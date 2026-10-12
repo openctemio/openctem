@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/activity"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -17,15 +17,15 @@ import (
 
 // FindingActivityHandler handles finding activity HTTP requests.
 type FindingActivityHandler struct {
-	activityService      *app.FindingActivityService
-	vulnerabilityService *app.VulnerabilityService
+	activityService      *activity.FindingActivityService
+	vulnerabilityService *finding.VulnerabilityService
 	logger               *logger.Logger
 }
 
 // NewFindingActivityHandler creates a new finding activity handler.
 func NewFindingActivityHandler(
-	actSvc *app.FindingActivityService,
-	vulnSvc *app.VulnerabilityService,
+	actSvc *activity.FindingActivityService,
+	vulnSvc *finding.VulnerabilityService,
 	log *logger.Logger,
 ) *FindingActivityHandler {
 	return &FindingActivityHandler{
@@ -99,18 +99,14 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		"user_id", userID,
 		"finding_id", findingID,
 		"tenant_id", tenantID,
-		"client_ip", r.RemoteAddr,
+		"client_ip", getClientIP(r),
 	)
 
-	// Parse pagination
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 0 {
-		page = 0
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Parse activity type filter
 	var activityTypes []string
@@ -118,7 +114,7 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		activityTypes = append(activityTypes, types)
 	}
 
-	input := app.ListActivitiesInput{
+	input := activity.ListActivitiesInput{
 		TenantID:      tenantID, // Security: Required for tenant isolation
 		FindingID:     findingID,
 		ActivityTypes: activityTypes,

@@ -21,6 +21,8 @@ export interface SensorTemplates {
   compose?: string
   kubernetes?: string
   helm?: string
+  /** The sensor-local policy template (api RFC-040 §5.7), prefilled with the zones' ranges. */
+  policy?: string
   image?: string
   api_url?: string
   api_key_included?: boolean
@@ -28,13 +30,15 @@ export interface SensorTemplates {
   ca_fingerprint_sha256?: string
 }
 
-export type SnippetFormat = 'docker' | 'compose' | 'kubernetes' | 'helm' | 'yaml' | 'env' | 'cli'
+export type SnippetFormat =
+  'docker' | 'compose' | 'kubernetes' | 'helm' | 'policy' | 'yaml' | 'env' | 'cli'
 
 const FORMATS: { key: SnippetFormat; label: string; file?: string }[] = [
   { key: 'docker', label: 'docker run' },
   { key: 'compose', label: 'Compose', file: 'compose.yaml' },
   { key: 'kubernetes', label: 'Kubernetes', file: 'sensor.yaml' },
   { key: 'helm', label: 'Helm' },
+  { key: 'policy', label: 'Local policy', file: 'sensor-policy.yaml' },
   { key: 'yaml', label: 'Config file', file: 'sensor.yaml' },
   { key: 'env', label: 'Env' },
   { key: 'cli', label: 'Binary' },
@@ -91,7 +95,7 @@ function downloadText(content: string, filename: string, type = 'text/plain') {
 }
 
 /** One snippet with Copy (and Download for files). */
-function Snippet({ text, label, file }: { text: string; label: string; file?: string }) {
+export function Snippet({ text, label, file }: { text: string; label: string; file?: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="relative min-w-0 rounded-lg border bg-muted/50">
@@ -192,7 +196,18 @@ export function SensorInstallSnippets({
           )}
         </div>
         {FORMATS.filter((f) => formats.includes(f.key)).map((f) => (
-          <TabsContent key={f.key} value={f.key} className="mt-3">
+          <TabsContent key={f.key} value={f.key} className="mt-3 space-y-2">
+            {f.key === 'policy' && (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  The owner of the network this sensor scans reviews this policy and installs it
+                  read-only on the sensor host (the install commands mount it). The sensor refuses
+                  every job outside it; the platform cannot change it. Needs a sensor release later
+                  than v0.8.0: v0.8.0 and older ignore the policy and scan without it.
+                </span>
+              </p>
+            )}
             <Snippet text={data[f.key] ?? ''} label={f.label} file={f.file} />
           </TabsContent>
         ))}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scim"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -330,7 +331,8 @@ func (h *SCIMHandler) PatchUser(w http.ResponseWriter, r *http.Request) {
 	writeSCIM(w, http.StatusOK, toResource(res))
 }
 
-// DeleteUser handles DELETE /scim/v2/Users/{id} (deprovision → deactivate).
+// DeleteUser handles DELETE /scim/v2/Users/{id}: the member is offboarded
+// (or disabled while their owned work waits for an administrator).
 func (h *SCIMHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(r)
 	if !ok {
@@ -342,7 +344,7 @@ func (h *SCIMHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		h.scimError(w, http.StatusBadRequest, "invalidValue", "invalid user id")
 		return
 	}
-	if _, err := h.provisioning.SetActive(r.Context(), tenantID, userID, false); err != nil {
+	if err := h.provisioning.Deprovision(r.Context(), tenantID, userID); err != nil {
 		h.writeProvisionError(w, err)
 		return
 	}
@@ -350,11 +352,16 @@ func (h *SCIMHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SCIMHandler) writeProvisionError(w http.ResponseWriter, err error) {
+	var lim *plan.ErrLimitReached
 	switch {
+	case errors.As(err, &lim):
+		h.scimError(w, http.StatusForbidden, "", PlanLimitMessage(lim))
 	case errors.Is(err, shared.ErrNotFound):
 		h.scimError(w, http.StatusNotFound, "", "user not found")
 	case errors.Is(err, shared.ErrValidation):
 		h.scimError(w, http.StatusBadRequest, "invalidValue", "invalid request")
+	case errors.Is(err, shared.ErrConflict):
+		h.scimError(w, http.StatusConflict, "uniqueness", "an account with this email already exists; invite them instead")
 	default:
 		h.logger.Error("scim provisioning failed", "error", err)
 		h.scimError(w, http.StatusInternalServerError, "", "provisioning failed")

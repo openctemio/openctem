@@ -3,7 +3,7 @@
 //
 // (invariant F1): the product claims to support discovering
 // assets from cloud providers. This package is the seam — providers
-// implement Connector; the discovery pipeline consumes them uniformly.
+// implement Connector; the discovery scan workflow consumes them uniformly.
 //
 // Only the framework + the AWS scaffold land in this PR. Each
 // provider-specific SDK wiring is its own follow-up (#339 GCP,
@@ -101,7 +101,7 @@ func (r *DiscoveryResult) Duration() time.Duration {
 	return r.EndedAt.Sub(r.StartedAt)
 }
 
-// Connector is the provider-agnostic interface the inventory pipeline
+// Connector is the provider-agnostic interface the inventory scan workflow
 // consumes. Implementations MUST be safe for concurrent Discover calls
 // across different tenants.
 type Connector interface {
@@ -128,7 +128,7 @@ type Registry struct {
 
 // NewRegistry constructs an empty registry. Callers register
 // connectors via Register before handing the registry to the ingest
-// pipeline.
+// scan workflow.
 func NewRegistry() *Registry {
 	return &Registry{connectors: make(map[Provider]Connector)}
 }

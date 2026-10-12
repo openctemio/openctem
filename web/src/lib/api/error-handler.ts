@@ -8,10 +8,17 @@ import { toast } from 'sonner'
 import type { ApiError } from './types'
 import { devLog } from '@/lib/logger'
 import { IP_NOT_ALLOWED_CODE, IP_NOT_ALLOWED_MESSAGE, notifyIpNotAllowed } from './ip-not-allowed'
+import { describePermissionDenied } from './permission-denied'
 
 // ============================================
 // ERROR CLASSES
 // ============================================
+
+/**
+ * 403 code for a change only an approver may make (e.g. marking a finding false
+ * positive). The message names the permission the approver needs.
+ */
+export const APPROVAL_REQUIRED_CODE = 'APPROVAL_REQUIRED'
 
 /**
  * Custom API Client Error
@@ -117,6 +124,14 @@ function statusOf(error: unknown): number | undefined {
  * A server error, rate limit or network failure: usually transient (the API
  * restarting during a deploy) and retried by SWR.
  */
+/**
+ * A write refused because the organization's plan dropped the module recently:
+ * it is read-only (view and export) until its grace ends.
+ */
+export function isReadOnlyModuleError(error: ApiClientError): boolean {
+  return error.code === 'MODULE_NOT_ENABLED' && error.details?.reason === 'read_only_grace'
+}
+
 export function isTransientApiError(error: ApiClientError): boolean {
   const s = error.statusCode
   return !s || s >= 500 || s === 429 || error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT'
@@ -214,9 +229,23 @@ export function handleApiError(
   // IP allowlist blocks share one de-duplicated toast with the API client.
   if (showToast && apiError.code === IP_NOT_ALLOWED_CODE) {
     notifyIpNotAllowed()
+  } else if (showToast && isReadOnlyModuleError(apiError)) {
+    // Unlike a module that is off (its pages are hidden), a module in
+    // read-only grace shows its pages, so a refused save must say why.
+    toast.error('Read-only', { description: message })
   } else if (showToast && apiError.code !== 'MODULE_NOT_ENABLED') {
     // Different toast types based on error
-    if (apiError.isAuthError()) {
+    if (apiError.code === APPROVAL_REQUIRED_CODE) {
+      // The server message says who can approve and what to do instead.
+      toast.error('Approval required', {
+        description: message,
+      })
+    } else if (apiError.code === 'FORBIDDEN' && describePermissionDenied(apiError.details)) {
+      // The refusal named the missing permission or role.
+      toast.error('Permission needed', {
+        description: message,
+      })
+    } else if (apiError.isAuthError()) {
       toast.error('Authentication Error', {
         description: message,
       })
@@ -262,6 +291,25 @@ function getUserFriendlyMessage(
   // Check custom messages first
   if (customMessages[error.code]) {
     return customMessages[error.code]
+  }
+
+  // An approval-required refusal carries an actionable server message (which
+  // permission the approver needs, and to submit a request instead); the
+  // generic 403 text below would hide it.
+  if (error.code === APPROVAL_REQUIRED_CODE && error.message) {
+    return error.message
+  }
+
+  // A write to a module in read-only grace: the server says why.
+  if (isReadOnlyModuleError(error) && error.message) {
+    return error.message
+  }
+
+  // A refused permission names what was missing (details); say it, so the
+  // person knows exactly what to ask an administrator for.
+  if (error.code === 'FORBIDDEN') {
+    const why = describePermissionDenied(error.details)
+    if (why) return why
   }
 
   // Built-in messages by error code
@@ -476,10 +524,10 @@ export function extractValidationErrors(error: ApiClientError): Record<string, s
  * @example
  * ```typescript
  * try {
- *   await updatePipeline(data)
- *   toast.success('Pipeline updated')
+ *   await updateScanWorkflow(data)
+ *   toast.success('Workflow updated')
  * } catch (error) {
- *   toast.error(getErrorMessage(error, 'Failed to update pipeline'))
+ *   toast.error(getErrorMessage(error, 'Failed to update workflow'))
  * }
  * ```
  */
@@ -489,6 +537,22 @@ export function getErrorMessage(
 ): string {
   // Handle ApiClientError
   if (error instanceof ApiClientError) {
+    // A refused permission names what was missing.
+    if (error.code === 'FORBIDDEN') {
+      const why = describePermissionDenied(error.details)
+      if (why) return why
+    }
+
+    // A validation failure carries its reasons as [{ field, message }]; the
+    // message itself is only "Validation failed".
+    if (Array.isArray(error.details)) {
+      const reasons = (error.details as { field?: unknown; message?: unknown }[])
+        .filter((d) => d && typeof d.message === 'string')
+        .map((d) =>
+          typeof d.field === 'string' && d.field ? `${d.field} ${d.message}` : d.message
+        )
+      if (reasons.length > 0) return reasons.join('. ')
+    }
     // If message is technical/long, try to get a friendlier version
     if (error.message && error.message.length < 200 && !error.message.includes('Error:')) {
       return error.message

@@ -28,11 +28,28 @@ const OUTCOME_STYLES: Record<string, string> = {
 }
 
 const OUTCOME_LABELS: Record<string, string> = {
-  not_detected: 'Not detected (fix stood)',
+  not_detected: 'Not detected',
   detected: 'Detected (still exploitable)',
   inconclusive: 'Inconclusive',
   error: 'Error',
   skipped: 'Skipped',
+}
+
+/**
+ * A safe-check is a reachability probe: it says whether the host answers, not
+ * whether the vulnerability is there, and it never changes the finding's status
+ * (RFC-039 D3). Label it as what it is.
+ */
+const REACHABILITY_LABELS: Record<string, string> = {
+  detected: 'Reachable',
+  not_detected: 'Not reachable',
+}
+
+export function outcomeLabel(item: Pick<ValidationEvidenceItem, 'executor_kind' | 'outcome'>) {
+  if (item.executor_kind === 'safe-check' && REACHABILITY_LABELS[item.outcome]) {
+    return REACHABILITY_LABELS[item.outcome]
+  }
+  return OUTCOME_LABELS[item.outcome] ?? item.outcome
 }
 
 /**
@@ -94,9 +111,14 @@ function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
       <div className="flex flex-wrap items-center gap-2">
         <Badge
           variant="secondary"
-          className={cn('font-medium', OUTCOME_STYLES[item.outcome] ?? OUTCOME_STYLES.skipped)}
+          className={cn(
+            'font-medium',
+            item.executor_kind === 'safe-check'
+              ? OUTCOME_STYLES.skipped
+              : (OUTCOME_STYLES[item.outcome] ?? OUTCOME_STYLES.skipped)
+          )}
         >
-          {OUTCOME_LABELS[item.outcome] ?? item.outcome}
+          {outcomeLabel(item)}
         </Badge>
         <DetectionBadge item={item} />
         <span className="text-muted-foreground text-xs">{item.executor_kind}</span>

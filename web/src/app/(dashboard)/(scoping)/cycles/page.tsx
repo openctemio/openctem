@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import useSWR from 'swr'
@@ -17,13 +17,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, RefreshCw, CalendarClock, Lightbulb } from 'lucide-react'
 import { get, post } from '@/lib/api/client'
 import { toast } from 'sonner'
-import { summarizeEvaluation, type CtemCycle } from '@/features/cycles'
+import { CyclePolicyCard, summarizeEvaluation, type CtemCycle } from '@/features/cycles'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface PaginatedResponse {
   data: CtemCycle[]
@@ -80,6 +82,7 @@ function firstOfNextMonth(): Date {
 }
 
 export default function CtemCyclesPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const {
     data: response,
@@ -199,14 +202,21 @@ export default function CtemCyclesPage() {
     <>
       <Main>
         <PageHeader
-          title="Cycles"
-          description="Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by."
+          title={t('scope.cycles.title', 'Cycles')}
+          description={t(
+            'scope.cycles.description',
+            'Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.'
+          )}
         >
           <Button size="sm" onClick={() => setIsCreateOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
             New cycle
           </Button>
         </PageHeader>
+
+        <div className="mt-4">
+          <CyclePolicyCard />
+        </div>
 
         {/* CTEM operating rhythm — a lightweight, always-visible reminder of
             the prescribed cadence. Checkpoints are anchored to real dates: the
@@ -252,8 +262,8 @@ export default function CtemCyclesPage() {
           ) : cycles.length === 0 ? (
             <EmptyState
               icon={RefreshCw}
-              title="No cycles yet"
-              description="A cycle binds the charter, the scope it freezes and the outcome it is judged by. Create one to start."
+              title={t('scope.cycles.emptyTitle', 'No cycles yet')}
+              description={t('scope.cycles.empty', 'Create a cycle to start.')}
             />
           ) : (
             <DataTable
@@ -276,63 +286,65 @@ export default function CtemCyclesPage() {
               Start a new continuous threat exposure management cycle
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Feed-forward: the last finished cycle's scope-refinement notes,
+          <DialogBody>
+            <div className="space-y-4">
+              {/* Feed-forward: the last finished cycle's scope-refinement notes,
                 shown read-only so the lessons visibly inform this new cycle's
                 scope instead of being copied by hand. */}
-            {lastLessons && (
-              <div className={LESSONS_CALLOUT_CLASS}>
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Lightbulb className={LESSONS_ICON_CLASS} />
-                  Lessons from {lastLessons.name}
+              {lastLessons && (
+                <div className={LESSONS_CALLOUT_CLASS}>
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Lightbulb className={LESSONS_ICON_CLASS} />
+                    Lessons from {lastLessons.name}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
+                    {lastLessons.charter?.scope_refinement_notes}
+                  </p>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Carry the relevant items into this cycle&rsquo;s scope and charter.
+                  </p>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
-                  {lastLessons.charter?.scope_refinement_notes}
-                </p>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  Carry the relevant items into this cycle&rsquo;s scope and charter.
-                </p>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Q2 2026 CTEM Cycle"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Brief description of cycle goals"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+              )}
               <div className="space-y-2">
-                <Label htmlFor="start_date">Start date</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
-                  id="start_date"
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Q2 2026 CTEM Cycle"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="end_date">End date</Label>
+                <Label htmlFor="description">Description</Label>
                 <Input
-                  id="end_date"
-                  type="date"
-                  value={formData.end_date}
-                  onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Brief description of cycle goals"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="start_date">Start date</Label>
+                  <Input
+                    id="start_date"
+                    type="date"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="end_date">End date</Label>
+                  <Input
+                    id="end_date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel

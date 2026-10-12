@@ -1,0 +1,44 @@
+{
+  "tool": "trivy",
+  "asset": {"type": "repository", "value": "github.com/acme/api"},
+  "cases": [
+    {
+      "name": "still vulnerable after a version bump",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "lodash: command injection", "severity": "high", "rule_id": "CVE-2021-23337",
+        "fingerprint": "1111aaaa2222bbbb",
+        "location": {"path": "package-lock.json"},
+        "vulnerability": {"cve_id": "CVE-2021-23337", "package": "lodash", "purl": "pkg:npm/lodash@4.17.15", "affected_version": "4.17.15", "fixed_version": "4.17.21"}},
+      "after": {"type": "vulnerability", "title": "lodash: command injection", "severity": "high", "rule_id": "CVE-2021-23337",
+        "fingerprint": "3333cccc4444dddd",
+        "location": {"path": "package-lock.json"},
+        "vulnerability": {"cve_id": "cve-2021-23337", "package": "lodash", "purl": "pkg:npm/lodash@4.17.20", "affected_version": "4.17.20", "fixed_version": "4.17.21"}}
+    },
+    {
+      "name": "the same package in another manifest of the asset (D2)",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "requests leak", "severity": "medium", "rule_id": "CVE-2023-32681",
+        "location": {"path": "requirements.txt"},
+        "vulnerability": {"cve_id": "CVE-2023-32681", "package": "requests", "purl": "pkg:pypi/requests@2.28.0"}},
+      "after": {"type": "vulnerability", "title": "requests leak", "severity": "medium", "rule_id": "CVE-2023-32681",
+        "location": {"path": "services/worker/requirements.txt"},
+        "vulnerability": {"cve_id": "CVE-2023-32681", "package": "Requests", "purl": "pkg:pypi/Requests@2.28.0"}}
+    },
+    {
+      "name": "another CVE in the same package",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "lodash", "severity": "high", "rule_id": "CVE-2021-23337",
+        "vulnerability": {"cve_id": "CVE-2021-23337", "package": "lodash", "purl": "pkg:npm/lodash@4.17.15"}},
+      "after": {"type": "vulnerability", "title": "lodash", "severity": "high", "rule_id": "CVE-2020-8203",
+        "vulnerability": {"cve_id": "CVE-2020-8203", "package": "lodash", "purl": "pkg:npm/lodash@4.17.15"}}
+    },
+    {
+      "name": "deb and pypi copies are different components",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "requests", "severity": "medium", "rule_id": "CVE-2023-32681",
+        "vulnerability": {"cve_id": "CVE-2023-32681", "package": "python3-requests", "purl": "pkg:deb/debian/python3-requests@2.28.1?distro=debian-12"}},
+      "after": {"type": "vulnerability", "title": "requests", "severity": "medium", "rule_id": "CVE-2023-32681",
+        "vulnerability": {"cve_id": "CVE-2023-32681", "package": "requests", "purl": "pkg:pypi/requests@2.28.1"}}
+    }
+  ]
+}

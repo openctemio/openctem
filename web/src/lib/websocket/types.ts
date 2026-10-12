@@ -33,6 +33,7 @@ export type ChannelType =
   | 'user' // user:{tenant_id}:{user_id} - The signed-in user's own notifications
   | 'triage' // triage:{finding_id} - AI triage progress
   | 'group' // group:{id} - Group membership/scope rule changes
+  | 'run' // run:{id} - A scan run changed (the live run map refreshes)
 
 /**
  * Create a channel string from type and ID
@@ -148,6 +149,25 @@ export interface PongResponse {
  * WebSocket connection states
  */
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error'
+
+/**
+ * Close codes the server sends when it ends a connection on its own
+ * (api/internal/infra/websocket/types.go, RFC-045 §5.4).
+ */
+export const WS_CLOSE = {
+  /** Client-initiated normal close: do not reconnect. */
+  NORMAL: 1000,
+  /** Message rate limit abused. */
+  POLICY_VIOLATION: 1008,
+  /**
+   * The credential is no longer valid: the access token expired, the session
+   * was signed out or revoked, or membership/role changed. Reconnect (the
+   * upgrade re-runs every gate); refresh the session if that fails.
+   */
+  UNAUTHORIZED: 4401,
+  /** Too many sockets for this user: back off at the maximum delay. */
+  TOO_MANY_CONNECTIONS: 4429,
+} as const
 
 // ============================================
 // EVENT DATA TYPES

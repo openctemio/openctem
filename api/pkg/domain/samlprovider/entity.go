@@ -37,7 +37,7 @@ func New(id, tenantID shared.ID, idpEntityID, idpSSOURL, idpCert string) *SAMLPr
 		idpEntityID:    idpEntityID,
 		idpSSOURL:      idpSSOURL,
 		idpCertificate: idpCert,
-		defaultRole:    "member",
+		defaultRole:    "viewer", // least privilege for SSO just-in-time members
 		autoProvision:  true,
 		enabled:        false,
 		createdAt:      now,

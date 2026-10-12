@@ -71,3 +71,32 @@ description = "Redis connection string"
 regex = '''redis://[^:]*:[^@]+@[^/]+'''
 entropy = 0
 allowlist = { regexes = ['''redis://[^:]*:(password|secret)@(localhost|127\.0\.0\.1|redis)'''] }
+
+# OpenCTEM sensor credentials (api/docs/architecture/agent-identity.md,
+# "Credential formats"). octs_ and octe_ are <prefix> + 43 base62 characters
+# (32 random bytes) + 6 base62 characters (CRC32 of the random part); the
+# regex pins that exact shape so it cannot match prose or placeholders. The
+# checksum cannot be checked in a regex: it is what lets a scanner with code
+# (and the API) discard look-alikes. Test fixtures never hold a literal key:
+# Go tests mint keys at run time and web fixtures use short placeholders
+# (web/src/test/sensor-keys.ts); *_test.go is also allowlisted above.
+[[rules]]
+id = "openctem-sensor-key"
+description = "OpenCTEM sensor API key (octs_)"
+regex = '''\b(octs_[0-9A-Za-z]{43}[0-9A-Za-z]{6})\b'''
+secretGroup = 1
+keywords = ["octs_"]
+
+[[rules]]
+id = "openctem-enrollment-token"
+description = "OpenCTEM sensor enrollment token (octe_)"
+regex = '''\b(octe_[0-9A-Za-z]{43}[0-9A-Za-z]{6})\b'''
+secretGroup = 1
+keywords = ["octe_"]
+
+[[rules]]
+id = "openctem-legacy-sensor-key"
+description = "OpenCTEM legacy sensor API key (rda_, retired after enrollment ships)"
+regex = '''\b(rda_[0-9a-f]{64})\b'''
+secretGroup = 1
+keywords = ["rda_"]

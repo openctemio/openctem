@@ -92,6 +92,10 @@ var (
 	ErrInvalidCredentials  = fmt.Errorf("%w: invalid credentials", shared.ErrUnauthorized)
 	ErrInvalidMFACode      = fmt.Errorf("%w: invalid verification code", shared.ErrUnauthorized)
 	ErrAccountLocked       = fmt.Errorf("%w: account temporarily locked", shared.ErrForbidden)
+	// ErrStepUpUnavailable: a step-up needs the console's own authenticator, and
+	// this administrator has none enrolled (for example, it only ever signed in
+	// through the platform identity provider).
+	ErrStepUpUnavailable = fmt.Errorf("%w: enroll the console authenticator to confirm this action", shared.ErrForbidden)
 	// ErrNotSignedIn: no valid /login session behind the request.
 	ErrNotSignedIn = fmt.Errorf("%w: sign in first", shared.ErrUnauthorized)
 	// ErrNotPlatformAdmin: the signed-in account is not an active administrator.

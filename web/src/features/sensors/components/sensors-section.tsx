@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { Plus, RadioTower, Loader2, Search, Download, Trash2, Ban, Layers } from 'lucide-react'
+import Link from '@/components/link'
+import { Plus, RadioTower, Loader2, Search, Download, Trash2, Layers, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { ScanZonesPanel } from '@/features/scan-zones'
@@ -15,24 +16,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { useNow } from '@/hooks/use-now'
 import { exportToCsv } from '@/hooks/use-csv-export'
+import { resetListPage } from '@/hooks/use-list-params'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import { InstallSensorDialog } from './install-sensor-dialog'
+import { PairSensorButton, PairSensorDialog } from './pair-sensor-dialog'
 import { SensorInstallFlow } from './sensor-install-flow'
 import { EditSensorDialog } from './edit-sensor-dialog'
 import { RegenerateKeyDialog } from './regenerate-key-dialog'
@@ -41,6 +36,7 @@ import { FleetContentRefreshButton } from './sensor-content-cells'
 import { SensorTable } from './sensor-table'
 import { FleetHealthStrip } from './fleet-health-strip'
 import { SensorFacetPanel } from './sensor-facet-panel'
+import { dispatchTools } from '../lib/capabilities'
 import {
   useAllSensors,
   useTenantSensorStats,
@@ -52,15 +48,31 @@ import {
   invalidateSensorsCache,
 } from '@/lib/api/sensor-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
+import { useSensorGrantSummaries } from '@/lib/api/sensor-grant-hooks'
+import { useSensorIdentityPolicy } from '@/lib/api/sensor-pairing-hooks'
 import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
 import { Tabs, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PlatformSensorsLink } from '@/features/platform'
-import { BulkActionBar, EmptyState, ErrorState, FilterSheet, PageHeader } from '@/features/shared'
+import { PlatformScanningCard } from '@/features/platform'
+import {
+  BulkActionBar,
+  EmptyState,
+  ErrorState,
+  FilterSheet,
+  PageHeader,
+  SegmentedLens,
+} from '@/features/shared'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
+import { useFleet } from '@/features/ci-runners/api/use-ci'
+import { CIPipelinesPanel } from '@/features/ci-runners/components/ci-pipelines-panel'
+import { CICDLinkCard } from '@/features/ci-runners/components/ci-cd-link-card'
+import { CIPipelineSheet } from '@/features/ci-runners/components/ci-pipeline-sheet'
+import { FleetAllView } from './fleet-all-view'
 
 import {
   DEFAULT_FLEET_THRESHOLDS,
   SENSOR_STATE_META,
   SENSOR_STATES,
+  stateTakesJobs,
   sensorState,
   type FleetThresholds,
 } from '../lib/sensor-state'
@@ -75,18 +87,16 @@ import {
   filterSensors,
   groupSensors,
   summarizeFleet,
-  tenantSensors,
   type FleetFilters,
   type FleetGroupBy,
   type ReleaseChannel,
   type SensorModeFilter,
   type SensorProtocolFilter,
+  SENSOR_POLICY_FILTERS,
+  type SensorPolicyFilter,
 } from '../lib/fleet'
 
-type SensorTypeFilter = 'runner' | 'worker' | 'collector' | 'sensor'
-
 interface SensorsSectionProps {
-  typeFilter?: SensorTypeFilter
   /** Page title and description; the section renders the page header. */
   title?: string
   description?: string
@@ -100,6 +110,32 @@ const VERSION_STATUSES: SensorVersionStatus[] = [
   'unknown',
 ]
 const MODES: SensorModeFilter[] = ['daemon', 'ci']
+
+/**
+ * The page's Mode (api RFC-051 §10): a sensor row runs as a daemon; a CI
+ * pipeline is listed in runner mode. The page opens on the daemons; CI
+ * pipelines have their own page (CI/CD integration), linked from here, and
+ * stay reachable as the Runner and All modes.
+ */
+export type FleetPageMode = 'all' | 'daemon' | 'runner'
+
+/**
+ * The mode a URL asks for. `?mode=` once held the run-style facet
+ * (daemon|ci|standalone) and the old collector tab: those links open the
+ * daemon list with the same filter.
+ */
+export function fleetPageMode(raw: string, canDaemon: boolean, canRunner: boolean): FleetPageMode {
+  const allowed = (m: FleetPageMode) =>
+    m === 'all' ? canDaemon && canRunner : m === 'daemon' ? canDaemon : canRunner
+  const values = raw.split(',').map((v) => v.trim())
+  for (const v of values) {
+    if ((v === 'all' || v === 'daemon' || v === 'runner') && allowed(v)) return v
+  }
+  if (values.some((v) => v === 'ci' || v === 'standalone' || v === 'collector') && canDaemon) {
+    return 'daemon'
+  }
+  return canDaemon ? 'daemon' : 'runner'
+}
 const PROTOCOLS: SensorProtocolFilter[] = ['v2', 'v1', 'unknown']
 const GROUP_LABELS: Record<Exclude<FleetGroupBy, 'none'>, string> = {
   zone: 'Zone',
@@ -114,7 +150,7 @@ function legacyStates(status: string): SensorState[] {
     case 'all':
       return []
     case 'online':
-      return ['online', 'degraded']
+      return ['online', 'degraded', 'late']
     case 'offline':
       return ['stale', 'offline', 'never_connected']
     case 'error':
@@ -140,17 +176,20 @@ function LiveIndicator({ updatedAt, now }: { updatedAt: number | null; now: numb
 }
 
 export function SensorsSection({
-  typeFilter,
   title = 'Sensors',
-  description = 'The scanners and collectors that run inside your networks and report back to the platform.',
+  description = 'The scanners and collectors that run inside your networks. CI/CD pipelines have their own page.',
 }: SensorsSectionProps) {
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [pairDialogOpen, setPairDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [regenerateKeyDialogOpen, setRegenerateKeyDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false)
+  // The sensor waiting for a disable confirmation.
+  const [pendingDisable, setPendingDisable] = useState<Sensor | null>(null)
+  const { t } = useTranslation()
   const [detailSheetOpen, setDetailSheetOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -170,8 +209,11 @@ export function SensorsSection({
   const [roleParam, setRoleParam] = useUrlFilterList('role')
   const [stateParam, setStateParam] = useUrlFilterList('state')
   const [versionParam, setVersionParam] = useUrlFilterList('version')
+  // The run-style facet; legacy links carried it in ?mode=.
+  const [execParam, setExecParam] = useUrlFilterList('exec')
   const [modeParam, setModeParam] = useUrlFilterList('mode')
   const [protocolParam, setProtocolParam] = useUrlFilterList('protocol')
+  const [policyParam, setPolicyParam] = useUrlFilterList('policy')
   // The same name and values as the API's GET /sensors?sdk_version= filter.
   const [sdkVersionParam, setSdkVersionParam] = useUrlFilterList('sdk_version')
   const [attentionParam, setAttentionParam] = useUrlFilter('attention', '')
@@ -181,7 +223,38 @@ export function SensorsSection({
 
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const canWriteSensors = useHasPermission(Permission.SensorsWrite)
-  const zonesTab = tabParam === 'zones' && canReadZones && !typeFilter
+  const canReadSensors = useHasPermission(Permission.SensorsRead)
+  // Grant flags on the list (RFC-052): legacy broad grants and New sensors.
+  const { data: grantSummaries } = useSensorGrantSummaries(canReadSensors)
+  const grants = useMemo(
+    () => new Map((grantSummaries?.data ?? []).map((g) => [g.sensor_id, g])),
+    [grantSummaries?.data]
+  )
+  const canPairSensors = useHasPermission(Permission.SensorsPair)
+  // RFC-052 D-4: an organization that requires key-bound identity cannot
+  // create a sensor with an API key (the API answers 403), so the key-based
+  // install flow gives way to pairing there.
+  const { data: identityPolicy } = useSensorIdentityPolicy()
+  const bearerKeysAllowed = identityPolicy?.bearer_keys_allowed !== false
+  const canInstallWithKey = canWriteSensors && bearerKeysAllowed
+  const zonesTab = tabParam === 'zones' && canReadZones
+  const canDaemon = useHasPermission(Permission.SensorsRead)
+  const scansEnabled = useModuleEnabled('scans')
+  const canRunner = useHasPermission(Permission.CIRead) && scansEnabled
+  const fleetMode: FleetPageMode = fleetPageMode(modeParam.join(','), canDaemon, canRunner)
+  const setFleetMode = useCallback(
+    (m: FleetPageMode) => {
+      setModeParam(m === fleetPageMode('', canDaemon, canRunner) ? [] : [m])
+      resetListPage()
+    },
+    [setModeParam, canDaemon, canRunner]
+  )
+  // Header counts for the Mode switch (one row of the fleet read model).
+  const { data: fleetCounts } = useFleet({ mode: 'all', perPage: 1 }, { enabled: canRunner })
+  const runnerCount = fleetCounts?.counts?.runner
+    ? (fleetCounts.counts.runner.total ?? 0) - (fleetCounts.counts.runner.inactive ?? 0)
+    : undefined
+  const [openPipeline, setOpenPipeline] = useState<string | null>(null)
 
   const filters = useMemo<FleetFilters>(() => {
     const roles = roleParam.filter((r): r is SensorRole => (ROLES as string[]).includes(r))
@@ -192,7 +265,7 @@ export function SensorsSection({
     const states = stateParam.filter((s): s is SensorState =>
       (SENSOR_STATES as string[]).includes(s)
     )
-    const modes = modeParam
+    const modes = [...execParam, ...modeParam.filter((m) => m === 'ci' || m === 'standalone')]
       .map((m) => (m === 'standalone' ? 'ci' : m))
       .filter((m): m is SensorModeFilter => (MODES as string[]).includes(m))
     return {
@@ -206,15 +279,20 @@ export function SensorsSection({
       protocols: protocolParam.filter((p): p is SensorProtocolFilter =>
         (PROTOCOLS as string[]).includes(p)
       ),
+      policies: policyParam.filter((p): p is SensorPolicyFilter =>
+        (SENSOR_POLICY_FILTERS as string[]).includes(p)
+      ),
       sdkVersions: sdkVersionParam.filter(Boolean),
       attention: attentionParam === '1',
     }
   }, [
     protocolParam,
+    policyParam,
     sdkVersionParam,
     roleParam,
     stateParam,
     versionParam,
+    execParam,
     modeParam,
     attentionParam,
     searchQuery,
@@ -226,7 +304,11 @@ export function SensorsSection({
   const clearLegacy = useCallback(() => {
     if (legacyStatus) setLegacyStatus('')
     if (tabParam === 'scanners' || tabParam === 'collectors') setTabParam('')
-  }, [legacyStatus, setLegacyStatus, tabParam, setTabParam])
+    // A legacy ?mode=ci|standalone|collector becomes the daemon list plus the facet.
+    if (modeParam.some((m) => m !== 'all' && m !== 'daemon' && m !== 'runner')) {
+      setModeParam(['daemon'])
+    }
+  }, [legacyStatus, setLegacyStatus, tabParam, setTabParam, modeParam, setModeParam])
 
   const setFilters = useCallback(
     (next: FleetFilters) => {
@@ -234,8 +316,9 @@ export function SensorsSection({
       setRoleParam(next.roles)
       setStateParam(next.states)
       setVersionParam(next.versions)
-      setModeParam(next.modes)
+      setExecParam(next.modes)
       setProtocolParam(next.protocols)
+      setPolicyParam(next.policies)
       setSdkVersionParam(next.sdkVersions)
       setAttentionParam(next.attention ? '1' : '')
     },
@@ -244,8 +327,9 @@ export function SensorsSection({
       setRoleParam,
       setStateParam,
       setVersionParam,
-      setModeParam,
+      setExecParam,
       setProtocolParam,
+      setPolicyParam,
       setSdkVersionParam,
       setAttentionParam,
     ]
@@ -302,7 +386,7 @@ export function SensorsSection({
   )
 
   // Zones, for grouping and the coverage metric.
-  const { data: zonesData } = useScanZones(canReadZones && !typeFilter)
+  const { data: zonesData } = useScanZones(canReadZones)
   const zones = useMemo(() => zonesData?.data ?? [], [zonesData?.data])
 
   // Mutations. Each takes the target sensor's id when triggered: the row
@@ -314,12 +398,8 @@ export function SensorsSection({
   const { trigger: deactivateSensorTrigger } = useDeactivateSensor()
   const { trigger: revokeSensorTrigger } = useRevokeSensor()
 
-  // The tenant's own sensors (platform sensors have their own page); the
-  // /runners page shows one type.
-  const scopedSensors = useMemo(() => {
-    const own = tenantSensors(sensors)
-    return typeFilter ? own.filter((a) => a.type === typeFilter) : own
-  }, [sensors, typeFilter])
+  // The tenant's own sensors: the API never lists a platform sensor.
+  const scopedSensors = sensors
 
   const summary = useMemo(
     () => summarizeFleet(scopedSensors, now, thresholds, channel, zones),
@@ -351,10 +431,7 @@ export function SensorsSection({
       renderHeader: (key: string, rows: Sensor[]) => {
         const g = byKey.get(key)
         if (!g) return null
-        const online = rows.filter((s) => {
-          const st = sensorState(s, now, thresholds)
-          return st === 'online' || st === 'degraded'
-        }).length
+        const online = rows.filter((s) => stateTakesJobs(sensorState(s, now, thresholds))).length
         const zoneGap = g.zone && online === 0
         return (
           <span className="flex flex-wrap items-center gap-x-1.5">
@@ -470,6 +547,7 @@ export function SensorsSection({
       try {
         const updatedSensor = await deactivateSensorTrigger(sensor.id)
         toast.success(`Sensor "${sensor.name}" disabled`)
+        setPendingDisable(null)
         await invalidateSensorsCache()
         await mutate()
         if (updatedSensor) setSelectedSensor(updatedSensor)
@@ -479,6 +557,11 @@ export function SensorsSection({
     },
     [deactivateSensorTrigger, mutate]
   )
+
+  const requestDeactivateSensor = useCallback((sensor: Sensor) => {
+    setDetailSheetOpen(false)
+    setPendingDisable(sensor)
+  }, [])
 
   const handleRevokeSensor = useCallback((sensor: Sensor) => {
     setSelectedSensor(sensor)
@@ -530,7 +613,7 @@ export function SensorsSection({
         { header: 'Max jobs', accessor: (s) => s.max_concurrent_jobs },
         { header: 'Outbox pending', accessor: (s) => s.outbox?.pending_count ?? '' },
         { header: 'Key expires', accessor: (s) => s.key_expires_at ?? '' },
-        { header: 'Tools', accessor: (s) => (s.tools ?? []).join(' ') },
+        { header: 'Tools', accessor: (s) => dispatchTools(s).join(' ') },
         { header: 'Last heartbeat', accessor: (s) => s.last_seen_at ?? '' },
         { header: 'Scans', accessor: (s) => s.total_scans },
         { header: 'Findings', accessor: (s) => s.total_findings },
@@ -566,8 +649,52 @@ export function SensorsSection({
     />
   )
 
+  const modeOptions = [
+    ...(canDaemon && canRunner
+      ? [
+          {
+            value: 'all' as const,
+            label: 'All',
+            count: runnerCount === undefined ? undefined : scopedSensors.length + runnerCount,
+            description: 'Daemons and CI pipelines in one list',
+          },
+        ]
+      : []),
+    ...(canDaemon
+      ? [
+          {
+            value: 'daemon' as const,
+            label: 'Daemon',
+            count: isLoading ? undefined : scopedSensors.length,
+            description: 'Sensors that run continuously and take jobs',
+          },
+        ]
+      : []),
+    ...(canRunner
+      ? [
+          {
+            value: 'runner' as const,
+            label: 'Runner',
+            count: runnerCount,
+            description: 'CI/CD pipelines: the sensor binary runs inside a CI job',
+          },
+        ]
+      : []),
+  ]
+  const modeLens =
+    modeOptions.length > 1 ? (
+      <SegmentedLens<FleetPageMode>
+        label="Mode"
+        value={fleetMode}
+        options={modeOptions}
+        onChange={setFleetMode}
+        countNoun="sensors"
+      />
+    ) : null
+
   const toolbarStart = (
     <>
+      {modeLens}
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -603,7 +730,9 @@ export function SensorsSection({
     </>
   )
 
-  const fleetEmpty = inlineInstall || (!isLoading && !error && scopedSensors.length === 0)
+  const fleetEmpty =
+    fleetMode === 'daemon' &&
+    (inlineInstall || (!isLoading && !error && scopedSensors.length === 0))
 
   let body: React.ReactNode
   if (error && !inlineInstall) {
@@ -613,31 +742,44 @@ export function SensorsSection({
   } else if (fleetEmpty) {
     // No sensors yet: the page is the install flow (admins), or says who can
     // install one (everyone else).
-    body = canWriteSensors ? (
-      <SensorInstallFlow
-        title="Install your first sensor"
-        onCreated={() => setInlineInstall(true)}
-        onOpen={(s) => {
-          setInlineInstall(false)
-          handleViewSensor(s)
-        }}
-        onDone={() => setInlineInstall(false)}
-      />
-    ) : (
-      <EmptyState
-        icon={RadioTower}
-        title="No sensors yet"
-        description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. An organization admin can install one."
-      />
+    body = (
+      <>
+        {modeLens && <div className="mb-4">{modeLens}</div>}
+        {canInstallWithKey ? (
+          <SensorInstallFlow
+            title="Install your first sensor"
+            onCreated={() => setInlineInstall(true)}
+            onOpen={(s) => {
+              setInlineInstall(false)
+              handleViewSensor(s)
+            }}
+            onDone={() => setInlineInstall(false)}
+          />
+        ) : canPairSensors ? (
+          <EmptyState
+            icon={RadioTower}
+            title="Pair your first sensor"
+            description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. Start it on the host with only the platform URL; it prints a code and a fingerprint to pair it here."
+            action={<PairSensorButton onClick={() => setPairDialogOpen(true)} />}
+          />
+        ) : (
+          <EmptyState
+            icon={RadioTower}
+            title="No sensors yet"
+            description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. An organization admin can install one."
+          />
+        )}
+      </>
     )
   } else {
     body = (
       <SensorTable
         sensors={filteredSensors}
+        grants={grants}
         onViewSensor={handleViewSensor}
         onEditSensor={handleEditSensor}
         onActivateSensor={handleActivateSensor}
-        onDeactivateSensor={handleDeactivateSensor}
+        onDeactivateSensor={requestDeactivateSensor}
         onDeleteSensor={handleDeleteClick}
         onRegenerateKey={handleRegenerateKey}
         onSelectionChange={(rows) => setSelectedIds(rows.map((a) => a.id))}
@@ -659,7 +801,6 @@ export function SensorsSection({
     )
   }
 
-  const onlineWindow = thresholds.onlineWindowSeconds
   const offlineAfter = thresholds.offlineAfterSeconds
   const secondsLabel = (s: number) => (s % 60 === 0 && s >= 60 ? `${s / 60} min` : `${s}s`)
 
@@ -675,29 +816,37 @@ export function SensorsSection({
           </Can>
         ) : (
           <>
-            {/* Shared platform sensors have their own page, linked only where
-                the tenant has them (the same condition the old card used). */}
-            {!typeFilter && <PlatformSensorsLink />}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={filteredSensors.length === 0}
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-            <Can permission={Permission.SensorsWrite}>
+            {fleetMode === 'daemon' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                disabled={filteredSensors.length === 0}
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </Button>
+            )}
+            {fleetMode === 'runner' && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/ci-cd?tab=setup">
+                  <Workflow className="h-4 w-4" />
+                  Connect a CI pipeline
+                </Link>
+              </Button>
+            )}
+            {fleetMode !== 'runner' && <PairSensorButton onClick={() => setPairDialogOpen(true)} />}
+            {canInstallWithKey && (
               <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Install sensor
               </Button>
-            </Can>
+            )}
           </>
         )}
       </PageHeader>
 
-      {!typeFilter && canReadZones && (
+      {canReadZones && (
         <Tabs
           value={zonesTab ? 'zones' : 'sensors'}
           onValueChange={(v) => setTabParam(v === 'zones' ? 'zones' : '')}
@@ -716,8 +865,26 @@ export function SensorsSection({
 
       {zonesTab ? (
         <ScanZonesPanel createOpen={zoneCreateOpen} onCreateOpenChange={setZoneCreateOpen} />
+      ) : fleetMode === 'runner' ? (
+        <CIPipelinesPanel toolbarStart={modeLens} />
+      ) : fleetMode === 'all' ? (
+        <>
+          <FleetAllView
+            toolbarStart={modeLens}
+            onOpenDaemon={(id) => {
+              const s = sensors.find((x) => x.id === id)
+              if (s) handleViewSensor(s)
+            }}
+            onOpenRunner={setOpenPipeline}
+          />
+          <CIPipelineSheet id={openPipeline} onClose={() => setOpenPipeline(null)} />
+        </>
       ) : (
         <>
+          {canRunner && <CICDLinkCard className="mt-4" count={runnerCount} />}
+          {/* Where else scans can run: the platform's shared scanning, shown
+              only when the organization may use it. */}
+          <PlatformScanningCard className="mt-4" />
           {!fleetEmpty && (
             <FleetHealthStrip
               className="mt-5"
@@ -759,9 +926,11 @@ export function SensorsSection({
               {body}
               {!fleetEmpty && !error && !isLoading && (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Online: heartbeat within {secondsLabel(onlineWindow)} · Stale:{' '}
-                  {secondsLabel(onlineWindow)} to {secondsLabel(offlineAfter)} · Offline: over{' '}
-                  {secondsLabel(offlineAfter)} · Idle (CI): a CI sensor between runs
+                  Each sensor is judged against its own heartbeat interval. Online: its next
+                  heartbeat is not yet due · Late: past due, still takes work · Stale: well past
+                  due, takes no new work · Offline: over 3 intervals (at least 90s) past due, at
+                  most {secondsLabel(offlineAfter)} without a heartbeat · Idle (CI): a CI sensor
+                  between runs
                 </p>
               )}
             </div>
@@ -791,6 +960,10 @@ export function SensorsSection({
           </Button>
         </BulkActionBar>
       </Can>
+
+      {pairDialogOpen && (
+        <PairSensorDialog open={pairDialogOpen} onOpenChange={setPairDialogOpen} />
+      )}
 
       {/* Mounted only while open: it loads tools and zones. */}
       {addDialogOpen && (
@@ -832,100 +1005,114 @@ export function SensorsSection({
             onRegenerateKey={handleRegenerateKey}
             onDelete={handleDeleteClick}
             onActivate={handleActivateSensor}
-            onDeactivate={handleDeactivateSensor}
+            onDeactivate={requestDeactivateSensor}
             onRevoke={handleRevokeSensor}
           />
         </>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation: the sensor's key stops working, so type its name. */}
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete sensor"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedSensor?.name}</strong>? This action
-            cannot be undone and will invalidate the sensor&apos;s API key.
-          </>
+        title={t('confirm.sensor.deleteTitle', 'Delete the sensor {name}?', {
+          name: selectedSensor?.name ?? '',
+        })}
+        desc={t(
+          'confirm.sensor.deleteDesc',
+          'Its API key stops working at once and it can no longer claim jobs or send results. Findings it reported stay. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
         }
-        confirmText="Delete"
         destructive
         isLoading={isDeleting}
+        typeToConfirm={selectedSensor?.name}
         handleConfirm={handleDeleteConfirm}
       />
 
-      {/* Bulk Delete Confirmation */}
+      {/* Bulk Delete Confirmation: type the count. */}
       <ConfirmDialog
         open={bulkDeleteDialogOpen}
         onOpenChange={setBulkDeleteDialogOpen}
-        title="Delete sensors"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedIds.length}</strong> sensor(s)? This
-            action cannot be undone and will invalidate all their API keys.
-          </>
+        title={
+          selectedIds.length === 1
+            ? t('confirm.sensor.bulkDeleteTitleOne', 'Delete 1 sensor?')
+            : t('confirm.sensor.bulkDeleteTitle', 'Delete {count} sensors?', {
+                count: selectedIds.length,
+              })
         }
-        confirmText="Delete all"
+        desc={t(
+          'confirm.sensor.bulkDeleteDesc',
+          'Their API keys stop working at once and they can no longer claim jobs or send results. Findings they reported stay. This cannot be undone.'
+        )}
+        confirmText={
+          isBulkDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
         destructive
         isLoading={isBulkDeleting}
+        typeToConfirm={String(selectedIds.length)}
         handleConfirm={handleBulkDeleteConfirm}
       />
 
-      {/* Revoke Confirmation */}
-      <AlertDialog open={revokeDialogOpen} onOpenChange={setRevokeDialogOpen}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-              <Ban className="h-5 w-5" />
-              Revoke sensor access
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>
-                  Permanently revoke access for <strong>{selectedSensor?.name}</strong>?
-                </p>
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-sm text-destructive">
-                  <p className="text-xs font-medium">This is permanent</p>
-                  <ul className="mt-1.5 space-y-0.5 text-xs">
-                    <li>- Sensor loses access immediately</li>
-                    <li>- Cannot be undone</li>
-                    <li>- Must create new sensor to restore</li>
-                  </ul>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Use <strong>Disable</strong> for temporary suspension.
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isRevoking}>Cancel</AlertDialogCancel>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setRevokeDialogOpen(false)
-                if (selectedSensor) {
-                  handleDeactivateSensor(selectedSensor)
-                }
-              }}
-              disabled={isRevoking}
-            >
-              Disable
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleRevokeConfirm}
-              disabled={isRevoking}
-            >
-              {isRevoking && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Revoke
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Disable: reversible, the sensor stops claiming jobs until enabled. */}
+      <ConfirmDialog
+        open={pendingDisable !== null}
+        onOpenChange={(open) => !open && setPendingDisable(null)}
+        destructive
+        title={t('confirm.sensor.disableTitle', 'Disable the sensor {name}?', {
+          name: pendingDisable?.name ?? '',
+        })}
+        desc={t(
+          'confirm.sensor.disableDesc',
+          'It stops claiming new jobs until you enable it again. Its key and history are kept.'
+        )}
+        confirmText={t('confirm.disable', 'Disable')}
+        handleConfirm={() => (pendingDisable ? handleDeactivateSensor(pendingDisable) : undefined)}
+      />
+
+      {/* Revoke Confirmation: permanent, so type the name. */}
+      <ConfirmDialog
+        open={revokeDialogOpen}
+        onOpenChange={setRevokeDialogOpen}
+        destructive
+        title={t('confirm.sensor.revokeTitle', 'Revoke the sensor {name}?', {
+          name: selectedSensor?.name ?? '',
+        })}
+        desc={t(
+          'confirm.sensor.revokeDesc',
+          'It loses access at once and for good: its key is revoked and it cannot be re-enabled. To use the machine again, enroll a new sensor. This cannot be undone.'
+        )}
+        confirmText={
+          isRevoking ? (
+            <>
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              {t('confirm.revoking', 'Revoking…')}
+            </>
+          ) : (
+            t('confirm.revoke', 'Revoke')
+          )
+        }
+        isLoading={isRevoking}
+        typeToConfirm={selectedSensor?.name}
+        handleConfirm={handleRevokeConfirm}
+      >
+        <p className="text-sm text-muted-foreground">
+          {t('confirm.sensor.revokeDisableHint', 'For a temporary stop, disable it instead.')}{' '}
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            disabled={isRevoking}
+            onClick={() => {
+              setRevokeDialogOpen(false)
+              if (selectedSensor) setPendingDisable(selectedSensor)
+            }}
+          >
+            {t('confirm.sensor.disableInstead', 'Disable instead')}
+          </Button>
+        </p>
+      </ConfirmDialog>
     </>
   )
 }

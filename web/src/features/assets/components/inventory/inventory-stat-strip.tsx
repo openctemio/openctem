@@ -13,11 +13,21 @@
  * "Stale" is intentionally omitted: the stats endpoint exposes no stale count,
  * and faking one from the current page would misrepresent the tenant total. The
  * "Stale >30d" view still covers that filter.
+ *
+ * Typed mode (research/77): the counts are the type's (or the lens's), the
+ * first metric is named after it ("Hosts") and keeps it when clicked, and each of the
+ * type's yes/no attributes adds a metric ("Virtual machine", "MFA") counting
+ * the assets where it is true, a click filtering to them.
  */
 
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import type { AssetStatsData } from '../../hooks/use-assets'
-import { isInventoryFilterEmpty, type InventoryFilters } from '../../lib/inventory-url'
+import {
+  HIGH_RISK_SCORE,
+  isInventoryFilterEmpty,
+  togglePropertyFilter,
+  type InventoryFilters,
+} from '../../lib/inventory-url'
 
 interface StatDef {
   id: string
@@ -35,6 +45,10 @@ interface StatStripProps {
   isLoading?: boolean
   onChange: (next: InventoryFilters) => void
   className?: string
+  /** Typed or lens mode: the type's plural ("Hosts") or the lens's label. */
+  typeLabel?: string
+  /** Typed mode: the type's yes/no attributes to count. */
+  boolFacets?: { key: string; label: string }[]
 }
 
 export function InventoryStatStrip({
@@ -43,15 +57,23 @@ export function InventoryStatStrip({
   isLoading,
   onChange,
   className,
+  typeLabel,
+  boolFacets = [],
 }: StatStripProps) {
+  const typed = typeLabel !== undefined
   const defs: StatDef[] = [
     {
       id: 'total',
-      label: 'All assets',
+      label: typeLabel ?? 'All assets',
       value: stats.total,
-      active: isInventoryFilterEmpty(filters),
-      // Clears every filter (keeps sort + page size).
-      toggle: (f) => ({ sort: f.sort, pageSize: f.pageSize }),
+      active: isInventoryFilterEmpty(
+        typed ? { ...filters, types: undefined, subType: undefined, lens: undefined } : filters
+      ),
+      // Clears every filter (keeps sort + page size, and the type or lens when typed).
+      toggle: (f) =>
+        typed
+          ? { types: f.types, subType: f.subType, lens: f.lens, sort: f.sort, pageSize: f.pageSize }
+          : { sort: f.sort, pageSize: f.pageSize },
     },
     {
       id: 'critical',
@@ -66,12 +88,14 @@ export function InventoryStatStrip({
     {
       id: 'internet',
       label: 'Internet-facing',
-      value: stats.byInternetAccessible['true'] ?? 0,
-      active: filters.isInternetAccessible === true,
+      // One definition across the product (research/22 P0-12): exposure =
+      // public, the population the Attack surface pages count.
+      value: stats.byExposure['public'] ?? 0,
+      active: isPublicOnly(filters.exposures),
       toggle: (f) =>
-        f.isInternetAccessible === true
-          ? { ...f, isInternetAccessible: undefined, page: 1 }
-          : { ...f, isInternetAccessible: true, page: 1 },
+        isPublicOnly(f.exposures)
+          ? { ...f, exposures: undefined, page: 1 }
+          : { ...f, exposures: ['public'], page: 1 },
     },
     {
       id: 'unowned',
@@ -85,6 +109,16 @@ export function InventoryStatStrip({
           : { ...f, hasOwner: false, page: 1 },
     },
     {
+      id: 'high-risk',
+      label: 'High risk',
+      value: stats.highRiskCount,
+      active: filters.minRiskScore === HIGH_RISK_SCORE,
+      toggle: (f) =>
+        f.minRiskScore === HIGH_RISK_SCORE
+          ? { ...f, minRiskScore: undefined, page: 1 }
+          : { ...f, minRiskScore: HIGH_RISK_SCORE, page: 1 },
+    },
+    {
       id: 'with-findings',
       label: 'With findings',
       value: stats.withFindings,
@@ -94,6 +128,13 @@ export function InventoryStatStrip({
           ? { ...f, hasFindings: undefined, page: 1 }
           : { ...f, hasFindings: true, page: 1 },
     },
+    ...boolFacets.map((b): StatDef => ({
+      id: `attr:${b.key}`,
+      label: b.label,
+      value: stats.metadataCounts?.[b.key]?.['true'] ?? 0,
+      active: filters.propertiesFilter?.[b.key]?.includes('true') ?? false,
+      toggle: (f) => togglePropertyFilter(f, b.key, 'true'),
+    })),
   ]
 
   return (
@@ -110,4 +151,8 @@ export function InventoryStatStrip({
       }))}
     />
   )
+}
+
+function isPublicOnly(exposures: readonly string[] | undefined): boolean {
+  return exposures?.length === 1 && exposures[0] === 'public'
 }

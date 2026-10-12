@@ -31,14 +31,8 @@ export const API_BASE = {
   SCANNER_TEMPLATES: '/api/v1/scanner-templates',
   TEMPLATE_SOURCES: '/api/v1/template-sources',
   TOOLS: '/api/v1/tools',
-  PLATFORM_TOOLS: '/api/v1/tools/platform',
-  CUSTOM_TOOLS: '/api/v1/custom-tools',
-  TENANT_TOOLS: '/api/v1/tenant-tools',
-  TOOL_STATS: '/api/v1/tenant-tools/stats',
   TOOL_CATEGORIES: '/api/v1/tool-categories',
-  CUSTOM_TOOL_CATEGORIES: '/api/v1/custom-tool-categories',
   CAPABILITIES: '/api/v1/capabilities',
-  CUSTOM_CAPABILITIES: '/api/v1/custom-capabilities',
   SCANS: '/api/v1/scans',
   EXPOSURES: '/api/v1/exposures',
   THREAT_INTEL: '/api/v1/threat-intel',
@@ -82,6 +76,14 @@ export const authEndpoints = {
    */
   register: () => `${API_BASE.AUTH}/register`,
 
+  /** Request access (public; sign-up closed, requests allowed). */
+  accessRequests: () => `${API_BASE.AUTH}/access-requests`,
+
+  /** Confirm an access request by its emailed token (token in the body). */
+  accessRequestConfirm: () => `${API_BASE.AUTH}/access-requests/confirm`,
+  /** Email-first sign-in: where does this email sign in? (email in the body) */
+  discover: () => `${API_BASE.AUTH}/discover`,
+
   /**
    * Login with email/password (local auth)
    */
@@ -90,12 +92,7 @@ export const authEndpoints = {
   /**
    * Verify email with token
    */
-  verifyEmail: (token: string) => `${API_BASE.AUTH}/verify-email?token=${token}`,
-
-  /**
-   * Resend verification email
-   */
-  resendVerification: () => `${API_BASE.AUTH}/resend-verification`,
+  verifyEmail: () => `${API_BASE.AUTH}/verify-email`,
 
   /**
    * Request password reset
@@ -314,11 +311,6 @@ export const tenantEndpoints = {
   memberStats: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/stats`,
 
   /**
-   * Add member to tenant
-   */
-  addMember: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/members`,
-
-  /**
    * Update member (alias for updateMemberRole)
    */
   updateMember: (tenantIdOrSlug: string, memberId: string) =>
@@ -328,12 +320,6 @@ export const tenantEndpoints = {
    * Update member role
    */
   updateMemberRole: (tenantIdOrSlug: string, memberId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
-
-  /**
-   * Remove member from tenant
-   */
-  removeMember: (tenantIdOrSlug: string, memberId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}`,
 
   /**
@@ -386,6 +372,39 @@ export const tenantEndpoints = {
   reactivateMember: (tenantIdOrSlug: string, memberId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/members/${memberId}/reactivate`,
 
+  /**
+   * Reset a member's two-factor authentication (POST) — owner/admin
+   */
+  resetMemberMfa: (memberId: string) => `/api/v1/organization/members/${memberId}/mfa`,
+
+  /**
+   * What a member holds and owns (GET, owner/admin) — member lifecycle, RFC-050
+   */
+  memberAccessReport: (memberId: string) =>
+    `/api/v1/organization/members/${memberId}/access-report`,
+
+  /**
+   * When an external member's access ends (PATCH, owner/admin) — RFC-058
+   */
+  memberAccess: (memberId: string) => `/api/v1/organization/members/${memberId}/access`,
+
+  /**
+   * Trusted organizations (GET owner/admin; changes owner + step-up) — RFC-058
+   */
+  orgTrusts: () => '/api/v1/organization/trusts',
+  orgTrust: (trustId: string) => `/api/v1/organization/trusts/${trustId}`,
+  approveOrgTrust: (trustId: string) => `/api/v1/organization/trusts/${trustId}/approve`,
+
+  /**
+   * Offboard a member with mandatory reassignment (POST, owner/admin)
+   */
+  offboardMember: (memberId: string) => `/api/v1/organization/members/${memberId}/offboard`,
+
+  /**
+   * Erase an offboarded person's name and email (POST, owner only)
+   */
+  eraseMember: (memberId: string) => `/api/v1/organization/members/${memberId}/erase`,
+
   // ============================================
   // SETTINGS MANAGEMENT
   // ============================================
@@ -408,16 +427,8 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/security`,
 
   /**
-   * What members without a team see (GET/PATCH, owner/admin)
-   */
-  dataScopePolicy: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/data-scope`,
-
-  /**
    * Update API settings
    */
-  updateAPISettings: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/api`,
 
   /**
    * Update branding settings
@@ -493,12 +504,6 @@ export const tenantEndpoints = {
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/modules/presets/${presetId}/preview`,
   modulesPresetApply: (tenantIdOrSlug: string, presetId: string) =>
     `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/modules/presets/${presetId}/apply`,
-  /**
-   * Product-bundle subscription. GET returns the current subscription +
-   * catalog; POST replaces the subscription (live-resolved module set).
-   */
-  modulesBundles: (tenantIdOrSlug: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/settings/modules/bundles`,
 } as const
 
 // ============================================
@@ -506,18 +511,22 @@ export const tenantEndpoints = {
 // ============================================
 
 /**
- * Invitation endpoints for accepting invitations
+ * Invitation endpoints for accepting invitations. The token is a bearer
+ * credential: every call sends it in the JSON body ({ token }), never in the
+ * URL (RFC-041).
  */
 export const invitationEndpoints = {
-  /**
-   * Get invitation details by token
-   */
-  get: (token: string) => `${API_BASE.INVITATIONS}/${token}`,
+  /** What a token grants, readable before sign-in (public). */
+  lookup: () => `${API_BASE.INVITATIONS}/lookup`,
 
-  /**
-   * Accept invitation
-   */
-  accept: (token: string) => `${API_BASE.INVITATIONS}/${token}/accept`,
+  /** Accept as the signed-in, invited email. */
+  accept: () => `${API_BASE.INVITATIONS}/accept`,
+
+  /** Accept with the refresh token, for a user who has no organization yet. */
+  acceptWithRefresh: () => `${API_BASE.INVITATIONS}/accept-with-refresh`,
+
+  /** Decline (public: holding the token is the authorization). */
+  decline: () => `${API_BASE.INVITATIONS}/decline`,
 } as const
 
 // ============================================
@@ -647,6 +656,15 @@ export const assetEndpoints = {
   removeOwner: (assetId: string, ownerId: string) =>
     `${API_BASE.ASSETS}/${assetId}/owners/${ownerId}`,
 
+  /**
+   * Explicit per-user data-scope grants. Being an owner gives no access;
+   * groups and these grants do (team:groups:read / team:groups:write).
+   */
+  listAccessGrants: (assetId: string) => `${API_BASE.ASSETS}/${assetId}/access-grants`,
+  createAccessGrant: (assetId: string) => `${API_BASE.ASSETS}/${assetId}/access-grants`,
+  deleteAccessGrant: (assetId: string, grantId: string) =>
+    `${API_BASE.ASSETS}/${assetId}/access-grants/${grantId}`,
+
   // ============================================
   // ASSET RELATIONSHIPS
   // ============================================
@@ -672,49 +690,6 @@ export const assetEndpoints = {
    * Delete a relationship by its own ID (DELETE)
    */
   deleteRelationship: (relationshipId: string) => `/api/v1/relationships/${relationshipId}`,
-} as const
-
-// ============================================
-// PROJECT ENDPOINTS (Tenant-scoped)
-// @deprecated Use assetEndpoints with type="repository" instead
-// ============================================
-
-/**
- * Project endpoints (tenant-scoped repositories/code projects)
- * @deprecated Use assetEndpoints with type="repository" instead.
- * Projects are now unified under the Asset domain as repository type assets.
- */
-export const projectEndpoints = {
-  /**
-   * List projects in tenant
-   */
-  list: (tenantIdOrSlug: string, filters?: SearchFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects${queryString}`
-  },
-
-  /**
-   * Get project by ID
-   */
-  get: (tenantIdOrSlug: string, projectId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects/${projectId}`,
-
-  /**
-   * Create project (member+ role)
-   */
-  create: (tenantIdOrSlug: string) => `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects`,
-
-  /**
-   * Update project (member+ role)
-   */
-  update: (tenantIdOrSlug: string, projectId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects/${projectId}`,
-
-  /**
-   * Delete project (admin+ role)
-   */
-  delete: (tenantIdOrSlug: string, projectId: string) =>
-    `${API_BASE.TENANTS}/${tenantIdOrSlug}/projects/${projectId}`,
 } as const
 
 // ============================================
@@ -1083,12 +1058,19 @@ export const sensorEndpoints = {
       limit: query.limit,
     })}`,
 
+  /** The sensor's heartbeat history in 15-minute buckets (RFC-035, sensors:read; at most 24 h). */
+  heartbeatHistory: (sensorId: string, hours = 24) =>
+    `${API_BASE.SENSORS}/${sensorId}/heartbeat-history${buildQueryString({ hours })}`,
+
   /** The sensor's current manifest (RFC-033, sensors:read); 404 before the first. */
   manifest: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/manifest`,
 
   /** The sensor's manifest versions, most recently current first (RFC-033). */
   manifests: (sensorId: string, limit = 50) =>
     `${API_BASE.SENSORS}/${sensorId}/manifests${buildQueryString({ limit })}`,
+
+  /** The sensor's setup report and its checks (research/26, sensors:read). */
+  configReport: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/config-report`,
 
   /** The tenant's scanner content policy (RFC-031): GET, PUT with sensors:write. */
   contentPolicy: () => `${API_BASE.SENSORS}/content-policy`,
@@ -1220,6 +1202,12 @@ export const scannerTemplateEndpoints = {
   deprecate: (templateId: string) => `${API_BASE.SCANNER_TEMPLATES}/${templateId}/deprecate`,
 
   /**
+   * Approve the template's current version for sensors (scope approvers,
+   * step-up)
+   */
+  approve: (templateId: string) => `${API_BASE.SCANNER_TEMPLATES}/${templateId}/approve`,
+
+  /**
    * Get template usage and quota information for the tenant
    */
   usage: () => `${API_BASE.SCANNER_TEMPLATES}/usage`,
@@ -1229,201 +1217,35 @@ export const scannerTemplateEndpoints = {
 // TOOL ENDPOINTS
 // ============================================
 
-import type {
-  ToolListFilters,
-  TenantToolConfigListFilters,
-  ToolExecutionListFilters,
-} from './tool-types'
+import type { ToolListFilters } from './tool-types'
 
 /**
- * Tool endpoints for managing system-wide tool definitions
+ * The organization's view of the tool catalog (api tool-availability.md):
+ * platform tools plus its own custom tools, one resource. include= adds its
+ * settings, the availability from its sensors and run statistics.
  */
 export const toolEndpoints = {
-  /**
-   * List tools with optional filters
-   */
+  /** List with filters, sort, pagination and include= */
   list: (filters?: ToolListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `${API_BASE.TOOLS}${queryString}`
   },
 
-  /**
-   * Get tool by ID
-   */
+  /** One tool (platform or own custom) */
   get: (toolId: string) => `${API_BASE.TOOLS}/${toolId}`,
 
-  /**
-   * Get tool by name
-   */
-  getByName: (name: string) => `${API_BASE.TOOLS}/name/${name}`,
-
-  /**
-   * Create a new tool
-   */
+  /** Create a custom tool owned by the organization */
   create: () => API_BASE.TOOLS,
 
-  /**
-   * Update tool
-   */
+  /** Update / delete one of the organization's custom tools */
   update: (toolId: string) => `${API_BASE.TOOLS}/${toolId}`,
-
-  /**
-   * Delete tool
-   */
   delete: (toolId: string) => `${API_BASE.TOOLS}/${toolId}`,
 
-  /**
-   * Activate tool
-   */
-  activate: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/activate`,
+  /** PATCH: the organization's switch and config overrides of one tool */
+  settings: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/settings`,
 
-  /**
-   * Deactivate tool
-   */
-  deactivate: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/deactivate`,
-
-  /**
-   * Check tool version
-   */
-  checkVersion: (toolId: string) => `${API_BASE.TOOLS}/${toolId}/check-version`,
-} as const
-
-/**
- * Platform tools endpoints (system-wide tools available to all tenants)
- * Platform tools are managed by admins and cannot be enabled/disabled by tenants
- */
-export const platformToolEndpoints = {
-  /**
-   * List platform tools with optional filters
-   */
-  list: (filters?: ToolListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.PLATFORM_TOOLS}${queryString}`
-  },
-} as const
-
-/**
- * Custom tools endpoints for tenant-specific custom tool definitions
- * Custom tools are created and managed by tenants
- */
-export const customToolEndpoints = {
-  /**
-   * List custom tools with optional filters
-   */
-  list: (filters?: ToolListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.CUSTOM_TOOLS}${queryString}`
-  },
-
-  /**
-   * Get custom tool by ID
-   */
-  get: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}`,
-
-  /**
-   * Create a new custom tool
-   */
-  create: () => API_BASE.CUSTOM_TOOLS,
-
-  /**
-   * Update custom tool
-   */
-  update: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}`,
-
-  /**
-   * Delete custom tool
-   */
-  delete: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}`,
-
-  /**
-   * Activate custom tool
-   */
-  activate: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}/activate`,
-
-  /**
-   * Deactivate custom tool
-   */
-  deactivate: (toolId: string) => `${API_BASE.CUSTOM_TOOLS}/${toolId}/deactivate`,
-} as const
-
-/**
- * Tenant tool config endpoints for tenant-specific tool configurations
- */
-export const tenantToolEndpoints = {
-  /**
-   * List tenant tool configs
-   */
-  list: (filters?: TenantToolConfigListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TENANT_TOOLS}${queryString}`
-  },
-
-  /**
-   * Get tenant tool config by tool ID
-   */
-  get: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}`,
-
-  /**
-   * Get tool with effective config (combines system tool + tenant config)
-   */
-  getWithConfig: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}/with-config`,
-
-  /**
-   * Update tenant tool config
-   */
-  update: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}`,
-
-  /**
-   * Delete tenant tool config (reset to defaults)
-   */
-  delete: (toolId: string) => `${API_BASE.TENANT_TOOLS}/${toolId}`,
-
-  /**
-   * Bulk enable tools for tenant
-   */
-  bulkEnable: () => `${API_BASE.TENANT_TOOLS}/bulk/enable`,
-
-  /**
-   * Bulk disable tools for tenant
-   */
-  bulkDisable: () => `${API_BASE.TENANT_TOOLS}/bulk/disable`,
-
-  /**
-   * List all tools with tenant-specific enabled status
-   * Returns tools joined with tenant configs, where is_enabled defaults to true if no config exists
-   */
-  allTools: (filters?: ToolListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TENANT_TOOLS}/all-tools${queryString}`
-  },
-} as const
-
-/**
- * Tool stats and execution endpoints
- */
-export const toolStatsEndpoints = {
-  /**
-   * Get stats for a specific tool
-   */
-  toolStats: (toolId: string) => `${API_BASE.TOOL_STATS}/${toolId}`,
-
-  /**
-   * Get tenant tool stats summary
-   */
-  tenantStats: () => `${API_BASE.TOOL_STATS}/tenant`,
-
-  /**
-   * List tool executions
-   */
-  executions: (filters?: ToolExecutionListFilters) => {
-    const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `${API_BASE.TOOL_STATS}/executions${queryString}`
-  },
-
-  /**
-   * Get tool execution by ID
-   */
-  execution: (executionId: string) => `${API_BASE.TOOL_STATS}/executions/${executionId}`,
+  /** PATCH: switch several tools on or off */
+  bulkSettings: () => `${API_BASE.TOOLS}/settings`,
 } as const
 
 // ============================================
@@ -1433,46 +1255,18 @@ export const toolStatsEndpoints = {
 import type { ToolCategoryListFilters } from './tool-category-types'
 
 /**
- * Tool Category endpoints (read-only for platform + tenant custom)
+ * Tool categories: platform plus the organization's custom ones. Changes
+ * reach only its own custom categories.
  */
 export const toolCategoryEndpoints = {
-  /**
-   * List all categories (platform + tenant custom, with pagination)
-   */
   list: (filters?: ToolCategoryListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
     return `${API_BASE.TOOL_CATEGORIES}${queryString}`
   },
-
-  /**
-   * List all categories for dropdowns (no pagination)
-   */
-  all: () => `${API_BASE.TOOL_CATEGORIES}/all`,
-
-  /**
-   * Get category by ID
-   */
   get: (categoryId: string) => `${API_BASE.TOOL_CATEGORIES}/${categoryId}`,
-} as const
-
-/**
- * Custom Tool Category endpoints (tenant custom categories management)
- */
-export const customToolCategoryEndpoints = {
-  /**
-   * Create a new custom category
-   */
-  create: () => API_BASE.CUSTOM_TOOL_CATEGORIES,
-
-  /**
-   * Update a custom category
-   */
-  update: (categoryId: string) => `${API_BASE.CUSTOM_TOOL_CATEGORIES}/${categoryId}`,
-
-  /**
-   * Delete a custom category
-   */
-  delete: (categoryId: string) => `${API_BASE.CUSTOM_TOOL_CATEGORIES}/${categoryId}`,
+  create: () => API_BASE.TOOL_CATEGORIES,
+  update: (categoryId: string) => `${API_BASE.TOOL_CATEGORIES}/${categoryId}`,
+  delete: (categoryId: string) => `${API_BASE.TOOL_CATEGORIES}/${categoryId}`,
 } as const
 
 // ============================================
@@ -1482,11 +1276,12 @@ export const customToolCategoryEndpoints = {
 import type { CapabilityListFilters } from './capability-types'
 
 /**
- * Capability endpoints (read-only for platform + tenant custom)
+ * Capability endpoints: one collection, platform and the organization's custom capabilities
  */
 export const capabilityEndpoints = {
   /**
-   * List all capabilities (platform + tenant custom, with pagination)
+   * List capabilities: the platform ones and the organization's own custom
+   * ones (source=platform|custom, category, q, include=usage, page, per_page).
    */
   list: (filters?: CapabilityListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
@@ -1494,133 +1289,119 @@ export const capabilityEndpoints = {
   },
 
   /**
-   * List all capabilities for dropdowns (no pagination)
+   * Get one capability; include=usage adds which tools and sensors have it.
    */
-  all: () => `${API_BASE.CAPABILITIES}/all`,
+  get: (capabilityId: string, include?: 'usage') =>
+    `${API_BASE.CAPABILITIES}/${capabilityId}${include ? `?include=${include}` : ''}`,
 
   /**
-   * Get capability by ID
-   */
-  get: (capabilityId: string) => `${API_BASE.CAPABILITIES}/${capabilityId}`,
-
-  /**
-   * Get all capability categories (security, recon, analysis)
+   * The categories in use (security, recon, analysis, ...)
    */
   categories: () => `${API_BASE.CAPABILITIES}/categories`,
 
   /**
-   * List capabilities by category
+   * Create a custom capability (owner/admin)
    */
-  byCategory: (category: string) => `${API_BASE.CAPABILITIES}/by-category/${category}`,
+  create: () => API_BASE.CAPABILITIES,
 
   /**
-   * Get usage stats for a single capability
+   * Update one of the organization's custom capabilities
    */
-  usageStats: (capabilityId: string) => `${API_BASE.CAPABILITIES}/${capabilityId}/usage-stats`,
+  update: (capabilityId: string) => `${API_BASE.CAPABILITIES}/${capabilityId}`,
 
   /**
-   * Get usage stats for multiple capabilities (batch)
-   */
-  usageStatsBatch: () => `${API_BASE.CAPABILITIES}/usage-stats`,
-} as const
-
-/**
- * Custom Capability endpoints (tenant custom capabilities management)
- */
-export const customCapabilityEndpoints = {
-  /**
-   * Create a new custom capability
-   */
-  create: () => API_BASE.CUSTOM_CAPABILITIES,
-
-  /**
-   * Update a custom capability
-   */
-  update: (capabilityId: string) => `${API_BASE.CUSTOM_CAPABILITIES}/${capabilityId}`,
-
-  /**
-   * Delete a custom capability
+   * Delete one of the organization's custom capabilities
    * @param force - Force delete even if capability is in use
    */
   delete: (capabilityId: string, force?: boolean) =>
-    `${API_BASE.CUSTOM_CAPABILITIES}/${capabilityId}${force ? '?force=true' : ''}`,
+    `${API_BASE.CAPABILITIES}/${capabilityId}${force ? '?force=true' : ''}`,
 } as const
 
 // ============================================
-// PIPELINE ENDPOINTS
+// SCAN_WORKFLOW ENDPOINTS
 // ============================================
 
-import type { PipelineListFilters, PipelineRunListFilters } from './pipeline-types'
+import type { ScanWorkflowListFilters, ScanRunListFilters } from './scan-workflow-types'
 import type { WorkflowListFilters, WorkflowRunListFilters } from './workflow-types'
 
 /**
- * Pipeline endpoints for managing workflow pipelines
- * Pipelines are templates for multi-step scan orchestration
+ * Scan workflow endpoints: the graph of steps a scan runs
+ * (GET/POST /api/v1/scan-workflows, scans:workflows:*).
  */
-export const pipelineEndpoints = {
+export const scanWorkflowEndpoints = {
   /**
-   * List pipelines with optional filters
+   * List workflows with optional filters
    */
-  list: (filters?: PipelineListFilters) => {
+  list: (filters?: ScanWorkflowListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `/api/v1/pipelines${queryString}`
+    return `/api/v1/scan-workflows${queryString}`
   },
 
   /**
-   * Get pipeline by ID
+   * Get workflow by ID
    */
-  get: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}`,
+  get: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}`,
 
   /**
-   * Create a new pipeline
+   * Create a new workflow
    */
-  create: () => '/api/v1/pipelines',
+  create: () => '/api/v1/scan-workflows',
 
   /**
-   * Update pipeline
+   * Update workflow
    */
-  update: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}`,
+  update: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}`,
 
   /**
-   * Delete pipeline
+   * Delete workflow
    */
-  delete: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}`,
+  delete: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}`,
 
   /**
-   * Activate pipeline
+   * Activate workflow
    */
-  activate: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/activate`,
+  activate: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/activate`,
 
   /**
-   * Deactivate pipeline
+   * Deactivate workflow
    */
-  deactivate: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/deactivate`,
+  deactivate: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/deactivate`,
 
   /**
-   * Clone pipeline
+   * Clone workflow
    */
-  clone: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/clone`,
+  clone: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/clone`,
 
   /**
-   * Add step to pipeline
+   * Add step to workflow
    */
-  addStep: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/steps`,
+  addStep: (workflowId: string) => `/api/v1/scan-workflows/${workflowId}/steps`,
 
   /**
    * Update step
    */
-  updateStep: (pipelineId: string, stepId: string) =>
-    `/api/v1/pipelines/${pipelineId}/steps/${stepId}`,
+  updateStep: (workflowId: string, stepId: string) =>
+    `/api/v1/scan-workflows/${workflowId}/steps/${stepId}`,
 
   /**
    * Delete step
    */
-  deleteStep: (pipelineId: string, stepId: string) =>
-    `/api/v1/pipelines/${pipelineId}/steps/${stepId}`,
+  deleteStep: (workflowId: string, stepId: string) =>
+    `/api/v1/scan-workflows/${workflowId}/steps/${stepId}`,
+
+  /**
+   * Check a draft workflow's steps as a workflow graph (stores nothing)
+   */
+  verify: () => '/api/v1/scan-workflows/verify',
+
+  /**
+   * The scan capability catalog: contracts, port types and adapters
+   */
+  capabilities: () => '/api/v1/scans/stages',
 } as const
 
 /**
- * Pipeline Run endpoints
+ * Scan run endpoints: one execution of a scan (scans:read)
  */
 /**
  * Scan zone endpoints (RFC-023): tenant from the JWT.
@@ -1637,40 +1418,55 @@ export const scanZoneEndpoints = {
     `${API_BASE.SCAN_ZONES}/${zoneId}/sensors/${sensorId}`,
 } as const
 
-export const pipelineRunEndpoints = {
+export const scanRunEndpoints = {
   /**
-   * List pipeline runs with optional filters
+   * List workflow runs with optional filters
    */
-  list: (filters?: PipelineRunListFilters) => {
+  list: (filters?: ScanRunListFilters) => {
     const queryString = filters ? buildQueryString(filters as Record<string, unknown>) : ''
-    return `/api/v1/pipeline-runs${queryString}`
+    return `/api/v1/scan-runs${queryString}`
   },
 
   /**
-   * Get pipeline run by ID
+   * Get workflow run by ID
    */
-  get: (runId: string) => `/api/v1/pipeline-runs/${runId}`,
+  get: (runId: string) => `/api/v1/scan-runs/${runId}`,
 
   /**
-   * Get step runs for a pipeline run
+   * Cancel a running workflow
    */
-  stepRuns: (runId: string) => `/api/v1/pipeline-runs/${runId}/steps`,
+  cancel: (runId: string) => `/api/v1/scan-runs/${runId}/cancel`,
 
   /**
-   * Trigger a new pipeline run
-   * Note: Uses /api/v1/pipelines/{id}/runs endpoint
+   * How each stage of a run was planned (counts by reason; research/27).
    */
-  trigger: (pipelineId: string) => `/api/v1/pipelines/${pipelineId}/runs`,
+  stages: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/stages`,
+
+  /** A run's timeline: every change of its tasks, oldest first (research/62 P0-4). */
+  events: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/events`,
+  /** The run drawn on its workflow version: step states, chunks, outputs. */
+  map: (runId: string) => `/api/v1/scan-runs/${encodeURIComponent(runId)}/map`,
+  /** What one step of a run produced, new ones first (in the caller's scope). */
+  stepOutputs: (runId: string, stepKey: string, limit = 20) =>
+    `/api/v1/scan-runs/${encodeURIComponent(runId)}/outputs?step_key=${encodeURIComponent(stepKey)}&limit=${limit}`,
 
   /**
-   * Cancel a running pipeline
+   * One cursor page of a run's tasks (the run read embeds the first page and
+   * its tasks_next_cursor).
    */
-  cancel: (runId: string) => `/api/v1/pipeline-runs/${runId}/cancel`,
+  tasks: (runId: string, cursor?: string, perPage?: number) => {
+    const params = new URLSearchParams()
+    if (cursor) params.set('cursor', cursor)
+    if (perPage) params.set('per_page', String(perPage))
+    const qs = params.toString()
+    return `/api/v1/scan-runs/${encodeURIComponent(runId)}/tasks${qs ? `?${qs}` : ''}`
+  },
 
   /**
-   * Retry a failed pipeline run
+   * The log lines a task's sensor sent (kept 14 days).
    */
-  retry: (runId: string) => `/api/v1/pipeline-runs/${runId}/retry`,
+  taskLogs: (runId: string, taskId: string) =>
+    `/api/v1/scan-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/logs`,
 } as const
 
 /**
@@ -1678,7 +1474,7 @@ export const pipelineRunEndpoints = {
  */
 export const scanManagementEndpoints = {
   /**
-   * Get overview stats (pipelines, scans, jobs)
+   * Get overview stats (workflows, scans, jobs)
    */
   stats: () => '/api/v1/scans/overview-stats',
 
@@ -1694,7 +1490,7 @@ export const scanManagementEndpoints = {
 
 /**
  * Workflow endpoints for managing automation workflows
- * Workflows are event-driven automation pipelines with visual graph builder
+ * Workflows are event-driven automation workflows with visual graph builder
  */
 export const workflowEndpoints = {
   /**
@@ -1765,7 +1561,7 @@ export const workflowEndpoints = {
 } as const
 
 /**
- * Workflow Run endpoints
+ * Scan run endpoints: one execution of a scan (scans:read)
  */
 export const workflowRunEndpoints = {
   /**
@@ -1855,6 +1651,21 @@ export const scanEndpoints = {
    * Clone scan
    */
   clone: (scanId: string) => `${API_BASE.SCANS}/${scanId}/clone`,
+
+  /**
+   * Save an unsaved quick scan as a configuration ("Save as scan")
+   */
+  save: (scanId: string) => `${API_BASE.SCANS}/${scanId}/save`,
+
+  /**
+   * Next occurrences of a schedule, validated as saving would (stateless)
+   */
+  schedulePreview: () => `${API_BASE.SCANS}/schedule-preview`,
+
+  /**
+   * What a workflow scan would do before it is saved or started
+   */
+  workflowPreview: () => `${API_BASE.SCANS}/workflow-preview`,
 
   // ============================================
   // BULK OPERATIONS
@@ -2051,11 +1862,6 @@ export const threatIntelEndpoints = {
    */
   enrichCVE: (cveId: string) => `${API_BASE.THREAT_INTEL}/enrich/${cveId}`,
 
-  /**
-   * Bulk enrich multiple CVEs
-   */
-  enrichCVEs: () => `${API_BASE.THREAT_INTEL}/enrich/bulk`,
-
   // ============================================
   // EPSS
   // ============================================
@@ -2090,13 +1896,13 @@ export const threatIntelEndpoints = {
 // ============================================
 
 /**
- * Platform sensor endpoints. The API serves only the tenant's view of the
- * shared pool (GET /platform/stats); there is no tenant list of platform
- * sensors or platform jobs.
+ * Platform scanning. The API serves only the organization's view of the
+ * service (regions, state, tools, its own jobs); no tenant route lists,
+ * reads or manages a platform sensor.
  */
 export const platformEndpoints = {
-  /** Aggregate pool health plus this organization's queued platform jobs. */
-  stats: () => `${API_BASE.PLATFORM}/stats`,
+  /** Platform scanning as the organization may use it. */
+  scanning: () => `${API_BASE.PLATFORM}/scanning`,
 } as const
 
 // ============================================
@@ -2146,7 +1952,6 @@ export const endpoints = {
   tenants: tenantEndpoints,
   invitations: invitationEndpoints,
   assets: assetEndpoints,
-  projects: projectEndpoints,
   components: componentEndpoints,
   vulnerabilities: vulnerabilityEndpoints,
   findings: findingEndpoints,
@@ -2157,12 +1962,8 @@ export const endpoints = {
   scanProfiles: scanProfileEndpoints,
   scannerTemplates: scannerTemplateEndpoints,
   tools: toolEndpoints,
-  platformTools: platformToolEndpoints,
-  customTools: customToolEndpoints,
-  tenantTools: tenantToolEndpoints,
-  toolStats: toolStatsEndpoints,
-  pipelines: pipelineEndpoints,
-  pipelineRuns: pipelineRunEndpoints,
+  scanWorkflows: scanWorkflowEndpoints,
+  scanRuns: scanRunEndpoints,
   scanManagement: scanManagementEndpoints,
   scans: scanEndpoints,
   exposures: exposureEndpoints,
@@ -2183,7 +1984,6 @@ export {
   tenantEndpoints as tenants,
   invitationEndpoints as invitations,
   assetEndpoints as assets,
-  projectEndpoints as projects,
   componentEndpoints as components,
   vulnerabilityEndpoints as vulnerabilities,
   findingEndpoints as findings,
@@ -2193,12 +1993,8 @@ export {
   scanProfileEndpoints as scanProfiles,
   scannerTemplateEndpoints as scannerTemplates,
   toolEndpoints as tools,
-  platformToolEndpoints as platformTools,
-  customToolEndpoints as customTools,
-  tenantToolEndpoints as tenantTools,
-  toolStatsEndpoints as toolStats,
-  pipelineEndpoints as pipelines,
-  pipelineRunEndpoints as pipelineRuns,
+  scanWorkflowEndpoints as scanWorkflows,
+  scanRunEndpoints as scanRuns,
   scanManagementEndpoints as scanManagement,
   scanEndpoints as scans,
   exposureEndpoints as exposures,

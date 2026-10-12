@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // secretPatterns are masked out of any text pushed to a third-party ticket
@@ -49,34 +50,54 @@ func isSecretFinding(f *vulnerability.Finding) bool {
 // the leaked secret), surfacing only the masked value + location and pointing
 // the reader back to the platform. For all other findings it runs the
 // description through redactSecrets as defense-in-depth.
+//
+// The description is Jira wiki markup (REST API v2), and every value that
+// comes from the finding is attacker-influenced (a scanned page title, a file
+// path, a sensor report). Each one is redacted first, then encoded: one-line
+// values are escaped, the description goes into a {noformat} block, and URLs
+// are defanged, so the text cannot add links, mentions, images or macros to
+// the ticket (RFC-040 §5.4).
 func ticketDescription(f *vulnerability.Finding) string {
+	inline := func(s string) string {
+		return safetext.JiraWikiInline(redactSecrets(s), safetext.MaxInlineRunes)
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "**Finding:** %s\n**Severity:** %s\n**Status:** %s\n",
-		f.Title(), f.Severity(), f.Status())
+	fmt.Fprintf(&b, "*Finding:* %s\n*Severity:* %s\n*Status:* %s\n",
+		inline(f.Title()), inline(string(f.Severity())), inline(string(f.Status())))
 	if f.FilePath() != "" {
-		fmt.Fprintf(&b, "**Location:** %s:%d\n", f.FilePath(), f.StartLine())
+		fmt.Fprintf(&b, "*Location:* %s:%d\n", inline(f.FilePath()), f.StartLine())
 	}
 
 	if isSecretFinding(f) {
-		b.WriteString("\nA secret was detected. The value is redacted here for safety — open the finding in the platform for full details.")
+		b.WriteString("\nA secret was detected. The value is redacted here for safety. Open the finding in the platform for full details.")
 		if mv := f.SecretMaskedValue(); mv != "" {
-			fmt.Fprintf(&b, "\n**Masked value:** %s", mv)
+			fmt.Fprintf(&b, "\n*Masked value:* %s", inline(mv))
 		}
 		return withMobilizationBrief(b.String(), f)
 	}
 
-	b.WriteString("\n")
-	b.WriteString(f.Description())
-	return withMobilizationBrief(redactSecrets(b.String()), f)
+	if desc := strings.TrimSpace(f.Description()); desc != "" {
+		b.WriteString("\n")
+		b.WriteString(safetext.JiraWikiBlock(redactSecrets(desc), safetext.MaxDescriptionRunes))
+	}
+	return withMobilizationBrief(b.String(), f)
+}
+
+// ticketSummary is the Jira summary (plain text, one line, at most 255
+// characters in Jira): secret-redacted, cleaned of control and bidi
+// characters, folded to one line and capped.
+func ticketSummary(f *vulnerability.Finding) string {
+	return safetext.SingleLine(redactSecrets(fmt.Sprintf("[%s] %s", f.Severity(), f.Title())), safetext.MaxTitleRunes)
 }
 
 // withMobilizationBrief appends the CTEM Mobilization brief (definition of done
 // + acceptable fixes) to a ticket body when the finding carries one. The brief
 // contains only operator-entered guidance — never a finding-embedded secret —
 // so it is safe to append after the (redacted) body, including for secret
-// findings.
+// findings. It keeps its formatting (it is written for the ticket) but loses
+// control and bidi characters.
 func withMobilizationBrief(body string, f *vulnerability.Finding) string {
-	brief := f.Remediation().MobilizationBrief()
+	brief := safetext.Clean(f.Remediation().MobilizationBrief())
 	if brief == "" {
 		return body
 	}
@@ -146,6 +167,8 @@ type CreateIssueInput struct {
 	IssueType   string
 	Priority    string
 	Labels      []string
+	// ParentKey makes the issue a child of this issue (an epic).
+	ParentKey string
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -186,6 +209,9 @@ type SyncService struct {
 	// trigger to close the "Jira Done → auto rescan" feedback edge
 	// without a manual Verify button click.
 	postFixHook FixAppliedHook
+
+	// activity records inbound status changes with the integration as actor.
+	activity StatusActivityRecorder
 
 	// campaignSink receives inbound epic status changes so a linked remediation
 	// campaign can be completed (epic Done → campaign completed). nil → inbound
@@ -298,6 +324,46 @@ func (s *SyncService) SyncFindingStatus(ctx context.Context, tenantID, findingID
 	return s.SyncFindingStatusToTicket(ctx, tenantID, findingID, mapping)
 }
 
+// CommentOnFinding adds a comment to the Jira issue linked to a finding (RFC-039:
+// a retest or a scan found the issue fixed, or saw it again). Outbound writes
+// are opt-in per integration, exactly like status sync: a no-op unless the
+// tenant's mapping has SyncEnabled, and when the finding has no linked issue.
+// The body is platform-written text around values a sensor controls (the
+// finding title, a retest reason, the tool name), so it is encoded here for
+// every caller: each paragraph is one line of escaped wiki markup with its
+// URLs defanged (jiraCommentBody).
+func (s *SyncService) CommentOnFinding(ctx context.Context, tenantID, findingID shared.ID, body string) error {
+	if s.mappingResolver == nil {
+		return nil
+	}
+	mapping, err := s.mappingResolver.ResolveMapping(ctx, tenantID)
+	if err != nil {
+		if errors.Is(err, ErrNoTicketingIntegration) {
+			return nil
+		}
+		return err
+	}
+	if !mapping.SyncEnabled {
+		return nil
+	}
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return fmt.Errorf("get finding: %w", err)
+	}
+	issueKey := firstJiraIssueKey(finding.WorkItemURIs())
+	if issueKey == "" {
+		return nil
+	}
+	client, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	if err := client.AddComment(ctx, issueKey, jiraCommentBody(body)); err != nil {
+		return fmt.Errorf("comment on jira issue: %w", err)
+	}
+	return nil
+}
+
 // resolveClient returns the Jira client to use for a tenant. A statically
 // injected client (tests) wins; otherwise the resolver loads the tenant's
 // integration. Returns ErrNoTicketingIntegration when neither is available.
@@ -344,6 +410,8 @@ type CreateTicketInput struct {
 	FindingID  string `json:"finding_id"`
 	ProjectKey string `json:"project_key"` // e.g. "SEC"
 	IssueType  string `json:"issue_type"`  // e.g. "Bug"
+	// ParentKey creates the ticket as a child of this issue (an epic).
+	ParentKey string `json:"parent_key,omitempty"`
 }
 
 // jiraBrowseKeyRe extracts a Jira issue key from a browse URL,
@@ -517,11 +585,12 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 
 	result, err := jiraClient.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
-		Summary:     redactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())),
+		Summary:     ticketSummary(finding),
 		Description: ticketDescription(finding),
 		IssueType:   issueType,
 		Priority:    priority,
 		Labels:      []string{"openctem", "security", string(finding.Severity())},
+		ParentKey:   strings.TrimSpace(input.ParentKey),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create jira ticket: %w", err)
@@ -564,8 +633,8 @@ func (s *SyncService) CreateEpic(ctx context.Context, tenantID shared.ID, projec
 	}
 	result, err := client.CreateIssue(ctx, CreateIssueInput{
 		ProjectKey:  projectKey,
-		Summary:     redactSecrets(summary),
-		Description: redactSecrets(description),
+		Summary:     safetext.SingleLine(redactSecrets(summary), safetext.MaxTitleRunes),
+		Description: safetext.Truncate(safetext.Clean(redactSecrets(description)), safetext.MaxDescriptionRunes),
 		IssueType:   "Epic",
 		Labels:      labels,
 	})
@@ -607,89 +676,6 @@ func (s *SyncService) TransitionEpic(ctx context.Context, tenantID shared.ID, is
 		return fmt.Errorf("transition jira epic: %w", terr)
 	}
 	s.logger.Info("jira epic outbound: synced campaign status to epic", "issue_key", issueKey, "target", targetStatus)
-	return nil
-}
-
-// LinkTicketInput is the payload for linking a Jira ticket to a finding.
-type LinkTicketInput struct {
-	TenantID  string `json:"tenant_id"`
-	FindingID string `json:"finding_id"`
-	TicketKey string `json:"ticket_key"` // e.g. "PROJ-123"
-	TicketURL string `json:"ticket_url"` // e.g. "https://myorg.atlassian.net/browse/PROJ-123"
-}
-
-// LinkTicket adds a Jira ticket reference to a finding's work_item_uris.
-// Idempotent — re-adding the same URL is a no-op at the domain level.
-func (s *SyncService) LinkTicket(ctx context.Context, input LinkTicketInput) error {
-	if strings.TrimSpace(input.TicketKey) == "" {
-		return fmt.Errorf("%w: ticket_key is required", shared.ErrValidation)
-	}
-	if strings.TrimSpace(input.TicketURL) == "" {
-		return fmt.Errorf("%w: ticket_url is required", shared.ErrValidation)
-	}
-
-	tenantID, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
-	}
-
-	findingID, err := shared.IDFromString(input.FindingID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid finding ID", shared.ErrValidation)
-	}
-
-	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
-	if err != nil {
-		return fmt.Errorf("get finding: %w", err)
-	}
-
-	// Add only if not already present (domain method is idempotent).
-	finding.AddWorkItemURI(input.TicketURL)
-
-	if err := s.findingRepo.UpdateWorkItemURIs(ctx, tenantID, findingID, finding.WorkItemURIs()); err != nil {
-		return fmt.Errorf("persist ticket link: %w", err)
-	}
-
-	s.logger.Info("jira ticket linked to finding",
-		"finding_id", findingID.String(),
-		"ticket_key", input.TicketKey,
-		"ticket_url", input.TicketURL,
-	)
-	return nil
-}
-
-// UnlinkTicket removes a Jira ticket reference from a finding.
-func (s *SyncService) UnlinkTicket(ctx context.Context, tenantIDStr, findingIDStr, ticketURL string) error {
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
-	}
-	findingID, err := shared.IDFromString(findingIDStr)
-	if err != nil {
-		return fmt.Errorf("%w: invalid finding ID", shared.ErrValidation)
-	}
-
-	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
-	if err != nil {
-		return fmt.Errorf("get finding: %w", err)
-	}
-
-	existing := finding.WorkItemURIs()
-	updated := make([]string, 0, len(existing))
-	for _, u := range existing {
-		if u != ticketURL {
-			updated = append(updated, u)
-		}
-	}
-
-	if err := s.findingRepo.UpdateWorkItemURIs(ctx, tenantID, findingID, updated); err != nil {
-		return fmt.Errorf("persist ticket unlink: %w", err)
-	}
-
-	s.logger.Info("jira ticket unlinked from finding",
-		"finding_id", findingID.String(),
-		"ticket_url", ticketURL,
-	)
 	return nil
 }
 
@@ -759,7 +745,7 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		}
 	}
 
-	newFindingStatus, ok := mapJiraStatusToFinding(newJiraStatus)
+	newFindingStatus, ok := s.inboundMapping(ctx, tenantID).FindingStatusForJira(newJiraStatus)
 	if !ok {
 		s.logger.Debug("jira status has no finding mapping — ignored",
 			"jira_status", newJiraStatus,
@@ -785,6 +771,16 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		return fmt.Errorf("lookup finding by work item URI: %w", err)
 	}
 
+	// Apply-time guard: whatever the mapping says, a ticket never closes a
+	// finding (no verify gate, no approval, no person). FindingStatusForJira
+	// already refuses these; this keeps the rule if the mapping code changes.
+	if !newFindingStatus.IsTicketInboundTarget() {
+		s.logger.Warn("jira webhook: refused a closing status from a ticket",
+			"issue_key", logger.SanitizeValue(payload.Issue.Key), "target_status", logger.SanitizeValue(string(newFindingStatus)))
+		return nil
+	}
+
+	oldStatus := finding.Status()
 	// Apply the status transition if valid.
 	if err := finding.TransitionStatus(newFindingStatus, "", nil); err != nil {
 		s.logger.Warn("jira webhook: finding status transition not allowed",
@@ -808,6 +804,14 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 		"jira_status", newJiraStatus,
 		"finding_status", newFindingStatus,
 	)
+	// The actor of this change is the Jira integration, not a person: record
+	// it so the finding's history says who moved it and from which ticket.
+	if s.activity != nil && oldStatus != newFindingStatus {
+		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
+			oldStatus.String(), newFindingStatus.String(), "jira", payload.Issue.Key); aerr != nil {
+			s.logger.Warn("jira webhook: failed to record activity", "finding_id", finding.ID().String(), "error", aerr)
+		}
+	}
 
 	// B3: fire the verification-scan hook on transition to
 	// fix_applied. This closes the "Jira Done → auto rescan" feedback
@@ -822,13 +826,26 @@ func (s *SyncService) HandleJiraWebhook(ctx context.Context, tenantID shared.ID,
 	return nil
 }
 
-// mapJiraStatusToFinding maps a Jira status name to a FindingStatus using the
-// default mapping. Per-integration overrides are applied via MappingConfig (see
-// mapping.go); this keeps callers without integration context working.
-// Returns (status, true) when a mapping exists, (_, false) otherwise.
-func mapJiraStatusToFinding(jiraStatus string) (vulnerability.FindingStatus, bool) {
-	return DefaultMappingConfig().FindingStatusForJira(jiraStatus)
+// inboundMapping is the tenant's inbound status map: its integration overlay
+// when one resolves, the defaults otherwise. Either way FindingStatusForJira
+// only ever yields IsTicketInboundTarget statuses.
+func (s *SyncService) inboundMapping(ctx context.Context, tenantID shared.ID) MappingConfig {
+	if s.mappingResolver != nil {
+		if m, err := s.mappingResolver.ResolveMapping(ctx, tenantID); err == nil && m.StatusInbound != nil {
+			return m
+		}
+	}
+	return DefaultMappingConfig()
 }
+
+// StatusActivityRecorder records a status change whose actor is an
+// integration (a ticket webhook), naming the integration and the ticket.
+type StatusActivityRecorder interface {
+	RecordIntegrationStatusChange(ctx context.Context, tenantID, findingID shared.ID, oldStatus, newStatus, integration, ref string) error
+}
+
+// SetActivityRecorder wires the finding-activity recorder for inbound changes.
+func (s *SyncService) SetActivityRecorder(r StatusActivityRecorder) { s.activity = r }
 
 // deriveJiraTicketURL builds the canonical browse URL for a Jira issue.
 // It prefers payload.Issue.Self (REST API URL) but converts it to the browse URL
@@ -854,4 +871,64 @@ type TicketInfo struct {
 	TicketKey string    `json:"ticket_key"`
 	TicketURL string    `json:"ticket_url"`
 	LinkedAt  time.Time `json:"linked_at"`
+}
+
+// jiraCommentBody encodes a comment for Jira wiki markup: paragraphs (split on
+// blank lines) stay paragraphs, each folded to one line, escaped and with its
+// URLs defanged, so a finding title such as "[x|https://evil.test] !img! [~admin]"
+// renders as text: no link, no image beacon, no mention.
+func jiraCommentBody(body string) string {
+	paras := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n\n")
+	out := make([]string, 0, len(paras))
+	for _, p := range paras {
+		if e := safetext.JiraWikiInline(p, safetext.MaxInlineRunes); e != "" {
+			out = append(out, e)
+		}
+	}
+	return strings.Join(out, "\n\n")
+}
+
+// IssueRef is a Jira issue as shown to an issue picker.
+type IssueRef struct {
+	Key     string `json:"key"`
+	Summary string `json:"summary"`
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	URL     string `json:"url"`
+}
+
+// issueSearcher is implemented by clients that can search issues and name
+// their site (the production client; test stubs need not).
+type issueSearcher interface {
+	SiteURL() string
+	SearchIssues(ctx context.Context, text string, max int) ([]IssueRef, error)
+}
+
+// ErrIssueSearchUnsupported: the tenant's Jira client cannot search.
+var ErrIssueSearchUnsupported = fmt.Errorf("%w: the Jira integration cannot search issues", shared.ErrValidation)
+
+// SiteURL returns the tenant's connected Jira site (scheme and host), or
+// ErrNoTicketingIntegration.
+func (s *SyncService) SiteURL(ctx context.Context, tenantID shared.ID) (string, error) {
+	c, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if is, ok := c.(issueSearcher); ok {
+		return is.SiteURL(), nil
+	}
+	return "", ErrIssueSearchUnsupported
+}
+
+// SearchIssues searches the tenant's Jira for an issue picker (at most 20).
+func (s *SyncService) SearchIssues(ctx context.Context, tenantID shared.ID, text string) ([]IssueRef, error) {
+	c, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	is, ok := c.(issueSearcher)
+	if !ok {
+		return nil, ErrIssueSearchUnsupported
+	}
+	return is.SearchIssues(ctx, text, 20)
 }

@@ -95,6 +95,12 @@ func (m *scimMemberStore) ReactivateMember(_ context.Context, _, membershipID sh
 	}
 	return shared.ErrNotFound
 }
+func (m *scimMemberStore) OffboardMember(_ context.Context, _, membershipID shared.ID) error {
+	if mem := m.findMembership(membershipID); mem != nil {
+		return mem.Offboard()
+	}
+	return shared.ErrNotFound
+}
 
 type stubSCIMAuth struct {
 	tenantID shared.ID
@@ -245,15 +251,21 @@ func TestSCIM_PatchUser_Deactivate(t *testing.T) {
 	}
 }
 
-func TestSCIM_DeleteUser_Deactivates(t *testing.T) {
+// SCIM DELETE offboards the member (member lifecycle): the membership turns
+// into a tombstone, and a second DELETE or a GET answers 404.
+func TestSCIM_DeleteUser_Offboards(t *testing.T) {
 	e := newSCIMTestEnv()
 	uid := e.seedMember(t, "del@example.com")
 	w := e.serve(t, e.handler.DeleteUser, http.MethodDelete, "/scim/v2/Users/"+uid.String(), nil, uid.String(), false)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want 204; body=%s", w.Code, w.Body.String())
 	}
-	if !e.members.byUser[uid].IsSuspended() {
-		t.Error("DELETE should suspend (deprovision) the membership")
+	if !e.members.byUser[uid].IsOffboarded() {
+		t.Error("DELETE should offboard the membership")
+	}
+	w = e.serve(t, e.handler.DeleteUser, http.MethodDelete, "/scim/v2/Users/"+uid.String(), nil, uid.String(), false)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("second DELETE status = %d, want 404", w.Code)
 	}
 }
 

@@ -6,19 +6,23 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -33,8 +37,8 @@ import (
 // @contact.url    https://github.com/openctemio/openctem
 // @contact.email  support@openctem.io
 
-// @license.name  MIT
-// @license.url   https://opensource.org/licenses/MIT
+// @license.name  GPL-3.0-only
+// @license.url   https://www.gnu.org/licenses/gpl-3.0.html
 
 // @host      localhost:8080
 // @BasePath  /api/v1
@@ -43,6 +47,11 @@ import (
 // @in header
 // @name Authorization
 // @description JWT access token, or a tenant oct_ API key (read-only: GET/HEAD on tenant routes, within the key's scopes). Format: "Bearer {token}". An oct_ key may instead be sent as X-API-Key.
+
+// @securityDefinitions.apikey CIRunToken
+// @in header
+// @name Authorization
+// @description CI run upload token from POST /ci/oidc/exchange (RFC-051): "Bearer octci_...", 15 minutes, one run on one repository.
 
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/
@@ -55,12 +64,26 @@ var (
 	routePath   = flag.String("route-path", "", "Filter routes containing this path")
 	routeSort   = flag.String("route-sort", "path", "Sort routes by: path, method, handler")
 
+	checkConfig = flag.Bool("check-config", false,
+		"Load and validate the configuration from the environment, print the result and exit (0 = valid, 1 = invalid); connects to nothing")
+
 	sensorUpgradeCheck = flag.Bool("sensor-upgrade-check", false,
 		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000230, then exit (0 = clean, 1 = leftovers)")
+
+	healthcheck = flag.Bool("healthcheck", false,
+		"GET /health on 127.0.0.1:$SERVER_PORT (default 8080) and exit 0 when it answers 200, 1 otherwise; "+
+			"the container healthcheck, so the image needs no shell or wget")
+
+	signerLedgerExport = flag.String("signer-ledger-export", "",
+		"Write every organization's scope in effect as a job-signer ledger snapshot to this new file (0600), then exit; "+
+			"the operator imports it with `openctem-signer ledger import` (RFC-040 P2)")
 )
 
 func main() {
 	flag.Parse()
+	if *healthcheck {
+		os.Exit(runHealthcheck(os.Stderr))
+	}
 	os.Exit(run())
 }
 
@@ -71,6 +94,9 @@ func run() int {
 	// Configuration & Logger
 	// ==========================================================================
 	cfg, err := config.Load()
+	if *checkConfig {
+		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err, os.Environ())
+	}
 	if err != nil {
 		log := logger.NewDefault()
 		log.Error("failed to load configuration", "error", err)
@@ -79,8 +105,22 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
-	for _, d := range cfg.Deprecations {
-		log.Warn("deprecated configuration", "detail", d)
+	for _, w := range cfg.EnvWarnings {
+		log.Warn("environment: " + w)
+	}
+	// A wide trusted-proxy range lets any host in it set the client IP the
+	// API believes; it should name the gateway and the web server only.
+	for _, w := range cfg.WideTrustedProxies() {
+		log.Warn("SECURITY: a trusted-proxy range covers more than 16 addresses; every host in it can set the client IP (rate limits, audit, IP allowlists)",
+			"setting", w, "remediation", "list only the gateway's and the web server's addresses")
+	}
+
+	if httpsec.AllowPrivate() {
+		log.Warn("outbound requests may reach every private network range (" + httpsec.EnvAllowPrivate + "=1, development only)")
+	}
+	if cidrs := httpsec.AllowedPrivateCIDRs(); len(cidrs) > 0 {
+		log.Warn("outbound requests may reach these private ranges for every tenant ("+httpsec.EnvAllowPrivateCIDRs+")",
+			"cidrs", strings.Join(cidrs, ","))
 	}
 
 	// ==========================================================================
@@ -106,7 +146,11 @@ func run() int {
 	if *sensorUpgradeCheck {
 		return runSensorUpgradeCheck(ctx, db.DB, os.Stdout)
 	}
+	if *signerLedgerExport != "" {
+		return runSignerLedgerExport(ctx, db, *signerLedgerExport, os.Stdout, log)
+	}
 	logSensorUpgradeLeftovers(ctx, db.DB, log)
+	registerOpsMetrics(db.DB, cfg, log)
 
 	redisClient, err := redis.New(&cfg.Redis, log)
 	if err != nil {
@@ -162,13 +206,9 @@ func run() int {
 	}
 	log.Info("services initialized")
 
-	// P0-2: Jira webhook preflight. In production, refuse to start when
-	// any tenant has a connected Jira integration but the HMAC secret is
-	// missing — otherwise inbound webhooks would start silently 401'ing.
-	if err := checkJiraWebhookPreflight(ctx, cfg, db.DB, log); err != nil {
-		log.Error("jira webhook preflight failed", "error", err)
-		return 1
-	}
+	// Warn about connected Jira integrations without their own webhook
+	// secret: their inbound deliveries are refused until one is set.
+	warnJiraIntegrationsWithoutSecret(ctx, db.DB, log)
 
 	// Initialize auth services if local auth is supported
 	if cfg.Auth.Provider.SupportsLocal() {
@@ -188,6 +228,11 @@ func run() int {
 		services.Auth.SetSecurityNotifier(services.Email)
 	}
 
+	// Owners are emailed about an SSO change that waits for their approval.
+	if services.SSOChange != nil && services.Email != nil {
+		services.SSOChange.SetMailer(services.Email)
+	}
+
 	// Wire SMTP availability checker into auth service for smart email verification.
 	// When no SMTP is configured (system or tenant), email verification is auto-disabled
 	// so first-time deployments can register users without setting up SMTP first.
@@ -200,7 +245,7 @@ func run() int {
 	// system default. The SetTenantSMTPResolver seam was never called, so
 	// per-tenant SMTP was silently dead and every tenant fell back to system SMTP.
 	if services.Email != nil {
-		services.Email.SetTenantSMTPResolver(app.NewIntegrationSMTPResolver(repos.Integration, log))
+		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, log))
 	}
 
 	// ==========================================================================
@@ -236,60 +281,38 @@ func run() int {
 		})
 	}
 
-	emailEnqueuer := jobs.NewEmailEnqueuerAdapter(jobClient)
-	services.Tenant = app.NewTenantService(repos.Tenant, log,
-		app.WithTenantAuditService(services.Audit),
-		app.WithEmailEnqueuer(emailEnqueuer),
-		// Inviter display name for invitation emails and the public preview
-		// (was never wired: emails said "A team member", the preview was blank).
-		app.WithUserInfoProvider(tenantapp.NewUserDisplayNames(repos.User)),
-	)
-	services.Tenant.SetPermissionServices(services.PermCache, services.PermVersion)
-	// Re-wire session service after rebuilding the tenant service —
-	// the constructor above replaces services.Tenant, dropping the
-	// SetSessionService call from initServices().
-	services.Tenant.SetSessionService(services.Session)
-	// Re-wire the membership cache too. Without this, SuspendMember /
-	// ReactivateMember / UpdateMemberRole / RemoveMember silently skip cache
-	// invalidation (membershipCache == nil), so a revoked member keeps tenant
-	// access until the cache TTL expires — breaking the documented 0-second
-	// revocation guarantee.
-	if services.MembershipCache != nil {
-		services.Tenant.SetMembershipCache(services.MembershipCache)
-	}
-	// Re-wire the SSO-path checker after rebuilding the tenant service (the
-	// constructor above dropped the SetSSOPathChecker call from initServices).
-	// Needed so the can't-enable guard on sso_enforced works at runtime.
-	if services.SSO != nil {
-		services.Tenant.SetSSOPathChecker(services.SSO)
-	}
-	// Wire the member-status email notifier so SuspendMember / ReactivateMember
-	// send their transactional email. SetMemberStatusEmailNotifier was never
-	// called, so those emails silently never went out. Applied here (not in
-	// initServices) because the constructor above rebuilt services.Tenant and
-	// would otherwise drop the wire.
+	// The tenant service is built once, in NewServices, with everything it can
+	// get there. Only collaborators that do not exist until this point are
+	// added here, on that same instance. It used to be rebuilt here instead,
+	// which silently dropped every setter NewServices had applied (session,
+	// membership cache, SSO checker, role service, data-scope store, ...).
+	services.Tenant.SetEmailEnqueuer(jobs.NewEmailEnqueuerAdapter(jobClient))
+	// Suspend/reactivate emails need the email service, built above.
 	if services.Email != nil {
 		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
 	}
-	// Re-wire the RBAC role service. The rebuild above dropped the
-	// SetRoleService call from initServices, so POST /invitations/{token}/accept
-	// silently discarded the invitation's role_ids and the new member kept only
-	// the role the tenant_members trigger copied from the membership role.
-	if services.Role != nil {
-		services.Tenant.SetRoleService(services.Role)
-	}
-	// The user service lets AddMember enforce Security.AllowedDomains and lets
-	// the suspend/reactivate notifier resolve the recipient (it was never wired,
-	// so those emails were skipped).
-	services.Tenant.SetUserService(services.User)
 	// Administrator-created accounts. The set-password link is emailed
 	// when SMTP is configured, otherwise returned once to the administrator.
-	var setupMailer app.AccountSetupMailer
+	var setupMailer tenant.AccountSetupMailer
 	if services.Email != nil {
 		setupMailer = services.Email
 	}
 	if services.Role != nil {
-		services.UserProvisioning = app.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+		services.UserProvisioning = tenant.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+		services.UserProvisioning.SetAddressClassifier(services.AddressClassifier)
+	}
+
+	// The request-access queue: approval creates the organization with the
+	// requester as owner, through the same creator as the console.
+	if services.Signup != nil && services.Tenant != nil {
+		var captcha accessrequestapp.Captcha
+		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
+			captcha = t
+		}
+		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
+			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
+			accessRequestMailer{email: services.Email, appName: cfg.App.Name, log: log},
+			captcha, cfg.SMTP.BaseURL, log)
 	}
 
 	// Wire AI triage job enqueuer if service is enabled
@@ -322,6 +345,7 @@ func run() int {
 	if cfg.Auth.Provider.SupportsLocal() {
 		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
 	}
+	wireStepUpGate(&handlers, services)
 
 	// ==========================================================================
 	// WebSocket Hub
@@ -350,6 +374,12 @@ func run() int {
 		}()
 		log.Info("websocket redis bridge started")
 	}
+	if services.ModuleChangeBus != nil {
+		if err := services.ModuleChangeBus.Start(wsCtx); err != nil {
+			// Toggles still apply here at once and elsewhere after the gate TTL.
+			log.Error("module change bus not subscribed", "error", err)
+		}
+	}
 
 	// ==========================================================================
 	// HTTP Server
@@ -363,8 +393,21 @@ func run() int {
 		authCfg.RevokedSessions = services.SessionRevocations
 	}
 
+	// Close a socket whose session was revoked while its upgrade was in flight.
+	if handlers.WebSocket != nil && services.SessionRevocations != nil {
+		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
+	}
+
 	server := http.NewServer(cfg, log)
 	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
+	// Sensor protocol v3 HTTPS binding (RFC-059): ahead of the router, which
+	// would cut its control stream; it carries its own guards.
+	if handlers.SensorV3 != nil {
+		server.MountPrefix(sensortransport.PathPrefix, handlers.SensorV3.HTTPSHandler(handlers.SensorResultsV2.AuthenticateV3))
+		// When the API terminates TLS itself, a ClientHello offering the
+		// sensor ALPN id is served by the gRPC binding on the same port.
+		server.SetTLSSplitter(handlers.SensorV3.SplitTLS)
+	}
 
 	// Handle --routes flag
 	if *showRoutes {
@@ -428,6 +471,11 @@ func run() int {
 			log.Error("server error", "error", err)
 		}
 	}()
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.Start(ctx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
+		}
+	}
 	log.Info("application started", "http_addr", cfg.Server.Addr())
 
 	// ==========================================================================
@@ -456,6 +504,11 @@ func run() int {
 	}
 
 	// Then stop server
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.Shutdown(shutdownCtx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding shutdown", "error", err)
+		}
+	}
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown error", "error", err)
 		return 1
@@ -470,23 +523,31 @@ func run() int {
 // =============================================================================
 
 func initLogger(cfg *config.Config) *logger.Logger {
-	var log *logger.Logger
-	if cfg.App.Env == "production" {
-		// SamplingThreshold is validated to be non-negative in config validation
-		//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
-		threshold := uint64(cfg.Log.SamplingThreshold)
-		log = logger.NewProductionWithConfig(logger.SamplingConfig{
+	log := logger.New(loggerConfig(cfg))
+	log.SetDefault()
+	return log
+}
+
+// loggerConfig turns LOG_LEVEL, LOG_FORMAT and LOG_SAMPLING_* into the logger
+// settings, in every environment. (Outside APP_ENV=production they used to be
+// ignored: always debug + text, so a non-production deployment such as the
+// live demo could neither lower the volume nor switch to JSON.)
+func loggerConfig(cfg *config.Config) logger.Config {
+	// SamplingThreshold is validated to be non-negative in config validation
+	//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
+	threshold := uint64(cfg.Log.SamplingThreshold)
+	return logger.Config{
+		Level:  cfg.Log.Level,
+		Format: cfg.Log.Format,
+		Output: os.Stdout,
+		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,
 			Threshold: threshold,
 			Rate:      cfg.Log.SamplingRate,
 			ErrorRate: cfg.Log.ErrorSamplingRate,
-		})
-	} else {
-		log = logger.NewDevelopment()
+		},
 	}
-	log.SetDefault()
-	return log
 }
 
 type closer interface {

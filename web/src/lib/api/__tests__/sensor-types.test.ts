@@ -6,7 +6,6 @@ import { sensorRoleOf, type SensorType } from '../sensor-types'
 describe('sensorRoleOf', () => {
   it.each<[SensorType, string]>([
     ['worker', 'scanner'],
-    ['runner', 'scanner'],
     ['sensor', 'scanner'], // the old EASM type is an internet-facing scanner
     ['collector', 'collector'],
   ])('%s -> %s', (type, role) => {

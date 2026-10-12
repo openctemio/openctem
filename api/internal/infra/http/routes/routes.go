@@ -7,15 +7,19 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -31,6 +35,7 @@ type Router = infrahttp.Router
 // Handlers holds all HTTP handlers for route registration.
 type Handlers struct {
 	Health           *handler.HealthHandler
+	ClientErrors     *handler.ClientErrorHandler
 	Auth             *handler.AuthHandler             // OIDC auth info handler
 	LocalAuth        *handler.LocalAuthHandler        // Local auth handler (nil if OIDC-only)
 	OAuth            *handler.OAuthHandler            // OAuth handler for social login (nil if not configured)
@@ -38,61 +43,107 @@ type Handlers struct {
 	Tenant           *handler.TenantHandler           // nil if not initialized (no database)
 	User             *handler.UserHandler             // nil if not initialized (no database)
 	Component        *handler.ComponentHandler        // nil if not initialized (no database)
+	VEXStatement     *handler.VEXStatementHandler     // nil if not initialized (no database)
 	Vulnerability    *handler.VulnerabilityHandler    // nil if not initialized (no database)
 	RemediationGroup *handler.RemediationGroupHandler // nil if not initialized (no database)
 	MCP              *handler.MCPHandler              // read-only MCP server; nil if not initialized
 	// MCPAuth is the tenant-scoped `oct_` API-key auth middleware guarding the
 	// MCP endpoint. Set alongside MCP; nil disables the endpoint.
 	MCPAuth Middleware
+	// MCPDiscovery is the OAuth discovery of the MCP endpoint (Protected
+	// Resource Metadata, 401 challenge, Origin guard). nil without a public URL.
+	MCPDiscovery *MCPDiscovery
+	// MCPOAuth is the authorization server of the MCP endpoint (RFC-062);
+	// nil without discovery or a database.
+	MCPOAuth *handler.MCPOAuthHandler
+	// MCPSettings is the organization MCP policy (RFC-062 §8).
+	MCPSettings *handler.MCPSettingsHandler
+	// MCPConnections is the connected applications (RFC-062 §12), tenant
+	// and platform console; nil without the authorization server.
+	MCPConnections *handler.MCPConnectionsHandler
+	// MCPClients is client registration (RFC-062 §5).
+	MCPClients *handler.MCPClientsHandler
 	// APIKeyAuth authenticates `oct_` API keys on the tenant REST routes (the
 	// token-tenant chains), read-only. Share the instance behind MCPAuth so a
 	// key has one rate-limit budget. nil leaves the REST API JWT-only.
 	APIKeyAuth      *middleware.APIKeyAuthMiddleware
 	FindingActivity *handler.FindingActivityHandler // nil if not initialized (no database)
 	// Note: Real-time updates moved to WebSocket (see WebSocket field below)
-	AITriage         *handler.AITriageHandler         // Always initialized - handles nil service gracefully
-	Dashboard        *handler.DashboardHandler        // nil if not initialized (no database)
-	UserDashboard    *handler.UserDashboardHandler    // nil if not initialized - per-user customizable dashboards (RFC-021)
-	Audit            *handler.AuditHandler            // nil if not initialized (no database)
-	Branch           *handler.BranchHandler           // nil if not initialized (no database)
-	SLA              *handler.SLAHandler              // nil if not initialized (no database)
-	Integration      *handler.IntegrationHandler      // nil if not initialized (no database)
-	DefectDojo       *handler.DefectDojoHandler       // nil if not initialized / no DefectDojo sync
-	AssetGroup       *handler.AssetGroupHandler       // nil if not initialized (no database)
-	Scope            *handler.ScopeHandler            // nil if not initialized (no database)
-	AssetType        *handler.AssetTypeHandler        // nil if not initialized (no database)
-	AttackSurface    *handler.AttackSurfaceHandler    // nil if not initialized (no database)
-	Docs             *handler.DocsHandler             // API documentation handler
-	Command          *handler.CommandHandler          // nil if not initialized (no database)
-	Ingest           *handler.IngestHandler           // nil if not initialized (no database) - unified ingestion (CTIS, SARIF, Recon)
-	RuntimeTelemetry *handler.RuntimeTelemetryHandler // nil if not initialized - EDR/XDR events from endpoint sensors
+	AITriage      *handler.AITriageHandler      // Always initialized - handles nil service gracefully
+	Dashboard     *handler.DashboardHandler     // nil if not initialized (no database)
+	UserDashboard *handler.UserDashboardHandler // nil if not initialized - per-user customizable dashboards (RFC-021)
+	SavedView     *handler.SavedViewHandler     // nil if not initialized - saved list views (D15, RFC-048)
+	Audit         *handler.AuditHandler         // nil if not initialized (no database)
+	Branch        *handler.BranchHandler        // nil if not initialized (no database)
+	SLA           *handler.SLAHandler           // nil if not initialized (no database)
+	Integration   *handler.IntegrationHandler   // nil if not initialized (no database)
+	DefectDojo    *handler.DefectDojoHandler    // nil if not initialized / no DefectDojo sync
+	AssetGroup    *handler.AssetGroupHandler    // nil if not initialized (no database)
+	Scope         *handler.ScopeHandler         // nil if not initialized (no database)
+	// BountyProgram serves bug-bounty programs (RFC-065); nil without a database.
+	BountyProgram *handler.BountyProgramHandler
+	// ScopeLetter serves authorization letters (RFC-065 §13).
+	ScopeLetter   *handler.ScopeLetterHandler
+	AssetType     *handler.AssetTypeHandler     // nil if not initialized (no database)
+	AttackSurface *handler.AttackSurfaceHandler // nil if not initialized (no database)
+	EASM          *handler.EASMHandler          // RFC-036 overview; nil if not initialized
+	// EASMVerifiedDomain is tenant self-service domain verification
+	// (research/22 P0-10); nil if not initialized.
+	EASMVerifiedDomain *handler.EASMVerifiedDomainHandler
+	// EASMSettings is attack-surface monitoring settings and run-now
+	// (research/22 P0-11); nil if not initialized.
+	EASMSettings *handler.EASMSettingsHandler
+	// EASMLookalike manages passive lookalike-domain monitoring (RFC-083)
+	EASMLookalike *handler.EASMLookalikeHandler
+	// EASMNetworkSeed manages AS number and organization seeds (RFC-082)
+	EASMNetworkSeed *handler.EASMNetworkSeedHandler
+	// AssetWebEvidence serves an asset's web evidence and screenshots (RFC-081)
+	AssetWebEvidence *handler.AssetWebEvidenceHandler
+	Docs             *handler.DocsHandler    // API documentation handler
+	Command          *handler.CommandHandler // nil if not initialized (no database)
+	Ingest           *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
-	IOC             *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
-	Validation      *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
-	SCIM            *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
-	SCIMToken       *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
-	SCIMAuth        Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
-	ModuleGate      *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
+	// SensorV3 serves sensor protocol v3 (RFC-059); nil unless
+	// SENSOR_TRANSPORT_V3_ENABLED. Register attaches the in-process v2 route
+	// group it serves through; the HTTPS binding is mounted by the caller
+	// (Server.MountPrefix).
+	SensorV3 *sensortransport.Server
+	// SensorPairing serves interactive pairing (RFC-052); nil when disabled.
+	SensorPairing *handler.SensorPairingHandler
+	IOC           *handler.IOCHandler        // nil if not initialized - IOC catalog (feeds B6 correlator)
+	Validation    *handler.ValidationHandler // nil if not initialized - CTEM Stage-4 validation evidence
+	SCIM          *handler.SCIMHandler       // nil if not initialized - SCIM 2.0 provisioning (RFC-009)
+	SCIMToken     *handler.SCIMTokenHandler  // nil if not initialized - SCIM token admin
+	SCIMAuth      Middleware                 // SCIM bearer-token auth middleware (nil if SCIM disabled)
+	ModuleGate    *middleware.ModuleGate     // per-tenant module route gating (nil-safe: fail-open)
 	// DataScope enforces the Layer 2 (group) data scope on every by-id asset
 	// and finding route of the token-tenant chain (DataScopeGuard). nil
 	// disables the guard (tests with a minimal handler set).
-	DataScope       middleware.DataScopeAsserter
-	Sensor          *handler.SensorHandler          // nil if not initialized (no database)
-	SensorContent   *handler.SensorContentHandler   // scanner content policy + refresh (RFC-031); nil without a database
-	ScanZone        *handler.ScanZoneHandler        // nil if not initialized (no database)
-	Pipeline        *handler.PipelineHandler        // nil if not initialized (no database)
-	ScanProfile     *handler.ScanProfileHandler     // nil if not initialized (no database)
-	Tool            *handler.ToolHandler            // nil if not initialized (no database)
-	ToolCategory    *handler.ToolCategoryHandler    // nil if not initialized (no database)
-	Capability      *handler.CapabilityHandler      // nil if not initialized (no database)
-	Scan            *handler.ScanHandler            // nil if not initialized (no database)
-	CI              *handler.CIHandler              // nil if not initialized (no database) - CI/CD snippet generator
-	ScanSession     *handler.ScanSessionHandler     // nil if not initialized (no database)
-	ScannerTemplate *handler.ScannerTemplateHandler // nil if not initialized (no database)
-	TemplateSource  *handler.TemplateSourceHandler  // nil if not initialized (no database)
-	SecretStore     *handler.SecretStoreHandler     // nil if not initialized (no database)
+	DataScope     middleware.DataScopeAsserter
+	Sensor        *handler.SensorHandler        // nil if not initialized (no database)
+	SensorContent *handler.SensorContentHandler // scanner content policy + refresh (RFC-031); nil without a database
+	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
+	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
+	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
+	ScanWorkflow  *handler.ScanWorkflowHandler  // nil if not initialized (no database)
+	ScanProfile   *handler.ScanProfileHandler   // nil if not initialized (no database)
+	Tool          *handler.ToolHandler          // nil if not initialized (no database)
+	ToolCategory  *handler.ToolCategoryHandler  // nil if not initialized (no database)
+	Capability    *handler.CapabilityHandler    // nil if not initialized (no database)
+	Scan          *handler.ScanHandler          // nil if not initialized (no database)
+	// CIAdmin and CIRunner serve CI runs, trust and the gate (RFC-051); nil
+	// without a database.
+	CIAdmin             *handler.CIAdminHandler
+	CIRunner            *handler.CIRunnerHandler
+	SCMApps             *handler.SCMAppHandler              // nil without a database
+	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
+	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
+	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
+	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
+	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
 	Exposure         *handler.ExposureHandler         // nil if not initialized (no database)
 	ThreatIntel      *handler.ThreatIntelHandler      // nil if not initialized (no database)
@@ -103,15 +154,20 @@ type Handlers struct {
 
 	// CTEM Discovery handlers
 	AssetService           *handler.AssetServiceHandler           // nil if not initialized (no database)
+	WebEndpoint            *handler.WebEndpointHandler            // Web surface (RFC-056); nil without a database
+	APISpec                *handler.APISpecHandler                // API descriptions of web origins (RFC-056)
 	AssetStateHistory      *handler.AssetStateHistoryHandler      // nil if not initialized (no database)
+	AssetSoftware          *handler.AssetSoftwareHandler          // RFC-066; nil if not initialized
 	AssetIdentifier        *handler.AssetIdentifierHandler        // asset identity model; nil if not initialized
+	AssetAttribution       *handler.AssetAttributionHandler       // RFC-036 attribution; nil if not initialized
 	AssetRelationship      *handler.AssetRelationshipHandler      // nil if not initialized (no database)
 	RelationshipSuggestion *handler.RelationshipSuggestionHandler // nil if not initialized (no database)
 
 	// Access Control handlers
-	Group          *handler.GroupHandler          // nil if not initialized (no database)
-	PermissionSet  *handler.PermissionSetHandler  // nil if not initialized (no database)
-	Role           *handler.RoleHandler           // nil if not initialized (no database)
+	Group *handler.GroupHandler // nil if not initialized (no database)
+	Role  *handler.RoleHandler  // nil if not initialized (no database)
+	// ServiceAccount serves /api/v1/service-accounts; nil when not wired.
+	ServiceAccount *handler.ServiceAccountHandler
 	Permission     *handler.PermissionHandler     // nil if not initialized (permission sync handler)
 	AssignmentRule *handler.AssignmentRuleHandler // nil if not initialized (no database)
 	ScopeRule      *handler.ScopeRuleHandler      // nil if not initialized (no database)
@@ -119,6 +175,10 @@ type Handlers struct {
 
 	// Finding Lifecycle (closed-loop: fix_applied → verified → resolved)
 	FindingActions *handler.FindingActionsHandler // nil if not initialized (no database)
+	// FindingRetest serves Retest now + retest history (RFC-039); nil if not initialized
+	FindingRetest *handler.FindingRetestHandler
+	// FindingEvidenceItems serves masked finding evidence + reveal; nil if not initialized
+	FindingEvidenceItems *handler.FindingEvidenceItemsHandler
 
 	// Jira Bidirectional Sync (link tickets to findings + receive Jira webhooks)
 	JiraWebhook   *handler.JiraWebhookHandler   // nil if not initialized (no database)
@@ -132,8 +192,10 @@ type Handlers struct {
 	JiraWebhookSecretResolver JiraWebhookSecretResolver
 
 	// Pentest Campaign Management handlers
-	Pentest                *handler.PentestHandler        // nil if not initialized (no database)
-	PentestCampaignRoleQry middleware.CampaignRoleQuerier // Campaign role resolver for RBAC middleware
+	Pentest                *handler.PentestHandler               // nil if not initialized (no database)
+	PentestCampaignRoleQry middleware.CampaignRoleQuerier        // Campaign role resolver for RBAC middleware
+	PentestReportTemplate  *handler.PentestReportTemplateHandler // nil if not initialized
+	PentestChecklist       *handler.PentestChecklistHandler      // nil if not initialized
 
 	// File Attachments (shared across pentest, retest, campaign)
 	Attachment *handler.AttachmentHandler // nil if not initialized
@@ -166,15 +228,17 @@ type Handlers struct {
 	ThreatModel           *handler.ThreatModelHandler           // nil if not initialized
 	Scoping               *handler.ScopingHandler               // nil if not initialized
 
-	// Asset Import (Nessus, K8s, CSV)
+	// Asset Import (K8s, CSV)
 	AssetImport *handler.AssetImportHandler // nil if not initialized
+
+	// Finding import (exports of other tools, VEX documents)
+	FindingImport *handler.FindingImportHandler // nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
 
 	// API Keys & Webhooks
-	APIKey  *handler.APIKeyHandler  // nil if not initialized (no database)
-	Webhook *handler.WebhookHandler // nil if not initialized (no database)
+	APIKey *handler.APIKeyHandler // nil if not initialized (no database)
 
 	// Notification handlers
 	Notification *handler.NotificationHandler // nil if not initialized (no database)
@@ -184,9 +248,40 @@ type Handlers struct {
 	Bootstrap *handler.BootstrapHandler // nil if not initialized (no database)
 
 	// Admin Auth handler (API key authentication for Admin UI)
-	AdminAuth           *handler.AdminAuthHandler
-	AdminOrganization   *handler.AdminOrganizationHandler
-	AdminConsole        *handler.AdminConsoleHandler
+	AdminAuth         *handler.AdminAuthHandler
+	AdminOrganization *handler.AdminOrganizationHandler
+	AdminOverview     *handler.AdminOverviewHandler
+	AdminPlatformUser *handler.AdminPlatformUserHandler
+	AdminSession      *handler.AdminSessionHandler
+	AdminOperations   *handler.AdminOperationsHandler
+	Announcement      *handler.AnnouncementHandler
+	// AdminSupportRateLimiter caps console support actions per administrator.
+	AdminSupportRateLimiter *middleware.AdminMappingRateLimiter
+	AdminConsole            *handler.AdminConsoleHandler
+	AdminAuditChain         *handler.AdminAuditChainHandler
+	// AccessRequest: the request-access queue (public form + console).
+	AccessRequest *handler.AccessRequestHandler
+	// Plan: plans and limits (console plan defaults, organization plans and
+	// overrides, the organization's own usage).
+	Plan *handler.PlanHandler
+	// IdleWorkspace: an organization's idle lifecycle in the console.
+	IdleWorkspace *handler.IdleWorkspaceHandler
+	// IdleReadOnly refuses changes to an idle Free organization (read-only
+	// after 90 days without a sign-in).
+	IdleReadOnly middleware.IdleReadOnlyChecker
+	// AdminSignup: Console > System > Sign-up (the sign-up policy).
+	AdminSignup *handler.AdminSignupHandler
+	// AdminEmail: Console > System > E-mail (the platform SMTP server, RFC-079).
+	AdminEmail *handler.AdminEmailHandler
+	// AdminLegal: Console > System > Legal and the public GET /api/v1/legal (RFC-079).
+	AdminLegal *handler.AdminLegalHandler
+	// AdminScanPolicy: the platform policy for scan approval
+	// (RFC-073), platform default and per organization.
+	AdminScanPolicy *handler.AdminScanPolicyHandler
+	// ScanGovernance: the organization's scan approval settings (RFC-073).
+	ScanGovernance *handler.ScanGovernanceHandler
+	// SignupPolicy answers the sign-up policy to the public auth endpoints.
+	SignupPolicy        signupdom.PolicySource
 	AdminAuthMiddleware *middleware.AdminAuthMiddleware
 
 	// Admin Audit middleware (audit logging for admin operations)
@@ -204,19 +299,33 @@ type Handlers struct {
 	// SSO handler (per-tenant SSO authentication)
 	SSO  *handler.SSOHandler  // nil if not initialized
 	SAML *handler.SAMLHandler // nil if not initialized - SAML 2.0 SP (RFC-009)
+	// SSOChange lists and decides admin-console SSO changes that wait for an
+	// owner's approval (RFC-022). nil if SAML/SSO is not initialized.
+	SSOChange *handler.SSOChangeHandler
 
 	// VerifiedDomain handler (SSO P1 domain-ownership verification)
 	VerifiedDomain *handler.VerifiedDomainHandler // nil if not initialized
+	// OrgTrust: trusted organizations (RFC-058); nil if not initialized.
+	OrgTrust *handler.OrgTrustHandler
 
 	// Platform Stats handler (tenant-scoped platform sensor stats)
-	PlatformStats *handler.PlatformStatsHandler
+	PlatformScanning *handler.PlatformScanningHandler
 
 	// WebSocket handler for real-time communication
 	WebSocket *websocket.Handler
 
 	// F-8: Optional single-use WebSocket ticket redeemer. When non-nil,
 	// the /ws route uses ticket auth instead of the JWT chain.
-	WSTicketRedeemer middleware.WSTicketRedeemer
+
+	// AuthRateLimitBackend is the shared store (Redis) the public auth rate
+	// limits count in, so every API replica spends one budget. nil keeps them
+	// in-memory per process (tests, single-instance dev).
+	AuthRateLimitBackend middleware.AuthRateLimitBackend
+
+	// StepUp answers the step-up check on sensitive routes. nil uses the
+	// local auth handler's (sessions.step_up_at); route tests that are not
+	// about step-up pass a stub. No checker at all refuses those routes.
+	StepUp middleware.RecentAuthChecker
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -236,7 +345,7 @@ type AuthConfig struct {
 //   - auth.go: Authentication (login, register, OAuth)
 //   - tenant.go: Tenant management
 //   - assets.go: Assets, components, asset groups, scope
-//   - scanning.go: Sensors, commands, scans, pipelines, tools
+//   - scanning.go: Sensors, commands, scans, scan workflows, tools
 //   - exposure.go: Exposures, threat intel, credentials
 //   - access_control.go: Groups, roles, permissions
 //   - platform.go: Platform sensors and jobs
@@ -250,7 +359,7 @@ func Register(
 	log *logger.Logger,
 	authCfg AuthConfig,
 	tenantRepo tenant.Repository,
-	userService *app.UserService,
+	userService *tenantapp.UserService,
 	// Optional Redis-backed membership reader. When non-nil it is
 	// used by RequireMembership and RequireActiveMembershipFromJWT
 	// instead of querying the database directly. nil falls back to
@@ -260,8 +369,8 @@ func Register(
 	// mounted on every token-tenant chain so revoked permissions / demoted
 	// admins are enforced within the token lifetime (real-time sync). nil
 	// disables it (legacy embedded-JWT-permission behavior).
-	permCache *app.PermissionCacheService,
-	permVersion *app.PermissionVersionService,
+	permCache *accesscontrol.PermissionCacheService,
+	permVersion *accesscontrol.PermissionVersionService,
 ) {
 	// Pick the membership reader: cache when available, repo otherwise.
 	if membershipReader == nil {
@@ -275,6 +384,7 @@ func Register(
 		Logger:                log,
 		SessionTimeoutMinutes: cfg.Server.SessionTimeoutMinutes,
 		RevokedSessions:       authCfg.RevokedSessions,
+		CookieName:            cfg.Auth.AccessTokenCookieName,
 	}
 	authMiddleware := middleware.UnifiedAuth(unifiedAuthCfg)
 
@@ -282,6 +392,13 @@ func Register(
 	// uses it, so routes outside those chains (account, auth, admin console,
 	// /tenants/{tenant}) stay JWT-only. Reset on every Register so a previous
 	// router's setting can't leak into this one.
+	authRateLimitBackend = h.AuthRateLimitBackend
+	// Step-up re-authentication for sensitive routes. Reset on every Register
+	// so a previous router's checker cannot leak into this one.
+	stepUpChecker = h.StepUp
+	if stepUpChecker == nil && h.LocalAuth != nil {
+		stepUpChecker = h.LocalAuth.RecentAuthChecker()
+	}
 	apiKeyOrJWT = nil
 	if h.APIKeyAuth != nil {
 		apiKeyOrJWT = h.APIKeyAuth.OrJWT
@@ -289,14 +406,7 @@ func Register(
 	// Health routes: /health and /ready are public; /metrics is gated by a
 	// bearer token unless METRICS_PUBLIC=true (see MetricsConfig).
 	registerHealthRoutes(router, h.Health, middleware.MetricsAuth(cfg.Metrics.Public, cfg.Metrics.Token, log))
-
-	// API Documentation routes (public)
-	if h.Docs != nil {
-		registerDocsRoutes(router, h.Docs)
-	}
-
-	// Auth routes - based on provider (some protected, some public)
-	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, log)
+	registerClientErrorRoute(router, h.ClientErrors, log)
 
 	// Initialize per-user read endpoint rate limiter to prevent enumeration and scraping.
 	// Applied to all GET requests on authenticated tenant-scoped routes via
@@ -330,7 +440,7 @@ func Register(
 	// Clients that authenticate with a header (Bearer JWT, oct_ API keys,
 	// sensor keys) are not ambient-credential requests — a cross-site page
 	// cannot set Authorization — and pass without a CSRF token. Sensor
-	// (/api/v1/agent/*) and HMAC-verified webhook routes do not use these
+	// (/api/v2/sensor/*) and HMAC-verified webhook routes do not use these
 	// chains at all.
 	csrfProtectionMiddleware = middleware.CSRFOptional(middleware.NewCSRFConfig(cfg.Auth, log))
 
@@ -343,6 +453,9 @@ func Register(
 	// A stale token's admin flag and role are re-read from the database
 	// (tenantRepo, not the membership cache), so a demoted admin loses the
 	// admin bypass on the next request, reads included.
+	if permCache != nil {
+		tenantPermissionChecker = permCache
+	}
 	if permCache != nil && permVersion != nil {
 		permissionSyncMiddleware = middleware.NewPermissionSyncMiddleware(permCache, permVersion, log).
 			WithTeamRoleReader(tenantRepo).EnrichPermissions
@@ -366,6 +479,13 @@ func Register(
 		).Enforce
 	}
 
+	// Idle Free organizations are read-only after 90 days without a sign-in
+	// (docs/architecture/idle-workspaces.md). Appended to
+	// buildBaseMiddlewares; reads always pass.
+	if h.IdleReadOnly != nil {
+		idleReadOnlyMiddleware = middleware.IdleReadOnly(h.IdleReadOnly)
+	}
+
 	// Organization IP allowlist (Security.IPWhitelist) on user sessions.
 	// Appended to buildBaseMiddlewares (token-scoped organization)
 	// and to the /tenants/{tenant} chain (URL organization). Settings changes
@@ -385,8 +505,25 @@ func Register(
 		userSync = middleware.UserSync(userService, log)
 	}
 
+	// Auth routes - based on provider (some protected, some public).
+	// Registered AFTER the tenant-chain middlewares above are initialized.
+	registerAuthRoutes(router, h, cfg, authCfg, authMiddleware, userSync, log)
+
 	// Build identity for Help > About (any signed-in user).
 	registerVersionRoute(router, authMiddleware)
+	registerLegalRoute(router, h.AdminLegal)
+	// API documentation: public outside production; in production the spec
+	// needs a signed-in user and the reference page a platform administrator.
+	if h.Docs != nil {
+		var consoleAuth Middleware
+		if h.AdminAuthMiddleware != nil {
+			consoleAuth = h.AdminAuthMiddleware.Authenticate
+		}
+		registerDocsRoutes(router, h.Docs, cfg.IsProduction(), authMiddleware, consoleAuth)
+	}
+	if h.Announcement != nil {
+		registerAnnouncementRoute(router, h.Announcement, authMiddleware)
+	}
 
 	// User routes (protected with user sync for OIDC)
 	if h.User != nil {
@@ -395,7 +532,8 @@ func Register(
 
 	// Tenant routes (protected with user sync)
 	if h.Tenant != nil {
-		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth)
+		registerTenantRoutes(router, h.Tenant, authMiddleware, userSync, tenantRepo, membershipReader, h.LocalAuth, h.SSOChange)
+		registerOrganizationPlanRoutes(router, h.Plan, authMiddleware, userSync)
 	}
 
 	// Asset routes (tenant from JWT token) - only if handler is initialized
@@ -404,6 +542,9 @@ func Register(
 	}
 	if h.AssetImport != nil {
 		registerAssetImportRoutes(router, h.AssetImport, authMiddleware, userSync)
+	}
+	if h.FindingImport != nil {
+		registerFindingImportRoutes(router, h.FindingImport, authMiddleware, userSync)
 	}
 
 	// Asset Owner routes (tenant from JWT token) - nested under assets
@@ -415,16 +556,29 @@ func Register(
 	if h.Component != nil {
 		registerComponentRoutes(router, h.Component, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleComponents))
 	}
+	registerVEXStatementRoutes(router, h.VEXStatement, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleComponents))
 
 	// Asset Service routes (CTEM Discovery - network services on assets)
 	if h.AssetService != nil {
 		registerAssetServiceRoutes(router, h.AssetService, authMiddleware, userSync)
 	}
 
+	// Web surface: endpoints under their origin asset (RFC-056)
+	if h.WebEndpoint != nil {
+		registerWebEndpointRoutes(router, h.WebEndpoint, authMiddleware, userSync)
+	}
+	if h.APISpec != nil {
+		registerAPISpecRoutes(router, h.APISpec, authMiddleware, userSync)
+	}
+
 	// Asset State History routes (CTEM Discovery - shadow IT detection, audit)
+	if h.AssetAttribution != nil {
+		registerAssetAttributionRoutes(router, h.AssetAttribution, authMiddleware, userSync)
+	}
 	if h.AssetIdentifier != nil {
 		registerAssetIdentifierRoutes(router, h.AssetIdentifier, authMiddleware, userSync)
 	}
+	registerAssetSoftwareRoutes(router, h.AssetSoftware, authMiddleware, userSync)
 	if h.AssetStateHistory != nil {
 		registerAssetStateHistoryRoutes(router, h.AssetStateHistory, authMiddleware, userSync)
 	}
@@ -441,13 +595,29 @@ func Register(
 
 	// Relationship Suggestion routes (auto-generated relationship recommendations)
 	if h.RelationshipSuggestion != nil {
-		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync)
+		registerRelationshipSuggestionRoutes(router, h.RelationshipSuggestion, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleRelationships))
 	}
 
 	// Vulnerability routes (global) and Finding routes (tenant from JWT token)
 	if h.Vulnerability != nil {
 		registerVulnerabilityRoutes(router, h.Vulnerability, h.FindingActions, h.JiraWebhook, h.RemediationGroup, authMiddleware, userSync)
 	}
+
+	// Continuous retest (RFC-039): Retest now + a finding's retest history.
+	registerFindingRetestRoutes(router, h.FindingRetest, authMiddleware, userSync)
+	registerRetestSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerVulnMatchingSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerLicensePolicySettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerScanGovernanceRoutes(router, h.ScanGovernance, authMiddleware, userSync)
+	registerScanApprovalRoutes(router, h.Scan.Approvals(), authMiddleware, userSync)
+	registerAssetReconciliationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	// Finding evidence: masked proof per detection / retest + audited reveal.
+	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
+	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
+	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
 	// CTEM Stage-4 validation evidence (sensor ingest + finding evidence list)
 	if h.Validation != nil {
@@ -460,12 +630,12 @@ func Register(
 	}
 
 	// Incoming Jira webhook — public endpoint (no JWT), HMAC-gated (F-1).
-	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, cfg.Webhooks.JiraSecret, log)
+	registerIncomingWebhookRoutes(router, h.JiraWebhook, h.JiraWebhookSecretResolver, log)
 
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
 	if h.GitHubWebhook != nil {
-		router.POST("/api/v1/webhooks/incoming/github", h.GitHubWebhook.IncomingGitHubWebhook)
+		registerGitHubWebhookRoute(router, h.GitHubWebhook, log)
 	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
@@ -488,11 +658,12 @@ func Register(
 
 	// AI Triage routes (tenant from JWT token)
 	// Always registered - handler handles nil service gracefully (returns 503)
-	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter)
+	registerAITriageRoutes(router, h.AITriage, authMiddleware, userSync, aiTriageRateLimiter,
+		h.ModuleGate.RequireModule(moduledom.ModuleAITriage))
 
 	// Dashboard routes (global and tenant from JWT token)
 	if h.Dashboard != nil {
-		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync)
+		registerDashboardRoutes(router, h.Dashboard, authMiddleware, userSync, log)
 	}
 
 	// Audit log routes (tenant from JWT token)
@@ -507,12 +678,18 @@ func Register(
 
 	// SLA Policy routes (tenant from JWT token)
 	if h.SLA != nil {
-		registerSLARoutes(router, h.SLA, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleSLA))
+		registerSLARoutes(router, h.SLA, authMiddleware, userSync)
 	}
 
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
-		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		registerPentestRoutes(router, h.Pentest, h.PentestChecklist, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		if h.PentestChecklist != nil {
+			registerPentestChecklistTemplateRoutes(router, h.PentestChecklist, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		}
+		if h.PentestReportTemplate != nil {
+			registerPentestReportTemplateRoutes(router, h.PentestReportTemplate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		}
 	}
 
 	// Attachment routes (file upload/download, shared across pentest/retest/campaign)
@@ -540,10 +717,27 @@ func Register(
 		registerIOCRoutes(router, h.IOC, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleIOCs))
 	}
 
+	// Organization MCP policy (RFC-062 §8).
+	if h.MCPSettings != nil {
+		registerMCPSettingsRoutes(router, h.MCPSettings, authMiddleware, userSync)
+	}
+	// Connected AI applications (RFC-062 §12).
+	if h.MCPConnections != nil {
+		registerMCPConnectionRoutes(router, h.MCPConnections, authMiddleware, userSync)
+	}
+	// AI application registration (RFC-062 §5).
+	if h.MCPClients != nil {
+		registerMCPClientRoutes(router, h.MCPClients, authMiddleware, userSync)
+	}
+
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
-	// Per-IP rate limit runs before auth to throttle junk-token floods.
+	// Per-IP rate limit runs before auth to throttle junk-token floods; the
+	// organization IP allowlist runs after it (mcpMiddlewares).
 	if h.MCP != nil && h.MCPAuth != nil {
-		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth)
+		registerMCPRoutes(router, h.MCP, middleware.RateLimit(&cfg.RateLimit, log), h.MCPAuth, h.MCPDiscovery)
+		if h.MCPOAuth != nil {
+			registerMCPOAuthRoutes(router, h.MCPOAuth, middleware.RateLimit(&cfg.RateLimit, log), authMiddleware, userSync)
+		}
 	}
 
 	// Remediation Campaign routes
@@ -618,6 +812,12 @@ func Register(
 	if h.Scope != nil {
 		registerScopeRoutes(router, h.Scope, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
 	}
+	if h.BountyProgram != nil {
+		registerProgramRoutes(router, h.BountyProgram, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
+	}
+	if h.ScopeLetter != nil {
+		registerScopeLetterRoutes(router, h.ScopeLetter, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScopeConfig))
+	}
 
 	// Asset Type routes (tenant from JWT token)
 	if h.AssetType != nil {
@@ -633,67 +833,91 @@ func Register(
 	if h.AttackSurface != nil {
 		registerAttackSurfaceRoutes(router, h.AttackSurface, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.EASM != nil {
+		registerEASMRoutes(router, h.EASM, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMVerifiedDomain != nil {
+		registerEASMVerifiedDomainRoutes(router, h.EASMVerifiedDomain, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMSettings != nil {
+		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMLookalike != nil {
+		registerEASMLookalikeRoutes(router, h.EASMLookalike, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMNetworkSeed != nil {
+		registerEASMNetworkSeedRoutes(router, h.EASMNetworkSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.AssetWebEvidence != nil {
+		registerAssetWebEvidenceRoutes(router, h.AssetWebEvidence, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 
 	// Command routes (tenant from JWT token)
 	if h.Command != nil {
 		registerCommandRoutes(router, h.Command, authMiddleware, userSync)
 	}
 
-	// Per-tenant rate limiter for the telemetry-events ingest endpoint.
-	// Not generic rate limiting — only this route needs it because an
-	// EDR sensor can legitimately batch thousands of events, but we
-	// still need to prevent a single compromised sensor key from
-	// drowning the correlator. Conservative defaults: 200 rps burst
-	// 400, buckets evicted after 10 m idle.
-	var telemetryRateLimiter *middleware.TelemetryRateLimiter
-	if cfg.RateLimit.Enabled {
-		telemetryRateLimiter = middleware.NewTelemetryRateLimiter(200, 400, 10*time.Minute, log)
-	}
-
-	// Per-tenant limiter for the heavy report-ingest endpoints. Report ingest
-	// is far heavier per request than telemetry (up to 100k findings / 100MB),
-	// so it gets a much lower budget — enough for legitimate CI bursts, low
-	// enough to bound a runaway loop or compromised sensor key.
+	// Per-tenant limiter for the heavy report-ingest endpoints (up to 100k
+	// findings / 100MB per request): a low budget, enough for legitimate CI
+	// bursts, low enough to bound a runaway loop or compromised sensor key.
 	var ingestRateLimiter *middleware.TelemetryRateLimiter
 	if cfg.RateLimit.Enabled {
 		ingestRateLimiter = middleware.NewTelemetryRateLimiter(20, 40, 10*time.Minute, log)
 	}
 
-	// Ingest/Sensor routes (API key authenticated)
-	if h.Ingest != nil && h.Command != nil {
-		registerSensorRoutes(router, h.Ingest, h.Command, h.ScanSession, h.RuntimeTelemetry, h.Suppression, h.ModuleGate, telemetryRateLimiter, ingestRateLimiter, log)
+	// CI runs: OIDC exchange, run-token uploads and the gate, administration
+	// (RFC-051).
+	if h.CIAdmin != nil || h.CIRunner != nil {
+		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
+			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
+	// Code-host app installations and the GitHub App webhook (RFC-077).
+	registerSCMAppRoutes(router, h.SCMApps, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScans), log)
 
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.
 	if h.SensorResultsV2 != nil {
-		registerSensorV2Routes(router, h.SensorResultsV2, sensorControlV2Handler(h, log), ingestRateLimiter, log)
+		ctl := sensorControlV2Handler(h, log)
+		budgets := newSensorV2Budgets(ingestRateLimiter, log)
+		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)
+		if h.SensorV3 != nil && ctl != nil {
+			h.SensorV3.Attach(sensorV2InProcess(h.SensorResultsV2, ctl, budgets), ctl, h.SensorResultsV2)
+		}
+	}
+
+	// Sensor pairing (RFC-052): sensor plane (signed by the key being
+	// paired) and user plane.
+	if h.SensorPairing != nil {
+		registerSensorPairingRoutes(router, h.SensorPairing, authMiddleware, userSync, log)
 	}
 
 	// Sensor management routes (tenant from JWT token)
 	if h.Sensor != nil {
-		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, authMiddleware, userSync)
+		registerSensorManagementRoutes(router, h.Sensor, h.SensorContent, h.SensorResults, authMiddleware, userSync)
 	}
+
+	// The fleet: sensors (daemon mode) and CI pipelines (runner mode) in one
+	// read model (RFC-051).
+	registerFleetRoutes(router, h.Sensor, h.CIAdmin, h.ModuleGate, authMiddleware, userSync, log)
 
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
 	}
+	if h.ScanWindow != nil {
+		registerScanWindowRoutes(router, h.ScanWindow, authMiddleware, userSync)
+	}
 
-	// Initialize trigger rate limiter for pipeline/scan trigger endpoints
+	// Initialize trigger rate limiter for scan workflow/scan trigger endpoints
 	// This prevents abuse and ensures fair resource usage across tenants
 	var triggerRateLimiter *middleware.TriggerRateLimiter
 	if cfg.RateLimit.Enabled {
 		triggerRateLimiter = middleware.NewTriggerRateLimiter(middleware.DefaultTriggerRateLimitConfig(), log)
 	}
 
-	// Pipeline routes (tenant from JWT token)
-	if h.Pipeline != nil {
-		// Gate on scan_pipelines — the real module presets/subscriptions grant
-		// and the id the UI sidebar uses. The legacy bare "pipelines" module was
-		// a duplicate (deprecated in migration 000187); gating on it 403'd
-		// pipeline routes for any tenant on a bundle subscription.
-		registerPipelineRoutes(router, h.Pipeline, authMiddleware, userSync, triggerRateLimiter, h.ModuleGate.RequireModule(moduledom.ModuleScanPipelines))
+	// Scan workflow and scan run routes (tenant from JWT token)
+	if h.ScanWorkflow != nil {
+		registerScanWorkflowRoutes(router, h.ScanWorkflow, authMiddleware, userSync, h.ModuleGate)
 	}
 
 	// Scan Profile routes (tenant from JWT token)
@@ -718,12 +942,7 @@ func Register(
 
 	// Scan routes (tenant from JWT token)
 	if h.Scan != nil {
-		registerScanRoutes(router, h.Scan, h.CI, authMiddleware, userSync, triggerRateLimiter)
-	}
-
-	// Scan Session routes (tenant from JWT token for admin, API key for sensor)
-	if h.ScanSession != nil {
-		registerScanSessionRoutes(router, h.ScanSession, authMiddleware, userSync)
+		registerScanRoutes(router, h.Scan, authMiddleware, userSync, triggerRateLimiter)
 	}
 
 	// Scanner Template routes (tenant from JWT token)
@@ -732,6 +951,13 @@ func Register(
 	}
 
 	// Template Source routes (tenant from JWT token)
+	if h.ContentPack != nil {
+		registerContentPackRoutes(router, h.ContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+	if h.PlatformContentPack != nil {
+		registerPlatformContentPackRoutes(router, h.PlatformContentPack, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScannerTemplates))
+	}
+
 	if h.TemplateSource != nil {
 		registerTemplateSourceRoutes(router, h.TemplateSource, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleTemplateSources))
 	}
@@ -768,7 +994,7 @@ func Register(
 
 	// Credential Import routes (tenant from JWT token)
 	if h.CredentialImport != nil {
-		registerCredentialRoutes(router, h.CredentialImport, h.Ingest, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
+		registerCredentialRoutes(router, h.CredentialImport, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleCredentials))
 	}
 
 	// Group routes (Access Control - tenant from JWT token)
@@ -780,10 +1006,8 @@ func Register(
 	if h.UserDashboard != nil {
 		registerUserDashboardRoutes(router, h.UserDashboard, authMiddleware, userSync)
 	}
-
-	// Permission Set routes (Access Control - tenant from JWT token)
-	if h.PermissionSet != nil {
-		registerPermissionSetRoutes(router, h.PermissionSet, authMiddleware, userSync)
+	if h.SavedView != nil {
+		registerSavedViewRoutes(router, h.SavedView, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)
@@ -794,6 +1018,9 @@ func Register(
 	// Role routes (Access Control - tenant from JWT token)
 	if h.Role != nil {
 		registerRoleRoutes(router, h.Role, authMiddleware, userSync)
+	}
+	if h.ServiceAccount != nil {
+		registerServiceAccountRoutes(router, h.ServiceAccount, authMiddleware, userSync)
 	}
 
 	// Assignment Rule routes (Access Control - tenant from JWT token)
@@ -809,11 +1036,6 @@ func Register(
 	// API Key routes (tenant from JWT token)
 	if h.APIKey != nil {
 		registerAPIKeyRoutes(router, h.APIKey, authMiddleware, userSync)
-	}
-
-	// Webhook routes (tenant from JWT token)
-	if h.Webhook != nil {
-		registerWebhookRoutes(router, h.Webhook, authMiddleware, userSync)
 	}
 
 	// User Notification routes (tenant from JWT token, user-scoped)
@@ -832,8 +1054,8 @@ func Register(
 	}
 
 	// Platform Stats routes (tenant-scoped platform sensor statistics)
-	if h.PlatformStats != nil {
-		registerPlatformStatsRoutes(router, h.PlatformStats, authMiddleware, userSync)
+	if h.PlatformScanning != nil {
+		registerPlatformScanningRoutes(router, h.PlatformScanning, authMiddleware, userSync)
 	}
 
 	// ==========================================================================
@@ -841,18 +1063,14 @@ func Register(
 	// ==========================================================================
 	// These routes are for OpenCTEM platform administrators only.
 	// They manage shared infrastructure that serves all tenants.
-	registerAdminRoutes(router, h, authMiddleware, userSync)
+	registerAdminRoutes(router, h, middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log))
 
 	// ==========================================================================
 	// WebSocket Routes (protected with auth)
 	// ==========================================================================
 	// WebSocket endpoint for real-time features (activities, scans, notifications)
 	if h.WebSocket != nil {
-		var wsTicketMW Middleware
-		if h.WSTicketRedeemer != nil {
-			wsTicketMW = middleware.WSTicketAuth(h.WSTicketRedeemer, log)
-		}
-		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync, wsTicketMW)
+		registerWebSocketRoutes(router, h.WebSocket, authMiddleware, userSync)
 	}
 }
 
@@ -876,6 +1094,10 @@ func buildBaseMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middl
 	if ipAllowlistMiddleware != nil {
 		middlewares = append(middlewares, ipAllowlistMiddleware)
 	}
+	// Idle Free organization: changes refused until someone signs in.
+	if idleReadOnlyMiddleware != nil {
+		middlewares = append(middlewares, idleReadOnlyMiddleware)
+	}
 	return middlewares
 }
 
@@ -891,6 +1113,17 @@ var csrfProtectionMiddleware Middleware //nolint:gochecknoglobals // set once du
 // middleware.APIKeyAuthMiddleware.OrJWT). Set during Register when the API-key
 // service is wired; nil keeps the token-tenant chains JWT-only.
 var apiKeyOrJWT func(func(http.Handler) http.Handler) func(http.Handler) http.Handler //nolint:gochecknoglobals // set once during init
+
+// authRateLimitBackend is the shared store for the auth rate limits, set on
+// every Register from Handlers.AuthRateLimitBackend (nil = in-memory).
+var authRateLimitBackend middleware.AuthRateLimitBackend //nolint:gochecknoglobals // set once during init
+
+// newAuthRateLimiter builds the auth limiter for one group of routes. scope
+// keeps its budgets apart from other groups' in the shared store; the same
+// scope on another replica shares them.
+func newAuthRateLimiter(scope string) *middleware.AuthRateLimiter {
+	return middleware.NewDistributedAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil, authRateLimitBackend, scope)
+}
 
 // readRateLimitMiddleware is the per-user read endpoint rate limiter,
 // set during Register() if rate limiting is enabled. Applied automatically
@@ -913,6 +1146,10 @@ var activeMembershipFromJWTMiddleware Middleware //nolint:gochecknoglobals // se
 // Set once during Register; nil leaves the legacy embedded-JWT behavior.
 var permissionSyncMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// tenantPermissionChecker resolves a caller's permissions in the tenant named
+// by a /api/v1/tenants/{tenant}/... path (see tenantPerm).
+var tenantPermissionChecker middleware.TenantPermissionChecker //nolint:gochecknoglobals // set once during init
+
 // dataScopeGuardMiddleware enforces the Layer 2 data scope on every by-id
 // asset and finding route (see middleware.DataScopeGuard). It runs last on
 // the token-tenant chain, after auth, tenant, membership and permission sync
@@ -927,9 +1164,24 @@ var dataScopeGuardMiddleware Middleware //nolint:gochecknoglobals // set once du
 // available; nil leaves only the mint-time gate.
 var ssoEnforcementMiddleware Middleware //nolint:gochecknoglobals // set once during init
 
+// idleReadOnlyMiddleware refuses changes to an idle Free organization.
+var idleReadOnlyMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
 // ipAllowlistMiddleware enforces each organization's Security.IPWhitelist on
 // user sessions. Set once during Register; nil disables it (tests).
 var ipAllowlistMiddleware Middleware //nolint:gochecknoglobals // set once during init
+
+// stepUpChecker answers RequireRecentAuth (step-up re-authentication,
+// docs/architecture/step-up-reauth.md). Set once during Register from the
+// local auth handler; nil makes every step-up route refuse (fail closed).
+var stepUpChecker middleware.RecentAuthChecker //nolint:gochecknoglobals // set once during init
+
+// requireStepUp is the middleware for a sensitive route: the caller's session
+// must have signed in or stepped up within authapp.StepUpWindow, otherwise
+// 403 STEP_UP_REQUIRED. Mount it after the route's permission check.
+func requireStepUp() Middleware {
+	return middleware.RequireRecentAuth(stepUpChecker, authapp.StepUpWindow)
+}
 
 // tenantSecurityPolicyAdapter adapts tenant.Repository to
 // middleware.TenantSecurityPolicyProvider (the organization's security
@@ -948,7 +1200,9 @@ func (a tenantSecurityPolicyAdapter) SecuritySettings(ctx context.Context, tenan
 	if err != nil {
 		return tenant.SecuritySettings{}, err
 	}
-	return t.TypedSettings().Security, nil
+	// Strict: an unreadable security section is an error (the IP allowlist
+	// gate then denies), never the permissive defaults.
+	return t.SecuritySettingsStrict()
 }
 
 // tenantSSOEnforcedAdapter adapts tenant.Repository to
@@ -968,7 +1222,29 @@ func (a tenantSSOEnforcedAdapter) IsSSOEnforced(ctx context.Context, tenantID st
 	if err != nil {
 		return false, err
 	}
-	return t.TypedSettings().Security.SSOEnforced, nil
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.SSOEnforced, nil
+}
+
+// HasSSOException reports whether the member has an unexpired SSO exception
+// (RFC-058), read fresh from the tenant settings.
+func (a tenantSSOEnforcedAdapter) HasSSOException(ctx context.Context, tenantID, userID string) (bool, error) {
+	id, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false, err
+	}
+	t, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		return false, err
+	}
+	return sec.HasSSOException(userID, time.Now().UTC()), nil
 }
 
 // buildTokenTenantMiddlewares builds a middleware chain for token-based tenant routes.
@@ -1039,6 +1315,18 @@ func tenantOverlayMiddlewares() []Middleware {
 		mws = append(mws, readRateLimitMiddleware)
 	}
 	return mws
+}
+
+// realtimeMiddlewares is the chain for the WebSocket upgrade,
+// GET /api/v1/ws (RFC-045). The socket opens the tenant's real-time stream,
+// so the upgrade passes the same tenant gates as any tenant route: the
+// session (Authorization header or the auth_token cookie, revoked-session
+// check), SSO enforcement and the organization IP allowlist
+// (buildBaseMiddlewares), then RequireTenant, active membership and the read
+// rate limit (tenantOverlayMiddlewares). It stays session-only: unlike
+// buildTokenTenantMiddlewares it does not accept `oct_` API keys.
+func realtimeMiddlewares(authMiddleware, userSyncMiddleware Middleware) []Middleware {
+	return append(buildBaseMiddlewares(authMiddleware, userSyncMiddleware), tenantOverlayMiddlewares()...)
 }
 
 // ChainFunc wraps a handler function with middleware(s).

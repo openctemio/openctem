@@ -97,6 +97,18 @@ describe('ExposureSection', () => {
     render(<ExposureSection asset={makeAsset({ piiDataExposed: false, phiDataExposed: false })} />)
     expect(screen.getByText('None flagged')).toBeInTheDocument()
   })
+
+  it('shows the crown-jewel flag from the asset column, not from properties', () => {
+    const { unmount } = render(<ExposureSection asset={makeAsset({ isCrownJewel: true })} />)
+    expect(screen.getByText('Crown jewel').nextSibling).toHaveTextContent('Yes')
+    unmount()
+    render(
+      <ExposureSection
+        asset={makeAsset({ metadata: { is_crown_jewel: true } as unknown as Asset['metadata'] })}
+      />
+    )
+    expect(screen.queryByText('Crown jewel')).not.toBeInTheDocument()
+  })
 })
 
 describe('DiscoverySection', () => {
@@ -144,5 +156,34 @@ describe('PropertiesSection', () => {
   it('renders nothing when there are no properties', () => {
     const { container } = render(<PropertiesSection properties={{}} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('renders from the type schema: one labelled address list linked to the IP assets, the rest under Other', () => {
+    render(
+      <PropertiesSection
+        type="domain"
+        properties={{
+          ip: '198.51.100.20',
+          ip_addresses: ['198.51.100.20', '198.51.100.21'],
+          registrar: 'Example Registrar',
+          x_vendor_score: 7,
+        }}
+      />
+    )
+    expect(screen.getByText('IP addresses')).toBeInTheDocument()
+    expect(screen.queryByText('Ip')).not.toBeInTheDocument()
+    const link = screen.getByRole('link', { name: '198.51.100.20' })
+    expect(link).toHaveAttribute('href', '/assets?types=ip_address&q=198.51.100.20')
+    expect(screen.getAllByRole('link')).toHaveLength(2)
+    expect(screen.getByText('Registrar')).toBeInTheDocument()
+    expect(screen.getByText('Other')).toBeInTheDocument()
+    expect(screen.getByText('X vendor score')).toBeInTheDocument()
+  })
+
+  it('never links a url property that is not http(s)', () => {
+    render(
+      <PropertiesSection type="repository" properties={{ canonical_url: 'javascript:alert(1)' }} />
+    )
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 })

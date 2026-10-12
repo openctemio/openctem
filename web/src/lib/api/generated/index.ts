@@ -70,22 +70,27 @@ export type ApiError = Schemas['github_com_openctemio_openctem_api_pkg_apierror.
 export type AssetTypeResponse = Schemas['internal_infra_http_handler.AssetTypeResponse']
 export type AssetTypeCategoryResponse = Schemas['internal_infra_http_handler.CategoryResponse']
 
+// Asset type registry (RFC-042): GET /asset-types
+export type AssetTypeRegistryResponse =
+  Schemas['internal_infra_http_handler.AssetTypeRegistryResponse']
+export type AssetTypeDefinition =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_asset.TypeDefinition']
+export type AssetClassDefinition =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_asset.ClassDefinition']
+export type AssetLensDefinition =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_asset.LensDefinition']
+
 // Asset groups
 export type AssetGroupResponse = Schemas['internal_infra_http_handler.AssetGroupResponse']
 export type AssetGroupStatsResponse = Schemas['internal_infra_http_handler.AssetGroupStatsResponse']
 export type GroupAssetResponse = Schemas['internal_infra_http_handler.GroupAssetResponse']
 export type GroupFindingResponse = Schemas['internal_infra_http_handler.GroupFindingResponse']
 
-// Components (SBOM)
-export type ComponentResponse = Schemas['internal_infra_http_handler.ComponentResponse']
-export type ComponentStats =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.ComponentStats']
-export type EcosystemStats =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.EcosystemStats']
-export type LicenseStats =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.LicenseStats']
-export type VulnerableComponent =
-  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.VulnerableComponent']
+// Components (RFC-070)
+export type ComponentPackage =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.Package']
+export type ComponentSummary =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_component.Summary']
 
 // CTEM cycles — the close-time verdict on each charter success criterion.
 export type CtemCycleResponse = Schemas['internal_infra_http_handler.CTEMCycleResponse']
@@ -98,11 +103,11 @@ export type CriterionOutcome =
 
 // Credentials (leaked-credential inventory)
 export type CredentialItem =
-  Schemas['github_com_openctemio_openctem_api_internal_app.CredentialItem']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.CredentialItem']
 export type CredentialListResult =
-  Schemas['github_com_openctemio_openctem_api_internal_app.CredentialListResult']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.CredentialListResult']
 export type IdentityListResult =
-  Schemas['github_com_openctemio_openctem_api_internal_app.IdentityListResult']
+  Schemas['github_com_openctemio_openctem_api_internal_app_integration.IdentityListResult']
 export type IdentityExposure =
   Schemas['github_com_openctemio_openctem_api_internal_app_integration.IdentityExposure']
 export type CredentialImportResult =
@@ -121,15 +126,171 @@ export type FindingStatsResponse = Schemas['internal_infra_http_handler.FindingS
 export type VulnerabilityResponse = Schemas['internal_infra_http_handler.VulnerabilityResponse']
 export type DataFlowResponse = Schemas['internal_infra_http_handler.DataFlowResponse']
 export type BulkUpdateResponse = Schemas['internal_infra_http_handler.BulkUpdateResponse']
+// Continuous retest (RFC-039)
+export type FindingRetestResponse = Schemas['internal_infra_http_handler.FindingRetestResponse']
+export type FindingRetestListResponse =
+  Schemas['internal_infra_http_handler.FindingRetestListResponse']
+// Finding evidence (masked proof + audited reveal)
+export type FindingEvidenceItemResponse =
+  Schemas['internal_infra_http_handler.FindingEvidenceItemResponse']
+export type FindingEvidenceItemListResponse =
+  Schemas['internal_infra_http_handler.FindingEvidenceItemListResponse']
+export type RevealEvidenceResponse = Schemas['internal_infra_http_handler.RevealEvidenceResponse']
+export type EvidenceItem = Schemas['github_com_openctemio_openctem_api_pkg_domain_evidence.Item']
 
-// Scope (targets / exclusions / schedules)
+// Scope (targets / exclusions)
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']
 export type ScopeExclusionResponse = Schemas['internal_infra_http_handler.ScopeExclusionResponse']
-export type ScanScheduleResponse = Schemas['internal_infra_http_handler.ScanScheduleResponse']
 export type ScopeStatsResponse = Schemas['internal_infra_http_handler.ScopeStatsResponse']
-export type ScopeMatchResponse = Schemas['internal_infra_http_handler.ScopeMatchResponse']
+export type CheckScopeResponse = Schemas['internal_infra_http_handler.CheckScopeResponse']
+export type ScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
 export type ScopeBulkOperationResponse =
   Schemas['internal_infra_http_handler.ScopeBulkOperationResponse']
+export type BulkCreateScopeTargetsResponse =
+  Schemas['internal_infra_http_handler.BulkCreateScopeTargetsResponse']
+
+// Inventory vulnerability matching (RFC-066): an asset's software, its
+// matched CVEs and the organization's policy
+export type AssetSoftwareListResponse =
+  Schemas['internal_infra_http_handler.AssetSoftwareListResponse']
+export type AssetSoftwareResponse = Schemas['internal_infra_http_handler.AssetSoftwareResponse']
+export type AssetSoftwareMatchResponse =
+  Schemas['internal_infra_http_handler.AssetSoftwareMatchResponse']
+export type VulnMatchingSettings =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_tenant.VulnMatchingSettings']
 
 // Asset state history ("What changed")
 export type StateChangeResponse = Schemas['internal_infra_http_handler.StateChangeResponse']
+
+// Web surface (RFC-056): endpoints under origins, path patterns, the change feed
+export type WebEndpointResponse = Schemas['internal_infra_http_handler.WebEndpointResponse']
+export type WebEndpointParamResponse =
+  Schemas['internal_infra_http_handler.WebEndpointParamResponse']
+export type WebEndpointStatsResponse =
+  Schemas['internal_infra_http_handler.WebEndpointStatsResponse']
+export type WebOriginResponse = Schemas['internal_infra_http_handler.WebOriginResponse']
+export type WebPathPatternResponse = Schemas['internal_infra_http_handler.WebPathPatternResponse']
+export type WebEndpointEventResponse =
+  Schemas['internal_infra_http_handler.WebEndpointEventResponse']
+export type WebPathCatalogEntry =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_webendpoint.CatalogEntry']
+
+// Admin console: an organization's audit hash-chain
+export type AdminAuditChainStatusResponse =
+  Schemas['internal_infra_http_handler.AdminAuditChainStatusResponse']
+export type AdminAuditChainRebaselineRequest =
+  Schemas['internal_infra_http_handler.AdminAuditChainRebaselineRequest']
+export type AdminAuditChainRebaselineResponse =
+  Schemas['internal_infra_http_handler.AdminAuditChainRebaselineResponse']
+// Admin console: the request-access queue (Organizations > Access requests)
+export type AccessRequest = Schemas['internal_infra_http_handler.AccessRequestResponse']
+export type AccessRequestList = Schemas['internal_infra_http_handler.AccessRequestListResponse']
+export type ApproveAccessRequestInput = Schemas['internal_infra_http_handler.ApproveAccessRequest']
+export type ApproveAccessRequestResult =
+  Schemas['internal_infra_http_handler.ApproveAccessRequestResponse']
+// Plans and limits (console System > Plans and organization plans;
+// the organization Settings > Plan & usage)
+export type PlanDefaultsResponse = Schemas['internal_infra_http_handler.PlanDefaultsResponse']
+export type UpdatePlanDefaultsRequest =
+  Schemas['internal_infra_http_handler.UpdatePlanDefaultsRequest']
+export type PlanSummaryResponse = Schemas['internal_infra_http_handler.PlanSummaryResponse']
+export type PlanEffectiveLimit =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_plan.Effective']
+export type SetTenantPlanRequest = Schemas['internal_infra_http_handler.SetTenantPlanRequest']
+export type SetPlanOverrideRequest = Schemas['internal_infra_http_handler.SetPlanOverrideRequest']
+// Module entitlements (console System > Plans and an organization's modules)
+export type PlanModulesResponse = Schemas['internal_infra_http_handler.PlanModulesResponse']
+export type UpdatePlanModulesRequest =
+  Schemas['internal_infra_http_handler.UpdatePlanModulesRequest']
+export type AdminTenantModulesResponse =
+  Schemas['internal_infra_http_handler.AdminTenantModulesResponse']
+export type ModuleEntitlement =
+  Schemas['github_com_openctemio_openctem_api_internal_app_entitlement.ModuleEntitlement']
+export type SetModuleGrantRequest = Schemas['internal_infra_http_handler.SetModuleGrantRequest']
+export type DeleteModuleGrantRequest =
+  Schemas['internal_infra_http_handler.DeleteModuleGrantRequest']
+// Admin console: the sign-up policy (System > Sign-up)
+export type SignupPolicyResponse = Schemas['internal_infra_http_handler.SignupPolicyResponse']
+export type UpdateSignupPolicyRequest =
+  Schemas['internal_infra_http_handler.UpdateSignupPolicyRequest']
+// Admin console: the platform e-mail settings (System > E-mail, RFC-079)
+export type EmailSettingsResponse = Schemas['internal_infra_http_handler.EmailSettingsResponse']
+export type UpdateEmailSettingsRequest =
+  Schemas['internal_infra_http_handler.UpdateEmailSettingsRequest']
+// Admin console: the operator's legal information (System > Legal, RFC-079)
+export type LegalSettingsResponse = Schemas['internal_infra_http_handler.LegalSettingsResponse']
+export type UpdateLegalSettingsRequest =
+  Schemas['internal_infra_http_handler.UpdateLegalSettingsRequest']
+export type AuditChainSample =
+  Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
+export type AuditChainClass =
+  Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Class']
+
+/** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
+export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+export type EASMChangePage =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Page']
+export type EASMChange = Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Change']
+export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
+/** Lookalike-domain monitoring (RFC-083). */
+export type LookalikeWatchList = Schemas['internal_infra_http_handler.LookalikeWatchList']
+export type LookalikeWatch =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_lookalike.Watch']
+export type LookalikeCandidate =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_lookalike.CandidateRecord']
+export type LookalikeCandidateList = Schemas['internal_infra_http_handler.LookalikeCandidateList']
+/** GET /api/v1/easm/network-seeds (RFC-082). */
+export type EASMNetworkSeedList = Schemas['internal_infra_http_handler.EASMNetworkSeedList']
+export type EASMNetworkSeed =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SeedView']
+/** GET /api/v1/assets/{id}/web-evidence (RFC-081). */
+export type WebEvidenceList = Schemas['internal_infra_http_handler.WebEvidenceListResponse']
+export type WebEvidenceItem = Schemas['internal_infra_http_handler.WebEvidenceResponse']
+
+/** A scan run's tasks (RFC-046): GET /api/v1/scan-runs and /scan-runs/{id}. */
+export type RunTaskSummary = Schemas['internal_infra_http_handler.RunTaskSummaryResponse']
+export type RunTask = Schemas['internal_infra_http_handler.RunTaskResponse']
+/** GET /api/v1/scan-runs/{id}/tasks — one cursor page of a run's tasks. */
+export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageResponse']
+/** GET /api/v1/scan-runs/{id}/tasks/{task_id}/logs — the log lines a task's sensor sent. */
+export type RunTaskLogs = Schemas['internal_infra_http_handler.RunTaskLogsResponse']
+export type RunTaskLogLine = Schemas['internal_infra_http_handler.RunTaskLogLine']
+/** GET /api/v1/scan-runs/{id}/stages — how each stage of a run was planned. */
+export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
+export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']
+/** GET /api/v1/scan-runs/{id}/events — a run timeline (research/62 P0-4). */
+export type RunEvent = Schemas['internal_infra_http_handler.RunEvent']
+export type RunEventsResponse = Schemas['internal_infra_http_handler.RunEventsResponse']
+export type RunMap = Schemas['internal_infra_http_handler.RunMapResponse']
+export type RunMapNode = Schemas['internal_infra_http_handler.RunMapNode']
+export type RunStepOutputs = Schemas['internal_infra_http_handler.RunStepOutputsResponse']
+export type RunStepOutput = Schemas['internal_infra_http_handler.RunStepOutput']
+/** GET /api/v1/easm/candidates — the attribution review queue. */
+export type EASMReviewPage =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewPage']
+export type EASMReviewItem =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewItem']
+export type EASMVerifiedDomain = Schemas['internal_infra_http_handler.EASMVerifiedDomain']
+export type EASMVerifiedDomainList = Schemas['internal_infra_http_handler.EASMVerifiedDomainList']
+export type EASMReviewEvidence =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ReviewEvidence']
+/** POST /api/v1/easm/candidates/decisions */
+export type EASMDecisionResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
+/** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
+export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
+export type EASMSweepTicket =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SweepTicket']
+
+// Platform content packs (Console > System > Content packs).
+export type PlatformContentPackResponse =
+  Schemas['internal_infra_http_handler.PlatformContentPackResponse']
+export type PlatformContentPackListResponse =
+  Schemas['internal_infra_http_handler.PlatformContentPackListResponse']
+export type ContentChannelResponse = Schemas['internal_infra_http_handler.ContentChannelResponse']
+export type ContentSigningKeyResponse =
+  Schemas['internal_infra_http_handler.ContentSigningKeyResponse']
+export type ContentLintReport =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_contentpack.LintReport']
+export type ContentLintIssue =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_contentpack.Issue']

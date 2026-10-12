@@ -1,8 +1,9 @@
 import { z } from 'zod'
+import { RATED_CRITICALITY_LEVELS } from '@/lib/criticality'
 
 export const businessUnitStatusSchema = z.enum(['active', 'inactive', 'archived'])
 export const riskToleranceSchema = z.enum(['very_low', 'low', 'medium', 'high', 'very_high'])
-export const criticalitySchema = z.enum(['critical', 'high', 'medium', 'low'])
+export const criticalitySchema = z.enum(RATED_CRITICALITY_LEVELS)
 
 export const createBusinessUnitSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),

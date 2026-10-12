@@ -10,6 +10,9 @@ make swagger-install
 make swagger
 ```
 
+The spec is generated, not committed. `make generate` at the repository root
+also regenerates the web types from it; CI generates it on every run.
+
 ## Annotation Format
 
 ### Endpoint Annotations
@@ -57,7 +60,7 @@ type Response struct {
 
 ```
 api/openapi/
-└── swagger.yaml          # Auto-generated from code annotations (make swagger)
+└── swagger.yaml          # Generated from code annotations (make swagger); not committed
 ```
 
 ## Workflow

@@ -71,6 +71,7 @@ func New() *Validator {
 
 	// Register custom validators for asset domain
 	_ = v.RegisterValidation("asset_type", validateAssetType)
+	_ = v.RegisterValidation("asset_lens", validateAssetLens)
 	_ = v.RegisterValidation("criticality", validateCriticality)
 	_ = v.RegisterValidation("status", validateStatus)
 	_ = v.RegisterValidation("scope", validateScope)
@@ -140,6 +141,15 @@ func validateAssetType(fl validator.FieldLevel) bool {
 	}
 	_, err := asset.ParseAssetType(value)
 	return err == nil
+}
+
+// validateAssetLens validates that a string is a lens of the asset type registry.
+func validateAssetLens(fl validator.FieldLevel) bool {
+	value := fl.Field().String()
+	if value == "" {
+		return true
+	}
+	return asset.IsLens(value)
 }
 
 // validateCriticality validates that a string is a valid Criticality.

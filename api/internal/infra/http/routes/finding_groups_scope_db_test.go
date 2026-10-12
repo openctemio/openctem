@@ -22,16 +22,22 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/testdb"
+
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
+	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -49,7 +55,8 @@ type gsHarness struct {
 	findingB2, findingP          shared.ID // FB2: B1 sharing A's component; FP: pentest on A1
 	cveA, cveB, cveB2, cveP      string
 	componentA, componentB, camp shared.ID
-	vuln                         *app.VulnerabilityService
+	vuln                         *finding.VulnerabilityService
+	views                        *savedviewapp.Service
 }
 
 func newGroupScopeHarness(t *testing.T) *gsHarness {
@@ -64,7 +71,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	db := &postgres.DB{DB: ds.db}
 	log := logger.NewNop()
 	tenantRepo := postgres.NewTenantRepository(db)
-	enforcer := datascope.New(postgres.NewDataScopeRepository(db), dsStrictPolicy{ds},
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
@@ -80,14 +87,14 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	assetRepo := postgres.NewAssetRepository(db)
 	accessRepo := postgres.NewAccessControlRepository(db)
 
-	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
+	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetAccessControlRepository(accessRepo)
-	vulnSvc.SetDataScopePolicy(dsStrictPolicy{ds})
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
+	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 	h.vuln = vulnSvc
 
-	actionsSvc := app.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
+	actionsSvc := finding.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
 	actionsSvc.SetDataScope(enforcer)
 
 	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)
@@ -109,9 +116,22 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		}))
 	})
+	// Saved views (D15) on the same router, so ?view=<id> runs end to end.
+	viewSvc := savedviewapp.NewService(postgres.NewSavedViewRepository(db), map[string]savedviewapp.PageConfig{
+		savedview.PageFindings: {Registry: vulnerability.FindingFields, Permission: permission.FindingsRead.String(),
+			GroupBy: vulnerability.FindingGroupDimensions(), Extra: []string{"branch_status"}},
+	}, log)
+	viewSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	h.views = viewSvc
+	vulnHandler := handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log)
+	vulnHandler.SetSavedViews(viewSvc)
+	actionsHandler := handler.NewFindingActionsHandler(actionsSvc, log)
+	actionsHandler.SetSavedViews(viewSvc)
+
 	router := infrahttp.NewChiRouter()
-	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, validator.New(), log),
-		handler.NewFindingActionsHandler(actionsSvc, log), nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
+	registerVulnerabilityRoutes(router, vulnHandler,
+		actionsHandler, nil, handler.NewRemediationGroupHandler(remediationSvc), auth, nil)
+	registerSavedViewRoutes(router, handler.NewSavedViewHandler(viewSvc, log), auth, nil)
 	ds.srv.Close()
 	ds.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(ds.srv.Close)
@@ -132,13 +152,18 @@ func (h *gsHarness) seedGroups() {
 	h.t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, h.ownerB.String())
-		_, _ = h.db.ExecContext(ctx, `DELETE FROM components WHERE id IN ($1, $2)`, h.componentA.String(), h.componentB.String())
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM software_products WHERE id IN (SELECT product_id FROM software_versions WHERE id IN ($1, $2))`,
+			h.componentA.String(), h.componentB.String())
 	})
-	h.exec(`UPDATE assets SET owner_id = $2 WHERE id = $1`, h.assetA.String(), h.memberA.String())
-	h.exec(`UPDATE assets SET owner_id = $2 WHERE id = $1`, h.assetB.String(), h.ownerB.String())
+	// B1's owner is a member of the tenant: only a member can be a finding's
+	// assignee (assign-to-owners).
+	h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, h.ownerB.String(), t)
+	// Primary user owners (asset_owners is the only owner store; 'owner_ref'
+	// rows do not grant data scope, so the scope under test is unchanged).
+	h.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`, h.assetA.String(), h.memberA.String())
+	h.exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'primary', 'owner_ref')`, h.assetB.String(), h.ownerB.String())
 	for id, name := range map[shared.ID]string{h.componentA: gsComponentA, h.componentB: gsMarkerComponentB} {
-		h.exec(`INSERT INTO components (id, purl, name, version, ecosystem) VALUES ($1, $2, $3, '1.0.0', 'npm')`,
-			id.String(), "pkg:npm/"+name+"-"+id.String()+"@1.0.0", name)
+		testdb.InsertPackageVersion(h.t, h.db, "", id.String(), "pkg:npm/"+name+"-"+id.String()+"@1.0.0")
 	}
 	// FA: in scope. FB: out of scope, different value in every dimension.
 	h.exec(`UPDATE findings SET cve_id = $2, component_id = $3, finding_type = 'vulnerability' WHERE id = $1`,
@@ -252,7 +277,7 @@ func TestFindingGroups_AdminAndUnrestrictedMemberUnchanged(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		for _, d := range h.dimensions() {
 			res, _ := h.groups(who.user, who.admin, "group_by="+d.groupBy)
 			if got := gsKeys(res); strings.Join(got, ",") != strings.Join(d.all, ",") {
@@ -274,7 +299,6 @@ func TestFindingGroups_AdminAndUnrestrictedMemberUnchanged(t *testing.T) {
 
 func TestFindingGroups_PolicyNothing_MemberWithoutGroupSeesNoGroups(t *testing.T) {
 	h := newGroupScopeHarness(t)
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
 	for _, d := range h.dimensions() {
 		res, _ := h.groups(h.memberStrict, false, "group_by="+d.groupBy)
 		if len(res.Data) != 0 || res.Pagination.Total != 0 {
@@ -318,7 +342,7 @@ func TestFindingGroups_RelatedCVEsScoped(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		if status, body := h.do(who.user, who.admin, http.MethodGet, path, nil); status != http.StatusOK || !strings.Contains(body, h.cveB2) {
 			t.Errorf("%s related CVEs of %s = %d, want %s listed: %.300s", who.name, h.cveA, status, h.cveB2, body)
 		}

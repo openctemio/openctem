@@ -27,6 +27,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { KeyRound, Plus, Ban, Copy, Check, ShieldCheck } from 'lucide-react'
@@ -40,6 +42,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { toast } from 'sonner'
 import { usePermissions } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 
 function isActive(t: ScimToken): boolean {
   return t.status === 'active'
@@ -83,7 +86,7 @@ function GenerateTokenDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Generate SCIM token</DialogTitle>
           <DialogDescription>
@@ -91,17 +94,19 @@ function GenerateTokenDialog({
             users. The secret is shown once.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="scim-token-name">Name</Label>
-            <Input
-              id="scim-token-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Okta production"
-              required
-            />
-          </div>
+        <DialogForm onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="scim-token-name">Name</Label>
+              <Input
+                id="scim-token-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Okta production"
+                required
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -110,7 +115,7 @@ function GenerateTokenDialog({
               {isMutating ? 'Generating...' : 'Generate'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )
@@ -129,7 +134,7 @@ function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => v
   }
   return (
     <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Copy your SCIM token</DialogTitle>
           <DialogDescription>
@@ -137,12 +142,14 @@ function RevealTokenDialog({ value, onClose }: { value: string; onClose: () => v
             configuration as the bearer token, then store it securely.
           </DialogDescription>
         </DialogHeader>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <code className="flex-1 break-all text-xs">{value}</code>
-          <Button size="icon" variant="ghost" onClick={copy} title="Copy">
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          </Button>
-        </div>
+        <DialogBody>
+          <div className="bg-muted flex items-center gap-2 rounded-md p-3">
+            <code className="flex-1 break-all text-xs">{value}</code>
+            <Button size="icon" variant="ghost" onClick={copy} title="Copy">
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </Button>
+          </div>
+        </DialogBody>
         <DialogFooter>
           <Button onClick={onClose}>Done</Button>
         </DialogFooter>
@@ -210,6 +217,8 @@ function TokenActionsCell({
   canRevoke: boolean
 }) {
   const [revokeOpen, setRevokeOpen] = useState(false)
+  // `t` is the token here, so the translator is `tr`.
+  const { t: tr } = useTranslation()
   const { trigger: revoke, isMutating: revoking } = useRevokeScimToken()
 
   async function handleRevoke() {
@@ -232,8 +241,8 @@ function TokenActionsCell({
           allowed={canRevoke}
           reason={SCIM_OWNER_ONLY_REASON}
           onClick={() => setRevokeOpen(true)}
-          title={canRevoke ? 'Revoke' : undefined}
-          aria-label={`Revoke ${t.name}`}
+          title={canRevoke ? tr('confirm.revoke', 'Revoke') : undefined}
+          aria-label={tr('confirm.scimToken.revokeLabel', 'Revoke {name}', { name: t.name })}
           className="text-destructive hover:text-destructive"
         >
           <Ban className="h-4 w-4" />
@@ -242,11 +251,19 @@ function TokenActionsCell({
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
-        title={`Revoke ${t.name}?`}
-        desc="Your identity provider will immediately lose access to SCIM provisioning with this token. This cannot be undone."
-        confirmText={revoking ? 'Revoking...' : 'Revoke'}
+        title={tr('confirm.scimToken.revokeTitle', 'Revoke the SCIM token {name}?', {
+          name: t.name,
+        })}
+        desc={tr(
+          'confirm.scimToken.revokeDesc',
+          'Your identity provider loses access to SCIM provisioning with this token at once. This cannot be undone.'
+        )}
+        confirmText={
+          revoking ? tr('confirm.revoking', 'Revoking…') : tr('confirm.revoke', 'Revoke')
+        }
         destructive
         isLoading={revoking}
+        typeToConfirm={t.name}
         handleConfirm={() => void handleRevoke()}
       />
     </div>

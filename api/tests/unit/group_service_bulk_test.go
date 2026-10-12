@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	accesscontrolsvc "github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -180,8 +181,8 @@ func (m *mockGroupRepoForBulk) Create(_ context.Context, _ *group.Group) error {
 func (m *mockGroupRepoForBulk) GetBySlug(_ context.Context, _ shared.ID, _ string) (*group.Group, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error { return nil }
-func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID) error    { return nil }
+func (m *mockGroupRepoForBulk) Update(_ context.Context, _ *group.Group) error           { return nil }
+func (m *mockGroupRepoForBulk) Delete(_ context.Context, _ shared.ID, _ shared.ID) error { return nil }
 func (m *mockGroupRepoForBulk) List(_ context.Context, _ shared.ID, _ group.ListFilter) ([]*group.Group, error) {
 	return nil, nil
 }
@@ -222,26 +223,14 @@ func (m *mockGroupRepoForBulk) ListGroupsByUser(_ context.Context, _, _ shared.I
 func (m *mockGroupRepoForBulk) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
 	return nil, nil
 }
-func (m *mockGroupRepoForBulk) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForBulk) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-func (m *mockGroupRepoForBulk) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *mockGroupRepoForBulk) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*group.Group, error) {
-	return nil, nil
-}
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
-func newGroupServiceForBulk(groupRepo group.Repository, acRepo accesscontrol.Repository) *app.GroupService {
+func newGroupServiceForBulk(groupRepo group.Repository, acRepo accesscontrol.Repository) *accesscontrolsvc.GroupService {
 	log := logger.New(logger.Config{Level: "error"})
-	return app.NewGroupService(groupRepo, log, app.WithAccessControlRepository(acRepo))
+	return accesscontrolsvc.NewGroupService(groupRepo, log, accesscontrolsvc.WithAccessControlRepository(acRepo))
 }
 
 func makeTestGroup(tenantID shared.ID) *group.Group {
@@ -271,13 +260,13 @@ func TestBulkAssignAssets_Success(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      assetIDs,
 		OwnershipType: "primary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -321,13 +310,13 @@ func TestBulkAssignAssets_AllOwnershipTypes(t *testing.T) {
 			acRepo := &mockACRepoForBulk{}
 			svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-			input := app.BulkAssignAssetsInput{
+			input := accesscontrolsvc.BulkAssignAssetsInput{
 				GroupID:       g.ID().String(),
 				AssetIDs:      generateAssetIDs(2),
 				OwnershipType: ot,
 			}
 
-			result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+			result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 			if err != nil {
 				t.Fatalf("expected no error for ownership type %s, got: %v", ot, err)
 			}
@@ -343,13 +332,13 @@ func TestBulkAssignAssets_InvalidGroupID(t *testing.T) {
 	groupRepo := newMockGroupRepoForBulk()
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       "not-a-uuid",
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
 	}
 
-	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid group ID")
 	}
@@ -367,13 +356,13 @@ func TestBulkAssignAssets_InvalidOwnershipType(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "invalid_type",
 	}
 
-	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ownership type")
 	}
@@ -387,13 +376,13 @@ func TestBulkAssignAssets_GroupNotFound(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       shared.NewID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
 	}
 
-	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for missing group")
 	}
@@ -415,13 +404,13 @@ func TestBulkAssignAssets_MixedValidInvalidAssetIDs(t *testing.T) {
 	invalidIDs := []string{"not-a-uuid", "also-invalid", "bad"}
 	allIDs := append(validIDs, invalidIDs...)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      allIDs,
 		OwnershipType: "primary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error (partial success), got: %v", err)
 	}
@@ -456,13 +445,13 @@ func TestBulkAssignAssets_RepoError(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(5),
 		OwnershipType: "primary",
 	}
 
-	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error on repo failure")
 	}
@@ -479,14 +468,14 @@ func TestBulkAssignAssets_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
 	}
 
 	// Refresh errors should NOT block the bulk assign operation
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh errors should not block, got: %v", err)
 	}
@@ -507,15 +496,15 @@ func TestBulkAssignAssets_AccessControlRepoNotConfigured(t *testing.T) {
 	groupRepo.addGroup(g)
 	// Create service WITHOUT access control repo
 	log := logger.New(logger.Config{Level: "error"})
-	svc := app.NewGroupService(groupRepo, log) // no WithAccessControlRepository
+	svc := accesscontrolsvc.NewGroupService(groupRepo, log) // no WithAccessControlRepository
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(3),
 		OwnershipType: "primary",
 	}
 
-	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{})
+	_, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error when access control repo not configured")
 	}
@@ -531,13 +520,13 @@ func TestBulkAssignAssets_LargeDataset(t *testing.T) {
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
 	// Test with 100 assets (reasonable for unit test)
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(100),
 		OwnershipType: "secondary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error for 100 assets, got: %v", err)
 	}
@@ -561,13 +550,13 @@ func TestBulkAssignAssets_PartialBulkInsert(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrolsvc.BulkAssignAssetsInput{
 		GroupID:       g.ID().String(),
 		AssetIDs:      generateAssetIDs(5),
 		OwnershipType: "primary",
 	}
 
-	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	result, err := svc.BulkAssignAssets(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -592,13 +581,13 @@ func TestAssignAsset_UsesIncrementalRefresh(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AssignAssetInput{
+	input := accesscontrolsvc.AssignAssetInput{
 		GroupID:       g.ID().String(),
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "primary",
 	}
 
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -620,14 +609,14 @@ func TestAssignAsset_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AssignAssetInput{
+	input := accesscontrolsvc.AssignAssetInput{
 		GroupID:       g.ID().String(),
 		AssetID:       shared.NewID().String(),
 		OwnershipType: "primary",
 	}
 
 	// Refresh error should NOT block the assign operation
-	err := svc.AssignAsset(context.Background(), input, shared.NewID(), app.AuditContext{TenantID: tenantID.String()})
+	err := svc.AssignAsset(context.Background(), input, shared.NewID(), audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh error should not block assign, got: %v", err)
 	}
@@ -646,12 +635,12 @@ func TestUnassignAsset_UsesIncrementalRefresh(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.UnassignAssetInput{
+	input := accesscontrolsvc.UnassignAssetInput{
 		GroupID: g.ID().String(),
 		AssetID: shared.NewID().String(),
 	}
 
-	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	err := svc.UnassignAsset(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -673,12 +662,12 @@ func TestUnassignAsset_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.UnassignAssetInput{
+	input := accesscontrolsvc.UnassignAssetInput{
 		GroupID: g.ID().String(),
 		AssetID: shared.NewID().String(),
 	}
 
-	err := svc.UnassignAsset(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	err := svc.UnassignAsset(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh error should not block unassign, got: %v", err)
 	}
@@ -699,13 +688,13 @@ func TestAddMember_UsesIncrementalRefresh(t *testing.T) {
 	acRepo := &mockACRepoForBulk{}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrolsvc.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  userID,
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	_, err := svc.AddMember(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -728,13 +717,13 @@ func TestAddMember_RefreshErrorNonBlocking(t *testing.T) {
 	}
 	svc := newGroupServiceForBulk(groupRepo, acRepo)
 
-	input := app.AddGroupMemberInput{
+	input := accesscontrolsvc.AddGroupMemberInput{
 		GroupID: g.ID().String(),
 		UserID:  shared.NewID(),
 		Role:    "member",
 	}
 
-	_, err := svc.AddMember(context.Background(), input, app.AuditContext{TenantID: tenantID.String()})
+	_, err := svc.AddMember(context.Background(), input, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("refresh error should not block member add, got: %v", err)
 	}
@@ -764,7 +753,7 @@ func TestRemoveMember_UsesIncrementalRefresh(t *testing.T) {
 	ownerMember, _ := group.NewMember(g.ID(), ownerID, group.MemberRoleOwner, nil)
 	groupRepo.members[g.ID()] = []*group.Member{ownerMember, member}
 
-	err := svc.RemoveMember(context.Background(), g.ID().String(), memberID, app.AuditContext{TenantID: tenantID.String()})
+	err := svc.RemoveMember(context.Background(), g.ID().String(), memberID, audit.AuditContext{TenantID: tenantID.String()})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

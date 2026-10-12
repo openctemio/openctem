@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	ts "github.com/openctemio/openctem/api/pkg/domain/templatesource"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,6 +20,7 @@ import (
 
 // TemplateSourceHandler handles HTTP requests for template sources.
 type TemplateSourceHandler struct {
+	configAuditor
 	service   *template.SourceService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -173,6 +174,9 @@ func (h *TemplateSourceHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	created := toTemplateSourceResponse(source)
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceCreated, auditdom.ResourceTypeTemplateSource, created.ID, created.Name,
+		nil, created, auditdom.SeverityMedium, "Template source created")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -221,7 +225,7 @@ func (h *TemplateSourceHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Param        template_type  query     string  false  "Filter by template type (nuclei, semgrep, betterleaks)"
 // @Param        enabled        query     bool    false  "Filter by enabled status"
 // @Param        page           query     int     false  "Page number"
-// @Param        page_size      query     int     false  "Page size"
+// @Param        per_page       query     int     false  "Page size (max 100)"
 // @Param        sort_by        query     string  false  "Sort by field"
 // @Param        sort_order     query     string  false  "Sort order (asc, desc)"
 // @Success      200  {object}  ListSourcesResponse
@@ -249,16 +253,11 @@ func (h *TemplateSourceHandler) List(w http.ResponseWriter, r *http.Request) {
 		enabled := enabledStr == queryParamTrue
 		input.Enabled = &enabled
 	}
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if page, err := strconv.Atoi(pageStr); err == nil {
-			input.Page = page
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pageSizeStr := r.URL.Query().Get("page_size"); pageSizeStr != "" {
-		if pageSize, err := strconv.Atoi(pageSizeStr); err == nil {
-			input.PageSize = pageSize
-		}
-	}
+	input.Page, input.PageSize = paging.Page, paging.PerPage
 
 	result, err := h.service.ListSources(r.Context(), input)
 	if err != nil {
@@ -348,11 +347,18 @@ func (h *TemplateSourceHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Audit:           h.buildAuditContext(r),
 	}
 
+	var before any
+	if prev, gerr := h.service.GetSource(r.Context(), input.TenantID, input.SourceID); gerr == nil {
+		before = toTemplateSourceResponse(prev)
+	}
 	source, err := h.service.UpdateSource(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := toTemplateSourceResponse(source)
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeTemplateSource, updated.ID, updated.Name,
+		before, updated, auditdom.SeverityMedium, "Template source updated")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateSourceResponse(source))
@@ -380,10 +386,18 @@ func (h *TemplateSourceHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	tenantID := middleware.GetTenantID(r.Context())
 
+	var before any
+	name := ""
+	if prev, gerr := h.service.GetSource(r.Context(), tenantID, sourceID); gerr == nil {
+		view := toTemplateSourceResponse(prev)
+		before, name = view, view.Name
+	}
 	if err := h.service.DeleteSource(r.Context(), tenantID, sourceID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceDeleted, auditdom.ResourceTypeTemplateSource, sourceID, name,
+		before, nil, auditdom.SeverityMedium, "Template source deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -415,6 +429,8 @@ func (h *TemplateSourceHandler) Enable(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeTemplateSource, sourceID, source.Name,
+		map[string]any{"enabled": false}, map[string]any{"enabled": true}, auditdom.SeverityMedium, "Template source enabled")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateSourceResponse(source))
@@ -447,6 +463,8 @@ func (h *TemplateSourceHandler) Disable(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionRuleSourceUpdated, auditdom.ResourceTypeTemplateSource, sourceID, source.Name,
+		map[string]any{"enabled": true}, map[string]any{"enabled": false}, auditdom.SeverityMedium, "Template source disabled")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toTemplateSourceResponse(source))
@@ -495,9 +513,9 @@ func toTemplateSourceResponse(s *ts.TemplateSource) *TemplateSourceResponse {
 		Enabled:         s.Enabled,
 		AutoSyncOnScan:  s.AutoSyncOnScan,
 		CacheTTLMinutes: s.CacheTTLMinutes,
-		GitConfig:       s.GitConfig,
+		GitConfig:       maskedGitConfig(s.GitConfig),
 		S3Config:        s.S3Config,
-		HTTPConfig:      s.HTTPConfig,
+		HTTPConfig:      maskedHTTPConfig(s.HTTPConfig),
 		LastSyncHash:    s.LastSyncHash,
 		LastSyncStatus:  string(s.LastSyncStatus),
 		LastSyncError:   s.LastSyncError,
@@ -585,4 +603,39 @@ func (h *TemplateSourceHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// secretHeaderMask replaces a credential header value in responses.
+const secretHeaderMask = "********"
+
+// maskedGitConfig returns a copy with any password embedded in the URL
+// hidden. Sources stored before the https/no-credentials rule may still hold
+// "https://user:token@host/..."; viewers of the source must not read it.
+func maskedGitConfig(c *ts.GitSourceConfig) *ts.GitSourceConfig {
+	if c == nil {
+		return nil
+	}
+	out := *c
+	out.URL = ts.MaskedURL(c.URL)
+	return &out
+}
+
+// maskedHTTPConfig returns a copy with credential headers and any password in
+// the URL hidden (legacy rows; new ones are refused at write).
+func maskedHTTPConfig(c *ts.HTTPSourceConfig) *ts.HTTPSourceConfig {
+	if c == nil {
+		return nil
+	}
+	out := *c
+	out.URL = ts.MaskedURL(c.URL)
+	if len(c.Headers) > 0 {
+		out.Headers = make(map[string]string, len(c.Headers))
+		for k, v := range c.Headers {
+			if ts.IsSecretHeader(k) {
+				v = secretHeaderMask
+			}
+			out.Headers[k] = v
+		}
+	}
+	return &out
 }

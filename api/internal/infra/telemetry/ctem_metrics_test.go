@@ -37,11 +37,11 @@ func TestAllStages_Canonical(t *testing.T) {
 
 func TestObserveStageIn_IncrementsCounter(t *testing.T) {
 	tid := "t-" + t.Name()
+	c := stageFindingsIn.WithLabelValues(string(StagePrioritization), "P0")
+	before := testutil.ToFloat64(c)
 	ObserveStageIn(StagePrioritization, tid, "P0")
 	ObserveStageIn(StagePrioritization, tid, "P0")
-	got := testutil.ToFloat64(stageFindingsIn.WithLabelValues(
-		string(StagePrioritization), tid, "P0",
-	))
+	got := testutil.ToFloat64(c) - before
 	if got != 2 {
 		t.Fatalf("counter = %v, want 2", got)
 	}
@@ -52,10 +52,10 @@ func TestObserveStageIn_EmptyPriorityBecomesUnclassified(t *testing.T) {
 	// counted — but under a predictable "unclassified" label so the
 	// Grafana panel doesn't render an empty string.
 	tid := "t-" + t.Name()
+	c := stageFindingsIn.WithLabelValues(string(StageDiscovery), "unclassified")
+	before := testutil.ToFloat64(c)
 	ObserveStageIn(StageDiscovery, tid, "")
-	got := testutil.ToFloat64(stageFindingsIn.WithLabelValues(
-		string(StageDiscovery), tid, "unclassified",
-	))
+	got := testutil.ToFloat64(c) - before
 	if got != 1 {
 		t.Fatalf("unclassified counter = %v, want 1", got)
 	}
@@ -63,19 +63,18 @@ func TestObserveStageIn_EmptyPriorityBecomesUnclassified(t *testing.T) {
 
 func TestObserveStageOut_IncrementsByOutcome(t *testing.T) {
 	tid := "t-" + t.Name()
+	advC := stageFindingsOut.WithLabelValues(string(StageValidation), string(OutcomeAdvanced))
+	failC := stageFindingsOut.WithLabelValues(string(StageValidation), string(OutcomeFailed))
+	advBefore, failBefore := testutil.ToFloat64(advC), testutil.ToFloat64(failC)
 	ObserveStageOut(StageValidation, tid, OutcomeAdvanced)
 	ObserveStageOut(StageValidation, tid, OutcomeFailed)
 	ObserveStageOut(StageValidation, tid, OutcomeAdvanced)
 
-	adv := testutil.ToFloat64(stageFindingsOut.WithLabelValues(
-		string(StageValidation), tid, string(OutcomeAdvanced),
-	))
+	adv := testutil.ToFloat64(advC) - advBefore
 	if adv != 2 {
 		t.Errorf("advanced counter = %v, want 2", adv)
 	}
-	fail := testutil.ToFloat64(stageFindingsOut.WithLabelValues(
-		string(StageValidation), tid, string(OutcomeFailed),
-	))
+	fail := testutil.ToFloat64(failC) - failBefore
 	if fail != 1 {
 		t.Errorf("failed counter = %v, want 1", fail)
 	}
@@ -121,7 +120,9 @@ func TestMetricNames_Stable(t *testing.T) {
 
 	cases := []struct {
 		name string
-		col  interface{ Collect(ch chan<- prometheusMetric) }
+		col  interface {
+			Collect(ch chan<- prometheusMetric)
+		}
 	}{}
 	// CollectAndCount accepts any prometheus.Collector; we invoke it
 	// through the concrete vars so the import-identity check works.

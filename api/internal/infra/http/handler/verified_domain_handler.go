@@ -5,7 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -18,18 +19,19 @@ import (
 // VerifiedDomainHandler handles tenant-scoped domain-ownership verification.
 type VerifiedDomainHandler struct {
 	service *domainverify.Service
-	audit   *app.AuditService
+	audit   *auditsvc.AuditService
 	logger  *logger.Logger
+	changes *auth.SSOChangeService
 }
 
 // SetAuditService records verified-domain changes in the organization's audit
 // log.
-func (h *VerifiedDomainHandler) SetAuditService(svc *app.AuditService) {
+func (h *VerifiedDomainHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
-func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) app.AuditEvent {
-	return app.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
+func domainAuditEvent(action audit.Action, vd *verifieddomain.VerifiedDomain, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeVerifiedDomain, vd.ID().String()).
 		WithResourceName(vd.Domain()).
 		WithMessage(message).
 		WithMetadata("domain", vd.Domain()).
@@ -51,14 +53,27 @@ type AddDomainRequest struct {
 
 // VerifiedDomainResponse is the JSON representation of a verified-domain row.
 type VerifiedDomainResponse struct {
-	ID            string                 `json:"id"`
-	Domain        string                 `json:"domain"`
-	Status        string                 `json:"status"`
+	ID     string `json:"id"`
+	Domain string `json:"domain"`
+	Status string `json:"status"`
+	// Purpose: sso (admits SSO JIT and SCIM users) or easm (the organization
+	// verified it itself for attack-surface management; admits nobody).
+	// Adding an easm domain here makes it sso (research/22 E6).
+	Purpose string `json:"purpose"`
+	// ClaimConflict: another organization also held this domain verified for
+	// SSO when domain claims became exclusive. Both keep working until a
+	// platform administrator removes one of the claims.
+	ClaimConflict bool                   `json:"claim_conflict"`
 	Instructions  domainverify.TXTRecord `json:"instructions"`
-	VerifiedAt    *string                `json:"verified_at,omitempty"`
-	LastCheckedAt *string                `json:"last_checked_at,omitempty"`
-	CreatedAt     string                 `json:"created_at"`
-	UpdatedAt     string                 `json:"updated_at"`
+	// JITEnabled: SSO admits new people on this domain (RFC-058).
+	JITEnabled bool `json:"jit_enabled"`
+	// JITRole: the role they get (viewer or member); empty uses the
+	// identity provider's default.
+	JITRole       string  `json:"jit_role,omitempty"`
+	VerifiedAt    *string `json:"verified_at,omitempty"`
+	LastCheckedAt *string `json:"last_checked_at,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 // AddDomain adds a domain and returns the DNS TXT record to publish.
@@ -206,9 +221,8 @@ func (h *VerifiedDomainHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainDeleted, removed,
 			"Domain '"+removed.Domain()+"' removed"))
 	} else {
-		logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-			app.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
-				WithMessage("Verified domain removed"))
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOVerifiedDomainDeleted, audit.ResourceTypeVerifiedDomain, id.String()).
+			WithMessage("Verified domain removed"))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -237,6 +251,8 @@ func (h *VerifiedDomainHandler) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, verifieddomain.ErrNotFound):
 		apierror.NotFound("Domain not found").WriteJSON(w)
+	case errors.Is(err, verifieddomain.ErrDomainClaimed):
+		apierror.Conflict("This domain is verified by another organization. A claim can move only 7 days after that organization's DNS proof lapses.").WriteJSON(w)
 	case errors.Is(err, verifieddomain.ErrAlreadyExists):
 		apierror.Conflict("Domain already added for this organization").WriteJSON(w)
 	case errors.Is(err, verifieddomain.ErrBlockedDomain):
@@ -252,12 +268,16 @@ func (h *VerifiedDomainHandler) handleError(w http.ResponseWriter, err error) {
 func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverify.TXTRecord) VerifiedDomainResponse {
 	const layout = "2006-01-02T15:04:05Z"
 	resp := VerifiedDomainResponse{
-		ID:           vd.ID().String(),
-		Domain:       vd.Domain(),
-		Status:       string(vd.Status()),
-		Instructions: txt,
-		CreatedAt:    vd.CreatedAt().Format(layout),
-		UpdatedAt:    vd.UpdatedAt().Format(layout),
+		ID:            vd.ID().String(),
+		Domain:        vd.Domain(),
+		Status:        string(vd.Status()),
+		Purpose:       string(vd.Purpose()),
+		ClaimConflict: vd.ClaimConflict(),
+		Instructions:  txt,
+		JITEnabled:    jitOn(vd),
+		JITRole:       jitRoleOf(vd),
+		CreatedAt:     vd.CreatedAt().Format(layout),
+		UpdatedAt:     vd.UpdatedAt().Format(layout),
 	}
 	if t := vd.VerifiedAt(); t != nil {
 		s := t.Format(layout)
@@ -269,3 +289,75 @@ func toVerifiedDomainResponse(vd *verifieddomain.VerifiedDomain, txt domainverif
 	}
 	return resp
 }
+
+func jitOn(vd *verifieddomain.VerifiedDomain) bool {
+	on, _ := vd.JIT()
+	return on
+}
+
+func jitRoleOf(vd *verifieddomain.VerifiedDomain) string {
+	_, role := vd.JIT()
+	return role
+}
+
+// UpdateDomainJITRequest sets a domain's just-in-time provisioning.
+type UpdateDomainJITRequest struct {
+	JITEnabled bool   `json:"jit_enabled"`
+	JITRole    string `json:"jit_role"`
+}
+
+// UpdateJIT sets whether SSO admits new people on the domain and with which
+// role (viewer or member; administrators are never provisioned).
+// @Summary Set a verified domain's just-in-time provisioning
+// @Description Platform admin console (RFC-022, RFC-058): per-domain JIT for an organization with several SSO domains.
+// @Tags Admin Organization SSO
+// @Accept json
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Domain ID"
+// @Param body body UpdateDomainJITRequest true "JIT settings"
+// @Success 200 {object} VerifiedDomainResponse
+// @Success 202 {object} SSOChangeResponse "Raising provisioning waits for an owner's approval"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/verified-domains/{id} [patch]
+func (h *VerifiedDomainHandler) UpdateJIT(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.tenantID(w, r)
+	if !ok {
+		return
+	}
+	id, ok := h.pathID(w, r)
+	if !ok {
+		return
+	}
+	var req UpdateDomainJITRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	// Raising provisioning from the admin console waits for an owner of the
+	// organization (RFC-058); lowering it applies at once. Fail closed when
+	// the approval service is missing.
+	by := ssoChangeRequester(r)
+	if by == nil || h.changes == nil {
+		writeSSOChangeApprovalUnavailable(w)
+		return
+	}
+	res, vd, err := h.changes.SubmitDomainJIT(r.Context(), tenantID, id, req.JITEnabled, req.JITRole, *by)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	if !res.Applied {
+		writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+		return
+	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, domainAuditEvent(audit.ActionSSOVerifiedDomainJITChanged, vd,
+		"Just-in-time provisioning of domain '"+vd.Domain()+"' changed").
+		WithMetadata("jit_enabled", req.JITEnabled).WithMetadata("jit_role", req.JITRole))
+	txt := domainverify.Instructions(vd.Domain(), vd.VerificationToken())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toVerifiedDomainResponse(vd, txt))
+}
+
+// SetChangeApproval wires the owner approval of provisioning raises (RFC-058).
+func (h *VerifiedDomainHandler) SetChangeApproval(svc *auth.SSOChangeService) { h.changes = svc }

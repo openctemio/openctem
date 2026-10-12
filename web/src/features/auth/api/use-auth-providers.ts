@@ -11,6 +11,8 @@ import useSWR, { type SWRConfiguration } from 'swr'
 
 import { get } from '@/lib/api/client'
 
+import type { PasswordPolicy } from '../lib/password-policy'
+
 // ============================================
 // TYPES
 // ============================================
@@ -32,6 +34,12 @@ export interface AuthProvidersResponse {
   registration_enabled?: boolean
   /** Who may create organizations (server policy). */
   tenant_creation_mode?: string
+  /** Whether people who cannot sign up may request an organization. */
+  request_access?: boolean
+  /** The password rules the server enforces and the reset-link lifetime. */
+  password_policy?: PasswordPolicy
+  /** Turnstile site key; set when the sign-up forms must pass a CAPTCHA. */
+  captcha_site_key?: string
 }
 
 // ============================================
@@ -63,9 +71,21 @@ const defaultConfig: SWRConfiguration = {
  * Fetch configured auth providers (public, no auth required).
  * Consumers should render social buttons only for providers reported `true`.
  */
-export function useAuthProviders(config?: SWRConfiguration) {
-  return useSWR<AuthProvidersResponse>(URL, (url: string) => get<AuthProvidersResponse>(url), {
-    ...defaultConfig,
-    ...config,
-  })
+export function useAuthProviders(config?: SWRConfiguration, enabled = true) {
+  return useSWR<AuthProvidersResponse>(
+    enabled ? URL : null,
+    (url: string) => get<AuthProvidersResponse>(url),
+    {
+      ...defaultConfig,
+      ...config,
+    }
+  )
+}
+
+/**
+ * The password policy the server enforces (undefined until it is loaded).
+ * Forms state and pre-check it from here, never from their own constants.
+ */
+export function usePasswordPolicy(): PasswordPolicy | undefined {
+  return useAuthProviders().data?.password_policy
 }

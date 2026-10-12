@@ -9,17 +9,6 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
 import { DataTable, EmptyState } from '@/features/shared'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { Can } from '@/lib/permissions'
@@ -27,6 +16,8 @@ import { useReportSchedules } from '../hooks/use-report-schedules'
 import { humanizeCron } from '../lib/cron'
 import { NewScheduleDialog } from './new-schedule-dialog'
 import type { ReportSchedule } from '../types'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 const REPORT_TYPE_LABELS: Record<string, string> = {
   executive_summary: 'Executive summary',
@@ -65,10 +56,12 @@ function LastRunCell({ schedule }: { schedule: ReportSchedule }) {
 }
 
 export function ReportSchedulesSection() {
+  const { t } = useTranslation()
   const { schedules, isLoading, error, createSchedule, toggleSchedule, deleteSchedule } =
     useReportSchedules()
   const [pendingToggle, setPendingToggle] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ReportSchedule | null>(null)
 
   const handleToggle = useCallback(
     async (schedule: ReportSchedule) => {
@@ -90,6 +83,7 @@ export function ReportSchedulesSection() {
       setDeletingId(id)
       try {
         await deleteSchedule(id)
+        setPendingDelete(null)
         toast.success('Schedule deleted')
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to delete schedule')
@@ -178,33 +172,18 @@ export function ReportSchedulesSection() {
         const schedule = row.original
         return (
           <Can permission="reports:write">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={deletingId === schedule.id}
-                  aria-label={`Delete ${schedule.name}`}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete schedule?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    &ldquo;{schedule.name}&rdquo; will stop sending. This cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => handleDelete(schedule.id)}>
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              disabled={deletingId === schedule.id}
+              aria-label={t('confirm.reportSchedule.deleteLabel', 'Delete {name}', {
+                name: schedule.name,
+              })}
+              onClick={() => setPendingDelete(schedule)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
           </Can>
         )
       },
@@ -217,7 +196,10 @@ export function ReportSchedulesSection() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold">Scheduled reports</h2>
           <p className="text-sm text-muted-foreground">
-            Recurring finding-summary digests emailed to recipients on a cron cadence.
+            {t(
+              'reports.schedulesHint',
+              'Finding-summary digests emailed to recipients on a schedule.'
+            )}
           </p>
         </div>
         {schedules.length > 0 && (
@@ -262,6 +244,21 @@ export function ReportSchedulesSection() {
           emptyMessage="No scheduled reports"
         />
       )}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => !o && setPendingDelete(null)}
+        destructive
+        title={t('confirm.reportSchedule.deleteTitle', 'Delete the schedule "{name}"?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.reportSchedule.deleteDesc',
+          'It stops sending at once. Reports already sent are not affected. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
+        isLoading={deletingId !== null}
+        handleConfirm={() => (pendingDelete ? handleDelete(pendingDelete.id) : undefined)}
+      />
     </section>
   )
 }

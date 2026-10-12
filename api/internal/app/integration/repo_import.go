@@ -86,7 +86,7 @@ func (s *IntegrationService) ImportSCMRepositories(ctx context.Context, input Im
 	var branchClient scm.Client
 	if s.branchRepo != nil {
 		if intgID, err := shared.IDFromString(input.IntegrationID); err == nil {
-			branchClient, _ = s.scmClientForIntegration(ctx, intgID)
+			branchClient, _ = s.scmClientForIntegration(ctx, tenantID, intgID)
 		}
 	}
 
@@ -242,10 +242,12 @@ func applyRepoFields(ext *assetdom.RepositoryExtension, r scm.Repository, visibi
 	}
 }
 
-// scmClientForIntegration builds an SCM client for an integration (resolving
-// org, base URL and decrypted credentials), mirroring ListSCMRepositories.
-func (s *IntegrationService) scmClientForIntegration(ctx context.Context, intgID shared.ID) (scm.Client, error) {
-	intg, err := s.repo.GetByID(ctx, intgID)
+// scmClientForIntegration builds an SCM client for an integration of the
+// tenant (resolving org, base URL and decrypted credentials), mirroring
+// ListSCMRepositories. The lookup is tenant-scoped: an integration of another
+// tenant is not found, so its credentials are never decrypted here.
+func (s *IntegrationService) scmClientForIntegration(ctx context.Context, tenantID, intgID shared.ID) (scm.Client, error) {
+	intg, err := s.repo.GetByTenantAndID(ctx, tenantID, intgID)
 	if err != nil {
 		return nil, err
 	}
@@ -260,10 +262,14 @@ func (s *IntegrationService) scmClientForIntegration(ctx context.Context, intgID
 	if baseURL == "" {
 		baseURL = s.getDefaultBaseURL(intg.Provider())
 	}
+	token, err := s.decryptCredentials(intg)
+	if err != nil {
+		return nil, err
+	}
 	return s.scmFactory.CreateClient(scm.Config{
 		Provider:     toSCMProvider(intg.Provider()),
 		BaseURL:      baseURL,
-		AccessToken:  s.decryptCredentials(intg),
+		AccessToken:  token,
 		Organization: scmOrg,
 		AuthType:     scm.AuthType(intg.AuthType()),
 	})

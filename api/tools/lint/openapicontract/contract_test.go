@@ -41,7 +41,7 @@ func paths(t *testing.T) (handlerDir, routesDir, spec, baseline string) {
 
 // TestSpecMatchesAnnotations is what makes the spec a generated artifact rather
 // than a hand-maintained document. It fails if a path was hand-added to
-// swagger.yaml, and if a handler's @Router changed without `make swagger`.
+// swagger.yaml, and if swag skipped a handler's @Router.
 //
 // This replaces a byte-for-byte diff of the regenerated spec. That was tried
 // and does not hold: swag emits `format: int64` for some map[string]int64
@@ -62,7 +62,7 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	if len(specOps) == 0 {
 		t.Fatal("spec declares no operations — the parse is broken, not the code")
@@ -75,8 +75,8 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 		}
 	}
 	if len(missing) > 0 {
-		t.Errorf("%d operation(s) are annotated but absent from the committed spec.\n"+
-			"The spec is generated: run `make swagger` and commit the result.\n  %s",
+		t.Errorf("%d operation(s) are annotated but absent from the generated spec.\n"+
+			"swag did not read them: regenerate (`make swagger`) and check its log.\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
 
@@ -87,11 +87,11 @@ func TestSpecMatchesAnnotations(t *testing.T) {
 		}
 	}
 	if len(extra) > 0 {
-		t.Errorf("%d operation(s) are in the committed spec with no @Router annotation.\n"+
+		t.Errorf("%d operation(s) are in the spec with no @Router annotation.\n"+
 			"swagger.yaml is a GENERATED file — never hand-edit it. A path here that\n"+
 			"no handler declares is exactly how the UI came to call\n"+
 			"GET /api/v1/me/event-types against a server that never had it.\n"+
-			"Run `make swagger` and commit the result.\n  %s",
+			"Regenerate it with `make swagger`.\n  %s",
 			len(extra), strings.Join(extra, "\n  "))
 	}
 }
@@ -106,7 +106,7 @@ func TestEveryDocumentedPathIsRouted(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	routes, err := openapicontract.Routes(routesDir)
 	if err != nil {
@@ -129,8 +129,7 @@ func TestEveryDocumentedPathIsRouted(t *testing.T) {
 	if len(phantom) > 0 {
 		t.Errorf("%d documented operation(s) have no registered route — a client\n"+
 			"calling them gets a 404. Either register the route, or correct the\n"+
-			"handler's @Router to the path it is really served on and rerun\n"+
-			"`make swagger`.\n  %s",
+			"handler's @Router to the path it is really served on.\n  %s",
 			len(phantom), strings.Join(phantom, "\n  "))
 	}
 }
@@ -149,7 +148,7 @@ func TestEveryRouteIsDocumentedOrBaselined(t *testing.T) {
 
 	specOps, err := openapicontract.SpecOps(spec)
 	if err != nil {
-		t.Fatalf("reading spec: %v", err)
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
 	}
 	routes, err := openapicontract.Routes(routesDir)
 	if err != nil {
@@ -232,5 +231,115 @@ func TestSensorProtocolV2Documented(t *testing.T) {
 		if !registered[op] {
 			t.Errorf("in sensor-protocol-v2.yaml but not registered: %s", op)
 		}
+	}
+}
+
+// The probes live on the root router. They used to be annotated and mapped
+// back to /health by a special case, so the spec advertised GET /api/v1/health
+// and GET /api/v1/ready, both of which 404, while this gate passed. With the
+// special case gone, an annotated /health maps to /api/v1/health and fails the
+// "no registered route" check, as it should.
+func TestRootProbesAreNotPartOfTheDocumentedSurface(t *testing.T) {
+	for _, p := range []string{"/health", "/ready"} {
+		if got := openapicontract.SpecToRoute(p); got != "/api/v1"+p {
+			t.Errorf("SpecToRoute(%q) = %q; an annotation is always served under %s", p, got, openapicontract.BasePath)
+		}
+		if _, ok := openapicontract.RouteToSpec(p); ok {
+			t.Errorf("RouteToSpec(%q) reports a documented path; root probes are outside the API spec", p)
+		}
+	}
+}
+
+// TestSpecParamNamesMatchRoutes is check D (RFC-041 §7). Checks A–C compare
+// operations with every path parameter reduced to {}, so a spec that says
+// /repositories/{repository_id} for a route registered as
+// /repositories/{repositoryId} passes them — and every generated client then
+// carries the spec's name, not the server's. This compares the names.
+//
+// Today's mismatches are frozen in api/openapi/param-name-drift.txt, which
+// only shrinks: a new mismatch fails, and so does a line that no longer
+// matches one.
+func TestSpecParamNamesMatchRoutes(t *testing.T) {
+	_, routesDir, spec, _ := paths(t)
+	driftPath := filepath.Join(filepath.Dir(spec), "param-name-drift.txt")
+
+	specRaw, err := openapicontract.SpecRawPaths(spec)
+	if err != nil {
+		t.Fatalf("reading spec: %v (the spec is generated, not committed: run `make swagger` in api/ or `make generate` at the repository root)", err)
+	}
+	routeRaw, err := openapicontract.RawRoutes(routesDir)
+	if err != nil {
+		t.Fatalf("reading routes: %v", err)
+	}
+	baseline, err := openapicontract.Baseline(driftPath)
+	if err != nil {
+		t.Fatalf("reading baseline: %v", err)
+	}
+
+	mismatched := map[openapicontract.Op]bool{}
+	var fresh []string
+	for _, op := range openapicontract.SortedOps(specRaw) {
+		route, ok := routeRaw[op]
+		if !ok {
+			continue // TestEveryDocumentedPathIsRouted reports it
+		}
+		if strings.Join(openapicontract.ParamNames(route), ",") == strings.Join(openapicontract.ParamNames(specRaw[op]), ",") {
+			continue
+		}
+		mismatched[op] = true
+		if !baseline[op] {
+			fresh = append(fresh, op.Method+" "+route+"  (spec: "+specRaw[op]+")")
+		}
+	}
+	if len(fresh) > 0 {
+		t.Errorf("%d documented operation(s) name their path parameters differently in the spec\n"+
+			"and in the router. Make the handler's @Router use the route's names:\n  %s", len(fresh), strings.Join(fresh, "\n  "))
+	}
+	var stale []string
+	for _, op := range openapicontract.SortedOps(baseline) {
+		if !mismatched[op] {
+			stale = append(stale, op.String())
+		}
+	}
+	if len(stale) > 0 {
+		t.Errorf("%d line(s) in api/openapi/param-name-drift.txt no longer match a mismatch; delete them:\n  %s",
+			len(stale), strings.Join(stale, "\n  "))
+	}
+}
+
+// TestWriteRouteManifest writes api/openapi/routes.txt, every registered API
+// operation with its path parameters written {}. The web's endpoint check
+// (web/src/lib/api/__tests__/endpoints-target-routes.test.ts) reads it.
+//
+// The file is generated, never committed: `make contract` in api/ (and the
+// Web CI contract job) writes it from the router before the web tests run. A committed copy went stale every time two pull
+// requests that add routes were in flight together, and each one then failed
+// in the merge queue until it was regenerated.
+//
+// Write it locally with:
+//
+//	UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run RouteManifest
+func TestWriteRouteManifest(t *testing.T) {
+	if os.Getenv("UPDATE_ROUTE_MANIFEST") != "1" {
+		t.Skip("set UPDATE_ROUTE_MANIFEST=1 to write api/openapi/routes.txt")
+	}
+	_, routesDir, spec, _ := paths(t)
+	manifest := filepath.Join(filepath.Dir(spec), "routes.txt")
+
+	routes, err := openapicontract.Routes(routesDir)
+	if err != nil {
+		t.Fatalf("reading routes: %v", err)
+	}
+	if len(routes) == 0 {
+		t.Fatal("the router registers no routes; refusing to write an empty manifest")
+	}
+	var b strings.Builder
+	b.WriteString("# GENERATED by tools/lint/openapicontract (TestWriteRouteManifest). Not committed.\n")
+	b.WriteString("# Every registered API operation; path parameters are written {}.\n")
+	for _, op := range openapicontract.SortedOps(routes) {
+		b.WriteString(op.String() + "\n")
+	}
+	if err := os.WriteFile(manifest, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

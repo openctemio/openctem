@@ -1,0 +1,83 @@
+# Repository statements that read or write a tenant-scoped row by id with no
+# tenant_id predicate. Format: file:Func:table  reason
+#
+# This list only shrinks: TestNoNewTenantlessStatements fails on a new
+# tenantless statement AND on an entry that no longer matches anything.
+#
+# "D-11 baseline" entries predate the guard and are being fixed area by area
+# (research/14 SEC-15, owner decision D-11). Any other entry is a permanent,
+# reviewed exception and says why the id alone is safe.
+capability_repository.go:CapabilityRepository.GetByID:capabilities  D-11 baseline: add the tenant predicate
+ingest_job_repository.go:IngestJobRepository.ClaimBatch:ingest_jobs  D-11 baseline: add the tenant predicate
+ingest_job_repository.go:IngestJobRepository.Complete:ingest_jobs  D-11 baseline: add the tenant predicate
+ingest_job_repository.go:IngestJobRepository.Fail:ingest_jobs  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.Abandon:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.ClaimFinalize:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.Commit:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.Finish:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.GetByID:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.MarkFailed:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.RecordSegmentOutcome:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.ReleaseSegment:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.Reopen:ingest_reports  D-11 baseline: add the tenant predicate
+ingest_report_repository.go:IngestReportRepository.ReserveSegment:ingest_reports  D-11 baseline: add the tenant predicate
+integration_repository.go:IntegrationRepository.Delete:integrations  D-11 baseline: add the tenant predicate
+integration_repository.go:IntegrationRepository.GetByID:integrations  D-11 baseline: add the tenant predicate
+outbox_event_repository.go:OutboxEventRepository.Delete:notification_events  D-11 baseline: add the tenant predicate
+outbox_event_repository.go:OutboxEventRepository.GetByID:notification_events  D-11 baseline: add the tenant predicate
+outbox_repository.go:OutboxRepository.Delete:notification_outbox  D-11 baseline: add the tenant predicate
+outbox_repository.go:OutboxRepository.FetchPendingBatch:notification_outbox  D-11 baseline: add the tenant predicate
+outbox_repository.go:OutboxRepository.GetByID:notification_outbox  D-11 baseline: add the tenant predicate
+outbox_repository.go:OutboxRepository.Update:notification_outbox  D-11 baseline: add the tenant predicate
+scan_workflow_repository.go:ScanWorkflowRepository.DeleteInTx:scan_workflows  D-11 baseline: add the tenant predicate
+scan_workflow_repository.go:ScanWorkflowRepository.Delete:scan_workflows  D-11 baseline: add the tenant predicate
+scan_workflow_repository.go:ScanWorkflowRepository.GetByID:scan_workflows  D-11 baseline: add the tenant predicate
+scan_workflow_repository.go:ScanWorkflowRepository.GetSystemTemplateByID:scan_workflows  D-11 baseline: add the tenant predicate
+scan_workflow_repository.go:ScanWorkflowRepository.Update:scan_workflows  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.CreateRunIfUnderLimit:scan_workflows  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.CreateRunIfUnderLimit:scans  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.Delete:scan_runs  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.GetByID:scan_runs  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.notUpdatedError:scan_runs  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.ReleaseFailedRetryDispatch:scan_runs  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.Update:scan_runs  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.UpdateStats:scan_runs  D-11 baseline: add the tenant predicate
+scan_run_repository.go:ScanRunRepository.UpdateStatus:scan_runs  D-11 baseline: add the tenant predicate
+scanner_template_repository.go:ScannerTemplateRepository.Update:scanner_templates  D-11 baseline: add the tenant predicate
+sensor_apikey_repository.go:lockSensorKeys:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:retireInlineKey:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.ClearIdentityCloned:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.Delete:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.GetByID:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.IncrementStats:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.ObserveInstance:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.RecordKeyUse:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.UpdateLastSeen:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.UpdateOfflineTimestamp:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:SensorRepository.Update:sensors  D-11 baseline: add the tenant predicate
+sensor_repository.go:updateInlineKey:sensors  D-11 baseline: add the tenant predicate
+template_source_repository.go:TemplateSourceRepository.Delete:template_sources  D-11 baseline: add the tenant predicate
+template_source_repository.go:TemplateSourceRepository.GetByID:template_sources  D-11 baseline: add the tenant predicate
+template_source_repository.go:TemplateSourceRepository.UpdateSyncStatus:template_sources  D-11 baseline: add the tenant predicate
+template_source_repository.go:TemplateSourceRepository.Update:template_sources  D-11 baseline: add the tenant predicate
+tenant_tool_config_repository.go:TenantToolConfigRepository.Delete:tenant_tool_configs  D-11 baseline: add the tenant predicate
+tenant_tool_config_repository.go:TenantToolConfigRepository.GetByID:tenant_tool_configs  D-11 baseline: add the tenant predicate
+tenant_tool_config_repository.go:TenantToolConfigRepository.Update:tenant_tool_configs  D-11 baseline: add the tenant predicate
+toolcategory_repository.go:ToolCategoryRepository.Delete:tool_categories  D-11 baseline: add the tenant predicate
+toolcategory_repository.go:ToolCategoryRepository.GetByID:tool_categories  D-11 baseline: add the tenant predicate
+toolcategory_repository.go:ToolCategoryRepository.Update:tool_categories  D-11 baseline: add the tenant predicate
+tool_repository.go:ToolRepository.BulkUpdateVersions:tools  D-11 baseline: add the tenant predicate
+tool_repository.go:ToolRepository.Delete:tools  D-11 baseline: add the tenant predicate
+tool_repository.go:ToolRepository.GetByID:tools  D-11 baseline: add the tenant predicate
+tool_repository.go:ToolRepository.Update:tools  D-11 baseline: add the tenant predicate
+automation_repository.go:AutomationRepository.Delete:automations  D-11 baseline: add the tenant predicate
+automation_repository.go:AutomationRepository.GetByID:automations  D-11 baseline: add the tenant predicate
+automation_repository.go:AutomationRepository.Update:automations  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.Delete:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.GetByID:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.UpdateStats:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.UpdateStatus:automation_runs  D-11 baseline: add the tenant predicate
+automation_run_repository.go:AutomationRunRepository.Update:automation_runs  D-11 baseline: add the tenant predicate
+mcp_oauth_repository.go:MCPOAuthRepository.GetRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
+mcp_oauth_repository.go:MCPOAuthRepository.ClaimRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user
+mcp_oauth_repository.go:MCPOAuthRepository.DenyRequest:mcp_oauth_requests  pre-tenant OAuth authorization request (RFC-062): no organization is chosen until approval; the row is found by a random id and bound to the claiming user

@@ -15,7 +15,7 @@ export { LoginForm, RegisterForm, SignOutDialog, SignOutButton } from './compone
 // HOOKS
 // ============================================
 
-export { useAuth, useProtectedRoute, useRequireRoles, useRequireAuth } from './hooks'
+export { useAuth } from './hooks'
 
 // ============================================
 // SERVER ACTIONS
@@ -27,7 +27,6 @@ export {
   getCurrentUser,
   logoutAction,
   isAuthenticated,
-  getAccessToken,
 } from './actions'
 
 // ============================================
@@ -94,7 +93,6 @@ export {
 
   // Helper functions
   isValidEmail,
-  isValidPassword,
   getPasswordStrength,
   getPasswordStrengthLabel,
 } from './schemas'

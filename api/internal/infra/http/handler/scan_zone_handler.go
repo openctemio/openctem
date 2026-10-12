@@ -47,9 +47,9 @@ type ScanZonePreviewRequest struct {
 	ScannerName   string   `json:"scanner_name"`
 	TargetsPerJob int      `json:"targets_per_job"`
 	ScanZoneID    *string  `json:"scan_zone_id"`
-	// PipelineID is accepted so a client can send its whole draft; a workflow
+	// ScanWorkflowID is accepted so a client can send its whole draft; a workflow
 	// is routed the same whatever its steps, so it does not change the result.
-	PipelineID *string `json:"pipeline_id,omitempty"`
+	ScanWorkflowID *string `json:"scan_workflow_id,omitempty"`
 }
 
 // ScanZoneResponse is a scan zone.
@@ -441,6 +441,15 @@ var scanZoneErrorCodes = map[string]bool{
 	"NO_TARGETS":              true,
 	"ALL_TARGETS_EXCLUDED":    true,
 	"PLATFORM_SENSOR_REFUSED": true,
+	"SENSOR_POLICY_REFUSED":   true,
+	"SENSOR_OPT_IN_DISABLED":  true,
+	// Tool and sensor refusals at trigger time
+	// (docs/architecture/tool-availability.md).
+	"NO_SENSOR_FOR_TOOL":  true,
+	"NO_SENSOR_AVAILABLE": true,
+	"TOOL_NOT_FOUND":      true,
+	"TOOL_DISABLED":       true,
+	"TOOL_NOT_SCANNER":    true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.
@@ -459,12 +468,10 @@ func writeScanZoneJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func buildScanZoneAuditContext(r *http.Request) auditapp.AuditContext {
-	clientIP := r.RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		clientIP = xff
-	} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		clientIP = xri
-	}
+	// The TCP peer, or the forwarded client only when that peer is a trusted
+	// proxy. Reading X-Forwarded-For directly let any caller choose the IP
+	// recorded in the audit log.
+	clientIP := getClientIP(r)
 	return auditapp.AuditContext{
 		TenantID:   middleware.GetTenantID(r.Context()),
 		ActorID:    middleware.GetUserID(r.Context()),

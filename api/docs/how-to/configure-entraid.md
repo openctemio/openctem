@@ -116,7 +116,7 @@ OAUTH_FRONTEND_CALLBACK_URL=https://app.example.com/auth/callback
 
 The social button appears when `OAUTH_MICROSOFT_CLIENT_ID` **and**
 `OAUTH_MICROSOFT_CLIENT_SECRET` are both set (`IsConfigured()`), OAuth is enabled,
-and the OAuth handler is wired. `GET /api/v1/auth/oauth/providers` reports which
+and the OAuth handler is wired. `GET /api/v1/auth/providers` reports which
 social providers are enabled.
 
 ### Path B — per-tenant Entra SSO (admin UI, recommended)
@@ -220,7 +220,7 @@ Auto-provisioning decision (`jitProvisioningAllowed`), all branches fail-closed:
 
 If JIT isn't permitted, the login is refused with "not a member of this
 organization" — the user must be **invited** first (Settings → Team →
-Invitations). Also: with `AUTH_ALLOW_REGISTRATION=false`, a federated login can
+Invitations). Also: with the sign-up policy at `admin_only`, a federated login can
 only bind to an existing/pre-invited account — it will never create a brand-new
 user.
 
@@ -355,7 +355,7 @@ the SSO `state`. Generate one with `openssl rand -hex 32`.
 ```yaml
 services:
   api:
-    image: ghcr.io/openctemio/api:latest
+    image: ghcr.io/openctemio/openctem-api:vX.Y.Z   # v0.8.0 and earlier: ghcr.io/openctemio/api
     environment:
       APP_ENV: production
       # Required — encrypts per-tenant client secrets + PKCE verifier
@@ -383,7 +383,6 @@ services:
       SSO_ENTRA_ALLOWED_TENANTS: "acme"        # P0 opt-in: tenant slug(s) allowed to use this fallback
 
       # In production, disable open registration — add users via invitations
-      AUTH_ALLOW_REGISTRATION: "false"
 ```
 
 For per-tenant setup (recommended), leave the `SSO_ENTRA_*` block out and have
@@ -453,12 +452,21 @@ generic `400` and revokes nothing.
 
 ---
 
+## Step-up re-authentication needs `auth_time`
+
+Sensitive actions ask an SSO user without an authenticator to sign in again
+at Entra ID (docs/architecture/step-up-reauth.md). The API checks the
+id_token's `auth_time`, which Entra adds only as an optional claim: in the app
+registration, **Token configuration → Add optional claim → ID → `auth_time`**.
+Without it the re-sign-in is refused and the user cannot run those actions
+(an authenticator code always works).
+
 ## Reference
 
 - Architecture / rationale: [`architecture/sso-authentication.md`](../architecture/sso-authentication.md)
 - SAML / SCIM (enterprise, separate): [`architecture/saml-sso.md`](../architecture/saml-sso.md),
   [`architecture/scim-provisioning.md`](../architecture/scim-provisioning.md)
-- Code: `internal/app/auth/{sso.go,oauth.go,oidc_verifier.go,backchannel_logout.go}`,
+- Code: `internal/app/auth/{sso.go,oauth.go,backchannel_logout.go}`, `pkg/oidc/{verify.go,issuers.go}`,
   `internal/app/auth/domainverify/service.go`, `internal/config/config.go`,
   `internal/infra/http/routes/auth.go`,
   per-request enforce-SSO: `internal/infra/http/middleware/sso_enforcement.go`

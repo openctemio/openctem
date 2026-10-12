@@ -26,6 +26,9 @@ type zoneSensorOpts struct {
 	lastSeen *time.Time
 	status   string
 	platform bool
+	// declaredOnly: the sensor never reported (verified) the tools; dispatch
+	// must not use them.
+	declaredOnly bool
 }
 
 func seedZoneSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID *shared.ID, name string, o zoneSensorOpts) shared.ID {
@@ -42,12 +45,19 @@ func seedZoneSensor(ctx context.Context, t *testing.T, db *sql.DB, tenantID *sha
 	}
 	id := shared.NewID()
 	tenant := tenantID.String()
+	// By default the sensor also reported (verified) its tools, as a sensor
+	// on a current SDK does on every heartbeat.
+	var reported any
+	if !o.declaredOnly && o.tools != nil {
+		reported = pq.Array(o.tools)
+	}
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO sensors (id, tenant_id, name, type, status, health, api_key_hash, api_key_prefix,
-		                      tools, execution_mode, max_concurrent_jobs, current_jobs, last_seen_at, is_platform_sensor)
-		 VALUES ($1, $2, $3, 'worker', $4, $5, $6, $7, $8, 'daemon', 5, 0, $9, $10)`,
+		                      execution_mode, max_concurrent_jobs, current_jobs, last_seen_at, is_platform_sensor,
+		                      reported_tool_names)
+		 VALUES ($1, $2, $3, 'worker', $4, $5, $6, $7, 'daemon', 5, 0, $8, $9, $10)`,
 		id.String(), tenant, name+" "+id.String()[:8], o.status, o.health,
-		"hash-"+id.String(), id.String()[:8], pq.Array(o.tools), *o.lastSeen, o.platform)
+		"hash-"+id.String(), id.String()[:8], *o.lastSeen, o.platform, reported)
 	if err != nil {
 		t.Fatalf("seed sensor %s: %v", name, err)
 	}
@@ -394,17 +404,17 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 
 	var runID, stepID, stepRunID string
 	if err := sqlDB.QueryRowContext(ctx,
-		`INSERT INTO pipeline_runs (pipeline_id, tenant_id, status, trigger_type)
+		`INSERT INTO scan_runs (scan_workflow_id, tenant_id, status, trigger_type)
 		 VALUES ('00000000-0000-0000-0000-000000000001', $1, 'running', 'manual') RETURNING id`,
 		tenant.String()).Scan(&runID); err != nil {
 		t.Skipf("seed run (quick-scan template missing?): %v", err)
 	}
 	if err := sqlDB.QueryRowContext(ctx,
-		`SELECT id FROM pipeline_steps WHERE pipeline_id = '00000000-0000-0000-0000-000000000001' LIMIT 1`).Scan(&stepID); err != nil {
+		`SELECT id FROM scan_workflow_steps WHERE scan_workflow_id = '00000000-0000-0000-0000-000000000001' LIMIT 1`).Scan(&stepID); err != nil {
 		t.Skipf("quick-scan template has no step: %v", err)
 	}
 	if err := sqlDB.QueryRowContext(ctx,
-		`INSERT INTO step_runs (pipeline_run_id, step_id, step_key, step_order) VALUES ($1, $2, 'scan', 1) RETURNING id`,
+		`INSERT INTO scan_run_steps (scan_run_id, step_id, step_key, step_order) VALUES ($1, $2, 'scan', 1) RETURNING id`,
 		runID, stepID).Scan(&stepRunID); err != nil {
 		t.Fatal(err)
 	}
@@ -422,15 +432,16 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mk("completed", `{"findings_count": 3}`, "")
+	mk("completed", `{"findings_count": 3, "metadata": {"refused_targets_total": 2}}`, "")
 	mk("running", "", "")
-	mk("failed", "", "nuclei crashed")
+	mk("failed", `{"metadata": {"refused_targets_total": 7}}`, "nuclei crashed")
 
 	b, err := cmds.StepBatchState(ctx, tenant, srID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.Total != 3 || b.Active != 1 || b.Failed != 1 || b.Findings != 3 || b.FirstError != "nuclei crashed" {
+	// Skipped counts the completed batches' skipped targets only.
+	if b.Total != 3 || b.Active != 1 || b.Failed != 1 || b.Findings != 3 || b.Skipped != 2 || b.FirstError != "nuclei crashed" {
 		t.Errorf("batch state = %+v", b)
 	}
 	if other, _ := cmds.StepBatchState(ctx, seedTestTenant(ctx, t, sqlDB), srID); other.Total != 0 {

@@ -219,6 +219,13 @@ type ScannerTemplate struct {
 	SourcePath   *string    // Path within source (e.g., templates/sqli.yaml)
 	SourceCommit *string    // Git commit hash
 
+	// Approval for sensors (sensor_approval.go): the digest the signer's
+	// ledger holds for this template ("" when none), the approvals of the
+	// current version, and who wrote it.
+	LedgerSHA256    string
+	SensorApprovals []SensorApproval
+	ContentAuthorID *shared.ID
+
 	// Audit
 	CreatedBy *shared.ID
 	CreatedAt time.Time
@@ -263,8 +270,10 @@ func NewScannerTemplate(
 		Tags:         []string{},
 		Metadata:     make(map[string]any),
 		CreatedBy:    createdBy,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		// The creator wrote the first version.
+		ContentAuthorID: createdBy,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}, nil
 }
 

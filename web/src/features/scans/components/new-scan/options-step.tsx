@@ -1,15 +1,20 @@
 /**
  * Options Step
  *
- * Step 3: Configure scan options, intensity, and concurrency
+ * Only what most scans need, defaults already right: where the scan runs
+ * (the sensor preference) and the scan profile (tool settings, intensity),
+ * with the job size and reliability settings under Advanced.
  */
 
 'use client'
 
+import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
+import { ChevronDown, Cloud, Server, Sparkles } from 'lucide-react'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Slider } from '@/components/ui/slider'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Select,
   SelectContent,
@@ -17,207 +22,208 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { NewScanFormData, ScanIntensity, ScanOptions } from '../../types'
-import { SCAN_OPTIONS_CONFIG } from '../../types'
+import { cn } from '@/lib/utils'
+import { Permission, useHasPermission } from '@/lib/permissions'
+import { usePlatformScanning } from '@/lib/api/platform-hooks'
+import { useScanProfiles } from '@/lib/api/scan-profile-hooks'
+import type { NewScanFormData, SensorPreference } from '../../types'
+import { SENSOR_PREFERENCE_CONFIG } from '../../types'
 
 interface OptionsStepProps {
   data: NewScanFormData
   onChange: (data: Partial<NewScanFormData>) => void
+  /** Offer the scan profile (a new scan; Edit keeps the stored one). */
+  showProfile?: boolean
 }
 
-export function OptionsStep({ data, onChange }: OptionsStepProps) {
-  const handleOptionToggle = (option: keyof ScanOptions, checked: boolean) => {
-    onChange({
-      options: {
-        ...data.options,
-        [option]: checked,
-      },
-    })
-  }
+const DEFAULT_PROFILE = 'default'
 
-  const handleIntensityChange = (values: number[]) => {
-    const value = values[0]
-    let intensity: ScanIntensity = 'low'
-    if (value >= 66) {
-      intensity = 'high'
-    } else if (value >= 33) {
-      intensity = 'medium'
-    }
-    onChange({ intensity })
-  }
+const PREFERENCE_ICONS: Record<SensorPreference, React.ReactNode> = {
+  auto: <Sparkles className="h-4 w-4" aria-hidden />,
+  tenant: <Server className="h-4 w-4" aria-hidden />,
+  platform: <Cloud className="h-4 w-4" aria-hidden />,
+}
 
-  const getIntensityValue = (): number => {
-    switch (data.intensity) {
-      case 'high':
-        return 100
-      case 'medium':
-        return 50
-      case 'low':
-      default:
-        return 0
-    }
-  }
+export function OptionsStep({ data, onChange, showProfile = false }: OptionsStepProps) {
+  const { t } = useTranslation()
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const { offered: platformOffered } = usePlatformScanning()
+  const canReadProfiles = useHasPermission(Permission.ScanProfilesRead)
+  const { data: profilesData } = useScanProfiles(
+    showProfile && canReadProfiles ? { per_page: 100 } : undefined,
+    { revalidateOnFocus: false, isPaused: () => !(showProfile && canReadProfiles) }
+  )
+  const profiles = profilesData?.items ?? []
+  const preferences: SensorPreference[] =
+    platformOffered || data.sensorPreference === 'platform'
+      ? ['auto', 'tenant', 'platform']
+      : ['auto', 'tenant']
+  const chosenProfile = profiles.find((p) => p.id === data.profileId)
 
   return (
     <div className="space-y-6 p-4">
-      {/* Scan Options */}
-      <div className="space-y-3">
-        <Label>Scan Options</Label>
-        <div className="space-y-2 rounded-lg border p-3">
-          {(Object.keys(SCAN_OPTIONS_CONFIG) as (keyof ScanOptions)[]).map((option) => (
-            <div
-              key={option}
-              className="flex items-start space-x-3 rounded-md p-2 hover:bg-muted/50"
-            >
-              <Checkbox
-                id={`option-${option}`}
-                checked={data.options[option]}
-                onCheckedChange={(checked) => handleOptionToggle(option, checked as boolean)}
-                className="mt-0.5"
-              />
-              <div className="flex-1">
-                <Label htmlFor={`option-${option}`} className="cursor-pointer font-medium">
-                  {SCAN_OPTIONS_CONFIG[option].label}
-                </Label>
-                <p className="text-muted-foreground text-xs">
-                  {SCAN_OPTIONS_CONFIG[option].description}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Intensity */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label>Intensity</Label>
-          <span className="text-muted-foreground text-sm capitalize">{data.intensity}</span>
-        </div>
-        <div className="px-2">
-          <Slider
-            value={[getIntensityValue()]}
-            onValueChange={handleIntensityChange}
-            max={100}
-            step={50}
-            className="w-full"
-          />
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>Low</span>
-            <span>Medium</span>
-            <span>High</span>
-          </div>
-        </div>
-        <p className="text-muted-foreground text-xs">
-          {data.intensity === 'low' &&
-            'Slower, less aggressive scanning. Recommended for production systems.'}
-          {data.intensity === 'medium' &&
-            'Balanced speed and thoroughness. Good for most environments.'}
-          {data.intensity === 'high' && 'Fast, aggressive scanning. May impact target performance.'}
-        </p>
-      </div>
-
-      {/* Max Concurrent */}
-      <div className="space-y-2">
-        <Label htmlFor="max-concurrent">Max Concurrent Connections</Label>
-        <Select
-          value={data.maxConcurrent.toString()}
-          onValueChange={(value) => onChange({ maxConcurrent: parseInt(value, 10) })}
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">{t('scans.options.whereRuns')}</legend>
+        <RadioGroup
+          value={data.sensorPreference}
+          onValueChange={(value: SensorPreference) => onChange({ sensorPreference: value })}
+          className="grid gap-2 sm:grid-cols-3"
         >
-          <SelectTrigger id="max-concurrent" className="w-full">
-            <SelectValue placeholder="Select max concurrent" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="5">5 connections</SelectItem>
-            <SelectItem value="10">10 connections</SelectItem>
-            <SelectItem value="15">15 connections</SelectItem>
-            <SelectItem value="20">20 connections</SelectItem>
-            <SelectItem value="25">25 connections</SelectItem>
-            <SelectItem value="50">50 connections</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-muted-foreground text-xs">
-          Higher values speed up scanning but may trigger rate limiting or IDS alerts.
-        </p>
-      </div>
+          {preferences.map((p) => (
+            <label
+              key={p}
+              htmlFor={`sensor-${p}`}
+              className={cn(
+                'flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/50',
+                data.sensorPreference === p && 'border-primary bg-primary/5'
+              )}
+            >
+              <RadioGroupItem value={p} id={`sensor-${p}`} className="mt-0.5" />
+              <span className="min-w-0 space-y-0.5">
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  {PREFERENCE_ICONS[p]}
+                  {t(`scans.sensorPref.${p}.label`, SENSOR_PREFERENCE_CONFIG[p].label)}
+                </span>
+                <span className="text-muted-foreground block text-xs">
+                  {t(`scans.sensorPref.${p}.description`, SENSOR_PREFERENCE_CONFIG[p].description)}
+                </span>
+              </span>
+            </label>
+          ))}
+        </RadioGroup>
+        <p className="text-muted-foreground text-xs">{t('scans.options.zoneNote')}</p>
+      </fieldset>
 
-      {/* Execution timeout & retry config — wired to backend pipeline_runs
-          fields. Kept under a "Reliability" group so it's discoverable but not
-          in the way of the main options. */}
-      <div className="space-y-4 rounded-lg border p-4">
-        <div>
-          <Label className="text-sm font-semibold">Reliability</Label>
-          <p className="text-muted-foreground text-xs mt-0.5">
-            Control how long a run can take and how aggressively the platform retries failures.
+      {showProfile && canReadProfiles && profiles.length > 0 && (
+        <div className="space-y-2">
+          <Label htmlFor="scan-profile">{t('scans.options.profile')}</Label>
+          <Select
+            value={data.profileId ?? DEFAULT_PROFILE}
+            onValueChange={(v) => onChange({ profileId: v === DEFAULT_PROFILE ? undefined : v })}
+          >
+            <SelectTrigger id="scan-profile" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFAULT_PROFILE}>{t('scans.options.orgDefault')}</SelectItem>
+              {profiles.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                  {p.is_default ? t('scans.options.defaultSuffix') : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            {chosenProfile
+              ? `${t('scans.options.profileIntensity', undefined, { intensity: chosenProfile.intensity })}${chosenProfile.description ? ` · ${chosenProfile.description}` : ''}`
+              : t('scans.options.profileHelp')}
           </p>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="timeout-seconds" className="text-xs">
-              Timeout (seconds)
-            </Label>
-            <Input
-              id="timeout-seconds"
-              type="number"
-              min={30}
-              max={86400}
-              value={data.timeoutSeconds}
-              onChange={(e) =>
-                onChange({
-                  timeoutSeconds: Math.max(
-                    30,
-                    Math.min(86400, parseInt(e.target.value || '0', 10) || 3600)
-                  ),
-                })
-              }
-            />
-            <p className="text-muted-foreground text-[11px]">30s – 24h</p>
+      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <CollapsibleTrigger className="flex w-full items-center gap-2 border-t py-2 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <ChevronDown
+            className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')}
+            aria-hidden
+          />
+          {t('scans.options.advanced')}
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-4 pt-3">
+          <div className="space-y-2">
+            <Label htmlFor="max-concurrent">{t('scans.options.perJob')}</Label>
+            <Select
+              value={data.maxConcurrent.toString()}
+              onValueChange={(value) => onChange({ maxConcurrent: parseInt(value, 10) })}
+            >
+              <SelectTrigger id="max-concurrent" className="w-full">
+                <SelectValue placeholder={t('scans.options.perJobPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from(new Set([1, 5, 10, 15, 20, 25, 50, data.maxConcurrent]))
+                  .sort((a, b) => a - b)
+                  .map((n) => (
+                    <SelectItem key={n} value={n.toString()}>
+                      {t(
+                        n === 1 ? 'scans.options.targetsOne' : 'scans.options.targetsMany',
+                        undefined,
+                        {
+                          count: n,
+                        }
+                      )}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">{t('scans.options.perJobHelp')}</p>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="max-retries" className="text-xs">
-              Max retries
-            </Label>
-            <Input
-              id="max-retries"
-              type="number"
-              min={0}
-              max={10}
-              value={data.maxRetries}
-              onChange={(e) =>
-                onChange({
-                  maxRetries: Math.max(0, Math.min(10, parseInt(e.target.value || '0', 10) || 0)),
-                })
-              }
-            />
-            <p className="text-muted-foreground text-[11px]">0 = no retries</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="timeout-seconds" className="text-xs">
+                {t('scans.options.timeout')}
+              </Label>
+              <Input
+                id="timeout-seconds"
+                type="number"
+                min={30}
+                max={86400}
+                value={data.timeoutSeconds}
+                onChange={(e) =>
+                  onChange({
+                    timeoutSeconds: Math.max(
+                      30,
+                      Math.min(86400, parseInt(e.target.value || '0', 10) || 3600)
+                    ),
+                  })
+                }
+              />
+              <p className="text-muted-foreground text-[11px]">{t('scans.options.timeoutRange')}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="max-retries" className="text-xs">
+                {t('scans.options.maxRetries')}
+              </Label>
+              <Input
+                id="max-retries"
+                type="number"
+                min={0}
+                max={10}
+                value={data.maxRetries}
+                onChange={(e) =>
+                  onChange({
+                    maxRetries: Math.max(0, Math.min(10, parseInt(e.target.value || '0', 10) || 0)),
+                  })
+                }
+              />
+              <p className="text-muted-foreground text-[11px]">{t('scans.options.noRetries')}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="retry-backoff" className="text-xs">
+                {t('scans.options.backoff')}
+              </Label>
+              <Input
+                id="retry-backoff"
+                type="number"
+                min={10}
+                max={86400}
+                value={data.retryBackoffSeconds}
+                onChange={(e) =>
+                  onChange({
+                    retryBackoffSeconds: Math.max(
+                      10,
+                      Math.min(86400, parseInt(e.target.value || '0', 10) || 60)
+                    ),
+                  })
+                }
+                disabled={data.maxRetries === 0}
+              />
+              <p className="text-muted-foreground text-[11px]">{t('scans.options.backoffHelp')}</p>
+            </div>
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="retry-backoff" className="text-xs">
-              Retry backoff (s)
-            </Label>
-            <Input
-              id="retry-backoff"
-              type="number"
-              min={10}
-              max={86400}
-              value={data.retryBackoffSeconds}
-              onChange={(e) =>
-                onChange({
-                  retryBackoffSeconds: Math.max(
-                    10,
-                    Math.min(86400, parseInt(e.target.value || '0', 10) || 60)
-                  ),
-                })
-              }
-              disabled={data.maxRetries === 0}
-            />
-            <p className="text-muted-foreground text-[11px]">Initial wait between retries</p>
-          </div>
-        </div>
-      </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -58,6 +59,11 @@ type Hub struct {
 	// it to h.broadcast for local delivery.
 	publisher BroadcastPublisher
 
+	// Cross-pod revocation bus (RFC-045). When set, RevokeSession and
+	// RevokeAccess publish through it so every pod closes its own matching
+	// sockets; otherwise they apply to this pod only.
+	revocations RevocationPublisher
+
 	// done is closed when Run exits. Every send onto the hub's channels selects
 	// on it so callers (HTTP handlers broadcasting, ReadPump/WritePump defers
 	// unregistering) cannot block forever once the hub stopped — an unguarded
@@ -92,6 +98,10 @@ type ChannelAccessChecker interface {
 	// inside the user's Layer 2 data scope (admins and unrestricted members
 	// see every finding of their tenant).
 	CanSeeFinding(ctx context.Context, tenantID, userID, findingID string) (bool, error)
+	// CanSeeRun reports whether the scan run exists in the tenant and the
+	// user may read it: a run about a finding (retest, validation) also
+	// needs that finding in the user's data scope.
+	CanSeeRun(ctx context.Context, tenantID, userID, runID string) (bool, error)
 }
 
 // channelAccessTimeout bounds the permission lookup made on a subscribe.
@@ -152,6 +162,11 @@ func (h *Hub) defaultAuthorize(client *Client, channel string) bool {
 	case ChannelTypeScan:
 		return h.hasPermission(client, permission.ScansRead)
 
+	case ChannelTypeRun:
+		// One run's change notices: the run reads' permission, and the run
+		// must be the user's to read (GET /scan-runs/{id} would 404 otherwise).
+		return h.hasPermission(client, permission.ScansRead) && h.canSeeRun(client, id)
+
 	case ChannelTypeGroup:
 		// Scope-rule changes of one group: its members, or anyone allowed to
 		// read groups.
@@ -173,6 +188,20 @@ func (h *Hub) hasPermission(client *Client, perm permission.Permission) bool {
 	ok, err := h.access.HasPermission(ctx, client.TenantID, client.UserID, perm.String())
 	if err != nil {
 		h.logger.Warn("ws channel permission check failed", "user_id", client.UserID, "permission", perm.String(), "error", err)
+		return false
+	}
+	return ok
+}
+
+func (h *Hub) canSeeRun(client *Client, runID string) bool {
+	if h.access == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), channelAccessTimeout)
+	defer cancel()
+	ok, err := h.access.CanSeeRun(ctx, client.TenantID, client.UserID, runID)
+	if err != nil {
+		h.logger.Debug("ws run access check failed", "user_id", client.UserID, "run_id", runID, "error", err)
 		return false
 	}
 	return ok
@@ -239,13 +268,19 @@ func (h *Hub) Run(ctx context.Context) {
 						"current", count,
 						"max", maxConnectionsPerUser,
 					)
-					client.Close()
+					metrics.WSUpgradeRejectionsTotal.WithLabelValues("too_many").Inc()
+					// A close code, not a silent drop: the client backs off
+					// instead of reconnecting in a tight loop.
+					client.closeWith(CloseTooManyConnections, "too many connections", "")
+					client.markRegistered()
 					continue
 				}
 				h.userConnCounts[client.UserID] = count + 1
 			}
 			h.clients[client] = true
 			h.mu.Unlock()
+			metrics.WSConnections.Inc()
+			client.markRegistered()
 
 			h.logger.Debug("client registered",
 				"client_id", client.ID,
@@ -257,6 +292,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
+				metrics.WSConnections.Dec()
 				h.removeClientFromAllChannels(client)
 				// Decrement user connection count
 				if client.UserID != "" {
@@ -288,7 +324,116 @@ func (h *Hub) RegisterClient(client *Client) {
 	case h.register <- client:
 	case <-h.done:
 		client.Close()
+		client.markRegistered()
 	}
+}
+
+// Revocation reasons. They label openctem_ws_forced_closes_total and are the
+// only values ApplyRevocation accepts from the cross-instance bus.
+const (
+	RevocationSessionRevoked = "session_revoked"
+	RevocationAccessChanged  = "access_changed"
+)
+
+// Revocation names the connections that must be closed because the
+// credential or access they were opened with no longer holds: every
+// connection of one session, or every connection of one user in one tenant.
+type Revocation struct {
+	Reason    string `json:"reason"`
+	SessionID string `json:"session_id,omitempty"`
+	TenantID  string `json:"tenant_id,omitempty"`
+	UserID    string `json:"user_id,omitempty"`
+}
+
+// RevocationPublisher fans a revocation out to every API instance (the Redis
+// bridge). Each instance, this one included, applies it via ApplyRevocation.
+type RevocationPublisher interface {
+	PublishRevocation(ctx context.Context, r Revocation) error
+}
+
+// SetRevocationPublisher attaches the cross-instance revocation bus.
+func (h *Hub) SetRevocationPublisher(p RevocationPublisher) {
+	h.revocations = p
+}
+
+// RevokeSession closes every connection opened with sessionID, on every API
+// instance. Called when the session is signed out or revoked.
+func (h *Hub) RevokeSession(ctx context.Context, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	h.revoke(ctx, Revocation{Reason: RevocationSessionRevoked, SessionID: sessionID})
+}
+
+// RevokeAccess closes every connection of userID in tenantID, on every API
+// instance. Called when the user's membership or role in the tenant changes;
+// the client reconnects and the upgrade re-runs every tenant gate.
+func (h *Hub) RevokeAccess(ctx context.Context, tenantID, userID string) {
+	if tenantID == "" || userID == "" {
+		return
+	}
+	h.revoke(ctx, Revocation{Reason: RevocationAccessChanged, TenantID: tenantID, UserID: userID})
+}
+
+func (h *Hub) revoke(ctx context.Context, r Revocation) {
+	if h.revocations != nil {
+		err := h.revocations.PublishRevocation(ctx, r)
+		if err == nil {
+			return
+		}
+		// Other instances miss this one; their sockets still end at the
+		// credential expiry. This instance closes its own now.
+		h.logger.Error("ws revocation publish failed, closing local connections only",
+			"reason", r.Reason, "error", err)
+	}
+	h.ApplyRevocation(r)
+}
+
+// ApplyRevocation closes the matching connections on this instance and
+// returns how many it closed. A revocation that names neither a session nor
+// a user+tenant, or carries an unknown reason, closes nothing: a malformed
+// bus message must never fan out to every socket.
+func (h *Hub) ApplyRevocation(r Revocation) int {
+	var text string
+	switch r.Reason {
+	case RevocationSessionRevoked:
+		text = "session revoked"
+	case RevocationAccessChanged:
+		text = "access changed"
+	default:
+		return 0
+	}
+	bySession := r.SessionID != ""
+	if !bySession && (r.TenantID == "" || r.UserID == "") {
+		return 0
+	}
+
+	h.mu.RLock()
+	var targets []*Client
+	for c := range h.clients {
+		if bySession {
+			if c.SessionID == r.SessionID {
+				targets = append(targets, c)
+			}
+		} else if c.TenantID == r.TenantID && c.UserID == r.UserID {
+			targets = append(targets, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, c := range targets {
+		c.closeWith(CloseUnauthorized, text, r.Reason)
+	}
+	if len(targets) > 0 {
+		h.logger.Info("websocket connections revoked",
+			"reason", r.Reason,
+			"session_id", r.SessionID,
+			"tenant_id", r.TenantID,
+			"user_id", r.UserID,
+			"closed", len(targets),
+		)
+	}
+	return len(targets)
 }
 
 // UnregisterClient unregisters a client. No-op after the hub stopped.
@@ -462,6 +607,7 @@ func (h *Hub) closeAllClients() {
 	for client := range h.clients {
 		client.Close()
 		delete(h.clients, client)
+		metrics.WSConnections.Dec()
 	}
 	h.channels = make(map[string]map[*Client]bool)
 }

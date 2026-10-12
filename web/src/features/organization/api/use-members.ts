@@ -19,6 +19,12 @@ import type {
   MemberWithUser,
   CreateTenantUserInput,
   CreatedTenantUser,
+  MemberStatusFilter,
+  MemberAccessReport,
+  OffboardMemberInput,
+  OffboardResult,
+  MemberKind,
+  UpdateMemberAccessInput,
 } from '../types/member.types'
 
 // ============================================
@@ -30,10 +36,21 @@ export interface UseMembersOptions {
   includeRoles?: boolean
   /** Search term for name or email (case-insensitive) */
   search?: string
-  /** Max results (default 10, max 100) */
+  /** Max results (server default 100, max 100) */
   limit?: number
   /** Pagination offset */
   offset?: number
+  /**
+   * Membership status filter (server-side). Defaults to `active`: every
+   * picker (assignee, group member, approver, owner) must never offer a
+   * disabled member or a person who left (RFC-050). `current` lists active
+   * and disabled members (the server default), `all` adds offboarded ones.
+   */
+  status?: MemberStatusFilter | 'current'
+  /** Effective system role filter (server-side) */
+  role?: 'owner' | 'admin' | 'member' | 'viewer'
+  /** Internal or external members only (server-side, api RFC-058) */
+  kind?: MemberKind
 }
 
 /**
@@ -44,9 +61,21 @@ export interface UseMembersOptions {
  * @param options - Options for fetching members
  * @param options.includeRoles - Include RBAC roles for each member
  * @param options.search - Search term for name or email
- * @param options.limit - Max results (default 10, max 100)
- * @param options.offset - Pagination offset
+ * @param options.limit - Page size (sent as per_page; default 100, max 500)
+ * @param options.offset - Offset of the first member (sent as a 1-based page)
  */
+/**
+ * The members list pages with page / per_page (one list convention); the
+ * options keep an offset window, which maps onto a page of `limit` members.
+ */
+export function setMemberPage(params: URLSearchParams, options?: UseMembersOptions) {
+  const perPage = options?.limit && options.limit > 0 ? options.limit : 0
+  if (perPage) params.set('per_page', String(perPage))
+  if (perPage && options?.offset && options.offset > 0) {
+    params.set('page', String(Math.floor(options.offset / perPage) + 1))
+  }
+}
+
 export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMembersOptions) {
   const { can } = usePermissions()
   const canReadMembers = can(Permission.MembersRead)
@@ -68,11 +97,16 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   if (options?.search) {
     params.set('search', options.search)
   }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
+  setMemberPage(params, options)
+  const status = options?.status ?? PICKER_MEMBER_STATUS
+  if (status !== 'current') {
+    params.set('status', status)
   }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
+  if (options?.role) {
+    params.set('role', options.role)
+  }
+  if (options?.kind) {
+    params.set('kind', options.kind)
   }
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(
@@ -153,26 +187,39 @@ export function useUpdateMemberRole(
   }
 }
 
-async function removeMember(url: string) {
-  return fetcherWithOptions<void>(url, {
-    method: 'DELETE',
+// ============================================
+// MEMBER LIFECYCLE (RFC-050)
+// ============================================
+
+/** The member list filter every picker uses (RFC-050: no deactivated people). */
+export const PICKER_MEMBER_STATUS: MemberStatusFilter = 'active'
+
+/**
+ * What a member holds and owns. Fetched only when `memberId` is set and the
+ * caller can manage members (the API answers 403 otherwise).
+ */
+export function useMemberAccessReport(memberId: string | undefined) {
+  const { can } = usePermissions()
+  const shouldFetch = !!memberId && can(Permission.MembersManage)
+  const { data, error, isLoading, mutate } = useSWR<MemberAccessReport>(
+    shouldFetch ? tenantEndpoints.memberAccessReport(memberId) : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  )
+  return { report: data, isLoading: shouldFetch ? isLoading : false, error, mutate }
+}
+
+/** Offboard a member (mandatory reassignment; 409 reassignment_required otherwise). */
+export function offboardMember(memberId: string, input: OffboardMemberInput) {
+  return fetcherWithOptions<OffboardResult>(tenantEndpoints.offboardMember(memberId), {
+    method: 'POST',
+    body: JSON.stringify(input),
   })
 }
 
-/**
- * Hook to remove a member
- */
-export function useRemoveMember(tenantIdOrSlug: string | undefined, memberId: string | undefined) {
-  const { trigger, isMutating, error } = useSWRMutation(
-    tenantIdOrSlug && memberId ? tenantEndpoints.removeMember(tenantIdOrSlug, memberId) : null,
-    removeMember
-  )
-
-  return {
-    removeMember: trigger,
-    isRemoving: isMutating,
-    error,
-  }
+/** Erase an offboarded person's name and email (owner only). */
+export function eraseMemberPersonalData(memberId: string) {
+  return fetcherWithOptions<void>(tenantEndpoints.eraseMember(memberId), { method: 'POST' })
 }
 
 // ============================================
@@ -245,6 +292,16 @@ export function useDeleteInvitation(
 // ============================================
 
 /**
+ * Change when an external member's access ends (owner/admin, api RFC-058).
+ */
+export function updateMemberAccess(memberId: string, input: UpdateMemberAccessInput) {
+  return fetcherWithOptions<unknown>(tenantEndpoints.memberAccess(memberId), {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+/**
  * Create an invitation. The response is the only place the raw invitation token
  * appears (the API stores a hash), so the caller shows the link from it.
  */
@@ -297,11 +354,16 @@ export function getMembersKey(tenantIdOrSlug: string, options?: UseMembersOption
   if (options?.search) {
     params.set('search', options.search)
   }
-  if (options?.limit && options.limit > 0) {
-    params.set('limit', String(options.limit))
+  setMemberPage(params, options)
+  const status = options?.status ?? PICKER_MEMBER_STATUS
+  if (status !== 'current') {
+    params.set('status', status)
   }
-  if (options?.offset && options.offset > 0) {
-    params.set('offset', String(options.offset))
+  if (options?.role) {
+    params.set('role', options.role)
+  }
+  if (options?.kind) {
+    params.set('kind', options.kind)
   }
 
   return `${tenantEndpoints.members(tenantIdOrSlug)}?${params.toString()}`

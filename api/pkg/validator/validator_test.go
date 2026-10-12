@@ -84,6 +84,25 @@ func TestValidateAssetType(t *testing.T) {
 	}
 }
 
+func TestValidateAssetLens(t *testing.T) {
+	v := New()
+
+	type TestStruct struct {
+		Lenses []string `validate:"dive,asset_lens"`
+	}
+
+	for _, ok := range [][]string{nil, {"external_surface"}, {"containers_k8s", "data"}} {
+		if err := v.Validate(TestStruct{Lenses: ok}); err != nil {
+			t.Errorf("lenses %v: unexpected error %v", ok, err)
+		}
+	}
+	for _, bad := range [][]string{{"nope"}, {"data", "storage"}, {"' OR 1=1 --"}} {
+		if err := v.Validate(TestStruct{Lenses: bad}); err == nil {
+			t.Errorf("lenses %v: want a validation error", bad)
+		}
+	}
+}
+
 func TestValidateCriticality(t *testing.T) {
 	v := New()
 

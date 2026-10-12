@@ -17,7 +17,6 @@ func trivyDB(updated time.Duration, errText string) ReportedContent {
 // withContent stores items on the sensor's reported tool inventory, grouped
 // by tool, as a heartbeat would (no admin tool limit, all installed).
 func withContent(s *Sensor, items []ReportedContent) {
-	s.Tools = nil
 	s.Reported.Tools = nil
 	idx := map[string]int{}
 	for _, c := range items {

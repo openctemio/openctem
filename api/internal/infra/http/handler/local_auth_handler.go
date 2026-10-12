@@ -4,15 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -23,26 +27,63 @@ import (
 
 // LocalAuthHandler handles local authentication requests.
 type LocalAuthHandler struct {
-	authService    *app.AuthService
-	sessionService *app.SessionService
-	emailService   *app.EmailService
-	// F-8: optional single-use WS ticket service. When non-nil, GetWSToken
-	// returns an opaque ticket instead of a JWT, eliminating query-string
-	// replay risk.
-	wsTicketService *app.WSTicketService
-	platformAdmin   PlatformAdminChecker
-	authConfig      config.AuthConfig
-	cookieConfig    CookieConfig
-	csrfConfig      middleware.CSRFConfig
-	validator       *validator.Validator
-	logger          *logger.Logger
+	authService    *auth.AuthService
+	sessionService *auth.SessionService
+	emailService   *auth.EmailService
+	platformAdmin  PlatformAdminChecker
+	authConfig     config.AuthConfig
+	cookieConfig   CookieConfig
+	csrfConfig     middleware.CSRFConfig
+	validator      *validator.Validator
+	logger         *logger.Logger
+	// signupPolicy answers registration_enabled on /auth/info (the console
+	// sign-up setting). Nil: TENANT_CREATION_MODE from the config.
+	signupPolicy signupdom.PolicySource
+	// captcha, when set (CAPTCHA_TURNSTILE_SECRET), must pass before a
+	// registration is looked at.
+	captcha Captcha
+}
+
+// Captcha verifies a CAPTCHA token from the browser (Cloudflare Turnstile).
+type Captcha interface {
+	Verify(ctx context.Context, token, remoteIP string) (bool, error)
+}
+
+// SetCaptcha requires a passing CAPTCHA on registration.
+func (h *LocalAuthHandler) SetCaptcha(c Captcha) { h.captcha = c }
+
+// CodeCaptchaFailed is the error code of a missing or failed CAPTCHA.
+const CodeCaptchaFailed apierror.Code = "CAPTCHA_FAILED"
+
+// SetSignupPolicy wires the platform sign-up policy.
+func (h *LocalAuthHandler) SetSignupPolicy(p signupdom.PolicySource) { h.signupPolicy = p }
+
+// registrationEnabled reports whether anyone may create an account: the
+// self_service sign-up mode.
+func (h *LocalAuthHandler) registrationEnabled(r *http.Request) bool {
+	if h.signupPolicy != nil {
+		return h.signupPolicy.Current(r.Context()).AllowsSelfService()
+	}
+	return h.authConfig.SelfServiceTenantCreation()
+}
+
+// CodeSignupNotAvailable is the error code of every sign-up refusal; the web
+// shows the "not set up" page for it.
+const CodeSignupNotAvailable apierror.Code = "SIGNUP_NOT_AVAILABLE"
+
+// writeSignupNotAvailable is the one answer of every refused sign-up path
+// (register, social sign-in): the same status, code and text whatever the
+// reason, so it says nothing about the email or the organization.
+func writeSignupNotAvailable(w http.ResponseWriter) {
+	apierror.New(http.StatusForbidden, CodeSignupNotAvailable,
+		"Your organization isn't set up yet. Ask your administrator to invite you.").WriteJSON(w)
 }
 
 // NewLocalAuthHandler creates a new LocalAuthHandler.
 func NewLocalAuthHandler(
-	authService *app.AuthService,
-	sessionService *app.SessionService,
-	emailService *app.EmailService,
+	authService *auth.AuthService,
+	sessionService *auth.SessionService,
+	emailService *auth.EmailService,
 	platformAdmin PlatformAdminChecker,
 	authConfig config.AuthConfig,
 	log *logger.Logger,
@@ -60,12 +101,6 @@ func NewLocalAuthHandler(
 	}
 }
 
-// SetWSTicketService wires the single-use WebSocket ticket service (F-8).
-// When configured, GetWSToken returns an opaque ticket instead of a JWT.
-func (h *LocalAuthHandler) SetWSTicketService(svc *app.WSTicketService) {
-	h.wsTicketService = svc
-}
-
 // RegisterRequest is the request body for user registration.
 type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email,max=255"`
@@ -77,6 +112,8 @@ type RegisterRequest struct {
 	// invitation links would fall back to the platform default and
 	// silently ignore an admin's per-tenant "never" setting.
 	InvitationToken string `json:"invitation_token,omitempty" validate:"omitempty,max=200"`
+	// CaptchaToken is the Turnstile token when a CAPTCHA is configured.
+	CaptchaToken string `json:"captcha_token,omitempty" validate:"omitempty,max=2048"`
 }
 
 // RegisterResponse is the response body for user registration.
@@ -111,7 +148,21 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.authService.Register(r.Context(), app.RegisterInput{
+	// The CAPTCHA is checked before the account lookup and the same way for
+	// every address, so it says nothing about the email. A verifier error
+	// (Turnstile unreachable) refuses: sign-up is not worth an open door.
+	if h.captcha != nil {
+		ok, cerr := h.captcha.Verify(r.Context(), req.CaptchaToken, getClientIP(r))
+		if cerr != nil || !ok {
+			if cerr != nil {
+				h.logger.Warn("captcha verification failed", "error", logger.SanitizeError(cerr))
+			}
+			apierror.New(http.StatusBadRequest, CodeCaptchaFailed, "Complete the check and try again.").WriteJSON(w)
+			return
+		}
+	}
+
+	result, err := h.authService.Register(r.Context(), auth.RegisterInput{
 		Email:           req.Email,
 		Password:        req.Password,
 		Name:            req.Name,
@@ -122,59 +173,58 @@ func (h *LocalAuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Security: Always show the same generic message to prevent email enumeration
-	// The message "check your email" is shown whether the email existed or not
-	message := "Registration successful. Please check your email to verify your account."
-
-	// Handle case where email already existed (anti-enumeration)
-	if result.EmailExisted {
-		// Return a generic response that looks identical to a successful registration
-		// to prevent attackers from discovering which emails are registered
-		resp := RegisterResponse{
-			ID:                   "", // Don't reveal any info
-			Email:                req.Email,
-			Name:                 req.Name,
-			RequiresVerification: true,
-			Message:              message,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(resp)
-		return
-	}
-
-	// Send verification email if required (only for new users)
-	if result.RequiresVerification && result.VerificationToken != "" {
-		if h.emailService != nil {
-			if err := h.emailService.SendVerificationEmail(
-				r.Context(),
-				result.User.Email(),
-				result.User.Name(),
-				result.VerificationToken,
-				h.authConfig.EmailVerificationDuration,
-			); err != nil {
-				h.logger.Error("failed to send verification email",
-					"email", result.User.Email(),
-					"error", err,
-				)
-				// Don't fail registration if email fails - user can request resend
-			}
-		}
-	} else if !result.RequiresVerification {
-		message = "Registration successful"
-	}
-
+	// SECURITY (anti-enumeration): a new and an already registered email get
+	// byte-identical responses. The body never carries the account id, echoes
+	// the submitted email and name (normalized the same way), and states the
+	// verification rule that applies to a new account either way. The
+	// verification email is sent after the response, so its latency does not
+	// tell the two apart either.
 	resp := RegisterResponse{
-		ID:                   result.User.ID().String(),
-		Email:                result.User.Email(),
-		Name:                 result.User.Name(),
+		Email:                strings.TrimSpace(strings.ToLower(req.Email)),
+		Name:                 strings.TrimSpace(req.Name),
 		RequiresVerification: result.RequiresVerification,
-		Message:              message,
+		Message:              registerMessage(result.RequiresVerification),
+	}
+
+	// Registering again with an address whose account never verified emails
+	// a set-password link instead of a new verification link: following it
+	// verifies the address AND replaces the password, so an account someone
+	// else registered first with this address cannot be kept by them. This is
+	// the way back for a user whose verification email was lost or expired.
+	if result.EmailExisted && result.ExistingUnverified {
+		h.sendResetLinkAsync(r, req.Email)
+	}
+
+	if !result.EmailExisted && result.User != nil && result.RequiresVerification &&
+		result.VerificationToken != "" && h.emailService != nil {
+		u := result.User
+		token := result.VerificationToken
+		duration := h.authConfig.EmailVerificationDuration
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+			defer cancel()
+			if err := h.emailService.SendVerificationEmail(ctx, u.Email(), u.Name(), token, duration); err != nil {
+				// The user can request another email.
+				h.logger.Error("failed to send verification email",
+					"email", logger.SanitizeValue(u.Email()),
+					"error", logger.SanitizeError(err),
+				)
+			}
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// registerMessage is the one message a registration answers with, whether or
+// not the email already had an account.
+func registerMessage(requiresVerification bool) string {
+	if requiresVerification {
+		return "Registration received. Please check your email to verify your account."
+	}
+	return "Registration received. You can now sign in."
 }
 
 // LoginRequest is the request body for login.
@@ -251,7 +301,7 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	ipAddress := getClientIP(r)
 	userAgent := r.UserAgent()
 
-	result, err := h.authService.Login(r.Context(), app.LoginInput{
+	result, err := h.authService.Login(r.Context(), auth.LoginInput{
 		Email:     req.Email,
 		Password:  req.Password,
 		IPAddress: ipAddress,
@@ -275,7 +325,7 @@ func (h *LocalAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // writeLoginSuccess sets the session cookies and writes the login response
 // shared by password login and the second-factor steps. recoveryCodes is set
 // only when the login just completed a forced 2FA enrollment.
-func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Request, result *app.LoginResult, recoveryCodes []string) {
+func (h *LocalAuthHandler) writeLoginSuccess(w http.ResponseWriter, r *http.Request, result *auth.LoginResult, recoveryCodes []string) {
 	// Convert tenant memberships to response format
 	tenants := make([]TenantInfo, len(result.Tenants))
 	for i, t := range result.Tenants {
@@ -370,26 +420,57 @@ func (h *LocalAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("logout failed", "error", err)
 		// Don't return error - logout should be idempotent
 	}
+	h.writeLoggedOut(w)
+}
 
-	// Clear all auth cookies
+// logoutRequest is the optional body of POST /auth/logout.
+type logoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// LogoutWithRefreshToken signs out by the refresh token when the request
+// carries one (in the body, or in the refresh_token cookie with the CSRF
+// pair) and hands every other request to withAccessToken, the access-token
+// sign-out. The refresh token outlives the access token, so this is the path
+// that still ends the server-side session after the access token expired.
+func (h *LocalAuthHandler) LogoutWithRefreshToken(withAccessToken http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req logoutRequest
+		if r.Body != nil {
+			// An empty or non-JSON body is a plain access-token sign-out.
+			_ = json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req)
+		}
+		token, ok := h.refreshTokenFrom(w, r, req.RefreshToken)
+		if !ok {
+			return
+		}
+		if token == "" {
+			withAccessToken.ServeHTTP(w, r)
+			return
+		}
+		if err := h.authService.LogoutByRefreshToken(r.Context(), token); err != nil {
+			h.logger.Error("logout by refresh token failed", "error", err)
+		}
+		h.writeLoggedOut(w)
+	}
+}
+
+// writeLoggedOut clears the session cookies and answers the sign-out.
+func (h *LocalAuthHandler) writeLoggedOut(w http.ResponseWriter) {
 	ClearRefreshTokenCookie(w, h.cookieConfig)
 	ClearTenantCookie(w, h.cookieConfig)
-
-	// Clear the CSRF token cookie
 	middleware.ClearCSRFTokenCookie(w, h.csrfConfig)
-
-	h.logger.Info("logout successful", "session_id", sessionID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"message": "Logged out successfully",
 	})
 }
 
 // refreshTokenFrom returns the refresh token that authenticates a
 // refresh-token route (/auth/token, /auth/refresh, /auth/create-first-team,
-// /invitations/{token}/accept-with-refresh). A token sent in the body is a
+// /invitations/accept-with-refresh). A token sent in the body is a
 // deliberate, non-ambient credential (server-to-server callers such as the
 // UI's Next routes use it) and needs nothing else. A token taken from the
 // refresh_token cookie is ambient - the browser attaches it to any request -
@@ -460,7 +541,7 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	result, err := h.authService.ExchangeToken(r.Context(), app.ExchangeTokenInput{
+	result, err := h.authService.ExchangeToken(r.Context(), auth.ExchangeTokenInput{
 		RefreshToken: refreshToken,
 		TenantID:     req.TenantID,
 	})
@@ -549,7 +630,7 @@ func (h *LocalAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	ipAddress := getClientIP(r)
 	userAgent := r.UserAgent()
 
-	result, err := h.authService.RefreshToken(r.Context(), app.RefreshTokenInput{
+	result, err := h.authService.RefreshToken(r.Context(), auth.RefreshTokenInput{
 		RefreshToken: refreshToken,
 		TenantID:     req.TenantID,
 		IPAddress:    ipAddress,
@@ -637,7 +718,7 @@ func (h *LocalAuthHandler) CreateFirstTeam(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	result, err := h.authService.CreateFirstTeam(r.Context(), app.CreateFirstTeamInput{
+	result, err := h.authService.CreateFirstTeam(r.Context(), auth.CreateFirstTeamInput{
 		RefreshToken: refreshToken,
 		TeamName:     req.TeamName,
 		TeamSlug:     req.TeamSlug,
@@ -688,11 +769,6 @@ func (h *LocalAuthHandler) CreateFirstTeam(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(resp)
 }
 
-// AcceptInvitationWithRefreshRequest is the request body for accepting invitation with refresh token.
-type AcceptInvitationWithRefreshRequest struct {
-	InvitationToken string `json:"invitation_token" validate:"required"`
-}
-
 // AcceptInvitationWithRefreshResponse is the response body for accepting invitation with refresh token.
 type AcceptInvitationWithRefreshResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -705,16 +781,49 @@ type AcceptInvitationWithRefreshResponse struct {
 	Role         string `json:"role"`
 }
 
-// AcceptInvitationWithRefresh handles accepting an invitation using refresh token.
-// POST /api/v1/invitations/{token}/accept-with-refresh
-// This endpoint is for users who were invited but don't have a tenant yet,
-// so they only have a refresh token (no access token).
-// The refresh token is obtained from the httpOnly cookie.
+// AcceptInvitationWithRefreshRequest is the body of
+// POST /api/v1/invitations/accept-with-refresh. refresh_token may be omitted
+// when the browser sends the refresh_token cookie (with the CSRF pair).
+type AcceptInvitationWithRefreshRequest struct {
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// AcceptInvitationWithRefreshBody handles
+// POST /api/v1/invitations/accept-with-refresh: accept an invitation with a
+// refresh token, for an invited user who has no organization yet (so no
+// tenant-scoped access token). The invitation token travels in the body.
+// @Summary      Accept an invitation with a refresh token
+// @Description  For an invited user without an organization yet: accepts the invitation and issues an access token for the new organization. The refresh token comes from the body or the httpOnly cookie (cookie requires the CSRF pair). The invitation token travels in the body, never in the URL.
+// @Tags         Invitations
+// @Accept       json
+// @Produce      json
+// @Param        request  body      AcceptInvitationWithRefreshRequest  true  "Invitation token and optional refresh token"
+// @Success      200  {object}  AcceptInvitationWithRefreshResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      429  {object}  apierror.Error
+// @Router       /invitations/accept-with-refresh [post]
+func (h *LocalAuthHandler) AcceptInvitationWithRefreshBody(w http.ResponseWriter, r *http.Request) {
+	var body AcceptInvitationWithRefreshRequest
+	if !decodeInvitationBody(w, r, &body) {
+		return
+	}
+	if !validInvitationToken(body.Token) {
+		apierror.BadRequest("Invalid invitation token").WriteJSON(w)
+		return
+	}
+	h.acceptInvitationWithRefresh(w, r, body.Token, body.RefreshToken)
+}
+
+// AcceptInvitationWithRefresh handles
+// POST /api/v1/invitations/{token}/accept-with-refresh (deprecated; the
+// successor is POST /api/v1/invitations/accept-with-refresh).
+// The refresh token is obtained from the body or the httpOnly cookie.
 func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r *http.Request) {
-	// Get invitation token from URL path
-	invitationToken := r.PathValue("token")
-	if invitationToken == "" {
-		apierror.BadRequest("Invitation token is required").WriteJSON(w)
+	invitationToken, ok := invitationTokenFromPath(w, r)
+	if !ok {
 		return
 	}
 
@@ -725,7 +834,11 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 	if r.Body != nil {
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
 	}
-	refreshToken, ok := h.refreshTokenFrom(w, r, body.RefreshToken)
+	h.acceptInvitationWithRefresh(w, r, invitationToken, body.RefreshToken)
+}
+
+func (h *LocalAuthHandler) acceptInvitationWithRefresh(w http.ResponseWriter, r *http.Request, invitationToken, bodyRefreshToken string) {
+	refreshToken, ok := h.refreshTokenFrom(w, r, bodyRefreshToken)
 	if !ok {
 		return
 	}
@@ -734,7 +847,7 @@ func (h *LocalAuthHandler) AcceptInvitationWithRefresh(w http.ResponseWriter, r 
 		return
 	}
 
-	result, err := h.authService.AcceptInvitationWithRefreshToken(r.Context(), app.AcceptInvitationWithRefreshTokenInput{
+	result, err := h.authService.AcceptInvitationWithRefreshToken(r.Context(), auth.AcceptInvitationWithRefreshTokenInput{
 		RefreshToken:    refreshToken,
 		InvitationToken: invitationToken,
 	})
@@ -854,48 +967,45 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Always return success to prevent email enumeration
-	ipAddress := getClientIP(r)
-	result, _ := h.authService.ForgotPassword(r.Context(), app.ForgotPasswordInput{
-		Email: req.Email,
-	})
-
-	// Send password reset email asynchronously if we got a token.
-	// Anti-enumeration (AUTHZ-6): the email send only happens for existing
-	// local users, so performing it inline would leak account existence via
-	// response latency. Dispatching it in a detached goroutine keeps the
-	// synchronous response time independent of whether the account exists.
-	if result != nil && result.Token != "" && h.emailService != nil {
-		email := req.Email
-		token := result.Token
-		resetDuration := h.authConfig.PasswordResetDuration
-		go func() {
-			// Detach from the request context (which is canceled once we
-			// respond) but keep request-scoped values for tracing.
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
-			defer cancel()
-			if err := h.emailService.SendPasswordResetEmail(
-				ctx,
-				email,
-				"", // empty name for privacy
-				token,
-				resetDuration,
-				ipAddress,
-			); err != nil {
-				h.logger.Error("failed to send password reset email",
-					"email", logger.SanitizeValue(email),
-					"error", logger.SanitizeError(err),
-				)
-				// Don't reveal the error to prevent enumeration
-			}
-		}()
-	}
+	// SECURITY (anti-enumeration, AUTHZ-6): the answer is the same whether or
+	// not the email has an account, and so is its latency: the whole lookup,
+	// the token write and the email run after the response, detached from
+	// the request.
+	h.sendResetLinkAsync(r, req.Email)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "If the email exists, a password reset link has been sent",
 	})
+}
+
+// sendResetLinkAsync issues a password reset token for email (when it has a
+// local account) and emails the link, after the response and detached from
+// the request, so neither the lookup nor the email shows in the latency.
+func (h *LocalAuthHandler) sendResetLinkAsync(r *http.Request, email string) {
+	ipAddress := getClientIP(r)
+	resetDuration := h.authConfig.PasswordResetDuration
+	go func() {
+		// Detach from the request context (which is canceled once we
+		// respond) but keep request-scoped values for tracing.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+		defer cancel()
+		result, err := h.authService.ForgotPassword(ctx, auth.ForgotPasswordInput{Email: email})
+		if err != nil {
+			h.logger.Error("password reset request failed", "error", logger.SanitizeError(err))
+			return
+		}
+		if result == nil || result.Token == "" || h.emailService == nil {
+			return
+		}
+		if err := h.emailService.SendPasswordResetEmail(ctx, email, "", result.Token, resetDuration, ipAddress); err != nil {
+			h.logger.Error("failed to send password reset email",
+				"email", logger.SanitizeValue(email),
+				"error", logger.SanitizeError(err),
+			)
+		}
+	}()
 }
 
 // ResetPasswordRequest is the request body for password reset.
@@ -926,9 +1036,11 @@ func (h *LocalAuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.authService.ResetPassword(r.Context(), app.ResetPasswordInput{
+	if err := h.authService.ResetPassword(r.Context(), auth.ResetPasswordInput{
 		Token:       req.Token,
 		NewPassword: req.NewPassword,
+		IPAddress:   getClientIP(r),
+		UserAgent:   r.UserAgent(),
 	}); err != nil {
 		h.handleAuthError(w, err)
 		return
@@ -977,7 +1089,7 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.authService.ChangePassword(r.Context(), userID, app.ChangePasswordInput{
+	if err := h.authService.ChangePassword(r.Context(), userID, auth.ChangePasswordInput{
 		CurrentPassword:  req.CurrentPassword,
 		NewPassword:      req.NewPassword,
 		CurrentSessionID: middleware.GetSessionID(r.Context()),
@@ -997,7 +1109,7 @@ func (h *LocalAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 
 // SessionsResponse is the response body for listing sessions.
 type SessionsResponse struct {
-	Sessions []app.SessionInfo `json:"sessions"`
+	Sessions []auth.SessionInfo `json:"sessions"`
 }
 
 // ListSessions lists all active sessions for the authenticated user.
@@ -1105,75 +1217,6 @@ type AuthInfoResponse struct {
 	EmailVerificationReq bool   `json:"email_verification_required"`
 }
 
-// WSTokenResponse is the response body for WebSocket token.
-type WSTokenResponse struct {
-	Token     string `json:"token"`
-	ExpiresIn int64  `json:"expires_in"` // Seconds until expiration
-}
-
-// GetWSToken returns a short-lived token for WebSocket authentication.
-// This is needed because WebSocket connections cannot use httpOnly cookies
-// when the connection is cross-origin (different port in development).
-// The token is valid for 30 seconds - just enough time to establish the connection.
-// @Summary      Get WebSocket token
-// @Description  Returns a short-lived token for WebSocket authentication
-// @Tags         Authentication
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200  {object}  WSTokenResponse
-// @Failure      401  {object}  map[string]string
-// @Router       /auth/ws-token [get]
-func (h *LocalAuthHandler) GetWSToken(w http.ResponseWriter, r *http.Request) {
-	userID := middleware.GetUserID(r.Context())
-	tenantID := middleware.GetTenantID(r.Context())
-
-	if userID == "" || tenantID == "" {
-		apierror.Unauthorized("Authentication required").WriteJSON(w)
-		return
-	}
-
-	// F-8: prefer the single-use ticket path. The ticket is an opaque
-	// 64-hex string with no embedded claims — capturing it after
-	// redemption is useless because it has already been DEL'd from Redis.
-	// Clients pass it as ?ticket=<ticket> on the WS upgrade.
-	if h.wsTicketService != nil {
-		ticket, err := h.wsTicketService.IssueTicket(r.Context(), userID, tenantID)
-		if err != nil {
-			h.logger.Error("failed to issue WS ticket", "error", err)
-			apierror.InternalError(err).WriteJSON(w)
-			return
-		}
-		resp := WSTokenResponse{
-			Token:     ticket,
-			ExpiresIn: int64(h.wsTicketService.TTLSeconds()),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-		return
-	}
-
-	// Fallback (only when Redis/WSTicket is not configured). This path
-	// still issues a short-lived JWT — operators running without Redis
-	// MUST treat WebSocket URLs as equivalent to short-lived credentials
-	// in access logs.
-	token, err := h.authService.GenerateWSToken(r.Context(), userID, tenantID)
-	if err != nil {
-		h.logger.Error("failed to generate WS token", "error", err)
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-
-	resp := WSTokenResponse{
-		Token:     token,
-		ExpiresIn: 30, // 30 seconds
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
 // Info returns authentication provider information.
 // @Summary      Auth info
 // @Description  Returns authentication provider information
@@ -1184,7 +1227,7 @@ func (h *LocalAuthHandler) GetWSToken(w http.ResponseWriter, r *http.Request) {
 func (h *LocalAuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	resp := AuthInfoResponse{
 		Provider:             string(h.authConfig.Provider),
-		RegistrationEnabled:  h.authConfig.AllowRegistration,
+		RegistrationEnabled:  h.registrationEnabled(r),
 		EmailVerificationReq: h.authConfig.RequireEmailVerification,
 	}
 
@@ -1193,58 +1236,67 @@ func (h *LocalAuthHandler) Info(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// minPasswordLength is the configured minimum (the default when unset).
+func (h *LocalAuthHandler) minPasswordLength() int {
+	if h.authConfig.PasswordMinLength > 0 {
+		return h.authConfig.PasswordMinLength
+	}
+	return password.MinLengthDefault
+}
+
 // handleAuthError handles authentication errors and returns appropriate HTTP responses.
 func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, app.ErrInvalidCredentials):
+	case errors.Is(err, auth.ErrInvalidCredentials):
 		apierror.Unauthorized("Invalid email or password").WriteJSON(w)
-	case errors.Is(err, app.ErrAccountLocked):
+	case errors.Is(err, auth.ErrAccountLocked):
 		apierror.Forbidden("Account is locked due to too many failed attempts").WriteJSON(w)
-	case errors.Is(err, app.ErrAccountSuspended):
+	case errors.Is(err, auth.ErrAccountSuspended):
 		apierror.Forbidden("Account is suspended").WriteJSON(w)
-	case errors.Is(err, app.ErrEmailNotVerified):
+	case errors.Is(err, auth.ErrEmailNotVerified):
 		apierror.Forbidden("Email is not verified").WriteJSON(w)
-	case errors.Is(err, app.ErrRegistrationDisabled):
-		apierror.Forbidden("Registration is not available").WriteJSON(w)
-	case errors.Is(err, app.ErrTenantCreationDisabled):
+	case WritePlanLimitError(w, err):
+	case errors.Is(err, auth.ErrRegistrationDisabled), errors.Is(err, auth.ErrSignupNotAvailable):
+		writeSignupNotAvailable(w)
+	case errors.Is(err, auth.ErrTenantCreationDisabled):
 		apierror.Forbidden("Organizations are created by the application administrator").WriteJSON(w)
 	case errors.Is(err, tenantdom.ErrPlatformAdminMembership):
 		apierror.Conflict("Platform administrators cannot belong to an organization. Use the admin console, or a separate account.").WriteJSON(w)
-	case errors.Is(err, app.ErrEmailAlreadyExists):
+	case errors.Is(err, auth.ErrEmailAlreadyExists):
 		apierror.Conflict("Email already exists").WriteJSON(w)
-	case errors.Is(err, app.ErrInvalidResetToken):
+	case errors.Is(err, auth.ErrInvalidResetToken):
 		apierror.BadRequest("Invalid or expired reset token").WriteJSON(w)
-	case errors.Is(err, app.ErrInvalidVerificationToken):
+	case errors.Is(err, auth.ErrInvalidVerificationToken):
 		apierror.BadRequest("Invalid or expired verification token").WriteJSON(w)
-	case errors.Is(err, app.ErrPasswordMismatch):
+	case errors.Is(err, auth.ErrPasswordMismatch):
 		// 400, not 401: the caller IS authenticated. Clients treat a 401 as an
 		// expired session and sign the user out, which is wrong for a typo.
 		apierror.BadRequest("Current password is incorrect").WriteJSON(w)
-	case errors.Is(err, app.ErrSessionLimitReached):
+	case errors.Is(err, auth.ErrSessionLimitReached):
 		apierror.Forbidden("Maximum number of active sessions reached").WriteJSON(w)
-	case errors.Is(err, app.ErrTenantAccessDenied):
+	case errors.Is(err, auth.ErrTenantAccessDenied):
 		apierror.Forbidden("User does not have access to this tenant").WriteJSON(w)
-	case errors.Is(err, app.ErrSSORequired):
+	case errors.Is(err, auth.ErrSSORequired):
 		apierror.Forbidden("This organization requires SSO sign-in. Please sign in through your identity provider.").WriteJSON(w)
-	case errors.Is(err, app.ErrTenantRequired):
+	case errors.Is(err, auth.ErrTenantRequired):
 		apierror.BadRequest("tenant_id is required").WriteJSON(w)
 	// Two-factor authentication
-	case errors.Is(err, app.ErrMFAChallengeInvalid):
+	case errors.Is(err, auth.ErrMFAChallengeInvalid):
 		apierror.Unauthorized("Your sign-in verification expired or is no longer valid. Please sign in again.").WriteJSON(w)
-	case errors.Is(err, app.ErrMFACodeInvalid):
+	case errors.Is(err, auth.ErrMFACodeInvalid):
 		apierror.Unauthorized("Invalid verification code").WriteJSON(w)
-	case errors.Is(err, app.ErrMFAEnrollmentRequired):
+	case errors.Is(err, auth.ErrMFAEnrollmentRequired):
 		apierror.New(http.StatusForbidden, apierror.CodeMFAEnrollmentRequired,
-			"This organization requires two-factor authentication. Sign in again to set it up.").WriteJSON(w)
-	case errors.Is(err, app.ErrMFANotSupported):
+			"This organization requires two-factor authentication. Sign in again to complete it.").WriteJSON(w)
+	case errors.Is(err, auth.ErrMFANotSupported):
 		apierror.BadRequest("Two-factor authentication for this account is managed by your identity provider").WriteJSON(w)
-	case errors.Is(err, app.ErrMFAAlreadyEnabled):
+	case errors.Is(err, auth.ErrMFAAlreadyEnabled):
 		apierror.Conflict("Two-factor authentication is already enabled").WriteJSON(w)
-	case errors.Is(err, app.ErrMFANotEnabled):
+	case errors.Is(err, auth.ErrMFANotEnabled):
 		apierror.BadRequest("Two-factor authentication is not enabled").WriteJSON(w)
-	case errors.Is(err, app.ErrMFANoPendingSetup):
+	case errors.Is(err, auth.ErrMFANoPendingSetup):
 		apierror.BadRequest("Start two-factor setup first").WriteJSON(w)
-	case errors.Is(err, app.ErrMFAUnavailable):
+	case errors.Is(err, auth.ErrMFAUnavailable):
 		apierror.ServiceUnavailable("Two-factor authentication is not available on this server").WriteJSON(w)
 	// Session/Token errors. A malformed, forged or expired refresh JWT (or
 	// anything else presented as one, e.g. a 2FA challenge token) is a 401,
@@ -1272,7 +1324,11 @@ func (h *LocalAuthHandler) handleAuthError(w http.ResponseWriter, err error) {
 		apierror.Unauthorized("Invalid token (possible replay attack detected)").WriteJSON(w)
 	// Password validation errors
 	case errors.Is(err, password.ErrPasswordTooShort):
-		apierror.BadRequest("Password is too short (minimum 8 characters)").WriteJSON(w)
+		apierror.BadRequest(fmt.Sprintf("Password is too short (minimum %d characters)", h.minPasswordLength())).WriteJSON(w)
+	case errors.Is(err, password.ErrPasswordTooLong):
+		apierror.BadRequest(fmt.Sprintf("Password is too long (maximum %d bytes; a letter with an accent counts as 2 or more)", password.MaxBytes)).WriteJSON(w)
+	case errors.Is(err, password.ErrPasswordCommon):
+		apierror.BadRequest("This password appears in lists of breached passwords. Choose another one.").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoUppercase):
 		apierror.BadRequest("Password must contain at least one uppercase letter").WriteJSON(w)
 	case errors.Is(err, password.ErrPasswordNoLowercase):

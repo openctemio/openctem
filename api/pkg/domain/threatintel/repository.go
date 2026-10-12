@@ -84,6 +84,11 @@ type KEVRepository interface {
 
 	// DeleteAll removes all KEV entries (for full refresh).
 	DeleteAll(ctx context.Context) error
+
+	// PruneNotIn removes the entries whose CVE is not in keep, the CVE ids of
+	// the latest complete feed. CISA occasionally removes a CVE from KEV; without
+	// this the removed CVE stays flagged as known-exploited forever.
+	PruneNotIn(ctx context.Context, keep []string) (int64, error)
 }
 
 // SyncStatusRepository defines the interface for sync status persistence.

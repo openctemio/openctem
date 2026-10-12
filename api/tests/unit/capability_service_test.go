@@ -2,9 +2,10 @@ package unit
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	capabilitysvc "github.com/openctemio/openctem/api/internal/app/capability"
 	"github.com/openctemio/openctem/api/pkg/domain/capability"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -19,6 +20,8 @@ import (
 type MockCapabilityRepository struct {
 	capabilities map[string]*capability.Capability
 	usageStats   map[string]*capability.CapabilityUsageStats
+	// statsTenants records the tenant passed to every usage-stats call.
+	statsTenants []shared.ID
 }
 
 func NewMockCapabilityRepository() *MockCapabilityRepository {
@@ -41,8 +44,12 @@ func (m *MockCapabilityRepository) GetByID(ctx context.Context, id shared.ID) (*
 	return c, nil
 }
 
-func (m *MockCapabilityRepository) GetByTenantAndID(_ context.Context, _, id shared.ID) (*capability.Capability, error) {
-	return nil, nil
+func (m *MockCapabilityRepository) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*capability.Capability, error) {
+	c, ok := m.capabilities[id.String()]
+	if !ok || c.TenantID == nil || *c.TenantID != tenantID {
+		return nil, shared.ErrNotFound
+	}
+	return c, nil
 }
 
 func (m *MockCapabilityRepository) GetByName(ctx context.Context, tenantID *shared.ID, name string) (*capability.Capability, error) {
@@ -84,46 +91,6 @@ func (m *MockCapabilityRepository) List(ctx context.Context, filter capability.F
 	}, nil
 }
 
-func (m *MockCapabilityRepository) ListAll(ctx context.Context, tenantID *shared.ID) ([]*capability.Capability, error) {
-	var result []*capability.Capability
-	for _, c := range m.capabilities {
-		if c.IsBuiltin || (tenantID != nil && c.TenantID != nil && *tenantID == *c.TenantID) {
-			result = append(result, c)
-		}
-	}
-	return result, nil
-}
-
-func (m *MockCapabilityRepository) ListByNames(ctx context.Context, tenantID *shared.ID, names []string) ([]*capability.Capability, error) {
-	var result []*capability.Capability
-	nameSet := make(map[string]bool)
-	for _, n := range names {
-		nameSet[n] = true
-	}
-	for _, c := range m.capabilities {
-		if !nameSet[c.Name] {
-			continue
-		}
-		if c.IsBuiltin || (tenantID != nil && c.TenantID != nil && *tenantID == *c.TenantID) {
-			result = append(result, c)
-		}
-	}
-	return result, nil
-}
-
-func (m *MockCapabilityRepository) ListByCategory(ctx context.Context, tenantID *shared.ID, category string) ([]*capability.Capability, error) {
-	var result []*capability.Capability
-	for _, c := range m.capabilities {
-		if c.Category != category {
-			continue
-		}
-		if c.IsBuiltin || (tenantID != nil && c.TenantID != nil && *tenantID == *c.TenantID) {
-			result = append(result, c)
-		}
-	}
-	return result, nil
-}
-
 func (m *MockCapabilityRepository) Update(ctx context.Context, c *capability.Capability) error {
 	if _, ok := m.capabilities[c.ID.String()]; !ok {
 		return shared.ErrNotFound
@@ -132,8 +99,8 @@ func (m *MockCapabilityRepository) Update(ctx context.Context, c *capability.Cap
 	return nil
 }
 
-func (m *MockCapabilityRepository) Delete(ctx context.Context, id shared.ID) error {
-	if _, ok := m.capabilities[id.String()]; !ok {
+func (m *MockCapabilityRepository) Delete(_ context.Context, tenantID, id shared.ID) error {
+	if c, ok := m.capabilities[id.String()]; !ok || c.TenantID == nil || *c.TenantID != tenantID {
 		return shared.ErrNotFound
 	}
 	delete(m.capabilities, id.String())
@@ -170,10 +137,10 @@ func (m *MockCapabilityRepository) CountByTenant(ctx context.Context, tenantID s
 	return count, nil
 }
 
-func (m *MockCapabilityRepository) GetCategories(ctx context.Context) ([]string, error) {
+func (m *MockCapabilityRepository) GetCategories(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	categorySet := make(map[string]bool)
 	for _, c := range m.capabilities {
-		if c.Category != "" {
+		if c.Category != "" && (c.TenantID == nil || *c.TenantID == tenantID) {
 			categorySet[c.Category] = true
 		}
 	}
@@ -184,7 +151,8 @@ func (m *MockCapabilityRepository) GetCategories(ctx context.Context) ([]string,
 	return categories, nil
 }
 
-func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
+func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, tenantID shared.ID, capabilityID shared.ID) (*capability.CapabilityUsageStats, error) {
+	m.statsTenants = append(m.statsTenants, tenantID)
 	c, ok := m.capabilities[capabilityID.String()]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -200,7 +168,8 @@ func (m *MockCapabilityRepository) GetUsageStats(ctx context.Context, capability
 	return stats, nil
 }
 
-func (m *MockCapabilityRepository) GetUsageStatsBatch(ctx context.Context, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
+func (m *MockCapabilityRepository) GetUsageStatsBatch(ctx context.Context, tenantID shared.ID, capabilityIDs []shared.ID) (map[shared.ID]*capability.CapabilityUsageStats, error) {
+	m.statsTenants = append(m.statsTenants, tenantID)
 	result := make(map[shared.ID]*capability.CapabilityUsageStats)
 	for _, id := range capabilityIDs {
 		c, ok := m.capabilities[id.String()]
@@ -231,10 +200,10 @@ func (m *MockCapabilityRepository) AddCapability(c *capability.Capability) {
 // Test Helpers
 // ============================================================================
 
-func newCapabilityTestService() (*app.CapabilityService, *MockCapabilityRepository) {
+func newCapabilityTestService() (*capabilitysvc.CapabilityService, *MockCapabilityRepository) {
 	repo := NewMockCapabilityRepository()
 	log := logger.NewDevelopment()
-	svc := app.NewCapabilityService(repo, nil, log)
+	svc := capabilitysvc.NewCapabilityService(repo, nil, log)
 	return svc, repo
 }
 
@@ -407,147 +376,34 @@ func TestCapabilityService_GetUsageStats_PlatformCapabilityAccessible(t *testing
 	}
 }
 
-// ============================================================================
-// Tests: GetCapabilitiesUsageStatsBatch
-// ============================================================================
-
-func TestCapabilityService_GetUsageStatsBatch_Success(t *testing.T) {
+// Security test: the repository computes usage stats for one tenant (its own
+// tools and sensors plus the platform catalog). The service must always pass
+// the caller's tenant, and refuse a call without one, so another tenant's
+// sensors and custom tools can never be counted or named.
+func TestCapabilityService_GetUsageStats_PassesCallerTenant(t *testing.T) {
 	svc, repo := newCapabilityTestService()
-	tenantID := shared.NewID()
+	caller := shared.NewID()
+	c := createPlatformCapability("sast", "SAST", "security")
+	repo.AddCapability(c)
 
-	// Create multiple platform capabilities
-	cap1 := createPlatformCapability("sast", "SAST", "security")
-	cap2 := createPlatformCapability("sca", "SCA", "security")
-	cap3 := createPlatformCapability("dast", "DAST", "security")
-	repo.AddCapability(cap1)
-	repo.AddCapability(cap2)
-	repo.AddCapability(cap3)
-
-	// Set different usage stats
-	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 5, SensorCount: 2})
-	repo.SetUsageStats("sca", &capability.CapabilityUsageStats{ToolCount: 3, SensorCount: 1})
-	repo.SetUsageStats("dast", &capability.CapabilityUsageStats{ToolCount: 0, SensorCount: 0})
-
-	// Get batch stats
-	ids := []string{cap1.ID.String(), cap2.ID.String(), cap3.ID.String()}
-	stats, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), tenantID.String(), ids)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if _, err := svc.GetCapabilityUsageStats(context.Background(), caller.String(), c.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UsageStats(context.Background(), caller.String(), []shared.ID{c.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.statsTenants) != 2 || repo.statsTenants[0] != caller || repo.statsTenants[1] != caller {
+		t.Fatalf("repository got tenants %v, want the caller %s for both calls", repo.statsTenants, caller)
 	}
 
-	if len(stats) != 3 {
-		t.Errorf("expected 3 stats entries, got %d", len(stats))
+	if _, err := svc.GetCapabilityUsageStats(context.Background(), "", c.ID.String()); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("no tenant: err = %v, want a validation error", err)
 	}
-
-	if stats[cap1.ID.String()].ToolCount != 5 {
-		t.Errorf("expected cap1 ToolCount 5, got %d", stats[cap1.ID.String()].ToolCount)
+	if _, err := svc.UsageStats(context.Background(), "", []shared.ID{c.ID}); !errors.Is(err, shared.ErrValidation) {
+		t.Errorf("no tenant (batch): err = %v, want a validation error", err)
 	}
-	if stats[cap2.ID.String()].ToolCount != 3 {
-		t.Errorf("expected cap2 ToolCount 3, got %d", stats[cap2.ID.String()].ToolCount)
-	}
-	if stats[cap3.ID.String()].ToolCount != 0 {
-		t.Errorf("expected cap3 ToolCount 0, got %d", stats[cap3.ID.String()].ToolCount)
-	}
-}
-
-func TestCapabilityService_GetUsageStatsBatch_EmptyInput(t *testing.T) {
-	svc, _ := newCapabilityTestService()
-	tenantID := shared.NewID()
-
-	stats, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), tenantID.String(), []string{})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if len(stats) != 0 {
-		t.Errorf("expected empty map, got %d entries", len(stats))
-	}
-}
-
-func TestCapabilityService_GetUsageStatsBatch_InvalidCapabilityID(t *testing.T) {
-	svc, _ := newCapabilityTestService()
-	tenantID := shared.NewID()
-
-	_, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), tenantID.String(), []string{"invalid-uuid"})
-	if err == nil {
-		t.Fatal("expected error for invalid capability ID")
-	}
-}
-
-func TestCapabilityService_GetUsageStatsBatch_PartialNotFound(t *testing.T) {
-	svc, repo := newCapabilityTestService()
-	tenantID := shared.NewID()
-
-	// Create only one capability
-	cap1 := createPlatformCapability("sast", "SAST", "security")
-	repo.AddCapability(cap1)
-	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 5, SensorCount: 2})
-
-	// Request stats for existing + non-existing capabilities
-	nonExistentID := shared.NewID()
-	ids := []string{cap1.ID.String(), nonExistentID.String()}
-
-	stats, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), tenantID.String(), ids)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// Should return stats only for existing capability
-	if len(stats) != 1 {
-		t.Errorf("expected 1 stats entry, got %d", len(stats))
-	}
-	if stats[cap1.ID.String()].ToolCount != 5 {
-		t.Errorf("expected cap1 ToolCount 5, got %d", stats[cap1.ID.String()].ToolCount)
-	}
-}
-
-// Security test: Batch returns only accessible capabilities
-func TestCapabilityService_GetUsageStatsBatch_TenantIsolation(t *testing.T) {
-	svc, repo := newCapabilityTestService()
-
-	tenant1 := shared.NewID()
-	tenant2 := shared.NewID()
-
-	// Create platform capability (accessible to all)
-	platformCap := createPlatformCapability("sast", "SAST", "security")
-	repo.AddCapability(platformCap)
-	repo.SetUsageStats("sast", &capability.CapabilityUsageStats{ToolCount: 10, SensorCount: 5})
-
-	// Create tenant1's custom capability
-	tenant1Cap := createTenantCapability(tenant1, "custom-scan", "Custom Scan")
-	repo.AddCapability(tenant1Cap)
-	repo.SetUsageStats("custom-scan", &capability.CapabilityUsageStats{ToolCount: 3, SensorCount: 1})
-
-	// Create tenant2's custom capability
-	tenant2Cap := createTenantCapability(tenant2, "other-scan", "Other Scan")
-	repo.AddCapability(tenant2Cap)
-	repo.SetUsageStats("other-scan", &capability.CapabilityUsageStats{ToolCount: 7, SensorCount: 4})
-
-	// Tenant1 requests all three
-	ids := []string{platformCap.ID.String(), tenant1Cap.ID.String(), tenant2Cap.ID.String()}
-	stats, err := svc.GetCapabilitiesUsageStatsBatch(context.Background(), tenant1.String(), ids)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// Tenant1 should only see platform + their own capability
-	if len(stats) != 2 {
-		t.Errorf("expected 2 stats entries (platform + own), got %d", len(stats))
-	}
-
-	// Should have platform capability
-	if _, ok := stats[platformCap.ID.String()]; !ok {
-		t.Error("expected platform capability in results")
-	}
-
-	// Should have tenant1's own capability
-	if _, ok := stats[tenant1Cap.ID.String()]; !ok {
-		t.Error("expected tenant1's capability in results")
-	}
-
-	// Should NOT have tenant2's capability
-	if _, ok := stats[tenant2Cap.ID.String()]; ok {
-		t.Error("should not have tenant2's capability in results")
+	if len(repo.statsTenants) != 2 {
+		t.Errorf("a call without a tenant reached the repository")
 	}
 }
 
@@ -560,7 +416,7 @@ func TestCapabilityService_CreateCapability_Success(t *testing.T) {
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := app.CreateCapabilityInput{
+	input := capabilitysvc.CreateCapabilityInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "custom-scan",
@@ -596,7 +452,7 @@ func TestCapabilityService_CreateCapability_DuplicateName(t *testing.T) {
 	existing := createTenantCapability(tenantID, "existing-cap", "Existing")
 	repo.AddCapability(existing)
 
-	input := app.CreateCapabilityInput{
+	input := capabilitysvc.CreateCapabilityInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "existing-cap", // Duplicate name
@@ -619,7 +475,7 @@ func TestCapabilityService_CreateCapability_PlatformNameConflict(t *testing.T) {
 	repo.AddCapability(platformCap)
 
 	// Try to create tenant capability with same name as platform
-	input := app.CreateCapabilityInput{
+	input := capabilitysvc.CreateCapabilityInput{
 		TenantID:    tenantID.String(),
 		CreatedBy:   userID.String(),
 		Name:        "sast", // Conflicts with platform capability
@@ -651,7 +507,7 @@ func TestCapabilityService_CreateCapability_InvalidName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			input := app.CreateCapabilityInput{
+			input := capabilitysvc.CreateCapabilityInput{
 				TenantID:    tenantID.String(),
 				CreatedBy:   userID.String(),
 				Name:        tc.invalidName,
@@ -675,7 +531,7 @@ func TestCapabilityService_CreateCapability_ReservedName(t *testing.T) {
 
 	for _, name := range reservedNames {
 		t.Run(name, func(t *testing.T) {
-			input := app.CreateCapabilityInput{
+			input := capabilitysvc.CreateCapabilityInput{
 				TenantID:    tenantID.String(),
 				CreatedBy:   userID.String(),
 				Name:        name,
@@ -702,7 +558,7 @@ func TestCapabilityService_UpdateCapability_Success(t *testing.T) {
 	cap := createTenantCapability(tenantID, "my-scan", "My Scan")
 	repo.AddCapability(cap)
 
-	input := app.UpdateCapabilityInput{
+	input := capabilitysvc.UpdateCapabilityInput{
 		TenantID:    tenantID.String(),
 		ID:          cap.ID.String(),
 		DisplayName: "Updated Name",
@@ -737,15 +593,18 @@ func TestCapabilityService_UpdateCapability_TenantIsolation(t *testing.T) {
 	repo.AddCapability(cap)
 
 	// Tenant2 tries to update tenant1's capability
-	input := app.UpdateCapabilityInput{
+	input := capabilitysvc.UpdateCapabilityInput{
 		TenantID:    tenant2.String(),
 		ID:          cap.ID.String(),
 		DisplayName: "Hacked Name",
 	}
 
 	_, err := svc.UpdateCapability(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error when updating another tenant's capability")
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("updating another tenant's capability: err = %v, want not found", err)
+	}
+	if cap.DisplayName != "My Scan" {
+		t.Fatalf("display name changed to %q", cap.DisplayName)
 	}
 }
 
@@ -758,15 +617,15 @@ func TestCapabilityService_UpdateCapability_CannotUpdatePlatform(t *testing.T) {
 	cap := createPlatformCapability("sast", "SAST", "security")
 	repo.AddCapability(cap)
 
-	input := app.UpdateCapabilityInput{
+	input := capabilitysvc.UpdateCapabilityInput{
 		TenantID:    tenantID.String(),
 		ID:          cap.ID.String(),
 		DisplayName: "My Custom SAST",
 	}
 
 	_, err := svc.UpdateCapability(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error when updating platform capability")
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("updating a platform capability: err = %v, want not found", err)
 	}
 }
 
@@ -782,7 +641,7 @@ func TestCapabilityService_DeleteCapability_Success(t *testing.T) {
 	cap := createTenantCapability(tenantID, "my-scan", "My Scan")
 	repo.AddCapability(cap)
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 	}
@@ -811,7 +670,7 @@ func TestCapabilityService_DeleteCapability_InUse(t *testing.T) {
 		SensorCount: 1,
 	})
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 		Force:        false,
@@ -835,7 +694,7 @@ func TestCapabilityService_DeleteCapability_ForceDelete(t *testing.T) {
 		SensorCount: 1,
 	})
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 		Force:        true, // Force delete
@@ -859,14 +718,17 @@ func TestCapabilityService_DeleteCapability_TenantIsolation(t *testing.T) {
 	repo.AddCapability(cap)
 
 	// Tenant2 tries to delete tenant1's capability
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenant2.String(),
 		CapabilityID: cap.ID.String(),
 	}
 
 	err := svc.DeleteCapability(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error when deleting another tenant's capability")
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("deleting another tenant's capability: err = %v, want not found", err)
+	}
+	if _, ok := repo.capabilities[cap.ID.String()]; !ok {
+		t.Fatal("another tenant's capability was deleted")
 	}
 }
 
@@ -879,13 +741,13 @@ func TestCapabilityService_DeleteCapability_CannotDeletePlatform(t *testing.T) {
 	cap := createPlatformCapability("sast", "SAST", "security")
 	repo.AddCapability(cap)
 
-	input := app.DeleteCapabilityInput{
+	input := capabilitysvc.DeleteCapabilityInput{
 		TenantID:     tenantID.String(),
 		CapabilityID: cap.ID.String(),
 	}
 
 	err := svc.DeleteCapability(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error when deleting platform capability")
+	if !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("deleting a platform capability: err = %v, want not found", err)
 	}
 }

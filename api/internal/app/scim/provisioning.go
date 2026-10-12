@@ -34,7 +34,24 @@ type MembershipManager interface {
 	AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error
 	SuspendMember(ctx context.Context, tenantID, membershipID shared.ID) error
 	ReactivateMember(ctx context.Context, tenantID, membershipID shared.ID) error
+	// OffboardMember is SCIM delete: offboard when the member owns nothing
+	// that needs a new owner, otherwise disable and ask an administrator to
+	// finish the offboarding (SCIM cannot pick the new owners).
+	OffboardMember(ctx context.Context, tenantID, membershipID shared.ID) error
 }
+
+// DomainVerifier reports whether an organization has DNS-proven an email domain
+// (the domainverify service satisfies it).
+type DomainVerifier interface {
+	IsVerifiedDomain(ctx context.Context, tenantID, emailDomain string) (bool, error)
+}
+
+// ErrExistingAccountNeedsInvite is returned when SCIM asks to provision an email
+// that already has an account outside this organization and the organization
+// has not DNS-verified its domain. Attaching an existing account needs the
+// account owner's consent (an invitation), the same rule as administrator-
+// created accounts; otherwise any organization could enroll any person by email.
+var ErrExistingAccountNeedsInvite = fmt.Errorf("%w: an account with this email already exists; invite them instead", shared.ErrConflict)
 
 // ScimUser is the renderer-agnostic projection the HTTP layer wraps into SCIM
 // JSON. Active reflects the tenant membership (suspended → active:false).
@@ -67,16 +84,26 @@ type ProvisioningService struct {
 	members     MembershipReader
 	manager     MembershipManager
 	defaultRole string
+	domains     DomainVerifier
 	logger      *logger.Logger
+}
+
+// SetDomainVerifier wires the verified-domain check. Without it an existing
+// account is never attached by SCIM (fail-closed); new accounts are unaffected.
+func (s *ProvisioningService) SetDomainVerifier(v DomainVerifier) {
+	s.domains = v
 }
 
 // NewProvisioningService wires the service.
 func NewProvisioningService(users UserStore, members MembershipReader, manager MembershipManager, log *logger.Logger) *ProvisioningService {
 	return &ProvisioningService{
-		users:       users,
-		members:     members,
-		manager:     manager,
-		defaultRole: string(tenantdom.RoleMember),
+		users:   users,
+		members: members,
+		manager: manager,
+		// Least privilege: a provisioned person is a viewer (with no data
+		// until a team includes them) unless an identity-provider group maps
+		// them higher.
+		defaultRole: string(tenantdom.RoleViewer),
 		logger:      log.With("service", "scim-provisioning"),
 	}
 }
@@ -101,19 +128,29 @@ func (s *ProvisioningService) CreateOrActivate(ctx context.Context, tenantID sha
 		name = email
 	}
 
-	u, err := s.findOrCreateUser(ctx, email, name)
+	u, existed, err := s.findOrCreateUser(ctx, email, name)
 	if err != nil {
 		return ScimUser{}, false, err
 	}
 
 	created := false
 	m, merr := s.members.GetMembership(ctx, u.ID(), tenantID)
+	// An offboarded tombstone is not a membership: provisioning re-adds the
+	// person from zero, under the same rules as a newcomer.
+	if merr == nil && m != nil && m.IsOffboarded() {
+		merr = shared.ErrNotFound
+	}
 	switch {
 	case merr == nil && m != nil:
 		if err := s.reconcileExisting(ctx, tenantID, m, in.Active); err != nil {
 			return ScimUser{}, false, err
 		}
 	case errors.Is(merr, shared.ErrNotFound):
+		if existed && !s.domainVerified(ctx, tenantID, email) {
+			s.logger.Warn("scim provision refused: existing account outside a verified domain",
+				"tenant_id", tenantID.String(), "user_id", u.ID().String())
+			return ScimUser{}, false, ErrExistingAccountNeedsInvite
+		}
 		if aerr := s.manager.AddMember(ctx, tenantID, u.ID(), s.defaultRole); aerr != nil {
 			return ScimUser{}, false, fmt.Errorf("add member: %w", aerr)
 		}
@@ -151,9 +188,26 @@ func (s *ProvisioningService) reconcileExisting(ctx context.Context, tenantID sh
 	return nil
 }
 
-func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name string) (*userdom.User, error) {
+// domainVerified reports whether tenantID has DNS-proven the domain of email.
+// Fail-closed on a missing verifier, a lookup error or an unparseable email.
+func (s *ProvisioningService) domainVerified(ctx context.Context, tenantID shared.ID, email string) bool {
+	at := strings.LastIndex(email, "@")
+	if s.domains == nil || at < 0 || at == len(email)-1 {
+		return false
+	}
+	ok, err := s.domains.IsVerifiedDomain(ctx, tenantID.String(), email[at+1:])
+	if err != nil {
+		s.logger.Warn("scim verified-domain check failed (fail-closed)", "tenant_id", tenantID.String(), "error", err)
+		return false
+	}
+	return ok
+}
+
+// findOrCreateUser returns the account for email, creating a passwordless one
+// when none exists. existed reports whether the account was already there.
+func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name string) (u *userdom.User, existed bool, err error) {
 	if u, err := s.users.GetByEmail(ctx, email); err == nil && u != nil {
-		return u, nil
+		return u, true, nil
 	}
 	// Create as a local user with no password — the same "invited, not yet
 	// logged in" state the invitation flow uses, so the user can later be
@@ -161,16 +215,17 @@ func (s *ProvisioningService) findOrCreateUser(ctx context.Context, email, name 
 	// passwordless local user).
 	newU, cerr := userdom.New(email, name)
 	if cerr != nil {
-		return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cerr)
+		return nil, false, fmt.Errorf("%w: %v", shared.ErrValidation, cerr)
 	}
 	if cerr := s.users.Create(ctx, newU); cerr != nil {
-		// Race: a concurrent request may have created it between lookup and create.
+		// Race: a concurrent request may have created it between lookup and
+		// create. Treat it as existing: we cannot tell it was ours.
 		if retry, rerr := s.users.GetByEmail(ctx, email); rerr == nil && retry != nil {
-			return retry, nil
+			return retry, true, nil
 		}
-		return nil, fmt.Errorf("create user: %w", cerr)
+		return nil, false, fmt.Errorf("create user: %w", cerr)
 	}
-	return newU, nil
+	return newU, false, nil
 }
 
 // Get returns a provisioned user scoped to the tenant.
@@ -182,13 +237,27 @@ func (s *ProvisioningService) Get(ctx context.Context, tenantID, userID shared.I
 // active=false — suspends the membership, which revokes sessions immediately).
 func (s *ProvisioningService) SetActive(ctx context.Context, tenantID, userID shared.ID, active bool) (ScimUser, error) {
 	m, err := s.members.GetMembership(ctx, userID, tenantID)
-	if err != nil || m == nil {
+	if err != nil || m == nil || m.IsOffboarded() {
 		return ScimUser{}, ErrUserNotInTenant
 	}
 	if err := s.reconcileExisting(ctx, tenantID, m, active); err != nil {
 		return ScimUser{}, err
 	}
 	return s.buildResource(ctx, userID, tenantID)
+}
+
+// Deprovision is SCIM DELETE: the member is offboarded (or, when they own
+// work that needs a new owner, disabled pending an administrator's
+// offboarding). Access is cut either way.
+func (s *ProvisioningService) Deprovision(ctx context.Context, tenantID, userID shared.ID) error {
+	m, err := s.members.GetMembership(ctx, userID, tenantID)
+	if err != nil || m == nil || m.IsOffboarded() {
+		return ErrUserNotInTenant
+	}
+	if err := s.manager.OffboardMember(ctx, tenantID, m.ID()); err != nil {
+		return fmt.Errorf("offboard member: %w", err)
+	}
+	return nil
 }
 
 // List returns provisioned users. A non-empty filterEmail returns the matching
@@ -245,7 +314,7 @@ func (s *ProvisioningService) List(ctx context.Context, tenantID shared.ID, filt
 
 func (s *ProvisioningService) buildResource(ctx context.Context, userID, tenantID shared.ID) (ScimUser, error) {
 	m, err := s.members.GetMembership(ctx, userID, tenantID)
-	if err != nil || m == nil {
+	if err != nil || m == nil || m.IsOffboarded() {
 		return ScimUser{}, ErrUserNotInTenant
 	}
 	u, uerr := s.users.GetByID(ctx, userID)
@@ -261,7 +330,7 @@ func resourceFrom(u *userdom.User, m *tenantdom.Membership) ScimUser {
 		UserName:    u.Email(),
 		DisplayName: u.Name(),
 		Email:       u.Email(),
-		Active:      !m.IsSuspended(),
+		Active:      m.IsActive(),
 		CreatedAt:   u.CreatedAt(),
 		UpdatedAt:   u.UpdatedAt(),
 	}

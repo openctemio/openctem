@@ -8,8 +8,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { BulkActionBar, GatedButton } from '@/features/shared'
@@ -169,29 +172,31 @@ export function ExposureActionDialog({
           <DialogDescription>{config.description}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="rounded-lg border p-3 bg-muted/50">
-            <p className="text-sm font-medium">{exposure.title}</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {exposure.description || 'No description'}
-            </p>
-          </div>
-
-          {(config.requireReason || actionType !== 'reactivate') && (
-            <div className="space-y-2">
-              <Label htmlFor="reason">
-                Reason {config.requireReason ? '(required)' : '(optional)'}
-              </Label>
-              <Textarea
-                id="reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder={`Why are you ${actionType === 'resolve' ? 'resolving' : actionType === 'accept' ? 'accepting' : actionType === 'false_positive' ? 'marking as false positive' : 'reactivating'} this exposure?`}
-                rows={3}
-              />
+        <DialogBody>
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg border p-3 bg-muted/50">
+              <p className="text-sm font-medium">{exposure.title}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {exposure.description || 'No description'}
+              </p>
             </div>
-          )}
-        </div>
+
+            {(config.requireReason || actionType !== 'reactivate') && (
+              <div className="space-y-2">
+                <Label htmlFor="reason">
+                  Reason {config.requireReason ? '(required)' : '(optional)'}
+                </Label>
+                <Textarea
+                  id="reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={`Why are you ${actionType === 'resolve' ? 'resolving' : actionType === 'accept' ? 'accepting' : actionType === 'false_positive' ? 'marking as false positive' : 'reactivating'} this exposure?`}
+                  rows={3}
+                />
+              </div>
+            )}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
@@ -299,6 +304,8 @@ export function ExposureBulkActions({
 }: ExposureBulkActionsProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [bulkAction, setBulkAction] = useState<'accept' | 'false_positive' | null>(null)
+  const [resolveOpen, setResolveOpen] = useState(false)
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const canApprove = useCanApproveExposures()
 
@@ -311,6 +318,7 @@ export function ExposureBulkActions({
     try {
       await onBulkResolve(selectedIds)
       toast.success(`${count} exposure(s) resolved`)
+      setResolveOpen(false)
       onClearSelection()
     } catch (_error) {
       toast.error('Failed to resolve exposures')
@@ -347,7 +355,12 @@ export function ExposureBulkActions({
   return (
     <>
       <BulkActionBar count={count} onClear={onClearSelection} noun="exposures selected">
-        <Button size="sm" variant="ghost" onClick={handleBulkResolve} disabled={isProcessing}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setResolveOpen(true)}
+          disabled={isProcessing}
+        >
           {isProcessing ? (
             <Loader2 className="me-2 h-4 w-4 animate-spin" />
           ) : (
@@ -391,16 +404,18 @@ export function ExposureBulkActions({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2 py-4">
-            <Label htmlFor="bulk-reason">Reason (required)</Label>
-            <Textarea
-              id="bulk-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Provide a reason for this bulk action..."
-              rows={3}
-            />
-          </div>
+          <DialogBody>
+            <div className="space-y-2 py-4">
+              <Label htmlFor="bulk-reason">Reason (required)</Label>
+              <Textarea
+                id="bulk-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Provide a reason for this bulk action..."
+                rows={3}
+              />
+            </div>
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkAction(null)}>
@@ -413,6 +428,23 @@ export function ExposureBulkActions({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={resolveOpen}
+        onOpenChange={(open) => !isProcessing && setResolveOpen(open)}
+        title={
+          count === 1
+            ? t('confirm.exposure.bulkResolveTitleOne', 'Resolve 1 exposure?')
+            : t('confirm.exposure.bulkResolveTitle', 'Resolve {count} exposures?', { count })
+        }
+        desc={t(
+          'confirm.exposure.bulkResolveDesc',
+          'The selected exposures are marked resolved and leave the active list. Reactivate one from its row if it is still present.'
+        )}
+        confirmText={t('confirm.exposure.resolve', 'Resolve')}
+        isLoading={isProcessing}
+        handleConfirm={handleBulkResolve}
+      />
     </>
   )
 }

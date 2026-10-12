@@ -83,6 +83,11 @@ test.describe('Finding drawer', () => {
       .first()
       .click()
     const drawer = page.getByRole('dialog')
-    await expect(drawer.getByText(apiType, { exact: true }).first()).toBeVisible()
+    // The drawer names the asset's type in words under its name
+    // ("Web Application · Critical asset"), not a hard-coded "repository".
+    await expect(drawer.getByText('Asset', { exact: true })).toBeVisible()
+    if (apiType !== 'repository') {
+      await expect(drawer.getByText(/^Repository\b/)).toHaveCount(0)
+    }
   })
 })

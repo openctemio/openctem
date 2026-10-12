@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib/severity-colors'
+import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 
 export type SeverityCounts = Partial<Record<SeverityLevel, number>>
 
@@ -8,13 +9,7 @@ interface SeverityStripProps {
   className?: string
 }
 
-const LABELS: Record<SeverityLevel, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+const LABELS: Record<SeverityLevel, string> = SHARED_SEVERITY_LABELS
 
 /**
  * Compact severity breakdown: one stacked bar plus a count per severity.

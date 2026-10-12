@@ -51,7 +51,7 @@ func (p *CVEProcessor) ProcessBatch(
 		if f.Vulnerability == nil {
 			continue
 		}
-		cveID := strings.TrimSpace(f.Vulnerability.CVEID)
+		cveID := vulnerability.NormalizeCVEID(f.Vulnerability.CVEID)
 		if cveID == "" || !vulnerability.IsValidCVE(cveID) {
 			continue
 		}
@@ -101,12 +101,44 @@ func (p *CVEProcessor) ProcessBatch(
 		result[v.CVEID()] = v.ID()
 	}
 
+	p.linkUnlinkedFindings(ctx, result)
+
 	// Best-effort counter: without per-row insert/update distinction from
 	// RETURNING (xmax=0), count all as updates. A future improvement can
 	// plumb the insert bit through the repo.
 	output.CVEsUpdated += len(result)
 
 	return result, nil
+}
+
+// findingCatalogLinker links stored findings to catalog entries by CVE.
+// Optional, like cveIDLookup, so repository fakes need not implement it.
+type findingCatalogLinker interface {
+	LinkUnlinkedFindings(ctx context.Context, cveIDs []string) (int64, error)
+}
+
+// linkUnlinkedFindings links findings stored before their CVE had a catalog
+// entry (a protocol v2 report reads the catalog and never creates entries; a
+// manual or pentest finding never looked one up) to the entries this batch
+// found or created. Failures are logged: the link is repaired by the next
+// batch that names the CVE.
+func (p *CVEProcessor) linkUnlinkedFindings(ctx context.Context, ids map[string]shared.ID) {
+	l, ok := p.repo.(findingCatalogLinker)
+	if !ok || len(ids) == 0 {
+		return
+	}
+	cves := make([]string, 0, len(ids))
+	for cve := range ids {
+		cves = append(cves, cve)
+	}
+	n, err := l.LinkUnlinkedFindings(ctx, cves)
+	if err != nil {
+		p.logger.Warn("failed to link stored findings to the CVE catalog", "error", err)
+		return
+	}
+	if n > 0 {
+		p.logger.Info("linked stored findings to the CVE catalog", "findings", n)
+	}
 }
 
 // cveIDLookup is the read-only batch lookup the catalog repository offers.
@@ -129,7 +161,7 @@ func (p *CVEProcessor) LookupBatch(ctx context.Context, report *ctis.Report) (ma
 		if f.Vulnerability == nil {
 			continue
 		}
-		cveID := strings.TrimSpace(f.Vulnerability.CVEID)
+		cveID := vulnerability.NormalizeCVEID(f.Vulnerability.CVEID)
 		if cveID == "" || seen[cveID] || !vulnerability.IsValidCVE(cveID) {
 			continue
 		}
@@ -144,6 +176,7 @@ func (p *CVEProcessor) LookupBatch(ctx context.Context, report *ctis.Report) (ma
 		if err != nil {
 			return map[string]shared.ID{}, fmt.Errorf("look up CVE batch: %w", err)
 		}
+		p.linkUnlinkedFindings(ctx, m)
 		return m, nil
 	}
 	out := make(map[string]shared.ID, len(ids))

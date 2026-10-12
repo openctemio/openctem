@@ -1,10 +1,22 @@
 # License-Aware Scan Coverage (Tenable Nessus Pro + Tenable.sc)
 
-> **Status**: Converter (#139) + manual `.nessus` ingest endpoint shipped.
-> Live connector + scheduler designed in
+> **Status**: `.nessus` uploads go through the shared ctis importer
+> (`POST /findings/import`, [finding-import.md](finding-import.md)). The live connector and the coverage scheduler are **paused** (owner
+> decision D-14): sensor v0.8.0 removed the Tenable runner, so new Tenable
+> integrations are refused, the scheduler is not registered and the web hides
+> Connect/Edit/Coverage, all behind one switch
+> (`integration.TenableConnectorEnabled`, web `TENABLE_CONNECTOR_ENABLED`).
+> Rebuild: RFC-047 (two-way Tenable.sc connector in the sensor). Design in
 > [RFC-007](../rfcs/RFC-007-license-aware-scan-coverage.md). Complements
-> [Scan Orchestration](scan-orchestration.md) (agent-run scanners); this doc
+> [Scan Orchestration](scan-orchestration.md) (sensor-run scanners); this doc
 > covers **external** Tenable engines.
+
+> **Superseded design (2026-10-04).** Coverage now runs on the Tenable.sc
+> sensor connector ([RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md)
+> §9, [tenable-sc-connector.md](tenable-sc-connector.md#rolling-coverage-p2)):
+> each batch is a `connector_scan`, sized against Tenable.sc's own licensed and
+> active IPs. The runner and direct modes described below are gone; the
+> planner, cursor and batch-scoped auto-resolve invariant are kept.
 
 ## Problem
 
@@ -41,7 +53,7 @@ step runs.
    ScanEngine.Launch(targets) ─poll─► Export(.nessus)
             │
             ▼
-   nessus.Convert(.nessus)  ──►  *ctis.Report   (internal/infra/scanner/nessus)
+   ctis importer (.nessus)  ──►  *ctis.Report   (github.com/openctemio/ctis/importer)
             │   tool=tenable · metadata.id=session · coverage=full · synthetic default branch
             ▼
    ingest pipeline (RFC-005 async)
@@ -62,7 +74,7 @@ scoped to **(this tool) × (these asset IDs) × (this scan)**
 (`internal/app/ingest/service.go`). So:
 
 - a 500-IP batch cannot resolve the other 2500 assets' findings;
-- a Tenable scan cannot resolve agent-scanner (nuclei/trivy) findings.
+- a Tenable scan cannot resolve sensor-scanner (nuclei/trivy) findings.
 
 The requirement on the converter is therefore narrow: emit **one report per
 batch** with `tool.name="tenable"`, a unique `metadata.id` (the scan session),
@@ -78,47 +90,29 @@ batch** with `tool.name="tenable"`, a unique `metadata.id` (the scan session),
 > `shift-left-ci-scanning.md`, "Which findings auto-resolve"); making this one
 > server-side, batch-scoped path an exception is an open product decision.
 
-## `.nessus → CTIS` converter (shipped, #139)
+## `.nessus → CTIS` conversion
 
-`internal/infra/scanner/nessus/converter.go` — `Convert(io.Reader, ConvertOptions) (*ctis.Report, error)`.
-Both Nessus Pro and Tenable.sc emit the same `NessusClientData_v2` format, so one
-converter serves both.
+One parser: the ctis importer (`importer.FormatNessus`), shared by every
+upload path. Nessus Pro and Tenable.sc write the same `NessusClientData_v2`
+format. The mapping, field by field, is the importer's spec
+(`docs/importers/nessus.md` in the ctis repository): one asset per host with
+its identity hints, one finding per plugin result or compliance check, every
+CVSS version, VPR and EPSS, typed vulnerability ids, advisories, KEV and
+exploit flags. The scan policy (credentials) is never read; plugin output and
+compliance values are redacted of accounts, passwords, tokens and community
+strings. Every finding carries a network location (port 0 = host level), so
+the receiver keys it on the network identity (host, CVE or plugin,
+port/protocol).
 
-- `ReportHost` → CTIS asset (host/ip_address; FQDN preferred value; ip/os/mac/fqdn in properties).
-- `ReportItem` → CTIS vulnerability finding:
-  - severity 0–4 → info/low/medium/high/critical;
-  - CVSS (v3 preferred over v2), remediation from `solution`, `see_also` → references;
-  - first-class CTIS fields (no longer stuffed in `properties`): `vulnerability.cve_ids`
-    (all CVEs per plugin) + `cve_id` (primary), `vpr_score` (Tenable VPR),
-    `exploit_available`, `cpe`; `finding.network` {port, protocol, service};
-    `finding.evidence` (plugin_output);
-  - stable fingerprint `nessus:<host>:<plugin>:<port>/<proto>` for cross-cycle dedup.
-- `ConvertOptions`: `ScanSessionID` (→ metadata.id, unique per batch), `ToolName`
-  (default `tenable`), `MinSeverity` (drop info noise), `Now` (deterministic tests),
-  `DefaultCriticality`.
-
-## Manual / cron ingest endpoint (shipped)
+## Upload endpoint
 
 Until the live Tenable connector lands, results enter OpenCTEM by uploading a
-`.nessus` export. This is the RFC's Phase 1 pilot path (an external script or
-operator pushes each batch's file):
-
-```
-POST /api/v1/assets/import/nessus-findings        (JWT; AssetsWrite + FindingsWrite)
-  ?session_id=<batch id>   optional — unique per batch (default: generated)
-  ?tool=tenable            optional — auto-resolve scope (default: tenable)
-  ?min_severity=1          optional — 0..4, drop info noise (default: 1)
-  body: the .nessus XML
-  → { "scan_session_id": "...", "result": { assets_*, findings_*, findings_auto_resolved, ... } }
-```
-
-Each upload is one batch: the handler builds a synthetic agent for the tenant
-(mirroring the ingest job processor), runs `nessus.Convert`, and ingests through
-the standard pipeline. The report is shaped for batch-scoped auto-resolve
-(tool, session id, full coverage), but host findings are not auto-resolved
-today; see the note above. Contrast with
-`POST /api/v1/assets/import/nessus`, which imports host assets only (no findings).
-Handler: `internal/infra/http/handler/asset_import_handler.go` `IngestNessusFindings`.
+`.nessus` export (or a ZIP of them) to `POST /api/v1/findings/import`
+([finding-import.md](finding-import.md)). Settings → Vulnerability scanners
+sends `?min_severity=low` to skip informational results. The upload runs with
+the uploader's rights and is always partial coverage: it never auto-resolves.
+The earlier `POST /assets/import/nessus` (hosts only) and
+`POST /assets/import/nessus-findings`, with their own parser, are removed.
 
 ## Reused infrastructure (do not rebuild)
 
@@ -145,29 +139,29 @@ sharing everything above the execution boundary — scheduler, parser, ingest,
 mappings, isolation. Only *where the Tenable REST calls run* differs:
 
 - **`direct`** — the backend calls Tenable REST itself (cloud, or reachable `.sc`).
-  api-side `DirectRunner` + per-tenant resolver. **No agent/sdk-go work.**
-- **`agent`** — a purpose-built agent on the customer network calls the local
-  appliance and pushes CTIS back (on-prem `.sc` the api can't reach). Adds an agent
+  api-side `DirectRunner` + per-tenant resolver. **No sensor/sdk-go work.**
+- **`sensor`** — a purpose-built sensor on the customer network calls the local
+  appliance and pushes CTIS back (on-prem `.sc` the api can't reach). Adds a sensor
   `tenable` tool + a shared `TenableClient`/parser; api-side `AgentRunner` dispatches
-  the job carrying the coverage `session_id`. Credentials can stay **agent-local**
+  the job carrying the coverage `session_id`. Credentials can stay **sensor-local**
   (api never holds on-prem creds).
 
 The two modes share the L1 `TenableClient` (REST, injectable HTTP) and the L2
 `.nessus → CTIS` parser; only the thin `ScanEngineRunner` strategy differs. The
-parser is promoted to the shared `ctis` module so api and agent use one copy.
+parser is promoted to the shared `ctis` module so api and sensor use one copy.
 Full design + code-ownership + tenant-isolation in
 [RFC-007 §3.9](../rfcs/RFC-007-license-aware-scan-coverage.md).
 
 Today (Phase 1): on-prem unreachable from the api is already covered by an external
-cron pushing `.nessus` to `POST /assets/import/nessus-findings` — no agent needed yet.
+cron pushing `.nessus` to `POST /findings/import` — no sensor needed yet.
 
 ### Configuring a Tenable integration (shipped)
 
-A `provider=tenable` integration carries `config.execution_mode` (`agent` default |
+A `provider=tenable` integration carries `config.execution_mode` (`sensor` default |
 `direct`) and `config.engine` (`nessus_pro` default | `tenable_sc`). Creation is
 validated server-side (`internal/app/scancoverage/tenable_config.go`):
 
-- **agent mode MUST NOT store credentials in the control plane** (RFC-007 §8 R3/R4)
+- **sensor mode MUST NOT store credentials in the control plane** (RFC-007 §8 R3/R4)
   — they belong on the runner; supplying credentials is rejected.
 - **direct mode requires credentials + base_url** (the api calls Tenable).
 - unknown `execution_mode`/`engine` values are rejected; config is normalized so the
@@ -197,6 +191,18 @@ and advances the rotation cursor (`scan_coverage_state`, migration 000176) so th
 assets sort last next cycle. The runner scans its local appliance and pushes CTIS back;
 ingest auto-resolve is scoped to the batch's `session_id` + assets.
 
+Every batch passes the checks of a scan trigger before it is claimed
+(`scan.Service.ResolveDispatchTargets`, RFC-042 F16): scan create's target
+validator (a private address only inside a scan zone; loopback, link-local and
+metadata never), approved scope exclusions, the attribution of the candidate
+asset (an asset whose ownership is not confirmed is skipped, RFC-036 O4), and
+zone routing ([active-probe-gate.md](active-probe-gate.md)). A skipped asset
+is claimed without a dispatch, so it rotates to the back and is checked again
+on its next turn. A batch stays in the zone of its top candidate, the command
+is stamped with that zone, and a pinned sensor must be in it. No gate, or a
+failed exclusion or attribution lookup, dispatches nothing. Internal networks therefore need
+a scan zone covering them, as for any other scan.
+
 > **Scope:** today the scheduler drives only **unlimited engines (Nessus Pro)** —
 > exactly the 3000-IP-on-Nessus-Pro use case. **Capped engines (Tenable.sc) are
 > skipped** (logged) until active-IP accounting + reclaim-ACK ship (Phase 3.5):
@@ -207,8 +213,8 @@ ingest auto-resolve is scoped to the batch's `session_id` + assets.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — converter (#139) + `POST /assets/import/nessus-findings` |
-| 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, agent `TenableExecutor`; live-appliance REST verification pending |
+| 1 | `.nessus → CTIS` findings adapter + batch-scoped safety + manual ingest endpoint | **Done** — now the ctis importer + `POST /findings/import` |
+| 2 | `ScanEngine` connector (Nessus Pro + Tenable.sc) + runner executor | **Done (mock-first)** — sdk-go tenable client/parser, sensor `TenableExecutor`; live-appliance REST verification pending |
 | 3 | Coverage scheduler (rotation cursor, dispatch, license headroom) | **Done (unlimited engine)** — planner + dispatcher + scheduler + live controller + `scan_coverage_state` |
 | 3.5 | `.sc` active-IP accounting + reclaim gated on ingest ACK | Planned |
 | 4 | Observability (freshness, coverage %) | **Done (API)** — `GET /api/v1/scans/coverage`; UI pending |
@@ -234,8 +240,7 @@ query over the scannable estate LEFT JOIN `scan_coverage_state`). `coverage_perc
 ## Key files
 
 ```
-internal/infra/scanner/nessus/converter.go    .nessus → *ctis.Report (shipped)
-internal/infra/http/handler/asset_import_handler.go   IngestNessusFindings endpoint (shipped)
+internal/app/findingimport/                    .nessus (and other exports) → ctis importer → ingest
 internal/app/scancoverage/planner.go           LicensePolicy + batch selection (pure core, shipped)
 internal/app/scancoverage/dispatcher.go         build scan command routed to a tenable runner (shipped)
 internal/app/scancoverage/scheduler.go          rotation pass: headroom -> select -> dispatch -> cursor (shipped)
@@ -243,7 +248,6 @@ internal/app/scancoverage/tenable_config.go     parse config (engine/mode/covera
 internal/infra/controller/coverage_scheduler.go live controller binding the scheduler to repos (shipped)
 internal/infra/postgres/scan_coverage_repository.go  candidates + rotation cursor (shipped)
 migrations/000176_scan_coverage_state.up.sql    per-asset rotation cursor table (shipped)
-internal/app/asset/import.go                   ImportNessus (asset-only legacy path)
 internal/app/ingest/service.go                 scoped auto-resolve (safety invariant)
 pkg/domain/scan/entity.go                       Scan.TargetsPerJob, scheduler
 ```

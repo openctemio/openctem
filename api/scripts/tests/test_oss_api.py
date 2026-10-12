@@ -6,11 +6,9 @@ Tests all major API flows to ensure migrations and code are working correctly.
 
 import requests
 import json
-import time
 import sys
 import uuid
-from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict
 
 # Configuration
 BASE_URL = "http://localhost:8080"
@@ -117,7 +115,7 @@ def api_request(method: str, endpoint: str, data: Optional[Dict] = None,
                 try:
                     error_detail = resp.json()
                     log_error(f"  Error: {json.dumps(error_detail, indent=2)}")
-                except:
+                except ValueError:
                     log_error(f"  Response: {resp.text[:500]}")
             return None
     except Exception as e:
@@ -235,7 +233,7 @@ def test_auth_create_first_team():
             log_error(f"POST /auth/create-first-team - Expected 201, got {resp.status_code}")
             try:
                 log_error(f"  Error: {json.dumps(resp.json(), indent=2)}")
-            except:
+            except ValueError:
                 log_error(f"  Response: {resp.text[:500]}")
             return False
     except Exception as e:
@@ -608,11 +606,11 @@ def test_finding_crud():
     else:
         return False
 
-    # Triage finding
-    data = {"triageStatus": "confirmed", "triageReason": "Verified by security team"}
-    result = api_request("PATCH", f"/findings/{finding_id}/triage", data)
+    # Confirm the finding (triage is a status change)
+    data = {"status": "confirmed", "reason": "Verified by security team"}
+    result = api_request("PATCH", f"/findings/{finding_id}/status", data)
     if result:
-        log_success(f"PATCH /findings/{finding_id}/triage - Finding triaged")
+        log_success(f"PATCH /findings/{finding_id}/status - Finding confirmed")
     else:
         return False
 
@@ -695,10 +693,10 @@ def test_tools():
     log_section("TOOL TESTS")
 
     # List platform tools
-    result = api_request("GET", "/tools/platform")
+    result = api_request("GET", "/tools?source=platform")
     if result:
-        tools = result.get("tools", [])
-        log_success(f"GET /tools/platform - Listed {len(tools)} platform tools")
+        tools = result.get("items", [])
+        log_success(f"GET /tools?source=platform - Listed {len(tools)} platform tools")
         for tool in tools[:5]:
             log_info(f"  - {tool.get('name')} ({tool.get('category')})")
     else:
@@ -712,10 +710,10 @@ def test_tools():
         return False
 
     # List capabilities
-    result = api_request("GET", "/capabilities/all")
+    result = api_request("GET", "/capabilities?per_page=100")
     if result:
-        caps = result.get("capabilities", [])
-        log_success(f"GET /capabilities/all - Listed {len(caps)} capabilities")
+        caps = result.get("items", [])
+        log_success(f"GET /capabilities - Listed {len(caps)} capabilities")
     else:
         return False
 

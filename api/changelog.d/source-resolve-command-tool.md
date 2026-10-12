@@ -1,0 +1,3 @@
+### Security: a report may close findings on its source's say-so only for its own connector
+
+- With `INGEST_SOURCE_RESOLVE=enforce`, a command-bound report that marked findings mitigated (Tenable.sc) closed the matching open findings anywhere in the organization. If the command named no tool (a `validate` command), the report could pick its own source tool. A sensor holding any open command could therefore close Tenable findings on any asset. Now only a connector command of the same tool may resolve this way: a `connector_sync` over its whole inventory, and a `connector_scan` only on the assets inside its targets.

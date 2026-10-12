@@ -112,6 +112,28 @@ func TestResolveGroup_InvalidStatusRejected(t *testing.T) {
 	}
 }
 
+// Resolving a group without findings:verify is forbidden before anything is
+// read or counted (a member with findings:write cannot close a whole group).
+func TestResolveGroup_ResolvedNeedsVerify(t *testing.T) {
+	keys := &mockKeyRepo{openIDs: []shared.ID{shared.NewID()}}
+	res := &mockResolver{}
+	guard := &mockGuard{}
+	svc := newSvc(keys, res, guard)
+
+	_, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k", Status: "resolved"})
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("group resolve without verify: err = %v, want ErrForbidden", err)
+	}
+	if res.called || keys.lastKey != "" || guard.gotSize != 0 {
+		t.Error("a refused group resolve must not read the group, hit the guard or call the bulk path")
+	}
+
+	out, err := svc.ResolveGroup(context.Background(), shared.NewID(), ResolveGroupInput{Key: "k", Status: "resolved", HasVerifyPermission: true})
+	if err != nil || out.Updated != 1 || !res.gotInput.HasVerifyPermission {
+		t.Fatalf("verify holder group resolve = %+v, %v; want 1 updated with the permission passed on", out, err)
+	}
+}
+
 // An empty group is a no-op (no resolver call).
 func TestResolveGroup_EmptyGroupNoop(t *testing.T) {
 	res := &mockResolver{}

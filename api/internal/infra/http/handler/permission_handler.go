@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,15 +18,15 @@ import (
 // PermissionHandler handles permission-related HTTP requests.
 // This handler provides the real-time permission sync endpoint.
 type PermissionHandler struct {
-	permCacheSvc   *app.PermissionCacheService
-	permVersionSvc *app.PermissionVersionService
+	permCacheSvc   *accesscontrol.PermissionCacheService
+	permVersionSvc *accesscontrol.PermissionVersionService
 	logger         *logger.Logger
 }
 
 // NewPermissionHandler creates a new permission handler.
 func NewPermissionHandler(
-	permCacheSvc *app.PermissionCacheService,
-	permVersionSvc *app.PermissionVersionService,
+	permCacheSvc *accesscontrol.PermissionCacheService,
+	permVersionSvc *accesscontrol.PermissionVersionService,
 	log *logger.Logger,
 ) *PermissionHandler {
 	return &PermissionHandler{

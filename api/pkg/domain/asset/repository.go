@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -58,9 +59,19 @@ type Repository interface {
 	// Security: Asset's TenantID is validated internally.
 	Update(ctx context.Context, asset *Asset) error
 
-	// Delete removes an asset by its ID within a tenant.
+	// Delete soft-deletes an asset of the tenant (owner decision O3): it sets
+	// deleted_at / deleted_by, frees its name, and detaches it from groups,
+	// owners, access, relationships and identity, in one transaction. It
+	// refuses an asset that has any finding with *HasFindingsError (archive it
+	// instead). An already deleted or unknown asset is not found. A deleted
+	// asset is excluded from every read and purged by PurgeDeleted.
 	// Security: Requires tenantID to prevent cross-tenant deletion.
-	Delete(ctx context.Context, tenantID, id shared.ID) error
+	Delete(ctx context.Context, tenantID, id shared.ID, deletedBy *shared.ID) error
+
+	// PurgeDeleted hard-deletes up to limit assets soft-deleted before the
+	// cutoff that still have no findings (all tenants; platform retention).
+	// Returns how many were purged.
+	PurgeDeleted(ctx context.Context, before time.Time, limit int) (int, error)
 
 	// List retrieves assets with filtering, sorting, and pagination.
 	List(ctx context.Context, filter Filter, opts ListOptions, page pagination.Pagination) (pagination.Result[*Asset], error)
@@ -92,7 +103,7 @@ type Repository interface {
 	FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*Asset, error)
 
 	// FindByHostname finds an existing asset by hostname.
-	// Searches: name, properties->>'hostname', properties->'ip_address'->>'hostname'.
+	// Searches: name, properties->>'hostname'.
 	// Returns nil, nil if not found.
 	FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*Asset, error)
 
@@ -118,9 +129,10 @@ type Repository interface {
 	// This is used after bulk finding ingestion to refresh asset statistics.
 	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
 
-	// ListDistinctTags returns distinct tags across all assets for a tenant.
-	// Supports prefix filtering for autocomplete and a limit for result size.
-	ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error)
+	// ListDistinctTags returns the tags of the assets of a tenant that
+	// access admits (data scope; never an asset hidden from the caller),
+	// most used first, and, when asked, the system tags the caller may see.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, access AccessScope, q TagListQuery) (TagList, error)
 
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
 	// This replaces the N+1 pattern of calling Count() per type.
@@ -139,16 +151,28 @@ type Repository interface {
 
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+	// access applies the acting user's data scope, the same predicate as List.
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+
+	// GetInventoryOverview counts the caller's assets per (lens, type,
+	// sub-type) for the inventory overview, in one aggregate query.
+	// access applies the acting user's data scope, the same predicate as List.
+	GetInventoryOverview(ctx context.Context, tenantID shared.ID, access AccessScope) ([]InventoryOverviewRow, error)
 
 	// GetPropertyFacets returns distinct JSONB property keys and their top values for faceted filtering.
-	GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]PropertyFacet, error)
+	// access applies the acting user's data scope, the same predicate as List.
+	GetPropertyFacets(ctx context.Context, tenantID shared.ID, access AccessScope, types []string, subType string) ([]PropertyFacet, error)
 
 	// ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
 	// Used exclusively by attack path scoring which needs the full set of assets
 	// in-memory. Columns are minimal (id, name, type, exposure, criticality,
 	// risk_score, is_crown_jewel, finding_count) to keep the query fast.
 	ListAllNodes(ctx context.Context, tenantID shared.ID) ([]AssetNode, error)
+
+	// SetCrownJewel sets the crown-jewel flag and business impact of an
+	// asset of the tenant (shared.ErrNotFound when there is none). It is the
+	// only writer of the flag.
+	SetCrownJewel(ctx context.Context, tenantID, assetID shared.ID, isCrownJewel bool, impactScore float64, impactNotes string) error
 }
 
 // AssetNode is a lightweight representation of an asset used for in-memory
@@ -158,6 +182,7 @@ type AssetNode struct {
 	ID           string
 	Name         string
 	AssetType    string
+	SubType      string
 	Exposure     string
 	Criticality  string
 	RiskScore    int
@@ -171,6 +196,23 @@ type PropertyFacet struct {
 	Label  string
 	Values []string
 	Count  int
+}
+
+// InventoryOverviewRow is one (lens, type, sub-type) of the inventory
+// overview. Total and the attention counts cover the assets the default
+// inventory lists (attribution confirmed, dependency or monitor only, or no
+// record); NeedsReview counts the names in the review queue (needs_review,
+// candidate), which the default inventory hides. Rejected names are in
+// neither.
+type InventoryOverviewRow struct {
+	Lens        string `json:"lens"`
+	Type        string `json:"type"`
+	SubType     string `json:"sub_type"`
+	Total       int    `json:"total"`
+	Unowned     int    `json:"unowned"`
+	HighRisk    int    `json:"high_risk"`
+	New7d       int    `json:"new_7d"`
+	NeedsReview int    `json:"needs_review"`
 }
 
 // AggregateStats holds all statistics computed via SQL aggregation.
@@ -233,27 +275,43 @@ type RepositoryExtensionRepository interface {
 
 // Filter defines the filtering options for listing assets.
 type Filter struct {
-	TenantID         *string             // Filter by tenant ID
-	Name             *string             // Filter by name (partial match)
-	Types            []AssetType         // Filter by asset types
-	Criticalities    []Criticality       // Filter by criticality levels
-	Statuses         []Status            // Filter by statuses
-	Scopes           []Scope             // Filter by scopes
-	Exposures        []Exposure          // Filter by exposure levels
-	Providers        []Provider          // Filter by providers
-	SyncStatuses     []SyncStatus        // Filter by sync statuses
-	Tags             []string            // Filter by tags
-	Search           *string             // Full-text search across name and description
-	MinRiskScore     *int                // Filter by minimum risk score
-	MaxRiskScore     *int                // Filter by maximum risk score
-	HasFindings      *bool               // Filter by whether asset has findings
+	TenantID      *string       // Filter by tenant ID
+	Name          *string       // Filter by name (partial match)
+	Types         []AssetType   // Filter by asset types
+	Lenses        []Lens        // Filter by registry lens (the stored asset_lens)
+	Criticalities []Criticality // Filter by criticality levels
+	Statuses      []Status      // Filter by statuses
+	Scopes        []Scope       // Filter by scopes
+	Exposures     []Exposure    // Filter by exposure levels
+	Providers     []Provider    // Filter by providers
+	SyncStatuses  []SyncStatus  // Filter by sync statuses
+	Tags          []string      // Filter by tags (any of them, or all with TagsMatchAll)
+	TagsMatchAll  bool          // Tags: the asset must carry every tag
+	ExcludeTags   []string      // Leave out assets carrying any of these tags
+	Search        *string       // Full-text search across name and description
+	MinRiskScore  *int          // Filter by minimum risk score
+	MaxRiskScore  *int          // Filter by maximum risk score
+	HasFindings   *bool         // Filter by whether asset has findings
+	// Freshness keeps assets whose data is "stale" (an attribute class past
+	// its TTL) or "never" (a passive class that applies was never observed);
+	// docs/architecture/asset-freshness.md. "" = no filter.
+	Freshness        string
 	ParentID         *string             // Filter by parent asset ID
 	IsCrownJewel     *bool               // Filter crown jewel assets
 	SubType          *string             // Filter by sub_type
 	PropertiesFilter map[string][]string // Filter by JSONB properties (AND across keys, OR within values)
 
 	// CTEM inventory dimensions (all optional; back-compat when unset).
-	BusinessUnitIDs      []string   // Filter by business_units membership (business_unit_assets)
+	BusinessUnitIDs []string // Filter by business_units membership (business_unit_assets)
+	// AssetGroupIDs keeps the members of any of these asset groups of the
+	// tenant (asset_group_members).
+	AssetGroupIDs []string
+	// OwnerIDs keeps the assets owned by any of these users or groups of
+	// the tenant (asset_owners).
+	OwnerIDs             []string
+	IDs                  []string   // Only these assets (a batch lookup by id; data scope still applies)
+	UnderDomains         []string   // Names equal to or below these DNS names (example.com, *.example.com)
+	InCIDRs              []string   // Address assets (ip_address, host named by an address) inside these ranges
 	HasOwner             *bool      // Filter assets with/without an assigned owner (asset_owners)
 	DataClassifications  []string   // Filter by data_classification (public|internal|confidential|restricted|secret)
 	IsControlPlane       *bool      // Filter assets that are a control-plane dependency (asset_relationships edge)
@@ -261,17 +319,43 @@ type Filter struct {
 	Environments         []string   // Filter by environment (production|staging|development|testing|dr)
 	LastSeenAfter        *time.Time // Filter assets last seen at/after this time (freshness)
 	LastSeenBefore       *time.Time // Filter assets last seen at/before this time (freshness)
+	// ExpiresAfter / ExpiresBefore keep the assets whose expiry property
+	// (format expiry: not_after, expires_at) is after / before this time.
+	// An asset without a readable expiry never matches either.
+	ExpiresAfter  *time.Time
+	ExpiresBefore *time.Time
+	CreatedAfter  *time.Time // Filter assets added to the inventory at/after this time
+	// ExposureChangedOrCreatedAfter keeps assets that were added, or whose
+	// exposure level last changed, at/after this time. Combined with an
+	// Exposures filter it answers "newly exposed since t".
+	ExposureChangedOrCreatedAfter *time.Time
 
-	// Layer 2: Data Scope - filter assets by user's group membership
-	// When set, only assets accessible to this user are returned.
-	// Backward compat: if user has no group assignments, all assets are visible.
+	// Attribution filters by the asset's attribution (RFC-036 §6.4): the
+	// stored states to match, and whether an asset with no record (legacy,
+	// counted as confirmed) matches too. Nil = no attribution filter.
+	Attribution *attribution.StateFilter
+
+	// CoveredByScopeTarget keeps the assets the scope join confirmed through
+	// this scope entry (matches_scope_target evidence from it).
+	CoveredByScopeTarget *shared.ID
+
+	// ProgramAssets: "only" keeps the assets a bug-bounty program lists or
+	// covers (system tag bug-bounty); "exclude" leaves out the program-only
+	// ones (RFC-065 §16.5). Empty: no filter.
+	ProgramAssets string
+	// ProgramTagViewer: when set, the tag filter and ProgramAssets "only"
+	// match only the system tags derived from programs not hidden from this
+	// user (RFC-065 §15.3), so a non-member cannot learn through the filter
+	// that a private program covers a shared asset. Nil (owners, internal
+	// calls) matches every stored system tag.
+	ProgramTagViewer *shared.ID
+
+	// Layer 2: Data Scope. When set, only the assets in this user's scope
+	// rows (user_accessible_assets) are returned; a user with none sees none.
 	DataScopeUserID *shared.ID
-
-	// DataScopeStrict makes the DataScopeUserID filter fail-CLOSED: a user with
-	// no accessible assets sees none (instead of the default fail-open "see all").
-	// Set by the service from the tenant's RestrictedDataScope policy. No-op
-	// unless DataScopeUserID is also set.
-	DataScopeStrict bool
+	// DataScopeUnrestricted: DataScopeUserID sees every asset except the
+	// ones hidden from them (private program assets, RFC-065 §15.3).
+	DataScopeUnrestricted bool
 }
 
 // ListOptions contains options for listing assets (sorting).
@@ -340,6 +424,29 @@ func (f Filter) WithStatuses(statuses ...Status) Filter {
 	return f
 }
 
+// TagListQuery narrows the tag list (GET /assets/tags).
+type TagListQuery struct {
+	// Prefix keeps the tags starting with it; Search the tags containing it
+	// (both case-insensitive).
+	Prefix string
+	Search string
+	// Types keeps the tags of assets of these types.
+	Types []string
+	// Limit caps each list (tags, system tags).
+	Limit int
+	// IncludeSystem also lists the system tags (derived from program links).
+	IncludeSystem bool
+	// ProgramTagViewer: when set, only the system tags of programs not hidden
+	// from this user are listed (same rule as Filter.ProgramTagViewer).
+	ProgramTagViewer *shared.ID
+}
+
+// TagList is the tags of a tenant's assets, most used first.
+type TagList struct {
+	Tags       []string
+	SystemTags []string
+}
+
 // WithTags adds a tags filter.
 func (f Filter) WithTags(tags ...string) Filter {
 	f.Tags = tags
@@ -355,6 +462,12 @@ func (f Filter) WithSearch(search string) Filter {
 // WithTenantID adds a tenant ID filter.
 func (f Filter) WithTenantID(tenantID string) Filter {
 	f.TenantID = &tenantID
+	return f
+}
+
+// WithLenses adds a lens filter.
+func (f Filter) WithLenses(lenses ...Lens) Filter {
+	f.Lenses = lenses
 	return f
 }
 
@@ -406,20 +519,35 @@ func (f Filter) WithParentID(parentID string) Filter {
 	return f
 }
 
+// AccessScope narrows an aggregate read (stats, property facets) to the
+// assets the acting user may list. It carries the same field the list's
+// Filter uses, so the repository applies the very same data-scope predicate
+// to counts as to rows. The zero value applies no data scope (admin, or a
+// caller with no user such as an API key), exactly like an unset Filter.
+type AccessScope struct {
+	DataScopeUserID *shared.ID
+	// DataScopeUnrestricted: DataScopeUserID sees every asset except the
+	// ones hidden from them (private program assets, RFC-065 §15.3).
+	DataScopeUnrestricted bool
+}
+
+// AccessScope returns the data-scope part of the filter.
+func (f Filter) AccessScope() AccessScope {
+	return AccessScope{DataScopeUserID: f.DataScopeUserID, DataScopeUnrestricted: f.DataScopeUnrestricted}
+}
+
 // WithDataScopeUserID adds a data scope filter by user's group membership.
 func (f Filter) WithDataScopeUserID(id shared.ID) Filter {
 	f.DataScopeUserID = &id
 	return f
 }
 
-// WithDataScope narrows to a resolved data scope (nil = unchanged). A
-// resolved scope is always enforced strictly: the fail-open decision was
-// already taken when it was resolved.
+// WithDataScope narrows to a resolved data scope (nil = unchanged).
 func (f Filter) WithDataScope(scope *shared.DataScope) Filter {
 	if scope != nil {
 		id := scope.UserID
 		f.DataScopeUserID = &id
-		f.DataScopeStrict = true
+		f.DataScopeUnrestricted = scope.Unrestricted
 	}
 	return f
 }
@@ -430,9 +558,46 @@ func (f Filter) WithPropertiesFilter(kv map[string][]string) Filter {
 	return f
 }
 
+// WithUnderDomains keeps the assets named after one of these DNS names or a
+// name below it.
+func (f Filter) WithUnderDomains(names ...string) Filter {
+	f.UnderDomains = names
+	return f
+}
+
+// WithInCIDRs keeps the address assets inside one of these ranges.
+func (f Filter) WithInCIDRs(cidrs ...string) Filter {
+	f.InCIDRs = cidrs
+	return f
+}
+
+// WithIDs narrows the list to these asset ids (a batch lookup).
+func (f Filter) WithIDs(ids ...string) Filter {
+	f.IDs = ids
+	return f
+}
+
+// WithAssetGroupIDs keeps the members of these asset groups.
+func (f Filter) WithAssetGroupIDs(ids ...string) Filter {
+	f.AssetGroupIDs = ids
+	return f
+}
+
+// WithOwnerIDs keeps the assets owned by these users or groups.
+func (f Filter) WithOwnerIDs(ids ...string) Filter {
+	f.OwnerIDs = ids
+	return f
+}
+
 // WithBusinessUnitIDs filters by business_units membership.
 func (f Filter) WithBusinessUnitIDs(ids ...string) Filter {
 	f.BusinessUnitIDs = ids
+	return f
+}
+
+// WithAttribution filters by attribution state (RFC-036).
+func (f Filter) WithAttribution(af attribution.StateFilter) Filter {
+	f.Attribution = &af
 	return f
 }
 
@@ -472,6 +637,19 @@ func (f Filter) WithLastSeenAfter(t time.Time) Filter {
 	return f
 }
 
+// WithCreatedAfter filters assets added to the inventory at/after t.
+func (f Filter) WithCreatedAfter(t time.Time) Filter {
+	f.CreatedAfter = &t
+	return f
+}
+
+// WithExposureChangedOrCreatedAfter filters assets added, or whose exposure
+// last changed, at/after t.
+func (f Filter) WithExposureChangedOrCreatedAfter(t time.Time) Filter {
+	f.ExposureChangedOrCreatedAfter = &t
+	return f
+}
+
 // WithLastSeenBefore filters assets last seen at/before t.
 func (f Filter) WithLastSeenBefore(t time.Time) Filter {
 	f.LastSeenBefore = &t
@@ -483,6 +661,7 @@ func (f Filter) IsEmpty() bool {
 	return f.TenantID == nil &&
 		f.Name == nil &&
 		len(f.Types) == 0 &&
+		len(f.Lenses) == 0 &&
 		len(f.Criticalities) == 0 &&
 		len(f.Statuses) == 0 &&
 		len(f.Scopes) == 0 &&
@@ -494,15 +673,25 @@ func (f Filter) IsEmpty() bool {
 		f.MinRiskScore == nil &&
 		f.MaxRiskScore == nil &&
 		f.HasFindings == nil &&
+		f.Freshness == "" &&
 		f.ParentID == nil &&
 		f.DataScopeUserID == nil &&
 		len(f.PropertiesFilter) == 0 &&
 		len(f.BusinessUnitIDs) == 0 &&
+		len(f.AssetGroupIDs) == 0 &&
+		len(f.OwnerIDs) == 0 &&
+		len(f.IDs) == 0 &&
+		len(f.UnderDomains) == 0 &&
+		len(f.InCIDRs) == 0 &&
 		f.HasOwner == nil &&
 		len(f.DataClassifications) == 0 &&
 		f.IsControlPlane == nil &&
 		f.IsInternetAccessible == nil &&
 		len(f.Environments) == 0 &&
 		f.LastSeenAfter == nil &&
-		f.LastSeenBefore == nil
+		f.LastSeenBefore == nil &&
+		f.ExpiresAfter == nil &&
+		f.ExpiresBefore == nil &&
+		f.CreatedAfter == nil &&
+		f.ExposureChangedOrCreatedAfter == nil
 }

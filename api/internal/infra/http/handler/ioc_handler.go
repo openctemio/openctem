@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -186,6 +185,9 @@ func (h *IOCHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeIOCResponse(w, http.StatusCreated, ind)
 }
 
+// maxIOCPage caps per_page on the indicator lists.
+const maxIOCPage = 200
+
 // List handles GET /iocs.
 func (h *IOCHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := tenantFromContext(w, r)
@@ -193,9 +195,13 @@ func (h *IOCHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pagination — bounded defaults, hard cap in repo.
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
-	offset := parseNonNegativeInt(r.URL.Query().Get("offset"), 0)
+	// Pagination: page / per_page (default 50, max 200: the indicators
+	// panel loads the set it filters).
+	paging, ok := listPageMax(w, r, 50, maxIOCPage)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	items, err := h.repo.ListByTenant(r.Context(), tenantID, limit, offset)
 	if err != nil {
@@ -214,9 +220,9 @@ func (h *IOCHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items":  out,
-		"limit":  limit,
-		"offset": offset,
+		"items":    out,
+		"page":     paging.Page,
+		"per_page": paging.PerPage,
 	})
 }
 
@@ -295,8 +301,11 @@ func (h *IOCHandler) Matches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
-	offset := parseNonNegativeInt(r.URL.Query().Get("offset"), 0)
+	paging, ok := listPageMax(w, r, 50, maxIOCPage)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	out := make([]iocMatchResponse, 0)
 	if h.matches != nil {
@@ -318,9 +327,9 @@ func (h *IOCHandler) Matches(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items":  out,
-		"limit":  limit,
-		"offset": offset,
+		"items":    out,
+		"page":     paging.Page,
+		"per_page": paging.PerPage,
 	})
 }
 
@@ -355,8 +364,11 @@ func (h *IOCHandler) RecentMatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50, 200)
-	offset := parseNonNegativeInt(r.URL.Query().Get("offset"), 0)
+	paging, ok := listPageMax(w, r, 50, maxIOCPage)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	out := make([]iocMatchResponse, 0)
 	if h.matches != nil {
@@ -377,9 +389,9 @@ func (h *IOCHandler) RecentMatches(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"items":  out,
-		"limit":  limit,
-		"offset": offset,
+		"items":    out,
+		"page":     paging.Page,
+		"per_page": paging.PerPage,
 	})
 }
 
@@ -426,35 +438,6 @@ func tenantFromContext(w http.ResponseWriter, r *http.Request) (shared.ID, bool)
 		return shared.ID{}, false
 	}
 	return id, true
-}
-
-// parsePositiveInt parses a query-string integer with a default +
-// upper cap. Invalid input returns the default.
-func parsePositiveInt(s string, def, maxCap int) int {
-	if s == "" {
-		return def
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return def
-	}
-	if n > maxCap {
-		return maxCap
-	}
-	return n
-}
-
-// parseNonNegativeInt parses a query-string integer ≥ 0. Invalid or
-// negative returns the default.
-func parseNonNegativeInt(s string, def int) int {
-	if s == "" {
-		return def
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 0 {
-		return def
-	}
-	return n
 }
 
 func writeIOCResponse(w http.ResponseWriter, status int, ind *ioc.Indicator) {

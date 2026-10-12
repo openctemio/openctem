@@ -159,11 +159,11 @@ func (r *AssetRelationshipRepository) ListByAsset(
 	// Count query using UNION ALL
 	countQuery := fmt.Sprintf(`
 		SELECT COUNT(*) FROM (
-			SELECT ar.id FROM asset_relationships ar
-			WHERE ar.tenant_id = $1 AND ar.source_asset_id = $2 %s
+			SELECT ar2.id FROM asset_relationships ar2
+			WHERE ar2.tenant_id = $1 AND ar2.source_asset_id = $2 %s
 			UNION ALL
-			SELECT ar.id FROM asset_relationships ar
-			WHERE ar.tenant_id = $1 AND ar.target_asset_id = $2 %s
+			SELECT ar2.id FROM asset_relationships ar2
+			WHERE ar2.tenant_id = $1 AND ar2.target_asset_id = $2 %s
 		) sub
 	`, r.applyDirectionFilter(filterConditions, "outgoing", filter.Direction),
 		r.applyDirectionFilter(filterConditions, "incoming", filter.Direction))
@@ -280,6 +280,11 @@ func (r *AssetRelationshipRepository) CountByAsset(ctx context.Context, tenantID
 }
 
 // CreateBatchIgnoreConflicts inserts multiple relationships, silently skipping duplicates.
+// A duplicate that carries a newer last_verified (an edge observed again, such
+// as a DNS resolution seen by a later scan) moves the stored edge's
+// last_verified forward; nothing else of an existing edge changes. The
+// conflict key includes tenant_id, so an edge of another tenant is never
+// touched. It returns how many edges were inserted (not refreshed).
 func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Context, rels []*asset.Relationship) (int, error) {
 	if len(rels) == 0 {
 		return 0, nil
@@ -293,7 +298,12 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 			is_control_plane
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (tenant_id, source_asset_id, target_asset_id, relationship_type) DO NOTHING
+		ON CONFLICT (tenant_id, source_asset_id, target_asset_id, relationship_type) DO UPDATE
+		SET last_verified = EXCLUDED.last_verified, updated_at = EXCLUDED.updated_at
+		WHERE EXCLUDED.last_verified IS NOT NULL
+		  AND (asset_relationships.last_verified IS NULL
+		       OR asset_relationships.last_verified < EXCLUDED.last_verified)
+		RETURNING (xmax = 0) AS inserted
 	`
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -310,7 +320,8 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 
 	created := 0
 	for _, rel := range rels {
-		result, err := stmt.ExecContext(ctx,
+		var inserted bool
+		err := stmt.QueryRowContext(ctx,
 			rel.ID().String(),
 			rel.TenantID().String(),
 			rel.SourceAssetID().String(),
@@ -325,12 +336,12 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 			rel.CreatedAt(),
 			rel.UpdatedAt(),
 			rel.IsControlPlane(),
-		)
-		if err != nil {
+		).Scan(&inserted)
+		switch {
+		case errors.Is(err, sql.ErrNoRows): // a duplicate with nothing newer
+		case err != nil:
 			return created, fmt.Errorf("failed to insert relationship: %w", err)
-		}
-		rowsAffected, _ := result.RowsAffected()
-		if rowsAffected > 0 {
+		case inserted:
 			created++
 		}
 	}
@@ -346,14 +357,16 @@ func (r *AssetRelationshipRepository) CreateBatchIgnoreConflicts(ctx context.Con
 // Used by the usage-stats endpoint so admins can see which relationship
 // types are actually being used and prune the registry based on real
 // data instead of guessing.
-func (r *AssetRelationshipRepository) CountByType(ctx context.Context, tenantID shared.ID) (map[asset.RelationshipType]int64, error) {
+func (r *AssetRelationshipRepository) CountByType(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[asset.RelationshipType]int64, error) {
+	scopeCond, args := pairInScopeCond("source_asset_id", "target_asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT relationship_type, COUNT(*) AS n
 		FROM asset_relationships
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + scopeCond + `
 		GROUP BY relationship_type
 	`
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("count relationships by type: %w", err)
 	}
@@ -497,6 +510,15 @@ func (r *AssetRelationshipRepository) buildFilterConditions(
 		conditions = append(conditions, fmt.Sprintf("ar2.impact_weight <= $%d", argIdx))
 		args = append(args, *filter.MaxImpactWeight)
 		argIdx++
+	}
+
+	// Both ends in scope: the row names the other asset.
+	if filter.Scope != nil {
+		srcCond, scopeArgs := dataScopeCondAt("ar2.source_asset_id", filter.Scope, argIdx)
+		dstCond, _ := dataScopeCondAt("ar2.target_asset_id", filter.Scope, argIdx)
+		conditions = append(conditions, srcCond, dstCond)
+		args = append(args, scopeArgs...)
+		argIdx += len(scopeArgs)
 	}
 
 	condStr := ""

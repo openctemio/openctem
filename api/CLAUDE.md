@@ -4,10 +4,28 @@
 
 ## Project Context
 
-OpenCTEM Platform monorepo: `api/` (this), `ui/` (Next.js), `agent/` (Go), `sdk-go/`, `docs/` (GitHub Pages).
+This is `api/` in the `openctemio/openctem` monorepo (formerly the `openctemio/api`
+repository, renamed 2026-10-02; RFC-020). The repository holds two components:
 
-- **Local docs**: `./docs/` — API-specific documentation (architecture, development guides)
-- **Global docs**: `../docs/` — Workspace-level GitHub Pages docs
+- `api/` (this): the Go API, module `github.com/openctemio/openctem/api`.
+- `web/`: the Next.js web console (formerly `openctemio/ui`, now archived). See `../web/CLAUDE.md`.
+
+Separate repositories: [sensor](https://github.com/openctemio/sensor) (formerly
+agent), [sdk-go](https://github.com/openctemio/sdk-go),
+[ctis](https://github.com/openctemio/ctis),
+[helm-charts](https://github.com/openctemio/helm-charts) and the public
+[docs](https://github.com/openctemio/docs) site. Map:
+`docs/development/repositories.md`.
+
+- **Docs**: `./docs/`: architecture, RFCs, development guides, user guide.
+- **Root**: `../Makefile` (`make setup`, `make hooks`, `make check`, …), `../.github/workflows/`
+  (all CI; see `docs/development/ci-cd.md`), `../.githooks/`, `../CLAUDE.md` (rules that span both).
+- **Contract**: the OpenAPI spec and the files derived from it are generated, not
+  committed. After changing a handler's request/response, a route or its gate run
+  `make generate` at the root to refresh them locally; Web CI type-checks the web
+  against the fresh contract and posts the contract diff on the pull request.
+- **Release**: one `vX.Y.Z` tag on `main` releases API + web together (`ghcr.io/openctemio/openctem-api`,
+  `openctem-web`, all-in-one `openctem`, `migrations`, `seed`, `admin-cli`).
 
 ---
 
@@ -41,11 +59,8 @@ api/
 │   ├── app/               # Application services (business logic)
 │   │   ├── <cluster>/     # One bounded context per folder (audit/,
 │   │   │                  # asset/, finding/, auth/, tenant/, ...)
-│   │   └── <cluster>_service.go  # Compat shim — type aliases re-
-│   │                      #   exporting the cluster's public surface
-│   │                      #   as `app.X` for pre-refactor callers.
-│   │                      #   New code should import the cluster
-│   │                      #   package directly.
+│   │                      # Callers import the cluster package
+│   │                      # directly (no `app.X` re-exports).
 │   ├── domain/            # Domain models and interfaces
 │   │   └── shared/        # Shared types (ID, errors)
 │   └── infra/             # Infrastructure layer
@@ -67,15 +82,23 @@ api/
 **Run before every commit:**
 
 ```bash
-# 1. Run linter - MUST pass with no errors
-GOWORK=off golangci-lint run ./...
+# 1. Lint the code this branch adds (what CI gates on). golangci-lint is
+#    pinned to v1.64.8: .golangci.yml is v1 format and a global v2 binary
+#    rejects it. Findings in files you did not touch mean the branch lags
+#    develop: merge develop and rerun.
+make lint-new
 
 # 2. Format code
 goimports -w ./...
 
-# 3. Run tests (if applicable)
-make test
+# 3. Tests of the packages you touched (integration tests need a scratch
+#    Postgres + Redis); CI runs the full suite
+GOWORK=off go test ./internal/app/<area>/... ./tests/unit/...
 ```
+
+Checklists for routes, permissions and modules (`api-route`), migrations
+(`migration`) and pull requests (`pr-checklist`) are skills in the repository
+root `.claude/skills/`.
 
 **Pre-commit hooks will fail if linting errors exist.**
 
@@ -153,9 +176,6 @@ auth/oauth_service.go
 
 Exceptions:
 - Test files keep `_test.go` suffix (Go requirement).
-- The compat shim file at `internal/app/<cluster>_service.go` DOES carry
-  the `_service` suffix because it lives in `package app`, not inside
-  a named cluster folder.
 
 Struct names keep the `Service` suffix (`AuthService`, `AssetService`) —
 only file names are adjusted.
@@ -289,22 +309,52 @@ Integration credentials (access tokens, API keys) are encrypted using AES-256-GC
 - `APP_ENCRYPTION_KEY`: 32-byte key (required in production)
   - Hex format: 64 characters (`openssl rand -hex 32`)
   - Base64 format: 44 characters (`openssl rand -base64 32`)
-- If not set, credentials stored in plaintext (dev only)
-- Existing plaintext credentials remain readable (backward compatible)
+- If not set, credentials stored in plaintext (dev only, `APP_ALLOW_PLAINTEXT_CREDENTIALS=true`)
+- A stored value that does not decrypt is never used as is (fail closed); legacy plaintext rows are encrypted with `cmd/encrypt-credentials`
 
 ---
 
 ## 2-Layer Access Control
 
 ```
-┌──────────────────────────────────────────────┐
-│  LAYER 1: RBAC — User → Roles → Permissions │
-│  "What can this user do?"                     │
-├──────────────────────────────────────────────┤
-│  LAYER 2: Groups — User → Groups → Data      │
-│  "What data can this user see?"               │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  LAYER 1: RBAC — User → Roles → Permissions            │
+│  "What can this user do?"                              │
+├────────────────────────────────────────────────────────┤
+│  LAYER 2: Data scope — which assets this user can see  │
+│  = assets of the user's active groups                  │
+│  + explicit per-user grants (asset_access_grants)      │
+└────────────────────────────────────────────────────────┘
 ```
+
+**Layer 2 (data scope)** rows live in `user_accessible_assets`, computed from
+exactly two sources:
+
+- **Group assignment:** the assets assigned to the user's active groups
+  (`asset_owners` rows with a `group_id`: Groups → Assets, scope rules, or a
+  group owner on an asset), managed with `team:groups:write`.
+- **Explicit grant:** one user, one asset, in `asset_access_grants`
+  (migration `000372`), managed with `team:groups:write` through
+  `GET/POST/DELETE /api/v1/assets/{id}/access-grants`.
+
+**Being an asset owner is not a scope grant** (decision O1,
+2026-10-03): naming a *user* as an owner is an assignment (accountability,
+finding assignment, notifications) and never changes what that user can see.
+Owners and internal calls with no user are never restricted.
+Administrators and holders of a `has_full_data_access` role are not narrowed
+to scope rows, with one exception: the program-only assets of a **private
+bug-bounty program** (and their findings) are seen only by that program's
+members and the organization's owners (RFC-065 §15.3). For such a caller the
+enforcer returns `DataScope{Unrestricted: true}` (every asset but the hidden
+ones); every scoped read goes through `dataScopeCondAt` /
+`filterspec.ScopeSQL`, so never test `scope != nil` to mean "restricted to
+scope rows" (use `scope.Restricted()`), and never skip the scope for an
+admin. Program system tags follow the same rule
+(`filterspec.ProgramHiddenSQL`). A member with no scope row sees
+**nothing**, in every organization (the per-organization "see everything"
+mode is retired, decision D2, 2026-10-04). By-id access is enforced in
+`internal/app/datascope` (out of scope answers 404, never 403). Full model:
+`docs/architecture/authorization-matrix.md`, section "Data scope".
 
 > **Note:** Module route gating IS live: `RequireModule` (`internal/infra/http/middleware/module_gate.go`) gates ~26 route groups. It is a **fail-open feature flag, NOT a security boundary** (nil/error/unknown → allow) and has **no admin bypass** (unlike permission checks). A request must pass BOTH the module gate (feature on for tenant) AND the permission check.
 
@@ -318,7 +368,7 @@ middleware.RequireAdmin()                                               // Owner
 middleware.RequireOwner()                                               // Owner only
 ```
 
-**Owner-only operations:** `TeamDelete`, `BillingManage`, `GroupsDelete`, `PermissionSetsDelete`
+**Owner-only operations:** `TeamDelete`, `BillingManage`, `GroupsDelete`, `AssignmentRulesDelete`
 
 **Route registration pattern:**
 
@@ -333,7 +383,7 @@ r.Route("/assets", func(r chi.Router) {
 **Permission check flow:**
 
 - **Owner/Admin** (`isAdmin=true` in JWT): Bypass all permission checks
-- **Member** (`isAdmin=false`): Check permissions array in JWT
+- **Member** (`isAdmin=false`): Check the permissions `EnrichPermissions` resolved for this request (the JWT array is only a fallback; see below)
 
 ### Permission Real-time Sync
 
@@ -354,7 +404,7 @@ permVersionService.Increment(ctx, tenantID, userID)
 |-------|-------------|----------------|---------|
 | Role assigned/removed | Clear user cache | Increment version | `RoleService` |
 | Role permissions changed | Clear all users with role | Increment affected users | `RoleService` |
-| Member removed from tenant | Clear user cache | Delete version | `TenantService` |
+| Member disabled / offboarded (RFC-050) | Clear user cache | Delete version (closes sockets) | `TenantService` |
 | Session revoked | Clear all tenants cache | No change | `SessionService` |
 | User suspended | Clear via session revoke | No change | `UserService` |
 
@@ -372,6 +422,9 @@ touching any gate. In short:
   (or `RequireTeamAdmin/Owner` for `/tenants/{tenant}/*`). Genuinely public/self
   routes must be added to `allowlistPrefixes` in `route_authz_coverage_test.go` **with
   a reason** — that test fails the build on any ungated, un-allowlisted route.
+- **Classify every new route's data scope** in `dataSurfaceRegistry`
+  (`tests/unit/route_scope_classification_test.go`): scoped, partial, gap (with
+  its research id), separate, config or system. CI fails on an unclassified route.
 - **Add a permission** in three synced places: `permission.go` (`AllPermissions()`) +
   a numbered DB seed migration (additive, with a `.down.sql`) + the UI TS constants.
   `permission_catalog_sync_test.go` fails if Go and DB disagree.
@@ -385,8 +438,10 @@ touching any gate. In short:
 - Never treat the frontend perm check as the boundary — backend is the only authority.
 - Never rely on the module gate for security — it is fail-open by design.
 - Never widen a route's gate to "make a role work" — adjust the role's grant via seed/migration.
-- No `expires_at`/time-boxed grants and no permission-set deny-gate (deliberate — see the doc).
-- Don't change an organization's data-scope policy (`tenants.members_without_group_see`: existing orgs `everything`, new orgs `nothing`) in a migration, and don't unify admin/owner oracles, without signoff.
+- No permission-set deny-gate (deliberate — see the doc). Expiring access (`expires_at` + reason on
+  grants, group memberships, engagements, role assignments) is **planned** (decisions D4/A2,
+  RFC-050 W22/W23); do not add it ad hoc, build it as designed there.
+- Never add a fail-open data-scope mode back ("no scope row means everything", per organization or global): a member with no scope row sees nothing. Don't unify admin/owner oracles without signoff.
 
 ---
 
@@ -476,7 +531,7 @@ For detailed docs, see `docs/architecture/notification-system.md`.
 
 Transactional emails (invitations, verification, password reset) support per-tenant SMTP configuration via the email notification integration.
 
-**Resolution order:** Tenant email integration (if active) → System SMTP (`SMTP_HOST` env vars) → Skip (log warning).
+**Resolution order:** Tenant email integration (if active) → platform e-mail (admin console, System > E-mail; `internal/app/platformemail`, RFC-079) → Skip (log warning).
 
 ```go
 // TenantSMTPResolver interface (internal/app/email_service.go)
@@ -493,8 +548,8 @@ type TenantSMTPResolver interface {
 
 ### User Management (Production)
 
-Public registration is **off by default** (`AUTH_ALLOW_REGISTRATION=false`,
-RFC-025). People get accounts from an administrator, an invitation, or their
+Public registration is **off by default**: the sign-up policy (Console >
+System > Sign-up, seeded from `TENANT_CREATION_MODE`) is `admin_only`, RFC-025. People get accounts from an administrator, an invitation, or their
 organization's SSO (JIT on verified domains). See
 `docs/architecture/user-onboarding.md`.
 
@@ -520,8 +575,9 @@ POST /api/v1/tenants/{tenant}/invitations
 //   00000000-...-000000000003  member
 //   00000000-...-000000000004  viewer
 
-// 2. User accepts via token link
-POST /api/v1/invitations/{token}/accept-with-refresh
+// 2. User opens the emailed link (/invitations#token=..., the token in the
+//    fragment) and accepts; the token always travels in the body:
+POST /api/v1/invitations/accept-with-refresh   {"token": "..."}
 ```
 
 **Key Files:** `internal/app/tenant_service.go` (CreateInvitation), `internal/infra/http/handler/tenant_handler.go`
@@ -534,23 +590,20 @@ POST /api/v1/invitations/{token}/accept-with-refresh
 
 | Term | Meaning in this code base |
 |---|---|
-| **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
+| **Sensor** | Customer-side software that authenticates *to* the platform with its own key (`octs_…`; legacy `rda_…`) and heartbeat. Umbrella term; one row in `sensors`. |
 | Scanner / Agent / Collector | Sensor **roles** (RFC-023 D18). *Agent* now means only the endpoint role. |
 | `type` | Legacy v1 value (`worker`, `scanner`, `sensor`, `collector`, `runner`), kept as input and storage. |
-| Platform sensor | `is_platform_sensor = true`: shared infrastructure, no tenant. |
+| Platform sensor | `is_platform_sensor = true`: shared infrastructure run by the platform operator. Never one of a tenant's sensors: every tenant route answers 404 for it, and tenants see only the aggregated platform scanning service. |
 | AI agent | AI-triage mode `agent` (`AIModeAgent`, module `ai_triage.agent`) — an LLM agent, not a sensor. |
-| Protocol v1 | What deployed sensors speak: `/api/v1/agent/*`, `agent_id` in responses. Frozen; lives only in `pkg/sensorproto/legacyv1`. |
+| Protocol v1 | `/api/v1/agent/*`: retired 2026-10-05. Sensors speak protocol v2 (`/api/v2/sensor/*`) only; a sensor older than v0.9.0 must be upgraded. |
 
 The rename is complete (RFC-023 §9.5, migration 000230): packages, types,
-tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
-(`/api/v1/agents` → 308), audit ids `sensor.*`, log field `sensor_id`, env
-`SENSOR_*` (old `AGENT_*` still read with a warning).
+tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`,
+audit ids `sensor.*`, log field `sensor_id`, env `SENSOR_*` (the old `AGENT_*` names are retired: startup refuses them).
 
 **Rules**
 - Never add an identifier containing "agent" for a sensor concept —
-  `tools/lint/sensorvocab` fails CI. Wire vocabulary that deployed sensors need
-  goes in `pkg/sensorproto/legacyv1`; the v1 wire is pinned by
-  `internal/infra/http/handler/protocol_v1_golden_db_test.go`.
+  `tools/lint/sensorvocab` fails CI.
 - A branch written before the rename catches up with `scripts/rename/sensor-rename.sh`.
 - Historical audit rows (`agent.*`) and asset state history (`source='agent'`)
   are never rewritten; reads use `audit.WithHistoricalActions` /
@@ -562,15 +615,14 @@ tables/columns, permissions `sensors:*`, management API `/api/v1/sensors`
 
 ```
 pkg/domain/sensor/                 # entity, API keys, errors, repository interfaces
-pkg/sensorproto/legacyv1/          # protocol v1 + /api/v1/agents redirect + renamed env vars
 pkg/sensorproto/v2/                # protocol v2 results wire (RFC-026): media type, problems, status, hello
 internal/infra/http/routes/sensor_v2.go  # /api/v2/sensor (own sensor-key authenticator + edge chain)
 internal/app/ingest/v2*.go         # v2 accept (receiver), segment semantics, commit + blinding guard, jobs
 internal/app/sensor/               # service, selector, config templates
 internal/infra/postgres/           # sensor_repository, sensor_apikey_repository, sensor_upgrade_check
 internal/infra/controller/         # sensor_health
-internal/infra/http/handler/       # sensor_handler (management), ingest/command/scansession (v1)
-internal/infra/http/routes/        # scanning.go: /api/v1/sensors + v1 mounts
+internal/infra/http/handler/       # sensor_handler (management), sensor_control_v2_handler, sensor_results_v2_handler
+internal/infra/http/routes/        # scanning.go: /api/v1/sensors
 pkg/domain/sensor/event.go, activity.go, build.go  # activity timeline (heartbeat diff), build/SDK info
 internal/infra/postgres/sensor_event_repository.go  # sensor_events + merged timeline (events, commands, audit)
 pkg/domain/scanzone/               # scan zones: range validation, router (RFC-023 Phase 1)
@@ -793,13 +845,14 @@ case errors.Is(err, sensor.ErrBootstrapTokenInvalid),
 
 Smart filtering matches assets to compatible scanners based on `supported_targets`.
 
-**How it works:**
-1. **At scan creation** — `PreviewScanCompatibility()` warns about incompatible assets (never blocks)
-2. **At scan trigger** — `filterAssetsForSingleScan()` filters by tool's `supported_targets`
+**How it works** (RFC-042 §6.3.8 O6: enforcing, keyed on the stored (type, sub_type)):
+1. **At scan creation** — `PreviewScanCompatibility()` warns about incompatible assets (never blocks creation)
+2. **At scan trigger** — `resolveScanTargets()` leaves out asset-group members the scanner cannot scan (registry `scannable_by` + active admin target mappings); nothing left → `NO_COMPATIBLE_TARGETS` (400). `filterAssetsForSingleScan()` reports the same split
+3. **At every workflow step** — `FilterStepTargets()` gates the run's typed targets for the step's tool before the sensor command is built (both dispatchers); nothing left → the step fails with `INCOMPATIBLE_TARGETS`
 
-**Design principles:** Never block, transparent (show scanned vs skipped), graceful degradation, unclassified = skipped.
+**Design principles:** a scanner is never handed a type it cannot scan; transparent (counts and a reason per type); undecidable (unclassified, unknown type, tool without target types) = dispatched; direct targets have no stored type and are not type-gated; `target_types` in the run context never reaches a sensor.
 
-**Key files:** `internal/app/scan/filtering.go`, `internal/app/scan/trigger.go`, `internal/domain/tool/target_mapping.go`
+**Key files:** `internal/app/scan/type_gate.go`, `internal/app/scan/compatibility.go`, `internal/app/scan/filtering.go`, `internal/app/scan/targets.go`, `pkg/domain/tool/target_mapping.go`
 
 ---
 
@@ -834,49 +887,28 @@ git commit -m "fix(security): add input validation
 
 ---
 
-## Recent Changes (2026-04-15)
+## Where to find recent changes
 
-### Asset Identity Resolution (RFC-001)
-- Asset names normalized automatically in `NewAsset()` constructor (16 asset types)
-- IP correlation for host dedup (`internal/app/ingest/correlator.go`)
-- Aliases stored in `properties.aliases[]` when assets renamed
-- Admin dedup review: `GET/POST /api/v1/assets/dedup/reviews`
-- Per-tenant config: `tenant.Settings.AssetIdentity`
-- See `docs/architecture/asset-identity-resolution.md`
+This file describes conventions, not history, so it keeps no change log and
+no counts that go stale:
 
-### API Decoupled from SDK-Go (RFC-002)
-- API imports `github.com/openctemio/ctis` (4K lines, zero deps) instead of SDK-Go (50K lines)
-- Adapters copied to `internal/infra/adapters/`
-- Branch: `feat/decouple-sdk` (pending merge)
-- See `docs/architecture/api-ctis-decoupling.md`
+- **What changed:** `git log` on `develop`, `changelog.d/` (unreleased entries,
+  one file per change; never edit `CHANGELOG.md` directly), `CHANGELOG.md`, and the RFC index
+  (`docs/rfcs/README.md`, generated from each RFC's H1 and Status by
+  `python3 scripts/rfc_index.py`; implementation PRs are listed in each RFC).
+- **Migrations:** the numbers are not contiguous (renumbering leaves gaps), so
+  do not count them. The newest is
+  `ls migrations/*.up.sql | sort | tail -1`. A new migration takes the next
+  number above the highest on `develop` and in open PRs. Tests look a migration up by
+  name (`testdb.MigrationVersion`), never by number, so the merge queue can
+  renumber it.
 
-### Asset metadata column removed
-- `metadata` JSONB merged into `properties` (migration 000140)
-- Entity: `Metadata()` and `SetMetadata()` removed
-- API response: only `properties` field (no more `metadata`)
+## Local builds: `GOWORK=off`
 
-### Sub-type promotion
-- Ingest now resolves TypeAliases and promotes `sub_type` from properties
-- Migration 000141 backfills existing data
-
-### CTEM loop closures (2026-04-20)
-- Migration 000154 — audit log hash-chain (tamper-evident trail)
-- Migration 000155 — runtime telemetry events (EDR/XDR ingest from endpoint sensors)
-- Migration 000156 — IOC catalogue + match log (runtime auto-reopen, B6)
-- Sensor API-key endpoint (protocol v1): `POST /api/v1/agent/telemetry-events` (NOT `/runtime-telemetry/events`)
-- Admin endpoint: `GET /api/v1/audit-logs/verify` returns 409 when chain broken
-- Package `pkg/domain/ioc/`, `pkg/domain/telemetry/`, `internal/app/ioc/` added
-- Priority-flood guard renamed: `P0FloodGuard` → `PriorityFloodGuard` with configurable `ProtectedClass`
-- Q1/Q2/Q3 gate integration tests in `tests/integration/ctem_*_test.go`
-
-### Migrations: 176 total (000001–000176)
-
-### Local builds: `GOWORK=off`
-
-The repo ships a `go.work` that lists the `sdk-go` submodule, but that submodule
-path is frequently not populated in a fresh checkout. When it isn't, `go build` /
-`go test` / `golangci-lint` fail with `cannot load module sdk-go listed in
-go.work`. **Prefix local Go commands with `GOWORK=off`** (which is what CI does):
+The monorepo has no `go.work`, but a `go.work` in a parent directory (for example
+a workspace checkout that lists `sdk-go` or `sensor`) would still be picked up and
+can fail with `cannot load module … listed in go.work`. **Run Go from `api/` with
+`GOWORK=off`**, which is what CI does (and what the root `Makefile` does):
 
 ```bash
 GOWORK=off go build ./...
@@ -884,4 +916,4 @@ GOWORK=off go test ./...
 GOWORK=off golangci-lint run ./...
 ```
 
-**Last Updated**: 2026-06-06
+**Last Updated**: 2026-10-10

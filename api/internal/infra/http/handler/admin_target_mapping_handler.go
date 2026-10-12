@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -103,14 +102,11 @@ func (h *AdminTargetMappingHandler) List(w http.ResponseWriter, r *http.Request)
 	ctx := r.Context()
 
 	// Parse pagination
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
-	if perPage < 1 || perPage > 100 {
-		perPage = 50
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	// Parse filters
 	filter := tool.TargetMappingFilter{}

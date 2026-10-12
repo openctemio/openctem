@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/telemetry"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -19,15 +20,19 @@ type SensorHealthChecker struct {
 	logger     *logger.Logger
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
+	// lastLegacyKeys is the legacy rda_ key count logged last (-1 = none
+	// yet), so the count is logged when it changes, not on every pass.
+	lastLegacyKeys int64
 }
 
 // NewSensorHealthChecker creates a new SensorHealthChecker.
 func NewSensorHealthChecker(sensorRepo sensor.Repository, cfg *config.SensorConfig, log *logger.Logger) *SensorHealthChecker {
 	return &SensorHealthChecker{
-		sensorRepo: sensorRepo,
-		config:     cfg,
-		logger:     log.With("component", "sensor-health-checker"),
-		stopCh:     make(chan struct{}),
+		sensorRepo:     sensorRepo,
+		config:         cfg,
+		logger:         log.With("component", "sensor-health-checker"),
+		stopCh:         make(chan struct{}),
+		lastLegacyKeys: -1,
 	}
 }
 
@@ -63,11 +68,13 @@ func (c *SensorHealthChecker) run() {
 
 	// Run immediately on start
 	c.checkStaleSensors()
+	c.countLegacyKeys()
 
 	for {
 		select {
 		case <-ticker.C:
 			c.checkStaleSensors()
+			c.countLegacyKeys()
 		case <-c.stopCh:
 			return
 		}
@@ -89,5 +96,29 @@ func (c *SensorHealthChecker) checkStaleSensors() {
 			"count", count,
 			"timeout", c.config.HeartbeatTimeout,
 		)
+	}
+}
+
+// countLegacyKeys publishes how many sensors are still on a legacy rda_ key
+// (openctem_sensor_legacy_keys) and logs the count when it changes. A sensor
+// moves to an octs_ key on its next renewal; the count has to reach zero
+// before the rda_ sunset.
+func (c *SensorHealthChecker) countLegacyKeys() {
+	counter, ok := c.sensorRepo.(sensor.LegacyKeyCounter)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	n, err := counter.CountLegacyKeySensors(ctx)
+	if err != nil {
+		c.logger.Warn("failed to count sensors on legacy rda_ keys", "error", err)
+		return
+	}
+	telemetry.SetSensorLegacyKeys(n)
+	if n != c.lastLegacyKeys {
+		c.logger.Info("sensors on legacy rda_ keys (they move to octs_ on renewal)", "count", n)
+		c.lastLegacyKeys = n
 	}
 }

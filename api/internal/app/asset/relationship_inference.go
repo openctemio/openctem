@@ -104,7 +104,7 @@ func InferGraphEdges(assets []GraphAsset) InferenceResult {
 		}
 		addKey(a.Name, a.ID)
 		if a.Type == assetdom.AssetTypeHost {
-			for _, ip := range stringSliceProp(a.Props, "ip_addresses") {
+			for _, ip := range assetdom.IPAddresses(a.Props) {
 				addKey(ip, a.ID)
 			}
 			addKey(stringProp(a.Props, "hostname"), a.ID)
@@ -218,17 +218,15 @@ func inferRunsOn(app *GraphAsset, index map[string]map[shared.ID]bool, res *Infe
 
 // serviceHostKeys returns the candidate host identifiers a service asset
 // carries. Naabu open_port assets set properties.host (an IP or hostname);
-// HTTPX / live-host services set properties.ip and name themselves by
-// hostname. The Name is only trusted for non-open_port services because an
+// HTTPX / live-host services record their address (ip_addresses, read
+// through assetdom.IPAddresses) and name themselves by hostname. The Name is only trusted for non-open_port services because an
 // open_port's Name is "ip:port/proto" (not a clean host key).
 func serviceHostKeys(svc *GraphAsset) []string {
 	keys := make([]string, 0, 3)
 	if h := stringProp(svc.Props, "host"); h != "" {
 		keys = append(keys, h)
 	}
-	if ip := stringProp(svc.Props, "ip"); ip != "" {
-		keys = append(keys, ip)
-	}
+	keys = append(keys, assetdom.IPAddresses(svc.Props)...)
 	if svc.SubType != "open_port" && isCleanHostKey(svc.Name) {
 		keys = append(keys, svc.Name)
 	}
@@ -238,8 +236,8 @@ func serviceHostKeys(svc *GraphAsset) []string {
 // applicationHostKeys returns candidate host identifiers for an application
 // asset: explicit ip/hostname/host properties plus a clean hostname Name.
 func applicationHostKeys(app *GraphAsset) []string {
-	keys := make([]string, 0, 4)
-	for _, k := range []string{"ip", "hostname", "host"} {
+	keys := assetdom.IPAddresses(app.Props)
+	for _, k := range []string{"hostname", "host"} {
 		if v := stringProp(app.Props, k); v != "" {
 			keys = append(keys, v)
 		}
@@ -256,29 +254,21 @@ func isHostContainer(t assetdom.AssetType) bool {
 }
 
 // isServiceLike reports whether the asset is a network service worth an
-// Exposes edge. Naabu/HTTPX assets normalize to the `service` core type;
-// crawled URLs (sub_type discovered_url) are excluded — they are page
-// endpoints, not listening services, and linking every crawled URL to a host
-// would flood the graph with low-value edges.
+// Exposes edge. Naabu/HTTPX assets are the `service` core type; crawled URLs
+// (sub_type discovered_url) are excluded — they are page endpoints, not
+// listening services, and linking every crawled URL to a host would flood the
+// graph with low-value edges. A row still stored under an alias name reads as
+// the pair it stands for (RFC-042 §6.3.8).
 func isServiceLike(t assetdom.AssetType, subType string) bool {
-	if subType == "discovered_url" {
-		return false
-	}
-	return t == assetdom.AssetTypeService || t == assetdom.AssetTypeHTTPService || t == assetdom.AssetTypeOpenPort
+	p := assetdom.CanonicalPair(t, subType)
+	return p.Type == assetdom.AssetTypeService && p.SubType != "discovered_url"
 }
 
 // isApplicationLike reports whether the asset is an application worth a RunsOn
-// edge. Handles both the consolidated `application` core type and the legacy
-// website/web_application/api/mobile_app types (in case a tenant predates
-// consolidation).
+// edge: the `application` core type, or a row still stored under one of its
+// alias names (website, api ...).
 func isApplicationLike(t assetdom.AssetType) bool {
-	switch t {
-	case assetdom.AssetTypeApplication, assetdom.AssetTypeWebsite,
-		assetdom.AssetTypeWebApplication, assetdom.AssetTypeAPI, assetdom.AssetTypeMobileApp:
-		return true
-	default:
-		return false
-	}
+	return assetdom.CanonicalPair(t, "").Type == assetdom.AssetTypeApplication
 }
 
 // normalizeHostKey lower-cases and trims a host key for stable map lookups.
@@ -316,26 +306,4 @@ func stringProp(props map[string]any, key string) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
-}
-
-// stringSliceProp reads a string-slice property, tolerating both []string and
-// []any (the shape produced by JSON unmarshaling of JSONB).
-func stringSliceProp(props map[string]any, key string) []string {
-	if props == nil {
-		return nil
-	}
-	switch v := props[key].(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			if s, ok := e.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
 }

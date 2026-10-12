@@ -38,7 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Checkbox } from '@/components/ui/checkbox'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter } from '@/hooks/use-url-param'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, useCanMutate } from '@/lib/permissions'
 
 import { CapabilityCard } from './capability-card'
 import { CapabilityTable } from './capability-table'
@@ -47,19 +47,20 @@ import { EditCapabilityDialog } from './edit-capability-dialog'
 import { CapabilityDetailPanel } from './capability-detail-panel'
 
 import {
-  useCapabilities,
+  useAllCapabilities,
   useDeleteCapability,
   useCapabilityUsageStats,
-  useCapabilitiesUsageStatsBatch,
   invalidateCapabilitiesCache,
 } from '@/lib/api/capability-hooks'
-import type { Capability, CapabilityListFilters } from '@/lib/api/capability-types'
+import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
 import { EmptyState, ErrorState, PageHeader } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 type ViewMode = 'grid' | 'table'
 type MainTab = 'platform' | 'custom'
 
 export function CapabilitiesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -79,19 +80,22 @@ export function CapabilitiesSection() {
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
   const viewMode: ViewMode = viewParam === 'grid' ? 'grid' : 'table'
   const mainTab: MainTab = tabParam === 'custom' ? 'custom' : 'platform'
-  const [filters, _setFilters] = useState<CapabilityListFilters>({})
+  // API data: every capability, each with its usage (include=usage). A
+  // capability without usage (not permitted) shows as unknown, not unused.
+  const {
+    data: capabilitiesData,
+    error,
+    isLoading,
+    mutate,
+  } = useAllCapabilities(undefined, { usage: true })
 
-  // API data
-  const { data: capabilitiesData, error, isLoading, mutate } = useCapabilities(filters)
-
-  // Get all capability IDs for batch usage stats
-  const capabilityIds = useMemo(
-    () => capabilitiesData?.items?.map((c) => c.id) || [],
-    [capabilitiesData]
-  )
-
-  // Fetch usage stats for all capabilities
-  const { data: usageStatsData } = useCapabilitiesUsageStatsBatch(capabilityIds)
+  const usageStatsData = useMemo(() => {
+    const out: CapabilityUsageStatsBatchResponse = {}
+    for (const c of capabilitiesData?.items ?? []) {
+      if (c.usage) out[c.id] = c.usage
+    }
+    return out
+  }, [capabilitiesData])
 
   // Fetch usage stats for the selected capability (for delete dialog)
   const { data: selectedUsageStats, isLoading: isLoadingSelectedStats } = useCapabilityUsageStats(
@@ -198,6 +202,10 @@ export function CapabilitiesSection() {
 
   // Check if we're in custom capabilities mode for conditional rendering
   const isCustomMode = mainTab === 'custom'
+  // Custom capabilities are written with scans:tools:* (owner and admin), as
+  // custom tools are.
+  const canEditCapability = useCanMutate('PUT /api/v1/capabilities/{id}')
+  const canDeleteCapability = useCanMutate('DELETE /api/v1/capabilities/{id}')
 
   // Stats
   const platformCount = capabilitiesData?.items?.filter((c) => c.is_builtin).length || 0
@@ -284,7 +292,7 @@ export function CapabilitiesSection() {
       card={false}
       action={
         !hasFilter && isCustomMode ? (
-          <Can permission={Permission.ToolsWrite}>
+          <Can route="POST /api/v1/capabilities">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add capability
@@ -308,8 +316,8 @@ export function CapabilitiesSection() {
         <CapabilityTable
           capabilities={filteredCapabilities}
           usageStats={usageStatsData}
-          onEdit={isCustomMode ? handleEditCapability : undefined}
-          onDelete={isCustomMode ? handleDeleteClick : undefined}
+          onEdit={isCustomMode && canEditCapability ? handleEditCapability : undefined}
+          onDelete={isCustomMode && canDeleteCapability ? handleDeleteClick : undefined}
           onViewDetails={handleViewDetails}
           readOnly={!isCustomMode}
           toolbarStart={toolbarStart}
@@ -331,8 +339,8 @@ export function CapabilitiesSection() {
                 key={capability.id}
                 capability={capability}
                 usageStats={usageStatsData?.[capability.id]}
-                onEdit={isCustomMode ? handleEditCapability : undefined}
-                onDelete={isCustomMode ? handleDeleteClick : undefined}
+                onEdit={isCustomMode && canEditCapability ? handleEditCapability : undefined}
+                onDelete={isCustomMode && canDeleteCapability ? handleDeleteClick : undefined}
                 onViewDetails={handleViewDetails}
                 readOnly={!isCustomMode}
               />
@@ -348,10 +356,13 @@ export function CapabilitiesSection() {
   return (
     <>
       <PageHeader
-        title="Capabilities"
-        description="What tools can do. Platform capabilities are built in; add custom ones to extend the tool registry."
+        title={t('scans.capabilities.title', 'Capabilities')}
+        description={t(
+          'scans.capabilities.description',
+          'What tools can do. Add custom capabilities for your own tools.'
+        )}
       >
-        <Can permission={Permission.ToolsWrite}>
+        <Can route="POST /api/v1/capabilities">
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -425,34 +436,34 @@ export function CapabilitiesSection() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               {selectedHasUsage && <AlertTriangle className="h-5 w-5 text-destructive" />}
-              Delete capability
+              {t('confirm.capability.deleteTitle', 'Delete the capability {name}?', {
+                name: selectedCapability?.display_name ?? '',
+              })}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
-                <p>
-                  Are you sure you want to delete{' '}
-                  <strong>{selectedCapability?.display_name}</strong>? This action cannot be undone.
-                </p>
+                <p>{t('confirm.capability.deleteDesc', 'This cannot be undone.')}</p>
 
                 {/* Usage Stats Warning */}
                 {isLoadingSelectedStats ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Checking usage...
+                    {t('confirm.capability.checkingUsage', 'Checking usage…')}
                   </div>
                 ) : selectedHasUsage ? (
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
                     <div className="flex items-center gap-2 font-medium text-amber-600 dark:text-amber-400">
                       <AlertTriangle className="h-4 w-4" />
-                      This capability is in use
+                      {t('confirm.capability.inUse', 'This capability is in use')}
                     </div>
                     <div className="flex flex-wrap gap-3 text-sm">
                       {selectedUsageStats.tool_count > 0 && (
                         <div className="flex items-center gap-1.5">
                           <Wrench className="h-4 w-4" />
                           <span>
-                            {selectedUsageStats.tool_count} tool
-                            {selectedUsageStats.tool_count > 1 ? 's' : ''}
+                            {t('confirm.capability.toolCount', '{count} tool(s)', {
+                              count: selectedUsageStats.tool_count,
+                            })}
                           </span>
                         </div>
                       )}
@@ -460,8 +471,9 @@ export function CapabilitiesSection() {
                         <div className="flex items-center gap-1.5">
                           <Bot className="h-4 w-4" />
                           <span>
-                            {selectedUsageStats.sensor_count} sensor
-                            {selectedUsageStats.sensor_count > 1 ? 's' : ''}
+                            {t('confirm.capability.sensorCount', '{count} sensor(s)', {
+                              count: selectedUsageStats.sensor_count,
+                            })}
                           </span>
                         </div>
                       )}
@@ -473,19 +485,19 @@ export function CapabilitiesSection() {
                         {selectedUsageStats.tool_names &&
                           selectedUsageStats.tool_names.length > 0 && (
                             <p>
-                              <strong>Tools:</strong>{' '}
+                              <strong>{t('confirm.capability.tools', 'Tools:')}</strong>{' '}
                               {selectedUsageStats.tool_names.slice(0, 3).join(', ')}
                               {selectedUsageStats.tool_names.length > 3 &&
-                                ` (+${selectedUsageStats.tool_names.length - 3} more)`}
+                                ` ${t('confirm.capability.more', '(+{count} more)', { count: selectedUsageStats.tool_names.length - 3 })}`}
                             </p>
                           )}
                         {selectedUsageStats.sensor_names &&
                           selectedUsageStats.sensor_names.length > 0 && (
                             <p>
-                              <strong>Sensors:</strong>{' '}
+                              <strong>{t('confirm.capability.sensors', 'Sensors:')}</strong>{' '}
                               {selectedUsageStats.sensor_names.slice(0, 3).join(', ')}
                               {selectedUsageStats.sensor_names.length > 3 &&
-                                ` (+${selectedUsageStats.sensor_names.length - 3} more)`}
+                                ` ${t('confirm.capability.more', '(+{count} more)', { count: selectedUsageStats.sensor_names.length - 3 })}`}
                             </p>
                           )}
                       </div>
@@ -501,27 +513,37 @@ export function CapabilitiesSection() {
                         htmlFor="force-delete"
                         className="text-sm font-medium leading-none cursor-pointer"
                       >
-                        I understand and want to force delete
+                        {t(
+                          'confirm.capability.forceLabel',
+                          'I understand: the tools and sensors above lose this capability'
+                        )}
                       </label>
                     </div>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    This capability is not currently used by any tools or sensors.
+                    {t(
+                      'confirm.capability.unused',
+                      'This capability is not used by any tool or sensor.'
+                    )}
                   </p>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>
+              {t('confirm.cancel', 'Cancel')}
+            </AlertDialogCancel>
             <Button
               variant="destructive"
               onClick={handleDeleteConfirm}
               disabled={isDeleting || isLoadingSelectedStats || (selectedHasUsage && !forceDelete)}
             >
               {isDeleting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              {selectedHasUsage ? 'Force delete' : 'Delete'}
+              {selectedHasUsage
+                ? t('confirm.capability.forceDelete', 'Force delete')
+                : t('confirm.delete', 'Delete')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -92,6 +92,12 @@ func (m *memberStore) ReactivateMember(_ context.Context, _, membershipID shared
 	}
 	return errors.New("not found")
 }
+func (m *memberStore) OffboardMember(_ context.Context, _, membershipID shared.ID) error {
+	if mem := m.find(membershipID); mem != nil {
+		return mem.Offboard()
+	}
+	return errors.New("not found")
+}
 
 func newProvisioning() (*ProvisioningService, *fakeUserStore, *memberStore) {
 	users := newFakeUserStore()
@@ -136,6 +142,13 @@ func TestProvision_NewUser_CreatesUserAndMembership(t *testing.T) {
 	}
 	if len(members.byUser) != 1 {
 		t.Errorf("membership count = %d, want 1", len(members.byUser))
+	}
+	// Least privilege (RFC-058): a provisioned person is a viewer until an
+	// identity-provider group maps them higher.
+	for _, m := range members.byUser {
+		if m.Role() != tenantdom.RoleViewer {
+			t.Errorf("provisioned role = %s, want viewer", m.Role())
+		}
 	}
 }
 
@@ -190,6 +203,54 @@ func TestProvision_Reactivate(t *testing.T) {
 	}
 	if members.byUser[uid].IsSuspended() {
 		t.Error("membership should no longer be suspended")
+	}
+}
+
+// SCIM DELETE offboards; the tombstone is then invisible to SCIM (Get and
+// SetActive answer not found), and re-provisioning the same person creates a
+// fresh membership (re-join from zero) instead of reviving the old one.
+func TestProvision_Deprovision_OffboardsAndReprovisionStartsFresh(t *testing.T) {
+	svc, users, members := newProvisioning()
+	tenantID := shared.NewID()
+	uid := seedActiveMember(t, users, members, tenantID, "leaver@example.com")
+	oldID := members.byUser[uid].ID()
+
+	if err := svc.Deprovision(context.Background(), tenantID, uid); err != nil {
+		t.Fatalf("deprovision: %v", err)
+	}
+	if !members.byUser[uid].IsOffboarded() {
+		t.Fatal("membership should be offboarded")
+	}
+	if _, err := svc.Get(context.Background(), tenantID, uid); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("Get of an offboarded member: want not found, got %v", err)
+	}
+	if _, err := svc.SetActive(context.Background(), tenantID, uid, true); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("SetActive(true) must not revive a tombstone, got %v", err)
+	}
+	if err := svc.Deprovision(context.Background(), tenantID, uid); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("second deprovision: want not found, got %v", err)
+	}
+
+	// The account exists, so re-attaching it follows the newcomer rule: the
+	// organization must own the email domain (else it must invite).
+	if _, _, err := svc.CreateOrActivate(context.Background(), tenantID, ProvisionInput{
+		UserName: "leaver@example.com", Active: true,
+	}); !errors.Is(err, ErrExistingAccountNeedsInvite) {
+		t.Fatalf("re-provision without a verified domain: want ErrExistingAccountNeedsInvite, got %v", err)
+	}
+	svc.SetDomainVerifier(staticVerifier{"example.com": true})
+	_, created, err := svc.CreateOrActivate(context.Background(), tenantID, ProvisionInput{
+		UserName: "leaver@example.com", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("re-provision: %v", err)
+	}
+	if !created {
+		t.Error("re-provisioning an offboarded person must report created=true")
+	}
+	m := members.byUser[uid]
+	if !m.IsActive() || m.ID() == oldID {
+		t.Errorf("re-provision should add a fresh active membership (active=%v, sameID=%v)", m.IsActive(), m.ID() == oldID)
 	}
 }
 
@@ -272,5 +333,69 @@ func TestProvision_CreateInactive(t *testing.T) {
 		if !m.IsSuspended() {
 			t.Error("provisioned-inactive membership should be suspended")
 		}
+	}
+}
+
+type staticVerifier map[string]bool
+
+func (v staticVerifier) IsVerifiedDomain(_ context.Context, _, domain string) (bool, error) {
+	return v[domain], nil
+}
+
+// seedOutsideAccount creates an account that is not a member of the tenant
+// under test (it belongs to some other organization).
+func seedOutsideAccount(t *testing.T, users *fakeUserStore, email string) *userdom.User {
+	t.Helper()
+	u, err := userdom.New(email, "Victim")
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	_ = users.Create(context.Background(), u)
+	return u
+}
+
+// An organization must not enroll someone else's existing account by email:
+// attaching an existing account needs the person's consent (an invitation)
+// unless the organization owns the email domain.
+func TestProvision_ExistingAccountOutsideVerifiedDomain_Refused(t *testing.T) {
+	for name, verifier := range map[string]DomainVerifier{
+		"no verifier":         nil,
+		"domain not verified": staticVerifier{"attacker.io": true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, users, members := newProvisioning()
+			if verifier != nil {
+				svc.SetDomainVerifier(verifier)
+			}
+			seedOutsideAccount(t, users, "victim@corp.com")
+
+			_, _, err := svc.CreateOrActivate(context.Background(), shared.NewID(), ProvisionInput{
+				UserName: "victim@corp.com", Active: true,
+			})
+			if !errors.Is(err, ErrExistingAccountNeedsInvite) || !errors.Is(err, shared.ErrConflict) {
+				t.Fatalf("expected ErrExistingAccountNeedsInvite, got %v", err)
+			}
+			if len(members.byUser) != 0 {
+				t.Fatal("no membership may be created for a refused provision")
+			}
+		})
+	}
+}
+
+// On a domain the organization has DNS-verified, SCIM may attach the existing
+// account (the organization owns that identity).
+func TestProvision_ExistingAccountOnVerifiedDomain_Attached(t *testing.T) {
+	svc, users, members := newProvisioning()
+	svc.SetDomainVerifier(staticVerifier{"corp.com": true})
+	u := seedOutsideAccount(t, users, "staff@corp.com")
+
+	_, created, err := svc.CreateOrActivate(context.Background(), shared.NewID(), ProvisionInput{
+		UserName: "staff@corp.com", Active: true,
+	})
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if !created || members.byUser[u.ID()] == nil {
+		t.Fatal("expected the existing account to be attached on a verified domain")
 	}
 }

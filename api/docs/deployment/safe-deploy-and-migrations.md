@@ -10,9 +10,11 @@ migration-ordering outage. Read this before any production upgrade.
 - Therefore: **apply migrations first, then roll the app.** Never start the new
   binary before its migrations are applied.
 - Migrations ship as a **separate, same-versioned image**
-  (`openctemio/migrations:<VERSION>` / `ghcr.io/openctemio/migrations:<VERSION>`).
+  (`ghcr.io/openctemio/migrations:<VERSION>`, released with the API on the same tag).
 - Keep `SKIP_SCHEMA_CHECK` **unset** (false) in production — it is the last-line
   safety net.
+- Migrations run as the schema owner (`DB_MIGRATE_USER`, `openctem_migrator`);
+  the API runs as a DML-only role. See [database-roles.md](database-roles.md).
 - Write migrations to be **expand-contract** (backward compatible) so a rolling
   deploy — and a rollback — is always safe. CI blocks destructive migrations.
 
@@ -52,26 +54,19 @@ guarantee ordering (below), and keep the schema check on as the backstop.
    `…/api:<VERSION>` **and** `…/migrations:<VERSION>` from the same commit. Always
    deploy them as a matched pair.
 
-2. **(Recommended) Pre-flight the data.** `scripts/preflight-migrate.sh
-   --check-only` runs data-violation checks (e.g. a new `UNIQUE`/`FK` that would
-   fail validation against existing rows) *before* touching the schema, so a
-   deploy either proceeds cleanly or stops with an actionable message — never
-   half-applied. Requires `psql`.
-
-   ```bash
-   DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require \
-     ./scripts/preflight-migrate.sh --check-only
-   ```
+2. **Back up the database.** Every upgrade starts from a backup you have
+   restored once (`pg_dump -Fc`, or your provider's snapshot). A database
+   older than the migration baseline cannot be upgraded by this release at all:
+   see [Migration baseline](#migration-baseline-upgrading-an-older-database).
 
 3. **Apply migrations and wait for completion.**
 
    ```bash
-   # Local / VM (needs golang-migrate + psql):
-   DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require \
-     ./scripts/preflight-migrate.sh          # pre-flight, then `migrate up`
+   # Local / VM (needs golang-migrate):
+   migrate -path migrations -database "$DATABASE_URL" up
 
    # …or the migrations image directly:
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
@@ -81,13 +76,13 @@ guarantee ordering (below), and keep the schema check on as the backstop.
      migrations use the **pre-deploy `Job`** and
      `kubectl wait --for=condition=complete job/openctem-migrate`.
    - **Docker Compose:** the one-shot `migrate` service in
-     `docker-compose.prod.yml` runs first; the `app` service waits on
+     `deploy/docker-compose.yml` runs first; the `api` service waits on
      `condition: service_completed_successfully`.
 
 4. **Verify the DB version** matches the shipped binary before serving:
 
    ```bash
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" version
    ```
 
@@ -124,7 +119,7 @@ UPDATE findings SET owner_email = owner WHERE owner_email IS NULL;
 ```
 
 ```sql
--- Release N+1 (000540_drop_owner.up.sql) — CONTRACT, destructive but now safe
+-- Release N+1 (000771_drop_owner.up.sql) — CONTRACT, destructive but now safe
 -- because no running code references `owner` anymore.
 -- expand-contract-ok: contract step; `owner` unused since v0.5.0 (replaced by owner_email)
 ALTER TABLE findings DROP COLUMN owner;
@@ -189,6 +184,22 @@ scripts/check-migrations.sh migrations/000500_*.up.sql   # scan specific files
 
 ---
 
+## Backup, ledger and archive tables
+
+A data migration sometimes keeps the rows it changes in a side table so that
+its down migration can put them back (`<thing>_backup_<version>`,
+`<thing>_ledger`, `<thing>_archive`, `<thing>_pre_<version>`). Such a table is
+rollback data only: once the forward step is final, a later migration drops it
+(migration 001481 dropped twelve of them). The pre-upgrade backup is where the
+rows live after that.
+
+`tests/unit/migration_ledger_tables_test.go` replays CREATE / RENAME / DROP TABLE
+over the migration chain and fails when a table with such a name is left at the
+end of it. Either add the drop migration in the same change, or add the table to
+`ledgerTableAllowlist` in that test with an expiry date and a reason; when the
+date passes the test fails again until the drop migration exists. Temporary
+tables (`CREATE TEMP TABLE`) are not counted.
+
 ## Dirty-migration recovery
 
 `golang-migrate` runs each migration in a transaction. If a step fails midway,
@@ -200,23 +211,22 @@ Recover:
 1. **Find the failed version and inspect** what partially happened:
 
    ```bash
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" version   # prints "<N> (dirty)"
    ```
 
 2. **Fix the root cause.** Usually a **data violation** the migration's new
-   constraint/FK/unique-index rejects. `scripts/preflight-migrate.sh --check-only`
-   points at the exact offending rows for the known-risky migrations. Clean the
-   data.
+   constraint/FK/unique-index rejects. Find the offending rows with the
+   migration's own condition and clean the data.
 
 3. **Force the tracker to the last cleanly-applied version, then re-run:**
 
    ```bash
    # If version N failed and applied nothing, force to N-1 and re-migrate:
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" force <N-1>
 
-   docker run --rm openctemio/migrations:<VERSION> \
+   docker run --rm ghcr.io/openctemio/migrations:<VERSION> \
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
@@ -251,10 +261,40 @@ keep *both* the deploy and the rollback boringly safe.
 
 ---
 
+## Migration baseline: upgrading an older database
+
+The migrations start from one baseline file, `migrations/NNNNNN_baseline.up.sql`
+(RFC-053). It holds the schema and built-in rows that every earlier migration
+produced, and a fresh database applies it and then the migrations above it.
+
+- A database **at the baseline version or later** (every install that ran the
+  last release before the baseline) never runs the baseline and upgrades as
+  usual.
+- A database **older than the baseline** is refused, and nothing is changed:
+  golang-migrate cannot find the file of its version, the migrations image and
+  the all-in-one image print what to do, and the API refuses to start with the
+  same message. Upgrade in two steps: back up, deploy the last release before
+  the baseline (git tag `pre-baseline-NNNNNN`, which still ships every
+  migration up to the baseline) and run its migrations, then deploy the new
+  release.
+- `migrate down` cannot go below the baseline: its down migration refuses and
+  drops nothing (golang-migrate then shows the tracker dirty at -1; `migrate
+  force NNNNNN` restores it). Restore a backup instead.
+
+Coming from v0.8.0 (migration 000224): follow
+[Upgrading from v0.8.0 to v0.9.0](../operations/upgrade-v0.8-to-v0.9.md#4-database-migration-path),
+which gives the exact commands for both steps.
+
+The runbooks of individual migrations that the baseline replaced (for example
+the asset tenant foreign keys of 000920-000922 and the assignee scrub of
+001012) are in the tree at that tag.
+
+---
+
 ## Related
 
 - [Kubernetes Deployment](kubernetes.md) — init-container / pre-deploy-Job manifests
 - [Docker Deployment](docker.md) — the one-shot `migrate` compose service
 - [Migrations (development)](../development/migrations.md) — authoring migrations
-- `scripts/preflight-migrate.sh`, `scripts/migrate.sh`, `scripts/check-migrations.sh`
+- `scripts/migrate.sh`, `scripts/check-migrations.sh`, `scripts/squash-migrations.sh`
 - `cmd/server/schema_check.go` — the fail-fast schema check + `SKIP_SCHEMA_CHECK`

@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import './globals.css'
 import { Providers } from './providers'
-import { getDirFromLocale, defaultLocale } from '@/lib/i18n'
+import { getDirFromLocale, defaultLocale, isSupportedLocale } from '@/lib/i18n'
 import { NavProgressBar } from '@/components/layout/nav-progress'
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME || 'OpenCTEM'
@@ -31,8 +31,14 @@ export default async function RootLayout({
   children: React.ReactNode
 }>) {
   const h = await headers()
-  const locale = h.get('x-locale') ?? defaultLocale
+  // Set by src/proxy.ts (cookie, then Accept-Language). Checked again here:
+  // a request the proxy does not run on keeps whatever header it was sent.
+  const requested = h.get('x-locale')
+  const locale = isSupportedLocale(requested) ? requested : defaultLocale
   const dir = getDirFromLocale(locale)
+  // Per-request CSP nonce from src/proxy.ts, for the inline script next-themes
+  // writes (the policy has no 'unsafe-inline').
+  const nonce = h.get('x-nonce') ?? undefined
   return (
     <html lang={locale} dir={dir} suppressHydrationWarning>
       <body
@@ -40,7 +46,7 @@ export default async function RootLayout({
         className="antialiased"
         suppressHydrationWarning
       >
-        <Providers dir={dir} locale={locale}>
+        <Providers dir={dir} locale={locale} nonce={nonce}>
           {children}
         </Providers>
         {/* Page-wide navigation progress bar, shown while a nav link waits for

@@ -11,6 +11,7 @@ const ATTENTION_WORDS: Record<AttentionKind, string> = {
   key: 'key',
   version: 'version',
   sdk: 'SDK',
+  heartbeat: 'heartbeat',
   tools: 'tools',
   content: 'scanner content',
   error: 'errors',
@@ -21,7 +22,12 @@ function FleetBar({ summary }: { summary: FleetSummary }) {
   const s = summary.byState
   const parts = [
     { key: 'online', label: 'Online', n: s.online, className: 'bg-success' },
-    { key: 'warn', label: 'Degraded or stale', n: s.degraded + s.stale, className: 'bg-warning' },
+    {
+      key: 'warn',
+      label: 'Degraded, late or stale',
+      n: s.degraded + s.late + s.stale,
+      className: 'bg-warning',
+    },
     {
       key: 'offline',
       label: 'Offline',

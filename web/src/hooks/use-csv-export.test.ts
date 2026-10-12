@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizeCsvCell } from './use-csv-export'
+import { buildCsv, sanitizeCsvCell } from './use-csv-export'
 
 describe('sanitizeCsvCell', () => {
   it('neutralizes formula-injection triggers', () => {
@@ -44,5 +44,32 @@ describe('sanitizeCsvCell', () => {
   // A lone carriage return must also force quoting (RFC 4180 row separator).
   it('quotes cells containing a bare carriage return', () => {
     expect(sanitizeCsvCell('a\rb')).toBe('"a\rb"')
+  })
+})
+
+describe('buildCsv', () => {
+  it('sanitizes every cell, headers included', () => {
+    // A finding title or SBOM component name taken from a scanned target.
+    const csv = buildCsv(
+      ['ID', '=Header'],
+      [
+        ['f-1', '=HYPERLINK("http://evil.example","x")'],
+        ['f-2', 'lodash, the "util" lib'],
+      ]
+    )
+    expect(csv.split('\n')).toEqual([
+      "ID,'=Header",
+      `f-1,"'=HYPERLINK(""http://evil.example"",""x"")"`,
+      'f-2,"lodash, the ""util"" lib"',
+    ])
+  })
+
+  it('keeps a comma inside a value in one column', () => {
+    const csv = buildCsv(['tags'], [['prod, pci']])
+    expect(csv).toBe('tags\n"prod, pci"')
+  })
+
+  it('renders null and undefined as empty cells and numbers as text', () => {
+    expect(buildCsv(['a', 'b', 'c'], [[null, undefined, 42]])).toBe('a,b,c\n,,42')
   })
 })

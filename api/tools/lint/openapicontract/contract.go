@@ -1,5 +1,5 @@
 // Package openapicontract checks that three descriptions of this server's HTTP
-// surface agree: the // @Router annotations on the handlers, the committed
+// surface agree: the // @Router annotations on the handlers, the generated
 // OpenAPI spec, and the routes actually registered with the router.
 //
 // # WHY NOT A BYTE COMPARISON OF THE SPEC
@@ -25,17 +25,21 @@
 //
 // Set comparison catches both exactly, and is stable across swag's formatting.
 //
-// THE THREE CHECKS
+// THE CHECKS
 //
 //	A. annotations == spec
 //	   Every // @Router in internal/infra/http/handler must appear as a
-//	   path+method in the committed spec, and vice versa. This is what makes
-//	   the spec "generated": you cannot hand-add a path, and you cannot change
-//	   an annotation without running `make swagger`.
+//	   path+method in the generated spec, and vice versa: swag read every
+//	   handler, and nothing else reached the spec.
 //
 //	B. spec ⊆ routes
 //	   Every documented path+method must be registered on the router. This is
 //	   the phantom-endpoint check.
+//
+//	D. parameter names agree
+//	   For every documented operation, the spec's path-parameter names equal
+//	   the router's (A–C compare names reduced to {}). Mismatches today are
+//	   frozen in api/openapi/param-name-drift.txt (RFC-041 §7).
 //
 //	C. routes ⊆ spec ∪ baseline
 //	   Every registered route must be documented, or listed in
@@ -60,7 +64,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -87,15 +90,11 @@ func norm(method, path string) Op {
 	return Op{Method: strings.ToUpper(method), Path: NormalizePath(path)}
 }
 
-// rootOnlyPaths are registered on the root router rather than under BasePath,
-// deliberately: liveness and readiness probes must not require a version prefix
-// or auth. Swagger 2.0 has no per-operation basePath, so the spec renders them
-// as /api/v1/health and /api/v1/ready. This is the one place the spec cannot be
-// literally true, and it is recorded here rather than papered over.
-var rootOnlyPaths = map[string]bool{
-	"/health": true,
-	"/ready":  true,
-}
+// Routes registered on the root router (the /health and /ready probes) are
+// outside BasePath. Swagger 2.0 has no per-operation basePath, so an
+// annotation on them would render as /api/v1/health, a path that 404s. They
+// are therefore not annotated, and RouteToSpec leaves them out of the
+// documented surface.
 
 // ---------------------------------------------------------------------------
 // 1. @Router annotations
@@ -131,7 +130,7 @@ func Annotations(handlerDir string) (map[Op]string, error) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. The committed spec
+// 2. The generated spec
 // ---------------------------------------------------------------------------
 
 var httpMethods = map[string]bool{
@@ -139,7 +138,7 @@ var httpMethods = map[string]bool{
 	"head": true, "options": true,
 }
 
-// SpecOps returns every path+method declared in the committed OpenAPI document.
+// SpecOps returns every path+method declared in the generated OpenAPI document.
 func SpecOps(specPath string) (map[Op]bool, error) {
 	data, err := os.ReadFile(specPath) //nolint:gosec // repo-local path from the caller
 	if err != nil {
@@ -163,6 +162,40 @@ func SpecOps(specPath string) (map[Op]bool, error) {
 	return ops, nil
 }
 
+// SpecRawPaths maps each documented operation onto its route path as the
+// spec writes it (BasePath included), parameter names included.
+func SpecRawPaths(specPath string) (map[Op]string, error) {
+	data, err := os.ReadFile(specPath) //nolint:gosec // repo-local path from the caller
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Paths map[string]map[string]yaml.Node `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", specPath, err)
+	}
+	out := map[Op]string{}
+	for p, methods := range doc.Paths {
+		for m := range methods {
+			if httpMethods[strings.ToLower(m)] {
+				out[norm(m, SpecToRoute(p))] = SpecToRoute(p)
+			}
+		}
+	}
+	return out, nil
+}
+
+// ParamNames lists the parameter names of a path in order.
+func ParamNames(path string) []string {
+	ms := paramRe.FindAllString(path, -1)
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, strings.Trim(m, "{}"))
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // 3. Registered routes
 // ---------------------------------------------------------------------------
@@ -179,12 +212,25 @@ var routeMethods = map[string]bool{
 // literal. Parsing the AST rather than grepping matters here — a regex cannot
 // tell which Group a method call belongs to.
 func Routes(routesDir string) (map[Op]string, error) {
+	found := map[Op]string{}
+	err := walkRoutes(routesDir, func(op Op, _, pos string) { found[op] = pos })
+	return found, err
+}
+
+// RawRoutes maps each registered operation onto its full path as written,
+// parameter names included (check D compares those names with the spec's).
+func RawRoutes(routesDir string) (map[Op]string, error) {
+	found := map[Op]string{}
+	err := walkRoutes(routesDir, func(op Op, raw, _ string) { found[op] = raw })
+	return found, err
+}
+
+func walkRoutes(routesDir string, visit func(op Op, raw, pos string)) error {
 	entries, err := os.ReadDir(routesDir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	fset := token.NewFileSet()
-	found := map[Op]string{}
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -192,20 +238,20 @@ func Routes(routesDir string) (map[Op]string, error) {
 		}
 		file, err := parser.ParseFile(fset, filepath.Join(routesDir, name), nil, parser.SkipObjectResolution)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
-			collect(fset, fn.Body, "", found)
+			collect(fset, fn.Body, "", visit)
 		}
 	}
-	return found, nil
+	return nil
 }
 
-func collect(fset *token.FileSet, n ast.Node, prefix string, out map[Op]string) {
+func collect(fset *token.FileSet, n ast.Node, prefix string, visit func(op Op, raw, pos string)) {
 	ast.Inspect(n, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
@@ -226,18 +272,18 @@ func collect(fset *token.FileSet, n ast.Node, prefix string, out map[Op]string) 
 			if !ok {
 				return true
 			}
-			collect(fset, body.Body, join(prefix, s), out)
+			collect(fset, body.Body, join(prefix, s), visit)
 			return false // the recursion above already covered this subtree
 		case routeMethods[sel.Sel.Name]:
 			full := join(prefix, s)
-			out[norm(sel.Sel.Name, full)] = fset.Position(call.Pos()).String()
+			visit(norm(sel.Sel.Name, full), full, fset.Position(call.Pos()).String())
 		}
 		return true
 	})
 }
 
 // pathArg resolves a route path argument: a string literal, or one of the
-// legacyv1 / protov2 constants that name the sensor protocol mounts.
+// protov2 constants that name the sensor protocol mounts.
 func pathArg(e ast.Expr) (string, bool) {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -247,10 +293,6 @@ func pathArg(e ast.Expr) (string, bool) {
 		s, err := strconv.Unquote(v.Value)
 		return s, err == nil
 	case *ast.SelectorExpr:
-		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "legacyv1" {
-			s, ok := legacyv1.Paths[v.Sel.Name]
-			return s, ok
-		}
 		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "protov2" {
 			s, ok := protov2.Paths[v.Sel.Name]
 			return s, ok
@@ -297,18 +339,12 @@ func Baseline(path string) (map[Op]bool, error) {
 
 // SpecToRoute maps a spec/annotation path onto the route path it should serve.
 func SpecToRoute(specPath string) string {
-	if rootOnlyPaths[specPath] {
-		return specPath
-	}
 	return BasePath + specPath
 }
 
 // RouteToSpec maps a registered route path back onto its spec path, reporting
-// false when the route lives outside BasePath and is not a known root-only one.
+// false when the route lives outside BasePath.
 func RouteToSpec(routePath string) (string, bool) {
-	if rootOnlyPaths[routePath] {
-		return routePath, true
-	}
 	if !strings.HasPrefix(routePath, BasePath+"/") {
 		return "", false
 	}

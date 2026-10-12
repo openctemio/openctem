@@ -21,6 +21,7 @@ import {
   AlertCircle,
   AlertTriangle,
   CircleDot,
+  CircleDashed,
   Minus,
   Network,
 } from 'lucide-react'
@@ -74,6 +75,7 @@ const CRITICALITY_ICONS: Record<Criticality, React.ElementType> = {
   high: AlertCircle,
   medium: CircleDot,
   low: Minus,
+  none: CircleDashed,
 }
 
 interface AssetScopeBadgeProps {

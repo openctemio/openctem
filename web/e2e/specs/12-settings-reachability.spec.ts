@@ -1,4 +1,4 @@
-import { test as base, request } from '@playwright/test'
+import { test as base, request, type Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 import { loginAs } from '../helpers/auth'
 import { getE2EConfig } from '../helpers/env'
@@ -89,18 +89,36 @@ test('moved settings URLs answer 308 with the query kept', async ({ e2eConfig })
 
 test('Cmd+K finds settings pages', async ({ page }) => {
   await page.goto('/')
+  // The shortcut listener is attached after hydration: wait until the header's
+  // search button is interactive, and retry the key press until the palette
+  // opens rather than pressing once into a page that is not ready yet.
+  await expect(page.getByRole('button', { name: /^Search/ })).toBeEnabled({ timeout: 30_000 })
+  const input = page.getByPlaceholder('Type a command or search...')
   for (const [query, label] of [
     ['api keys', 'API keys'],
     ['audit', 'Audit log'],
     ['members', 'Members'],
   ]) {
-    await page.keyboard.press('Control+k')
-    const input = page.getByPlaceholder('Type a command or search...')
+    await expect(async () => {
+      await page.keyboard.press('Control+k')
+      await expect(input).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 20_000 })
     await input.fill(query)
     await expect(page.locator('[cmdk-item]').first(), query).toContainText(label)
     await page.keyboard.press('Escape')
+    await expect(input).toBeHidden()
   }
 })
+
+// The user menu ignores a click on its button for a moment after it closes
+// (under 100ms: after Escape, or after a menu item navigates), so the open
+// is retried instead of clicked once.
+async function openUserMenuItem(page: Page, name: string) {
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Open user menu' }).click()
+    await page.getByRole('menuitem', { name }).click({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
+}
 
 base('a member opens their own settings and sees no admin entries', async ({ page }) => {
   const cfg = getE2EConfig()
@@ -111,14 +129,12 @@ base('a member opens their own settings and sees no admin entries', async ({ pag
 
   await loginAs(page, { ...cfg.config, userEmail: email!, userPassword: password! })
 
-  await page.getByRole('button', { name: 'Open user menu' }).click()
-  await page.getByRole('menuitem', { name: 'Notifications' }).click()
+  await openUserMenuItem(page, 'Notifications')
   await expect(page).toHaveURL(/\/account\/notifications/)
   await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible()
   await expect(page.getByText('Access Denied')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Open user menu' }).click()
-  await page.getByRole('menuitem', { name: 'All settings' }).click()
+  await openUserMenuItem(page, 'All settings')
   await expect(page).toHaveURL(/\/settings$/)
   await expect(page.getByText('Access Denied')).toHaveCount(0)
   // Owner/admin-only entries are hidden, not shown and refused.

@@ -9,18 +9,10 @@
 
 import useSWR, { type SWRConfiguration } from 'swr'
 import useSWRMutation from 'swr/mutation'
-import useSWRInfinite from 'swr/infinite'
 import { get, post, put, patch, del } from './client'
 import { handleApiError } from './error-handler'
 import { endpoints } from './endpoints'
-import type {
-  User,
-  CreateUserRequest,
-  UpdateUserRequest,
-  UserListFilters,
-  SearchFilters,
-  PaginatedResponse,
-} from './types'
+import type { User, UpdateUserRequest, SearchFilters } from './types'
 
 // ============================================
 // SWR CONFIGURATION
@@ -82,52 +74,6 @@ export function useUpdateCurrentUser() {
 // ============================================
 // USER MANAGEMENT HOOKS (Admin)
 // ============================================
-
-/**
- * Fetch user by ID
- */
-export function useUser(userId: string | null, config?: SWRConfiguration) {
-  return useSWR<User>(userId ? endpoints.users.get(userId) : null, get, {
-    ...defaultSwrConfig,
-    ...config,
-  })
-}
-
-/**
- * Fetch users list with pagination and filters
- */
-export function useUsers(filters?: UserListFilters, config?: SWRConfiguration) {
-  return useSWR<PaginatedResponse<User>>(endpoints.users.list(filters), get, {
-    ...defaultSwrConfig,
-    ...config,
-  })
-}
-
-/**
- * Create user mutation
- */
-export function useCreateUser() {
-  return useSWRMutation(endpoints.users.create(), (url, { arg }: { arg: CreateUserRequest }) =>
-    post<User>(url, arg)
-  )
-}
-
-/**
- * Update user mutation
- */
-export function useUpdateUser(userId: string) {
-  return useSWRMutation(
-    endpoints.users.update(userId),
-    (url, { arg }: { arg: UpdateUserRequest }) => put<User>(url, arg)
-  )
-}
-
-/**
- * Delete user mutation
- */
-export function useDeleteUser(userId: string) {
-  return useSWRMutation(endpoints.users.delete(userId), (url) => del(url))
-}
 
 // ============================================
 // TENANT HOOKS
@@ -270,70 +216,9 @@ export function useFindingsByProject(
 // PROJECT HOOKS
 // ============================================
 
-/**
- * Fetch projects for a tenant
- */
-export function useProjects(
-  tenantIdOrSlug: string | null,
-  filters?: SearchFilters,
-  config?: SWRConfiguration
-) {
-  return useSWR(tenantIdOrSlug ? endpoints.projects.list(tenantIdOrSlug, filters) : null, get, {
-    ...defaultSwrConfig,
-    ...config,
-  })
-}
-
-/**
- * Fetch project by ID
- */
-export function useProject(
-  tenantIdOrSlug: string | null,
-  projectId: string | null,
-  config?: SWRConfiguration
-) {
-  return useSWR(
-    tenantIdOrSlug && projectId ? endpoints.projects.get(tenantIdOrSlug, projectId) : null,
-    get,
-    { ...defaultSwrConfig, ...config }
-  )
-}
-
 // ============================================
 // COMPONENT HOOKS
 // ============================================
-
-/**
- * Fetch components for a tenant
- */
-export function useComponents(
-  tenantIdOrSlug: string | null,
-  filters?: SearchFilters,
-  config?: SWRConfiguration
-) {
-  return useSWR(tenantIdOrSlug ? endpoints.components.list(tenantIdOrSlug, filters) : null, get, {
-    ...defaultSwrConfig,
-    ...config,
-  })
-}
-
-/**
- * Fetch components by project
- */
-export function useComponentsByProject(
-  tenantIdOrSlug: string | null,
-  projectId: string | null,
-  filters?: SearchFilters,
-  config?: SWRConfiguration
-) {
-  return useSWR(
-    tenantIdOrSlug && projectId
-      ? endpoints.components.listByProject(tenantIdOrSlug, projectId, filters)
-      : null,
-    get,
-    { ...defaultSwrConfig, ...config }
-  )
-}
 
 // ============================================
 // ASSET HOOKS
@@ -396,17 +281,6 @@ export async function optimisticUpdate<T>(
 // ============================================
 // ADVANCED HOOKS
 // ============================================
-
-/**
- * Infinite scroll hook for paginated users
- */
-export function useInfiniteUsers(filters?: UserListFilters) {
-  return useSWRInfinite(
-    (pageIndex: number) => endpoints.users.list({ ...filters, page: pageIndex + 1 }),
-    get,
-    defaultSwrConfig
-  )
-}
 
 /**
  * Dependent fetching - fetch data only when condition is met

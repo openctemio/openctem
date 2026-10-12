@@ -40,9 +40,6 @@ vi.mock('@/lib/api/scan-zone-hooks', () => ({
   unassignSensorFromZone: api.unassign,
   invalidateScanZonesCache: vi.fn(async () => undefined),
 }))
-vi.mock('../../hooks', () => ({
-  useSensorFormOptions: () => ({ getCapabilitiesForTools: (t: string[]) => t }),
-}))
 
 import { EditSensorDialog } from '../edit-sensor-dialog'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
@@ -53,7 +50,6 @@ const sensor: Sensor = {
   name: 'sensor-docker-01',
   type: 'worker',
   capabilities: [],
-  tools: [],
   execution_mode: 'daemon',
   status: 'active',
   health: 'online',
@@ -141,25 +137,19 @@ describe('EditSensorDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('limits to a subset of the reported tools', async () => {
-    const user = userEvent.setup()
+  it('lists the reported tools read-only: no tool limit on the sensor (the grant narrows)', () => {
     const { dialog } = renderDialog()
-    expect(within(dialog).getByRole('radio', { name: 'All reported tools' })).toBeChecked()
-
-    await user.click(within(dialog).getByRole('radio', { name: /Only the tools/ }))
-    // Nothing picked yet: not saveable.
-    expect(within(dialog).getByText(/Pick at least one tool/)).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeDisabled()
-
-    await user.click(within(dialog).getByRole('button', { name: 'nuclei 3.3.0' }))
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }))
-    expect(api.update).toHaveBeenCalledWith({ tools: ['nuclei'], capabilities: [] })
+    const list = within(dialog).getByRole('list', { name: 'Reported tools' })
+    expect(within(list).getByText('nuclei 3.3.0')).toBeInTheDocument()
+    expect(within(list).getByText('trivy 0.58.0')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('radio', { name: 'All reported tools' })).toBeNull()
+    expect(within(dialog).getByText(/edit the sensor's grant/)).toBeInTheDocument()
   })
 
-  it('says so when the sensor has not reported tools, with nothing to pick', () => {
+  it('says so when the sensor has not reported tools', () => {
     const { dialog } = renderDialog({ reported: null, last_seen_at: undefined })
     expect(within(dialog).getByText(/hasn't reported its tools yet/)).toBeInTheDocument()
-    expect(within(dialog).queryByRole('radio', { name: 'All reported tools' })).toBeNull()
+    expect(within(dialog).queryByRole('list', { name: 'Reported tools' })).toBeNull()
     expect(within(dialog).getByText('Never connected')).toBeInTheDocument()
   })
 
@@ -168,8 +158,8 @@ describe('EditSensorDialog', () => {
     const { dialog } = renderDialog()
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
 
-    const confirm = screen.getByRole('alertdialog', { name: 'Revoke sensor access' })
-    const go = within(confirm).getByRole('button', { name: 'Revoke access' })
+    const confirm = screen.getByRole('alertdialog', { name: 'Revoke the sensor sensor-docker-01?' })
+    const go = within(confirm).getByRole('button', { name: 'Revoke' })
     expect(go).toBeDisabled()
     await user.type(within(confirm).getByRole('textbox'), 'sensor-docker')
     expect(go).toBeDisabled()
@@ -179,9 +169,9 @@ describe('EditSensorDialog', () => {
     expect(api.revoke).not.toHaveBeenCalled()
 
     await user.click(within(dialog).getByRole('button', { name: 'Revoke' }))
-    const again = screen.getByRole('alertdialog', { name: 'Revoke sensor access' })
+    const again = screen.getByRole('alertdialog', { name: 'Revoke the sensor sensor-docker-01?' })
     await user.type(within(again).getByRole('textbox'), 'sensor-docker-01')
-    await user.click(within(again).getByRole('button', { name: 'Revoke access' }))
+    await user.click(within(again).getByRole('button', { name: 'Revoke' }))
     expect(api.revoke).toHaveBeenCalledWith('s1')
   })
 
@@ -189,8 +179,8 @@ describe('EditSensorDialog', () => {
     const user = userEvent.setup()
     const { dialog } = renderDialog()
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
-    const confirm = screen.getByRole('alertdialog', { name: 'Delete sensor' })
-    expect(within(confirm).getByRole('button', { name: 'Delete sensor' })).toBeDisabled()
+    const confirm = screen.getByRole('alertdialog', { name: 'Delete the sensor sensor-docker-01?' })
+    expect(within(confirm).getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
 
   it('hides the danger zone without the delete permission', () => {
@@ -217,7 +207,7 @@ describe('EditSensorDialog', () => {
     await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'renamed')
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
-    const confirm = screen.getByRole('alertdialog', { name: 'Discard changes?' })
+    const confirm = screen.getByRole('alertdialog', { name: 'Discard your changes?' })
     expect(onOpenChange).not.toHaveBeenCalled()
     await user.click(within(confirm).getByRole('button', { name: 'Discard' }))
     expect(onOpenChange).toHaveBeenCalledWith(false)

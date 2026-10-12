@@ -28,7 +28,7 @@ func TestApplyCTEMSignals_CarriesScannerSignals(t *testing.T) {
 			PIIExposed:         true,
 			PHIExposed:         true,
 		},
-	})
+	}, true)
 
 	if !a.IsInternetAccessible() {
 		t.Error("is_internet_accessible not carried")
@@ -53,7 +53,7 @@ func TestApplyCTEMSignals_NoSignalsNoOp(t *testing.T) {
 	p := &AssetProcessor{logger: logger.NewNop()}
 	a, _ := asset.NewAsset("internal-host", asset.AssetTypeHost, asset.CriticalityLow)
 
-	p.applyCTEMSignals(a, &ctis.Asset{}) // no compliance, not internet-accessible
+	p.applyCTEMSignals(a, &ctis.Asset{}, true) // no compliance, not internet-accessible
 
 	if a.IsInternetAccessible() {
 		t.Error("must not mark internet-accessible without a signal")
@@ -75,7 +75,7 @@ func TestApplyCTEMSignals_InvalidClassificationSkipped(t *testing.T) {
 	p.applyCTEMSignals(a, &ctis.Asset{
 		IsInternetAccessible: true,
 		Compliance:           &ctis.AssetCompliance{DataClassification: "not-a-level", PIIExposed: true},
-	})
+	}, true)
 
 	if string(a.DataClassification()) == "not-a-level" {
 		t.Error("invalid data classification should not be applied")

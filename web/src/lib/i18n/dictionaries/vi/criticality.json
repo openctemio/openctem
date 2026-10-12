@@ -1,0 +1,7 @@
+{
+  "criticality.critical": "Trọng yếu",
+  "criticality.high": "Cao",
+  "criticality.medium": "Trung bình",
+  "criticality.low": "Thấp",
+  "criticality.none": "Chưa đánh giá"
+}

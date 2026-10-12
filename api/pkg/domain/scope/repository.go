@@ -34,8 +34,10 @@ type TargetRepository interface {
 	// Count returns the total number of scope targets matching the filter.
 	Count(ctx context.Context, filter TargetFilter) (int64, error)
 
-	// ExistsByPattern checks if a target with the given pattern exists.
-	ExistsByPattern(ctx context.Context, tenantID shared.ID, targetType TargetType, pattern string) (bool, error)
+	// FindByPattern returns the tenant's entry with this type and pattern
+	// and no port or protocol limit (its effective status: an active entry
+	// past its expiry is expired), or nil when there is none.
+	FindByPattern(ctx context.Context, tenantID shared.ID, targetType TargetType, pattern string) (*Existing, error)
 }
 
 // TargetFilter defines the filtering options for listing targets.
@@ -45,6 +47,9 @@ type TargetFilter struct {
 	Statuses    []Status
 	Tags        []string
 	Search      *string
+	// ExcludeProgramIDs leaves out the entries of these programs (the
+	// private programs the caller may not see, RFC-065 §15.3).
+	ExcludeProgramIDs []string
 }
 
 // =============================================================================
@@ -68,7 +73,8 @@ type ExclusionRepository interface {
 	// List retrieves scope exclusions with filtering and pagination.
 	List(ctx context.Context, filter ExclusionFilter, page pagination.Pagination) (pagination.Result[*Exclusion], error)
 
-	// ListActive retrieves all active scope exclusions for a tenant.
+	// ListActive retrieves the exclusions in effect for a tenant: approved,
+	// active and unexpired (never pending or rejected).
 	ListActive(ctx context.Context, tenantID shared.ID) ([]*Exclusion, error)
 
 	// Count returns the total number of scope exclusions matching the filter.
@@ -76,6 +82,10 @@ type ExclusionRepository interface {
 
 	// ExpireOld marks expired exclusions as expired.
 	ExpireOld(ctx context.Context) error
+
+	// FindByPattern returns the tenant's exclusion with this type and
+	// pattern (its effective status), or nil when there is none.
+	FindByPattern(ctx context.Context, tenantID shared.ID, exclusionType ExclusionType, pattern string) (*Existing, error)
 }
 
 // ExclusionFilter defines the filtering options for listing exclusions.
@@ -85,43 +95,6 @@ type ExclusionFilter struct {
 	Statuses       []Status
 	IsApproved     *bool
 	Search         *string
-}
-
-// =============================================================================
-// Schedule Repository
-// =============================================================================
-
-// ScheduleRepository defines the interface for scan schedule persistence.
-type ScheduleRepository interface {
-	// Create persists a new scan schedule.
-	Create(ctx context.Context, schedule *Schedule) error
-
-	// GetByID retrieves a scan schedule by its tenant ID and ID.
-	GetByID(ctx context.Context, tenantID, id shared.ID) (*Schedule, error)
-
-	// Update updates an existing scan schedule.
-	Update(ctx context.Context, schedule *Schedule) error
-
-	// Delete removes a scan schedule by its tenant ID and ID.
-	Delete(ctx context.Context, tenantID, id shared.ID) error
-
-	// List retrieves scan schedules with filtering and pagination.
-	List(ctx context.Context, filter ScheduleFilter, page pagination.Pagination) (pagination.Result[*Schedule], error)
-
-	// ListDue retrieves all enabled schedules that are due to run.
-	ListDue(ctx context.Context) ([]*Schedule, error)
-
-	// Count returns the total number of scan schedules matching the filter.
-	Count(ctx context.Context, filter ScheduleFilter) (int64, error)
-}
-
-// ScheduleFilter defines the filtering options for listing schedules.
-type ScheduleFilter struct {
-	TenantID      *string
-	ScanTypes     []ScanType
-	ScheduleTypes []ScheduleType
-	Enabled       *bool
-	Search        *string
 }
 
 // =============================================================================
@@ -154,9 +127,29 @@ type Stats struct {
 	ActiveTargets    int64   `json:"active_targets"`
 	TotalExclusions  int64   `json:"total_exclusions"`
 	ActiveExclusions int64   `json:"active_exclusions"`
-	TotalSchedules   int64   `json:"total_schedules"`
-	EnabledSchedules int64   `json:"enabled_schedules"`
 	Coverage         float64 `json:"coverage"`
+	// Inventory is the coverage breakdown behind Coverage, counted over the
+	// assets the caller may see.
+	Inventory InventoryCoverage `json:"inventory"`
+}
+
+// InventoryCoverage is how much of the internet-facing inventory the active
+// scope targets cover (research/53 SC8): InScope of InternetFacing. Internal
+// names and addresses (zone-gated) are counted apart, in neither.
+type InventoryCoverage struct {
+	InternetFacing int64 `json:"internet_facing"`
+	InScope        int64 `json:"in_scope"`
+	Internal       int64 `json:"internal"`
+}
+
+// Percent is InScope as a share of InternetFacing, rounded to two decimals
+// (0 with no internet-facing inventory).
+func (c InventoryCoverage) Percent() float64 {
+	if c.InternetFacing <= 0 {
+		return 0
+	}
+	p := float64(c.InScope) / float64(c.InternetFacing) * 100
+	return float64(int64(p*100+0.5)) / 100
 }
 
 // Coverage represents scope coverage breakdown.

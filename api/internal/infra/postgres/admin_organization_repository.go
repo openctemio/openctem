@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // AdminOrganizationRepository is the platform admin's cross-tenant read model
@@ -41,8 +42,17 @@ const adminOrganizationSelect = `
 	         WHERE p.tenant_id = t.id AND p.is_active),
 	       (SELECT COUNT(*) FROM verified_domains d
 	         WHERE d.tenant_id = t.id AND d.verified_at IS NOT NULL),
-	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE)
+	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE),
+	       ` + adminOrganizationPlanExpr + `
 	FROM tenants t`
+
+// adminOrganizationPlanExpr is the organization's plan: the stored one, or
+// enterprise for an organization created before plans (plan.go).
+const adminOrganizationPlanExpr = `COALESCE((SELECT tp.plan FROM tenant_plans tp WHERE tp.tenant_id = t.id), 'enterprise')`
+
+// adminOrganizationActiveOwner holds when the organization has an active owner.
+const adminOrganizationActiveOwner = `EXISTS (SELECT 1 FROM tenant_members m
+	WHERE m.tenant_id = t.id AND m.role = 'owner' AND m.status = 'active')`
 
 func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, error) {
 	var (
@@ -52,7 +62,7 @@ func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, 
 	)
 	if err := sc.Scan(&id, &o.Name, &o.Slug, &o.Description, &o.CreatedAt,
 		&o.ActiveMembers, &owners, &o.SAMLEnabled, &o.ActiveIdentityProviders,
-		&o.VerifiedDomains, &o.SSOEnforced); err != nil {
+		&o.VerifiedDomains, &o.SSOEnforced, &o.Plan); err != nil {
 		return nil, err
 	}
 	parsed, err := shared.IDFromString(id)
@@ -67,12 +77,29 @@ func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, 
 // ListOrganizations returns one page of organizations, newest first, and the
 // total matching the filter.
 func (r *AdminOrganizationRepository) ListOrganizations(ctx context.Context, f admin.OrganizationFilter) ([]*admin.Organization, int, error) {
-	where := ""
+	conds := []string{}
 	args := []any{}
 	if s := strings.TrimSpace(f.Search); s != "" {
-		pattern := "%" + escapeLikePattern(s) + "%"
-		where = ` WHERE t.name ILIKE $1 OR t.slug ILIKE $1`
-		args = append(args, pattern)
+		args = append(args, "%"+escapeLikePattern(s)+"%")
+		conds = append(conds, fmt.Sprintf("(t.name ILIKE $%d OR t.slug ILIKE $%d)", len(args), len(args)))
+	}
+	switch f.Owner {
+	case admin.OrganizationOwnerNone:
+		conds = append(conds, "NOT "+adminOrganizationActiveOwner)
+	case admin.OrganizationOwnerPresent:
+		conds = append(conds, adminOrganizationActiveOwner)
+	}
+	if f.Plan != "" {
+		args = append(args, f.Plan)
+		conds = append(conds, fmt.Sprintf("%s = $%d", adminOrganizationPlanExpr, len(args)))
+	}
+	if !f.IncludeSystem {
+		args = append(args, tenant.SystemTenantID)
+		conds = append(conds, fmt.Sprintf("t.id <> $%d", len(args)))
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
 	}
 
 	var total int

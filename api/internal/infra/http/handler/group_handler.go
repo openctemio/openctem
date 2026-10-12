@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/group"
@@ -21,14 +21,14 @@ import (
 
 // GroupHandler handles group-related HTTP requests for the Access Control system.
 type GroupHandler struct {
-	service     *app.GroupService
-	syncService *app.GroupSyncService
+	service     *accesscontrol.GroupService
+	syncService *accesscontrol.GroupSyncService
 	validator   *validator.Validator
 	logger      *logger.Logger
 }
 
 // NewGroupHandler creates a new group handler.
-func NewGroupHandler(svc *app.GroupService, v *validator.Validator, log *logger.Logger) *GroupHandler {
+func NewGroupHandler(svc *accesscontrol.GroupService, v *validator.Validator, log *logger.Logger) *GroupHandler {
 	return &GroupHandler{
 		service:   svc,
 		validator: v,
@@ -37,7 +37,7 @@ func NewGroupHandler(svc *app.GroupService, v *validator.Validator, log *logger.
 }
 
 // WithSyncService sets the group sync service on the handler.
-func (h *GroupHandler) WithSyncService(syncService *app.GroupSyncService) *GroupHandler {
+func (h *GroupHandler) WithSyncService(syncService *accesscontrol.GroupSyncService) *GroupHandler {
 	h.syncService = syncService
 	return h
 }
@@ -50,30 +50,8 @@ func (h *GroupHandler) WithSyncService(syncService *app.GroupSyncService) *Group
 type PaginatedResponse struct {
 	Items      any   `json:"items"`
 	TotalCount int64 `json:"total_count"`
-	Limit      int   `json:"limit"`
-	Offset     int   `json:"offset"`
-}
-
-// parsePagination extracts limit and offset from query params with defaults.
-func parsePagination(r *http.Request) (limit, offset int) {
-	limit = 20
-	offset = 0
-
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
-			limit = parsed
-		}
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
-
-	if limit > 100 {
-		limit = 100
-	}
-	return limit, offset
+	Page       int   `json:"page"`
+	PerPage    int   `json:"per_page"`
 }
 
 // =============================================================================
@@ -99,10 +77,12 @@ type GroupResponse struct {
 
 // GroupMemberResponse represents a group member in API responses.
 type GroupMemberResponse struct {
-	UserID   string    `json:"user_id"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
-	AddedBy  string    `json:"added_by,omitempty"`
+	UserID       string     `json:"user_id"`
+	Role         string     `json:"role"`
+	JoinedAt     time.Time  `json:"joined_at"`
+	AddedBy      string     `json:"added_by,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty"`
 }
 
 // GroupMemberWithUserResponse represents a member with user details.
@@ -115,6 +95,9 @@ type GroupMemberWithUserResponse struct {
 	Email       string    `json:"email"`
 	Name        string    `json:"name"`
 	AvatarURL   string    `json:"avatar_url,omitempty"`
+	// ExpiresAt: when the membership ends (RFC-050 W22); absent means no end.
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty"`
 }
 
 // GroupWithRoleResponse represents a group with the user's role.
@@ -129,8 +112,8 @@ type GroupListResponse struct {
 	Groups            []GroupResponse `json:"groups"`
 	TotalCount        int64           `json:"total_count"`
 	UniqueMemberCount int             `json:"unique_member_count"`
-	Limit             int             `json:"limit"`
-	Offset            int             `json:"offset"`
+	Page              int             `json:"page"`
+	PerPage           int             `json:"per_page"`
 }
 
 // =============================================================================
@@ -161,16 +144,22 @@ type UpdateGroupRequest struct {
 type AddGroupMemberRequest struct {
 	UserID string `json:"user_id" validate:"required,uuid"`
 	Role   string `json:"role" validate:"required,oneof=owner lead member"`
+	// ExpiresAt ends the membership; required on external teams, at most
+	// 365 days ahead.
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty" validate:"max=500"`
+}
+
+// SetGroupMemberAccessRequest sets, moves or clears (null) when a team
+// membership ends.
+type SetGroupMemberAccessRequest struct {
+	ExpiresAt *time.Time `json:"expires_at"`
+	Reason    string     `json:"reason,omitempty" validate:"max=500"`
 }
 
 // UpdateGroupMemberRoleRequest represents the request to update a member's role.
 type UpdateGroupMemberRoleRequest struct {
 	Role string `json:"role" validate:"required,oneof=owner lead member"`
-}
-
-// AssignPermissionSetRequest represents the request to assign a permission set.
-type AssignPermissionSetRequest struct {
-	PermissionSetID string `json:"permission_set_id" validate:"required,uuid"`
 }
 
 // =============================================================================
@@ -202,6 +191,7 @@ func toGroupMemberResponse(m *group.Member) GroupMemberResponse {
 	if m.AddedBy() != nil {
 		resp.AddedBy = m.AddedBy().String()
 	}
+	resp.ExpiresAt, resp.ExpiryReason = m.ExpiresAt(), m.ExpiryReason()
 	return resp
 }
 
@@ -218,6 +208,7 @@ func toGroupMemberWithUserResponse(m *group.MemberWithUser) GroupMemberWithUserR
 	if m.Member.AddedBy() != nil {
 		resp.AddedBy = m.Member.AddedBy().String()
 	}
+	resp.ExpiresAt, resp.ExpiryReason = m.Member.ExpiresAt(), m.Member.ExpiryReason()
 	return resp
 }
 
@@ -244,9 +235,9 @@ func toGroupWithRoleResponse(g *group.GroupWithRole) GroupWithRoleResponse {
 // =============================================================================
 
 // buildAuditContext builds an AuditContext from the HTTP request.
-func (h *GroupHandler) buildAuditContext(r *http.Request) app.AuditContext {
-	actx := app.AuditContext{
-		ActorIP:   r.RemoteAddr,
+func (h *GroupHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	actx := audit.AuditContext{
+		ActorIP:   getClientIP(r),
 		UserAgent: r.UserAgent(),
 		RequestID: r.Header.Get("X-Request-ID"),
 	}
@@ -347,7 +338,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateGroupInput{
+	input := accesscontrol.CreateGroupInput{
 		TenantID:           tenantID,
 		Name:               req.Name,
 		Slug:               req.Slug,
@@ -413,8 +404,8 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 // @Param type query string false "Filter by group type"
 // @Param active query bool false "Filter by active status"
 // @Param search query string false "Search by name or slug"
-// @Param limit query int false "Limit results" default(20)
-// @Param offset query int false "Offset for pagination" default(0)
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} GroupListResponse
 // @Router /groups [get]
 func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
@@ -423,23 +414,13 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	// Get tenant ID from JWT token
 	tenantID := middleware.MustGetTenantID(ctx)
 
-	// Parse query parameters
-	limit := 20
-	offset := 0
-
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
+	limit, offset := paging.Limit(), paging.Offset()
 
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
-
-	input := app.ListGroupsInput{
+	input := accesscontrol.ListGroupsInput{
 		TenantID: tenantID,
 		Search:   r.URL.Query().Get("search"),
 		Limit:    limit,
@@ -487,8 +468,8 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		Groups:            groups,
 		TotalCount:        output.TotalCount,
 		UniqueMemberCount: uniqueMembers,
-		Limit:             limit,
-		Offset:            offset,
+		Page:              paging.Page,
+		PerPage:           paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -522,7 +503,7 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateGroupInput{
+	input := accesscontrol.UpdateGroupInput{
 		Name:               req.Name,
 		Slug:               req.Slug,
 		Description:        req.Description,
@@ -575,8 +556,8 @@ func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Param limit query int false "Page size" default(20)
-// @Param offset query int false "Offset" default(0)
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} PaginatedResponse{items=[]GroupMemberWithUserResponse}
 // @Failure 404 {object} apierror.Error
 // @Router /groups/{groupId}/members [get]
@@ -585,7 +566,11 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
-	limit, offset := parsePagination(r)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	members, totalCount, err := h.service.ListGroupMembersWithUserInfo(ctx, tenantID, groupID, limit, offset)
 	if err != nil {
@@ -601,8 +586,8 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	resp := PaginatedResponse{
 		Items:      items,
 		TotalCount: totalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Page:       paging.Page,
+		PerPage:    paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -642,10 +627,12 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.AddGroupMemberInput{
-		GroupID: groupID,
-		UserID:  memberUserID,
-		Role:    req.Role,
+	input := accesscontrol.AddGroupMemberInput{
+		GroupID:      groupID,
+		UserID:       memberUserID,
+		Role:         req.Role,
+		ExpiresAt:    req.ExpiresAt,
+		ExpiryReason: req.ExpiryReason,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -659,6 +646,50 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(toGroupMemberResponse(member))
+}
+
+// UpdateMemberAccess handles PATCH /api/v1/groups/{groupId}/members/{userId}
+// @Summary Set when a team membership ends
+// @Description Sets, moves or clears (expires_at null) the end date of a team membership (RFC-050 W22). External teams always need an end date; at most 365 days ahead. The membership is removed within a minute of its end date.
+// @Tags groups
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID"
+// @Param userId path string true "User ID"
+// @Param request body SetGroupMemberAccessRequest true "End date"
+// @Success 200 {object} GroupMemberResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 403 {object} apierror.Error
+// @Failure 404 {object} apierror.Error
+// @Router /groups/{groupId}/members/{userId} [patch]
+func (h *GroupHandler) UpdateMemberAccess(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req SetGroupMemberAccessRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	uid, err := shared.IDFromString(chi.URLParam(r, "userId"))
+	if err != nil {
+		apierror.BadRequest("Invalid user ID format").WriteJSON(w)
+		return
+	}
+	member, err := h.service.UpdateMemberAccess(ctx, accesscontrol.SetGroupMemberAccessInput{
+		GroupID:   chi.URLParam(r, "groupId"),
+		UserID:    uid,
+		ExpiresAt: req.ExpiresAt,
+		Reason:    req.Reason,
+	}, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(toGroupMemberResponse(member))
 }
 
 // UpdateMemberRole handles PUT /api/v1/groups/{groupId}/members/{userId}
@@ -696,7 +727,7 @@ func (h *GroupHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.UpdateGroupMemberRoleInput{
+	input := accesscontrol.UpdateGroupMemberRoleInput{
 		GroupID: groupID,
 		UserID:  uid,
 		Role:    req.Role,
@@ -748,126 +779,6 @@ func (h *GroupHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 // =============================================================================
 // Permission Set Assignment Handlers
 // =============================================================================
-
-// AssignPermissionSet handles POST /api/v1/groups/{groupId}/permission-sets
-// @Summary Assign a permission set to a group
-// @Description Assign a permission set to the group
-// @Tags groups
-// @Accept json
-// @Produce json
-// @Param groupId path string true "Group ID"
-// @Param request body AssignPermissionSetRequest true "Permission set details"
-// @Success 204 "No Content"
-// @Failure 400 {object} apierror.Error
-// @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/permission-sets [post]
-func (h *GroupHandler) AssignPermissionSet(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	groupID := chi.URLParam(r, "groupId")
-
-	userID := middleware.GetLocalUserID(ctx)
-	if userID.IsZero() {
-		apierror.Unauthorized("User context required").WriteJSON(w)
-		return
-	}
-
-	var req AssignPermissionSetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := app.AssignPermissionSetInput{
-		GroupID:         groupID,
-		PermissionSetID: req.PermissionSetID,
-	}
-
-	actx := h.buildAuditContext(r)
-
-	if err := h.service.AssignPermissionSet(ctx, input, userID, actx); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// UnassignPermissionSet handles DELETE /api/v1/groups/{groupId}/permission-sets/{permissionSetId}
-// @Summary Remove a permission set from a group
-// @Description Remove a permission set assignment from the group
-// @Tags groups
-// @Param groupId path string true "Group ID"
-// @Param permissionSetId path string true "Permission Set ID"
-// @Success 204 "No Content"
-// @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/permission-sets/{permissionSetId} [delete]
-func (h *GroupHandler) UnassignPermissionSet(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	groupID := chi.URLParam(r, "groupId")
-	permissionSetID := chi.URLParam(r, "permissionSetId")
-
-	actx := h.buildAuditContext(r)
-
-	if err := h.service.UnassignPermissionSet(ctx, groupID, permissionSetID, actx); err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// ListAssignedPermissionSets handles GET /api/v1/groups/{groupId}/permission-sets
-// @Summary List permission sets assigned to a group
-// @Description Get all permission sets assigned to the group with full details
-// @Tags groups
-// @Produce json
-// @Param groupId path string true "Group ID"
-// @Success 200 {array} PermissionSetResponse
-// @Failure 404 {object} apierror.Error
-// @Router /groups/{groupId}/permission-sets [get]
-func (h *GroupHandler) ListAssignedPermissionSets(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	tenantID := middleware.MustGetTenantID(ctx)
-	groupID := chi.URLParam(r, "groupId")
-
-	permissionSets, err := h.service.ListGroupPermissionSetsWithDetails(ctx, tenantID, groupID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Convert to response objects
-	result := make([]PermissionSetWithItemsResponse, len(permissionSets))
-	for i, ps := range permissionSets {
-		// Resolve permission items to permission strings
-		// Since we don't have a resolver helper handy here, and we just want raw permission keys
-		// we can map them directly if items contain the key.
-		// Assumption: ps.Items contains PermissionItem which has PermissionID/Key.
-
-		// Wait, toPermissionSetWithItemsResponse requires resolved string slice.
-		// We'll simplisticly assume for now that listing assigned sets might not need FULL resolved hierarchy
-		// if complex, but the UI expects a list of strings.
-
-		// Let's implement a simple extraction loop locally or reuse what we can.
-		// Actually, let's map what we have.
-
-		permStrings := make([]string, 0, len(ps.Items))
-		for _, item := range ps.Items {
-			// PermissionID is the string key like "user:read"
-			permStrings = append(permStrings, item.PermissionID())
-		}
-
-		result[i] = toPermissionSetWithItemsResponse(ps, permStrings)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
 
 // =============================================================================
 // My Groups (Current User)
@@ -970,7 +881,7 @@ func (h *GroupHandler) AssignAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.AssignAssetInput{
+	input := accesscontrol.AssignAssetInput{
 		GroupID:       groupID,
 		AssetID:       req.AssetID,
 		OwnershipType: req.OwnershipType,
@@ -1021,7 +932,7 @@ func (h *GroupHandler) BulkAssignAssets(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.BulkAssignAssetsInput{
+	input := accesscontrol.BulkAssignAssetsInput{
 		GroupID:       groupID,
 		AssetIDs:      req.AssetIDs,
 		OwnershipType: req.OwnershipType,
@@ -1059,7 +970,7 @@ func (h *GroupHandler) UnassignAsset(w http.ResponseWriter, r *http.Request) {
 	groupID := chi.URLParam(r, "groupId")
 	assetID := chi.URLParam(r, "assetId")
 
-	input := app.UnassignAssetInput{
+	input := accesscontrol.UnassignAssetInput{
 		GroupID: groupID,
 		AssetID: assetID,
 	}
@@ -1108,7 +1019,7 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	input := app.UpdateAssetOwnershipInput{
+	input := accesscontrol.UpdateAssetOwnershipInput{
 		GroupID:       groupID,
 		AssetID:       assetID,
 		OwnershipType: req.OwnershipType,
@@ -1130,8 +1041,8 @@ func (h *GroupHandler) UpdateAssetOwnership(w http.ResponseWriter, r *http.Reque
 // @Tags groups
 // @Produce json
 // @Param groupId path string true "Group ID"
-// @Param limit query int false "Page size" default(20)
-// @Param offset query int false "Offset" default(0)
+// @Param page query int false "Page number" default(1)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} PaginatedResponse{items=[]GroupOwnershipResponse}
 // @Failure 404 {object} apierror.Error
 // @Router /groups/{groupId}/assets [get]
@@ -1140,7 +1051,11 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(ctx)
 	groupID := chi.URLParam(r, "groupId")
 
-	limit, offset := parsePagination(r)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	owners, totalCount, err := h.service.ListGroupAssets(ctx, tenantID, groupID, limit, offset)
 	if err != nil {
@@ -1176,8 +1091,8 @@ func (h *GroupHandler) ListGroupAssets(w http.ResponseWriter, r *http.Request) {
 	resp := PaginatedResponse{
 		Items:      items,
 		TotalCount: totalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Page:       paging.Page,
+		PerPage:    paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

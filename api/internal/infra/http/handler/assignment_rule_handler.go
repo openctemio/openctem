@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -22,6 +23,7 @@ import (
 
 // AssignmentRuleHandler handles assignment rule HTTP requests.
 type AssignmentRuleHandler struct {
+	configAuditor
 	service   *assignment.RuleService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -60,8 +62,8 @@ type AssignmentRuleResponse struct {
 type AssignmentRuleListResponse struct {
 	Rules      []AssignmentRuleResponse `json:"rules"`
 	TotalCount int64                    `json:"total_count"`
-	Limit      int                      `json:"limit"`
-	Offset     int                      `json:"offset"`
+	Page       int                      `json:"page"`
+	PerPage    int                      `json:"per_page"`
 }
 
 func toAssignmentRuleResponse(r *accesscontrol.AssignmentRule) AssignmentRuleResponse {
@@ -156,20 +158,11 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
 
-	limit := 50
-	offset := 0
-
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	input := assignment.ListRulesInput{
 		TenantID:  tenantID,
@@ -209,8 +202,8 @@ func (h *AssignmentRuleHandler) ListRules(w http.ResponseWriter, r *http.Request
 	resp := AssignmentRuleListResponse{
 		Rules:      rules,
 		TotalCount: output.TotalCount,
-		Limit:      limit,
-		Offset:     offset,
+		Page:       paging.Page,
+		PerPage:    paging.PerPage,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -253,6 +246,9 @@ func (h *AssignmentRuleHandler) CreateRule(w http.ResponseWriter, r *http.Reques
 		h.handleServiceError(w, err)
 		return
 	}
+	created := toAssignmentRuleResponse(rule)
+	h.recordChange(r, h.logger, auditdom.ActionAssignmentRuleCreated, auditdom.ResourceTypeAssignmentRule, created.ID, created.Name,
+		nil, created, auditdom.SeverityMedium, "Assignment rule created")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -302,11 +298,18 @@ func (h *AssignmentRuleHandler) UpdateRule(w http.ResponseWriter, r *http.Reques
 		Options:       req.Options,
 	}
 
+	var before any
+	if prev, gerr := h.service.GetRule(ctx, tenantID, ruleID); gerr == nil {
+		before = toAssignmentRuleResponse(prev)
+	}
 	rule, err := h.service.UpdateRule(ctx, tenantID, ruleID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := toAssignmentRuleResponse(rule)
+	h.recordChange(r, h.logger, auditdom.ActionAssignmentRuleUpdated, auditdom.ResourceTypeAssignmentRule, updated.ID, updated.Name,
+		before, updated, auditdom.SeverityMedium, "Assignment rule updated")
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toAssignmentRuleResponse(rule))
@@ -317,10 +320,18 @@ func (h *AssignmentRuleHandler) DeleteRule(w http.ResponseWriter, r *http.Reques
 	tenantID := middleware.MustGetTenantID(r.Context())
 	ruleID := chi.URLParam(r, "id")
 
+	var before any
+	name := ""
+	if prev, gerr := h.service.GetRule(r.Context(), tenantID, ruleID); gerr == nil {
+		view := toAssignmentRuleResponse(prev)
+		before, name = view, view.Name
+	}
 	if err := h.service.DeleteRule(r.Context(), tenantID, ruleID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionAssignmentRuleDeleted, auditdom.ResourceTypeAssignmentRule, ruleID, name,
+		before, nil, auditdom.SeverityMedium, "Assignment rule deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }

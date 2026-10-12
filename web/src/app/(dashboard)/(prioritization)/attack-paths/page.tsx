@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Main } from '@/components/layout'
 import { PageHeader, StatsCard, EmptyState } from '@/features/shared'
 import { useAttackPathScoring, PathGraph } from '@/features/attack-surface'
@@ -19,6 +19,7 @@ import {
   ArrowRight,
   GitBranch,
 } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================================
 // Map a scored asset onto the generic path-graph model. Attack-path
@@ -47,7 +48,7 @@ function assetToPath(asset: AttackPathScore, maxPathScore: number): PathGraphPat
         criticality: asset.criticality,
         isCrownJewel: asset.isCrownJewel,
         findingCount: asset.findingCount,
-        href: asset.assetId ? `/findings?assetId=${asset.assetId}` : undefined,
+        href: asset.assetId ? `/findings?asset_id=${asset.assetId}` : undefined,
       },
     ],
     score: asset.pathScore,
@@ -98,15 +99,19 @@ function LoadingSkeleton() {
 // ============================================================
 
 function NoRelationshipData() {
+  const { t } = useTranslation()
   return (
     <EmptyState
       icon={GitBranch}
-      title="No relationship data yet"
-      description="Attack path scoring requires asset relationships. Add relationships between your assets to see which internal assets are reachable from internet-facing entry points."
+      title={t('prioritization.noRelationships.title', 'No relationship data yet')}
+      description={t(
+        'prioritization.attackPaths.noRelationships',
+        'Add relationships between your assets to see which ones internet-facing entry points can reach.'
+      )}
       action={
         <Button size="sm" asChild>
           <Link href="/assets">
-            Go to assets
+            {t('prioritization.goToAssets', 'Go to assets')}
             <ArrowRight className="ms-2 h-4 w-4" />
           </Link>
         </Button>
@@ -120,6 +125,7 @@ function NoRelationshipData() {
 // ============================================================
 
 export default function AttackPathAnalysisPage() {
+  const { t } = useTranslation()
   const { scoring, isLoading } = useAttackPathScoring()
 
   const summary = scoring?.summary
@@ -150,8 +156,11 @@ export default function AttackPathAnalysisPage() {
   return (
     <Main>
       <PageHeader
-        title="Attack paths"
-        description="Assets ranked by how many public entry points reach them — fix the top ones to break the most paths."
+        title={t('prioritization.attackPaths.title', 'Attack paths')}
+        description={t(
+          'prioritization.attackPaths.description',
+          'Assets ranked by how many public entry points reach them.'
+        )}
       />
 
       {isLoading ? (
@@ -198,11 +207,17 @@ export default function AttackPathAnalysisPage() {
                 section heading rather than inside another card. */}
             <section className="space-y-3 lg:col-span-2">
               <div>
-                <h2 className="text-base font-semibold">Assets ranked by attack-path score</h2>
+                <h2 className="text-base font-semibold">
+                  {t(
+                    'prioritization.attackPaths.rankedTitle',
+                    'Assets ranked by attack-path score'
+                  )}
+                </h2>
                 <p className="text-sm text-muted-foreground">
-                  Score = reachable entry points x risk score x criticality weight. Hover to trace a
-                  path; click a node to open the asset&apos;s findings. Fixing the top-ranked assets
-                  breaks the most attack paths.
+                  {t(
+                    'prioritization.attackPaths.rankedHint',
+                    'Score = reachable entry points × risk score × criticality weight. Click a node to open its findings.'
+                  )}
                 </p>
               </div>
               <PathGraph
@@ -262,7 +277,7 @@ export default function AttackPathAnalysisPage() {
                         ep.assetId ? (
                           <Link
                             key={ep.assetId}
-                            href={`/findings?assetId=${ep.assetId}`}
+                            href={`/findings?asset_id=${ep.assetId}`}
                             aria-label={`View findings for ${ep.name}`}
                             className="hover:bg-muted/50 focus-visible:ring-ring flex items-center gap-2 rounded-md px-2 py-1.5 text-sm focus-visible:ring-2 focus-visible:outline-none"
                           >

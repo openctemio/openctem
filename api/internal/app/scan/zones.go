@@ -8,10 +8,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -63,6 +65,9 @@ type zonePlan struct {
 	Warnings  []string
 	Summary   map[string]any
 	Routing   *scanzone.Plan // where each target went
+	// PolicyRefused explains, per zone, the targets no zone sensor's local
+	// policy accepts (research/25 §3.6); they are in Uncovered too.
+	PolicyRefused []string
 }
 
 // zoneRouted reports the zone routing for this run's tenant: the zones, or
@@ -85,11 +90,11 @@ func (s *Service) loadZones(ctx context.Context, tenantID shared.ID) ([]*scanzon
 // are only files, repositories or containers (SAST, SCA, secrets, IaC) runs
 // where the code is and is not routed. An unknown tool is routed (fail
 // closed).
-func (s *Service) toolReachesNetwork(ctx context.Context, name string) bool {
+func (s *Service) toolReachesNetwork(ctx context.Context, tenantID shared.ID, name string) bool {
 	if s.toolRepo == nil || name == "" {
 		return true
 	}
-	t, err := s.toolRepo.GetByName(ctx, name)
+	t, err := s.toolRepo.GetByName(ctx, tenantID, name)
 	if err != nil || t == nil || len(t.SupportedTargets) == 0 {
 		return true
 	}
@@ -154,6 +159,10 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 	if err != nil {
 		return nil, fmt.Errorf("scan zone sensor lookup failed, scan not dispatched: %w", err)
 	}
+	opts, err := s.dispatchOptions(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	zoneSummaries := make([]map[string]any, 0, len(routing.ZoneOrder))
 	for _, zid := range routing.ZoneOrder {
@@ -170,15 +179,28 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		}
 		cands := sensors[zid]
 		load := make([]int, len(cands))
+		reports := make([]*sensor.LocalPolicyReport, len(cands))
 		for i, c := range cands {
 			load[i] = c.ActiveCommands
+			reports[i] = c.LocalPolicy
 		}
 		var pinned []string
-		queued := 0
+		queued, jobs := 0, 0
 		for _, chunk := range chunkTargets(zoneTargets, batchSize) {
 			b := zoneBatch{Zone: z, Targets: chunk}
 			if len(cands) > 0 {
-				i := leastLoaded(load)
+				// Only a sensor whose reported local policy accepts the
+				// batch is a candidate (sensor.Accepts).
+				v := judge(reports, scanJob(sc, chunk), opts)
+				if len(v.accepted) == 0 {
+					reason := v.reason(fmt.Sprintf("scan zone %q", z.Name))
+					plan.PolicyRefused = appendUnique(plan.PolicyRefused, reason)
+					for _, t := range chunk {
+						plan.Uncovered = append(plan.Uncovered, scanzone.Uncovered{Target: t, Reason: reason})
+					}
+					continue
+				}
+				i := leastLoadedOf(load, v.accepted)
 				load[i]++
 				id := cands[i].ID
 				b.SensorID = &id
@@ -186,6 +208,7 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 			} else {
 				queued++
 			}
+			jobs++
 			plan.Batches = append(plan.Batches, b)
 		}
 		if queued > 0 {
@@ -197,7 +220,7 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 			"zone_id":     z.ID.String(),
 			"zone_name":   z.Name,
 			"targets":     len(zoneTargets),
-			"jobs":        len(chunkTargets(zoneTargets, batchSize)),
+			"jobs":        jobs,
 			"sensor_ids":  pinned,
 			"queued_jobs": queued,
 		})
@@ -313,6 +336,9 @@ func recordZonePlan(sc *scan.Scan, plan *zonePlan, runContext map[string]any) er
 		n := min(len(plan.Uncovered), maxListedUncovered)
 		runContext[runContextKeyUncovered] = plan.Uncovered[:n]
 	}
+	if len(plan.Batches) == 0 && len(plan.PolicyRefused) > 0 {
+		return policyRefusedError(sc, plan.PolicyRefused)
+	}
 	if len(plan.Batches) == 0 {
 		return shared.NewDomainError("NO_ZONE_COVERAGE", fmt.Sprintf(
 			"No target of scan %q can be scanned: %d target(s) are outside every scan zone or in a zone without sensors. See the run warnings, or add the ranges to a zone.",
@@ -325,7 +351,7 @@ func recordZonePlan(sc *scan.Scan, plan *zonePlan, runContext map[string]any) er
 // run. Zone batches are stamped with their zone and pinned to the chosen
 // sensor; they are never platform jobs (RFC-023 D14). Unzoned public batches
 // follow the pre-zone platform/tenant rules.
-func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pipeline.Run, stepRun *pipeline.StepRun, plan *zonePlan, usePlatform bool) error {
+func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, plan *zonePlan, usePlatform bool) error {
 	templates := s.customTemplatesForScan(ctx, sc)
 	batchContext := batchRunContext(run.Context)
 
@@ -346,6 +372,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *pi
 		if stepRun != nil {
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
+		cmd.DispatchGate = scanDispatchGate(sc, run)
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)
 			if b.SensorID != nil {
@@ -426,9 +453,10 @@ func chunkTargets(targets []string, size int) [][]string {
 	return out
 }
 
-func leastLoaded(load []int) int {
-	best := 0
-	for i := 1; i < len(load); i++ {
+// leastLoadedOf returns the index, among idx, of the least loaded sensor.
+func leastLoadedOf(load []int, idx []int) int {
+	best := idx[0]
+	for _, i := range idx[1:] {
 		if load[i] < load[best] {
 			best = i
 		}
@@ -446,7 +474,7 @@ func appendUnique(xs []string, x string) []string {
 }
 
 // routeWorkflowTargets applies zones to a workflow run. A workflow runs as one
-// pipeline, so all of its routed targets must fall in one zone (or all be
+// scan workflow, so all of its routed targets must fall in one zone (or all be
 // unzoned public targets); the run is stamped with that zone and every step
 // command stays inside it.
 func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, error) {
@@ -459,7 +487,7 @@ func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones
 		return nil, err
 	}
 	if zid, ok := plan.Summary["zone_id"].(string); ok {
-		runContext[pipeline.RunContextKeyScanZoneID] = zid
+		runContext[scanrun.RunContextKeyScanZoneID] = zid
 	}
 	if err := recordZonePlan(sc, plan, runContext); err != nil {
 		return nil, err

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -55,16 +55,11 @@ func emailTestLogger() *logger.Logger {
 }
 
 func emailTestConfig() config.SMTPConfig {
-	return config.SMTPConfig{
-		Host:    "smtp.example.com",
-		Port:    587,
-		From:    "noreply@example.com",
-		BaseURL: "https://app.example.com",
-	}
+	return config.SMTPConfig{BaseURL: "https://app.example.com"}
 }
 
-func emailNewService(sender email.Sender) *app.EmailService {
-	return app.NewEmailService(sender, emailTestConfig(), "OpenCTEM", emailTestLogger())
+func emailNewService(sender email.Sender) *auth.EmailService {
+	return auth.NewEmailService(sender, emailTestConfig(), "OpenCTEM", emailTestLogger())
 }
 
 // =============================================================================
@@ -90,7 +85,7 @@ func TestEmailService_IsConfigured_False(t *testing.T) {
 }
 
 func TestEmailService_IsConfigured_NilSender(t *testing.T) {
-	svc := app.NewEmailService(nil, emailTestConfig(), "OpenCTEM", emailTestLogger())
+	svc := auth.NewEmailService(nil, emailTestConfig(), "OpenCTEM", emailTestLogger())
 
 	if svc.IsConfigured() {
 		t.Error("expected IsConfigured() to return false when sender is nil")
@@ -130,7 +125,7 @@ func TestEmailService_SendVerificationEmail_Success(t *testing.T) {
 	if data.Email != "user@example.com" {
 		t.Errorf("expected Email=user@example.com, got %s", data.Email)
 	}
-	expectedURL := "https://app.example.com/auth/verify-email?token=tok123"
+	expectedURL := "https://app.example.com/verify-email#token=tok123"
 	if data.VerificationURL != expectedURL {
 		t.Errorf("expected VerificationURL=%s, got %s", expectedURL, data.VerificationURL)
 	}
@@ -202,7 +197,7 @@ func TestEmailService_SendPasswordResetEmail_Success(t *testing.T) {
 	if data.Email != "user@example.com" {
 		t.Errorf("expected Email=user@example.com, got %s", data.Email)
 	}
-	expectedURL := "https://app.example.com/reset-password?token=reset-tok"
+	expectedURL := "https://app.example.com/reset-password#token=reset-tok"
 	if data.ResetURL != expectedURL {
 		t.Errorf("expected ResetURL=%s, got %s", expectedURL, data.ResetURL)
 	}
@@ -286,10 +281,6 @@ func TestEmailService_SendPasswordChangedEmail_Success(t *testing.T) {
 	if data.AppName != "OpenCTEM" {
 		t.Errorf("expected AppName=OpenCTEM, got %s", data.AppName)
 	}
-	expectedSupportURL := "https://app.example.com/support"
-	if data.SupportURL != expectedSupportURL {
-		t.Errorf("expected SupportURL=%s, got %s", expectedSupportURL, data.SupportURL)
-	}
 	if data.ChangedAt == "" {
 		t.Error("expected ChangedAt to be non-empty")
 	}
@@ -355,13 +346,9 @@ func TestEmailService_SendWelcomeEmail_Success(t *testing.T) {
 	if data.Email != "new@example.com" {
 		t.Errorf("expected Email=new@example.com, got %s", data.Email)
 	}
-	expectedLoginURL := "https://app.example.com/auth/login"
+	expectedLoginURL := "https://app.example.com/login"
 	if data.LoginURL != expectedLoginURL {
 		t.Errorf("expected LoginURL=%s, got %s", expectedLoginURL, data.LoginURL)
-	}
-	expectedSupportURL := "https://app.example.com/support"
-	if data.SupportURL != expectedSupportURL {
-		t.Errorf("expected SupportURL=%s, got %s", expectedSupportURL, data.SupportURL)
 	}
 	if data.AppName != "OpenCTEM" {
 		t.Errorf("expected AppName=OpenCTEM, got %s", data.AppName)
@@ -428,7 +415,7 @@ func TestEmailService_SendTeamInvitationEmail_Success(t *testing.T) {
 	if data.TeamName != "Acme Corp" {
 		t.Errorf("expected TeamName=Acme Corp, got %s", data.TeamName)
 	}
-	expectedURL := "https://app.example.com/invitations/inv-tok-456"
+	expectedURL := "https://app.example.com/invitations#token=inv-tok-456"
 	if data.InvitationURL != expectedURL {
 		t.Errorf("expected InvitationURL=%s, got %s", expectedURL, data.InvitationURL)
 	}
@@ -527,7 +514,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := &emailMockSender{isConfigured: true}
 			cfg := config.SMTPConfig{BaseURL: tc.baseURL}
-			svc := app.NewEmailService(mock, cfg, "TestApp", emailTestLogger())
+			svc := auth.NewEmailService(mock, cfg, "TestApp", emailTestLogger())
 
 			// Test verification URL
 			err := svc.SendVerificationEmail(context.Background(), "u@e.com", "U", "t1", time.Hour)
@@ -535,7 +522,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			vData := mock.lastData.(email.VerifyEmailData)
-			expectedVerifyURL := fmt.Sprintf("%s/auth/verify-email?token=t1", tc.baseURL)
+			expectedVerifyURL := fmt.Sprintf("%s/verify-email#token=t1", tc.baseURL)
 			if vData.VerificationURL != expectedVerifyURL {
 				t.Errorf("expected VerificationURL=%s, got %s", expectedVerifyURL, vData.VerificationURL)
 			}
@@ -546,7 +533,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			rData := mock.lastData.(email.PasswordResetData)
-			expectedResetURL := fmt.Sprintf("%s/reset-password?token=t2", tc.baseURL)
+			expectedResetURL := fmt.Sprintf("%s/reset-password#token=t2", tc.baseURL)
 			if rData.ResetURL != expectedResetURL {
 				t.Errorf("expected ResetURL=%s, got %s", expectedResetURL, rData.ResetURL)
 			}
@@ -557,7 +544,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			wData := mock.lastData.(email.WelcomeData)
-			expectedLoginURL := fmt.Sprintf("%s/auth/login", tc.baseURL)
+			expectedLoginURL := fmt.Sprintf("%s/login", tc.baseURL)
 			if wData.LoginURL != expectedLoginURL {
 				t.Errorf("expected LoginURL=%s, got %s", expectedLoginURL, wData.LoginURL)
 			}
@@ -568,21 +555,11 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			iData := mock.lastData.(email.TeamInvitationData)
-			expectedInvURL := fmt.Sprintf("%s/invitations/inv1", tc.baseURL)
+			expectedInvURL := fmt.Sprintf("%s/invitations#token=inv1", tc.baseURL)
 			if iData.InvitationURL != expectedInvURL {
 				t.Errorf("expected InvitationURL=%s, got %s", expectedInvURL, iData.InvitationURL)
 			}
 
-			// Test password changed support URL
-			err = svc.SendPasswordChangedEmail(context.Background(), "u@e.com", "U", "1.1.1.1")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			pcData := mock.lastData.(email.PasswordChangedData)
-			expectedSupportURL := fmt.Sprintf("%s/support", tc.baseURL)
-			if pcData.SupportURL != expectedSupportURL {
-				t.Errorf("expected SupportURL=%s, got %s", expectedSupportURL, pcData.SupportURL)
-			}
 		})
 	}
 }
@@ -594,7 +571,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 func TestEmailService_AppName_PropagatedToAllTemplates(t *testing.T) {
 	mock := &emailMockSender{isConfigured: true}
 	customAppName := "MyCustomApp"
-	svc := app.NewEmailService(mock, emailTestConfig(), customAppName, emailTestLogger())
+	svc := auth.NewEmailService(mock, emailTestConfig(), customAppName, emailTestLogger())
 
 	// Verification
 	_ = svc.SendVerificationEmail(context.Background(), "u@e.com", "U", "t", time.Hour)
@@ -700,7 +677,7 @@ func TestEmailService_SendAccountSetupEmail_Success(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected AccountSetupData, got %T", mock.lastData)
 	}
-	if data.SetupURL != "https://app.example.com/set-password?token=setup-tok" {
+	if data.SetupURL != "https://app.example.com/set-password#token=setup-tok" {
 		t.Errorf("unexpected SetupURL %s", data.SetupURL)
 	}
 	if data.TeamName != "Acme" || data.ExpiresIn != "24 hours" {
@@ -727,7 +704,7 @@ func TestEmailService_SendAccountSetupEmail_NotConfiguredIsAnError(t *testing.T)
 
 func TestEmailTemplate_AccountSetupRenders(t *testing.T) {
 	subject, body, err := email.NewTemplateEngine().Render(email.TemplateAccountSetup, email.AccountSetupData{
-		UserName: "New", TeamName: "Acme", SetupURL: "https://x/set-password?token=t", ExpiresIn: "24 hours", AppName: "OpenCTEM",
+		UserName: "New", TeamName: "Acme", SetupURL: "https://x/set-password#token=t", ExpiresIn: "24 hours", AppName: "OpenCTEM",
 	})
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -735,7 +712,7 @@ func TestEmailTemplate_AccountSetupRenders(t *testing.T) {
 	if subject != "Your OpenCTEM account for Acme is ready" {
 		t.Errorf("unexpected subject %q", subject)
 	}
-	if !strings.Contains(body, "https://x/set-password?token=t") || !strings.Contains(body, "24 hours") {
+	if !strings.Contains(body, "https://x/set-password#token=t") || !strings.Contains(body, "24 hours") {
 		t.Error("body must carry the link and its expiry")
 	}
 }

@@ -13,47 +13,44 @@ import (
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// PipelineDeactivator interface for cascade deactivation when tools are disabled/deleted.
+// ScanWorkflowDeactivator interface for cascade deactivation when tools are disabled/deleted.
 // This decouples Service from PipelineService while allowing the cascade behavior.
-type PipelineDeactivator interface {
-	// DeactivatePipelinesByTool deactivates all active pipelines using the specified tool.
-	// Returns the count of deactivated pipelines and their IDs.
-	DeactivatePipelinesByTool(ctx context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error)
+type ScanWorkflowDeactivator interface {
+	// DeactivateScanWorkflowsByTool deactivates all active scan workflows using the specified tool.
+	// Returns the count of deactivated scan workflows and their IDs.
+	DeactivateScanWorkflowsByTool(ctx context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error)
 
-	// GetPipelinesUsingTool returns all active pipeline IDs that use a specific tool.
-	GetPipelinesUsingTool(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
+	// GetScanWorkflowsUsingTool returns all active scan workflow IDs that use a specific tool.
+	GetScanWorkflowsUsingTool(ctx context.Context, tenantID shared.ID, toolName string) ([]shared.ID, error)
 }
 
 // Service handles tool registry business operations.
 type Service struct {
-	toolRepo            tooldom.Repository
-	configRepo          tooldom.TenantToolConfigRepository
-	executionRepo       tooldom.ToolExecutionRepository
-	sensorRepo          sensor.Repository     // For checking tool availability
-	categoryRepo        tooldomcat.Repository // For fetching category info
-	pipelineDeactivator PipelineDeactivator   // For cascade deactivation when tool is disabled/deleted
-	logger              *logger.Logger
+	toolRepo                tooldom.Repository
+	configRepo              tooldom.TenantToolConfigRepository
+	categoryRepo            tooldomcat.Repository   // For fetching category info
+	scanWorkflowDeactivator ScanWorkflowDeactivator // For cascade deactivation when tool is disabled/deleted
+	logger                  *logger.Logger
+
+	// Tool availability sources (availability.go).
+	availSensors SensorLister
+	availZones   ZoneLister
+	availGrants  GrantLister
+	// availManifests are the sensors' manifests (SetManifestSource).
+	availManifests ManifestLister
 }
 
 // NewService creates a new Service.
 func NewService(
 	toolRepo tooldom.Repository,
 	configRepo tooldom.TenantToolConfigRepository,
-	executionRepo tooldom.ToolExecutionRepository,
 	log *logger.Logger,
 ) *Service {
 	return &Service{
-		toolRepo:      toolRepo,
-		configRepo:    configRepo,
-		executionRepo: executionRepo,
-		logger:        log.With("service", "tool"),
+		toolRepo:   toolRepo,
+		configRepo: configRepo,
+		logger:     log.With("service", "tool"),
 	}
-}
-
-// SetSensorRepo sets the sensor repository for tool availability checks.
-// This is optional - if not set, IsAvailable will always be true.
-func (s *Service) SetSensorRepo(repo sensor.Repository) {
-	s.sensorRepo = repo
 }
 
 // SetCategoryRepo sets the category repository for fetching category info.
@@ -62,10 +59,10 @@ func (s *Service) SetCategoryRepo(repo tooldomcat.Repository) {
 	s.categoryRepo = repo
 }
 
-// SetPipelineDeactivator sets the pipeline deactivator for cascade deactivation.
-// This is optional - if not set, pipelines will not be auto-deactivated when tools are disabled.
-func (s *Service) SetPipelineDeactivator(deactivator PipelineDeactivator) {
-	s.pipelineDeactivator = deactivator
+// SetScanWorkflowDeactivator sets the scan workflow deactivator for cascade deactivation.
+// This is optional - if not set, scan workflows will not be auto-deactivated when tools are disabled.
+func (s *Service) SetScanWorkflowDeactivator(deactivator ScanWorkflowDeactivator) {
+	s.scanWorkflowDeactivator = deactivator
 }
 
 // =============================================================================
@@ -74,15 +71,18 @@ func (s *Service) SetPipelineDeactivator(deactivator PipelineDeactivator) {
 
 // CreateInput represents the input for creating a tool.
 type CreateInput struct {
-	Name             string         `json:"name" validate:"required,min=1,max=50"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
-	InstallMethod    string         `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	Name          string `json:"name" validate:"required,min=1,max=50"`
+	DisplayName   string `json:"display_name" validate:"max=100"`
+	Description   string `json:"description" validate:"max=1000"`
+	CategoryID    string `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
+	InstallMethod string `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
+	InstallCmd    string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd     string `json:"update_cmd" validate:"max=500"`
+	VersionCmd    string `json:"version_cmd" validate:"max=500"`
+	VersionRegex  string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -124,6 +124,9 @@ func (s *Service) CreateTool(ctx context.Context, input CreateInput) (*tooldom.T
 	t.UpdateCmd = input.UpdateCmd
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.ConfigFilePath = ""
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
@@ -166,12 +169,19 @@ func (s *Service) GetTool(ctx context.Context, toolID string) (*tooldom.Tool, er
 }
 
 // GetToolByName retrieves a tool by name.
-func (s *Service) GetToolByName(ctx context.Context, name string) (*tooldom.Tool, error) {
+func (s *Service) GetToolByName(ctx context.Context, tenantID, name string) (*tooldom.Tool, error) {
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
-
-	return s.toolRepo.GetByName(ctx, name)
+	// No tenant (platform-only caller): platform tools only.
+	var tid shared.ID
+	if tenantID != "" {
+		var err error
+		if tid, err = shared.IDFromString(tenantID); err != nil {
+			return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+		}
+	}
+	return s.toolRepo.GetByName(ctx, tid, name)
 }
 
 // ListInput represents the input for listing tools.
@@ -238,14 +248,17 @@ func (s *Service) ListToolsByCapability(ctx context.Context, capability string) 
 
 // UpdateInput represents the input for updating a tool.
 type UpdateInput struct {
-	ToolID           string         `json:"tool_id" validate:"required,uuid"`
-	TenantID         string         `json:"-"` // set from the JWT tenant context, not the body
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	ToolID       string `json:"tool_id" validate:"required,uuid"`
+	TenantID     string `json:"-"` // set from the JWT tenant context, not the body
+	DisplayName  string `json:"display_name" validate:"max=100"`
+	Description  string `json:"description" validate:"max=1000"`
+	InstallCmd   string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd    string `json:"update_cmd" validate:"max=500"`
+	VersionCmd   string `json:"version_cmd" validate:"max=500"`
+	VersionRegex string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -285,6 +298,9 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 	// Update additional fields
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
 	t.LogoURL = input.LogoURL
@@ -313,7 +329,7 @@ func (s *Service) UpdateTool(ctx context.Context, input UpdateInput) (*tooldom.T
 }
 
 // DeleteTool deletes a tool from the registry.
-// Before deleting, cascade deactivates any active pipelines that use this tool.
+// Before deleting, cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error {
 	s.logger.Info("deleting tool", "tool_id", toolID)
 
@@ -336,9 +352,9 @@ func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error
 		return err
 	}
 
-	// Cascade deactivate pipelines using this tool before deletion
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool before deletion
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines before tool deletion",
 				"tool_id", toolID,
@@ -350,7 +366,7 @@ func (s *Service) DeleteTool(ctx context.Context, tenantID, toolID string) error
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -386,7 +402,7 @@ func (s *Service) ActivateTool(ctx context.Context, tenantID, toolID string) (*t
 }
 
 // DeactivateTool deactivates a tool.
-// Also cascade deactivates any active pipelines that use this tool.
+// Also cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (*tooldom.Tool, error) {
 	s.logger.Info("deactivating tool", "tool_id", toolID)
 
@@ -403,9 +419,9 @@ func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (
 		return nil, err
 	}
 
-	// Cascade deactivate pipelines using this tool
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines for tool",
 				"tool_id", toolID,
@@ -417,7 +433,7 @@ func (s *Service) DeactivateTool(ctx context.Context, tenantID, toolID string) (
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -461,17 +477,20 @@ func (s *Service) UpdateToolVersion(ctx context.Context, input UpdateToolVersion
 
 // CreateCustomToolInput represents the input for creating a tenant custom tool.
 type CreateCustomToolInput struct {
-	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
-	CreatedBy        string         `json:"created_by" validate:"omitempty,uuid"` // User ID who created the tool
-	Name             string         `json:"name" validate:"required,min=1,max=50"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
-	InstallMethod    string         `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	TenantID      string `json:"tenant_id" validate:"required,uuid"`
+	CreatedBy     string `json:"created_by" validate:"omitempty,uuid"` // User ID who created the tool
+	Name          string `json:"name" validate:"required,min=1,max=50"`
+	DisplayName   string `json:"display_name" validate:"max=100"`
+	Description   string `json:"description" validate:"max=1000"`
+	CategoryID    string `json:"category_id" validate:"omitempty,uuid"` // UUID of tool_categories
+	InstallMethod string `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
+	InstallCmd    string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd     string `json:"update_cmd" validate:"max=500"`
+	VersionCmd    string `json:"version_cmd" validate:"max=500"`
+	VersionRegex  string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -521,12 +540,21 @@ func (s *Service) CreateCustomTool(ctx context.Context, input CreateCustomToolIn
 		return nil, err
 	}
 
+	// Platform tool names are reserved: a name resolves to the platform tool
+	// first, so a custom tool with the same name would never run.
+	if existing, gerr := s.toolRepo.GetByName(ctx, shared.ID{}, t.Name); gerr == nil && existing != nil && existing.TenantID == nil {
+		return nil, fmt.Errorf("%w: %q is the name of a platform tool; choose another name", shared.ErrConflict, t.Name)
+	}
+
 	// Set optional fields
 	t.Description = input.Description
 	t.InstallCmd = input.InstallCmd
 	t.UpdateCmd = input.UpdateCmd
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.ConfigFilePath = ""
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
@@ -671,14 +699,17 @@ func (s *Service) ListAvailableTools(ctx context.Context, input ListAvailableToo
 
 // UpdateCustomToolInput represents the input for updating a tenant custom tool.
 type UpdateCustomToolInput struct {
-	TenantID         string         `json:"tenant_id" validate:"required,uuid"`
-	ToolID           string         `json:"tool_id" validate:"required,uuid"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	TenantID     string `json:"tenant_id" validate:"required,uuid"`
+	ToolID       string `json:"tool_id" validate:"required,uuid"`
+	DisplayName  string `json:"display_name" validate:"max=100"`
+	Description  string `json:"description" validate:"max=1000"`
+	InstallCmd   string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd    string `json:"update_cmd" validate:"max=500"`
+	VersionCmd   string `json:"version_cmd" validate:"max=500"`
+	VersionRegex string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -716,6 +747,9 @@ func (s *Service) UpdateCustomTool(ctx context.Context, input UpdateCustomToolIn
 	// Update additional fields
 	t.VersionCmd = input.VersionCmd
 	t.VersionRegex = input.VersionRegex
+	if t.MinVersion, err = minVersionOf(input.MinVersion); err != nil {
+		return nil, err
+	}
 	t.DocsURL = input.DocsURL
 	t.GithubURL = input.GithubURL
 	t.LogoURL = input.LogoURL
@@ -744,7 +778,7 @@ func (s *Service) UpdateCustomTool(ctx context.Context, input UpdateCustomToolIn
 }
 
 // DeleteCustomTool deletes a tenant custom tool.
-// Before deleting, cascade deactivates any active pipelines that use this tool.
+// Before deleting, cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string) error {
 	s.logger.Info("deleting custom tool", "tenant_id", tenantID, "tool_id", toolID)
 
@@ -769,9 +803,9 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 		return err
 	}
 
-	// Cascade deactivate pipelines using this tool before deletion
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool before deletion
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines before custom tool deletion",
 				"tenant_id", tenantID,
@@ -784,7 +818,7 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -820,7 +854,7 @@ func (s *Service) ActivateCustomTool(ctx context.Context, tenantID, toolID strin
 }
 
 // DeactivateCustomTool deactivates a tenant custom tool.
-// Also cascade deactivates any active pipelines that use this tool.
+// Also cascade deactivates any active scan workflows that use this tool.
 func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID string) (*tooldom.Tool, error) {
 	s.logger.Info("deactivating custom tool", "tenant_id", tenantID, "tool_id", toolID)
 
@@ -839,9 +873,9 @@ func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID str
 		return nil, err
 	}
 
-	// Cascade deactivate pipelines using this tool
-	if s.pipelineDeactivator != nil {
-		count, pipelineIDs, err := s.pipelineDeactivator.DeactivatePipelinesByTool(ctx, tid, t.Name)
+	// Cascade deactivate scan workflows using this tool
+	if s.scanWorkflowDeactivator != nil {
+		count, scanWorkflowIDs, err := s.scanWorkflowDeactivator.DeactivateScanWorkflowsByTool(ctx, tid, t.Name)
 		if err != nil {
 			s.logger.Warn("failed to deactivate pipelines for custom tool",
 				"tenant_id", tenantID,
@@ -854,7 +888,7 @@ func (s *Service) DeactivateCustomTool(ctx context.Context, tenantID, toolID str
 				"tool_id", toolID,
 				"tool_name", t.Name,
 				"deactivated_count", count,
-				"pipeline_ids", pipelineIDs)
+				"scan_workflow_ids", scanWorkflowIDs)
 		}
 	}
 
@@ -894,8 +928,8 @@ func (s *Service) CreateTenantToolConfig(ctx context.Context, input CreateTenant
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Verify tool exists
-	if _, err := s.toolRepo.GetByID(ctx, toolID); err != nil {
+	// Verify the tool exists and the tenant may see it (platform or its own).
+	if _, err := s.visibleTool(ctx, tenantID, toolID); err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)
 	}
 
@@ -949,7 +983,26 @@ func (s *Service) GetEffectiveToolConfig(ctx context.Context, tenantID, toolID s
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
+	if _, err := s.visibleTool(ctx, tid, toid); err != nil {
+		return nil, err
+	}
+
 	return s.configRepo.GetEffectiveConfig(ctx, tid, toid)
+}
+
+// visibleTool loads a tool the tenant may see: a platform tool (tenant_id IS
+// NULL) or the tenant's own custom tool. Another tenant's custom tool answers
+// not-found, the same as a tool that does not exist, so its existence, its
+// definition and its default config never cross the tenant boundary.
+func (s *Service) visibleTool(ctx context.Context, tenantID, toolID shared.ID) (*tooldom.Tool, error) {
+	t, err := s.toolRepo.GetByID(ctx, toolID)
+	if err != nil {
+		return nil, err
+	}
+	if !t.IsPlatformTool() && !t.BelongsToTenant(tenantID) {
+		return nil, fmt.Errorf("%w: tool not found", shared.ErrNotFound)
+	}
+	return t, nil
 }
 
 // ListTenantToolConfigsInput represents the input for listing tenant tool configs.
@@ -1008,8 +1061,8 @@ func (s *Service) UpdateTenantToolConfig(ctx context.Context, input UpdateTenant
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Verify tool exists
-	if _, err := s.toolRepo.GetByID(ctx, toolID); err != nil {
+	// Verify the tool exists and the tenant may see it (platform or its own).
+	if _, err := s.visibleTool(ctx, tenantID, toolID); err != nil {
 		return nil, fmt.Errorf("tool not found: %w", err)
 	}
 
@@ -1191,34 +1244,17 @@ func (s *Service) ListToolsWithConfig(ctx context.Context, input ListToolsWithCo
 		return result, err
 	}
 
-	// Enrich with tool availability info if sensorRepo is available
-	if s.sensorRepo != nil {
-		// Get all tools that have at least one sensor available
-		availableTools, err := s.sensorRepo.GetAvailableToolsForTenant(ctx, tenantID)
-		if err != nil {
-			s.logger.Warn("Failed to get available tools, defaulting to all available",
-				"error", err, "tenant_id", tenantID)
-			// On error, mark all as available to not block UI
-			for _, twc := range result.Data {
-				twc.IsAvailable = true
-			}
-		} else {
-			// Create a set for O(1) lookup
-			availableSet := make(map[string]bool, len(availableTools))
-			for _, t := range availableTools {
-				availableSet[t] = true
-			}
-
-			// Mark each tool's availability
-			for _, twc := range result.Data {
-				twc.IsAvailable = availableSet[twc.Tool.Name]
-			}
-		}
-	} else {
-		// No sensor repo, default to all available
-		for _, twc := range result.Data {
-			twc.IsAvailable = true
-		}
+	// is_available: the tool can be dispatched now (availability.go); every
+	// tool when availability is unknown or cannot be read, so a picker is
+	// never blocked by a failure here (trigger time refuses for real).
+	runnable, err := s.RunnableToolNames(ctx, input.TenantID)
+	if err != nil {
+		s.logger.Warn("tool availability unavailable; marking every tool available",
+			"error", err, "tenant_id", tenantID)
+		runnable = nil
+	}
+	for _, twc := range result.Data {
+		twc.IsAvailable = runnable == nil || runnable[twc.Tool.Name]
 	}
 
 	return result, nil
@@ -1236,8 +1272,8 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
 	}
 
-	// Get tool
-	t, err := s.toolRepo.GetByID(ctx, toid)
+	// Get tool (platform or the tenant's own)
+	t, err := s.visibleTool(ctx, tid, toid)
 	if err != nil {
 		return nil, err
 	}
@@ -1272,243 +1308,31 @@ func (s *Service) GetToolWithConfig(ctx context.Context, tenantID, toolID string
 		}
 	}
 
+	runnable, err := s.RunnableToolNames(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("tool availability unavailable; marking the tool available",
+			"error", err, "tenant_id", tenantID)
+		runnable = nil
+	}
+
 	return &tooldom.ToolWithConfig{
 		Tool:            t,
 		Category:        embeddedCat,
 		TenantConfig:    tenantConfig,
 		EffectiveConfig: effectiveConfig,
 		IsEnabled:       isEnabled,
+		IsAvailable:     runnable == nil || runnable[t.Name],
 	}, nil
 }
 
-// =============================================================================
-// Tool Execution Operations
-// =============================================================================
-
-// RecordToolExecutionInput represents the input for recording a tool execution.
-type RecordToolExecutionInput struct {
-	TenantID      string         `json:"tenant_id" validate:"required,uuid"`
-	ToolID        string         `json:"tool_id" validate:"required,uuid"`
-	SensorID      string         `json:"sensor_id" validate:"omitempty,uuid"`
-	PipelineRunID string         `json:"pipeline_run_id" validate:"omitempty,uuid"`
-	StepRunID     string         `json:"step_run_id" validate:"omitempty,uuid"`
-	InputConfig   map[string]any `json:"input_config"`
-	TargetsCount  int            `json:"targets_count"`
-}
-
-// RecordToolExecution records a new tool execution.
-func (s *Service) RecordToolExecution(ctx context.Context, input RecordToolExecutionInput) (*tooldom.ToolExecution, error) {
-	tenantID, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+// minVersionOf validates a catalog minimum version: empty (no minimum) or a
+// release version, stored in its normalized form ("3.2" -> "v3.2.0").
+func minVersionOf(v string) (string, error) {
+	if v == "" {
+		return "", nil
 	}
-
-	toolID, err := shared.IDFromString(input.ToolID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
+	if !sensor.IsReleaseVersion(v) {
+		return "", fmt.Errorf("%w: min_version must be a release version such as 3.2.0", shared.ErrValidation)
 	}
-
-	var sensorID *shared.ID
-	if input.SensorID != "" {
-		aid, err := shared.IDFromString(input.SensorID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
-		}
-		sensorID = &aid
-	}
-
-	execution := tooldom.NewToolExecution(tenantID, toolID, sensorID, input.InputConfig, input.TargetsCount)
-
-	// Set optional pipeline/step run IDs
-	if input.PipelineRunID != "" {
-		prid, err := shared.IDFromString(input.PipelineRunID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid pipeline_run id", shared.ErrValidation)
-		}
-		execution.PipelineRunID = &prid
-	}
-
-	if input.StepRunID != "" {
-		srid, err := shared.IDFromString(input.StepRunID)
-		if err != nil {
-			return nil, fmt.Errorf("%w: invalid step_run id", shared.ErrValidation)
-		}
-		execution.StepRunID = &srid
-	}
-
-	if err := s.executionRepo.Create(ctx, execution); err != nil {
-		return nil, err
-	}
-
-	return execution, nil
-}
-
-// CompleteToolExecutionInput represents the input for completing a tool execution.
-type CompleteToolExecutionInput struct {
-	ExecutionID   string         `json:"execution_id" validate:"required,uuid"`
-	FindingsCount int            `json:"findings_count"`
-	OutputSummary map[string]any `json:"output_summary"`
-}
-
-// CompleteToolExecution marks a tool execution as completed.
-func (s *Service) CompleteToolExecution(ctx context.Context, input CompleteToolExecutionInput) (*tooldom.ToolExecution, error) {
-	s.logger.Info("completing tool execution", "execution_id", input.ExecutionID)
-
-	executionID, err := shared.IDFromString(input.ExecutionID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
-	}
-
-	execution, err := s.executionRepo.GetByID(ctx, executionID)
-	if err != nil {
-		return nil, err
-	}
-
-	execution.Complete(input.FindingsCount, input.OutputSummary)
-
-	if err := s.executionRepo.Update(ctx, execution); err != nil {
-		return nil, err
-	}
-
-	return execution, nil
-}
-
-// FailToolExecutionInput represents the input for failing a tool execution.
-type FailToolExecutionInput struct {
-	ExecutionID  string `json:"execution_id" validate:"required,uuid"`
-	ErrorMessage string `json:"error_message" validate:"required,max=2000"`
-}
-
-// FailToolExecution marks a tool execution as failed.
-func (s *Service) FailToolExecution(ctx context.Context, input FailToolExecutionInput) (*tooldom.ToolExecution, error) {
-	s.logger.Info("failing tool execution", "execution_id", input.ExecutionID)
-
-	executionID, err := shared.IDFromString(input.ExecutionID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
-	}
-
-	execution, err := s.executionRepo.GetByID(ctx, executionID)
-	if err != nil {
-		return nil, err
-	}
-
-	execution.Fail(input.ErrorMessage)
-
-	if err := s.executionRepo.Update(ctx, execution); err != nil {
-		return nil, err
-	}
-
-	return execution, nil
-}
-
-// TimeoutToolExecution marks a tool execution as timed out.
-func (s *Service) TimeoutToolExecution(ctx context.Context, executionID string) (*tooldom.ToolExecution, error) {
-	s.logger.Info("timing out tool execution", "execution_id", executionID)
-
-	eid, err := shared.IDFromString(executionID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid execution id", shared.ErrValidation)
-	}
-
-	execution, err := s.executionRepo.GetByID(ctx, eid)
-	if err != nil {
-		return nil, err
-	}
-
-	execution.Timeout()
-
-	if err := s.executionRepo.Update(ctx, execution); err != nil {
-		return nil, err
-	}
-
-	return execution, nil
-}
-
-// GetToolStats retrieves statistics for a specific tool.
-func (s *Service) GetToolStats(ctx context.Context, tenantID, toolID string, days int) (*tooldom.ToolStats, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	toid, err := shared.IDFromString(toolID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
-	}
-
-	if days <= 0 {
-		days = 30 // Default to 30 days
-	}
-
-	return s.executionRepo.GetToolStats(ctx, tid, toid, days)
-}
-
-// GetTenantToolStats retrieves aggregated tool statistics for a tenant.
-func (s *Service) GetTenantToolStats(ctx context.Context, tenantID string, days int) (*tooldom.TenantToolStats, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	if days <= 0 {
-		days = 30 // Default to 30 days
-	}
-
-	return s.executionRepo.GetTenantStats(ctx, tid, days)
-}
-
-// ListToolExecutionsInput represents the input for listing tool executions.
-type ListToolExecutionsInput struct {
-	TenantID      string `json:"tenant_id" validate:"required,uuid"`
-	ToolID        string `json:"tool_id" validate:"omitempty,uuid"`
-	SensorID      string `json:"sensor_id" validate:"omitempty,uuid"`
-	PipelineRunID string `json:"pipeline_run_id" validate:"omitempty,uuid"`
-	Status        string `json:"status" validate:"omitempty,oneof=running completed failed timeout"`
-	Page          int    `json:"page"`
-	PerPage       int    `json:"per_page"`
-}
-
-// ListToolExecutions lists tool executions with filters.
-func (s *Service) ListToolExecutions(ctx context.Context, input ListToolExecutionsInput) (pagination.Result[*tooldom.ToolExecution], error) {
-	tenantID, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	filter := tooldom.ToolExecutionFilter{
-		TenantID: tenantID,
-	}
-
-	if input.ToolID != "" {
-		toolID, err := shared.IDFromString(input.ToolID)
-		if err != nil {
-			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid tool id", shared.ErrValidation)
-		}
-		filter.ToolID = &toolID
-	}
-
-	if input.SensorID != "" {
-		sensorID, err := shared.IDFromString(input.SensorID)
-		if err != nil {
-			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
-		}
-		filter.SensorID = &sensorID
-	}
-
-	if input.PipelineRunID != "" {
-		pipelineRunID, err := shared.IDFromString(input.PipelineRunID)
-		if err != nil {
-			return pagination.Result[*tooldom.ToolExecution]{}, fmt.Errorf("%w: invalid pipeline_run id", shared.ErrValidation)
-		}
-		filter.PipelineRunID = &pipelineRunID
-	}
-
-	if input.Status != "" {
-		status := tooldom.ExecutionStatus(input.Status)
-		filter.Status = &status
-	}
-
-	page := pagination.New(input.Page, input.PerPage)
-	return s.executionRepo.List(ctx, filter, page)
+	return sensor.NormalizeVersion(v), nil
 }

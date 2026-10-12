@@ -15,7 +15,8 @@ import (
 
 // EPSS and CISA KEV sync is platform-wide: one organization's administrator
 // could switch it off (or trigger it) for every organization. The tenant
-// routes now refuse; the operator controls live under /api/v1/admin.
+// plane has no write route (405); the operator controls live under
+// /api/v1/admin.
 func TestThreatIntelRoutes_TenantCannotChangeFeedSync(t *testing.T) {
 	router := infrahttp.NewChiRouter()
 	asTenantAdmin := func(next http.Handler) http.Handler {
@@ -40,8 +41,8 @@ func TestThreatIntelRoutes_TenantCannotChangeFeedSync(t *testing.T) {
 			}()
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
-			if rec.Code != http.StatusForbidden {
-				t.Errorf("%s %s: got %d, want 403", tc.method, tc.path, rec.Code)
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s %s: got %d, want 405", tc.method, tc.path, rec.Code)
 			}
 		}()
 	}

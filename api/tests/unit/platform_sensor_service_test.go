@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -121,8 +121,8 @@ func (m *mockSensorRepo) Update(_ context.Context, a *sensor.Sensor) error {
 	return nil
 }
 
-func (m *mockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
-	return nil
+func (m *mockSensorRepo) RetireInlineKey(_ context.Context, _ shared.ID, _ []string, _ time.Time) (bool, error) {
+	return false, nil
 }
 
 func (m *mockSensorRepo) UpdateHeartbeat(_ context.Context, id shared.ID, hb sensor.HeartbeatUpdate) (bool, error) {
@@ -238,12 +238,6 @@ func (m *mockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, 
 	return false, nil
 }
 
-func (m *mockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	return &sensor.PlatformSensorStatsResult{
-		TierBreakdown: make(map[string]sensor.TierBreakdown),
-	}, nil
-}
-
 func (m *mockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
 	return &sensor.TenantSensorStats{
 		ByStatus: make(map[string]int),
@@ -257,14 +251,14 @@ func (m *mockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*
 // Test Helpers
 // =============================================================================
 
-func newTestSensorService(repo *mockSensorRepo) *app.SensorService {
+func newTestSensorService(repo *mockSensorRepo) *sensorapp.SensorService {
 	log := logger.NewNop()
-	return app.NewSensorService(repo, nil, log)
+	return sensorapp.NewSensorService(repo, nil, log)
 }
 
 func createTestSensor(t *testing.T, tenantID shared.ID, name string) *sensor.Sensor {
 	t.Helper()
-	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test sensor", []string{"sast"}, []string{"semgrep"}, sensor.ExecutionModeDaemon)
+	a, err := sensor.NewSensor(tenantID, name, sensor.SensorTypeWorker, "test sensor", []string{"sast"}, sensor.ExecutionModeDaemon)
 	if err != nil {
 		t.Fatalf("failed to create test sensor: %v", err)
 	}
@@ -280,13 +274,12 @@ func TestCreateSensor_Success(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID:      tenantID.String(),
 		Name:          "Test Worker Sensor",
 		Type:          "worker",
 		Description:   "A test worker sensor",
 		Capabilities:  []string{"sast", "sca"},
-		Tools:         []string{"semgrep", "trivy"},
 		ExecutionMode: "daemon",
 	}
 
@@ -327,7 +320,7 @@ func TestCreateSensor_InvalidTenantID(t *testing.T) {
 	repo := newMockSensorRepo()
 	svc := newTestSensorService(repo)
 
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID: "not-a-uuid",
 		Name:     "Bad Sensor",
 		Type:     "worker",
@@ -347,7 +340,7 @@ func TestCreateSensor_EmptyName(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID: tenantID.String(),
 		Name:     "",
 		Type:     "worker",
@@ -365,7 +358,7 @@ func TestCreateSensor_RepoError(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID: tenantID.String(),
 		Name:     "Failing Sensor",
 		Type:     "worker",
@@ -382,7 +375,7 @@ func TestCreateSensor_WithMaxConcurrentJobs(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID:          tenantID.String(),
 		Name:              "Capacity Sensor",
 		Type:              "worker",
@@ -405,7 +398,7 @@ func TestCreateSensor_DefaultExecutionMode(t *testing.T) {
 	tenantID := shared.NewID()
 
 	// Worker should default to daemon mode
-	input := app.CreateSensorInput{
+	input := sensorapp.CreateSensorInput{
 		TenantID: tenantID.String(),
 		Name:     "Default Mode Sensor",
 		Type:     "worker",
@@ -518,7 +511,7 @@ func TestListSensors_WithFilters(t *testing.T) {
 		repo.sensors[a.ID] = a
 	}
 
-	result, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+	result, err := svc.ListSensors(context.Background(), sensorapp.ListSensorsInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  10,
@@ -536,7 +529,7 @@ func TestListSensors_InvalidTenantID(t *testing.T) {
 	repo := newMockSensorRepo()
 	svc := newTestSensorService(repo)
 
-	_, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+	_, err := svc.ListSensors(context.Background(), sensorapp.ListSensorsInput{
 		TenantID: "not-a-uuid",
 	})
 	if err == nil {
@@ -552,7 +545,7 @@ func TestListSensors_EmptyResult(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	result, err := svc.ListSensors(context.Background(), app.ListSensorsInput{
+	result, err := svc.ListSensors(context.Background(), sensorapp.ListSensorsInput{
 		TenantID: tenantID.String(),
 		Page:     1,
 		PerPage:  10,
@@ -578,7 +571,7 @@ func TestUpdateSensor_Success(t *testing.T) {
 	a := createTestSensor(t, tenantID, "Update Me")
 	repo.sensors[a.ID] = a
 
-	input := app.UpdateSensorInput{
+	input := sensorapp.UpdateSensorInput{
 		TenantID:    tenantID.String(),
 		SensorID:    a.ID.String(),
 		Name:        "Updated Name",
@@ -603,7 +596,7 @@ func TestUpdateSensor_NotFound(t *testing.T) {
 	svc := newTestSensorService(repo)
 	tenantID := shared.NewID()
 
-	input := app.UpdateSensorInput{
+	input := sensorapp.UpdateSensorInput{
 		TenantID: tenantID.String(),
 		SensorID: shared.NewID().String(),
 		Name:     "Updated",
@@ -627,7 +620,7 @@ func TestUpdateSensor_ChangeStatus(t *testing.T) {
 	repo.sensors[a.ID] = a
 
 	// Disable sensor
-	input := app.UpdateSensorInput{
+	input := sensorapp.UpdateSensorInput{
 		TenantID: tenantID.String(),
 		SensorID: a.ID.String(),
 		Status:   "disabled",
@@ -652,7 +645,7 @@ func TestUpdateSensor_ChangeMaxConcurrentJobs(t *testing.T) {
 	repo.sensors[a.ID] = a
 
 	maxJobs := 20
-	input := app.UpdateSensorInput{
+	input := sensorapp.UpdateSensorInput{
 		TenantID:          tenantID.String(),
 		SensorID:          a.ID.String(),
 		MaxConcurrentJobs: &maxJobs,
@@ -891,7 +884,7 @@ func TestHeartbeat_Success(t *testing.T) {
 	a := createTestSensor(t, tenantID, "Heartbeat Sensor")
 	repo.sensors[a.ID] = a
 
-	input := app.SensorHeartbeatInput{
+	input := sensorapp.SensorHeartbeatInput{
 		SensorID: a.ID,
 		Version:  "1.0.0",
 		Hostname: "test-host",
@@ -919,7 +912,7 @@ func TestHeartbeat_SensorNotFound(t *testing.T) {
 	repo := newMockSensorRepo()
 	svc := newTestSensorService(repo)
 
-	input := app.SensorHeartbeatInput{
+	input := sensorapp.SensorHeartbeatInput{
 		SensorID: shared.NewID(),
 	}
 
@@ -1043,7 +1036,8 @@ func TestSensor_AvailableSlots(t *testing.T) {
 func TestSensor_MatchesRequirements(t *testing.T) {
 	tenantID := shared.NewID()
 	a := createTestSensor(t, tenantID, "Requirements Test")
-	// Has capabilities: ["sast"], tools: ["semgrep"]
+	// Has capabilities: ["sast"]; reports semgrep installed.
+	a.Reported = sensor.ReportOf("semgrep")
 
 	if !a.MatchesRequirements([]string{"sast"}, "semgrep") {
 		t.Error("Sensor should match sast + semgrep requirements")

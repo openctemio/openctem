@@ -9,6 +9,8 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -34,8 +36,24 @@ type RoleService struct {
 	// team-role gates (RequireTeamAdmin/Owner) see the new role on the next
 	// request instead of after the cache TTL.
 	membershipCache membershipCacheInvalidator
-	logger          *logger.Logger
+	// stepUp requires a recent re-authentication of the acting user before
+	// someone is made an administrator or an owner. nil (a service built
+	// outside the HTTP server, such as the bootstrap CLI) skips the check.
+	stepUp shared.RecentAuthGate
+	// bindings are the team role bindings (decisions G1-G12); nil: none.
+	bindings groupdom.RoleBindingRepository
+	// serviceAccounts applies the service-account role ceiling; nil: none.
+	serviceAccounts serviceAccountReader
+	// externalCeiling is the trust ceiling for external members (RFC-058).
+	externalCeiling func(ctx context.Context, host, home shared.ID) (string, error)
+	// privilege tells the administrators about privilege increases (RFC-058).
+	privilege PrivilegeNotifier
+	logger    *logger.Logger
 }
+
+// SetStepUpGate wires step-up re-authentication for granting the
+// administrator and owner roles (docs/architecture/step-up-reauth.md).
+func (s *RoleService) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
 
 // membershipCacheInvalidator drops a user's cached membership in a tenant.
 // MembershipCacheService satisfies it.
@@ -253,6 +271,9 @@ func (s *RoleService) CreateRole(ctx context.Context, input CreateRoleInput, cre
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
+		return nil, err
+	}
 	if err := creator.mayCarry(input.Permissions, input.HasFullDataAccess); err != nil {
 		return nil, err
 	}
@@ -322,6 +343,16 @@ func assertRoleTenant(r *roledom.Role, tenantID string) error {
 	return nil
 }
 
+// roleForTenant loads a role visible to the caller's tenant (a system role or
+// one of its own). Another tenant's role is ErrRoleNotFound.
+func (s *RoleService) roleForTenant(ctx context.Context, tenantID string, id roledom.ID) (*roledom.Role, error) {
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	return s.roleRepo.GetByID(ctx, tid, id)
+}
+
 // ValidateRolesForTenant checks that every id names a role the tenant may
 // grant: a system role or one of the tenant's own custom roles. Another
 // tenant's role, an unknown id and a malformed id all fail with
@@ -346,7 +377,7 @@ func (s *RoleService) GetRole(ctx context.Context, tenantID, roleID string) (*ro
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +417,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		return nil, fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -438,6 +469,14 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 	if err != nil {
 		return nil, err
 	}
+	if err := s.guardBoundRolePrivilege(ctx, r, newPerms, hasFullDataAccess, editor); err != nil {
+		return nil, err
+	}
+	if input.Permissions != nil {
+		if err := rejectAdminOnlyPermissions(input.Permissions); err != nil {
+			return nil, err
+		}
+	}
 	if err := editor.mayCarry(newPerms, hasFullDataAccess); err != nil {
 		return nil, err
 	}
@@ -465,27 +504,32 @@ func (s *RoleService) UpdateRole(ctx context.Context, tenantID, roleID string, i
 		}
 	}
 
+	// A permission change must reach every holder of the role. Load the
+	// holders BEFORE writing: if they cannot be listed, the edit is refused
+	// instead of committing and leaving revoked permissions live in their
+	// caches until the TTL expires. Updating a role does not change who holds
+	// it, so the list taken here is the set to invalidate afterwards.
+	var holderIDs []string
+	tenantIDStr := ""
+	if input.Permissions != nil && r.TenantID() != nil {
+		tenantIDStr = r.TenantID().String()
+		// Direct holders and team members holding it through a binding.
+		holders, err := s.roleRepo.ListRoleHolderIDs(ctx, *r.TenantID(), id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list role holders for permission invalidation: %w", err)
+		}
+		holderIDs = make([]string, len(holders))
+		for i, h := range holders {
+			holderIDs[i] = h.String()
+		}
+	}
+
 	if err := s.roleRepo.Update(ctx, r); err != nil {
 		return nil, fmt.Errorf("failed to update role: %w", err)
 	}
 
-	// If permissions changed, invalidate all users with this role
-	if input.Permissions != nil {
-		tenantIDStr := ""
-		if r.TenantID() != nil {
-			tenantIDStr = r.TenantID().String()
-		}
-		if tenantIDStr != "" {
-			// Get all users with this role
-			members, err := s.roleRepo.ListRoleMembers(ctx, *r.TenantID(), id)
-			if err == nil && len(members) > 0 {
-				userIDs := make([]string, len(members))
-				for i, m := range members {
-					userIDs[i] = m.UserID.String()
-				}
-				s.invalidateUsersPermissions(ctx, tenantIDStr, userIDs)
-			}
-		}
+	if len(holderIDs) > 0 {
+		s.invalidateUsersPermissions(ctx, tenantIDStr, holderIDs)
 	}
 
 	s.logger.Info("role updated", "id", roleID)
@@ -510,7 +554,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, id)
+	r, err := s.roleForTenant(ctx, tenantID, id)
 	if err != nil {
 		return err
 	}
@@ -525,13 +569,28 @@ func (s *RoleService) DeleteRole(ctx context.Context, tenantID, roleID string, a
 		return err
 	}
 
+	// The deleter is held to the same ceiling as a creator or editor: a
+	// delegated role manager may not remove a role carrying permissions (or
+	// full data access) they do not hold themselves. Owners pass.
+	tid, err := roledom.ParseID(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	deleter, err := s.loadGrantActor(ctx, tid, actx.ActorID)
+	if err != nil {
+		return err
+	}
+	if err := deleter.mayCarry(r.Permissions(), r.HasFullDataAccess()); err != nil {
+		return fmt.Errorf("%w (role %q)", err, r.Name())
+	}
+
 	roleName := r.Name()
 	var tenantIDStr string
 	if r.TenantID() != nil {
 		tenantIDStr = r.TenantID().String()
 	}
 
-	if err := s.roleRepo.Delete(ctx, id); err != nil {
+	if err := s.roleRepo.Delete(ctx, tid, id); err != nil {
 		if errors.Is(err, roledom.ErrRoleInUse) {
 			return fmt.Errorf("%w: role is assigned to users and cannot be deleted", shared.ErrValidation)
 		}
@@ -680,7 +739,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	}
 
 	// Verify role exists and is available for tenant
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return err
 	}
@@ -700,6 +759,12 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 		return err
 	}
 	if err := actor.mayGrant(r); err != nil {
+		return err
+	}
+	if err := s.capExternalTarget(ctx, tid, uid, r); err != nil {
+		return err
+	}
+	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
 		return err
 	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
@@ -723,6 +788,7 @@ func (s *RoleService) AssignRole(ctx context.Context, input AssignRoleInput, ass
 	s.invalidateUserPermissions(ctx, input.TenantID, input.UserID)
 
 	s.logger.Info("role assigned", "tenant_id", input.TenantID, "user_id", input.UserID, "role_id", input.RoleID)
+	s.notifyElevated(ctx, tid, []roledom.ID{uid}, r)
 
 	// Log audit event
 	actx.TenantID = input.TenantID
@@ -753,7 +819,7 @@ func (s *RoleService) RemoveRole(ctx context.Context, tenantID, userID, roleID s
 		return fmt.Errorf("%w: invalid role id format", shared.ErrValidation)
 	}
 
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return err
 	}
@@ -827,6 +893,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 
 	roleIDs := make([]roledom.ID, 0, len(input.RoleIDs))
 	roleNames := make([]string, 0, len(input.RoleIDs))
+	granted := make([]*roledom.Role, 0, len(input.RoleIDs))
 	keepsOwner := false
 	for _, ridStr := range input.RoleIDs {
 		rid, err := roledom.ParseID(ridStr)
@@ -835,7 +902,7 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		}
 
 		// Verify role exists and is available for tenant
-		r, err := s.roleRepo.GetByID(ctx, rid)
+		r, err := s.roleRepo.GetByID(ctx, tid, rid)
 		if err != nil {
 			return fmt.Errorf("role not found: %s", ridStr)
 		}
@@ -847,14 +914,21 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		if err := actor.mayGrant(r); err != nil {
 			return err
 		}
+		if err := s.capExternalTarget(ctx, tid, uid, r); err != nil {
+			return err
+		}
 		if rid == roledom.OwnerRoleID {
 			keepsOwner = true
 		}
 
 		roleIDs = append(roleIDs, rid)
 		roleNames = append(roleNames, r.Name())
+		granted = append(granted, r)
 	}
 
+	if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, roleIDs); err != nil {
+		return err
+	}
 	if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, keepsOwner); err != nil {
 		return err
 	}
@@ -865,7 +939,9 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 		return fmt.Errorf("load current roles: %w", err)
 	}
 	currentRoleNames := make([]string, 0, len(currentRoles))
+	held := make(map[roledom.ID]bool, len(currentRoles))
 	for _, r := range currentRoles {
+		held[r.ID()] = true
 		currentRoleNames = append(currentRoleNames, r.Name())
 		if !slices.Contains(roleIDs, r.ID()) {
 			if err := actor.mayRevoke(r); err != nil {
@@ -891,6 +967,11 @@ func (s *RoleService) SetUserRoles(ctx context.Context, input SetUserRolesInput,
 	s.invalidateUserPermissions(ctx, input.TenantID, input.UserID)
 
 	s.logger.Info("user roles updated", "tenant_id", input.TenantID, "user_id", input.UserID, "roles", input.RoleIDs)
+	for _, r := range granted {
+		if !held[r.ID()] {
+			s.notifyElevated(ctx, tid, []roledom.ID{uid}, r)
+		}
+	}
 
 	// Log audit event
 	actx.TenantID = input.TenantID
@@ -937,7 +1018,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 	}
 
 	// Verify role exists and is available for tenant
-	r, err := s.roleRepo.GetByID(ctx, rid)
+	r, err := s.roleRepo.GetByID(ctx, tid, rid)
 	if err != nil {
 		return nil, err
 	}
@@ -971,6 +1052,12 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 			skipped++
 			continue
 		}
+		if err := s.capExternalTarget(ctx, tid, uid, r); err != nil {
+			return nil, err
+		}
+		if err := s.authorizeAdminPromotion(ctx, actor, tid, uid, []roledom.ID{rid}); err != nil {
+			return nil, err
+		}
 		if err := s.authorizeRoleSetChange(ctx, actor, tid, uid, true); err != nil {
 			return nil, err
 		}
@@ -994,6 +1081,7 @@ func (s *RoleService) BulkAssignRoleToUsers(ctx context.Context, input BulkAssig
 		}
 		// Invalidate permissions only for the users actually assigned.
 		s.invalidateUsersPermissions(ctx, input.TenantID, assignedUserIDs)
+		s.notifyElevated(ctx, tid, userIDs, r)
 	}
 
 	s.logger.Info("bulk role assignment completed",
@@ -1060,4 +1148,30 @@ func (s *RoleService) ListModulesWithPermissions(ctx context.Context) ([]*roledo
 // ListPermissions returns all permissions.
 func (s *RoleService) ListPermissions(ctx context.Context) ([]*roledom.Permission, error) {
 	return s.permissionRepo.ListPermissions(ctx)
+}
+
+// guardBoundRolePrivilege: a role bound to a team that an edit makes
+// privileged (decisions G1-G12 R5) is a privileged binding change, so only the
+// owner makes it, with a recent sign-in.
+func (s *RoleService) guardBoundRolePrivilege(ctx context.Context, r *roledom.Role, newPerms []string, fullData bool, editor grantActor) error {
+	if s.bindings == nil || r.TenantID() == nil || editor.system {
+		return nil
+	}
+	if permission.IsPrivilegedRole(r.Permissions(), r.HasFullDataAccess()) || !permission.IsPrivilegedRole(newPerms, fullData) {
+		return nil
+	}
+	bound, err := s.bindings.ListRoleGroups(ctx, asSharedID(*r.TenantID()), asSharedID(r.ID()))
+	if err != nil {
+		return fmt.Errorf("load role bindings: %w", err)
+	}
+	if len(bound) == 0 {
+		return nil
+	}
+	if !editor.owner {
+		return ErrPrivilegedTeamOwnerOnly
+	}
+	if s.stepUp != nil {
+		return s.stepUp.RequireRecentAuth(ctx, editor.id)
+	}
+	return nil
 }

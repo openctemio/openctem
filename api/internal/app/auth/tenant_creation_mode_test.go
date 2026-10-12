@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -35,5 +36,19 @@ func TestCreateFirstTeamRefusedWhenModeUnset(t *testing.T) {
 		if !errors.Is(err, ErrTenantCreationDisabled) {
 			t.Fatalf("mode %q: got %v, want ErrTenantCreationDisabled", mode, err)
 		}
+	}
+}
+
+// The console sign-up policy, when wired, decides: admin_only there refuses
+// even with TENANT_CREATION_MODE=self_service in the environment.
+func TestCreateFirstTeamFollowsTheConsolePolicy(t *testing.T) {
+	svc := NewAuthService(nil, nil, nil, nil, nil,
+		config.AuthConfig{TenantCreationMode: config.TenantCreationSelfService}, logger.NewNop())
+	svc.SetSignupPolicy(signupdom.Static{Mode: signupdom.ModeAdminOnly})
+	_, err := svc.CreateFirstTeam(context.Background(), CreateFirstTeamInput{
+		RefreshToken: "irrelevant", TeamName: "Sneaky", TeamSlug: "sneaky",
+	})
+	if !errors.Is(err, ErrTenantCreationDisabled) {
+		t.Fatalf("got %v, want ErrTenantCreationDisabled", err)
 	}
 }

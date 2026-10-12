@@ -167,6 +167,10 @@ func (r *Redactor) Redact(ev Evidence) Evidence {
 	return out
 }
 
+// RedactString returns s with every secret pattern replaced by
+// "[REDACTED]" (sensor task logs use the same patterns as evidence).
+func (r *Redactor) RedactString(s string) string { return r.redactString(s) }
+
 func (r *Redactor) redactString(in string) string {
 	out := in
 	for _, re := range r.patterns {

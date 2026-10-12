@@ -16,9 +16,6 @@ type Repository interface {
 	// CreateBatch persists multiple audit log entries.
 	CreateBatch(ctx context.Context, logs []*AuditLog) error
 
-	// GetByID retrieves an audit log by ID.
-	GetByID(ctx context.Context, id shared.ID) (*AuditLog, error)
-
 	// GetByTenantAndID retrieves an audit log by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*AuditLog, error)
 
@@ -28,19 +25,8 @@ type Repository interface {
 	// Count returns the count of audit logs matching the filter.
 	Count(ctx context.Context, filter Filter) (int64, error)
 
-	// DeleteOlderThan deletes audit logs older than the specified time
-	// ACROSS ALL TENANTS. Used for platform-wide retention policy enforcement.
-	//
-	// F-3: This is a PLATFORM-PRIVILEGED operation — callers MUST ensure the
-	// operation is driven by platform operators (via the audit retention
-	// background controller) and never by a tenant-scoped HTTP handler.
-	// For per-tenant retention use DeleteOlderThanForTenant instead.
-	DeleteOlderThan(ctx context.Context, before time.Time) (int64, error)
-
-	// DeleteOlderThanForTenant deletes audit logs older than the specified
-	// time, scoped to a single tenant. Intended for per-tenant retention
-	// policies (e.g. tenant-configured data lifecycle).
-	DeleteOlderThanForTenant(ctx context.Context, tenantID shared.ID, before time.Time) (int64, error)
+	// Retention does not delete rows in place (that broke the hash chain);
+	// see ChainRetentionRepository in retention.go.
 
 	// GetLatestByResource retrieves the latest audit log for a resource within a tenant.
 	// tenantID MUST be provided to prevent cross-tenant reads.
@@ -79,9 +65,12 @@ type Repository interface {
 	// tenant's rows. This one can only ever return rows with no tenant.
 	GetSystemByID(ctx context.Context, id shared.ID) (*AuditLog, error)
 
-	// ListChainEntries returns chain rows for verification. Ordered by
-	// chain_position ASC.
-	ListChainEntries(ctx context.Context, tenantID shared.ID, limit int) ([]ChainEntry, error)
+	// ListChainEntries returns up to limit chain rows whose chain_position is
+	// greater than afterPosition, ordered by chain_position ASC. It is a
+	// keyset page: callers walk a whole chain by passing the last position
+	// they saw (0 to start). A single unpaged call is NOT a whole chain —
+	// that is how the verifier stopped looking past the first 10,000 rows.
+	ListChainEntries(ctx context.Context, tenantID shared.ID, afterPosition int64, limit int) ([]ChainEntry, error)
 
 	// ApplyChainRebaseline re-signs a tenant's chain in ONE transaction: it
 	// records the rebaseline header, archives the old and new hashes of every

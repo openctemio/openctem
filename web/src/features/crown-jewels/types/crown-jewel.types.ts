@@ -1,6 +1,8 @@
 /**
  * Crown Jewels Types - Critical Asset Management
  */
+import type { CriticalityLevel } from '@/lib/criticality'
+import type { SeverityLevel } from '@/lib/severity'
 
 export type AssetCategory =
   'data' | 'system' | 'application' | 'infrastructure' | 'intellectual_property' | 'financial'
@@ -34,10 +36,10 @@ export interface CrownJewel {
   assetType?: string // raw asset type, e.g. "database", "host"
   findingCount?: number
   businessImpactScore?: number // 0-100
-  findingSeverity?: { critical: number; high: number; medium: number; low: number }
+  findingSeverity?: Record<SeverityLevel, number>
   exposure?: string // reachability: "internet" | "internal" | "unknown"
   isInternetAccessible?: boolean
-  criticality?: string // "critical" | "high" | "medium" | "low"
+  criticality?: string // a CriticalityLevel (none = Not rated)
   piiExposed?: boolean
   phiExposed?: boolean
 }
@@ -48,7 +50,7 @@ export interface CrownJewelDependency {
   dependsOnId: string
   dependsOnName: string
   dependencyType: 'upstream' | 'downstream' | 'bidirectional'
-  criticality: 'critical' | 'high' | 'medium' | 'low'
+  criticality: CriticalityLevel
 }
 
 export interface CrownJewelStats {

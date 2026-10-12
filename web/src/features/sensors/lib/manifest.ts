@@ -10,8 +10,10 @@ import type {
   SensorManifestDiff,
   SensorManifestDocument,
   SensorManifestVersion,
+  SensorToolContract,
 } from '@/lib/api/sensor-types'
 
+import { shortDigest } from './content'
 import { formatBytes } from './format'
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
@@ -43,6 +45,9 @@ export function diffManifests(
     if ((p.version ?? '') !== (t.version ?? '')) {
       ;(d.versions ??= []).push({ tool: t.name, from: p.version ?? '', to: t.version ?? '' })
     }
+    const pc = p.contract?.digest ?? ''
+    const tc = t.contract?.digest ?? ''
+    if (pc !== tc) (d.contracts ??= []).push({ tool: t.name, from: pc, to: tc })
     if (p.installed !== t.installed) {
       ;(d.installed ??= []).push({
         tool: t.name,
@@ -79,6 +84,7 @@ export function isEmptyDiff(d: SensorManifestDiff | null | undefined): boolean {
     !d.tools_removed?.length &&
     !d.versions?.length &&
     !d.installed?.length &&
+    !d.contracts?.length &&
     !d.capabilities?.length &&
     !d.sensor_wide &&
     !d.other?.length
@@ -105,6 +111,15 @@ export function manifestDiffLines(d: SensorManifestDiff, t: Translate = plain): 
   }
   for (const i of d.installed ?? []) {
     lines.push(`${i.tool}: ${i.to}`)
+  }
+  for (const c of d.contracts ?? []) {
+    lines.push(
+      t('sensors.manifest.toolContract', '{tool} tool contract {from} → {to}', {
+        tool: c.tool,
+        from: shortDigest(c.from) ?? '—',
+        to: shortDigest(c.to) ?? '—',
+      })
+    )
   }
   for (const c of d.capabilities ?? []) {
     lines.push(
@@ -169,5 +184,11 @@ export const IGNORED_REASON_LABEL: Record<string, string> = {
   'unknown-tool': 'not in the tool catalog',
   'invalid-name': 'not a valid name',
   'unknown-capability': 'not a known capability',
+  'invalid-contract': 'not a valid tool contract',
   limit: 'over the limit',
+}
+
+/** "target-scan · T1 · network: targets" for a tool contract. */
+export function contractSummary(c: SensorToolContract): string {
+  return [c.class, c.tier, c.network ? `network: ${c.network}` : null].filter(Boolean).join(' · ')
 }

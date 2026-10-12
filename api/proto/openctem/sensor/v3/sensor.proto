@@ -1,0 +1,380 @@
+// Sensor protocol v3: the sensor <-> platform transport
+// (docs/rfcs/RFC-059-sensor-transport-v3.md).
+//
+// One service, two bindings served by the same handlers:
+//   - gRPC over HTTP/2 on the dedicated sensor host, authenticated by a client
+//     certificate from the sensor CA (mTLS, TLS 1.3);
+//   - Connect over HTTPS (HTTP/1.1 or HTTP/2) under /api/v3/sensor on the
+//     platform host, authenticated by an RFC 9421 request signature with the
+//     sensor's key, as protocol v2.
+//
+// v3 carries the resource model of protocol v2 (RFC-026 results, RFC-029
+// control plane). The envelope is typed: identifiers, sequence numbers, lease
+// epochs, encodings, digests, entity tags and transport facts. A document whose
+// schema is owned by another specification travels as its JSON bytes, unchanged:
+// the heartbeat body and answer (RFC-029), commands (RFC-029), CTIS reports
+// (RFC-026), the manifest (RFC-033), the config report and suppressions.
+//
+// Rules every message follows:
+//   - No message names a tenant. The tenant and the sensor are those of the
+//     authenticated identity (certificate or signature), never of a field.
+//   - A command or report id of another sensor or tenant is NOT_FOUND.
+//   - An error carries an openctem.sensor.v3.Problem detail: the RFC 9457
+//     problem document v2 would have answered, with its HTTP status.
+syntax = "proto3";
+
+package openctem.sensor.v3;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/openctemio/openctem/api/pkg/sensorproto/v3;sensorv3";
+
+// SensorService is everything a sensor asks of the platform.
+service SensorService {
+  // Hello returns the protocol level, the features and limits this platform
+  // serves and where its v3 endpoints are.
+  rpc Hello(HelloRequest) returns (HelloResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // Heartbeat records the sensor's state and answers with the doorbell
+  // (RFC-029 §4.3, RFC-035).
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Subscribe is the control stream: the platform pushes the doorbell (work
+  // waiting, cancels, pause, drain, key rotation, manifest requests) as soon as
+  // it changes, plus a keepalive. It never carries a job: jobs are claimed with
+  // ClaimCommands, so the database lease stays the only source of truth and a
+  // lost stream loses nothing.
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
+
+  // ClaimCommands claims up to limit commands this sensor may run now.
+  rpc ClaimCommands(ClaimCommandsRequest) returns (ClaimCommandsResponse);
+
+  // TransitionCommand moves a command this sensor holds: claim, start,
+  // complete, fail or release (RFC-029, RFC-030 §5.12).
+  rpc TransitionCommand(TransitionCommandRequest) returns (TransitionCommandResponse);
+
+  // AppendCommandLogs appends a batch of task log lines (RFC-029 §4.4.1).
+  rpc AppendCommandLogs(AppendCommandLogsRequest) returns (AppendCommandLogsResponse);
+
+  // PutResult uploads a whole CTIS report, or one segment of it. Idempotent:
+  // the same report id, segment and digest answer the same status; a
+  // different digest for a stored segment is a conflict (RFC-026).
+  rpc PutResult(PutResultRequest) returns (PutResultResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // CommitResult closes a segmented report (RFC-026).
+  rpc CommitResult(CommitResultRequest) returns (CommitResultResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // GetResultStatus is the status of a report: what was received and what
+  // is missing, so an interrupted upload resumes where it stopped.
+  rpc GetResultStatus(GetResultStatusRequest) returns (GetResultStatusResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // AbandonResult drops an uncommitted report.
+  rpc AbandonResult(AbandonResultRequest) returns (AbandonResultResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // PutManifest registers what the sensor is (RFC-033).
+  rpc PutManifest(PutManifestRequest) returns (PutManifestResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // GetManifest returns the current manifest digest and policy (RFC-033).
+  rpc GetManifest(GetManifestRequest) returns (GetManifestResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // PutConfigReport stores the sensor's preflight check results.
+  rpc PutConfigReport(PutConfigReportRequest) returns (PutConfigReportResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // GetSuppressions returns the active suppression rules (RFC-029 §4.5).
+  rpc GetSuppressions(GetSuppressionsRequest) returns (GetSuppressionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // CheckFingerprints tells which finding fingerprints the platform knows.
+  rpc CheckFingerprints(CheckFingerprintsRequest) returns (CheckFingerprintsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // BaselineDiff splits fingerprints into new and pre-existing on a branch.
+  rpc BaselineDiff(BaselineDiffRequest) returns (BaselineDiffResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // IssueCertificate issues a client certificate for the sensor's registered
+  // key, signed by the sensor CA. No CSR: the caller proved possession of the
+  // key by signing the request (HTTPS binding) or by the TLS handshake (gRPC
+  // binding). The sensor calls it again at two thirds of the lifetime.
+  rpc IssueCertificate(IssueCertificateRequest) returns (IssueCertificateResponse);
+}
+
+// Problem is the error detail of every refused call: the RFC 9457 problem
+// document protocol v2 answers, and its HTTP status.
+message Problem {
+  // HTTP status v2 would have answered (400, 401, 403, 404, 409, 413, 415,
+  // 422, 429, 500, 503).
+  int32 http_status = 1;
+  // Problem type URI (https://openctem.io/problems/sensor/...).
+  string type = 2;
+  // The problem document, application/problem+json.
+  bytes problem_json = 3;
+  // Seconds to wait before retrying, when the platform advises it.
+  int32 retry_after_seconds = 4;
+}
+
+// Binding is how a sensor reaches the platform.
+enum Binding {
+  BINDING_UNSPECIFIED = 0;
+  // gRPC over HTTP/2 with a client certificate (mTLS).
+  BINDING_GRPC = 1;
+  // Connect over HTTPS with RFC 9421 request signatures.
+  BINDING_HTTPS = 2;
+  // Protocol v2 (JSON resources over HTTPS).
+  BINDING_V2 = 3;
+}
+
+// Transport describes the sensor's connection, reported on every heartbeat.
+// The platform records the binding it actually served the call on; the sensor
+// only explains why it is not on the preferred one.
+message Transport {
+  // The binding the sensor believes it uses (informational).
+  Binding binding = 1;
+  // Why the sensor is not on gRPC: "" when it is. A short machine-readable
+  // reason (e.g. "http2_refused", "handshake_failed", "forced_by_config"),
+  // at most 64 characters, then free text up to 256 characters in total.
+  string fallback_reason = 2;
+  // When the sensor started using this binding.
+  google.protobuf.Timestamp since = 3;
+}
+
+message HelloRequest {}
+
+message HelloResponse {
+  // The protocol level of this answer: 3.
+  int32 protocol = 1;
+  // The protocol v2 hello document (features, media types, encodings,
+  // digests, limits), application/json.
+  bytes hello_json = 2;
+  // host:port of the gRPC (mTLS) binding; "" when this platform serves only
+  // the HTTPS binding.
+  string grpc_endpoint = 3;
+  // The binding this answer was served on.
+  Binding binding = 4;
+}
+
+message HeartbeatRequest {
+  // The heartbeat body of protocol v2 (RFC-029 §4.3), application/json.
+  bytes heartbeat_json = 1;
+  // How the sensor is connected.
+  Transport transport = 2;
+}
+
+message HeartbeatResponse {
+  // The heartbeat answer of protocol v2 (sensor and tenant ids, status,
+  // doorbell hints, actions, cancel ids), application/json.
+  bytes heartbeat_json = 1;
+}
+
+message SubscribeRequest {}
+
+// SubscribeResponse is one event of the control stream: the doorbell as it
+// stands now. The sensor acts on it exactly as on a heartbeat answer.
+message SubscribeResponse {
+  // "ok" or "paused".
+  string status = 1;
+  // Commands waiting for this sensor (capped by the platform).
+  int32 pending_jobs = 2;
+  // Actions to take: claim, cancel, pause, drain, rotate_key,
+  // send_manifest, send_config_report, ...
+  repeated string actions = 3;
+  // Commands this sensor holds that were cancelled.
+  repeated string cancel_command_ids = 4;
+  // Version of the sensor's configuration (re-read the manifest policy when
+  // it changes).
+  string config_version = 5;
+  // A keepalive carries no new information.
+  bool keepalive = 6;
+}
+
+message ClaimCommandsRequest {
+  // Most commands to claim (1..100).
+  int32 limit = 1;
+  // Optional sensor features, as X-OpenCTEM-Sensor-Features on v2.
+  repeated string features = 2;
+}
+
+message ClaimCommandsResponse {
+  // The protocol v2 command list ({"commands": [...]}), application/json.
+  bytes commands_json = 1;
+}
+
+// CommandTransition is the state change a sensor asks for.
+enum CommandTransition {
+  COMMAND_TRANSITION_UNSPECIFIED = 0;
+  COMMAND_TRANSITION_CLAIM = 1;
+  COMMAND_TRANSITION_START = 2;
+  COMMAND_TRANSITION_COMPLETE = 3;
+  COMMAND_TRANSITION_FAIL = 4;
+  COMMAND_TRANSITION_RELEASE = 5;
+}
+
+message TransitionCommandRequest {
+  // The command, a UUID.
+  string command_id = 1;
+  CommandTransition transition = 2;
+  // The lease epoch the sensor holds the command under; a command claimed
+  // again since refuses the change.
+  optional int64 lease_epoch = 3;
+  // The v2 request body of the transition (complete: result; fail: error
+  // and refusal; release: reason), application/json. Empty for none.
+  bytes body_json = 4;
+}
+
+message TransitionCommandResponse {
+  // The command after the transition, protocol v2 shape, application/json.
+  bytes command_json = 1;
+}
+
+message AppendCommandLogsRequest {
+  string command_id = 1;
+  // The protocol v2 logs body, application/json.
+  bytes body_json = 2;
+}
+
+message AppendCommandLogsResponse {
+  // The protocol v2 answer, application/json.
+  bytes response_json = 1;
+}
+
+message PutResultRequest {
+  // Idempotency key of the report, a UUID chosen by the sensor.
+  string report_id = 1;
+  // The command the report belongs to, a UUID; "" for a report of no command.
+  string command_id = 2;
+  // The segment number (0-based); absent for a whole report in one call.
+  optional uint32 segment = 3;
+  // The content as sent: CTIS JSON, possibly compressed.
+  bytes content = 4;
+  // application/vnd.openctem.ctis.v1+json
+  string content_type = 5;
+  // "", "gzip" or "zstd".
+  string content_encoding = 6;
+  // RFC 9530 Content-Digest of content as sent (sha-256 or sha-512).
+  string content_digest = 7;
+}
+
+message PutResultResponse {
+  // True when this call created the report or segment (v2: 202).
+  bool created = 1;
+  // The report status resource, application/json.
+  bytes status_json = 2;
+  // Seconds before polling the status again; 0 when the state is final.
+  int32 retry_after_seconds = 3;
+}
+
+message CommitResultRequest {
+  string report_id = 1;
+  string command_id = 2;
+  // The protocol v2 commit body, application/json.
+  bytes body_json = 3;
+}
+
+message CommitResultResponse {
+  bool created = 1;
+  bytes status_json = 2;
+  int32 retry_after_seconds = 3;
+}
+
+message GetResultStatusRequest {
+  string report_id = 1;
+}
+
+message GetResultStatusResponse {
+  bytes status_json = 1;
+  int32 retry_after_seconds = 2;
+}
+
+message AbandonResultRequest {
+  string report_id = 1;
+}
+
+message AbandonResultResponse {}
+
+message PutManifestRequest {
+  // The manifest (RFC-033, schema 1), application/json.
+  bytes manifest_json = 1;
+}
+
+message PutManifestResponse {
+  bytes response_json = 1;
+}
+
+message GetManifestRequest {}
+
+message GetManifestResponse {
+  bytes response_json = 1;
+}
+
+message PutConfigReportRequest {
+  // The config report (schema 1), application/json.
+  bytes report_json = 1;
+}
+
+message PutConfigReportResponse {
+  bytes response_json = 1;
+}
+
+message GetSuppressionsRequest {
+  // The entity tag of the copy the sensor holds; "" for none.
+  string etag = 1;
+}
+
+message GetSuppressionsResponse {
+  // True when the sensor's copy is current; suppressions_json is then empty.
+  bool not_modified = 1;
+  string etag = 2;
+  // The protocol v2 suppression list, application/json.
+  bytes suppressions_json = 3;
+}
+
+message CheckFingerprintsRequest {
+  bytes request_json = 1;
+}
+
+message CheckFingerprintsResponse {
+  bytes response_json = 1;
+}
+
+message BaselineDiffRequest {
+  bytes request_json = 1;
+}
+
+message BaselineDiffResponse {
+  bytes response_json = 1;
+}
+
+message IssueCertificateRequest {}
+
+message IssueCertificateResponse {
+  // The client certificate followed by any intermediates, PEM.
+  string certificate_chain_pem = 1;
+  // The CA certificates to pin for the gRPC binding (verify the platform's
+  // server certificate against these only), PEM.
+  string ca_bundle_pem = 2;
+  google.protobuf.Timestamp not_before = 3;
+  google.protobuf.Timestamp not_after = 4;
+  // When to ask for the next certificate (two thirds of the lifetime).
+  google.protobuf.Timestamp renew_after = 5;
+  // host:port of the gRPC binding.
+  string grpc_endpoint = 6;
+}

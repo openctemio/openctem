@@ -187,33 +187,27 @@ func (r *ComplianceFrameworkRepository) scanFramework(scan func(dest ...any) err
 func (r *ComplianceFrameworkRepository) buildFrameworkWhere(filter compliance.FrameworkFilter) (string, []any) {
 	var conditions []string
 	var args []any
-	idx := 1
 
 	// Show system frameworks + tenant frameworks
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("(tenant_id IS NULL OR tenant_id = $%d)", idx))
 		args = append(args, filter.TenantID.String())
-		idx++
+		conditions = append(conditions, fmt.Sprintf("(tenant_id IS NULL OR tenant_id = $%d)", len(args)))
 	}
 	if filter.Category != nil {
-		conditions = append(conditions, fmt.Sprintf("category = $%d", idx))
 		args = append(args, string(*filter.Category))
-		idx++
+		conditions = append(conditions, fmt.Sprintf("category = $%d", len(args)))
 	}
 	if filter.IsSystem != nil {
-		conditions = append(conditions, fmt.Sprintf("is_system = $%d", idx))
 		args = append(args, *filter.IsSystem)
-		idx++
+		conditions = append(conditions, fmt.Sprintf("is_system = $%d", len(args)))
 	}
 	if filter.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("is_active = $%d", idx))
 		args = append(args, *filter.IsActive)
-		idx++
+		conditions = append(conditions, fmt.Sprintf("is_active = $%d", len(args)))
 	}
 	if filter.Search != nil && *filter.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", idx, idx))
 		args = append(args, wrapLikePattern(*filter.Search))
-		idx++
+		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
 	}
 
 	// Always show active frameworks by default

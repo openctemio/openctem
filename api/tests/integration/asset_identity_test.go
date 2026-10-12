@@ -94,7 +94,7 @@ func (f *identityFixture) count(t *testing.T, q string, args ...any) int {
 
 func (f *identityFixture) reviews(t *testing.T) []postgres.AssetDedupReview {
 	t.Helper()
-	r, err := f.dedup.ListPendingReviews(context.Background(), f.tenant.String())
+	r, err := f.dedup.ListPendingReviews(context.Background(), f.tenant.String(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

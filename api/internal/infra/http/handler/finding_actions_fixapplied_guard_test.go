@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -18,7 +18,7 @@ import (
 // required" guard, adapted to this filter-only action). The guard runs before
 // any service/DB call, so a service built from nil repos is never exercised.
 func TestFixApplied_RequiresFilter(t *testing.T) {
-	svc := app.NewFindingActionsService(nil, nil, nil, nil, nil, nil, logger.NewNop())
+	svc := finding.NewFindingActionsService(nil, nil, nil, nil, nil, nil, logger.NewNop())
 	h := NewFindingActionsHandler(svc, logger.NewNop())
 
 	cases := map[string]string{

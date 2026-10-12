@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -131,51 +132,53 @@ export function InventoryBusinessContextActions({
                 : `Link ${count} selected asset${count === 1 ? '' : 's'} to a business service. A cycle scoped to the service covers them.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="bulk-context-target">
-                {dialog === 'unit' ? 'Business unit' : 'Business service'}
-              </Label>
-              <Select value={targetId} onValueChange={setTargetId}>
-                <SelectTrigger id="bulk-context-target" className="w-full">
-                  <SelectValue placeholder={`Choose a ${noun}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.length === 0 ? (
-                    <div className="px-2 py-3 text-sm text-muted-foreground">
-                      No {noun}s yet. Create one under Scoping › Business context.
-                    </div>
-                  ) : (
-                    options.map((o) => (
-                      <SelectItem key={o.id} value={o.id}>
-                        {o.name}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            {dialog === 'service' && (
+          <DialogBody>
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="bulk-context-dependency">How the service uses them</Label>
-                <Select
-                  value={dependency}
-                  onValueChange={(v) => setDependency(v as DependencyType)}
-                >
-                  <SelectTrigger id="bulk-context-dependency" className="w-full">
-                    <SelectValue />
+                <Label htmlFor="bulk-context-target">
+                  {dialog === 'unit' ? 'Business unit' : 'Business service'}
+                </Label>
+                <Select value={targetId} onValueChange={setTargetId}>
+                  <SelectTrigger id="bulk-context-target" className="w-full">
+                    <SelectValue placeholder={`Choose a ${noun}`} />
                   </SelectTrigger>
                   <SelectContent>
-                    {DEPENDENCY_TYPES.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
+                    {options.length === 0 ? (
+                      <div className="px-2 py-3 text-sm text-muted-foreground">
+                        No {noun}s yet. Create one under Scoping › Business context.
+                      </div>
+                    ) : (
+                      options.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
-            )}
-          </div>
+              {dialog === 'service' && (
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-context-dependency">How the service uses them</Label>
+                  <Select
+                    value={dependency}
+                    onValueChange={(v) => setDependency(v as DependencyType)}
+                  >
+                    <SelectTrigger id="bulk-context-dependency" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEPENDENCY_TYPES.map((d) => (
+                        <SelectItem key={d.value} value={d.value}>
+                          {d.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={close}>
               Cancel

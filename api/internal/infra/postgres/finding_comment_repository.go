@@ -27,9 +27,9 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 		INSERT INTO finding_comments (
 			id, tenant_id, finding_id, author_id, content,
 			is_status_change, old_status, new_status,
-			created_at, updated_at
+			created_at, updated_at, is_internal
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -43,6 +43,7 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 		nullFindingStatus(comment.NewStatus()),
 		comment.CreatedAt(),
 		comment.UpdatedAt(),
+		comment.IsInternal(),
 	)
 
 	if err != nil {
@@ -50,19 +51,6 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 	}
 
 	return nil
-}
-
-// GetByID retrieves a comment by ID.
-//
-// Deprecated: callers in a multi-tenant context must use GetByTenantAndID.
-// Kept for backward compatibility with internal call sites that already
-// scope via another path. New code MUST NOT call this directly — the
-// service layer IDOR in UpdateFindingComment/DeleteFindingComment was
-// caused by using this unscoped variant.
-func (r *FindingCommentRepository) GetByID(ctx context.Context, id shared.ID) (*vulnerability.FindingComment, error) {
-	query := r.selectQuery() + " WHERE fc.id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanComment(row)
 }
 
 // GetByTenantAndID retrieves a comment scoped to (tenantID, commentID).
@@ -136,7 +124,7 @@ func (r *FindingCommentRepository) Delete(ctx context.Context, tenantID, id shar
 
 // ListByFinding returns all comments for a finding.
 func (r *FindingCommentRepository) ListByFinding(ctx context.Context, findingID shared.ID) ([]*vulnerability.FindingComment, error) {
-	query := r.selectQuery() + " WHERE finding_id = $1 ORDER BY created_at ASC"
+	query := r.selectQuery() + " WHERE fc.finding_id = $1 ORDER BY fc.created_at ASC, fc.id ASC"
 
 	rows, err := r.db.QueryContext(ctx, query, findingID.String())
 	if err != nil {
@@ -177,7 +165,7 @@ func (r *FindingCommentRepository) selectQuery() string {
 			COALESCE(u.name, '') as author_name,
 			COALESCE(u.email, '') as author_email,
 			fc.content, fc.is_status_change, fc.old_status, fc.new_status,
-			fc.created_at, fc.updated_at
+			fc.created_at, fc.updated_at, fc.is_internal
 		FROM finding_comments fc
 		LEFT JOIN users u ON fc.author_id = u.id
 	`
@@ -212,13 +200,14 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 		newStatus      sql.NullString
 		createdAt      time.Time
 		updatedAt      time.Time
+		isInternal     bool
 	)
 
 	err := scan(
 		&idStr, &tenantIDStr, &findingIDStr, &authorIDStr,
 		&authorName, &authorEmail,
 		&content, &isStatusChange, &oldStatus, &newStatus,
-		&createdAt, &updatedAt,
+		&createdAt, &updatedAt, &isInternal,
 	)
 	if err != nil {
 		return nil, err
@@ -252,7 +241,7 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 		parsedNewStatus, _ = vulnerability.ParseFindingStatus(newStatus.String)
 	}
 
-	return vulnerability.ReconstituteFindingComment(
+	comment := vulnerability.ReconstituteFindingComment(
 		parsedID,
 		parsedTenantID,
 		parsedFindingID,
@@ -265,7 +254,9 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 		parsedNewStatus,
 		createdAt,
 		updatedAt,
-	), nil
+	)
+	comment.SetInternal(isInternal)
+	return comment, nil
 }
 
 // Helper function for nullable finding status

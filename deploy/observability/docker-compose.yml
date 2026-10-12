@@ -1,0 +1,219 @@
+# =============================================================================
+# OpenCTEM operator monitoring: metrics, alert rules, Telegram/Slack alerts
+# =============================================================================
+# Runbook and every alert: api/docs/operations/monitoring.md
+#
+# Joins the network of a running OpenCTEM compose stack (OBS_APP_NETWORK) and
+# scrapes it from inside. Nothing is published on a public interface: the
+# Prometheus, Alertmanager and Grafana UIs bind to 127.0.0.1 only (reach them
+# over an SSH tunnel). The gateway never routes to them.
+#
+#   docker compose -p openctemio-obs --env-file /path/to/.env \
+#     -f deploy/observability/docker-compose.yml --profile observability up -d
+#   # optional dashboards: add --profile grafana
+#
+# Settings (all from the environment / --env-file; secrets only there):
+#   METRICS_TOKEN               the API's METRICS_TOKEN (required: /metrics is 404 without it)
+#   OBS_APP_NETWORK             the stack's docker network (default openctemio_openctem-network)
+#   OBS_API_UPSTREAM            api host:port on that network (default api:8080)
+#   OBS_WEB_UPSTREAM            web host:port on that network (default ui:3000)
+#   OBS_PUBLIC_URL              the public URL users open (default https://localhost)
+#   OBS_PUBLIC_PROBE_MODULE     http_2xx (public CA) or http_2xx_internal_ca (gateway internal CA)
+#   OBS_POSTGRES_HOST           default postgres:5432; OBS_POSTGRES_DB default openctem
+#   OBS_PG_MONITOR_PASSWORD     password of the openctem_monitor role (postgres/monitor-role.sql)
+#   REDIS_PASSWORD              the stack's Redis password (empty when none)
+#   OBS_REDIS_ADDR              default redis:6379
+#   OBS_TEXTFILE_DIR            host dir of *.prom files (backup status), default /var/lib/node_exporter/textfile
+#   OBS_CONTAINER_REGEX         containers watched for restart loops (default openctemio-.*|openctem-sensor.*)
+#   ALERT_TELEGRAM_BOT_TOKEN, ALERT_TELEGRAM_CHAT_ID   Telegram receiver (both, or neither)
+#   ALERT_SLACK_WEBHOOK_URL     Slack incoming webhook receiver
+#   OBS_GRAFANA_ADMIN_PASSWORD  required with --profile grafana
+#
+# Memory budget (limits): prometheus 512M, alertmanager 64M, node-exporter 64M,
+# cadvisor 192M, postgres-exporter 64M, redis-exporter 32M, blackbox 32M:
+# under 1 GiB in total, about 150 MiB in use on a small install. Grafana +384M
+# (about 200 MiB in use).
+# =============================================================================
+
+x-logging: &obs-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+x-hardening: &obs-hardening
+  restart: unless-stopped
+  logging: *obs-logging
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+
+services:
+  prometheus:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: prom/prometheus:v3.15.0
+    entrypoint: ["/bin/sh", "/etc/prometheus/entrypoint.sh"]
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      OBS_API_UPSTREAM: ${OBS_API_UPSTREAM:-api:8080}
+      OBS_WEB_UPSTREAM: ${OBS_WEB_UPSTREAM:-ui:3000}
+      OBS_PUBLIC_URL: ${OBS_PUBLIC_URL:-https://localhost}
+      OBS_PUBLIC_PROBE_MODULE: ${OBS_PUBLIC_PROBE_MODULE:-http_2xx}
+      OBS_CONTAINER_REGEX: ${OBS_CONTAINER_REGEX:-openctemio-.*|openctem-sensor.*}
+      OBS_RETENTION_TIME: ${OBS_RETENTION_TIME:-15d}
+      OBS_RETENTION_SIZE: ${OBS_RETENTION_SIZE:-2GB}
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    tmpfs:
+      - /run/obs:size=1m,mode=0700,uid=65534,gid=65534
+    ports:
+      - "127.0.0.1:${OBS_PROMETHEUS_PORT:-9091}:9090"
+    mem_limit: 512m
+    cpus: 0.5
+    networks: [obs, app]
+
+  alertmanager:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: prom/alertmanager:v0.34.1
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
+      ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
+      ALERT_TELEGRAM_API_URL: ${ALERT_TELEGRAM_API_URL:-}
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+      OBS_ALERTMANAGER_URL: ${OBS_ALERTMANAGER_URL:-http://127.0.0.1:9093}
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    tmpfs:
+      - /run/obs:size=1m,mode=0700,uid=65534,gid=65534
+    ports:
+      - "127.0.0.1:${OBS_ALERTMANAGER_PORT:-9093}:9093"
+    mem_limit: 64m
+    cpus: 0.2
+    networks: [obs]
+
+  node-exporter:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+|var/lib/containers/.+)($|/)
+      - --no-collector.wifi
+      - --no-collector.hwmon
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - ${OBS_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}:/textfile:ro
+    mem_limit: 64m
+    cpus: 0.2
+    networks: [obs]
+
+  # Reads the docker socket (read-only mount): root-equivalent on the host.
+  # Never published, no-new-privileges, read-only filesystem. Only the CPU,
+  # memory and OOM metrics are kept.
+  cadvisor:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: ghcr.io/google/cadvisor:v0.60.6
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --store_container_labels=false
+      - --enable_metrics=cpu,memory,oom_event
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    devices:
+      - /dev/kmsg
+    mem_limit: 192m
+    cpus: 0.3
+    networks: [obs]
+
+  # Connects as openctem_monitor (pg_monitor only, no table access):
+  # deploy/observability/postgres/monitor-role.sql.
+  postgres-exporter:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    command:
+      - --collector.long_running_transactions
+    environment:
+      DATA_SOURCE_URI: ${OBS_POSTGRES_HOST:-postgres:5432}/${OBS_POSTGRES_DB:-openctem}?sslmode=${OBS_POSTGRES_SSLMODE:-disable}
+      DATA_SOURCE_USER: openctem_monitor
+      DATA_SOURCE_PASS: ${OBS_PG_MONITOR_PASSWORD:-}
+    mem_limit: 64m
+    cpus: 0.2
+    networks: [obs, app]
+
+  redis-exporter:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: oliver006/redis_exporter:v1.93.0
+    environment:
+      REDIS_ADDR: redis://${OBS_REDIS_ADDR:-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    mem_limit: 32m
+    cpus: 0.1
+    networks: [obs, app]
+
+  blackbox:
+    <<: *obs-hardening
+    profiles: [observability]
+    image: prom/blackbox-exporter:v0.29.0
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./blackbox:/etc/blackbox:ro
+    mem_limit: 32m
+    cpus: 0.1
+    networks: [obs, app]
+
+  grafana:
+    <<: *obs-hardening
+    profiles: [grafana]
+    image: grafana/grafana:13.2.3
+    # Grafana unpacks its bundled plugins into the image at start.
+    read_only: false
+    entrypoint:
+      - /bin/sh
+      - -c
+      - '[ -n "$$GF_SECURITY_ADMIN_PASSWORD" ] || { echo "set OBS_GRAFANA_ADMIN_PASSWORD" >&2; exit 1; }; exec /run.sh'
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${OBS_GRAFANA_ADMIN_PASSWORD:-}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana-dashboards:ro
+      - grafana-data:/var/lib/grafana
+    tmpfs:
+      - /tmp
+    ports:
+      - "127.0.0.1:${OBS_GRAFANA_PORT:-3001}:3000"
+    mem_limit: 384m
+    cpus: 0.3
+    networks: [obs]
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+
+networks:
+  # Internal network of the monitoring stack.
+  obs:
+  # The OpenCTEM stack's network, joined to scrape the API and probe the web.
+  app:
+    external: true
+    name: ${OBS_APP_NETWORK:-openctemio_openctem-network}

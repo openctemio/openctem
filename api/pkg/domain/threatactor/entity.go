@@ -189,6 +189,18 @@ func (t *ThreatActor) SetIntel(sophistication, motivation, country, mitreGroupID
 	t.updatedAt = time.Now()
 }
 
+// SetAliases sets the other names the actor is known by.
+func (t *ThreatActor) SetAliases(aliases []string) {
+	t.aliases = aliases
+	t.updatedAt = time.Now()
+}
+
+// SetTags sets the actor's free-form tags.
+func (t *ThreatActor) SetTags(tags []string) {
+	t.tags = tags
+	t.updatedAt = time.Now()
+}
+
 // SetTTPs sets MITRE ATT&CK tactics, techniques, and procedures.
 func (t *ThreatActor) SetTTPs(ttps []TTP) {
 	t.ttps = ttps

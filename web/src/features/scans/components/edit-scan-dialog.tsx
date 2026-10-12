@@ -8,13 +8,16 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { ScanRoutingSection, toZonePreviewRequest } from '@/features/scan-zones'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -27,16 +30,19 @@ import { BasicInfoStep } from './new-scan/basic-info-step'
 import { TargetsStep } from './new-scan/targets-step'
 import { OptionsStep } from './new-scan/options-step'
 import { ScheduleStep } from './new-scan/schedule-step'
-import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
+import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../types'
+import {
+  basicInfoError,
+  formDataToUpdateRequest,
+  scanConfigToFormData,
+  targetsError,
+  scheduleError,
+} from '../lib/scan-form'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { notifyScannerConfigWarnings } from '../lib/scanner-config-warnings'
 import { useUpdateScanConfig, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import type {
-  ScanConfig,
-  UpdateScanConfigRequest,
-  ScheduleType,
-  SensorPreference,
-} from '@/lib/api/scan-types'
+import type { ScanConfig } from '@/lib/api/scan-types'
+import { refusedFromError, ScopeRefusalPanel, type ScopeRefusal } from '@/features/scope'
 
 interface EditScanDialogProps {
   scanConfig: ScanConfig | null
@@ -47,81 +53,8 @@ interface EditScanDialogProps {
 
 const STEPS: ScanWizardStep[] = ['basic', 'targets', 'options', 'schedule']
 
-function mapScheduleTypeToFrequency(scheduleType?: string): ScheduleFrequency {
-  switch (scheduleType) {
-    case 'daily':
-      return 'daily'
-    case 'weekly':
-      return 'weekly'
-    case 'monthly':
-      return 'monthly'
-    default:
-      return 'once'
-  }
-}
-
-function mapScheduleFrequencyToType(frequency: ScheduleFrequency | undefined): ScheduleType {
-  switch (frequency) {
-    case 'daily':
-      return 'daily'
-    case 'weekly':
-      return 'weekly'
-    case 'monthly':
-      return 'monthly'
-    default:
-      return 'manual'
-  }
-}
-
-/**
- * Convert a ScanConfig from the API into form data for the wizard steps.
- */
-function scanConfigToFormData(config: ScanConfig): NewScanFormData {
-  const scannerConfig = (config.scanner_config ?? {}) as Record<string, boolean | string>
-  const isManual = config.schedule_type === 'manual'
-
-  return {
-    name: config.name,
-    mode: config.scan_type === 'workflow' ? 'workflow' : 'single',
-    type: 'full',
-    workflowId: config.pipeline_id,
-    sensorPreference: config.sensor_preference || 'auto',
-    targets: {
-      type: 'asset_groups',
-      assetGroupIds:
-        config.asset_group_ids ?? (config.asset_group_id ? [config.asset_group_id] : []),
-      assetIds: [],
-      assetNames: {},
-      customTargets: config.targets ?? [],
-    },
-    options: {
-      portScanning: !!scannerConfig.port_scanning,
-      webAppScanning: !!scannerConfig.web_app_scanning,
-      sslAnalysis: !!scannerConfig.ssl_analysis,
-      bruteForce: !!scannerConfig.brute_force,
-      techDetection: !!scannerConfig.tech_detection,
-      apiSecurity: !!scannerConfig.api_security,
-    },
-    intensity: (scannerConfig.intensity as 'low' | 'medium' | 'high') || 'medium',
-    maxConcurrent: config.targets_per_job || 10,
-    timeoutSeconds: config.timeout_seconds || 3600,
-    maxRetries: config.max_retries ?? 0,
-    retryBackoffSeconds: config.retry_backoff_seconds || 60,
-    schedule: {
-      runImmediately: isManual,
-      frequency: mapScheduleTypeToFrequency(config.schedule_type),
-      dayOfWeek: config.schedule_day,
-      time: config.schedule_time,
-    },
-    notifications: {
-      notifyOnComplete: false,
-      autoCreateTasks: false,
-    },
-    scanZoneId: config.scan_zone_id ?? null,
-  }
-}
-
 export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: EditScanDialogProps) {
+  const { t } = useTranslation()
   const [currentStep, setCurrentStep] = useState<ScanWizardStep>('basic')
   const [formData, setFormData] = useState<NewScanFormData>(DEFAULT_NEW_SCAN)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -137,8 +70,8 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
           targets: formData.targets.customTargets,
           asset_group_ids: formData.targets.assetGroupIds,
           scan_type: formData.mode === 'workflow' ? 'workflow' : 'single',
-          scanner_name: formData.mode === 'single' ? 'nuclei' : undefined,
-          pipeline_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
+          scanner_name: formData.mode === 'single' ? formData.scannerName : undefined,
+          scan_workflow_id: formData.mode === 'workflow' ? formData.workflowId : undefined,
           targets_per_job: formData.maxConcurrent || 10,
         },
         formData.scanZoneId
@@ -162,29 +95,35 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   const isFirstStep = currentStepIndex === 0
   const isLastStep = currentStepIndex === STEPS.length - 1
 
+  // Targets the server refused on save (TARGET_OUT_OF_SCOPE details).
+  const [refused, setRefused] = useState<ScopeRefusal[]>([])
+
   const handleDataChange = (data: Partial<NewScanFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }))
   }
 
   const validateCurrentStep = (): boolean => {
     switch (currentStep) {
-      case 'basic':
-        if (!formData.name.trim()) {
-          toast.error('Please enter a scan name')
-          return false
-        }
-        if (formData.mode === 'workflow' && !formData.workflowId) {
-          toast.error('Please select a workflow')
+      case 'basic': {
+        const problem = basicInfoError(formData, t)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
+      }
       case 'targets': {
-        const { targets } = formData
-        const hasAssetGroups = targets.assetGroupIds.length > 0
-        const hasIndividualAssets = targets.assetIds.length > 0
-        const hasCustomTargets = targets.customTargets.length > 0
-        if (!hasAssetGroups && !hasIndividualAssets && !hasCustomTargets) {
-          toast.error('Please select at least one target')
+        const problem = targetsError(formData, t)
+        if (problem) {
+          toast.error(problem)
+          return false
+        }
+        return true
+      }
+      case 'schedule': {
+        const problem = scheduleError(formData, { requireFuture: false }, t)
+        if (problem) {
+          toast.error(problem)
           return false
         }
         return true
@@ -220,80 +159,30 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
 
     setIsSubmitting(true)
     try {
-      const { options, intensity, schedule } = formData
-      // Send all scanner options explicitly (including false) so the API
-      // knows which options to disable vs enable.
-      // The backend replaces the whole scanner_config map on save, so spread
-      // the existing config first to preserve keys the wizard doesn't model
-      // (e.g. `severity`) instead of wiping them.
-      const scannerConfig: Record<string, unknown> = {
-        ...(scanConfig?.scanner_config ?? {}),
-        port_scanning: options.portScanning,
-        web_app_scanning: options.webAppScanning,
-        ssl_analysis: options.sslAnalysis,
-        brute_force: options.bruteForce,
-        tech_detection: options.techDetection,
-        api_security: options.apiSecurity,
-        intensity,
-      }
-
-      const scheduleType = schedule.runImmediately
-        ? 'manual'
-        : mapScheduleFrequencyToType(schedule.frequency)
-
-      const request: UpdateScanConfigRequest = {
-        name: formData.name.trim(),
-        description: scanConfig?.description || undefined,
-        scanner_config: scannerConfig,
-        targets_per_job: formData.maxConcurrent || 10,
-        // Reliability options are editable in the Options step (and sent by the
-        // create path) but were previously omitted here, so edits to them
-        // silently reverted on save.
-        timeout_seconds: formData.timeoutSeconds,
-        max_retries: formData.maxRetries,
-        retry_backoff_seconds: formData.retryBackoffSeconds,
-        schedule_type: scheduleType as ScheduleType,
-        sensor_preference: formData.sensorPreference as SensorPreference,
-      }
-      // Only someone who can see the zones may change the zone: otherwise an
-      // empty picker would reset a restricted scan to Automatic.
-      if (canReadZones) {
-        request.scan_zone_id = formData.scanZoneId ?? ''
-      }
-
-      if (formData.mode === 'workflow' && formData.workflowId) {
-        request.pipeline_id = formData.workflowId
-      }
-      if (formData.mode === 'single') {
-        request.scanner_name = 'nuclei'
-      }
-
-      if (!schedule.runImmediately && schedule.frequency !== 'once') {
-        if (schedule.time) request.schedule_time = schedule.time
-        if (schedule.frequency === 'weekly' && schedule.dayOfWeek !== undefined) {
-          request.schedule_day = schedule.dayOfWeek
-        }
-        if (schedule.frequency === 'monthly') {
-          request.schedule_day = 1
-        }
-      }
-
+      const request = formDataToUpdateRequest(formData, scanConfig, { canSetZone: canReadZones })
       const updated = await updateScanConfig(request)
 
-      toast.success(`Scan "${formData.name}" updated successfully`)
-      notifyScannerConfigWarnings(updated)
+      toast.success(t('scans.edit.updated', undefined, { name: formData.name }))
+      notifyScannerConfigWarnings(updated, t)
       await invalidateScanConfigsCache()
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
+      const scopeRefused = refusedFromError(error)
+      if (scopeRefused.length > 0) {
+        setRefused(scopeRefused)
+        setCurrentStep('targets')
+        return
+      }
       console.error('Failed to update scan:', error)
-      toast.error(getErrorMessage(error, 'Failed to update scan. Please try again.'))
+      toast.error(getErrorMessage(error, t('scans.edit.updateFailed')))
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const handleClose = () => {
+    setRefused([])
     setCurrentStep('basic')
     onOpenChange(false)
   }
@@ -301,15 +190,15 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
   const renderStep = () => {
     switch (currentStep) {
       case 'basic':
-        return <BasicInfoStep data={formData} onChange={handleDataChange} />
+        return <BasicInfoStep data={formData} onChange={handleDataChange} lockMode />
       case 'targets':
         return (
           <div>
             <div className="mx-6 mt-4 rounded-md border border-muted bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              Target changes require creating a new scan configuration. Targets shown here are
-              read-only.
+              {t('scans.edit.targetsReadOnly')}
             </div>
-            <TargetsStep data={formData} onChange={handleDataChange} />
+            {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-6 mt-4" />}
+            <TargetsStep data={formData} onChange={handleDataChange} showCoverage={false} />
           </div>
         )
       case 'options':
@@ -317,7 +206,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       case 'schedule':
         return (
           <>
-            <ScheduleStep data={formData} onChange={handleDataChange} />
+            <ScheduleStep data={formData} onChange={handleDataChange} requireFutureRun={false} />
             {canReadZones && zones.length > 0 && (
               <ScanRoutingSection
                 zones={zones}
@@ -337,24 +226,22 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] overflow-hidden p-0 w-full sm:max-w-[600px]">
-        <DialogHeader className="border-b px-6 py-4">
-          <DialogTitle>Edit Scan</DialogTitle>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>{t('scans.edit.title')}</DialogTitle>
           <DialogDescription>
-            Update the configuration for &quot;{scanConfig?.name}&quot;
+            {t('scans.edit.description', undefined, { name: scanConfig?.name ?? '' })}
           </DialogDescription>
+          <ScanStepper
+            className="px-0 pt-2 pb-0 sm:px-0"
+            currentStep={currentStep}
+            onStepClick={handleStepClick}
+          />
         </DialogHeader>
 
-        {/* Stepper */}
-        <div className="min-w-0 border-b">
-          <ScanStepper currentStep={currentStep} onStepClick={handleStepClick} />
-        </div>
+        <DialogBody className="px-0 py-0 sm:px-0">{renderStep()}</DialogBody>
 
-        {/* Step Content */}
-        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">{renderStep()}</div>
-
-        {/* Footer */}
-        <div className="flex flex-col-reverse gap-3 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <DialogFooter className="sm:items-center sm:justify-between">
           <div className="flex justify-center sm:justify-start">
             {!isFirstStep && (
               <Button
@@ -365,7 +252,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
                 className="w-full sm:w-auto"
               >
                 <ChevronLeft className="me-1 h-4 w-4" />
-                Back
+                {t('scans.common.back')}
               </Button>
             )}
           </div>
@@ -378,7 +265,7 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
               disabled={isLoading}
               className="w-full sm:w-auto order-2 sm:order-1"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
 
             {isLastStep ? (
@@ -391,12 +278,12 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
                 {isLoading ? (
                   <>
                     <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    Saving...
+                    {t('scans.common.saving')}
                   </>
                 ) : (
                   <>
                     <Save className="me-2 h-4 w-4" />
-                    Save Changes
+                    {t('scans.edit.saveChanges')}
                   </>
                 )}
               </Button>
@@ -406,12 +293,12 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
                 onClick={handleNext}
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
-                Next
+                {t('scans.common.next')}
                 <ChevronRight className="ms-1 h-4 w-4" />
               </Button>
             )}
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

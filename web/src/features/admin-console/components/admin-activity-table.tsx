@@ -3,25 +3,13 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { DataTable, RelativeTime, StackedCell } from '@/features/shared'
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import type { AdminAuditEntry } from '../types'
-
-// Words shown in their conventional form, not sentence-cased.
-const ACTION_WORDS: Record<string, string> = {
-  mfa: 'two-step verification',
-  sso: 'SSO',
-  saml: 'SAML',
-  idp: 'identity provider',
-  api: 'API',
-}
 
 /** "organization.idp_create" -> "Identity provider create". */
 export function humanizeAction(action: string): string {
   const [area, verb] = action.split('.')
-  const words = (verb ?? area)
-    .split(/[_-]+/)
-    .map((w) => ACTION_WORDS[w.toLowerCase()] ?? w)
-    .join(' ')
-  return words.charAt(0).toUpperCase() + words.slice(1)
+  return humanizeIdentifier(verb ?? area)
 }
 
 const columns: ColumnDef<AdminAuditEntry>[] = [
@@ -74,6 +62,8 @@ interface AdminActivityTableProps {
     onPageChange: (page: number) => void
   }
   toolbarStart?: React.ReactNode
+  /** Opens one entry (the detail sheet). */
+  onRowClick?: (entry: AdminAuditEntry) => void
 }
 
 /** Platform admin audit trail (admin_audit_logs). */
@@ -82,6 +72,7 @@ export function AdminActivityTable({
   isLoading,
   paging,
   toolbarStart,
+  onRowClick,
 }: AdminActivityTableProps) {
   return (
     <DataTable
@@ -96,6 +87,7 @@ export function AdminActivityTable({
       toolbarStart={toolbarStart}
       emptyMessage="No administrator activity yet"
       mobileCards
+      onRowClick={onRowClick}
       {...(paging && {
         manualPagination: true,
         pageCount: paging.pageCount,

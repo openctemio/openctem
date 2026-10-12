@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/openctemio/ctis"
 
@@ -32,7 +33,7 @@ func TestBuildPropertiesFromCTIS_DropsReservedKeys(t *testing.T) {
 			t.Errorf("sensor-supplied reserved key %q was kept", k)
 		}
 	}
-	if props["os"] != "linux" {
+	if props["os_name"] != "linux" { // a sensor writes "os"; the schema folds it into os_name
 		t.Error("ordinary sensor properties must be kept")
 	}
 }
@@ -46,7 +47,7 @@ func TestMergeCTISIntoAsset_KeepsReservedValues(t *testing.T) {
 	// What an analyst decided in the UI.
 	a.SetProperties(map[string]any{"is_crown_jewel": false, "business_impact_score": 10})
 
-	p.mergeCTISIntoAsset(a, &ctis.Asset{Value: "h.example.com", Type: "host", Properties: hostileProps()}, nil, nil)
+	p.mergeCTISIntoAsset(a, &ctis.Asset{Value: "h.example.com", Type: "host", Properties: hostileProps()}, nil, time.Time{}, nil)
 
 	got := a.Properties()
 	if got["is_crown_jewel"] != false || got["business_impact_score"] != 10 {
@@ -55,7 +56,7 @@ func TestMergeCTISIntoAsset_KeepsReservedValues(t *testing.T) {
 	if _, ok := got["business_impact_notes"]; ok {
 		t.Error("a sensor added a reserved key")
 	}
-	if got["os"] != "linux" {
+	if got["os_name"] != "linux" {
 		t.Error("ordinary sensor properties must be merged")
 	}
 }

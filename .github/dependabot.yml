@@ -28,22 +28,6 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # The protocol-v1 compat harness pins the LAST RELEASED sdk-go on purpose
-  # (api/tests/compat/v1); never let Dependabot move it.
-  - package-ecosystem: "gomod"
-    directory: "/api/tests/compat/v1"
-    target-branch: "develop"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 2
-    labels: ["dependencies", "go", "api"]
-    commit-message:
-      prefix: "deps(api-compat)"
-    ignore:
-      - dependency-name: "github.com/openctemio/sdk-go"
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-
   - package-ecosystem: "npm"
     directory: "/web"
     target-branch: "develop"
@@ -84,7 +68,8 @@ updates:
         dependency-type: "all"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # The workflows, and the composite actions in .github/actions.
+    directories: ["/", "/.github/actions/*"]
     target-branch: "develop"
     schedule:
       interval: "weekly"
@@ -95,3 +80,33 @@ updates:
     labels: ["dependencies", "github-actions"]
     commit-message:
       prefix: "deps(actions)"
+    # One weekly PR for minor/patch bumps of the SHA-pinned actions; majors stay separate.
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Base images of the release images (api/Dockerfile*, web/Dockerfile,
+  # deploy/allinone/Dockerfile, api/deploy/gateway/Dockerfile): Go, Alpine,
+  # node, distroless, Postgres. A base refresh is how OS-package advisories get
+  # fixed (the image guard fails a release on a fixable HIGH/CRITICAL one).
+  # Majors (node 26 -> 28, Alpine 3.x -> 4) stay manual: they change runtimes.
+  - package-ecosystem: "docker"
+    directories: ["/api", "/web", "/deploy/allinone", "/api/deploy/gateway"]
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "deps(images)"
+    groups:
+      base-images:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

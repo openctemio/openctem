@@ -2,7 +2,6 @@ package scm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -123,7 +122,7 @@ func (c *BitbucketClient) GetUser(ctx context.Context) (*User, error) {
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "bitbucket", resp.StatusCode, body)
 	}
 
 	if c.isCloud {
@@ -138,7 +137,7 @@ func (c *BitbucketClient) GetUser(ctx context.Context) (*User, error) {
 			} `json:"links"`
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&bbUser); err != nil {
+		if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &bbUser); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
@@ -164,7 +163,7 @@ func (c *BitbucketClient) GetUser(ctx context.Context) (*User, error) {
 		} `json:"links"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&bbServerUser); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &bbServerUser); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -214,7 +213,7 @@ func (c *BitbucketClient) listCloudWorkspaces(ctx context.Context, opts ListOpti
 		} `json:"values"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -252,7 +251,7 @@ func (c *BitbucketClient) listServerProjects(ctx context.Context, opts ListOptio
 		} `json:"values"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -310,7 +309,7 @@ func (c *BitbucketClient) listCloudRepositories(ctx context.Context, opts ListOp
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "bitbucket", resp.StatusCode, body)
 	}
 
 	if c.config.Organization != "" {
@@ -321,7 +320,7 @@ func (c *BitbucketClient) listCloudRepositories(ctx context.Context, opts ListOp
 			Next   string        `json:"next"`
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
@@ -343,7 +342,7 @@ func (c *BitbucketClient) listCloudRepositories(ctx context.Context, opts ListOp
 		Next string `json:"next"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -386,7 +385,7 @@ func (c *BitbucketClient) listServerRepositories(ctx context.Context, opts ListO
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "bitbucket", resp.StatusCode, body)
 	}
 
 	var result struct {
@@ -396,7 +395,7 @@ func (c *BitbucketClient) listServerRepositories(ctx context.Context, opts ListO
 		NextPageStart int            `json:"nextPageStart"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -441,7 +440,7 @@ func (c *BitbucketClient) getCloudRepository(ctx context.Context, fullName strin
 	}
 
 	var repoData bbCloudRepo
-	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &repoData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -477,7 +476,7 @@ func (c *BitbucketClient) getServerRepository(ctx context.Context, fullName stri
 	}
 
 	var repoData bbServerRepo
-	if err := json.NewDecoder(resp.Body).Decode(&repoData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &repoData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -520,7 +519,7 @@ func (c *BitbucketClient) getCloudWorkspace(ctx context.Context, slug string) (*
 		Name string `json:"name"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&workspace); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &workspace); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -533,7 +532,7 @@ func (c *BitbucketClient) getCloudWorkspace(ctx context.Context, slug string) (*
 		var repoResult struct {
 			Size int `json:"size"`
 		}
-		if json.NewDecoder(repoResp.Body).Decode(&repoResult) == nil {
+		if httpsec.DecodeJSON(repoResp.Body, httpsec.MaxResponseBytes, &repoResult) == nil {
 			repoCount = repoResult.Size
 		}
 	}
@@ -569,7 +568,7 @@ func (c *BitbucketClient) getServerProject(ctx context.Context, key string) (*Or
 		Description string `json:"description"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&project); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &project); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -582,7 +581,7 @@ func (c *BitbucketClient) getServerProject(ctx context.Context, key string) (*Or
 		var repoResult struct {
 			Size int `json:"size"`
 		}
-		if json.NewDecoder(repoResp.Body).Decode(&repoResult) == nil {
+		if httpsec.DecodeJSON(repoResp.Body, httpsec.MaxResponseBytes, &repoResult) == nil {
 			repoCount = repoResult.Size
 		}
 	}
@@ -767,7 +766,7 @@ func (c *BitbucketClient) ListBranches(ctx context.Context, fullName string, opt
 			} `json:"target"`
 		} `json:"values"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &data); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 	out := make([]Branch, 0, len(data.Values))

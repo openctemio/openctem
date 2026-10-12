@@ -69,6 +69,13 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     shells: ['app'],
   },
   {
+    id: 'open-activity',
+    label: 'Open activity and write a comment',
+    keys: ['C'],
+    group: 'findings',
+    shells: ['app'],
+  },
+  {
     id: 'clear-selection',
     label: 'Clear the selected rows',
     keys: ['esc'],

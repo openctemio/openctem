@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 
 	"github.com/go-chi/chi/v5"
 
@@ -43,7 +43,7 @@ type CreateAPIKeyRequest struct {
 	Description   string   `json:"description" validate:"max=1000"`
 	Scopes        []string `json:"scopes" validate:"max=50"`
 	RateLimit     int      `json:"rate_limit" validate:"min=0,max=100000"`
-	ExpiresInDays int      `json:"expires_in_days" validate:"min=0,max=365"`
+	ExpiresInDays int      `json:"expires_in_days" validate:"required,min=1,max=365"`
 }
 
 // APIKeyResponse represents an API key in the response.
@@ -148,13 +148,17 @@ func (h *APIKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 	input := apikey.ListInput{
 		TenantID:  tenantID,
 		UserID:    ownerFilter,
 		Status:    query.Get("status"),
 		Search:    query.Get("search"),
-		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:      paging.Page,
+		PerPage:   paging.PerPage,
 		SortBy:    query.Get("sort"),
 		SortOrder: query.Get("order"),
 	}
@@ -214,10 +218,19 @@ func (h *APIKeyHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	// Members revoke only their own keys; owners and administrators any key
+	// of the organization (the same rule as List and Get).
+	ownerFilter, ok := ownKeysOnly(r)
+	if !ok {
+		apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+		return
+	}
+
 	input := apikey.RevokeInput{
 		ID:           id,
 		TenantID:     tenantID,
 		RevokedBy:    userID,
+		OwnerID:      ownerFilter,
 		AuditContext: apiKeyAuditContext(r, tenantID),
 	}
 
@@ -236,7 +249,12 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	if err := h.service.Delete(r.Context(), id, tenantID, apiKeyAuditContext(r, tenantID)); err != nil {
+	ownerFilter, ok := ownKeysOnly(r)
+	if !ok {
+		apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+		return
+	}
+	if err := h.service.DeleteOwned(r.Context(), id, tenantID, ownerFilter, apiKeyAuditContext(r, tenantID)); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
@@ -247,8 +265,8 @@ func (h *APIKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // --- Helpers ---
 
 // apiKeyAuditContext attributes an API-key lifecycle event to the caller.
-func apiKeyAuditContext(r *http.Request, tenantID string) *app.AuditContext {
-	return &app.AuditContext{
+func apiKeyAuditContext(r *http.Request, tenantID string) *audit.AuditContext {
+	return &audit.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: auditActorEmail(r.Context()),
@@ -307,6 +325,9 @@ func (h *APIKeyHandler) handleValidationError(w http.ResponseWriter, err error) 
 }
 
 func (h *APIKeyHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, apikeydom.ErrAPIKeyNotFound):
 		apierror.NotFound("API key").WriteJSON(w)

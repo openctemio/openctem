@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -32,8 +32,8 @@ import (
 // (and its fingerprint) when SENSOR_CA_CERT_FILE names a certificate.
 func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 	f := newFleetHarness(t, sensordom.HealthPolicy{})
-	f.sh.SetTemplateService(app.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
-	f.sh.SetPublicAPIURL("https://192.168.8.204")
+	f.sh.SetTemplateService(sensor.NewSensorConfigTemplateService("../../../../configs/sensor-templates", logger.NewNop()))
+	f.sh.SetPublicAPIURL("https://192.0.2.204")
 	f.sh.SetSensorImage("ghcr.io/openctemio/sensor:v0.4.2")
 
 	call := func(key string) (*httptest.ResponseRecorder, SensorConfigTemplatesResponse) {
@@ -67,7 +67,7 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 			t.Errorf("%s snippet is empty", name)
 		}
 	}
-	if resp.Image != "ghcr.io/openctemio/sensor:v0.4.2" || resp.APIURL != "https://192.168.8.204" || resp.APIKeyIncluded {
+	if resp.Image != "ghcr.io/openctemio/sensor:v0.4.2" || resp.APIURL != "https://192.0.2.204" || resp.APIKeyIncluded {
 		t.Errorf("image=%q api_url=%q key_included=%v", resp.Image, resp.APIURL, resp.APIKeyIncluded)
 	}
 	if !strings.Contains(resp.Docker, "OPENCTEM_API_KEY") || resp.CACertificate != "" || resp.CAFingerprintSHA256 != "" {
@@ -79,7 +79,7 @@ func TestSensorConfigTemplates_Endpoint(t *testing.T) {
 
 	// With the freshly issued key.
 	_, resp = call("rda_4b1e0123456789abcdef")
-	if !resp.APIKeyIncluded || !strings.Contains(resp.Docker, "-e API_KEY='rda_4b1e0123456789abcdef'") {
+	if !resp.APIKeyIncluded || !strings.Contains(resp.Docker, "-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'") {
 		t.Errorf("key not embedded:\n%s", resp.Docker)
 	}
 

@@ -1,13 +1,11 @@
 import { cn } from '@/lib/utils'
 
 /**
- * Where the operator's terms and privacy policy live. The app has no /terms or
- * /privacy page of its own: the sign-in and register pages used to link there
- * and every visitor who clicked landed on the 404 page. The notice now shows
- * only the documents the installation configures.
+ * Where the operator's terms and privacy policy live (admin console, System >
+ * Legal): documents hosted elsewhere or the built-in templates at /terms and
+ * /privacy. The server pages pass them in (src/lib/legal.ts); the notice shows
+ * only what is configured, so nothing links to a 404.
  */
-const TERMS_URL = process.env.NEXT_PUBLIC_TERMS_URL || ''
-const PRIVACY_URL = process.env.NEXT_PUBLIC_PRIVACY_URL || ''
 
 interface LegalNoticeProps {
   /** What the visitor is doing: "clicking sign in", "creating an account". */
@@ -22,8 +20,8 @@ const linkClass = 'hover:text-primary underline underline-offset-4'
 /** "By <action>, you agree to our Terms of Service and Privacy Policy." */
 export function LegalNotice({
   action,
-  termsUrl = TERMS_URL,
-  privacyUrl = PRIVACY_URL,
+  termsUrl = '',
+  privacyUrl = '',
   className,
 }: LegalNoticeProps) {
   if (!termsUrl && !privacyUrl) return null

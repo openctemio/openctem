@@ -2,12 +2,13 @@ package jobs
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"strings"
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -16,7 +17,9 @@ type WorkerConfig struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
-	Concurrency   int
+	// RedisTLS is nil for a plaintext Redis (redis.TLSConfig).
+	RedisTLS    *tls.Config
+	Concurrency int
 }
 
 // WorkerOption is a functional option for configuring the Worker.
@@ -24,13 +27,12 @@ type WorkerOption func(*Worker)
 
 // Worker processes background jobs.
 type Worker struct {
-	server                *asynq.Server
-	mux                   *asynq.ServeMux
-	logger                *logger.Logger
-	notificationProcessor NotificationProcessor
-	aiTriageProcessor     AITriageProcessor
-	jiraStatusSyncer      JiraStatusSyncer
-	githubStatusSyncer    GitHubStatusSyncer
+	server             *asynq.Server
+	mux                *asynq.ServeMux
+	logger             *logger.Logger
+	aiTriageProcessor  AITriageProcessor
+	jiraStatusSyncer   JiraStatusSyncer
+	githubStatusSyncer GitHubStatusSyncer
 }
 
 // WithJiraStatusSyncer adds the outbound Jira status-sync handler to the worker.
@@ -47,13 +49,6 @@ func WithGitHubStatusSyncer(syncer GitHubStatusSyncer) WorkerOption {
 	}
 }
 
-// WithNotificationProcessor adds a notification processor to the worker.
-func WithNotificationProcessor(processor NotificationProcessor) WorkerOption {
-	return func(w *Worker) {
-		w.notificationProcessor = processor
-	}
-}
-
 // WithAITriageProcessor adds an AI triage processor to the worker.
 func WithAITriageProcessor(processor AITriageProcessor) WorkerOption {
 	return func(w *Worker) {
@@ -62,21 +57,20 @@ func WithAITriageProcessor(processor AITriageProcessor) WorkerOption {
 }
 
 // NewWorker creates a new background job worker.
-func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Logger, opts ...WorkerOption) (*Worker, error) {
+func NewWorker(cfg WorkerConfig, emailService *auth.EmailService, log *logger.Logger, opts ...WorkerOption) (*Worker, error) {
 	server := asynq.NewServer(
 		asynq.RedisClientOpt{
-			Addr:     cfg.RedisAddr,
-			Password: cfg.RedisPassword,
-			DB:       cfg.RedisDB,
+			Addr:      cfg.RedisAddr,
+			Password:  cfg.RedisPassword,
+			DB:        cfg.RedisDB,
+			TLSConfig: cfg.RedisTLS,
 		},
 		asynq.Config{
 			Concurrency: cfg.Concurrency,
 			Queues: map[string]int{
-				"default":       10,
-				"email":         5,
-				"notifications": 5,
-				"ai_triage":     3,
-				"maintenance":   2,
+				"default":   10,
+				"email":     5,
+				"ai_triage": 3,
 			},
 		},
 	)
@@ -116,13 +110,6 @@ func NewWorker(cfg WorkerConfig, emailService *app.EmailService, log *logger.Log
 	// Apply options
 	for _, opt := range opts {
 		opt(w)
-	}
-
-	// Register notification handlers if processor is provided
-	if w.notificationProcessor != nil {
-		notificationHandler := NewNotificationTaskHandler(w.notificationProcessor, log.Logger)
-		notificationHandler.RegisterHandlers(mux)
-		log.Info("notification task handlers registered")
 	}
 
 	// Register AI triage handlers if processor is provided

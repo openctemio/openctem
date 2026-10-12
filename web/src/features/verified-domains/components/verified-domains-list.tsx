@@ -3,15 +3,17 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
-import { FileText, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, FileText, RefreshCw, Trash2, UserPlus } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { DataTable } from '@/features/shared/components/data-table'
 import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
@@ -19,8 +21,10 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useDeleteVerifiedDomain, useVerifyDomain } from '../api/use-verified-domains'
 import type { VerifiedDomain } from '../types/verified-domain.types'
+import { DomainJITDialog, jitLabel } from './domain-jit-dialog'
 import { DnsInstructions } from './dns-instructions'
 import { VerifiedDomainStatusBadge } from './verified-domain-status-badge'
+import { useTranslation } from '@/context/i18n-provider'
 
 function DomainActions({
   tenantId,
@@ -31,7 +35,9 @@ function DomainActions({
   domain: VerifiedDomain
   onChanged: () => void
 }) {
+  const { t } = useTranslation()
   const [dnsOpen, setDnsOpen] = useState(false)
+  const [jitOpen, setJitOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const { trigger: verify, isMutating: isVerifying } = useVerifyDomain(tenantId)
   const { trigger: remove, isMutating: isDeleting } = useDeleteVerifiedDomain(tenantId)
@@ -81,6 +87,9 @@ function DomainActions({
                 },
               ]
             : []),
+          ...(domain.status === 'verified'
+            ? [{ label: 'New people…', icon: UserPlus, onClick: () => setJitOpen(true) }]
+            : []),
           {
             label: 'Remove',
             icon: Trash2,
@@ -93,25 +102,39 @@ function DomainActions({
 
       {domain.instructions && (
         <Dialog open={dnsOpen} onOpenChange={setDnsOpen}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>DNS record for {domain.domain}</DialogTitle>
               <DialogDescription>
                 Publish this TXT record, then choose Verify now.
               </DialogDescription>
             </DialogHeader>
-            <DnsInstructions instructions={domain.instructions} />
+            <DialogBody>
+              <DnsInstructions instructions={domain.instructions} />
+            </DialogBody>
           </DialogContent>
         </Dialog>
       )}
+
+      <DomainJITDialog
+        tenantId={tenantId}
+        domain={jitOpen ? domain : null}
+        onOpenChange={setJitOpen}
+        onSaved={onChanged}
+      />
 
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         destructive
-        title={`Remove ${domain.domain}?`}
-        desc="This domain will no longer gate SSO auto-join. You can add and re-verify it again later."
-        confirmText="Remove"
+        title={t('confirm.verifiedDomain.removeTitle', 'Remove the domain {domain}?', {
+          domain: domain.domain,
+        })}
+        desc={t(
+          'confirm.verifiedDomain.removeDesc',
+          'It no longer gates SSO auto-join. You can add and verify it again later.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
         isLoading={isDeleting}
         handleConfirm={handleDelete}
       />
@@ -144,12 +167,35 @@ export function VerifiedDomainsList({
     {
       accessorKey: 'domain',
       header: 'Domain',
-      cell: ({ row }) => <span className="font-medium">{row.original.domain}</span>,
+      cell: ({ row }) => (
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">{row.original.domain}</span>
+          {row.original.claim_conflict && (
+            <Badge
+              variant="destructive"
+              title="Another organization also verified this domain for SSO before domain claims became exclusive. Both keep working until you remove one of the claims."
+            >
+              <AlertTriangle />
+              Claim conflict
+            </Badge>
+          )}
+        </span>
+      ),
     },
     {
       accessorKey: 'status',
       header: 'Status',
       cell: ({ row }) => <VerifiedDomainStatusBadge status={row.original.status} />,
+    },
+    {
+      id: 'jit',
+      header: 'New people',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground" data-testid="domain-jit">
+          {row.original.status === 'verified' ? jitLabel(row.original) : 'Not until verified'}
+        </span>
+      ),
     },
     {
       id: 'activity',

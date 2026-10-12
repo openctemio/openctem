@@ -5,12 +5,10 @@ import "strings"
 
 // Module dependency graph — PLATFORM-WIDE STATIC SPEC.
 //
-// This file is the single source of truth for "module X requires module
-// Y". Dependencies describe how features relate structurally — they
-// change only when a feature is added or reshaped, which means a code
-// commit. So they belong in Go, not the DB. The pattern mirrors
-// RolePermissions in pkg/domain/permission/role_mapping.go and the
-// ModulePermissionMapping map below in module.go.
+// The edges ("module X requires module Y") are declared in the module
+// registry, configs/modules/<id>.yaml (`depends`), and derived into
+// ModuleDependencies (registry.go). This file holds the toggle rules that
+// read them.
 //
 // Two edge kinds:
 //
@@ -45,163 +43,6 @@ type Dependency struct {
 	Reason   string
 }
 
-// ModuleDependencies is the platform-wide dependency graph, keyed by
-// the dependent module ID. Core modules (dashboard, assets, findings,
-// scans, team, roles, audit, settings) are never listed as keys here
-// because the core-module check short-circuits ValidateToggle before
-// dependency logic runs — they are structurally un-disable-able.
-//
-// When adding a new feature, add its entry here. When removing, delete
-// the entry AND search for references in values. The unit test
-// TestReferencedModulesExist enforces both sides.
-var ModuleDependencies = map[string][]Dependency{
-	// Scoping cluster ------------------------------------------------------
-	"attack_surface": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "attack surface is computed from assets"},
-	},
-	"scope_config": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "scope rules select assets"},
-	},
-	"business_services": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "services map to underlying assets"},
-	},
-	"business_units": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "business units group underlying assets"},
-	},
-	"crown_jewels": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "crown jewels are assets flagged as business-critical"},
-	},
-	"threat_model": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "threat models are derived from the asset graph"},
-		{ModuleID: "findings", Type: DependencySoft, Reason: "threat-model coverage reflects findings on in-scope assets"},
-	},
-	"ctem_cycles": {
-		{ModuleID: "scope_config", Type: DependencyHard, Reason: "cycles operate on a defined scope"},
-		{ModuleID: "findings", Type: DependencySoft, Reason: "cycle phases reference findings progress"},
-	},
-	"relationships": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "relationships are between assets"},
-	},
-
-	// Discovery ------------------------------------------------------------
-	"credentials": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "leaked credentials are scoped to assets"},
-	},
-	"components": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "components belong to assets (repos, images, runtimes)"},
-	},
-	"branches": {
-		{ModuleID: "assets", Type: DependencyHard, Reason: "branches belong to repository assets"},
-		{ModuleID: "components", Type: DependencySoft, Reason: "branch views surface component inventories per branch"},
-	},
-	"vulnerabilities": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "vulnerability views list findings of type=vulnerability"},
-	},
-
-	// Prioritisation cluster -----------------------------------------------
-	"threat_intel": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "threat intel enriches findings"},
-	},
-	"exposures": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "an exposure is a finding in a specific lifecycle state"},
-	},
-	"ai_triage": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "triage operates on findings"},
-		{ModuleID: "threat_intel", Type: DependencySoft, Reason: "triage uses KEV/EPSS context when scoring"},
-	},
-	"priority_rules": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "rules classify findings"},
-		{ModuleID: "threat_intel", Type: DependencySoft, Reason: "rule conditions often reference KEV/EPSS"},
-	},
-	"risk_analysis": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "risk scoring reads finding severity + exposure"},
-		{ModuleID: "assets", Type: DependencyHard, Reason: "per-asset risk requires the asset inventory"},
-	},
-	"business_impact": {
-		{ModuleID: "business_services", Type: DependencyHard, Reason: "impact scoring is weighted by business-service mapping"},
-		{ModuleID: "findings", Type: DependencyHard, Reason: "impact is computed from finding severity × service weight"},
-	},
-	"risk_scoring": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "risk scoring operates on findings"},
-	},
-
-	// Validation cluster ---------------------------------------------------
-	"pentest": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "pentest campaigns produce findings"},
-	},
-	"attack_simulation": {
-		{ModuleID: "attacker_profiles", Type: DependencyHard, Reason: "simulation requires an attacker profile to emulate"},
-		{ModuleID: "assets", Type: DependencyHard, Reason: "simulation needs target assets"},
-	},
-	"control_testing": {
-		{ModuleID: "compensating_controls", Type: DependencyHard, Reason: "control testing validates compensating controls"},
-	},
-	"compensating_controls": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "compensating controls reduce severity of findings"},
-	},
-
-	// Mobilisation cluster -------------------------------------------------
-	"remediation": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "remediation closes findings"},
-	},
-	"remediation_tasks": {
-		{ModuleID: "remediation", Type: DependencyHard, Reason: "tasks are the operator-facing queue of the remediation engine"},
-	},
-	"workflows": {
-		// Soft because workflows can also trigger on scan-completion and asset-ingest events —
-		// disabling findings degrades finding-lifecycle workflows but doesn't break the engine.
-		{ModuleID: "findings", Type: DependencySoft, Reason: "finding-lifecycle triggers are a subset of workflow triggers"},
-		{ModuleID: "integrations", Type: DependencySoft, Reason: "most workflow actions route through integrations (Jira, Slack)"},
-	},
-	"suppressions": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "suppressions suppress findings"},
-	},
-	"sla": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "SLA tracks time-to-remediate per finding"},
-	},
-	"compliance": {
-		{ModuleID: "findings", Type: DependencySoft, Reason: "compliance reports aggregate findings against frameworks"},
-	},
-	"iocs": {
-		{ModuleID: "threat_intel", Type: DependencySoft, Reason: "IOC enrichment pulls from threat intel feeds"},
-	},
-	"scan_profiles": {
-		{ModuleID: "scans", Type: DependencyHard, Reason: "profiles are parameterised scan configurations"},
-	},
-
-	// Insights cluster -----------------------------------------------------
-	"reports": {
-		{ModuleID: "findings", Type: DependencySoft, Reason: "most report types render finding data"},
-	},
-	"executive_summary": {
-		{ModuleID: "findings", Type: DependencyHard, Reason: "exec summary rolls up finding metrics"},
-		{ModuleID: "scans", Type: DependencySoft, Reason: "scan coverage metrics appear on the summary"},
-	},
-	"ctem_maturity": {
-		{ModuleID: "ctem_cycles", Type: DependencyHard, Reason: "maturity is computed across CTEM cycles"},
-		{ModuleID: "findings", Type: DependencySoft, Reason: "F3/B4 invariants rely on finding SLA data"},
-	},
-	"mitre_coverage": {
-		{ModuleID: "threat_intel", Type: DependencyHard, Reason: "coverage maps detections to MITRE techniques"},
-		{ModuleID: "compensating_controls", Type: DependencySoft, Reason: "control coverage appears on the heatmap"},
-	},
-	"sbom_export": {
-		{ModuleID: "components", Type: DependencyHard, Reason: "SBOM is generated from the component inventory"},
-	},
-
-	// Settings -> scanner orchestration ------------------------------------
-	"scanner_templates": {
-		{ModuleID: "scans", Type: DependencyHard, Reason: "templates are consumed by scans"},
-	},
-	"template_sources": {
-		{ModuleID: "scanner_templates", Type: DependencyHard, Reason: "sources feed the template catalogue"},
-	},
-	"scan_pipelines": {
-		{ModuleID: "scans", Type: DependencyHard, Reason: "pipelines orchestrate scan runs"},
-		{ModuleID: "scanner_templates", Type: DependencySoft, Reason: "pipelines typically invoke templates"},
-	},
-}
-
 // ToggleBlocker describes a module that cannot be disabled because
 // another still-enabled module hard-depends on it.
 type ToggleBlocker struct {
@@ -223,7 +64,7 @@ type ToggleWarning struct {
 }
 
 // parentModuleID extracts the parent module for a sub-module ID.
-// Sub-modules use the convention "<parent>.<sub>" (e.g. "assets.hosts",
+// Sub-modules use the convention "<parent>.<sub>" (e.g. "ai_triage.agent",
 // "ai_triage.bulk", "integrations.scm"). Returns empty string when the
 // ID has no dot, i.e. is already a top-level module.
 func parentModuleID(moduleID string) string {
@@ -239,8 +80,8 @@ func parentModuleID(moduleID string) string {
 // dependent is enabled, the edge type decides blocker vs warning.
 //
 // Implicit sub-module cascade: every sub-module "<parent>.<sub>" is
-// treated as hard-depending on its parent. Disabling `assets` therefore
-// auto-blocks on every enabled `assets.*` sub-module without needing
+// treated as hard-depending on its parent. Disabling `integrations`
+// therefore auto-blocks on every enabled `integrations.*` sub-module without needing
 // explicit edges per sub-module in ModuleDependencies. The inverse
 // direction (disabling a sub-module) does NOT cascade — sub-modules
 // are leaf toggles.

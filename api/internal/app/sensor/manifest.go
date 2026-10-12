@@ -123,6 +123,8 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 		OmitInventory:        s.SlimHeartbeat(),
 	}
 
+	s.storeManifestLocalPolicy(ctx, a, clean.LocalPolicy, now)
+
 	if digest == a.ManifestDigest {
 		if err := store.TouchManifest(ctx, a.TenantID, a.ID, digest, now); err != nil {
 			s.logger.Warn("failed to confirm sensor manifest", "sensor_id", a.ID.String(), "error", err)

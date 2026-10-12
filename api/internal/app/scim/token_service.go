@@ -26,6 +26,7 @@ const tokenPlaintextPrefix = "oct_scim_"
 type TokenService struct {
 	repo   scimtoken.Repository
 	pepper string
+	legacy []string // earlier peppers that still verify (key rotation)
 	logger *logger.Logger
 	now    func() time.Time
 }
@@ -38,6 +39,24 @@ func NewTokenService(repo scimtoken.Repository, pepper string, log *logger.Logge
 		logger: log.With("service", "scim-token"),
 		now:    func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// SetLegacyPeppers sets earlier peppers whose token hashes keep verifying
+// while APP_ENCRYPTION_KEY rotates (APP_ENCRYPTION_KEY_PREVIOUS). New tokens
+// are always hashed with the current pepper.
+func (s *TokenService) SetLegacyPeppers(peppers ...string) {
+	s.legacy = s.legacy[:0]
+	for _, p := range peppers {
+		if p != "" && p != s.pepper {
+			s.legacy = append(s.legacy, p)
+		}
+	}
+}
+
+// TokenRehasher is implemented by a repository that can replace a token hash
+// made with an earlier pepper (compare-and-swap on the old hash).
+type TokenRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
 }
 
 // MintResult carries the plaintext, which is shown to the admin exactly once.
@@ -98,12 +117,29 @@ func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*sci
 	}
 	hash := crypto.HashTokenPeppered(plaintext, s.pepper)
 	tok, err := s.repo.GetByHash(ctx, hash)
+	matched := hash
+	for _, p := range s.legacy {
+		if err == nil {
+			break
+		}
+		matched = crypto.HashTokenPeppered(plaintext, p)
+		tok, err = s.repo.GetByHash(ctx, matched)
+	}
 	if err != nil || !tok.IsActive() {
 		return nil, scimtoken.ErrNotFound
 	}
+	// A token that matched under an earlier pepper is re-hashed with the
+	// current one, so it stops depending on APP_ENCRYPTION_KEY_PREVIOUS.
+	if matched != hash {
+		if r, ok := s.repo.(TokenRehasher); ok {
+			if _, rerr := r.RehashKey(ctx, tok.ID(), matched, hash); rerr != nil {
+				s.logger.Warn("scim token re-hash under the current pepper failed", "token_id", tok.ID().String(), "error", rerr)
+			}
+		}
+	}
 	// Best-effort last-used stamp (non-fatal). Uses a status-preserving,
 	// active-only update so a concurrent revoke is never clobbered.
-	if uerr := s.repo.TouchLastUsed(ctx, tok.ID(), s.now()); uerr != nil {
+	if uerr := s.repo.TouchLastUsed(ctx, tok.TenantID(), tok.ID(), s.now()); uerr != nil {
 		s.logger.Warn("scim token touch failed", "token_id", tok.ID().String(), "error", uerr)
 	}
 	return tok, nil

@@ -27,29 +27,9 @@ func NewAssetTypeService(repo assettypedom.Repository, categoryRepo assettypedom
 	}
 }
 
-// GetCategory retrieves a category by ID.
-func (s *AssetTypeService) GetCategory(ctx context.Context, categoryID string) (*assettypedom.Category, error) {
-	parsedID, err := shared.IDFromString(categoryID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
-	}
-
-	return s.categoryRepo.GetByID(ctx, parsedID)
-}
-
 // GetCategoryByCode retrieves a category by code.
 func (s *AssetTypeService) GetCategoryByCode(ctx context.Context, code string) (*assettypedom.Category, error) {
 	return s.categoryRepo.GetByCode(ctx, code)
-}
-
-// ListCategories lists categories with pagination.
-func (s *AssetTypeService) ListCategories(ctx context.Context, filter assettypedom.CategoryFilter, page pagination.Pagination) (pagination.Result[*assettypedom.Category], error) {
-	return s.categoryRepo.List(ctx, filter, page)
-}
-
-// ListActiveCategories lists all active categories.
-func (s *AssetTypeService) ListActiveCategories(ctx context.Context) ([]*assettypedom.Category, error) {
-	return s.categoryRepo.ListActive(ctx)
 }
 
 // GetAssetType retrieves an asset type by ID.

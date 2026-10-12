@@ -2,7 +2,7 @@
 
 > Reusable code patterns for common scenarios in the project.
 
-## 📋 Table of Contents
+## Table of Contents
 
 1. [CRUD Pattern](#crud-pattern)
 2. [Server Component Pattern](#server-component-pattern)
@@ -15,12 +15,12 @@
 9. [Loading State Pattern](#loading-state-pattern)
 10. [API Route Pattern](#api-route-pattern)
 11. [Asset API Pattern](#asset-api-pattern)
-12. [Permission-Gated SWR Hook Pattern](#permission-gated-hook-pattern)
-13. [Permission Guard Component Pattern](#permission-guard-pattern)
+12. [Permission-Gated SWR Hook Pattern](#permission-gated-swr-hook-pattern)
+13. [Permission Guard Component Pattern](#permission-guard-component-pattern)
 
 ---
 
-## 🔄 CRUD Pattern {#crud-pattern}
+## CRUD Pattern
 
 Complete CRUD implementation for a feature.
 
@@ -36,17 +36,17 @@ export interface User {
   updatedAt: Date
 }
 
-export type CreateUserInput = Omit<User, "id" | "createdAt" | "updatedAt">
+export type CreateUserInput = Omit<User, 'id' | 'createdAt' | 'updatedAt'>
 export type UpdateUserInput = Partial<CreateUserInput>
 ```
 
 ```tsx
 // features/users/schemas/user.schema.ts
-import { z } from "zod"
+import { z } from 'zod'
 
 export const userSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Invalid email address"),
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
 })
 
 export type UserFormData = z.infer<typeof userSchema>
@@ -56,16 +56,16 @@ export type UserFormData = z.infer<typeof userSchema>
 
 ```tsx
 // features/users/actions/user-actions.ts
-"use server"
+'use server'
 
-import { revalidatePath } from "next/cache"
-import { db } from "@/lib/db"
-import { userSchema } from "../schemas/user.schema"
+import { revalidatePath } from 'next/cache'
+import { db } from '@/lib/db'
+import { userSchema } from '../schemas/user.schema'
 
 export async function createUser(formData: FormData) {
   const validated = userSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email"),
+    name: formData.get('name'),
+    email: formData.get('email'),
   })
 
   if (!validated.success) {
@@ -80,18 +80,18 @@ export async function createUser(formData: FormData) {
       data: validated.data,
     })
 
-    revalidatePath("/users")
+    revalidatePath('/users')
     return { success: true, data: user }
   } catch (error) {
-    console.error("Failed to create user:", error)
-    return { success: false, error: "Failed to create user" }
+    console.error('Failed to create user:', error)
+    return { success: false, error: 'Failed to create user' }
   }
 }
 
 export async function updateUser(id: string, formData: FormData) {
   const validated = userSchema.safeParse({
-    name: formData.get("name"),
-    email: formData.get("email"),
+    name: formData.get('name'),
+    email: formData.get('email'),
   })
 
   if (!validated.success) {
@@ -107,11 +107,11 @@ export async function updateUser(id: string, formData: FormData) {
       data: validated.data,
     })
 
-    revalidatePath("/users")
+    revalidatePath('/users')
     revalidatePath(`/users/${id}`)
     return { success: true, data: user }
   } catch (error) {
-    return { success: false, error: "Failed to update user" }
+    return { success: false, error: 'Failed to update user' }
   }
 }
 
@@ -121,10 +121,10 @@ export async function deleteUser(id: string) {
       where: { id },
     })
 
-    revalidatePath("/users")
+    revalidatePath('/users')
     return { success: true }
   } catch (error) {
-    return { success: false, error: "Failed to delete user" }
+    return { success: false, error: 'Failed to delete user' }
   }
 }
 ```
@@ -133,18 +133,18 @@ export async function deleteUser(id: string) {
 
 ```tsx
 // features/users/components/user-form.tsx
-"use client"
+'use client'
 
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { toast } from "@/hooks/use-toast"
-import { createUser, updateUser } from "../actions/user-actions"
-import { userSchema, type UserFormData } from "../schemas/user.schema"
-import type { User } from "../types/user.types"
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { toast } from '@/hooks/use-toast'
+import { createUser, updateUser } from '../actions/user-actions'
+import { userSchema, type UserFormData } from '../schemas/user.schema'
+import type { User } from '../types/user.types'
 
 interface UserFormProps {
   user?: User
@@ -169,25 +169,23 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
 
   const onSubmit = async (data: UserFormData) => {
     const formData = new FormData()
-    formData.append("name", data.name)
-    formData.append("email", data.email)
+    formData.append('name', data.name)
+    formData.append('email', data.email)
 
-    const result = user
-      ? await updateUser(user.id, formData)
-      : await createUser(formData)
+    const result = user ? await updateUser(user.id, formData) : await createUser(formData)
 
     if (result.success) {
       toast({
-        title: "Success",
-        description: `User ${user ? "updated" : "created"} successfully`,
+        title: 'Success',
+        description: `User ${user ? 'updated' : 'created'} successfully`,
       })
       onSuccess?.()
       router.refresh()
     } else {
       toast({
-        title: "Error",
-        description: result.error || "Something went wrong",
-        variant: "destructive",
+        title: 'Error',
+        description: result.error || 'Something went wrong',
+        variant: 'destructive',
       })
     }
   }
@@ -196,15 +194,8 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
-        <Input
-          id="name"
-          {...register("name")}
-          placeholder="John Doe"
-          disabled={isSubmitting}
-        />
-        {errors.name && (
-          <p className="text-sm text-destructive">{errors.name.message}</p>
-        )}
+        <Input id="name" {...register('name')} placeholder="John Doe" disabled={isSubmitting} />
+        {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
       </div>
 
       <div className="space-y-2">
@@ -212,21 +203,15 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
         <Input
           id="email"
           type="email"
-          {...register("email")}
+          {...register('email')}
           placeholder="john@example.com"
           disabled={isSubmitting}
         />
-        {errors.email && (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
-        )}
+        {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
       </div>
 
       <Button type="submit" disabled={isSubmitting} className="w-full">
-        {isSubmitting
-          ? "Saving..."
-          : user
-          ? "Update User"
-          : "Create User"}
+        {isSubmitting ? 'Saving...' : user ? 'Update User' : 'Create User'}
       </Button>
     </form>
   )
@@ -237,18 +222,18 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
 
 ```tsx
 // app/(dashboard)/users/page.tsx
-import { db } from "@/lib/db"
-import { UserList } from "@/features/users/components/user-list"
-import { CreateUserDialog } from "@/features/users/components/create-user-dialog"
+import { db } from '@/lib/db'
+import { UserList } from '@/features/users/components/user-list'
+import { CreateUserDialog } from '@/features/users/components/create-user-dialog'
 
 export const metadata = {
-  title: "Users",
-  description: "Manage your users",
+  title: 'Users',
+  description: 'Manage your users',
 }
 
 async function getUsers() {
   return await db.user.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: 'desc' },
   })
 }
 
@@ -272,14 +257,14 @@ export default async function UsersPage() {
 
 ---
 
-## 🖥️ Server Component Pattern {#server-component-pattern}
+## Server Component Pattern
 
 ```tsx
 // app/(dashboard)/dashboard/page.tsx
-import { db } from "@/lib/db"
-import { getServerSession } from "next-auth"
-import { redirect } from "next/navigation"
-import { DashboardStats } from "@/features/analytics/components/dashboard-stats"
+import { db } from '@/lib/db'
+import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
+import { DashboardStats } from '@/features/analytics/components/dashboard-stats'
 
 // This runs on the server
 async function getData(userId: string) {
@@ -288,7 +273,7 @@ async function getData(userId: string) {
     db.activity.findMany({
       where: { userId },
       take: 10,
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
     }),
   ])
 
@@ -299,7 +284,7 @@ export default async function DashboardPage() {
   const session = await getServerSession()
 
   if (!session) {
-    redirect("/login")
+    redirect('/login')
   }
 
   const { stats, recentActivity } = await getData(session.user.id)
@@ -316,27 +301,28 @@ export default async function DashboardPage() {
 
 ---
 
-## 💻 Client Component Pattern {#client-component-pattern}
+## Client Component Pattern
 
 ```tsx
 // features/users/components/user-list.tsx
-"use client"
+'use client'
 
-import { useState } from "react"
-import { Input } from "@/components/ui/input"
-import { UserCard } from "./user-card"
-import type { User } from "../types/user.types"
+import { useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { UserCard } from './user-card'
+import type { User } from '../types/user.types'
 
 interface UserListProps {
   users: User[]
 }
 
 export function UserList({ users }: UserListProps) {
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState('')
 
-  const filteredUsers = users.filter((user) =>
-    user.name.toLowerCase().includes(search.toLowerCase()) ||
-    user.email.toLowerCase().includes(search.toLowerCase())
+  const filteredUsers = users.filter(
+    (user) =>
+      user.name.toLowerCase().includes(search.toLowerCase()) ||
+      user.email.toLowerCase().includes(search.toLowerCase())
   )
 
   return (
@@ -349,9 +335,7 @@ export function UserList({ users }: UserListProps) {
       />
 
       {filteredUsers.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8">
-          No users found
-        </p>
+        <p className="text-muted-foreground text-center py-8">No users found</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredUsers.map((user) => (
@@ -366,25 +350,25 @@ export function UserList({ users }: UserListProps) {
 
 ---
 
-## 📝 Form Pattern {#form-pattern}
+## Form Pattern
 
 ### Simple Form with Server Action
 
 ```tsx
 // features/contact/components/contact-form.tsx
-"use client"
+'use client'
 
-import { useFormState, useFormStatus } from "react-dom"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { sendMessage } from "../actions/contact-actions"
+import { useFormState, useFormStatus } from 'react-dom'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { sendMessage } from '../actions/contact-actions'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
   return (
     <Button type="submit" disabled={pending}>
-      {pending ? "Sending..." : "Send Message"}
+      {pending ? 'Sending...' : 'Send Message'}
     </Button>
   )
 }
@@ -403,14 +387,10 @@ export function ContactForm() {
       <div>
         <Textarea name="message" placeholder="Your message" required />
       </div>
-      
-      {state?.error && (
-        <p className="text-sm text-destructive">{state.error}</p>
-      )}
-      {state?.success && (
-        <p className="text-sm text-green-600">Message sent successfully!</p>
-      )}
-      
+
+      {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+      {state?.success && <p className="text-sm text-green-600">Message sent successfully!</p>}
+
       <SubmitButton />
     </form>
   )
@@ -419,13 +399,13 @@ export function ContactForm() {
 
 ---
 
-## 🎭 Dialog Pattern {#dialog-pattern}
+## Dialog Pattern
 
 ```tsx
 // features/users/components/create-user-dialog.tsx
-"use client"
+'use client'
 
-import { useState } from "react"
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -433,9 +413,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { UserForm } from "./user-form"
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { UserForm } from './user-form'
 
 export function CreateUserDialog() {
   const [open, setOpen] = useState(false)
@@ -448,9 +428,7 @@ export function CreateUserDialog() {
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Create New User</DialogTitle>
-          <DialogDescription>
-            Add a new user to your organization.
-          </DialogDescription>
+          <DialogDescription>Add a new user to your organization.</DialogDescription>
         </DialogHeader>
         <UserForm onSuccess={() => setOpen(false)} />
       </DialogContent>
@@ -463,9 +441,9 @@ export function CreateUserDialog() {
 
 ```tsx
 // features/users/components/delete-user-dialog.tsx
-"use client"
+'use client'
 
-import { useState } from "react"
+import { useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -476,12 +454,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import { Button } from "@/components/ui/button"
-import { Trash2 } from "lucide-react"
-import { deleteUser } from "../actions/user-actions"
-import { toast } from "@/hooks/use-toast"
-import { useRouter } from "next/navigation"
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { Trash2 } from 'lucide-react'
+import { deleteUser } from '../actions/user-actions'
+import { toast } from '@/hooks/use-toast'
+import { useRouter } from 'next/navigation'
 
 interface DeleteUserDialogProps {
   userId: string
@@ -499,16 +477,16 @@ export function DeleteUserDialog({ userId, userName }: DeleteUserDialogProps) {
 
     if (result.success) {
       toast({
-        title: "User deleted",
+        title: 'User deleted',
         description: `${userName} has been deleted successfully`,
       })
       setOpen(false)
       router.refresh()
     } else {
       toast({
-        title: "Error",
+        title: 'Error',
         description: result.error,
-        variant: "destructive",
+        variant: 'destructive',
       })
     }
 
@@ -527,9 +505,8 @@ export function DeleteUserDialog({ userId, userName }: DeleteUserDialogProps) {
         <AlertDialogHeader>
           <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
           <AlertDialogDescription>
-            This will permanently delete{" "}
-            <span className="font-semibold">{userName}</span> and remove their
-            data from our servers.
+            This will permanently delete <span className="font-semibold">{userName}</span> and
+            remove their data from our servers.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -539,7 +516,7 @@ export function DeleteUserDialog({ userId, userName }: DeleteUserDialogProps) {
             disabled={isDeleting}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {isDeleting ? "Deleting..." : "Delete"}
+            {isDeleting ? 'Deleting...' : 'Delete'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -550,36 +527,36 @@ export function DeleteUserDialog({ userId, userName }: DeleteUserDialogProps) {
 
 ---
 
-## ⚡ Server Action Pattern {#server-action-pattern}
+## Server Action Pattern
 
 ```tsx
 // features/posts/actions/post-actions.ts
-"use server"
+'use server'
 
-import { revalidatePath, revalidateTag } from "next/cache"
-import { redirect } from "next/navigation"
-import { db } from "@/lib/db"
-import { getSession } from "@/features/auth/lib/session"
+import { revalidatePath, revalidateTag } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { db } from '@/lib/db'
+import { getSession } from '@/features/auth/lib/session'
 
 export async function createPost(formData: FormData) {
   // 1. Authentication
   const session = await getSession()
   if (!session) {
-    return { success: false, error: "Unauthorized" }
+    return { success: false, error: 'Unauthorized' }
   }
 
   // 2. Validation
-  const title = formData.get("title") as string
-  const content = formData.get("content") as string
+  const title = formData.get('title') as string
+  const content = formData.get('content') as string
 
   if (!title || !content) {
-    return { success: false, error: "Title and content are required" }
+    return { success: false, error: 'Title and content are required' }
   }
 
   // 3. Authorization (if needed)
-  const canCreate = await checkPermission(session.user.id, "create:posts")
+  const canCreate = await checkPermission(session.user.id, 'create:posts')
   if (!canCreate) {
-    return { success: false, error: "Forbidden" }
+    return { success: false, error: 'Forbidden' }
   }
 
   // 4. Business logic
@@ -593,14 +570,14 @@ export async function createPost(formData: FormData) {
     })
 
     // 5. Cache revalidation
-    revalidatePath("/posts")
-    revalidateTag("posts")
+    revalidatePath('/posts')
+    revalidateTag('posts')
 
     // 6. Return result
     return { success: true, data: post }
   } catch (error) {
-    console.error("Failed to create post:", error)
-    return { success: false, error: "Failed to create post" }
+    console.error('Failed to create post:', error)
+    return { success: false, error: 'Failed to create post' }
   }
 }
 
@@ -618,24 +595,20 @@ export async function createPostAndRedirect(formData: FormData) {
 
 ---
 
-## 🎨 Layout Pattern {#layout-pattern}
+## Layout Pattern
 
 ```tsx
 // app/(dashboard)/layout.tsx
-import { getServerSession } from "next-auth"
-import { redirect } from "next/navigation"
-import { Sidebar } from "@/components/layouts/sidebar"
-import { SiteHeader } from "@/components/layouts/site-header"
+import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
+import { Sidebar } from '@/components/layouts/sidebar'
+import { SiteHeader } from '@/components/layouts/site-header'
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession()
 
   if (!session) {
-    redirect("/login")
+    redirect('/login')
   }
 
   return (
@@ -652,14 +625,14 @@ export default async function DashboardLayout({
 
 ---
 
-## 🚨 Error Handling Pattern {#error-handling-pattern}
+## Error Handling Pattern
 
 ```tsx
 // app/(dashboard)/users/error.tsx
-"use client"
+'use client'
 
-import { useEffect } from "react"
-import { Button } from "@/components/ui/button"
+import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
 
 export default function UsersError({
   error,
@@ -669,7 +642,7 @@ export default function UsersError({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error("Users page error:", error)
+    console.error('Users page error:', error)
   }, [error])
 
   return (
@@ -686,17 +659,15 @@ export default function UsersError({
 
 ```tsx
 // app/(dashboard)/users/[id]/not-found.tsx
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 
 export default function UserNotFound() {
   return (
     <div className="flex min-h-[400px] flex-col items-center justify-center">
       <div className="text-center space-y-4">
         <h2 className="text-2xl font-bold">User Not Found</h2>
-        <p className="text-muted-foreground">
-          The user you're looking for doesn't exist.
-        </p>
+        <p className="text-muted-foreground">The user you're looking for doesn't exist.</p>
         <Button asChild>
           <Link href="/users">Back to Users</Link>
         </Button>
@@ -708,11 +679,11 @@ export default function UserNotFound() {
 
 ---
 
-## ⏳ Loading State Pattern {#loading-state-pattern}
+## Loading State Pattern
 
 ```tsx
 // app/(dashboard)/users/loading.tsx
-import { Skeleton } from "@/components/ui/skeleton"
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function UsersLoading() {
   return (
@@ -735,10 +706,10 @@ export default function UsersLoading() {
 
 ```tsx
 // app/(dashboard)/dashboard/page.tsx
-import { Suspense } from "react"
-import { UserStats } from "@/features/analytics/components/user-stats"
-import { RecentActivity } from "@/features/analytics/components/recent-activity"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Suspense } from 'react'
+import { UserStats } from '@/features/analytics/components/user-stats'
+import { RecentActivity } from '@/features/analytics/components/recent-activity'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function DashboardPage() {
   return (
@@ -759,29 +730,26 @@ export default function DashboardPage() {
 
 ---
 
-## 🔌 API Route Pattern {#api-route-pattern}
+## API Route Pattern
 
 ```tsx
 // app/api/users/route.ts
-import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { db } from "@/lib/db"
-import { userSchema } from "@/features/users/schemas/user.schema"
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { db } from '@/lib/db'
+import { userSchema } from '@/features/users/schemas/user.schema'
 
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession()
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const users = await db.user.findMany()
     return NextResponse.json(users)
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to fetch users" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
   }
 }
 
@@ -789,7 +757,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession()
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
@@ -801,38 +769,29 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(user, { status: 201 })
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to create user" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
   }
 }
 ```
 
 ```tsx
 // app/api/users/[id]/route.ts
-import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const user = await db.user.findUnique({
     where: { id: params.id },
   })
 
   if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 })
+    return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
   return NextResponse.json(user)
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const body = await request.json()
 
   const user = await db.user.update({
@@ -843,10 +802,7 @@ export async function PUT(
   return NextResponse.json(user)
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   await db.user.delete({
     where: { id: params.id },
   })
@@ -857,7 +813,7 @@ export async function DELETE(
 
 ---
 
-## 🎯 Quick Reference
+## Quick Reference
 
 ### When to use what:
 
@@ -879,7 +835,7 @@ export async function DELETE(
 
 ---
 
-## 🏢 Asset API Pattern {#asset-api-pattern}
+## Asset API Pattern
 
 Pattern for asset pages with real API integration using SWR.
 
@@ -894,7 +850,7 @@ import {
   bulkDeleteAssets,
   type Asset,
   type AssetSearchFilters,
-} from "@/features/assets";
+} from '@/features/assets'
 ```
 
 ### 2. Component Setup
@@ -920,93 +876,99 @@ export default function HostsPage() {
 ### 3. CRUD Handlers
 
 ```tsx
-  // Create
-  const handleCreate = async () => {
-    if (!formData.name) {
-      toast.error("Name is required");
-      return;
-    }
+// Create
+const handleCreate = async () => {
+  if (!formData.name) {
+    toast.error('Name is required')
+    return
+  }
 
-    setIsSubmitting(true);
-    try {
-      await createAsset({
-        name: formData.name,
-        type: "host",
-        criticality: "medium",
-        description: formData.description,
-        scope: "internal",
-        exposure: "private",
-        tags: formData.tags.split(",").map(s => s.trim()).filter(Boolean),
-      });
-      await mutate();
-      setFormData(emptyForm);
-      setAddDialogOpen(false);
-      toast.success("Asset created successfully");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  setIsSubmitting(true)
+  try {
+    await createAsset({
+      name: formData.name,
+      type: 'host',
+      criticality: 'medium',
+      description: formData.description,
+      scope: 'internal',
+      exposure: 'private',
+      tags: formData.tags
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    })
+    await mutate()
+    setFormData(emptyForm)
+    setAddDialogOpen(false)
+    toast.success('Asset created successfully')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Failed to create')
+  } finally {
+    setIsSubmitting(false)
+  }
+}
 
-  // Update
-  const handleUpdate = async () => {
-    if (!selectedAsset || !formData.name) {
-      toast.error("Please fill required fields");
-      return;
-    }
+// Update
+const handleUpdate = async () => {
+  if (!selectedAsset || !formData.name) {
+    toast.error('Please fill required fields')
+    return
+  }
 
-    setIsSubmitting(true);
-    try {
-      await updateAsset(selectedAsset.id, {
-        name: formData.name,
-        description: formData.description,
-        tags: formData.tags.split(",").map(s => s.trim()).filter(Boolean),
-      });
-      await mutate();
-      setSelectedAsset(null);
-      toast.success("Asset updated successfully");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  setIsSubmitting(true)
+  try {
+    await updateAsset(selectedAsset.id, {
+      name: formData.name,
+      description: formData.description,
+      tags: formData.tags
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    })
+    await mutate()
+    setSelectedAsset(null)
+    toast.success('Asset updated successfully')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Failed to update')
+  } finally {
+    setIsSubmitting(false)
+  }
+}
 
-  // Delete
-  const handleDelete = async () => {
-    if (!assetToDelete) return;
+// Delete
+const handleDelete = async () => {
+  if (!assetToDelete) return
 
-    setIsSubmitting(true);
-    try {
-      await deleteAsset(assetToDelete.id);
-      await mutate();
-      setDeleteDialogOpen(false);
-      toast.success("Asset deleted successfully");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  setIsSubmitting(true)
+  try {
+    await deleteAsset(assetToDelete.id)
+    await mutate()
+    setDeleteDialogOpen(false)
+    toast.success('Asset deleted successfully')
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete')
+  } finally {
+    setIsSubmitting(false)
+  }
+}
 
-  // Bulk Delete
-  const handleBulkDelete = async () => {
-    const selectedIds = table.getSelectedRowModel().rows.map(r => r.original.id);
-    if (selectedIds.length === 0) return;
+// Bulk Delete
+const handleBulkDelete = async () => {
+  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id)
+  if (selectedIds.length === 0) return
 
-    setIsSubmitting(true);
-    try {
-      await bulkDeleteAssets(selectedIds);
-      await mutate();
-      setRowSelection({});
-      toast.success(`Deleted ${selectedIds.length} assets`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  setIsSubmitting(true)
+  try {
+    await bulkDeleteAssets(selectedIds)
+    await mutate()
+    setRowSelection({})
+    toast.success(`Deleted ${selectedIds.length} assets`)
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete')
+  } finally {
+    setIsSubmitting(false)
+  }
+}
 ```
 
 ### 4. Render with Loading States
@@ -1049,7 +1011,7 @@ export default function HostsPage() {
 
 ---
 
-## 🔐 Permission-Gated SWR Hook Pattern {#permission-gated-hook-pattern}
+## Permission-Gated SWR Hook Pattern
 
 Pattern for API hooks that check permissions before fetching.
 
@@ -1072,7 +1034,7 @@ export function useAssets(filters?: AssetFilters) {
   const shouldFetch = currentTenant && canReadAssets
 
   const { data, error, isLoading, mutate } = useSWR<AssetListResponse>(
-    shouldFetch ? ['assets', currentTenant, filters] : null,  // null key = no fetch
+    shouldFetch ? ['assets', currentTenant, filters] : null, // null key = no fetch
     () => get<AssetListResponse>(endpoints.assets.list(filters)),
     {
       revalidateOnFocus: false,
@@ -1083,7 +1045,7 @@ export function useAssets(filters?: AssetFilters) {
   return {
     assets: data?.data || [],
     total: data?.total || 0,
-    isLoading: shouldFetch ? isLoading : false,  // Not loading if no permission
+    isLoading: shouldFetch ? isLoading : false, // Not loading if no permission
     isError: !!error,
     error,
     mutate,
@@ -1124,7 +1086,7 @@ export function useStats(tenantId: string | null) {
 
 ---
 
-## 🔒 Permission Guard Component Pattern {#permission-guard-pattern}
+## Permission Guard Component Pattern
 
 Pattern for conditionally showing/disabling UI based on permissions.
 
@@ -1177,9 +1139,7 @@ function AssetActions({ asset }) {
   return (
     <div>
       {/* Single permission check */}
-      {can(Permission.AssetsWrite) && (
-        <Button onClick={handleEdit}>Edit</Button>
-      )}
+      {can(Permission.AssetsWrite) && <Button onClick={handleEdit}>Edit</Button>}
 
       {/* Any of multiple permissions */}
       {canAny(Permission.AssetsDelete, Permission.AssetsManage) && (
@@ -1194,17 +1154,18 @@ function AssetActions({ asset }) {
 
 ### When to Use Each Approach
 
-| Approach | Use When |
-|----------|----------|
-| `<Can>` with `mode="hide"` (default) | Navigation items, menu entries |
-| `<Can>` with `mode="disable"` | Action buttons, forms - show user what they can't do |
-| `usePermissions().can()` | Conditional logic, not just rendering |
-| Multiple permissions array | User needs ANY of the listed permissions |
+| Approach                             | Use When                                             |
+| ------------------------------------ | ---------------------------------------------------- |
+| `<Can>` with `mode="hide"` (default) | Navigation items, menu entries                       |
+| `<Can>` with `mode="disable"`        | Action buttons, forms - show user what they can't do |
+| `usePermissions().can()`             | Conditional logic, not just rendering                |
+| Multiple permissions array           | User needs ANY of the listed permissions             |
 
 ---
 
 **See also:**
+
 - [architecture.md](architecture.md) - Project structure
 - [access-control.md](access-control.md) - Complete RBAC guide
 - [troubleshooting.md](troubleshooting.md) - Common issues
-- [ASSETS_API_INTEGRATION.md](../docs/ASSETS_API_INTEGRATION.md) - Complete asset API guide
+- [API_INTEGRATION.md](../docs/guides/API_INTEGRATION.md) - Calling the API

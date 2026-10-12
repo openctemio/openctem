@@ -14,68 +14,68 @@ import "github.com/openctemio/openctem/api/pkg/domain/tenant"
 var RolePermissions = map[tenant.Role][]Permission{
 	tenant.RoleOwner: {
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
-		CredentialsRead, CredentialsWrite, CredentialsReveal,
+		VulnerabilitiesRead,
+		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesWrite, PoliciesDelete,
 		// Scans
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		SourcesRead, SourcesWrite, SourcesDelete,
+		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
-		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
+		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
+		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
+		CIRead, CIWrite, CIOverride,
+		ScanWindowsManage, ScanWindowsOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
-		CommandsRead, CommandsWrite, CommandsDelete,
+		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team
 		TeamRead, TeamUpdate, TeamDelete,
 		MembersRead, MembersInvite, MembersWrite,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 		// Integrations
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
-		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite, ScanWorkflowsDelete,
 		// Settings
-		BillingRead, BillingWrite,
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
-		ScopeRead, ScopeWrite, ScopeDelete,
+		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 		// Validation (legacy)
-		ValidationRead, ValidationWrite,
+		PentestRead, PentestWrite,
 		// Pentest (granular - all)
 		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
 		PentestRetestsRead, PentestRetestsWrite,
 		PentestTemplatesRead, PentestTemplatesWrite,
-		PentestReportsWrite,
+		PentestReportsWrite, PentestChecklistsManage,
 		// Compliance (all)
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 		// Reports
 		ReportsRead, ReportsWrite,
 		// Threat Intel
@@ -93,68 +93,68 @@ var RolePermissions = map[tenant.Role][]Permission{
 
 	tenant.RoleAdmin: {
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 		// Assets
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 		// Findings
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
-		SuppressionsRead, SuppressionsWrite, SuppressionsDelete,
-		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
-		CredentialsRead, CredentialsWrite, CredentialsReveal,
+		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
+		VulnerabilitiesRead,
+		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesDelete, PoliciesWrite,
 		// Scans
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		SourcesRead, SourcesWrite, SourcesDelete,
+		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
-		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
+		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
+		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
+		CIRead, CIWrite, CIOverride,
+		ScanWindowsManage, ScanWindowsOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
-		CommandsRead, CommandsWrite, CommandsDelete,
+		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team (no team:delete)
 		TeamRead, TeamUpdate,
 		MembersRead, MembersInvite, MembersWrite,
 		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 		// Integrations
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
-		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite, ScanWorkflowsDelete,
 		// Settings (billing read only)
-		BillingRead,
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
-		ScopeRead, ScopeWrite, ScopeDelete,
+		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 		// Validation (legacy)
-		ValidationRead, ValidationWrite,
+		PentestRead, PentestWrite,
 		// Pentest (granular - all)
 		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
 		PentestRetestsRead, PentestRetestsWrite,
 		PentestTemplatesRead, PentestTemplatesWrite,
-		PentestReportsWrite,
+		PentestReportsWrite, PentestChecklistsManage,
 		// Compliance (all)
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 		// Reports
 		ReportsRead, ReportsWrite,
 		// Threat Intel
@@ -175,7 +175,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		DashboardRead,
 		SettingsRead,
 		// Assets (read + write, no delete)
-		AssetsRead, AssetsWrite,
+		AssetsRead, AssetsWrite, AssetsImport,
 		AssetGroupsRead, AssetGroupsWrite,
 		ComponentsRead, ComponentsWrite,
 		// Findings (read + write, no delete; fix_apply yes, verify no).
@@ -186,21 +186,25 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// member's assign/bulk grant is a separate product decision.
 		FindingsRead, FindingsWrite,
 		FindingsTriage, FindingsStatus, FindingsAssign, FindingsBulkUpdate, FindingsFixApply,
-		ExposuresRead, ExposuresWrite,
+		FindingsComment, FindingsSeverity,
+		ExposuresRead, ExposuresWrite, ExposuresTriage,
 		SuppressionsRead,
 		VulnerabilitiesRead,
 		CredentialsRead,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead,
-		PoliciesRead,
 		// Scans (read + write, no delete)
 		ScansRead, ScansWrite, ScansExecute,
 		ScanProfilesRead, ScanProfilesWrite,
-		SourcesRead, SourcesWrite,
+		// Template sources and scanner templates: read only. A custom
+		// template is code the sensors run, so writing one is owner/admin
+		// only (owner decision 2026-10-02, migration 000262).
+		TemplateSourcesRead,
 		ToolsRead,
 		TenantToolsRead, TenantToolsWrite,
-		ScannerTemplatesRead, ScannerTemplatesWrite,
+		ScannerTemplatesRead,
 		SecretStoreRead, SecretStoreWrite,
+		CIRead, // CI trust and the gate are managed by owners and admins (RFC-051)
 		// Sensors: read only. Creating sensors and minting, rotating or
 		// revoking their keys is owner/admin only.
 		SensorsRead,
@@ -211,20 +215,18 @@ var RolePermissions = map[tenant.Role][]Permission{
 		MembersRead,
 		GroupsRead,
 		RolesRead,
-		PermissionSetsRead,
 		// Integrations (read + limited write)
 		IntegrationsRead,
 		SCMConnectionsRead, SCMConnectionsWrite,
 		NotificationsRead,
-		WebhooksRead,
 		APIKeysRead,
-		PipelinesRead, PipelinesWrite,
+		ScanWorkflowsRead, ScanWorkflowsWrite,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read + write)
 		ScopeRead, ScopeWrite,
 		// Validation (legacy)
-		ValidationRead, ValidationWrite,
+		PentestRead, PentestWrite,
 		// Pentest (read + write, no delete)
 		PentestCampaignsRead, PentestCampaignsWrite,
 		PentestFindingsRead, PentestFindingsWrite,
@@ -235,7 +237,6 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 		// Reports (read + write)
 		ReportsRead, ReportsWrite,
 		// Threat Intel (read only)
@@ -266,15 +267,14 @@ var RolePermissions = map[tenant.Role][]Permission{
 		CredentialsRead,
 		RemediationRead,
 		WorkflowsRead,
-		PoliciesRead,
 		// Scans (read only)
 		ScansRead,
 		ScanProfilesRead,
-		SourcesRead,
+		TemplateSourcesRead,
 		ToolsRead,
 		TenantToolsRead,
 		ScannerTemplatesRead,
-		SecretStoreRead,
+		CIRead,
 		// Sensors (read only)
 		SensorsRead,
 		CommandsRead,
@@ -284,24 +284,22 @@ var RolePermissions = map[tenant.Role][]Permission{
 		MembersRead,
 		GroupsRead,
 		RolesRead,
-		PermissionSetsRead,
 		// Integrations (read only)
 		IntegrationsRead,
 		SCMConnectionsRead,
 		NotificationsRead,
-		WebhooksRead,
 		APIKeysRead,
-		PipelinesRead,
+		ScanWorkflowsRead,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
 		// Attack Surface (read only)
 		ScopeRead,
 		// Validation (legacy)
-		ValidationRead,
+		PentestRead,
 		// Pentest (read only)
 		PentestCampaignsRead, PentestFindingsRead, PentestRetestsRead, PentestTemplatesRead,
 		// Compliance (read only)
-		ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceMappingsRead, ComplianceReportsRead,
+		ComplianceFrameworksRead, ComplianceAssessmentsRead, ComplianceMappingsRead,
 		// Reports (read only)
 		ReportsRead,
 		// Threat Intel (read only)

@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { Upload, X, Image as ImageIcon, Loader2 } from 'lucide-react'
 import { Button } from './button'
 import { cn } from '@/lib/utils'
+import { safeImageSrc } from '@/lib/safe-href'
 
 interface ImageUploadProps {
   value?: string
@@ -202,7 +203,11 @@ export function ImageUpload({
       {/* Preview or Upload area */}
       {value ? (
         <div className="relative inline-block">
-          <img src={value} alt="Uploaded" className="h-20 w-20 rounded-lg object-cover border" />
+          <img
+            src={safeImageSrc(value)}
+            alt="Uploaded"
+            className="h-20 w-20 rounded-lg object-cover border"
+          />
           {!disabled && (
             <Button
               variant="destructive"

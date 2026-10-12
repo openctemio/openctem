@@ -47,6 +47,7 @@ docker run -d --name "$name-off" "${common[@]}" -e GATEWAY=off "$img" >/dev/null
 wait_healthy "$name-off"
 docker exec "$name-off" wget -qO- http://127.0.0.1:8080/health; echo
 docker exec "$name-off" wget -qO /dev/null http://127.0.0.1:3000/login && echo "  ok    web /login on :3000 -> 200"
+docker exec "$name-off" sh -c 'wget -qO- http://127.0.0.1:8080/openapi.yaml | grep -q "^paths:"' && echo "  ok    api /openapi.yaml on :8080 -> spec"
 docker exec "$name-off" sh -c 'netstat -ltn 2>/dev/null | grep -E ":(8080|3000|443) " || true'
 docker logs "$name-off" 2>&1 | grep -oE '^\[(supervise|migrate|api|web|gateway)\]' | sort | uniq -c
 docker rm -f "$name-off" >/dev/null

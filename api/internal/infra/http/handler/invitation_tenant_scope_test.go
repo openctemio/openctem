@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -23,14 +23,17 @@ type invScopeRepo struct {
 	deletedInv []shared.ID
 }
 
-func (r *invScopeRepo) GetInvitationByID(_ context.Context, id shared.ID) (*tenantdom.Invitation, error) {
-	if r.inv != nil && r.inv.ID() == id {
+func (r *invScopeRepo) GetInvitationByID(_ context.Context, tenantID, id shared.ID) (*tenantdom.Invitation, error) {
+	if r.inv != nil && r.inv.ID() == id && r.inv.TenantID() == tenantID {
 		return r.inv, nil
 	}
 	return nil, shared.ErrNotFound
 }
 
-func (r *invScopeRepo) DeleteInvitation(_ context.Context, id shared.ID) error {
+func (r *invScopeRepo) DeleteInvitation(_ context.Context, tenantID, id shared.ID) error {
+	if r.inv == nil || r.inv.ID() != id || r.inv.TenantID() != tenantID {
+		return shared.ErrNotFound
+	}
 	r.deletedInv = append(r.deletedInv, id)
 	return nil
 }
@@ -48,7 +51,7 @@ func ctxWith(pathTenant shared.ID, jwtTenant string) context.Context {
 }
 
 func newInvScopeHandler(repo *invScopeRepo) *TenantHandler {
-	svc := app.NewTenantService(repo, logger.NewNop())
+	svc := tenant.NewTenantService(repo, logger.NewNop())
 	return NewTenantHandler(svc, validator.New(), logger.NewNop())
 }
 

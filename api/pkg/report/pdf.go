@@ -2,13 +2,31 @@ package report
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"github.com/go-pdf/fpdf"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
 
-// translator maps UTF-8 text to the cp1252 charset of the core PDF fonts.
+// The report font is DejaVu Sans, embedded (subset into each PDF) so every
+// language a finding is written in renders, Vietnamese included. The core
+// PDF fonts only cover cp1252. License: fonts/LICENSE-DejaVu.txt.
+const pdfFont = "DejaVu"
+
+var (
+	//go:embed fonts/DejaVuSans.ttf
+	fontRegular []byte
+	//go:embed fonts/DejaVuSans-Bold.ttf
+	fontBold []byte
+	//go:embed fonts/DejaVuSans-Oblique.ttf
+	fontItalic []byte
+)
+
+// translator prepares text for the PDF. With an embedded Unicode font the
+// text is passed as UTF-8, unchanged.
 type translator func(string) string
 
 // GeneratePDF renders a pentest report as a PDF directly from the structured
@@ -18,7 +36,13 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(15, 15, 15)
 	pdf.SetAutoPageBreak(true, 18)
-	tr := translator(pdf.UnicodeTranslatorFromDescriptor("")) // cp1252
+	pdf.AddUTF8FontFromBytes(pdfFont, "", fontRegular)
+	pdf.AddUTF8FontFromBytes(pdfFont, "B", fontBold)
+	pdf.AddUTF8FontFromBytes(pdfFont, "I", fontItalic)
+	if err := pdf.Error(); err != nil {
+		return nil, fmt.Errorf("failed to load the report font: %w", err)
+	}
+	tr := translator(func(s string) string { return s })
 
 	classification := strings.ToUpper(strings.TrimSpace(input.Classification))
 	if classification == "" {
@@ -28,7 +52,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	// Footer: classification + optional watermark + page number on every page.
 	pdf.SetFooterFunc(func() {
 		pdf.SetY(-15)
-		pdf.SetFont("Helvetica", "I", 8)
+		pdf.SetFont(pdfFont, "I", 8)
 		pdf.SetTextColor(140, 140, 140)
 		foot := classification
 		if strings.TrimSpace(input.Watermark) != "" {
@@ -41,15 +65,15 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	pdf.AddPage()
 
 	// Title block.
-	pdf.SetFont("Helvetica", "B", 22)
+	pdf.SetFont(pdfFont, "B", 22)
 	pdf.SetTextColor(20, 20, 20)
 	pdf.MultiCell(0, 10, tr(input.TypeLabel()), "", "L", false)
 	if input.Campaign.Name != "" {
-		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetFont(pdfFont, "B", 14)
 		pdf.SetTextColor(70, 70, 70)
 		pdf.MultiCell(0, 8, tr(input.Campaign.Name), "", "L", false)
 	}
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFont, "", 10)
 	pdf.SetTextColor(120, 120, 120)
 	pdf.CellFormat(0, 6, tr(fmt.Sprintf("Classification: %s     Generated: %s",
 		classification, input.GeneratedAt.Format("2006-01-02 15:04 MST"))), "", 1, "L", false, 0, "")
@@ -60,8 +84,9 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	for _, row := range [][2]string{
 		{"Client", input.Campaign.ClientName},
 		{"Contact", input.Campaign.ClientContact},
-		{"Type", input.Campaign.Type},
-		{"Priority", input.Campaign.Priority},
+		{"Targets", input.Campaign.Type},
+		{"Environment", input.Campaign.Environment},
+		{"TLP", input.Campaign.TLP},
 		{"Status", input.Campaign.Status},
 		{"Start date", input.Campaign.StartDate},
 		{"End date", input.Campaign.EndDate},
@@ -73,7 +98,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	}
 	if strings.TrimSpace(input.Campaign.Description) != "" {
 		pdf.Ln(2)
-		bodyText(pdf, tr, input.Campaign.Description)
+		writeMarkdown(pdf, tr, input.Campaign.Description, input.Images)
 	}
 
 	// Team.
@@ -105,7 +130,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 			bodyText(pdf, tr, "No findings recorded for this campaign.")
 		}
 		for i, f := range input.Findings {
-			renderFinding(pdf, tr, i+1, f, input.IncludePOC)
+			renderFinding(pdf, tr, i+1, f, input.IncludePOC, input.Images)
 		}
 	} else {
 		// Executive summary: compact findings listing, no per-finding detail.
@@ -138,6 +163,23 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 		}
 	}
 
+	// Methodology coverage.
+	if len(input.Checklists) > 0 {
+		pdf.Ln(4)
+		sectionHeading(pdf, tr, "Methodology Coverage")
+		for _, c := range input.Checklists {
+			name := c.Name
+			if c.StandardVersion != "" {
+				name += " (" + c.StandardVersion + ")"
+			}
+			bulletLine(pdf, tr, fmt.Sprintf("%s: %.1f%% covered - %d passed, %d failed, %d not applicable, %d untested of %d",
+				name, c.Counts.Coverage(), c.Counts.Passed, c.Counts.Failed, c.Counts.NotApplicable, c.Counts.Untested, c.Counts.Total))
+			for _, it := range c.FailedItems {
+				bodyText(pdf, tr, "Failed: "+it.ID+" "+it.Title)
+			}
+		}
+	}
+
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
 		return nil, fmt.Errorf("render pdf: %w", err)
@@ -146,7 +188,7 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 }
 
 func sectionHeading(pdf *fpdf.Fpdf, tr translator, text string) {
-	pdf.SetFont("Helvetica", "B", 13)
+	pdf.SetFont(pdfFont, "B", 13)
 	pdf.SetTextColor(30, 30, 30)
 	pdf.CellFormat(0, 8, tr(text), "", 1, "L", false, 0, "")
 	x, y := pdf.GetX(), pdf.GetY()
@@ -156,23 +198,23 @@ func sectionHeading(pdf *fpdf.Fpdf, tr translator, text string) {
 }
 
 func kvRow(pdf *fpdf.Fpdf, tr translator, label, value string) {
-	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetFont(pdfFont, "B", 10)
 	pdf.SetTextColor(80, 80, 80)
 	pdf.CellFormat(38, 6, tr(label), "", 0, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFont, "", 10)
 	pdf.SetTextColor(40, 40, 40)
 	pdf.MultiCell(0, 6, tr(value), "", "L", false)
 }
 
 func bulletLine(pdf *fpdf.Fpdf, tr translator, text string) {
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFont, "", 10)
 	pdf.SetTextColor(40, 40, 40)
 	pdf.CellFormat(5, 6, tr("-"), "", 0, "L", false, 0, "")
 	pdf.MultiCell(0, 6, tr(text), "", "L", false)
 }
 
 func bodyText(pdf *fpdf.Fpdf, tr translator, text string) {
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFont, "", 10)
 	pdf.SetTextColor(40, 40, 40)
 	pdf.MultiCell(0, 5, tr(text), "", "L", false)
 }
@@ -193,18 +235,18 @@ func statsTable(pdf *fpdf.Fpdf, tr translator, s StatsData) {
 	for _, c := range cells {
 		pdf.SetFillColor(c.r, c.g, c.b)
 		pdf.SetTextColor(255, 255, 255)
-		pdf.SetFont("Helvetica", "B", 10)
+		pdf.SetFont(pdfFont, "B", 10)
 		pdf.CellFormat(w, 8, tr(fmt.Sprintf("%s: %d", c.label, c.count)), "", 0, "C", true, 0, "")
 		pdf.CellFormat(2, 8, "", "", 0, "C", false, 0, "")
 	}
 	pdf.Ln(10)
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFont, "", 10)
 	pdf.SetTextColor(40, 40, 40)
 	pdf.MultiCell(0, 6, tr(fmt.Sprintf("Total findings: %d     Remediation progress: %.0f%%     Avg CVSS: %.1f     Max CVSS: %.1f",
 		s.Total, s.Progress, s.AvgCVSS, s.MaxCVSS)), "", "L", false)
 }
 
-func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includePOC bool) {
+func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includePOC bool, images map[string]markdown.Image) {
 	pdf.Ln(3)
 
 	// Severity badge + title.
@@ -215,11 +257,11 @@ func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includeP
 	}
 	pdf.SetFillColor(sr, sg, sb)
 	pdf.SetTextColor(255, 255, 255)
-	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetFont(pdfFont, "B", 9)
 	pdf.CellFormat(28, 7, tr(sev), "", 0, "C", true, 0, "")
 	pdf.CellFormat(2, 7, "", "", 0, "L", false, 0, "")
 	pdf.SetTextColor(20, 20, 20)
-	pdf.SetFont("Helvetica", "B", 12)
+	pdf.SetFont(pdfFont, "B", 12)
 	pdf.MultiCell(0, 7, tr(fmt.Sprintf("%d. %s", n, f.Title)), "", "L", false)
 
 	// Meta line.
@@ -243,26 +285,26 @@ func renderFinding(pdf *fpdf.Fpdf, tr translator, n int, f FindingData, includeP
 		meta = append(meta, "OWASP: "+f.OWASP)
 	}
 	if len(meta) > 0 {
-		pdf.SetFont("Helvetica", "I", 9)
+		pdf.SetFont(pdfFont, "I", 9)
 		pdf.SetTextColor(110, 110, 110)
 		pdf.MultiCell(0, 5, tr(strings.Join(meta, "   |   ")), "", "L", false)
 	}
 
-	findingField(pdf, tr, "Description", f.Description)
+	markdownField(pdf, tr, "Description", f.Description, images)
 	if len(f.Steps) > 0 {
-		pdf.SetFont("Helvetica", "B", 10)
+		pdf.SetFont(pdfFont, "B", 10)
 		pdf.SetTextColor(80, 80, 80)
 		pdf.CellFormat(0, 6, tr("Steps to reproduce"), "", 1, "L", false, 0, "")
-		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetFont(pdfFont, "", 10)
 		pdf.SetTextColor(40, 40, 40)
 		for i, step := range f.Steps {
 			pdf.CellFormat(8, 5, tr(fmt.Sprintf("%d.", i+1)), "", 0, "L", false, 0, "")
-			pdf.MultiCell(0, 5, tr(step), "", "L", false)
+			writeMarkdown(pdf, tr, step, images)
 		}
 	}
-	findingField(pdf, tr, "Business impact", f.Impact)
-	findingField(pdf, tr, "Technical impact", f.TechImpact)
-	findingField(pdf, tr, "Remediation", f.Remediation)
+	markdownField(pdf, tr, "Business impact", f.Impact, images)
+	markdownField(pdf, tr, "Technical impact", f.TechImpact, images)
+	markdownField(pdf, tr, "Remediation", f.Remediation, images)
 	if includePOC {
 		findingField(pdf, tr, "Proof of concept", f.POC)
 	}
@@ -278,7 +320,7 @@ func findingField(pdf *fpdf.Fpdf, tr translator, label, value string) {
 	if strings.TrimSpace(value) == "" {
 		return
 	}
-	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetFont(pdfFont, "B", 10)
 	pdf.SetTextColor(80, 80, 80)
 	pdf.CellFormat(0, 6, tr(label), "", 1, "L", false, 0, "")
 	bodyText(pdf, tr, value)

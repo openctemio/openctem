@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { type ColumnDef } from '@tanstack/react-table'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -41,6 +41,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -48,14 +49,23 @@ import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 
+import { useDisplayUser } from '@/hooks/use-display-user'
 import {
-  usePendingApprovals,
+  useApprovals,
   useApproveStatus,
   useRejectApproval,
   useCancelApproval,
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
-import { FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { APPROVAL_STATUSES, FINDING_STATUS_CONFIG } from '@/features/findings/types'
+import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
+import { useListParams } from '@/hooks/use-list-params'
+import {
+  approvalTabCounts,
+  canCancelApproval,
+  type ApprovalTab,
+} from '@/features/findings/lib/approvals'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // CONSTANTS
@@ -66,6 +76,7 @@ const APPROVAL_BADGE_STYLES: Record<ApprovalStatus, string> = {
   approved: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
   rejected: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30',
   canceled: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
+  expired: 'bg-muted text-muted-foreground border-border',
 }
 
 const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
@@ -73,7 +84,10 @@ const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
   approved: 'Approved',
   rejected: 'Rejected',
   canceled: 'Canceled',
+  expired: 'Expired',
 }
+
+const APPROVAL_TABS: readonly string[] = ['all', ...APPROVAL_STATUSES]
 
 // ============================================
 // HELPERS
@@ -132,7 +146,13 @@ function ApprovalsLoadingSkeleton() {
 // ============================================
 
 export default function ApprovalsPage() {
-  const [activeTab, setActiveTab] = useState<string>('all')
+  const { t } = useTranslation()
+  // Tab (status) and page live in the URL, like every list.
+  const list = useListParams({ filters: { status: '' } })
+  const activeTab: ApprovalTab = APPROVAL_TABS.includes(list.filters.status)
+    ? (list.filters.status as ApprovalTab)
+    : 'all'
+  const currentUserId = useDisplayUser()?.id
 
   // Action state
   const [approveDialogOpen, setApproveDialogOpen] = useState(false)
@@ -142,8 +162,12 @@ export default function ApprovalsPage() {
   const [rejectionReason, setRejectionReason] = useState('')
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
 
-  // Fetch all approvals once, filter client-side by tab
-  const { data, isLoading, error, mutate } = usePendingApprovals(1, 500)
+  // One server page of the active tab; the counts cover every status.
+  const { data, isLoading, error, mutate } = useApprovals(
+    list.page,
+    list.perPage,
+    activeTab === 'all' ? undefined : activeTab
+  )
 
   // Action hooks
   const { trigger: triggerApprove, isMutating: isApproving } = useApproveStatus(
@@ -156,23 +180,15 @@ export default function ApprovalsPage() {
     selectedApproval?.id ?? ''
   )
 
-  const allApprovals = useMemo(() => data?.data ?? [], [data?.data])
+  const approvals = useMemo(() => data?.data ?? [], [data?.data])
+  const counts = useMemo(() => approvalTabCounts(data?.status_counts), [data?.status_counts])
+  const pageCount = data ? Math.max(1, Math.ceil(data.total / list.perPage)) : 1
 
-  // Compute counts from single fetch
-  const counts = useMemo(() => {
-    const result = { all: 0, pending: 0, approved: 0, rejected: 0, canceled: 0 }
-    for (const a of allApprovals) {
-      result.all++
-      if (a.status in result) result[a.status as keyof typeof result]++
-    }
-    return result
-  }, [allApprovals])
-
-  // Filter by active tab
-  const filteredApprovals = useMemo(() => {
-    if (activeTab === 'all') return allApprovals
-    return allApprovals.filter((a) => a.status === activeTab)
-  }, [allApprovals, activeTab])
+  const { setFilter } = list
+  const changeTab = useCallback(
+    (tab: string) => setFilter('status', tab === 'all' ? '' : tab),
+    [setFilter]
+  )
 
   const isInitialLoading = isLoading && !data
 
@@ -274,17 +290,12 @@ export default function ApprovalsPage() {
       {
         accessorKey: 'finding_id',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Finding" />,
-        cell: ({ row }) => {
-          const findingId = row.getValue('finding_id') as string
-          return (
-            <Link
-              href={`/findings/${findingId}`}
-              className="font-mono text-xs text-primary hover:underline"
-            >
-              {findingId.slice(0, 8)}...
-            </Link>
-          )
-        },
+        cell: ({ row }) => (
+          <ApprovalFindingLink
+            findingId={row.original.finding_id}
+            findingTitle={row.original.finding_title}
+          />
+        ),
         enableSorting: false,
       },
       {
@@ -346,6 +357,7 @@ export default function ApprovalsPage() {
         cell: ({ row }) => {
           const approval = row.original
           if (approval.status !== 'pending') return null
+          const mayCancel = canCancelApproval(approval, currentUserId)
           return (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -372,17 +384,21 @@ export default function ApprovalsPage() {
                     Reject
                   </DropdownMenuItem>
                 </Can>
-                <DropdownMenuItem onClick={() => handleCancelClick(approval)}>
-                  <Ban className="me-2 h-4 w-4" />
-                  Cancel
-                </DropdownMenuItem>
+                {mayCancel && (
+                  <Can permission={Permission.FindingsWrite}>
+                    <DropdownMenuItem onClick={() => handleCancelClick(approval)}>
+                      <Ban className="me-2 h-4 w-4" />
+                      Cancel request
+                    </DropdownMenuItem>
+                  </Can>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )
         },
       },
     ],
-    [actionInProgress, handleApproveClick, handleRejectClick, handleCancelClick]
+    [actionInProgress, handleApproveClick, handleRejectClick, handleCancelClick, currentUserId]
   )
 
   // ============================================
@@ -493,7 +509,7 @@ export default function ApprovalsPage() {
             </div>
 
             {/* Tabs + DataTable */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-6">
+            <Tabs value={activeTab} onValueChange={changeTab} className="mt-6">
               {/* Scroll container with fade indicator on mobile */}
               <div className="relative sm:static">
                 <div className="overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -513,6 +529,9 @@ export default function ApprovalsPage() {
                     <TabsTrigger value="canceled" className="text-xs sm:text-sm shrink-0">
                       Canceled <TabsCount value={counts.canceled} />
                     </TabsTrigger>
+                    <TabsTrigger value="expired" className="text-xs sm:text-sm shrink-0">
+                      Expired <TabsCount value={counts.expired} />
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 {/* Fade indicator for scrollable tabs on mobile */}
@@ -523,9 +542,13 @@ export default function ApprovalsPage() {
                 <div className="mt-4">
                   <DataTable
                     columns={columns}
-                    data={filteredApprovals}
-                    searchPlaceholder="Search by justification..."
-                    searchKey="justification"
+                    data={approvals}
+                    manualPagination
+                    pageCount={pageCount}
+                    rowCount={data?.total ?? 0}
+                    pagination={list.pagination}
+                    onPaginationChange={list.setPagination}
+                    getRowId={(row) => row.id}
                     showColumnToggle={false}
                     emptyMessage="No approval requests"
                     emptyDescription={
@@ -545,16 +568,19 @@ export default function ApprovalsPage() {
       <ConfirmDialog
         open={approveDialogOpen}
         onOpenChange={setApproveDialogOpen}
-        title="Approve Status Change"
-        desc="Are you sure you want to approve this request?"
+        title={t('confirm.findingApproval.approveTitle', 'Approve this status change?')}
+        desc={t(
+          'confirm.findingApproval.approveDesc',
+          'The finding moves to the requested status at once.'
+        )}
         confirmText={
           isApproving ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Approving...
+              {t('confirm.suppression.approving', 'Approving…')}
             </>
           ) : (
-            'Approve'
+            t('confirm.suppression.approve', 'Approve')
           )
         }
         isLoading={isApproving}
@@ -588,31 +614,35 @@ export default function ApprovalsPage() {
 
       {/* Reject Dialog */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Reject Request</DialogTitle>
             <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
           </DialogHeader>
-          {selectedApproval && (
-            <div className="rounded-lg border bg-muted/50 p-3">
-              <p className="text-sm font-medium">
-                {getRequestedStatusLabel(selectedApproval.requested_status)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                {selectedApproval.justification}
+          <DialogBody className="grid gap-4">
+            {selectedApproval && (
+              <div className="rounded-lg border bg-muted/50 p-3">
+                <p className="text-sm font-medium">
+                  {getRequestedStatusLabel(selectedApproval.requested_status)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                  {selectedApproval.justification}
+                </p>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Textarea
+                placeholder="Reason for rejection..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={3}
+                maxLength={2000}
+              />
+              <p className="text-xs text-muted-foreground text-end">
+                {rejectionReason.length}/2000
               </p>
             </div>
-          )}
-          <div className="grid gap-2">
-            <Textarea
-              placeholder="Reason for rejection..."
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              rows={3}
-              maxLength={2000}
-            />
-            <p className="text-xs text-muted-foreground text-end">{rejectionReason.length}/2000</p>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button
               variant="outline"
@@ -643,17 +673,20 @@ export default function ApprovalsPage() {
       <ConfirmDialog
         open={cancelDialogOpen}
         onOpenChange={setCancelDialogOpen}
-        title="Cancel Request"
-        desc="Are you sure you want to cancel this approval request? This action cannot be undone."
-        cancelBtnText="Keep Request"
+        title={t('confirm.findingApproval.cancelTitle', 'Cancel this approval request?')}
+        desc={t(
+          'confirm.findingApproval.cancelDesc',
+          'The request is withdrawn and the finding keeps its current status. This cannot be undone; ask again if needed.'
+        )}
+        cancelBtnText={t('confirm.findingApproval.keep', 'Keep request')}
         confirmText={
           isCancelling ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Canceling...
+              {t('confirm.findingApproval.cancelling', 'Cancelling…')}
             </>
           ) : (
-            'Cancel Request'
+            t('confirm.findingApproval.cancel', 'Cancel request')
           )
         }
         destructive

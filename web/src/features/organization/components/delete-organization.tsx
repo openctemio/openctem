@@ -12,6 +12,7 @@ import { del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * Organization › General › Danger zone: delete the organization.
@@ -26,6 +27,7 @@ import { env } from '@/lib/env'
  * or to onboarding when there is none.
  */
 export function DeleteOrganization() {
+  const { t } = useTranslation()
   const { currentTenant, tenants, switchTeam, loadTenants } = useTenant()
   const { isOwner } = usePermissions()
   const [open, setOpen] = useState(false)
@@ -38,22 +40,31 @@ export function DeleteOrganization() {
     setBusy(true)
     try {
       await del(`/api/v1/tenants/${currentTenant.slug}`)
-      toast.success(`Organization "${name}" deleted`)
-      // A full reload (not router.push) so no cached data of the deleted
-      // organization survives; replace() so Back does not return here.
-      const next = tenants.find((t) => t.id !== currentTenant.id)
-      let target = '/'
-      if (next) {
-        await switchTeam(next.id)
-      } else {
-        removeCookie(env.cookies.tenant)
-        target = '/onboarding/create-team'
-      }
-      window.location.replace(target)
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to delete the organization'))
       setBusy(false)
+      return
     }
+    // The delete succeeded. Anything that fails from here on is only the move
+    // to another organization, so it must never be reported as a failed
+    // delete (the organization is already gone).
+    toast.success(`Organization "${name}" deleted`)
+    // A full reload (not router.push) so no cached data of the deleted
+    // organization survives; replace() so Back does not return here.
+    const next = tenants.find((t) => t.id !== currentTenant.id)
+    let target = '/'
+    if (next) {
+      try {
+        await switchTeam(next.id)
+      } catch {
+        // Fall back to the root; the app picks an organization on load.
+        removeCookie(env.cookies.tenant)
+      }
+    } else {
+      removeCookie(env.cookies.tenant)
+      target = '/onboarding/create-team'
+    }
+    window.location.replace(target)
   }
 
   return (
@@ -81,10 +92,17 @@ export function DeleteOrganization() {
         open={open}
         onOpenChange={setOpen}
         destructive
-        title={`Delete ${name}?`}
-        desc="This deletes the organization and all of its data for every member. It cannot be undone."
+        title={t('confirm.org.deleteTitle', 'Delete the organization {name}?', {
+          name: name ?? '',
+        })}
+        desc={t(
+          'confirm.org.deleteDesc',
+          'The organization and all of its data are deleted for every member: assets, findings, scans, members, roles, settings and its audit log. Member accounts are kept. This cannot be undone.'
+        )}
         typeToConfirm={name}
-        confirmText={busy ? 'Deleting…' : 'Delete organization'}
+        confirmText={
+          busy ? t('confirm.deleting', 'Deleting…') : t('confirm.org.delete', 'Delete organization')
+        }
         isLoading={busy}
         handleConfirm={handleDelete}
       />

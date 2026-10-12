@@ -50,6 +50,7 @@ import {
   isCredentialExpiringSoon,
   formatLastUsed,
 } from '@/lib/api/secret-store-types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const CREDENTIAL_TYPE_ICONS: Record<CredentialType, React.ElementType> = {
   api_key: Key,
@@ -84,6 +85,7 @@ function CredentialStatusBadge({ credential }: { credential: SecretStoreCredenti
 }
 
 export function SecretStoreSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -188,14 +190,14 @@ export function SecretStoreSection() {
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <Can permission={Permission.CredentialsWrite}>
+          <Can permission={[Permission.SecretStoreWrite, Permission.SecretStoreDelete]}>
             <DataTableRowActions
               actions={[
                 {
                   label: 'Edit',
                   icon: Pencil,
                   onClick: () => handleEditCredential(row.original),
-                  permission: Permission.CredentialsWrite,
+                  permission: Permission.SecretStoreWrite,
                 },
                 {
                   label: 'Delete',
@@ -203,7 +205,7 @@ export function SecretStoreSection() {
                   onClick: () => handleDeleteClick(row.original),
                   destructive: true,
                   separatorBefore: true,
-                  permission: Permission.CredentialsWrite,
+                  permission: Permission.SecretStoreDelete,
                 },
               ]}
             />
@@ -226,7 +228,7 @@ export function SecretStoreSection() {
         title="No credentials"
         description="Add credentials to authenticate with template sources."
         action={
-          <Can permission={Permission.CredentialsWrite}>
+          <Can permission={Permission.SecretStoreWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add credential
@@ -254,7 +256,7 @@ export function SecretStoreSection() {
         title="Source credentials"
         description="Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more)."
       >
-        <Can permission={Permission.CredentialsWrite}>
+        <Can permission={Permission.SecretStoreWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Add credential
@@ -284,17 +286,17 @@ export function SecretStoreSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete credential"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedCredential?.name}</strong>? Template
-            sources using this credential will no longer be able to authenticate. This action cannot
-            be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.credential.deleteTitle', 'Delete the credential {name}?', {
+          name: selectedCredential?.name ?? '',
+        })}
+        desc={t(
+          'confirm.credential.deleteDesc',
+          'Template sources that use it can no longer authenticate. The secret cannot be recovered. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
+        typeToConfirm={selectedCredential?.name}
         handleConfirm={handleDeleteConfirm}
       />
     </>

@@ -16,13 +16,17 @@ import (
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/config"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // OAuth errors.
@@ -68,6 +72,8 @@ func (p OAuthProvider) ToAuthProvider() userdom.AuthProvider {
 
 // OAuthService handles OAuth authentication.
 type OAuthService struct {
+	// audit records each sign-in (auth.login), as the password sign-in does.
+	audit            *auditapp.AuditService
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
@@ -79,11 +85,66 @@ type OAuthService struct {
 	// oidcVerifier validates the signed id_token for providers that return one
 	// (Microsoft/Entra), so identity is taken from verified claims rather than
 	// a mutable directory attribute. See getMicrosoftUserInfo.
-	oidcVerifier *oidcVerifier
+	oidcVerifier *oidc.Client
 	// pkceStore holds each login's PKCE code_verifier server-side, keyed by
 	// its state, until the callback consumes it.
 	pkceStore PKCEVerifierStore
+	// signupPolicy decides whether a social sign-in may create an account
+	// (signup.Admit). Nil: TENANT_CREATION_MODE from the config.
+	signupPolicy signupdom.PolicySource
+	// invitations answers whether a pending invitation is addressed to an
+	// email (an invited person may sign up with Google/GitHub/Microsoft).
+	invitations InvitationLookup
+	// identities binds accounts to the provider's (issuer, subject); a login
+	// finds the account by it first (federated_identity.go). Required.
+	identities useridentity.Repository
 }
+
+// InvitationLookup answers whether any organization has a pending invitation
+// for an email. Implemented by the tenant repository.
+type InvitationLookup interface {
+	HasPendingInvitationForEmail(ctx context.Context, email string) (bool, error)
+}
+
+// SetSignupPolicy wires the platform sign-up policy (the console setting).
+// SetAuditService wires the auth.login event for social sign-ins.
+func (s *OAuthService) SetAuditService(a *auditapp.AuditService) { s.audit = a }
+
+func (s *OAuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
+
+// SetInvitationLookup wires the pending-invitation check.
+func (s *OAuthService) SetInvitationLookup(l InvitationLookup) { s.invitations = l }
+
+// invitedPending reports whether a pending invitation is addressed to email.
+// A lookup error counts as not invited (fail-closed).
+func (s *OAuthService) invitedPending(ctx context.Context, email string) bool {
+	if s.invitations == nil {
+		return false
+	}
+	ok, err := s.invitations.HasPendingInvitationForEmail(ctx, email)
+	if err != nil {
+		s.logger.Warn("pending-invitation lookup failed; treating as not invited", "error", err)
+		return false
+	}
+	return ok
+}
+
+// SetIdentityRepo wires the federated identity store.
+func (s *OAuthService) SetIdentityRepo(repo useridentity.Repository) {
+	s.identities = repo
+}
+
+func (s *OAuthService) accounts() federatedAccounts {
+	return federatedAccounts{identities: s.identities, users: s.userRepo, logger: s.logger}
+}
+
+// Issuers of the social providers that have no id_token on this path: the
+// identity comes from the provider's own API over the access token, so only
+// that provider can produce it.
+const (
+	googleIssuer = "https://accounts.google.com"
+	githubIssuer = "https://github.com"
+)
 
 // SetPKCEStore replaces the PKCE verifier store. Production wires the Redis
 // store so a login started on one replica can finish on another; the default
@@ -130,7 +191,7 @@ func NewOAuthService(
 		// redirect ever lands on a tenant-controlled host, the dialer
 		// refuses the connection instead of silently following.
 		httpClient:   httpsec.SafeHTTPClient(30 * time.Second),
-		oidcVerifier: newOIDCVerifier(httpsec.SafeHTTPClient(30*time.Second), log),
+		oidcVerifier: newOIDCClient(httpsec.SafeHTTPClient(30 * time.Second)),
 		pkceStore:    NewMemoryPKCEStore(),
 	}
 }
@@ -462,13 +523,13 @@ func (s *OAuthService) exchangeCode(ctx context.Context, provider OAuthProvider,
 	defer resp.Body.Close()
 
 	// SECURITY: Limit response body to 1MB to prevent memory exhaustion
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := httpsec.ReadLimited(resp.Body, 1<<20)
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed: %s", string(body))
+		return nil, fmt.Errorf("token exchange failed: %w", httpsec.NewUpstreamStatusError(ctx, "oauth provider", resp.StatusCode, body))
 	}
 
 	var tokens oauthTokens
@@ -485,11 +546,15 @@ type OAuthUserInfo struct {
 	Email     string
 	Name      string
 	AvatarURL string
-	// Issuer + Subject are the immutable federated identity from a verified
-	// id_token (set for Microsoft). When present, the account is bound to and
-	// matched by this pair rather than the mutable email alone.
+	// Issuer + Subject are the provider's immutable user id: from the verified
+	// id_token for Microsoft (keyed on oid), from the provider API for Google
+	// (sub) and GitHub (numeric id). The account is found by this pair first;
+	// the email is a mutable attribute (federated_identity.go).
 	Issuer  string
 	Subject string
+	// LegacySubject is the subject the identity was bound under before
+	// (Microsoft: sub); a binding found under it is re-keyed to Subject.
+	LegacySubject string
 }
 
 // getUserInfo fetches user information from the OAuth provider.
@@ -524,7 +589,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("failed to get user info: %s", string(body))
+		return nil, fmt.Errorf("failed to get user info: %w", httpsec.NewUpstreamStatusError(ctx, "oauth provider", resp.StatusCode, body))
 	}
 
 	var data struct {
@@ -534,7 +599,7 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 		Picture       string `json:"picture"`
 		EmailVerified bool   `json:"verified_email"` // Google uses "verified_email" in v2
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &data); err != nil {
 		return nil, err
 	}
 
@@ -548,6 +613,9 @@ func (s *OAuthService) getGoogleUserInfo(ctx context.Context, accessToken string
 		Email:     data.Email,
 		Name:      data.Name,
 		AvatarURL: data.Picture,
+		// The v2 userinfo id is the Google account id, the OIDC sub.
+		Issuer:  googleIssuer,
+		Subject: data.ID,
 	}, nil
 }
 
@@ -570,7 +638,7 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("failed to get user info: %s", string(body))
+		return nil, fmt.Errorf("failed to get user info: %w", httpsec.NewUpstreamStatusError(ctx, "oauth provider", resp.StatusCode, body))
 	}
 
 	var userData struct {
@@ -580,7 +648,7 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 		Email     string `json:"email"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&userData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &userData); err != nil {
 		return nil, err
 	}
 
@@ -598,11 +666,17 @@ func (s *OAuthService) getGitHubUserInfo(ctx context.Context, accessToken string
 		name = userData.Login
 	}
 
+	ghID := ""
+	if userData.ID > 0 {
+		ghID = fmt.Sprintf("%d", userData.ID)
+	}
 	return &OAuthUserInfo{
-		ID:        fmt.Sprintf("%d", userData.ID),
+		ID:        ghID,
 		Email:     email,
 		Name:      name,
 		AvatarURL: userData.AvatarURL,
+		Issuer:    githubIssuer,
+		Subject:   ghID,
 	}, nil
 }
 
@@ -630,7 +704,7 @@ func (s *OAuthService) getGitHubPrimaryEmail(ctx context.Context, accessToken st
 		Primary  bool   `json:"primary"`
 		Verified bool   `json:"verified"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &emails); err != nil {
 		return "", err
 	}
 
@@ -677,11 +751,11 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 		return nil, ErrInvalidProvider
 	}
 
-	claims, err := s.oidcVerifier.verify(ctx, idToken, idTokenExpectations{
-		jwksURL:        "https://login.microsoftonline.com/common/discovery/v2.0/keys",
-		audience:       cfg.ClientID,
-		validateIssuer: entraIssuerValidator("common"),
-		skipNonce:      true, // code flow: id_token delivered server-to-server
+	claims, err := s.oidcVerifier.VerifyIDToken(ctx, idToken, oidc.Expectations{
+		JWKSURI:    "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+		ClientID:   cfg.ClientID,
+		IssuerRule: oidc.EntraIssuer("common"),
+		SkipNonce:  true, // code flow: id_token delivered server-to-server
 	})
 	if err != nil {
 		return nil, fmt.Errorf("microsoft id_token verification failed: %w", err)
@@ -699,36 +773,58 @@ func (s *OAuthService) getMicrosoftUserInfo(ctx context.Context, idToken string)
 // microsoftUserInfoFromClaims applies the nOAuth email-verification gate to
 // already-verified Entra id_token claims and maps them to OAuthUserInfo. It is
 // the security-critical mapping (the signature/issuer/audience checks are done
-// by oidcVerifier.verify), so it is a pure function to keep it unit-testable.
-func microsoftUserInfoFromClaims(claims *oidcClaims) (*OAuthUserInfo, error) {
-	if claims.XMSEdov == nil || !*claims.XMSEdov {
+// by pkg/oidc), so it is a pure function to keep it unit-testable.
+func microsoftUserInfoFromClaims(claims *oidc.Claims) (*OAuthUserInfo, error) {
+	if !bool(claims.XMSEdov) {
 		return nil, errors.New("email not verified by Microsoft (email domain not owner-verified)")
 	}
 	if strings.TrimSpace(claims.Email) == "" {
 		return nil, errors.New("microsoft id_token has no email claim")
 	}
+	subject, legacy := entraSubject(claims)
 	return &OAuthUserInfo{
-		ID:      claims.Subject,
-		Email:   claims.Email,
-		Name:    claims.Name,
-		Issuer:  claims.Issuer,
-		Subject: claims.Subject,
+		ID:            claims.Subject,
+		Email:         claims.Email,
+		Name:          claims.Name,
+		Issuer:        claims.Issuer,
+		Subject:       subject,
+		LegacySubject: legacy,
 	}, nil
 }
 
-// findOrCreateUser finds an existing user or creates a new one.
+// findOrCreateUser finds the account of a social login or creates one.
+//
+// The provider's (issuer, subject) finds a returning account first; the email
+// it sends now replaces the old one when no other account holds it (the
+// provider verified it). Only an unknown identity falls back to the email,
+// under the takeover guards, and is then bound to the account.
 func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUserInfo, provider OAuthProvider) (*userdom.User, error) {
-	// Try to find existing user by email
+	acc := s.accounts()
+	key := useridentity.Key{Issuer: userInfo.Issuer, Subject: userInfo.Subject}
+	if key.Valid() {
+		u, ident, err := acc.lookup(ctx, key, userInfo.LegacySubject)
+		if err != nil {
+			return nil, fmt.Errorf("resolve federated identity: %w", err)
+		}
+		if u != nil {
+			prev, changed := acc.adoptProviderEmail(ctx, u, userInfo.Email, nil)
+			u.UpdateLastLogin()
+			acc.saveLogin(ctx, u, prev, changed)
+			acc.markUsed(ctx, ident)
+			return u, nil
+		}
+	}
+
 	existingUser, err := s.userRepo.GetByEmail(ctx, userInfo.Email)
 	if err == nil && existingUser != nil {
 		// SECURITY: an account is bound to the auth provider that created it.
-		// Users are matched by email, but a verified email at one IdP does NOT
-		// prove ownership of an account created at another. On a provider
-		// mismatch the ONLY safe adoption is a CLAIMABLE LOCAL account (invited,
-		// no password yet) signing in via its IdP for the first time. Block
-		// every other mismatch — a password-backed local account AND a different
-		// federated provider (e.g. account created via Google, login attempted
-		// via GitHub) — otherwise it is a cross-IdP account takeover.
+		// A verified email at one IdP does NOT prove ownership of an account
+		// created at another. On a provider mismatch the ONLY safe adoption is
+		// a CLAIMABLE LOCAL account (invited, no password yet) signing in via
+		// its IdP for the first time. Block every other mismatch — a
+		// password-backed local account AND a different federated provider
+		// (e.g. account created via Google, login attempted via GitHub) —
+		// otherwise it is a cross-IdP account takeover.
 		existingProvider := existingUser.AuthProvider()
 		expectedProvider := provider.ToAuthProvider()
 
@@ -740,28 +836,29 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 					"existing_provider", existingProvider,
 					"oauth_provider", expectedProvider,
 				)
-				return nil, fmt.Errorf("this email is registered with a different login method")
+				return nil, errors.New("this email is registered with a different login method")
 			}
 		}
 
-		// Defense-in-depth: when the provider supplied a verified federated
-		// identity (issuer+subject from a signed id_token, e.g. Microsoft), pin
-		// the account to it. If already pinned, a DIFFERENT identity presenting
-		// the same email is rejected; otherwise bind it now (safe here — the
-		// email was domain-verified before we reached this point).
-		if userInfo.Issuer != "" && userInfo.Subject != "" {
-			if boundIss, boundSub := existingUser.FederatedIssuer(), existingUser.FederatedSubject(); boundIss != nil && boundSub != nil {
-				if *boundIss != userInfo.Issuer || *boundSub != userInfo.Subject {
-					s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
-						"email", userInfo.Email, "oauth_provider", expectedProvider)
-					return nil, fmt.Errorf("this email is registered with a different login method")
-				}
-			} else {
-				existingUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
+		// The identity was not found above. An account bound to another
+		// subject at this provider, or to another issuer, belongs to a
+		// different identity: refuse. Otherwise bind this one (the account
+		// email matches the provider-verified email).
+		if key.Valid() {
+			sameIssuer, otherIssuer, berr := acc.boundIdentities(ctx, existingUser, key)
+			if berr != nil {
+				return nil, fmt.Errorf("check federated identities: %w", berr)
+			}
+			if sameIssuer || otherIssuer != nil {
+				s.logger.Warn("OAuth login blocked: federated identity mismatch for email",
+					"email", userInfo.Email, "oauth_provider", expectedProvider)
+				return nil, errors.New("this email is registered with a different login method")
+			}
+			if berr := acc.bind(ctx, existingUser, key); berr != nil {
+				return nil, errors.New("this email is registered with a different login method")
 			}
 		}
 
-		// Update last login
 		existingUser.UpdateLastLogin()
 		if err := s.userRepo.Update(ctx, existingUser); err != nil {
 			s.logger.Warn("failed to update last login", "error", err)
@@ -769,26 +866,30 @@ func (s *OAuthService) findOrCreateUser(ctx context.Context, userInfo *OAuthUser
 		return existingUser, nil
 	}
 
-	// SECURITY (FIX 4): when public registration is disabled, social login may
-	// only bind to an existing/pre-invited account (handled above) — it must NOT
-	// create a brand-new user. Reaching here means no account exists, so refuse.
-	if !s.authConfig.AllowRegistration {
-		s.logger.Warn("OAuth login refused: registration disabled and no account exists",
-			"email", userInfo.Email, "provider", provider)
-		return nil, ErrRegistrationDisabled
+	// SECURITY (FIX 4, sign-up policy): no account exists, so this sign-in
+	// would create one. It may only when the sign-up policy admits it
+	// (signup.Admit): self-service sign-up, or a pending invitation for this
+	// verified email. Otherwise nothing is written (no orphan account).
+	if !signupdom.Admit(policyOrConfig(ctx, s.signupPolicy, s.authConfig), signupdom.Identity{
+		Intent:          signupdom.IntentAccount,
+		InvitedPending:  s.invitedPending(ctx, userInfo.Email),
+		DisposableEmail: disposableEmail(userInfo.Email),
+	}).Admitted() {
+		s.logger.Warn("OAuth sign-up refused by the sign-up policy", "provider", provider)
+		return nil, ErrSignupNotAvailable
 	}
 
-	// Create new user
 	newUser, err := userdom.NewOAuthUser(userInfo.Email, userInfo.Name, userInfo.AvatarURL, provider.ToAuthProvider())
 	if err != nil {
 		return nil, err
 	}
-	if userInfo.Issuer != "" && userInfo.Subject != "" {
-		newUser.BindFederatedIdentity(userInfo.Issuer, userInfo.Subject)
-	}
-
 	if err := s.userRepo.Create(ctx, newUser); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+	if key.Valid() {
+		if err := acc.bind(ctx, newUser, key); err != nil {
+			return nil, fmt.Errorf("bind new account: %w", err)
+		}
 	}
 
 	s.logger.Info("created OAuth user", "user_id", newUser.ID().String(), "email", userInfo.Email, "provider", provider)
@@ -819,19 +920,22 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	}
 
 	// Create session under the same id embedded in the token.
+	ci := clientInfoFrom(ctx)
 	newSession, err := sessiondom.NewWithID(
 		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
-		"", // IP address - can be set from request context
-		"", // User agent - can be set from request context
+		ci.IP,
+		ci.UserAgent,
 		s.authConfig.SessionDuration,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
-	// Social OAuth is a federated login — stamp 'sso' so it is exempt from
-	// password-only per-tenant SSO enforcement.
+	// Social OAuth (GitHub/Google/personal Microsoft) is a federated login, so
+	// it is stamped 'sso', but no organization's identity provider issued it:
+	// no issuing tenant is recorded, so it is exempt from NO organization's SSO
+	// enforcement or 2FA requirement (Session.FederatedFor).
 	newSession.SetAuthMethod(sessiondom.AuthMethodSSO)
 
 	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
@@ -852,6 +956,7 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	if err := s.refreshTokenRepo.Create(ctx, refreshTokenEntity); err != nil {
 		return nil, fmt.Errorf("failed to save refresh token: %w", err)
 	}
+	auditFederatedLogin(ctx, s.audit, s.logger, u, "", sessionID.String(), "oauth", string(u.AuthProvider()))
 
 	return &SessionResult{
 		AccessToken:  tokenPair.AccessToken,

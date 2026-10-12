@@ -23,25 +23,60 @@ import (
 //	Group                     Read (GET)        Write (POST/PATCH/DELETE)
 //	------------------------  ----------------  --------------------------
 //	/admin/auth/validate      any admin         —
+//	/admin/overview           any admin         —
+//	/admin/operations         any admin         —
+//	/admin/announcements      any admin         ops_admin+ + reason (audited)
+//	/admin/console-sessions   super_admin       super_admin + reason + fresh TOTP
+//	                                            code (audited high)
+//	/admin/platform-users     any admin (view   ops_admin+, reason, rate-limited,
+//	                          audited)          audited; platform admins refused
 //	/admin/users              super_admin       super_admin (+ audited)
 //	/admin/administrators     —                 super_admin (audited)
 //	/admin/audit-logs         any admin         —
 //	/admin/target-mappings    any admin         ops_admin+ (+ audited)
 //	/admin/threat-intel       any admin         ops_admin+ (+ audited)
 //	/admin/platform-idp       super_admin       super_admin (audited)
+//	/admin/access-requests    any admin         ops_admin+ (approve/reject, audited)
+//	/admin/settings/plans     any admin         super_admin + fresh TOTP code
+//	/admin/settings/plan-modules
+//	                          any admin         super_admin + fresh TOTP code
+//	/admin/tenants/{id}/plan  any admin         ops_admin+ (plan, overrides; audited)
+//	/admin/tenants/{id}/modules
+//	                          any admin         ops_admin+ (grant/deny; audited)
+//	/admin/settings/signup    any admin         super_admin + fresh TOTP code
+//	                                            (critical audit, admins emailed)
+//	/admin/settings/legal     any admin         super_admin + fresh TOTP code
+//	                                            (critical audit; read publicly
+//	                                            at GET /api/v1/legal)
+//	/admin/settings/email     any admin         super_admin + fresh TOTP code
+//	                                            (critical audit, password never
+//	                                            returned); test: super_admin,
+//	                                            to the caller's address only
+//	/admin/settings/scan-approval-policy, /admin/tenants/{id}/scan-approval-policy
+//	                          any admin         super_admin + fresh TOTP code +
+//	                                            reason (critical audit, admins
+//	                                            emailed, tenant admins told)
+//	/admin/tenants/{id}/audit-chain
+//	                          any admin         rebaseline: super_admin + fresh
+//	                                            TOTP code (audited, both logs)
+//	/admin/content-packs      any admin         super_admin + reason + fresh TOTP
+//	                                            code (audited with the reason)
+//	/admin/program-feed       any admin         local bundle switch: super_admin +
+//	                                            reason + fresh TOTP code (audited)
 //	/admin/auth/idp*          public (sign-in)  public, rate-limited
 //
 // Roles (pkg/domain/admin): super_admin > ops_admin > readonly.
 
 // registerAdminRoutes registers all platform admin endpoints.
 // These are privileged operations for managing shared infrastructure.
-// Note: authMiddleware and userSyncMiddleware are kept for interface compatibility
-// but not used: admin routes authenticate the console session.
+// Admin routes authenticate the console session, not the tenant session.
+// crossSite (middleware.RejectCrossSiteBrowser; nil in route-shape tests)
+// guards the console's sign-in steps, which run before a console session and
+// its admin_csrf cookie exist.
 func registerAdminRoutes(
 	router Router,
 	h Handlers,
-	_ Middleware, // authMiddleware - unused, admin uses the console session
-	_ Middleware, // userSyncMiddleware - unused, admin uses the console session
+	crossSite Middleware,
 ) {
 	// ==========================================================================
 	// Console-session authenticated routes
@@ -64,7 +99,7 @@ func registerAdminRoutes(
 	// refresh-token cookie names the user, /session opens a pending console
 	// session and /mfa completes it. They share the tenant login's rate limits.
 	if h.AdminAuth != nil || h.AdminConsole != nil {
-		consoleRL := middleware.NewAuthRateLimiter(middleware.DefaultAuthRateLimitConfig(), nil)
+		consoleRL := newAuthRateLimiter("console")
 		loginRL := consoleRL.LoginMiddleware()
 		authed := h.AdminAuthMiddleware.Authenticate
 
@@ -73,9 +108,9 @@ func registerAdminRoutes(
 				r.GET("/validate", h.AdminAuth.Validate, authed)
 			}
 			if h.AdminConsole != nil {
-				r.POST("/session", h.AdminConsole.StartSession, loginRL)
-				r.POST("/mfa", h.AdminConsole.VerifyMFA, loginRL)
-				r.POST("/logout", h.AdminConsole.Logout)
+				r.POST("/session", h.AdminConsole.StartSession, preSession(crossSite, loginRL)...)
+				r.POST("/mfa", h.AdminConsole.VerifyMFA, preSession(crossSite, loginRL)...)
+				r.POST("/logout", h.AdminConsole.Logout, preSession(crossSite)...)
 				r.POST("/password", h.AdminConsole.ChangePassword, consoleRL.PasswordMiddleware(), authed)
 				// Platform identity provider sign-in (RFC-022 revision 4). Not a
 				// credential-guessing surface (the IdP authenticates, the state is
@@ -86,14 +121,165 @@ func registerAdminRoutes(
 				// the login bucket.
 				idpRL := consoleRL.TokenExchangeMiddleware()
 				r.GET("/idp", h.AdminConsole.IdPInfo)
-				r.POST("/idp/start", h.AdminConsole.IdPStart, idpRL)
-				r.POST("/idp/callback", h.AdminConsole.IdPCallback, idpRL)
+				r.POST("/idp/start", h.AdminConsole.IdPStart, preSession(crossSite, idpRL)...)
+				r.POST("/idp/callback", h.AdminConsole.IdPCallback, preSession(crossSite, idpRL)...)
 			}
 		})
 	}
 
 	// Build identity for the console's Help > About (any admin role).
 	router.GET("/api/v1/admin/version", handler.Version, adminMiddlewares...)
+
+	// The console overview's attention queue (any admin role): counts only,
+	// no tenant content and no administrator emails.
+	if h.AdminOverview != nil {
+		router.GET("/api/v1/admin/overview", h.AdminOverview.Get, adminMiddlewares...)
+	}
+	// System > Announcements: any admin reads; ops_admin+ publishes or ends
+	// one with a reason (audited).
+	if h.Announcement != nil {
+		opsAnn := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		annAudit := func(action string) []Middleware {
+			out := cloneMW(opsAnn)
+			if h.AdminAuditMiddleware != nil {
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "announcement", "announcement_id"))
+			}
+			return out
+		}
+		router.Group("/api/v1/admin/announcements", func(r Router) {
+			r.GET("/", h.Announcement.AdminList)
+			r.POST("/", h.Announcement.AdminCreate, annAudit("announcement.create")...)
+			r.POST("/{announcement_id}/cancel", h.Announcement.AdminEnd, annAudit("announcement.cancel")...)
+		}, adminMiddlewares...)
+	}
+
+	// Console > Operations (any admin role): build, schema, database, Redis,
+	// work queues, sensor versions, controllers. Infrastructure facts only.
+	if h.AdminOperations != nil {
+		router.GET("/api/v1/admin/operations", h.AdminOperations.Get, adminMiddlewares...)
+	}
+
+	// Plan defaults (Console > System > Plans): any admin reads; a super admin
+	// changes them with a fresh authenticator code (checked in the handler,
+	// audited, the other administrators told).
+	if h.Plan != nil {
+		requireSuperPlans := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/plans", func(r Router) {
+			r.GET("/", h.Plan.GetDefaults)
+			r.PUT("/", h.Plan.UpdateDefaults, requireSuperPlans)
+		}, adminMiddlewares...)
+		// The modules of each plan (RFC-064): same rule as the plan limits.
+		router.Group("/api/v1/admin/settings/plan-modules", func(r Router) {
+			r.GET("/", h.Plan.GetPlanModules)
+			r.PUT("/", h.Plan.UpdatePlanModules, requireSuperPlans)
+		}, adminMiddlewares...)
+	}
+
+	// The sign-up policy (Console > System > Sign-up): who may create an
+	// organization. Any admin reads; a super admin changes it with a fresh
+	// authenticator code (checked in the handler, which also writes the
+	// critical audit row and tells the other administrators).
+	// One group per prefix (chi cannot mount the same prefix twice): the
+	// super-admin guard is on the PUT route.
+	if h.AdminSignup != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/signup", func(r Router) {
+			r.GET("/", h.AdminSignup.Get)
+			r.PUT("/", h.AdminSignup.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Platform e-mail (Console > System > E-mail, RFC-079): any admin reads;
+	// a super admin changes it with a fresh authenticator code and sends the
+	// test message (to their own address only).
+	if h.AdminEmail != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/email", func(r Router) {
+			r.GET("/", h.AdminEmail.Get)
+			r.PUT("/", h.AdminEmail.Update, requireSuper)
+			r.POST("/test", h.AdminEmail.SendTest, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Legal information (Console > System > Legal, RFC-079): any admin reads;
+	// a super admin changes it with a fresh authenticator code.
+	if h.AdminLegal != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/legal", func(r Router) {
+			r.GET("/", h.AdminLegal.Get)
+			r.PUT("/", h.AdminLegal.Update, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Scope-widening approvals (RFC-054 §12.6): any admin reads; a super
+	// admin changes the platform default with a fresh authenticator code and
+	// a reason (checked in the handler; the service audits and notifies).
+	if h.AdminScanPolicy != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/scan-approval-policy", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetDefault)
+			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper)
+		}, adminMiddlewares...)
+		// Verified domain before platform sensors scan (RFC-054 §8.1):
+		// same gate, step-up and audit.
+		router.Group("/api/v1/admin/settings/platform-sensor-proof", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetProof)
+			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// The request-access queue: any admin reads; approving (creates the
+	// organization, requester as owner) or rejecting needs ops_admin+, audited.
+	if h.AccessRequest != nil {
+		requireOps := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)
+		decide := func(action string) []Middleware {
+			mws := []Middleware{requireOps}
+			if h.AdminAuditMiddleware != nil {
+				mws = append(mws, h.AdminAuditMiddleware.AuditLog(action, "access_request", "id"))
+			}
+			return mws
+		}
+		router.Group("/api/v1/admin/access-requests", func(r Router) {
+			r.GET("/", h.AccessRequest.List)
+			r.POST("/{id}/approve", h.AccessRequest.Approve, decide("access_request.approve")...)
+			r.POST("/{id}/reject", h.AccessRequest.Reject, decide("access_request.reject")...)
+		}, adminMiddlewares...)
+	}
+
+	// Platform content packs (RFC-061): any admin reads; ingesting (upload or
+	// an upstream release by URL with a required digest), revoking and moving
+	// a channel need super_admin and are audited. A platform pack reaches the
+	// platform's sensors of every organization.
+	// Program feed sources (RFC-065 §16.6): any admin reads; switching the
+	// operator's local bundle needs super_admin, a reason and a fresh console
+	// authenticator code (checked in the handler, audited high).
+	if h.AdminProgramFeed != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		f := h.AdminProgramFeed
+		router.Group("/api/v1/admin/program-feed", func(r Router) {
+			r.GET("/", f.Status)
+			r.PUT("/local-bundle", f.SetLocalBundle, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	if h.PlatformContentPack != nil {
+		// Writes: super_admin here; the handler adds the reason, a fresh
+		// console authenticator code (confirmAdminStepUp) and its own admin
+		// audit row carrying the reason.
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		p := h.PlatformContentPack
+		router.Group("/api/v1/admin/content-packs", func(r Router) {
+			r.GET("/", p.List)
+			r.GET("/channels", p.Channels)
+			r.GET("/signing-key", p.SigningKey)
+			r.GET("/{id}", p.Get)
+			r.GET("/{id}/download", p.Download)
+			r.POST("/", p.Upload, requireSuper)
+			r.POST("/import", p.Import, requireSuper)
+			r.POST("/{id}/revoke", p.Revoke, requireSuper)
+			r.PUT("/channels/{channel}", p.SetChannel, requireSuper)
+		}, adminMiddlewares...)
+	}
 
 	// Provisioning a platform administrator (links or creates the users-table
 	// account they sign in with). Super admin only; the service writes the
@@ -160,6 +346,12 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
 				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
 			}
+			// SAML and identity-provider creates/updates from here wait for an
+			// owner of the organization (unless it has no owner yet); the
+			// admin sees what is pending.
+			if h.SSOChange != nil {
+				r.GET("/{tenantId}/sso/changes", h.SSOChange.AdminList, read...)
+			}
 			if h.SSO != nil {
 				r.GET("/{tenantId}/sso/identity-providers", h.SSO.ListProviders, read...)
 				r.POST("/{tenantId}/sso/identity-providers", h.SSO.CreateProvider, write("organization.idp_create")...)
@@ -167,13 +359,95 @@ func registerAdminRoutes(
 				r.PUT("/{tenantId}/sso/identity-providers/{id}", h.SSO.UpdateProvider, write("organization.idp_update")...)
 				r.DELETE("/{tenantId}/sso/identity-providers/{id}", h.SSO.DeleteProvider, write("organization.idp_delete")...)
 			}
+			// The organization's audit hash-chain: classify (any admin) and
+			// rebaseline (super_admin). The rebaseline handler also demands a
+			// fresh authenticator code and writes its own high-severity admin
+			// audit row (with the rebaseline id and the outcome), so it does not
+			// take the generic audit middleware.
+			if h.AdminAuditChain != nil {
+				r.GET("/{tenantId}/audit-chain", h.AdminAuditChain.Classify, read...)
+				r.POST("/{tenantId}/audit-chain/rebaseline", h.AdminAuditChain.Rebaseline, superWrite, scope)
+			}
+
+			// Plan and limits of one organization: any admin reads (with
+			// the over-limit flag); ops_admin+ changes the plan or sets a
+			// per-organization limit (audited by the service).
+			// Idle lifecycle of a Free organization: any admin reads;
+			// ops_admin+ exempts it (audited by the service).
+			if h.IdleWorkspace != nil {
+				r.GET("/{tenantId}/idle", h.IdleWorkspace.Get, read...)
+				r.PUT("/{tenantId}/idle/exemption", h.IdleWorkspace.SetExemption, with([]Middleware{opsWrite, scope})...)
+			}
+
+			if h.Plan != nil {
+				r.GET("/{tenantId}/plan", h.Plan.GetTenantPlan, read...)
+				r.PUT("/{tenantId}/plan", h.Plan.SetTenantPlan, with([]Middleware{opsWrite, scope})...)
+				r.PUT("/{tenantId}/plan/overrides/{key}", h.Plan.SetOverride, with([]Middleware{opsWrite, scope})...)
+				r.DELETE("/{tenantId}/plan/overrides/{key}", h.Plan.DeleteOverride, with([]Middleware{opsWrite, scope})...)
+				// Module entitlements of one organization (RFC-064): any admin
+				// reads; ops_admin+ grants a module beyond the plan (a trial, an
+				// add-on) or denies one (audited by the service).
+				r.GET("/{tenantId}/modules", h.Plan.GetTenantModules, read...)
+				r.PUT("/{tenantId}/modules/{module_id}/grant", h.Plan.SetModuleGrant, with([]Middleware{opsWrite, scope})...)
+				r.DELETE("/{tenantId}/modules/{module_id}/grant", h.Plan.DeleteModuleGrant, with([]Middleware{opsWrite, scope})...)
+			}
+
+			// The organization's scope approval policy (RFC-054 §12.6): any
+			// admin reads; a super admin changes it with a fresh code and a
+			// reason (the service writes the critical audit row).
+			if h.AdminScanPolicy != nil {
+				r.GET("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.GetOrganization, read...)
+				r.PUT("/{tenantId}/scan-approval-policy", h.AdminScanPolicy.UpdateOrganization, superWrite, scope)
+			}
+
 			if h.VerifiedDomain != nil {
 				r.GET("/{tenantId}/sso/verified-domains", h.VerifiedDomain.List, read...)
 				r.POST("/{tenantId}/sso/verified-domains", h.VerifiedDomain.AddDomain, write("organization.domain_add")...)
 				r.POST("/{tenantId}/sso/verified-domains/{id}/verify", h.VerifiedDomain.Verify, write("organization.domain_verify")...)
 				r.DELETE("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.Delete, write("organization.domain_delete")...)
+				r.PATCH("/{tenantId}/sso/verified-domains/{id}", h.VerifiedDomain.UpdateJIT, write("organization.domain_jit")...)
 			}
 		}, adminMiddlewares...)
+	}
+
+	// Console > Users (RFC-022): find an account across
+	// organizations (any admin; viewing one is audited) and run a support
+	// action on it (ops_admin+, reason required, rate-limited, audited).
+	// Account-level facts only, never organization data.
+	if h.AdminPlatformUser != nil {
+		opsSupport := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+		if h.AdminSupportRateLimiter != nil {
+			opsSupport = append(opsSupport, h.AdminSupportRateLimiter.WriteMiddleware())
+		}
+		audited := func(action string, base []Middleware) []Middleware {
+			out := cloneMW(base)
+			if h.AdminAuditMiddleware != nil {
+				out = append(out, h.AdminAuditMiddleware.AuditLog(action, "user", "user_id"))
+			}
+			return out
+		}
+		router.Group("/api/v1/admin/platform-users", func(r Router) {
+			r.GET("/", h.AdminPlatformUser.Search)
+			r.GET("/{user_id}", h.AdminPlatformUser.Get, audited("platform_user.view", nil)...)
+			r.POST("/{user_id}/revoke-sessions", h.AdminPlatformUser.RevokeSessions, audited("platform_user.revoke_sessions", opsSupport)...)
+			r.POST("/{user_id}/unlock", h.AdminPlatformUser.Unlock, audited("platform_user.unlock", opsSupport)...)
+			r.POST("/{user_id}/password-reset", h.AdminPlatformUser.SendPasswordReset, audited("platform_user.password_reset", opsSupport)...)
+			r.POST("/{user_id}/verification-emails", h.AdminPlatformUser.ResendVerification, audited("platform_user.resend_verification", opsSupport)...)
+		}, adminMiddlewares...)
+	}
+
+	// Security > Sessions: every administrator's open console session, and
+	// ending one (reason + fresh authenticator code, audited high). Super
+	// admin only, like the roster.
+	if h.AdminSession != nil {
+		router.Group("/api/v1/admin/console-sessions", func(r Router) {
+			r.GET("/", h.AdminSession.List)
+			end := []Middleware{}
+			if h.AdminAuditMiddleware != nil {
+				end = append(end, h.AdminAuditMiddleware.AuditLog("console.session_ended", "admin_session", "console_session_id"))
+			}
+			r.DELETE("/{console_session_id}", h.AdminSession.End, end...)
+		}, superAdminOnly...)
 	}
 
 	// Admin user management — the platform admin roster (emails, last-used
@@ -233,6 +507,22 @@ func registerAdminRoutes(
 		}, adminMiddlewares...)
 	}
 
+	// AI applications (MCP clients, RFC-062 §12). Reads: any admin, counts
+	// only. Block / unblock: ops_admin+, audited.
+	if h.MCPConnections != nil {
+		router.Group("/api/v1/admin/mcp-clients", func(r Router) {
+			r.GET("/", h.MCPConnections.AdminListClients)
+			write := []Middleware{h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin, admin.AdminRoleOpsAdmin)}
+			block, unblock := cloneMW(write), cloneMW(write)
+			if h.AdminAuditMiddleware != nil {
+				block = append(block, h.AdminAuditMiddleware.AuditLog("mcp_client.blocked", "mcp_client", "id"))
+				unblock = append(unblock, h.AdminAuditMiddleware.AuditLog("mcp_client.unblocked", "mcp_client", "id"))
+			}
+			r.POST("/{id}/block", h.MCPConnections.AdminBlockClient, block...)
+			r.POST("/{id}/unblock", h.MCPConnections.AdminUnblockClient, unblock...)
+		}, adminMiddlewares...)
+	}
+
 	// Target mapping management (scanner target type -> asset type).
 	// Reads: any admin. Writes: ops_admin+ (readonly rejected) — target
 	// mappings are shared platform configuration, gated at the route layer to
@@ -269,4 +559,12 @@ func registerAdminRoutes(
 // middleware (e.g. an audit factory) cannot mutate the shared write chain.
 func cloneMW(mws []Middleware) []Middleware {
 	return append([]Middleware{}, mws...)
+}
+
+// preSession prepends the cross-site guard (when set) to a route's middlewares.
+func preSession(crossSite Middleware, mws ...Middleware) []Middleware {
+	if crossSite == nil {
+		return mws
+	}
+	return append([]Middleware{crossSite}, mws...)
 }

@@ -62,35 +62,32 @@ type SensorAvailability interface {
 	HasValidationSensor(ctx context.Context, tenantID shared.ID) (bool, error)
 }
 
-// networkAddressableTypes is the set of asset types whose Name() is a host,
+// networkAddressableTypes are the stored core types whose Name() is a host,
 // IP, or URL a safe-check probe can reach over the network. Types outside this
 // set (repository, container, cloud_account, …) cannot be reachability-probed.
 //
-// Application, HTTPService and DiscoveredURL are included because their Name()
-// is normalized to a reachable URL / host:port (see asset.NormalizeName:
-// AssetTypeApplication -> normalizeURL; AssetTypeHTTPService/DiscoveredURL ->
-// normalizeServiceName -> normalizeURL). Application in particular is the
-// consolidated core type ingest normalizes website/web_application/api/mobile_app
-// INTO (asset.TypeAliases), so it is the primary DAST/nuclei re-verify target;
-// omitting it rejected every URL/app re-verify as "not network-addressable".
+// Application and service names are normalized to a reachable URL or
+// host:port (asset.NormalizeName); every web, API and recon URL kind is a
+// sub-type of one of them. A row still stored under a legacy alias name
+// (website, http_service ...) is read as the core type it stands for
+// (RFC-042 §6.3.8), so the check never depends on the spelling.
 var networkAddressableTypes = map[asset.AssetType]bool{
-	asset.AssetTypeDomain:         true,
-	asset.AssetTypeSubdomain:      true,
-	asset.AssetTypeIPAddress:      true,
-	asset.AssetTypeWebsite:        true,
-	asset.AssetTypeWebApplication: true,
-	asset.AssetTypeAPI:            true,
-	asset.AssetTypeApplication:    true, // consolidated web/api/mobile core type (URL name)
-	asset.AssetTypeService:        true,
-	asset.AssetTypeHTTPService:    true, // httpx HTTP/HTTPS service (URL name)
-	asset.AssetTypeDiscoveredURL:  true, // katana-discovered URL/endpoint
-	asset.AssetTypeHost:           true,
+	asset.AssetTypeDomain:      true,
+	asset.AssetTypeSubdomain:   true,
+	asset.AssetTypeIPAddress:   true,
+	asset.AssetTypeApplication: true,
+	asset.AssetTypeService:     true,
+	asset.AssetTypeHost:        true,
 }
+
+// IsNetworkAddressable reports whether an asset of type t has a network
+// address a sensor can probe (exported for the retest service, RFC-039).
+func IsNetworkAddressable(t asset.AssetType) bool { return isNetworkAddressable(t) }
 
 // isNetworkAddressable reports whether a safe-check reachability probe can
 // meaningfully target an asset of the given type.
 func isNetworkAddressable(t asset.AssetType) bool {
-	return networkAddressableTypes[t]
+	return networkAddressableTypes[asset.CanonicalPair(t, "").Type]
 }
 
 // RunService turns "validate this finding" into a dispatched validation job.
@@ -112,7 +109,32 @@ type RunService struct {
 	// Phase 2b). Nil means the fleet advertises no nuclei executor, so routing
 	// stays safe-check-only — 2b is inert-safe until a nuclei sensor is deployed.
 	nucleiAvailability NucleiAvailability
-	logger             *logger.Logger
+	// runs records each finding validation as a run of kind validation
+	// (research/62 P0-3): its task and logs are in Runs. Nil: no run.
+	runs   RunRecorder
+	logger *logger.Logger
+}
+
+// RunRecorder records a finding validation as a run (scanrun.Service).
+type RunRecorder interface {
+	StartValidationRun(ctx context.Context, tenantID, findingID shared.ID, requestedBy string) (runID, stepRunID shared.ID, err error)
+	FinishValidationRun(ctx context.Context, tenantID, runID shared.ID, succeeded bool, message, code string) error
+}
+
+// SetRunRecorder records every finding validation as a run.
+func (s *RunService) SetRunRecorder(r RunRecorder) { s.runs = r }
+
+type requesterKey struct{}
+
+// WithRequester names the user who asked for a validation (the run's
+// trigger). Without it the platform asked.
+func WithRequester(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, requesterKey{}, userID)
+}
+
+func requesterFrom(ctx context.Context) string {
+	id, _ := ctx.Value(requesterKey{}).(string)
+	return id
 }
 
 // NewRunService wires the run service. available is the set of executor kinds
@@ -264,17 +286,35 @@ func (s *RunService) ValidateFinding(ctx context.Context, tenantID, findingID sh
 		ExecutorKind: kind,
 		Technique:    technique,
 		Target: Target{
-			AssetID: assetID,
-			Type:    a.Type().String(),
-			Address: address,
+			AssetID:   assetID,
+			Type:      a.Type().String(),
+			Address:   address,
+			AssetName: a.Name(),
 		},
 		TimeoutSeconds: defaultTimeoutSeconds,
 		TemplateID:     templateID,
 		CVEID:          cveID,
 	}
 
+	var runID shared.ID
+	if s.runs != nil {
+		rid, stepID, rerr := s.runs.StartValidationRun(ctx, tenantID, findingID, requesterFrom(ctx))
+		if rerr != nil {
+			// The validation still runs; it is just not listed in Runs.
+			s.logger.Warn("failed to record the validation run", "finding_id", findingID.String(), "error", rerr)
+		} else {
+			runID = rid
+			job.ScanRunID, job.ScanRunStepID = rid, stepID
+		}
+	}
+
 	cmdID, err := s.dispatcher.Dispatch(ctx, job)
 	if err != nil {
+		if !runID.IsZero() {
+			if ferr := s.runs.FinishValidationRun(ctx, tenantID, runID, false, "the validation could not be queued", "DISPATCH_FAILED"); ferr != nil {
+				s.logger.Warn("failed to settle the validation run", "run_id", runID.String(), "error", ferr)
+			}
+		}
 		return shared.ID{}, err
 	}
 
@@ -335,9 +375,10 @@ func (s *RunService) DispatchSimulationCheck(ctx context.Context, tenantID, simR
 		ExecutorKind:    kind,
 		Technique:       tech,
 		Target: Target{
-			AssetID: assetID,
-			Type:    a.Type().String(),
-			Address: address,
+			AssetID:   assetID,
+			Type:      a.Type().String(),
+			Address:   address,
+			AssetName: a.Name(),
 		},
 		TimeoutSeconds: defaultTimeoutSeconds,
 	}

@@ -23,7 +23,7 @@ interface CoverageHeatmapProps {
 }
 
 /**
- * ATT&CK-Navigator-style coverage matrix: one column per kill-chain tactic
+ * ATT&CK coverage matrix: one column per kill-chain tactic
  * (backend order), each a stack of technique cells colored by worst-case
  * status. Horizontal-scrolls so the page never scrolls sideways. Includes a
  * client-side Navigator layer (v4.5) export.

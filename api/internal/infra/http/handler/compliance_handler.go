@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	compliancesvc "github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/compliance"
@@ -19,12 +19,12 @@ import (
 
 // ComplianceHandler handles compliance HTTP requests.
 type ComplianceHandler struct {
-	service *app.ComplianceService
+	service *compliancesvc.ComplianceService
 	logger  *logger.Logger
 }
 
 // NewComplianceHandler creates a new compliance handler.
-func NewComplianceHandler(svc *app.ComplianceService, log *logger.Logger) *ComplianceHandler {
+func NewComplianceHandler(svc *compliancesvc.ComplianceService, log *logger.Logger) *ComplianceHandler {
 	return &ComplianceHandler{service: svc, logger: log}
 }
 
@@ -36,14 +36,10 @@ func NewComplianceHandler(svc *app.ComplianceService, log *logger.Logger) *Compl
 func (h *ComplianceHandler) ListFrameworks(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListFrameworks(r.Context(), tenantID, page)
 	if err != nil {
@@ -84,14 +80,10 @@ func (h *ComplianceHandler) ListControls(w http.ResponseWriter, r *http.Request)
 	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := chi.URLParam(r, "id")
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListControls(r.Context(), tenantID, frameworkID, page)
 	if err != nil {
@@ -132,6 +124,14 @@ func (h *ComplianceHandler) GetFrameworkStats(w http.ResponseWriter, r *http.Req
 // =============================================
 
 // GetControl returns a single compliance control.
+// @Summary      Get a compliance control
+// @Tags         Compliance
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  string  true  "Control ID"
+// @Success      200  {object}  ComplianceControlResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /compliance/controls/{id} [get]
 func (h *ComplianceHandler) GetControl(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -161,7 +161,7 @@ func (h *ComplianceHandler) UpdateAssessment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	assessment, err := h.service.UpdateAssessment(r.Context(), app.UpdateAssessmentInput{
+	assessment, err := h.service.UpdateAssessment(r.Context(), compliancesvc.UpdateAssessmentInput{
 		TenantID:    tenantID,
 		FrameworkID: req.FrameworkID,
 		ControlID:   controlID,
@@ -185,14 +185,10 @@ func (h *ComplianceHandler) ListAssessments(w http.ResponseWriter, r *http.Reque
 	tenantID := middleware.MustGetTenantID(r.Context())
 	frameworkID := r.URL.Query().Get("framework_id")
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 50, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListAssessments(r.Context(), tenantID, frameworkID, page)
 	if err != nil {

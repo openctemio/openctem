@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql)](https://www.postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Built with Go, PostgreSQL, and Redis using Clean Architecture (DDD).
 
@@ -28,7 +28,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 ### Scanning
 - 30+ scanner integrations via Agent SDK (Nuclei, Trivy, Semgrep, Betterleaks, Nmap, etc.)
 - Pipeline-based scan orchestration with multi-step workflows
-- Platform agents with K8s-inspired lifecycle management
+- Platform agents with lease-based lifecycle management
 - Bootstrap token authentication for agent self-registration
 
 ### Access Control
@@ -38,7 +38,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 - OAuth2 (Google, GitHub, Microsoft) + OIDC (Keycloak)
 
 ### Integrations
-- ITSM: Jira, Linear, Asana
+- ITSM: Jira
 - SCM: GitHub, GitLab (repository sync, credential import)
 - Notifications: Slack, Teams, Telegram, Email, Webhooks
 - Compliance: PCI-DSS, HIPAA, SOC2, GDPR, ISO27001, NIST, FedRAMP, CCPA
@@ -131,9 +131,18 @@ Redis are never published.
 
 ```bash
 cd deploy
-cp .env.example .env   # set OPENCTEM_HOSTNAME, OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE, secrets
+./setup.sh ctem.example.com   # writes .env: host name + generated secrets (--acme you@example.com for Let's Encrypt)
+docker compose run --rm --no-deps api -check-config   # validate the settings, start nothing
 docker compose up -d
 ```
+
+The API runs in production mode unless told otherwise: an unset `APP_ENV`
+means `production`, which refuses to start without TLS to Postgres and Redis,
+strong secrets and the other production checks. Secrets that still hold
+example-file text (`openssl rand -hex 32`, `<CHANGE_ME...>`) are refused in
+every mode. `server -check-config` reports the first problem without starting
+or connecting to anything (exit 0 = valid). Back the stack up with
+`deploy/backup.sh` (`backup`, `verify`, `restore <dir> --yes`).
 
 TLS modes (`OPENCTEM_TLS_MODE`): `internal` (own CA, for LAN/IP installs; the
 root for sensors is exported to `deploy/ca/`), `acme` (Let's Encrypt), `files`
@@ -162,16 +171,19 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 | `AUTH_JWT_SECRET` | JWT signing secret (min 64 chars) |
 | `APP_ENCRYPTION_KEY` | AES-256 key (64 hex chars: `openssl rand -hex 32`) |
 | `CORS_ALLOWED_ORIGINS` | Allowed CORS origins |
+| `DB_SSLMODE` | `require` or `verify-full` (the default `disable` is refused in production) |
+| `REDIS_TLS_ENABLED` | `true`; with a private CA also `REDIS_TLS_CA_FILE` |
+
+`APP_ENV` defaults to `production` when unset; set `APP_ENV=development`
+explicitly for local development (`.env.example` does).
 
 ### Optional
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` |
-| `AUTH_ALLOW_REGISTRATION` | `false` | Allow public self-registration. Keep it off in production: administrators create users, invite them, or the organization's SSO admits them |
-| `TENANT_CREATION_MODE` | `admin_only` | Who creates organizations: `admin_only` (the platform administrator, from the console or `bootstrap-admin -org-*`) or `self_service` (any signed-in user; SaaS/trial opt-in) |
+| `AUTH_PROVIDER` | `local` | Auth provider: `local`, `oidc`, `hybrid` (the default was `oidc` up to v0.8.0) |
+| `TENANT_CREATION_MODE` | `admin_only` | Seeds the sign-up policy on the first start: `admin_only` (only the platform administrator creates organizations; nobody else can create an account without an invitation or their organization's SSO) or `self_service` (anyone may sign up and create one). Afterwards change it in the console (System > Sign-up). |
 | `AI_PLATFORM_PROVIDER` | — | AI triage: `claude`, `openai`, `gemini` |
-| `SMTP_ENABLED` | `false` | Enable email notifications (required for invitations) |
 | `RATE_LIMIT_RPS` | `100` | Rate limit (requests/second) |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
@@ -180,10 +192,12 @@ docker compose -f deploy/docker-compose.yml exec api wget -qO- localhost:8080/re
 Public registration and self-service organizations are off by default:
 
 ```env
-AUTH_ALLOW_REGISTRATION=false      # No public signup (the default)
-TENANT_CREATION_MODE=admin_only    # Only the platform administrator creates organizations (the default)
-SMTP_ENABLED=true                  # Emails set-password links and invitations
+TENANT_CREATION_MODE=admin_only    # Seeds the sign-up policy: no public signup (the default)
 ```
+
+Platform e-mail (set-password links, invitations, verification) is set in the
+admin console, System > E-mail; headless installs pass `BOOTSTRAP_SMTP_*` to
+`bootstrap-admin`.
 
 **Flow**: the platform administrator creates the organization and its owner
 (`bootstrap-admin -org-*` at install, then the console) → the owner sets a
@@ -201,14 +215,14 @@ POST /api/v1/tenants/{tenant}/invitations
 #   00000000-...-000000000003  member      (read/write, no delete)
 #   00000000-...-000000000004  viewer      (read-only)
 
-# User accepts invitation via token link
-POST /api/v1/invitations/{token}/accept
+# User accepts invitation (the token travels in the body, never in the URL)
+POST /api/v1/invitations/accept   {"token": "..."}
 ```
 
 ### Per-Tenant SMTP
 
 Each tenant can configure its own SMTP server for outgoing emails (invitations, notifications).
-If not configured, the system-wide SMTP (`SMTP_HOST`, etc.) is used as fallback.
+If not configured, the platform e-mail (admin console, System > E-mail) is used as fallback.
 
 **Setup via email integration:**
 ```bash
@@ -232,7 +246,7 @@ POST /api/v1/integrations
 
 **Resolution order:**
 1. Tenant has active email integration → use tenant SMTP
-2. No tenant integration → use system SMTP (`SMTP_HOST`, `SMTP_PORT`, etc.)
+2. No tenant integration → use the platform e-mail (admin console, System > E-mail)
 3. No system SMTP → emails skipped (logged as warning)
 
 Credentials are encrypted at rest using AES-256-GCM.
@@ -259,7 +273,8 @@ make security-scan   # Run security scan (semgrep + betterleaks + trivy)
 | GET | `/health` | Liveness check |
 | GET | `/ready` | Readiness check (DB + Redis) |
 | GET | `/metrics` | Prometheus metrics |
-| GET | `/docs` | API documentation |
+| GET | `/docs` | API documentation (not served in production; platform administrators use `/api/v1/admin/docs`) |
+| GET | `/openapi.yaml` | The OpenAPI spec (shipped in the release images; signed-in users only in production) |
 
 ### Assets
 
@@ -292,23 +307,17 @@ See `/docs` endpoint for complete OpenAPI documentation.
 ### Docker Compose
 
 ```bash
-# 1. Go to setup directory
-cd ../setup
+# 1. Go to the production stack (api/deploy/ in the openctem repository)
+cd deploy
 
-# 2. Initialize environment files
-make init-prod
+# 2. Create the environment file: OPENCTEM_VERSION, OPENCTEM_HOSTNAME,
+#    OPENCTEM_PUBLIC_URL, OPENCTEM_TLS_MODE and every secret marked required
+cp .env.example .env
 
-# 3. Generate secrets and update .env files
-make generate-secrets
-# Update all <CHANGE_ME> values in .env.*.prod files
+# 3. Start the gateway (443), web, API, Postgres and Redis
+docker compose up -d
 
-# 4. Setup SSL (self-signed or Let's Encrypt)
-make auto-ssl
-
-# 5. Start production
-make prod-up
-
-# 6. Create the first admin, its break-glass backup and the first organization
+# 4. Create the first admin, its break-glass backup and the first organization
 #    (see Bootstrap Admin below)
 docker compose exec api /app/bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com \
   -org-name="Example Corp" -org-owner-email=owner@example.com
@@ -383,7 +392,7 @@ service as the console's Organizations → Create: the owner's membership and
 role are written with the organization, and `tenant.created` / `user.created`
 are audited in it. A new owner account gets a one-time set-password link
 (valid 24 hours): emailed when SMTP is configured (`SMTP_*`), otherwise printed
-once (as `$SMTP_BASE_URL/set-password?token=...`). An organization whose slug
+once (as `$SMTP_BASE_URL/set-password#token=...`). An organization whose slug
 exists is reported and left alone. The owner's email must not be an
 administrator's.
 
@@ -462,9 +471,9 @@ kubectl exec -it deploy/openctem-api -n openctem -- \
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE).
 
 ## Legal
 
-- [Terms of Service](../docs/legal/terms-of-service.md)
-- [Privacy Policy](../docs/legal/privacy-policy.md)
+- [Terms of Service](https://github.com/openctemio/docs/blob/main/legal/terms-of-service.md)
+- [Privacy Policy](https://github.com/openctemio/docs/blob/main/legal/privacy-policy.md)

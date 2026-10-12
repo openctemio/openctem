@@ -18,8 +18,10 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { setServerCookie } from '@/lib/cookies-server'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
@@ -46,6 +48,7 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(await browserContextHeaders()),
       ...options.headers,
     },
   })
@@ -68,7 +71,8 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
 export async function getSSOAuthorizeUrl(
   provider: SSOProviderType,
   orgSlug: string,
-  redirectTo?: string
+  redirectTo?: string,
+  reauth = false
 ): Promise<AuthSuccessResponse<{ authorizationUrl: string; state: string }> | AuthErrorResponse> {
   if (!isAllowedValue(SSO_PROVIDER_TYPES, provider)) return UNSUPPORTED_PROVIDER
 
@@ -81,6 +85,11 @@ export async function getSSOAuthorizeUrl(
     })
     if (redirectTo) {
       params.set('final_redirect', redirectTo)
+    }
+    // Step-up: the identity provider must authenticate the user again
+    // (prompt=login / max_age=0); the API checks auth_time on the way back.
+    if (reauth) {
+      params.set('reauth', 'true')
     }
 
     const data = await backendFetch<SSOAuthorizeResponse>(
@@ -235,12 +244,13 @@ export async function handleSSOCallback(
 export async function initiateSSOLogin(
   provider: SSOProviderType,
   orgSlug: string,
-  redirectTo?: string
+  redirectTo?: string,
+  reauth = false
 ): Promise<never> {
-  const result = await getSSOAuthorizeUrl(provider, orgSlug, redirectTo)
+  const result = await getSSOAuthorizeUrl(provider, orgSlug, redirectTo, reauth)
 
   if (!result.success) {
-    redirect(`/login?error=${encodeURIComponent(result.error)}&org=${encodeURIComponent(orgSlug)}`)
+    redirect(loginErrorHref('start_failed', { org: orgSlug }))
   }
 
   redirect(result.data.authorizationUrl)

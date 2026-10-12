@@ -6,62 +6,33 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Pipeline metrics
+// Scan workflow metrics
 var (
-	// PipelineRunsTotal tracks total pipeline runs by status
-	PipelineRunsTotal = promauto.NewCounterVec(
+	// ScanRunsTotal tracks total scan runs by status
+	ScanRunsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "pipeline_runs_total",
-			Help: "Total number of pipeline runs by status",
+			Name: "scan_runs_total",
+			Help: "Total number of scan runs by status",
 		},
-		[]string{"tenant_id", "status"},
+		[]string{"status"},
 	)
 
-	// PipelineRunDuration tracks pipeline run duration
-	PipelineRunDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "pipeline_run_duration_seconds",
-			Help:    "Pipeline run duration in seconds",
-			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600},
-		},
-		[]string{"tenant_id", "pipeline_id"},
-	)
-
-	// PipelineRunsInProgress tracks currently running pipelines
-	PipelineRunsInProgress = promauto.NewGaugeVec(
+	// ScanRunsInProgress tracks currently running scan workflows
+	ScanRunsInProgress = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "pipeline_runs_in_progress",
-			Help: "Number of pipeline runs currently in progress",
+			Name: "scan_runs_in_progress",
+			Help: "Number of scan runs currently in progress",
 		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 
 	// StepRunsTotal tracks total step runs by status
 	StepRunsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "step_runs_total",
+			Name: "scan_run_steps_total",
 			Help: "Total number of step runs by status",
 		},
-		[]string{"tenant_id", "step_key", "status"},
-	)
-
-	// StepRunDuration tracks step run duration
-	StepRunDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "step_run_duration_seconds",
-			Help:    "Step run duration in seconds",
-			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600},
-		},
-		[]string{"tenant_id", "step_key"},
-	)
-
-	// StepRetryTotal tracks step retries
-	StepRetryTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "step_retry_total",
-			Help: "Total number of step retries",
-		},
-		[]string{"tenant_id", "step_key"},
+		[]string{"step_key", "status"},
 	)
 )
 
@@ -73,17 +44,7 @@ var (
 			Name: "commands_total",
 			Help: "Total number of commands by type and status",
 		},
-		[]string{"tenant_id", "type", "status"},
-	)
-
-	// CommandDuration tracks command execution duration
-	CommandDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "command_duration_seconds",
-			Help:    "Command execution duration in seconds",
-			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600},
-		},
-		[]string{"tenant_id", "type"},
+		[]string{"type", "status"},
 	)
 
 	// CommandsExpired tracks expired commands
@@ -92,59 +53,20 @@ var (
 			Name: "commands_expired_total",
 			Help: "Total number of expired commands",
 		},
-		[]string{"tenant_id"},
-	)
-
-	// CommandQueueSize tracks pending commands
-	CommandQueueSize = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "command_queue_size",
-			Help: "Number of pending commands in queue",
-		},
-		[]string{"tenant_id", "type"},
-	)
-)
-
-// Sensor metrics
-var (
-	// SensorsOnline tracks online sensors
-	SensorsOnline = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "sensors_online",
-			Help: "Number of online sensors",
-		},
-		[]string{"tenant_id"},
-	)
-
-	// SensorCommandsExecuted tracks commands executed by sensors
-	SensorCommandsExecuted = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "sensor_commands_executed_total",
-			Help: "Total commands executed by sensors",
-		},
-		[]string{"tenant_id", "sensor_id", "status"},
-	)
-
-	// SensorHeartbeatLatency tracks sensor heartbeat latency
-	SensorHeartbeatLatency = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "sensor_heartbeat_latency_seconds",
-			Help:    "Sensor heartbeat latency in seconds",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
-		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 )
 
 // Scan metrics
 var (
-	// ScansTotal tracks total scans by status
-	ScansTotal = promauto.NewCounterVec(
+	// ScanScheduleOutcomes counts what each due scheduled occurrence became:
+	// triggered, skipped_overlap (previous run still active), failed.
+	ScanScheduleOutcomes = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "scans_total",
-			Help: "Total number of scans by status",
+			Name: "scan_schedule_outcomes_total",
+			Help: "Scheduled scan occurrences by outcome (triggered, skipped_overlap, failed)",
 		},
-		[]string{"tenant_id", "scan_type", "status"},
+		[]string{"outcome"},
 	)
 
 	// ScansScheduled tracks scheduled scan triggers
@@ -153,61 +75,30 @@ var (
 			Name: "scans_scheduled_total",
 			Help: "Total number of scheduled scan triggers",
 		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 
-	// ScanFindingsTotal tracks total findings from scans
-	ScanFindingsTotal = promauto.NewCounterVec(
+	// ScanTargetSelectorExpansions counts the dynamic target selectors a run
+	// start expanded from the inventory (RFC-068), by kind (wildcard, cidr)
+	// and outcome (expanded, empty, capped: more assets than one selector
+	// may add).
+	ScanTargetSelectorExpansions = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "scan_findings_total",
-			Help: "Total number of findings from scans",
+			Name: "scan_target_selector_expansions_total",
+			Help: "Dynamic scan target selectors expanded at run start, by kind and outcome",
 		},
-		[]string{"tenant_id", "severity"},
+		[]string{"kind", "outcome"},
 	)
 
-	// ScanTriggerDuration tracks scan trigger latency
-	ScanTriggerDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "scan_trigger_duration_seconds",
-			Help:    "Time to trigger a scan in seconds",
-			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
-		},
-		[]string{"scan_type"},
-	)
-
-	// ScanSchedulerErrors tracks scheduler errors by type
-	ScanSchedulerErrors = promauto.NewCounterVec(
+	// ScanStageTargetsSkipped counts targets a chained workflow stage left
+	// out because a run-wide limit was reached (over_cap, hop_limit): the
+	// signal of a runaway in-run expansion.
+	ScanStageTargetsSkipped = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "scan_scheduler_errors_total",
-			Help: "Total number of scan scheduler errors",
+			Name: "scan_stage_targets_skipped_total",
+			Help: "Targets a chained scan stage left out at a run limit, by reason",
 		},
-		[]string{"error_type"},
-	)
-
-	// ScanSchedulerLag tracks time since last scheduler cycle
-	ScanSchedulerLag = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "scan_scheduler_lag_seconds",
-			Help: "Time since last scheduler cycle in seconds",
-		},
-	)
-
-	// ScansConcurrentRuns tracks current concurrent scan runs per tenant
-	ScansConcurrentRuns = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "scans_concurrent_runs",
-			Help: "Number of concurrent scan runs",
-		},
-		[]string{"tenant_id"},
-	)
-
-	// ScansQualityGateResults tracks quality gate pass/fail results
-	ScansQualityGateResults = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "scans_quality_gate_results_total",
-			Help: "Total quality gate evaluation results",
-		},
-		[]string{"tenant_id", "result"}, // result: "passed", "failed"
+		[]string{"reason"},
 	)
 )
 
@@ -219,7 +110,7 @@ var (
 			Name: "findings_expired_total",
 			Help: "Total number of findings expired by lifecycle rules",
 		},
-		[]string{"tenant_id", "reason"},
+		[]string{"reason"},
 	)
 
 	// FindingsAutoResolved tracks findings auto-resolved by full coverage scans
@@ -228,7 +119,7 @@ var (
 			Name: "findings_auto_resolved_total",
 			Help: "Total number of findings auto-resolved by full coverage scans",
 		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 )
 
@@ -240,7 +131,7 @@ var (
 			Name: "template_syncs_total",
 			Help: "Total number of template sync operations by source type",
 		},
-		[]string{"tenant_id", "source_type"},
+		[]string{"source_type"},
 	)
 
 	// TemplateSyncsSuccessTotal tracks successful template syncs
@@ -249,7 +140,7 @@ var (
 			Name: "template_syncs_success_total",
 			Help: "Total number of successful template sync operations",
 		},
-		[]string{"tenant_id"},
+		[]string{},
 	)
 
 	// TemplateSyncsFailedTotal tracks failed template syncs
@@ -258,17 +149,7 @@ var (
 			Name: "template_syncs_failed_total",
 			Help: "Total number of failed template sync operations",
 		},
-		[]string{"tenant_id"},
-	)
-
-	// TemplateSyncDuration tracks template sync duration
-	TemplateSyncDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "template_sync_duration_seconds",
-			Help:    "Template sync duration in seconds",
-			Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600},
-		},
-		[]string{"tenant_id", "source_type"},
+		[]string{},
 	)
 )
 
@@ -329,6 +210,30 @@ var (
 		[]string{"stage"},
 	)
 
+	// SensorUnsolicitedResultsTotal counts sensor reports that named no
+	// command (RFC-040 §5.3), by what happened to them: applied (a collector
+	// or CI runner), warned (another role, applied because the tenant's mode
+	// is warn), quarantined, or refused (the quarantine was full).
+	SensorUnsolicitedResultsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_unsolicited_results_total",
+			Help: "Sensor reports without a command, by outcome (applied, warned, quarantined, refused)",
+		},
+		[]string{"outcome"},
+	)
+
+	// SensorResultChangesWithheldTotal counts changes a sensor report was not
+	// allowed to make because no command covering the object stood behind
+	// it (RFC-040 §5.3): kind asset (an existing asset left unchanged) or
+	// reopen (a finding a person resolved left resolved).
+	SensorResultChangesWithheldTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_result_changes_withheld_total",
+			Help: "Changes withheld from sensor reports with no command covering the object, by kind (asset, reopen)",
+		},
+		[]string{"kind"},
+	)
+
 	// IngestV2ItemsTotal counts processed v2 items by kind (asset, finding)
 	// and result (accepted, rejected, quarantined).
 	IngestV2ItemsTotal = promauto.NewCounterVec(
@@ -337,6 +242,27 @@ var (
 			Help: "Sensor protocol v2 results items processed, by kind and result",
 		},
 		[]string{"kind", "result"},
+	)
+
+	// FindingsCoverageAutoResolve counts findings that coverage-scoped
+	// auto-resolve closed ("resolved"), would have closed in dry-run mode
+	// ("would_resolve") or held behind the blinding guard ("held").
+	FindingsCoverageAutoResolve = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "findings_coverage_auto_resolve_total",
+			Help: "Non-repository findings closed, or that would be closed, by coverage-scoped auto-resolve, by mode and result",
+		},
+		[]string{"mode", "result"},
+	)
+
+	// CoverageAutoResolveEvaluations counts coverage evaluations of scan
+	// commands by mode and decision (eligible or why not).
+	CoverageAutoResolveEvaluations = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "coverage_auto_resolve_evaluations_total",
+			Help: "Coverage-scoped auto-resolve evaluations of scan commands, by mode and decision",
+		},
+		[]string{"mode", "decision"},
 	)
 
 	// IngestV2ReportsTotal counts v2 reports reaching a final state, with the
@@ -350,26 +276,14 @@ var (
 		[]string{"state", "auto_resolve"},
 	)
 
-	// SensorProtocolRequestsTotal counts sensor requests by protocol ("1",
-	// "2") and route name, both from closed sets: the fleet view of who
-	// still speaks the deprecated protocol v1 (RFC-029 §5.3).
+	// SensorProtocolRequestsTotal counts sensor requests by protocol version
+	// and route name, both from closed sets (RFC-029 §5.3).
 	SensorProtocolRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "sensor_protocol_requests_total",
 			Help: "Sensor protocol requests, by protocol version and route",
 		},
 		[]string{"protocol", "route"},
-	)
-
-	// IngestV1RequestsTotal counts protocol v1 ingest requests per route, to
-	// measure who still uses which v1 route before any is retired
-	// (RFC-026 §8.3).
-	IngestV1RequestsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "ingest_v1_requests_total",
-			Help: "Sensor protocol v1 ingest requests, by route",
-		},
-		[]string{"route"},
 	)
 
 	// IngestQueueDepth is the number of not-yet-terminal (pending+processing)
@@ -379,5 +293,74 @@ var (
 			Name: "ingest_queue_depth",
 			Help: "Async ingest jobs awaiting or in processing across all tenants",
 		},
+	)
+)
+
+// Dispatch (RFC-046 §12). No tenant, sensor or run labels (B9): per-tenant
+// views come from logs and traces.
+var (
+	// CommandClaimsTotal counts commands sensors claimed, by how: "claim"
+	// (one by id) or "claim_n" (claimed by the poll).
+	CommandClaimsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "command_claims_total",
+			Help: "Commands claimed by sensors, by mode (claim, claim_n)",
+		},
+		[]string{"mode"},
+	)
+
+	// CommandLeasesExpiredTotal counts commands taken back from a sensor
+	// whose lease ran out (it stopped renewing) and re-queued.
+	CommandLeasesExpiredTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "command_leases_expired_total",
+			Help: "Commands re-queued because the sensor holding them let the lease expire",
+		},
+	)
+
+	// ScanRunsReapedTotal counts runs the timeout controller ended, by
+	// reason: "deadline" (past its deadline; ends partial or timeout) or
+	// "unclaimed" (no sensor picked any work up in time).
+	ScanRunsReapedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scan_runs_reaped_total",
+			Help: "Scan runs ended by the timeout controller, by reason (deadline, unclaimed)",
+		},
+		[]string{"reason"},
+	)
+
+	// JobSigningTotal counts claimed commands sent to the job signer, by
+	// outcome: "signed", "refused" (the signer said no) or "unavailable"
+	// (no answer). A command not signed is not handed out.
+	JobSigningTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_job_signing_total",
+			Help: "Claimed commands sent to the job signer, by outcome (signed, refused, unavailable)",
+		},
+		[]string{"outcome"},
+	)
+
+	// SignerRefusalsTotal counts the job signer's refusals by reason
+	// (out_of_ledger, tier_exceeds_ledger, target_excluded, rate limits,
+	// malformed statements; RFC-040 §5.11 detection A10). The signer's own
+	// signing log is the record a compromised API cannot rewrite; this is
+	// the alerting signal.
+	SignerRefusalsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_signer_refusals_total",
+			Help: "Job statements the job signer refused, by reason",
+		},
+		[]string{"reason"},
+	)
+
+	// SignerLedgerFeedTotal counts scope changes sent to the job signer's
+	// ledger, by kind (widen, narrow, sync) and outcome (applied, refused,
+	// unavailable).
+	SignerLedgerFeedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_signer_ledger_feed_total",
+			Help: "Scope changes sent to the job signer's ledger, by kind and outcome",
+		},
+		[]string{"kind", "outcome"},
 	)
 )

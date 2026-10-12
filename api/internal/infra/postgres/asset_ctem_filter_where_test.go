@@ -110,13 +110,13 @@ func TestBuildWhereClause_HasOwnerRequiresTenant(t *testing.T) {
 	}
 }
 
-// TestBuildWhereClause_BackCompat verifies an empty filter still produces no
-// conditions (today's behavior).
+// TestBuildWhereClause_BackCompat verifies an empty filter produces only the
+// soft-delete predicate (a deleted asset is never listed) and binds nothing.
 func TestBuildWhereClause_BackCompat(t *testing.T) {
 	r := &AssetRepository{}
 	where, args := r.buildWhereClause(asset.NewFilter())
-	if where != "" {
-		t.Errorf("empty filter should produce empty where clause; got: %s", where)
+	if where != "a.deleted_at IS NULL" {
+		t.Errorf("empty filter should produce only the live-asset predicate; got: %s", where)
 	}
 	if len(args) != 0 {
 		t.Errorf("empty filter should bind no args; got: %#v", args)

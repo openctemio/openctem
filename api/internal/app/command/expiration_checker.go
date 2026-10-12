@@ -6,14 +6,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
-	"github.com/openctemio/openctem/api/internal/app/pipeline"
+	"github.com/openctemio/openctem/api/internal/metrics"
+
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// stepFailer is the slice of pipeline.Service this checker needs: a way to tell
+// stepFailer is the slice of scanrun.Service this checker needs: a way to tell
 // the owning run that the step it is waiting on is dead. Narrowed to an
 // interface so the notification can be asserted in a test — silently skipping
 // it is the failure mode this file exists to prevent.
@@ -23,9 +24,9 @@ type stepFailer interface {
 
 // ExpirationChecker periodically checks for expired commands and handles them.
 type ExpirationChecker struct {
-	commandRepo     commanddom.Repository
-	pipelineService stepFailer
-	logger          *logger.Logger
+	commandRepo    commanddom.Repository
+	scanRunService stepFailer
+	logger         *logger.Logger
 
 	interval        time.Duration
 	maxQueueMinutes int
@@ -46,7 +47,7 @@ type ExpirationCheckerConfig struct {
 // NewExpirationChecker creates a new ExpirationChecker.
 func NewExpirationChecker(
 	commandRepo commanddom.Repository,
-	pipelineService *pipeline.Service,
+	scanRunService *scanrun.Service,
 	cfg ExpirationCheckerConfig,
 	log *logger.Logger,
 ) *ExpirationChecker {
@@ -60,17 +61,17 @@ func NewExpirationChecker(
 		maxQueueMinutes = 60
 	}
 
-	// A nil *pipeline.Service wrapped in an interface is non-nil, which would
-	// turn "no pipeline service configured" into a nil-pointer panic on the
+	// A nil *scanrun.Service wrapped in an interface is non-nil, which would
+	// turn "no scan run service configured" into a nil-pointer panic on the
 	// first expired command. Keep the nil.
 	var failer stepFailer
-	if pipelineService != nil {
-		failer = pipelineService
+	if scanRunService != nil {
+		failer = scanRunService
 	}
 
 	return &ExpirationChecker{
 		commandRepo:     commandRepo,
-		pipelineService: failer,
+		scanRunService:  failer,
 		logger:          log.With("component", "command_expiration_checker"),
 		interval:        interval,
 		maxQueueMinutes: maxQueueMinutes,
@@ -135,9 +136,9 @@ func (c *ExpirationChecker) checkAndExpire() {
 // up out of the dispatch queue.
 //
 // This lives here, next to the tenant-command expiry, because it needs the same
-// thing that expiry needs: a route back to the owning pipeline run.
+// thing that expiry needs: a route back to the owning scan run.
 // JobRecoveryController used to do it with a raw UPDATE, which reaped the row
-// and told nobody — a platform job carries pipeline_run_id + step_key in its
+// and told nobody — a platform job carries scan_run_id + step_key in its
 // payload, and without OnStepFailed the step sat 'queued' until
 // ScanTimeoutController reported a generic timeout minutes or hours later.
 func (c *ExpirationChecker) checkAndExpireQueuedPlatformJobs() {
@@ -162,7 +163,7 @@ func (c *ExpirationChecker) checkAndExpireQueuedPlatformJobs() {
 	}
 }
 
-// expiryReason carries the message and code handed to pipeline.OnStepFailed, so
+// expiryReason carries the message and code handed to scanrun.OnStepFailed, so
 // the run records why the step died rather than a generic timeout.
 type expiryReason struct {
 	errorMessage string
@@ -181,45 +182,64 @@ var (
 )
 
 func (c *ExpirationChecker) handleExpiredCommand(ctx context.Context, cmd *commanddom.Command, reason expiryReason) {
-	// Mark command as expired
-	cmd.Expire()
-	cmd.ErrorMessage = reason.errorMessage
-	if err := c.commandRepo.Update(ctx, cmd); err != nil {
+	// Expire only if the row still matches the snapshot FindExpired returned.
+	// A sensor may have picked the command up or finished it since, and every
+	// API replica runs this checker over the same rows: an unconditional write
+	// put a running/completed command back to 'expired' and failed its scan workflow
+	// step once per replica.
+	expirer, ok := c.commandRepo.(commanddom.ConditionalExpirer)
+	if !ok {
+		c.logger.Error("command repository cannot expire conditionally; not expiring",
+			"command_id", cmd.ID.String())
+		return
+	}
+	won, err := expirer.ExpireIfUnchanged(ctx, cmd, reason.errorMessage)
+	if err != nil {
 		c.logger.Error("failed to update expired command", "command_id", cmd.ID.String(), "error", err)
 		return
 	}
+	if !won {
+		c.logger.Debug("command changed since it was found expired; leaving it",
+			"command_id", cmd.ID.String(), "reason", reason.code)
+		return
+	}
+	cmd.Expire()
+	cmd.ErrorMessage = reason.errorMessage
+	metrics.
 
-	// Record metric
-	app.CommandsExpired.WithLabelValues(cmd.TenantID.String()).Inc()
-	app.CommandsTotal.WithLabelValues(cmd.TenantID.String(), string(cmd.Type), "expired").Inc()
+		// Record metric
+		CommandsExpired.
+		WithLabelValues().Inc()
+	metrics.CommandsTotal.
+		WithLabelValues(string(cmd.Type), "expired").Inc()
 
 	c.logger.Info("command expired", "command_id", cmd.ID.String(), "reason", reason.code)
 
-	// Trigger pipeline failure if this is a pipeline command
-	if c.pipelineService != nil {
-		c.triggerPipelineExpired(ctx, cmd, reason)
+	// Trigger scan workflow failure if this is a scan workflow command
+	if c.scanRunService != nil {
+		c.triggerScanRunExpired(ctx, cmd, reason)
 	}
 }
 
-func (c *ExpirationChecker) triggerPipelineExpired(ctx context.Context, cmd *commanddom.Command, reason expiryReason) {
-	// Parse command payload to get pipeline info
+func (c *ExpirationChecker) triggerScanRunExpired(ctx context.Context, cmd *commanddom.Command, reason expiryReason) {
+	// Parse command payload to get scan workflow info
 	var payload struct {
-		PipelineRunID string `json:"pipeline_run_id"`
-		StepKey       string `json:"step_key"`
+		ScanRunID string `json:"scan_run_id"`
+		StepKey   string `json:"step_key"`
 	}
 
 	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
-		return // Not a pipeline command
+		return // Not a scan workflow command
 	}
 
-	if payload.PipelineRunID == "" || payload.StepKey == "" {
+	if payload.ScanRunID == "" || payload.StepKey == "" {
 		return
 	}
 
 	// Trigger step failure with timeout error
-	if err := c.pipelineService.OnStepFailed(ctx, payload.PipelineRunID, payload.StepKey, reason.errorMessage, reason.code); err != nil {
+	if err := c.scanRunService.OnStepFailed(ctx, payload.ScanRunID, payload.StepKey, reason.errorMessage, reason.code); err != nil {
 		c.logger.Error("failed to trigger pipeline expiration",
-			"pipeline_run_id", payload.PipelineRunID,
+			"scan_run_id", payload.ScanRunID,
 			"step_key", payload.StepKey,
 			"error", err,
 		)

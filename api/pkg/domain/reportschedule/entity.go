@@ -121,7 +121,7 @@ func NewReportSchedule(tenantID shared.ID, name, reportType, format, cron string
 		return nil, fmt.Errorf("%w: format is required", shared.ErrValidation)
 	}
 	now := time.Now()
-	return &ReportSchedule{
+	s := &ReportSchedule{
 		id:              shared.NewID(),
 		tenantID:        tenantID,
 		name:            name,
@@ -135,7 +135,11 @@ func NewReportSchedule(tenantID shared.ID, name, reportType, format, cron string
 		isActive:        true,
 		createdAt:       now,
 		updatedAt:       now,
-	}, nil
+	}
+	// A new schedule waits for its first cron slot. Leaving next_run_at NULL
+	// made the scheduler (NULLS FIRST) send it on the next tick.
+	s.rescheduleFrom(now)
+	return s, nil
 }
 
 // ReconstituteReportSchedule creates from persisted data.
@@ -208,7 +212,38 @@ func (s *ReportSchedule) Update(name, reportType, format, cron, timezone string)
 		s.timezone = timezone
 	}
 	s.updatedAt = time.Now()
+	// The cron or timezone may have changed: the stored next run belongs to
+	// the old definition.
+	s.rescheduleFrom(s.updatedAt)
 	return nil
+}
+
+// NextFireAfter returns the first cron fire strictly after t, evaluated in the
+// schedule's timezone ("0 9 * * 1" means 09:00 Monday where the schedule's
+// owner is, not on the server clock), in UTC. An empty or unloadable timezone
+// is treated as UTC. It fails only on an unparseable cron expression.
+func (s *ReportSchedule) NextFireAfter(t time.Time) (time.Time, error) {
+	sched, err := cronParser.Parse(s.cronExpression)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: invalid cron expression", shared.ErrValidation)
+	}
+	loc := time.UTC
+	if s.timezone != "" {
+		if l, lerr := time.LoadLocation(s.timezone); lerr == nil {
+			loc = l
+		}
+	}
+	// robfig/cron evaluates the spec in the location of the time it is given.
+	return sched.Next(t.In(loc)).UTC(), nil
+}
+
+// rescheduleFrom sets next_run_at to the first fire after now. On an
+// unparseable cron (only possible for rows persisted before validation) the
+// existing value is left for the scheduler's fallback to handle.
+func (s *ReportSchedule) rescheduleFrom(now time.Time) {
+	if next, err := s.NextFireAfter(now); err == nil {
+		s.nextRunAt = &next
+	}
 }
 
 // SetOptions sets report generation options.
@@ -240,8 +275,14 @@ func (s *ReportSchedule) RecordRun(status string, nextRunAt *time.Time) {
 	s.updatedAt = now
 }
 
-// Activate enables the schedule.
-func (s *ReportSchedule) Activate() { s.isActive = true; s.updatedAt = time.Now() }
+// Activate enables the schedule. The next run is recomputed from now: a
+// schedule re-enabled after weeks off would otherwise still hold a next run in
+// the past and fire immediately.
+func (s *ReportSchedule) Activate() {
+	s.isActive = true
+	s.updatedAt = time.Now()
+	s.rescheduleFrom(s.updatedAt)
+}
 
 // Deactivate disables the schedule.
 func (s *ReportSchedule) Deactivate() { s.isActive = false; s.updatedAt = time.Now() }
@@ -283,4 +324,41 @@ type Repository interface {
 	Delete(ctx context.Context, tenantID, id shared.ID) error
 	List(ctx context.Context, filter ScheduleFilter, page pagination.Pagination) (pagination.Result[*ReportSchedule], error)
 	ListDue(ctx context.Context, now time.Time) ([]*ReportSchedule, error)
+}
+
+// RecipientPolicy decides which addresses may receive an organization's
+// scheduled reports (owner decision D12, research doc 15 L-19): an active
+// member of the organization, or an address in one of its
+// Security.AllowedDomains. With no allowed domains, members only.
+type RecipientPolicy interface {
+	// AllowedRecipients returns, for each address (lower-cased), whether it may
+	// receive the organization's reports.
+	AllowedRecipients(ctx context.Context, tenantID shared.ID, emails []string) (map[string]bool, error)
+}
+
+// ErrRecipientNotAllowed: a recipient is neither a member nor in an allowed
+// domain.
+var ErrRecipientNotAllowed = fmt.Errorf("%w: report recipients must be members of the organization or in one of its allowed email domains (Settings → Security)", shared.ErrValidation)
+
+// RefusedRecipients returns the recipients the policy does not allow, in
+// order. A nil policy allows everyone (tests).
+func RefusedRecipients(ctx context.Context, p RecipientPolicy, tenantID shared.ID, recipients []Recipient) ([]string, error) {
+	if p == nil || len(recipients) == 0 {
+		return nil, nil
+	}
+	emails := make([]string, 0, len(recipients))
+	for _, r := range recipients {
+		emails = append(emails, strings.ToLower(strings.TrimSpace(r.Email)))
+	}
+	allowed, err := p.AllowedRecipients(ctx, tenantID, emails)
+	if err != nil {
+		return nil, err
+	}
+	var refused []string
+	for _, e := range emails {
+		if !allowed[e] {
+			refused = append(refused, e)
+		}
+	}
+	return refused, nil
 }

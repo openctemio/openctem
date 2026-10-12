@@ -35,10 +35,13 @@ type TechniqueID string
 // Target identifies what we are validating against. The executor kind
 // determines which fields it uses.
 type Target struct {
-	AssetID  shared.ID
-	Type     string // "host" | "web_url" | "api_endpoint" | "cloud_resource"
-	Address  string // host:port, URL, ARN, etc.
-	Metadata map[string]any
+	AssetID shared.ID
+	Type    string // "host" | "web_url" | "api_endpoint" | "cloud_resource"
+	Address string // host:port, URL, ARN, etc.
+	// AssetName is the inventory name of the asset; a scope exclusion of it
+	// refuses the probe even when Address is a URL on the asset.
+	AssetName string
+	Metadata  map[string]any
 }
 
 // Evidence is everything a reviewer needs to judge whether the
@@ -65,12 +68,6 @@ type Evidence struct {
 	// heuristic. See detection.go.
 	CorrelationID shared.ID
 }
-
-// Executor is a back-compat accessor for legacy handler code that
-// already referenced the field. Prefer ExecutorKind directly.
-//
-// Deprecated: read ExecutorKind.
-func (e Evidence) Executor() string { return e.ExecutorKind }
 
 // Outcome is the exit status of an execution.
 type Outcome string
@@ -127,6 +124,14 @@ type ValidationJob struct {
 	// cross-scanner findings. Both empty for safe-check jobs.
 	TemplateID string
 	CVEID      string
+	// RetestID links the job to a finding retest (RFC-039). A retest job's
+	// evidence is recorded advisory-only and the retest service, not
+	// applyOutcomeToFinding, decides what happens to the finding.
+	RetestID shared.ID
+	// ScanRunID / ScanRunStepID tag the command with the run that holds it
+	// (a retest's run): the run lists it as a task and serves its logs.
+	ScanRunID     shared.ID
+	ScanRunStepID shared.ID
 }
 
 // ValidationDispatcher submits a job for a sensor and returns the

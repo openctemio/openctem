@@ -15,7 +15,14 @@ export type {
 } from './hooks/use-attack-path-scoring'
 
 // Components
-export { PathGraph } from './components'
+export { PathGraph, EASMOverview } from './components'
+export { useEASMSummary } from './hooks/use-easm-summary'
+export { EASMReviewQueue } from './components/easm-review-queue'
+export { EASMLookalikes } from './components/easm-lookalikes'
+export { AssetWebEvidenceCard } from './components/asset-web-evidence-card'
+export { EASMChanges } from './components/easm-changes'
+export { AttackSurfaceSectionTabs } from './components/attack-surface-section-tabs'
+export { useEASMReviewQueue, useDecideReviewBatch } from './hooks/use-easm-review'
 export type { PathGraphNode, PathGraphPath, PathNodeRole } from './components'
 
 export { useExposureChains } from './hooks/use-exposure-chains'

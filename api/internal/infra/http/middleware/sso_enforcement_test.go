@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -141,5 +143,59 @@ func TestSSOEnforcement_CachesLookup(t *testing.T) {
 	}
 	if p.calls != 1 {
 		t.Fatalf("expected a single cached lookup across 3 requests, got %d", p.calls)
+	}
+}
+
+// runEnforceURL drives one request on a URL-organization route: the context
+// carries the local claims plus the organization from the URL and the
+// caller's membership role there (as TenantContext + RequireMembership set).
+func runEnforceURL(t *testing.T, provider SSOEnforcedProvider, claims *jwt.Claims, urlTenant shared.ID, role tenantdom.Role) (int, bool) {
+	t.Helper()
+	gate := NewSSOEnforcementGate(provider, 60*time.Second, logger.NewNop())
+	reached := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/x/settings", nil)
+	ctx := context.WithValue(req.Context(), LocalClaimsKey, claims)
+	ctx = context.WithValue(ctx, TeamIDKey, urlTenant)
+	ctx = context.WithValue(ctx, TeamRoleKey, role)
+	rr := httptest.NewRecorder()
+	gate.Enforce(next).ServeHTTP(rr, req.WithContext(ctx))
+	return rr.Code, reached
+}
+
+func TestSSOEnforcement_URLOrganization(t *testing.T) {
+	enforced := shared.NewID()
+	other := shared.NewID()
+	p := &stubSSOEnforced{enforced: map[string]bool{enforced.String(): true}}
+
+	for _, tc := range []struct {
+		name   string
+		claims *jwt.Claims
+		role   tenantdom.Role
+		want   int
+	}{
+		{"password token from another org, admin here", passwordClaims(other.String(), "admin"), tenantdom.RoleAdmin, http.StatusForbidden},
+		{"owner elsewhere does not pass here", passwordClaims(other.String(), "owner"), tenantdom.RoleAdmin, http.StatusForbidden},
+		{"federated for another org counts as password here",
+			&jwt.Claims{UserID: "u1", TenantID: other.String(), Role: "admin", AuthMethod: "sso"}, tenantdom.RoleAdmin, http.StatusForbidden},
+		{"global token, admin here", passwordClaims("", ""), tenantdom.RoleAdmin, http.StatusForbidden},
+		{"federated for this org passes",
+			&jwt.Claims{UserID: "u1", TenantID: enforced.String(), Role: "admin", AuthMethod: "saml"}, tenantdom.RoleAdmin, http.StatusOK},
+		{"owner of this org passes (break-glass)", passwordClaims(other.String(), "member"), tenantdom.RoleOwner, http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, reached := runEnforceURL(t, p, tc.claims, enforced, tc.role)
+			if code != tc.want || reached != (tc.want == http.StatusOK) {
+				t.Fatalf("code=%d reached=%v, want %d", code, reached, tc.want)
+			}
+		})
+	}
+
+	// A URL organization without enforcement admits the password session.
+	if code, _ := runEnforceURL(t, p, passwordClaims(enforced.String(), "admin"), other, tenantdom.RoleAdmin); code != http.StatusOK {
+		t.Fatalf("unenforced URL organization: code=%d, want 200", code)
 	}
 }

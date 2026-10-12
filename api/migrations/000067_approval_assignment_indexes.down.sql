@@ -1,3 +1,0 @@
-DROP INDEX IF EXISTS idx_approvals_finding_status;
-DROP INDEX IF EXISTS idx_approvals_tenant_status_created;
-DROP INDEX IF EXISTS idx_assignment_rules_tenant_active_priority;

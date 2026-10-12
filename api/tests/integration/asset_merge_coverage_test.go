@@ -23,8 +23,13 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		SELECT c.conrelid::regclass::text || '.' || a.attname,
 		       CASE c.confdeltype WHEN 'c' THEN 'fk cascade' WHEN 'n' THEN 'fk set null' ELSE 'fk' END
 		FROM pg_constraint c
-		JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+		-- The referencing column paired with assets.id: the only column of a
+		-- single-column key, the asset column of a composite (tenant_id, asset)
+		-- key (migration 000921).
+		JOIN pg_attribute a ON a.attrelid = c.conrelid
+		 AND a.attnum = c.conkey[array_position(c.confkey, (SELECT attnum FROM pg_attribute WHERE attrelid = 'assets'::regclass AND attname = 'id'))]
 		WHERE c.contype = 'f' AND c.confrelid = 'assets'::regclass
+		  AND c.conparentid = 0 -- a partition's copy of its parent's key is covered by the parent
 		UNION
 		SELECT col.table_name || '.' || col.column_name, 'no fk'
 		FROM information_schema.columns col
@@ -34,7 +39,7 @@ func assetReferenceColumns(t *testing.T, db *sql.DB) map[string]string {
 		  AND col.udt_name IN ('uuid', '_uuid')
 		  AND NOT EXISTS (
 			SELECT 1 FROM pg_constraint k
-			JOIN pg_attribute ka ON ka.attrelid = k.conrelid AND ka.attnum = k.conkey[1]
+			JOIN pg_attribute ka ON ka.attrelid = k.conrelid AND ka.attnum = ANY(k.conkey)
 			WHERE k.contype = 'f' AND k.conrelid::regclass::text = col.table_name AND ka.attname = col.column_name)`)
 	if err != nil {
 		t.Fatalf("list asset references: %v", err)
@@ -121,10 +126,12 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	exec(`INSERT INTO business_services (id, tenant_id, name) VALUES ($1,$2,'svc')`, newID("svc"), T)
 	exec(`INSERT INTO asset_groups (id, tenant_id, name) VALUES ($1,$2,'ag')`, newID("ag"), T)
 	exec(`INSERT INTO compensating_controls (id, tenant_id, name, control_type) VALUES ($1,$2,'cc','other')`, newID("cc"), T)
-	exec(`INSERT INTO attack_paths (id, tenant_id, name) VALUES ($1,$2,'ap')`, newID("ap"), T)
 	exec(`INSERT INTO threat_models (id, tenant_id, scope_type, name) VALUES ($1,$2,'tenant','tm')`, newID("tm"), T)
-	exec(`INSERT INTO pipeline_templates (id, tenant_id, name) VALUES ($1,$2,'pt')`, newID("pt"), T)
-	exec(`INSERT INTO components (id, purl, name, ecosystem) VALUES ($1,'pkg:npm/m-'||md5(random()::text),'m','npm')`, newID("comp"))
+	exec(`INSERT INTO scan_workflows (id, tenant_id, name) VALUES ($1,$2,'pt')`, newID("pt"), T)
+	exec(`INSERT INTO software_products (id, tenant_id, part, name, purl_type, purl_namespace, purl_name, source)
+		VALUES ($1,$2,'a','m','npm','','m-'||md5(random()::text),'observed')`, newID("prod"), T)
+	exec(`INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme) VALUES ($1,$2,$3,'1.0.0','1.0.0','npm')`, newID("comp"), ids["prod"], T)
+	exec(`INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme) VALUES ($1,$2,$3,'2.0.0','2.0.0','npm')`, newID("comp2"), ids["prod"], T)
 
 	// One row per reference for the merged asset ($2); where noted, the kept
 	// asset ($3) already holds the same unique key, so the merged row is
@@ -134,13 +141,11 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`INSERT INTO exposures (tenant_id, asset_id, title, category, severity) VALUES ($1,$2,'e','c','low')`,
 		`INSERT INTO suppression_rules (tenant_id, name, requested_by, asset_id) VALUES ($1,'s',$4,$2)`,
 		`INSERT INTO sla_policies (tenant_id, name, asset_id) VALUES ($1,md5(random()::text),$2)`,
-		`INSERT INTO scan_sessions (tenant_id, scanner_name, asset_type, asset_value, asset_id) VALUES ($1,'s','host','v',$2)`,
 		`INSERT INTO exposure_events (tenant_id, event_type, title, fingerprint, source, asset_id) VALUES ($1,'port_open','t',md5(random()::text),'s',$2)`,
 		`INSERT INTO runtime_telemetry_events (tenant_id, event_type, observed_at, endpoint_asset_id) VALUES ($1,'process_start',NOW(),$2)`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($2,$4,'primary')`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($3,$4,'primary')`, // conflict
 		`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($4,$1,$2)`,
-		`INSERT INTO asset_sources (asset_id, source_type, source_id) VALUES ($2,'scanner',NULL)`,
 		`INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at) VALUES ($2,$1,NOW())`,
 		`INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at) VALUES ($3,$1,NOW())`, // conflict
 		`INSERT INTO asset_services (tenant_id, asset_id, port, protocol) VALUES ($1,$2,8080,'tcp')`,
@@ -161,10 +166,13 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	exec(`INSERT INTO business_service_assets (tenant_id, service_id, asset_id) VALUES ($1,$2,$3)`, T, ids["svc"], M)
 	exec(`INSERT INTO asset_group_members (asset_group_id, asset_id) VALUES ($1,$2)`, ids["ag"], M)
 	exec(`INSERT INTO compensating_control_assets (control_id, asset_id) VALUES ($1,$2)`, ids["cc"], M)
-	exec(`INSERT INTO attack_path_nodes (attack_path_id, asset_id, node_order, node_type) VALUES ($1,$2,1,'entry')`, ids["ap"], M)
 	exec(`INSERT INTO threat_model_threats (tenant_id, threat_model_id, entry_point_asset_id, hop_asset_id, target_asset_id) VALUES ($1,$2,$3,$3,$3)`, T, ids["tm"], M)
-	exec(`INSERT INTO pipeline_runs (tenant_id, pipeline_id, trigger_type, asset_id) VALUES ($1,$2,'manual',$3)`, T, ids["pt"], M)
-	exec(`INSERT INTO asset_components (tenant_id, asset_id, component_id, path, name, ecosystem) VALUES ($1,$2,$3,'/m','m','npm')`, T, M, ids["comp"])
+	exec(`INSERT INTO scan_runs (tenant_id, scan_workflow_id, trigger_type, asset_id) VALUES ($1,$2,'manual',$3)`, T, ids["pt"], M)
+	exec(`INSERT INTO asset_software (id, tenant_id, asset_id, product_id, software_version_id, location, source, confidence, relationship)
+		VALUES ($1,$2,$3,$4,$5,'/m','package',100,'direct')`, newID("link1"), T, M, ids["prod"], ids["comp"])
+	exec(`INSERT INTO asset_software (id, tenant_id, asset_id, product_id, software_version_id, location, source, confidence, relationship)
+		VALUES ($1,$2,$3,$4,$5,'/m','package',100,'transitive')`, newID("link2"), T, M, ids["prod"], ids["comp2"])
+	exec(`INSERT INTO asset_software_edges (tenant_id, asset_id, parent_id, child_id) VALUES ($1,$2,$3,$4)`, T, M, ids["link1"], ids["link2"])
 	exec(`INSERT INTO pentest_campaigns (tenant_id, name, asset_ids) VALUES ($1,'pc',$2)`, T, pq.Array([]string{M, O}))
 
 	// Repository data: the merged repo has branches main (the kept repo has
@@ -185,7 +193,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		VALUES ($1,$2,'keep','repository',$3,'keep',$4,$5,'pending')`, reviewID, T, K, pq.Array([]string{M}), pq.Array([]string{"merge-mergeall"}))
 
 	repo := postgres.NewAssetDedupRepository(&postgres.DB{DB: db})
-	if err := repo.ApproveAndMerge(ctx, T, reviewID, U); err != nil {
+	if err := repo.ApproveAndMerge(ctx, T, reviewID, U, nil); err != nil {
 		t.Fatalf("ApproveAndMerge: %v", err)
 	}
 
@@ -221,22 +229,20 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`SELECT count(*) FROM exposures WHERE asset_id = $1`:                                                                       1,
 		`SELECT count(*) FROM suppression_rules WHERE asset_id = $1`:                                                               1,
 		`SELECT count(*) FROM sla_policies WHERE asset_id = $1`:                                                                    1,
-		`SELECT count(*) FROM scan_sessions WHERE asset_id = $1`:                                                                   1,
 		`SELECT count(*) FROM exposure_events WHERE asset_id = $1`:                                                                 1,
 		`SELECT count(*) FROM runtime_telemetry_events WHERE endpoint_asset_id = $1`:                                               1,
-		`SELECT count(*) FROM pipeline_runs WHERE asset_id = $1`:                                                                   1,
-		`SELECT count(*) FROM attack_path_nodes WHERE asset_id = $1`:                                                               1,
+		`SELECT count(*) FROM scan_runs WHERE asset_id = $1`:                                                                       1,
 		`SELECT count(*) FROM threat_model_threats WHERE entry_point_asset_id = $1 AND hop_asset_id = $1 AND target_asset_id = $1`: 1,
 		`SELECT count(*) FROM asset_owners WHERE asset_id = $1`:                                                                    2, // user (kept's own) + group
 		`SELECT count(*) FROM user_accessible_assets WHERE asset_id = $1`:                                                          1,
-		`SELECT count(*) FROM asset_sources WHERE asset_id = $1`:                                                                   1,
 		`SELECT count(*) FROM scan_coverage_state WHERE asset_id = $1`:                                                             1,
 		`SELECT count(*) FROM asset_services WHERE asset_id = $1`:                                                                  1,
 		`SELECT count(*) FROM business_unit_assets WHERE asset_id = $1`:                                                            1,
 		`SELECT count(*) FROM business_service_assets WHERE asset_id = $1`:                                                         1,
 		`SELECT count(*) FROM asset_group_members WHERE asset_id = $1`:                                                             1,
 		`SELECT count(*) FROM compensating_control_assets WHERE asset_id = $1`:                                                     1,
-		`SELECT count(*) FROM asset_components WHERE asset_id = $1`:                                                                1,
+		`SELECT count(*) FROM asset_software WHERE asset_id = $1 AND source = 'package'`:                                           2,
+		`SELECT count(*) FROM asset_software_edges WHERE asset_id = $1`:                                                            1,
 		`SELECT count(*) FROM relationship_suggestions WHERE source_asset_id = $1`:                                                 1, // loop dropped
 		`SELECT count(*) FROM asset_relationships WHERE target_asset_id = $1`:                                                      1,
 		`SELECT count(*) FROM assets WHERE parent_id = $1`:                                                                         1,
@@ -259,6 +265,5 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 	}
 
 	_, _ = db.Exec(`DELETE FROM tenants WHERE id = $1`, T)
-	_, _ = db.Exec(`DELETE FROM components WHERE id = $1`, ids["comp"])
 	_, _ = db.Exec(`DELETE FROM users WHERE id = $1`, U)
 }

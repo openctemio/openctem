@@ -13,6 +13,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -100,7 +101,7 @@ func (m *APIKeyAuthMiddleware) Handler(next http.Handler) http.Handler {
 			apierror.Unauthorized("Invalid credentials").WriteJSON(w)
 			return
 		}
-		ctx, ok := m.authenticate(w, r, raw)
+		ctx, ok := m.authenticate(w, r, raw, scangov.OriginMCP)
 		if !ok {
 			return
 		}
@@ -143,7 +144,7 @@ func (m *APIKeyAuthMiddleware) OrJWT(jwtAuth func(http.Handler) http.Handler) fu
 				apierror.Forbidden("API keys cannot be used on this endpoint").WriteJSON(w)
 				return
 			}
-			ctx, ok := m.authenticate(w, r, raw)
+			ctx, ok := m.authenticate(w, r, raw, scangov.OriginAPIKey)
 			if !ok {
 				return
 			}
@@ -157,9 +158,10 @@ func (m *APIKeyAuthMiddleware) OrJWT(jwtAuth func(http.Handler) http.Handler) fu
 }
 
 // authenticate validates raw, applies the key's rate limit and returns the
-// request context carrying the key's identity. On failure it writes the
-// response and returns false.
-func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, raw string) (context.Context, bool) {
+// request context carrying the key's identity and origin (the MCP
+// endpoint or the REST API). On failure it writes the response and returns
+// false.
+func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, raw string, origin scangov.Origin) (context.Context, bool) {
 	key, perms, err := m.auth.AuthenticateWithPermissions(r.Context(), raw, getClientIP(r))
 	if err != nil {
 		m.log.Debug("api key auth failed", "reason", err.Error())
@@ -185,6 +187,7 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 	ctx = context.WithValue(ctx, APIKeyIDKey, key.ID().String())
 	ctx = context.WithValue(ctx, APIKeyPrefixKey, key.KeyPrefix())
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderAPIKey)
+	ctx = scangov.WithOrigin(ctx, origin)
 	if uid := key.UserID(); uid != nil {
 		ctx = context.WithValue(ctx, UserIDKey, uid.String())
 	}
@@ -204,13 +207,18 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 // with a matching scope. They manage credentials or the account itself, or
 // belong to a person's browser session rather than to automation:
 //
-//   - /api/v1/api-keys, /api/v1/scim-tokens: a key must not list, mint or
-//     revoke credentials (it could otherwise extend its own life).
+//   - /api/v1/api-keys, /api/v1/scim-tokens, /api/v1/service-accounts: a key
+//     must not list, mint or revoke credentials (it could otherwise extend
+//     its own life, or mint one for a service account).
 //   - /api/v1/me, /api/v1/notifications, /api/v1/ws: the signed-in user's own
 //     surface (permissions bootstrap, inbox, websocket).
-//   - /api/v1/platform: its /stats route has no permission gate, so a key's
-//     scopes could not bound it.
+//   - /api/v1/platform: platform scanning as the signed-in organization sees
+//     it in the console; automation has no use for it.
 //   - /api/v1/users: account management, including /users/{id}/roles.
+//   - /api/v1/oauth: answering an MCP client's consent request is a person's
+//     decision in their browser session, never automation's (RFC-062).
+//   - /api/v1/mcp-access: the organization MCP policy, which decides what
+//     keys and applications may do on the MCP server.
 //   - /api/v1/auth, /api/v1/admin, /api/v1/tenants, /api/v1/invitations:
 //     sign-in, the platform admin console, organization and membership
 //     management. These are not on the key-capable chain at all; listing them
@@ -218,6 +226,7 @@ func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Reque
 var apiKeyDeniedPrefixes = []string{ //nolint:gochecknoglobals // fixed policy table
 	"/api/v1/api-keys",
 	"/api/v1/scim-tokens",
+	"/api/v1/service-accounts",
 	"/api/v1/me",
 	"/api/v1/notifications",
 	"/api/v1/ws",
@@ -227,6 +236,8 @@ var apiKeyDeniedPrefixes = []string{ //nolint:gochecknoglobals // fixed policy t
 	"/api/v1/admin",
 	"/api/v1/tenants",
 	"/api/v1/invitations",
+	"/api/v1/oauth",
+	"/api/v1/mcp-access",
 }
 
 // APIKeyDeniedPrefixes returns the route prefixes an API key may never reach.

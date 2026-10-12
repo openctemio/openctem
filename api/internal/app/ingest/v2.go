@@ -3,10 +3,10 @@ package ingest
 // Ingest semantics of sensor protocol v2 results (RFC-026 §5,
 // docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
-// A v2 segment runs through the same pipeline as v1 (Service.Ingest) with the
+// A v2 segment runs through the same ingest path as v1 (Service.Ingest) with the
 // v2 Options on: no fallback asset, no writes to the global vulnerability
 // catalog, no auto-resolve. Findings whose asset cannot be resolved inside
-// their own segment are rejected per item before the pipeline runs, and every
+// their own segment are rejected per item before the scan runs, and every
 // finding and asset ends up either accepted or rejected with a pointer and a
 // fixed reason. Auto-resolve runs once, at commit, over the union of the
 // assets the report's segments touched, behind the blinding guard.
@@ -22,9 +22,9 @@ import (
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
@@ -58,15 +58,26 @@ type V2Header struct {
 	Metadata ctis.ReportMetadata `json:"metadata"`
 }
 
+// MaxV2HeaderBytes caps the header of a report (its tool and metadata,
+// without the items), which is stored with the report.
+const MaxV2HeaderBytes = 64 << 10
+
 // V2HeaderOf returns the canonical header JSON of a segment and its digest.
 // The report id is not part of it: metadata.id is either empty or the report
 // id, and both spellings describe the same report.
+//
+// The header is stored with the report and kept as long as the report, so
+// it is capped (MaxV2HeaderBytes): over it the segment is report-too-large.
 func V2HeaderOf(r *ctis.Report) (canonical []byte, digest string, err error) {
 	md := r.Metadata
 	md.ID = ""
 	canonical, err = json.Marshal(V2Header{Tool: r.Tool, Metadata: md})
 	if err != nil {
 		return nil, "", fmt.Errorf("encode v2 header: %w", err)
+	}
+	if len(canonical) > MaxV2HeaderBytes {
+		return nil, "", &V2ReportError{Problem: protov2.ProblemReportTooLarge, Errors: []protov2.ItemError{
+			item("/metadata", protov2.CodeTooMany, protov2.DetailTooMany)}}
 	}
 	sum := sha256.Sum256(canonical)
 	return canonical, protov2.FormatSHA256(sum[:]), nil
@@ -96,7 +107,13 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	filtered.Findings = kept
 
 	agt := &sensor.Sensor{ID: prov.SensorID, TenantID: &prov.TenantID, Type: sensor.SensorType(prov.SensorType), Status: sensor.SensorStatusActive}
-	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, Options: V2Options()})
+	opts := V2Options()
+	// The job processor ran the unsolicited gate for a report without a
+	// command (V2JobProcessor.processSegment); a bound one changes only what
+	// its command covers.
+	opts.Binding = s.bindingFromCommandID(ctx, prov.TenantID, prov.CommandID)
+	opts.Admitted = true
+	out, err := s.Ingest(ctx, agt, Input{Report: &filtered, Options: opts})
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +172,7 @@ func addItemError(o *ingestreport.SegmentOutcome, e protov2.ItemError) {
 }
 
 // resolveV2Assets binds every finding to an asset of its own segment
-// (RFC-026 §5.2) before the pipeline runs. A finding with an asset_ref keeps
+// (RFC-026 §5.2) before the scan runs. A finding with an asset_ref keeps
 // it when the segment has that asset; a finding without one is bound to the
 // segment's asset when there is exactly one. Anything else is rejected:
 // v2 never falls back to a made-up or shared asset. Assets without an id get
@@ -223,13 +240,6 @@ func (g BlindingGuard) Holds(stale, open int) bool {
 	return stale > g.MinFindings && float64(stale) > g.Ratio*float64(open)
 }
 
-// autoResolveCounter is the dry-run count the blinding guard needs. Optional
-// so finding repository fakes need not implement it; without it the guard
-// cannot measure, and a commit holds rather than resolves.
-type autoResolveCounter interface {
-	CountAutoResolveCandidates(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID, toolName, currentScanID string) (stale, open int, err error)
-}
-
 // CommitResult is what the commit-time steps did.
 type CommitResult struct {
 	AutoResolved int
@@ -238,13 +248,14 @@ type CommitResult struct {
 	AutoResolve string
 }
 
-// ErrV2ToolNotDeclared: the report's tool is not among the sensor's declared
-// tools (strict: a sensor with no declared tools may report none).
+// ErrV2ToolNotDeclared: the report's tool is not among the sensor's effective
+// tools, the ones it reported installed (strict: a sensor that reported no
+// tool may report no result).
 var ErrV2ToolNotDeclared = errors.New("tool not declared by the sensor")
 
 // SensorDeclaresTool is the v2 tool gate (RFC-026 §5.2): the tool must be one
-// the sensor declared, and never a name reserved for non-sensor sources.
-// Unlike v1 there is no allow-all for a sensor that declared nothing.
+// the sensor reported installed, and never a name reserved for non-sensor sources.
+// There is no allow-all for a sensor that reported nothing.
 func SensorDeclaresTool(tools []string, toolName string) bool {
 	name := strings.TrimSpace(toolName)
 	if name == "" {
@@ -282,6 +293,25 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 	if header.Tool == nil || s.findingRepo == nil || len(touched) == 0 {
 		return res
 	}
+	// RFC-040 §5.3: a report without a command never auto-resolves in a
+	// tenant whose mode is quarantine; a bound one resolves only on the
+	// assets its command covers. finding counts still cover every touched
+	// asset (deferred above).
+	scoped := touched
+	if prov.CommandID == nil {
+		if s.ResultPolicy(ctx, tenantID).Mode != sensorresult.ModeWarn {
+			s.logger.Info("v2 commit: auto-resolve skipped, the report names no command (tenant mode quarantine)",
+				"sensor_id", prov.SensorID.String(), "report_id", prov.ReportID)
+			return res
+		}
+		// Warn mode: the per-branch occurrence sweep still runs, but a report
+		// without a command never closes a finding (owner decision O11).
+	} else {
+		scoped = s.coveredByCommand(ctx, tenantID, prov.CommandID, touched)
+		if len(scoped) == 0 {
+			return res
+		}
+	}
 	toolName := header.Tool.Name
 	md := header.Metadata
 	md.ID = prov.ReportID
@@ -299,37 +329,28 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 		return res
 	}
 
-	if input.ShouldAutoResolve() {
-		counter, ok := s.findingRepo.(autoResolveCounter)
-		if !ok {
-			res.AutoResolve = protov2.AutoResolveHeld
-			return res
-		}
-		stale, open, err := counter.CountAutoResolveCandidates(ctx, tenantID, touched, toolName, prov.ReportID)
-		if err != nil {
-			s.logger.Warn("v2 commit: blinding guard could not count; auto-resolve held", "error", err)
-			res.AutoResolve = protov2.AutoResolveHeld
-			return res
-		}
-		if guard.Holds(stale, open) {
-			s.logger.Warn("v2 commit: auto-resolve held for review (blinding guard)",
-				"sensor_id", prov.SensorID.String(), "report_id", prov.ReportID,
-				"tool_name", sanitizeIngestLogField(toolName), "would_resolve", stale, "open", open)
-			res.AutoResolve = protov2.AutoResolveHeld
-			return res
-		}
-		resolved, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, touched, toolName, prov.ReportID, nil)
-		if err != nil {
-			s.logger.Warn("v2 commit: auto-resolve failed", "error", err)
-			return res
-		}
-		res.AutoResolve = protov2.AutoResolveApplied
-		res.AutoResolved = len(resolved)
-		if len(resolved) > 0 {
-			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolved)))
-			if s.activityService != nil {
-				if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, resolved, toolName, prov.ReportID); err != nil {
-					s.logger.Warn("failed to record auto-resolve activities", "error", err)
+	// Default-branch findings close only through the per-command evaluation
+	// (evaluateRepoCoverage): it needs the command completed with exit 0 and
+	// every report of the run clean, so it runs here when the command already
+	// finished, and again when it does (command completion, finalize).
+	if input.ShouldAutoResolve() && prov.CommandID != nil {
+		if repo, ok := s.findingRepo.(coverageRepo); ok {
+			if cov, err := repo.CommandCoverage(ctx, tenantID, *prov.CommandID); err == nil {
+				// This report is being finalized: committed, with every
+				// segment's outcome recorded (ClaimFinalize). Its row says
+				// so only after Finish, so count it as completed here.
+				for i := range cov.Reports {
+					if cov.Reports[i].ReportID == prov.ReportID {
+						cov.Reports[i].State = protov2.StateCompleted
+					}
+				}
+				out := s.evaluateRepoCoverage(ctx, tenantID, *prov.CommandID, cov, guard)
+				switch {
+				case out.Held:
+					res.AutoResolve = protov2.AutoResolveHeld
+				case out.Reason == coverageEligible:
+					res.AutoResolve = protov2.AutoResolveApplied
+					res.AutoResolved = len(out.Resolved)
 				}
 			}
 		}
@@ -337,7 +358,7 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 
 	// Per-branch occurrences: any full scan, on the branch it scanned.
 	if input.IsFullCoverage() && s.branchRepo != nil && md.Branch != nil && md.Branch.Name != "" {
-		for _, assetID := range touched {
+		for _, assetID := range scoped {
 			br, err := s.branchRepo.GetByName(ctx, assetID, md.Branch.Name)
 			if err != nil || br == nil {
 				continue
@@ -348,4 +369,24 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 		}
 	}
 	return res
+}
+
+// coveredByCommand keeps the assets among ids that the bound command's
+// targets cover (RFC-040 §5.3): the scope of a bound report's auto-resolve.
+func (s *Service) coveredByCommand(ctx context.Context, tenantID shared.ID, commandID *shared.ID, ids []shared.ID) []shared.ID {
+	scope := newAlterScope(s.bindingFromCommandID(ctx, tenantID, commandID))
+	if s.assetRepo == nil {
+		return nil
+	}
+	out := make([]shared.ID, 0, len(ids))
+	for _, id := range ids {
+		a, err := s.assetRepo.GetByID(ctx, tenantID, id)
+		if err != nil || a == nil {
+			continue
+		}
+		if scope.mayAlter(a) {
+			out = append(out, id)
+		}
+	}
+	return out
 }

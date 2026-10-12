@@ -11,7 +11,7 @@ A key works in two places:
 | `POST /api/v1/mcp` | The read-only MCP server ([mcp-server.md](./mcp-server.md)). |
 | Tenant REST routes (`/api/v1/assets`, `/api/v1/findings`, …) | **Read-only**: `GET`/`HEAD`, within the key's scopes. |
 
-Sensor keys (`rda_…`, `X-Sensor-Api-Key`), SCIM tokens and the admin console
+Sensor keys (`octs_…`, legacy `rda_…`; see [agent-identity.md](agent-identity.md#credential-formats)), SCIM tokens and the admin console
 are separate credentials and are not covered here.
 
 ## What a key carries
@@ -28,7 +28,7 @@ are separate credentials and are not covered here.
 Who sees which keys: owners and administrators list every key of the
 organization; anyone else (`integrations:api_keys:read` without the admin
 bypass) lists only the keys whose `user_id` is their own, and another user's
-key reads as 404 (owner decision 2026-10-02). Minting, revoking and deleting
+key reads as 404. Minting, revoking and deleting
 need `integrations:api_keys:write` / `:delete`, which only owners and
 administrators hold by default.
 
@@ -60,6 +60,11 @@ An owner or admin holds everything, so their keys keep exactly their scopes;
 anyone else's key loses a scope as soon as the user loses that permission.
 A key is never an admin: the owner/admin bypass never applies, so a route the
 key has no scope for is `403`.
+
+Every key expires: `expires_in_days` is required, 1 to 365 (settings decision
+B14). Keys minted before this rule without an expiry keep working. A member
+may revoke or delete only their own keys (someone else's key reads as `404`);
+an owner or administrator may revoke or delete any key of the organization.
 
 The key is refused (`401`) when it is unknown, revoked or expired, when its user
 is no longer an active member of the tenant (suspended or removed), when the
@@ -116,7 +121,7 @@ a permission gate is reachable by a key.
 Keys are read-only on the REST API. Scopes can include write permissions
 (`assets:write`, `findings:status`, …), but every key minted so far was minted
 for the read-only MCP server, so honouring those scopes now would silently give
-existing keys write access. Allowing writes needs an owner decision: either a
+existing keys write access. Allowing writes needs a design decision: either a
 per-key "allow writes" flag set at mint time, or honouring write scopes only
 for keys minted after the change. The denylist and the CSRF reasoning above
 already hold for writes; the read-only check in `OrJWT` is the one switch.

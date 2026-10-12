@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { usePathname } from 'next/navigation'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { SidebarFooterLinks } from '../sidebar-footer-links'
-import { DOCS_URL, REPORT_ISSUE_URL } from '@/config/help-links'
+import { REPORT_ISSUE_URL } from '@/config/help-links'
+import { DOCS_URL } from '@/lib/docs-links'
 import { KEYBOARD_SHORTCUTS, shortcutsForShell } from '@/config/keyboard-shortcuts'
 
 // About reads the builds over the network; the dialog's own test covers that.
@@ -12,11 +13,9 @@ vi.mock('@/hooks/use-build-versions', () => ({
   useBuildVersions: (shell: string, open: boolean) =>
     open
       ? {
-          web: { version: 'v0.8.0-dev', commit: '4d2f4b02', channel: 'development' },
+          web: { version: 'v0.8.0-dev', commit: '4d2f4b02', channel: 'dev' },
           api:
-            shell === 'app'
-              ? { version: 'v0.8.0-dev', commit: 'a0a14db0', channel: 'development' }
-              : null,
+            shell === 'app' ? { version: 'v0.8.0-dev', commit: 'a0a14db0', channel: 'dev' } : null,
         }
       : { web: undefined, api: undefined },
 }))

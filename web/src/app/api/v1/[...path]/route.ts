@@ -17,28 +17,48 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { env } from '@/lib/env'
 
-// Limit request body to 12MB (matches backend MaxFileSize 10MB + 2MB overhead).
-// Prevents memory exhaustion from oversized uploads hitting the Node.js proxy.
+// Request bodies: at most 12 MiB, read into memory, except the import routes,
+// which are streamed up to the API's own limit (src/lib/api/proxy-upload.ts).
 export const maxDuration = 60 // seconds
 export const dynamic = 'force-dynamic'
 import { isInSwitchCooldown } from '@/lib/api/switch-cooldown'
 import { applyClientIpHeaders } from '@/lib/api/client-ip-headers'
-import { proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
+import { CONDITIONAL_REQUEST_HEADERS, proxyCacheHeaders } from '@/lib/api/proxy-cache-headers'
+import { isBinaryContentType } from '@/lib/api/proxy-binary'
+import { proxyBackendPath } from '@/lib/api/proxy-path'
+import {
+  accessTokenExpiresSoon,
+  limitBodyStream,
+  ProxyBodyTooLargeError,
+  proxyBodyPolicy,
+} from '@/lib/api/proxy-upload'
+import {
+  copyProxiedHeaders,
+  PROXIED_RESPONSE_HEADERS,
+  PROXIED_STREAM_HEADERS,
+} from '@/lib/api/proxy-response-headers'
 import {
   isSensorProtocolPath,
   SENSOR_PROTOCOL_REFUSAL,
   SENSOR_PROTOCOL_REFUSAL_STATUS,
 } from '@/lib/api/sensor-protocol-guard'
 import { devLog } from '@/lib/logger'
-import { rotatedRefreshToken } from '@/lib/server-auth-cookies'
+import { csrfRejection, rotatedRefreshToken } from '@/lib/server-auth-cookies'
 
 const ACCESS_TOKEN_COOKIE = env.auth.cookieName
 const REFRESH_TOKEN_COOKIE = env.auth.refreshCookieName
 const TENANT_COOKIE = env.cookies.tenant
 
-// Simple in-memory lock to prevent concurrent refresh attempts
-// Key: tenantId, Value: Promise that resolves when refresh completes
+// One refresh at a time per session: parallel requests of one browser share
+// it. The key is the caller's own refresh token (with the tenant), never the
+// tenant alone: the result is set as the caller's cookies, and the tenant
+// cookie is chosen by the client, so a tenant-keyed lock handed one person's
+// refreshed tokens to anyone whose request arrived during that refresh.
 const refreshLocks = new Map<string, Promise<RefreshResult | null>>()
+
+function refreshLockKey(refreshToken: string, tenantId: string): string {
+  return `${tenantId}\u0000${refreshToken}`
+}
 
 // Switch cooldown is managed by @/lib/api/switch-cooldown
 // imported above as isInSwitchCooldown()
@@ -68,7 +88,7 @@ async function getTenantId(): Promise<string | undefined> {
 
 /**
  * Attempt to refresh the access token using refresh token
- * Uses locking to prevent concurrent refresh attempts for the same tenant
+ * Uses locking to prevent concurrent refresh attempts for the same session
  * Returns the new access token if successful, null otherwise
  */
 async function tryRefreshAccessToken(
@@ -80,10 +100,11 @@ async function tryRefreshAccessToken(
     return null
   }
 
-  // Check if there's already a refresh in progress for this tenant
-  const existingPromise = refreshLocks.get(tenantId)
+  // Check if this session already has a refresh in progress
+  const lockKey = refreshLockKey(refreshToken, tenantId)
+  const existingPromise = refreshLocks.get(lockKey)
   if (existingPromise) {
-    devLog.log('[Proxy] Refresh already in progress for tenant, waiting...')
+    devLog.log('[Proxy] Refresh already in progress for this session, waiting...')
     return existingPromise
   }
 
@@ -122,12 +143,12 @@ async function tryRefreshAccessToken(
       return null
     } finally {
       // Remove lock after completion
-      refreshLocks.delete(tenantId)
+      refreshLocks.delete(lockKey)
     }
   })()
 
   // Store the promise so concurrent requests can wait on it
-  refreshLocks.set(tenantId, refreshPromise)
+  refreshLocks.set(lockKey, refreshPromise)
 
   return refreshPromise
 }
@@ -174,11 +195,14 @@ async function makeBackendRequest(
   headers: Headers,
   body: BodyInit | undefined
 ): Promise<Response> {
+  // A streamed body needs duplex 'half' (Node's fetch refuses it otherwise).
+  const streamed = typeof ReadableStream !== 'undefined' && body instanceof ReadableStream
   return fetch(backendUrl, {
     method,
     headers,
     body,
-  })
+    ...(streamed ? { duplex: 'half' } : {}),
+  } as RequestInit)
 }
 
 async function proxyRequest(
@@ -190,7 +214,19 @@ async function proxyRequest(
     return NextResponse.json(SENSOR_PROTOCOL_REFUSAL, { status: SENSOR_PROTOCOL_REFUSAL_STATUS })
   }
 
-  const path = params.path.join('/')
+  // Every write here is authenticated by the browser's cookies (the session,
+  // or for /auth/* the refresh cookie the API sets): same origin and the
+  // double-submit pair, signed in or not. The API checks the pair again.
+  const csrf = csrfRejection(request)
+  if (csrf) return csrf
+
+  const path = proxyBackendPath(params.path)
+  if (path === null) {
+    return NextResponse.json(
+      { error: 'INVALID_PATH', code: 'INVALID_PATH', message: 'Invalid request path' },
+      { status: 400 }
+    )
+  }
   const url = new URL(request.url)
   // Route is /api/v1/[...path], so we need to add /api/v1/ prefix for backend
   const backendUrl = `${env.api.url}/api/v1/${path}${url.search}`
@@ -206,9 +242,14 @@ async function proxyRequest(
   // Track if we refreshed the token (to set cookie in response)
   let refreshedTokenData: RefreshResult | null = null
 
+  const bodyPolicy = proxyBodyPolicy(request.method, path)
+
   // If access token is missing but refresh token exists, try to refresh BEFORE making request
-  // Skip during post-switch cooldown to avoid stale refresh token errors
-  if (!accessToken && refreshToken && !isInSwitchCooldown()) {
+  // Skip during post-switch cooldown to avoid stale refresh token errors.
+  // A streamed upload cannot be sent again after a 401, so a token about to
+  // expire is refreshed before it too.
+  const refreshFirst = !accessToken || (bodyPolicy.stream && accessTokenExpiresSoon(accessToken))
+  if (refreshFirst && refreshToken && !isInSwitchCooldown()) {
     devLog.log('[Proxy] Access token missing, attempting pre-request refresh...')
     const tenantId = await getTenantId()
     refreshedTokenData = await tryRefreshAccessToken(refreshToken, tenantId)
@@ -269,6 +310,9 @@ async function proxyRequest(
     // derives tenant solely from the JWT. Forwarding it is a footgun.
     'x-csrf-token',
     'x-sensor-api-key', // For GET /sensors/{id}/config-templates — keeps key out of query string
+    // Conditional GETs: the browser revalidates a kept response and the API
+    // answers 304 when its ETag still matches.
+    ...CONDITIONAL_REQUEST_HEADERS,
   ]
   forwardHeaders.forEach((header) => {
     const value = request.headers.get(header)
@@ -288,12 +332,16 @@ async function proxyRequest(
   // For JSON requests, read as text.
   let body: BodyInit | undefined
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    // Guard: reject oversized bodies before reading into memory (12MB max)
+    // Guard: reject oversized bodies before reading or forwarding them.
     const contentLength = parseInt(request.headers.get('content-length') || '0', 10)
-    if (contentLength > 12 * 1024 * 1024) {
+    if (contentLength > bodyPolicy.limit) {
       return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
     }
-    if (isMultipart) {
+    if (bodyPolicy.stream && request.body) {
+      // Import uploads go to the API as they arrive, never held in memory;
+      // the counting stream cuts a body without an honest Content-Length.
+      body = limitBodyStream(request.body, bodyPolicy.limit)
+    } else if (isMultipart) {
       // Preserve binary content for file uploads — read as raw ArrayBuffer
       // and wrap in Uint8Array which fetch() accepts as BodyInit.
       const buffer = await request.arrayBuffer()
@@ -310,7 +358,15 @@ async function proxyRequest(
     // Handle 401 Unauthorized - try to refresh token and retry ONCE
     // Skip during post-switch cooldown: tokens were just rotated by switch-team,
     // using the old refresh token would trigger "already been used" errors
-    if (response.status === 401 && refreshToken && !refreshedTokenData && !isInSwitchCooldown()) {
+    // A streamed body was consumed by the first attempt and cannot be resent.
+    const replayable = !(typeof ReadableStream !== 'undefined' && body instanceof ReadableStream)
+    if (
+      response.status === 401 &&
+      replayable &&
+      refreshToken &&
+      !refreshedTokenData &&
+      !isInSwitchCooldown()
+    ) {
       devLog.log('[Proxy] Got 401, attempting token refresh and retry...')
       const tenantId = await getTenantId()
       refreshedTokenData = await tryRefreshAccessToken(refreshToken, tenantId)
@@ -344,15 +400,11 @@ async function proxyRequest(
     // For binary content (images, PDFs, videos, downloads) — stream the
     // response body directly without reading as text. Reading binary data
     // via response.text() corrupts it (encoding mismatch).
+    // Everything that is not JSON or text is passed through as bytes: an
+    // allow-list of binary types missed DOCX/XLSX and corrupted every Word
+    // report and template download (2026-10-12).
     const backendContentType = response.headers.get('content-type') || ''
-    const isBinaryResponse =
-      backendContentType.startsWith('image/') ||
-      backendContentType.startsWith('video/') ||
-      backendContentType.startsWith('audio/') ||
-      backendContentType === 'application/pdf' ||
-      backendContentType === 'application/zip' ||
-      backendContentType === 'application/octet-stream' ||
-      backendContentType === 'application/x-gzip'
+    const isBinaryResponse = isBinaryContentType(backendContentType)
 
     if (isBinaryResponse) {
       const proxyResponse = new NextResponse(response.body, {
@@ -360,10 +412,7 @@ async function proxyRequest(
         statusText: response.statusText,
       })
       // Forward content headers
-      for (const key of ['content-type', 'content-disposition', 'content-length']) {
-        const val = response.headers.get(key)
-        if (val) proxyResponse.headers.set(key, val)
-      }
+      copyProxiedHeaders(response.headers, proxyResponse.headers, PROXIED_STREAM_HEADERS)
       for (const [key, val] of Object.entries(
         proxyCacheHeaders(response.headers.get('cache-control'), Boolean(accessToken))
       )) {
@@ -373,6 +422,25 @@ async function proxyRequest(
         setTokenCookies(proxyResponse, refreshedTokenData)
       }
       return proxyResponse
+    }
+
+    // Not Modified: the browser's kept copy is still current. A 304 has no
+    // body; it carries the validator and the caching headers only.
+    if (response.status === 304) {
+      const notModified = new NextResponse(null, { status: 304 })
+      for (const [key, val] of Object.entries(
+        proxyCacheHeaders(
+          response.headers.get('cache-control'),
+          Boolean(accessToken),
+          response.headers.get('etag')
+        )
+      )) {
+        notModified.headers.set(key, val)
+      }
+      if (refreshedTokenData) {
+        setTokenCookies(notModified, refreshedTokenData)
+      }
+      return notModified
     }
 
     // Get response body — wrap in try-catch to handle stream errors
@@ -397,18 +465,16 @@ async function proxyRequest(
       statusText: response.statusText,
     })
 
-    // Copy relevant response headers
-    const copyHeaders = ['content-type', 'x-request-id', 'x-total-count', 'x-permission-stale']
-    copyHeaders.forEach((header) => {
-      const value = response.headers.get(header)
-      if (value) {
-        proxyResponse.headers.set(header, value)
-      }
-    })
+    // The API's content and security headers (CSP, nosniff, attachments).
+    copyProxiedHeaders(response.headers, proxyResponse.headers, PROXIED_RESPONSE_HEADERS)
     // The API's caching decision (no-store on secrets, max-age on config),
     // keyed by the session cookie for authenticated responses.
     for (const [key, val] of Object.entries(
-      proxyCacheHeaders(response.headers.get('cache-control'), Boolean(accessToken))
+      proxyCacheHeaders(
+        response.headers.get('cache-control'),
+        Boolean(accessToken),
+        response.headers.get('etag')
+      )
     )) {
       proxyResponse.headers.set(key, val)
     }
@@ -428,6 +494,12 @@ async function proxyRequest(
 
     return proxyResponse
   } catch (error) {
+    // A streamed upload cut at its limit: fetch rejects with the stream's
+    // error, or with a TypeError whose cause it is.
+    const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
+    if (error instanceof ProxyBodyTooLargeError || cause instanceof ProxyBodyTooLargeError) {
+      return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
+    }
     devLog.error('[Proxy] Connection error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(

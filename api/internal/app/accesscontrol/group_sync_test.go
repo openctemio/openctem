@@ -59,7 +59,7 @@ func (m *MockGroupRepository) Update(_ context.Context, _ *groupdom.Group) error
 	return nil
 }
 
-func (m *MockGroupRepository) Delete(_ context.Context, _ shared.ID) error {
+func (m *MockGroupRepository) Delete(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
@@ -131,22 +131,6 @@ func (m *MockGroupRepository) ListGroupsByUser(_ context.Context, _, _ shared.ID
 }
 
 func (m *MockGroupRepository) ListGroupIDsByUser(_ context.Context, _, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *MockGroupRepository) AssignPermissionSet(_ context.Context, _, _ shared.ID, _ *shared.ID) error {
-	return nil
-}
-
-func (m *MockGroupRepository) RemovePermissionSet(_ context.Context, _, _ shared.ID) error {
-	return nil
-}
-
-func (m *MockGroupRepository) ListPermissionSetIDs(_ context.Context, _ shared.ID) ([]shared.ID, error) {
-	return nil, nil
-}
-
-func (m *MockGroupRepository) ListGroupsWithPermissionSet(_ context.Context, _ shared.ID) ([]*groupdom.Group, error) {
 	return nil, nil
 }
 

@@ -5,11 +5,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 )
 
 func TestPromoteKnownProperties_SubType(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "fw-01",
 		Type:        "network",
 		Criticality: "high",
@@ -19,7 +19,7 @@ func TestPromoteKnownProperties_SubType(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	// sub_type promoted to __promoted_sub_type, removed from properties
 	assert.Equal(t, "firewall", result.Properties["__promoted_sub_type"])
@@ -29,7 +29,7 @@ func TestPromoteKnownProperties_SubType(t *testing.T) {
 }
 
 func TestPromoteKnownProperties_TypeAlias(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "fw-01",
 		Type:        "host",
 		Criticality: "high",
@@ -39,20 +39,36 @@ func TestPromoteKnownProperties_TypeAlias(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
-	// type resolved via alias: firewall → network
-	assert.Equal(t, "network", result.Type)
-	// sub_type promoted from alias resolution
-	assert.Equal(t, "firewall", result.Properties["__promoted_sub_type"])
+	// an alias in properties.type names the input type; CreateAsset
+	// resolves it to (network, firewall)
+	assert.Equal(t, "firewall", result.Type)
 	// original "type" key removed from properties
 	assert.Nil(t, result.Properties["type"])
 	// vendor stays
 	assert.Equal(t, "Palo Alto", result.Properties["vendor"])
 }
 
+// A properties.type that is not a registry alias (a vendor's own word such as
+// "lan") is an ordinary property. It used to overwrite the request type and
+// fail the request with "invalid asset type".
+func TestPromoteKnownProperties_NonAliasTypeStaysAProperty(t *testing.T) {
+	for _, v := range []string{"lan", "vpn_gateway", "network"} {
+		input := asset.CreateAssetInput{
+			Name:        "seg-01",
+			Type:        "network",
+			Criticality: "high",
+			Properties:  map[string]any{"type": v},
+		}
+		result := asset.PromoteKnownProperties(input)
+		assert.Equal(t, "network", result.Type, v)
+		assert.Equal(t, v, result.Properties["type"], v)
+	}
+}
+
 func TestPromoteKnownProperties_ScopeExposure(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
@@ -63,7 +79,7 @@ func TestPromoteKnownProperties_ScopeExposure(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	assert.Equal(t, "internal", result.Scope)
 	assert.Equal(t, "private", result.Exposure)
@@ -73,7 +89,7 @@ func TestPromoteKnownProperties_ScopeExposure(t *testing.T) {
 }
 
 func TestPromoteKnownProperties_ScopeNoOverride(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
@@ -83,14 +99,14 @@ func TestPromoteKnownProperties_ScopeNoOverride(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	// Top-level scope preserved, properties scope ignored
 	assert.Equal(t, "external", result.Scope)
 }
 
 func TestPromoteKnownProperties_Tags(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
@@ -100,7 +116,7 @@ func TestPromoteKnownProperties_Tags(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	assert.Contains(t, result.Tags, "existing")
 	assert.Contains(t, result.Tags, "production")
@@ -109,7 +125,7 @@ func TestPromoteKnownProperties_Tags(t *testing.T) {
 }
 
 func TestPromoteKnownProperties_TagsString(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
@@ -118,7 +134,7 @@ func TestPromoteKnownProperties_TagsString(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	assert.Contains(t, result.Tags, "prod")
 	assert.Contains(t, result.Tags, "staging")
@@ -126,7 +142,7 @@ func TestPromoteKnownProperties_TagsString(t *testing.T) {
 }
 
 func TestPromoteKnownProperties_RemoveColumnNames(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
@@ -140,7 +156,7 @@ func TestPromoteKnownProperties_RemoveColumnNames(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	assert.Nil(t, result.Properties["name"])
 	assert.Nil(t, result.Properties["tenant_id"])
@@ -151,7 +167,7 @@ func TestPromoteKnownProperties_RemoveColumnNames(t *testing.T) {
 }
 
 func TestPromoteKnownProperties_CamelToSnakeNormalization(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name: "srv-01",
 		Type: "host",
 		Properties: map[string]any{
@@ -167,7 +183,7 @@ func TestPromoteKnownProperties_CamelToSnakeNormalization(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	// camelCase keys converted to snake_case
 	assert.Equal(t, 8, result.Properties["cpu_cores"])
@@ -192,7 +208,7 @@ func TestPromoteKnownProperties_CamelToSnakeNormalization(t *testing.T) {
 
 func TestPromoteKnownProperties_CamelSnakeDuplicate(t *testing.T) {
 	// When both camelCase and snake_case exist, prefer snake_case
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name: "srv-01",
 		Type: "host",
 		Properties: map[string]any{
@@ -201,20 +217,20 @@ func TestPromoteKnownProperties_CamelSnakeDuplicate(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	assert.Equal(t, 16, result.Properties["cpu_cores"])
 	assert.Nil(t, result.Properties["cpuCores"])
 }
 
 func TestPromoteKnownProperties_EmptyProperties(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	// No panic, returns as-is
 	assert.Equal(t, "host", result.Type)
@@ -222,7 +238,7 @@ func TestPromoteKnownProperties_EmptyProperties(t *testing.T) {
 }
 
 func TestPromoteKnownProperties_Description(t *testing.T) {
-	input := app.CreateAssetInput{
+	input := asset.CreateAssetInput{
 		Name:        "srv-01",
 		Type:        "host",
 		Criticality: "high",
@@ -231,7 +247,7 @@ func TestPromoteKnownProperties_Description(t *testing.T) {
 		},
 	}
 
-	result := app.PromoteKnownProperties(input)
+	result := asset.PromoteKnownProperties(input)
 
 	assert.Equal(t, "From collector", result.Description)
 	assert.Nil(t, result.Properties["description"])

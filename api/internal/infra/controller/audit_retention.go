@@ -148,3 +148,7 @@ func (c *AuditRetentionController) Reconcile(ctx context.Context) (int, error) {
 
 	return int(deleted), nil
 }
+
+// Exclusive: it runs on one API replica at a time (controller lease, RFC-046
+// P1.8); two replicas sweeping at once would delete or fetch twice.
+func (c *AuditRetentionController) Exclusive() bool { return true }

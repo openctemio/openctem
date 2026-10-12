@@ -8,7 +8,10 @@
 
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { NOT_SET_UP_PATH, isSignupNotAvailable } from '@/features/auth/lib/signup-outcome'
+import { useTranslation } from '@/context/i18n-provider'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -31,10 +34,14 @@ import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 // Import schema and server actions
 import { registerSchema, type RegisterInput } from '../schemas/auth.schema'
+import { passwordPolicyIssue } from '../lib/password-policy'
+import { PasswordPolicyHint } from './password-policy-hint'
 import { registerAction } from '../actions/local-auth-actions'
+import { TurnstileWidget } from './turnstile-widget'
 import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth-actions'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { invitationTokenFromReturnTo } from '../lib/self-register'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 // ============================================
 // TYPES
@@ -96,19 +103,27 @@ export function RegisterForm({
   // button dead-ends. LoginForm has always asked the API which providers are
   // live; this is the same question, asked here too.
   const { data: authProviders } = useAuthProviders()
+  const passwordPolicy = authProviders?.password_policy
+  const captchaSiteKey = authProviders?.captcha_site_key ?? ''
+  const [captchaToken, setCaptchaToken] = useState('')
+  const [captchaReset, setCaptchaReset] = useState(0)
   const enabledSocialProviders = authProviders
     ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
     : []
 
-  // Check for error from OAuth callback
+  // Error code from an OAuth callback. Only a known code's message is shown,
+  // never the raw parameter, and once per value (this ran on every render).
   const errorParam = searchParams.get('error')
-  if (errorParam) {
-    toast.error(errorParam)
-  }
+  const { t } = useTranslation()
+  const loginError = errorParam ? loginErrorMessage(errorParam) : null
+  const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null
+  useEffect(() => {
+    if (errorMessage) toast.error(errorMessage)
+  }, [errorMessage])
 
   // Pre-fill the email field when the user arrives from an invitation
   // link. The invitation page redirects to /login?email=alice@co.com&
-  // returnTo=/invitations/{token}, and the "Create Account" link on
+  // returnTo=/invitations, and the "Create Account" link on
   // the login page preserves the email param. Without this the user
   // has to manually re-type the exact email the invitation was sent
   // to — error-prone and high friction.
@@ -142,6 +157,15 @@ export function RegisterForm({
    * Handle form submission for local auth
    */
   function onSubmit(data: RegisterInput) {
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    if (issue) {
+      form.setError('password', { message: issue })
+      return
+    }
+    if (captchaSiteKey && !captchaToken) {
+      toast.error(t('auth.captcha.required', 'Complete the security check first.'))
+      return
+    }
     startTransition(async () => {
       const result = await registerAction({
         email: data.email,
@@ -149,7 +173,10 @@ export function RegisterForm({
         firstName: data.firstName,
         lastName: data.lastName,
         invitationToken,
+        captchaToken: captchaToken || undefined,
       })
+      // A token works once: ask for a fresh one whatever happened.
+      if (captchaSiteKey) setCaptchaReset((n) => n + 1)
 
       if (result.success) {
         toast.success(
@@ -162,6 +189,11 @@ export function RegisterForm({
             ? `/login?returnTo=${encodeURIComponent(returnTo)}&email=${encodeURIComponent(data.email)}`
             : redirectTo
         )
+      } else if (isSignupNotAvailable(result.code)) {
+        // The sign-up policy refused: the one "not set up" page.
+        router.push(NOT_SET_UP_PATH)
+      } else if (result.code === 'CAPTCHA_FAILED') {
+        toast.error(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
         toast.error(result.error || 'Registration failed')
       }
@@ -180,7 +212,7 @@ export function RegisterForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign up with ${provider}. Please try again.`)
+      toast.error(`Failed to sign up with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 
@@ -189,6 +221,7 @@ export function RegisterForm({
   return (
     <Form {...form}>
       <form
+        method="post"
         onSubmit={form.handleSubmit(onSubmit)}
         className={cn('grid gap-3', className)}
         {...props}
@@ -311,6 +344,7 @@ export function RegisterForm({
                   {...field}
                 />
               </FormControl>
+              <PasswordPolicyHint />
               <FormMessage />
             </FormItem>
           )}
@@ -335,6 +369,14 @@ export function RegisterForm({
             </FormItem>
           )}
         />
+
+        {captchaSiteKey && (
+          <TurnstileWidget
+            siteKey={captchaSiteKey}
+            onToken={setCaptchaToken}
+            resetSignal={captchaReset}
+          />
+        )}
 
         {/* Submit Button */}
         <Button className="mt-2" disabled={isLoading} type="submit">

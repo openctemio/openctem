@@ -29,15 +29,44 @@ function subscribeToUrl(cb: () => void) {
  */
 function writeSearch(params: URLSearchParams) {
   const qs = params.toString()
+  const { pathname, search, hash } = window.location
+  // Idempotency guard on the NORMALISED query string, not the raw address bar.
+  // URLSearchParams.toString() re-encodes and can reorder keys, so a shared link
+  // carrying a literal `?sources=a,b` (serialised here as `a%2Cb`) looks changed
+  // on a raw string compare even when nothing changed. That bogus "change"
+  // dispatches URL_PARAMS_CHANGED, a subscriber re-renders and may write the same
+  // value straight back, and the page loops ("Maximum update depth exceeded").
+  // Comparing normalised query strings makes a no-op write a true no-op.
+  if (qs === new URLSearchParams(search).toString()) return
   // Keep the hash. Rebuilding the URL from pathname + query alone silently
   // dropped it, so changing any filter threw away a deep link like
   // /findings#evidence-3 — and the anchor is often the reason the link was
   // shared in the first place.
-  const { pathname, search, hash } = window.location
   const next = `${pathname}${qs ? `?${qs}` : ''}${hash}`
-  if (next === `${pathname}${search}${hash}`) return
   window.history.replaceState(window.history.state, '', next)
   window.dispatchEvent(new Event(URL_PARAMS_CHANGED))
+}
+
+/**
+ * Navigate to a new query string on the same page, as a NEW history entry.
+ *
+ * For a drill-down (a group row's "View"), which is a destination rather than
+ * a refinement: Back must return to where the user came from, with its
+ * filters. Filter edits keep using replaceState (writeSearch). The current
+ * history state object is carried over, so the framework router still
+ * recognises the entry on Back.
+ */
+export function pushUrlSearch(params: URLSearchParams) {
+  const qs = params.toString()
+  const { pathname, search, hash } = window.location
+  if (qs === new URLSearchParams(search).toString()) return
+  window.history.pushState(window.history.state, '', `${pathname}${qs ? `?${qs}` : ''}${hash}`)
+  window.dispatchEvent(new Event(URL_PARAMS_CHANGED))
+}
+
+/** Replace the query string in place (a refinement; no new history entry). */
+export function replaceUrlSearch(params: URLSearchParams) {
+  writeSearch(params)
 }
 
 /**

@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -33,7 +34,7 @@ func newCeilingRepo(rs ...*role.Role) *ceilingRepo {
 	return c
 }
 
-func (c *ceilingRepo) GetByID(_ context.Context, id role.ID) (*role.Role, error) {
+func (c *ceilingRepo) GetByID(_ context.Context, _ role.ID, id role.ID) (*role.Role, error) {
 	if r, ok := c.roles[id.String()]; ok {
 		return r, nil
 	}
@@ -60,6 +61,15 @@ func (c *ceilingRepo) GetUserPermissions(_ context.Context, _, uid role.ID) ([]s
 		}
 	}
 	return out, nil
+}
+
+func (c *ceilingRepo) HasFullDataAccess(_ context.Context, _, uid role.ID) (bool, error) {
+	for _, id := range c.sets[uid.String()] {
+		if c.roles[id.String()].HasFullDataAccess() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c *ceilingRepo) AssignRole(_ context.Context, _, uid, rid role.ID, _ *role.ID) error {
@@ -104,6 +114,11 @@ func (c *ceilingRepo) Update(_ context.Context, r *role.Role) error {
 	return nil
 }
 
+func (c *ceilingRepo) Delete(_ context.Context, _ role.ID, id role.ID) error {
+	delete(c.roles, id.String())
+	return nil
+}
+
 func (c *ceilingRepo) has(uid role.ID, rid role.ID) bool {
 	for _, id := range c.sets[uid.String()] {
 		if id == rid {
@@ -124,7 +139,7 @@ func (m ceilingMembers) GetMembership(_ context.Context, uid, tid shared.ID) (*t
 }
 
 type ceilingFixture struct {
-	svc                    *app.RoleService
+	svc                    *accesscontrol.RoleService
 	repo                   *ceilingRepo
 	tenant                 role.ID
 	owner, admin, member   role.ID
@@ -148,8 +163,8 @@ func newCeilingFixture(t *testing.T) *ceilingFixture {
 	f.repo.sets[f.owner.String()] = []role.ID{role.OwnerRoleID}
 	f.repo.sets[f.admin.String()] = []role.ID{role.AdminRoleID}
 	f.repo.sets[f.member.String()] = []role.ID{role.ViewerRoleID}
-	f.svc = app.NewRoleService(f.repo, newMockPermissionRepo(), logger.NewNop(),
-		app.WithRoleMembershipReader(ceilingMembers{owners: map[string]bool{f.owner.String(): true}}))
+	f.svc = accesscontrol.NewRoleService(f.repo, newMockPermissionRepo(), logger.NewNop(),
+		accesscontrol.WithRoleMembershipReader(ceilingMembers{owners: map[string]bool{f.owner.String(): true}}))
 	return f
 }
 
@@ -166,11 +181,11 @@ func TestGrantCeiling_AdminCannotMakeThemselfOwner(t *testing.T) {
 	tid, aid := f.tenant.String(), f.admin.String()
 
 	wantForbidden(t, "SetUserRoles self -> [owner]", f.svc.SetUserRoles(ctx,
-		app.SetUserRolesInput{TenantID: tid, UserID: aid, RoleIDs: []string{role.OwnerRoleID.String()}}, aid, app.AuditContext{}))
+		accesscontrol.SetUserRolesInput{TenantID: tid, UserID: aid, RoleIDs: []string{role.OwnerRoleID.String()}}, aid, audit.AuditContext{}))
 	wantForbidden(t, "AssignRole self owner", f.svc.AssignRole(ctx,
-		app.AssignRoleInput{TenantID: tid, UserID: aid, RoleID: role.OwnerRoleID.String()}, aid, app.AuditContext{}))
+		accesscontrol.AssignRoleInput{TenantID: tid, UserID: aid, RoleID: role.OwnerRoleID.String()}, aid, audit.AuditContext{}))
 	_, err := f.svc.BulkAssignRoleToUsers(ctx,
-		app.BulkAssignRoleToUsersInput{TenantID: tid, RoleID: role.OwnerRoleID.String(), UserIDs: []string{aid}}, aid, app.AuditContext{})
+		accesscontrol.BulkAssignRoleToUsersInput{TenantID: tid, RoleID: role.OwnerRoleID.String(), UserIDs: []string{aid}}, aid, audit.AuditContext{})
 	wantForbidden(t, "BulkAssign owner -> self", err)
 
 	if f.repo.has(f.admin, role.OwnerRoleID) {
@@ -184,24 +199,24 @@ func TestGrantCeiling_AdminCannotGrantRoleAboveTheirOwn(t *testing.T) {
 	tid, aid := f.tenant.String(), f.admin.String()
 
 	wantForbidden(t, "owner to another user", f.svc.AssignRole(ctx,
-		app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()}, aid, app.AuditContext{}))
+		accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()}, aid, audit.AuditContext{}))
 	wantForbidden(t, "custom role with an owner-only permission", f.svc.AssignRole(ctx,
-		app.AssignRoleInput{TenantID: tid, UserID: aid, RoleID: f.analyst.ID().String()}, aid, app.AuditContext{}))
+		accesscontrol.AssignRoleInput{TenantID: tid, UserID: aid, RoleID: f.analyst.ID().String()}, aid, audit.AuditContext{}))
 	wantForbidden(t, "set member roles incl. that custom role", f.svc.SetUserRoles(ctx,
-		app.SetUserRolesInput{TenantID: tid, UserID: f.member.String(), RoleIDs: []string{f.analyst.ID().String()}}, aid, app.AuditContext{}))
+		accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.member.String(), RoleIDs: []string{f.analyst.ID().String()}}, aid, audit.AuditContext{}))
 }
 
 func TestGrantCeiling_AdminCannotCreateOrWidenRoleBeyondTheirOwn(t *testing.T) {
 	f := newCeilingFixture(t)
 	ctx := context.Background()
-	_, err := f.svc.CreateRole(ctx, app.CreateRoleInput{
+	_, err := f.svc.CreateRole(ctx, accesscontrol.CreateRoleInput{
 		TenantID: f.tenant.String(), Slug: "superuser", Name: "Superuser", Permissions: []string{"team:delete"},
-	}, f.admin.String(), app.AuditContext{ActorID: f.admin.String()})
+	}, f.admin.String(), audit.AuditContext{ActorID: f.admin.String()})
 	wantForbidden(t, "create role with team:delete", err)
 
 	widen := []string{"assets:read", "groups:delete"}
 	_, err = f.svc.UpdateRole(ctx, f.tenant.String(), f.analyst.ID().String(),
-		app.UpdateRoleInput{Permissions: widen}, app.AuditContext{ActorID: f.admin.String()})
+		accesscontrol.UpdateRoleInput{Permissions: widen}, audit.AuditContext{ActorID: f.admin.String()})
 	wantForbidden(t, "update role to groups:delete", err)
 }
 
@@ -209,10 +224,10 @@ func TestGrantCeiling_AdminCannotChangeOwnersRoles(t *testing.T) {
 	f := newCeilingFixture(t)
 	ctx := context.Background()
 	wantForbidden(t, "admin strips the owner", f.svc.SetUserRoles(ctx,
-		app.SetUserRolesInput{TenantID: f.tenant.String(), UserID: f.owner.String(), RoleIDs: []string{role.ViewerRoleID.String()}},
-		f.admin.String(), app.AuditContext{}))
+		accesscontrol.SetUserRolesInput{TenantID: f.tenant.String(), UserID: f.owner.String(), RoleIDs: []string{role.ViewerRoleID.String()}},
+		f.admin.String(), audit.AuditContext{}))
 	wantForbidden(t, "admin removes owner role", f.svc.RemoveRole(ctx, f.tenant.String(), f.owner.String(),
-		role.OwnerRoleID.String(), app.AuditContext{ActorID: f.admin.String()}))
+		role.OwnerRoleID.String(), audit.AuditContext{ActorID: f.admin.String()}))
 }
 
 func TestGrantCeiling_AllowedChanges(t *testing.T) {
@@ -220,27 +235,86 @@ func TestGrantCeiling_AllowedChanges(t *testing.T) {
 	ctx := context.Background()
 	tid := f.tenant.String()
 
-	// An admin may grant roles within their own grants.
-	if err := f.svc.AssignRole(ctx, app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.AdminRoleID.String()},
-		f.admin.String(), app.AuditContext{}); err != nil {
-		t.Fatalf("admin grants admin: %v", err)
+	// An admin may grant roles within their own grants (but not the admin
+	// role itself: only the owner promotes to admin, settings decision B2).
+	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.ViewerRoleID.String()},
+		f.admin.String(), audit.AuditContext{}); err != nil {
+		t.Fatalf("admin grants viewer: %v", err)
 	}
 	// An owner may grant anything, including the owner role and owner-only permissions.
-	if err := f.svc.AssignRole(ctx, app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: f.analyst.ID().String()},
-		f.owner.String(), app.AuditContext{}); err != nil {
+	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: f.analyst.ID().String()},
+		f.owner.String(), audit.AuditContext{}); err != nil {
 		t.Fatalf("owner grants custom role: %v", err)
 	}
-	if err := f.svc.AssignRole(ctx, app.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()},
-		f.owner.String(), app.AuditContext{}); err != nil {
+	if err := f.svc.AssignRole(ctx, accesscontrol.AssignRoleInput{TenantID: tid, UserID: f.member.String(), RoleID: role.OwnerRoleID.String()},
+		f.owner.String(), audit.AuditContext{}); err != nil {
 		t.Fatalf("owner grants owner: %v", err)
 	}
 	// The tenant's owner keeps the owner role, even if they try to drop it.
-	err := f.svc.SetUserRoles(ctx, app.SetUserRolesInput{TenantID: tid, UserID: f.owner.String(), RoleIDs: []string{role.AdminRoleID.String()}},
-		f.owner.String(), app.AuditContext{})
+	err := f.svc.SetUserRoles(ctx, accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.owner.String(), RoleIDs: []string{role.AdminRoleID.String()}},
+		f.owner.String(), audit.AuditContext{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("owner drops own owner role: want validation error, got %v", err)
 	}
 	// A system path (no actor) still cannot grant owner.
 	wantForbidden(t, "system grant of owner", f.svc.SetUserRoles(ctx,
-		app.SetUserRolesInput{TenantID: tid, UserID: f.member.String(), RoleIDs: []string{role.OwnerRoleID.String()}}, "", app.AuditContext{}))
+		accesscontrol.SetUserRolesInput{TenantID: tid, UserID: f.member.String(), RoleIDs: []string{role.OwnerRoleID.String()}}, "", audit.AuditContext{}))
+}
+
+// Deleting a custom role used to have no ceiling: an administrator (or any
+// holder of roles:delete) could remove a role the owner built with
+// permissions the administrator does not hold. Delete now uses the same
+// subset check as create and update.
+func TestGrantCeiling_RoleDelete(t *testing.T) {
+	t.Run("admin cannot delete a role carrying an owner-only permission", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		err := f.svc.DeleteRole(context.Background(), f.tenant.String(), f.analyst.ID().String(), audit.AuditContext{ActorID: f.admin.String()})
+		wantForbidden(t, "admin deletes analyst (team:delete)", err)
+		if _, ok := f.repo.roles[f.analyst.ID().String()]; !ok {
+			t.Fatal("the role was deleted despite the refusal")
+		}
+	})
+
+	t.Run("admin cannot delete a role with full data access when they lack it", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		// A delegated role manager: holds the role permissions but not full data access.
+		mgr := role.New(f.tenant, "role-mgr", "Role manager", "", 10, false, []string{"assets:read", "roles:delete"}, role.NewID())
+		wide := role.New(f.tenant, "wide", "Wide", "", 10, true, []string{"assets:read"}, role.NewID())
+		f.repo.roles[mgr.ID().String()] = mgr
+		f.repo.roles[wide.ID().String()] = wide
+		uid := role.NewID()
+		f.repo.sets[uid.String()] = []role.ID{mgr.ID()}
+		err := f.svc.DeleteRole(context.Background(), f.tenant.String(), wide.ID().String(), audit.AuditContext{ActorID: uid.String()})
+		wantForbidden(t, "manager deletes full-data role", err)
+	})
+
+	t.Run("admin may delete a role within their own permissions", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		within := role.New(f.tenant, "reader", "Reader", "", 10, false, []string{"assets:read"}, role.NewID())
+		f.repo.roles[within.ID().String()] = within
+		if err := f.svc.DeleteRole(context.Background(), f.tenant.String(), within.ID().String(), audit.AuditContext{ActorID: f.admin.String()}); err != nil {
+			t.Fatalf("admin deletes role within their set: %v", err)
+		}
+		if _, ok := f.repo.roles[within.ID().String()]; ok {
+			t.Fatal("the role was not deleted")
+		}
+	})
+
+	t.Run("owner may delete any custom role", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		if err := f.svc.DeleteRole(context.Background(), f.tenant.String(), f.analyst.ID().String(), audit.AuditContext{ActorID: f.owner.String()}); err != nil {
+			t.Fatalf("owner deletes analyst: %v", err)
+		}
+		if _, ok := f.repo.roles[f.analyst.ID().String()]; ok {
+			t.Fatal("the role was not deleted")
+		}
+	})
+
+	t.Run("another tenant's role still reads as not found", func(t *testing.T) {
+		f := newCeilingFixture(t)
+		err := f.svc.DeleteRole(context.Background(), role.NewID().String(), f.analyst.ID().String(), audit.AuditContext{ActorID: f.owner.String()})
+		if !errors.Is(err, role.ErrRoleNotFound) {
+			t.Fatalf("cross-tenant delete: want not found, got %v", err)
+		}
+	})
 }

@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -37,7 +38,7 @@ func TestScanRunTriggerNames(t *testing.T) {
 	repo := &fakeRunUserRepo{users: []*user.User{named, unnamed}}
 	h := NewScanHandler(nil, repo, nil, nil, logger.NewNop())
 
-	runs := []*pipeline.Run{
+	runs := []*scanrun.Run{
 		{ID: shared.NewID(), TriggeredBy: named.ID().String()},
 		{ID: shared.NewID(), TriggeredBy: named.ID().String()}, // same user twice
 		{ID: shared.NewID(), TriggeredBy: unnamed.ID().String()},
@@ -54,7 +55,7 @@ func TestScanRunTriggerNames(t *testing.T) {
 	}
 
 	cases := []struct {
-		run  *pipeline.Run
+		run  *scanrun.Run
 		want string
 	}{
 		{runs[0], "Ada Lovelace"},
@@ -74,12 +75,12 @@ func TestScanRunTriggerNames(t *testing.T) {
 
 func TestScanRunTriggerNames_NoUserRepoOrNoIDs(t *testing.T) {
 	if got := NewScanHandler(nil, nil, nil, nil, logger.NewNop()).
-		resolveRunTriggerNames(context.Background(), &pipeline.Run{TriggeredBy: shared.NewID().String()}); got != nil {
+		resolveRunTriggerNames(context.Background(), &scanrun.Run{TriggeredBy: shared.NewID().String()}); got != nil {
 		t.Fatalf("no user repo: want nil map, got %v", got)
 	}
 	repo := &fakeRunUserRepo{}
 	h := NewScanHandler(nil, repo, nil, nil, logger.NewNop())
-	if got := h.resolveRunTriggerNames(context.Background(), &pipeline.Run{TriggeredBy: "webhook:github"}); got != nil {
+	if got := h.resolveRunTriggerNames(context.Background(), &scanrun.Run{TriggeredBy: "webhook:github"}); got != nil {
 		t.Fatalf("no user ids: want nil map, got %v", got)
 	}
 	if repo.callCnt != 0 {

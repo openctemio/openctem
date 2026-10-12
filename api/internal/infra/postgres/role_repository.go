@@ -75,18 +75,19 @@ func (r *RoleRepository) Create(ctx context.Context, ro *role.Role) error {
 	return tx.Commit()
 }
 
-// GetByID retrieves a role by its ID.
-func (r *RoleRepository) GetByID(ctx context.Context, id role.ID) (*role.Role, error) {
+// GetByID retrieves a role visible to tenantID: a system role (tenant_id IS
+// NULL) or one of tenantID's custom roles.
+func (r *RoleRepository) GetByID(ctx context.Context, tenantID, id role.ID) (*role.Role, error) {
 	query := `
 		SELECT id, tenant_id, slug, name, description, is_system,
 		       hierarchy_level, has_full_data_access, created_at, updated_at, created_by
 		FROM roles
-		WHERE id = $1
+		WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)
 	`
 
 	var (
 		roleID            string
-		tenantID          sql.NullString
+		dbTenantID        sql.NullString
 		slug              string
 		name              string
 		description       sql.NullString
@@ -98,8 +99,8 @@ func (r *RoleRepository) GetByID(ctx context.Context, id role.ID) (*role.Role, e
 		createdBy         sql.NullString
 	)
 
-	err := r.db.QueryRowContext(ctx, query, id.String()).Scan(
-		&roleID, &tenantID, &slug, &name, &description,
+	err := r.db.QueryRowContext(ctx, query, id.String(), tenantID.String()).Scan(
+		&roleID, &dbTenantID, &slug, &name, &description,
 		&isSystem, &hierarchyLevel, &hasFullDataAccess,
 		&createdAt, &updatedAt, &createdBy,
 	)
@@ -116,7 +117,7 @@ func (r *RoleRepository) GetByID(ctx context.Context, id role.ID) (*role.Role, e
 		return nil, err
 	}
 
-	return r.reconstructRole(roleID, tenantID, slug, name, description,
+	return r.reconstructRole(roleID, dbTenantID, slug, name, description,
 		isSystem, hierarchyLevel, hasFullDataAccess,
 		permissions, createdAt, updatedAt, createdBy)
 }
@@ -346,9 +347,12 @@ func (r *RoleRepository) Update(ctx context.Context, ro *role.Role) error {
 		UPDATE roles
 		SET name = $2, description = $3, hierarchy_level = $4,
 		    has_full_data_access = $5, updated_at = $6
-		WHERE id = $1 AND is_system = FALSE
+		WHERE id = $1 AND is_system = FALSE AND tenant_id = $7
 	`
 
+	if ro.TenantID() == nil {
+		return role.ErrRoleNotFound
+	}
 	result, err := tx.ExecContext(ctx, query,
 		ro.ID().String(),
 		ro.Name(),
@@ -356,6 +360,7 @@ func (r *RoleRepository) Update(ctx context.Context, ro *role.Role) error {
 		ro.HierarchyLevel(),
 		ro.HasFullDataAccess(),
 		ro.UpdatedAt(),
+		ro.TenantID().String(),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update role: %w", err)
@@ -392,15 +397,18 @@ func (r *RoleRepository) Update(ctx context.Context, ro *role.Role) error {
 // deleted a single diagnostic SELECT determines which precondition failed so
 // the caller still gets the same ErrRoleNotFound / ErrCannotDeleteSystemRole /
 // ErrRoleInUse semantics as before.
-func (r *RoleRepository) Delete(ctx context.Context, id role.ID) error {
-	// Delete only when non-system and unreferenced (cascade handles role_permissions).
+func (r *RoleRepository) Delete(ctx context.Context, tenantID, id role.ID) error {
+	// Delete only when tenantID's, non-system and unreferenced (cascade
+	// handles role_permissions).
 	const deleteQuery = `
 		DELETE FROM roles
 		WHERE id = $1
+		  AND tenant_id = $2
 		  AND is_system = false
-		  AND NOT EXISTS (SELECT 1 FROM user_roles WHERE role_id = $1)`
+		  AND NOT EXISTS (SELECT 1 FROM user_roles WHERE role_id = $1)
+		  AND NOT EXISTS (SELECT 1 FROM group_role_bindings WHERE role_id = $1)`
 
-	res, err := r.db.ExecContext(ctx, deleteQuery, id.String())
+	res, err := r.db.ExecContext(ctx, deleteQuery, id.String(), tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete role: %w", err)
 	}
@@ -415,7 +423,9 @@ func (r *RoleRepository) Delete(ctx context.Context, id role.ID) error {
 
 	// Nothing was deleted — establish why to preserve the original error semantics.
 	var isSystem bool
-	err = r.db.QueryRowContext(ctx, "SELECT is_system FROM roles WHERE id = $1", id.String()).Scan(&isSystem)
+	err = r.db.QueryRowContext(ctx,
+		"SELECT is_system FROM roles WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)",
+		id.String(), tenantID.String()).Scan(&isSystem)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return role.ErrRoleNotFound
@@ -617,7 +627,7 @@ func (r *RoleRepository) GetUserPermissions(ctx context.Context, tenantID, userI
 	// silently keep granting via the enforcement path.
 	query := `
 		SELECT DISTINCT rp.permission_id
-		FROM user_roles ur
+		FROM v_user_role_grants ur
 		JOIN role_permissions rp ON rp.role_id = ur.role_id
 		JOIN permissions p ON p.id = rp.permission_id AND p.is_active = TRUE
 		WHERE ur.tenant_id = $1 AND ur.user_id = $2
@@ -646,7 +656,7 @@ func (r *RoleRepository) HasFullDataAccess(ctx context.Context, tenantID, userID
 	query := `
 		SELECT EXISTS (
 			SELECT 1
-			FROM user_roles ur
+			FROM v_user_role_grants ur
 			JOIN roles r ON r.id = ur.role_id
 			WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND r.has_full_data_access = TRUE
 		)
@@ -777,6 +787,32 @@ func (r *RoleRepository) BulkAssignRoleToUsers(ctx context.Context, tenantID, ro
 	}
 
 	return tx.Commit()
+}
+
+// ListRoleHolderIDs returns every user who holds the role in the tenant,
+// directly or through a team (v_user_role_grants): the users whose cached
+// permissions a change to the role must invalidate.
+func (r *RoleRepository) ListRoleHolderIDs(ctx context.Context, tenantID, roleID role.ID) ([]role.ID, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT user_id FROM v_user_role_grants WHERE tenant_id = $1 AND role_id = $2`,
+		tenantID.String(), roleID.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list role holders: %w", err)
+	}
+	defer rows.Close()
+	var out []role.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, fmt.Errorf("failed to scan role holder: %w", err)
+		}
+		id, err := role.ParseID(s)
+		if err != nil {
+			return nil, fmt.Errorf("role holder id: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ListRoleMembers returns all users who have a specific role.

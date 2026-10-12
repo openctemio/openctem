@@ -9,9 +9,9 @@
  */
 
 import type { AssetStatsData } from '../hooks/use-assets'
-import type { InventoryFilters } from './inventory-url'
+import { ATTRIBUTION_FILTER_VALUES, type InventoryFilters } from './inventory-url'
 import { ASSET_TYPE_LABELS, ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
-import { CRITICALITY_LABELS } from '@/lib/criticality-colors'
+import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
 /** Data classification levels (mirrors the api CHECK constraint on assets). */
 export const DATA_CLASSIFICATION_LABELS: Record<string, string> = {
@@ -20,6 +20,17 @@ export const DATA_CLASSIFICATION_LABELS: Record<string, string> = {
   confidential: 'Confidential',
   restricted: 'Restricted',
   secret: 'Secret',
+}
+
+/** Attribution filter labels (RFC-036; the asset page uses the same words). */
+export const ATTRIBUTION_FILTER_LABELS: Record<string, string> = {
+  confirmed: 'Confirmed',
+  unknown: 'No record (added before EASM)',
+  needs_review: 'Needs review',
+  candidate: 'Candidate',
+  dependency: 'Dependency',
+  monitor_only: 'Monitor only',
+  rejected: 'Not ours',
 }
 
 /** Deployment environments (mirrors the api CHECK constraint on assets). */
@@ -58,6 +69,7 @@ export interface MultiFacetDef {
     | 'environments'
     | 'providers'
     | 'businessUnitIds'
+    | 'attribution'
   >
   label: string
   source: FacetValueSource
@@ -115,7 +127,7 @@ export function buildFacetGroups(businessUnitLabels: Record<string, string>): Fa
           filterKey: 'criticalities',
           label: 'Criticality',
           source: 'static',
-          values: ['critical', 'high', 'medium', 'low'],
+          values: [...ASSET_CRITICALITY_LEVELS],
           labelFor: (v) => CRITICALITY_LABELS[v as keyof typeof CRITICALITY_LABELS] ?? v,
           counts: (s) => s.byCriticality,
         },
@@ -141,6 +153,16 @@ export function buildFacetGroups(businessUnitLabels: Record<string, string>): Fa
           trueLabel: 'Has owner',
           falseLabel: 'Unowned',
           counts: (s) => s.byHasOwner,
+        },
+        {
+          kind: 'multi',
+          filterKey: 'attribution',
+          label: 'Attribution',
+          source: 'static',
+          values: [...ATTRIBUTION_FILTER_VALUES],
+          labelFor: (v) => ATTRIBUTION_FILTER_LABELS[v] ?? v,
+          // The stats endpoint has no attribution breakdown.
+          counts: () => ({}),
         },
         {
           kind: 'multi',
@@ -276,12 +298,44 @@ export const QUICK_PRESETS: QuickPreset[] = [
     isActive: (f) => f.isControlPlane === true,
   },
   {
+    id: 'bug-bounty',
+    label: 'Bug bounty',
+    apply: { programAssets: 'only' },
+    isActive: (f) => f.programAssets === 'only',
+  },
+  {
     id: 'stale',
     label: 'Stale >30d',
     apply: { lastSeenBefore: staleBeforeISO(30) },
     isActive: (f) => !!f.lastSeenBefore,
   },
 ]
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The expiry views (properties of format expiry: a certificate's not_after, a
+ * domain's expires_at). The instants are taken when the views are built, so
+ * build them when the menu renders. "Expired" also clears a lower bound left
+ * by the other view, so switching between them never yields an empty range.
+ */
+export function expiryPresets(now = Date.now()): QuickPreset[] {
+  const nowISO = new Date(now).toISOString()
+  return [
+    {
+      id: 'expired',
+      label: 'Expired',
+      apply: { expiresBefore: nowISO, expiresAfter: undefined },
+      isActive: (f) => !!f.expiresBefore && !f.expiresAfter,
+    },
+    {
+      id: 'expiring-30d',
+      label: 'Expiring in 30 days',
+      apply: { expiresAfter: nowISO, expiresBefore: new Date(now + 30 * DAY_MS).toISOString() },
+      isActive: (f) => !!f.expiresBefore && !!f.expiresAfter,
+    },
+  ]
+}
 
 /**
  * Compute the filters after toggling a preset OFF, removing only the values the

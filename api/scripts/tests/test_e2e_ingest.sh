@@ -7,7 +7,7 @@
 #   -> Fingerprint Check -> Heartbeat -> Verify Data -> Docker Log Check
 #
 # Prerequisites:
-#   - API running at localhost:8080 with AUTH_ALLOW_REGISTRATION=true
+#   - API running at localhost:8080 with the sign-up policy in self_service (TENANT_CREATION_MODE=self_service on a fresh database)
 #   - jq and curl installed
 #   - Docker running (for log check, optional)
 #
@@ -214,7 +214,7 @@ elif [ "$HTTP_CODE" = "429" ]; then
     mark_critical_failure
 else
     print_failure "User registration" "Expected 201, got $HTTP_CODE"
-    print_info "Hint: Ensure AUTH_ALLOW_REGISTRATION=true in your environment"
+    print_info "Hint: Ensure the sign-up policy is self_service (Console > System > Sign-up)"
     mark_critical_failure
 fi
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -175,10 +175,10 @@ func (m *branchSvcMockRepository) CompareBranches(_ context.Context, _, _ shared
 // Helper Functions
 // ============================================================================
 
-func newTestBranchService() (*app.BranchService, *branchSvcMockRepository) {
+func newTestBranchService() (*asset.BranchService, *branchSvcMockRepository) {
 	repo := newBranchSvcMockRepository()
 	log := logger.NewNop()
-	svc := app.NewBranchService(repo, log)
+	svc := asset.NewBranchService(repo, log)
 	return svc, repo
 }
 
@@ -207,7 +207,7 @@ func TestBranchService_CreateBranch_Success(t *testing.T) {
 	ctx := context.Background()
 	repoID := shared.NewID()
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID: repoID.String(),
 		Name:         "feature/login",
 		BranchType:   "feature",
@@ -236,7 +236,7 @@ func TestBranchService_CreateBranch_WithDefaults(t *testing.T) {
 	ctx := context.Background()
 	repoID := shared.NewID()
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID:  repoID.String(),
 		Name:          "main",
 		BranchType:    "main",
@@ -264,7 +264,7 @@ func TestBranchService_CreateBranch_InvalidRepositoryID(t *testing.T) {
 	svc, _ := newTestBranchService()
 	ctx := context.Background()
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID: "not-a-uuid",
 		Name:         "main",
 		BranchType:   "main",
@@ -287,7 +287,7 @@ func TestBranchService_CreateBranch_AlreadyExists(t *testing.T) {
 	existing := makeBranchSvcTestBranch(repoID, "main", true)
 	repo.branches[existing.ID().String()] = existing
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID: repoID.String(),
 		Name:         "main",
 		BranchType:   "main",
@@ -312,7 +312,7 @@ func TestBranchService_CreateBranch_ExistenceCheckError(t *testing.T) {
 		return false, dbErr
 	}
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID: repoID.String(),
 		Name:         "main",
 		BranchType:   "main",
@@ -331,7 +331,7 @@ func TestBranchService_CreateBranch_RepositoryCreateError(t *testing.T) {
 
 	repo.createErr = errors.New("create failed")
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID: repoID.String(),
 		Name:         "develop",
 		BranchType:   "develop",
@@ -348,7 +348,7 @@ func TestBranchService_CreateBranch_InvalidTypeDefaultsToOther(t *testing.T) {
 	ctx := context.Background()
 	repoID := shared.NewID()
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID: repoID.String(),
 		Name:         "my-branch",
 		BranchType:   "unknown_type",
@@ -469,7 +469,7 @@ func TestBranchService_UpdateBranch_Success(t *testing.T) {
 	repo.branches[b.ID().String()] = b
 
 	isProtected := true
-	input := app.UpdateBranchInput{
+	input := asset.UpdateBranchInput{
 		IsProtected: &isProtected,
 	}
 
@@ -494,7 +494,7 @@ func TestBranchService_UpdateBranch_WithCommitInfo(t *testing.T) {
 	message := "fix: resolve login issue"
 	author := "John Doe"
 	avatar := "https://example.com/avatar.png"
-	input := app.UpdateBranchInput{
+	input := asset.UpdateBranchInput{
 		LastCommitSHA:          &sha,
 		LastCommitMessage:      &message,
 		LastCommitAuthor:       &author,
@@ -526,7 +526,7 @@ func TestBranchService_UpdateBranch_WithScanConfig(t *testing.T) {
 
 	scanOnPush := false
 	scanOnPR := true
-	input := app.UpdateBranchInput{
+	input := asset.UpdateBranchInput{
 		ScanOnPush: &scanOnPush,
 		ScanOnPR:   &scanOnPR,
 	}
@@ -553,7 +553,7 @@ func TestBranchService_UpdateBranch_WithRetention(t *testing.T) {
 
 	keepWhenInactive := false
 	retentionDays := 30
-	input := app.UpdateBranchInput{
+	input := asset.UpdateBranchInput{
 		KeepWhenInactive: &keepWhenInactive,
 		RetentionDays:    &retentionDays,
 	}
@@ -574,7 +574,7 @@ func TestBranchService_UpdateBranch_InvalidID(t *testing.T) {
 	svc, _ := newTestBranchService()
 	ctx := context.Background()
 
-	_, err := svc.UpdateBranch(ctx, "bad-id", "", app.UpdateBranchInput{})
+	_, err := svc.UpdateBranch(ctx, "bad-id", "", asset.UpdateBranchInput{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -588,7 +588,7 @@ func TestBranchService_UpdateBranch_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	id := shared.NewID()
-	_, err := svc.UpdateBranch(ctx, id.String(), "", app.UpdateBranchInput{})
+	_, err := svc.UpdateBranch(ctx, id.String(), "", asset.UpdateBranchInput{})
 	if err == nil {
 		t.Fatal("expected error for not found branch")
 	}
@@ -603,7 +603,7 @@ func TestBranchService_UpdateBranch_IDORPrevention(t *testing.T) {
 	b := makeBranchSvcTestBranch(repoID, "main", true)
 	repo.branches[b.ID().String()] = b
 
-	_, err := svc.UpdateBranch(ctx, b.ID().String(), wrongRepoID.String(), app.UpdateBranchInput{})
+	_, err := svc.UpdateBranch(ctx, b.ID().String(), wrongRepoID.String(), asset.UpdateBranchInput{})
 	if err == nil {
 		t.Fatal("expected error for IDOR prevention")
 	}
@@ -622,7 +622,7 @@ func TestBranchService_UpdateBranch_EmptyRepositoryIDRejected(t *testing.T) {
 
 	// repositoryID is required — an empty value must be rejected, not skip the
 	// IDOR ownership check.
-	_, err := svc.UpdateBranch(ctx, b.ID().String(), "", app.UpdateBranchInput{})
+	_, err := svc.UpdateBranch(ctx, b.ID().String(), "", asset.UpdateBranchInput{})
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected ErrValidation for empty repositoryID, got %v", err)
 	}
@@ -638,7 +638,7 @@ func TestBranchService_UpdateBranch_RepositoryUpdateError(t *testing.T) {
 	repo.updateErr = errors.New("update failed")
 
 	isProtected := true
-	input := app.UpdateBranchInput{IsProtected: &isProtected}
+	input := asset.UpdateBranchInput{IsProtected: &isProtected}
 
 	_, err := svc.UpdateBranch(ctx, b.ID().String(), repoID.String(), input)
 	if err == nil {
@@ -776,7 +776,7 @@ func TestBranchService_ListBranches_Success(t *testing.T) {
 	repo.branches[b1.ID().String()] = b1
 	repo.branches[b2.ID().String()] = b2
 
-	input := app.ListBranchesInput{
+	input := asset.ListBranchesInput{
 		RepositoryID: repoID.String(),
 		Page:         1,
 		PerPage:      10,
@@ -795,7 +795,7 @@ func TestBranchService_ListBranches_InvalidRepositoryID(t *testing.T) {
 	svc, _ := newTestBranchService()
 	ctx := context.Background()
 
-	input := app.ListBranchesInput{
+	input := asset.ListBranchesInput{
 		RepositoryID: "bad-uuid",
 		Page:         1,
 		PerPage:      10,
@@ -819,7 +819,7 @@ func TestBranchService_ListBranches_WithFilters(t *testing.T) {
 	repo.branches[b1.ID().String()] = b1
 
 	isDefault := true
-	input := app.ListBranchesInput{
+	input := asset.ListBranchesInput{
 		RepositoryID: repoID.String(),
 		Name:         "main",
 		BranchTypes:  []string{"main"},
@@ -844,7 +844,7 @@ func TestBranchService_ListBranches_SortAscending(t *testing.T) {
 	b := makeBranchSvcTestBranch(repoID, "main", true)
 	repo.branches[b.ID().String()] = b
 
-	input := app.ListBranchesInput{
+	input := asset.ListBranchesInput{
 		RepositoryID: repoID.String(),
 		Sort:         "name",
 		Page:         1,
@@ -864,7 +864,7 @@ func TestBranchService_ListBranches_RepoError(t *testing.T) {
 
 	repo.listErr = errors.New("database error")
 
-	input := app.ListBranchesInput{
+	input := asset.ListBranchesInput{
 		RepositoryID: repoID.String(),
 		Page:         1,
 		PerPage:      10,
@@ -1081,7 +1081,7 @@ func TestBranchService_UpdateBranchScanStatus_Success(t *testing.T) {
 	repo.branches[b.ID().String()] = b
 
 	total, critical, high, medium, low := 10, 2, 3, 3, 2
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:           scanID.String(),
 		ScanStatus:       "passed",
 		QualityGate:      "passed",
@@ -1119,7 +1119,7 @@ func TestBranchService_UpdateBranchScanStatus_WithoutFindings(t *testing.T) {
 	b := makeBranchSvcTestBranch(repoID, "develop", false)
 	repo.branches[b.ID().String()] = b
 
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:     scanID.String(),
 		ScanStatus: "scanning",
 	}
@@ -1144,7 +1144,7 @@ func TestBranchService_UpdateBranchScanStatus_InvalidBranchID(t *testing.T) {
 	svc, _ := newTestBranchService()
 	ctx := context.Background()
 
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:     shared.NewID().String(),
 		ScanStatus: "passed",
 	}
@@ -1162,7 +1162,7 @@ func TestBranchService_UpdateBranchScanStatus_BranchNotFound(t *testing.T) {
 	svc, _ := newTestBranchService()
 	ctx := context.Background()
 
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:     shared.NewID().String(),
 		ScanStatus: "passed",
 	}
@@ -1183,7 +1183,7 @@ func TestBranchService_UpdateBranchScanStatus_IDORPrevention(t *testing.T) {
 	b := makeBranchSvcTestBranch(repoID, "main", true)
 	repo.branches[b.ID().String()] = b
 
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:     shared.NewID().String(),
 		ScanStatus: "passed",
 	}
@@ -1205,7 +1205,7 @@ func TestBranchService_UpdateBranchScanStatus_InvalidScanID(t *testing.T) {
 	b := makeBranchSvcTestBranch(repoID, "main", true)
 	repo.branches[b.ID().String()] = b
 
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:     "bad-scan-id",
 		ScanStatus: "passed",
 	}
@@ -1228,7 +1228,7 @@ func TestBranchService_UpdateBranchScanStatus_UpdateError(t *testing.T) {
 	repo.branches[b.ID().String()] = b
 	repo.updateErr = errors.New("update failed")
 
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:     shared.NewID().String(),
 		ScanStatus: "passed",
 	}
@@ -1249,7 +1249,7 @@ func TestBranchService_UpdateBranchScanStatus_PartialFindingsNotApplied(t *testi
 
 	// Only provide some findings - should not update stats since all 5 are required
 	total := 10
-	input := app.UpdateBranchScanStatusInput{
+	input := asset.UpdateBranchScanStatusInput{
 		ScanID:        shared.NewID().String(),
 		ScanStatus:    "passed",
 		TotalFindings: &total,

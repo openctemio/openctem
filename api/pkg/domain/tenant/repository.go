@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/emaildomain"
 )
 
 // Repository defines the interface for tenant persistence.
@@ -13,7 +14,15 @@ type Repository interface {
 	Create(ctx context.Context, t *Tenant) error
 	GetByID(ctx context.Context, id shared.ID) (*Tenant, error)
 	GetBySlug(ctx context.Context, slug string) (*Tenant, error)
-	Update(ctx context.Context, t *Tenant) error
+	// UpdateProfile writes the organization profile (name, slug, description,
+	// logo URL). It never touches settings.
+	UpdateProfile(ctx context.Context, t *Tenant) error
+	// UpdateSettingsSection replaces one top-level settings section with
+	// next, only if its stored value still equals expected (expectedPresent
+	// false = the key is absent). Returns *SettingsConflictError when another
+	// write changed the section first, and shared.ErrNotFound when the tenant
+	// does not exist. Other sections are never rewritten.
+	UpdateSettingsSection(ctx context.Context, id shared.ID, section string, expected any, expectedPresent bool, next any) error
 	Delete(ctx context.Context, id shared.ID) error
 	ExistsBySlug(ctx context.Context, slug string) (bool, error)
 
@@ -29,12 +38,14 @@ type Repository interface {
 	// Membership operations
 	CreateMembership(ctx context.Context, membership *Membership) error
 	GetMembership(ctx context.Context, userID shared.ID, tenantID shared.ID) (*Membership, error)
-	GetMembershipByID(ctx context.Context, id shared.ID) (*Membership, error)
+	// GetMembershipByID returns a membership of tenantID; another tenant's is ErrNotFound.
+	GetMembershipByID(ctx context.Context, tenantID, id shared.ID) (*Membership, error)
 	UpdateMembership(ctx context.Context, membership *Membership) error
 	// UpdateMembershipStatus persists the lifecycle status change
 	// (active ↔ suspended). Used by Suspend/Reactivate service methods.
 	UpdateMembershipStatus(ctx context.Context, membership *Membership) error
-	DeleteMembership(ctx context.Context, id shared.ID) error
+	// DeleteMembership removes a membership of tenantID.
+	DeleteMembership(ctx context.Context, tenantID, id shared.ID) error
 	ListMembersByTenant(ctx context.Context, tenantID shared.ID) ([]*Membership, error)
 	ListMembersWithUserInfo(ctx context.Context, tenantID shared.ID) ([]*MemberWithUser, error)
 	SearchMembersWithUserInfo(ctx context.Context, tenantID shared.ID, filters MemberSearchFilters) (*MemberSearchResult, error)
@@ -60,9 +71,11 @@ type Repository interface {
 	// Invitation operations
 	CreateInvitation(ctx context.Context, invitation *Invitation) error
 	GetInvitationByToken(ctx context.Context, token string) (*Invitation, error)
-	GetInvitationByID(ctx context.Context, id shared.ID) (*Invitation, error)
+	// GetInvitationByID returns an invitation of tenantID; another tenant's is ErrNotFound.
+	GetInvitationByID(ctx context.Context, tenantID, id shared.ID) (*Invitation, error)
 	UpdateInvitation(ctx context.Context, invitation *Invitation) error
-	DeleteInvitation(ctx context.Context, id shared.ID) error
+	// DeleteInvitation removes an invitation of tenantID.
+	DeleteInvitation(ctx context.Context, tenantID, id shared.ID) error
 	ListPendingInvitationsByTenant(ctx context.Context, tenantID shared.ID) ([]*Invitation, error)
 	GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*Invitation, error)
 	DeleteExpiredInvitations(ctx context.Context) (int64, error)
@@ -86,6 +99,37 @@ type TenantWithRole struct {
 	Tenant   *Tenant
 	Role     Role
 	JoinedAt time.Time
+	// The caller's own membership (RFC-058), for the organization switcher.
+	MemberStatus    MemberStatus
+	Kind            MemberKind
+	HomeTenantID    *shared.ID
+	HomeDomain      string
+	ExpiresAt       *time.Time
+	SuspendedReason string
+}
+
+// Blocked reasons of the organization switcher (RFC-058).
+const (
+	BlockedSuspended               = "suspended"
+	BlockedPersonalAccountsBlocked = "personal_accounts_blocked"
+)
+
+// BlockedReason says why the user cannot open this organization now ("" when
+// they can): the membership is suspended (with its reason when one is
+// recorded: expired, home_access_ended, ...), or the organization blocks
+// personal accounts and this is one.
+func (t *TenantWithRole) BlockedReason() string {
+	if t.MemberStatus == MemberStatusSuspended {
+		if t.SuspendedReason != "" {
+			return t.SuspendedReason
+		}
+		return BlockedSuspended
+	}
+	if t.Tenant != nil && t.Kind == MemberKindExternal && t.HomeTenantID == nil && emaildomain.IsConsumer(t.HomeDomain) &&
+		t.Tenant.TypedSettings().Security.PersonalAccounts.Effective() == PersonalAccountsBlocked {
+		return BlockedPersonalAccountsBlocked
+	}
+	return ""
 }
 
 // MemberInfo represents a membership with user info.
@@ -119,22 +163,57 @@ type MemberWithUser struct {
 	// PendingSetup: an administrator-created local account whose owner has not
 	// set a password or signed in yet.
 	PendingSetup bool
+	// External members (RFC-058). HomeTenantName is the name of the
+	// organization that manages the address, shown to the host (the only
+	// thing it learns about the home organization). Filled by
+	// SearchMembersWithUserInfo only.
+	Kind            MemberKind
+	HomeDomain      string
+	HomeTenantName  string
+	ExpiresAt       *time.Time
+	SuspendedReason string
+	// DomainLapsed: the member's email domain was verified for SSO by this
+	// organization and its DNS proof lapsed (RFC-058): nobody vouches for
+	// the address any more.
+	DomainLapsed bool
 }
 
 // MemberStats contains statistics about tenant members.
 type MemberStats struct {
-	TotalMembers   int            `json:"total_members"`
-	ActiveMembers  int            `json:"active_members"`
-	PendingInvites int            `json:"pending_invites"`
-	RoleCounts     map[string]int `json:"role_counts"`
+	TotalMembers  int `json:"total_members"`
+	ActiveMembers int `json:"active_members"`
+	// SuspendedMembers are disabled members (access cut, reversible).
+	SuspendedMembers int `json:"suspended_members"`
+	// OffboardedMembers are tombstones of members who left. They are not
+	// counted in TotalMembers.
+	OffboardedMembers int            `json:"offboarded_members"`
+	PendingInvites    int            `json:"pending_invites"`
+	RoleCounts        map[string]int `json:"role_counts"`
 }
 
 // MemberSearchFilters defines filters for searching members.
 type MemberSearchFilters struct {
 	Search string // Search by name or email (case-insensitive)
-	Limit  int    // Maximum number of results (0 = no limit)
-	Offset int    // Offset for pagination
+	// SearchNameOnly restricts Search to the member's name. Set for callers
+	// who may not see member emails, so a search cannot confirm an address.
+	SearchNameOnly bool
+	Limit          int // Maximum number of results (0 = no limit)
+	Offset         int // Offset for pagination
+	// Status filters by membership status: "active", "suspended",
+	// "offboarded", or "all". Empty lists active and suspended members (not
+	// the offboarded tombstones).
+	Status string
+	// Role filters on the effective system role (owner, admin, member,
+	// viewer); empty = any.
+	Role string
+	// Kind filters on internal or external members (RFC-058); empty = any.
+	Kind string
 }
+
+// Member status filter values for MemberSearchFilters.Status.
+const (
+	MemberFilterAll = "all"
+)
 
 // MemberSearchResult contains the search results and total count.
 type MemberSearchResult struct {
@@ -160,7 +239,7 @@ type UserMembershipsByStatus struct {
 }
 
 // SystemTenantID is the platform system tenant seeded by migration 000058. It
-// owns system scan profiles and pipeline templates; it has no members, assets
+// owns system scan profiles and scan workflows; it has no members, assets
 // or findings, and it is not a customer tenant. shared.ID treats this all-zero
 // UUID as empty, so per-tenant services reject it — background sweeps must
 // never iterate it.

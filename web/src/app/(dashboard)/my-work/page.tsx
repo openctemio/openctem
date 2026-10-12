@@ -1,7 +1,8 @@
 'use client'
 
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ArrowRight } from 'lucide-react'
@@ -21,14 +22,7 @@ import { formatRelative } from '@/lib/format-date'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding, FindingApiFilters } from '@/features/findings/api/finding-api.types'
 
-const OPEN_EXCLUDE = [
-  'resolved',
-  'false_positive',
-  'accepted',
-  'duplicate',
-  'verified',
-  'accepted_risk',
-]
+const OPEN_EXCLUDE = findingStatusesInCategory('closed')
 
 /** The queue shows the top of the list; "View all" opens Findings filtered to me. */
 const QUEUE_SIZE = 15
@@ -74,21 +68,21 @@ export default function MyWorkPage() {
       key: 'open',
       label: 'Open · assigned to me',
       value: openTotal,
-      onClick: () => router.push('/findings?mine=true'),
+      onClick: () => router.push('/findings?related_to=me'),
     },
     {
       key: 'critical',
       label: 'Critical / high',
       value: critical?.total ?? 0,
       tone: 'danger',
-      onClick: () => router.push('/findings?mine=true&priority=P0'),
+      onClick: () => router.push('/findings?related_to=me&priority_class=P0'),
     },
     {
       key: 'overdue',
       label: 'Overdue (SLA)',
       value: overdue?.total ?? 0,
       tone: 'danger',
-      onClick: () => router.push('/findings?mine=true&sla_status=overdue'),
+      onClick: () => router.push('/findings?related_to=me&sla_status=overdue'),
     },
   ]
 
@@ -187,7 +181,7 @@ export default function MyWorkPage() {
             }
             toolbarEnd={
               <Button variant="outline" size="sm" asChild>
-                <Link href="/findings?mine=true">
+                <Link href="/findings?related_to=me">
                   View all
                   <ArrowRight className="ms-2 h-4 w-4" />
                 </Link>

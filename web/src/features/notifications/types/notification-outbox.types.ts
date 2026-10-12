@@ -70,7 +70,7 @@ export interface OutboxListResponse {
 export interface OutboxListFilters {
   status?: OutboxStatus
   page?: number
-  page_size?: number
+  per_page?: number
 }
 
 /**

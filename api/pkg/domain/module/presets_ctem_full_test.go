@@ -8,7 +8,7 @@ import "testing"
 //
 //	scope      → scope_config
 //	sources    → template_sources
-//	pipelines  → scan_pipelines
+//	scan workflows  → scan_workflows
 //	webhooks   → integrations.webhooks
 //	secrets    → credentials
 //
@@ -29,12 +29,11 @@ import "testing"
 // every preset; the constant + ModulePermissionMapping entry stay only so
 // historic permission lookups resolve, so it too must be excluded here.
 var legacyDuplicateModuleIDs = map[string]bool{
-	"scope":     true,
-	"sources":   true,
-	"pipelines": true,
-	"webhooks":  true,
-	"secrets":   true,
-	"policies":  true,
+	"scope":    true,
+	"sources":  true,
+	"webhooks": true,
+	"secrets":  true,
+	"policies": true,
 }
 
 // TestCTEMFullEnablesEveryRealModule is the drift-guard that would have caught

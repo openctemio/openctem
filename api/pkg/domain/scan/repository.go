@@ -10,14 +10,22 @@ import (
 
 // Filter represents filter options for listing scans.
 type Filter struct {
-	TenantID     *shared.ID
-	AssetGroupID *shared.ID
-	PipelineID   *shared.ID
-	ScanType     *ScanType
-	ScheduleType *ScheduleType
-	Status       *Status
-	Tags         []string
-	Search       string
+	TenantID       *shared.ID
+	AssetGroupID   *shared.ID
+	ScanWorkflowID *shared.ID
+	ScanType       *ScanType
+	ScheduleType   *ScheduleType
+	Status         *Status
+	Tags           []string
+	Search         string
+	// Archived scans (never-run one-off scans the archive job retired) are
+	// left out of every list.
+	//
+	// ExcludeAdHoc leaves out quick scans that were never saved (Scan.AdHoc):
+	// the Configurations list shows saved configurations only.
+	ExcludeAdHoc bool
+	// Sort orders the list; the zero value is by name.
+	Sort ListSort
 }
 
 // Stats represents aggregated statistics for scans.
@@ -32,9 +40,9 @@ type Stats struct {
 
 // OverviewStats represents the scan management overview statistics.
 type OverviewStats struct {
-	Pipelines StatusCounts `json:"pipelines"`
-	Scans     StatusCounts `json:"scans"`
-	Jobs      StatusCounts `json:"jobs"`
+	ScanRuns StatusCounts `json:"scan_runs"`
+	Scans    StatusCounts `json:"scans"`
+	Jobs     StatusCounts `json:"jobs"`
 }
 
 // StatusCounts represents counts by status.
@@ -52,9 +60,6 @@ type Repository interface {
 	// Create creates a new scan.
 	Create(ctx context.Context, scan *Scan) error
 
-	// GetByID retrieves a scan by ID.
-	GetByID(ctx context.Context, id shared.ID) (*Scan, error)
-
 	// GetByTenantAndID retrieves a scan by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Scan, error)
 
@@ -67,8 +72,9 @@ type Repository interface {
 	// Update updates a scan.
 	Update(ctx context.Context, scan *Scan) error
 
-	// Delete deletes a scan.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete deletes a scan of tenantID. A scan of another tenant is
+	// shared.ErrNotFound.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// Scheduling
 
@@ -85,19 +91,12 @@ type Repository interface {
 	CountScheduledWithoutNextRun(ctx context.Context) (int, []string, error)
 
 	// UpdateNextRunAt updates the next run time for a scan.
-	UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error
+	UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error
 
-	// RecordRun records a run result for a scan.
-	RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error
-
-	// RecordTriggerFailure records that a scheduled trigger failed BEFORE any
-	// run was created (e.g. no sensor available). It sets last_run_at/last_run_status
-	// so the failure is visible in the scan's own state — the scheduler advances
-	// next_run_at regardless (to avoid re-trigger storms), which otherwise makes a
-	// scan that can never start look identical to one that simply hasn't run yet.
-	// Deliberately does NOT touch the run counters: no run existed, so inflating
-	// total_runs would be a second lie on top of the one this fixes.
-	RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error
+	// RefreshRunSummary recomputes the scan's last run and run counters from
+	// its runs (scan_runs), the one source of both. Called after any
+	// change to one of its runs.
+	RefreshRunSummary(ctx context.Context, tenantID, id shared.ID) error
 
 	// Statistics
 
@@ -112,20 +111,23 @@ type Repository interface {
 	// ListByAssetGroupID lists all scans for an asset group.
 	ListByAssetGroupID(ctx context.Context, assetGroupID shared.ID) ([]*Scan, error)
 
-	// ListByPipelineID lists all scans using a pipeline.
-	ListByPipelineID(ctx context.Context, pipelineID shared.ID) ([]*Scan, error)
+	// ListByScanWorkflowID lists all scans using a scan workflow.
+	ListByScanWorkflowID(ctx context.Context, scanWorkflowID shared.ID) ([]*Scan, error)
 
 	// UpdateStatusByAssetGroupID updates status for all scans in an asset group.
 	UpdateStatusByAssetGroupID(ctx context.Context, assetGroupID shared.ID, status Status) error
 
 	// Distributed Locking (for multi-instance schedulers)
 
-	// TryLockScanForScheduler attempts to acquire a session-level advisory lock
-	// for the given scan ID. Returns true if the lock was acquired, false if
-	// another instance already holds it. The lock must be released with
-	// UnlockScanForScheduler when the trigger completes.
-	TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error)
+	// ClaimScheduledRun atomically moves next_run_at from dueAt to next if it
+	// still equals dueAt and the scan is active. It returns true for exactly
+	// one caller per due occurrence, across replicas.
+	ClaimScheduledRun(ctx context.Context, tenantID, id shared.ID, dueAt time.Time, next *time.Time) (bool, error)
+}
 
-	// UnlockScanForScheduler releases a previously acquired scheduler lock for the given scan ID.
-	UnlockScanForScheduler(ctx context.Context, id shared.ID) error
+// ArchivedScan is a one-off scan the archive job archived.
+type ArchivedScan struct {
+	TenantID shared.ID
+	ID       shared.ID
+	Name     string
 }

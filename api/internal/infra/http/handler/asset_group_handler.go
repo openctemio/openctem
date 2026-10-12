@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
@@ -19,13 +19,13 @@ import (
 
 // AssetGroupHandler handles asset group HTTP requests.
 type AssetGroupHandler struct {
-	service   *app.AssetGroupService
+	service   *asset.AssetGroupService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssetGroupHandler creates a new asset group handler.
-func NewAssetGroupHandler(svc *app.AssetGroupService, v *validator.Validator, log *logger.Logger) *AssetGroupHandler {
+func NewAssetGroupHandler(svc *asset.AssetGroupService, v *validator.Validator, log *logger.Logger) *AssetGroupHandler {
 	return &AssetGroupHandler{
 		service:   svc,
 		validator: v,
@@ -68,7 +68,7 @@ type CreateAssetGroupRequest struct {
 	Owner        string   `json:"owner" validate:"max=255"`
 	OwnerEmail   string   `json:"owner_email" validate:"omitempty,email,max=255"`
 	Tags         []string `json:"tags" validate:"max=20,dive,max=50"`
-	AssetIDs     []string `json:"existing_asset_ids" validate:"dive,uuid"`
+	AssetIDs     []string `json:"existing_asset_ids" validate:"max=1000,dive,uuid"`
 }
 
 // UpdateAssetGroupRequest represents the request to update an asset group.
@@ -89,12 +89,12 @@ type UpdateAssetGroupRequest struct {
 
 // AddAssetsRequest represents the request to add assets to a group.
 type AddAssetsRequest struct {
-	AssetIDs []string `json:"asset_ids" validate:"required,min=1,dive,uuid"`
+	AssetIDs []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
 }
 
 // RemoveAssetsRequest represents the request to remove assets from a group.
 type RemoveAssetsRequest struct {
-	AssetIDs []string `json:"asset_ids" validate:"required,min=1,dive,uuid"`
+	AssetIDs []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
 }
 
 // BulkUpdateRequest represents bulk update request.
@@ -237,7 +237,11 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 
-	input := app.ListAssetGroupsInput{
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := asset.ListAssetGroupsInput{
 		TenantID:       tenantID,
 		Search:         query.Get("search"),
 		Environments:   parseQueryArray(query.Get("environments")),
@@ -250,8 +254,8 @@ func (h *AssetGroupHandler) List(w http.ResponseWriter, r *http.Request) {
 		MinRiskScore:   parseQueryIntPtr(query.Get("min_risk_score")),
 		MaxRiskScore:   parseQueryIntPtr(query.Get("max_risk_score")),
 		Sort:           query.Get("sort"),
-		Page:           parseQueryInt(query.Get("page"), 1),
-		PerPage:        parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:           paging.Page,
+		PerPage:        paging.PerPage,
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -340,7 +344,7 @@ func (h *AssetGroupHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateAssetGroupInput{
+	input := asset.CreateAssetGroupInput{
 		TenantID:     tenantID,
 		Name:         req.Name,
 		Description:  req.Description,
@@ -397,7 +401,7 @@ func (h *AssetGroupHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateAssetGroupInput{
+	input := asset.UpdateAssetGroupInput{
 		Name:         req.Name,
 		Description:  req.Description,
 		Environment:  req.Environment,
@@ -513,9 +517,11 @@ func (h *AssetGroupHandler) GetAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := r.URL.Query()
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetGroupAssets(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {
@@ -574,9 +580,11 @@ func (h *AssetGroupHandler) GetFindings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	query := r.URL.Query()
-	page := parseQueryInt(query.Get("page"), 1)
-	perPage := parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetGroupFindings(r.Context(), middleware.MustGetTenantID(r.Context()), id, page, perPage)
 	if err != nil {
@@ -733,7 +741,7 @@ func (h *AssetGroupHandler) BulkUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.BulkUpdateInput{
+	input := asset.BulkUpdateInput{
 		GroupIDs:    req.GroupIDs,
 		Environment: req.Update.Environment,
 		Criticality: req.Update.Criticality,

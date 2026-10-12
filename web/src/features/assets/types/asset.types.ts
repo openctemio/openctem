@@ -5,6 +5,12 @@
  */
 
 import type { Status } from '@/features/shared/types'
+import type { CriticalityLevel } from '@/lib/criticality'
+import {
+  LEGACY_ASSET_CATEGORY_LABELS,
+  type AssetPropertyKey,
+  type LegacyAssetCategory,
+} from '@/features/asset-types/registry.generated'
 
 /**
  * Asset Type Categories (CTEM-aligned)
@@ -66,202 +72,6 @@ export type AssetType =
   | 'service' // @deprecated - Use application instead
   | 'credential' // @deprecated - Moved to Identities module
   | 'mobile' // @deprecated - Use mobile_app instead
-
-/**
- * Asset Type Category for grouping in UI
- */
-export type AssetTypeCategory =
-  | 'external'
-  | 'applications'
-  | 'infrastructure'
-  | 'network'
-  | 'cloud'
-  | 'data'
-  | 'identity'
-  | 'code'
-
-export interface CategorySubItem {
-  key: string // sub_type key or asset_type
-  label: string
-  url: string
-  countKey: string // key in bySubType or byType to get count
-}
-
-export interface CategoryConfig {
-  label: string
-  description: string
-  types: AssetType[] // for total count calculation
-  items: CategorySubItem[] // individual rows in overview
-}
-
-export const ASSET_TYPE_CATEGORIES: Record<AssetTypeCategory, CategoryConfig> = {
-  external: {
-    label: 'External Attack Surface',
-    description: 'Internet-facing assets and entry points',
-    types: ['domain', 'subdomain', 'certificate', 'ip_address'],
-    items: [
-      { key: 'domain', label: 'Domains', url: '/assets/domains?type=domain', countKey: 'domain' },
-      {
-        key: 'subdomain',
-        label: 'Subdomains',
-        url: '/assets/domains?type=subdomain',
-        countKey: 'subdomain',
-      },
-      {
-        key: 'certificate',
-        label: 'Certificates',
-        url: '/assets/certificates',
-        countKey: 'certificate',
-      },
-      {
-        key: 'ip_address',
-        label: 'IP Addresses',
-        url: '/assets/ip-addresses',
-        countKey: 'ip_address',
-      },
-    ],
-  },
-  applications: {
-    label: 'Applications',
-    description: 'Web, mobile, and API applications',
-    types: ['application'],
-    items: [
-      { key: 'website', label: 'Websites', url: '/assets/websites', countKey: 'website' },
-      { key: 'api', label: 'APIs', url: '/assets/apis', countKey: 'api' },
-      {
-        key: 'web_application',
-        label: 'Web Applications',
-        url: '/assets/websites?sub_type=web_application',
-        countKey: 'web_application',
-      },
-      { key: 'mobile_app', label: 'Mobile Apps', url: '/assets/mobile', countKey: 'mobile_app' },
-    ],
-  },
-  infrastructure: {
-    label: 'Infrastructure',
-    description: 'Servers, VMs, containers, Kubernetes, and services',
-    types: ['host', 'container', 'kubernetes', 'service'],
-    items: [
-      { key: 'host', label: 'Hosts', url: '/assets/hosts', countKey: 'host' },
-      {
-        key: 'container',
-        label: 'Containers',
-        url: '/assets/containers?type=container',
-        countKey: 'container',
-      },
-      {
-        key: 'kubernetes',
-        label: 'Kubernetes',
-        url: '/assets/containers?type=kubernetes',
-        countKey: 'kubernetes',
-      },
-      { key: 'service', label: 'Services', url: '/assets/services', countKey: 'service' },
-    ],
-  },
-  network: {
-    label: 'Network & Security',
-    description: 'Firewalls, switches, routers, load balancers',
-    types: ['network'],
-    items: [
-      {
-        key: 'firewall',
-        label: 'Firewalls',
-        url: '/assets/networks?sub_type=firewall',
-        countKey: 'firewall',
-      },
-      {
-        key: 'load_balancer',
-        label: 'Load Balancers',
-        url: '/assets/networks?sub_type=load_balancer',
-        countKey: 'load_balancer',
-      },
-      {
-        key: 'switch',
-        label: 'Switches',
-        url: '/assets/networks?sub_type=switch',
-        countKey: 'switch',
-      },
-      {
-        key: 'router',
-        label: 'Routers',
-        url: '/assets/networks?sub_type=router',
-        countKey: 'router',
-      },
-    ],
-  },
-  cloud: {
-    label: 'Cloud',
-    description: 'Cloud accounts and storage',
-    types: ['cloud_account', 'storage'],
-    items: [
-      {
-        key: 'cloud_account',
-        label: 'Cloud Accounts',
-        url: '/assets/cloud-accounts',
-        countKey: 'cloud_account',
-      },
-      { key: 'storage', label: 'Storage', url: '/assets/storage', countKey: 'storage' },
-    ],
-  },
-  data: {
-    label: 'Data',
-    description: 'Databases and data stores',
-    types: ['database'],
-    items: [
-      { key: 'database', label: 'Databases', url: '/assets/databases', countKey: 'database' },
-    ],
-  },
-  identity: {
-    label: 'Identity & Access',
-    description: 'Users, roles, and service accounts',
-    types: ['identity'],
-    items: [
-      {
-        key: 'iam_user',
-        label: 'Users',
-        url: '/assets/identity?sub_type=iam_user',
-        countKey: 'iam_user',
-      },
-      {
-        key: 'iam_role',
-        label: 'Roles',
-        url: '/assets/identity?sub_type=iam_role',
-        countKey: 'iam_role',
-      },
-      {
-        key: 'service_account',
-        label: 'Service Accounts',
-        url: '/assets/identity?sub_type=service_account',
-        countKey: 'service_account',
-      },
-    ],
-  },
-  code: {
-    label: 'Code & CI/CD',
-    description: 'Source code repositories and pipelines',
-    types: ['repository'],
-    items: [
-      {
-        key: 'repository',
-        label: 'Repositories',
-        url: '/assets/repositories',
-        countKey: 'repository',
-      },
-    ],
-  },
-}
-
-/**
- * Legacy asset types that are deprecated but still supported
- */
-export const LEGACY_ASSET_TYPES: AssetType[] = ['credential', 'mobile', 'endpoint']
-
-/**
- * Check if an asset type is deprecated
- */
-export const isLegacyAssetType = (type: AssetType): boolean => {
-  return LEGACY_ASSET_TYPES.includes(type)
-}
 
 /**
  * Asset Scope - Ownership/location perspective
@@ -541,32 +351,11 @@ export const ASSET_TYPE_COLORS: Record<AssetType, { bg: string; text: string }> 
 }
 
 /**
- * Asset Criticality Level
- * Indicates the business importance of the asset
+ * Asset Criticality Level: the business importance of the asset, with `none` =
+ * Not rated. The scale (values, order, labels) is the shared @/lib/criticality.
  */
-export type Criticality = 'low' | 'medium' | 'high' | 'critical'
-
-export const CRITICALITY_LABELS: Record<Criticality, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  critical: 'Critical',
-}
-
-export const CRITICALITY_DESCRIPTIONS: Record<Criticality, string> = {
-  low: 'Non-critical asset with minimal business impact',
-  medium: 'Standard business asset with moderate impact',
-  high: 'Important asset with significant business impact',
-  critical: 'Mission-critical asset essential to business operations',
-}
-
-export const CRITICALITY_COLORS: Record<Criticality, { bg: string; text: string; border: string }> =
-  {
-    low: { bg: 'bg-slate-500/15', text: 'text-slate-600', border: 'border-slate-500/30' },
-    medium: { bg: 'bg-blue-500/15', text: 'text-blue-600', border: 'border-blue-500/30' },
-    high: { bg: 'bg-orange-500/15', text: 'text-orange-600', border: 'border-orange-500/30' },
-    critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
-  }
+export type Criticality = CriticalityLevel
+export { CRITICALITY_LABELS, CRITICALITY_DESCRIPTIONS } from '@/lib/criticality'
 
 /**
  * CIA Impact Rating (CTEM Scoping critical-asset register)
@@ -628,372 +417,29 @@ export type DomainDiscoverySource =
   | 'web_crawl' // Web crawler discovery
 
 /**
- * Asset metadata varies by asset type.
+ * An asset's properties (the API's `properties`, kept as `asset.metadata`).
  *
- * IMPORTANT: All metadata keys use snake_case convention (e.g., cpu_cores, os_version).
- * The backend normalizes camelCase keys to snake_case on ingest.
- * Config files should access metadata via `Record<string, unknown>` with snake_case keys.
- *
- * @deprecated Use `Record<string, unknown>` with snake_case keys instead of this typed interface.
+ * The keys are the registry's (api/configs/asset-types.yaml, generated into
+ * `AssetPropertyKey`): web code reads and writes a property only by a schema
+ * key, so a key outside the registry does not compile
+ * (docs/architecture/asset-inventory-v2.md, "Property names"). Third-party
+ * or custom keys (`x_` prefix) are kept and shown under "Other", and are
+ * read only by listing the entries, never by name.
  */
-export interface AssetMetadata {
-  // ============================================
-  // Domain-specific - Hierarchy (NEW - Best Practice)
-  // ============================================
-  /** Root/apex domain (e.g., "techviet.vn") */
-  rootDomain?: string
-  /** Domain level: 1=root, 2=subdomain, 3=sub-subdomain, etc. */
-  domainLevel?: number
-  /** Parent domain (e.g., "api.techviet.vn" -> "techviet.vn") */
-  parentDomain?: string
-  /** Is this a wildcard domain (*.domain.com) */
-  isWildcard?: boolean
-  /** How the domain was discovered */
-  discoverySource?: DomainDiscoverySource
-
-  // ============================================
-  // Domain-specific - DNS Information
-  // ============================================
-  /** DNS record types (A, AAAA, CNAME, MX, NS, TXT, etc.) */
-  dnsRecordTypes?: string[]
-  /** IP addresses this domain resolves to */
-  resolvedIPs?: string[]
-  /** MX (mail exchange) records */
-  mxRecords?: string[]
-  /** CNAME target if applicable */
-  cnameTarget?: string
-  /** DNS TTL in seconds */
-  ttl?: number
-
-  // ============================================
-  // Domain-specific - WHOIS & Registration
-  // ============================================
-  registrar?: string
-  expiryDate?: string
-  nameservers?: string[]
-  whoisOrganization?: string
-  registrationDate?: string
-  updatedDate?: string
-
-  // ============================================
-  // Domain-specific - Security
-  // ============================================
-  dnssecEnabled?: boolean
-  /** CAA record value */
-  caa?: string
-  /** SPF record */
-  spf?: string
-  /** DKIM record */
-  dkim?: string
-  /** DMARC record */
-  dmarc?: string
-  /** Has linked SSL/TLS certificate */
-  hasCertificate?: boolean
-  /** Link to certificate asset ID */
-  certificateAssetId?: string
-
-  // ============================================
-  // Certificate-specific (NEW)
-  // ============================================
-  certIssuer?: string
-  certSubject?: string
-  certSerialNumber?: string
-  certNotBefore?: string
-  certNotAfter?: string
-  certDaysUntilExpiry?: number
-  certSignatureAlgorithm?: string
-  certKeySize?: number
-  certSans?: string[] // Subject Alternative Names
-  certChainValid?: boolean
-  certIsWildcard?: boolean
-  certTransparencyLogged?: boolean
-
-  // ============================================
-  // IP Address-specific (NEW)
-  // ============================================
-  ipVersion?: 'ipv4' | 'ipv6'
-  ipAddress?: string
-  asn?: string
-  asnOrganization?: string
-  ipCountry?: string
-  ipCity?: string
-  ipIsp?: string
-  ipReverseDns?: string
-  ipIsPublic?: boolean
-  ipOpenPorts?: number[]
-  ipServices?: string[]
-
-  // ============================================
-  // Website-specific
-  // ============================================
-  technology?: string[]
-  ssl?: boolean
-  sslExpiry?: string
-  httpStatus?: number
-  responseTime?: number
-  server?: string
-  wafDetected?: string
-  cdnDetected?: string
-
-  // ============================================
-  // API-specific
-  // ============================================
-  apiType?: 'rest' | 'graphql' | 'grpc' | 'websocket' | 'soap'
-  baseUrl?: string
-  apiVersion?: string
-  authType?: 'none' | 'api_key' | 'oauth2' | 'jwt' | 'basic' | 'mtls'
-  endpointCount?: number
-  documentationUrl?: string
-  openApiSpec?: boolean
-  rateLimit?: number
-  rateLimitEnabled?: boolean
-  corsEnabled?: boolean
-  tlsVersion?: string
-  owner?: string
-  team?: string
-  requestsPerDay?: number
-  avgResponseTime?: number
-  errorRate?: number
-  lastActivity?: string
-
-  // ============================================
-  // Mobile App-specific
-  // ============================================
-  platform?: 'ios' | 'android' | 'cross-platform'
-  bundleId?: string
-  appVersion?: string
-  buildNumber?: string
-  minSdkVersion?: string
-  targetSdkVersion?: string
-  storeUrl?: string
-  lastRelease?: string
-  downloads?: number
-  rating?: number
-  permissions?: string[]
-  sdks?: string[]
-
-  // ============================================
-  // Cloud Account-specific (NEW)
-  // ============================================
-  cloudProvider?: CloudProvider
-  accountId?: string
-  accountAlias?: string
-  organizationId?: string
-  rootEmail?: string
-  mfaEnabled?: boolean
-  ssoEnabled?: boolean
-  resourceCount?: number
-  monthlySpend?: number
-  complianceFrameworks?: string[]
-
-  // ============================================
-  // Compute-specific (NEW - VM/Instance)
-  // ============================================
-  instanceId?: string
-  instanceType?: string
-  instanceState?: 'running' | 'stopped' | 'terminated' | 'pending'
-  availabilityZone?: string
-  vpcId?: string
-  subnetId?: string
-  privateIp?: string
-  publicIp?: string
-  securityGroups?: string[]
-  iamRole?: string
-  launchTime?: string
-  imageId?: string // AMI ID
-
-  // ============================================
-  // Storage-specific (NEW - S3/Blob/GCS)
-  // ============================================
-  bucketName?: string
-  storageClass?: string
-  bucketRegion?: string
-  isPubliclyAccessible?: boolean
-  encryptionEnabled?: boolean
-  encryptionType?: 'none' | 'sse-s3' | 'sse-kms' | 'sse-c'
-  versioningEnabled?: boolean
-  loggingEnabled?: boolean
-  lifecycleRules?: number
-  objectCount?: number
-  totalSizeGB?: number
-  lastModified?: string
-
-  // ============================================
-  // Serverless-specific (NEW)
-  // ============================================
-  functionName?: string
-  functionRuntime?: string
-  functionHandler?: string
-  functionMemory?: number
-  functionTimeout?: number
-  functionCodeSize?: number
-  functionLastModified?: string
-  functionTriggers?: string[]
-  functionEnvVars?: number
-  functionLayers?: string[]
-  functionVpcEnabled?: boolean
-
-  // ============================================
-  // Host-specific
-  // ============================================
-  ip?: string
-  hostname?: string
-  os?: string
-  osVersion?: string
-  architecture?: 'x86' | 'x64' | 'arm64'
-  cpuCores?: number
-  memoryGB?: number
-  isVirtual?: boolean
-  hypervisor?: string
-  openPorts?: number[]
-  lastBoot?: string
-
-  // ============================================
-  // Container-specific
-  // ============================================
-  image?: string
-  imageTag?: string
-  registry?: string
-  runtime?: 'docker' | 'containerd' | 'cri-o'
-  orchestrator?: 'kubernetes' | 'docker-swarm' | 'ecs' | 'standalone'
-  namespace?: string
-  cluster?: string
-  replicas?: number
-  cpuLimit?: string
-  memoryLimit?: string
-  containerPorts?: number[]
-  containerVulnerabilities?: number
-
-  // ============================================
-  // Database-specific
-  // ============================================
-  engine?:
-    | 'mysql'
-    | 'postgresql'
-    | 'mongodb'
-    | 'redis'
-    | 'elasticsearch'
-    | 'mssql'
-    | 'oracle'
-    | 'dynamodb'
-    | 'cosmosdb'
-  dbVersion?: string
-  dbHost?: string
-  dbPort?: number
-  sizeGB?: number
-  encryption?: boolean
-  backupEnabled?: boolean
-  lastBackup?: string
-  replication?: 'single' | 'replica-set' | 'cluster'
-  connections?: number
-  dbPubliclyAccessible?: boolean
-
-  // ============================================
-  // Network-specific (NEW)
-  // ============================================
-  networkType?:
-    'vpc' | 'vnet' | 'firewall' | 'load_balancer' | 'nat_gateway' | 'vpn' | 'transit_gateway'
-  vpcCidr?: string
-  subnetCidrs?: string[]
-  routeTableCount?: number
-  networkAclCount?: number
-  peeringConnections?: string[]
-  flowLogsEnabled?: boolean
-  // Firewall specific
-  firewallRules?: number
-  allowedPorts?: number[]
-  deniedPorts?: number[]
-  // Load balancer specific
-  lbType?: 'application' | 'network' | 'classic' | 'gateway'
-  lbScheme?: 'internet-facing' | 'internal'
-  lbTargetGroups?: number
-  lbListeners?: number
-  healthCheckEnabled?: boolean
-
-  // ============================================
-  // Project-specific (Git repositories)
-  // ============================================
-  projectProvider?: 'github' | 'gitlab' | 'bitbucket' | 'azure_devops' | 'codecommit'
-  /** @deprecated Use projectProvider instead */
-  repoProvider?: 'github' | 'gitlab' | 'bitbucket' | 'azure_devops' | 'codecommit'
-  visibility?: 'public' | 'private' | 'internal'
-  language?: string
-  languages?: Record<string, number> // language -> percentage
-  stars?: number
-  forks?: number
-  openIssues?: number
-  defaultBranch?: string
-  lastCommit?: string
-  contributors?: number
-  hasSecurityPolicy?: boolean
-  branchProtection?: boolean
-  secretScanningEnabled?: boolean
-  dependabotEnabled?: boolean
-
-  // ============================================
-  // Credential Leak specific (for credential assets)
-  // ============================================
-  /** Whether the leak carries a stored secret (password, API key, etc.) */
-  hasSecret?: boolean
-  /** Display-safe mask of the secret; the plaintext is revealed on demand */
-  secretMasked?: string
-  /** Keyed fingerprint: the same value means the same secret leaked again */
-  secretFingerprint?: string
-  /** Type of credential (password, api_key, aws_key, database_cred, etc.) */
-  credentialType?: string
-
-  // ============================================
-  // Legacy fields (deprecated, for migration)
-  // ============================================
-  /** @deprecated Use repoProvider instead */
-  provider?: 'github' | 'gitlab' | 'bitbucket'
-  /** @deprecated Use specific port fields instead */
-  port?: number
-  /** @deprecated Use apiType service detection instead */
-  protocol?: string
-  /** @deprecated Use appropriate version field instead */
-  version?: string
-  /** @deprecated Use ipServices instead */
-  banner?: string
-  /** @deprecated Use dedicated region fields instead */
-  region?: string
-  /** @deprecated Compute type is now a separate asset type */
-  resourceType?: string
-  /** @deprecated Moved to Identities module */
-  source?: string
-  /** @deprecated Moved to Identities module */
-  username?: string
-  /** @deprecated Moved to Identities module */
-  leakDate?: string
-  /** @deprecated Use containerVulnerabilities instead */
-  vulnerabilities?: number
-}
+export type AssetMetadata = Partial<Record<AssetPropertyKey, unknown>>
 
 /**
  * Asset represents a single discoverable asset
  */
-export type AssetCategory =
-  | 'external_surface'
-  | 'application'
-  | 'infrastructure'
-  | 'network'
-  | 'cloud'
-  | 'data'
-  | 'code'
-  | 'identity'
-  | 'other'
+/**
+ * Legacy derived category of an asset type (the `category` field of asset
+ * responses), generated from api/configs/asset-types.yaml. New code uses the
+ * RFC-042 class and lens (features/asset-types).
+ */
+export type AssetCategory = LegacyAssetCategory
 
-export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
-  external_surface: 'External Surface',
-  application: 'Applications',
-  infrastructure: 'Infrastructure',
-  network: 'Network',
-  cloud: 'Cloud',
-  data: 'Data',
-  code: 'Code',
-  identity: 'Identity',
-  other: 'Other',
-}
+export const ASSET_CATEGORY_LABELS: Readonly<Record<AssetCategory, string>> =
+  LEGACY_ASSET_CATEGORY_LABELS
 
 export interface Asset {
   id: string
@@ -1027,6 +473,15 @@ export interface Asset {
    * "unknown/not flagged" (api #467, backend `is_control_plane`).
    */
   isControlPlane?: boolean
+  /**
+   * Crown jewel (backend `is_crown_jewel`, the assets column). Set only
+   * through PATCH /assets/{id}/crown-jewel, never through properties.
+   */
+  isCrownJewel?: boolean
+  /** Tags the platform derives from bug-bounty program links (read-only). */
+  systemTags?: string[]
+  /** Came with a bug-bounty program and no own scope covers it. */
+  programOnly?: boolean
   riskScore: number // 0-100, calculated from criticality, exposure, and findings
   findingCount: number
   /** Open findings per severity (assets.finding_severity_counts). */
@@ -1056,7 +511,7 @@ export interface Asset {
    * exists. Persisted to assets.owner_ref (max 500 chars).
    */
   ownerRef?: string
-  metadata: AssetMetadata & Record<string, unknown>
+  metadata: AssetMetadata
   tags?: string[]
   primaryOwner?: OwnerBrief
   firstSeen: string
@@ -1087,6 +542,12 @@ export interface Asset {
  */
 export interface CreateAssetInput {
   type: AssetType
+  /**
+   * The kind within the type, from the registry's closed list
+   * (`ASSET_SUB_TYPES`). Typed pages send theirs (websites → `website`), so
+   * the new asset shows on the page that created it.
+   */
+  subType?: string
   name: string
   description?: string
   criticality?: Criticality // Defaults to 'medium' if not provided
@@ -1102,7 +563,7 @@ export interface CreateAssetInput {
   groupId?: string // Optional - can create ungrouped assets
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: Partial<AssetMetadata> & Record<string, unknown>
+  metadata?: AssetMetadata
   tags?: string[]
 }
 
@@ -1125,7 +586,7 @@ export interface UpdateAssetInput {
   groupId?: string | null // null to remove from group
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
-  metadata?: Partial<AssetMetadata> & Record<string, unknown>
+  metadata?: AssetMetadata
   tags?: string[]
 }
 
@@ -1560,7 +1021,14 @@ export const OWNERSHIP_TYPE_COLORS: Record<
 }
 
 /**
- * Asset owner returned from the API
+ * Who created an owner row: a person (`manual`), a group scope rule
+ * (`scope_rule`), or the match of the asset's owner reference to a member's
+ * email (`owner_ref`; removing it clears the owner reference).
+ */
+export type OwnerAssignmentSource = 'manual' | 'scope_rule' | 'owner_ref'
+
+/**
+ * Asset owner returned from the API. asset_owners is the only owner model.
  */
 export interface AssetOwner {
   id: string
@@ -1572,6 +1040,7 @@ export interface AssetOwner {
   ownershipType: OwnershipType
   assignedAt: string
   assignedByName?: string
+  assignmentSource: OwnerAssignmentSource
 }
 
 /**

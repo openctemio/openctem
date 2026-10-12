@@ -72,7 +72,7 @@ func TestJITMembershipRole_LeastPrivilegeDefault(t *testing.T) {
 		"":        tenantdom.RoleViewer,
 		"viewer":  tenantdom.RoleViewer,
 		"member":  tenantdom.RoleMember,
-		"Admin":   tenantdom.RoleAdmin,
+		"Admin":   tenantdom.RoleViewer, // never granted by SSO (B18)
 		"owner":   tenantdom.RoleViewer, // never granted by SSO
 		"garbage": tenantdom.RoleViewer,
 	}

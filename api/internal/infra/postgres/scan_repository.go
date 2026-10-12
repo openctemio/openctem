@@ -32,11 +32,21 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal scanner_config: %w", err)
 	}
+	targetOptions, err := json.Marshal(s.TargetOptions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal target_options: %w", err)
+	}
+	var skipped []byte
+	if len(s.SkippedTargets) > 0 {
+		if skipped, err = json.Marshal(s.SkippedTargets); err != nil {
+			return fmt.Errorf("failed to marshal skipped_targets: %w", err)
+		}
+	}
 
-	var pipelineID *string
-	if s.PipelineID != nil {
-		pid := s.PipelineID.String()
-		pipelineID = &pid
+	var scanWorkflowID *string
+	if s.ScanWorkflowID != nil {
+		pid := s.ScanWorkflowID.String()
+		scanWorkflowID = &pid
 	}
 
 	var createdBy *string
@@ -82,16 +92,16 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	query := `
 		INSERT INTO scans (
 			id, tenant_id, name, description,
-			asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
+			asset_group_id, asset_group_ids, targets, scan_type, scan_workflow_id,
 			scanner_name, scanner_config, targets_per_job,
 			schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
 			tags, run_on_tenant_runner, sensor_preference, profile_id, timeout_seconds,
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, scan_zone_id
+			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity, skipped_targets
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41, $42)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -103,7 +113,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		pq.Array(assetGroupIDStrings), // NEW: multiple asset groups
 		pq.Array(s.Targets),           // Direct targets
 		string(s.ScanType),
-		pipelineID,
+		scanWorkflowID,
 		s.ScannerName,
 		scannerConfig,
 		s.TargetsPerJob,
@@ -131,6 +141,12 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.CreatedAt,
 		s.UpdatedAt,
 		nullableIDString(s.ScanZoneID),
+		s.AdHoc,
+		s.ScheduleRRule,
+		s.ScheduleRunAt,
+		targetOptions,
+		string(s.EffectiveIntensity()),
+		skipped,
 	)
 
 	if err != nil {
@@ -141,13 +157,6 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	}
 
 	return nil
-}
-
-// GetByID retrieves a scan by ID.
-func (r *ScanRepository) GetByID(ctx context.Context, id shared.ID) (*scan.Scan, error) {
-	query := r.selectQuery() + " WHERE id = $1"
-	row := r.db.QueryRowContext(ctx, query, id.String())
-	return r.scanFromRow(row)
 }
 
 // GetByTenantAndID retrieves a scan by tenant and ID.
@@ -186,7 +195,8 @@ func (r *ScanRepository) List(ctx context.Context, filter scan.Filter, page pagi
 
 	// Apply pagination
 	offset := (page.Page - 1) * page.PerPage
-	baseQuery += fmt.Sprintf(" ORDER BY name LIMIT %d OFFSET %d", page.PerPage, offset)
+	// OrderBy is a constant expression chosen from the domain whitelist.
+	baseQuery += fmt.Sprintf(" ORDER BY %s LIMIT %d OFFSET %d", filter.Sort.OrderBy(), page.PerPage, offset)
 
 	rows, err := r.db.QueryContext(ctx, baseQuery, args...)
 	if err != nil {
@@ -212,11 +222,15 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal scanner_config: %w", err)
 	}
+	targetOptions, err := json.Marshal(s.TargetOptions)
+	if err != nil {
+		return fmt.Errorf("failed to marshal target_options: %w", err)
+	}
 
-	var pipelineID *string
-	if s.PipelineID != nil {
-		pid := s.PipelineID.String()
-		pipelineID = &pid
+	var scanWorkflowID *string
+	if s.ScanWorkflowID != nil {
+		pid := s.ScanWorkflowID.String()
+		scanWorkflowID = &pid
 	}
 
 	// Handle nullable asset_group_id
@@ -256,12 +270,13 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	query := `
 		UPDATE scans
 		SET name = $2, description = $3,
-		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, pipeline_id = $8,
+		    asset_group_id = $4, asset_group_ids = $5, targets = $6, scan_type = $7, scan_workflow_id = $8,
 		    scanner_name = $9, scanner_config = $10, targets_per_job = $11,
 		    schedule_type = $12, schedule_cron = $13, schedule_day = $14, schedule_time = $15, schedule_timezone = $16, next_run_at = $17,
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
-		    updated_at = $26, scan_zone_id = $28
+		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29, schedule_rrule = NULLIF($30, ''), schedule_run_at = $31,
+		    target_options = $32, intensity = $33
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -273,7 +288,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		pq.Array(assetGroupIDStrings), // Multiple asset groups
 		pq.Array(s.Targets),           // Direct targets
 		string(s.ScanType),
-		pipelineID,
+		scanWorkflowID,
 		s.ScannerName,
 		scannerConfig,
 		s.TargetsPerJob,
@@ -294,6 +309,11 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.UpdatedAt,
 		s.TenantID.String(), // $27 — tenant scope: never update another tenant's scan
 		nullableIDString(s.ScanZoneID),
+		s.AdHoc, // $29
+		s.ScheduleRRule,
+		s.ScheduleRunAt,                // $31
+		targetOptions,                  // $32
+		string(s.EffectiveIntensity()), // $33
 	)
 
 	if err != nil {
@@ -311,10 +331,10 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	return nil
 }
 
-// Delete deletes a scan.
-func (r *ScanRepository) Delete(ctx context.Context, id shared.ID) error {
-	query := "DELETE FROM scans WHERE id = $1"
-	result, err := r.db.ExecContext(ctx, query, id.String())
+// Delete deletes a scan of tenantID. A scan of another tenant is not found.
+func (r *ScanRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+	query := "DELETE FROM scans WHERE tenant_id = $1 AND id = $2"
+	result, err := r.db.ExecContext(ctx, query, tenantID.String(), id.String())
 	if err != nil {
 		return fmt.Errorf("failed to delete scan: %w", err)
 	}
@@ -346,7 +366,7 @@ func (r *ScanRepository) CountScheduledWithoutNextRun(ctx context.Context) (int,
 		SELECT name
 		FROM scans
 		WHERE status = 'active'
-		  AND schedule_type != 'manual'
+		  AND schedule_type NOT IN ('manual', 'once')
 		  AND next_run_at IS NULL
 		ORDER BY created_at
 	`
@@ -398,58 +418,11 @@ func (r *ScanRepository) ListDueForExecution(ctx context.Context, now time.Time)
 }
 
 // UpdateNextRunAt updates the next run time for a scan.
-func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, id shared.ID, nextRunAt *time.Time) error {
-	query := "UPDATE scans SET next_run_at = $2, updated_at = NOW() WHERE id = $1"
-	_, err := r.db.ExecContext(ctx, query, id.String(), nextRunAt)
+func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, tenantID, id shared.ID, nextRunAt *time.Time) error {
+	query := "UPDATE scans SET next_run_at = $2, updated_at = NOW() WHERE id = $1 AND tenant_id = $3"
+	_, err := r.db.ExecContext(ctx, query, id.String(), nextRunAt, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("failed to update next_run_at: %w", err)
-	}
-	return nil
-}
-
-// RecordRun records a run result for a scan.
-func (r *ScanRepository) RecordRun(ctx context.Context, id shared.ID, runID shared.ID, status string) error {
-	var successIncrement, failedIncrement int
-	switch status {
-	case "completed", "success":
-		successIncrement = 1
-	case "failed", "error":
-		failedIncrement = 1
-	}
-
-	query := `
-		UPDATE scans
-		SET last_run_id = $2,
-		    last_run_at = NOW(),
-		    last_run_status = $3,
-		    total_runs = total_runs + 1,
-		    successful_runs = successful_runs + $4,
-		    failed_runs = failed_runs + $5,
-		    updated_at = NOW()
-		WHERE id = $1
-	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), runID.String(), status, successIncrement, failedIncrement)
-	if err != nil {
-		return fmt.Errorf("failed to record run: %w", err)
-	}
-	return nil
-}
-
-// RecordTriggerFailure records a scheduled-trigger failure that happened before
-// any run was created. It sets last_run_at/last_run_status only — no last_run_id
-// (there is no run) and no counter changes (there was no run to count). Makes a
-// scan that failed to dispatch visible instead of indistinguishable from one
-// that has not run yet.
-func (r *ScanRepository) RecordTriggerFailure(ctx context.Context, id shared.ID, status string) error {
-	const query = `
-		UPDATE scans
-		SET last_run_at = NOW(),
-		    last_run_status = $2,
-		    updated_at = NOW()
-		WHERE id = $1
-	`
-	if _, err := r.db.ExecContext(ctx, query, id.String(), status); err != nil {
-		return fmt.Errorf("failed to record trigger failure: %w", err)
 	}
 	return nil
 }
@@ -469,7 +442,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 			COUNT(*) FILTER (WHERE status = 'paused') as paused,
 			COUNT(*) FILTER (WHERE status = 'disabled') as disabled
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 	`
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
 		&stats.Total, &stats.Active, &stats.Paused, &stats.Disabled,
@@ -482,7 +455,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 	scheduleQuery := `
 		SELECT schedule_type, COUNT(*)
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 		GROUP BY schedule_type
 	`
 	scheduleRows, err := r.db.QueryContext(ctx, scheduleQuery, tenantID.String())
@@ -507,7 +480,7 @@ func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*sca
 	scanTypeQuery := `
 		SELECT scan_type, COUNT(*)
 		FROM scans
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ad_hoc = false
 		GROUP BY scan_type
 	`
 	scanTypeRows, err := r.db.QueryContext(ctx, scanTypeQuery, tenantID.String())
@@ -566,10 +539,10 @@ func (r *ScanRepository) ListByAssetGroupID(ctx context.Context, assetGroupID sh
 	return scans, nil
 }
 
-// ListByPipelineID lists all scans using a pipeline.
-func (r *ScanRepository) ListByPipelineID(ctx context.Context, pipelineID shared.ID) ([]*scan.Scan, error) {
-	query := r.selectQuery() + " WHERE pipeline_id = $1 ORDER BY name"
-	rows, err := r.db.QueryContext(ctx, query, pipelineID.String())
+// ListByScanWorkflowID lists all scans using a scan workflow.
+func (r *ScanRepository) ListByScanWorkflowID(ctx context.Context, scanWorkflowID shared.ID) ([]*scan.Scan, error) {
+	query := r.selectQuery() + " WHERE scan_workflow_id = $1 ORDER BY name"
+	rows, err := r.db.QueryContext(ctx, query, scanWorkflowID.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list by pipeline: %w", err)
 	}
@@ -597,71 +570,90 @@ func (r *ScanRepository) UpdateStatusByAssetGroupID(ctx context.Context, assetGr
 	return nil
 }
 
-// scanSchedulerLockNamespace is a constant used as the first key in 2-arg
-// pg_advisory_lock to namespace scan scheduler locks. Picked to be unlikely
-// to collide with other application locks.
-const scanSchedulerLockNamespace int32 = 0x5343414e // "SCAN" in ASCII
-
-// TryLockScanForScheduler attempts to acquire a session-level advisory lock for the given scan ID.
-// Uses pg_try_advisory_lock(int4, int4) — the first arg namespaces this lock to the scan scheduler,
-// the second arg is a 32-bit hash of the scan UUID.
-func (r *ScanRepository) TryLockScanForScheduler(ctx context.Context, id shared.ID) (bool, error) {
-	key := scanIDLockKey(id)
-	var acquired bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT pg_try_advisory_lock($1, $2)",
-		scanSchedulerLockNamespace, key,
-	).Scan(&acquired)
+// ClaimScheduledRun claims one due occurrence of a scheduled scan: it moves
+// next_run_at from dueAt to next, and only if next_run_at still equals dueAt
+// and the scan is still active. Exactly one scheduler (on any replica) wins a
+// given occurrence; the losers see false and skip it.
+//
+// This replaces a session-level pg_try_advisory_lock taken through the
+// connection pool. Lock and unlock ran on whatever pooled connection each
+// statement got: the unlock usually hit a different session, released nothing
+// (its result was ignored), and the lock stayed held by the first session
+// until that connection closed — from then on every attempt to schedule that
+// scan, on every replica, saw "locked by another instance" and skipped it.
+func (r *ScanRepository) ClaimScheduledRun(ctx context.Context, tenantID, id shared.ID, dueAt time.Time, next *time.Time) (bool, error) {
+	const query = `
+		UPDATE scans
+		SET next_run_at = $3, updated_at = NOW()
+		WHERE id = $1 AND next_run_at = $2 AND status = 'active' AND tenant_id = $4
+	`
+	res, err := r.db.ExecContext(ctx, query, id.String(), dueAt, next, tenantID.String())
 	if err != nil {
-		return false, fmt.Errorf("failed to try advisory lock for scan %s: %w", id.String(), err)
+		return false, fmt.Errorf("failed to claim scheduled run for scan %s: %w", id.String(), err)
 	}
-	return acquired, nil
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
-// UnlockScanForScheduler releases a previously acquired session-level scheduler lock.
-func (r *ScanRepository) UnlockScanForScheduler(ctx context.Context, id shared.ID) error {
-	key := scanIDLockKey(id)
-	var released bool
-	err := r.db.QueryRowContext(ctx,
-		"SELECT pg_advisory_unlock($1, $2)",
-		scanSchedulerLockNamespace, key,
-	).Scan(&released)
+// DeferScheduledRun moves a scheduled scan whose run a freeze window stopped
+// to until: next_run_at changes from from (nil when the schedule had no
+// further occurrence) to until, only if it still holds from and the scan is
+// active. Tenant-scoped.
+func (r *ScanRepository) DeferScheduledRun(ctx context.Context, tenantID, id shared.ID, from *time.Time, until time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE scans
+		SET next_run_at = $3, updated_at = NOW()
+		WHERE id = $1 AND tenant_id = $4 AND status = 'active'
+		  AND next_run_at IS NOT DISTINCT FROM $2`,
+		id.String(), nullTime(from), until, tenantID.String())
 	if err != nil {
-		return fmt.Errorf("failed to release advisory lock for scan %s: %w", id.String(), err)
+		return false, fmt.Errorf("failed to defer scheduled run for scan %s: %w", id.String(), err)
 	}
-	return nil
-}
-
-// scanIDLockKey converts a scan UUID to a deterministic int32 key for advisory locks.
-// Uses FNV-1a 32-bit hash of the UUID string. Collisions are rare and only cause
-// brief serialization (the worst case is two unrelated scans waiting for each other,
-// which is acceptable since each trigger is fast).
-func scanIDLockKey(id shared.ID) int32 {
-	const (
-		fnvOffsetBasis uint32 = 2166136261
-		fnvPrime       uint32 = 16777619
-	)
-	h := fnvOffsetBasis
-	s := id.String()
-	for i := 0; i < len(s); i++ {
-		h ^= uint32(s[i])
-		h *= fnvPrime
-	}
-	return int32(h) //nolint:gosec // intentional truncation for advisory lock key
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // selectQuery returns the base SELECT query.
+// ListOptInScans lists the tenant's scans whose scanner_config asks for
+// out-of-band callbacks (allow_interactsh true, as boolean or string) or
+// names custom templates, newest first, at most limit (research/25 D3
+// banner). Tenant-scoped.
+func (r *ScanRepository) ListOptInScans(ctx context.Context, tenantID shared.ID, limit int) ([]*scan.Scan, error) {
+	query := r.selectQuery() + `
+		WHERE tenant_id = $1
+		  AND (lower(scanner_config->>'allow_interactsh') = 'true'
+		       OR (jsonb_typeof(scanner_config->'custom_template_ids') = 'array'
+		           AND jsonb_array_length(scanner_config->'custom_template_ids') > 0))
+		ORDER BY created_at DESC
+		LIMIT $2`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list opt-in scans: %w", err)
+	}
+	defer rows.Close()
+	var out []*scan.Scan
+	for rows.Next() {
+		s, err := r.scanFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (r *ScanRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, name, description,
-		       asset_group_id, asset_group_ids, targets, scan_type, pipeline_id,
+		       asset_group_id, asset_group_ids, targets, scan_type, scan_workflow_id,
 		       scanner_name, scanner_config, targets_per_job,
 		       schedule_type, schedule_cron, schedule_day, schedule_time, schedule_timezone, next_run_at,
 		       tags, run_on_tenant_runner, sensor_preference, profile_id, timeout_seconds,
 		       max_retries, retry_backoff_seconds, status,
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
-		       created_by, created_at, updated_at, scan_zone_id
+		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
+		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity, skipped_targets
 		FROM scans
 	`
 }
@@ -686,7 +678,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		status              string
 		tags                pq.StringArray
 		scannerConfig       []byte
-		pipelineID          sql.NullString
+		scanWorkflowID      sql.NullString
 		profileID           sql.NullString
 		sensorPreference    sql.NullString
 		timeoutSeconds      sql.NullInt64
@@ -700,6 +692,8 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		lastRunStatus       sql.NullString
 		scheduleTimezone    sql.NullString
 		scanZoneID          sql.NullString
+		targetOptions       []byte
+		skippedTargets      []byte
 	)
 
 	err := reader.Scan(
@@ -711,7 +705,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&assetGroupIDs,
 		&targets,
 		&scanType,
-		&pipelineID,
+		&scanWorkflowID,
 		&scannerName,
 		&scannerConfig,
 		&s.TargetsPerJob,
@@ -739,6 +733,14 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.CreatedAt,
 		&s.UpdatedAt,
 		&scanZoneID,
+		&s.AdHoc,
+		&s.PartialRuns,
+		&s.ScheduleRRule,
+		&s.BlockedRuns,
+		&s.ScheduleRunAt,
+		&targetOptions,
+		&s.Intensity,
+		&skippedTargets,
 	)
 	if err != nil {
 		return nil, err
@@ -796,9 +798,9 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		s.RetryBackoffSeconds = scan.DefaultRetryBackoffSeconds
 	}
 
-	if pipelineID.Valid {
-		pid, _ := shared.IDFromString(pipelineID.String)
-		s.PipelineID = &pid
+	if scanWorkflowID.Valid {
+		pid, _ := shared.IDFromString(scanWorkflowID.String)
+		s.ScanWorkflowID = &pid
 	}
 	if profileID.Valid {
 		pid, _ := shared.IDFromString(profileID.String)
@@ -811,6 +813,17 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 	if createdBy.Valid {
 		cid, _ := shared.IDFromString(createdBy.String)
 		s.CreatedBy = &cid
+	}
+
+	if len(targetOptions) > 0 {
+		if err := json.Unmarshal(targetOptions, &s.TargetOptions); err != nil {
+			return nil, fmt.Errorf("scan %s target_options: %w", id, err)
+		}
+	}
+	if len(skippedTargets) > 0 {
+		if err := json.Unmarshal(skippedTargets, &s.SkippedTargets); err != nil {
+			return nil, fmt.Errorf("scan %s skipped_targets: %w", id, err)
+		}
 	}
 
 	if len(scannerConfig) > 0 {
@@ -840,9 +853,9 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 		argIndex++
 	}
 
-	if filter.PipelineID != nil {
-		conditions = append(conditions, fmt.Sprintf("pipeline_id = $%d", argIndex))
-		args = append(args, filter.PipelineID.String())
+	if filter.ScanWorkflowID != nil {
+		conditions = append(conditions, fmt.Sprintf("scan_workflow_id = $%d", argIndex))
+		args = append(args, filter.ScanWorkflowID.String())
 		argIndex++
 	}
 
@@ -869,6 +882,12 @@ func (r *ScanRepository) buildWhereClause(filter scan.Filter) (string, []any) {
 		args = append(args, pq.Array(filter.Tags))
 		argIndex++
 	}
+
+	if filter.ExcludeAdHoc {
+		conditions = append(conditions, "ad_hoc = false")
+	}
+	// Archived one-off scans are never listed.
+	conditions = append(conditions, "archived_at IS NULL")
 
 	if filter.Search != "" {
 		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIndex, argIndex))

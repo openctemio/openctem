@@ -75,7 +75,7 @@ func (m *mockScanRepository) Update(_ context.Context, s *scan.Scan) error {
 	return nil
 }
 
-func (m *mockScanRepository) Delete(_ context.Context, id shared.ID) error {
+func (m *mockScanRepository) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if _, ok := m.scans[id.String()]; !ok {
 		return shared.ErrNotFound
 	}
@@ -91,15 +91,11 @@ func (m *mockScanRepository) ListDueForExecution(_ context.Context, _ time.Time)
 	return nil, nil
 }
 
-func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ *time.Time) error {
+func (m *mockScanRepository) UpdateNextRunAt(_ context.Context, _ shared.ID, _ shared.ID, _ *time.Time) error {
 	return nil
 }
 
-func (m *mockScanRepository) RecordRun(_ context.Context, _ shared.ID, _ shared.ID, _ string) error {
-	return nil
-}
-
-func (m *mockScanRepository) RecordTriggerFailure(_ context.Context, _ shared.ID, _ string) error {
+func (m *mockScanRepository) RefreshRunSummary(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
@@ -115,7 +111,7 @@ func (m *mockScanRepository) ListByAssetGroupID(_ context.Context, _ shared.ID) 
 	return nil, nil
 }
 
-func (m *mockScanRepository) ListByPipelineID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
+func (m *mockScanRepository) ListByScanWorkflowID(_ context.Context, _ shared.ID) ([]*scan.Scan, error) {
 	return nil, nil
 }
 
@@ -123,12 +119,8 @@ func (m *mockScanRepository) UpdateStatusByAssetGroupID(_ context.Context, _ sha
 	return nil
 }
 
-func (m *mockScanRepository) TryLockScanForScheduler(_ context.Context, _ shared.ID) (bool, error) {
+func (m *mockScanRepository) ClaimScheduledRun(_ context.Context, _ shared.ID, _ shared.ID, _ time.Time, _ *time.Time) (bool, error) {
 	return true, nil
-}
-
-func (m *mockScanRepository) UnlockScanForScheduler(_ context.Context, _ shared.ID) error {
-	return nil
 }
 
 // addScan is a test helper to insert a scan into the mock repository.
@@ -322,11 +314,11 @@ func TestExportConfig_PipelineIDConverted(t *testing.T) {
 	svc := newTestImportExportService(repo)
 
 	tenantID := shared.NewID()
-	pipelineID := shared.NewID()
+	scanWorkflowID := shared.NewID()
 
 	sc, err := scan.NewScan(tenantID, "Workflow Scan", shared.NewID(), scan.ScanTypeWorkflow)
 	require.NoError(t, err)
-	sc.PipelineID = &pipelineID
+	sc.ScanWorkflowID = &scanWorkflowID
 	repo.addScan(sc)
 
 	data, err := svc.ExportConfig(context.Background(), tenantID, sc.ID)
@@ -336,8 +328,8 @@ func TestExportConfig_PipelineIDConverted(t *testing.T) {
 	err = json.Unmarshal(data, &export)
 	require.NoError(t, err)
 
-	require.NotNil(t, export.PipelineID)
-	assert.Equal(t, pipelineID.String(), *export.PipelineID)
+	require.NotNil(t, export.ScanWorkflowID)
+	assert.Equal(t, scanWorkflowID.String(), *export.ScanWorkflowID)
 }
 
 func TestExportConfig_ScheduleTimeConverted(t *testing.T) {
@@ -416,7 +408,7 @@ func TestImportConfig_InvalidJSON(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data)
+			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data, shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, shared.ErrValidation)
@@ -464,7 +456,7 @@ func TestImportConfig_MissingRequiredFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, []byte(tc.data))
+			result, err := svc.ImportConfig(context.Background(), tenantID, []byte(tc.data), shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, shared.ErrValidation)
@@ -499,7 +491,7 @@ func TestImportConfig_EmptyData(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data)
+			result, err := svc.ImportConfig(context.Background(), tenantID, tc.data, shared.NewID().String())
 			assert.Error(t, err)
 			assert.Nil(t, result)
 		})
@@ -522,7 +514,7 @@ func TestImportConfig_InvalidScheduleTime(t *testing.T) {
 	jsonData, err := json.Marshal(data)
 	require.NoError(t, err)
 
-	result, err := svc.ImportConfig(context.Background(), tenantID, jsonData)
+	result, err := svc.ImportConfig(context.Background(), tenantID, jsonData, shared.NewID().String())
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, shared.ErrValidation)
@@ -566,7 +558,7 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 	// Test that the ScanConfigExport JSON structure round-trips correctly.
 	// This verifies the JSON tags and field types are consistent.
 
-	pipelineID := shared.NewID().String()
+	scanWorkflowID := shared.NewID().String()
 	scheduleDay := 3
 	scheduleTime := "14:30"
 
@@ -585,7 +577,7 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 		Tags:              []string{"imported", "ci"},
 		RunOnTenantRunner: true,
 		SensorPreference:  "tenant",
-		PipelineID:        &pipelineID,
+		ScanWorkflowID:    &scanWorkflowID,
 		AssetGroupIDs:     []string{shared.NewID().String()},
 		Targets:           []string{"target.example.com"},
 		Version:           "1.0",
@@ -611,8 +603,8 @@ func TestImportConfig_ParsedFieldsMapping(t *testing.T) {
 	assert.Equal(t, original.Tags, parsed.Tags)
 	assert.True(t, parsed.RunOnTenantRunner)
 	assert.Equal(t, original.SensorPreference, parsed.SensorPreference)
-	assert.NotNil(t, parsed.PipelineID)
-	assert.Equal(t, pipelineID, *parsed.PipelineID)
+	assert.NotNil(t, parsed.ScanWorkflowID)
+	assert.Equal(t, scanWorkflowID, *parsed.ScanWorkflowID)
 	assert.NotNil(t, parsed.ScheduleDay)
 	assert.Equal(t, scheduleDay, *parsed.ScheduleDay)
 	assert.NotNil(t, parsed.ScheduleTime)
@@ -675,13 +667,14 @@ func TestExportImport_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, "1.0", exported.Version)
 }
 
-// An export written before the agent → sensor rename keeps its selection mode.
-func TestDecodeScanConfigExport_ReadsPreRenameKey(t *testing.T) {
-	old, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","agent_preference":"tenant"}`))
-	require.NoError(t, err)
-	assert.Equal(t, "tenant", old.SensorPreference)
-
+// The selection mode is read from sensor_preference only; the pre-rename key
+// is no longer read.
+func TestDecodeScanConfigExport_SensorPreference(t *testing.T) {
 	cur, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","sensor_preference":"platform","agent_preference":"tenant"}`))
 	require.NoError(t, err)
-	assert.Equal(t, "platform", cur.SensorPreference, "the current key wins when both are present")
+	assert.Equal(t, "platform", cur.SensorPreference)
+
+	old, err := decodeScanConfigExport([]byte(`{"name":"n","scan_type":"single","agent_preference":"tenant"}`))
+	require.NoError(t, err)
+	assert.Empty(t, old.SensorPreference)
 }

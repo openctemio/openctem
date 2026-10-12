@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assettyperef "github.com/openctemio/openctem/api/pkg/domain/asset"
+
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -38,6 +40,9 @@ type mockAssetGroupServiceRepo struct {
 	getGroupAssetsErr   error
 	getGroupFindingsErr error
 	recalculateErr      error
+
+	// foreignAssets are ids that are not assets of the caller's tenant.
+	foreignAssets map[shared.ID]bool
 
 	// Configurable return values
 	statsResult         *assetgroup.Stats
@@ -172,7 +177,7 @@ func (m *mockAssetGroupServiceRepo) ExistsByName(_ context.Context, tenantID sha
 	return false, nil
 }
 
-func (m *mockAssetGroupServiceRepo) GetStats(_ context.Context, _ shared.ID) (*assetgroup.Stats, error) {
+func (m *mockAssetGroupServiceRepo) GetStats(_ context.Context, _ shared.ID, _ *shared.DataScope) (*assetgroup.Stats, error) {
 	m.getStatsCalls++
 	if m.getStatsErr != nil {
 		return nil, m.getStatsErr
@@ -185,13 +190,29 @@ func (m *mockAssetGroupServiceRepo) GetStats(_ context.Context, _ shared.ID) (*a
 	}, nil
 }
 
-func (m *mockAssetGroupServiceRepo) AddAssets(_ context.Context, groupID shared.ID, assetIDs []shared.ID) error {
+func (m *mockAssetGroupServiceRepo) AddAssets(_ context.Context, groupID shared.ID, assetIDs []shared.ID) (int, error) {
 	m.addAssetsCalls++
 	if m.addAssetsErr != nil {
-		return m.addAssetsErr
+		return 0, m.addAssetsErr
 	}
-	m.groupAssets[groupID.String()] = append(m.groupAssets[groupID.String()], assetIDs...)
-	return nil
+	own := 0
+	for _, id := range assetIDs {
+		if !m.foreignAssets[id] {
+			m.groupAssets[groupID.String()] = append(m.groupAssets[groupID.String()], id)
+			own++
+		}
+	}
+	return own, nil
+}
+
+func (m *mockAssetGroupServiceRepo) FilterTenantAssetIDs(_ context.Context, _ shared.ID, assetIDs []shared.ID) ([]shared.ID, error) {
+	out := make([]shared.ID, 0, len(assetIDs))
+	for _, id := range assetIDs {
+		if !m.foreignAssets[id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
 }
 
 func (m *mockAssetGroupServiceRepo) RemoveAssets(_ context.Context, groupID shared.ID, assetIDs []shared.ID) error {
@@ -222,6 +243,10 @@ func (m *mockAssetGroupServiceRepo) GetGroupAssets(_ context.Context, _ shared.I
 	return m.groupAssetsResult, nil
 }
 
+func (m *mockAssetGroupServiceRepo) ListScanMembers(_ context.Context, _ assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	return &assetgroup.ScanMemberPage{}, nil
+}
+
 func (m *mockAssetGroupServiceRepo) GetGroupFindings(_ context.Context, _ shared.ID, _ pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupFinding], error) {
 	m.getGroupFindingCalls++
 	if m.getGroupFindingsErr != nil {
@@ -247,7 +272,7 @@ func (m *mockAssetGroupServiceRepo) GetDistinctAssetTypesMultiple(_ context.Cont
 	return nil, nil
 }
 
-func (m *mockAssetGroupServiceRepo) CountAssetsByType(_ context.Context, _ shared.ID) (map[string]int64, error) {
+func (m *mockAssetGroupServiceRepo) CountAssetsByType(_ context.Context, _ shared.ID) (map[assettyperef.TypeRef]int64, error) {
 	return nil, nil
 }
 
@@ -255,9 +280,9 @@ func (m *mockAssetGroupServiceRepo) CountAssetsByType(_ context.Context, _ share
 // Test Helpers
 // =============================================================================
 
-func newTestAssetGroupService(repo *mockAssetGroupServiceRepo) *app.AssetGroupService {
+func newTestAssetGroupService(repo *mockAssetGroupServiceRepo) *asset.AssetGroupService {
 	log := logger.NewNop()
-	return app.NewAssetGroupService(repo, log)
+	return asset.NewAssetGroupService(repo, log)
 }
 
 func seedAssetGroup(repo *mockAssetGroupServiceRepo, tenantID shared.ID, name string, env assetgroup.Environment, crit assetgroup.Criticality) *assetgroup.AssetGroup {
@@ -286,7 +311,7 @@ func TestCreateAssetGroup(t *testing.T) {
 		svc := newTestAssetGroupService(repo)
 		tenantID := shared.NewID()
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:     tenantID.String(),
 			Name:         "Production Servers",
 			Description:  "All production servers",
@@ -337,7 +362,7 @@ func TestCreateAssetGroup(t *testing.T) {
 		repo := newMockAssetGroupServiceRepo()
 		svc := newTestAssetGroupService(repo)
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:    "not-a-uuid",
 			Name:        "Test Group",
 			Environment: "production",
@@ -358,7 +383,7 @@ func TestCreateAssetGroup(t *testing.T) {
 		svc := newTestAssetGroupService(repo)
 		tenantID := shared.NewID()
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:    tenantID.String(),
 			Name:        "Test Group",
 			Environment: "invalid_env",
@@ -379,7 +404,7 @@ func TestCreateAssetGroup(t *testing.T) {
 		svc := newTestAssetGroupService(repo)
 		tenantID := shared.NewID()
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:    tenantID.String(),
 			Name:        "Test Group",
 			Environment: "production",
@@ -402,7 +427,7 @@ func TestCreateAssetGroup(t *testing.T) {
 
 		seedAssetGroup(repo, tenantID, "Existing Group", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:    tenantID.String(),
 			Name:        "Existing Group",
 			Environment: "production",
@@ -424,7 +449,7 @@ func TestCreateAssetGroup(t *testing.T) {
 		svc := newTestAssetGroupService(repo)
 		tenantID := shared.NewID()
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:    tenantID.String(),
 			Name:        "Test Group",
 			Environment: "production",
@@ -447,7 +472,7 @@ func TestCreateAssetGroup(t *testing.T) {
 		assetID1 := shared.NewID()
 		assetID2 := shared.NewID()
 
-		input := app.CreateAssetGroupInput{
+		input := asset.CreateAssetGroupInput{
 			TenantID:    tenantID.String(),
 			Name:        "Group With Assets",
 			Environment: "staging",
@@ -525,7 +550,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		newDesc := "Updated description"
 		newEnv := "staging"
 		newCrit := "medium"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Name:        &newName,
 			Description: &newDesc,
 			Environment: &newEnv,
@@ -559,7 +584,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		tenantID := shared.NewID()
 
 		newName := "Updated"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Name: &newName,
 		}
 
@@ -580,7 +605,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Old Name", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		newName := "New Name"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Name: &newName,
 		}
 
@@ -608,7 +633,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Env Test", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		newEnv := "development"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Environment: &newEnv,
 		}
 
@@ -629,7 +654,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Bad Env", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		badEnv := "invalid_environment"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Environment: &badEnv,
 		}
 
@@ -650,7 +675,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Crit Test", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		newCrit := "low"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Criticality: &newCrit,
 		}
 
@@ -671,7 +696,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Bad Crit", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		badCrit := "ultra"
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Criticality: &badCrit,
 		}
 
@@ -692,7 +717,7 @@ func TestUpdateAssetGroup(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Tags Test", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		newTags := []string{"web", "api", "microservice"}
-		input := app.UpdateAssetGroupInput{
+		input := asset.UpdateAssetGroupInput{
 			Tags: newTags,
 		}
 
@@ -779,7 +804,7 @@ func TestListAssetGroups(t *testing.T) {
 		seedAssetGroup(repo, tenantID, "Group B", assetgroup.EnvironmentStaging, assetgroup.CriticalityHigh)
 		seedAssetGroup(repo, tenantID, "Group C", assetgroup.EnvironmentDevelopment, assetgroup.CriticalityMedium)
 
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID: tenantID.String(),
 			Page:     1,
 			PerPage:  20,
@@ -807,7 +832,7 @@ func TestListAssetGroups(t *testing.T) {
 
 		seedAssetGroup(repo, tenantID, "Prod Group", assetgroup.EnvironmentProduction, assetgroup.CriticalityCritical)
 
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID:     tenantID.String(),
 			Environments: []string{"production", "staging"},
 			Page:         1,
@@ -831,7 +856,7 @@ func TestListAssetGroups(t *testing.T) {
 
 		seedAssetGroup(repo, tenantID, "Critical Group", assetgroup.EnvironmentProduction, assetgroup.CriticalityCritical)
 
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID:      tenantID.String(),
 			Criticalities: []string{"critical", "high"},
 			Page:          1,
@@ -854,7 +879,7 @@ func TestListAssetGroups(t *testing.T) {
 
 		seedAssetGroup(repo, tenantID, "Tagged Group", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID: tenantID.String(),
 			Tags:     []string{"web", "api"},
 			Page:     1,
@@ -877,7 +902,7 @@ func TestListAssetGroups(t *testing.T) {
 
 		seedAssetGroup(repo, tenantID, "Searchable Group", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID: tenantID.String(),
 			Search:   "Searchable",
 			Page:     1,
@@ -901,7 +926,7 @@ func TestListAssetGroups(t *testing.T) {
 		seedAssetGroup(repo, tenantID, "Findings Group", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		hasFindings := true
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID:    tenantID.String(),
 			HasFindings: &hasFindings,
 			Page:        1,
@@ -926,7 +951,7 @@ func TestListAssetGroups(t *testing.T) {
 
 		minScore := 20
 		maxScore := 80
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID:     tenantID.String(),
 			MinRiskScore: &minScore,
 			MaxRiskScore: &maxScore,
@@ -948,7 +973,7 @@ func TestListAssetGroups(t *testing.T) {
 		repo.listErr = errors.New("query failed")
 		svc := newTestAssetGroupService(repo)
 
-		input := app.ListAssetGroupsInput{
+		input := asset.ListAssetGroupsInput{
 			TenantID: shared.NewID().String(),
 			Page:     1,
 			PerPage:  20,
@@ -1122,6 +1147,23 @@ func TestAddAssetsToGroup(t *testing.T) {
 		}
 		if repo.addAssetsCalls != 0 {
 			t.Errorf("expected 0 AddAssets calls when all IDs invalid, got %d", repo.addAssetsCalls)
+		}
+	})
+
+	t.Run("foreign-tenant id refuses the whole request", func(t *testing.T) {
+		repo := newMockAssetGroupServiceRepo()
+		svc := newTestAssetGroupService(repo)
+		tenantID := shared.NewID()
+		groupID := seedAssetGroup(repo, tenantID, "Members", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh).ID()
+		own, foreign := shared.NewID(), shared.NewID()
+		repo.foreignAssets = map[shared.ID]bool{foreign: true}
+
+		err := svc.AddAssetsToGroup(context.Background(), tenantID.String(), groupID, []string{own.String(), foreign.String()})
+		if !errors.Is(err, shared.ErrValidation) {
+			t.Fatalf("expected a validation error, got: %v", err)
+		}
+		if repo.addAssetsCalls != 0 || len(repo.groupAssets[groupID.String()]) != 0 {
+			t.Errorf("nothing may be added: calls=%d members=%v", repo.addAssetsCalls, repo.groupAssets[groupID.String()])
 		}
 	})
 
@@ -1365,7 +1407,7 @@ func TestBulkUpdateAssetGroups(t *testing.T) {
 		nonExistentID := shared.NewID()
 
 		newEnv := "testing"
-		input := app.BulkUpdateInput{
+		input := asset.BulkUpdateInput{
 			GroupIDs:    []string{g1.ID().String(), g2.ID().String(), nonExistentID.String()},
 			Environment: &newEnv,
 		}
@@ -1386,7 +1428,7 @@ func TestBulkUpdateAssetGroups(t *testing.T) {
 		tenantID := shared.NewID()
 
 		newCrit := "low"
-		input := app.BulkUpdateInput{
+		input := asset.BulkUpdateInput{
 			GroupIDs:    []string{"not-a-uuid", "also-invalid"},
 			Criticality: &newCrit,
 		}
@@ -1460,7 +1502,7 @@ func TestUpdateAssetGroup_OwnerEmailClear(t *testing.T) {
 		}
 
 		empty := ""
-		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), app.UpdateAssetGroupInput{
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), asset.UpdateAssetGroupInput{
 			OwnerEmail: &empty,
 		})
 		if err != nil {
@@ -1478,7 +1520,7 @@ func TestUpdateAssetGroup_OwnerEmailClear(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Owned2", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		bad := "not-an-email"
-		_, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), app.UpdateAssetGroupInput{
+		_, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), asset.UpdateAssetGroupInput{
 			OwnerEmail: &bad,
 		})
 		if err == nil {
@@ -1496,7 +1538,7 @@ func TestUpdateAssetGroup_OwnerEmailClear(t *testing.T) {
 		existing := seedAssetGroup(repo, tenantID, "Owned3", assetgroup.EnvironmentProduction, assetgroup.CriticalityHigh)
 
 		good := "new.owner@example.com"
-		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), app.UpdateAssetGroupInput{
+		result, err := svc.UpdateAssetGroup(context.Background(), tenantID.String(), existing.ID(), asset.UpdateAssetGroupInput{
 			OwnerEmail: &good,
 		})
 		if err != nil {

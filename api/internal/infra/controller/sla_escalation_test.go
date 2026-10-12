@@ -38,7 +38,7 @@ func TestBreachQuery_WritesValidEnumStatus(t *testing.T) {
 // counter.
 func TestBreachQuery_ExcludesAcceptedRisk(t *testing.T) {
 	for _, closed := range []vulnerability.FindingStatus{
-		vulnerability.FindingStatusAcceptedRisk,
+		vulnerability.FindingStatusAccepted,
 		vulnerability.FindingStatusAccepted,
 		vulnerability.FindingStatusDuplicate,
 	} {
@@ -133,5 +133,13 @@ func TestSLABreachPublisher_ErrorsDoNotEscape(t *testing.T) {
 	pub := &captureBreachPub{err: errors.New("redis down")}
 	if err := pub.Publish(context.Background(), SLABreachEvent{}); err == nil {
 		t.Fatal("expected error from publisher")
+	}
+}
+
+// The breach notification's severity depends on the finding's, so the
+// escalation query must return it.
+func TestBreachQuery_ReturnsFindingSeverity(t *testing.T) {
+	if !strings.Contains(breachSelectUpdateQuery, "RETURNING findings.tenant_id, findings.id, findings.sla_deadline, findings.severity") {
+		t.Error("breach query must RETURN the finding severity for the notification")
 	}
 }

@@ -199,6 +199,9 @@ type KEVEscalationResult struct {
 	// Flagged is the number of findings whose is_in_kev was reconciled
 	// from false to true (independent of severity).
 	Flagged int
+	// Unflagged is the number of findings whose is_in_kev was cleared because
+	// their CVE is no longer in KEV.
+	Unflagged int
 	// Tenants is the distinct set of tenant IDs with at least one finding
 	// touched by either the escalation or the is_in_kev reconciliation.
 	Tenants []shared.ID
@@ -370,6 +373,8 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 		}
 	}
 
+	s.pruneRemovedKEV(ctx, entries)
+
 	duration := time.Since(startTime)
 	result.RecordsSynced = len(entries)
 	result.DurationMs = duration.Milliseconds()
@@ -389,6 +394,62 @@ func (s *IntelService) SyncKEV(ctx context.Context) IntelSyncResult {
 	)
 
 	return result
+}
+
+// maxKEVRemovalsPerSync bounds how many CVEs one sync may remove from the KEV
+// catalog. CISA removes entries rarely (a handful in the catalog's history);
+// a feed that would remove more than this, or more than kevMaxRemovalShare of
+// the catalog, is more likely truncated or wrong than a real change, so the
+// prune is skipped and logged and the next sync tries again.
+const (
+	maxKEVRemovalsPerSync = 25
+	kevMaxRemovalShare    = 0.02
+)
+
+// pruneRemovedKEV removes the KEV entries that are not in the feed just
+// stored, so a CVE CISA took off the list stops counting as known-exploited.
+// The catalog propagation and the findings reconciliation that follow then
+// clear the flags they had set. Errors are logged: the upsert succeeded and
+// the next sync prunes again.
+func (s *IntelService) pruneRemovedKEV(ctx context.Context, entries []*threatintel.KEVEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	keep := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		id := e.CVEID()
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		keep = append(keep, id)
+	}
+	total, err := s.repo.KEV().Count(ctx)
+	if err != nil {
+		s.logger.Error("KEV prune skipped: count failed", "error", err)
+		return
+	}
+	removals := total - int64(len(keep))
+	if removals <= 0 {
+		return
+	}
+	if removals > maxKEVRemovalsPerSync || float64(removals) > kevMaxRemovalShare*float64(total) {
+		s.logger.Warn("KEV prune skipped: the feed would remove too many entries",
+			"would_remove", removals, "catalog", total, "feed", len(keep))
+		return
+	}
+	n, err := s.repo.KEV().PruneNotIn(ctx, keep)
+	if err != nil {
+		s.logger.Error("KEV prune failed", "error", err)
+		return
+	}
+	if n > 0 {
+		s.logger.Info("removed CVEs that left the KEV catalog", "removed", n)
+	}
 }
 
 // fetchEPSSData fetches and parses EPSS data from FIRST.org.
@@ -411,7 +472,7 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	// Decompress gzip. Bound both the compressed input and the decompressed
 	// output to defend against an oversized body / decompression bomb.
-	gzReader, err := gzip.NewReader(io.LimitReader(resp.Body, maxCompressedFeedBytes))
+	gzReader, err := gzip.NewReader(httpsec.NewLimitedReader(resp.Body, maxCompressedFeedBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
@@ -419,7 +480,7 @@ func (s *IntelService) fetchEPSSData(ctx context.Context) ([]*threatintel.EPSSSc
 
 	// The scores CSV is parsed by a pure helper so the format handling is
 	// unit-testable without the SSRF-guarded HTTP client (which refuses loopback).
-	return parseEPSSCSV(io.LimitReader(gzReader, maxDecompressedFeedBytes))
+	return parseEPSSCSV(httpsec.NewLimitedReader(gzReader, maxDecompressedFeedBytes))
 }
 
 // parseEPSSCSV parses the (already-decompressed) EPSS scores CSV. The feed opens
@@ -541,7 +602,7 @@ func (s *IntelService) fetchKEVFrom(ctx context.Context, url string) ([]*threati
 
 	// Parse JSON (bounded to guard against an oversized upstream body)
 	var kevCatalog kevCatalogResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
+	if err := json.NewDecoder(httpsec.NewLimitedReader(resp.Body, maxDecompressedFeedBytes)).Decode(&kevCatalog); err != nil {
 		return nil, fmt.Errorf("failed to parse KEV JSON: %w", err)
 	}
 

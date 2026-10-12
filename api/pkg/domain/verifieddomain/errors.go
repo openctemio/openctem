@@ -16,4 +16,7 @@ var (
 	// ErrBlockedDomain is returned when a shared/public consumer domain is submitted;
 	// such domains can never be owned by a single tenant.
 	ErrBlockedDomain = fmt.Errorf("%w: shared/public domain cannot be verified", shared.ErrValidation)
+	// ErrDomainClaimed is returned when another organization holds the domain
+	// verified for SSO, or lost its proof less than ClaimDisputeWindow ago.
+	ErrDomainClaimed = fmt.Errorf("%w: domain is claimed by another organization", shared.ErrConflict)
 )

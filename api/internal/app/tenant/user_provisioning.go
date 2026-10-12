@@ -21,6 +21,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
@@ -74,7 +75,13 @@ type UserProvisioningService struct {
 	audit   *auditapp.AuditService
 	logger  *logger.Logger
 	now     func() time.Time
+	// classifier refuses creating accounts for people outside the
+	// organization (they join by invitation, RFC-058).
+	classifier *AddressClassifier
 }
+
+// SetAddressClassifier wires external-member classification.
+func (s *UserProvisioningService) SetAddressClassifier(c *AddressClassifier) { s.classifier = c }
 
 // NewUserProvisioningService wires the service. mailer and audit may be nil.
 func NewUserProvisioningService(tenants tenantdom.Repository, users userdom.Repository, roles RoleGranter, mailer AccountSetupMailer, auditSvc *auditapp.AuditService, log *logger.Logger) *UserProvisioningService {
@@ -147,6 +154,32 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 	if !t.TypedSettings().Security.EmailDomainAllowed(email) {
 		return nil, ErrEmailDomainNotAllowed
 	}
+	// An organization administrator creates accounts for the organization's
+	// own people only; someone outside it joins by accepting an invitation.
+	// The platform administrator's first-owner bootstrap (no creator) is not
+	// limited: the owner's domain is usually not verified yet.
+	if !in.CreatedBy.IsZero() && s.classifier != nil {
+		class, cerr := s.classifier.Classify(ctx, tenantID, email)
+		if cerr != nil {
+			return nil, cerr
+		}
+		if class.Kind == tenantdom.MemberKindExternal {
+			return nil, ErrExternalNeedsInvitation
+		}
+		// The new account is email-verified and its set-password link can
+		// come back to the administrator (or travel through the
+		// organization's own SMTP relay): only an organization that
+		// verified the address's domain may create it. Otherwise any
+		// organization could mint a signed-in account for an address it
+		// does not own, ahead of its real holder.
+		held, herr := s.classifier.HeldBy(ctx, tenantID, email)
+		if herr != nil {
+			return nil, herr
+		}
+		if !held {
+			return nil, ErrDirectAddNeedsVerifiedDomain
+		}
+	}
 
 	if _, err := s.users.GetByEmail(ctx, email); err == nil {
 		return nil, ErrAccountExists
@@ -189,7 +222,7 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 		grantedBy = invitedBy.String()
 	}
 	if err := s.roles.GrantExactRoles(ctx, tenantID.String(), u.ID().String(), in.RoleIDs, grantedBy, actx); err != nil {
-		if derr := s.tenants.DeleteMembership(ctx, membership.ID()); derr != nil {
+		if derr := s.tenants.DeleteMembership(ctx, membership.TenantID(), membership.ID()); derr != nil {
 			s.logger.Error("rollback membership after role grant failure", "tenant_id", tenantID.String(), "error", derr)
 		}
 		s.discardAccount(ctx, u.ID())
@@ -285,14 +318,16 @@ func (s *UserProvisioningService) ReissueSetupLink(ctx context.Context, tenantID
 	if err != nil {
 		return nil, err
 	}
-	if membership.IsSuspended() {
+	if !membership.IsActive() {
 		return nil, ErrNotPendingSetup
 	}
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if !u.IsPendingSetup() {
+	if !u.IsPendingSetup() || strings.HasSuffix(u.Email(), "@"+serviceaccount.EmailDomain) {
+		// A service account never gets a password (the database refuses it
+		// too): it acts only through API keys.
 		return nil, ErrNotPendingSetup
 	}
 	if err := s.authorizeSetupLinkCaller(ctx, tenantID, callerIDStr, membership); err != nil {
@@ -345,7 +380,7 @@ func (s *UserProvisioningService) authorizeSetupLinkCaller(ctx context.Context, 
 		}
 		return fmt.Errorf("look up caller membership: %w", err)
 	}
-	if caller.IsSuspended() || !isOwnerOrAdmin(caller.Role()) {
+	if !caller.IsActive() || !isOwnerOrAdmin(caller.Role()) {
 		return ErrSetupLinkForbidden
 	}
 	if isOwnerOrAdmin(target.Role()) && caller.Role() != tenantdom.RoleOwner {

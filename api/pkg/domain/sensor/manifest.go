@@ -38,6 +38,11 @@ const (
 	// are pruned when a new version is stored.
 	ManifestVersionsKept   = 50
 	ManifestVersionsMaxAge = 90 * 24 * time.Hour
+	// ManifestVersionsHardCap bounds the stored versions of one sensor
+	// whatever their age: a sensor that changes its manifest on every call
+	// (any unknown member changes the digest) must not grow the table
+	// without bound within the retention age.
+	ManifestVersionsHardCap = 100
 
 	maxManifestCPUCores = 4096
 	maxManifestStrLen   = 128
@@ -85,6 +90,13 @@ type Manifest struct {
 	Concurrency  *ManifestConcurrency `json:"concurrency,omitempty"`
 	Capabilities []string             `json:"capabilities,omitempty"`
 	Tools        []ManifestTool       `json:"tools"`
+	// LocalPolicy is the sensor-local policy report (RFC-040 §5.7), sent
+	// by SDKs that see "local_policy" on hello; sanitized when stored.
+	LocalPolicy *LocalPolicyReport `json:"local_policy,omitempty"`
+	// Posture is the sensor's platform TLS pin and tool sandbox (posture.go),
+	// sent by SDKs that see "posture" on hello; sanitized when stored.
+	// Display and alert data only: it never relaxes a platform check.
+	Posture *ManifestPosture `json:"posture,omitempty"`
 }
 
 // ManifestBuild is the sensor binary.
@@ -130,6 +142,10 @@ type ManifestTool struct {
 	Capabilities []string          `json:"capabilities,omitempty"`
 	TargetTypes  []string          `json:"target_types,omitempty"`
 	Content      []ManifestContent `json:"content,omitempty"`
+	// Contract is the tool's tool-contract manifest: its digest and the
+	// class, tier, network, consumes and produces it declares. Absent for a
+	// tool not ported to the tool contract.
+	Contract *ToolContract `json:"contract,omitempty"`
 }
 
 // ManifestContent is one piece of a tool's content (RFC-031), without the
@@ -194,7 +210,7 @@ func ManifestDigest(raw []byte) (string, error) {
 // manifestMembers are the top-level members of schema 1.
 var manifestMembers = map[string]bool{
 	"schema": true, "sensor": true, "sdk": true, "platform": true, "resources": true,
-	"concurrency": true, "capabilities": true, "tools": true,
+	"concurrency": true, "capabilities": true, "tools": true, "local_policy": true, "posture": true,
 }
 
 // ParseManifest decodes a manifest leniently: unknown top-level members are
@@ -283,6 +299,11 @@ func (m Manifest) CapabilityInput() CapabilityReportInput {
 // ignored.
 func (m Manifest) Sanitized(rep CapabilityReport, now time.Time) (Manifest, []ManifestIgnored) {
 	out := Manifest{Schema: ManifestSchema, Tools: []ManifestTool{}}
+	if lp := SanitizeLocalPolicyReport(m.LocalPolicy); lp != nil {
+		lp.KillSwitch = false // live state: the heartbeat's, never the manifest's
+		out.LocalPolicy = lp
+	}
+	out.Posture = SanitizeManifestPosture(m.Posture)
 	var ignored []ManifestIgnored
 	ignore := func(path, value, reason string) {
 		if len(ignored) < MaxManifestIgnored {
@@ -356,6 +377,18 @@ func (m Manifest) Sanitized(rep CapabilityReport, now time.Time) (Manifest, []Ma
 			Capabilities: rt.Capabilities, TargetTypes: sanitizeTargetTypes(t.TargetTypes)}
 		for _, c := range rt.Content {
 			mt.Content = append(mt.Content, ManifestContent{Name: c.Name, Version: c.Version, Digest: c.Digest, Source: c.Source, Managed: c.Managed})
+		}
+		if t.Contract != nil {
+			if c, why := SanitizeToolContract(t.Contract); c != nil {
+				mt.Contract = c
+				if d, why := SanitizeToolDescriptor(c, t.Contract.Descriptor); d != nil {
+					c.Descriptor = d
+				} else if why != "" {
+					ignore(path+".contract.descriptor", why, IgnoredInvalidDescriptor)
+				}
+			} else {
+				ignore(path+".contract", why, IgnoredInvalidContract)
+			}
 		}
 		out.Tools = append(out.Tools, mt)
 	}
@@ -487,10 +520,12 @@ func (a *Sensor) ManifestPolicy() ManifestPolicy {
 // ManifestDiff is what changed between two manifests (RFC-033 §6.12). Content
 // versions are left out: they have their own content_updated events.
 type ManifestDiff struct {
-	ToolsAdded   []string          `json:"tools_added,omitempty"`
-	ToolsRemoved []string          `json:"tools_removed,omitempty"`
-	Versions     []ManifestChange  `json:"versions,omitempty"`
-	Installed    []ManifestChange  `json:"installed,omitempty"`
+	ToolsAdded   []string         `json:"tools_added,omitempty"`
+	ToolsRemoved []string         `json:"tools_removed,omitempty"`
+	Versions     []ManifestChange `json:"versions,omitempty"`
+	Installed    []ManifestChange `json:"installed,omitempty"`
+	// Contracts are tools whose tool-contract digest changed ("" when absent).
+	Contracts    []ManifestChange  `json:"contracts,omitempty"`
 	Capabilities []ManifestCapDiff `json:"capabilities,omitempty"`
 	// SensorWide is the change of the sensor-wide capabilities.
 	SensorWide *ManifestCapDiff `json:"sensor_wide,omitempty"`
@@ -516,7 +551,7 @@ type ManifestCapDiff struct {
 // IsEmpty reports whether nothing worth an event changed.
 func (d ManifestDiff) IsEmpty() bool {
 	return len(d.ToolsAdded) == 0 && len(d.ToolsRemoved) == 0 && len(d.Versions) == 0 &&
-		len(d.Installed) == 0 && len(d.Capabilities) == 0 && d.SensorWide == nil && len(d.Other) == 0
+		len(d.Installed) == 0 && len(d.Contracts) == 0 && len(d.Capabilities) == 0 && d.SensorWide == nil && len(d.Other) == 0
 }
 
 // DiffManifests compares two manifests.
@@ -536,6 +571,9 @@ func DiffManifests(prev, next Manifest) ManifestDiff {
 		}
 		if p.Version != t.Version {
 			d.Versions = append(d.Versions, ManifestChange{Tool: t.Name, From: p.Version, To: t.Version})
+		}
+		if pd, td := contractDigest(p.Contract), contractDigest(t.Contract); pd != td {
+			d.Contracts = append(d.Contracts, ManifestChange{Tool: t.Name, From: pd, To: td})
 		}
 		if p.Installed != t.Installed {
 			d.Installed = append(d.Installed, ManifestChange{Tool: t.Name, From: installedWord(p.Installed), To: installedWord(t.Installed)})
@@ -581,6 +619,9 @@ func (d ManifestDiff) Summary() string {
 	for _, i := range d.Installed {
 		parts = append(parts, fmt.Sprintf("%s %s", i.Tool, i.To))
 	}
+	if n := len(d.Contracts); n > 0 {
+		parts = append(parts, fmt.Sprintf("tool contract of %d changed", n))
+	}
 	if n := len(d.Capabilities); n > 0 || d.SensorWide != nil {
 		if d.SensorWide != nil {
 			n++
@@ -617,6 +658,13 @@ func jsonEqual(a, b any) bool {
 	ra, errA := json.Marshal(a)
 	rb, errB := json.Marshal(b)
 	return errA == nil && errB == nil && bytes.Equal(ra, rb)
+}
+
+func contractDigest(c *ToolContract) string {
+	if c == nil {
+		return ""
+	}
+	return c.Digest
 }
 
 func installedWord(installed bool) string {

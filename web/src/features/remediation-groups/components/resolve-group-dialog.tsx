@@ -8,6 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -23,6 +24,8 @@ import {
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { usePermissions } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions'
 import { useResolveRemediationGroup } from '../api/use-remediation-groups'
 import type { RemediationGroup, ResolveGroupStatus } from '../types'
 
@@ -48,6 +51,10 @@ export function ResolveGroupDialog({
   const [approved, setApproved] = useState(false)
 
   const { trigger, isMutating } = useResolveRemediationGroup(group?.key ?? '')
+  // Closing the group as resolved needs findings:verify (the API refuses it
+  // otherwise); everyone else applies the fix and lets the rescan verify it.
+  const { hasPermission } = usePermissions()
+  const canResolve = hasPermission(Permission.FindingsVerify)
 
   const needsApproval = (group?.finding_count ?? 0) > APPROVAL_THRESHOLD
 
@@ -94,51 +101,55 @@ export function ResolveGroupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="resolve-status">Outcome</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as ResolveGroupStatus)}>
-              <SelectTrigger id="resolve-status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fix_applied">
-                  Fix applied — pending rescan verification (recommended)
-                </SelectItem>
-                <SelectItem value="resolved">Resolved — close now</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-muted-foreground text-xs">
-              {status === 'fix_applied'
-                ? 'The next scan confirms the fix and closes each finding automatically.'
-                : 'Closes every finding immediately without waiting for a rescan.'}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="resolve-note">Note (optional)</Label>
-            <Textarea
-              id="resolve-note"
-              placeholder="e.g. Patched via change CR-1234"
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          {needsApproval ? (
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id="resolve-approve"
-                checked={approved}
-                onCheckedChange={(c) => setApproved(c === true)}
-              />
-              <Label htmlFor="resolve-approve" className="text-sm font-normal leading-snug">
-                I confirm resolving {group?.finding_count} findings at once.
-              </Label>
+        <DialogBody>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="resolve-status">Outcome</Label>
+              <Select value={status} onValueChange={(v) => setStatus(v as ResolveGroupStatus)}>
+                <SelectTrigger id="resolve-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fix_applied">
+                    Fix applied — pending rescan verification (recommended)
+                  </SelectItem>
+                  {canResolve ? (
+                    <SelectItem value="resolved">Resolved — close now</SelectItem>
+                  ) : null}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">
+                {status === 'fix_applied'
+                  ? 'A retest, a later verified scan or a security reviewer confirms the fix and closes each finding.'
+                  : 'Closes every finding immediately without waiting for a rescan.'}
+              </p>
             </div>
-          ) : null}
-        </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="resolve-note">Note (optional)</Label>
+              <Textarea
+                id="resolve-note"
+                placeholder="e.g. Patched via change CR-1234"
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+                rows={3}
+              />
+            </div>
+
+            {needsApproval ? (
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="resolve-approve"
+                  checked={approved}
+                  onCheckedChange={(c) => setApproved(c === true)}
+                />
+                <Label htmlFor="resolve-approve" className="text-sm font-normal leading-snug">
+                  I confirm resolving {group?.finding_count} findings at once.
+                </Label>
+              </div>
+            ) : null}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>

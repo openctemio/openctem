@@ -1,824 +1,132 @@
-# API Integration Guide
+# Calling the API from the Web Console
 
-**Last Updated:** 2025-12-11
-**Version:** 1.0.0
+How web console code talks to the OpenCTEM API: the request path, the shared
+client, SWR hooks, mutations and errors. Paths are relative to `web/`.
 
-Complete guide for integrating with your separate backend API.
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [API Client Usage](#api-client-usage)
-- [Using Hooks](#using-hooks)
-- [Error Handling](#error-handling)
-- [Advanced Patterns](#advanced-patterns)
-- [Examples](#examples)
-- [Backend Requirements](#backend-requirements)
-- [Troubleshooting](#troubleshooting)
-
----
-
-## Overview
-
-The frontend connects to your separate backend API using:
-
-- **API Client:** Type-safe HTTP client with automatic auth headers
-- **SWR Hooks:** React hooks for data fetching with caching
-- **Error Handler:** Centralized error handling with user-friendly messages
-
-**Architecture (BFF proxy, httpOnly cookies):**
+## Request path
 
 ```
-Browser → fetch('/api/v1/*', credentials:'include')  (relative, same origin)
-        → Next.js proxy (proxy.ts) attaches auth from the httpOnly cookie
-        → Backend API
+Browser  fetch('/api/v1/...')                 relative, same origin
+   -> src/app/api/v1/[...path]/route.ts       reads the httpOnly session cookie,
+                                              forwards with Authorization: Bearer
+   -> API (BACKEND_API_URL)
 ```
 
-The browser never holds a Bearer token: access/refresh tokens live in **httpOnly**
-cookies set by the proxy. Mutations carry a double-submit `X-CSRF-Token` header
-(see [Authentication](#authentication) below).
+The browser never holds the access token and never needs an API URL. The only
+setting is the server-side `BACKEND_API_URL` (see
+[ENVIRONMENT_VARIABLES.md](../ops/ENVIRONMENT_VARIABLES.md)).
 
----
+## Wire types
 
-## Quick Start
+API request and response types are generated from the OpenAPI spec into
+`src/lib/api/generated/api.types.ts` (not committed; `make generate` at the
+repository root). Feature types (`src/lib/api/*-types.ts`,
+`src/features/<name>/types/`) should derive from or match the generated ones; CI
+type-checks the console against the spec a pull request produces.
 
-### 1. Configure Backend URL
+## The client (`src/lib/api/client.ts`)
 
-```bash
-# .env.local — server-side only (single source of truth)
-# Client-side requests proxied through Next.js at /api/v1/*
-BACKEND_API_URL=http://api:8080
+```ts
+import { get, post, put, patch, del, uploadFile } from '@/lib/api/client'
+
+const zones = await get<ScanZoneListResponse>('/api/v1/scan-zones')
+const zone = await post<ScanZone>('/api/v1/scan-zones', body)
+await del<void>(`/api/v1/scan-zones/${id}`)
 ```
 
-### 2. Use in Components
+The client:
 
-```typescript
+- sends the session cookie (`credentials: 'include'`) and, on POST, PUT, PATCH
+  and DELETE, the `X-CSRF-Token` header copied from the `csrf_token` cookie.
+  A raw `fetch` to a mutating endpoint must add that header itself, or the API
+  answers `403 csrf_token_missing_header`;
+- on `401`, refreshes the session once and retries;
+- on a step-up challenge (`STEP_UP_REQUIRED`), asks the user to re-authenticate
+  and retries (`src/lib/api/step-up.ts`);
+- throws `ApiClientError` (`code`, `statusCode`, `details`) for any error answer.
+
+URL builders live in `src/lib/api/endpoints.ts` (`API_BASE` plus one
+`<area>Endpoints` object per area, for example `scanZoneEndpoints.list()`). Use
+them instead of hand-written paths.
+
+## Reading data: SWR hooks
+
+Each area has a hooks file (`src/lib/api/<area>-hooks.ts` or
+`src/features/<name>/hooks/`). The pattern:
+
+```ts
 'use client'
-import { useUsers, useCreateUser } from '@/lib/api'
+import useSWR, { type SWRConfiguration } from 'swr'
+import { get } from './client'
+import { useTenant } from '@/context/tenant-provider'
+import { scanZoneEndpoints } from './endpoints'
 
-export function UsersPage() {
-  // Fetch users
-  const { data, error, isLoading } = useUsers({ page: 1, pageSize: 10 })
-
-  // Create user mutation
-  const { trigger: createUser, isMutating } = useCreateUser()
-
-  if (isLoading) return <div>Loading...</div>
-  if (error) return <div>Error: {error.message}</div>
-
-  return (
-    <div>
-      <ul>
-        {data?.data.map(user => (
-          <li key={user.id}>{user.name}</li>
-        ))}
-      </ul>
-      <button
-        onClick={() => createUser({ name: 'John', email: 'john@example.com', password: '123' })}
-        disabled={isMutating}
-      >
-        Create User
-      </button>
-    </div>
-  )
+export function useScanZones(enabled = true, config?: SWRConfiguration) {
+  const { currentTenant } = useTenant()
+  // No tenant or no permission: key null, so no request (and no 403).
+  const key = currentTenant && enabled ? scanZoneEndpoints.list() : null
+  return useSWR<ScanZoneListResponse>(key, (url: string) => get(url), config)
 }
 ```
 
----
+Rules:
 
-## Configuration
+- Use a **string key** built from the URL and query string, never an object.
+- Pass `null` as the key when the user lacks the read permission or no
+  organization is selected; gate with `usePermissions().can(...)`.
+- Always paginate list calls (`page`, `per_page`); see
+  `src/lib/api/fetch-all-pages.ts` when a screen truly needs every row.
+- Helpers in `src/lib/api/hooks.ts`: `useDependentData` (fetch when a condition
+  holds), `usePolling` (refresh interval), `optimisticUpdate`.
 
-### Environment Variables
+## Writing data
 
-```env
-# Required - Backend API URL (server-side only — single source of truth)
-# Client-side requests proxied through Next.js at /api/v1/*
-BACKEND_API_URL=http://api:8080
+Mutations are plain async functions next to the hooks; after one, revalidate the
+affected keys:
 
-# Optional - Request timeout (default: 30000ms)
-API_TIMEOUT=30000
-```
+```ts
+export function createScanZone(body: CreateScanZoneRequest) {
+  return post<ScanZone>(scanZoneEndpoints.create(), body)
+}
 
-### SWR Configuration
-
-```typescript
-// src/lib/api/hooks.ts (already configured)
-export const defaultSwrConfig = {
-  revalidateOnFocus: false, // Don't refetch on window focus
-  revalidateOnReconnect: true, // Refetch on network reconnect
-  shouldRetryOnError: true, // Retry on error
-  errorRetryCount: 3, // Max 3 retries
-  errorRetryInterval: 1000, // 1s between retries
-  dedupingInterval: 2000, // Dedupe requests within 2s
+export async function invalidateScanZonesCache() {
+  const { mutate } = await import('swr')
+  await mutate((key) => typeof key === 'string' && key.startsWith(API_BASE.SCAN_ZONES))
 }
 ```
 
----
+In a component: call the function, then the invalidation (or the hook's
+`mutate()`), and show the result with a `sonner` toast.
 
-## API Client Usage
+## Errors
 
-### Basic Requests
-
-```typescript
-import { get, post, put, del } from '@/lib/api'
-
-// GET request
-const users = await get<User[]>('/api/users')
-
-// POST request
-const newUser = await post<User>('/api/users', {
-  name: 'John',
-  email: 'john@example.com',
-})
-
-// PUT request
-const updated = await put<User>('/api/users/123', {
-  name: 'John Doe',
-})
-
-// DELETE request
-await del('/api/users/123')
-```
-
-### With Type Safety
-
-```typescript
-import { get, endpoints } from '@/lib/api'
-import type { User, PaginatedResponse } from '@/lib/api'
-
-// Type-safe endpoint + response type
-const users = await get<PaginatedResponse<User>>(endpoints.users.list({ page: 1, pageSize: 10 }))
-
-// users.data is User[]
-// users.pagination has page info
-```
-
-### Authentication
-
-The app uses a **BFF (backend-for-frontend) proxy** with **httpOnly cookies** and
-**CSRF double-submit** — the browser does not attach a Bearer token.
-
-- **Browser → proxy:** client requests go to the relative path `/api/v1/*` with
-  `credentials: 'include'`. The access/refresh tokens are in httpOnly cookies the
-  browser cannot read, so they can't be exfiltrated by XSS.
-- **CSRF:** on state-changing methods the client reads the JS-readable, backend-set
-  `csrf_token` cookie (`document.cookie`) and echoes it as the `X-CSRF-Token`
-  header. The proxy rejects a mismatch with `403 csrf_token_missing_header`. This
-  is why the CSRF cookie is intentionally **not** httpOnly — double-submit needs JS
-  to read it. GET/HEAD are exempt.
-- **Proxy → backend:** the proxy forwards the cookie-borne auth to the backend
-  (server-side only).
-
-```typescript
-import { get, post } from '@/lib/api'
-
-// GET: cookie auth is sent automatically (credentials: 'include')
-const profile = await get('/api/v1/auth/me')
-
-// Mutations: the client attaches X-CSRF-Token from the csrf_token cookie for you
-await post('/api/v1/findings', { title: 'New finding' })
-```
-
-**Skip auth (for public endpoints):**
-
-```typescript
-const data = await get('/api/v1/public/stats', { skipAuth: true })
-```
-
-### File Upload
-
-```typescript
-import { uploadFile } from '@/lib/api'
-
-const handleFileUpload = async (file: File) => {
-  const result = await uploadFile('/api/files/upload', file, {
-    onProgress: (progress) => {
-      console.log(`Uploaded: ${progress.percentage}%`)
-    },
-  })
-
-  console.log('File URL:', result.url)
-}
-```
-
----
-
-## Using Hooks
-
-### Fetching Data
-
-```typescript
-import { useUsers, useUser } from '@/lib/api'
-
-function UsersList() {
-  // List users with filters
-  const { data, error, isLoading, mutate } = useUsers({
-    page: 1,
-    pageSize: 20,
-    search: 'john',
-    role: 'admin'
-  })
-
-  // Single user
-  const { data: user } = useUser('user-123')
-
-  // Refresh data
-  const handleRefresh = () => mutate()
-
-  if (isLoading) return <Loading />
-  if (error) return <Error />
-
-  return (
-    <div>
-      {data?.data.map(user => (
-        <UserCard key={user.id} user={user} />
-      ))}
-      <button onClick={handleRefresh}>Refresh</button>
-    </div>
-  )
-}
-```
-
-### Mutations (Create/Update/Delete)
-
-```typescript
-import { useCreateUser, useUpdateUser, useDeleteUser } from '@/lib/api'
-
-function UserManagement() {
-  const { trigger: createUser, isMutating: isCreating } = useCreateUser()
-  const { trigger: updateUser } = useUpdateUser('user-123')
-  const { trigger: deleteUser } = useDeleteUser('user-123')
-
-  const handleCreate = async () => {
-    try {
-      const newUser = await createUser({
-        name: 'John',
-        email: 'john@example.com',
-        password: 'secure123'
-      })
-      toast.success('User created!')
-    } catch (error) {
-      // Error already shown by error handler
-    }
-  }
-
-  const handleUpdate = async () => {
-    await updateUser({ name: 'John Doe' })
-  }
-
-  const handleDelete = async () => {
-    if (confirm('Delete user?')) {
-      await deleteUser()
-    }
-  }
-
-  return (
-    <>
-      <button onClick={handleCreate} disabled={isCreating}>
-        Create User
-      </button>
-      <button onClick={handleUpdate}>Update User</button>
-      <button onClick={handleDelete}>Delete User</button>
-    </>
-  )
-}
-```
-
-### File Upload with Progress
-
-There is **no `useUploadFile` hook** — use the `uploadFile(endpoint, file, options)`
-function directly and track state yourself:
-
-```typescript
-import { uploadFile } from '@/lib/api'
-import { useState } from 'react'
-
-function FileUploader() {
-  const [isUploading, setIsUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-
-  const handleUpload = async (file: File) => {
-    setIsUploading(true)
-    try {
-      const result = await uploadFile<{ url: string }>('/api/files/upload', file, {
-        onProgress: (p) => setProgress(p.percentage),
-      })
-
-      toast.success(`File uploaded: ${result.url}`)
-    } catch (error) {
-      // Error handled automatically
-    } finally {
-      setProgress(0)
-      setIsUploading(false)
-    }
-  }
-
-  return (
-    <div>
-      <input
-        type="file"
-        onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
-        disabled={isUploading}
-      />
-      {isUploading && <progress value={progress} max={100} />}
-    </div>
-  )
-}
-```
-
-### Conditional Fetching
-
-```typescript
-import { useUser, useDependentData, endpoints } from '@/lib/api'
-
-function UserPosts({ userId }: { userId: string | null }) {
-  // Only fetch when userId is available
-  const { data: user } = useUser(userId)
-
-  // Fetch user's posts only after user is loaded
-  const { data: posts } = useDependentData(
-    user?.id,
-    (id) => endpoints.users.posts(id),
-    get
-  )
-
-  if (!userId) return <div>Select a user</div>
-  if (!user) return <Loading />
-
-  return <PostsList posts={posts?.data || []} />
-}
-```
-
-### Infinite Scroll
-
-```typescript
-import { useInfiniteUsers } from '@/lib/api'
-
-function InfiniteUsersList() {
-  const {
-    data,
-    size,
-    setSize,
-    isLoading,
-    isValidating
-  } = useInfiniteUsers({ pageSize: 20 })
-
-  const users = data ? data.flatMap(page => page.data) : []
-  const isLoadingMore = isValidating && data && data.length === size
-
-  return (
-    <div>
-      {users.map(user => <UserCard key={user.id} user={user} />)}
-
-      {isLoadingMore && <Loading />}
-
-      <button onClick={() => setSize(size + 1)}>
-        Load More
-      </button>
-    </div>
-  )
-}
-```
-
-### Polling (Auto-refresh)
-
-```typescript
-import { usePolling, endpoints, get } from '@/lib/api'
-
-function LiveDashboard() {
-  // Refresh every 5 seconds
-  const { data: stats } = usePolling(
-    endpoints.auth.me(),
-    get,
-    5000
-  )
-
-  return <div>Active users: {stats?.activeUsers}</div>
-}
-```
-
----
-
-## Error Handling
-
-### Automatic Error Handling
-
-Errors are handled automatically with user-friendly toast messages:
-
-```typescript
-const { data, error } = useUsers()
-
-// If error occurs:
-// - Toast shows: "Error: Network error. Please check your connection"
-// - Error logged to console
-// - Error is in `error` variable for custom handling
-```
-
-### Custom Error Handling
-
-```typescript
-import { handleApiError } from '@/lib/api'
+```ts
+import { handleApiError, extractValidationErrors, ApiClientError } from '@/lib/api/error-handler'
 
 try {
-  await createUser(data)
-} catch (error) {
-  handleApiError(error, {
-    showToast: false, // Don't show toast
-    logError: true, // Log to console
-    customMessages: {
-      USER_EXISTS: 'Email already taken',
-      INVALID_EMAIL: 'Please provide a valid email',
-    },
-    onError: (err) => {
-      // Custom handling
-      if (err.isValidationError()) {
-        setFormErrors(extractValidationErrors(err))
-      }
-    },
-  })
-}
-```
-
-### Error Types
-
-```typescript
-import { ApiClientError } from '@/lib/api'
-
-try {
-  await apiCall()
-} catch (error) {
-  if (error instanceof ApiClientError) {
-    if (error.isAuthError()) {
-      // Handle auth errors (401, token expired, etc.)
-      router.push('/login')
-    } else if (error.isValidationError()) {
-      // Handle validation errors (422)
-      const errors = extractValidationErrors(error)
-      setFormErrors(errors)
-    } else if (error.isNotFoundError()) {
-      // Handle 404
-      router.push('/404')
-    } else if (error.isServerError()) {
-      // Handle 5xx
-      showServerErrorPage()
-    }
+  await createScanZone(values)
+} catch (err) {
+  if (err instanceof ApiClientError) {
+    const fieldErrors = extractValidationErrors(err) // per-field messages for a 400/422
+    if (fieldErrors) return setFormErrors(fieldErrors)
   }
+  handleApiError(err, { showToast: true })
 }
 ```
 
-### Validation Errors
+`handleApiError` maps API error codes to user-facing messages and hides internal
+details of server errors. `retryWithBackoff` retries transient failures.
 
-```typescript
-import { extractValidationErrors } from '@/lib/api'
+## Uploads
 
-try {
-  await createUser(formData)
-} catch (error) {
-  if (error instanceof ApiClientError && error.isValidationError()) {
-    const fieldErrors = extractValidationErrors(error)
-    // { email: 'Invalid email format', password: 'Too short' }
-
-    // Set form errors
-    Object.entries(fieldErrors || {}).forEach(([field, message]) => {
-      form.setError(field, { message })
-    })
-  }
-}
-```
-
----
-
-## Advanced Patterns
-
-### Optimistic Updates
-
-```typescript
-import { optimisticUpdate, endpoints } from '@/lib/api'
-
-const handleLike = async (postId: string) => {
-  const optimisticData = { ...post, likes: post.likes + 1 }
-
-  await optimisticUpdate(endpoints.posts.get(postId), optimisticData, () =>
-    post('/api/posts/${postId}/like')
-  )
-}
-```
-
-### Retry with Backoff
-
-```typescript
-import { retryWithBackoff, get } from '@/lib/api'
-
-const data = await retryWithBackoff(() => get('/api/users'), {
-  maxRetries: 3,
-  onRetry: (error, attempt) => {
-    console.log(`Retry ${attempt} after error:`, error.message)
-  },
+```ts
+await uploadFile<Evidence>(url, file, {
+  onProgress: ({ percentage }) => setProgress(percentage),
 })
 ```
 
-### Custom Fetcher
-
-```typescript
-import useSWR from 'swr'
-import { get } from '@/lib/api'
-
-function useCustomData() {
-  return useSWR('/api/custom', async (url) => {
-    // Custom logic before fetch
-    console.log('Fetching:', url)
-
-    const data = await get(url)
-
-    // Custom logic after fetch
-    return transformData(data)
-  })
-}
-```
-
-### Prefetching
-
-```typescript
-import { mutate } from 'swr'
-import { get, endpoints } from '@/lib/api'
-
-// Prefetch on hover
-const handleMouseEnter = async () => {
-  await mutate(
-    endpoints.users.get('user-123'),
-    get(endpoints.users.get('user-123')),
-    { revalidate: false }
-  )
-}
-
-<Link href="/users/123" onMouseEnter={handleMouseEnter}>
-  View User
-</Link>
-```
-
----
-
-## Examples
-
-### Complete CRUD Example
-
-```typescript
-'use client'
-import {
-  useUsers,
-  useCreateUser,
-  useUpdateUser,
-  useDeleteUser,
-  type User,
-  type CreateUserRequest
-} from '@/lib/api'
-import { useState } from 'react'
-
-export function UserManagement() {
-  const [page, setPage] = useState(1)
-
-  // Fetch users
-  const { data, error, isLoading, mutate } = useUsers({ page, pageSize: 10 })
-
-  // Mutations
-  const { trigger: createUser } = useCreateUser()
-  const { trigger: updateUser } = useUpdateUser('user-id')
-  const { trigger: deleteUser } = useDeleteUser('user-id')
-
-  // Create
-  const handleCreate = async (userData: CreateUserRequest) => {
-    try {
-      await createUser(userData)
-      mutate() // Refresh list
-    } catch (error) {
-      // Error handled automatically
-    }
-  }
-
-  // Update
-  const handleUpdate = async (userId: string, data: Partial<User>) => {
-    try {
-      await updateUser(data)
-      mutate() // Refresh list
-    } catch (error) {
-      // Error handled
-    }
-  }
-
-  // Delete
-  const handleDelete = async (userId: string) => {
-    if (confirm('Delete user?')) {
-      await deleteUser()
-      mutate() // Refresh list
-    }
-  }
-
-  if (isLoading) return <div>Loading...</div>
-  if (error) return <div>Error loading users</div>
-
-  return (
-    <div>
-      <h1>Users</h1>
-
-      <ul>
-        {data?.data.map(user => (
-          <li key={user.id}>
-            {user.name}
-            <button onClick={() => handleUpdate(user.id, { name: 'New Name' })}>
-              Edit
-            </button>
-            <button onClick={() => handleDelete(user.id)}>Delete</button>
-          </li>
-        ))}
-      </ul>
-
-      {/* Pagination */}
-      <button onClick={() => setPage(p => p - 1)} disabled={page === 1}>
-        Previous
-      </button>
-      <button onClick={() => setPage(p => p + 1)}>Next</button>
-    </div>
-  )
-}
-```
-
-### Server Component Example
-
-```typescript
-// app/users/page.tsx (Server Component)
-import { get, endpoints } from '@/lib/api'
-import type { PaginatedResponse, User } from '@/lib/api'
-
-export default async function UsersPage() {
-  // Fetch on server
-  const users = await get<PaginatedResponse<User>>(
-    endpoints.users.list({ page: 1, pageSize: 10 })
-  )
-
-  return (
-    <div>
-      <h1>Users</h1>
-      <ul>
-        {users.data.map(user => (
-          <li key={user.id}>{user.name}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-```
-
----
-
-## Backend Requirements
-
-Your backend API must support:
-
-### 1. JWT Token Validation
-
-Validate the backend-issued JWT the proxy forwards (from the httpOnly auth cookie).
-Auth is local JWT + OAuth social + SAML SSO — there is no Keycloak/OIDC dependency.
-
-### 2. CORS Configuration
-
-Allow requests from Next.js frontend:
-
-```javascript
-// Example Express.js CORS
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL, // http://localhost:3000
-    credentials: true,
-  })
-)
-```
-
-### 3. Response Format (Recommended)
-
-Use consistent response format:
-
-```json
-{
-  "success": true,
-  "data": {
-    /* your data */
-  }
-}
-```
-
-Or for errors:
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid input",
-    "details": {
-      "email": "Invalid email format"
-    }
-  }
-}
-```
-
-### 4. HTTP Status Codes
-
-Use standard status codes:
-
-- `200` - Success
-- `201` - Created
-- `204` - No Content
-- `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `404` - Not Found
-- `422` - Validation Error
-- `500` - Server Error
-
----
-
-## Troubleshooting
-
-### CORS Errors
-
-**Problem:** `Access to fetch has been blocked by CORS policy`
-
-**Solution:**
-
-```javascript
-// Backend CORS configuration
-app.use(
-  cors({
-    origin: 'http://localhost:3000', // Your Next.js URL
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  })
-)
-```
-
-### Authentication Errors
-
-**Problem:** 401 Unauthorized
-
-**Solutions:**
-
-1. Check the auth cookie is present (httpOnly `auth_token`) and requests send
-   `credentials: 'include'`
-2. Check the token is not expired (the proxy refreshes via the refresh-token cookie)
-3. Verify the backend validates the forwarded JWT correctly
-4. For 403 on mutations: confirm the `csrf_token` cookie exists and is echoed as
-   `X-CSRF-Token`
-
-### Network Errors
-
-**Problem:** `Network error - please check your connection`
-
-**Solutions:**
-
-1. Check `BACKEND_API_URL` is correct (server-side only)
-2. Verify backend is running and reachable from the Next.js container
-3. Check firewall/proxy settings
-
-### TypeScript Errors
-
-**Problem:** Type mismatch errors
-
-**Solution:** Update types in `src/lib/api/types.ts` to match your backend:
-
-```typescript
-// Customize to match your backend response
-export interface User {
-  id: string
-  email: string
-  name: string
-  // Add your custom fields
-  customField?: string
-}
-```
-
----
-
-## Next Steps
-
-1. **Configure Environment:** Set `BACKEND_API_URL` in `.env.local`
-2. **Customize Types:** Update `src/lib/api/types.ts` for your backend schema
-3. **Add Endpoints:** Add more endpoints in `src/lib/api/endpoints.ts`
-4. **Create Hooks:** Create domain-specific hooks for your features
-5. **Replace Mock Data:** Update dashboard to use real API calls
-
----
-
-**See Also:**
-
-- [Architecture Documentation](../ARCHITECTURE.md)
-- [Auth Usage Guide](../features/auth/AUTH_USAGE.md)
-- [Troubleshooting](../features/auth/TROUBLESHOOTING.md)
-
----
-
-**Last Updated:** 2025-12-11
-**Version:** 1.0.0
+## Server Components
+
+Server Components and Server Actions call the API on the server with
+`BACKEND_API_URL` and the session cookie; see the auth helpers in
+`src/features/auth/` and `src/lib/cookies-server.ts`.

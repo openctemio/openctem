@@ -1,92 +1,69 @@
 # Security Policy
 
-## Supported Versions
+This policy covers everything in this repository (the API, the web console and the all-in-one image) and is part of the OpenCTEM vulnerability disclosure policy, which also covers the other `openctemio` repositories and the services we operate.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+## Reporting a vulnerability
 
-## Reporting a Vulnerability
+**Do not open a public GitHub issue, pull request or discussion for a
+vulnerability.** Report it privately through either channel:
 
-We take security seriously at OpenCTEM. If you discover a security vulnerability, please follow these steps:
+- email **security@openctem.io**;
+- GitHub private vulnerability reporting: **Security → Report a vulnerability**
+  on this repository (it becomes a draft security advisory visible only to you
+  and the maintainers).
 
-### DO NOT
+Please include:
 
-- Open a public GitHub issue for security vulnerabilities
-- Disclose the vulnerability publicly before it's fixed
-- Exploit the vulnerability beyond what's necessary to demonstrate it
+- the affected component (API, web console, all-in-one image) and version (or commit);
+- a description of the issue and its impact, and the access an attacker needs
+  first;
+- step-by-step reproduction, a proof of concept or a failing test;
+- any known mitigation or suggested fix;
+- how you would like to be credited, if at all.
 
-### DO
+Test only against systems you own or are authorized to test, with test data.
+On services we operate, use only your own accounts and organizations and never
+point scans at third-party systems; stop and report as soon as you reach data
+that is not yours. The full testing rules are in the disclosure policy below.
 
-1. **Email us directly** at security@openctem.io with:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Suggested fix (if any)
+## What to expect
 
-2. **Use our bug bounty program** (if available) through:
-   - [HackerOne](https://hackerone.com.openctemio) (coming soon)
+| Step | Target |
+|---|---|
+| Acknowledgement of your report | within 3 business days |
+| Triage (confirmed or not, severity, next steps) | within 10 business days |
+| Fix released, by severity (CVSS 3.1) | critical 7 days · high 30 days · medium 90 days · low best effort |
 
-### What to expect
+We follow coordinated disclosure: we keep you informed while we work on the
+fix, agree a disclosure date with you, and publish a GitHub security advisory
+with the fixed version, with a CVE identifier for a confirmed vulnerability in
+released software.
 
-- **Acknowledgment**: Within 48 hours
-- **Initial Assessment**: Within 5 business days
-- **Resolution Timeline**: Depends on severity
-  - Critical: 24-72 hours
-  - High: 1-2 weeks
-  - Medium: 2-4 weeks
-  - Low: Next release cycle
+## Acknowledgements and rewards
 
-### Security Measures
+This is a vulnerability disclosure programme without monetary rewards. Unless
+you prefer otherwise, we credit you on the security acknowledgements page of
+the documentation, in the security advisory and in the release notes of the
+fixed version.
+**Bug bounty: coming soon** — a programme with rewards is planned; until it
+starts, no report is eligible for a reward.
 
-This repository uses:
+## Supported versions
 
-- **CodeQL** - Static Application Security Testing (SAST)
-- **Gosec** - Go security checker
-- **Govulncheck** - Go vulnerability database scanning
-- **Trivy** - Container and dependency vulnerability scanning
-- **Betterleaks** - Secret detection
-- **Dependabot** - Automated dependency updates
+Security fixes are released for the **latest minor release** (the newest `vX.Y.*`). Upgrade to the latest patch of that minor release to receive them. Older minor releases do not receive fixes.
 
-## Security Best Practices for Contributors
+## Safe harbor
 
-1. **Never commit secrets** - Use environment variables
-2. **Validate all inputs** - Especially user-provided data
-3. **Use parameterized queries** - Prevent SQL injection
-4. **Follow the principle of least privilege**
-5. **Keep dependencies updated** - Review Dependabot PRs promptly
-6. **Enable 2FA** on your GitHub account
+We consider security research carried out in good faith under the disclosure
+policy to be authorized: we will not initiate or support legal action against
+you, or report you to law enforcement, for it, and we waive restrictions in our
+terms of service that would otherwise prohibit it. Good faith means testing
+only systems you own or are authorized to test, avoiding privacy violations,
+data destruction and service disruption, and giving us reasonable time to fix
+the issue before any public disclosure. If in doubt, ask security@openctem.io
+first.
 
-## Secure Development Guidelines
+## More information
 
-### Authentication & Authorization
-- Use JWT with proper expiration
-- Implement refresh token rotation
-- Validate tokens on every request
-- Use secure password hashing (bcrypt/argon2)
-
-### Data Protection
-- Encrypt sensitive data at rest
-- Use TLS for all communications
-- Sanitize logs (no PII/secrets)
-- Implement proper CORS policies
-
-### Input Validation
-- Validate and sanitize all user inputs
-- Use strong typing
-- Implement rate limiting
-- Validate file uploads
-
-## Compliance
-
-We aim to comply with:
-- OWASP Top 10
-- CWE/SANS Top 25
-- SOC 2 Type II (planned)
-- ISO 27001 (planned)
-
-## Contact
-
-- Security Team: security@openctem.io
-- General Issues: https://github.com/openctemio/openctem/issues
+The full vulnerability disclosure policy (scope, testing rules, safe harbor):
+<https://docs.openctem.io/security/vulnerability-disclosure/>.

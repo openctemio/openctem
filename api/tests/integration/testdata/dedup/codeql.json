@@ -1,0 +1,36 @@
+{
+  "tool": "codeql",
+  "asset": {"type": "repository", "value": "github.com/acme/web"},
+  "cases": [
+    {
+      "name": "SARIF primaryLocationLineHash survives a line shift",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Database query built from user-controlled sources", "severity": "high", "rule_id": "js/sql-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:1"},
+        "location": {"path": "src/routes/user.js", "start_line": 17, "end_line": 17}},
+      "after": {"type": "vulnerability", "title": "Database query built from user-controlled sources", "severity": "high", "rule_id": "js/sql-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:1"},
+        "location": {"path": "src/routes/user.js", "start_line": 31, "end_line": 31}}
+    },
+    {
+      "name": "a twin result has its own :N occurrence",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "SQL injection", "severity": "high", "rule_id": "js/sql-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:1"},
+        "location": {"path": "src/routes/user.js", "start_line": 17}},
+      "after": {"type": "vulnerability", "title": "SQL injection", "severity": "high", "rule_id": "js/sql-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:2"},
+        "location": {"path": "src/routes/user.js", "start_line": 60}}
+    },
+    {
+      "name": "Windows path separators",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Path injection", "severity": "high", "rule_id": "cs/path-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "aa11bb22cc33dd44:1"},
+        "location": {"path": "src\\Api\\Files.cs", "start_line": 9}},
+      "after": {"type": "vulnerability", "title": "Path injection", "severity": "high", "rule_id": "cs/path-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "aa11bb22cc33dd44:1"},
+        "location": {"path": "src/Api/Files.cs", "start_line": 9}}
+    }
+  ]
+}

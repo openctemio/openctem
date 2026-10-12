@@ -12,10 +12,12 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  CalendarClock,
 } from 'lucide-react'
 import { DataTableRowActions, EmptyState } from '@/features/shared'
 import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/access-control'
 import { useState, useEffect } from 'react'
+import { daysUntil, formatShortDate } from '@/features/organization/lib/external-access'
 
 interface MembersTabProps {
   members: GroupMember[]
@@ -24,8 +26,12 @@ interface MembersTabProps {
   limit: number
   offset: number
   onPageChange: (offset: number) => void
-  onAddMember: () => void
-  onRemoveMember: (userId: string, name: string) => void
+  /** Omitted when the caller may not add members (the button is hidden). */
+  onAddMember?: () => void
+  /** Omitted when the caller may not remove members (the action is hidden). */
+  onRemoveMember?: (userId: string, name: string) => void
+  /** Omitted when the caller may not change end dates (the action is hidden). */
+  onChangeEnd?: (userId: string, name: string, expiresAt?: string) => void
 }
 
 export function MembersTab({
@@ -37,6 +43,7 @@ export function MembersTab({
   onPageChange,
   onAddMember,
   onRemoveMember,
+  onChangeEnd,
 }: MembersTabProps) {
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -62,13 +69,15 @@ export function MembersTab({
   const totalPages = Math.ceil(totalCount / limit)
 
   return (
-    <div className="mt-4">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-medium">Group Members ({totalCount})</h4>
-        <Button size="sm" onClick={onAddMember}>
-          <UserPlus className="me-2 h-4 w-4" />
-          Add Member
-        </Button>
+        {onAddMember && (
+          <Button size="sm" onClick={onAddMember}>
+            <UserPlus className="me-2 h-4 w-4" />
+            Add Member
+          </Button>
+        )}
       </div>
 
       <div className="relative mb-4">
@@ -107,13 +116,13 @@ export function MembersTab({
                 key={key}
                 className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
               >
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar className="h-9 w-9 shrink-0">
                     <AvatarFallback className="text-xs">{initials}</AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-medium text-sm">{name}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium break-words">{name}</p>
+                    <p className="text-xs break-all text-muted-foreground">
                       {email}
                       {(member.added_by_name || member.added_by) && (
                         <span className="ms-1 text-xs text-muted-foreground/60">
@@ -123,24 +132,61 @@ export function MembersTab({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={`${roleConfig.bgColor} ${roleConfig.color} border-0 text-xs`}>
+                <div className="flex shrink-0 items-center gap-2">
+                  {member.expires_at && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        daysUntil(member.expires_at) <= 7
+                          ? 'gap-1 border-warning/40 text-xs text-warning'
+                          : 'gap-1 text-xs'
+                      }
+                      title={
+                        `Leaves the team ${formatShortDate(member.expires_at)}` +
+                        (member.expiry_reason ? `: ${member.expiry_reason}` : '')
+                      }
+                    >
+                      <CalendarClock className="h-3 w-3" />
+                      Ends {formatShortDate(member.expires_at)}
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className="text-xs">
                     {member.role === 'owner' && <Crown className="h-3 w-3 me-1" />}
                     {member.role === 'lead' && <Crown className="h-3 w-3 me-1" />}
                     {member.role === 'member' && <User className="h-3 w-3 me-1" />}
                     {roleConfig.label}
                   </Badge>
-                  <DataTableRowActions
-                    actions={[
-                      {
-                        label: 'Remove',
-                        icon: Trash2,
-                        destructive: true,
-                        onClick: () =>
-                          onRemoveMember(member.user_id || member.user?.id || '', name),
-                      },
-                    ]}
-                  />
+                  {(onRemoveMember || onChangeEnd) && (
+                    <DataTableRowActions
+                      actions={[
+                        ...(onChangeEnd
+                          ? [
+                              {
+                                label: 'Change end date',
+                                icon: CalendarClock,
+                                onClick: () =>
+                                  onChangeEnd(
+                                    member.user_id || member.user?.id || '',
+                                    name,
+                                    member.expires_at
+                                  ),
+                              },
+                            ]
+                          : []),
+                        ...(onRemoveMember
+                          ? [
+                              {
+                                label: 'Remove',
+                                icon: Trash2,
+                                destructive: true,
+                                onClick: () =>
+                                  onRemoveMember(member.user_id || member.user?.id || '', name),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  )}
                 </div>
               </div>
             )

@@ -8,11 +8,13 @@
 
 'use client'
 
-import Link from 'next/link'
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
+import Link from '@/components/link'
 import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Permission } from '@/lib/permissions'
+import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useTenant } from '@/context/tenant-provider'
 import { useDashboardStats } from '@/features/dashboard'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
@@ -22,6 +24,12 @@ import {
   useScanCoverage,
   useAttackPaths,
 } from '@/features/dashboard/hooks/use-ctem-dashboard'
+import {
+  INFORMATIONAL_LABEL,
+  SEVERITY_LABELS,
+  SEVERITY_LEVELS,
+  severityCounts,
+} from '@/lib/severity'
 
 function useStats() {
   const { currentTenant } = useTenant()
@@ -44,14 +52,7 @@ function useAttack() {
   return useAttackPaths(currentTenant?.id ?? null)
 }
 
-const OPEN_EXCLUDE = [
-  'resolved',
-  'false_positive',
-  'accepted',
-  'duplicate',
-  'verified',
-  'accepted_risk',
-]
+const OPEN_EXCLUDE = findingStatusesInCategory('closed')
 
 type WidgetSize = { w: number; h: number }
 
@@ -61,9 +62,25 @@ export interface WidgetDef {
   component: () => ReactNode
   defaultSize: WidgetSize
   requiredPermission?: string
+  /** Module the widget's data belongs to: not offered, and shown as off, when it is off. */
+  requiredModule?: string
 }
 
 // ── shared shells ───────────────────────────────────────────────────────────
+
+/** A widget whose module is switched off for the organization. */
+function ModuleOffShell({ title }: { title: string }) {
+  return (
+    <Card className="h-full">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">
+        Turned off for your organization.
+      </CardContent>
+    </Card>
+  )
+}
 
 function StatShell({
   title,
@@ -106,13 +123,12 @@ function StatShell({
 
 function SeverityBreakdownWidget() {
   const { stats, isLoading } = useStats()
-  const by = stats.findings.bySeverity ?? {}
-  const rows: Array<[string, number]> = [
-    ['Critical', by.critical ?? 0],
-    ['High', by.high ?? 0],
-    ['Medium', by.medium ?? 0],
-    ['Low', by.low ?? 0],
-  ]
+  // Every severity, Informational included (none folds into it).
+  const by = severityCounts(stats.findings.bySeverity)
+  const rows: Array<[string, number]> = SEVERITY_LEVELS.map((s) => [
+    s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s],
+    by[s],
+  ])
   return (
     <Card className="h-full">
       <CardHeader className="pb-2">
@@ -179,7 +195,7 @@ function AssignedToMeWidget() {
       title="Assigned to me · open"
       value={data?.total ?? 0}
       loading={isLoading}
-      href="/findings?mine=true"
+      href="/findings?related_to=me"
     />
   )
 }
@@ -197,7 +213,7 @@ function MyCriticalHighWidget() {
       value={data?.total ?? 0}
       loading={isLoading}
       tone="danger"
-      href="/findings?mine=true&priority=P0"
+      href="/findings?related_to=me&priority_class=P0"
     />
   )
 }
@@ -215,7 +231,7 @@ function MyOverdueSlaWidget() {
       value={data?.total ?? 0}
       loading={isLoading}
       tone="danger"
-      href="/findings?mine=true&sla_status=overdue"
+      href="/findings?related_to=me&sla_status=overdue"
     />
   )
 }
@@ -263,7 +279,7 @@ function P0OpenWidget() {
       value={data?.p0_open ?? 0}
       loading={isLoading}
       tone="danger"
-      href="/findings?priority=P0"
+      href="/findings?priority_class=P0"
     />
   )
 }
@@ -281,7 +297,9 @@ function ScanCoverageWidget() {
 }
 
 function ReachableAssetsWidget() {
+  const on = useModuleEnabled('attack_surface')
   const { data, isLoading } = useAttack()
+  if (!on) return <ModuleOffShell title="Assets reachable" />
   return (
     <StatShell
       title="Assets reachable"
@@ -415,6 +433,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDef> = {
     component: ReachableAssetsWidget,
     defaultSize: { w: 3, h: 1 },
     requiredPermission: Permission.DashboardRead,
+    requiredModule: 'attack_surface',
   },
   threat_intel: {
     title: 'Threat intel',

@@ -1,11 +1,15 @@
 # RFC-033 — Sensor manifest: register what a sensor is once, heartbeat a digest
 
-> Status: **Accepted** (2026-10-02; owner decisions in §10.2). Proposed
+> Status: **Implemented** (accepted 2026-10-02; decisions in §10.2). Proposed
 > 2026-10-02 in api#718.
-> - Phase 0 (defect fixes) is live: api#714, sdk-go#106, ui#589, sensor v0.6.3.
-> - Phase 1 is merged: api#718 (migration 000258, live) and sdk-go#108.
-> - Phase 2 is designed in §6.12 and in implementation.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) + ui.
+> - Phase 0 (defect fixes): api#714, sdk-go#106, openctemio/ui#589, sensor v0.6.3.
+> - Phase 1: api#718 (migration 000258) and sdk-go#108.
+> - Phase 2 (§6.12): policy echo on `PUT`/`GET /api/v2/sensor/manifest`.
+> - Config report (§11, decisions F1–F14, 2026-10-05): API implemented
+>   (migration 001061, `PUT /api/v2/sensor/config-report`, heartbeat
+>   `config_report` + `send_config_report`, `GET /api/v1/sensors/{id}/config-report`);
+>   sdk-go, sensor and web companions built in parallel.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) + ui.
 > Builds on [RFC-029](RFC-029-sensor-protocol-v2-and-sdk-stability.md) (protocol
 > v2, hello, §4.3.1 sensor-reported capabilities), [RFC-030](RFC-030-scan-work-distribution.md)
 > (load report, slots, routing), [RFC-031](RFC-031-managed-sensor-updates.md)
@@ -14,9 +18,8 @@
 > what a sensor may do: the sensor claims, policy narrows (RFC-029 §4.3.1,
 > RFC-032 §6.6).
 >
-> Owner's question (2026-10-02): "When a sensor first connects to the
-> platform, shouldn't it register which capabilities it has? Research deeply
-> and give the best design."
+> Question (2026-10-02): when a sensor first connects to the platform,
+> should it register which capabilities it has, and what is the best design?
 
 ## 1. Answer in short
 
@@ -29,7 +32,7 @@ sensor's live load. Nothing that changes slowly is sent every 30 seconds.**
 | When the sensor says what it has | on **every** heartbeat (≈1.9 KB, every 5–60 s) | once on connect (`PUT /api/v2/sensor/manifest`), then on change |
 | What a heartbeat carries | identity, load, **and** the whole tool inventory | identity, load and `manifest_digest` (Phase 2 drops the inventory) |
 | Which tool serves which capability | lost; only a flat list arrived (§3.2) | each tool lists its `capabilities` (and, Phase 3, `target_types`) |
-| Capacity | one number, `max_concurrent_jobs`, which carried the SDK's upper bound 64 (§3.2) | the operator's **ceiling** in the manifest; what the sensor can run **now** (`slots_total`) on every heartbeat, as Kubernetes separates `capacity` from `allocatable` |
+| Capacity | one number, `max_concurrent_jobs`, which carried the SDK's upper bound 64 (§3.2) | the operator's **ceiling** in the manifest; what the sensor can run **now** (`slots_total`) on every heartbeat, separating what the host has from what it may use |
 | What the platform kept | the latest report, overwritten every heartbeat | every **version** of the manifest, with its digest, what was accepted and what was ignored, and the diff as activity events |
 | What the sensor learns back | nothing | the digest the platform stored, what it accepted, what it ignored and why (Phase 2: the tools the policy allows, so the sensor refuses the others itself) |
 | Sensors that do not send one | — | keep working: the platform derives the manifest from their heartbeat |
@@ -49,13 +52,13 @@ sensor (RFC-032 E3). Routing reads it to pick the tool that can run a job
 | M5 | **Versions are kept.** `sensor_manifests` stores each distinct manifest per sensor (sanitized document, digest, source, accepted, ignored, first and last seen). `sensors.manifest_digest` points at the current one. The `reported_*` columns that dispatch reads (RFC-029 §4.3.1, migration 000253) become a projection of the current manifest, so no dispatch query changes. |
 | M6 | **Change is history.** The diff between two versions is written to the activity timeline with the existing types (`tools_changed`, `version_changed`, `sdk_version_changed`, `capacity_changed`, `content_updated`). Each event carries both digests. No new event category. |
 | M7 | **Backward compatible both ways.** For a sensor that sends no manifest (protocol v1, older v2 SDKs), the platform derives one from its heartbeat (`source = heartbeat`), with the same digest, storage and events. A sensor on a platform without the `manifest` feature keeps sending the full heartbeat. Phase 1 keeps the inventory on every heartbeat. Phase 2 drops it only once the platform has acknowledged the digest. |
-| M8 | **Capacity is two numbers** (Kubernetes `capacity` vs `allocatable`). The manifest carries the operator's **ceiling** (`SENSOR_MAX_JOBS`; none when unset) and the model (`dynamic`: the SDK sizes slots from CPU, memory and learned tool cost). The heartbeat carries `capacity.slots_total`, what it can run now. Dispatch capacity is the smallest of ceiling, slots and the administrator's limit (§6.1, implemented in Phase 0). |
-| M9 | **The sensorkit owns the manifest.** A sensor only registers tools (`ToolRegistry.Register`, `Kit.AddScanner`). The SDK builds the manifest from the registry, the build information and the host, computes the digest, sends it and reacts to `send_manifest`. Platform connection code lives in the SDK (owner principle). |
+| M8 | **Capacity is two numbers** (`capacity` vs `allocatable`). The manifest carries the operator's **ceiling** (`SENSOR_MAX_JOBS`; none when unset) and the model (`dynamic`: the SDK sizes slots from CPU, memory and learned tool cost). The heartbeat carries `capacity.slots_total`, what it can run now. Dispatch capacity is the smallest of ceiling, slots and the administrator's limit (§6.1, implemented in Phase 0). |
+| M9 | **The sensorkit owns the manifest.** A sensor only registers tools (`ToolRegistry.Register`, `Kit.AddScanner`). The SDK builds the manifest from the registry, the build information and the host, computes the digest, sends it and reacts to `send_manifest`. Platform connection code lives in the SDK (design principle). |
 | M10 | **Defense in depth (Phase 2).** The manifest answer, and a `GET` that re-reads it when `config_version` changes, carry the policy: the tools and capabilities the platform allows this sensor. The SDK refuses (fails with a typed reason) any command for a tool outside it, even if a platform bug dispatched it. |
 | M11 | **Routing by tool (Phase 3, RFC-030).** A job needs a capability and a target type. The platform picks a sensor whose effective manifest has a tool that provides both, and names that tool in the command. The flat capability list stays only as the compatibility path. |
 | M12 | **Integrity comes from the request.** RFC-032 Phase 1 signs every v2 request (RFC 9421, Ed25519 key bound to the sensor), so the `PUT` that carries a manifest is signed and attributable. No separate document signature is added, and the stored version keeps the key fingerprint that signed it. At enrollment (RFC-032 §6.3) the enroll request carries the first manifest, and approval shows it. |
 
-## 3. Current state (verified 2026-10-02: api `develop` bf003bb9, sdk-go `main` 46525ff, sensor `main` 83db392; live sensor-docker-01: sensor v0.6.1, sdk v0.11.0)
+## 3. Current state (verified 2026-10-02: api `develop` bf003bb9, sdk-go `main` 46525ff, sensor `main` 83db392; a deployed sensor v0.6.1 with SDK v0.11.0)
 
 ### 3.1 How a sensor says what it has today
 
@@ -80,15 +83,15 @@ sensor (RFC-032 E3). Routing reads it to pick the tool that can run a job
   for the activity timeline (`DiffHeartbeat`, migration 000255).
 - Dispatch reads the generated `effective_*` columns: the report narrowed by
   the administrator's settings.
-- No history of reports is kept. The first-heartbeat tool review (ui#583)
+- No history of reports is kept. The first-heartbeat tool review (openctemio/ui#583)
   reads whatever the latest heartbeat left.
 
 ### 3.2 Defects found while answering (fixed in Phase 0)
 
-| # | Defect (live) | Root cause | Fix |
+| # | Defect (observed in a deployment) | Root cause | Fix |
 |---|---|---|---|
-| D1 | `reported_max_jobs` 64 next to `reported_capacity.slots_total` 4 on a 4-core sensor; `effective_max_jobs` = LEAST(64, admin 5) = **5**, more than it runs; UI "sensor reports 64 · limit 5". | With no `SENSOR_MAX_JOBS`, sensorkit sizes the poller to `resource.Manager.MaxSlots()`, which is `HardMax` (64) when no cap is set (`pkg/resource/manager.go`). `BaseSensor.withCapabilities` then reported the poller's `MaxJobs()` as `max_concurrent_jobs` (`pkg/core/base_sensor.go:128`). The platform's rule ignored the slots. | sdk-go#106: `max_concurrent_jobs` is only the operator's cap (`Manager.Cap`). api#714: migration 000257, `effective_max_jobs` = the smallest of admin, ceiling and `slots_total`. ui#589: "Runs 4 at once now · operator cap 64 · your limit 5". |
-| D2 | Every reported tool had `capabilities: null`, `kind: null`; the flat list said `dast`, `sast`, … with no tool behind them. | The registry knew each tool's capabilities (`ToolSpec.Capabilities`), but `core.ToolInfo` had no field for them. The SDK did send `kind` (sdk-go#99), but the API's `HeartbeatTool` and `ReportedTool` had no `kind` either, so ingest dropped it. | sdk-go#106 `ToolInfo.Capabilities`; api#714 parses, sanitizes and stores `kind` and `capabilities` per tool; ui#589 shows them on the tool chips and in the first-heartbeat review. |
+| D1 | `reported_max_jobs` 64 next to `reported_capacity.slots_total` 4 on a 4-core sensor; `effective_max_jobs` = LEAST(64, admin 5) = **5**, more than it runs; UI "sensor reports 64 · limit 5". | With no `SENSOR_MAX_JOBS`, sensorkit sizes the poller to `resource.Manager.MaxSlots()`, which is `HardMax` (64) when no cap is set (`pkg/resource/manager.go`). `BaseSensor.withCapabilities` then reported the poller's `MaxJobs()` as `max_concurrent_jobs` (`pkg/core/base_sensor.go:128`). The platform's rule ignored the slots. | sdk-go#106: `max_concurrent_jobs` is only the operator's cap (`Manager.Cap`). api#714: migration 000257, `effective_max_jobs` = the smallest of admin, ceiling and `slots_total`. openctemio/ui#589: "Runs 4 at once now · operator cap 64 · your limit 5". |
+| D2 | Every reported tool had `capabilities: null`, `kind: null`; the flat list said `dast`, `sast`, … with no tool behind them. | The registry knew each tool's capabilities (`ToolSpec.Capabilities`), but `core.ToolInfo` had no field for them. The SDK did send `kind` (sdk-go#99), but the API's `HeartbeatTool` and `ReportedTool` had no `kind` either, so ingest dropped it. | sdk-go#106 `ToolInfo.Capabilities`; api#714 parses, sanitizes and stores `kind` and `capabilities` per tool; openctemio/ui#589 shows them on the tool chips and in the first-heartbeat review. |
 | D3 | `nuclei` installed with an empty version. | nuclei v3 prints `[INF] Nuclei Engine Version: v3.11.1` only to **stderr**, in ANSI color; `core.CheckBinaryInstalled` read stdout only (`cmd.Output()`), so the parser got "". The ProjectDiscovery recon tools behave the same (`[INF] Current Version:`). | sdk-go#106 `core.VersionOutput` (stdout, else stderr, ANSI stripped, whole text); nuclei parses `Engine Version:`, the recon tools `Current Version:`. |
 
 The three defects share a shape: what the sensor knows about itself loses
@@ -113,26 +116,21 @@ side notices. A manifest that the platform validates and **answers**
   request is signed from Phase 1. The manifest is that report, made durable
   and versioned.
 
-## 4. What mature systems do
+## 4. Design principles
 
-| System | Register (once / on change) | Heartbeat | What we take |
-|---|---|---|---|
-| **Kubernetes Node** | Node object with `status.capacity`, `status.allocatable`, `status.nodeInfo` (`kubeletVersion`, `containerRuntimeVersion`, `osImage`, `architecture`), labels (`kubernetes.io/arch`, `kubernetes.io/os`, `node.kubernetes.io/instance-type`), `status.images`. Allocatable = capacity − kube-reserved − system-reserved − eviction threshold. | A **Lease** in `kube-node-lease`, renewed about every 10 s (40 s duration × 0.25). Full `NodeStatus` is posted when it changes, or every `nodeStatusReportFrequency` (5 min) when it does not. | Capacity vs allocatable (M8). Liveness kept apart from the slow full status. Re-send on change, with a slow periodic resync. |
-| **Node Feature Discovery** | Detects hardware and kernel features and advertises them as labels `feature.node.kubernetes.io/*` (and extended resources). | — | Capabilities are discovered on the host, not typed by an admin. |
-| **Kubernetes device plugins** | A plugin registers and the node then advertises an extended resource (`nvidia.com/gpu`) that the scheduler counts. | — | A tool is a schedulable resource that the host registers. |
-| **HashiCorp Nomad** | At start the client runs fingerprinters (attributes such as `cpu.numcores`, `driver.docker.version`, `os.name`; drivers with *Detected* / *Healthy*) and calls `Node.Register`. A fingerprint diff (`updateNodeFromFingerprint`, `batchNodeUpdates`) calls `Node.Register` again. `ComputeClass` hashes the node's attributes, meta, class, pool and resources into `v1:<hash>` and **excludes `unique.*`** keys. | `Node.UpdateStatus`, which does not recompute the class. The **server** sets the heartbeat TTL (`HeartbeatTTL` in the response). | Re-register on change (M2). A digest over the stable part only, with unique fields excluded (M1, M3). The server steers the cadence (the doorbell already does). |
-| **GitHub Actions runners** | `config.sh --labels` at registration. Default labels are `self-hosted`, OS and architecture. Labels change later only through the UI or API. | — | Jobs route by labels (`runs-on`). The labels are flat and self-declared, with no versions. A manifest has to carry more than labels. |
-| **Buildkite agent** | `AgentRegisterRequest` {Name, Hostname, OS, Arch, Version, Build, Tags, PID, MachineID, Features}. The response returns an access token and **server-chosen** `PingInterval`, `JobStatusInterval`, `HeartbeatInterval`. | `Heartbeat` {SentAt, ReceivedAt} only. | A registration payload separate from a minimal heartbeat. The server answers registration with what the agent should do. |
-| **Tenable Nessus Agents** | Linked with a key. The agent reports its version, host architecture, the **versions of installed plugins**, OS, interfaces and hostname. | Checks in "on start, after a restart, and whenever metadata is updated (no more than every 10 minutes)". | Send on start and on change, rate-limited. Content versions belong in the self-description (RFC-031). |
-| **Envoy xDS** | — (server → client) | ACK echoes `version_info` and `response_nonce`. A NACK carries `error_detail` and the **previously accepted** version. | The receiver says what it accepted and what it rejected (M4). Each side echoes the other's version, not its own canonical form (M3). |
-| **Consul anti-entropy** | The agent's local state is authoritative, and it notifies the servers on change. | Periodic full sync, 1 min for clusters up to 128 nodes and longer for larger ones, staggered. | A periodic resync guards against a lost change: the digest in every heartbeat does this for free. |
+| Principle | Taken here |
+|---|---|
+| Separate what a host *has* (capacity) from what it may *use* now (allocatable); report the second on every heartbeat | M8 |
+| Register a full self-description once, then re-register only on change; hash the stable part only, with per-host unique fields excluded | M1, M2, M3 |
+| Keep liveness cheap: a minimal heartbeat, and the full state posted only when it changes or after a slow resync interval; the server steers the cadence (the doorbell already does) | M2, heartbeat digest |
+| Capabilities are discovered on the host and registered by it, not typed by an admin; a tool is a schedulable resource the host registers | M1 |
+| Flat self-declared labels are not enough: versions, per-tool capabilities and content versions need a structured document | M1 |
+| The receiver says what it accepted and what it rejected; each side echoes the other's version, not its own canonical form | M3, M4 |
+| A periodic resync guards against a lost change: the digest in every heartbeat does this for free | M2 |
 
-No system we found does exactly "digest in the heartbeat, full re-send on a
-mismatch". The design combines Nomad's hash over stable attributes,
-Kubernetes' change-or-slow-resync status, Consul's resync safety net and
-xDS's accepted/rejected answer. CrowdStrike Falcon's sensor reporting is not
-publicly documented (only sensor update policies are), so it is not used.
-Sources are in §11.
+The design is therefore a digest in the heartbeat, with a full re-send on a
+mismatch. The self-description includes the versions of installed content
+(RFC-031), and it is sent on start and on change, rate-limited.
 
 ## 5. Trust
 
@@ -156,8 +154,8 @@ and an event behind, and the claim is never silently overwritten. Approval
 
 ### 6.1 Capacity: ceiling and slots (Phase 0, implemented)
 
-Kubernetes separates what a node *has* (`capacity`) from what the scheduler
-may *use* (`allocatable`). A sensor has two numbers of the same kind:
+A sensor has two numbers: what it *has* (`capacity`) and what the scheduler
+may *use* (`allocatable`):
 
 - **ceiling**: the most jobs the operator lets it run (`SENSOR_MAX_JOBS`,
   `ToolRegistry.SetMaxConcurrentJobs`, `resource.ManagerConfig.Cap`). It is
@@ -174,8 +172,8 @@ Dispatch capacity (`effective_max_jobs`, migration 000257, and
 limit, the ceiling and the slots, among those that are set. Free slots stay
 `effective − held`, and no more than a fresh report's `slots_free`
 (RFC-030 §5.8.1). The last reported slots keep counting after the report goes
-stale (a generated column cannot read the clock), as a Kubernetes node keeps
-its last allocatable until its status is next posted. A stale report's
+stale (a generated column cannot read the clock), as the last-posted
+allocatable value stays in force until the status is next posted. A stale report's
 `slots_free` is ignored. A sensor that is gone is excluded by health anyway.
 
 ### 6.2 The manifest document
@@ -415,9 +413,9 @@ one, the platform records one **`manifest_changed`** event (category
 Both digests go in its details. Content versions keep their own
 `content_updated` events. A heartbeat that carries `manifest_digest` writes no
 `tools_changed` or `capacity_changed`: for a registering sensor the manifest
-records those. What a new tool may do is still decided by the
-administrator's tool limit: a tool outside it shows as "installed but not
-allowed". Manifests derived from heartbeats keep the heartbeat's
+records those. What a new tool may do is still decided by the sensor grant
+(RFC-052): a tool outside the grant is refused at admission. (The tool limit
+on the sensor, `sensors.tools`, is gone since migration 001149.) Manifests derived from heartbeats keep the heartbeat's
 `tools_changed` and `capacity_changed` events (§6.6), so nothing is recorded
 twice.
 
@@ -460,9 +458,9 @@ The Activity timeline renders `manifest_changed` with its diff.
   names that digest.
 - A later manifest that **adds** a tool does not widen anything by itself,
   because the token's tool ceiling and the administrator's limits still
-  narrow it. It is shown as "installed but not allowed" (ui#583 already
+  narrow it. It is shown as "installed but not allowed" (openctemio/ui#583 already
   does) and raises a `tools_changed` event. Whether it should also need
-  re-approval is owner decision O1.
+  re-approval is decision O1.
 
 ### 6.10 SDK and sensor
 
@@ -490,12 +488,12 @@ nothing else.
 ### 6.11 UI
 
 - Sensor drawer:
-  - "Tools & capacity" shows each tool's capabilities (ui#589) and, from
+  - "Tools & capacity" shows each tool's capabilities (openctemio/ui#589) and, from
     Phase 3, its target types.
   - A new "Manifest" section shows the current digest (short), source
     (sensor / derived), received time, the ignored items, and the version
     history with a diff between two versions.
-- The first-heartbeat review (ui#583) becomes the manifest review: it reads
+- The first-heartbeat review (openctemio/ui#583) becomes the manifest review: it reads
   the current manifest, so it works the same before the first heartbeat when
   the sensor registered first.
 - Approval (RFC-032 Phase 2) shows the manifest and records its digest.
@@ -519,7 +517,7 @@ nothing else.
 
 | Phase | Scope | Effort | Risk |
 |---|---|---|---|
-| **P0** (done, in review) | D1–D3 fixes (§3.2): ceiling vs slots in SDK and API, per-tool kind and capabilities end to end, nuclei and recon version parsing, UI wording and chips. api#714, sdk-go#106, ui#589, sensor#99. | S (done) | low |
+| **P0** (done, in review) | D1–D3 fixes (§3.2): ceiling vs slots in SDK and API, per-tool kind and capabilities end to end, nuclei and recon version parsing, UI wording and chips. api#714, sdk-go#106, openctemio/ui#589, sensor#99. | S (done) | low |
 | **P1** | API: migration (`sensor_manifests`, `sensors.manifest_digest`, `manifest_at`, `manifest_source`), `PUT /api/v2/sensor/manifest` with `accepted`/`ignored`, `manifest` feature, heartbeat `manifest_digest` + `send_manifest`, derived manifests, version-diff events, management reads `GET /api/v1/sensors/{id}/manifest` and `/manifests`. SDK: `core.Manifest`, `BuildManifest`, digest, `client.PutManifest`, `BaseSensor` register / echo / re-send. Sensor: SDK bump. Docs. | M (api ≈ 3 d, sdk ≈ 2 d) | low: additive, the heartbeat stays full |
 | **P2** | §6.12: slim heartbeat after acknowledgement with a `content` freshness block, `policy` + `heartbeat.omit_inventory` in the answer + `GET /api/v2/sensor/manifest`, SDK refuses disallowed tools (`tool-not-allowed`), `manifest_changed` event, UI manifest section with history diff. | M | medium: slimming must be exact, so it is gated on `omit_inventory` acknowledged per sensor and kill-switchable (`SENSOR_SLIM_HEARTBEAT`) |
 | **P3** | `core.TargetTyper` + target types for the bundled scanners; target-type registry check; RFC-030 selection by capability × target type with the chosen tool written into the command. | M–L | medium: routing change, behind the RFC-030 rollout |
@@ -534,9 +532,9 @@ nothing else.
 | sensor | SDK bump only. Verified end to end: a sensor built with the SDK branch registered against this API (`source = sensor`, ceiling 0, model dynamic, 4 tools); a second version followed when its content manager installed nuclei templates and the trivy DB |
 | ui | Phase 2 (manifest section) |
 
-Phase 0 and Phase 1 are live (2026-10-02): sensor v0.6.3 shows nuclei
+Phase 0 and Phase 1 were verified on a deployment (2026-10-02): sensor v0.6.3 shows nuclei
 v3.11.1 with per-tool capabilities, effective capacity is 4, and a
-heartbeat-derived manifest exists for sensor-docker-01.
+heartbeat-derived manifest exists for the sensor.
 
 ## 9. Alternatives considered
 
@@ -546,7 +544,7 @@ heartbeat-derived manifest exists for sensor-docker-01.
   Rejected.
 - **Send the manifest only once, at enrollment.** Tools are installed and
   upgraded, and content changes daily. A one-time registration goes stale.
-  Nomad and Tenable both re-send on change. Rejected.
+  Rejected.
 - **Let the platform poll the sensor for its manifest.** Sensors are
   outbound-only (RFC-023), so there is nothing for the platform to poll.
   Rejected.
@@ -556,19 +554,19 @@ heartbeat-derived manifest exists for sensor-docker-01.
   revisit it if manifests are ever relayed through a third party.
 - **Digest computed only by the sensor.** Two code bases would then have to
   agree on canonical bytes forever, and any drift would cause re-send loops.
-  The platform computes the digest and the sensor echoes it (xDS-style).
+  The platform computes the digest and the sensor echoes it.
   Chosen instead.
-- **Labels (GitHub runners, Buildkite tags) instead of a structured
+- **Free-form labels instead of a structured
   manifest.** Labels cannot carry versions, per-tool capabilities or content.
   They can come later as an optional `labels` member if operators need
   free-form routing hints.
 
 ## 10. Decisions
 
-### 10.1 Technical decisions taken (no owner input needed)
+### 10.1 Technical decisions taken
 
 M1–M9 and M12 (§2) are protocol and implementation choices inside the model
-the owner already accepted in RFC-029 §4.3.1 and RFC-032 §6.6: the sensor
+already accepted in RFC-029 §4.3.1 and RFC-032 §6.6: the sensor
 claims, policy narrows. They change no permission, no data-scope rule and no
 user-visible policy. Phase 1 implements M1–M9 except the parts marked
 Phase 2+.
@@ -582,14 +580,14 @@ Also decided here:
 - `ignored` items are visible to administrators in the API and, from Phase 2,
   in the UI.
 
-### 10.2 Owner decisions (2026-10-02)
+### 10.2 Decisions (2026-10-02)
 
-The owner accepted each recommendation below as written. §6.12 is the
+Each recommendation below was accepted as written. §6.12 is the
 resulting Phase 2 design.
 
 | # | Decision |
 |---|---|
-| O1 | **No re-approval** when a manifest adds a tool or changes its build. The change is recorded as an event (`manifest_changed`), and the administrator's tool limit still governs what the tool may do. |
+| O1 | **No re-approval** when a manifest adds a tool or changes its build. The change is recorded as an event (`manifest_changed`), and the sensor grant still governs what the tool may do. |
 | O2 | **The SDK refuses** commands for tools outside the platform's policy. The platform returns the policy (allowed tools, capabilities, capacity) in the manifest answer and on `GET /api/v2/sensor/manifest`. |
 | O3 | **Slim heartbeats.** Once the manifest is acknowledged, heartbeats drop the tool list. This is per sensor and has a server kill switch (`SENSOR_SLIM_HEARTBEAT`). |
 | O4 | **Resources** (CPU, memory) from the manifest are visible to `sensors:read`. |
@@ -603,47 +601,126 @@ The questions as they were put, with the recommendation:
 | O3 | **Slim heartbeats** (Phase 2): drop the inventory from heartbeats once the manifest is acknowledged? It saves the inventory's bytes (measured later: about 20 % of a heartbeat). | **Yes**, gated per sensor on an answer that says so (a platform from before Phase 2 never does), with a server kill switch. |
 | O4 | Should the manifest's `resources` (cores, memory) be **shown to tenant users** with `sensors:read`, or only to administrators? It is host sizing information, comparable to the hostname and IP already shown. | Show to `sensors:read`, as hostname and IP are today. |
 
-## 11. Sources
+## 11. Config report
 
-- Kubernetes, Node status (capacity, allocatable, node info, heartbeats and
-  Lease): https://kubernetes.io/docs/reference/node/node-status/
-- Kubernetes, Reserve compute resources (allocatable formula):
-  https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/
-- Kubernetes, Nodes (`status.images`, node info):
-  https://kubernetes.io/docs/concepts/architecture/nodes/
-- Kubelet configuration (`nodeStatusUpdateFrequency`,
-  `nodeStatusReportFrequency`, `nodeLeaseDurationSeconds`):
-  https://raw.githubusercontent.com/kubernetes/kubernetes/master/staging/src/k8s.io/kubelet/config/v1beta1/types.go
-- Kubernetes, well-known labels:
-  https://kubernetes.io/docs/reference/labels-annotations-taints/
-- Kubernetes, scheduling GPUs (device plugins, extended resources):
-  https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/
-- Node Feature Discovery:
-  https://kubernetes-sigs.github.io/node-feature-discovery/stable/get-started/introduction.html
-- Nomad architecture (register, heartbeat):
-  https://developer.hashicorp.com/nomad/docs/concepts/architecture
-- Nomad `Node.Register` / `Node.UpdateStatus`:
-  https://raw.githubusercontent.com/hashicorp/nomad/main/nomad/node_endpoint.go
-- Nomad client fingerprint updates (`updateNodeFromFingerprint`,
-  `batchNodeUpdates`): https://raw.githubusercontent.com/hashicorp/nomad/main/client/client.go
-- Nomad computed node class (`ComputeClass`, `unique.` exclusion):
-  https://raw.githubusercontent.com/hashicorp/nomad/main/nomad/structs/node_class.go
-- Nomad `node status` (attributes, driver Detected/Healthy):
-  https://developer.hashicorp.com/nomad/docs/commands/node/status
-- Nomad server heartbeat settings:
-  https://developer.hashicorp.com/nomad/docs/configuration/server
-- GitHub Actions self-hosted runner labels:
-  https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/using-labels-with-self-hosted-runners
-- GitHub Actions adding self-hosted runners (registration token):
-  https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/adding-self-hosted-runners
-- Buildkite agent API (`AgentRegisterRequest`, `AgentRegisterResponse`,
-  `Heartbeat`): https://pkg.go.dev/github.com/buildkite/agent/v4/api
-- Buildkite `agent start` (tags, ping mode):
-  https://buildkite.com/docs/agent/v3/cli-start
-- Tenable Vulnerability Management, Agents (linking, check-in, reported
-  metadata): https://docs.tenable.com/vulnerability-management/Content/Settings/Sensors/Agents.htm
-- Envoy xDS protocol (ACK/NACK, `version_info`, `error_detail`):
-  https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol
-- Consul anti-entropy: https://developer.hashicorp.com/consul/docs/concept/consistency
+The manifest says what a sensor *is*. The config report says whether it is
+*set up correctly*: the results of preflight checks the sensor runs on itself
+(state volume, key renewal, tools, TLS trust, proxy inheritance, local policy,
+settings it does not know) that used to reach only its stderr. It is a
+separate document from the manifest because check results change more often
+than the manifest (decision F2).
+
+**Wire.**
+- Hello feature `config_report` (`protov2.FeatureConfigReport`). A sensor sends
+  nothing new to a platform that does not list it.
+- `PUT /api/v2/sensor/config-report` (`protov2.ConfigReportPath`), sensor-key
+  authenticated like `PUT /manifest`, on the per-sensor control-write budget.
+  JSON, at most 65536 bytes (`protov2.MaxConfigReportBytes`; 413
+  `content-too-large` with the limit). Not JSON or nested deeper than 6: 400
+  `invalid-request`. Schema other than 1 or no `checks` array: 422
+  `config-report-invalid`. Inactive sensor: 403 `scope-denied`. The answer is
+  `{config_report_digest, changed, ignored[]}`.
+- Heartbeat member `config_report: {digest, health, fail, warn, observed_at}`
+  (v2 and v1 bodies). The heartbeat UPDATE stores the echoed digest in
+  `sensors.config_heartbeat_digest` (NULL when absent). The v2 answer carries
+  the action `send_config_report` when the digest is non-empty and differs
+  from the stored one.
+- Document (schema 1): `observed_at`, `trigger` (start, change, requested),
+  `runtime.kind`, the sensor's `config_health`, `checks[]` (id, status,
+  severity, code, typed `params`, `keys`, `summary`, `excerpt`, `blocks`),
+  `settings[]` (name, set, source, secret, valid) and `truncated`.
+
+**Limits and sanitizing** (`pkg/domain/sensor/config_report.go`,
+`SanitizeConfigReport`). Every rule is enforced by the platform, whatever the
+SDK did:
+- closed sets for status, severity, trigger, runtime kind, setting source and
+  blocks; id and code by pattern; an invalid status or id drops the check;
+- `params` typed and re-validated: exactly one of int (|n| ≤ 1e12), bool,
+  enum, path (absolute, ≤ 256 bytes, no control or bidi characters, no `..`
+  segment), host (name or IP; no scheme, user info or port), version, name,
+  names (≤ 8); anything else is dropped and its value never echoed;
+- `summary` ≤ 300 runes and `excerpt` ≤ 512 bytes, control and bidi
+  characters replaced; stored as data;
+- at most 200 checks (unique by id and canonical params), 300 settings, 16
+  params, 8 keys, 8 blocks; the rest is listed in `ignored` as one `limit`
+  item;
+- a settings entry keeps only name, set, source, secret and valid. Any other
+  member, `value` above all, is dropped unread and never stored or echoed;
+- unknown members anywhere are dropped and listed (`unknown-member`), never
+  an error.
+
+The platform computes its own digest ("sha256:" + hex over the canonical JSON
+of the sanitized report with `observed_at` emptied, so re-running the same
+checks does not change it) and its own health; it never trusts the sensor's
+`config_health`.
+
+**Storage** (migration 001061). `sensor_config_reports` keeps the latest
+report per sensor (primary key `sensor_id`, `tenant_id NOT NULL`, digest,
+health, fail/warn counts, `report jsonb`, `observed_at`, `received_at`).
+`sensors.config_report_digest` and `config_health` point at it. The same
+digest only moves `received_at`. Every read and write is tenant-scoped.
+
+**Health.** The rollup over the sanitized checks: `blocked` when a `fail`
+blocks `role:*`, `impaired` on any other fail or error, `attention` on a warn
+of severity warning or critical, `ok` otherwise. `AssessHealth` gains
+`config_check_failed` (critical), `config_check_warning` (warning) and
+`config_report_stale` (warning: the latest heartbeat echoed another digest or
+none, while the sensor is online). A stale report never raises the failed or
+warning reasons. The fleet `degraded` state works unchanged, and the sensor
+list and detail carry `config_health`.
+
+**Explanations come from the platform.** Titles, the "why" text and fix
+snippets (env, compose, helm) come only from the catalog in
+`internal/app/sensor/config_check_catalog.go`, keyed by check id and code
+(decision F12). Parameters go into the why as plain text and into the
+snippets escaped per format: shell-quoted for env (a value with a control
+character drops the env snippet), YAML-quoted for compose and helm. A drift
+test fails when a contract id or code has no entry. A check id the catalog
+does not know (a newer sensor) is shown with `known: false`, its id as the
+title, and no why or fix.
+
+**Management read.** `GET /api/v1/sensors/{id}/config-report`
+(`sensors:read`, tenant-scoped, 404 for another tenant's sensor) returns
+`state` (reported, derived, none), `stale`, `health`, times, `runtime_kind`,
+counts, the explained checks (sorted fail, error, warn, skip, pass, then
+group, then id) and the declared settings. A sensor that sends no report gets
+a checklist derived from its heartbeat: each reported tool's install state
+(`tool.<name>.binary`), `tools.available` and `policy.local`, with a
+`derived_note` asking for an upgrade.
+
+**What a report cannot do.** It only informs: P0 changes no dispatch (that
+is P1, decision F7), adds no route on the sensor, and carries no
+secret values.
+
+**Threat model**:
+
+| # | Threat | Control |
+|---|---|---|
+| T1 | A compromised sensor phishes the administrator with "fix" text | Fixes and wording come only from the platform catalog; sensor text is data, rendered as text; params are typed and escaped per format |
+| T2 | A compromised sensor stores junk or script through the report | 64 KiB cap, depth 6, closed sets, typed params, bounded stripped text, per-sensor write budget, one row per sensor, digest dedup |
+| T4 | A sensor makes the platform persist a secret | Settings entries are reduced to name/set/source/secret/valid; a `value` is dropped unread and never echoed (canary tests on the stored row and the read) |
+| T8 | Another tenant reads a sensor's report | `tenant_id NOT NULL`, every query tenant-scoped, 404 cross-tenant (BOLA tests) |
+| T9 | A network attacker forges a report | The same authenticated channel as the heartbeat |
+
+Tests: `config_report_test.go` (sanitizing, digest, rollup, stale rule,
+derived checklist), `config_check_catalog_test.go` (contract drift, escaping),
+`sensor_config_report_db_test.go` in `internal/infra/postgres` (tenant
+scoping, migration up/down/up) and `internal/infra/http/routes` (wire,
+dedup, heartbeat action, management read, isolation).
+
+## 12. Tool contracts in the manifest
+
+Tools ported to the tool contract (sdk-go `docs/rfcs/sensor-sdk-v2.md`) add
+`contract: {api_version, digest, version, class, tier, network, consumes,
+produces}` to their `tools[]` entry. The platform validates it whole, stores
+it inside the manifest version (per sensor, per tenant, content-addressed by
+the manifest digest; no cross-tenant table), diffs it, shows it on the
+Manifest tab and uses `produces` to narrow the output-type binding of the
+tool's command-bound reports (it can only narrow). Sensors without contracts
+are unchanged. Details: [architecture/sensors.md](../architecture/sensors.md#tool-contracts),
+[architecture/scan-stages.md §4](../architecture/scan-stages.md).
+
+## 13. Sources
+
 - RFC 8785, JSON Canonicalization Scheme: https://www.rfc-editor.org/rfc/rfc8785
 - RFC 9457, Problem Details for HTTP APIs: https://www.rfc-editor.org/rfc/rfc9457

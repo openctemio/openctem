@@ -100,3 +100,20 @@ func VerifyTokenHashAny(token, storedHash, pepper string) bool {
 	legacy := HashToken(token)
 	return subtle.ConstantTimeCompare([]byte(legacy), []byte(storedHash)) == 1
 }
+
+// pepperIDContext labels the pepper identifier so it is never an HMAC the
+// application uses for anything else.
+const pepperIDContext = "openctem/pepper-id/v1"
+
+// PepperID returns a public identifier of a token-hash pepper: 16 hex
+// characters of HMAC(pepper, label). Stored next to a hash, it tells which
+// pepper made the hash without revealing the pepper. An empty pepper (plain
+// SHA-256 hashes) is "plain".
+func PepperID(pepper string) string {
+	if pepper == "" {
+		return "plain"
+	}
+	mac := hmac.New(sha256.New, []byte(pepper))
+	mac.Write([]byte(pepperIDContext))
+	return hex.EncodeToString(mac.Sum(nil))[:16]
+}

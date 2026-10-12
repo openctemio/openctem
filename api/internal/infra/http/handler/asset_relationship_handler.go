@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -19,13 +19,13 @@ import (
 
 // AssetRelationshipHandler handles asset relationship HTTP requests.
 type AssetRelationshipHandler struct {
-	service   *app.AssetRelationshipService
+	service   *assetapp.AssetRelationshipService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAssetRelationshipHandler creates a new AssetRelationshipHandler.
-func NewAssetRelationshipHandler(svc *app.AssetRelationshipService, v *validator.Validator, log *logger.Logger) *AssetRelationshipHandler {
+func NewAssetRelationshipHandler(svc *assetapp.AssetRelationshipService, v *validator.Validator, log *logger.Logger) *AssetRelationshipHandler {
 	return &AssetRelationshipHandler{
 		service:   svc,
 		validator: v,
@@ -120,10 +120,14 @@ func (h *AssetRelationshipHandler) ListByAsset(w http.ResponseWriter, r *http.Re
 	query := r.URL.Query()
 
 	// Parse filter
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
+	}
 	filter := asset.RelationshipFilter{
 		Direction: query.Get("direction"),
-		Page:      parseQueryInt(query.Get("page"), 1),
-		PerPage:   parseQueryIntBounded(query.Get("per_page"), 50, 1, MaxPerPage),
+		Page:      paging.Page,
+		PerPage:   paging.PerPage,
 	}
 
 	if types := query.Get("types"); types != "" {
@@ -209,7 +213,7 @@ func (h *AssetRelationshipHandler) Create(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input := app.CreateRelationshipInput{
+	input := assetapp.CreateRelationshipInput{
 		TenantID:        tenantID,
 		SourceAssetID:   req.SourceAssetID,
 		TargetAssetID:   req.TargetAssetID,
@@ -265,7 +269,7 @@ func (h *AssetRelationshipHandler) Update(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	input := app.UpdateRelationshipInput{
+	input := assetapp.UpdateRelationshipInput{
 		Description:    req.Description,
 		Confidence:     req.Confidence,
 		ImpactWeight:   req.ImpactWeight,
@@ -310,6 +314,19 @@ func (h *AssetRelationshipHandler) Delete(w http.ResponseWriter, r *http.Request
 //
 // Always returns 200 with a results array, even if every item failed.
 // The caller decides what to do based on per-item statuses.
+//
+// @Summary      Create relationships in bulk
+// @Description  Creates relationships from one source asset to many targets; per-item results, never aborts the batch.
+// @Tags         Asset Relationships
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  string                          true  "Source asset ID"
+// @Param        body  body  BatchCreateRelationshipRequest  true  "Targets"
+// @Success      200  {object}  assetapp.BatchCreateRelationshipResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /assets/{id}/relationships/batch [post]
 func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	pathAssetID := chi.URLParam(r, "id")
@@ -326,9 +343,9 @@ func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Re
 	}
 
 	// Translate the wire DTOs to service inputs.
-	items := make([]app.BatchCreateRelationshipInput, 0, len(req.Items))
+	items := make([]assetapp.BatchCreateRelationshipInput, 0, len(req.Items))
 	for _, w := range req.Items {
-		items = append(items, app.BatchCreateRelationshipInput{
+		items = append(items, assetapp.BatchCreateRelationshipInput{
 			TargetAssetID:   w.TargetAssetID,
 			Type:            w.Type,
 			Description:     w.Description,
@@ -350,31 +367,6 @@ func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
-}
-
-// UsageStats handles GET /api/v1/relationships/usage-stats
-//
-// Returns the per-type usage count for every relationship type in the
-// registry, joined with each type's display metadata. Used by tenant
-// admins to see which types are actually being used and prune the
-// registry based on real data instead of guesses. Types with count=0
-// are returned (so the response is "every type in the registry, with
-// its count").
-func (h *AssetRelationshipHandler) UsageStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	usage, err := h.service.GetRelationshipTypeUsage(r.Context(), tenantID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":  usage,
-		"total": len(usage),
-	})
 }
 
 // =============================================================================

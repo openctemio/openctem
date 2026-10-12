@@ -1,5 +1,8 @@
 # Module coupling & the path to feature-toggleable modules
 
+> The current module model (core, overrides, bundles, every enforced surface) is in
+> [modules.md](modules.md); its direction is RFC-064. This page covers code coupling.
+
 > Question this answers: **"If we later don't need a module (e.g. pentesting),
 > can the system keep running instead of dying?"** — plus a concrete, phased
 > plan to get there.
@@ -71,12 +74,29 @@
   6. `FindingFilter` pentest fields + campaign-membership SQL subqueries.
   7. `VulnerabilityService.guardNotPentestManaged` / `assertPentestMember` on
      generic update/delete/bulk paths.
-  8. `ctem_cycle_handler.go` `LEFT JOIN pentest_findings` (breaks if tables dropped).
+  8. (gone) `ctem_cycle_handler.go` no longer joins a pentest table; the
+     deprecated `pentest_findings` table was dropped in migration 001612.
   9. Attachment handler access-checker = `svc.Pentest`.
   10. `compliance_service.go` / `tenant_service.go` type-alias shims.
   11. `permission` (13 constants), `module` presets + hard `pentest→findings`
       dependency edge, `tenant.PentestSettings`, `jira` status mappings.
   12. Orphaned `finding_number` column (no Go readers).
+
+**One store for pentest findings.** A pentest finding is a row of `findings`
+with `source = 'pentest'` and `pentest_campaign_id`; its pentest-only fields
+(steps to reproduce, PoC, evidence, request/responses, impacts, remediation
+guidance and deadline, OWASP category, affected targets, references, reviewer,
+MITRE technique, CVSS version) live in `findings.metadata` (`SourceMetadata()`,
+`compliance.PentestSourceMetadata`). Every pentest read and write goes through
+`PentestService` on that table: campaign finding lists, the all-findings list,
+get/update/status/delete, retests (`pentest_retests.finding_id` references
+`findings`), campaign stats (`PentestCampaignRepository.GetStats`/`GetStatsByIDs`,
+tenant-scoped aggregates over `findings`), reports/PDF, exports and the MCP
+tools. The deprecated `pentest_findings` table had no writer; migration 001612
+copied its rows into `findings` (same id, tenant and campaign; an assignee,
+author or reviewer outside the tenant is dropped; a row whose campaign is in
+another tenant is not copied) and dropped it. The `pentest:findings:*`
+permissions name the feature and are unchanged.
 
 ## Plan: toward a modular monolith with feature flags
 
@@ -90,7 +110,7 @@ them per-tenant (60s TTL), and **403s (`MODULE_NOT_ENABLED`) a disabled module's
 route group**. It is **fail-open**: nil gate, missing tenant, core module, or any
 lookup miss → allowed, so it can never block legitimate traffic. It is now wired
 to **26 route groups** in `routes/routes.go` — including pentest, compliance,
-attack-simulation, threat-intel, remediation, scan-pipelines, workflows,
+attack-simulation, threat-intel, remediation, scan workflows, automations,
 attack-surface, exposures, suppressions, components, relationships, credentials,
 scanner-templates, template-sources, IOCs, control-testing, reports, and the CTEM
 groups (ctem-cycles, attacker-profiles, business-services, compensating-controls,
@@ -117,7 +137,6 @@ Un-weave pentest from core so it becomes a real bolt-on:
 - Register pentest **permissions dynamically** rather than baking 13 constants
   into the shared `permission` package.
 - Make the attachment access-check a **pluggable checker**, not `svc.Pentest`.
-- Rewrite `ctem_cycle_handler`'s `pentest_findings` JOIN behind the interface.
 
 ### Cross-cutting — enforce the layering with a lint — **DONE (domain layer)**
 A **depguard** rule (`core-domain-isolation` in `.golangci.yml`) now forbids the

@@ -553,6 +553,30 @@ func (r *IntegrationRepository) ListDueForSync(ctx context.Context, provider int
 	return result, nil
 }
 
+// ClaimSyncDue moves an integration's next_sync_at from expected (the value
+// the caller read; nil = NULL) to next, only if it still holds expected.
+// It reports whether this caller won: two API replicas reading the same due
+// integration both try, exactly one moves it and queues the sync
+// (docs/rfcs/RFC-047-tenable-sc-sensor-connector.md §10). Tenant-scoped.
+func (r *IntegrationRepository) ClaimSyncDue(ctx context.Context, tenantID, id shared.ID, expected *time.Time, next time.Time) (bool, error) {
+	var exp any
+	if expected != nil {
+		exp = expected.UTC()
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE integrations SET next_sync_at = $4, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND next_sync_at IS NOT DISTINCT FROM $3::timestamptz`,
+		tenantID.String(), id.String(), exp, next.UTC())
+	if err != nil {
+		return false, fmt.Errorf("claim integration sync: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim integration sync: %w", err)
+	}
+	return n == 1, nil
+}
+
 // scanIntegration scans a single row into an Integration.
 func (r *IntegrationRepository) scanIntegration(row *sql.Row) (*integration.Integration, error) {
 	var (

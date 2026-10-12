@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -104,7 +105,7 @@ func TestCreateCampaign_SeedsProgress(t *testing.T) {
 		TenantID:      shared.NewID().String(),
 		Name:          "Fix Log4j",
 		FindingFilter: map[string]any{"cve_ids": []any{"CVE-2021-44228"}},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestCreateCampaign_EmptyFilter_TracksNothing(t *testing.T) {
 		TenantID: shared.NewID().String(),
 		Name:     "Unscoped",
 		// no FindingFilter → empty scope
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestCreateCampaign_NoCounter_StaysZero(t *testing.T) {
 	c, err := svc.CreateCampaign(context.Background(), CreateRemediationCampaignInput{
 		TenantID: shared.NewID().String(),
 		Name:     "Plain CRUD",
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestGetCampaign_RefreshesLive(t *testing.T) {
 		TenantID:      tid,
 		Name:          "C",
 		FindingFilter: map[string]any{"severities": []any{"critical"}},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
@@ -203,11 +204,11 @@ func TestReconcileProgress_AutoCompletes(t *testing.T) {
 		TenantID:      tid,
 		Name:          "Activate me",
 		FindingFilter: map[string]any{"severities": []any{"critical"}},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
-	if _, err := svc.UpdateCampaignStatus(context.Background(), tid, c.ID().String(), string(remediation.CampaignStatusActive)); err != nil {
+	if _, err := svc.UpdateCampaignStatus(context.Background(), tid, c.ID().String(), string(remediation.CampaignStatusActive), auditapp.AuditContext{}); err != nil {
 		t.Fatalf("activate: %v", err)
 	}
 
@@ -268,5 +269,51 @@ func TestCampaignFilterToFindingFilter_MapsKeys(t *testing.T) {
 	}
 	if f.Search == nil || *f.Search != "log4j" {
 		t.Fatalf("search not mapped")
+	}
+}
+
+type offModules map[string]bool // tenant id -> remediation off
+
+func (m offModules) TenantDisabledModules(_ context.Context, tenantID string) map[string]bool {
+	return map[string]bool{"remediation": m[tenantID]}
+}
+
+// A tenant with the remediation module off keeps its campaigns as they are:
+// no counts, no auto-complete. Another tenant reconciles normally.
+func TestReconcileProgress_SkipsTenantsWithRemediationOff(t *testing.T) {
+	repo := newFakeCampaignRepo()
+	counter := &fakeCounter{total: 3, resolved: 0}
+	svc := newService(repo, counter)
+	ctx := context.Background()
+
+	activate := func(tid string) string {
+		c, err := svc.CreateCampaign(ctx, CreateRemediationCampaignInput{
+			TenantID: tid, Name: "c " + tid, FindingFilter: map[string]any{"severities": []any{"critical"}},
+		}, auditapp.AuditContext{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.UpdateCampaignStatus(ctx, tid, c.ID().String(), string(remediation.CampaignStatusActive), auditapp.AuditContext{}); err != nil {
+			t.Fatal(err)
+		}
+		return c.ID().String()
+	}
+	off, on := shared.NewID().String(), shared.NewID().String()
+	offID, onID := activate(off), activate(on)
+	svc.SetModuleGuard(offModules{off: true})
+
+	counter.resolved = 3
+	updated, err := svc.ReconcileProgress(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated != 1 {
+		t.Fatalf("updated %d, want 1 (only the tenant with remediation on)", updated)
+	}
+	if st := repo.store[offID].Status(); st != remediation.CampaignStatusActive {
+		t.Errorf("campaign of the tenant with remediation off: status %s, want active", st)
+	}
+	if st := repo.store[onID].Status(); st != remediation.CampaignStatusCompleted {
+		t.Errorf("campaign of the tenant with remediation on: status %s, want completed", st)
 	}
 }

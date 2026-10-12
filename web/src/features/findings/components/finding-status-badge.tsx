@@ -26,6 +26,7 @@ import { FINDING_STATUS_CONFIG } from '../types'
 // instead of crashing on `config.icon`.
 const UNKNOWN_STATUS_CONFIG: StatusConfig = {
   label: 'Unknown',
+  labelKey: '',
   color: '',
   bgColor: 'bg-muted',
   textColor: 'text-muted-foreground',

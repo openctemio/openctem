@@ -9,7 +9,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // =============================================================================
@@ -26,20 +25,28 @@ type ScanConfigExport struct {
 	// Targets
 	AssetGroupIDs []string `json:"asset_group_ids,omitempty"`
 	Targets       []string `json:"targets,omitempty"`
+	// TargetOptions tunes how each run resolves the dynamic selectors among
+	// Targets (RFC-068); omitted when every option is the default.
+	TargetOptions *scan.TargetOptions `json:"target_options,omitempty"`
+	// Intensity is the probe ceiling (RFC-071).
+	Intensity string `json:"intensity,omitempty"`
 
 	// Scan Type
-	ScanType      string         `json:"scan_type"`
-	PipelineID    *string        `json:"pipeline_id,omitempty"`
-	ScannerName   string         `json:"scanner_name,omitempty"`
-	ScannerConfig map[string]any `json:"scanner_config,omitempty"`
-	TargetsPerJob int            `json:"targets_per_job"`
+	ScanType       string         `json:"scan_type"`
+	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
+	ScannerName    string         `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
+	TargetsPerJob  int            `json:"targets_per_job"`
 
 	// Schedule
 	ScheduleType     string  `json:"schedule_type"`
 	ScheduleCron     string  `json:"schedule_cron,omitempty"`
+	ScheduleRRule    string  `json:"schedule_rrule,omitempty"`
 	ScheduleDay      *int    `json:"schedule_day,omitempty"`
 	ScheduleTime     *string `json:"schedule_time,omitempty"`
 	ScheduleTimezone string  `json:"schedule_timezone"`
+	// ScheduleRunAt is the one run of a once schedule (RFC 3339).
+	ScheduleRunAt *time.Time `json:"schedule_run_at,omitempty"`
 
 	// Routing
 	Tags              []string `json:"tags,omitempty"`
@@ -62,10 +69,23 @@ type ScanConfigExport struct {
 // configExportVersion is the current version of the export format.
 const configExportVersion = "1.0"
 
+// ExportOptions shape an export.
+type ExportOptions struct {
+	// RedactSecrets masks secret-looking scanner_config values (see
+	// scan.RedactConfigSecrets). Set for callers that may read a scan but
+	// not edit it.
+	RedactSecrets bool
+}
+
 // ExportConfig exports a scan configuration as JSON bytes.
 // It strips runtime data (status, results, timestamps) and returns
 // only the configuration fields needed to recreate the scan.
 func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) ([]byte, error) {
+	return s.ExportConfigWithOptions(ctx, tenantID, scanID, ExportOptions{})
+}
+
+// ExportConfigWithOptions is ExportConfig with options.
+func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID shared.ID, opts ExportOptions) ([]byte, error) {
 	s.logger.Info("exporting scan config", "scan_id", scanID.String())
 
 	sc, err := s.scanRepo.GetByTenantAndID(ctx, tenantID, scanID)
@@ -82,8 +102,10 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		TargetsPerJob:       sc.TargetsPerJob,
 		ScheduleType:        string(sc.ScheduleType),
 		ScheduleCron:        sc.ScheduleCron,
+		ScheduleRRule:       sc.ScheduleRRule,
 		ScheduleDay:         sc.ScheduleDay,
 		ScheduleTimezone:    sc.ScheduleTimezone,
+		ScheduleRunAt:       sc.ScheduleRunAt,
 		RunOnTenantRunner:   sc.RunOnTenantRunner,
 		SensorPreference:    string(sc.SensorPreference),
 		TimeoutSeconds:      sc.TimeoutSeconds,
@@ -91,6 +113,14 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		RetryBackoffSeconds: sc.RetryBackoffSeconds,
 		ExportedAt:          time.Now().UTC().Format(time.RFC3339),
 		Version:             configExportVersion,
+	}
+	if opts.RedactSecrets {
+		export.ScannerConfig = scan.RedactConfigSecrets(sc.ScannerConfig)
+	}
+	export.Intensity = string(sc.EffectiveIntensity())
+	if !sc.TargetOptions.IsZero() {
+		o := sc.TargetOptions
+		export.TargetOptions = &o
 	}
 
 	if sc.ProfileID != nil && !sc.ProfileID.IsZero() {
@@ -114,10 +144,10 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 		}
 	}
 
-	// Convert pipeline ID
-	if sc.PipelineID != nil && !sc.PipelineID.IsZero() {
-		pid := sc.PipelineID.String()
-		export.PipelineID = &pid
+	// Convert scan workflow ID
+	if sc.ScanWorkflowID != nil && !sc.ScanWorkflowID.IsZero() {
+		pid := sc.ScanWorkflowID.String()
+		export.ScanWorkflowID = &pid
 	}
 
 	// Convert schedule time
@@ -147,30 +177,24 @@ func (s *Service) ExportConfig(ctx context.Context, tenantID, scanID shared.ID) 
 	return data, nil
 }
 
-// decodeScanConfigExport parses an exported scan configuration. Files
-// exported before the agent → sensor rename carry the selection mode under
-// its old key; it is read so such a file does not silently fall back to
-// "auto".
+// decodeScanConfigExport parses an exported scan configuration.
 func decodeScanConfigExport(data []byte) (ScanConfigExport, error) {
 	var export ScanConfigExport
-	if err := json.Unmarshal(data, &export); err != nil {
-		return export, err
-	}
-	if export.SensorPreference == "" {
-		var raw map[string]json.RawMessage
-		if json.Unmarshal(data, &raw) == nil {
-			if v, ok := raw[legacyv1.ScanExportKeySensorPreference]; ok {
-				_ = json.Unmarshal(v, &export.SensorPreference)
-			}
-		}
-	}
-	return export, nil
+	err := json.Unmarshal(data, &export)
+	return export, err
 }
 
 // ImportConfig creates a new scan from imported JSON configuration.
 // The imported config is validated and a new scan entity is created.
-func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte) (*scan.Scan, error) {
+// ImportConfig creates a scan from an exported configuration. The importer
+// becomes its owner (created_by), and the create path checks their act scope
+// on the direct targets; a scan without an owner would run its schedule as
+// the system (research 21b H3, RFC-050 W2).
+func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte, actorID string) (*scan.Scan, error) {
 	s.logger.Info("importing scan config", "tenant_id", tenantID.String())
+	if actor, err := shared.IDFromString(actorID); err != nil || actor.IsZero() {
+		return nil, ErrScanActorRequired
+	}
 
 	export, err := decodeScanConfigExport(data)
 	if err != nil {
@@ -196,6 +220,13 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 	}
 
 	// Build create input from export
+	// A one-off run is a moment, not a portable setting: one that is no
+	// longer ahead imports as a manual scan rather than failing the import.
+	if export.ScheduleType == string(scan.ScheduleOnce) &&
+		(export.ScheduleRunAt == nil || export.ScheduleRunAt.Before(time.Now().Add(scan.MinOnceLead))) {
+		export.ScheduleType = string(scan.ScheduleManual)
+		export.ScheduleRunAt = nil
+	}
 	input := CreateScanInput{
 		TenantID:            tenantID.String(),
 		Name:                export.Name,
@@ -206,10 +237,14 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		ScannerName:         export.ScannerName,
 		ScannerConfig:       export.ScannerConfig,
 		TargetsPerJob:       export.TargetsPerJob,
+		TargetOptions:       export.TargetOptions,
+		Intensity:           export.Intensity,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
+		ScheduleRRule:       export.ScheduleRRule,
 		ScheduleDay:         export.ScheduleDay,
 		ScheduleTime:        scheduleTime,
+		RunAt:               export.ScheduleRunAt,
 		Timezone:            export.ScheduleTimezone,
 		Tags:                export.Tags,
 		TenantRunner:        export.RunOnTenantRunner,
@@ -218,6 +253,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,
 		RetryBackoffSeconds: export.RetryBackoffSeconds,
+		CreatedBy:           actorID,
 	}
 
 	// Set primary asset group ID for backward compatibility
@@ -225,9 +261,9 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		input.AssetGroupID = export.AssetGroupIDs[0]
 	}
 
-	// Set pipeline ID if workflow type
-	if export.PipelineID != nil {
-		input.PipelineID = *export.PipelineID
+	// Set scan workflow ID if workflow type
+	if export.ScanWorkflowID != nil {
+		input.ScanWorkflowID = *export.ScanWorkflowID
 	}
 
 	// Use the existing CreateScan method which handles all validation

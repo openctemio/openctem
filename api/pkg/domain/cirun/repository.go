@@ -1,0 +1,176 @@
+package cirun
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+// Errors.
+var (
+	ErrTrustConfigNotFound = fmt.Errorf("%w: CI trust configuration not found", shared.ErrNotFound)
+	ErrRunNotFound         = fmt.Errorf("%w: CI run not found", shared.ErrNotFound)
+	ErrPolicyNotFound      = fmt.Errorf("%w: CI gate policy not found", shared.ErrNotFound)
+	ErrOverrideNotFound    = fmt.Errorf("%w: CI gate override not found", shared.ErrNotFound)
+	ErrPolicyExists        = fmt.Errorf("%w: a gate policy for this scope already exists", shared.ErrConflict)
+	ErrTrustConfigExists   = fmt.Errorf("%w: a CI trust configuration with this name already exists", shared.ErrConflict)
+)
+
+// Repository persists CI trust, runs, gate policies and overrides. Every
+// method but the token and replay lookups is tenant-scoped.
+type Repository interface {
+	CreateTrustConfig(ctx context.Context, c *TrustConfig) error
+	UpdateTrustConfig(ctx context.Context, c *TrustConfig) error
+	DeleteTrustConfig(ctx context.Context, tenantID, id shared.ID) error
+	GetTrustConfig(ctx context.Context, tenantID, id shared.ID) (*TrustConfig, error)
+	ListTrustConfigs(ctx context.Context, tenantID shared.ID) ([]TrustConfig, error)
+	// EnabledTrustConfigs returns the tenant's enabled configurations for
+	// an issuer.
+	EnabledTrustConfigs(ctx context.Context, tenantID shared.ID, issuer string) ([]TrustConfig, error)
+	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error
+
+	// CIRequireOIDC reads whether the tenant refuses CI results sent with a
+	// sensor key; SetCIRequireOIDC writes it.
+	CIRequireOIDC(ctx context.Context, tenantID shared.ID) (bool, error)
+	SetCIRequireOIDC(ctx context.Context, tenantID shared.ID, require bool) error
+
+	// ClaimJTI records an OIDC token id; false means it was exchanged
+	// before (replay). Global, not tenant-scoped: one token, one exchange.
+	ClaimJTI(ctx context.Context, issuer, jti string, expiresAt time.Time) (bool, error)
+	PurgeExpiredJTIs(ctx context.Context, before time.Time) (int64, error)
+
+	CreateRun(ctx context.Context, r *Run) error
+	// CountPipelineRunsSince counts the runs a pipeline started since the
+	// time (the per-pipeline rate).
+	CountPipelineRunsSince(ctx context.Context, tenantID, pipelineID shared.ID, since time.Time) (int, error)
+	GetRun(ctx context.Context, tenantID, id shared.ID) (*Run, error)
+	// GetRunByTokenHash returns the run whose unexpired upload token hashes
+	// to hash. Not tenant-scoped: the token is the credential.
+	GetRunByTokenHash(ctx context.Context, hash []byte, now time.Time) (*Run, error)
+	// RotateRunToken replaces a running run's upload token (the old one
+	// stops working).
+	RotateRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, expiresAt time.Time) error
+	// OpenAggregateRun returns the open aggregate run of the run's pipeline
+	// run (pipeline, external run id, attempt, commit), creating it from
+	// the given run when there is none; created says which.
+	OpenAggregateRun(ctx context.Context, r *Run) (open *Run, created bool, err error)
+	// AddRunToken adds a job's upload token to a running aggregate run.
+	AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error
+	ListRuns(ctx context.Context, tenantID shared.ID, f RunFilter) ([]Run, int, error)
+	// RecordRunReport adds the fingerprints a report sighted (capped at
+	// MaxRunFindings per run) and counts the report.
+	RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error
+	// RunFindings returns the findings on the run's repository asset whose
+	// fingerprints the run recorded.
+	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
+	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error
+
+	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]GatePolicy, error)
+	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*GatePolicy, error)
+	CreateGatePolicy(ctx context.Context, p *GatePolicy) error
+	UpdateGatePolicy(ctx context.Context, p *GatePolicy) error
+	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID) error
+	// GatePoliciesFor returns the enabled policies that may apply to a
+	// repository asset: its own, those of its business units, the tenant's.
+	GatePoliciesFor(ctx context.Context, tenantID, assetID shared.ID) ([]GatePolicy, error)
+
+	CreateOverride(ctx context.Context, o *GateOverride) error
+	ListOverrides(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope) ([]GateOverride, error)
+	GetOverride(ctx context.Context, tenantID, id shared.ID) (*GateOverride, error)
+	RevokeOverride(ctx context.Context, tenantID, id, by shared.ID, at time.Time) error
+	// ActiveOverride returns the newest unrevoked, unexpired override that
+	// covers the commit, or nil.
+	ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*GateOverride, error)
+
+	PipelineRepository
+	CoverageRepository
+}
+
+// Coverage errors.
+var (
+	ErrExpectationNotFound = fmt.Errorf("%w: coverage expectation not found", shared.ErrNotFound)
+	ErrPipelineRetired     = fmt.Errorf("%w: the CI pipeline is already retired", shared.ErrConflict)
+	ErrRepositoryNotFound  = fmt.Errorf("%w: repository not found", shared.ErrNotFound)
+)
+
+// CoverageRepository persists coverage expectations, alert state and the
+// stale-source finding updates. Every method but PipelineTenantsForPlatform
+// is tenant-scoped.
+type CoverageRepository interface {
+	ListRepositories(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]RepositoryRef, error)
+	CoverageObservations(ctx context.Context, tenantID shared.ID, since time.Time) ([]CoverageObservation, error)
+	ListExpectations(ctx context.Context, tenantID shared.ID) (map[shared.ID]Expectation, error)
+	UpsertExpectation(ctx context.Context, e *Expectation) error
+	DeleteExpectation(ctx context.Context, tenantID, assetID shared.ID) error
+	RepositoryExists(ctx context.Context, tenantID, assetID shared.ID) (bool, error)
+	ListAlertState(ctx context.Context, tenantID shared.ID) ([]AlertState, error)
+	FireAlert(ctx context.Context, tenantID shared.ID, a Alert, at time.Time) (bool, error)
+	ClearAlert(ctx context.Context, tenantID, subjectID shared.ID, kind AlertKind) error
+	PipelineTenantsForPlatform(ctx context.Context) ([]shared.ID, error)
+	// TokenRefusalsSince counts the tenant's refused CI token exchanges
+	// (audited, so verified tokens only) since the time.
+	TokenRefusalsSince(ctx context.Context, tenantID shared.ID, since time.Time) (int, error)
+	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
+	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
+}
+
+// PipelineCaps bound the pipelines a tenant and a trust configuration may
+// have.
+type PipelineCaps struct {
+	PerTenant      int
+	PerTrustConfig int
+}
+
+// PipelineRepository persists CI pipelines. Every method is tenant-scoped.
+type PipelineRepository interface {
+	// RepositoryBoundElsewhere reports whether an active pipeline of the
+	// provider and issuer, keyed by another repository id, already reports
+	// on the repository asset of that name: a name the token does not sign
+	// stays with the first repository id that used it.
+	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
+	// RequestRepoExceptions stores a repository file's exceptions as pending
+	// suppression rules on the repository asset, skipping any already open,
+	// and returns how many it created.
+	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
+	// MarkDecorationPending queues an evaluated run's verdict for posting to
+	// the code host (RFC-077).
+	MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error
+	// PinOwner records ownerID for the configuration's owner name unless one
+	// is pinned already, and returns the pinned id and whether this call
+	// pinned it.
+	PinOwner(ctx context.Context, tenantID, trustConfigID shared.ID, ownerName, ownerID string) (string, bool, error)
+	// ResetOwnerPins drops the configuration's pins (they are taken again at
+	// the next admitted exchange).
+	ResetOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) (int64, error)
+	// OwnerPins lists the configuration's pins.
+	OwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) ([]OwnerPin, error)
+	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled
+	// legacy row of the same repository asset and workflow path) or creates
+	// it within the caps (ErrPipelineCap). An existing pipeline takes p's
+	// trust configuration, is no longer revoked and, unless fork is set,
+	// takes p's display names, template and default branch. The stored
+	// pipeline is returned with created = true for a new row.
+	UpsertPipeline(ctx context.Context, p *Pipeline, fork bool, caps PipelineCaps) (*Pipeline, bool, error)
+	// RefreshPipeline recomputes the pipeline's run summary (last run,
+	// counts, gates, health inputs, cadence) from its runs.
+	RefreshPipeline(ctx context.Context, tenantID, pipelineID shared.ID) error
+	GetPipeline(ctx context.Context, tenantID, id shared.ID) (*Pipeline, error)
+	// ListPipelines returns the tenant's pipelines (at most MaxListedPipelines).
+	ListPipelines(ctx context.Context, tenantID shared.ID, f PipelineFilter) ([]Pipeline, error)
+	// PipelineBranches summarizes the pipeline's runs per branch, newest
+	// first, at most MaxPipelineBranches.
+	PipelineBranches(ctx context.Context, tenantID, pipelineID shared.ID) ([]PipelineBranch, error)
+	// PipelineGateTrend returns the newest evaluated non-fork
+	// default-branch runs, newest first.
+	PipelineGateTrend(ctx context.Context, tenantID, pipelineID shared.ID, limit int) ([]GatePoint, error)
+	// RevokeTrustConfigPipelines marks the pipelines the configuration
+	// admitted last as revoked and invalidates the upload tokens of its runs
+	// still running. Returns the pipelines revoked.
+	RevokeTrustConfigPipelines(ctx context.Context, tenantID, trustConfigID shared.ID, at time.Time) (int64, error)
+	// RecordRunOutcome stores what the runner reported at evaluation.
+	RecordRunOutcome(ctx context.Context, tenantID, runID shared.ID, scanFailures int) error
+	// RecordRunTools merges tool labels into the run's (capped).
+	RecordRunTools(ctx context.Context, tenantID, runID shared.ID, tools []ToolLabel) error
+}

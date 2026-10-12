@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -100,7 +101,7 @@ func (m *MockAssetRepository) Update(_ context.Context, a *asset.Asset) error {
 	return nil
 }
 
-func (m *MockAssetRepository) Delete(_ context.Context, tenantID, id shared.ID) error {
+func (m *MockAssetRepository) Delete(_ context.Context, tenantID, id shared.ID, _ *shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -235,8 +236,8 @@ func (m *MockAssetRepository) UpdateFindingCounts(_ context.Context, _ shared.ID
 	return nil
 }
 
-func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ string, _ []string, _ int) ([]string, error) {
-	return []string{}, nil
+func (m *MockAssetRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ asset.TagListQuery) (asset.TagList, error) {
+	return asset.TagList{Tags: []string{}}, nil
 }
 
 func (m *MockAssetRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
@@ -270,7 +271,7 @@ func (m *MockAssetRepository) BulkUpdateStatus(_ context.Context, _ shared.ID, i
 	return updated, nil
 }
 
-func (m *MockAssetRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
+func (m *MockAssetRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ asset.AccessScope, _, _, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -280,8 +281,24 @@ func (m *MockAssetRepository) GetAggregateStats(_ context.Context, _ shared.ID, 
 	}, nil
 }
 
-func (m *MockAssetRepository) GetPropertyFacets(_ context.Context, _ shared.ID, _ []string, _ string) ([]asset.PropertyFacet, error) {
+func (m *MockAssetRepository) GetPropertyFacets(_ context.Context, _ shared.ID, _ asset.AccessScope, _ []string, _ string) ([]asset.PropertyFacet, error) {
 	return nil, nil
+}
+
+func (m *MockAssetRepository) SetCrownJewel(_ context.Context, tenantID, id shared.ID, isCrownJewel bool, score float64, notes string) error {
+	a, ok := m.assets[id.String()]
+	if !ok || a.TenantID() != tenantID {
+		return shared.ErrNotFound
+	}
+	a.SetCrownJewel(isCrownJewel)
+	props := a.Properties()
+	if props == nil {
+		props = map[string]any{}
+	}
+	props["business_impact_score"] = score
+	props["business_impact_notes"] = notes
+	a.SetProperties(props)
+	return nil
 }
 
 func (m *MockAssetRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
@@ -376,25 +393,25 @@ func (m *mockRepoExtRepo) GetByAssetIDs(_ context.Context, assetIDs []shared.ID)
 // Test Helpers
 // =============================================================================
 
-func newTestService() (*app.AssetService, *MockAssetRepository) {
+func newTestService() (*assetapp.AssetService, *MockAssetRepository) {
 	repo := NewMockAssetRepository()
 	log := logger.NewNop()
-	svc := app.NewAssetService(repo, log)
+	svc := assetapp.NewAssetService(repo, log)
 	return svc, repo
 }
 
-func newTestServiceWithRepoExt() (*app.AssetService, *MockAssetRepository, *mockRepoExtRepo) {
+func newTestServiceWithRepoExt() (*assetapp.AssetService, *MockAssetRepository, *mockRepoExtRepo) {
 	repo := NewMockAssetRepository()
 	repoExtRepo := newMockRepoExtRepo()
 	log := logger.NewNop()
-	svc := app.NewAssetService(repo, log)
+	svc := assetapp.NewAssetService(repo, log)
 	svc.SetRepositoryExtensionRepository(repoExtRepo)
 	return svc, repo, repoExtRepo
 }
 
-func createAssetForTest(t *testing.T, svc *app.AssetService, tenantID, name string) *asset.Asset {
+func createAssetForTest(t *testing.T, svc *assetapp.AssetService, tenantID, name string) *asset.Asset {
 	t.Helper()
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        name,
 		Type:        "host",
@@ -416,7 +433,7 @@ func strPtr(s string) *string { return &s }
 func TestAssetService_CreateAsset_Success(t *testing.T) {
 	svc, repo := newTestService()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		Name:        "test-server-01",
 		Type:        "host",
 		Criticality: "high",
@@ -457,7 +474,7 @@ func TestAssetService_CreateAsset_WithTenantID(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Tenant Asset",
 		Type:        "domain",
@@ -474,10 +491,10 @@ func TestAssetService_CreateAsset_WithTenantID(t *testing.T) {
 	}
 }
 
-func TestAssetService_CreateAsset_DuplicateName_Upserts(t *testing.T) {
+func TestAssetService_CreateAsset_DuplicateName_IsConflict(t *testing.T) {
 	svc, repo := newTestService()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "Duplicate Asset",
 		Type:        "host",
@@ -492,75 +509,56 @@ func TestAssetService_CreateAsset_DuplicateName_Upserts(t *testing.T) {
 		t.Fatalf("failed to create first asset: %v", err)
 	}
 
-	// Create duplicate — should upsert (merge), not error
+	// A second create of the same name is a conflict that names the existing
+	// asset (no data scope is wired: the caller sees everything) and changes
+	// nothing.
 	input.Description = "Updated"
 	input.Tags = []string{"tag2"}
-	a2, err := svc.CreateAsset(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected upsert, got error: %v", err)
+	_, err = svc.CreateAsset(context.Background(), input)
+	var dup *assetapp.DuplicateAssetError
+	if !errors.As(err, &dup) || !errors.Is(err, shared.ErrAlreadyExists) {
+		t.Fatalf("duplicate create error = %v, want a DuplicateAssetError", err)
 	}
-
-	// Should return same asset (updated)
-	if a2.ID() != a1.ID() {
-		t.Errorf("expected same asset ID, got different: %s vs %s", a1.ID(), a2.ID())
+	if dup.ExistingID != a1.ID() {
+		t.Errorf("conflict names %s, want the existing asset %s", dup.ExistingID, a1.ID())
 	}
-	if a2.Description() != "Updated" {
-		t.Errorf("expected updated description, got %s", a2.Description())
+	if got := repo.assets[a1.ID().String()]; got == nil || got.Description() == "Updated" || len(got.Tags()) != len(a1.Tags()) {
+		t.Errorf("duplicate create changed the existing asset")
 	}
-	// Tags should be merged
-	if len(a2.Tags()) < 2 {
-		t.Errorf("expected merged tags (>=2), got %d: %v", len(a2.Tags()), a2.Tags())
-	}
-	// Should be 1 asset in repo, not 2
 	if len(repo.assets) != 1 {
-		t.Errorf("expected 1 asset (upsert), got %d", len(repo.assets))
+		t.Errorf("expected 1 asset, got %d", len(repo.assets))
 	}
 }
 
-func TestAssetService_CreateAsset_IPCorrelation(t *testing.T) {
+func TestAssetService_CreateAsset_IPCorrelation_IsConflict(t *testing.T) {
 	svc, repo := newTestService()
 
-	// Create host named by IP (simulating Splunk ingest)
-	input1 := app.CreateAssetInput{
+	// A host named by IP (for example from a Splunk import).
+	a1, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "10.0.1.5",
 		Type:        "host",
 		Criticality: "medium",
 		Description: "From Splunk",
-	}
-	a1, err := svc.CreateAsset(context.Background(), input1)
+	})
 	if err != nil {
 		t.Fatalf("failed to create IP-named host: %v", err)
 	}
-	if a1.Name() != "10.0.1.5" {
-		t.Errorf("expected name 10.0.1.5, got %s", a1.Name())
-	}
-	if len(repo.assets) != 1 {
-		t.Errorf("expected 1 asset, got %d", len(repo.assets))
-	}
 
-	// Create same host with hostname (simulating ESXi ingest)
-	// This should match by name "10.0.1.5" (exact match via GetByName)
-	// and upsert with new description
-	input2 := app.CreateAssetInput{
+	// The same address again is the same asset: a conflict naming it.
+	_, err = svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		TenantID:    serviceTenantID.String(),
 		Name:        "10.0.1.5",
 		Type:        "host",
 		Criticality: "high",
 		Description: "From ESXi",
+	})
+	var dup *assetapp.DuplicateAssetError
+	if !errors.As(err, &dup) || dup.ExistingID != a1.ID() {
+		t.Fatalf("duplicate address create error = %v, want a conflict naming %s", err, a1.ID())
 	}
-	a2, err := svc.CreateAsset(context.Background(), input2)
-	if err != nil {
-		t.Fatalf("expected upsert, got error: %v", err)
-	}
-	if a2.ID() != a1.ID() {
-		t.Errorf("expected same asset, got different ID")
-	}
-	if a2.Description() != "From ESXi" {
-		t.Errorf("expected updated description, got %s", a2.Description())
-	}
-	if len(repo.assets) != 1 {
-		t.Errorf("expected still 1 asset, got %d", len(repo.assets))
+	if len(repo.assets) != 1 || repo.assets[a1.ID().String()].Description() != "From Splunk" {
+		t.Errorf("duplicate address create changed or added assets")
 	}
 }
 
@@ -593,11 +591,11 @@ func TestLooksLikeIP(t *testing.T) {
 func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name  string
-		input app.CreateAssetInput
+		input assetapp.CreateAssetInput
 	}{
 		{
 			name: "empty name",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "",
 				Type:        "host",
 				Criticality: "high",
@@ -605,7 +603,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "invalid type",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "Test Asset",
 				Type:        "invalid_type",
 				Criticality: "high",
@@ -613,7 +611,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "invalid criticality",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "Test Asset",
 				Type:        "host",
 				Criticality: "super_critical",
@@ -621,7 +619,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "empty type",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "Test Asset",
 				Type:        "",
 				Criticality: "high",
@@ -629,7 +627,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "empty criticality",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "Test Asset",
 				Type:        "host",
 				Criticality: "",
@@ -637,7 +635,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "invalid scope",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "Bad Scope",
 				Type:        "host",
 				Criticality: "high",
@@ -646,7 +644,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "invalid exposure",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				Name:        "Bad Exposure",
 				Type:        "host",
 				Criticality: "high",
@@ -655,7 +653,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 		},
 		{
 			name: "invalid tenant ID format",
-			input: app.CreateAssetInput{
+			input: assetapp.CreateAssetInput{
 				TenantID:    "not-a-uuid",
 				Name:        "Bad Tenant",
 				Type:        "host",
@@ -681,7 +679,7 @@ func TestAssetService_CreateAsset_ValidationErrors(t *testing.T) {
 func TestAssetService_CreateAsset_WithScopeAndExposure(t *testing.T) {
 	svc, _ := newTestService()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		Name:        "Scoped Asset",
 		Type:        "host",
 		Criticality: "high",
@@ -711,7 +709,7 @@ func TestAssetService_CreateAsset_RepoCreateError(t *testing.T) {
 	svc, repo := newTestService()
 	repo.createErr = errors.New("database connection lost")
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		Name:        "Will Fail",
 		Type:        "host",
 		Criticality: "high",
@@ -731,7 +729,7 @@ func TestAssetService_CreateAsset_GetByNameError(t *testing.T) {
 	// Simulate a DB error on GetByName (not ErrNotFound, but an actual error)
 	repo.getByNameErr = errors.New("query timeout")
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		Name:        "Check Fails",
 		Type:        "host",
 		Criticality: "high",
@@ -743,18 +741,24 @@ func TestAssetService_CreateAsset_GetByNameError(t *testing.T) {
 	}
 }
 
+// Every input name is accepted, and only the core type is stored: an alias
+// becomes (core type, sub_type) (RFC-042 §6.3.8 R1).
 func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
-	assetTypes := []string{
-		"domain", "subdomain", "ip_address", "website", "web_application",
-		"api", "repository", "host", "container", "database", "network",
-		"cloud_account", "compute", "storage", "unclassified",
+	stored := map[string][2]string{
+		"domain": {"domain", ""}, "subdomain": {"subdomain", ""}, "ip_address": {"ip_address", ""},
+		"website": {"application", "website"}, "web_application": {"application", "website"},
+		"api": {"application", "api"}, "repository": {"repository", ""}, "host": {"host", ""},
+		"container": {"container", ""}, "database": {"database", ""}, "network": {"network", ""},
+		"cloud_account": {"cloud_account", ""}, "compute": {"host", "compute"}, "storage": {"storage", ""},
+		"unclassified": {"unclassified", ""}, "s3_bucket": {"storage", "bucket"},
+		"firewall": {"network", "firewall"}, "kubernetes_cluster": {"kubernetes", "cluster"},
 	}
 
-	for _, at := range assetTypes {
+	for at, want := range stored {
 		t.Run(at, func(t *testing.T) {
 			svc, _ := newTestService()
-			input := app.CreateAssetInput{
-				Name:        "Test " + at,
+			input := assetapp.CreateAssetInput{
+				Name:        "test-" + at,
 				Type:        at,
 				Criticality: "medium",
 			}
@@ -762,8 +766,11 @@ func TestAssetService_CreateAsset_AllAssetTypes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create asset with type %s: %v", at, err)
 			}
-			if a.Type().String() != at {
-				t.Errorf("expected type %s, got %s", at, a.Type().String())
+			if a.Type().String() != want[0] || a.SubType() != want[1] {
+				t.Errorf("input %s stored as (%s, %q), want (%s, %q)", at, a.Type(), a.SubType(), want[0], want[1])
+			}
+			if !a.Type().IsStored() {
+				t.Errorf("stored type %s is not a core type", a.Type())
 			}
 		})
 	}
@@ -775,7 +782,7 @@ func TestAssetService_CreateAsset_AllCriticalities(t *testing.T) {
 	for _, crit := range criticalities {
 		t.Run(crit, func(t *testing.T) {
 			svc, _ := newTestService()
-			input := app.CreateAssetInput{
+			input := assetapp.CreateAssetInput{
 				Name:        "Crit Test " + crit,
 				Type:        "host",
 				Criticality: crit,
@@ -905,7 +912,7 @@ func TestAssetService_UpdateAsset_Success(t *testing.T) {
 
 	newName := "updated-name"
 	newCrit := "medium"
-	updateInput := app.UpdateAssetInput{
+	updateInput := assetapp.UpdateAssetInput{
 		Name:        &newName,
 		Criticality: &newCrit,
 	}
@@ -926,7 +933,7 @@ func TestAssetService_UpdateAsset_PartialUpdate(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Original Name",
 		Type:        "host",
@@ -940,7 +947,7 @@ func TestAssetService_UpdateAsset_PartialUpdate(t *testing.T) {
 
 	// Update only name
 	newName := "new name"
-	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
+	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, assetapp.UpdateAssetInput{
 		Name: &newName,
 	})
 	if err != nil {
@@ -964,7 +971,7 @@ func TestAssetService_UpdateAsset_AllFields(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Full Update Asset",
 		Type:        "host",
@@ -977,7 +984,7 @@ func TestAssetService_UpdateAsset_AllFields(t *testing.T) {
 		t.Fatalf("failed to create asset: %v", err)
 	}
 
-	updateInput := app.UpdateAssetInput{
+	updateInput := assetapp.UpdateAssetInput{
 		Name:        strPtr("renamed asset"),
 		Criticality: strPtr("critical"),
 		Scope:       strPtr("external"),
@@ -1015,7 +1022,7 @@ func TestAssetService_UpdateAsset_NotFound(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), tenantID, app.UpdateAssetInput{
+	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), tenantID, assetapp.UpdateAssetInput{
 		Name: strPtr("updated-name"),
 	})
 	if err == nil {
@@ -1030,7 +1037,7 @@ func TestAssetService_UpdateAsset_InvalidID(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	_, err := svc.UpdateAsset(context.Background(), "not-a-uuid", tenantID, app.UpdateAssetInput{
+	_, err := svc.UpdateAsset(context.Background(), "not-a-uuid", tenantID, assetapp.UpdateAssetInput{
 		Name: strPtr("updated-name"),
 	})
 	if err == nil {
@@ -1044,7 +1051,7 @@ func TestAssetService_UpdateAsset_InvalidID(t *testing.T) {
 func TestAssetService_UpdateAsset_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), "not-a-uuid", app.UpdateAssetInput{
+	_, err := svc.UpdateAsset(context.Background(), shared.NewID().String(), "not-a-uuid", assetapp.UpdateAssetInput{
 		Name: strPtr("updated-name"),
 	})
 	if err == nil {
@@ -1058,23 +1065,23 @@ func TestAssetService_UpdateAsset_InvalidTenantID(t *testing.T) {
 func TestAssetService_UpdateAsset_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name  string
-		input app.UpdateAssetInput
+		input assetapp.UpdateAssetInput
 	}{
 		{
 			name:  "invalid criticality",
-			input: app.UpdateAssetInput{Criticality: strPtr("super_critical")},
+			input: assetapp.UpdateAssetInput{Criticality: strPtr("super_critical")},
 		},
 		{
 			name:  "invalid scope",
-			input: app.UpdateAssetInput{Scope: strPtr("nonexistent_scope")},
+			input: assetapp.UpdateAssetInput{Scope: strPtr("nonexistent_scope")},
 		},
 		{
 			name:  "invalid exposure",
-			input: app.UpdateAssetInput{Exposure: strPtr("nonexistent_exposure")},
+			input: assetapp.UpdateAssetInput{Exposure: strPtr("nonexistent_exposure")},
 		},
 		{
 			name:  "empty name",
-			input: app.UpdateAssetInput{Name: strPtr("")},
+			input: assetapp.UpdateAssetInput{Name: strPtr("")},
 		},
 	}
 
@@ -1103,7 +1110,7 @@ func TestAssetService_UpdateAsset_RepoUpdateError(t *testing.T) {
 
 	repo.updateErr = errors.New("disk full")
 
-	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
+	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, assetapp.UpdateAssetInput{
 		Name: strPtr("new name"),
 	})
 	if err == nil {
@@ -1119,7 +1126,7 @@ func TestAssetService_UpdateAsset_CrossTenantIsolation(t *testing.T) {
 	created := createAssetForTest(t, svc, tenantA, "Tenant A Update Test")
 
 	// Try to update from tenant B
-	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantB, app.UpdateAssetInput{
+	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantB, assetapp.UpdateAssetInput{
 		Name: strPtr("Hacked Name"),
 	})
 	if err == nil {
@@ -1140,7 +1147,7 @@ func TestAssetService_DeleteAsset_Success(t *testing.T) {
 
 	created := createAssetForTest(t, svc, tenantID, "To Delete")
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1154,7 +1161,7 @@ func TestAssetService_DeleteAsset_NotFound(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), tenantID, "")
 	if err == nil {
 		t.Fatal("expected error for non-existent asset")
 	}
@@ -1167,7 +1174,7 @@ func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID)
+	err := svc.DeleteAsset(context.Background(), "not-a-uuid", tenantID, "")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -1179,7 +1186,7 @@ func TestAssetService_DeleteAsset_InvalidID(t *testing.T) {
 func TestAssetService_DeleteAsset_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), "not-a-uuid")
+	err := svc.DeleteAsset(context.Background(), shared.NewID().String(), "not-a-uuid", "")
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1196,7 +1203,7 @@ func TestAssetService_DeleteAsset_CrossTenantIsolation(t *testing.T) {
 	created := createAssetForTest(t, svc, tenantA, "Tenant A Delete Test")
 
 	// Try to delete from tenant B
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantB)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantB, "")
 	if err == nil {
 		t.Fatal("expected error when deleting asset from different tenant")
 	}
@@ -1222,7 +1229,7 @@ func TestAssetService_DeleteAsset_RepoError(t *testing.T) {
 
 	repo.deleteErr = errors.New("foreign key constraint violation")
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err == nil {
 		t.Fatal("expected error when repo.Delete fails")
 	}
@@ -1236,7 +1243,7 @@ func TestAssetService_ListAssets_WithFilters(t *testing.T) {
 	svc, _ := newTestService()
 
 	// Create multiple assets
-	assetInputs := []app.CreateAssetInput{
+	assetInputs := []assetapp.CreateAssetInput{
 		{Name: "Server 1", Type: "host", Criticality: "high"},
 		{Name: "Server 2", Type: "host", Criticality: "medium"},
 		{Name: "Database 1", Type: "database", Criticality: "high"},
@@ -1248,7 +1255,7 @@ func TestAssetService_ListAssets_WithFilters(t *testing.T) {
 		}
 	}
 
-	result, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	result, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		Page:    1,
 		PerPage: 10,
 	})
@@ -1263,7 +1270,7 @@ func TestAssetService_ListAssets_WithFilters(t *testing.T) {
 func TestAssetService_ListAssets_WithTypeFilter(t *testing.T) {
 	svc, _ := newTestService()
 
-	assetInputs := []app.CreateAssetInput{
+	assetInputs := []assetapp.CreateAssetInput{
 		{Name: "Host 1", Type: "host", Criticality: "high"},
 		{Name: "DB 1", Type: "database", Criticality: "medium"},
 	}
@@ -1276,7 +1283,7 @@ func TestAssetService_ListAssets_WithTypeFilter(t *testing.T) {
 
 	// Note: our simple mock doesn't actually filter by type, but
 	// this verifies the input parsing doesn't error
-	result, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	result, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		Types:   []string{"host"},
 		Page:    1,
 		PerPage: 10,
@@ -1293,7 +1300,7 @@ func TestAssetService_ListAssets_Pagination(t *testing.T) {
 	svc, _ := newTestService()
 
 	for i := 0; i < 5; i++ {
-		input := app.CreateAssetInput{
+		input := assetapp.CreateAssetInput{
 			Name:        fmt.Sprintf("Asset %d", i),
 			Type:        "host",
 			Criticality: "medium",
@@ -1304,7 +1311,7 @@ func TestAssetService_ListAssets_Pagination(t *testing.T) {
 		}
 	}
 
-	result, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	result, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		Page:    1,
 		PerPage: 2,
 	})
@@ -1325,7 +1332,7 @@ func TestAssetService_ListAssets_WithSort(t *testing.T) {
 	createAssetForTest(t, svc, "", "Alpha")
 	createAssetForTest(t, svc, "", "Beta")
 
-	result, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	result, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		Sort:    "-created_at",
 		Page:    1,
 		PerPage: 10,
@@ -1341,7 +1348,7 @@ func TestAssetService_ListAssets_WithSort(t *testing.T) {
 func TestAssetService_ListAssets_EmptyResults(t *testing.T) {
 	svc, _ := newTestService()
 
-	result, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	result, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		TenantID: shared.NewID().String(),
 		Page:     1,
 		PerPage:  10,
@@ -1361,7 +1368,7 @@ func TestAssetService_ListAssets_RepoError(t *testing.T) {
 	svc, repo := newTestService()
 	repo.listErr = errors.New("query timeout")
 
-	_, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	_, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		Page:    1,
 		PerPage: 10,
 	})
@@ -1377,7 +1384,7 @@ func TestAssetService_ListAssets_WithRiskScoreFilters(t *testing.T) {
 
 	minScore := 0
 	maxScore := 100
-	result, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	result, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		MinRiskScore: &minScore,
 		MaxRiskScore: &maxScore,
 		Page:         1,
@@ -1396,7 +1403,7 @@ func TestAssetService_ListAssets_WithHasFindingsFilter(t *testing.T) {
 	createAssetForTest(t, svc, "", "Finding Filter Test")
 
 	hasFindings := true
-	_, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	_, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		HasFindings: &hasFindings,
 		Page:        1,
 		PerPage:     10,
@@ -1409,7 +1416,7 @@ func TestAssetService_ListAssets_WithHasFindingsFilter(t *testing.T) {
 func TestAssetService_ListAssets_WithSearchAndTags(t *testing.T) {
 	svc, _ := newTestService()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		Name:        "Searchable Server",
 		Type:        "host",
 		Criticality: "high",
@@ -1420,7 +1427,7 @@ func TestAssetService_ListAssets_WithSearchAndTags(t *testing.T) {
 		t.Fatalf("failed to create asset: %v", err)
 	}
 
-	_, err = svc.ListAssets(context.Background(), app.ListAssetsInput{
+	_, err = svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		Search:  "server",
 		Tags:    []string{"production"},
 		Page:    1,
@@ -1436,7 +1443,7 @@ func TestAssetService_ListAssets_WithMultipleFilterTypes(t *testing.T) {
 
 	createAssetForTest(t, svc, serviceTenantID.String(), "Multi Filter Test")
 
-	_, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	_, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		TenantID:      serviceTenantID.String(),
 		Types:         []string{"host"},
 		Criticalities: []string{"high"},
@@ -1457,7 +1464,7 @@ func TestAssetService_ListAssets_DataScopeFiltering(t *testing.T) {
 	createAssetForTest(t, svc, serviceTenantID.String(), "Scope Filter Test")
 
 	// Non-admin user with a valid acting user ID should trigger data scope filtering
-	_, err := svc.ListAssets(context.Background(), app.ListAssetsInput{
+	_, err := svc.ListAssets(context.Background(), assetapp.ListAssetsInput{
 		TenantID:     serviceTenantID.String(),
 		ActingUserID: shared.NewID().String(),
 		IsAdmin:      false,
@@ -1586,7 +1593,7 @@ func TestAssetService_BulkUpdateAssetStatus_Success(t *testing.T) {
 		assetIDs = append(assetIDs, a.ID().String())
 	}
 
-	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, assetapp.BulkUpdateAssetStatusInput{
 		AssetIDs: assetIDs,
 		Status:   "inactive",
 	})
@@ -1624,7 +1631,7 @@ func TestAssetService_BulkUpdateAssetStatus_PartialFailures(t *testing.T) {
 		"not-a-uuid",            // invalid format
 	}
 
-	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, assetapp.BulkUpdateAssetStatusInput{
 		AssetIDs: assetIDs,
 		Status:   "archived",
 	})
@@ -1648,7 +1655,7 @@ func TestAssetService_BulkUpdateAssetStatus_EmptyInput(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+	result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, assetapp.BulkUpdateAssetStatusInput{
 		AssetIDs: []string{},
 		Status:   "active",
 	})
@@ -1667,7 +1674,7 @@ func TestAssetService_BulkUpdateAssetStatus_InvalidStatus(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	_, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+	_, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, assetapp.BulkUpdateAssetStatusInput{
 		AssetIDs: []string{shared.NewID().String()},
 		Status:   "invalid_status",
 	})
@@ -1682,7 +1689,7 @@ func TestAssetService_BulkUpdateAssetStatus_InvalidStatus(t *testing.T) {
 func TestAssetService_BulkUpdateAssetStatus_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	_, err := svc.BulkUpdateAssetStatus(context.Background(), "bad-uuid", app.BulkUpdateAssetStatusInput{
+	_, err := svc.BulkUpdateAssetStatus(context.Background(), "bad-uuid", assetapp.BulkUpdateAssetStatusInput{
 		AssetIDs: []string{shared.NewID().String()},
 		Status:   "active",
 	})
@@ -1711,7 +1718,7 @@ func TestAssetService_BulkUpdateAssetStatus_AllStatuses(t *testing.T) {
 
 			a := createAssetForTest(t, svc, tenantID, "Status Test Asset")
 
-			result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, app.BulkUpdateAssetStatusInput{
+			result, err := svc.BulkUpdateAssetStatus(context.Background(), tenantID, assetapp.BulkUpdateAssetStatusInput{
 				AssetIDs: []string{a.ID().String()},
 				Status:   tt.input,
 			})
@@ -1966,11 +1973,11 @@ func TestAssetService_ListTags_Success(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	tags, err := svc.ListTags(context.Background(), tenantID, "", nil, 50)
+	tags, err := svc.ListTags(context.Background(), tenantID, "", false, asset.TagListQuery{Limit: 50})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if tags == nil {
+	if tags.Tags == nil {
 		t.Error("expected non-nil tags slice")
 	}
 }
@@ -1978,7 +1985,7 @@ func TestAssetService_ListTags_Success(t *testing.T) {
 func TestAssetService_ListTags_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestService()
 
-	_, err := svc.ListTags(context.Background(), "bad-uuid", "", nil, 50)
+	_, err := svc.ListTags(context.Background(), "bad-uuid", "", false, asset.TagListQuery{Limit: 50})
 	if err == nil {
 		t.Fatal("expected error for invalid tenant ID")
 	}
@@ -1992,17 +1999,17 @@ func TestAssetService_ListTags_DefaultLimit(t *testing.T) {
 	tenantID := serviceTenantID.String()
 
 	// Limit <= 0 should default to 50, limit > 100 should default to 50
-	_, err := svc.ListTags(context.Background(), tenantID, "", nil, 0)
+	_, err := svc.ListTags(context.Background(), tenantID, "", false, asset.TagListQuery{Limit: 0})
 	if err != nil {
 		t.Fatalf("expected no error with zero limit, got %v", err)
 	}
 
-	_, err = svc.ListTags(context.Background(), tenantID, "", nil, -1)
+	_, err = svc.ListTags(context.Background(), tenantID, "", false, asset.TagListQuery{Limit: -1})
 	if err != nil {
 		t.Fatalf("expected no error with negative limit, got %v", err)
 	}
 
-	_, err = svc.ListTags(context.Background(), tenantID, "", nil, 200)
+	_, err = svc.ListTags(context.Background(), tenantID, "", false, asset.TagListQuery{Limit: 200})
 	if err != nil {
 		t.Fatalf("expected no error with over-limit, got %v", err)
 	}
@@ -2015,7 +2022,7 @@ func TestAssetService_ListTags_DefaultLimit(t *testing.T) {
 func TestAssetService_CreateAsset_CallsRepoCorrectly(t *testing.T) {
 	svc, repo := newTestService()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		Name:        "Call Track Test",
 		Type:        "host",
 		Criticality: "high",
@@ -2042,7 +2049,7 @@ func TestAssetService_UpdateAsset_CallsRepoCorrectly(t *testing.T) {
 	repo.getCalls = 0
 	repo.updateCalls = 0
 
-	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
+	_, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, assetapp.UpdateAssetInput{
 		Name: strPtr("new name"),
 	})
 	if err != nil {
@@ -2065,7 +2072,7 @@ func TestAssetService_DeleteAsset_CallsRepoCorrectly(t *testing.T) {
 
 	repo.deleteCalls = 0
 
-	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID)
+	err := svc.DeleteAsset(context.Background(), created.ID().String(), tenantID, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2082,7 +2089,7 @@ func TestAssetService_DeleteAsset_CallsRepoCorrectly(t *testing.T) {
 func TestAssetService_CreateAsset_NoTags(t *testing.T) {
 	svc, _ := newTestService()
 
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		Name:        "No Tags Asset",
 		Type:        "host",
 		Criticality: "low",
@@ -2098,7 +2105,7 @@ func TestAssetService_CreateAsset_NoTags(t *testing.T) {
 func TestAssetService_CreateAsset_EmptyDescription(t *testing.T) {
 	svc, _ := newTestService()
 
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		Name:        "No Desc Asset",
 		Type:        "host",
 		Criticality: "low",
@@ -2115,7 +2122,7 @@ func TestAssetService_UpdateAsset_TagsReplacement(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Tag Replace Test",
 		Type:        "host",
@@ -2128,7 +2135,7 @@ func TestAssetService_UpdateAsset_TagsReplacement(t *testing.T) {
 	}
 
 	// Replace tags entirely
-	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
+	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, assetapp.UpdateAssetInput{
 		Tags: []string{"new1"},
 	})
 	if err != nil {
@@ -2148,7 +2155,7 @@ func TestAssetService_UpdateAsset_ClearTags(t *testing.T) {
 	svc, _ := newTestService()
 	tenantID := serviceTenantID.String()
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        "Clear Tags Test",
 		Type:        "host",
@@ -2161,7 +2168,7 @@ func TestAssetService_UpdateAsset_ClearTags(t *testing.T) {
 	}
 
 	// Clear tags by setting empty slice
-	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, app.UpdateAssetInput{
+	updated, err := svc.UpdateAsset(context.Background(), created.ID().String(), tenantID, assetapp.UpdateAssetInput{
 		Tags: []string{},
 	})
 	if err != nil {
@@ -2176,7 +2183,7 @@ func TestAssetService_UpdateAsset_ClearTags(t *testing.T) {
 func TestAssetService_CreateAsset_RiskScoreCalculated(t *testing.T) {
 	svc, _ := newTestService()
 
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		Name:        "Risk Score Test",
 		Type:        "host",
 		Criticality: "critical",
@@ -2194,7 +2201,7 @@ func TestAssetService_CreateAsset_RiskScoreCalculated(t *testing.T) {
 func TestAssetService_CreateAsset_DefaultValues(t *testing.T) {
 	svc, _ := newTestService()
 
-	a, err := svc.CreateAsset(context.Background(), app.CreateAssetInput{
+	a, err := svc.CreateAsset(context.Background(), assetapp.CreateAssetInput{
 		Name:        "Defaults Test",
 		Type:        "host",
 		Criticality: "low",
@@ -2294,4 +2301,12 @@ func TestAssetService_GetAssetDisplayInfo_InvalidTenant(t *testing.T) {
 	if _, err := svc.GetAssetDisplayInfo(context.Background(), "bad", []string{shared.NewID().String()}); err == nil {
 		t.Fatal("expected validation error for bad tenant id")
 	}
+}
+
+func (m *MockAssetRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
+}
+
+func (m *MockAssetRepository) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	return nil, nil
 }

@@ -12,6 +12,7 @@ import {
 import { useOrganizationUsers } from '../api/use-admin-organizations'
 import type { AdminOrganizationUser } from '../types'
 import { CreateFirstOwnerDialog } from './create-first-owner-dialog'
+import { OwnerRecoveryDialog } from './owner-recovery-dialog'
 
 const columns: ColumnDef<AdminOrganizationUser>[] = [
   {
@@ -57,23 +58,33 @@ const columns: ColumnDef<AdminOrganizationUser>[] = [
 
 /**
  * People in one organization. The platform console only bootstraps an
- * organization: "Create first owner" appears while it has no active owner;
- * after that the owner and its administrators add users themselves.
+ * organization: "Create first owner" appears while it has no owner. A
+ * suspended owner still counts (the API answers 409); recovering an
+ * organization whose owners are all suspended is a super admin's explicit
+ * API request (RFC-022 revision 7). After that the owner and its
+ * administrators add users themselves.
  */
 export function OrganizationUsersSection({
   tenantId,
+  orgName,
   canManage,
+  canRecover = false,
   onChanged,
 }: {
   tenantId: string
+  orgName: string
   canManage: boolean
+  /** Super admin: may run an owner recovery when every owner is suspended. */
+  canRecover?: boolean
   /** The organization's member count changed. */
   onChanged?: () => void
 }) {
   const { data, error, isLoading, mutate } = useOrganizationUsers(tenantId)
   const refresh = () => void mutate()
   const users = data?.data ?? []
-  const hasOwner = users.some((u) => u.role === 'owner' && u.status === 'active')
+  const hasOwner = users.some((u) => u.role === 'owner')
+  const ownersAllSuspended =
+    hasOwner && !users.some((u) => u.role === 'owner' && u.status === 'active')
   const canBootstrap = canManage && !isLoading && !error && !hasOwner
 
   return (
@@ -82,11 +93,23 @@ export function OrganizationUsersSection({
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Users</h2>
           <p className="text-sm text-muted-foreground">
-            {hasOwner
-              ? "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
-              : 'This organization has no owner yet. Create its first owner; they add everyone else.'}
+            {ownersAllSuspended
+              ? 'Every owner of this organization is suspended. A suspended owner still owns the organization, so the console cannot create another one; a super admin can recover ownership (with a reason and an authenticator code; the new owner gets a set-password link by email only).'
+              : hasOwner
+                ? "People with an account in this organization. The organization's owner and administrators invite or create users; the platform console only creates an organization's first owner."
+                : 'This organization has no owner yet. Create its first owner; they add everyone else.'}
           </p>
         </div>
+        {canRecover && ownersAllSuspended && (
+          <OwnerRecoveryDialog
+            tenantId={tenantId}
+            orgName={orgName}
+            onRecovered={() => {
+              refresh()
+              onChanged?.()
+            }}
+          />
+        )}
         {canBootstrap && (
           <CreateFirstOwnerDialog
             tenantId={tenantId}

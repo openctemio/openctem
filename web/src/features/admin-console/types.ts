@@ -91,6 +91,8 @@ export interface AdminOrganization {
   active_identity_providers: number
   verified_domains: number
   sso_enforced: boolean
+  /** free | pro | enterprise (enterprise when created before plans). */
+  plan: string
 }
 
 export interface AdminOrganizationList {
@@ -147,11 +149,26 @@ export interface AdminCreateOrganizationUserInput {
   name: string
 }
 
+/** Owner recovery: a new owner when every owner is suspended (super admin). */
+export interface AdminOwnerRecoveryInput {
+  email: string
+  name: string
+  reason: string
+  totp_code?: string
+}
+
 /** Same shape as the tenant-side create-user response. */
 export interface AdminCreatedOrganizationUser extends SetupLinkOutcome {
   user: { id: string; email: string; name: string }
   membership_id: string
   role: string
+}
+
+/** English names of the console roles (i18n keys admin.role.<role>). */
+export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
+  super_admin: 'Super admin',
+  ops_admin: 'Operations admin',
+  readonly: 'Read-only admin',
 }
 
 /** super_admin > ops_admin > readonly. */
@@ -239,4 +256,193 @@ export interface UpdateTargetMappingInput {
   priority?: number
   is_active?: boolean
   description?: string
+}
+
+/** GET /admin/overview: the console's attention counts (any admin role). */
+export interface AdminOverview {
+  organizations: {
+    total: number
+    without_owner: number
+    without_owner_sample: { id: string; name: string }[]
+  }
+  security: {
+    break_glass_sign_ins_7d: number
+    failed_admin_actions_24h: number
+    break_glass_tests_overdue: number
+  }
+  /** What waits in the Requests inbox. */
+  requests?: {
+    access_pending: number
+    access_oldest_pending_seconds: number
+  }
+  platform: {
+    schema_version: number
+    /** Newest migration the running API ships; 0 when unknown. */
+    schema_shipped: number
+    schema_dirty: boolean
+    schema_known: boolean
+    platform_sensors: { total: number; online: number; offline: number }
+    commands_pending: number
+    command_oldest_pending_seconds: number
+    scan_runs_past_deadline: number
+    outbox_failed: number
+    outbox_dead: number
+  }
+  generated_at: string
+}
+
+/** One account in Console > Users (account-level facts only). */
+export interface PlatformUser {
+  id: string
+  email: string
+  name: string
+  status: string
+  /** local | oidc | google | github | microsoft | saml */
+  auth_provider: string
+  email_verified: boolean
+  locked: boolean
+  locked_until?: string
+  failed_logins: number
+  last_login_at?: string
+  created_at: string
+  memberships: number
+  mfa_enabled: boolean
+  is_platform_admin: boolean
+  erased: boolean
+}
+
+export interface PlatformUserDetail extends PlatformUser {
+  membership_list: {
+    tenant_id: string
+    tenant_name: string
+    tenant_slug: string
+    role: string
+    status: string
+    joined_at: string
+  }[]
+  identities: {
+    issuer: string
+    subject: string
+    tenant_id?: string
+    created_at: string
+    last_used_at?: string
+  }[]
+  sessions: {
+    id: string
+    ip_address?: string
+    user_agent?: string
+    auth_method: string
+    created_at: string
+    last_activity_at: string
+    expires_at: string
+  }[]
+}
+
+export type PlatformUserAction =
+  'revoke-sessions' | 'unlock' | 'password-reset' | 'verification-emails'
+
+/** GET /admin/sessions: one open console session (super admin). */
+export interface AdminConsoleSession {
+  id: string
+  admin_id: string
+  admin_email: string
+  admin_name: string
+  admin_role: AdminRole
+  break_glass: boolean
+  /** password | idp */
+  auth_method: string
+  mfa_verified: boolean
+  ip_address?: string
+  user_agent?: string
+  created_at: string
+  last_seen_at: string
+  expires_at: string
+  /** The session making the request. */
+  current: boolean
+}
+
+interface AdminOpsComponent {
+  ok: boolean
+  latency_ms: number
+  configured: boolean
+  error?: string
+}
+
+/** GET /admin/operations: the installation's health (any admin role). */
+export interface AdminOperations {
+  build: { version: string; commit?: string; build_time?: string; channel?: string }
+  schema: { applied: number; shipped: number; dirty: boolean; known: boolean }
+  database: AdminOpsComponent & {
+    open_connections: number
+    in_use: number
+    idle: number
+    max_open: number
+    wait_count: number
+  }
+  redis: AdminOpsComponent
+  queues: {
+    commands_pending: number
+    commands_running: number
+    command_oldest_pending_seconds: number
+    scan_runs_open: number
+    scan_runs_past_deadline: number
+    outbox_pending: number
+    outbox_failed: number
+    outbox_dead: number
+    outbox_oldest_pending_seconds: number
+  }
+  sensors: {
+    platform: boolean
+    health: string
+    config_health?: string
+    sdk_version?: string
+    count: number
+  }[]
+  sdk_min_version?: string
+  /** How sensors reach this installation; absent when not wired. */
+  sensor_transport?: AdminSensorTransport
+  controllers: {
+    name: string
+    running: boolean
+    last_reconcile_at?: string
+    errors_total: number
+  }[]
+  checked_at: string
+}
+
+/** The sensor protocol v3 bindings and the gRPC self-probe (api RFC-059). */
+export interface AdminSensorTransport {
+  /** auto: protocol v3 served; off: every sensor on protocol v2. */
+  mode: 'auto' | 'off'
+  https_path?: string
+  grpc: {
+    /** advertised: offered to sensors; pending: first probe; unavailable: see reason. */
+    state: 'advertised' | 'pending' | 'unavailable'
+    endpoint?: string
+    requires_alpn?: boolean
+    reason?: string
+    checked_at?: string
+  }
+}
+
+/** A platform announcement in the console (GET /admin/announcements). */
+export interface AdminAnnouncement {
+  id: string
+  message: string
+  severity: 'info' | 'warning' | 'maintenance'
+  starts_at: string
+  ends_at?: string
+  state: 'scheduled' | 'active' | 'ended'
+  created_at: string
+}
+
+/** One threat-intelligence feed's sync state (GET /admin/threat-intel/sync). */
+export interface ThreatIntelFeed {
+  source: string
+  enabled: boolean
+  last_sync_at?: string
+  last_sync_status: string
+  last_error?: string
+  records_synced: number
+  next_sync_at?: string
 }

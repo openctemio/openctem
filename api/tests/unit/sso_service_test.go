@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/identityprovider"
@@ -210,8 +210,11 @@ func (m *ssoMockTenantRepo) GetBySlug(_ context.Context, slug string) (*tenant.T
 	return t, nil
 }
 
-func (m *ssoMockTenantRepo) Update(_ context.Context, _ *tenant.Tenant) error {
+func (m *ssoMockTenantRepo) UpdateProfile(_ context.Context, _ *tenant.Tenant) error {
 	return m.updateErr
+}
+func (m *ssoMockTenantRepo) UpdateSettingsSection(_ context.Context, _ shared.ID, _ string, _ any, _ bool, _ any) error {
+	return nil
 }
 
 func (m *ssoMockTenantRepo) Delete(_ context.Context, _ shared.ID) error {
@@ -259,7 +262,7 @@ func (m *ssoMockTenantRepo) GetMembership(_ context.Context, _ shared.ID, _ shar
 	return nil, shared.ErrNotFound
 }
 
-func (m *ssoMockTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID) (*tenant.Membership, error) {
+func (m *ssoMockTenantRepo) GetMembershipByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Membership, error) {
 	if m.getMembershipByIDErr != nil {
 		return nil, m.getMembershipByIDErr
 	}
@@ -270,7 +273,7 @@ func (m *ssoMockTenantRepo) UpdateMembership(_ context.Context, _ *tenant.Member
 	return m.updateMembershipErr
 }
 
-func (m *ssoMockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID) error {
+func (m *ssoMockTenantRepo) DeleteMembership(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return m.deleteMembershipErr
 }
 
@@ -324,7 +327,7 @@ func (m *ssoMockTenantRepo) GetInvitationByToken(_ context.Context, _ string) (*
 	return nil, shared.ErrNotFound
 }
 
-func (m *ssoMockTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID) (*tenant.Invitation, error) {
+func (m *ssoMockTenantRepo) GetInvitationByID(_ context.Context, _ shared.ID, _ shared.ID) (*tenant.Invitation, error) {
 	return nil, shared.ErrNotFound
 }
 
@@ -332,7 +335,7 @@ func (m *ssoMockTenantRepo) UpdateInvitation(_ context.Context, _ *tenant.Invita
 	return nil
 }
 
-func (m *ssoMockTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID) error {
+func (m *ssoMockTenantRepo) DeleteInvitation(_ context.Context, _ shared.ID, _ shared.ID) error {
 	return nil
 }
 
@@ -725,10 +728,10 @@ func newTestSSOService(
 	sessionRepo session.Repository,
 	refreshTokenRepo session.RefreshTokenRepository,
 	encryptor crypto.Encryptor,
-) *app.SSOService {
+) *auth.SSOService {
 	log := logger.New(logger.Config{Level: "error"})
 	authCfg := newTestAuthConfig()
-	return app.NewSSOService(
+	return auth.NewSSOService(
 		ipRepo,
 		tenantRepo,
 		userRepo,
@@ -786,14 +789,18 @@ func TestSSOService_GetProvidersForTenant_Success(t *testing.T) {
 	}
 }
 
+// Anti-enumeration: an unknown organization answers like one without SSO.
 func TestSSOService_GetProvidersForTenant_TenantNotFound(t *testing.T) {
 	ipRepo := newSSOmockIPRepo()
 	tenantRepo := newSSOmockTenantRepo()
 	svc := newTestSSOService(ipRepo, tenantRepo, newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	_, err := svc.GetProvidersForTenant(context.Background(), "nonexistent")
-	if !errors.Is(err, app.ErrSSOTenantNotFound) {
-		t.Fatalf("expected ErrSSOTenantNotFound, got %v", err)
+	got, err := svc.GetProvidersForTenant(context.Background(), "nonexistent")
+	if err != nil {
+		t.Fatalf("an unknown organization must not be an error, got %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("an unknown organization must answer an empty list, got %#v", got)
 	}
 }
 
@@ -867,7 +874,7 @@ func TestSSOService_GenerateAuthorizeURL_Success_EntraID(t *testing.T) {
 	provider.SetTenantIdentifier("tenant-guid-123")
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -906,7 +913,7 @@ func TestSSOService_GenerateAuthorizeURL_Success_GoogleWorkspace(t *testing.T) {
 	provider.SetAllowedDomains([]string{"example.com"})
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderGoogleWorkspace),
 		RedirectURI: "https://app.example.com/callback",
@@ -943,7 +950,7 @@ func TestSSOService_GenerateAuthorizeURL_Success_Okta(t *testing.T) {
 	provider.SetTenantIdentifier("https://dev-12345.okta.com")
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderOkta),
 		RedirectURI: "https://app.example.com/callback",
@@ -972,12 +979,12 @@ func TestSSOService_GenerateAuthorizeURL_InvalidRedirectURI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+			_, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 				OrgSlug:     "test-org",
 				Provider:    "entra_id",
 				RedirectURI: tt.redirectURI,
 			})
-			if !errors.Is(err, app.ErrSSOInvalidRedirectURI) {
+			if !errors.Is(err, auth.ErrSSOInvalidRedirectURI) {
 				t.Fatalf("expected ErrSSOInvalidRedirectURI, got %v", err)
 			}
 		})
@@ -1006,7 +1013,7 @@ func TestSSOService_GenerateAuthorizeURL_ValidRedirectURIs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+			result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 				OrgSlug:     "test-org",
 				Provider:    string(identityprovider.ProviderEntraID),
 				RedirectURI: tt.redirectURI,
@@ -1024,12 +1031,12 @@ func TestSSOService_GenerateAuthorizeURL_ValidRedirectURIs(t *testing.T) {
 func TestSSOService_GenerateAuthorizeURL_TenantNotFound(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	_, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	_, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "nonexistent",
 		Provider:    "entra_id",
 		RedirectURI: "https://app.example.com/callback",
 	})
-	if !errors.Is(err, app.ErrSSOTenantNotFound) {
+	if !errors.Is(err, auth.ErrSSOTenantNotFound) {
 		t.Fatalf("expected ErrSSOTenantNotFound, got %v", err)
 	}
 }
@@ -1042,12 +1049,12 @@ func TestSSOService_GenerateAuthorizeURL_ProviderNotFound(t *testing.T) {
 	testTenant := createTestTenant("test-org")
 	tenantRepo.addTenant(testTenant)
 
-	_, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	_, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    "entra_id",
 		RedirectURI: "https://app.example.com/callback",
 	})
-	if !errors.Is(err, app.ErrSSOProviderNotFound) {
+	if !errors.Is(err, auth.ErrSSOProviderNotFound) {
 		t.Fatalf("expected ErrSSOProviderNotFound, got %v", err)
 	}
 }
@@ -1063,12 +1070,12 @@ func TestSSOService_GenerateAuthorizeURL_ProviderInactive(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, false)
 	ipRepo.providers[provider.ID()] = provider
 
-	_, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	_, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
 	})
-	if !errors.Is(err, app.ErrSSOProviderInactive) {
+	if !errors.Is(err, auth.ErrSSOProviderInactive) {
 		t.Fatalf("expected ErrSSOProviderInactive, got %v", err)
 	}
 }
@@ -1086,12 +1093,12 @@ func TestSSOService_GenerateAuthorizeURL_DecryptionFailed(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	_, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	_, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
 	})
-	if !errors.Is(err, app.ErrSSODecryptionFailed) {
+	if !errors.Is(err, auth.ErrSSODecryptionFailed) {
 		t.Fatalf("expected ErrSSODecryptionFailed, got %v", err)
 	}
 }
@@ -1108,7 +1115,7 @@ func TestSSOService_GenerateAuthorizeURL_IncludesScopes(t *testing.T) {
 	provider.SetScopes([]string{"openid", "email", "profile"})
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -1132,7 +1139,7 @@ func TestSSOService_CreateProvider_Success(t *testing.T) {
 	tenantRepo := newSSOmockTenantRepo()
 	svc := newTestSSOService(ipRepo, tenantRepo, newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     string(identityprovider.ProviderEntraID),
 		DisplayName:  "Microsoft SSO",
@@ -1166,7 +1173,7 @@ func TestSSOService_CreateProvider_Success(t *testing.T) {
 func TestSSOService_CreateProvider_InvalidProvider(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     "invalid_provider",
 		DisplayName:  "Bad Provider",
@@ -1183,7 +1190,7 @@ func TestSSOService_CreateProvider_InvalidProvider(t *testing.T) {
 func TestSSOService_CreateProvider_OwnerRoleRejected(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     string(identityprovider.ProviderEntraID),
 		DisplayName:  "SSO Provider",
@@ -1193,19 +1200,19 @@ func TestSSOService_CreateProvider_OwnerRoleRejected(t *testing.T) {
 	}
 
 	_, err := svc.CreateProvider(context.Background(), input)
-	if !errors.Is(err, app.ErrSSOInvalidDefaultRole) {
+	if !errors.Is(err, auth.ErrSSOInvalidDefaultRole) {
 		t.Fatalf("expected ErrSSOInvalidDefaultRole, got %v", err)
 	}
 }
 
 func TestSSOService_CreateProvider_ValidDefaultRoles(t *testing.T) {
-	validRoles := []string{"admin", "member", "viewer", ""}
+	validRoles := []string{"member", "viewer", ""}
 	for _, role := range validRoles {
 		t.Run("role_"+role, func(t *testing.T) {
 			ipRepo := newSSOmockIPRepo()
 			svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-			input := app.CreateProviderInput{
+			input := auth.CreateProviderInput{
 				TenantID:     shared.NewID().String(),
 				Provider:     string(identityprovider.ProviderEntraID),
 				DisplayName:  "SSO Provider",
@@ -1228,7 +1235,7 @@ func TestSSOService_CreateProvider_InvalidDefaultRole(t *testing.T) {
 		t.Run("role_"+role, func(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-			input := app.CreateProviderInput{
+			input := auth.CreateProviderInput{
 				TenantID:     shared.NewID().String(),
 				Provider:     string(identityprovider.ProviderEntraID),
 				DisplayName:  "SSO Provider",
@@ -1238,7 +1245,7 @@ func TestSSOService_CreateProvider_InvalidDefaultRole(t *testing.T) {
 			}
 
 			_, err := svc.CreateProvider(context.Background(), input)
-			if !errors.Is(err, app.ErrSSOInvalidDefaultRole) {
+			if !errors.Is(err, auth.ErrSSOInvalidDefaultRole) {
 				t.Fatalf("expected ErrSSOInvalidDefaultRole for role %q, got %v", role, err)
 			}
 		})
@@ -1262,7 +1269,7 @@ func TestSSOService_CreateProvider_OktaTenantIdentifierValidation(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-			input := app.CreateProviderInput{
+			input := auth.CreateProviderInput{
 				TenantID:         shared.NewID().String(),
 				Provider:         string(identityprovider.ProviderOkta),
 				DisplayName:      "Okta SSO",
@@ -1285,7 +1292,7 @@ func TestSSOService_CreateProvider_OktaTenantIdentifierValidation(t *testing.T) 
 func TestSSOService_CreateProvider_EntraIDTenantIdentifierTooLong(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:         shared.NewID().String(),
 		Provider:         string(identityprovider.ProviderEntraID),
 		DisplayName:      "EntraID SSO",
@@ -1313,15 +1320,16 @@ func TestSSOService_CreateProvider_ScopesValidation(t *testing.T) {
 		{"empty scopes allowed", nil, false},
 		{"too many scopes", makeScopesList(21), true},
 		{"scope too long", []string{strings.Repeat("a", 129)}, true},
-		{"max scopes allowed", makeScopesList(20), false},
-		{"max length scope allowed", []string{strings.Repeat("a", 128)}, false},
+		{"max scopes allowed", append([]string{"openid"}, makeScopesList(19)...), false},
+		{"max length scope allowed", []string{"openid", strings.Repeat("a", 128)}, false},
+		{"scopes without openid rejected", []string{"email", "profile"}, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-			input := app.CreateProviderInput{
+			input := auth.CreateProviderInput{
 				TenantID:     shared.NewID().String(),
 				Provider:     string(identityprovider.ProviderEntraID),
 				DisplayName:  "SSO Provider",
@@ -1363,7 +1371,7 @@ func TestSSOService_CreateProvider_AllowedDomainsValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-			input := app.CreateProviderInput{
+			input := auth.CreateProviderInput{
 				TenantID:       shared.NewID().String(),
 				Provider:       string(identityprovider.ProviderEntraID),
 				DisplayName:    "SSO Provider",
@@ -1388,7 +1396,7 @@ func TestSSOService_CreateProvider_EncryptionFailed(t *testing.T) {
 	encryptor.encryptErr = errors.New("encryption failed")
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), encryptor)
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     string(identityprovider.ProviderEntraID),
 		DisplayName:  "SSO Provider",
@@ -1407,7 +1415,7 @@ func TestSSOService_CreateProvider_RepoError(t *testing.T) {
 	ipRepo.createErr = errors.New("db error")
 	svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     string(identityprovider.ProviderEntraID),
 		DisplayName:  "SSO Provider",
@@ -1426,7 +1434,7 @@ func TestSSOService_CreateProvider_SetsOptionalFields(t *testing.T) {
 	svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	createdBy := shared.NewID().String()
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:         shared.NewID().String(),
 		Provider:         string(identityprovider.ProviderEntraID),
 		DisplayName:      "EntraID SSO",
@@ -1480,7 +1488,7 @@ func TestSSOService_CreateProvider_AllProviderTypes(t *testing.T) {
 			ipRepo := newSSOmockIPRepo()
 			svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-			input := app.CreateProviderInput{
+			input := auth.CreateProviderInput{
 				TenantID:     shared.NewID().String(),
 				Provider:     string(p),
 				DisplayName:  "Provider " + string(p),
@@ -1515,7 +1523,7 @@ func TestSSOService_UpdateProvider_Success(t *testing.T) {
 	newClientID := "new-client-id"
 	isActive := false
 
-	result, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	result, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:          provider.ID(),
 		TenantID:    tenantID,
 		DisplayName: &newName,
@@ -1546,7 +1554,7 @@ func TestSSOService_UpdateProvider_NotFound(t *testing.T) {
 	tenantID := shared.NewID().String()
 	newName := "Updated"
 
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:          "nonexistent-id",
 		TenantID:    tenantID,
 		DisplayName: &newName,
@@ -1565,12 +1573,12 @@ func TestSSOService_UpdateProvider_OwnerRoleRejected(t *testing.T) {
 	ipRepo.providers[provider.ID()] = provider
 
 	ownerRole := "owner"
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:          provider.ID(),
 		TenantID:    tenantID,
 		DefaultRole: &ownerRole,
 	})
-	if !errors.Is(err, app.ErrSSOInvalidDefaultRole) {
+	if !errors.Is(err, auth.ErrSSOInvalidDefaultRole) {
 		t.Fatalf("expected ErrSSOInvalidDefaultRole, got %v", err)
 	}
 }
@@ -1584,7 +1592,7 @@ func TestSSOService_UpdateProvider_UpdateClientSecret(t *testing.T) {
 	ipRepo.providers[provider.ID()] = provider
 
 	newSecret := "new-secret-value"
-	result, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	result, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:           provider.ID(),
 		TenantID:     tenantID,
 		ClientSecret: &newSecret,
@@ -1611,7 +1619,7 @@ func TestSSOService_UpdateProvider_EncryptionFailed(t *testing.T) {
 	encryptor.encryptErr = errors.New("encryption failed")
 
 	newSecret := "new-secret"
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:           provider.ID(),
 		TenantID:     tenantID,
 		ClientSecret: &newSecret,
@@ -1631,7 +1639,7 @@ func TestSSOService_UpdateProvider_ValidateTenantIdentifier(t *testing.T) {
 
 	// Non-okta domain should fail for Okta provider
 	badIdentifier := "https://evil.example.com"
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:               provider.ID(),
 		TenantID:         tenantID,
 		TenantIdentifier: &badIdentifier,
@@ -1649,7 +1657,7 @@ func TestSSOService_UpdateProvider_ValidateAllowedDomains(t *testing.T) {
 	provider := createTestProvider(tenantID, identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:             provider.ID(),
 		TenantID:       tenantID,
 		AllowedDomains: []string{"*.example.com"},
@@ -1667,7 +1675,7 @@ func TestSSOService_UpdateProvider_ValidateScopes(t *testing.T) {
 	provider := createTestProvider(tenantID, identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:       provider.ID(),
 		TenantID: tenantID,
 		Scopes:   makeScopesList(21),
@@ -1688,7 +1696,7 @@ func TestSSOService_UpdateProvider_PartialUpdate(t *testing.T) {
 	originalClientID := provider.ClientID()
 	newName := "Updated Name Only"
 
-	result, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	result, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:          provider.ID(),
 		TenantID:    tenantID,
 		DisplayName: &newName,
@@ -1720,10 +1728,10 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	issuer := "https://issuer.example.com"
 	tid := "new-tenant-id"
 	autoProvision := false
-	role := "admin"
+	role := "member"
 	active := false
 
-	result, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	result, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:               provider.ID(),
 		TenantID:         tenantID,
 		DisplayName:      &name,
@@ -1761,7 +1769,7 @@ func TestSSOService_UpdateProvider_AllFields(t *testing.T) {
 	if result.AutoProvision() {
 		t.Fatal("expected auto-provision to be false")
 	}
-	if result.DefaultRole() != "admin" {
+	if result.DefaultRole() != "member" {
 		t.Fatalf("unexpected default role: %q", result.DefaultRole())
 	}
 	if result.IsActive() {
@@ -1779,7 +1787,7 @@ func TestSSOService_UpdateProvider_RepoError(t *testing.T) {
 	ipRepo.providers[provider.ID()] = provider
 
 	newName := "Updated"
-	_, err := svc.UpdateProvider(context.Background(), app.UpdateProviderInput{
+	_, err := svc.UpdateProvider(context.Background(), auth.UpdateProviderInput{
 		ID:          provider.ID(),
 		TenantID:    tenantID,
 		DisplayName: &newName,
@@ -1978,12 +1986,12 @@ func TestSSOService_DeleteProvider_RepoError(t *testing.T) {
 func TestSSOService_HandleCallback_InvalidState(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	_, err := svc.HandleCallback(context.Background(), app.SSOCallbackInput{
+	_, err := svc.HandleCallback(context.Background(), auth.SSOCallbackInput{
 		Provider: "entra_id",
 		Code:     "auth-code",
 		State:    "invalid-state-token",
 	})
-	if !errors.Is(err, app.ErrSSOInvalidState) {
+	if !errors.Is(err, auth.ErrSSOInvalidState) {
 		t.Fatalf("expected ErrSSOInvalidState, got %v", err)
 	}
 }
@@ -2000,7 +2008,7 @@ func TestSSOService_HandleCallback_ProviderMismatch(t *testing.T) {
 	ipRepo.providers[provider.ID()] = provider
 
 	// Generate a valid state for "entra_id"
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2010,12 +2018,12 @@ func TestSSOService_HandleCallback_ProviderMismatch(t *testing.T) {
 	}
 
 	// Use the state but claim the provider is "okta" - should fail
-	_, err = svc.HandleCallback(context.Background(), app.SSOCallbackInput{
+	_, err = svc.HandleCallback(context.Background(), auth.SSOCallbackInput{
 		Provider: "okta",
 		Code:     "auth-code",
 		State:    result.State,
 	})
-	if !errors.Is(err, app.ErrSSOInvalidState) {
+	if !errors.Is(err, auth.ErrSSOInvalidState) {
 		t.Fatalf("expected ErrSSOInvalidState for provider mismatch, got %v", err)
 	}
 }
@@ -2024,12 +2032,12 @@ func TestSSOService_HandleCallback_TamperedState(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
 	// State with tampered signature
-	_, err := svc.HandleCallback(context.Background(), app.SSOCallbackInput{
+	_, err := svc.HandleCallback(context.Background(), auth.SSOCallbackInput{
 		Provider: "entra_id",
 		Code:     "auth-code",
 		State:    "dGVzdA==.dGFtcGVyZWQ=",
 	})
-	if !errors.Is(err, app.ErrSSOInvalidState) {
+	if !errors.Is(err, auth.ErrSSOInvalidState) {
 		t.Fatalf("expected ErrSSOInvalidState for tampered state, got %v", err)
 	}
 }
@@ -2049,7 +2057,7 @@ func TestSSOService_StateToken_RoundTrip(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2079,7 +2087,7 @@ func TestSSOService_StateToken_UniquePerRequest(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	input := app.SSOAuthorizeInput{
+	input := auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2122,7 +2130,7 @@ func TestSSOService_ProviderEndpoints_EntraID_DefaultTenant(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2147,7 +2155,7 @@ func TestSSOService_ProviderEndpoints_EntraID_CustomTenant(t *testing.T) {
 	provider.SetTenantIdentifier("my-tenant-guid")
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2172,7 +2180,7 @@ func TestSSOService_ProviderEndpoints_GoogleWorkspace_NoDomainRestriction(t *tes
 	// No allowed domains set
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderGoogleWorkspace),
 		RedirectURI: "https://app.example.com/callback",
@@ -2193,7 +2201,7 @@ func TestSSOService_ProviderEndpoints_GoogleWorkspace_NoDomainRestriction(t *tes
 func TestSSOService_ValidateDefaultRole_EmptyIsValid(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     string(identityprovider.ProviderEntraID),
 		DisplayName:  "SSO Provider",
@@ -2215,7 +2223,7 @@ func TestSSOService_ValidateDefaultRole_EmptyIsValid(t *testing.T) {
 func TestSSOService_ValidateOktaTenantIdentifier_MissingScheme(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:         shared.NewID().String(),
 		Provider:         string(identityprovider.ProviderOkta),
 		DisplayName:      "Okta SSO",
@@ -2233,7 +2241,7 @@ func TestSSOService_ValidateOktaTenantIdentifier_MissingScheme(t *testing.T) {
 func TestSSOService_ValidateEntraIDTenantIdentifier_ValidLength(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:         shared.NewID().String(),
 		Provider:         string(identityprovider.ProviderEntraID),
 		DisplayName:      "EntraID SSO",
@@ -2251,7 +2259,7 @@ func TestSSOService_ValidateEntraIDTenantIdentifier_ValidLength(t *testing.T) {
 func TestSSOService_ValidateAllowedDomains_MaxLength(t *testing.T) {
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:       shared.NewID().String(),
 		Provider:       string(identityprovider.ProviderEntraID),
 		DisplayName:    "SSO Provider",
@@ -2316,7 +2324,7 @@ func TestSSOService_CreateProvider_ClientSecretEncrypted(t *testing.T) {
 	ipRepo := newSSOmockIPRepo()
 	svc := newTestSSOService(ipRepo, newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 
-	input := app.CreateProviderInput{
+	input := auth.CreateProviderInput{
 		TenantID:     shared.NewID().String(),
 		Provider:     string(identityprovider.ProviderEntraID),
 		DisplayName:  "SSO Provider",
@@ -2346,7 +2354,7 @@ func TestSSOService_GenerateAuthorizeURL_ContainsClientID(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2380,7 +2388,7 @@ func TestSSOService_GenerateAuthorizeURL_ContainsState(t *testing.T) {
 	provider := createTestProvider(testTenant.ID().String(), identityprovider.ProviderEntraID, true)
 	ipRepo.providers[provider.ID()] = provider
 
-	result, err := svc.GenerateAuthorizeURL(context.Background(), app.SSOAuthorizeInput{
+	result, err := svc.GenerateAuthorizeURL(context.Background(), auth.SSOAuthorizeInput{
 		OrgSlug:     "test-org",
 		Provider:    string(identityprovider.ProviderEntraID),
 		RedirectURI: "https://app.example.com/callback",
@@ -2454,7 +2462,7 @@ func TestSSOService_CompleteFederatedLogin_TakeoverGuardBlocksPasswordUser(t *te
 	tn := createTestTenant("acme")
 
 	_, err = svc.CompleteFederatedLogin(context.Background(), tn, "local@example.com", "Local User", "member", false)
-	if !errors.Is(err, app.ErrSSOFederatedTakeover) {
+	if !errors.Is(err, auth.ErrSSOFederatedTakeover) {
 		t.Fatalf("expected ErrSSOFederatedTakeover for a password-backed account, got %v", err)
 	}
 }
@@ -2470,6 +2478,7 @@ func TestSSOService_CompleteFederatedLogin_ReusesPasswordlessUser(t *testing.T) 
 
 	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), userRepo,
 		newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	svc.SetDomainVerifier(ssoUnitVerifier{"example.com": true})
 	tn := createTestTenant("acme")
 
 	res, err := svc.CompleteFederatedLogin(context.Background(), tn, "invited@example.com", "Invited", "member", false)
@@ -2504,12 +2513,42 @@ func TestSSOService_CompleteFederatedLogin_NewUser_NotAdmitted(t *testing.T) {
 				newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
 			svc.SetDomainVerifier(tc.verified)
 			_, err := svc.CompleteFederatedLogin(context.Background(), createTestTenant("acme"), "new@example.com", "New", "member", tc.autoProvision)
-			if !errors.Is(err, app.ErrSSONotAMember) {
+			if !errors.Is(err, auth.ErrSSONotAMember) {
 				t.Fatalf("expected ErrSSONotAMember, got %v", err)
 			}
 			if _, gerr := userRepo.GetByEmail(context.Background(), "new@example.com"); gerr == nil {
 				t.Fatal("no account may be created for a refused login")
 			}
 		})
+	}
+}
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *ssoMockUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *ssoMockUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *ssoMockUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error {
+	return nil
+}
+
+// An SSO provider can never auto-provision administrators (owner decision
+// B18): an IdP misconfiguration would otherwise be a takeover path.
+func TestSSOService_CreateProvider_AdminDefaultRoleRefused(t *testing.T) {
+	svc := newTestSSOService(newSSOmockIPRepo(), newSSOmockTenantRepo(), newSSOmockUserRepo(), newSSOmockSessionRepo(), newSSOmockRefreshTokenRepo(), newSSOmockEncryptor())
+	_, err := svc.CreateProvider(context.Background(), auth.CreateProviderInput{
+		TenantID:     shared.NewID().String(),
+		Provider:     string(identityprovider.ProviderEntraID),
+		DisplayName:  "SSO Provider",
+		ClientID:     "client-123",
+		ClientSecret: "super-secret",
+		DefaultRole:  "admin",
+	})
+	if !errors.Is(err, auth.ErrSSOInvalidDefaultRole) {
+		t.Fatalf("admin default role: err = %v, want ErrSSOInvalidDefaultRole", err)
 	}
 }

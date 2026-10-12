@@ -9,16 +9,24 @@
  *    options, so "Has owner" and "Unowned" are both one click away and ticking
  *    one replaces the other.
  * A "Signals" section holds the filters that are not facets (crown jewels,
- * has findings, stale) and any tags that arrived in the URL, so every filter
- * counted on the toolbar button can be seen and removed here.
+ * has findings, stale), so every filter counted on the toolbar button can be
+ * seen and removed here. Tags have their own section (InventoryTagsFacet):
+ * the tenant's tag list with search, include / exclude and Any / All.
  *
  * No per-option counts: the stats counts ignore the other active filters, so
  * they would disagree with the list. Selecting anything resets to page 1.
+ *
+ * Typed mode (research/77): the type's attribute facets (OS family,
+ * provider, issuer, …) come first, from the registry. Enum values are the
+ * registry's, yes/no attributes offer Yes and No, and text or number
+ * attributes list the values the tenant has, most common first. They filter
+ * server-side (`properties=key:value`).
  */
 
 import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/context/i18n-provider'
 import { FacetOption, FacetPanel, FacetSection } from '@/features/shared'
 import {
   staleBeforeISO,
@@ -27,7 +35,20 @@ import {
   type MultiFacetDef,
 } from '../../lib/inventory-facets'
 import type { AssetStatsData } from '../../hooks/use-assets'
-import type { InventoryFilters } from '../../lib/inventory-url'
+import { togglePropertyFilter, type InventoryFilters } from '../../lib/inventory-url'
+import type { TypeAttribute } from '@/features/asset-types/lib/type-view'
+import { InventoryTagsFacet } from './inventory-tags-facet'
+
+/** One attribute facet of the typed inventory. */
+export interface AttributeFacet {
+  attribute: TypeAttribute
+  label: string
+  /** Value → count among the type's assets (stats count_by). */
+  counts: Record<string, number>
+}
+
+/** Text and number attributes list at most this many values. */
+const MAX_ATTRIBUTE_VALUES = 20
 
 /** Sections unfolded by default; the rest start folded (a selection unfolds them). */
 const OPEN_BY_DEFAULT = new Set<string>(['types', 'criticalities', 'hasOwner'])
@@ -44,6 +65,10 @@ interface InventoryFacetPanelProps {
   activeCount: number
   onClearAll: () => void
   className?: string
+  /** Typed mode: the type's attribute facets, shown first. */
+  attributeFacets?: AttributeFacet[]
+  /** Typed mode: the tag list holds only the tags of these types' assets. */
+  tagTypes?: string[]
 }
 
 export function InventoryFacetPanel({
@@ -54,6 +79,8 @@ export function InventoryFacetPanel({
   activeCount,
   onClearAll,
   className,
+  attributeFacets = [],
+  tagTypes,
 }: InventoryFacetPanelProps) {
   const facets = groups.flatMap((g) => g.facets)
   // Signals sit right after the "kind" facets: they are what an analyst reaches
@@ -75,10 +102,18 @@ export function InventoryFacetPanel({
 
   return (
     <FacetPanel activeCount={activeCount} onClearAll={onClearAll} className={className}>
+      {attributeFacets.map((f) => (
+        <AttributeFacetSection
+          key={f.attribute.key}
+          facet={f}
+          filters={filters}
+          onChange={onChange}
+        />
+      ))}
       {facets.slice(0, kindCount).map(renderFacet)}
       <SignalsSection filters={filters} onChange={onChange} />
       {facets.slice(kindCount).map(renderFacet)}
-      <TagsSection filters={filters} onChange={onChange} />
+      <InventoryTagsFacet filters={filters} onChange={onChange} types={tagTypes} />
     </FacetPanel>
   )
 }
@@ -175,6 +210,54 @@ function MultiFacetSection({
   )
 }
 
+function AttributeFacetSection({
+  facet,
+  filters,
+  onChange,
+}: {
+  facet: AttributeFacet
+  filters: InventoryFilters
+  onChange: (next: InventoryFilters) => void
+}) {
+  const { attribute, label, counts } = facet
+  const selected = filters.propertiesFilter?.[attribute.key] ?? []
+  let options: { value: string; label: string }[]
+  if (attribute.kind === 'bool') {
+    options = [
+      { value: 'true', label: 'Yes' },
+      { value: 'false', label: 'No' },
+    ]
+  } else if (attribute.kind === 'enum' && attribute.values) {
+    options = attribute.values.map((v) => ({ value: v, label: v }))
+  } else {
+    options = Object.keys(counts)
+      .filter((v) => v !== 'null' && v !== '')
+      .sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))
+      .slice(0, MAX_ATTRIBUTE_VALUES)
+      .map((v) => ({ value: v, label: v }))
+  }
+  // A value selected from the URL stays visible (and removable).
+  for (const v of selected)
+    if (!options.some((o) => o.value === v)) options.push({ value: v, label: v })
+
+  return (
+    <FacetSection title={label} selectedCount={selected.length} defaultOpen={selected.length > 0}>
+      {options.length === 0 ? (
+        <p className="py-1 text-xs text-muted-foreground">None recorded yet.</p>
+      ) : (
+        options.map((o) => (
+          <FacetOption
+            key={o.value}
+            label={o.label}
+            checked={selected.includes(o.value)}
+            onCheckedChange={() => onChange(togglePropertyFilter(filters, attribute.key, o.value))}
+          />
+        ))
+      )}
+    </FacetSection>
+  )
+}
+
 function BoolFacetSection({
   facet,
   filters,
@@ -218,8 +301,10 @@ function SignalsSection({
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
 }) {
+  const { t } = useTranslation()
   const patch = (p: Partial<InventoryFilters>) => onChange({ ...filters, ...p, page: 1 })
   const selectedCount =
+    (filters.freshness ? 1 : 0) +
     (filters.isCrownJewel !== undefined ? 1 : 0) +
     (filters.hasFindings !== undefined ? 1 : 0) +
     (filters.lastSeenBefore ? 1 : 0) +
@@ -265,33 +350,16 @@ function SignalsSection({
           onCheckedChange={() => patch({ lastSeenAfter: undefined })}
         />
       )}
-    </FacetSection>
-  )
-}
-
-/** Tags have no facet (no tenant tag list to offer); show the ones in the URL. */
-function TagsSection({
-  filters,
-  onChange,
-}: {
-  filters: InventoryFilters
-  onChange: (next: InventoryFilters) => void
-}) {
-  const tags = filters.tags ?? []
-  if (tags.length === 0) return null
-  return (
-    <FacetSection title="Tags" selectedCount={tags.length}>
-      {tags.map((t) => (
-        <FacetOption
-          key={t}
-          label={t}
-          checked
-          onCheckedChange={() => {
-            const next = tags.filter((x) => x !== t)
-            onChange({ ...filters, tags: next.length > 0 ? next : undefined, page: 1 })
-          }}
-        />
-      ))}
+      <FacetOption
+        label={t('assetFreshness.filter.stale', 'Stale data')}
+        checked={filters.freshness === 'stale'}
+        onCheckedChange={(on) => patch({ freshness: on ? 'stale' : undefined })}
+      />
+      <FacetOption
+        label={t('assetFreshness.filter.never', 'Never enriched')}
+        checked={filters.freshness === 'never'}
+        onCheckedChange={(on) => patch({ freshness: on ? 'never' : undefined })}
+      />
     </FacetSection>
   )
 }

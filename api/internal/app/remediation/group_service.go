@@ -62,7 +62,7 @@ type ResolveGroupInput struct {
 	Status     string // fix_applied (default) or resolved
 	Resolution string
 	ActorID    string
-	// HasVerifyPermission mirrors the single-finding direct-resolve guard.
+	// HasVerifyPermission: a resolved target needs findings:verify.
 	HasVerifyPermission bool
 	// OperatorApproved lets an over-ceiling bulk through the abuse guard.
 	OperatorApproved bool
@@ -79,6 +79,12 @@ func (s *GroupService) ResolveGroup(ctx context.Context, tenantID shared.ID, in 
 	}
 	if status != string(vulnerability.FindingStatusFixApplied) && status != string(vulnerability.FindingStatusResolved) {
 		return nil, fmt.Errorf("%w: group resolve status must be fix_applied or resolved", shared.ErrValidation)
+	}
+	// Closing a whole group as resolved is a findings:verify decision, the
+	// same gate as every other resolve; refuse before counting or reading
+	// the group. The bulk path below checks it again.
+	if status == string(vulnerability.FindingStatusResolved) && !in.HasVerifyPermission {
+		return nil, finding.ErrResolveRequiresVerify
 	}
 
 	// Only the caller's in-scope findings are counted against the abuse guard

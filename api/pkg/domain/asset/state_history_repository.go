@@ -80,14 +80,15 @@ type StateHistoryRepository interface {
 	// ==========================================================================
 
 	// CountByType returns count of changes grouped by change type.
-	CountByType(ctx context.Context, tenantID shared.ID, since time.Time) (map[StateChangeType]int, error)
+	// The statistics take the caller's data scope (nil = whole tenant).
+	CountByType(ctx context.Context, tenantID shared.ID, since time.Time, scope *shared.DataScope) (map[StateChangeType]int, error)
 
 	// CountBySource returns count of changes grouped by source.
-	CountBySource(ctx context.Context, tenantID shared.ID, since time.Time) (map[ChangeSource]int, error)
+	CountBySource(ctx context.Context, tenantID shared.ID, since time.Time, scope *shared.DataScope) (map[ChangeSource]int, error)
 
 	// GetActivityTimeline returns daily counts of changes over a time period.
 	// Used for activity trend visualization.
-	GetActivityTimeline(ctx context.Context, tenantID shared.ID, from, to time.Time) ([]DailyActivityCount, error)
+	GetActivityTimeline(ctx context.Context, tenantID shared.ID, from, to time.Time, scope *shared.DataScope) ([]DailyActivityCount, error)
 
 	// GetAssetRefs returns a display snapshot (name, type, exposure, scope) of
 	// the given assets, tenant-scoped. Assets not found (deleted, or of another

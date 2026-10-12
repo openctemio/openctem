@@ -1,21 +1,24 @@
 'use client'
 
 import { formatDistanceToNow } from 'date-fns'
-import { Check, X, Trash2, Pencil, ShieldQuestion, Clock, User } from 'lucide-react'
+import { Check, Clock, Hash, Pencil, ShieldQuestion, Trash2, X } from 'lucide-react'
+import { toast } from 'sonner'
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { copyToClipboard } from '@/lib/clipboard'
-import { SheetDetailToolbar } from '@/features/shared'
 import {
-  SheetBody,
-  SheetInfoRow,
-  SheetSectionHeading,
-} from '@/features/shared/components/sheet-primitives'
-import { Can, Permission } from '@/lib/permissions'
+  DetailCallout,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  type DetailMenuItem,
+} from '@/features/shared'
+import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
   SUPPRESSION_STATUS_BADGE,
@@ -42,18 +45,18 @@ function relative(iso?: string | null): string {
   return formatDistanceToNow(d, { addSuffix: true })
 }
 
-function CriterionRow({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <SheetInfoRow label={label}>
-      {value ? (
-        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{value}</code>
-      ) : (
-        <span className="text-sm text-muted-foreground">Any</span>
-      )}
-    </SheetInfoRow>
+function Criterion({ value }: { value?: string | null }) {
+  return value ? (
+    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">{value}</code>
+  ) : (
+    <span className="text-muted-foreground">Any</span>
   )
 }
 
+/**
+ * A suppression rule, on the shared detail-drawer frame (sensor drawer
+ * layout). A pending rule leads with Approve / Reject for approvers.
+ */
 export function SuppressionDetailSheet({
   rule,
   open,
@@ -63,150 +66,145 @@ export function SuppressionDetailSheet({
   onReject,
   onDelete,
 }: SuppressionDetailSheetProps) {
+  const canApprove = useHasPermission(Permission.SuppressionsApprove)
+  const canWrite = useHasPermission(Permission.SuppressionsWrite)
+  const canDelete = useHasPermission(Permission.SuppressionsDelete)
   if (!rule) return null
 
   const isPending = rule.status === 'pending'
+  const reviewing = isPending && canApprove
+
+  const menu: DetailMenuItem[] = []
+  if (reviewing && canWrite && onEdit) {
+    menu.push({ label: 'Edit', icon: Pencil, onSelect: () => onEdit(rule) })
+  }
+  menu.push({
+    label: 'Copy ID',
+    icon: Hash,
+    onSelect: () => {
+      copyToClipboard(rule.id)
+      toast.success('Rule ID copied to clipboard')
+    },
+  })
+  if (canDelete && onDelete) {
+    menu.push({
+      label: 'Delete rule',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(rule),
+    })
+  }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        className="sm:max-w-xl p-0 flex flex-col h-full max-h-screen [&>button]:hidden"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <TooltipProvider>
-          <SheetDetailToolbar
-            title="Suppression Rule"
-            onClose={() => onOpenChange(false)}
-            onCopyId={() => copyToClipboard(rule.id)}
-            onEdit={onEdit ? () => onEdit(rule) : undefined}
-          />
-        </TooltipProvider>
-
-        <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl shrink-0 bg-primary/10">
-              <ShieldQuestion className="h-6 w-6 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <SheetTitle className="text-xl truncate">{rule.name}</SheetTitle>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-                <Badge
-                  variant="outline"
-                  className={cn('text-xs', SUPPRESSION_STATUS_BADGE[rule.status])}
-                >
-                  {SUPPRESSION_STATUS_LABELS[rule.status]}
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className={cn('text-xs', SUPPRESSION_TYPE_BADGE[rule.suppression_type])}
-                >
-                  {SUPPRESSION_TYPE_LABELS[rule.suppression_type]}
-                </Badge>
-              </div>
-              {rule.description && (
-                <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">
-                  {rule.description}
-                </p>
-              )}
-            </div>
-          </div>
-        </SheetHeader>
-
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <SheetBody className="pt-4 space-y-6">
-            {/* Matching criteria */}
-            <section className="space-y-1">
-              <SheetSectionHeading icon={ShieldQuestion}>Matching Criteria</SheetSectionHeading>
-              <div className="rounded-lg border divide-y px-3">
-                <CriterionRow label="Tool" value={rule.tool_name} />
-                <CriterionRow label="Rule ID" value={rule.rule_id} />
-                <CriterionRow label="Path pattern" value={rule.path_pattern} />
-                <CriterionRow label="Asset" value={rule.asset_id} />
-              </div>
-            </section>
-
-            {/* Workflow */}
-            <section className="space-y-1">
-              <SheetSectionHeading icon={Clock}>Approval Workflow</SheetSectionHeading>
-              <div className="rounded-lg border divide-y px-3">
-                <SheetInfoRow label="Requested">
-                  <span className="text-sm">{relative(rule.requested_at)}</span>
-                </SheetInfoRow>
-                <SheetInfoRow label="Requested by">
-                  <span className="text-sm font-mono flex items-center gap-1.5">
-                    <User className="h-3.5 w-3.5 text-muted-foreground" />
-                    {rule.requested_by.slice(0, 8)}
-                  </span>
-                </SheetInfoRow>
-                {rule.approved_at && (
-                  <SheetInfoRow label="Approved">
-                    <span className="text-sm">{relative(rule.approved_at)}</span>
-                  </SheetInfoRow>
-                )}
-                {rule.rejected_at && (
-                  <SheetInfoRow label="Rejected">
-                    <span className="text-sm">{relative(rule.rejected_at)}</span>
-                  </SheetInfoRow>
-                )}
-                {rule.rejection_reason && (
-                  <SheetInfoRow label="Rejection reason">
-                    <span className="text-sm text-muted-foreground max-w-[260px] text-end">
-                      {rule.rejection_reason}
-                    </span>
-                  </SheetInfoRow>
-                )}
-                <SheetInfoRow label="Expires">
-                  <span className="text-sm">
-                    {rule.expires_at ? relative(rule.expires_at) : 'Never'}
-                  </span>
-                </SheetInfoRow>
-                <SheetInfoRow label="Created">
-                  <span className="text-sm">{relative(rule.created_at)}</span>
-                </SheetInfoRow>
-              </div>
-            </section>
-          </SheetBody>
-        </div>
-
-        {/* Actions */}
-        <div className="border-t p-4 shrink-0 flex flex-wrap items-center gap-2">
-          {isPending && (
-            <Can permission={Permission.SuppressionsApprove}>
-              <Button size="sm" onClick={() => onApprove?.(rule)}>
-                <Check className="me-1.5 h-4 w-4" />
-                Approve
-              </Button>
-              <Button
-                size="sm"
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      header={
+        <DetailHeader
+          title={rule.name}
+          badges={
+            <>
+              <Badge
                 variant="outline"
-                className="text-destructive hover:text-destructive/90"
-                onClick={() => onReject?.(rule)}
+                className={cn('text-xs', SUPPRESSION_STATUS_BADGE[rule.status])}
               >
-                <X className="me-1.5 h-4 w-4" />
-                Reject
+                {SUPPRESSION_STATUS_LABELS[rule.status]}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn('text-xs', SUPPRESSION_TYPE_BADGE[rule.suppression_type])}
+              >
+                {SUPPRESSION_TYPE_LABELS[rule.suppression_type]}
+              </Badge>
+            </>
+          }
+          meta={[
+            `Requested ${relative(rule.requested_at)}`,
+            rule.expires_at ? `Expires ${relative(rule.expires_at)}` : 'Never expires',
+          ]}
+          actions={
+            reviewing ? (
+              <>
+                <Button size="sm" onClick={() => onApprove?.(rule)}>
+                  <Check className="h-4 w-4" />
+                  Approve
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onReject?.(rule)}>
+                  <X className="h-4 w-4" />
+                  Reject
+                </Button>
+              </>
+            ) : canWrite && onEdit ? (
+              <Button size="sm" variant="outline" onClick={() => onEdit(rule)}>
+                <Pencil className="h-4 w-4" />
+                Edit
               </Button>
-            </Can>
+            ) : undefined
+          }
+          menu={menu}
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <div className="space-y-5">
+        {isPending && !canApprove && (
+          <DetailCallout tone="info" icon={Clock} title="Waiting for approval">
+            The rule suppresses nothing until someone with the approve permission accepts it.
+          </DetailCallout>
+        )}
+        {rule.status === 'rejected' && rule.rejection_reason && (
+          <DetailCallout tone="destructive" icon={X} title="Rejected">
+            {rule.rejection_reason}
+          </DetailCallout>
+        )}
+
+        <DetailSections>
+          {rule.description && (
+            <DetailSection title="Description">
+              <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+                {rule.description}
+              </p>
+            </DetailSection>
           )}
-          <Can permission={Permission.SuppressionsWrite}>
-            <Button size="sm" variant="outline" onClick={() => onEdit?.(rule)}>
-              <Pencil className="me-1.5 h-4 w-4" />
-              Edit
-            </Button>
-          </Can>
-          <div className="flex-1" />
-          <Can permission={Permission.SuppressionsDelete}>
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive hover:text-destructive/90"
-              onClick={() => onDelete?.(rule)}
-            >
-              <Trash2 className="me-1.5 h-4 w-4" />
-              Delete
-            </Button>
-          </Can>
-        </div>
-      </SheetContent>
-    </Sheet>
+
+          <DetailSection title="Matching criteria" icon={ShieldQuestion}>
+            <DetailFieldGrid>
+              <DetailField label="Tool">
+                <Criterion value={rule.tool_name} />
+              </DetailField>
+              <DetailField label="Rule ID">
+                <Criterion value={rule.rule_id} />
+              </DetailField>
+              <DetailField label="Path pattern" full>
+                <Criterion value={rule.path_pattern} />
+              </DetailField>
+              <DetailField label="Asset" full>
+                <Criterion value={rule.asset_id} />
+              </DetailField>
+            </DetailFieldGrid>
+          </DetailSection>
+
+          <DetailSection title="Approval workflow" icon={Clock}>
+            <DetailFieldGrid>
+              <DetailField label="Requested">{relative(rule.requested_at)}</DetailField>
+              <DetailField label="Requested by">
+                <span className="font-mono">{rule.requested_by.slice(0, 8)}</span>
+              </DetailField>
+              {rule.approved_at && (
+                <DetailField label="Approved">{relative(rule.approved_at)}</DetailField>
+              )}
+              {rule.rejected_at && (
+                <DetailField label="Rejected">{relative(rule.rejected_at)}</DetailField>
+              )}
+              <DetailField label="Expires">
+                {rule.expires_at ? relative(rule.expires_at) : 'Never'}
+              </DetailField>
+              <DetailField label="Created">{relative(rule.created_at)}</DetailField>
+            </DetailFieldGrid>
+          </DetailSection>
+        </DetailSections>
+      </div>
+    </DetailSheet>
   )
 }

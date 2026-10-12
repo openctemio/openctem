@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -43,6 +45,27 @@ func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Sto
 			return nil, fmt.Errorf("S3 endpoint blocked: %w", err)
 		}
 	}
+	return newS3Storage(bucket, region, endpoint, accessKey, secretKey, s3HTTPClient()), nil
+}
+
+// NewOperatorS3Storage creates the server-wide attachment storage the operator
+// configured (STORAGE_PROVIDER=s3|minio, STORAGE_BUCKET, STORAGE_REGION,
+// STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY). Unlike a tenant
+// bucket, the endpoint is the operator's own configuration, so it may be a
+// private address (an in-cluster MinIO) and is not run through the SSRF guard.
+// Static keys are required: nothing is taken from the ambient AWS environment.
+func NewOperatorS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Storage, error) {
+	if bucket == "" {
+		return nil, fmt.Errorf("STORAGE_BUCKET is required for STORAGE_PROVIDER=s3/minio")
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY are required for STORAGE_PROVIDER=s3/minio")
+	}
+	return newS3Storage(bucket, region, endpoint, accessKey, secretKey, nil), nil
+}
+
+// newS3Storage builds the client. httpClient nil = the SDK's default client.
+func newS3Storage(bucket, region, endpoint, accessKey, secretKey string, httpClient aws.HTTPClient) *S3Storage {
 	if region == "" {
 		region = "us-east-1"
 	}
@@ -50,7 +73,9 @@ func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Sto
 	cfg := aws.Config{
 		Region:      region,
 		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-		HTTPClient:  s3HTTPClient(),
+	}
+	if httpClient != nil {
+		cfg.HTTPClient = httpClient
 	}
 
 	clientOpts := []func(*s3.Options){}
@@ -62,21 +87,32 @@ func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Sto
 		})
 	}
 
-	client := s3.NewFromConfig(cfg, clientOpts...)
-
-	return &S3Storage{client: client, bucket: bucket}, nil
+	return &S3Storage{client: s3.NewFromConfig(cfg, clientOpts...), bucket: bucket}
 }
 
 func (s *S3Storage) Upload(ctx context.Context, tenantID, filename, contentType string, reader io.Reader) (string, error) {
+	if err := checkNamespace(tenantID); err != nil {
+		return "", err
+	}
 	safe := sanitizeFilename(filename)
 	key := fmt.Sprintf("%s_%s", shared.NewID().String(), safe)
 	objectKey := path.Join(tenantID, key)
 
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(objectKey),
-		Body:        reader,
-		ContentType: aws.String(contentType),
+	// The request is signed over its payload, which needs a body that can
+	// be read twice: a stream is spooled to a temporary file first (never
+	// held in memory) and removed afterwards.
+	body, size, cleanup, err := seekableBody(reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to buffer upload: %w", err)
+	}
+	defer cleanup()
+
+	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(objectKey),
+		Body:          body,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(contentType),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to S3: %w", err)
@@ -120,4 +156,72 @@ func (s *S3Storage) Delete(ctx context.Context, tenantID, storageKey string) err
 		return fmt.Errorf("failed to delete from S3: %w", err)
 	}
 	return nil
+}
+
+// EraseTenant deletes every object under "{tenantID}/" in the bucket, page by
+// page. The prefix ends in a slash and tenant ids have a fixed length, so no
+// other tenant's key can match it.
+func (s *S3Storage) EraseTenant(ctx context.Context, tenantID string) (int, error) {
+	if err := attachment.ValidateTenantNamespace(tenantID); err != nil {
+		return 0, err
+	}
+	prefix := tenantID + "/"
+	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+	n := 0
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return n, fmt.Errorf("list tenant objects: %w", err)
+		}
+		for _, obj := range page.Contents {
+			key := aws.ToString(obj.Key)
+			if !strings.HasPrefix(key, prefix) {
+				continue // the listing is not trusted to apply the prefix
+			}
+			if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(s.bucket),
+				Key:    aws.String(key),
+			}); err != nil {
+				return n, fmt.Errorf("delete tenant object: %w", err)
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
+// seekableBody returns r as a ReadSeeker with its length: r itself when it
+// already seeks, else a temporary file r was copied to. cleanup removes the
+// file.
+func seekableBody(r io.Reader) (io.ReadSeeker, int64, func(), error) {
+	if rs, ok := r.(io.ReadSeeker); ok {
+		size, err := rs.Seek(0, io.SeekEnd)
+		if err == nil {
+			_, err = rs.Seek(0, io.SeekStart)
+		}
+		if err != nil {
+			return nil, 0, func() {}, err
+		}
+		return rs, size, func() {}, nil
+	}
+	f, err := os.CreateTemp("", "openctem-upload-*")
+	if err != nil {
+		return nil, 0, func() {}, err
+	}
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}
+	size, err := io.Copy(f, r)
+	if err == nil {
+		_, err = f.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		cleanup()
+		return nil, 0, func() {}, err
+	}
+	return f, size, cleanup, nil
 }

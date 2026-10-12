@@ -8,7 +8,7 @@ OpenCTEM uses a **multi-tenant authentication system** with:
 
 - **Local Auth**: Email/password via backend API
 - **Social Auth**: Google, GitHub, Microsoft (OAuth2)
-- **OIDC**: Keycloak for enterprise SSO
+- **Enterprise SSO**: OIDC (Microsoft Entra ID and other OIDC providers) and SAML, configured per organization in the API
 - **Multi-tenant**: Users can belong to multiple teams
 
 ## Authentication States
@@ -233,16 +233,13 @@ src/
 └── proxy.ts                       # Next.js 16 middleware
 ```
 
-## Access Control (Groups & Permission Sets)
+## Access Control
 
-### Overview
-
-OpenCTEM uses a **two-layer role model**:
-
-1. **Tenant Role** (tenant_members.role): owner, admin, member, viewer
-2. **Group Permissions**: Fine-grained permissions via groups and permission sets
-
-### Permission Checking
+OpenCTEM separates what a user may **do** (roles and permissions) from what data
+they may **see** (data scope: their groups' assets plus explicit asset access
+grants). The API is the only authority; the UI only hides what the user cannot
+use. See [access-control.md](./access-control.md) and
+`api/docs/architecture/authorization-matrix.md`.
 
 ```typescript
 import { Can, Permission, usePermissions } from "@/lib/permissions";
@@ -259,12 +256,7 @@ if (can(Permission.AssetsDelete)) {
 }
 ```
 
-### Admin Pages
-
-- **Groups**: `/settings/access-control/groups`
-- **Permission Sets**: `/settings/access-control/permission-sets`
-
-See [ACCESS_CONTROL.md](../docs/ACCESS_CONTROL.md) for full documentation.
+Admin pages: Teams (groups) at `/settings/teams`, roles at `/settings/roles`.
 
 ## Security Best Practices
 
@@ -339,4 +331,4 @@ export default async function ProtectedPage() {
 - [Architecture](./architecture.md) - Project structure
 - [Patterns](./patterns.md) - Code patterns
 - [Troubleshooting](./troubleshooting.md) - Common issues
-- [Access Control](../docs/ACCESS_CONTROL.md) - Groups and permission sets
+- [Access Control](./access-control.md) - Roles, permissions and data scope

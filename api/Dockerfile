@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # =============================================================================
 # MULTI-STAGE DOCKERFILE
 # =============================================================================
@@ -5,7 +6,7 @@
 # -----------------------------------------------------------------------------
 # Development stage - Standalone, no deps copy needed (uses volumes)
 # -----------------------------------------------------------------------------
-FROM golang:1.26.8-alpine AS development
+FROM golang:1.26.9-alpine AS development
 
 WORKDIR /app
 
@@ -25,7 +26,7 @@ RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 # Source and SDK mounted via volumes at runtime - no COPY needed
 
 # Expose ports
-EXPOSE 8080 9090 2345
+EXPOSE 8080 8443 2345
 
 # Run entrypoint (migrations + air)
 # Development only, never published: it runs as root so the bind-mounted
@@ -40,21 +41,40 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # SDK is fetched from GitHub as a released module (not local)
 # Build context: api/ folder (not parent)
 # -----------------------------------------------------------------------------
-FROM golang:1.26.8-alpine AS base
+FROM golang:1.26.9-alpine AS base
 
 WORKDIR /app
 
 # Install dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
-# Set GOPRIVATE for private modules (SDK is private on GitHub)
-ENV GOPRIVATE=github.com/openctemio/*
+# openctemio modules are public: fetch them through the Go module proxy and
+# verify them against the checksum database like every other dependency.
 
 # Copy go mod files (context is api/ folder)
 COPY go.mod go.sum ./
 
-# Download dependencies (SDK fetched from GitHub)
+# Download dependencies
 RUN go mod download
+
+# -----------------------------------------------------------------------------
+# OpenAPI spec stage
+# -----------------------------------------------------------------------------
+# The spec is generated from the handler annotations and is not committed
+# (#1300), so the image generates it: GET /openapi.yaml and /docs serve
+# /app/api/openapi/swagger.yaml. It is the same on every architecture, so it
+# runs on the build platform (no emulation). Same swag version and flags as
+# `make swagger` (SWAG_VERSION there and in scripts/check-openapi.sh).
+FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine AS openapi
+ARG SWAG_VERSION=v1.16.4
+WORKDIR /app
+ENV GOWORK=off
+RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
+ && test -s api/openapi/swagger.yaml
 
 # -----------------------------------------------------------------------------
 # Builder stage
@@ -76,62 +96,97 @@ ARG VERSION=""
 ARG COMMIT=""
 ARG BUILD_TIME=""
 
-# Build the main server
-RUN CGO_ENABLED=0 \
+# Every binary in ONE go build: the packages they share compile once. The
+# build cache is a BuildKit cache mount (local rebuilds recompile only what
+# changed; it never ends up in a layer). -trimpath keeps the builder's paths
+# out of the binaries, so the same source gives the same binary on any host.
+# Binaries:
+#   server           the API
+#   bootstrap-admin  initial setup: platform administrators and the first
+#                    organization
+#   refingerprint    re-keys findings to the current identity recipe (a dry run
+#                    by default, RFC-043 §6)
+#   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
+#                    from this image, see deploy/docker-compose.job-signer.yml
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
     GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w \
+    go build -trimpath -ldflags="-s -w \
       -X github.com/openctemio/openctem/api/pkg/version.Version=${VERSION} \
       -X github.com/openctemio/openctem/api/pkg/version.Commit=${COMMIT} \
       -X github.com/openctemio/openctem/api/pkg/version.BuildTime=${BUILD_TIME}" \
-    -o /app/bin/server ./cmd/server
+    -o /app/bin/ ./cmd/server ./cmd/bootstrap-admin ./cmd/refingerprint ./cmd/signer \
+ && mv /app/bin/signer /app/bin/openctem-signer
 
-# Build bootstrap-admin (initial setup: platform administrators and the first
-# organization)
-RUN CGO_ENABLED=0 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-$(go env GOARCH)} \
-    go build -ldflags="-s -w" -o /app/bin/bootstrap-admin ./cmd/bootstrap-admin
 
+# -----------------------------------------------------------------------------
+# Runtime filesystem additions: the users and the writable directories, made
+# here because the production image has no shell to make them with.
+# -----------------------------------------------------------------------------
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3 AS runtime-base
+
+FROM base AS runtime-fs
+COPY --from=runtime-base /etc/passwd /etc/group /out/etc/
+# openctem (1000) runs the API. The job signer runs as its own user (1001), in
+# the API's group only so the API can reach its socket: its key and state are
+# never the API's.
+RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
+ && echo 'openctem-signer:x:1001:1000:openctem-signer:/var/lib/openctem-signer:/sbin/nologin' >> /out/etc/passwd \
+ && echo 'openctem:x:1000:' >> /out/etc/group \
+ && mkdir -p /out/app-data/attachments /out/signer-lib/keys /out/signer-lib/state /out/signer-run \
+ && chmod 0700 /out/signer-lib/keys /out/signer-lib/state \
+ && chmod 0770 /out/signer-run
 
 # -----------------------------------------------------------------------------
 # Production stage
 # -----------------------------------------------------------------------------
-FROM alpine:3.20 AS production
+# Distroless static: CA certificates, time zones and the passwd entries above;
+# no shell, no package manager, no busybox. The healthcheck is the server's
+# own `-healthcheck`. To debug a running container use an ephemeral debug
+# container (`docker debug`, `kubectl debug --target=<container>`).
+FROM runtime-base AS production
 
-# Set working directory
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
+COPY --from=runtime-fs /out/etc/passwd /out/etc/group /etc/
 
-# Create non-root user
-RUN addgroup -g 1000 -S openctem && \
-    adduser -u 1000 -S openctem -G openctem
+# Everything below is owned by root and read-only to the runtime users: the API
+# cannot rewrite its own binaries, spec, migrations or configs.
+COPY --from=builder /app/bin/server /app/bin/bootstrap-admin /app/bin/refingerprint /app/bin/openctem-signer ./
 
-# Copy binaries from builder
-COPY --from=builder /app/bin/server .
-COPY --from=builder /app/bin/bootstrap-admin .
+# The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
+# cmd/server/handlers.go NewDocsHandler).
+COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
-# Copy migrations if exist
 COPY --from=builder /app/migrations ./migrations
+# The migrate wrapper of the migrations image, for the all-in-one image (a
+# file here; this image never runs it).
+COPY --from=builder /app/scripts/migrate-entrypoint.sh ./migrate-entrypoint.sh
 
 # Copy sensor config templates (editable without rebuild — operators can
 # mount a configmap/host volume on /app/configs to override)
 COPY --from=builder /app/configs ./configs
 
-# Change ownership
-RUN chown -R openctem:openctem /app
+# The only writable paths, with their owners, so a new named volume mounted on
+# them starts with the right owner (Docker copies it into the volume).
+#   /app/data                 the API: attachments (STORAGE_LOCAL_PATH default
+#                             ./data/attachments) and the sensor CA
+#                             (SENSOR_MTLS_CA_DIR default data/sensor-ca).
+#                             Mount a volume there: the container filesystem is
+#                             read-only in the Compose files and ephemeral anyway.
+#   /var/lib/openctem-signer  the job signer's key and state (0700)
+#   /run/openctem-signer      its socket, reachable by the API's group (0770)
+COPY --from=runtime-fs --chown=1000:1000 /out/app-data /app/data
+COPY --from=runtime-fs --chown=1001:1000 /out/signer-lib /var/lib/openctem-signer
+COPY --from=runtime-fs --chown=1001:1000 /out/signer-run /run/openctem-signer
 
-# Switch to non-root user
-USER openctem
+USER 1000:1000
 
-# Expose ports
-EXPOSE 8080 9090
+EXPOSE 8080 8443
 
-# Health check
+# `server -healthcheck` GETs /health on 127.0.0.1:$SERVER_PORT.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+    CMD ["/app/server", "-healthcheck"]
 
-# Run the application
 ENTRYPOINT ["./server"]

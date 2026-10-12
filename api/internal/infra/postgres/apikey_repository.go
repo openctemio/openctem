@@ -11,12 +11,15 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/apikey"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // APIKeyRepository is the PostgreSQL implementation of apikey.Repository.
 type APIKeyRepository struct {
 	db *DB
+	tokenPepper
+	planLimits // api_keys
 }
 
 // NewAPIKeyRepository creates a new APIKeyRepository.
@@ -28,13 +31,16 @@ var _ apikey.Repository = (*APIKeyRepository)(nil)
 
 // Create inserts a new API key.
 func (r *APIKeyRepository) Create(ctx context.Context, key *apikey.APIKey) error {
+	if err := r.checkLimit(ctx, key.TenantID(), plan.APIKeys, 1); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO api_keys (
 			id, tenant_id, user_id, name, description,
 			key_hash, key_prefix, scopes, rate_limit,
-			status, expires_at, created_by, created_at, updated_at
+			status, expires_at, created_by, created_at, updated_at, key_pepper_id
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		)
 	`
 
@@ -63,6 +69,7 @@ func (r *APIKeyRepository) Create(ctx context.Context, key *apikey.APIKey) error
 		createdBy,
 		key.CreatedAt(),
 		key.UpdatedAt(),
+		r.value(),
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -218,12 +225,12 @@ func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apik
 // Update updates an API key.
 // TouchLastUsed records that the key was just used. A single indexed UPDATE;
 // callers treat its error as best-effort so usage telemetry never blocks auth.
-func (r *APIKeyRepository) TouchLastUsed(ctx context.Context, id apikey.ID, ip string) error {
+func (r *APIKeyRepository) TouchLastUsed(ctx context.Context, tenantID, id apikey.ID, ip string) error {
 	const q = `
 		UPDATE api_keys
 		SET last_used_at = now(), last_used_ip = $2, use_count = use_count + 1
-		WHERE id = $1`
-	_, err := r.db.ExecContext(ctx, q, id.String(), ip)
+		WHERE id = $1 AND tenant_id = $3`
+	_, err := r.db.ExecContext(ctx, q, id.String(), ip, tenantID.String())
 	if err != nil {
 		return fmt.Errorf("touch api key last-used: %w", err)
 	}
@@ -430,4 +437,17 @@ func (r *APIKeyRepository) reconstruct(
 		expAt, luAt, luIP, useCount,
 		cbID, createdAt, updatedAt, revAt, revBy,
 	), nil
+}
+
+// RehashKey replaces the stored hash of an oct_ API key made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *APIKeyRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, apiKeyTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *APIKeyRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, apiKeyTokens)
 }

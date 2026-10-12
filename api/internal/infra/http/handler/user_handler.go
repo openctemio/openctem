@@ -1,14 +1,16 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -16,15 +18,15 @@ import (
 
 // UserHandler handles user-related HTTP requests.
 type UserHandler struct {
-	service       *app.UserService
-	tenantService *app.TenantService
+	service       *tenant.UserService
+	tenantService *tenant.TenantService
 	platformAdmin PlatformAdminChecker
 	validator     *validator.Validator
 	logger        *logger.Logger
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(svc *app.UserService, tenantSvc *app.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
+func NewUserHandler(svc *tenant.UserService, tenantSvc *tenant.TenantService, platformAdmin PlatformAdminChecker, v *validator.Validator, log *logger.Logger) *UserHandler {
 	return &UserHandler{
 		service:       svc,
 		tenantService: tenantSvc,
@@ -116,14 +118,21 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := toUserResponse(localUser)
-	if h.platformAdmin != nil {
-		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(r.Context(), localUser.ID())
-	}
+	response := h.MeResponse(r.Context(), localUser)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// MeResponse is the caller's own profile as GET /users/me returns it; the
+// session bootstrap embeds the same value.
+func (h *UserHandler) MeResponse(ctx context.Context, u *user.User) UserResponse {
+	response := toUserResponse(u)
+	if h.platformAdmin != nil {
+		response.IsPlatformAdmin = h.platformAdmin.IsPlatformAdmin(ctx, u.ID())
+	}
+	return response
 }
 
 // UpdateMe updates the current authenticated user's profile.
@@ -158,7 +167,7 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update profile
-	input := app.UpdateProfileInput{
+	input := tenant.UpdateProfileInput{
 		Name:      req.Name,
 		Phone:     req.Phone,
 		AvatarURL: req.AvatarURL,
@@ -193,11 +202,7 @@ func (h *UserHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prefs := PreferencesDTO{
-		Theme:         localUser.Preferences().Theme,
-		Language:      localUser.Preferences().Language,
-		Notifications: localUser.Preferences().Notifications,
-	}
+	prefs := toPreferencesDTO(localUser.Preferences())
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -212,7 +217,7 @@ func (h *UserHandler) GetPreferences(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        request  body      UpdatePreferencesRequest  true  "Preferences data"
-// @Success      200  {object}  UserResponse
+// @Success      200  {object}  PreferencesDTO
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
 // @Router       /users/me/preferences [put]
@@ -259,11 +264,23 @@ func (h *UserHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	response := toUserResponse(updatedUser)
-
+	// Return the preferences object, the same shape as GET: the web caches
+	// this response under the preferences key, and a user object there
+	// reset the form to defaults on the next render (and the next Save
+	// persisted those defaults).
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(toPreferencesDTO(updatedUser.Preferences()))
+}
+
+// toPreferencesDTO is the one wire shape of a user's preferences, for both
+// GET and PUT /users/me/preferences.
+func toPreferencesDTO(p user.Preferences) PreferencesDTO {
+	return PreferencesDTO{
+		Theme:         p.Theme,
+		Language:      p.Language,
+		Notifications: p.Notifications,
+	}
 }
 
 // handleValidationError converts validation errors to API errors and writes response.
@@ -313,6 +330,14 @@ type TenantMembershipResponse struct {
 	Role        string    `json:"role"`
 	JoinedAt    time.Time `json:"joined_at"`
 	CreatedAt   time.Time `json:"created_at"`
+	// The user's own membership (RFC-058), for the organization switcher.
+	// Kind is "internal" or "external"; AccessExpiresAt is when an external
+	// membership ends; BlockedReason, when set, says why the organization
+	// cannot be opened (suspended, expired, home_access_ended,
+	// home_domain_lapsed, trust_revoked, personal_accounts_blocked).
+	Kind            string     `json:"kind"`
+	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
+	BlockedReason   string     `json:"blocked_reason,omitempty"`
 }
 
 // GetMyTenants returns all tenants the current user belongs to.
@@ -332,30 +357,42 @@ func (h *UserHandler) GetMyTenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenants, err := h.tenantService.ListUserTenants(r.Context(), localUser.ID())
+	response, err := h.MyTenantsResponse(r.Context(), localUser.ID())
 	if err != nil {
 		h.logger.Error("failed to list user tenants", "error", err, "user_id", localUser.ID().String())
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
 
-	// Convert to response
-	response := make([]TenantMembershipResponse, len(tenants))
-	for i, t := range tenants {
-		response[i] = TenantMembershipResponse{
-			ID:          t.Tenant.ID().String(),
-			Name:        t.Tenant.Name(),
-			Slug:        t.Tenant.Slug(),
-			Description: t.Tenant.Description(),
-			LogoURL:     t.Tenant.LogoURL(),
-			Plan:        t.Tenant.Plan().String(),
-			Role:        t.Role.String(),
-			JoinedAt:    t.JoinedAt,
-			CreatedAt:   t.Tenant.CreatedAt(),
-		}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// MyTenantsResponse lists the caller's own memberships as GET
+// /users/me/tenants returns them; the session bootstrap embeds the same list.
+func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) ([]TenantMembershipResponse, error) {
+	tenants, err := h.tenantService.ListUserTenants(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	response := make([]TenantMembershipResponse, len(tenants))
+	for i, t := range tenants {
+		response[i] = TenantMembershipResponse{
+			ID:              t.Tenant.ID().String(),
+			Name:            t.Tenant.Name(),
+			Slug:            t.Tenant.Slug(),
+			Description:     t.Tenant.Description(),
+			LogoURL:         t.Tenant.LogoURL(),
+			Plan:            t.Tenant.Plan().String(),
+			Role:            t.Role.String(),
+			JoinedAt:        t.JoinedAt,
+			CreatedAt:       t.Tenant.CreatedAt(),
+			Kind:            string(memberKindOrInternal(t.Kind)),
+			AccessExpiresAt: t.ExpiresAt,
+			BlockedReason:   t.BlockedReason(),
+		}
+	}
+	return response, nil
 }

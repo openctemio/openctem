@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { pageSizeChoices } from '@/lib/page-size-options'
 
 interface PaginationProps {
   currentPage: number
@@ -70,7 +71,7 @@ export function Pagination({
                 <SelectValue placeholder={pageSize} />
               </SelectTrigger>
               <SelectContent side="top">
-                {pageSizeOptions.map((size) => (
+                {pageSizeChoices(pageSizeOptions, pageSize).map((size) => (
                   <SelectItem key={size} value={`${size}`}>
                     {size}
                   </SelectItem>

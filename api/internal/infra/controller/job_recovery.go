@@ -2,7 +2,13 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -34,7 +40,7 @@ type JobRecoveryControllerConfig struct {
 }
 
 // JobRecoveryController recovers stuck jobs and re-queues them.
-// This is a K8s-style controller that ensures jobs don't get lost if a sensor
+// This is a reconciliation controller that ensures jobs don't get lost if a sensor
 // goes offline or fails to complete them.
 //
 // The controller performs two main tasks:
@@ -45,12 +51,25 @@ type JobRecoveryControllerConfig struct {
 //
 // Expiry is NOT this controller's job — see the note in Reconcile;
 // app/command.ExpirationChecker owns it, because expiry has to notify the
-// owning pipeline run and a raw UPDATE here cannot.
+// owning scan run and a raw UPDATE here cannot.
 type JobRecoveryController struct {
 	commandRepo command.Repository
 	config      *JobRecoveryControllerConfig
 	logger      *logger.Logger
+	steps       StepFailureNotifier
 }
+
+// StepFailureNotifier is told when a workflow step's command died here.
+// Satisfied by the scan run service.
+type StepFailureNotifier interface {
+	OnStepFailed(ctx context.Context, runID, stepKey, errorMessage, errorCode string) error
+}
+
+// SetStepFailureNotifier wires the scan workflow: a command failed for exhausting
+// its dispatch attempts then fails its step (and settles the run) right away,
+// instead of the run hanging until the run timeout reports a generic
+// "no result reported before timeout".
+func (c *JobRecoveryController) SetStepFailureNotifier(n StepFailureNotifier) { c.steps = n }
 
 // NewJobRecoveryController creates a new JobRecoveryController.
 func NewJobRecoveryController(
@@ -157,8 +176,8 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	// NOTE: expiry is deliberately NOT done here — neither for regular
 	// (non-platform) commands nor for queued platform jobs.
 	// app/command.ExpirationChecker owns both: it calls
-	// pipeline.OnStepFailed(..., "COMMAND_EXPIRED" / "PLATFORM_JOB_EXPIRED_IN_QUEUE")
-	// so the owning pipeline run learns its step died.
+	// scanrun.OnStepFailed(..., "COMMAND_EXPIRED" / "PLATFORM_JOB_EXPIRED_IN_QUEUE")
+	// so the owning scan run learns its step died.
 	//
 	// This controller used to run commandRepo.ExpireOldCommands() on the same
 	// 60s tick — a raw UPDATE over a strict subset of the same rows. Whenever it
@@ -168,14 +187,50 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	// and worse: platform jobs are created with expires_at NULL, so FindExpired
 	// never covered them at all and the raw UPDATE was the *only* thing that
 	// ever reaped them. Every platform job that timed out in the queue took its
-	// pipeline run down silently, and the run hung until ScanTimeoutController
+	// scan run down silently, and the run hung until ScanTimeoutController
 	// reported a generic timeout instead of "expired in queue".
 	//
 	// Both raw-UPDATE reapers have since been deleted from the repository
 	// entirely, so this cannot be reintroduced by accident: expiry has exactly
 	// one implementation and it notifies the run.
 
-	// Step 3: Fail commands that have exceeded max retry attempts
+	// Step 2c: Take back commands whose lease ran out (RFC-035 D6): the
+	// sensor holding them stopped renewing (it died, or lost them), so they
+	// go back to the queue now instead of at the run timeout. The holder can
+	// no longer complete them (fenced by sensor, state and lease epoch).
+	if reaper, ok := c.commandRepo.(command.LeaseReaper); ok {
+		requeued, err := reaper.RequeueExpiredLeases(ctx)
+		if err != nil {
+			c.logger.Error("failed to re-queue commands with an expired lease", "error", err)
+		} else if len(requeued) > 0 {
+			metrics.CommandLeasesExpiredTotal.Add(float64(len(requeued)))
+			for _, rq := range requeued {
+				holder := ""
+				if rq.SensorID != nil {
+					holder = rq.SensorID.String()
+				}
+				c.logger.Info("re-queued command: its lease ran out",
+					"command_id", rq.ID.String(), "tenant_id", rq.TenantID.String(),
+					"sensor_id", holder, "lease_epoch", rq.Epoch)
+			}
+			totalProcessed += len(requeued)
+		}
+	}
+
+	// Step 3: Fail commands that have exceeded max retry attempts, and tell
+	// their scan runs (poison commands).
+	if failer, ok := c.commandRepo.(command.ExhaustedFailer); ok && c.steps != nil {
+		failed, err := failer.FailExhaustedCommandsReturning(ctx, c.config.MaxRetries)
+		if err != nil {
+			c.logger.Error("failed to mark exhausted commands as failed", "error", err)
+		} else if len(failed) > 0 {
+			c.logger.Info("marked exhausted commands as failed",
+				"count", len(failed), "max_retries", c.config.MaxRetries)
+			c.notifyExhausted(ctx, failed)
+			totalProcessed += len(failed)
+		}
+		return totalProcessed, nil
+	}
 	failedExhausted, err := c.commandRepo.FailExhaustedCommands(ctx, c.config.MaxRetries)
 	if err != nil {
 		c.logger.Error("failed to mark exhausted commands as failed",
@@ -191,4 +246,19 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	}
 
 	return totalProcessed, nil
+}
+
+// notifyExhausted fails the workflow step of each exhausted command.
+func (c *JobRecoveryController) notifyExhausted(ctx context.Context, failed []*command.Command) {
+	for _, cmd := range failed {
+		var p scanrun.StepCommandPayload
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil || !p.IsRoutable() {
+			continue // not a scan workflow command
+		}
+		msg := fmt.Sprintf("the command was handed to a sensor %d times and never finished (max dispatch attempts exceeded)", cmd.DispatchAttempts)
+		if err := c.steps.OnStepFailed(ctx, p.ScanRunID, p.StepKey, msg, scanrun.FailureCommandExhausted); err != nil {
+			c.logger.Error("failed to fail the scan workflow step of an exhausted command",
+				"command_id", cmd.ID.String(), "scan_run_id", p.ScanRunID, "step_key", p.StepKey, "error", err)
+		}
+	}
 }

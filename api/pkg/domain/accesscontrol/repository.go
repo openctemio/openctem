@@ -2,6 +2,7 @@ package accesscontrol
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -15,7 +16,8 @@ type Repository interface {
 	DeleteAssetOwner(ctx context.Context, assetID, groupID shared.ID) error
 	ListAssetOwners(ctx context.Context, assetID shared.ID) ([]*AssetOwner, error)
 	ListAssetsByGroup(ctx context.Context, groupID shared.ID) ([]shared.ID, error)
-	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
+	// scope limits the listed assets to the caller's data scope (nil: all).
+	ListAssetOwnersByGroupWithDetails(ctx context.Context, groupID shared.ID, scope *shared.DataScope, limit, offset int) ([]*AssetOwnerWithAsset, int64, error)
 	ListGroupsByAsset(ctx context.Context, assetID shared.ID) ([]shared.ID, error)
 	CountAssetOwners(ctx context.Context, assetID shared.ID) (int64, error)
 	CountAssetsByGroups(ctx context.Context, groupIDs []shared.ID) (map[shared.ID]int, error)
@@ -30,34 +32,55 @@ type Repository interface {
 	GetPrimaryOwnerBrief(ctx context.Context, tenantID, assetID shared.ID) (*OwnerBrief, error)
 	GetPrimaryOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[string]*OwnerBrief, error)
 
+	// One owner model: asset_owners is the only owner store (assets.owner_id
+	// was folded into it by migration 000340).
+	//
+	// GetPrimaryUserOwnersByAssetIDs returns, per asset of the tenant, its
+	// primary user owner: the earliest-assigned 'primary' row naming a user who
+	// is a member of the tenant. Assets without one are absent from the map.
+	GetPrimaryUserOwnersByAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]shared.ID, error)
+	// FilterAssetsOwnedByUser returns the subset of assetIDs (of the tenant)
+	// for which the user is a responsible owner: a 'primary' or 'secondary'
+	// row naming the user directly.
+	FilterAssetsOwnedByUser(ctx context.Context, tenantID, userID shared.ID, assetIDs []shared.ID) (map[shared.ID]bool, error)
+	// SyncOwnerRefOwner makes userID the owner derived from the asset's
+	// owner_ref: an 'owner_ref' row for any other user is removed and, when
+	// userID is not nil and is a member of the tenant, a 'primary' row with
+	// source 'owner_ref' is added unless the user already owns the asset.
+	// Rows set by a person or a scope rule are never touched. A no-op for an
+	// asset of another tenant.
+	SyncOwnerRefOwner(ctx context.Context, tenantID, assetID shared.ID, userID *shared.ID) error
+	// GetAssetOwnerSource returns the assignment_source of an asset_owners row
+	// ('manual', 'scope_rule' or 'owner_ref').
+	GetAssetOwnerSource(ctx context.Context, id shared.ID) (string, error)
+
+	// Explicit per-user data-scope grants (asset_access_grants). Being an
+	// owner does not grant access; a user's data scope is their groups' assets
+	// plus these grants. Every method is tenant-scoped and keeps
+	// user_accessible_assets in step in the same transaction.
+	ListAssetAccessGrants(ctx context.Context, tenantID, assetID shared.ID) ([]*AssetAccessGrant, error)
+	// CreateAssetAccessGrant grants the user (a member of the tenant) access
+	// to the tenant's asset. ErrAccessGrantExists when it already exists.
+	CreateAssetAccessGrant(ctx context.Context, tenantID, assetID, userID shared.ID, grantedBy *shared.ID) (*AssetAccessGrant, error)
+	// DeleteAssetAccessGrant revokes the grant and returns it. The user keeps
+	// the asset only if a group still gives access. ErrAccessGrantNotFound
+	// when the grant is not on this asset of this tenant.
+	DeleteAssetAccessGrant(ctx context.Context, tenantID, assetID, grantID shared.ID) (*AssetAccessGrant, error)
+
 	// IsGroupInTenant reports whether the group belongs to the tenant. Used to
 	// reject a cross-tenant principal before it is written as an asset owner
 	// (asset_owners has no tenant_id column, so the principal is otherwise
 	// unscoped). Mirrors the `groups WHERE tenant_id` screen used on reads.
 	IsGroupInTenant(ctx context.Context, tenantID, groupID shared.ID) (bool, error)
-	// IsUserInTenant reports whether the user is a member of the tenant.
+	// IsUserInTenant reports whether the user is an ACTIVE member of the
+	// tenant (active membership and account).
 	// Mirrors the `tenant_members WHERE tenant_id` screen used on reads.
 	IsUserInTenant(ctx context.Context, tenantID, userID shared.ID) (bool, error)
-
-	// Incremental access refresh for direct user ownership
-	RefreshAccessForDirectOwnerAdd(ctx context.Context, assetID, userID shared.ID, ownershipType string) error
-	RefreshAccessForDirectOwnerRemove(ctx context.Context, assetID, userID shared.ID) error
 
 	// User-Asset access queries
 	ListAccessibleAssets(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
 	CanAccessAsset(ctx context.Context, userID, assetID shared.ID) (bool, error)
 	GetUserAssetAccess(ctx context.Context, userID, assetID shared.ID) (*UserAssetAccess, error)
-	// HasAnyScopeAssignment checks if a user has any rows in user_accessible_assets.
-	// Used for backward compat: if false, user sees all data (no groups configured).
-	HasAnyScopeAssignment(ctx context.Context, tenantID, userID shared.ID) (bool, error)
-
-	// Group Permissions (custom overrides)
-	CreateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	GetGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) (*GroupPermission, error)
-	UpdateGroupPermission(ctx context.Context, gp *GroupPermission) error
-	DeleteGroupPermission(ctx context.Context, groupID shared.ID, permissionID string) error
-	ListGroupPermissions(ctx context.Context, groupID shared.ID) ([]*GroupPermission, error)
-	ListGroupPermissionsByEffect(ctx context.Context, groupID shared.ID, effect PermissionEffect) ([]*GroupPermission, error)
 
 	// Assignment Rules
 	CreateAssignmentRule(ctx context.Context, rule *AssignmentRule) error
@@ -117,7 +140,7 @@ type Repository interface {
 	// Scope rule controller queries
 	ListTenantsWithActiveScopeRules(ctx context.Context) ([]shared.ID, error)
 	ListGroupsWithActiveScopeRules(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
-	ListGroupsWithAssetGroupMatchRule(ctx context.Context, assetGroupID shared.ID) ([]shared.ID, error)
+	ListGroupsWithAssetGroupMatchRule(ctx context.Context, tenantID, assetGroupID shared.ID) ([]shared.ID, error)
 }
 
 // AssignmentRuleFilter contains filter options for listing assignment rules.
@@ -188,6 +211,22 @@ type AssetOwnerWithNames struct {
 	UserEmail      string
 	GroupName      string
 	AssignedByName string
+	// AssignmentSource is 'manual', 'scope_rule' or 'owner_ref'.
+	AssignmentSource string
+}
+
+// AssetAccessGrant is an explicit per-user data-scope grant on one asset.
+type AssetAccessGrant struct {
+	ID            shared.ID
+	TenantID      shared.ID
+	AssetID       shared.ID
+	UserID        shared.ID
+	UserName      string
+	UserEmail     string
+	Source        string // manual | migration (created from ownership in 2026-10)
+	GrantedBy     *shared.ID
+	GrantedByName string
+	GrantedAt     time.Time
 }
 
 // AssetOwnerWithAsset extends AssetOwner with basic asset details.

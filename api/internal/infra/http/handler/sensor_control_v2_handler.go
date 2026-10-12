@@ -11,6 +11,7 @@ package handler
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,14 +22,17 @@ import (
 	"strings"
 	"time"
 
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -76,8 +80,32 @@ func (h *SensorControlV2Handler) Features() []string {
 	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
 		out = append(out, protov2.FeatureManifest)
 	}
+	if h.ingest != nil {
+		out = append(out, protov2.FeatureLocalPolicy)
+	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
+		out = append(out, protov2.FeaturePosture)
+	}
+	if h.commands != nil {
+		out = append(out, protov2.FeatureCapacity, protov2.FeatureRefusal)
+	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsConfigReports() {
+		out = append(out, protov2.FeatureConfigReport)
+	}
+	if h.HasLogs() {
+		out = append(out, protov2.FeatureLogs)
+	}
+	if h.commands != nil && h.commands.service.SignsJobs() {
+		out = append(out, protov2.FeatureSignedJobs)
+	}
+	if h.ingest != nil && h.ingest.sensorService.SupportsKeyBind() {
+		out = append(out, protov2.FeatureKeyBind)
+	}
 	return out
 }
+
+// HasLogs reports whether the logs resource is served.
+func (h *SensorControlV2Handler) HasLogs() bool { return h.commands != nil && h.commands.logs != nil }
 
 // HasIngest, HasCommands and HasSuppressions tell route registration which
 // routes to mount.
@@ -164,9 +192,20 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
 		return
 	}
+	start := time.Now()
+	defer func() { h.ingest.observeHeartbeat(time.Since(start)) }()
 	id := sensorIdentityFromContext(r.Context())
+	// The doorbell rings first so the write stores the deadline of the
+	// interval just advised (RFC-035 §5.6); a v2 sensor always follows it.
+	var hints sensor.HeartbeatHints
+	if h.ingest.doorbell != nil {
+		hints = h.ingest.doorbell.Ring(r.Context(), sensorapp.DoorbellRequest{Identity: id, Aware: true})
+	}
 	if !id.Paused {
-		if err := h.ingest.sensorService.UpdateHeartbeat(r.Context(), s.ID, heartbeatData(r, &req, 2)); err != nil {
+		data := heartbeatData(r, &req, 2)
+		data.Protocol, data.Binding, data.FallbackReason = heartbeatTransport(r.Context(), &req)
+		data.AdvisedSeconds, data.DoorbellAware = hints.NextHeartbeatSeconds, true
+		if err := h.ingest.sensorService.UpdateHeartbeat(r.Context(), s.ID, data); err != nil {
 			// As v1: the heartbeat answers even when the write failed.
 			h.logger.Error("failed to update sensor heartbeat", "error", err, "sensor_id", s.ID)
 		}
@@ -174,19 +213,22 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 
 	resp := protov2.HeartbeatResponse{
 		SensorID: s.ID.String(), TenantID: s.TenantID.String(),
-		Status: protov2.HeartbeatStatusOK, Actions: []string{},
+		Status: protov2.HeartbeatStatusOK, Actions: []string{}, CancelCommandIDs: []string{},
 	}
 	if id.Paused {
 		resp.Status = protov2.HeartbeatStatusPaused
 	}
 	if h.ingest.doorbell != nil {
-		hints := h.ingest.doorbell.Ring(r.Context(), app.DoorbellRequest{Identity: id, Aware: true})
 		resp.PendingJobs = hints.PendingJobs
 		resp.ConfigVersion = hints.ConfigVersion
 		resp.NextHeartbeatSeconds = hints.NextHeartbeatSeconds
 		for _, a := range hints.Actions {
 			resp.Actions = append(resp.Actions, string(a))
 		}
+	}
+	if ids := h.ingest.commandsToCancel(r.Context(), s, &req); len(ids) > 0 {
+		resp.CancelCommandIDs = ids
+		resp.Actions = append(resp.Actions, protov2.ActionCancel)
 	}
 	// RFC-033: a sensor that registers manifests and echoes a digest the
 	// platform does not have as current is asked to send it again.
@@ -197,7 +239,72 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 		(d != s.ManifestDigest || (req.Tools == nil && !h.ingest.sensorService.SlimHeartbeat())) {
 		resp.Actions = append(resp.Actions, protov2.ActionSendManifest)
 	}
+	// research/26: a sensor that echoes a config report digest the platform
+	// does not have as the stored one is asked to send its report again.
+	if d := sensor.HeartbeatConfigDigest(sensor.ParseConfigReportSummary(req.ConfigReport)); !id.Paused && d != "" &&
+		d != s.ConfigReportDigest && h.ingest.sensorService.SupportsConfigReports() {
+		resp.Actions = append(resp.Actions, protov2.ActionSendConfigReport)
+	}
 	writeV2JSON(w, http.StatusOK, resp)
+}
+
+// PutConfigReport handles PUT /api/v2/sensor/config-report (research/26):
+// the sensor stores the results of its preflight checks. The body is a
+// JSON report (schema 1, at most protov2.MaxConfigReportBytes); it is
+// sanitized, and what was dropped is listed, never an error.
+func (h *SensorControlV2Handler) PutConfigReport(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		mt, _, err := mime.ParseMediaType(ct)
+		if err != nil || mt != protov2.MediaTypeJSON {
+			protov2.NewProblem(protov2.ProblemUnsupportedMediaType).WithAccept(protov2.MediaTypeJSON).Write(w)
+			return
+		}
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, protov2.MaxConfigReportBytes+1))
+	if err != nil {
+		protov2.NewProblem(protov2.ProblemInvalidRequest).Write(w)
+		return
+	}
+	if len(raw) > protov2.MaxConfigReportBytes {
+		protov2.NewProblem(protov2.ProblemContentTooLarge).WithLimit(protov2.MaxConfigReportBytes).Write(w)
+		return
+	}
+	res, err := h.ingest.sensorService.RegisterConfigReport(r.Context(), s, raw)
+	switch {
+	case err == nil:
+	case errors.Is(err, sensor.ErrConfigReportTooLarge):
+		protov2.NewProblem(protov2.ProblemContentTooLarge).WithLimit(protov2.MaxConfigReportBytes).Write(w)
+		return
+	case errors.Is(err, sensor.ErrConfigReportMalformed):
+		protov2.NewProblem(protov2.ProblemInvalidRequest).Write(w)
+		return
+	case errors.Is(err, sensor.ErrConfigReportInvalid):
+		protov2.NewProblem(protov2.ProblemConfigReportInvalid).Write(w)
+		return
+	case errors.Is(err, sensorapp.ErrConfigReportSensorInactive):
+		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
+		return
+	case errors.Is(err, sensorapp.ErrConfigReportUnavailable):
+		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
+		return
+	default:
+		h.logger.Error("failed to store sensor config report", "sensor_id", s.ID, "error", err)
+		protov2.NewProblem(protov2.ProblemInternal).Write(w)
+		return
+	}
+	out := protov2.ConfigReportResponse{
+		ConfigReportDigest: res.Digest,
+		Changed:            res.Changed,
+		Ignored:            make([]protov2.ConfigReportIgnored, 0, len(res.Ignored)),
+	}
+	for _, i := range res.Ignored {
+		out.Ignored = append(out.Ignored, protov2.ConfigReportIgnored{Path: i.Path, Value: i.Value, Reason: i.Reason})
+	}
+	writeV2JSON(w, http.StatusOK, out)
 }
 
 // PutManifest handles PUT /api/v2/sensor/manifest (RFC-033): the sensor
@@ -237,10 +344,10 @@ func (h *SensorControlV2Handler) PutManifest(w http.ResponseWriter, r *http.Requ
 	case errors.Is(err, sensor.ErrManifestInvalid):
 		protov2.NewProblem(protov2.ProblemManifestInvalid).Write(w)
 		return
-	case errors.Is(err, app.ErrManifestSensorInactive):
+	case errors.Is(err, sensorapp.ErrManifestSensorInactive):
 		protov2.NewProblem(protov2.ProblemScopeDenied).Write(w)
 		return
-	case errors.Is(err, app.ErrManifestUnavailable):
+	case errors.Is(err, sensorapp.ErrManifestUnavailable):
 		h.logger.Warn("sensor manifest not stored", "sensor_id", s.ID, "error", err)
 		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
 		return
@@ -314,8 +421,8 @@ func freeSlotsNow(s *sensor.Sensor) *int {
 // heartbeatData maps a heartbeat body (v1 and v2 share it) to the service
 // input, with the protocol the heartbeat arrived on and the client's
 // User-Agent for the fleet's protocol telemetry (RFC-029 §5.3).
-func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.SensorHeartbeatData {
-	return app.SensorHeartbeatData{
+func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) sensorapp.SensorHeartbeatData {
+	return sensorapp.SensorHeartbeatData{
 		Version:    req.Version,
 		Hostname:   req.Hostname,
 		InstanceID: req.InstanceID,
@@ -336,11 +443,34 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) app.Sen
 		UserAgent:     r.UserAgent(),
 		Report:        req.capabilityReport(),
 		Load:          req.loadReport(),
-		Build:         req.buildReport(),
+		// The SDK that reports its queue lists what it runs ("running",
+		// left out when empty); one that does not renews everything it holds.
+		Running:         req.Running,
+		RunningReported: req.Queue != nil,
+		Build:           req.buildReport(),
 		// v1 has no manifest: its heartbeat is always the source.
 		ManifestDigest: manifestDigestFor(req, protocol),
 		Content:        slimContentFor(req, protocol),
+		Control:        sensor.ParseControlReport(req.Control),
+		// Untrusted; sanitized by the service before it is stored.
+		LocalPolicy: req.LocalPolicy,
+		// Untrusted; only a well-formed digest is stored.
+		ConfigReport: sensor.ParseConfigReportSummary(req.ConfigReport),
 	}
+}
+
+// heartbeatTransport is the protocol, binding and fallback reason of a v2
+// route heartbeat: protocol 3 and the binding the v3 server decided when the
+// call was carried by protocol v3 (RFC-059), else protocol 2 on v2. The
+// reason is the sensor's own report.
+func heartbeatTransport(ctx context.Context, req *HeartbeatRequest) (protocol int, binding, reason string) {
+	if t, ok := servedTransportFrom(ctx); ok {
+		return 3, t.Binding, t.FallbackReason
+	}
+	if req.Transport != nil {
+		reason = req.Transport.FallbackReason
+	}
+	return 2, sensor.BindingV2, reason
 }
 
 // slimContentFor is a v2 heartbeat's content block, bounded; nil on v1.
@@ -368,18 +498,32 @@ const maxManifestDigestLen = 71
 // =============================================================================
 
 // PollCommands handles GET /api/v2/sensor/commands?limit=n: the commands this
-// sensor may claim now, by the v1 poll's predicate.
+// sensor may claim now, by the v1 poll's predicate, in the fair dispatch
+// order. With the capacity feature they come back already claimed (claim-N).
 func (h *SensorControlV2Handler) PollCommands(w http.ResponseWriter, r *http.Request) {
 	s := sensorForV2(w, r)
 	if s == nil {
 		return
 	}
 	limit := parseQueryInt(r.URL.Query().Get("limit"), 10)
-	cmds, err := h.commands.service.Poll(r.Context(), command.PollInput{
-		TenantID: s.TenantID.String(), SensorID: s.ID.String(),
-		Capabilities: s.EffectiveCapabilities(), Limit: limit,
-		MaxScanCommands: freeSlotsNow(s),
-	})
+	var (
+		cmds []*commanddom.Command
+		err  error
+	)
+	if protov2.HasFeature(r.Header.Values(protov2.HeaderSensorFeatures), protov2.FeatureCapacity) {
+		// Claim-N: the listed commands are claimed for this sensor.
+		cmds, err = h.commands.service.Claim(r.Context(), command.ClaimInput{
+			TenantID: s.TenantID.String(), SensorID: s.ID.String(),
+			Capabilities: s.EffectiveCapabilities(), Limit: limit,
+			MaxJobs: s.EffectiveMaxConcurrentJobs(), ReportedFree: freeSlotsNow(s),
+		})
+	} else {
+		cmds, err = h.commands.service.Poll(r.Context(), command.PollInput{
+			TenantID: s.TenantID.String(), SensorID: s.ID.String(),
+			Capabilities: s.EffectiveCapabilities(), Limit: limit,
+			MaxScanCommands: freeSlotsNow(s),
+		})
+	}
 	if err != nil {
 		h.internal(w, "commands", err)
 		return
@@ -451,7 +595,9 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return
 	}
-	in := command.TransitionInput{TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID}
+	in := command.TransitionInput{TenantID: s.TenantID.String(), SensorID: s.ID.String(), CommandID: commandID,
+		LeaseEpoch: leaseEpochHeader(r)}
+	failCode := scanrundom.FailureCommandFailed
 	switch t {
 	case command.TransitionComplete:
 		var req protov2.CompleteRequest
@@ -465,6 +611,10 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		in.ErrorMessage = req.ErrorMessage
+		failCode = sensorFailureCode(req.ErrorCode, req.Refusal != nil)
+		if req.Refusal != nil {
+			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
+		}
 	default:
 		var ignored struct{}
 		if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &ignored) {
@@ -480,12 +630,18 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 	// Side effects run on the real transition only, never on a replay.
 	if !res.Replayed {
 		switch t {
+		case command.TransitionStart:
+			h.commands.triggerScanRunStarted(r.Context(), res.Command)
 		case command.TransitionComplete:
-			h.commands.triggerPipelineProgression(r.Context(), res.Command)
+			h.commands.triggerScanRunProgression(r.Context(), res.Command)
 			h.commands.triggerValidationEvidence(res.Command)
 			h.commands.triggerSimulationFinalize(res.Command)
+			h.commands.triggerCoverageAutoResolve(res.Command)
 		case command.TransitionFail:
-			h.commands.triggerPipelineFailed(r.Context(), res.Command, in.ErrorMessage)
+			// A refused job re-queued to another sensor has not failed.
+			if res.Command.Status == commanddom.CommandStatusFailed {
+				h.commands.OnCommandFailed(r.Context(), res.Command, res.Command.ErrorMessage, failCode)
+			}
 		}
 	}
 	writeV2JSON(w, http.StatusOK, toV2Command(res.Command))
@@ -502,9 +658,27 @@ func (h *SensorControlV2Handler) transitionFailed(w http.ResponseWriter, route s
 		protov2.NewProblem(protov2.ProblemCommandClaimed).Write(w)
 	case errors.Is(err, command.ErrTransitionConflict):
 		protov2.NewProblem(protov2.ProblemTransitionConflict).Write(w)
+	case errors.Is(err, command.ErrJobNotSigned):
+		// Claims wait for the signer; nothing leaves unsigned.
+		protov2.NewProblem(protov2.ProblemUnavailable).Write(w)
 	default:
 		h.internal(w, route, err)
 	}
+}
+
+// leaseEpochHeader is the lease epoch a sensor states it holds the command
+// under (X-OpenCTEM-Lease-Epoch, the lease_epoch it was given); nil when
+// absent or not a number.
+func leaseEpochHeader(r *http.Request) *int {
+	v := strings.TrimSpace(r.Header.Get(protov2.HeaderLeaseEpoch))
+	if v == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return nil
+	}
+	return &n
 }
 
 // toV2Command is the v2 representation of a command.
@@ -522,6 +696,10 @@ func toV2Command(c *commanddom.Command) protov2.Command {
 		CompletedAt:    utcPtr(c.CompletedAt),
 		ErrorMessage:   c.ErrorMessage,
 		Result:         rawOrNull(c.Result),
+		LeaseEpoch:     c.LeaseEpoch,
+		LeaseExpiresAt: utcPtr(c.LeaseExpiresAt),
+		// Set only on the copy a claim hands out when jobs are signed.
+		SignedJob: c.SignedJob,
 	}
 	if c.SensorID != nil {
 		id := c.SensorID.String()
@@ -550,7 +728,10 @@ func utcPtr(t *time.Time) *time.Time {
 // =============================================================================
 
 // Suppressions handles GET /api/v2/sensor/suppressions (RFC-029 §4.5): the
-// v1 document with a strong ETag; If-None-Match with it answers 304.
+// v1 document with a strong ETag; If-None-Match with it answers 304. A rule
+// on an asset is listed only when the sensor reaches that asset
+// (ingest sensor_reach.go): a sensor never learns another zone's assets or
+// suppressed paths.
 func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Request) {
 	s := sensorForV2(w, r)
 	if s == nil {
@@ -563,7 +744,15 @@ func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Req
 			h.internal(w, "suppressions", err)
 			return
 		}
+		reachable, err := h.reachableRuleAssets(r, s, rules)
+		if err != nil {
+			h.internal(w, "suppressions", err)
+			return
+		}
 		for _, rule := range rules {
+			if rule.AssetID() != nil && !reachable[*rule.AssetID()] {
+				continue
+			}
 			item := protov2.SuppressionRule{RuleID: rule.RuleID(), ToolName: rule.ToolName(), PathPattern: rule.PathPattern()}
 			if rule.AssetID() != nil {
 				a := rule.AssetID().String()
@@ -594,6 +783,21 @@ func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", protov2.MediaTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(append(body, '\n'))
+}
+
+// reachableRuleAssets returns which of the rules' assets the sensor reaches,
+// in one lookup; without the ingest service it reaches none (fail closed).
+func (h *SensorControlV2Handler) reachableRuleAssets(r *http.Request, s *sensor.Sensor, rules []*suppression.Rule) (map[shared.ID]bool, error) {
+	var ids []shared.ID
+	for _, rule := range rules {
+		if rule.AssetID() != nil {
+			ids = append(ids, *rule.AssetID())
+		}
+	}
+	if len(ids) == 0 || h.ingest == nil || h.ingest.ingestService == nil {
+		return map[shared.ID]bool{}, nil
+	}
+	return h.ingest.ingestService.SensorReachableAssets(r.Context(), s, ids)
 }
 
 // etagMatches implements the If-None-Match comparison for a strong tag: "*"
@@ -682,7 +886,8 @@ func (h *SensorControlV2Handler) RenewKey(w http.ResponseWriter, r *http.Request
 	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &ignored) {
 		return
 	}
-	key, expiresAt, err := h.ingest.sensorService.RenewAPIKey(r.Context(), s)
+	// The identity says which key was presented; renewal retires that key.
+	key, expiresAt, err := h.ingest.sensorService.RenewAPIKey(r.Context(), sensorIdentityFromContext(r.Context()))
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) {
 			h.logger.Debug("sensor key renewal refused", "sensor_id", s.ID.String(), "error", err)
@@ -694,4 +899,64 @@ func (h *SensorControlV2Handler) RenewKey(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeV2JSON(w, http.StatusCreated, protov2.KeyResponse{APIKey: key, ExpiresAt: utcPtr(expiresAt)})
+}
+
+// BindKey handles POST /identity/bind (RFC-052 §4.8): a bearer-key sensor
+// binds its own Ed25519 signing key and becomes key-bound; its API keys are
+// retired. The tenant and sensor are those of the API key that
+// authenticated the call, never of the body.
+func (h *SensorControlV2Handler) BindKey(w http.ResponseWriter, r *http.Request) {
+	s := sensorForV2(w, r)
+	if s == nil {
+		return
+	}
+	var req protov2.KeyBindRequest
+	if !decodeControl(w, r, h.limits.MaxControlBodyBytes, &req) {
+		return
+	}
+	pub, errPub := base64.RawURLEncoding.DecodeString(req.PublicKey)
+	proof, errProof := base64.RawURLEncoding.DecodeString(req.Proof)
+	if errPub != nil || errProof != nil {
+		protov2.NewProblem(protov2.ProblemKeyBindRefused).Write(w)
+		return
+	}
+	res, err := h.ingest.sensorService.BindSigningKey(r.Context(), sensorIdentityFromContext(r.Context()), sensorapp.KeyBindInput{
+		PublicKey: pub, Proof: proof, IssuedAt: req.IssuedAt, ClientIP: getClientIP(r),
+	})
+	switch {
+	case err == nil:
+	case errors.Is(err, sensor.ErrKeyBindNeedsApproval):
+		protov2.NewProblem(protov2.ProblemKeyBindApproval).Write(w)
+		return
+	case errors.Is(err, shared.ErrConflict), errors.Is(err, shared.ErrValidation):
+		h.logger.Debug("sensor key bind refused", "sensor_id", s.ID.String(), "error", err)
+		protov2.NewProblem(protov2.ProblemKeyBindRefused).Write(w)
+		return
+	default:
+		h.internal(w, "identity-bind", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	status := http.StatusCreated
+	if res.Confirmed {
+		status = http.StatusOK
+	}
+	writeV2JSON(w, status, protov2.KeyBindResponse{SensorID: res.SensorID.String(), TenantID: res.TenantID.String(),
+		Name: res.Name, KeyID: res.KeyID})
+}
+
+// sensorFailureCode is the step error code of a sensor's fail: the sensor's
+// structured code when it is one a sensor may report (scanrundom.
+// SensorFailureCodes), POLICY_REFUSED for a structured policy refusal that
+// was not re-queued, else COMMAND_FAILED (the message is then classified).
+// The code only ever comes from the sensor that holds the command: the
+// transition is fenced by tenant, sensor and lease epoch before this runs.
+func sensorFailureCode(code string, refused bool) string {
+	if scanrundom.SensorFailureCodes[code] {
+		return code
+	}
+	if refused {
+		return scanrundom.FailurePolicyRefused
+	}
+	return scanrundom.FailureCommandFailed
 }

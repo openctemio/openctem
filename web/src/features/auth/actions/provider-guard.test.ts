@@ -54,6 +54,18 @@ describe('auth server actions reject unknown providers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('sso re-authentication asks the API to force a fresh sign-in at the provider', async () => {
+    const ok = () =>
+      new Response(JSON.stringify({ authorization_url: 'https://idp/x', state: 's' }), {
+        status: 200,
+      })
+    fetchMock.mockImplementation(async () => ok())
+    expect((await getSSOAuthorizeUrl('okta', 'acme', '/settings', true)).success).toBe(true)
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('reauth')).toBe('true')
+    await getSSOAuthorizeUrl('okta', 'acme', '/settings')
+    expect(new URL(fetchMock.mock.calls[1][0]).searchParams.has('reauth')).toBe(false)
+  })
+
   it('allowed provider still reaches the backend', async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ authorization_url: 'https://idp/x', state: 's' }), {

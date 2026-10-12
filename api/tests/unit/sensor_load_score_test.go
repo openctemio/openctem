@@ -8,7 +8,7 @@ import (
 )
 
 // TestComputeLoadScore_HonorsThroughputCeilings pins that the
-// AGENT_LB_MAX_DISK_THROUGHPUT_MBPS / AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS
+// SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS / SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS
 // normalization ceilings are honored. They used to be untouchable file-scope
 // constants inside ComputeLoadScoreWithWeights, so an operator on NVMe or
 // 10 GbE had no way to say what "100% busy" meant on their hardware.
@@ -39,7 +39,7 @@ func TestComputeLoadScore_HonorsThroughputCeilings(t *testing.T) {
 	})
 	if roomy != 25 {
 		t.Fatalf("disk score = %v with a 2000 MB/s ceiling at 500 MB/s, want 25; "+
-			"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS is ignored", roomy)
+			"SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS is ignored", roomy)
 	}
 
 	net := a.ComputeLoadScoreWithWeights(sensor.LoadBalancingWeights{
@@ -48,11 +48,11 @@ func TestComputeLoadScore_HonorsThroughputCeilings(t *testing.T) {
 	})
 	if net != 25 {
 		t.Fatalf("network score = %v with a 4000 MB/s ceiling at 1000 MB/s, want 25; "+
-			"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS is ignored", net)
+			"SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS is ignored", net)
 	}
 }
 
-// TestLoadBalancingConfig_Weights pins the seam between the parsed AGENT_LB_*
+// TestLoadBalancingConfig_Weights pins the seam between the parsed SENSOR_LB_*
 // environment variables and the domain scoring function. Without it the whole
 // LoadBalancingConfig struct was write-only: parsed at boot, read by nothing.
 func TestLoadBalancingConfig_Weights(t *testing.T) {
@@ -84,7 +84,7 @@ func TestLoadBalancingConfig_Weights(t *testing.T) {
 
 // TestConfigDefaults_MatchDomainDefaults guards against the config defaults and
 // the domain defaults silently drifting apart, which would make the documented
-// AGENT_LB_* defaults a lie.
+// SENSOR_LB_* defaults a lie.
 func TestConfigDefaults_MatchDomainDefaults(t *testing.T) {
 	t.Parallel()
 

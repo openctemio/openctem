@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import type { Sensor } from '@/lib/api/sensor-types'
 
-import { canTakeJobs, isOneShotSensor, sensorState, SENSOR_STATE_META } from '../sensor-state'
+import {
+  canTakeJobs,
+  isOneShotSensor,
+  sensorState,
+  SENSOR_STATE_META,
+  SENSOR_STATES,
+  stateIsHeartbeating,
+  stateTakesJobs,
+} from '../sensor-state'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
 
 const NOW = new Date('2026-10-02T12:00:00Z').getTime()
@@ -15,7 +23,7 @@ function sensor(over: Partial<Sensor> = {}): Sensor {
     name: 'scanner',
     type: 'worker',
     capabilities: [],
-    tools: ['nuclei'],
+    effective: { tools: ['nuclei'], capabilities: [], max_concurrent_jobs: 5 },
     execution_mode: 'daemon',
     status: 'active',
     health: 'online',
@@ -59,18 +67,18 @@ describe('sensorState', () => {
       ['outbox warning while heartbeating', { outbox_warning: true }, 'degraded'],
       [
         'a CI runner between runs is idle, not offline',
-        { type: 'runner', execution_mode: 'standalone', last_seen_at: ago(3 * 3600) },
+        { type: 'worker', execution_mode: 'standalone', last_seen_at: ago(3 * 3600) },
         'idle',
       ],
       [
         'a CI runner during a run',
-        { type: 'runner', execution_mode: 'standalone', last_seen_at: ago(20) },
+        { type: 'worker', execution_mode: 'standalone', last_seen_at: ago(20) },
         'online',
       ],
       [
         'a CI runner that never ran',
         {
-          type: 'runner',
+          type: 'worker',
           execution_mode: 'standalone',
           last_seen_at: undefined,
           health: 'unknown',
@@ -90,6 +98,24 @@ describe('sensorState', () => {
     })
   })
 
+  it('passes the heartbeat ladder states through (api RFC-035)', () => {
+    expect(sensorState(sensor({ state: 'late', last_seen_at: ago(50) }), NOW)).toBe('late')
+    expect(sensorState(sensor({ state: 'stale', last_seen_at: ago(110) }), NOW)).toBe('stale')
+    expect(SENSOR_STATES).toEqual([
+      'online',
+      'degraded',
+      'late',
+      'stale',
+      'offline',
+      'idle',
+      'never_connected',
+      'disabled',
+      'revoked',
+    ])
+    expect(SENSOR_STATE_META.late.label).toBe('Late')
+    expect(SENSOR_STATE_META.late.tone).toBe('warning')
+  })
+
   it('has a label and tone for every state, with Idle (CI) for runners', () => {
     for (const meta of Object.values(SENSOR_STATE_META)) {
       expect(meta.label).toBeTruthy()
@@ -100,10 +126,17 @@ describe('sensorState', () => {
 })
 
 describe('isOneShotSensor / canTakeJobs', () => {
-  it('a standalone or runner sensor is one-shot', () => {
+  it('a standalone sensor is one-shot', () => {
     expect(isOneShotSensor(sensor({ execution_mode: 'standalone' }))).toBe(true)
-    expect(isOneShotSensor(sensor({ type: 'runner' }))).toBe(true)
     expect(isOneShotSensor(sensor())).toBe(false)
+  })
+  it('late sensors still take jobs; stale ones do not', () => {
+    expect(canTakeJobs(sensor({ state: 'late' }), NOW)).toBe(true)
+    expect(canTakeJobs(sensor({ state: 'stale' }), NOW)).toBe(false)
+    expect(stateTakesJobs('late')).toBe(true)
+    expect(stateTakesJobs('stale')).toBe(false)
+    expect(stateIsHeartbeating('stale')).toBe(true)
+    expect(stateIsHeartbeating('offline')).toBe(false)
   })
   it('only enabled long-running sensors that are online or degraded take jobs', () => {
     expect(canTakeJobs(sensor(), NOW)).toBe(true)
@@ -112,7 +145,7 @@ describe('isOneShotSensor / canTakeJobs', () => {
     expect(canTakeJobs(sensor({ status: 'disabled' }), NOW)).toBe(false)
     expect(
       canTakeJobs(
-        sensor({ type: 'runner', execution_mode: 'standalone', last_seen_at: ago(5) }),
+        sensor({ type: 'worker', execution_mode: 'standalone', last_seen_at: ago(5) }),
         NOW
       )
     ).toBe(false)

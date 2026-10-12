@@ -26,7 +26,6 @@ const SIDEBAR_LABELS: Map<string, string> = (() => {
 
 /** Sub-pages the sidebar does not list, by full path. */
 const PATH_LABELS: Record<string, string> = {
-  '/sensors/platform': 'Platform sensors',
   // The first tab of Scoping > Business context: the row is named after the
   // section, the crumb after the page (its siblings humanize to "Business
   // services" and "Business units").
@@ -49,6 +48,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   builder: 'Builder',
   api: 'API',
   'api-keys': 'API keys',
+  'service-accounts': 'Service accounts',
   cicd: 'CI/CD',
   siem: 'SIEM',
   scm: 'SCM',
@@ -79,4 +79,28 @@ export function breadcrumbLabel(path: string, segment: string): string {
   const fromSidebar = SIDEBAR_LABELS.get(path)
   if (fromSidebar && !GENERIC_TITLES.has(fromSidebar)) return fromSidebar
   return FALLBACK_LABELS[segment] ?? humanize(segment)
+}
+
+/**
+ * What a record id under each parent segment is ("/scans/<id>" is a scan):
+ * the crumb for an id until its page names the record. Never the id itself.
+ */
+const RECORD_LABELS: Record<string, string> = {
+  assets: 'Asset',
+  campaigns: 'Campaign',
+  cycles: 'Cycle',
+  findings: 'Finding',
+  groups: 'Asset group',
+  organizations: 'Organization',
+  remediation: 'Campaign',
+  repositories: 'Repository',
+  runs: 'Run',
+  scans: 'Scan',
+  templates: 'Template',
+  workflows: 'Workflow',
+}
+
+/** Label for an id segment whose parent segment is `parent`. */
+export function recordLabel(parent: string | undefined): string {
+  return (parent && RECORD_LABELS[parent]) || 'Details'
 }

@@ -1,0 +1,5 @@
+### Fixed: expired invitations, admin sessions and reviewed quarantined results are purged
+
+- Three deletes existed with no caller, so their rows stayed forever: unaccepted invitations past their expiry (an email address and a token hash), platform-admin console sessions past their absolute expiry (IP address and user agent; they were only swept when an administrator signed in again), and reviewed quarantined sensor results (the full report payload).
+- New controllers `invitation-purge` (hourly), `admin-session-purge` (hourly) and `sensor-result-quarantine-purge` (daily, deletes items reviewed more than 30 days ago; pending items are never purged). Each holds its controller lease, so with several API replicas one runs it at a time, and each is exported under the usual `openctem_controller_*` metrics.
+- Settings: `INVITATION_PURGE_INTERVAL` (default `1h`), `ADMIN_SESSION_PURGE_INTERVAL` (`1h`), `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` (`24h`), `SENSOR_RESULT_QUARANTINE_RETENTION` (`720h`).

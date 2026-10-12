@@ -20,14 +20,14 @@ func TestResolveTypeAlias(t *testing.T) {
 		{"compute", "host", "compute"},
 		{"serverless", "host", "serverless"},
 		{"website", "application", "website"},
-		{"web_application", "application", "web_application"},
+		{"web_application", "application", "website"}, // O3: one web sub-type
 		{"api", "application", "api"},
 		{"mobile_app", "application", "mobile_app"},
 		{"iam_user", "identity", "iam_user"},
 		{"iam_role", "identity", "iam_role"},
 		{"service_account", "identity", "service_account"},
-		{"data_store", "database", "data_store"},
-		{"s3_bucket", "storage", "s3_bucket"},
+		{"data_store", "database", ""},     // RFC-042 §6.3.8: a sub-type is a kind
+		{"s3_bucket", "storage", "bucket"}, // vendor moves to the provider
 		{"container_registry", "storage", "container_registry"},
 		{"kubernetes_cluster", "kubernetes", "cluster"},
 		{"kubernetes_namespace", "kubernetes", "namespace"},

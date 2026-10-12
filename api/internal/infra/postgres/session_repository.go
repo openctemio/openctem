@@ -14,7 +14,7 @@ import (
 
 const sessionColumns = `id, user_id, access_token_hash, ip_address, user_agent,
 	device_fingerprint, expires_at, last_activity_at, status, auth_method,
-	idp_issuer, idp_sid, idp_sub, created_at, updated_at`
+	idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at, mfa_evidence`
 
 // SessionRepository implements session.Repository using PostgreSQL.
 type SessionRepository struct {
@@ -32,8 +32,8 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		INSERT INTO sessions (
 			id, user_id, access_token_hash, ip_address, user_agent,
 			device_fingerprint, expires_at, last_activity_at, status, auth_method,
-			idp_issuer, idp_sid, idp_sub, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
+			idp_issuer, idp_sid, idp_sub, idp_tenant_id, created_at, updated_at, mfa_evidence
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(),
@@ -49,8 +49,10 @@ func (r *SessionRepository) Create(ctx context.Context, s *session.Session) erro
 		nullString(s.IDPIssuer()),
 		nullString(s.IDPSID()),
 		nullString(s.IDPSub()),
+		nullIDValue(s.IDPTenantID()),
 		s.CreatedAt(),
 		s.UpdatedAt(),
+		s.MFAEvidence(),
 	)
 	if err != nil {
 		return err
@@ -297,8 +299,10 @@ func (r *SessionRepository) scanSession(row *sql.Row) (*session.Session, error) 
 		&fields.idpIssuer,
 		&fields.idpSID,
 		&fields.idpSub,
+		&fields.idpTenantID,
 		&fields.createdAt,
 		&fields.updatedAt,
+		&fields.mfaEvidence,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -327,8 +331,10 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 		&fields.idpIssuer,
 		&fields.idpSID,
 		&fields.idpSub,
+		&fields.idpTenantID,
 		&fields.createdAt,
 		&fields.updatedAt,
+		&fields.mfaEvidence,
 	)
 	if err != nil {
 		return nil, err
@@ -339,7 +345,7 @@ func (r *SessionRepository) scanSessionFromRows(rows *sql.Rows) (*session.Sessio
 
 // reconstructSession creates a Session from scanned fields.
 func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Session {
-	return session.Reconstitute(
+	sess := session.Reconstitute(
 		shared.IDFromUUID(f.id),
 		shared.IDFromUUID(f.userID),
 		f.accessTokenHash,
@@ -356,6 +362,11 @@ func (r *SessionRepository) reconstructSession(f sessionScanFields) *session.Ses
 		f.createdAt,
 		f.updatedAt,
 	)
+	if f.idpTenantID.Valid {
+		sess.SetIDPTenant(shared.IDFromUUID(f.idpTenantID.UUID))
+	}
+	sess.SetMFAEvidence(f.mfaEvidence)
+	return sess
 }
 
 // sessionScanFields holds scanned fields from database.
@@ -373,6 +384,52 @@ type sessionScanFields struct {
 	idpIssuer         sql.NullString
 	idpSID            sql.NullString
 	idpSub            sql.NullString
+	idpTenantID       uuid.NullUUID
 	createdAt         time.Time
 	updatedAt         time.Time
+	mfaEvidence       bool
+}
+
+// MarkStepUp records that userID re-authenticated at `at` inside sessionID
+// (step-up, docs/architecture/step-up-reauth.md). Only an active, unexpired
+// session that belongs to userID is marked; false means there was none.
+// Sessions are not tenant-scoped: the session id and its owner are the key.
+func (r *SessionRepository) MarkStepUp(ctx context.Context, sessionID, userID shared.ID, at time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sessions SET step_up_at = $3, updated_at = NOW()
+		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()`,
+		sessionID.String(), userID.String(), at)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}
+
+// RecentAuthAt returns when userID last proved their identity in sessionID:
+// the later of the sign-in that created the session and its last step-up.
+// For a session created by an organization's identity provider (auth_method
+// sso or saml with idp_tenant_id) the sign-in is the provider's
+// authentication, recorded as step_up_at when it was recent; the session's
+// creation does not count, since the provider may have signed the user in
+// silently. session.ErrSessionNotFound when the session is not an active,
+// unexpired session of userID.
+func (r *SessionRepository) RecentAuthAt(ctx context.Context, sessionID, userID shared.ID) (time.Time, error) {
+	var at time.Time
+	err := r.db.QueryRowContext(ctx, `
+		SELECT CASE
+			WHEN auth_method IN ('sso', 'saml') AND idp_tenant_id IS NOT NULL
+				THEN COALESCE(step_up_at, 'epoch'::timestamptz)
+			ELSE GREATEST(created_at, COALESCE(step_up_at, created_at))
+		END
+		FROM sessions
+		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()`,
+		sessionID.String(), userID.String()).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, session.ErrSessionNotFound
+	}
+	return at, err
 }

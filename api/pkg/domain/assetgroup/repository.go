@@ -3,6 +3,8 @@ package assetgroup
 import (
 	"context"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -38,10 +40,16 @@ type Repository interface {
 	ExistsByName(ctx context.Context, tenantID shared.ID, name string) (bool, error)
 
 	// GetStats returns aggregated statistics for asset groups.
-	GetStats(ctx context.Context, tenantID shared.ID) (*Stats, error)
+	// A non-nil scope counts only members in that data scope.
+	GetStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*Stats, error)
 
-	// AddAssets adds assets to a group.
-	AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error
+	// AddAssets adds assets to a group. Only assets of the group's own
+	// tenant are written; it returns how many of assetIDs are such assets.
+	AddAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) (int, error)
+
+	// FilterTenantAssetIDs returns the subset of assetIDs that are assets of
+	// tenantID.
+	FilterTenantAssetIDs(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) ([]shared.ID, error)
 
 	// RemoveAssets removes assets from a group.
 	RemoveAssets(ctx context.Context, groupID shared.ID, assetIDs []shared.ID) error
@@ -49,6 +57,11 @@ type Repository interface {
 	// GetGroupAssets returns assets belonging to a group. A non-nil scope
 	// keeps only the assets in that data scope (nil = all members).
 	GetGroupAssets(ctx context.Context, groupID shared.ID, page pagination.Pagination, scope *shared.DataScope) (pagination.Result[*GroupAsset], error)
+
+	// ListScanMembers returns one page of the group's members for scan
+	// dispatch: only members of the tenant, archived assets left out (and
+	// counted), ordered by name, after the cursor in q.
+	ListScanMembers(ctx context.Context, q ScanMemberQuery) (*ScanMemberPage, error)
 
 	// GetGroupFindings returns findings for assets belonging to a group. A
 	// non-nil scope keeps only findings whose asset is in that data scope.
@@ -68,9 +81,10 @@ type Repository interface {
 	// Used when scan has multiple asset groups (AssetGroupIDs[]).
 	GetDistinctAssetTypesMultiple(ctx context.Context, groupIDs []shared.ID) ([]string, error)
 
-	// CountAssetsByType returns count of assets per type in a group.
+	// CountAssetsByType returns the count of assets per stored
+	// (type, sub_type) pair in a group.
 	// Used for compatibility preview at scan creation.
-	CountAssetsByType(ctx context.Context, groupID shared.ID) (map[string]int64, error)
+	CountAssetsByType(ctx context.Context, groupID shared.ID) (map[asset.TypeRef]int64, error)
 }
 
 // Filter defines the filtering options for listing asset groups.
@@ -89,6 +103,14 @@ type Filter struct {
 	HasFindings    *bool
 	MinRiskScore   *int
 	MaxRiskScore   *int
+	// IDs keeps only these groups.
+	IDs []shared.ID
+	// DataScope, when set, computes every count and score of a group
+	// (asset_count, the per-kind counts, risk_score, finding_count) over the
+	// members in that data scope only, and filters and sorts on those values,
+	// so a restricted reader learns nothing about assets outside their scope.
+	// nil = every member.
+	DataScope *shared.DataScope
 }
 
 // ListOptions contains options for listing asset groups.
@@ -194,6 +216,35 @@ type GroupAsset struct {
 	RiskScore    int
 	FindingCount int
 	LastSeen     string
+}
+
+// ScanMemberQuery selects one keyset page of a group's scan members.
+type ScanMemberQuery struct {
+	TenantID shared.ID
+	GroupID  shared.ID
+	// AfterName and AfterID are the last member of the previous page; both
+	// empty for the first page.
+	AfterName string
+	AfterID   shared.ID
+	Limit     int
+}
+
+// ScanMember is a group member as scan dispatch sees it: its identity, the
+// name a scanner is handed, and the properties that exclusions match.
+type ScanMember struct {
+	ID         shared.ID
+	Name       string
+	Type       string
+	SubType    string // stored sub-type; scanner compatibility reads it
+	Status     string
+	Properties map[string]any // only the keys exclusion matching reads
+}
+
+// ScanMemberPage is one page of scan members. ArchivedCount (the group's
+// archived members, which are never listed) is set on the first page only.
+type ScanMemberPage struct {
+	Members       []*ScanMember
+	ArchivedCount int64
 }
 
 // GroupFinding represents a finding in group context (joined with asset info).

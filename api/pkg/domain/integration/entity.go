@@ -122,6 +122,17 @@ func (p Provider) IsValid() bool {
 	}
 }
 
+// TenableConnectorEnabled is the one switch for the Tenable connector and the
+// RFC-007 coverage scheduler. It is false while no sensor runs Tenable
+// commands: sensor v0.8.0 removed the old runner (owner decision D-14), and
+// the two-way Tenable.sc connector is being rebuilt in the sensor (RFC-047).
+// While false, creating a Tenable integration is refused (HasClient), the
+// coverage scheduler is not registered (cmd/server/workers.go) and the web
+// hides the connector (TENABLE_CONNECTOR_ENABLED). Stored rows, their config
+// and the scancoverage code are kept. Flip this (and the web flag) when the
+// RFC-047 runner ships.
+const TenableConnectorEnabled = false
+
 // HasClient reports whether the platform has a working client for this
 // provider — i.e. whether an integration of this provider can actually do
 // something once connected.
@@ -133,18 +144,20 @@ func (p Provider) IsValid() bool {
 //
 // Keep this list in step with the code that consumes each provider:
 //   - SCM: internal/infra/scm (GitHub, GitLab, Bitbucket, Azure DevOps)
-//   - Security: Tenable coverage scheduler, DefectDojo sync
+//   - Security: DefectDojo sync
 //   - Ticketing: Jira (internal/infra/jira)
 //   - Notification: internal/infra/notifier (incl. the Splunk HEC sink)
 //
 // Declared without a client: Wiz, Snyk, CrowdStrike, AWS, GCP, Azure,
-// Linear, Asana.
+// Linear, Asana. Tenable has a client only while TenableConnectorEnabled.
 func (p Provider) HasClient() bool {
 	switch p {
 	case ProviderGitHub, ProviderGitLab, ProviderBitbucket, ProviderAzureDevOps:
 		return true
-	case ProviderTenable, ProviderDefectDojo:
+	case ProviderDefectDojo:
 		return true
+	case ProviderTenable:
+		return TenableConnectorEnabled
 	case ProviderJira:
 		return true
 	case ProviderSlack, ProviderTeams, ProviderTelegram, ProviderEmail, ProviderWebhook, ProviderSplunk:
@@ -420,8 +433,13 @@ func (i *Integration) SetStatusMessage(message string) {
 	i.updatedAt = time.Now()
 }
 
+// SetConnected records a successful connection. A disabled integration stays
+// disabled: only EnableIntegration (which resets the status to pending first)
+// brings it back, never a read, a test or a sync.
 func (i *Integration) SetConnected() {
-	i.status = StatusConnected
+	if i.status != StatusDisabled {
+		i.status = StatusConnected
+	}
 	i.statusMessage = ""
 	i.syncError = ""
 	now := time.Now()
@@ -429,8 +447,12 @@ func (i *Integration) SetConnected() {
 	i.updatedAt = now
 }
 
+// SetError records a failed connection. A disabled integration stays
+// disabled; the reason is still recorded.
 func (i *Integration) SetError(err string) {
-	i.status = StatusError
+	if i.status != StatusDisabled {
+		i.status = StatusError
+	}
 	i.syncError = err
 	i.statusMessage = err
 	now := time.Now()
@@ -445,6 +467,12 @@ func (i *Integration) SetDisconnected() {
 
 func (i *Integration) SetSyncInterval(minutes int) {
 	i.syncIntervalMinutes = minutes
+	i.updatedAt = time.Now()
+}
+
+// SetNextSyncAt sets when the next scheduled sync is due (nil: not scheduled).
+func (i *Integration) SetNextSyncAt(t *time.Time) {
+	i.nextSyncAt = t
 	i.updatedAt = time.Now()
 }
 

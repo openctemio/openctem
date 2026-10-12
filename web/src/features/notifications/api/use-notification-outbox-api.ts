@@ -59,7 +59,7 @@ function buildOutboxListEndpoint(filters?: OutboxListFilters): string {
 
   if (filters.status) params.set('status', filters.status)
   if (filters.page) params.set('page', String(filters.page))
-  if (filters.page_size) params.set('page_size', String(filters.page_size))
+  if (filters.per_page) params.set('per_page', String(filters.per_page))
 
   const queryString = params.toString()
   return queryString ? `${BASE_URL}?${queryString}` : BASE_URL

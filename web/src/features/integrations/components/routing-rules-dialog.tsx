@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -144,7 +145,7 @@ export function RoutingRulesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Routing rules — {integration.name}</DialogTitle>
           <DialogDescription>
@@ -154,96 +155,98 @@ export function RoutingRulesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {rules.length === 0 && (
-            <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-center text-sm">
-              No routing rules. Tickets use the default project. Add a rule to route by team /
-              severity / asset.
-            </p>
-          )}
+        <DialogBody>
+          <div className="space-y-4">
+            {rules.length === 0 && (
+              <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-center text-sm">
+                No routing rules. Tickets use the default project. Add a rule to route by team /
+                severity / asset.
+              </p>
+            )}
 
-          {rules.map((rule, i) => (
-            <div key={i} className="space-y-3 rounded-lg border p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground text-xs font-medium">Rule {i + 1}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeRule(i)}
-                  aria-label={`Remove rule ${i + 1}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+            {rules.map((rule, i) => (
+              <div key={i} className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs font-medium">Rule {i + 1}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeRule(i)}
+                    aria-label={`Remove rule ${i + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor={`pk-${i}`}>Project key</Label>
+                    <Input
+                      id={`pk-${i}`}
+                      value={rule.projectKey}
+                      onChange={(e) => updateRule(i, { projectKey: e.target.value.toUpperCase() })}
+                      placeholder="e.g. PAY"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`it-${i}`}>Issue type (optional)</Label>
+                    <Input
+                      id={`it-${i}`}
+                      value={rule.issueType}
+                      onChange={(e) => updateRule(i, { issueType: e.target.value })}
+                      placeholder="e.g. Bug"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor={`sev-${i}`}>Severity</Label>
+                    <Input
+                      id={`sev-${i}`}
+                      value={rule.severity}
+                      onChange={(e) => updateRule(i, { severity: e.target.value })}
+                      placeholder="critical, high"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`scope-${i}`}>Asset scope</Label>
+                    <Input
+                      id={`scope-${i}`}
+                      value={rule.scope}
+                      onChange={(e) => updateRule(i, { scope: e.target.value })}
+                      placeholder="external, cloud"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`crit-${i}`}>Asset criticality</Label>
+                    <Input
+                      id={`crit-${i}`}
+                      value={rule.criticality}
+                      onChange={(e) => updateRule(i, { criticality: e.target.value })}
+                      placeholder="critical, high"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`tag-${i}`}>Finding tags</Label>
+                    <Input
+                      id={`tag-${i}`}
+                      value={rule.tag}
+                      onChange={(e) => updateRule(i, { tag: e.target.value })}
+                      placeholder="pci, payments"
+                    />
+                  </div>
+                </div>
               </div>
+            ))}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor={`pk-${i}`}>Project key</Label>
-                  <Input
-                    id={`pk-${i}`}
-                    value={rule.projectKey}
-                    onChange={(e) => updateRule(i, { projectKey: e.target.value.toUpperCase() })}
-                    placeholder="e.g. PAY"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor={`it-${i}`}>Issue type (optional)</Label>
-                  <Input
-                    id={`it-${i}`}
-                    value={rule.issueType}
-                    onChange={(e) => updateRule(i, { issueType: e.target.value })}
-                    placeholder="e.g. Bug"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label htmlFor={`sev-${i}`}>Severity</Label>
-                  <Input
-                    id={`sev-${i}`}
-                    value={rule.severity}
-                    onChange={(e) => updateRule(i, { severity: e.target.value })}
-                    placeholder="critical, high"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor={`scope-${i}`}>Asset scope</Label>
-                  <Input
-                    id={`scope-${i}`}
-                    value={rule.scope}
-                    onChange={(e) => updateRule(i, { scope: e.target.value })}
-                    placeholder="external, cloud"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor={`crit-${i}`}>Asset criticality</Label>
-                  <Input
-                    id={`crit-${i}`}
-                    value={rule.criticality}
-                    onChange={(e) => updateRule(i, { criticality: e.target.value })}
-                    placeholder="critical, high"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor={`tag-${i}`}>Finding tags</Label>
-                  <Input
-                    id={`tag-${i}`}
-                    value={rule.tag}
-                    onChange={(e) => updateRule(i, { tag: e.target.value })}
-                    placeholder="pci, payments"
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-
-          <Button type="button" variant="outline" size="sm" onClick={addRule}>
-            <Plus className="me-2 h-4 w-4" />
-            Add rule
-          </Button>
-        </div>
+            <Button type="button" variant="outline" size="sm" onClick={addRule}>
+              <Plus className="me-2 h-4 w-4" />
+              Add rule
+            </Button>
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

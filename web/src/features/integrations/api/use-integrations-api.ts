@@ -25,7 +25,6 @@ import type {
   ListSCMRepositoriesResponse,
   CreateNotificationIntegrationRequest,
   TestNotificationResponse,
-  SendNotificationRequest,
   NotificationEventsResponse,
 } from '../types/integration.types'
 
@@ -434,20 +433,6 @@ export function useTestNotificationApi(integrationId: string) {
 }
 
 /**
- * Send a notification through an integration
- */
-export function useSendNotificationApi(integrationId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/send` : null,
-    async (url: string, { arg }: { arg: SendNotificationRequest }) => {
-      return post<TestNotificationResponse>(url, arg)
-    }
-  )
-}
-
-/**
  * Fetch notification events for an integration (audit trail)
  */
 export function useNotificationEventsApi(
@@ -461,8 +446,11 @@ export function useNotificationEventsApi(
   let url = integrationId ? `${BASE_URL}/${integrationId}/notification-events` : null
   if (url) {
     const params = new URLSearchParams()
-    if (options?.limit) params.set('limit', options.limit.toString())
-    if (options?.offset) params.set('offset', options.offset.toString())
+    // page / per_page (one list convention); callers keep an offset window.
+    if (options?.limit) {
+      params.set('per_page', options.limit.toString())
+      if (options.offset) params.set('page', String(Math.floor(options.offset / options.limit) + 1))
+    }
     const queryString = params.toString()
     if (queryString) url += `?${queryString}`
   }

@@ -40,6 +40,35 @@ const (
 	// EventManifestChanged: a manifest the sensor registered replaced the
 	// previous one (RFC-033 §6.12); details carry the diff and both digests.
 	EventManifestChanged EventType = "manifest_changed"
+	// EventHeartbeatRecovered: a late or stale sensor heartbeated again
+	// (RFC-035 §5.6); details carry the gap and the step it reached. A
+	// sensor back from offline gets EventOnline instead.
+	EventHeartbeatRecovered EventType = "heartbeat_recovered"
+	// EventLocalPolicyChanged: the sensor-local policy the sensor reports
+	// (RFC-040 §5.7) changed state or digest, or its kill switch moved. An
+	// update: identical transitions fold, different ones each get a row.
+	EventLocalPolicyChanged EventType = "local_policy_changed"
+	// EventJobRefusedByLocalPolicy: the sensor refused a job because its
+	// local policy forbids it (RFC-040 detection A11); details carry the
+	// command id, rule and reason.
+	EventJobRefusedByLocalPolicy EventType = "job_refused_local_policy"
+	// EventPairingCompleted: the sensor confirmed the identity a pairing
+	// gave it and its key became active (RFC-052); details carry the key
+	// fingerprint, the SAS and the source address of the request.
+	EventPairingCompleted EventType = "pairing_completed"
+	// EventJobRefusedByGrant: the platform refused a claim because the job
+	// lies outside the sensor's grant (RFC-052 §5.3); details carry the
+	// command id and the grant dimension.
+	EventJobRefusedByGrant EventType = "job_refused_grant"
+	// EventPushRefusedByGrant: the platform refused results without a job
+	// because the sensor's grant does not allow push ingest.
+	EventPushRefusedByGrant EventType = "push_refused_grant"
+	// EventCertificateIssued: the platform issued the sensor a client
+	// certificate for protocol v3 (RFC-059).
+	EventCertificateIssued EventType = "certificate_issued"
+	// EventKeyBound: a bearer-key sensor bound its own signing key and
+	// became key-bound; details carry the key fingerprint and the address.
+	EventKeyBound EventType = "key_bound"
 )
 
 // ActivityCategory groups timeline items for the filter chips.
@@ -66,8 +95,11 @@ func (c ActivityCategory) IsValid() bool {
 // Category is the timeline category of a server-written event.
 func (t EventType) Category() ActivityCategory {
 	switch t {
-	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned:
+	case EventOnline, EventOffline, EventRestarted, EventKeyIPChanged, EventIdentityCloned, EventHeartbeatRecovered,
+		EventPairingCompleted, EventCertificateIssued, EventKeyBound:
 		return CategoryStatus
+	case EventJobRefusedByLocalPolicy, EventJobRefusedByGrant, EventPushRefusedByGrant:
+		return CategoryJobs
 	default:
 		return CategoryUpdates
 	}
@@ -77,7 +109,9 @@ func (t EventType) Category() ActivityCategory {
 func EventTypesIn(cats []ActivityCategory) []EventType {
 	all := []EventType{EventOnline, EventOffline, EventRestarted, EventVersionChanged, EventSDKVersionChanged,
 		EventProtocolChanged, EventToolsChanged, EventCapacityChanged, EventContentUpdated, EventContentRefreshFailed,
-		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged}
+		EventKeyIPChanged, EventIdentityCloned, EventManifestChanged, EventHeartbeatRecovered,
+		EventLocalPolicyChanged, EventJobRefusedByLocalPolicy, EventPairingCompleted, EventJobRefusedByGrant,
+		EventPushRefusedByGrant, EventCertificateIssued, EventKeyBound}
 	var out []EventType
 	for _, t := range all {
 		if slices.Contains(cats, t.Category()) {
@@ -408,6 +442,42 @@ func OnlineEvent(s *Sensor, at time.Time) (Event, bool) {
 		summary = fmt.Sprintf("Came back online after %s", humanDuration(gap))
 	}
 	return NewEvent(*s.TenantID, s.ID, EventOnline, at, summary, details), true
+}
+
+// RecoveredEvent is the event for a sensor whose heartbeat arrives at at
+// after its own deadline had passed far enough to make it late, stale or
+// offline (RFC-035 §5.6), judged on the heartbeat deadline alone: polls and
+// other requests do not count, and neither does whether the health
+// controller already ticked. false when the heartbeat is on time or the
+// sensor has no stored deadline. Status events coalesce on type, so a sensor
+// that keeps slipping folds into one row with a repeat count.
+func RecoveredEvent(s *Sensor, at time.Time) (Event, bool) {
+	if s == nil || s.TenantID == nil || s.HeartbeatDueAt == nil {
+		return Event{}, false
+	}
+	pos := Ladder(at, HeartbeatDeadline{DueAt: s.HeartbeatDueAt, Interval: s.HeartbeatInterval})
+	if pos.State == SensorHealthOnline {
+		return Event{}, false
+	}
+	details := map[string]any{"was": string(pos.State), "interval_seconds": int64(pos.Interval / time.Second)}
+	summary := fmt.Sprintf("Heartbeats back after being %s", pos.State)
+	if prev := s.PreviousHeartbeatAt(); prev != nil && at.After(*prev) {
+		gap := at.Sub(*prev)
+		details["gap_seconds"] = int64(gap / time.Second)
+		summary = fmt.Sprintf("Heartbeats back after a %s gap (was %s)", humanDuration(gap), pos.State)
+	}
+	return NewEvent(*s.TenantID, s.ID, EventHeartbeatRecovered, at, summary, details), true
+}
+
+// PreviousHeartbeatAt is when the sensor's last heartbeat arrived, from its
+// stored deadline (due = heartbeat + interval); nil without one. Unlike
+// LastSeenAt it is not moved by polls or other requests.
+func (a *Sensor) PreviousHeartbeatAt() *time.Time {
+	if a == nil || a.HeartbeatDueAt == nil || a.HeartbeatInterval <= 0 {
+		return nil
+	}
+	t := a.HeartbeatDueAt.Add(-a.HeartbeatInterval)
+	return &t
 }
 
 // OfflineEvent is the event for a sensor the health checker marked offline.

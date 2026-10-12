@@ -102,7 +102,13 @@
     "keys",
     "load",
     "release",
-    "manifest"
+    "manifest",
+    "local_policy",
+    "posture",
+    "capacity",
+    "refusal",
+    "config_report",
+    "logs"
   ],
   "media_types": [
     "application/vnd.openctem.ctis.v1+json"

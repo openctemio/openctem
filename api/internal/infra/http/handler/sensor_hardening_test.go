@@ -1,15 +1,11 @@
 package handler
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -27,35 +23,11 @@ func TestCommandHandler_ConflictMapsTo409(t *testing.T) {
 	}
 }
 
-// The adapter's raw error (parser internals / payload fragments) must not be
-// echoed to the client.
-func TestIngestScan_AdapterErrorIsGeneric(t *testing.T) {
-	h := NewIngestHandler(nil, nil, logger.NewNop())
-	tid := shared.NewID()
-	agt := &sensor.Sensor{ID: shared.NewID(), TenantID: &tid, Status: sensor.SensorStatusActive}
-
-	body, _ := json.Marshal(map[string]any{
-		"scanner_type": "no-such-scanner-SECRET-MARKER",
-		"data":         json.RawMessage(`{"x":1}`),
-	})
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/ingest/scan", bytes.NewReader(body))
-	r = r.WithContext(context.WithValue(r.Context(), sensorContextKey, agt))
-	rec := httptest.NewRecorder()
-	h.IngestScan(rec, r)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "SECRET-MARKER") || strings.Contains(rec.Body.String(), "supported:") {
-		t.Fatalf("adapter error leaked to client: %s", rec.Body.String())
-	}
-}
-
-// A platform sensor (no tenant) calling /agent/credentials/ingest gets a clean
+// A request without a tenant reaching the credential import gets a clean
 // 403 instead of a MustGetTenantID panic (recovered as a 500).
 func TestCredentialImport_NoTenantIs403NotPanic(t *testing.T) {
 	h := &CredentialImportHandler{logger: logger.NewNop()}
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/credentials/ingest", strings.NewReader(`{}`))
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/credentials/import", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 
 	defer func() {

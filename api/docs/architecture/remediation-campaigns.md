@@ -52,8 +52,8 @@ findings (a misconfiguration, not an error).
 
 - `finding_count` = findings matching the filter (any status);
 - `resolved_count` = those whose status is in the **closed** category —
-  `resolved`, `verified`, `false_positive`, `accepted`, `accepted_risk`,
-  `duplicate` (`vulnerability.ClosedFindingStatuses()`).
+  `resolved`, `false_positive`, `accepted`, `duplicate`
+  (`vulnerability.ClosedFindingStatuses()`).
 
 "Closed" rather than only "resolved" is deliberate: a finding that was accepted
 as risk or marked a false positive is no longer outstanding remediation work.
@@ -95,6 +95,32 @@ Base path `/api/v1/remediation/campaigns` (permissions: `remediation:read` /
 | PATCH  | `/{id}/status`   | transition lifecycle                     |
 | POST   | `/{id}/refresh`  | recompute progress + auto-complete now   |
 | DELETE | `/{id}`          | delete                                   |
+
+## Audit trail
+
+Every change to a campaign is written to `audit_logs` (resource type
+`remediation_campaign`), through `RemediationCampaignService.SetAuditLogger`:
+
+| Action                                  | When                                                        |
+|-----------------------------------------|-------------------------------------------------------------|
+| `remediation_campaign.created`          | `POST /`                                                    |
+| `remediation_campaign.updated`          | `PATCH /{id}`, with before/after of only the changed fields |
+| `remediation_campaign.status_changed`   | any lifecycle move (see `trigger` below)                    |
+| `remediation_campaign.deleted`          | `DELETE /{id}`                                              |
+
+A status change carries `trigger` (`manual` for `PATCH /{id}/status`,
+`auto_complete` when every finding closed, `jira_epic` when the linked epic was
+closed), `finding_count`, `resolved_count`, and on completion `open_findings`.
+Completing with findings still open is allowed (the console asks first and
+says how many are open) and is logged at medium severity. Automatic moves are
+attributed to the actor `system`. The audit row is always filed under the
+campaign's tenant; an audit write failure is logged and never fails the change.
+
+A manual completion recomputes the counts first, so `progress`,
+`risk_reduction` and `open_findings` reflect the findings at that moment, not
+the last reconcile. Completing does not change progress: a campaign completed
+with 0 of 4 findings closed reads "Completed, 0%", because that is what
+happened.
 
 ## Layering
 

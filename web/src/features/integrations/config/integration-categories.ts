@@ -4,7 +4,6 @@ import {
   Shield,
   ShieldCheck,
   TicketCheck,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -40,14 +39,14 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
   {
     id: 'security',
     title: 'Vulnerability scanners',
-    description: 'Connect Tenable (Nessus Pro / Tenable.sc)',
+    description: 'Import Nessus and Tenable scan exports',
     icon: ShieldCheck,
     href: '/settings/integrations/scanners',
   },
   {
     id: 'ticketing',
     title: 'Ticketing',
-    description: 'Connect Jira, ServiceNow, or Linear',
+    description: 'Connect Jira',
     icon: TicketCheck,
     href: '/settings/integrations/ticketing',
   },
@@ -64,13 +63,5 @@ export const INTEGRATION_CATEGORIES: IntegrationCategoryCard[] = [
     description: 'Forward security events to Splunk',
     icon: Shield,
     href: '/settings/integrations/siem',
-  },
-  {
-    id: 'cicd',
-    title: 'CI/CD',
-    description: 'Integrate with Jenkins, GitHub Actions, GitLab CI',
-    icon: Workflow,
-    href: '/settings/integrations/cicd',
-    badge: 'Soon',
   },
 ]

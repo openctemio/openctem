@@ -47,8 +47,10 @@ func dialStatus(t *testing.T, url, origin string) int {
 
 // Cross-Site WebSocket Hijacking guard: a browser upgrade from a foreign
 // Origin is refused, the configured UI origin (the UI proxies /ws on its own
-// origin) is accepted, and non-browser clients without an Origin are allowed
-// (they authenticate with a single-use ticket, not ambient cookies).
+// origin) is accepted, and a client without an Origin is allowed when it did
+// not authenticate with the session cookie (a cookie-authenticated upgrade
+// without an Origin is refused; covered over the real auth chain in
+// routes/ws_upgrade_db_test.go).
 func TestCheckOrigin_EnforcesAllowList(t *testing.T) {
 	h := NewHandler(nil, logger.NewNop(), []string{uiOrigin}, "production")
 	url := upgradeServer(t, h)
@@ -62,7 +64,7 @@ func TestCheckOrigin_EnforcesAllowList(t *testing.T) {
 		}
 	}
 	if got := dialStatus(t, url, ""); got != http.StatusSwitchingProtocols {
-		t.Errorf("no Origin (CLI/SDK): status %d, want 101", got)
+		t.Errorf("no Origin, no cookie session: status %d, want 101", got)
 	}
 }
 

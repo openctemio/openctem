@@ -3,11 +3,21 @@
  *
  * ALL components must import colors from here instead of defining their own.
  * This ensures consistency across findings, exposures, assets, and charts.
+ * The scale itself (values, order, labels) is severity.ts.
  */
 
-export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low' | 'info'
+import {
+  INFORMATIONAL_LABEL,
+  SEVERITY_LABELS,
+  SEVERITY_LEVELS,
+  severityCounts,
+  type SeverityLevel,
+} from '@/lib/severity'
 
-export const SEVERITY_ORDER: SeverityLevel[] = ['critical', 'high', 'medium', 'low', 'info']
+export type { SeverityLevel }
+
+/** The severity scale, most severe first (alias of SEVERITY_LEVELS). */
+export const SEVERITY_ORDER: SeverityLevel[] = [...SEVERITY_LEVELS]
 
 /** Chart hex colors (for recharts, inline styles) */
 export const SEVERITY_CHART_COLORS: Record<SeverityLevel, string> = {
@@ -90,4 +100,20 @@ export const SEVERITY_GRADIENT_COLORS: Record<SeverityLevel, string> = {
   medium: 'from-yellow-500 to-yellow-600',
   low: 'from-blue-500 to-blue-600',
   info: 'from-gray-500 to-gray-600',
+}
+
+/**
+ * Chart rows for a by-severity count map from the API, in scale order (none
+ * folded into info, zero rows dropped). Info is labelled "Informational".
+ */
+export function severityChartData(
+  by: Partial<Record<string, number>> | null | undefined
+): { key: SeverityLevel; name: string; value: number; color: string }[] {
+  const counts = severityCounts(by)
+  return SEVERITY_LEVELS.filter((s) => counts[s] > 0).map((s) => ({
+    key: s,
+    name: s === 'info' ? INFORMATIONAL_LABEL : SEVERITY_LABELS[s],
+    value: counts[s],
+    color: SEVERITY_CHART_COLORS[s],
+  }))
 }

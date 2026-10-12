@@ -85,6 +85,9 @@ func NewAuditLog(
 const (
 	SeverityInfo = "info"
 	SeverityHigh = "high"
+	// SeverityCritical marks a change to the whole platform's security
+	// posture (the sign-up policy).
+	SeverityCritical = "critical"
 )
 
 // SetRequest sets the request details.
@@ -166,6 +169,12 @@ func (b *AuditLogBuilder) High() *AuditLogBuilder {
 	return b
 }
 
+// Critical marks the entry as critical severity.
+func (b *AuditLogBuilder) Critical() *AuditLogBuilder {
+	b.log.Severity = SeverityCritical
+	return b
+}
+
 // Build returns the completed AuditLog.
 func (b *AuditLogBuilder) Build() *AuditLog {
 	return b.log
@@ -241,6 +250,7 @@ func redactSensitiveFields(body map[string]interface{}) map[string]interface{} {
 		"authorization", "auth_token", "authToken",
 		"private_key", "privateKey", "access_token", "accessToken",
 		"refresh_token", "refreshToken", "client_secret", "clientSecret",
+		"totp_code", "totpCode",
 	}
 
 	redactFields(result, sensitiveFields)

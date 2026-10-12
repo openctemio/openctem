@@ -3,11 +3,13 @@ package unit
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -117,14 +119,22 @@ func (m *mockAuditRepo) GetByID(_ context.Context, id shared.ID) (*audit.AuditLo
 	return log, nil
 }
 
-func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, _, id shared.ID) (*audit.AuditLog, error) {
+func (m *mockAuditRepo) GetByTenantAndID(_ context.Context, tenantID, id shared.ID) (*audit.AuditLog, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.chainLogs == nil {
-		return nil, nil
+	if m.chainLogs != nil {
+		log, ok := m.chainLogs[id]
+		if !ok {
+			return nil, shared.ErrNotFound
+		}
+		return log, nil
 	}
-	log, ok := m.chainLogs[id]
-	if !ok {
+	m.getByIDCalls++
+	if m.getByIDErr != nil {
+		return nil, m.getByIDErr
+	}
+	log, ok := m.logs[id]
+	if !ok || log.TenantID() == nil || *log.TenantID() != tenantID {
 		return nil, shared.ErrNotFound
 	}
 	return log, nil
@@ -260,15 +270,15 @@ func (m *mockAuditRepo) CountByAction(_ context.Context, tenantID *shared.ID, ac
 // Test Helpers
 // =============================================================================
 
-func newTestAuditService() (*app.AuditService, *mockAuditRepo) {
+func newTestAuditService() (*auditsvc.AuditService, *mockAuditRepo) {
 	repo := newMockAuditRepo()
 	log := logger.NewNop()
-	svc := app.NewAuditService(repo, log)
+	svc := auditsvc.NewAuditService(repo, log)
 	return svc, repo
 }
 
-func newTestAuditContext() app.AuditContext {
-	return app.AuditContext{
+func newTestAuditContext() auditsvc.AuditContext {
+	return auditsvc.AuditContext{
 		TenantID:   shared.NewID().String(),
 		ActorID:    shared.NewID().String(),
 		ActorEmail: "test@example.com",
@@ -289,7 +299,7 @@ func TestAuditService_LogEvent_SuccessFullContext(t *testing.T) {
 	actx := newTestAuditContext()
 
 	changes := audit.NewChanges().Set("name", "old", "new")
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123").
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123").
 		WithResourceName("John Doe").
 		WithChanges(changes).
 		WithMessage("User created").
@@ -365,9 +375,9 @@ func TestAuditService_LogEvent_SuccessMinimalContext(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	actx := app.AuditContext{} // Empty context - no IPs, no tenant, no actor
+	actx := auditsvc.AuditContext{} // Empty context - no IPs, no tenant, no actor
 
-	event := app.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
+	event := auditsvc.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
 
 	err := svc.LogEvent(ctx, actx, event)
 	if err != nil {
@@ -407,7 +417,7 @@ func TestAuditService_LogEvent_RepositoryError(t *testing.T) {
 	repoErr := errors.New("database connection refused")
 	repo.createErr = repoErr
 
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
 
 	err := svc.LogEvent(ctx, actx, event)
 	if err == nil {
@@ -426,13 +436,13 @@ func TestAuditService_LogEvent_InvalidTenantID(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	actx := app.AuditContext{
+	actx := auditsvc.AuditContext{
 		TenantID:   "not-a-valid-uuid",
 		ActorID:    shared.NewID().String(),
 		ActorEmail: "test@example.com",
 	}
 
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-123")
 
 	// LogEvent should handle invalid tenant ID gracefully (skip setting it)
 	err := svc.LogEvent(ctx, actx, event)
@@ -468,9 +478,11 @@ func TestAuditService_GetAuditLog_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create audit log: %v", err)
 	}
+	tenantID := shared.NewID()
+	log.WithTenantID(tenantID)
 	repo.logs[log.ID()] = log
 
-	result, err := svc.GetAuditLog(ctx, log.ID().String())
+	result, err := svc.GetAuditLog(ctx, tenantID, log.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -489,7 +501,7 @@ func TestAuditService_GetAuditLog_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	id := shared.NewID()
-	_, err := svc.GetAuditLog(ctx, id.String())
+	_, err := svc.GetAuditLog(ctx, shared.NewID(), id.String())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -503,11 +515,38 @@ func TestAuditService_GetAuditLog_NotFound(t *testing.T) {
 	}
 }
 
+// Another tenant's log, or a system log (tenant_id IS NULL), is not found by
+// the tenant-facing getter.
+func TestAuditService_GetAuditLog_OtherTenantOrSystemNotFound(t *testing.T) {
+	svc, repo := newTestAuditService()
+	ctx := context.Background()
+
+	other, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess)
+	if err != nil {
+		t.Fatalf("failed to create audit log: %v", err)
+	}
+	other.WithTenantID(shared.NewID())
+	repo.logs[other.ID()] = other
+
+	system, err := audit.NewAuditLog(audit.ActionUserCreated, audit.ResourceTypeUser, "user-2", audit.ResultSuccess)
+	if err != nil {
+		t.Fatalf("failed to create audit log: %v", err)
+	}
+	repo.logs[system.ID()] = system
+
+	caller := shared.NewID()
+	for _, id := range []shared.ID{other.ID(), system.ID()} {
+		if _, err := svc.GetAuditLog(ctx, caller, id.String()); !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("GetAuditLog(%s) = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
 func TestAuditService_GetAuditLog_InvalidID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	_, err := svc.GetAuditLog(ctx, "not-a-uuid")
+	_, err := svc.GetAuditLog(ctx, shared.NewID(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid id, got nil")
 	}
@@ -539,7 +578,7 @@ func TestAuditService_ListAuditLogs_SuccessWithFilters(t *testing.T) {
 	since := time.Now().Add(-24 * time.Hour)
 	until := time.Now()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID:      tenantID.String(),
 		ActorID:       actorID.String(),
 		Actions:       []string{"user.created"},
@@ -621,7 +660,7 @@ func TestAuditService_ListAuditLogs_EmptyResult(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		Page:    1,
 		PerPage: 10,
 	}
@@ -647,7 +686,7 @@ func TestAuditService_ListAuditLogs_InvalidTenantID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID: "not-a-uuid",
 	}
 
@@ -664,7 +703,7 @@ func TestAuditService_ListAuditLogs_InvalidActorID(t *testing.T) {
 	svc, _ := newTestAuditService()
 	ctx := context.Background()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		ActorID: "bad-id",
 	}
 
@@ -749,81 +788,6 @@ func TestAuditService_GetUserActivity_InvalidUserID(t *testing.T) {
 	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected ErrValidation, got %v", err)
-	}
-}
-
-// =============================================================================
-// CleanupOldLogs Tests
-// =============================================================================
-
-func TestAuditService_CleanupOldLogs_Success(t *testing.T) {
-	svc, repo := newTestAuditService()
-	ctx := context.Background()
-
-	repo.deleteOlderCount = 150
-
-	count, err := svc.CleanupOldLogs(ctx, 90)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if repo.deleteOlderCalls != 1 {
-		t.Fatalf("expected 1 deleteOlderThan call, got %d", repo.deleteOlderCalls)
-	}
-
-	if count != 150 {
-		t.Errorf("expected count 150, got %d", count)
-	}
-
-	// Verify the before time is approximately correct (90 days ago)
-	expectedBefore := time.Now().AddDate(0, 0, -90)
-	diff := repo.lastDeleteBefore.Sub(expectedBefore)
-	if diff < -time.Second || diff > time.Second {
-		t.Errorf("expected delete before ~%v, got %v", expectedBefore, repo.lastDeleteBefore)
-	}
-}
-
-func TestAuditService_CleanupOldLogs_RetentionTooShort(t *testing.T) {
-	svc, repo := newTestAuditService()
-	ctx := context.Background()
-
-	// Should reject retention < 30 days
-	_, err := svc.CleanupOldLogs(ctx, 29)
-	if err == nil {
-		t.Fatal("expected error for retention < 30 days, got nil")
-	}
-	if !errors.Is(err, shared.ErrValidation) {
-		t.Errorf("expected ErrValidation, got %v", err)
-	}
-
-	// Repo should not be called
-	if repo.deleteOlderCalls != 0 {
-		t.Fatalf("expected 0 deleteOlderThan calls, got %d", repo.deleteOlderCalls)
-	}
-
-	// Boundary: exactly 30 days should be accepted
-	repo.deleteOlderCount = 5
-	count, err := svc.CleanupOldLogs(ctx, 30)
-	if err != nil {
-		t.Fatalf("expected no error for retention = 30 days, got %v", err)
-	}
-	if count != 5 {
-		t.Errorf("expected count 5, got %d", count)
-	}
-}
-
-func TestAuditService_CleanupOldLogs_RepositoryError(t *testing.T) {
-	svc, repo := newTestAuditService()
-	ctx := context.Background()
-
-	repo.deleteOlderErr = errors.New("storage error")
-
-	count, err := svc.CleanupOldLogs(ctx, 90)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if count != 0 {
-		t.Errorf("expected count 0 on error, got %d", count)
 	}
 }
 
@@ -1015,7 +979,7 @@ func TestAuditService_LogAuthFailed(t *testing.T) {
 // =============================================================================
 
 func TestNewSuccessEvent(t *testing.T) {
-	event := app.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1")
+	event := auditsvc.NewSuccessEvent(audit.ActionUserCreated, audit.ResourceTypeUser, "user-1")
 
 	if event.Action != audit.ActionUserCreated {
 		t.Errorf("expected action %s, got %s", audit.ActionUserCreated, event.Action)
@@ -1036,7 +1000,7 @@ func TestNewSuccessEvent(t *testing.T) {
 
 func TestNewFailureEvent(t *testing.T) {
 	origErr := errors.New("something went wrong")
-	event := app.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", origErr)
+	event := auditsvc.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", origErr)
 
 	if event.Result != audit.ResultFailure {
 		t.Errorf("expected result failure, got %s", event.Result)
@@ -1047,7 +1011,7 @@ func TestNewFailureEvent(t *testing.T) {
 }
 
 func TestNewFailureEvent_NilError(t *testing.T) {
-	event := app.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", nil)
+	event := auditsvc.NewFailureEvent(audit.ActionScanFailed, audit.ResourceTypeScan, "scan-1", nil)
 
 	if event.Result != audit.ResultFailure {
 		t.Errorf("expected result failure, got %s", event.Result)
@@ -1058,7 +1022,7 @@ func TestNewFailureEvent_NilError(t *testing.T) {
 }
 
 func TestNewDeniedEvent(t *testing.T) {
-	event := app.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "no access")
+	event := auditsvc.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "no access")
 
 	if event.Result != audit.ResultDenied {
 		t.Errorf("expected result denied, got %s", event.Result)
@@ -1072,7 +1036,7 @@ func TestNewDeniedEvent(t *testing.T) {
 }
 
 func TestNewDeniedEvent_EmptyReason(t *testing.T) {
-	event := app.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "")
+	event := auditsvc.NewDeniedEvent(audit.ActionPermissionDenied, audit.ResourceTypeAsset, "asset-1", "")
 
 	if _, ok := event.Metadata["reason"]; ok {
 		t.Error("expected no reason key in metadata when empty reason passed")
@@ -1086,7 +1050,7 @@ func TestNewDeniedEvent_EmptyReason(t *testing.T) {
 func TestAuditEvent_BuilderChain(t *testing.T) {
 	changes := audit.NewChanges().Set("role", "viewer", "admin")
 
-	event := app.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeMembership, "m-1").
+	event := auditsvc.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeMembership, "m-1").
 		WithResourceName("user@example.com").
 		WithChanges(changes).
 		WithMessage("Role changed").
@@ -1122,11 +1086,11 @@ func TestAuditService_LogEvent_ActorEmailOnly(t *testing.T) {
 	svc, repo := newTestAuditService()
 	ctx := context.Background()
 
-	actx := app.AuditContext{
+	actx := auditsvc.AuditContext{
 		ActorEmail: "system@example.com",
 	}
 
-	event := app.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
+	event := auditsvc.NewSuccessEvent(audit.ActionSettingsUpdated, audit.ResourceTypeSettings, "settings-1")
 
 	err := svc.LogEvent(ctx, actx, event)
 	if err != nil {
@@ -1150,10 +1114,20 @@ func (m *mockAuditRepo) LatestChainHash(_ context.Context, _ shared.ID) (string,
 }
 func (m *mockAuditRepo) AppendChainEntry(_ context.Context, _ audit.ChainEntry) error { return nil }
 
-func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, _ int) ([]audit.ChainEntry, error) {
+func (m *mockAuditRepo) ListChainEntries(_ context.Context, _ shared.ID, afterPosition int64, limit int) ([]audit.ChainEntry, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.chainStore, nil
+	out := make([]audit.ChainEntry, 0, len(m.chainStore))
+	for _, e := range m.chainStore {
+		if e.ChainPosition <= afterPosition {
+			continue
+		}
+		out = append(out, e)
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (m *mockAuditRepo) ApplyChainRebaseline(_ context.Context, rb audit.ChainRebaseline) error {
@@ -1230,7 +1204,7 @@ func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
 		})
 	}
 
-	svc := app.NewAuditService(repo, logger.NewNop())
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
 	ctx := context.Background()
 
 	// Before: every entry should verify as broken.
@@ -1247,7 +1221,7 @@ func TestAuditService_RebaselineChain_HealsBrokenChain(t *testing.T) {
 
 	// Re-baseline re-signs the whole chain from current data.
 	actorID := shared.NewID()
-	actx := app.AuditContext{ActorID: actorID.String(), ActorEmail: "admin@example.test"}
+	actx := auditsvc.AuditContext{ActorID: actorID.String(), ActorEmail: "admin@example.test"}
 	res, err := svc.RebaselineChain(ctx, tenantID, actx)
 	if err != nil {
 		t.Fatalf("RebaselineChain: %v", err)
@@ -1330,9 +1304,9 @@ func TestAuditService_RebaselineChain_AbortsOnMissingLog(t *testing.T) {
 		ChainPosition: 1,
 	})
 
-	svc := app.NewAuditService(repo, logger.NewNop())
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
 
-	_, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{ActorID: shared.NewID().String()})
+	_, err := svc.RebaselineChain(context.Background(), tenantID, auditsvc.AuditContext{ActorID: shared.NewID().String()})
 	if !errors.Is(err, audit.ErrChainSourceMissing) {
 		t.Fatalf("expected ErrChainSourceMissing, got %v", err)
 	}
@@ -1362,12 +1336,104 @@ func TestAuditService_RebaselineChain_ApplyFailureIsNotReportedAsSuccess(t *test
 	repo.chainLogs[log.ID()] = log
 	repo.chainStore = []audit.ChainEntry{{AuditLogID: log.ID(), TenantID: tenantID, Hash: "stale", ChainPosition: 1}}
 
-	svc := app.NewAuditService(repo, logger.NewNop())
-	if _, err := svc.RebaselineChain(context.Background(), tenantID, app.AuditContext{}); !errors.Is(err, audit.ErrChainRebaselineConflict) {
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
+	if _, err := svc.RebaselineChain(context.Background(), tenantID, auditsvc.AuditContext{}); !errors.Is(err, audit.ErrChainRebaselineConflict) {
 		t.Fatalf("expected ErrChainRebaselineConflict, got %v", err)
 	}
 	events := repo.eventsWithAction(audit.ActionAuditChainRebaselined)
 	if len(events) != 1 || events[0].Result() != audit.ResultFailure {
 		t.Fatalf("expected one failed %s event, got %d", audit.ActionAuditChainRebaselined, len(events))
+	}
+}
+
+// seedValidChain builds n audit logs and a correctly hashed, correctly linked
+// chain over them, exactly as appendChainEntry would.
+func seedValidChain(t *testing.T, repo *mockAuditRepo, tenantID shared.ID, n int) {
+	t.Helper()
+	repo.chainLogs = make(map[shared.ID]*audit.AuditLog, n)
+	repo.chainStore = make([]audit.ChainEntry, 0, n)
+	prev := ""
+	for i := 0; i < n; i++ {
+		log, err := audit.NewAuditLog(audit.ActionUserUpdated, audit.ResourceTypeUser, "user-1", audit.ResultSuccess)
+		if err != nil {
+			t.Fatalf("NewAuditLog[%d]: %v", i, err)
+		}
+		repo.chainLogs[log.ID()] = log
+		payload := log.Action().String() + "|" + log.ResourceType().String() + "|" + log.ResourceID() + "|" + log.Result().String()
+		hash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
+		repo.chainStore = append(repo.chainStore, audit.ChainEntry{
+			AuditLogID:    log.ID(),
+			TenantID:      tenantID,
+			PrevHash:      prev,
+			Hash:          hash,
+			ChainPosition: int64(i + 1),
+		})
+		prev = hash
+	}
+}
+
+// TestAuditService_VerifyChain_WalksPastTenThousandEntries is the regression
+// for the verifier only ever reading the OLDEST 10,000 chain rows: a tamper on
+// any newer entry was never detected, however many times the hourly verifier ran.
+func TestAuditService_VerifyChain_WalksPastTenThousandEntries(t *testing.T) {
+	const n = 10_050
+	repo := newMockAuditRepo()
+	tenantID := shared.NewID()
+	seedValidChain(t, repo, tenantID, n)
+
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
+	ctx := context.Background()
+
+	clean, err := svc.VerifyChain(ctx, tenantID, 0)
+	if err != nil {
+		t.Fatalf("VerifyChain (clean): %v", err)
+	}
+	if !clean.OK || clean.Total != n || clean.Verified != n {
+		t.Fatalf("clean chain: ok=%v total=%d verified=%d, want ok with %d/%d", clean.OK, clean.Total, clean.Verified, n, n)
+	}
+
+	// Tamper with the newest entry — the one an intruder would edit.
+	repo.chainStore[n-1].Hash = strings.Repeat("0", 64)
+
+	res, err := svc.VerifyChain(ctx, tenantID, 0)
+	if err != nil {
+		t.Fatalf("VerifyChain (tampered): %v", err)
+	}
+	if res.OK || len(res.Breaks) != 1 || res.Breaks[0].ChainPosition != n {
+		t.Fatalf("tamper at position %d not reported: ok=%v breaks=%+v", n, res.OK, res.Breaks)
+	}
+
+	// An explicit limit still caps the walk.
+	capped, err := svc.VerifyChain(ctx, tenantID, 100)
+	if err != nil {
+		t.Fatalf("VerifyChain (capped): %v", err)
+	}
+	if capped.Total != 100 || !capped.OK {
+		t.Fatalf("capped walk: total=%d ok=%v, want 100 entries, ok", capped.Total, capped.OK)
+	}
+}
+
+// TestAuditService_RebaselineChain_CoversWholeLongChain: rebaseline used the same
+// 10,000-row read, so re-signing a longer chain rewrote only its head and left the
+// next entry linked to a hash that no longer existed.
+func TestAuditService_RebaselineChain_CoversWholeLongChain(t *testing.T) {
+	const n = 10_050
+	repo := newMockAuditRepo()
+	tenantID := shared.NewID()
+	seedValidChain(t, repo, tenantID, n)
+	for i := range repo.chainStore {
+		repo.chainStore[i].Hash = strings.Repeat("a", 64)
+	}
+
+	svc := auditsvc.NewAuditService(repo, logger.NewNop())
+	res, err := svc.RebaselineChain(context.Background(), tenantID, auditsvc.AuditContext{ActorID: shared.NewID().String()})
+	if err != nil {
+		t.Fatalf("RebaselineChain: %v", err)
+	}
+	if res.EntriesTotal != n || res.EntriesRewritten != n {
+		t.Fatalf("rebaseline covered %d/%d entries, want %d/%d", res.EntriesRewritten, res.EntriesTotal, n, n)
+	}
+	if got := repo.rebaselines[0].LastChainPosition; got != n {
+		t.Fatalf("LastChainPosition = %d, want %d", got, n)
 	}
 }

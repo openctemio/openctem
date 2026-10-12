@@ -20,6 +20,7 @@ import {
   ExternalLink,
   AlertCircle,
   RefreshCw,
+  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -28,11 +29,16 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  SheetBody,
-  SheetDetailToolbar,
-  SheetInfoRow,
-  SheetSectionHeading,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  type DetailMenuItem,
 } from '@/features/shared'
+import { copyToClipboard } from '@/lib/clipboard'
+import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -41,7 +47,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -49,6 +54,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -70,6 +76,7 @@ import {
   type ActorType,
   type CreateThreatActorInput,
 } from '../api/use-threat-actors-api'
+import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 
@@ -126,8 +133,10 @@ export function ThreatActorsPanel() {
           return (
             <div className="min-w-0">
               <div className="font-medium truncate">{a.name}</div>
-              {a.aliases.length > 0 && (
-                <div className="text-xs text-muted-foreground truncate">{a.aliases.join(', ')}</div>
+              {(a.aliases ?? []).length > 0 && (
+                <div className="text-xs text-muted-foreground truncate">
+                  {(a.aliases ?? []).join(', ')}
+                </div>
               )}
             </div>
           )
@@ -303,7 +312,7 @@ export function ThreatActorsPanel() {
 }
 
 // ── Detail sheet ────────────────────────────────────────────────────────────
-function ThreatActorDetailSheet({
+export function ThreatActorDetailSheet({
   actor,
   open,
   onOpenChange,
@@ -314,122 +323,171 @@ function ThreatActorDetailSheet({
   onOpenChange: (open: boolean) => void
   onDelete: (actor: ThreatActor) => void
 }) {
+  const { can } = usePermissions()
+  const canWrite = can(Permission.ThreatIntelWrite)
+  if (!actor) return null
+
+  // The API sends null for an empty list (ttps on every actor created
+  // without TTPs); reading .length on it crashed the page when the drawer
+  // opened.
+  const aliases = actor.aliases ?? []
+  const ttps = actor.ttps ?? []
+  const references = actor.external_references ?? []
+  const industries = actor.target_industries ?? []
+  const regions = actor.target_regions ?? []
+  const tags = actor.tags ?? []
+
+  const menu: DetailMenuItem[] = []
+  if (actor.mitre_group_id) {
+    menu.push({
+      label: 'Copy MITRE ID',
+      icon: Copy,
+      onSelect: () => {
+        copyToClipboard(actor.mitre_group_id!)
+        toast.success('MITRE ID copied to clipboard')
+      },
+    })
+  }
+  if (canWrite) {
+    menu.push({
+      label: 'Delete threat actor',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: menu.length > 0,
+      onSelect: () => onDelete(actor),
+    })
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="[&>button]:hidden w-full gap-0 p-0 sm:max-w-xl">
-        {actor && (
-          <>
-            <SheetDetailToolbar
-              title={actor.name}
-              onClose={() => onOpenChange(false)}
-              extraActions={[
-                {
-                  label: 'Delete',
-                  icon: Trash2,
-                  onClick: () => onDelete(actor),
-                },
-              ]}
-            />
-            <SheetBody className="space-y-6 overflow-y-auto">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">
-                  {ACTOR_TYPE_LABELS[actor.actor_type] ?? actor.actor_type}
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      header={
+        <DetailHeader
+          title={actor.name}
+          badges={
+            <>
+              <Badge variant="outline" className="text-xs">
+                {ACTOR_TYPE_LABELS[actor.actor_type] ?? actor.actor_type}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-xs',
+                  actor.is_active && 'border-success/30 bg-success/10 text-success'
+                )}
+              >
+                {actor.is_active ? 'Active' : 'Inactive'}
+              </Badge>
+              {actor.mitre_group_id && (
+                <Badge variant="outline" className="font-mono text-xs">
+                  {actor.mitre_group_id}
                 </Badge>
-                <Badge variant={actor.is_active ? 'default' : 'outline'}>
-                  {actor.is_active ? 'Active' : 'Inactive'}
-                </Badge>
-                {actor.mitre_group_id && (
-                  <Badge variant="outline" className="font-mono">
-                    {actor.mitre_group_id}
-                  </Badge>
-                )}
-              </div>
-
-              {actor.description && (
-                <p className="text-sm text-muted-foreground">{actor.description}</p>
               )}
-
-              <div className="space-y-1">
-                {actor.aliases.length > 0 && (
-                  <SheetInfoRow label="Aliases">{actor.aliases.join(', ')}</SheetInfoRow>
-                )}
-                {actor.motivation && (
-                  <SheetInfoRow label="Motivation">{humanize(actor.motivation)}</SheetInfoRow>
-                )}
-                {actor.sophistication && (
-                  <SheetInfoRow label="Sophistication">{actor.sophistication}</SheetInfoRow>
-                )}
-                {actor.country_of_origin && (
-                  <SheetInfoRow label="Country of origin">{actor.country_of_origin}</SheetInfoRow>
-                )}
-                {actor.target_industries.length > 0 && (
-                  <SheetInfoRow label="Target industries">
-                    {actor.target_industries.join(', ')}
-                  </SheetInfoRow>
-                )}
-                {actor.target_regions.length > 0 && (
-                  <SheetInfoRow label="Target regions">
-                    {actor.target_regions.join(', ')}
-                  </SheetInfoRow>
-                )}
-                <SheetInfoRow label="Updated">{formatDate(actor.updated_at)}</SheetInfoRow>
-              </div>
-
-              {actor.ttps.length > 0 && (
-                <div className="space-y-2">
-                  <SheetSectionHeading icon={Users}>TTPs</SheetSectionHeading>
-                  <div className="space-y-1">
-                    {actor.ttps.map((t, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm">
-                        {t.technique_id && (
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {t.technique_id}
-                          </span>
-                        )}
-                        <span>{t.technique_name || t.tactic}</span>
-                        {t.tactic && t.technique_name && (
-                          <Badge variant="outline">{t.tactic}</Badge>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {actor.external_references.length > 0 && (
-                <div className="space-y-2">
-                  <SheetSectionHeading icon={ExternalLink}>References</SheetSectionHeading>
-                  <div className="space-y-1">
-                    {actor.external_references.map((ref, i) => (
-                      <a
-                        key={i}
-                        href={ref.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-sm text-primary hover:underline"
-                      >
-                        {ref.source || ref.url}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {actor.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {actor.tags.map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </SheetBody>
-          </>
+            </>
+          }
+          meta={[
+            actor.country_of_origin,
+            actor.motivation ? humanize(actor.motivation) : null,
+            `Updated ${formatDate(actor.updated_at)}`,
+          ]}
+          menu={menu}
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <DetailSections>
+        {actor.description && (
+          <DetailSection title="Description">
+            <p className="text-sm text-muted-foreground">{actor.description}</p>
+          </DetailSection>
         )}
-      </SheetContent>
-    </Sheet>
+
+        <DetailSection title="Profile">
+          <DetailFieldGrid>
+            {aliases.length > 0 && (
+              <DetailField label="Aliases" full>
+                {aliases.join(', ')}
+              </DetailField>
+            )}
+            {actor.motivation && (
+              <DetailField label="Motivation">{humanize(actor.motivation)}</DetailField>
+            )}
+            {actor.sophistication && (
+              <DetailField label="Sophistication">{actor.sophistication}</DetailField>
+            )}
+            {actor.country_of_origin && (
+              <DetailField label="Country of origin">{actor.country_of_origin}</DetailField>
+            )}
+            {industries.length > 0 && (
+              <DetailField label="Target industries" full>
+                {industries.join(', ')}
+              </DetailField>
+            )}
+            {regions.length > 0 && (
+              <DetailField label="Target regions" full>
+                {regions.join(', ')}
+              </DetailField>
+            )}
+            <DetailField label="Updated">{formatDate(actor.updated_at)}</DetailField>
+          </DetailFieldGrid>
+        </DetailSection>
+
+        {ttps.length > 0 && (
+          <DetailSection title="TTPs" icon={Users} count={ttps.length}>
+            <ul className="divide-y rounded-lg border">
+              {ttps.map((t, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                  {t.technique_id && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {t.technique_id}
+                    </span>
+                  )}
+                  <span className="min-w-0 break-words">{t.technique_name || t.tactic}</span>
+                  {t.tactic && t.technique_name && (
+                    <Badge variant="outline" className="text-xs">
+                      {t.tactic}
+                    </Badge>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </DetailSection>
+        )}
+
+        {references.length > 0 && (
+          <DetailSection title="References" icon={ExternalLink} count={references.length}>
+            <ul className="space-y-1.5">
+              {references.map((ref, i) => (
+                <li key={i}>
+                  <a
+                    href={sanitizeExternalUrl(ref.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm break-all text-primary hover:underline"
+                  >
+                    {ref.source || ref.url}
+                    <ExternalLink className="h-3 w-3 shrink-0" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </DetailSection>
+        )}
+
+        {tags.length > 0 && (
+          <DetailSection title="Tags" count={tags.length}>
+            <div className="flex flex-wrap gap-1">
+              {tags.map((tag) => (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+      </DetailSections>
+    </DetailSheet>
   )
 }
 
@@ -496,90 +554,99 @@ function CreateThreatActorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add threat actor</DialogTitle>
           <DialogDescription>Track a new adversary group for this tenant.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="ta-name">Name *</Label>
-            <Input
-              id="ta-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. APT29"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ta-type">Type</Label>
-            <Select value={actorType} onValueChange={(v) => setActorType(v as ActorType)}>
-              <SelectTrigger id="ta-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ACTOR_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {ACTOR_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ta-aliases">Aliases</Label>
-            <Input
-              id="ta-aliases"
-              value={aliases}
-              onChange={(e) => setAliases(e.target.value)}
-              placeholder="Comma-separated, e.g. Cozy Bear, The Dukes"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ta-desc">Description</Label>
-            <Textarea
-              id="ta-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        <DialogBody>
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="ta-motivation">Motivation</Label>
+              <Label htmlFor="ta-name">Name *</Label>
               <Input
-                id="ta-motivation"
-                value={motivation}
-                onChange={(e) => setMotivation(e.target.value)}
-                placeholder="e.g. Espionage"
+                id="ta-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. APT29"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-country">Country of origin</Label>
-              <Input id="ta-country" value={country} onChange={(e) => setCountry(e.target.value)} />
+              <Label htmlFor="ta-type">Type</Label>
+              <Select value={actorType} onValueChange={(v) => setActorType(v as ActorType)}>
+                <SelectTrigger id="ta-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ACTOR_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {ACTOR_TYPE_LABELS[t]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="ta-mitre">MITRE group ID</Label>
+              <Label htmlFor="ta-aliases">Aliases</Label>
               <Input
-                id="ta-mitre"
-                value={mitreId}
-                onChange={(e) => setMitreId(e.target.value)}
-                placeholder="e.g. G0016"
+                id="ta-aliases"
+                value={aliases}
+                onChange={(e) => setAliases(e.target.value)}
+                placeholder="Comma-separated, e.g. Cozy Bear, The Dukes"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ta-tags">Tags</Label>
-              <Input
-                id="ta-tags"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="Comma-separated"
+              <Label htmlFor="ta-desc">Description</Label>
+              <Textarea
+                id="ta-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ta-motivation">Motivation</Label>
+                <Input
+                  id="ta-motivation"
+                  value={motivation}
+                  onChange={(e) => setMotivation(e.target.value)}
+                  placeholder="e.g. Espionage"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ta-country">Country of origin</Label>
+                {/* Stored as a 3-letter code; the API rejects anything longer. */}
+                <Input
+                  id="ta-country"
+                  value={country}
+                  maxLength={3}
+                  placeholder="ISO code, e.g. RU"
+                  onChange={(e) => setCountry(e.target.value.toUpperCase())}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ta-mitre">MITRE group ID</Label>
+                <Input
+                  id="ta-mitre"
+                  value={mitreId}
+                  onChange={(e) => setMitreId(e.target.value)}
+                  placeholder="e.g. G0016"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ta-tags">Tags</Label>
+                <Input
+                  id="ta-tags"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="Comma-separated"
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
@@ -604,6 +671,7 @@ function DeleteThreatActorConfirm({
   onOpenChange: (open: boolean) => void
   onDeleted: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger } = useDeleteThreatActor(actor?.id ?? '')
   const [deleting, setDeleting] = useState(false)
 
@@ -625,13 +693,14 @@ function DeleteThreatActorConfirm({
     <ConfirmDialog
       open={!!actor}
       onOpenChange={onOpenChange}
-      title="Delete threat actor?"
-      desc={
-        actor
-          ? `"${actor.name}" will be removed from this tenant's catalogue. This cannot be undone.`
-          : ''
-      }
-      confirmText={deleting ? 'Deleting...' : 'Delete'}
+      title={t('confirm.threatActor.deleteTitle', 'Delete the threat actor "{name}"?', {
+        name: actor?.name ?? '',
+      })}
+      desc={t(
+        'confirm.threatActor.deleteDesc',
+        'It is removed from this organization catalogue. This cannot be undone.'
+      )}
+      confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
       destructive
       handleConfirm={handleConfirm}
     />

@@ -14,7 +14,17 @@ type Member struct {
 	role     MemberRole
 	joinedAt time.Time
 	addedBy  *shared.ID
+
+	// expiresAt ends the membership (RFC-050 W22); nil means no end.
+	expiresAt    *time.Time
+	expiryReason string
 }
+
+// MaxMembershipDuration is the longest a membership may run with an end date.
+const MaxMembershipDuration = 365 * 24 * time.Hour
+
+// MaxExpiryReasonLength bounds the reason stored with an end date.
+const MaxExpiryReasonLength = 500
 
 // NewMember creates a new group member.
 func NewMember(groupID, userID shared.ID, role MemberRole, addedBy *shared.ID) (*Member, error) {
@@ -97,6 +107,48 @@ func (m *Member) CanManageMembers() bool {
 // CanManageSettings checks if this member can manage group settings.
 func (m *Member) CanManageSettings() bool {
 	return m.role.CanManageSettings()
+}
+
+// ExpiresAt returns when the membership ends (nil: no end).
+func (m *Member) ExpiresAt() *time.Time {
+	return m.expiresAt
+}
+
+// ExpiryReason returns why the membership has an end date.
+func (m *Member) ExpiryReason() string {
+	return m.expiryReason
+}
+
+// RestoreExpiry sets the end date read from persistence, unchecked.
+func (m *Member) RestoreExpiry(expiresAt *time.Time, reason string) {
+	m.expiresAt = expiresAt
+	m.expiryReason = reason
+}
+
+// SetExpiry gives the membership an end date, or clears it (nil). An end
+// date must lie in the future and at most MaxMembershipDuration from now.
+func (m *Member) SetExpiry(expiresAt *time.Time, reason string, now time.Time) error {
+	if len(reason) > MaxExpiryReasonLength {
+		return fmt.Errorf("%w: expiry reason is too long", shared.ErrValidation)
+	}
+	if expiresAt == nil {
+		m.expiresAt, m.expiryReason = nil, ""
+		return nil
+	}
+	at := expiresAt.UTC()
+	if !at.After(now) {
+		return fmt.Errorf("%w: expires_at must be in the future", shared.ErrValidation)
+	}
+	if at.Sub(now) > MaxMembershipDuration {
+		return fmt.Errorf("%w: expires_at must be within 365 days", shared.ErrValidation)
+	}
+	m.expiresAt, m.expiryReason = &at, reason
+	return nil
+}
+
+// IsExpired reports whether the membership has ended at now.
+func (m *Member) IsExpired(now time.Time) bool {
+	return m.expiresAt != nil && !m.expiresAt.After(now)
 }
 
 // UpdateRole updates the member's role.

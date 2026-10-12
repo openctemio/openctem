@@ -5,19 +5,21 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/validation"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -25,9 +27,30 @@ import (
 // CTEMCycleHandler handles CTEM cycle CRUD and state transition endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
 type CTEMCycleHandler struct {
-	db      *sql.DB
-	metrics ctemcycle.MetricsRepository
-	logger  *logger.Logger
+	db          *sql.DB
+	metrics     ctemcycle.MetricsRepository
+	dataScope   *datascope.Enforcer
+	cyclePolicy CyclePolicyReader
+	logger      *logger.Logger
+}
+
+// CyclePolicyReader reads an organization's CTEM cycle policy.
+type CyclePolicyReader interface {
+	GetCycleSettings(ctx context.Context, tenantID string) (*tenant.CycleSettings, error)
+}
+
+// WithCyclePolicy sets where the close gate reads the organization's policy
+// (nil: the coverage SLO is advisory for everyone).
+func (h *CTEMCycleHandler) WithCyclePolicy(p CyclePolicyReader) *CTEMCycleHandler {
+	h.cyclePolicy = p
+	return h
+}
+
+// WithDataScope limits a cycle's scope snapshot to the assets the caller
+// may see (nil: the whole snapshot).
+func (h *CTEMCycleHandler) WithDataScope(e *datascope.Enforcer) *CTEMCycleHandler {
+	h.dataScope = e
+	return h
 }
 
 // NewCTEMCycleHandler creates a new handler. metrics may be nil (metric
@@ -41,8 +64,10 @@ func NewCTEMCycleHandler(db *sql.DB, metrics ctemcycle.MetricsRepository, log *l
 func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	var total int64
 	err := h.db.QueryRowContext(r.Context(),
@@ -69,7 +94,7 @@ func (h *CTEMCycleHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CTEMCycleResponse, 0, perPage)
+	items := make([]CTEMCycleResponse, 0, pagination.MaxPerPage)
 	for rows.Next() {
 		c, err := h.scanCycle(rows)
 		if err != nil {
@@ -287,7 +312,7 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		// No scope filter declared → legacy behaviour: freeze every asset.
 		allQuery := `
 			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id)
-			SELECT $1, id FROM assets WHERE tenant_id = $2
+			SELECT $1, id FROM assets WHERE deleted_at IS NULL AND tenant_id = $2
 			ON CONFLICT DO NOTHING
 		`
 		result, snapErr = h.db.ExecContext(r.Context(), allQuery, id, tenantID)
@@ -389,13 +414,12 @@ func (h *CTEMCycleHandler) StartReview(w http.ResponseWriter, r *http.Request) {
 // gate: before closing, compute validation-evidence coverage
 // for findings that reached a terminal state within the cycle window.
 // If any enforced priority class is under its SLO threshold, the
-// close is rejected with 422 so the operator can either attach
+// close is rejected with 400 so the operator can either attach
 // evidence or explicitly accept the breach (future: cycle charter).
 //
-// Enforcement mode is controlled by env CTEM_ENFORCE_COVERAGE_SLO
-// (default: false → advisory). This preserves compatibility while
-// the evidence-store rollout is in progress; flip to true once every
-// tenant has the simulation_evidence table populated.
+// Enforcement is the organization's CTEM cycle policy
+// (PUT /api/v1/organization/settings/cycles, enforce_coverage_slo; default
+// off, advisory: the shortfall is logged).
 //
 // @Summary      Close CTEM cycle
 // @Description  Closes a cycle in review, computes its metrics and evaluates each charter success criterion.
@@ -433,8 +457,18 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	if covErr != nil {
 		h.logger.Warn("validation coverage query failed; allowing close",
 			"cycle_id", id, "error", covErr)
-	} else if sloErr := app.Enforce(coverage, app.DefaultThresholds); sloErr != nil {
-		enforce := os.Getenv("CTEM_ENFORCE_COVERAGE_SLO") == "true"
+	} else if sloErr := validation.Enforce(coverage, validation.DefaultThresholds); sloErr != nil {
+		enforce := false
+		if h.cyclePolicy != nil {
+			policy, err := h.cyclePolicy.GetCycleSettings(r.Context(), tenantID)
+			if err != nil {
+				// The organization may require the SLO: do not close on a guess.
+				h.logger.Error("ctem cycle close: read the cycle policy", "error", err)
+				apierror.InternalServerError("internal error").WriteJSON(w)
+				return
+			}
+			enforce = policy.EnforceCoverageSLO
+		}
 		if enforce {
 			h.logger.Warn("cycle close blocked by coverage SLO",
 				"cycle_id", id, "tenant_id", tenantID, "breach", sloErr.Error())
@@ -524,7 +558,7 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 func (h *CTEMCycleHandler) computeValidationCoverage(
 	ctx context.Context,
 	tenantID, startDate, endDate string,
-) (app.ValidationCoverage, error) {
+) (validation.ValidationCoverage, error) {
 	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate)
 }
 
@@ -582,6 +616,12 @@ func (h *CTEMCycleHandler) GetScope(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := rows.Err(); err != nil {
 		h.logger.Error("ctem cycle scope rows", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	items, err = filterLinksInScope(r, h.dataScope, tenantID, items, func(s CTEMScopeSnapshotResponse) string { return s.AssetID })
+	if err != nil {
+		h.logger.Error("ctem cycle scope data scope", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}

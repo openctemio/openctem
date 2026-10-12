@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// pipeline.Run has exported fields and no json tags, so encoding it directly
+// scanrun.Run has exported fields and no json tags, so encoding it directly
 // produces PascalCase keys. Every other endpoint in this API emits snake_case,
 // so GET /scans/{id}/runs was unusable by any client following our convention —
 // which is exactly why it shipped with zero consumers.
@@ -16,12 +18,12 @@ import (
 // This asserts the two shapes really do differ, so the conversion in
 // ListScanRuns cannot be quietly removed as redundant.
 func TestScanRuns_DomainEntityIsNotWireCompatible(t *testing.T) {
-	run := &pipeline.Run{
-		ID:          shared.NewID(),
-		TenantID:    shared.NewID(),
-		PipelineID:  shared.NewID(),
-		TriggerType: pipeline.TriggerTypeManual,
-		Status:      pipeline.RunStatusRunning,
+	run := &scanrun.Run{
+		ID:             shared.NewID(),
+		TenantID:       shared.NewID(),
+		ScanWorkflowID: shared.NewID(),
+		TriggerType:    scanworkflow.TriggerTypeManual,
+		Status:         scanrun.RunStatusRunning,
 	}
 
 	raw, err := json.Marshal(run)
@@ -43,13 +45,13 @@ func TestScanRuns_DomainEntityIsNotWireCompatible(t *testing.T) {
 
 // And the DTO the handler converts through must emit what clients expect.
 func TestScanRuns_DTOIsSnakeCase(t *testing.T) {
-	run := &pipeline.Run{
-		ID:          shared.NewID(),
-		TenantID:    shared.NewID(),
-		PipelineID:  shared.NewID(),
-		TriggerType: pipeline.TriggerTypeManual,
-		Status:      pipeline.RunStatusRunning,
-		TotalSteps:  3,
+	run := &scanrun.Run{
+		ID:             shared.NewID(),
+		TenantID:       shared.NewID(),
+		ScanWorkflowID: shared.NewID(),
+		TriggerType:    scanworkflow.TriggerTypeManual,
+		Status:         scanrun.RunStatusRunning,
+		TotalSteps:     3,
 	}
 
 	raw, err := json.Marshal(toRunResponse(run))
@@ -61,7 +63,7 @@ func TestScanRuns_DTOIsSnakeCase(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	for _, key := range []string{"id", "tenant_id", "pipeline_id", "trigger_type", "status", "total_steps"} {
+	for _, key := range []string{"id", "tenant_id", "scan_workflow_id", "trigger_type", "status", "total_steps"} {
 		if _, ok := asMap[key]; !ok {
 			t.Errorf("DTO is missing %q; clients read that key. Got: %v", key, keysOf(asMap))
 		}

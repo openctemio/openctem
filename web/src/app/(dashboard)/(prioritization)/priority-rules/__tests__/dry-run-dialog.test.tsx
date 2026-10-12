@@ -10,6 +10,11 @@ vi.mock('@/lib/api/client', () => ({
   post: (url: string, body: unknown) => mockPost(url, body),
 }))
 
+// The badge tooltip states the SLA window read from the API; not under test here.
+vi.mock('@/features/sla/api/use-sla-policies-api', () => ({
+  useEffectiveSlaPolicy: () => ({ data: undefined }),
+}))
+
 // Radix Tooltip needs a provider ancestor; flatten it so PriorityClassBadge
 // renders its label directly (matches the repo's other badge tests).
 vi.mock('@/components/ui/tooltip', () => ({

@@ -51,6 +51,32 @@ const (
 	TypeCampaignMemberRoleChange = "campaign_member_role_change"
 	TypeSLABreach                = "sla_breach"
 	TypeSystemAlert              = "system_alert"
+	// TypeSSOChangePending tells an organization owner that a platform
+	// administrator proposed an SSO change that waits for their approval.
+	TypeSSOChangePending = "sso_change_pending"
+	// TypeMemberLifecycle tells administrators that a member lifecycle action
+	// needs them: a disable paused schedules, or a deprovisioned member still
+	// owns work to reassign.
+	TypeMemberLifecycle = "member_lifecycle"
+	// TypeCISecurity tells administrators about a CI gate security event
+	// (break-glass created or used).
+	TypeCISecurity = "ci_security"
+	// TypeSensorSecurity tells administrators about a change to which
+	// sensors may act for the organization: a sensor paired or re-paired, a
+	// grant widened, a sensor promoted (RFC-052).
+	TypeSensorSecurity = "sensor_security"
+	// TypeScopeChange tells administrators that the organization's scope
+	// grew, or that a scope entry waits for their approval (RFC-054).
+	TypeScopeChange = "scope_change"
+	// TypeScanWindowOverride tells administrators that scan windows were
+	// overridden (RFC-067).
+	TypeScanWindowOverride = "scan_window_override"
+	// TypeScanApproval tells approvers that a scan waits for their approval,
+	// and requesters that it was approved or rejected (RFC-073).
+	TypeScanApproval = "scan_approval"
+	// TypeAttackSurfaceDigest is the weekly "what changed" digest of the
+	// attack surface, sent to administrators (RFC-080).
+	TypeAttackSurfaceDigest = "attack_surface_digest"
 )
 
 // Notification represents an in-app notification.
@@ -255,7 +281,7 @@ func IsValidType(t string) bool {
 		TypeAssetDiscovered,
 		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
 		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
-		TypeSLABreach, TypeSystemAlert:
+		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending:
 		return true
 	}
 	return false

@@ -11,6 +11,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -128,8 +130,8 @@ export function TargetMappingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <form onSubmit={submit} noValidate>
+      <DialogContent>
+        <DialogForm onSubmit={submit} noValidate>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit target mapping' : 'New target mapping'}</DialogTitle>
             <DialogDescription>
@@ -137,144 +139,147 @@ export function TargetMappingDialog({
               assets no active mapping covers.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {editing ? (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Target type</p>
-                  <p className="text-sm">{targetTypeLabel(mapping.target_type)}</p>
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              {editing ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Target type</p>
+                    <p className="text-sm">{targetTypeLabel(mapping.target_type)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Asset type</p>
+                    <p className="text-sm">{getAssetTypeLabel(mapping.asset_type)}</p>
+                  </div>
+                  <p className="col-span-2 text-xs text-muted-foreground">
+                    The pair cannot change. To map a different pair, create a new mapping.
+                  </p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Asset type</p>
-                  <p className="text-sm">{getAssetTypeLabel(mapping.asset_type)}</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="tm-target">Target type</Label>
+                    <Select value={targetType} onValueChange={setTargetType}>
+                      <SelectTrigger id="tm-target" className="w-full">
+                        <SelectValue placeholder="Choose..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TARGET_TYPE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {targetTypeHint(targetType) ?? "From a scanner's supported targets."}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="tm-asset">Asset type</Label>
+                    <Select value={assetType} onValueChange={setAssetType}>
+                      <SelectTrigger id="tm-asset" className="w-full">
+                        <SelectValue placeholder="Choose..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ASSET_TYPE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Assets of this type can be scanned.
+                    </p>
+                  </div>
+                  {touched && pairMissing && (
+                    <p className="text-sm text-destructive sm:col-span-2">
+                      Choose a target type and an asset type.
+                    </p>
+                  )}
+                  {existing && (
+                    <p className="text-sm text-destructive sm:col-span-2" role="alert">
+                      {targetTypeLabel(existing.target_type)} is already mapped to{' '}
+                      {getAssetTypeLabel(existing.asset_type)}. Edit that mapping instead.
+                    </p>
+                  )}
                 </div>
-                <p className="col-span-2 text-xs text-muted-foreground">
-                  The pair cannot change. To map a different pair, create a new mapping.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="tm-target">Target type</Label>
-                  <Select value={targetType} onValueChange={setTargetType}>
-                    <SelectTrigger id="tm-target" className="w-full">
-                      <SelectValue placeholder="Choose..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TARGET_TYPE_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              )}
+
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="tm-primary">Primary mapping</Label>
                   <p className="text-xs text-muted-foreground">
-                    {targetTypeHint(targetType) ?? "From a scanner's supported targets."}
+                    The main asset type for this target type. Sets the priority to{' '}
+                    {PRIMARY_PRIORITY}.
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="tm-asset">Asset type</Label>
-                  <Select value={assetType} onValueChange={setAssetType}>
-                    <SelectTrigger id="tm-asset" className="w-full">
-                      <SelectValue placeholder="Choose..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ASSET_TYPE_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <Switch
+                  id="tm-primary"
+                  checked={isPrimary}
+                  onCheckedChange={(on) =>
+                    setPriority(String(on ? PRIMARY_PRIORITY : DEFAULT_PRIORITY))
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tm-priority">Priority</Label>
+                <Input
+                  id="tm-priority"
+                  type="number"
+                  inputMode="numeric"
+                  min={MIN_PRIORITY}
+                  max={MAX_PRIORITY}
+                  step={1}
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                  aria-invalid={!!errors.priority}
+                  className="sm:max-w-40"
+                />
+                <p
+                  className={
+                    errors.priority ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'
+                  }
+                >
+                  {errors.priority ??
+                    `${MIN_PRIORITY}–${MAX_PRIORITY}. Lower comes first; ${PRIMARY_PRIORITY} is primary, ${DEFAULT_PRIORITY} is the default.`}
+                </p>
+              </div>
+
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="tm-active">Active</Label>
                   <p className="text-xs text-muted-foreground">
-                    Assets of this type can be scanned.
+                    Inactive mappings are kept but ignored when scans are filtered.
                   </p>
                 </div>
-                {touched && pairMissing && (
-                  <p className="text-sm text-destructive sm:col-span-2">
-                    Choose a target type and an asset type.
-                  </p>
+                <Switch id="tm-active" checked={active} onCheckedChange={setActive} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tm-description">Description (optional)</Label>
+                <Textarea
+                  id="tm-description"
+                  rows={2}
+                  maxLength={MAX_DESCRIPTION_LENGTH}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  aria-invalid={!!errors.description}
+                />
+                {errors.description && (
+                  <p className="text-xs text-destructive">{errors.description}</p>
                 )}
-                {existing && (
-                  <p className="text-sm text-destructive sm:col-span-2" role="alert">
-                    {targetTypeLabel(existing.target_type)} is already mapped to{' '}
-                    {getAssetTypeLabel(existing.asset_type)}. Edit that mapping instead.
-                  </p>
-                )}
               </div>
-            )}
 
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="tm-primary">Primary mapping</Label>
-                <p className="text-xs text-muted-foreground">
-                  The main asset type for this target type. Sets the priority to {PRIMARY_PRIORITY}.
+              {error && (
+                <p className="text-sm text-destructive" role="alert">
+                  {error}
                 </p>
-              </div>
-              <Switch
-                id="tm-primary"
-                checked={isPrimary}
-                onCheckedChange={(on) =>
-                  setPriority(String(on ? PRIMARY_PRIORITY : DEFAULT_PRIORITY))
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tm-priority">Priority</Label>
-              <Input
-                id="tm-priority"
-                type="number"
-                inputMode="numeric"
-                min={MIN_PRIORITY}
-                max={MAX_PRIORITY}
-                step={1}
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-                aria-invalid={!!errors.priority}
-                className="sm:max-w-40"
-              />
-              <p
-                className={
-                  errors.priority ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'
-                }
-              >
-                {errors.priority ??
-                  `${MIN_PRIORITY}–${MAX_PRIORITY}. Lower comes first; ${PRIMARY_PRIORITY} is primary, ${DEFAULT_PRIORITY} is the default.`}
-              </p>
-            </div>
-
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="tm-active">Active</Label>
-                <p className="text-xs text-muted-foreground">
-                  Inactive mappings are kept but ignored when scans are filtered.
-                </p>
-              </div>
-              <Switch id="tm-active" checked={active} onCheckedChange={setActive} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tm-description">Description (optional)</Label>
-              <Textarea
-                id="tm-description"
-                rows={2}
-                maxLength={MAX_DESCRIPTION_LENGTH}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                aria-invalid={!!errors.description}
-              />
-              {errors.description && (
-                <p className="text-xs text-destructive">{errors.description}</p>
               )}
             </div>
-
-            {error && (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            )}
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -284,7 +289,7 @@ export function TargetMappingDialog({
               {editing ? 'Save changes' : 'Create mapping'}
             </Button>
           </DialogFooter>
-        </form>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

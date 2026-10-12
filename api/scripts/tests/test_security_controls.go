@@ -8,7 +8,7 @@
 //
 // This script tests security controls across all services:
 //   - Workflow Executor (14 controls)
-//   - Pipeline Service (concurrent limits, input validation)
+//   - Scan workflow Service (concurrent limits, input validation)
 //   - Scan Service (concurrent limits, input validation)
 //   - Security Validator (identifier validation)
 
@@ -168,7 +168,7 @@ func testConcurrentRunLimits() []testResult {
 
 	results := []testResult{}
 
-	// Test Pipeline limits (5 per pipeline, 50 per tenant)
+	// Test Scan workflow limits (5 per scan workflow, 50 per tenant)
 	results = append(results, testPipelineLimits(suite)...)
 
 	// Test Scan limits (3 per scan, 50 per tenant)
@@ -186,28 +186,28 @@ func testPipelineLimits(suite string) []testResult {
 	const maxPerPipeline = 5
 	const maxPerTenant = 50
 
-	// Simulate pipeline runs
-	pipelineRuns := make(map[string]int) // pipelineID -> active count
-	tenantRuns := make(map[string]int)   // tenantID -> active count
+	// Simulate scan runs
+	scanRuns := make(map[string]int)   // scanWorkflowID -> active count
+	tenantRuns := make(map[string]int) // tenantID -> active count
 
-	// Test per-pipeline limit
-	pipelineID := "pipeline-1"
+	// Test per-scan workflow limit
+	scanWorkflowID := "pipeline-1"
 	tenantID := "tenant-1"
 
 	for i := 0; i < 7; i++ {
-		canRun := pipelineRuns[pipelineID] < maxPerPipeline && tenantRuns[tenantID] < maxPerTenant
+		canRun := scanRuns[scanWorkflowID] < maxPerPipeline && tenantRuns[tenantID] < maxPerTenant
 		if canRun {
-			pipelineRuns[pipelineID]++
+			scanRuns[scanWorkflowID]++
 			tenantRuns[tenantID]++
 		}
 	}
 
 	testName := fmt.Sprintf("Pipeline: max %d concurrent per pipeline", maxPerPipeline)
-	if pipelineRuns[pipelineID] == maxPerPipeline {
+	if scanRuns[scanWorkflowID] == maxPerPipeline {
 		results = append(results, testResult{suite: suite, name: testName, passed: true})
-		fmt.Printf("  ✓ %s (runs: %d)\n", testName, pipelineRuns[pipelineID])
+		fmt.Printf("  ✓ %s (runs: %d)\n", testName, scanRuns[scanWorkflowID])
 	} else {
-		results = append(results, testResult{suite: suite, name: testName, passed: false, reason: fmt.Sprintf("expected %d, got %d", maxPerPipeline, pipelineRuns[pipelineID])})
+		results = append(results, testResult{suite: suite, name: testName, passed: false, reason: fmt.Sprintf("expected %d, got %d", maxPerPipeline, scanRuns[scanWorkflowID])})
 		fmt.Printf("  ✗ %s\n", testName)
 	}
 

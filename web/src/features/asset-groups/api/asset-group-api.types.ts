@@ -7,6 +7,8 @@
  * The response shapes are GENERATED from the API's OpenAPI spec; only the
  * request inputs, filters and UI unions are declared here.
  */
+
+import type { RatedCriticality } from '@/lib/criticality'
 import type {
   ApiResponse,
   AssetGroupResponse,
@@ -21,7 +23,7 @@ import type {
 
 export type Environment = 'production' | 'staging' | 'development' | 'testing'
 
-export type Criticality = 'critical' | 'high' | 'medium' | 'low'
+export type Criticality = RatedCriticality
 
 export type AssetType =
   | 'domain'

@@ -5,6 +5,10 @@ deviation needs a reason written next to it in code. The Findings page
 (`src/app/(dashboard)/findings/page.tsx`) is the reference implementation of a
 list page.
 
+Decisions D14–D16 cover density, default sort, saved views, "Scroll all", the
+batch-bar rule, server facets, honest dashboard tiles and the three empty-state
+kinds.
+
 ## 1. Page anatomy
 
 Every page, top to bottom:
@@ -28,7 +32,10 @@ Every page, top to bottom:
      `src/config/section-tabs.ts` and pass it as the sidebar item's `sections`:
      the sidebar shows ONE row for the section (active on every tab's route), the
      command palette lists each tab. Never a third sidebar level for them.
-4. **Content blocks** separated by `mt-5` (or `space-y-5` / `gap-5`).
+4. **Sidebar**: the main sidebar collapses and its width can be resized
+   (persisted per user, between 13rem and 20rem). Its links are the same in
+   every organization. Settings and the admin console keep their own rail.
+5. **Content blocks** separated by `mt-5` (or `space-y-5` / `gap-5`).
 
 ## 2. Headline numbers
 
@@ -42,6 +49,15 @@ Every page, top to bottom:
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
   (`role="meter"`, a label saying what it measures), in a metric's `detail`,
   a `DetailStat` or a row. Not a hand-made bar.
+- Every number on a dashboard opens the list it counts, with the same filter
+  (not the unfiltered page).
+- A number that cannot be computed shows "Not enough data" and what is
+  missing, never 0 or a perfect score.
+- No cross-customer or industry benchmarks: a self-hosted platform has no
+  honest population to compare with. Compare with the tenant's own trend or
+  target.
+- Graph analytics (attack paths, exposure chains) lead with a ranked list of
+  choke points (paths × critical assets); the graph is one click away.
 - Colour a number only when it is a problem **and** greater than zero
   (`tone="danger"` / `text-destructive`). A zero is never coloured.
 
@@ -51,6 +67,11 @@ Every page, top to bottom:
 - Do **not** wrap `<DataTable>` in a `<Card>` — it draws its own border.
 - Toolbar: search on the left, secondary actions (refresh, export) on the right,
   via `toolbarStart` / `toolbarEnd`. Filters:
+  - Facet values and counts come from the server for the current query.
+    Dimensions list their top values with counts; measures (risk score,
+    CVSS, EPSS, age) use a range slider. A value count is shown only when it
+    is computed with every **other** active filter applied; otherwise show
+    no count.
   - ≥ 3 filter dimensions → `<FacetFilterPanel>` in a floating sticky card
     (see Findings), toggled from the toolbar, closed by default.
   - 1–2 dimensions → dropdown buttons in the toolbar.
@@ -72,12 +93,42 @@ Every page, top to bottom:
     filter icon; label them with `aria-label="Filter by …"`.
   - Enforced by `src/features/shared/components/__tests__/filter-trigger-governance.test.ts`;
     a non-trigger use of a filter icon needs an allowlist entry with a reason.
+- **Context filters** (a deep link's `asset_id`, `scan_id`, `cve_id`, `rule_id`:
+  "View findings" from an asset or a scan run) are `<ContextFilterChips>` from
+  `@/features/shared`, placed in `toolbarStart` after the search box, never as
+  a row of their own above the table (that row pushed the table down when the
+  page opened with the parameter). Each chip shows a human label (resolved
+  through the tenant-scoped hook; a fixed-width placeholder while loading;
+  "Unknown asset" on 404/403) and its X removes only its own parameter. Render
+  the same chips in the page's loading skeleton, so they are there from the
+  first frame. See `features/findings/components/finding-context-chips.tsx`.
 - Filters, search, sort, page and page size live in the URL
   (`useUrlFilter` / `useUrlFilterList`).
 - Server-paginated tables pass `sorting`/`onSortingChange`; columns the API
   cannot sort set `enableSorting: false`.
 - The first column is the row's name; row actions are the last column with
   `id: 'actions'` (both are pinned automatically).
+- **Density** (D14): `compact` (32px rows) or `comfortable` (40px). Single-line
+  lists (findings, scans, sensors, single-line asset lists) default to
+  compact; lists with multi-line rows (service rows, grouped cards on phones)
+  use comfortable. The user switches it from the table's view menu; it is a
+  per-user preference, not URL state.
+- **Default sort**: every sortable table has exactly one column sorted by
+  default, shown by its arrow. A newly clicked column sorts ascending;
+  clicking it again toggles the direction.
+- **Pagination**: page sizes 25 / 50 / 100. A list that can exceed 10k rows
+  may offer **"Scroll all"** (D16), which virtualizes rows
+  (`@tanstack/react-virtual` inside `DataTable`) over keyset (cursor) pages
+  from the API. It ships only after the list's API has cursor pagination, and
+  it never loads the whole set. The page-size view stays the default.
+- **Bulk actions**: while rows are selected, the `BulkActionBar` is the only
+  place to act on them. Row `⋯` menus are disabled, and the bar always has
+  Clear (Escape works too). Bulk endpoints accept IDs or the list's filter.
+- **Saved views** (D15): a view stores filter, sort, grouping, columns and
+  density for one page, personal or shared with a team. A view never changes
+  data. It is **not** a group: dynamic groups are scan and policy targets and
+  live under Assets › Groups; views are lenses and live in the toolbar's view
+  menu. The UI never offers one in place of the other.
 
 ### Grouped lists
 
@@ -104,6 +155,16 @@ reference implementations.
   navigation (View), outline for a change (Mark fixed, Approve). Gate each on
   its permission **and** on the API being able to do it for that group type;
   hide it otherwise (no dead buttons). Two at most; more go in a `⋯` menu.
+- **View is a drill-down, pushed onto the history.** It opens the flat list
+  with every other filter kept and the group's filter added, through
+  `pushUrlSearch` (not the `replaceState` filter writers), so Back returns to
+  the grouped view. The URL records the origin (`from=group:<dimension>`) and
+  the page shows a breadcrumb rebuilt from the URL alone
+  (`DrillDownBreadcrumb`: "Findings › By rule › 10114", the value as
+  untrusted text). The drilled filter is an ordinary context chip whose ✕
+  removes only its parameter and ends the drill-down. Every group dimension
+  needs a list filter, so View exists on all of them (Findings:
+  `features/findings/lib/drilldown.ts`).
 - **Selection** (`selectable`, with a `select` column): the header gets a
   checkbox that selects the group's rows on screen (indeterminate when some
   are). It feeds the same `BulkActionBar` as the flat list. Turn it on when
@@ -177,24 +238,100 @@ load.
   without the next page, the clicked row shows a moving bar and the window a
   top progress bar. Sidebar links use `SidebarLink`, which prefetches on hover
   or focus rather than on render.
-- **Empty**: the shared `<EmptyState>` (icon, title, one-line description,
-  optional action). No ad-hoc "No X found" text.
+- **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
+  next step, optional primary action, optional secondary link such as docs).
+  Three kinds, each worded for its case:
+  - **no data yet** (first use): the setup action;
+  - **no results** (filters active): "Clear filters";
+  - **not enough data** (a metric cannot be computed): what is missing.
+    Never a zero or a perfect score in its place.
+
+  No ad-hoc "No X found" text.
+
+- **Unknown facts** (a scanner fact nothing has collected yet: port, HTTP
+  status, technologies, TLS, open ports, DNS records …). Never show a default
+  as if it were data (no "200", no "TCP", no "valid"), and do not show the
+  gap either where space is tight:
+
+  | Where                     | A fact nothing collected                                                                                                                                                   | A known negative ("No TLS", "No open ports", "No technologies detected", a 4xx status) |
+  | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+  | List, table, compact cell | Nothing. A cell left with no content shows one muted `—` (`EmptyCell`)                                                                                                     | Shown                                                                                  |
+  | Drawer / detail page      | One muted line at the end of the facts: "Not collected yet: port, HTTP status, TLS certificate" (`NotCollectedNote`), only when something is missing. No per-row "Unknown" | Shown                                                                                  |
+  | Filters and facets        | Keep the "Not collected" / "Unknown" value where the facet has one, so coverage gaps stay findable                                                                         | Its own value                                                                          |
+
+  The shared service cells (`src/features/assets/components/service-cells/`)
+  do this by default: each returns nothing for an unknown fact (`fallback`
+  overrides it), `SurfaceFacts` shows the `—` for an all-unknown row, and
+  `SurfaceFactsDetail` / a typed page's `notCollected` field option build the
+  drawer line. A field the data cannot split into "not collected" and
+  "collected, none" (DNS records: no records either way) stays "not
+  collected". No dashed "unknown" chips.
+
 - **Error**: `<Alert variant="destructive">` with what failed and a retry.
 - Gated / coming-soon pages use the existing shared components.
 
 ## 8. Overlays
 
-- Create / edit forms: `<Dialog>` (up to `sm:max-w-lg`; `sm:max-w-2xl` for
-  long forms). Large editors: a full page.
-- A dialog laid out edge to edge (split panes, a tinted aside, a scrolling
-  body with a sticky footer): `<DialogContent showCloseButton={false}
-className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
-  (title, description, close) first, then the body. Pass
-  `onOpenAutoFocus={(e) => focusDialogBody(e, bodyRef.current)}` (body has
-  `tabIndex={-1}`) so it opens on the first field, not on the close button. The close button stays on
-  the dialog surface, never on a tinted region; a secondary panel is inset
-  (margin + radius), not bled to the edge. Install sensor and Edit sensor are
-  the reference. Ordinary dialogs keep the default corner close button.
+- Every modal surface (Dialog, AlertDialog, Sheet) has one frame, in
+  `src/components/ui/modal-layout.tsx`: a **fixed header** (title,
+  description, `actions`, the close button), a **body that is the only part
+  that scrolls**, and a **fixed footer** (the actions, always visible). The
+  title, the close button and the primary action never scroll away.
+
+  ```tsx
+  <DialogContent size="lg">
+    <DialogHeader>
+      <DialogTitle>Add finding</DialogTitle>
+      <DialogDescription>…</DialogDescription>
+    </DialogHeader>
+    <DialogForm onSubmit={submit}>
+      <DialogBody className="space-y-4">…fields…</DialogBody>
+      <DialogFooter>
+        <Button variant="outline" type="button">
+          Cancel
+        </Button>
+        <Button type="submit">Create</Button>
+      </DialogFooter>
+    </DialogForm>
+  </DialogContent>
+  ```
+
+  - Never put `max-h-*`, `overflow-*`, `flex`/`grid`, `p-0` or `gap-*` on a
+    `DialogContent` / `AlertDialogContent` / `SheetContent`, and never a
+    `max-w-*` on a dialog: width is `size` — `sm` (28rem), `md` (32rem, the
+    default; create / edit forms), `lg` (42rem; long forms), `xl` (56rem;
+    editors, tables), `full` (a workspace, 90% of the screen), `screen` (a
+    full-screen canvas editor, e.g. the workflow builder). Large editors:
+    a full page. `modal-layout-governance.test.ts` fails on these.
+  - The body scrolls between header and footer (`overscroll-contain`, so the
+    page behind never moves). A divider shows under the header only while
+    the body is scrolled, and above the footer only while there is more below.
+    Avoid a second scroll box inside the body (a picker list may keep a
+    bounded height of its own).
+  - A form wraps body and footer (`DialogForm` / `SheetForm`): Enter in a
+    field submits, the primary button is `type="submit"`. Footer order:
+    secondary first, primary last (on phones the primary is on top, buttons
+    are full width and 44px tall).
+  - Initial focus is the body's first field (never the close button); on a
+    touch screen the body itself, so the keyboard does not pop up uninvited.
+    Esc closes and focus returns to the trigger. Confirmations
+    (`AlertDialog`) have no close button and open on Cancel.
+  - Phones (under `sm`): a dialog is a bottom sheet, full width, as tall as
+    its content up to the visible screen. It stays above the on-screen
+    keyboard (`useKeyboardInset`: the visual viewport is measured, the
+    surface lifted, the focused field scrolled back into view), and the
+    footer clears the home indicator (`env(safe-area-inset-bottom)`). No
+    motion under reduced motion.
+  - Long forms may label groups inside the body with plain section headings;
+    never a second fixed bar.
+
+- A dialog laid out edge to edge (split panes, a tinted aside) still uses the
+  frame: the panes go in the body (`<DialogBody className="p-0">`). The older
+  `<DialogHeaderBar>` + `focusDialogBody` pattern (Install sensor, Edit
+  sensor) is being moved onto `DialogHeader` + `DialogBody`; do not use it for
+  new dialogs. The close button stays on the dialog surface, never on a
+  tinted region; a secondary panel is inset (margin + radius), not bled to
+  the edge.
 - Quick detail views: `<Sheet side="right">`. Read top to bottom as state →
   why → what it can do → what it did → identity, with the parts in
   `src/features/shared/components/detail-sheet.tsx`: a `<DetailCallout>`
@@ -206,6 +343,43 @@ className="flex flex-col gap-0 p-0 sm:p-0 …">` with a `<DialogHeaderBar>`
   primary and one outline button; security and lifecycle actions (rotate key,
   disable, revoke, delete) go in the `⋯` menu. The sensor drawer is the
   reference.
+  - The frame is shared too, in `detail-sheet-layout.tsx`: `<DetailSheet>`
+    (right drawer from `md`, bottom sheet on phones, header pinned while the
+    body scrolls, `width` token), `<DetailHeader>` (the title **wraps**, never
+    truncates: it is often the only identifier; `badges` after it, `meta`
+    parts joined with `·`, an `actions` row, a `menu` of items for `⋯`) and
+    `<DetailTabs>` (underline tabs; `useDetailTab(param, values)` keeps the
+    tab in the URL when the page wants it, with a parameter the page does not
+    already use).
+  - On phones `<DetailSheet>` is a Vaul drawer (`components/ui/drawer.tsx`):
+    swipe down from the handle, the header or a body scrolled to its top to
+    close; fields and the footer never start a drag; the Close button (44x44
+    hit area) and Esc always work; no slide under reduced motion. Never give
+    a sheet a swipe-only way out.
+  - "View all …" / "Open full page" at the end of a sheet or tab: render
+    `<DetailSheetFooter>` (from any component inside the sheet). It is pinned
+    under the scrolling body with a top border and the sheet's padding, so it
+    is always visible and last in the focus order. Never place such a button
+    after the list inside the body.
+  - Real checks only: `<DetailChecklist>` ("Health checks: N of M passing",
+    folded, failing first) and the `<DetailCallout>` above it appear only
+    when the record has such state. Never placeholder checks.
+  - Chips of tools or packages: `<DetailChipList>`. Trivia at the end:
+    `<DetailDisclosure summary="More details">`; the ID: `<DetailCopyId>`.
+- Full detail pages (a record with its own URL): the main column answers
+  what / why it matters / how to fix, and a sticky properties rail (`lg`, about
+  19rem) holds the editable state and facts as label → value rows. Below `lg`
+  the rail moves under the header with the trivia folded. The page names
+  itself in the breadcrumb with `useBreadcrumbTitle`. Its drawer reuses the
+  page's sections. The finding detail page is the reference
+  (`docs/finding-detail.md`).
+- Activity and comments, on every page and drawer: `<EntityActivity>` from
+  `src/features/activity/` (`docs/ui/activity-panel.md`). The page shows a
+  compact "Activity · N comments" summary; it opens the shared
+  `ActivityPanel` sheet (feed, filter, composer pinned at the bottom). Never a
+  full timeline inline, never an Activity tab, never a hand-rolled comment
+  box. A page keeps the open state in the URL (`?activity=open`); a drawer
+  keeps it in memory.
 - Destructive confirmation: `<ConfirmDialog destructive>`.
 
 ## 9. Responsiveness

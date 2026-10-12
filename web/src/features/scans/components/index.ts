@@ -5,7 +5,6 @@
 export * from './new-scan'
 export * from './clone-scan-dialog'
 export * from './asset-compatibility-warning'
-export * from './filtering-result-banner'
 export * from './edit-scan-dialog'
 export * from './quick-scan-dialog'
 export * from './scan-assets-dialog'

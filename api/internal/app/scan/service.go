@@ -5,17 +5,21 @@ import (
 	"context"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/robfig/cron/v3"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/templatesource"
@@ -179,12 +183,24 @@ type TemplateSyncResult struct {
 
 // Service handles scan business operations.
 type Service struct {
-	scanRepo            scan.Repository
-	templateRepo        pipeline.TemplateRepository
-	assetGroupRepo      assetgroup.Repository
-	runRepo             pipeline.RunRepository
-	stepRepo            pipeline.StepRepository
-	stepRunRepo         pipeline.StepRunRepository
+	// programRules refuses runs a bug-bounty program's rules forbid
+	// (program_rules.go); nil: not checked.
+	programRules ProgramRuleChecker
+	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
+	scopeSnapshots ScopeSnapshotRecorder
+	scanRepo       scan.Repository
+	ownerActivity  OwnerActivity
+	templateRepo   scanworkflow.Repository
+	assetGroupRepo assetgroup.Repository
+	// selectorAssets reads the inventory behind dynamic target selectors
+	// (target_selectors.go); nil refuses a run that has one.
+	selectorAssets SelectorAssets
+	runRepo        scanrun.RunRepository
+	stepRepo       scanworkflow.StepRepository
+	// approvalGate and governanceAssets: scan approval (governance.go).
+	approvalGate        ApprovalGate
+	governanceAssets    GovernanceAssets
+	stepRunRepo         scanrun.StepRunRepository
 	commandRepo         command.Repository
 	scannerTemplateRepo scannertemplate.Repository
 	templateSourceRepo  templatesource.Repository
@@ -196,9 +212,29 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
-	zones               ZoneDirectory        // optional; nil = zone routing off (RFC-023)
-	zoneResolver        scanzone.Resolver    // resolves hostname targets for zone routing
-	logger              *logger.Logger
+	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
+	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
+	pendingScope        PendingScope
+	scopeWaitTrigger    func(context.Context, TriggerScanExecInput) (*scanrun.Run, error) // tests only; nil = TriggerScan
+	zones               ZoneDirectory                                                     // optional; nil = zone routing off (RFC-023)
+	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
+	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
+	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
+	// revealResolved lets a refusal show what a hostname resolved to
+	// (WithRevealResolved).
+	revealResolved bool
+	// proofPolicy is the platform's proof requirement (active_proof.go).
+	proofPolicy      ProofPolicy
+	connectorScans   ConnectorScans            // optional; nil = a connector cannot be a scanner (RFC-047)
+	policySensors    AvailableSensorLister     // optional; nil = no policy preflight outside zones (policy_preflight.go)
+	privatePolicy    PrivateTargetPolicy       // optional; nil = the private-target switch is not read at trigger
+	readiness        *readinessSources         // optional; nil = no workflow readiness (readiness.go)
+	toolAvailability ToolAvailability          // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
+	tenantTools      TenantToolConfigs         // optional; nil = per-organization tool switch not enforced
+	optIns           OptInPolicy               // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
+	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
+	workflowVersions scanworkflow.VersionStore // pins workflow runs to the version they start with; nil leaves them on the live workflow
+	logger           *logger.Logger
 }
 
 // ScopeExclusionFilter reports which of the given candidate targets match an
@@ -208,6 +244,29 @@ type Service struct {
 // delayed scan (fail closed).
 type ScopeExclusionFilter interface {
 	ExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) (map[shared.ID]bool, error)
+}
+
+// AttributionGate decides which assets and typed targets may not be checked
+// actively (RFC-036 §6.3 active_allowed, O4): an asset whose attribution is
+// not confirmed, a name under one the tenant rejected, and an
+// internet-facing asset with no record outside every scope target and seed.
+// Implemented by *easm.ActiveGate. A lookup error stops the dispatch.
+type AttributionGate interface {
+	// ActiveCheckBlocked returns the given assets that may not be probed,
+	// with the reason.
+	ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error)
+	// BlockedTargets returns the typed targets that may not be probed: a
+	// target naming an inventory asset is decided as that asset; free text
+	// only when it is (or sits under) a name the tenant rejected.
+	BlockedTargets(ctx context.Context, tenantID shared.ID, targets []string) (map[string]attribution.State, error)
+	// TierExceeded returns the targets the tenant's scope authority covers,
+	// but only below tier (RFC-054 §4.2 step 6), with the covering entry of
+	// the highest ceiling.
+	TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error)
+	// UncoveredTargets returns the targets naming an internet host or
+	// address that no scope authority of the tenant covers (no scope
+	// target, root-domain seed or verified domain at or above them).
+	UncoveredTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
 }
 
 // ServiceOption is a functional option for Service.
@@ -243,14 +302,24 @@ func WithScopeExclusionFilter(f ScopeExclusionFilter) ServiceOption {
 	}
 }
 
+// WithAttributionGate makes every active-scan path refuse what the tenant
+// has not authorized: asset-group members and typed targets that name an
+// asset whose ownership is not confirmed, names under a rejected name, and
+// unattributed internet-facing assets (see AttributionGate).
+func WithAttributionGate(g AttributionGate) ServiceOption {
+	return func(s *Service) {
+		s.attributionGate = g
+	}
+}
+
 // NewService creates a new Service.
 func NewService(
 	scanRepo scan.Repository,
-	templateRepo pipeline.TemplateRepository,
+	templateRepo scanworkflow.Repository,
 	assetGroupRepo assetgroup.Repository,
-	runRepo pipeline.RunRepository,
-	stepRepo pipeline.StepRepository,
-	stepRunRepo pipeline.StepRunRepository,
+	runRepo scanrun.RunRepository,
+	stepRepo scanworkflow.StepRepository,
+	stepRunRepo scanrun.StepRunRepository,
 	commandRepo command.Repository,
 	scannerTemplateRepo scannertemplate.Repository,
 	templateSourceRepo templatesource.Repository,
@@ -283,14 +352,47 @@ func NewService(
 	return svc
 }
 
+type auditActorKey struct{}
+
+// WithAuditActor returns ctx carrying the id of the user making the request.
+// Most scan mutations (update, delete, activate, pause, disable, import,
+// export) take no actor argument; the HTTP handler attaches the caller here
+// so their audit entries say who made the change instead of leaving the actor
+// empty. An explicit AuditContext.ActorID still wins.
+func WithAuditActor(ctx context.Context, actorID string) context.Context {
+	if actorID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, auditActorKey{}, actorID)
+}
+
+func auditActorFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(auditActorKey{}).(string)
+	return v
+}
+
 // logAudit logs an audit event if audit service is configured.
 func (s *Service) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
 	if s.auditService == nil {
 		return
 	}
+	if actx.ActorID == "" {
+		actx.ActorID = auditActorFromContext(ctx)
+	}
 	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
 		s.logger.Error("failed to log audit event", "error", err, "action", event.Action)
 	}
+}
+
+// recordScheduledOutcome writes a scheduled occurrence that did not produce a
+// run (skipped by the overlap policy, or the trigger failed) to the scan's
+// audit trail, with the reason.
+func (s *Service) recordScheduledOutcome(ctx context.Context, sc *scan.Scan, message string, cause error) {
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), cause).
+			WithResourceName(sc.Name).
+			WithMessage(message).
+			WithMetadata("trigger_type", "schedule"))
 }
 
 // =============================================================================

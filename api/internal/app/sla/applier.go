@@ -33,6 +33,12 @@ type DeadlineCalculator interface {
 	) (time.Time, error)
 }
 
+// batchDeadlineSource is optionally implemented by the calculator (*Service)
+// to resolve a whole batch's deadlines from policies loaded once.
+type batchDeadlineSource interface {
+	SLADeadlineFunc(ctx context.Context, tenantID string) (DeadlineFunc, error)
+}
+
 // Applier is the concrete implementation of the ingest package's
 // Applier interface. Kept in the app package (not ingest) so
 // ingest doesn't depend on Service; the calculator contract is
@@ -62,6 +68,16 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 	}
 
 	tid := tenantID.String()
+	// One policy load for the whole batch when the calculator supports it;
+	// otherwise (tests, or a failed load) one lookup per finding.
+	compute := func(assetID, priorityClass string, sev vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+		return a.calc.CalculateSLADeadlineForPriority(ctx, tid, assetID, priorityClass, sev, detectedAt)
+	}
+	if b, ok := a.calc.(batchDeadlineSource); ok {
+		if fn, err := b.SLADeadlineFunc(ctx, tid); err == nil {
+			compute = fn
+		}
+	}
 	var applied, failed int
 	for _, f := range findings {
 		priorityClass := ""
@@ -73,16 +89,15 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 			assetID = f.AssetID().String()
 		}
 
-		deadline, err := a.calc.CalculateSLADeadlineForPriority(
-			ctx,
-			tid,
-			assetID,
-			priorityClass,
-			f.Severity(),
-			f.FirstDetectedAt(),
-		)
+		deadline, err := compute(assetID, priorityClass, f.Severity(), f.FirstDetectedAt())
 		if err != nil {
 			failed++
+			continue
+		}
+		if deadline.IsZero() {
+			// No SLA for this finding (informational, info days = 0): the
+			// deadline stays NULL and sla_status stays not_applicable.
+			applied++
 			continue
 		}
 		f.SetSLADeadline(deadline)

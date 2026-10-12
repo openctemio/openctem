@@ -2,6 +2,7 @@ package templatesource
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -33,7 +34,6 @@ func TestGitSourceConfig_NormalizesLegitimatePaths(t *testing.T) {
 func TestGitSourceConfig_URLSchemes(t *testing.T) {
 	ok := []string{
 		"https://github.com/org/repo.git",
-		"http://git.corp.example/org/repo",
 		"ssh://git@github.com/org/repo.git",
 		"git@github.com:org/repo.git",
 	}
@@ -43,6 +43,7 @@ func TestGitSourceConfig_URLSchemes(t *testing.T) {
 		}
 	}
 	bad := []string{
+		"http://git.corp.example/org/repo", // plain http: templates could be swapped in transit
 		"file:///etc",
 		"/srv/repos/other-tenant.git",
 		"./repo",
@@ -86,7 +87,7 @@ func TestS3SourceConfig_RequiresTenantCredentialsAndSafeEndpoint(t *testing.T) {
 		t.Error("sts_role without role_arn must be refused")
 	}
 
-	for _, ep := range []string{"gopher://x", "http://user:pw@minio:9000", "http://minio:9000/?x=1", "minio:9000", "file:///tmp"} {
+	for _, ep := range []string{"gopher://x", "http://user:" + "pw@minio:9000", "http://minio:9000/?x=1", "minio:9000", "file:///tmp"} {
 		c := base
 		c.Endpoint = ep
 		if err := c.Validate(); err == nil {
@@ -122,5 +123,52 @@ func TestTemplateSource_S3RequiresCredential(t *testing.T) {
 	src.SetCredential(shared.NewID())
 	if err := src.Validate(); err != nil {
 		t.Fatalf("s3 source with a credential refused: %v", err)
+	}
+}
+
+// Template-source configuration is stored as plain JSON and shown to anyone
+// who can read sources, and the fetched templates run on sensors: new or
+// edited sources must use https and keep credentials out of the URL and the
+// headers (settings audit SC-M7). Legacy rows are masked in responses.
+func TestSourceConfig_HTTPSOnlyAndNoInlineCredentials(t *testing.T) {
+	httpCases := []struct {
+		name    string
+		cfg     HTTPSourceConfig
+		wantErr bool
+	}{
+		{"https ok", HTTPSourceConfig{URL: "https://templates.example.com/pack.zip", Headers: map[string]string{"Accept": "application/zip"}}, false},
+		{"plain http", HTTPSourceConfig{URL: "http://templates.example.com/pack.zip"}, true},
+		{"password in url", HTTPSourceConfig{URL: "https://bot:ghp_x@templates.example.com/pack.zip"}, true},
+		{"authorization header", HTTPSourceConfig{URL: "https://t.example.com/a", Headers: map[string]string{"Authorization": "Bearer x"}}, true},
+		{"api key header", HTTPSourceConfig{URL: "https://t.example.com/a", Headers: map[string]string{"X-Api-Key": "x"}}, true},
+		{"header injection", HTTPSourceConfig{URL: "https://t.example.com/a", Headers: map[string]string{"Accept": "a\r\nX-Evil: 1"}}, true},
+		{"timeout too long", HTTPSourceConfig{URL: "https://t.example.com/a", Timeout: 3600}, true},
+	}
+	for _, tc := range httpCases {
+		c := tc.cfg
+		if err := c.Validate(); (err != nil) != tc.wantErr {
+			t.Errorf("http %s: err = %v, wantErr %v", tc.name, err, tc.wantErr)
+		}
+	}
+
+	gitCases := []struct {
+		url     string
+		wantErr bool
+	}{
+		{"https://github.com/org/repo.git", false},
+		{"git@github.com:org/repo.git", false},
+		{"ssh://git@github.com/org/repo.git", false},
+		{"http://github.com/org/repo.git", true},
+		{"https://bot:ghp_token@github.com/org/repo.git", true},
+	}
+	for _, tc := range gitCases {
+		c := GitSourceConfig{URL: tc.url, Branch: "main"}
+		if err := c.Validate(); (err != nil) != tc.wantErr {
+			t.Errorf("git %s: err = %v, wantErr %v", tc.url, err, tc.wantErr)
+		}
+	}
+
+	if got := MaskedURL("https://bot:ghp_token@github.com/org/repo.git"); strings.Contains(got, "ghp_token") {
+		t.Errorf("MaskedURL leaked the token: %s", got)
 	}
 }

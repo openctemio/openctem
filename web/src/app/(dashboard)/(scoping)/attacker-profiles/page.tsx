@@ -26,6 +26,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -40,6 +41,7 @@ import { Plus, Trash2, Lock, Target } from 'lucide-react'
 import { get, post, del } from '@/lib/api/client'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface AttackerProfile {
   id: string
@@ -89,6 +91,7 @@ const NETWORK_ACCESS_OPTIONS = ['external', 'internal', 'dmz'] as const
 const CREDENTIAL_LEVEL_OPTIONS = ['none', 'user', 'admin'] as const
 
 export default function AttackerProfilesPage() {
+  const { t } = useTranslation()
   const {
     data: response,
     isLoading,
@@ -311,120 +314,122 @@ export default function AttackerProfilesPage() {
             <DialogTitle>New attacker profile</DialogTitle>
             <DialogDescription>Define a new threat actor profile for scoping</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Financially Motivated APT"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Describe the attacker profile..."
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="profile_type">Profile type</Label>
-              <Select
-                value={formData.profile_type}
-                onValueChange={(value) =>
-                  setFormData({
-                    ...formData,
-                    profile_type: value as AttackerProfile['profile_type'],
-                  })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="external_unauth">External (Unauthenticated)</SelectItem>
-                  <SelectItem value="external_stolen_creds">
-                    External (Stolen Credentials)
-                  </SelectItem>
-                  <SelectItem value="malicious_insider">Malicious Insider</SelectItem>
-                  <SelectItem value="supplier_compromise">Supply Chain Compromise</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+          <DialogBody>
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="network_access">Network access</Label>
+                <Label htmlFor="name">Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Financially Motivated APT"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe the attacker profile..."
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="profile_type">Profile type</Label>
                 <Select
-                  value={formData.networkAccess}
-                  onValueChange={(value) => setFormData({ ...formData, networkAccess: value })}
+                  value={formData.profile_type}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      profile_type: value as AttackerProfile['profile_type'],
+                    })
+                  }
                 >
-                  <SelectTrigger id="network_access">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {NETWORK_ACCESS_OPTIONS.map((o) => (
-                      <SelectItem key={o} value={o} className="capitalize">
-                        {o}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="external_unauth">External (Unauthenticated)</SelectItem>
+                    <SelectItem value="external_stolen_creds">
+                      External (Stolen Credentials)
+                    </SelectItem>
+                    <SelectItem value="malicious_insider">Malicious Insider</SelectItem>
+                    <SelectItem value="supplier_compromise">Supply Chain Compromise</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="network_access">Network access</Label>
+                  <Select
+                    value={formData.networkAccess}
+                    onValueChange={(value) => setFormData({ ...formData, networkAccess: value })}
+                  >
+                    <SelectTrigger id="network_access">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NETWORK_ACCESS_OPTIONS.map((o) => (
+                        <SelectItem key={o} value={o} className="capitalize">
+                          {o}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="credential_level">Credential level</Label>
+                  <Select
+                    value={formData.credentialLevel}
+                    onValueChange={(value) => setFormData({ ...formData, credentialLevel: value })}
+                  >
+                    <SelectTrigger id="credential_level">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CREDENTIAL_LEVEL_OPTIONS.map((o) => (
+                        <SelectItem key={o} value={o} className="capitalize">
+                          {o}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="persistence"
+                  checked={formData.persistence}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, persistence: checked as boolean })
+                  }
+                />
+                <Label htmlFor="persistence" className="cursor-pointer">
+                  Can establish persistence
+                </Label>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="credential_level">Credential level</Label>
-                <Select
-                  value={formData.credentialLevel}
-                  onValueChange={(value) => setFormData({ ...formData, credentialLevel: value })}
-                >
-                  <SelectTrigger id="credential_level">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CREDENTIAL_LEVEL_OPTIONS.map((o) => (
-                      <SelectItem key={o} value={o} className="capitalize">
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="tools">Tools</Label>
+                <Input
+                  id="tools"
+                  value={formData.tools}
+                  onChange={(e) => setFormData({ ...formData, tools: e.target.value })}
+                  placeholder="Comma-separated, e.g., nmap, metasploit, commodity"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="assumptions">Assumptions</Label>
+                <Textarea
+                  id="assumptions"
+                  value={formData.assumptions}
+                  onChange={(e) => setFormData({ ...formData, assumptions: e.target.value })}
+                  placeholder="What this threat actor is assumed to be able to do"
+                />
               </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="persistence"
-                checked={formData.persistence}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, persistence: checked as boolean })
-                }
-              />
-              <Label htmlFor="persistence" className="cursor-pointer">
-                Can establish persistence
-              </Label>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tools">Tools</Label>
-              <Input
-                id="tools"
-                value={formData.tools}
-                onChange={(e) => setFormData({ ...formData, tools: e.target.value })}
-                placeholder="Comma-separated, e.g., nmap, metasploit, commodity"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assumptions">Assumptions</Label>
-              <Textarea
-                id="assumptions"
-                value={formData.assumptions}
-                onChange={(e) => setFormData({ ...formData, assumptions: e.target.value })}
-                placeholder="What this threat actor is assumed to be able to do"
-              />
-            </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
@@ -437,14 +442,11 @@ export default function AttackerProfilesPage() {
       <ConfirmDialog
         open={!!deleteProfile}
         onOpenChange={(open) => !open && setDeleteProfile(null)}
-        title="Delete Attacker Profile?"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteProfile?.name}&quot;? This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.attackerProfile.deleteTitle', 'Delete the attacker profile "{name}"?', {
+          name: deleteProfile?.name ?? '',
+        })}
+        desc={t('confirm.attackerProfile.deleteDesc', 'This cannot be undone.')}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />

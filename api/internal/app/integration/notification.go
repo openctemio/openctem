@@ -117,7 +117,7 @@ func (s *NotificationService) readerScope(ctx context.Context, tenantID, userID 
 	}
 	if scope != nil && scope.UserID != userID {
 		// The inbox is always the caller's own; never apply someone else's scope.
-		return &shared.DataScope{TenantID: tenantID, UserID: userID}, nil
+		return &shared.DataScope{TenantID: tenantID, UserID: userID, Unrestricted: scope.Unrestricted}, nil
 	}
 	return scope, nil
 }
@@ -266,7 +266,7 @@ func (s *NotificationService) pushWebSocket(ctx context.Context, n *notification
 		return
 	}
 
-	recipients, err := s.repo.ListRecipients(ctx, n, s.dataScope.Strict(ctx, n.TenantID()))
+	recipients, err := s.repo.ListRecipients(ctx, n)
 	if err != nil {
 		// The notification is stored; the inbox and badge still pick it up on
 		// the next fetch. Only the live push is lost.

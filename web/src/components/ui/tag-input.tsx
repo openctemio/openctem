@@ -12,6 +12,8 @@ interface TagInputProps {
   placeholder?: string
   maxTags?: number
   disabled?: boolean
+  /** id of the text field, for a <Label htmlFor>. */
+  id?: string
 }
 
 export function TagInput({
@@ -21,6 +23,7 @@ export function TagInput({
   placeholder = 'Type a tag and press Enter...',
   maxTags = 20,
   disabled = false,
+  id,
 }: TagInputProps) {
   const [input, setInput] = useState('')
   const [focused, setFocused] = useState(false)
@@ -115,6 +118,7 @@ export function TagInput({
           ) : (
             <>
               <Input
+                id={id}
                 placeholder={placeholder}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

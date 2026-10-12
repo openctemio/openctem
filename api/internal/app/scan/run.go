@@ -4,28 +4,43 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/pipeline"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// verifyAccessibleTemplate confirms a pipeline/workflow template is usable by
-// the given tenant: either it belongs to the tenant, or it is a shared system
-// template. Returns shared.ErrNotFound otherwise. This prevents cross-tenant
-// IDOR when a template is resolved by raw ID (e.g. QuickScan).
-func (s *Service) verifyAccessibleTemplate(ctx context.Context, tenantID, templateID shared.ID) error {
-	if _, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, templateID); err == nil {
-		return nil
-	} else if !errors.Is(err, shared.ErrNotFound) {
-		return err
+// usableWorkflow returns a scan workflow the tenant may USE (create, edit or
+// run a scan with): its own workflow, or a shared system template (a starter
+// workflow), which every tenant uses read-only. Another tenant's private
+// workflow is ErrScanWorkflowNotFound, exactly like a missing one (no IDOR).
+// A retired workflow is ErrScanWorkflowRetired and an inactive one a
+// validation error naming it. Changing a workflow (edit, delete, activate)
+// keeps the tenant-only lookup: a system template is never the tenant's to
+// change.
+func (s *Service) usableWorkflow(ctx context.Context, tenantID, workflowID shared.ID) (*scanworkflow.Workflow, error) {
+	wf, err := s.templateRepo.GetByTenantAndID(ctx, tenantID, workflowID)
+	if errors.Is(err, shared.ErrNotFound) {
+		wf, err = s.templateRepo.GetSystemTemplateByID(ctx, workflowID)
 	}
-	if _, err := s.templateRepo.GetSystemTemplateByID(ctx, templateID); err == nil {
-		return nil
+	if errors.Is(err, shared.ErrNotFound) || (err == nil && wf == nil) {
+		return nil, scanworkflow.ErrScanWorkflowNotFound
 	}
-	return shared.ErrNotFound
+	if err != nil {
+		return nil, err
+	}
+	if wf.RetiredAt != nil {
+		return nil, scanworkflow.ErrScanWorkflowRetired
+	}
+	if !wf.IsActive {
+		return nil, fmt.Errorf("%w: scan workflow %q is disabled; enable it or pick another workflow",
+			shared.ErrValidation, wf.Name)
+	}
+	return wf, nil
 }
 
 // =============================================================================
@@ -67,7 +82,7 @@ func (s *Service) ListScanRuns(ctx context.Context, tenantID, scanID string, pag
 }
 
 // GetLatestScanRun gets the latest run for a specific scan.
-func (s *Service) GetLatestScanRun(ctx context.Context, tenantID, scanID string) (*pipeline.Run, error) {
+func (s *Service) GetLatestScanRun(ctx context.Context, tenantID, scanID string) (*scanrun.Run, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -92,7 +107,7 @@ func (s *Service) GetLatestScanRun(ctx context.Context, tenantID, scanID string)
 }
 
 // GetScanRun gets a specific run for a scan.
-func (s *Service) GetScanRun(ctx context.Context, tenantID, scanID, runID string) (*pipeline.Run, error) {
+func (s *Service) GetScanRun(ctx context.Context, tenantID, scanID, runID string) (*scanrun.Run, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -138,20 +153,26 @@ type QuickScanInput struct {
 	WorkflowID  string         `json:"workflow_id" validate:"omitempty,uuid"`
 	Config      map[string]any `json:"config"`
 	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
-	CreatedBy   string         `json:"created_by" validate:"omitempty,uuid"`
+	// Intensity is the probe ceiling (RFC-071); "" = the tier the scanner
+	// or workflow probes at.
+	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
+	CreatedBy string `json:"created_by" validate:"omitempty,uuid"`
 }
 
 // QuickScanResult represents the result of a quick scan.
 type QuickScanResult struct {
-	PipelineRunID string `json:"pipeline_run_id"`
-	ScanID        string `json:"scan_id"`
-	AssetGroupID  string `json:"asset_group_id"`
-	Status        string `json:"status"`
-	TargetCount   int    `json:"target_count"`
+	ScanRunID string `json:"scan_run_id"`
+	ScanID    string `json:"scan_id"`
+	// AssetGroupID is always empty now: quick scans create no asset group.
+	// Kept so older clients that read it do not break.
+	AssetGroupID string `json:"asset_group_id"`
+	Status       string `json:"status"`
+	TargetCount  int    `json:"target_count"`
 }
 
-// QuickScan performs an immediate scan on provided targets.
-// It creates an ephemeral asset group and scan, then triggers immediately.
+// QuickScan performs an immediate scan on provided targets: it creates an ad-hoc
+// scan (no asset group, hidden from the Configurations list) and triggers it.
+// SaveQuickScan turns it into a saved configuration.
 func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickScanResult, error) {
 	s.logger.Info("quick scan requested", "tenant_id", input.TenantID, "target_count", len(input.Targets))
 
@@ -178,25 +199,39 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		return nil, err
 	}
 	input.Targets = validatedTargets
+	if err := s.refuseOutOfActScope(ctx, tenantID, userIDPtr(input.CreatedBy), input.Targets); err != nil {
+		return nil, err
+	}
+	if err := s.refuseUnprovenIntrusive(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
+		return nil, err
+	}
+	if err := s.refuseTierExceeded(ctx, tenantID, input.ScannerName, input.Targets); err != nil {
+		return nil, err
+	}
+	if err := s.refuseUnownedTargets(ctx, tenantID, "quick_scan", input.Targets, IsTakeoverOnlyProbe(input.ScannerName, input.Config)); err != nil {
+		return nil, err
+	}
 
 	// Determine scan type
 	scanType := scan.ScanTypeSingle
-	var pipelineID *shared.ID
+	var scanWorkflowID *shared.ID
 	if input.WorkflowID != "" {
 		scanType = scan.ScanTypeWorkflow
 		pid, err := shared.IDFromString(input.WorkflowID)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid workflow_id", shared.ErrValidation)
 		}
-		pipelineID = &pid
+		scanWorkflowID = &pid
 
-		// SECURITY: verify the workflow/pipeline template belongs to this
+		// SECURITY: verify the workflow/scan workflow belongs to this
 		// tenant (or is a system template). GetByID alone is unscoped and
-		// would let a caller trigger another tenant's private pipeline (IDOR).
-		if err := s.verifyAccessibleTemplate(ctx, tenantID, pid); err != nil {
-			s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
-				"tenant_id", input.TenantID, "workflow_id", input.WorkflowID)
-			return nil, fmt.Errorf("workflow not found: %w", err)
+		// would let a caller trigger another tenant's private scan workflow (IDOR).
+		if _, err := s.usableWorkflow(ctx, tenantID, pid); err != nil {
+			if errors.Is(err, shared.ErrNotFound) {
+				s.logger.Warn("SECURITY: cross-tenant quick-scan workflow attempt",
+					"tenant_id", tenantID.String(), "workflow_id", pid.String())
+			}
+			return nil, err
 		}
 	} else {
 		// SECURITY: single-scanner QuickScan bypasses CreateScan, so apply the
@@ -210,31 +245,15 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		}
 	}
 
-	// Create ephemeral asset group
-	timestamp := time.Now().Format("20060102-150405")
-	assetGroupName := fmt.Sprintf("quick-scan-%s", timestamp)
-
-	ag, err := assetgroup.NewAssetGroupWithTenant(
-		tenantID,
-		assetGroupName,
-		assetgroup.EnvironmentProduction, // Default for quick scan
-		assetgroup.CriticalityMedium,     // Default for quick scan
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create asset group: %w", err)
-	}
-	ag.UpdateDescription(fmt.Sprintf("Auto-created for quick scan with %d targets", len(input.Targets)))
-
-	if err := s.assetGroupRepo.Create(ctx, ag); err != nil {
-		return nil, fmt.Errorf("failed to create asset group: %w", err)
-	}
-
-	// Create ephemeral scan
-	scanName := fmt.Sprintf("Quick Scan - %s", timestamp)
-	sc, err := scan.NewScan(tenantID, scanName, ag.ID(), scanType)
+	// The scan the run belongs to. It is ad hoc (owner decision D10): not a
+	// configuration, hidden from the Configurations list until someone saves
+	// it (SaveQuickScan). No asset group is created: the targets live on the
+	// scan, which both trigger paths read.
+	sc, err := scan.NewScan(tenantID, quickScanName(time.Now(), shared.NewID()), shared.ID{}, scanType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan: %w", err)
 	}
+	sc.AdHoc = true
 
 	sc.Description = fmt.Sprintf("Quick scan of %d targets", len(input.Targets))
 
@@ -246,7 +265,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	sc.SetTargets(input.Targets)
 
 	if scanType == scan.ScanTypeWorkflow {
-		if err := sc.SetWorkflow(*pipelineID); err != nil {
+		if err := sc.SetWorkflow(*scanWorkflowID); err != nil {
 			return nil, fmt.Errorf("failed to set workflow: %w", err)
 		}
 	} else {
@@ -262,6 +281,15 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 
 	if len(input.Tags) > 0 {
 		sc.SetTags(input.Tags)
+	}
+
+	// Refused before the ad-hoc scan is stored: a wildcard pattern only for
+	// a tool that takes it as a root domain.
+	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
+		return nil, err
+	}
+	if err := s.applyIntensity(ctx, sc, input.Intensity); err != nil {
+		return nil, err
 	}
 
 	if input.CreatedBy != "" {
@@ -296,12 +324,36 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	)
 
 	return &QuickScanResult{
-		PipelineRunID: run.ID.String(),
-		ScanID:        sc.ID.String(),
-		AssetGroupID:  ag.ID().String(),
-		Status:        string(run.Status),
-		TargetCount:   len(input.Targets),
+		ScanRunID:   run.ID.String(),
+		ScanID:      sc.ID.String(),
+		Status:      string(run.Status),
+		TargetCount: len(input.Targets),
 	}, nil
+}
+
+// quickScanName names an ad-hoc quick scan. The time alone collided when two
+// quick scans started in the same second (409 "scan with this name already
+// exists", 22c B8); a short random suffix keeps every name unique.
+func quickScanName(now time.Time, nonce shared.ID) string {
+	return fmt.Sprintf("Quick Scan - %s-%s", now.Format("20060102-150405"), strings.ReplaceAll(nonce.String(), "-", "")[24:])
+}
+
+// SaveQuickScan turns an ad-hoc quick scan into a saved configuration named
+// name ("Save as scan"). Its runs stay attached; it then appears in the
+// Configurations list and can be edited and scheduled like any other.
+func (s *Service) SaveQuickScan(ctx context.Context, tenantID, scanID, name string) (*scan.Scan, error) {
+	sc, err := s.GetScan(ctx, tenantID, scanID)
+	if err != nil {
+		return nil, err
+	}
+	if err := sc.SaveAsConfiguration(name); err != nil {
+		return nil, err
+	}
+	if err := s.scanRepo.Update(ctx, sc); err != nil {
+		return nil, err
+	}
+	s.logger.Info("quick scan saved as configuration", "scan_id", sc.ID.String(), "tenant_id", tenantID)
+	return sc, nil
 }
 
 // =============================================================================
@@ -310,9 +362,9 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 
 // OverviewStats represents aggregated statistics for scan management overview.
 type OverviewStats struct {
-	Pipelines StatusCounts `json:"pipelines"`
-	Scans     StatusCounts `json:"scans"`
-	Jobs      StatusCounts `json:"jobs"`
+	ScanRuns StatusCounts `json:"scan_runs"`
+	Scans    StatusCounts `json:"scans"`
+	Jobs     StatusCounts `json:"jobs"`
 }
 
 // StatusCounts represents counts grouped by status.
@@ -321,12 +373,13 @@ type StatusCounts struct {
 	Running   int64 `json:"running"`
 	Pending   int64 `json:"pending"`
 	Completed int64 `json:"completed"`
+	Partial   int64 `json:"partial"`
 	Failed    int64 `json:"failed"`
 	Canceled  int64 `json:"canceled"`
 }
 
 // GetOverviewStats returns aggregated statistics for scan management.
-// This includes pipeline runs, step runs (scans), and commands (jobs).
+// This includes scan runs, step runs (scans), and commands (jobs).
 func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*OverviewStats, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -335,12 +388,12 @@ func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*Overv
 
 	stats := &OverviewStats{}
 
-	// Get pipeline run stats
-	pipelineStats, err := s.getPipelineRunStats(ctx, tid)
+	// Get scan run stats
+	pipelineStats, err := s.getScanRunStats(ctx, tid)
 	if err != nil {
-		s.logger.Warn("failed to get pipeline stats", "error", err)
+		s.logger.Warn("failed to get scan run stats", "error", err)
 	} else {
-		stats.Pipelines = pipelineStats
+		stats.ScanRuns = pipelineStats
 	}
 
 	// Get step run (scan) stats
@@ -362,9 +415,9 @@ func (s *Service) GetOverviewStats(ctx context.Context, tenantID string) (*Overv
 	return stats, nil
 }
 
-// getPipelineRunStats counts pipeline runs by status.
+// getScanRunStats counts scan runs by status.
 // OPTIMIZED: Uses single aggregation query instead of N queries per status.
-func (s *Service) getPipelineRunStats(ctx context.Context, tenantID shared.ID) (StatusCounts, error) {
+func (s *Service) getScanRunStats(ctx context.Context, tenantID shared.ID) (StatusCounts, error) {
 	// Use optimized single-query aggregation from repository
 	stats, err := s.runRepo.GetStatsByTenant(ctx, tenantID)
 	if err != nil {
@@ -376,6 +429,7 @@ func (s *Service) getPipelineRunStats(ctx context.Context, tenantID shared.ID) (
 		Pending:   stats.Pending,
 		Running:   stats.Running,
 		Completed: stats.Completed,
+		Partial:   stats.Partial,
 		Failed:    stats.Failed,
 		Canceled:  stats.Canceled,
 	}, nil
@@ -395,6 +449,7 @@ func (s *Service) getStepRunStats(ctx context.Context, tenantID shared.ID) (Stat
 		Pending:   stats.Pending,
 		Running:   stats.Running,
 		Completed: stats.Completed,
+		Partial:   stats.Partial,
 		Failed:    stats.Failed,
 		Canceled:  stats.Canceled,
 	}, nil
@@ -423,7 +478,7 @@ func (s *Service) getCommandStats(ctx context.Context, tenantID shared.ID) (Stat
 // Retry Operations
 // =============================================================================
 
-// RetryScanRun creates a new pipeline run for a scan as part of automatic retry.
+// RetryScanRun creates a new scan run for a scan as part of automatic retry.
 // Called by the ScanRetryController when a previous run failed and the scan
 // has retry budget remaining.
 //
@@ -445,6 +500,9 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 	}
 
 	// Trigger a new run via the standard trigger path, with retry attempt in context
+	// The new run is created with its retry_attempt. Setting it afterwards
+	// with a full-row update raced the run itself: a run that already finished
+	// was not updated, kept retry_attempt 0, and the retry budget never ran out.
 	run, err := s.TriggerScan(ctx, TriggerScanExecInput{
 		TenantID: tenantID.String(),
 		ScanID:   scanID.String(),
@@ -453,18 +511,12 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 			"retry_attempt": retryAttempt,
 			"retried_at":    time.Now().Unix(),
 		},
+		RetryAttempt: retryAttempt,
+		// A retry is started by the platform, not by a person.
+		TriggerType: scanworkflow.TriggerTypeSystem,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to trigger retry: %w", err)
-	}
-
-	// Persist retry_attempt on the new run (TriggerScan creates it via pipeline)
-	// The trigger path doesn't currently set RetryAttempt, so we update it here.
-	if run != nil {
-		run.RetryAttempt = retryAttempt
-		if err := s.runRepo.Update(ctx, run); err != nil {
-			s.logger.Warn("failed to persist retry_attempt on retried run", "run_id", run.ID.String(), "error", err)
-		}
 	}
 
 	s.logger.Info("scan retry triggered",

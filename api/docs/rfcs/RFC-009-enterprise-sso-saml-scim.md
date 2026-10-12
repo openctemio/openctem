@@ -1,6 +1,7 @@
 # RFC-009 — Enterprise SSO: SAML 2.0 + SCIM 2.0 provisioning
 
-> Status: **Proposed**. Adds enterprise identity to OpenCTEM beyond the current
+> Status: **Proposed**; SCIM 9a–9c shipped with its admin UI (#198, #202, #203), SAML 9d–9e shipped (#204, #249: SP-initiated login + ACS; per-tenant SAML configuration now lives in the platform admin console, `/api/v1/admin/tenants/{tenantId}/sso/saml`, and changes wait for an organization owner's approval, #827); 9f (IdP-initiated login, SLO) not shipped (checked 2026-10-04).
+> Adds enterprise identity to OpenCTEM beyond the current
 > OIDC/OAuth SSO (`internal/app/auth/sso.go`): inbound **SAML 2.0** login and
 > **SCIM 2.0** automated user provisioning/deprovisioning.
 
@@ -126,6 +127,11 @@ membership created, `active:false` suspends + revokes sessions, uniqueness →
   member; `owner` never assignable. PATCH supports Okta value-arrays + Azure
   `members[value eq "id"]` path filters. Verified end-to-end against real
   Postgres (provision → group → role reconcile → revert).
+  Amended 2026-10-04 (23b S-H1): the admin role is granted or removed only
+  through a mapping the owner configured (owner-only to add, change or remove
+  a mapping to admin; no "admin" name default; provenance in migration
+  `000911`), and mapping saves plus SCIM role changes are audited at High.
+  Details in `docs/architecture/scim-provisioning.md`.
 - **UI** — admin screen to mint/revoke the token + show the SCIM base URL.
   _(deferred)_
 

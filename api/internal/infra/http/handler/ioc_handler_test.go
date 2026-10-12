@@ -280,15 +280,15 @@ func TestIOCHandler_List_ReturnsPagedShape(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	h.List(w, requestWithTenant("GET", "/iocs?limit=10&offset=0", "", tenantID))
+	h.List(w, requestWithTenant("GET", "/iocs?per_page=10&page=1", "", tenantID))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d", w.Code)
 	}
 	var resp struct {
-		Items  []iocResponse `json:"items"`
-		Limit  int           `json:"limit"`
-		Offset int           `json:"offset"`
+		Items   []iocResponse `json:"items"`
+		Page    int           `json:"page"`
+		PerPage int           `json:"per_page"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -296,8 +296,20 @@ func TestIOCHandler_List_ReturnsPagedShape(t *testing.T) {
 	if len(resp.Items) != 3 {
 		t.Fatalf("items count = %d, want 3", len(resp.Items))
 	}
-	if resp.Limit != 10 || resp.Offset != 0 {
+	if resp.PerPage != 10 || resp.Page != 1 {
 		t.Fatalf("pagination echoed wrong: %+v", resp)
+	}
+
+	// The panel loads up to 200 indicators; more is capped, a bad page refused.
+	w = httptest.NewRecorder()
+	h.List(w, requestWithTenant("GET", "/iocs?per_page=5000", "", tenantID))
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || resp.PerPage != maxIOCPage {
+		t.Fatalf("per_page=5000 -> %+v %v, want the cap %d", resp, err, maxIOCPage)
+	}
+	w = httptest.NewRecorder()
+	h.List(w, requestWithTenant("GET", "/iocs?page=0", "", tenantID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("page=0 -> %d, want 400", w.Code)
 	}
 }
 

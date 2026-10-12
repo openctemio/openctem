@@ -1,20 +1,19 @@
-# RFC-013 — DefectDojo co-existence connector (buy the breadth, build the brain)
+# RFC-013 — DefectDojo co-existence connector
 
-> Status: **Proposed** (Phase 1 — converter — shipped alongside this doc)
+> Status: **Implemented** (Phases 1–2): converter (`internal/infra/importer/defectdojo/converter.go`), REST client, scheduled per-tenant sync worker, manual `POST /api/v1/integrations/defectdojo/sync`, and the DefectDojo-dependency ratio (`finding_analytics_repository.go`). Phase 3 (switching the connector off) is an operator choice, not code work.
 
-## Problem & strategy
+## Problem & approach
 
-OpenCTEM is strong at the **CTEM lifecycle** (EASM discovery, EPSS+KEV+reachability
-prioritization, attack-path, validation/BAS, mobilization) but weak at one thing
-DefectDojo has spent years on: **scanner breadth** — DefectDojo parses **200+**
-tools; OpenCTEM has ~7 native. Rather than block on writing hundreds of parsers,
-the early-phase strategy is **symbiosis**:
+DefectDojo parses **200+** scanner output formats; OpenCTEM has ~7 native
+parsers. Rather than block on writing hundreds of parsers, organizations that
+already run DefectDojo can use it as an ingestion front-end:
 
-- **DefectDojo = the ingestion front-end** (its parser breadth).
-- **OpenCTEM = the CTEM brain + the system of record** (everything users act on).
+- **DefectDojo = an ingestion front-end** (its parser breadth).
+- **OpenCTEM = the system of record** (everything users act on: prioritization,
+  validation, mobilization).
 
-Crucially, the user's intent is to **phase DefectDojo out over time**. That is
-only achievable if we design against lock-in from day one.
+The connector is designed so DefectDojo can be phased out over time, which is
+only achievable if it is designed against lock-in from day one.
 
 ## The one non-negotiable principle
 
@@ -43,8 +42,8 @@ removed. Four guardrails enforce removability:
 | **2 — Shrink** | native parsers for the tools *actually in use* (freq-ranked, not all 200); optionally push prioritization/validation results *back* to DD | native covers ≥ ~80% of finding volume |
 | **3 — Cut** | flip a flag to disable the connector; DD becomes optional / removed | DD-dependency ratio < ~10–15% |
 
-The goal is **not** parser parity with DefectDojo. It is covering the 10–20 tools
-that make up ~90% of a given customer's volume, after which DefectDojo has no
+The goal is **not** to reimplement every DefectDojo parser. It is covering the 10–20 tools
+that make up ~90% of a given customer's volume, after which the DefectDojo connector has no
 reason to remain.
 
 ## Design
@@ -56,7 +55,7 @@ DefectDojo REST API  ──(pull, per-tenant)──►  connector  ──CTIS─
    /api/v2/findings/                          (converter)          (async, RFC-005)
 ```
 
-- **Per-tenant + tenant-isolated** (standing rule): DefectDojo creds are a
+- **Per-tenant + tenant-isolated** (platform rule): DefectDojo creds are a
   `defectdojo` **integration** (AES-encrypted, `ListByProvider(tenantID)`); the
   ingest tenant is the authenticated tenant, never anything in the DD payload.
 - **Converter** (`internal/infra/importer/defectdojo/`) mirrors

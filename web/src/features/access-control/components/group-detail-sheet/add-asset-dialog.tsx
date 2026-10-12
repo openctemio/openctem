@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -79,7 +80,7 @@ export function AddAssetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Assign Asset</DialogTitle>
           <DialogDescription>
@@ -87,114 +88,118 @@ export function AddAssetDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Asset Selection */}
-          <div className="space-y-2">
-            <Label>Select Asset</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search for assets..."
-                className="ps-9 mb-2"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+        <DialogBody>
+          <div className="space-y-4 py-4">
+            {/* Asset Selection */}
+            <div className="space-y-2">
+              <Label>Select Asset</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search for assets..."
+                  className="ps-9 mb-2"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
 
-            <div className="border rounded-md max-h-[200px] overflow-y-auto p-1 space-y-1">
-              {isLoading ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
-                  Loading assets...
-                </div>
-              ) : assets.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">No assets found</div>
-              ) : (
-                assets.map((asset) => {
-                  const assigned = isAssetAssigned(asset.id)
-                  const selected = selectedAssetId === asset.id
+              <div className="border rounded-md max-h-[200px] overflow-y-auto p-1 space-y-1">
+                {isLoading ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
+                    Loading assets...
+                  </div>
+                ) : assets.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    No assets found
+                  </div>
+                ) : (
+                  assets.map((asset) => {
+                    const assigned = isAssetAssigned(asset.id)
+                    const selected = selectedAssetId === asset.id
 
-                  return (
-                    <div
-                      key={asset.id}
-                      className={`
+                    return (
+                      <div
+                        key={asset.id}
+                        className={`
                         flex items-center justify-between p-2 rounded-sm cursor-pointer text-sm
                         ${assigned ? 'opacity-50 cursor-not-allowed bg-muted/50' : 'hover:bg-muted'}
                         ${selected ? 'bg-primary/10 border-primary/20 border' : ''}
                       `}
-                      onClick={() => !assigned && setSelectedAssetId(asset.id)}
-                    >
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <div className="flex flex-col truncate">
-                          <span className="font-medium truncate">{asset.name}</span>
-                          <span className="text-xs text-muted-foreground capitalize">
-                            {asset.type}
-                          </span>
+                        onClick={() => !assigned && setSelectedAssetId(asset.id)}
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <Box className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex flex-col truncate">
+                            <span className="font-medium truncate">{asset.name}</span>
+                            <span className="text-xs text-muted-foreground capitalize">
+                              {asset.type}
+                            </span>
+                          </div>
                         </div>
+                        {assigned && (
+                          <Badge variant="secondary" className="text-[10px] h-5">
+                            Assigned
+                          </Badge>
+                        )}
                       </div>
-                      {assigned && (
-                        <Badge variant="secondary" className="text-[10px] h-5">
-                          Assigned
-                        </Badge>
-                      )}
-                    </div>
-                  )
-                })
+                    )
+                  })
+                )}
+              </div>
+              {selectedAssetId && (
+                <p className="text-xs text-muted-foreground text-end">1 asset selected</p>
               )}
             </div>
-            {selectedAssetId && (
-              <p className="text-xs text-muted-foreground text-end">1 asset selected</p>
-            )}
-          </div>
 
-          {/* Ownership Type */}
-          <div className="space-y-2">
-            <Label>Ownership Type</Label>
-            <Select
-              value={ownershipType}
-              onValueChange={(value: AssetOwnershipType) => setOwnershipType(value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="primary">
-                  <div className="flex flex-col">
-                    <span className="font-medium">Primary</span>
-                    <span className="text-xs text-muted-foreground">
-                      Main owner with full access and responsibility
-                    </span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="secondary">
-                  <div className="flex flex-col">
-                    <span className="font-medium">Secondary</span>
-                    <span className="text-xs text-muted-foreground">
-                      Co-owner with full access and shared responsibility
-                    </span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="stakeholder">
-                  <div className="flex flex-col">
-                    <span className="font-medium">Stakeholder</span>
-                    <span className="text-xs text-muted-foreground">
-                      View access, receives critical notifications
-                    </span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="informed">
-                  <div className="flex flex-col">
-                    <span className="font-medium">Informed</span>
-                    <span className="text-xs text-muted-foreground">
-                      No direct access, receives summary notifications
-                    </span>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Ownership Type */}
+            <div className="space-y-2">
+              <Label>Ownership Type</Label>
+              <Select
+                value={ownershipType}
+                onValueChange={(value: AssetOwnershipType) => setOwnershipType(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="primary">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Primary</span>
+                      <span className="text-xs text-muted-foreground">
+                        Main owner with full access and responsibility
+                      </span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="secondary">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Secondary</span>
+                      <span className="text-xs text-muted-foreground">
+                        Co-owner with full access and shared responsibility
+                      </span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="stakeholder">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Stakeholder</span>
+                      <span className="text-xs text-muted-foreground">
+                        View access, receives critical notifications
+                      </span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="informed">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Informed</span>
+                      <span className="text-xs text-muted-foreground">
+                        No direct access, receives summary notifications
+                      </span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

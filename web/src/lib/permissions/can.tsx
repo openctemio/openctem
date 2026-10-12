@@ -40,6 +40,7 @@
 import { type ReactNode, type ReactElement, cloneElement, isValidElement, Children } from 'react'
 import { usePermissions } from './hooks'
 import { type PermissionString, type RoleString, getPermissionLabel } from './constants'
+import { type ApiRouteKey, passesRouteGate, routeGate } from './can-mutate'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // ============================================
@@ -53,7 +54,16 @@ interface CanBaseProps {
    * Permission(s) required to render children.
    * If array, user needs ANY of the permissions (OR logic).
    */
-  permission: PermissionString | string | (PermissionString | string)[]
+  permission?: PermissionString | string | (PermissionString | string)[]
+
+  /**
+   * Mutating API route(s) the control calls, as keyed in
+   * src/config/api-route-permissions.json (generated from the API route
+   * table). The control shows only when the caller passes every route's
+   * gate: permissions and role, exactly as the API checks them. Prefer this
+   * over `permission` for buttons that write.
+   */
+  route?: ApiRouteKey | ApiRouteKey[]
 
   /**
    * If true, user needs ALL permissions (AND logic).
@@ -131,9 +141,12 @@ function isDisableableElement(element: ReactElement): boolean {
 // ============================================
 
 function generateTooltipMessage(
-  permission: PermissionString | string | (PermissionString | string)[],
+  permission: PermissionString | string | (PermissionString | string)[] | undefined,
   requireAll: boolean
 ): string {
+  if (permission === undefined) {
+    return 'You do not have access to this action'
+  }
   if (Array.isArray(permission)) {
     const labels = permission.map(getPermissionLabel)
     if (requireAll) {
@@ -220,8 +233,8 @@ function DisabledWrapper({ children, tooltip }: DisabledWrapperProps) {
  * Permission-based conditional rendering component
  */
 export function Can(props: CanProps): ReactNode {
-  const { permission, requireAll = false, minRole, children, mode = 'hide' } = props
-  const { can, canAny, canAll, isAtLeast, isLoading, tenantRole } = usePermissions()
+  const { permission, route, requireAll = false, minRole, children, mode = 'hide' } = props
+  const { permissions, can, canAny, canAll, isAtLeast, isLoading, tenantRole } = usePermissions()
 
   // While permissions are loading, hide content by default
   // Exception: owner/admin bypass (they always have access)
@@ -237,11 +250,16 @@ export function Can(props: CanProps): ReactNode {
   }
 
   // Check permission
-  let hasPermission: boolean
+  let hasPermission = true
   if (Array.isArray(permission)) {
     hasPermission = requireAll ? canAll(...permission) : canAny(...permission)
-  } else {
+  } else if (permission !== undefined) {
     hasPermission = can(permission)
+  }
+  if (route !== undefined) {
+    const routes = Array.isArray(route) ? route : [route]
+    hasPermission =
+      hasPermission && routes.every((r) => passesRouteGate(routeGate(r), permissions, tenantRole))
   }
 
   // A minRole requirement is ANDed with the permission check — the backend

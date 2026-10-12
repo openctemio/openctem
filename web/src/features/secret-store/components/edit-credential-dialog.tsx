@@ -16,6 +16,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -32,11 +34,13 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
 import {
+  useRotateSecretStoreCredential,
   useUpdateSecretStoreCredential,
   invalidateSecretStoreCache,
 } from '@/lib/api/secret-store-hooks'
-import { CREDENTIAL_TYPE_DISPLAY_NAMES } from '@/lib/api/secret-store-types'
+import { CREDENTIAL_TYPE_DISPLAY_NAMES, expiryDateToRFC3339 } from '@/lib/api/secret-store-types'
 import type {
+  RotateSecretStoreCredentialRequest,
   SecretStoreCredential,
   UpdateSecretStoreCredentialRequest,
 } from '@/lib/api/secret-store-types'
@@ -98,7 +102,13 @@ export function EditCredentialDialog({
     },
   })
 
-  const { trigger: updateCredential, isMutating } = useUpdateSecretStoreCredential(credential.id)
+  const { trigger: updateCredential, isMutating: isUpdating } = useUpdateSecretStoreCredential(
+    credential.id
+  )
+  const { trigger: rotateCredential, isMutating: isRotating } = useRotateSecretStoreCredential(
+    credential.id
+  )
+  const isMutating = isUpdating || isRotating
 
   // Reset form when credential changes
   useEffect(() => {
@@ -118,22 +128,32 @@ export function EditCredentialDialog({
   }
 
   const onSubmit = async (data: FormData) => {
-    const request: UpdateSecretStoreCredentialRequest = {
-      name: data.name,
-      description: data.description,
-      expires_at: data.expires_at || undefined,
+    // Metadata: send only what changed. Clearing is explicit ('' for the
+    // description, null for the expiry), never a silently dropped field.
+    const request: UpdateSecretStoreCredentialRequest = {}
+    if (data.name !== credential.name) request.name = data.name
+    if ((data.description ?? '') !== (credential.description ?? '')) {
+      request.description = data.description ?? ''
     }
+    const storedExpiry = credential.expires_at ? credential.expires_at.split('T')[0] : ''
+    if ((data.expires_at ?? '') !== storedExpiry) {
+      request.expires_at = expiryDateToRFC3339(data.expires_at)
+    }
+
+    // Secret: a new value replaces the stored one through the rotate endpoint
+    // (the metadata PUT never carried it, so "updating" a secret did nothing).
+    const rotation: RotateSecretStoreCredentialRequest = {}
 
     // Add credential-specific data based on type
     switch (credential.credential_type) {
       case 'api_key':
         if (data.api_key_value) {
-          request.api_key = { key: data.api_key_value }
+          rotation.api_key = { key: data.api_key_value }
         }
         break
       case 'basic_auth':
         if (data.basic_username || data.basic_password) {
-          request.basic_auth = {
+          rotation.basic_auth = {
             username: data.basic_username || '',
             password: data.basic_password || '',
           }
@@ -141,12 +161,12 @@ export function EditCredentialDialog({
         break
       case 'bearer_token':
         if (data.bearer_token) {
-          request.bearer_token = { token: data.bearer_token }
+          rotation.bearer_token = { token: data.bearer_token }
         }
         break
       case 'ssh_key':
         if (data.ssh_private_key) {
-          request.ssh_key = {
+          rotation.ssh_key = {
             private_key: data.ssh_private_key,
             passphrase: data.ssh_passphrase || undefined,
           }
@@ -154,7 +174,7 @@ export function EditCredentialDialog({
         break
       case 'aws_role':
         if (data.aws_role_arn) {
-          request.aws_role = {
+          rotation.aws_role = {
             role_arn: data.aws_role_arn,
             external_id: data.aws_external_id || undefined,
           }
@@ -162,12 +182,12 @@ export function EditCredentialDialog({
         break
       case 'gcp_service_account':
         if (data.gcp_json_key) {
-          request.gcp_service_account = { json_key: data.gcp_json_key }
+          rotation.gcp_service_account = { json_key: data.gcp_json_key }
         }
         break
       case 'azure_service_principal':
         if (data.azure_tenant_id || data.azure_client_id || data.azure_client_secret) {
-          request.azure_service_principal = {
+          rotation.azure_service_principal = {
             tenant_id: data.azure_tenant_id || '',
             client_id: data.azure_client_id || '',
             client_secret: data.azure_client_secret || '',
@@ -176,7 +196,7 @@ export function EditCredentialDialog({
         break
       case 'github_app':
         if (data.github_app_id || data.github_installation_id || data.github_private_key) {
-          request.github_app = {
+          rotation.github_app = {
             app_id: data.github_app_id || '',
             installation_id: data.github_installation_id || '',
             private_key: data.github_private_key || '',
@@ -185,14 +205,26 @@ export function EditCredentialDialog({
         break
       case 'gitlab_token':
         if (data.gitlab_token) {
-          request.gitlab_token = { token: data.gitlab_token }
+          rotation.gitlab_token = { token: data.gitlab_token }
         }
         break
     }
 
+    const hasMetadata = Object.keys(request).length > 0
+    const hasRotation = Object.keys(rotation).length > 0
+    if (!hasMetadata && !hasRotation) {
+      toast.info('No changes to save')
+      return
+    }
+
     try {
-      await updateCredential(request)
-      toast.success(`Credential "${data.name}" updated`)
+      if (hasMetadata) await updateCredential(request)
+      if (hasRotation) await rotateCredential(rotation)
+      toast.success(
+        hasRotation
+          ? `Credential "${data.name}" rotated: the new secret is used from the next fetch`
+          : `Credential "${data.name}" updated`
+      )
       await invalidateSecretStoreCache()
       setShowSecrets({})
       onOpenChange(false)
@@ -579,87 +611,88 @@ export function EditCredentialDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Edit Credential</DialogTitle>
           <DialogDescription>
             Update the credential configuration. Leave secret fields empty to keep existing values.
           </DialogDescription>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
+            </Badge>
+          </div>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 mb-4">
-          <Badge variant="outline">
-            {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
-          </Badge>
-        </div>
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
             {/* Basic Info */}
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Credential name" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <DialogBody className="space-y-6">
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Credential name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (optional)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Describe what this credential is used for"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description (optional)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Describe what this credential is used for"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="expires_at"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Expiration Date (optional)</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                <FormField
+                  control={form.control}
+                  name="expires_at"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Expiration Date (optional)</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
-            <Separator />
+              <Separator />
 
-            {/* Credential-specific fields */}
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium">
-                Update {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
-              </h4>
+              {/* Credential-specific fields */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">
+                  Update {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
+                </h4>
 
-              <Alert>
-                <AlertDescription>
-                  Leave fields empty to keep the current values. Enter new values to update.
-                </AlertDescription>
-              </Alert>
+                <Alert>
+                  <AlertDescription>
+                    Leave fields empty to keep the current values. Enter new values to update.
+                  </AlertDescription>
+                </Alert>
 
-              {renderCredentialFields()}
-            </div>
+                {renderCredentialFields()}
+              </div>
+            </DialogBody>
 
             <DialogFooter>
               <Button
@@ -675,7 +708,7 @@ export function EditCredentialDialog({
                 Save Changes
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

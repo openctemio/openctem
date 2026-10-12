@@ -11,6 +11,7 @@ import type {
   ChangePasswordInput,
   RecoveryCodesResponse,
   TwoFactorDisableInput,
+  TwoFactorEnableInput,
   TwoFactorStatus,
   TwoFactorSetupResponse,
 } from '../types/account.types'
@@ -99,8 +100,8 @@ function useTwoFactorMutation<TArgs extends unknown[], TResult>(
 }
 
 const startSetup = () => post<TwoFactorSetupResponse>(userEndpoints.twoFactorSetup())
-const enable = async (code: string) =>
-  (await post<RecoveryCodesResponse>(userEndpoints.twoFactorEnable(), { code })).recovery_codes
+const enable = async (input: TwoFactorEnableInput) =>
+  (await post<RecoveryCodesResponse>(userEndpoints.twoFactorEnable(), input)).recovery_codes
 const disable = (input: TwoFactorDisableInput) =>
   post<{ message: string }>(userEndpoints.twoFactorDisable(), input)
 const regenerate = async (code: string) =>
@@ -114,8 +115,10 @@ export function useSetupTwoFactor() {
 }
 
 /**
- * Confirm the pending secret with a code. Returns the recovery codes (shown
- * once). The server signs out every other session.
+ * Confirm the pending secret with the current password and a code. Returns
+ * the recovery codes (shown once). The server signs out every other session.
+ * The password is required so a stolen session alone cannot bind an
+ * authenticator and lock the real user out.
  */
 export function useEnableTwoFactor() {
   const { mutate, isPending } = useTwoFactorMutation(enable)

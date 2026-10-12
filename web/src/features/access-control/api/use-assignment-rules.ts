@@ -37,8 +37,8 @@ export function useAssignmentRules(filters?: AssignmentRuleFilters) {
   const { data, error, isLoading, mutate } = useSWR<{
     rules: AssignmentRule[]
     total_count: number
-    limit: number
-    offset: number
+    page: number
+    per_page: number
   }>(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30000,

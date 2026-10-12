@@ -149,8 +149,10 @@ export function useDashboardStats(tenantId: string | null) {
   const shouldFetch = tenantId && canReadDashboard
 
   const { data, error, isLoading, mutate } = useSWR<DashboardStatsResponse>(
-    shouldFetch ? ['dashboard-stats', tenantId] : null,
-    () => get<DashboardStatsResponse>(endpoints.dashboard.stats()),
+    // The endpoint's URL, shared with every other reader of it (the sidebar
+    // badges); a tenant switch drops every cached answer (tenant-provider).
+    shouldFetch ? endpoints.dashboard.stats() : null,
+    (url: string) => get<DashboardStatsResponse>(url),
     {
       revalidateOnFocus: false,
       dedupingInterval: 30000, // 30 seconds
@@ -207,11 +209,11 @@ export function useMTTRMetrics(tenantId: string | null) {
   const { can } = usePermissions()
   const hasPerm = can(Permission.DashboardRead)
 
-  // Tenant-aware SWR key prevents cross-tenant cache leak when user
-  // switches tenants (URL alone is the same; tenant scope comes from JWT).
+  // Keyed by the URL: a tenant switch drops every cached answer
+  // (tenant-provider), so the key needs no tenant part.
   return useSWR<MTTRMetrics>(
-    tenantId && hasPerm ? (['/api/v1/dashboard/mttr', tenantId] as const) : null,
-    ([url]) => get<MTTRMetrics>(url),
+    tenantId && hasPerm ? '/api/v1/dashboard/mttr' : null,
+    (url: string) => get<MTTRMetrics>(url),
     { revalidateOnFocus: false, dedupingInterval: 30000 }
   )
 }
@@ -229,10 +231,10 @@ export function useRiskVelocity(tenantId: string | null, weeks = 12) {
   const { can } = usePermissions()
   const hasPerm = can(Permission.DashboardRead)
 
-  // Tenant-aware SWR key — see useMTTRMetrics rationale.
+  // Keyed by the URL — see useMTTRMetrics.
   return useSWR<RiskVelocityPoint[]>(
-    tenantId && hasPerm ? ([`/api/v1/dashboard/velocity?weeks=${weeks}`, tenantId] as const) : null,
-    ([url]) => get<RiskVelocityPoint[]>(url),
+    tenantId && hasPerm ? `/api/v1/dashboard/velocity?weeks=${weeks}` : null,
+    (url: string) => get<RiskVelocityPoint[]>(url),
     { revalidateOnFocus: false, dedupingInterval: 30000 }
   )
 }

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -21,14 +22,17 @@ type ClientConfig struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
+	// RedisTLS is nil for a plaintext Redis (redis.TLSConfig).
+	RedisTLS *tls.Config
 }
 
 // NewClient creates a new job client for enqueueing tasks.
 func NewClient(cfg ClientConfig, log *logger.Logger) (*Client, error) {
 	redisOpt := asynq.RedisClientOpt{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
+		Addr:      cfg.RedisAddr,
+		Password:  cfg.RedisPassword,
+		DB:        cfg.RedisDB,
+		TLSConfig: cfg.RedisTLS,
 	}
 
 	client := asynq.NewClient(redisOpt)

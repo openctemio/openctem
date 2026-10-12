@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -261,10 +262,10 @@ func TestSuppressionHandler_ApproveRule(t *testing.T) {
 	rule, _ := svc.CreateRule(context.Background(), input)
 
 	t.Run("approve pending rule", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+rule.ID().String()+"/approve", bytes.NewBufferString("{}"))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+rule.ID().String()+"/approve", reviewedBody(rule))
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("id", rule.ID().String())
-		req = withSuppressionContext(req, tenantID, userID)
+		req = withSuppressionContext(req, tenantID, shared.NewID()) // a second person
 
 		rr := httptest.NewRecorder()
 		h.ApproveRule(rr, req)
@@ -286,7 +287,8 @@ func TestSuppressionHandler_ApproveRule(t *testing.T) {
 
 	t.Run("approve non-existent rule", func(t *testing.T) {
 		fakeID := shared.NewID()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+fakeID.String()+"/approve", bytes.NewBufferString("{}"))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+fakeID.String()+"/approve",
+			bytes.NewBufferString(`{"reviewed_updated_at":"2026-01-01T00:00:00Z"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("id", fakeID.String())
 		req = withSuppressionContext(req, tenantID, userID)
@@ -394,10 +396,10 @@ func TestSuppressionHandler_UpdateRule(t *testing.T) {
 
 	t.Run("update approved rule fails", func(t *testing.T) {
 		// First approve the rule
-		approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+rule.ID().String()+"/approve", bytes.NewBufferString("{}"))
+		approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+rule.ID().String()+"/approve", reviewedBody(rule))
 		approveReq.Header.Set("Content-Type", "application/json")
 		approveReq.SetPathValue("id", rule.ID().String())
-		approveReq = withSuppressionContext(approveReq, tenantID, userID)
+		approveReq = withSuppressionContext(approveReq, tenantID, shared.NewID()) // a second person
 		h.ApproveRule(httptest.NewRecorder(), approveReq)
 
 		// Now try to update
@@ -485,10 +487,12 @@ func TestSuppressionHandler_ListActiveRules(t *testing.T) {
 
 		// Approve only first 2
 		if i < 2 {
+			reviewed := rule.UpdatedAt()
 			svc.ApproveRule(context.Background(), suppression.ApproveRuleInput{
-				TenantID:   tenantID,
-				RuleID:     rule.ID(),
-				ApprovedBy: userID,
+				TenantID:          tenantID,
+				RuleID:            rule.ID(),
+				ApprovedBy:        shared.NewID(), // a second person
+				ReviewedUpdatedAt: &reviewed,
 			})
 		}
 	}
@@ -514,4 +518,9 @@ func TestSuppressionHandler_ListActiveRules(t *testing.T) {
 			t.Errorf("count = %v, want 2", resp["count"])
 		}
 	})
+}
+
+// reviewedBody is an approve request naming the version the approver saw.
+func reviewedBody(r *suppression.Rule) *bytes.Buffer {
+	return bytes.NewBufferString(`{"reviewed_updated_at":"` + r.UpdatedAt().Format(time.RFC3339Nano) + `"}`)
 }

@@ -7,7 +7,7 @@
 #   -> Scan CRUD -> Pipelines -> Stats -> Docker Log Check
 #
 # Prerequisites:
-#   - API running at localhost:8080 with AUTH_ALLOW_REGISTRATION=true
+#   - API running at localhost:8080 with the sign-up policy in self_service (TENANT_CREATION_MODE=self_service on a fresh database)
 #   - jq and curl installed
 #   - Docker running (for log check, optional)
 #
@@ -484,7 +484,7 @@ print_header "Section 8: Pipelines"
 if ! check_critical "Pipelines"; then :; else
 
 print_test "Create pipeline"
-do_request "POST" "/api/v1/pipelines" "{
+do_request "POST" "/api/v1/scan-workflows" "{
     \"name\": \"E2E Pipeline ${TIMESTAMP}\",
     \"description\": \"E2E test pipeline\",
     \"tags\": [\"e2e-test\"]
@@ -501,7 +501,7 @@ else
 fi
 
 print_test "List pipelines"
-do_request "GET" "/api/v1/pipelines" "" "Authorization: Bearer $ACCESS_TOKEN"
+do_request "GET" "/api/v1/scan-workflows" "" "Authorization: Bearer $ACCESS_TOKEN"
 if [ "$HTTP_CODE" = "200" ]; then
     print_success "List pipelines"
 else

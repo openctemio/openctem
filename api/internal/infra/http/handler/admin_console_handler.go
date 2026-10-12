@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
@@ -36,7 +36,7 @@ type AdminConsoleHandler struct {
 // NewAdminConsoleHandler creates the handler. cookieSecure mirrors
 // AUTH_COOKIE_SECURE (true in production, behind HTTPS).
 // refreshTokenCookie is the name of the normal sign-in refresh-token cookie
-// (AUTH_REFRESH_TOKEN_COOKIE_NAME): the console session starts from it.
+// (refresh_token): the console session starts from it.
 func NewAdminConsoleHandler(svc *adminconsole.Service, cookieSecure bool, refreshTokenCookie string, log *logger.Logger) *AdminConsoleHandler {
 	if refreshTokenCookie == "" {
 		refreshTokenCookie = "refresh_token"
@@ -226,11 +226,12 @@ func (h *AdminConsoleHandler) ChangePassword(w http.ResponseWriter, r *http.Requ
 	}
 	if err := h.svc.ChangePassword(r.Context(), a, req.CurrentPassword, req.NewPassword, clientInfo(r)); err != nil {
 		switch {
-		case errors.Is(err, app.ErrPasswordMismatch):
+		case errors.Is(err, auth.ErrPasswordMismatch):
 			apierror.BadRequest("Current password is incorrect").WriteJSON(w)
 		case errors.Is(err, password.ErrPasswordTooShort), errors.Is(err, password.ErrPasswordNoUppercase),
 			errors.Is(err, password.ErrPasswordNoLowercase), errors.Is(err, password.ErrPasswordNoNumber),
-			errors.Is(err, password.ErrPasswordNoSpecial):
+			errors.Is(err, password.ErrPasswordNoSpecial), errors.Is(err, password.ErrPasswordCommon),
+			errors.Is(err, password.ErrPasswordTooLong):
 			apierror.BadRequest("The new password does not meet the password policy: " + sanitizeLogField(errors.Unwrap(err).Error())).WriteJSON(w)
 		default:
 			h.logger.Error("admin change password", "error", sanitizeLogField(err.Error()))

@@ -33,6 +33,17 @@ db_url() {
     "${DB_NAME:-openctem}" "${DB_SSLMODE:-disable}"
 }
 
+# Migrations connect as the schema owner (D-6, api/docs/deployment/database-roles.md):
+# DATABASE_MIGRATE_URL, or DB_MIGRATE_USER/DB_MIGRATE_PASSWORD, and the API keeps
+# the least-privilege DB_USER. Without either, migrations use DB_USER as before.
+migrate_url() {
+  if [ -n "${DATABASE_MIGRATE_URL:-}" ]; then printf '%s' "$DATABASE_MIGRATE_URL"; return; fi
+  if [ -z "${DB_MIGRATE_USER:-}" ]; then db_url; return; fi
+  printf 'postgres://%s:%s@%s:%s/%s?sslmode=%s' \
+    "${DB_MIGRATE_USER}" "${DB_MIGRATE_PASSWORD:-}" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
+    "${DB_NAME:-openctem}" "${DB_SSLMODE:-disable}"
+}
+
 # Migrations under a lock that NOBODY WAITS ON INSIDE POSTGRES.
 # golang-migrate's own lock is a blocking pg_advisory_lock(): a second replica
 # sits in a running statement, and CREATE INDEX CONCURRENTLY (e.g. 000143) waits
@@ -46,7 +57,7 @@ migrate_locked() {
   for i in $(seq 1 150); do
     # (Re)open the session if there is none: the DB may not be up yet.
     if [ -z "${PSQL_PID:-}" ] || ! kill -0 "$PSQL_PID" 2>/dev/null; then
-      coproc PSQL { psql "$(db_url)" -qtAX 2>&1; }
+      coproc PSQL { psql "$(migrate_url)" -qtAX 2>&1; }
     fi
     fd="${PSQL[1]:-}"
     got=error
@@ -59,7 +70,9 @@ migrate_locked() {
   done
   if [ "$got" != t ]; then log "could not take the migration lock"; return 1; fi
   log "migration lock held; applying migrations"
-  migrate -path /opt/openctem/api/migrations -database "$(db_url)" up 2>&1 | prefix migrate || rc=$?
+  # openctem-migrate: migrate, plus what to do with a database older than the
+  # migration baseline (api/scripts/migrate-entrypoint.sh).
+  openctem-migrate -path /opt/openctem/api/migrations -database "$(migrate_url)" up 2>&1 | prefix migrate || rc=$?
   fd="${PSQL[1]:-}"
   [ -n "$fd" ] && { echo "SELECT pg_advisory_unlock(${MIGRATE_LOCK_KEY});" >&"$fd"; } 2>/dev/null
   kill "$PSQL_PID" 2>/dev/null || true; wait "$PSQL_PID" 2>/dev/null || true
@@ -86,6 +99,9 @@ else
   export SERVER_HOST="${SERVER_HOST:-0.0.0.0}" WEB_HOSTNAME="${WEB_HOSTNAME:-0.0.0.0}"
 fi
 export SERVER_PORT="${SERVER_PORT:-8080}"
+# The console's Content-Security-Policy names the public origin: the API's
+# APP_URL, unless set on its own.
+if [ -n "${APP_URL:-}" ]; then export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-$APP_URL}"; fi
 
 declare -A PIDS=()
 start() { # start <tag> <dir> <cmd...>

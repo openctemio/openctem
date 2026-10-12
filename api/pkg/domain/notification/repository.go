@@ -44,9 +44,10 @@ type Repository interface {
 	//
 	// For a finding or asset notification it also applies the Layer 2 data
 	// scope per recipient: owners/admins (team role from
-	// v_user_effective_role, as in the access token), members whose scope covers
-	// the asset, and (unless strictScope) members with no scope assignment.
-	ListRecipients(ctx context.Context, n *Notification, strictScope bool) ([]shared.ID, error)
+	// v_user_effective_role, as in the access token), holders of a
+	// has_full_data_access role, and members whose scope covers the asset. A
+	// member with no scope row gets no finding or asset push.
+	ListRecipients(ctx context.Context, n *Notification) ([]shared.ID, error)
 
 	// MarkAsRead marks a single notification as read for a user.
 	MarkAsRead(ctx context.Context, tenantID shared.ID, notificationID ID, userID shared.ID) error

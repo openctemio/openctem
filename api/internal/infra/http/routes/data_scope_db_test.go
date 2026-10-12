@@ -7,8 +7,12 @@ package routes
 // F4): a member whose scope is group A (asset A1) could read and change
 // group B's asset B1 and finding FB through by-id routes, sub-resources,
 // bulk-by-id actions and indirect lists. The same requests are also made as
-// an administrator and as a member with no scope assignment, whose behavior
-// must not change (fail-open stays the default).
+// an administrator, as a member holding a full-data role (both see the whole
+// tenant) and as members with no scope row, who see nothing: there is no
+// "see everything" mode for them, whatever the organization's legacy
+// members_without_group_see value says (owner decision D2, research doc 15
+// L-04). Migration 000910 made 'everything' impossible to store; that the
+// value is not read is pinned by the SQL builder tests.
 
 import (
 	"bytes"
@@ -21,11 +25,19 @@ import (
 	"strings"
 	"testing"
 
+	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
+
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/module"
+	vulnmatchapp "github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -34,7 +46,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -54,29 +65,16 @@ type dsHarness struct {
 	t   *testing.T
 	db  *sql.DB
 	srv *httptest.Server
+	// router and enforcer let a test walk the registered routes or mount a
+	// handler without the route guard.
+	router   Router
+	enforcer *datascope.Enforcer
 
-	tenant, owner, memberA, memberFree, memberStrict shared.ID
-	assetA, assetB, findingA, findingB               shared.ID
-	exposureA, exposureB, group                      shared.ID
-}
-
-// dsStrictPolicy reads the organization's policy (members without an access
-// group see everything | nothing) straight from the database, uncached.
-type dsStrictPolicy struct{ h *dsHarness }
-
-func (p dsStrictPolicy) RestrictedDataScope(ctx context.Context, tenantID string) bool {
-	id, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return false
-	}
-	v, err := postgres.NewTenantRepository(&postgres.DB{DB: p.h.db}).GetMembersWithoutGroupSee(ctx, id)
-	return err == nil && tenant.RestrictsMembersWithoutGroup(v)
-}
-
-// setPolicy sets what members without an access group see in the harness tenant.
-func (h *dsHarness) setPolicy(v string) {
-	h.t.Helper()
-	h.exec(`UPDATE tenants SET members_without_group_see = $2 WHERE id = $1`, h.tenant.String(), v)
+	// memberFree and memberStrict have no scope row; memberFull has none
+	// either but holds a has_full_data_access role.
+	tenant, owner, memberA, memberFree, memberStrict, memberFull shared.ID
+	assetA, assetB, findingA, findingB                           shared.ID
+	exposureA, exposureB, group                                  shared.ID
 }
 
 // dsMemberPerms is what a generous custom "member" role holds: every
@@ -86,17 +84,31 @@ var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 	permission.FindingsRead.String(), permission.FindingsWrite.String(), permission.FindingsDelete.String(),
 	permission.FindingsStatus.String(), permission.FindingsTriage.String(), permission.FindingsAssign.String(),
 	permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String(),
+	permission.FindingsComment.String(), permission.FindingsSeverity.String(),
 	permission.AssetGroupsRead.String(), permission.DashboardRead.String(),
+	permission.ExposuresRead.String(), permission.ExposuresWrite.String(), permission.ExposuresTriage.String(),
+	permission.ExposuresDelete.String(),
 }
 
 // dsAuth is a stand-in for UnifiedAuth: the test names the caller in headers.
 func (h *dsHarness) dsAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, middleware.UserIDKey, r.Header.Get("X-Test-User"))
+		// The caller travels as a credential too (Authorization: Test <user>
+		// [admin]), so an internal dispatch that forwards only credentials
+		// (the dashboard overview) authenticates as the same caller.
+		user, admin := r.Header.Get("X-Test-User"), r.Header.Get("X-Test-Admin") == "1"
+		if f := strings.Fields(r.Header.Get("Authorization")); user == "" && len(f) >= 2 && f[0] == "Test" {
+			user, admin = f[1], len(f) > 2 && f[2] == "admin"
+		}
+		ctx = context.WithValue(ctx, middleware.UserIDKey, user)
 		ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenant.String())
-		ctx = context.WithValue(ctx, middleware.IsAdminKey, r.Header.Get("X-Test-Admin") == "1")
-		ctx = context.WithValue(ctx, middleware.PermissionsKey, dsMemberPerms)
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
+		perms := dsMemberPerms
+		if p := r.Header.Get("X-Test-Perms"); p != "" {
+			perms = strings.Split(p, ",")
+		}
+		ctx = context.WithValue(ctx, middleware.PermissionsKey, perms)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -125,7 +137,7 @@ func newDSHarness(t *testing.T) *dsHarness {
 	v := validator.New()
 	tenantRepo := postgres.NewTenantRepository(db)
 
-	enforcer := datascope.New(postgres.NewDataScopeRepository(db), dsStrictPolicy{h},
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db),
 		func(ctx context.Context) datascope.Caller {
 			return datascope.Caller{UserID: middleware.GetUserID(ctx), IsAdmin: middleware.IsAdmin(ctx)}
 		}, log)
@@ -141,32 +153,38 @@ func newDSHarness(t *testing.T) *dsHarness {
 	findingRepo := postgres.NewFindingRepository(db)
 	accessRepo := postgres.NewAccessControlRepository(db)
 
-	assetSvc := app.NewAssetService(assetRepo, log)
+	assetSvc := asset.NewAssetService(assetRepo, log)
 	assetSvc.SetAccessControlRepository(accessRepo)
-	assetSvc.SetDataScopePolicy(dsStrictPolicy{h})
 	assetSvc.SetDataScope(enforcer)
+	assetSvc.SetRepositoryExtensionRepository(postgres.NewRepositoryExtensionRepository(db))
+	assetSvc.SetAttributeSources(postgres.NewAssetAttributeSourceRepository(db), tenantRepo)
+	assetSvc.SetChangeTimeline(postgres.NewAssetChangeEventRepository(db))
 
-	vulnSvc := app.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
+	vulnSvc := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
 	vulnSvc.SetCommentRepository(postgres.NewFindingCommentRepository(db))
 	vulnSvc.SetAccessControlRepository(accessRepo)
-	vulnSvc.SetDataScopePolicy(dsStrictPolicy{h})
+	vulnSvc.SetAssigneeChecker(accessRepo)
 	vulnSvc.SetDataScope(enforcer)
 	vulnSvc.SetAssetRepository(assetRepo)
+	vulnSvc.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
 
-	groupSvc := app.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
+	groupSvc := asset.NewAssetGroupService(postgres.NewAssetGroupRepository(db), log)
 	groupSvc.SetDataScope(enforcer)
 
 	surfaceSvc := attack.NewSurfaceService(assetRepo, postgres.NewAssetRelationshipRepository(db), log)
 	surfaceSvc.SetFindingRiskCounter(findingRepo)
 	surfaceSvc.SetDataScope(enforcer)
 
-	expSvc := app.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
+	expSvc := exposure.NewExposureService(postgres.NewExposureRepository(db), postgres.NewExposureStateHistoryRepository(db), log)
 	expSvc.SetDataScope(enforcer)
 
-	dashSvc := app.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
+	dashSvc := module.NewDashboardService(postgres.NewDashboardRepository(sqldb), log)
 	dashSvc.SetDataScope(enforcer)
+	dashSvc.SetAggregateCheck(func(ctx context.Context) bool {
+		return middleware.HasPermission(ctx, permission.DashboardAggregate.String())
+	})
 
-	notifSvc := app.NewNotificationService(postgres.NewNotificationRepository(db), nil, log)
+	notifSvc := integration.NewNotificationService(postgres.NewNotificationRepository(db), nil, log)
 	notifSvc.SetDataScope(enforcer)
 
 	// The guard is installed on the token-tenant chain exactly as Register does.
@@ -176,18 +194,46 @@ func newDSHarness(t *testing.T) *dsHarness {
 
 	router := infrahttp.NewChiRouter()
 	auth := Middleware(h.dsAuth)
-	registerAssetRoutes(router, handler.NewAssetHandler(assetSvc, v, log), auth, nil)
+	assetHandler := handler.NewAssetHandler(assetSvc, v, log)
+	assetHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	registerAssetRoutes(router, assetHandler, auth, nil)
+	importHandler := handler.NewAssetImportHandler(asset.NewAssetImportService(assetRepo, log), log)
+	importHandler.SetAuditService(auditapp.NewAuditService(postgres.NewAuditRepository(db), log))
+	registerAssetImportRoutes(router, importHandler, auth, nil)
 	registerVulnerabilityRoutes(router, handler.NewVulnerabilityHandler(vulnSvc, v, log), nil, nil, nil, auth, nil)
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
 	registerExposureRoutes(router, handler.NewExposureHandler(expSvc, nil, v, log), auth, nil, passthrough)
-	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil)
+	registerDashboardRoutes(router, handler.NewDashboardHandler(dashSvc, log), auth, nil, log)
 	registerNotificationRoutes(router, handler.NewNotificationHandler(notifSvc, log), auth, nil)
+
+	// Asset sub-resources outside /assets/<uuid>: services, state history,
+	// relationships, relationship suggestions, dedup reviews.
+	relRepo := postgres.NewAssetRelationshipRepository(db)
+	svcHandler := handler.NewAssetServiceHandler(postgres.NewAssetServiceRepository(db), assetRepo, v, log).SetDataScope(enforcer)
+	historyHandler := handler.NewAssetStateHistoryHandler(postgres.NewAssetStateHistoryRepository(db), assetRepo, v, log).SetDataScope(enforcer)
+	relSvc := asset.NewAssetRelationshipService(relRepo, assetRepo, log)
+	relSvc.SetDataScope(enforcer)
+	suggSvc := asset.NewRelationshipSuggestionService(postgres.NewRelationshipSuggestionRepository(db), assetRepo, relRepo, log)
+	suggSvc.SetDataScope(enforcer)
+	dedupHandler := handler.NewAdminDedupHandler(postgres.NewAssetDedupRepository(db), log).SetDataScope(enforcer)
+	registerAssetServiceRoutes(router, svcHandler, auth, nil)
+	registerWebEndpointRoutes(router, handler.NewWebEndpointHandler(webendpointapp.NewService(postgres.NewWebEndpointRepository(db), enforcer), nil, log), auth, nil)
+	registerAssetStateHistoryRoutes(router, historyHandler, auth, nil)
+	registerAssetRelationshipRoutes(router, handler.NewAssetRelationshipHandler(relSvc, v, log), auth, nil, passthrough)
+	registerRelationshipSuggestionRoutes(router, handler.NewRelationshipSuggestionHandler(suggSvc, log), auth, nil, passthrough)
+	registerAssetDedupRoutes(router, dedupHandler, auth, nil)
+	// The asset's software list (RFC-066).
+	vmSvc := vulnmatchapp.NewService(postgres.NewSoftwareMatchRepository(db),
+		vulnmatchapp.TenantPolicy(postgres.NewTenantRepository(db)), postgres.NewFindingRepository(db), log)
+	vmSvc.SetLinkReader(postgres.NewSoftwareRepository(db))
+	registerAssetSoftwareRoutes(router, handler.NewAssetSoftwareHandler(vmSvc, assetRepo, log).SetDataScope(enforcer), auth, nil)
 	// A sub-resource with no scope code of its own: the guard alone covers it.
 	router.Group("/api/v1/assets/{id}/owners", func(r Router) {
 		r.GET("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	}, buildTokenTenantMiddlewares(auth, nil)...)
 
+	h.router, h.enforcer = router, enforcer
 	h.srv = httptest.NewServer(router.(interface{ Handler() http.Handler }).Handler())
 	t.Cleanup(h.srv.Close)
 	return h
@@ -202,29 +248,32 @@ func (h *dsHarness) exec(q string, args ...any) {
 
 func (h *dsHarness) seed() {
 	h.tenant = shared.NewID()
-	h.owner, h.memberA, h.memberFree, h.memberStrict = shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
+	h.owner, h.memberA, h.memberFree, h.memberStrict, h.memberFull = shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
 	h.assetA, h.assetB = shared.NewID(), shared.NewID()
 	h.findingA, h.findingB = shared.NewID(), shared.NewID()
 	h.exposureA, h.exposureB, h.group = shared.NewID(), shared.NewID(), shared.NewID()
 	t := h.tenant.String()
 
-	// An organization that existed before the "nothing" default: its members
-	// without an access group see everything.
-	h.exec(`INSERT INTO tenants (id, name, slug, members_without_group_see) VALUES ($1, $2, $2, 'everything')`, t, "ds-"+t)
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, t, "ds-"+t)
 	h.t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = h.db.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, t)
-		for _, u := range []shared.ID{h.owner, h.memberA, h.memberFree, h.memberStrict} {
+		for _, u := range []shared.ID{h.owner, h.memberA, h.memberFree, h.memberStrict, h.memberFull} {
 			_, _ = h.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, u.String())
 		}
 	})
-	for u, role := range map[shared.ID]string{h.owner: "owner", h.memberA: "member", h.memberFree: "member", h.memberStrict: "member"} {
+	for u, role := range map[shared.ID]string{h.owner: "owner", h.memberA: "member", h.memberFree: "member", h.memberStrict: "member", h.memberFull: "member"} {
 		h.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, $3)`, u.String(), u.String()+"@ds.test", role)
 		h.exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, $3)`, u.String(), t, role)
 		// The team role comes from the system role held (v_user_effective_role).
 		roleID := map[string]string{"owner": "00000000-0000-0000-0000-000000000001", "member": "00000000-0000-0000-0000-000000000003"}[role]
 		h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, u.String(), t, roleID)
 	}
+	// memberFull: a "Global Reader" custom role with full data access.
+	fullRole := shared.NewID()
+	h.exec(`INSERT INTO roles (id, tenant_id, slug, name, hierarchy_level, has_full_data_access) VALUES ($1, $2, $3, 'Global Reader', 30, TRUE)`,
+		fullRole.String(), t, "ds-global-reader-"+fullRole.String()[:8])
+	h.exec(`INSERT INTO user_roles (user_id, tenant_id, role_id) VALUES ($1, $2, $3)`, h.memberFull.String(), t, fullRole.String())
 	for id, name := range map[shared.ID]string{h.assetA: dsMarkerAssetA, h.assetB: dsMarkerAssetB} {
 		h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, $3, 'domain', 'public', 'high')`,
 			id.String(), t, name)
@@ -266,9 +315,12 @@ func (h *dsHarness) do(user shared.ID, isAdmin bool, method, path string, body a
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Test-User", user.String())
+	auth := "Test " + user.String()
 	if isAdmin {
 		req.Header.Set("X-Test-Admin", "1")
+		auth += " admin"
 	}
+	req.Header.Set("Authorization", auth)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		h.t.Fatal(err)
@@ -298,6 +350,7 @@ func TestDataScope_ByIDReads_OutOfScopeIs404(t *testing.T) {
 		"/api/v1/assets/" + b + "/full",             // was BYPASS (full B1 body)
 		"/api/v1/assets/" + b + "/findings",         // was BYPASS (listed FB)
 		"/api/v1/assets/" + b + "/owners",           // sub-resource without scope code
+		"/api/v1/assets/" + b + "/software",         // RFC-066
 		"/api/v1/findings/" + fb,                    // already honored
 		"/api/v1/findings/" + fb + "/comments",      // was BYPASS (owner's comment)
 		"/api/v1/findings/" + fb + "/dataflows",     // was BYPASS
@@ -318,6 +371,7 @@ func TestDataScope_ByIDReads_OutOfScopeIs404(t *testing.T) {
 		"/api/v1/assets/" + h.assetA.String() + "/full",
 		"/api/v1/assets/" + h.assetA.String() + "/findings",
 		"/api/v1/assets/" + h.assetA.String() + "/owners",
+		"/api/v1/assets/" + h.assetA.String() + "/software",
 		"/api/v1/findings/" + h.findingA.String(),
 		"/api/v1/findings/" + h.findingA.String() + "/comments",
 		"/api/v1/exposures/" + h.exposureA.String(),
@@ -335,12 +389,13 @@ func TestDataScope_ByIDReads_AdminAndUnrestrictedUnchanged(t *testing.T) {
 		name  string
 		user  shared.ID
 		admin bool
-	}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 		for _, p := range []string{
 			"/api/v1/assets/" + b,
 			"/api/v1/assets/" + b + "/full",
 			"/api/v1/assets/" + b + "/findings",
 			"/api/v1/assets/" + b + "/owners",
+			"/api/v1/assets/" + b + "/software",
 			"/api/v1/findings/" + fb,
 			"/api/v1/findings/" + fb + "/comments",
 			"/api/v1/exposures/" + h.exposureB.String(),
@@ -493,12 +548,12 @@ func TestDataScope_IndirectLists_FilterForScopedMemberOnly(t *testing.T) {
 		if !strings.Contains(body, l.keep) {
 			t.Errorf("memberA GET %s lost in-scope row %q (body %.300s)", l.path, l.keep, body)
 		}
-		// Admins and unrestricted members keep the full, tenant-wide view.
+		// Admins and full-data roles keep the full, tenant-wide view.
 		for _, who := range []struct {
 			name  string
 			user  shared.ID
 			admin bool
-		}{{"owner", h.owner, true}, {"member without group", h.memberFree, false}} {
+		}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
 			status, body := h.do(who.user, who.admin, http.MethodGet, l.path, nil)
 			if status != http.StatusOK || !strings.Contains(body, l.marker) || !strings.Contains(body, l.keep) {
 				t.Errorf("%s GET %s = %d, want both rows (body %.300s)", who.name, l.path, status, body)
@@ -514,19 +569,85 @@ func TestDataScope_IndirectLists_FilterForScopedMemberOnly(t *testing.T) {
 	}
 }
 
-// --- Fail-closed tenants -----------------------------------------------------
+// --- Members without a scope row see nothing ---------------------------------
 
-func TestDataScope_StrictTenant_MemberWithoutGroupSeesNothing(t *testing.T) {
+// A member with no scope row sees nothing on every list, by-id read (404,
+// never 403), count, search and export, while the owner and a full-data role
+// see the whole tenant.
+func TestDataScope_ScopelessMember_SeesNothingEverywhere(t *testing.T) {
 	h := newDSHarness(t)
-	h.setPolicy(tenant.MembersWithoutGroupSeeNothing)
-	if status, _ := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/findings/"+h.findingA.String()+"/comments", nil); status != http.StatusNotFound {
-		t.Errorf("strict tenant, member without group: finding comments = %d, want 404", status)
+	a, b := h.assetA.String(), h.assetB.String()
+	fa, fb := h.findingA.String(), h.findingB.String()
+	byID := []string{
+		"/api/v1/assets/" + a, "/api/v1/assets/" + b,
+		"/api/v1/assets/" + b + "/full",
+		"/api/v1/assets/" + b + "/findings",
+		"/api/v1/assets/" + b + "/owners",
+		"/api/v1/findings/" + fa, "/api/v1/findings/" + fb,
+		"/api/v1/findings/" + fb + "/comments",
+		"/api/v1/exposures/" + h.exposureA.String(), "/api/v1/exposures/" + h.exposureB.String(),
 	}
-	if _, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/exposures", nil); strings.Contains(body, "exposure on") {
-		t.Errorf("strict tenant, member without group listed exposures: %.200s", body)
+	// Lists, searches, counts and exports: none may carry a row of A or B.
+	reads := []string{
+		"/api/v1/assets?per_page=100",
+		"/api/v1/assets?search=example.com",
+		"/api/v1/assets/stats",
+		"/api/v1/findings?per_page=100",
+		"/api/v1/findings?search=finding",
+		"/api/v1/findings/stats",
+		"/api/v1/exposures",
+		"/api/v1/notifications",
+		"/api/v1/asset-groups/" + h.group.String() + "/assets",
+		"/api/v1/asset-groups/" + h.group.String() + "/findings",
+		"/api/v1/dashboard/stats",
 	}
-	if status, _ := h.do(h.owner, true, http.MethodGet, "/api/v1/findings/"+h.findingB.String()+"/comments", nil); status != http.StatusOK {
-		t.Errorf("strict tenant: owner lost access (%d)", status)
+	markers := []string{dsMarkerAssetA, dsMarkerAssetB, dsMarkerFindingA, dsMarkerFindingB, dsMarkerExpB, "dsA exposure on A1"}
+	for _, u := range []shared.ID{h.memberFree, h.memberStrict} {
+		for _, p := range byID {
+			if status, body := h.do(u, false, http.MethodGet, p, nil); status != http.StatusNotFound {
+				t.Errorf("scopeless member GET %s = %d, want 404 (body %.200s)", p, status, body)
+			}
+		}
+		for _, p := range reads {
+			status, body := h.do(u, false, http.MethodGet, p, nil)
+			if status != http.StatusOK && status != http.StatusNotFound {
+				t.Errorf("scopeless member GET %s = %d (body %.200s)", p, status, body)
+				continue
+			}
+			for _, m := range markers {
+				if strings.Contains(body, m) {
+					t.Errorf("scopeless member GET %s leaked %q (body %.300s)", p, m, body)
+				}
+			}
+		}
+		// Stats count nothing.
+		if _, body := h.do(u, false, http.MethodGet, "/api/v1/findings/stats", nil); !strings.Contains(body, `"total":0`) {
+			t.Errorf("scopeless member finding stats not empty: %.300s", body)
+		}
+		if _, body := h.do(u, false, http.MethodGet, "/api/v1/assets/stats", nil); !strings.Contains(body, `"total":0`) {
+			t.Errorf("scopeless member asset stats not empty: %.300s", body)
+		}
+	}
+	// Owner and full-data role: unchanged, the whole tenant.
+	for _, who := range []struct {
+		name  string
+		user  shared.ID
+		admin bool
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
+		for _, p := range byID {
+			if status, body := h.do(who.user, who.admin, http.MethodGet, p, nil); status != http.StatusOK {
+				t.Errorf("%s GET %s = %d, want 200 (body %.200s)", who.name, p, status, body)
+			}
+		}
+		for _, l := range []struct{ path, marker string }{
+			{"/api/v1/assets?per_page=100", dsMarkerAssetB},
+			{"/api/v1/findings?per_page=100", dsMarkerFindingB},
+			{"/api/v1/exposures", dsMarkerExpB},
+		} {
+			if _, body := h.do(who.user, who.admin, http.MethodGet, l.path, nil); !strings.Contains(body, l.marker) {
+				t.Errorf("%s GET %s lost %q", who.name, l.path, l.marker)
+			}
+		}
 	}
 }
 
@@ -538,12 +659,12 @@ func TestDataScope_PushRecipientsAndFindingChannels(t *testing.T) {
 	repo := postgres.NewNotificationRepository(db)
 	tenantRepo := postgres.NewTenantRepository(db)
 
-	recipients := func(findingID shared.ID, strict bool) map[shared.ID]bool {
+	recipients := func(findingID shared.ID) map[shared.ID]bool {
 		n := notification.NewNotification(notification.NotificationParams{
 			TenantID: h.tenant, Audience: notification.AudienceAll, NotificationType: notification.TypeFindingNew,
 			Severity: "high", Title: "t", ResourceType: "finding", ResourceID: &findingID,
 		})
-		ids, err := repo.ListRecipients(context.Background(), n, strict)
+		ids, err := repo.ListRecipients(context.Background(), n)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -553,20 +674,20 @@ func TestDataScope_PushRecipientsAndFindingChannels(t *testing.T) {
 		}
 		return out
 	}
-	rb := recipients(h.findingB, false)
-	if rb[h.memberA] || !rb[h.owner] || !rb[h.memberFree] {
-		t.Errorf("push for FB: memberA=%v (want false) owner=%v memberFree=%v (want true)", rb[h.memberA], rb[h.owner], rb[h.memberFree])
+	rb := recipients(h.findingB)
+	if rb[h.memberA] || rb[h.memberFree] || !rb[h.owner] || !rb[h.memberFull] {
+		t.Errorf("push for FB: memberA=%v memberFree=%v (want false) owner=%v memberFull=%v (want true)",
+			rb[h.memberA], rb[h.memberFree], rb[h.owner], rb[h.memberFull])
 	}
-	if ra := recipients(h.findingA, false); !ra[h.memberA] {
-		t.Error("push for in-scope FA must reach memberA")
-	}
-	if rs := recipients(h.findingA, true); rs[h.memberFree] || !rs[h.owner] || !rs[h.memberA] {
-		t.Errorf("strict push for FA: memberFree=%v (want false) owner=%v memberA=%v (want true)", rs[h.memberFree], rs[h.owner], rs[h.memberA])
+	// A member with no scope row gets no finding push.
+	if ra := recipients(h.findingA); !ra[h.memberA] || ra[h.memberFree] || ra[h.memberStrict] {
+		t.Errorf("push for FA: memberA=%v (want true) memberFree=%v memberStrict=%v (want false)",
+			ra[h.memberA], ra[h.memberFree], ra[h.memberStrict])
 	}
 
 	// WebSocket finding:{id}/triage:{id} subscriptions resolve the user's
 	// scope from their membership (no request context).
-	enforcer := datascope.New(postgres.NewDataScopeRepository(db), nil, nil, logger.NewNop())
+	enforcer := datascope.New(postgres.NewDataScopeRepository(db), nil, logger.NewNop())
 	enforcer.SetAdminLookup(func(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
 		m, err := tenantRepo.GetMembership(ctx, userID, tenantID)
 		if err != nil {
@@ -584,21 +705,24 @@ func TestDataScope_PushRecipientsAndFindingChannels(t *testing.T) {
 	if err := enforcer.AssertFindingForUser(ctx, h.tenant, h.owner, h.findingB); err != nil {
 		t.Errorf("owner refused finding:FB: %v", err)
 	}
-	if err := enforcer.AssertFindingForUser(ctx, h.tenant, h.memberFree, h.findingB); err != nil {
-		t.Errorf("member without group refused finding:FB: %v", err)
+	if enforcer.AssertFindingForUser(ctx, h.tenant, h.memberFree, h.findingB) == nil {
+		t.Error("a member without a scope row may subscribe to finding:FB")
+	}
+	if err := enforcer.AssertFindingForUser(ctx, h.tenant, h.memberFull, h.findingB); err != nil {
+		t.Errorf("full-data role refused finding:FB: %v", err)
 	}
 }
 
 // --- Repository paths not reached over HTTP above ----------------------------
 
-func TestDataScope_AffectedAssetsAndCrossTenantActivity(t *testing.T) {
+func TestDataScope_AffectedAssets(t *testing.T) {
 	h := newDSHarness(t)
 	ctx := context.Background()
 	db := &postgres.DB{DB: h.db}
 
 	// One CVE affecting both assets.
 	vulnID := shared.NewID()
-	cve := "CVE-2099-" + vulnID.String()[:8]
+	cve := "CVE-2099-" + vulnID.String()[28:]
 	h.exec(`INSERT INTO vulnerabilities (id, cve_id, title) VALUES ($1, $2, 'ds cve')`, vulnID.String(), cve)
 	t.Cleanup(func() {
 		_, _ = h.db.ExecContext(context.Background(), `DELETE FROM vulnerabilities WHERE id = $1`, vulnID.String())
@@ -618,31 +742,332 @@ func TestDataScope_AffectedAssetsAndCrossTenantActivity(t *testing.T) {
 	if err != nil || res.Total != 2 {
 		t.Errorf("unscoped affected assets = %d (err %v), want 2", res.Total, err)
 	}
+}
 
-	// Cross-tenant dashboard activity: a tenant where the user is restricted
-	// contributes only in-scope findings.
-	dash := postgres.NewDashboardRepository(h.db)
-	items, err := dash.GetFilteredRecentActivity(ctx, nil, []string{h.tenant.String()}, h.memberA.String(), 50)
-	if err != nil {
+// --- Asset sub-resources outside /assets/<uuid> -------------------------------
+//
+// Services, state history, relationships, relationship suggestions and dedup
+// reviews hang off assets but live under their own prefixes, so the by-id
+// guard on /api/v1/assets/<uuid> never saw them. A scoped member must see and
+// change only the rows of assets in their scope; a row that links an in-scope
+// asset to an out-of-scope one (a relationship, a suggestion, a dedup review)
+// is out of scope, because returning it would reveal the other asset.
+
+const (
+	dsMarkerAssetA2 = "dsa-a2.example.com"
+	dsMarkerSvcA    = "dsA-svc"
+	dsMarkerSvcB    = "dsB-SECRET-svc"
+	dsMarkerHistA   = "dsA-hist"
+	dsMarkerHistB   = "dsB-SECRET-hist"
+	dsMarkerSuggA   = "dsA-suggestion"
+	dsMarkerSuggB   = "dsB-SECRET-suggestion"
+	dsMarkerLogA    = "dsA-merged-name"
+	dsMarkerLogB    = "dsB-SECRET-merged-name"
+)
+
+type dsSubresources struct {
+	assetA2, svcA, svcB, histA, histB, relAA, relAB shared.ID
+	suggAA, suggAB, reviewAA, reviewAB              shared.ID
+}
+
+// seedSubresources adds a second in-scope asset A2 and, for each kind of
+// sub-resource, one row that stays inside memberA's scope and one that
+// reaches group B's asset B1.
+func (h *dsHarness) seedSubresources() dsSubresources {
+	h.t.Helper()
+	t := h.tenant.String()
+	r := dsSubresources{
+		assetA2: shared.NewID(), svcA: shared.NewID(), svcB: shared.NewID(),
+		histA: shared.NewID(), histB: shared.NewID(), relAA: shared.NewID(), relAB: shared.NewID(),
+		suggAA: shared.NewID(), suggAB: shared.NewID(), reviewAA: shared.NewID(), reviewAB: shared.NewID(),
+	}
+	a1, a2, b1 := h.assetA.String(), r.assetA2.String(), h.assetB.String()
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, $3, 'domain', 'public', 'high')`,
+		a2, t, dsMarkerAssetA2)
+	h.exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id, ownership_type) VALUES ($1, $2, $3, 'secondary')`,
+		h.memberA.String(), t, a2)
+	h.exec(`INSERT INTO asset_services (id, tenant_id, asset_id, port, protocol, name, service_type, is_public, exposure)
+		VALUES ($1, $3, $4, 443, 'tcp', $5, 'https', TRUE, 'public'), ($2, $3, $6, 8443, 'tcp', $7, 'https', TRUE, 'public')`,
+		r.svcA.String(), r.svcB.String(), t, a1, dsMarkerSvcA, b1, dsMarkerSvcB)
+	h.exec(`INSERT INTO asset_state_history (id, tenant_id, asset_id, change_type, new_value, reason, source, changed_at)
+		VALUES ($1, $3, $4, 'appeared', $5, $5, 'scan', NOW()), ($2, $3, $6, 'appeared', $7, $7, 'scan', NOW())`,
+		r.histA.String(), r.histB.String(), t, a1, dsMarkerHistA, b1, dsMarkerHistB)
+	h.exec(`INSERT INTO asset_relationships (id, tenant_id, source_asset_id, target_asset_id, relationship_type)
+		VALUES ($1, $3, $4, $5, 'depends_on'), ($2, $3, $4, $6, 'depends_on')`,
+		r.relAA.String(), r.relAB.String(), t, a1, a2, b1)
+	h.exec(`INSERT INTO relationship_suggestions (id, tenant_id, source_asset_id, target_asset_id, relationship_type, reason, status)
+		VALUES ($1, $3, $4, $5, 'contains', $7, 'pending'), ($2, $3, $4, $6, 'contains', $8, 'pending')`,
+		r.suggAA.String(), r.suggAB.String(), t, a1, a2, b1, dsMarkerSuggA, dsMarkerSuggB)
+	h.exec(`INSERT INTO asset_dedup_review (id, tenant_id, normalized_name, asset_type, keep_asset_id, keep_asset_name, merge_asset_ids, merge_asset_names, status)
+		VALUES ($1, $3, 'dsa', 'domain', $4, $5, ARRAY[$6]::uuid[], ARRAY[$7], 'pending'),
+		       ($2, $3, 'dsb', 'domain', $8, $9, ARRAY[$4]::uuid[], ARRAY[$5], 'pending')`,
+		r.reviewAA.String(), r.reviewAB.String(), t, a1, dsMarkerAssetA, a2, dsMarkerAssetA2, b1, dsMarkerAssetB)
+	h.exec(`INSERT INTO asset_merge_log (tenant_id, kept_asset_id, kept_asset_name, merged_asset_name, correlation_type, action)
+		VALUES ($1, $2, $3, $4, 'admin_review', 'merge'), ($1, $5, $6, $7, 'admin_review', 'merge')`,
+		t, a1, dsMarkerAssetA, dsMarkerLogA, b1, dsMarkerAssetB, dsMarkerLogB)
+	return r
+}
+
+func dsLeaksB(body string) bool {
+	for _, m := range []string{dsMarkerAssetB, dsMarkerSvcB, dsMarkerHistB, dsMarkerSuggB, dsMarkerLogB, "dsB-SECRET"} {
+		if strings.Contains(body, m) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	lists := []struct {
+		path string
+		keep string // in-scope row the scoped member must still see
+		hide string // out-of-scope row the scoped member must not see
+	}{
+		{"/api/v1/state-history/appearances", dsMarkerHistA, dsMarkerHistB},
+		{"/api/v1/assets/" + h.assetA.String() + "/relationships", r.relAA.String(), r.relAB.String()},
+		{"/api/v1/relationships/suggestions", dsMarkerSuggA, dsMarkerSuggB},
+		{"/api/v1/assets/dedup/reviews", r.reviewAA.String(), r.reviewAB.String()},
+		{"/api/v1/assets/dedup/merge-log", dsMarkerLogA, dsMarkerLogB},
+	}
+	for _, l := range lists {
+		status, body := h.do(h.memberA, false, http.MethodGet, l.path, nil)
+		if status != http.StatusOK {
+			t.Errorf("memberA GET %s = %d (body %.200s)", l.path, status, body)
+			continue
+		}
+		if strings.Contains(body, l.hide) || dsLeaksB(body) {
+			t.Errorf("memberA GET %s leaked an out-of-scope row: %.400s", l.path, body)
+		}
+		if !strings.Contains(body, l.keep) {
+			t.Errorf("memberA GET %s lost the in-scope row %q (body %.300s)", l.path, l.keep, body)
+		}
+		for _, who := range []struct {
+			name  string
+			user  shared.ID
+			admin bool
+		}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
+			status, body := h.do(who.user, who.admin, http.MethodGet, l.path, nil)
+			if status != http.StatusOK || !strings.Contains(body, l.keep) || !strings.Contains(body, l.hide) {
+				t.Errorf("%s GET %s = %d, want both rows (body %.300s)", who.name, l.path, status, body)
+			}
+		}
+		// A member with no scope row sees neither row.
+		if _, body := h.do(h.memberFree, false, http.MethodGet, l.path, nil); strings.Contains(body, l.keep) || strings.Contains(body, l.hide) {
+			t.Errorf("scopeless member GET %s saw rows (body %.300s)", l.path, body)
+		}
+	}
+
+	// Aggregates count only in-scope rows for the scoped member.
+	counts := []struct {
+		path, member, owner string
+	}{
+		{"/api/v1/state-history/counts", `"appeared":1`, `"appeared":2`},
+		{"/api/v1/relationships/suggestions/count", `"count":1`, `"count":2`},
+	}
+	for _, c := range counts {
+		_, m := h.do(h.memberA, false, http.MethodGet, c.path, nil)
+		_, o := h.do(h.owner, true, http.MethodGet, c.path, nil)
+		if !strings.Contains(m, c.member) || !strings.Contains(o, c.owner) {
+			t.Errorf("GET %s: memberA %.300s (want %s); owner %.300s (want %s)", c.path, m, c.member, o, c.owner)
+		}
+	}
+}
+
+func TestDataScope_SubresourceByID_OutOfScopeIs404AndUnchanged(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	reqs := []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/api/v1/assets/" + h.assetB.String() + "/services", nil},
+		{http.MethodPost, "/api/v1/assets/" + h.assetB.String() + "/services", map[string]any{"port": 8443, "protocol": "tcp", "name": "pwned"}},
+		{http.MethodGet, "/api/v1/assets/" + h.assetB.String() + "/state-history", nil},
+		{http.MethodGet, "/api/v1/relationships/" + r.relAB.String(), nil},
+		{http.MethodPut, "/api/v1/relationships/" + r.relAB.String(), map[string]any{"description": "pwned"}},
+		{http.MethodDelete, "/api/v1/relationships/" + r.relAB.String(), nil},
+		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAB.String() + "/approve", nil},
+		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAB.String() + "/dismiss", nil},
+		{http.MethodPatch, "/api/v1/relationships/suggestions/" + r.suggAB.String() + "/type", map[string]any{"relationship_type": "depends_on"}},
+		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAB.String() + "/approve", nil},
+		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAB.String() + "/reject", nil},
+	}
+	for _, q := range reqs {
+		status, body := h.do(h.memberA, false, q.method, q.path, q.body)
+		if status != http.StatusNotFound {
+			t.Errorf("memberA %s %s = %d, want 404 (body %.200s)", q.method, q.path, status, body)
+		}
+		if dsLeaksB(body) {
+			t.Errorf("memberA %s %s returned group-B data: %.200s", q.method, q.path, body)
+		}
+	}
+	var n int
+	var name, desc, suggStatus, suggType, reviewStatus sql.NullString
+	_ = h.db.QueryRow(`SELECT name FROM asset_services WHERE id = $1`, r.svcB.String()).Scan(&name)
+	if name.String != dsMarkerSvcB {
+		t.Errorf("service B changed or deleted by an out-of-scope member: name=%q", name.String)
+	}
+	_ = h.db.QueryRow(`SELECT description FROM asset_relationships WHERE id = $1`, r.relAB.String()).Scan(&desc)
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM asset_relationships WHERE id = $1`, r.relAB.String()).Scan(&n)
+	if n != 1 || desc.String == "pwned" {
+		t.Errorf("relationship A1->B1 changed by an out-of-scope member: exists=%d description=%q", n, desc.String)
+	}
+	_ = h.db.QueryRow(`SELECT status, relationship_type FROM relationship_suggestions WHERE id = $1`, r.suggAB.String()).Scan(&suggStatus, &suggType)
+	if suggStatus.String != "pending" || suggType.String != "contains" {
+		t.Errorf("suggestion A1->B1 changed by an out-of-scope member: %s %s", suggStatus.String, suggType.String)
+	}
+	_ = h.db.QueryRow(`SELECT status FROM asset_dedup_review WHERE id = $1`, r.reviewAB.String()).Scan(&reviewStatus)
+	if reviewStatus.String != "pending" {
+		t.Errorf("dedup review A1+B1 changed by an out-of-scope member: %s", reviewStatus.String)
+	}
+	_ = h.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE id = $1`, h.assetB.String()).Scan(&n)
+	if n != 1 {
+		t.Error("B1 was merged away by an out-of-scope member")
+	}
+
+	// In-scope rows stay usable.
+	for _, q := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/assets/" + h.assetA.String() + "/services"},
+		{http.MethodGet, "/api/v1/assets/" + h.assetA.String() + "/state-history"},
+		{http.MethodGet, "/api/v1/relationships/" + r.relAA.String()},
+		{http.MethodPost, "/api/v1/relationships/suggestions/" + r.suggAA.String() + "/dismiss"},
+		{http.MethodPost, "/api/v1/assets/dedup/reviews/" + r.reviewAA.String() + "/reject"},
+	} {
+		if status, body := h.do(h.memberA, false, q.method, q.path, nil); status != http.StatusOK {
+			t.Errorf("memberA %s in-scope %s = %d, want 200 (body %.200s)", q.method, q.path, status, body)
+		}
+	}
+	// An administrator still reaches group B's rows.
+	if status, body := h.do(h.owner, true, http.MethodGet, "/api/v1/relationships/"+r.relAB.String(), nil); status != http.StatusOK {
+		t.Errorf("owner GET relationship A1->B1 = %d (body %.200s)", status, body)
+	}
+}
+
+func TestDataScope_SubresourceWrites_TargetMustBeInScope(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	count := func() int {
+		var n int
+		_ = h.db.QueryRow(`SELECT COUNT(*) FROM asset_relationships WHERE source_asset_id = $1 AND target_asset_id = $2 AND relationship_type = 'cname_of'`,
+			h.assetA.String(), h.assetB.String()).Scan(&n)
+		return n
+	}
+	base := "/api/v1/assets/" + h.assetA.String() + "/relationships"
+	status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": h.assetB.String(), "type": "cname_of"})
+	if status == http.StatusCreated || dsLeaksB(body) {
+		t.Errorf("memberA linked A1 to out-of-scope B1: %d %.200s", status, body)
+	}
+	_, _ = h.do(h.memberA, false, http.MethodPost, base+"/batch", map[string]any{
+		"items": []map[string]any{{"target_asset_id": h.assetB.String(), "type": "cname_of"}},
+	})
+	if count() != 0 {
+		t.Error("an out-of-scope relationship target was linked")
+	}
+	// The registry's relationship check runs only after the scope check, so a
+	// disallowed pair to an out-of-scope target answers like a missing
+	// target and never names that target's type.
+	stOut, bodyOut := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": h.assetB.String(), "type": "runs_on"})
+	stMissing, _ := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": shared.NewID().String(), "type": "runs_on"})
+	if stOut != stMissing || strings.Contains(bodyOut, "cannot") {
+		t.Errorf("out-of-scope target with a disallowed type = %d %.200s, missing target = %d", stOut, bodyOut, stMissing)
+	}
+	// The same link to an in-scope target works.
+	if status, body := h.do(h.memberA, false, http.MethodPost, base, map[string]any{"target_asset_id": r.assetA2.String(), "type": "cname_of"}); status != http.StatusCreated {
+		t.Errorf("memberA link A1->A2 = %d (body %.200s)", status, body)
+	}
+
+	// Generating reads and replaces every pending suggestion of the
+	// organization: a scoped member may not trigger it.
+	if status, body := h.do(h.memberA, false, http.MethodPost, "/api/v1/relationships/suggestions/generate", nil); status != http.StatusForbidden {
+		t.Errorf("memberA generate = %d, want 403 (body %.200s)", status, body)
+	}
+
+	// Approve-all only approves the suggestions the member can see.
+	if status, body := h.do(h.memberA, false, http.MethodPost, "/api/v1/relationships/suggestions/approve-all", nil); status != http.StatusOK {
+		t.Fatalf("approve-all = %d (body %.200s)", status, body)
+	}
+	var sa, sb string
+	_ = h.db.QueryRow(`SELECT status FROM relationship_suggestions WHERE id = $1`, r.suggAA.String()).Scan(&sa)
+	_ = h.db.QueryRow(`SELECT status FROM relationship_suggestions WHERE id = $1`, r.suggAB.String()).Scan(&sb)
+	if sa != "approved" || sb != "pending" {
+		t.Errorf("approve-all by memberA: A1->A2 %s (want approved), A1->B1 %s (want pending)", sa, sb)
+	}
+}
+
+// The duplicate-review queue is readable with assets:read (the web route and
+// the asset overview show it to every reader); acting on it needs
+// assets:delete.
+func TestDataScope_DedupReviewPermissions(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	call := func(perms, method, path string) int {
+		req, err := http.NewRequestWithContext(context.Background(), method, h.srv.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Test-User", h.memberFull.String())
+		req.Header.Set("X-Test-Perms", perms)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	read := permission.AssetsRead.String()
+	if got := call(read, http.MethodGet, "/api/v1/assets/dedup/reviews"); got != http.StatusOK {
+		t.Errorf("assets:read GET reviews = %d, want 200", got)
+	}
+	reject := "/api/v1/assets/dedup/reviews/" + r.reviewAA.String() + "/reject"
+	if got := call(read+","+permission.AssetsWrite.String(), http.MethodPost, reject); got != http.StatusForbidden {
+		t.Errorf("assets:read+write POST reject = %d, want 403", got)
+	}
+	if got := call(read+","+permission.AssetsDelete.String(), http.MethodPost, reject); got != http.StatusOK {
+		t.Errorf("assets:delete POST reject = %d, want 200", got)
+	}
+}
+
+// L-18: the group list, a group read and the group stats carry counts.
+// memberA sees asset A1 of the two members, so every count they get covers A1
+// only (1 asset, 1 finding), while the owner and a full-data role still get
+// the whole group (2 and 2).
+func TestDataScope_AssetGroupCounts_FollowReaderScope(t *testing.T) {
+	h := newDSHarness(t)
+	if err := postgres.NewAssetGroupRepository(&postgres.DB{DB: h.db}).RecalculateCounts(context.Background(), h.group); err != nil {
 		t.Fatal(err)
 	}
-	var sawA, sawB bool
-	for _, it := range items {
-		sawA = sawA || it.Description == dsMarkerFindingA
-		sawB = sawB || it.Description == dsMarkerFindingB
+	g := h.group.String()
+	for _, c := range []struct {
+		path        string
+		assets      string
+		findings    string
+		ownerAssets string
+		ownerFinds  string
+	}{
+		{"/api/v1/asset-groups", `"asset_count":1`, `"finding_count":1`, `"asset_count":2`, `"finding_count":2`},
+		{"/api/v1/asset-groups/" + g, `"asset_count":1`, `"finding_count":1`, `"asset_count":2`, `"finding_count":2`},
+		{"/api/v1/asset-groups/stats", `"total_assets":1`, `"total_findings":1`, `"total_assets":2`, `"total_findings":2`},
+	} {
+		status, body := h.do(h.memberA, false, http.MethodGet, c.path, nil)
+		if status != http.StatusOK || !strings.Contains(body, c.assets) || !strings.Contains(body, c.findings) {
+			t.Errorf("memberA GET %s = %d, want %s and %s (body %.400s)", c.path, status, c.assets, c.findings, body)
+		}
+		for _, who := range []struct {
+			name  string
+			user  shared.ID
+			admin bool
+		}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
+			status, body := h.do(who.user, who.admin, http.MethodGet, c.path, nil)
+			if status != http.StatusOK || !strings.Contains(body, c.ownerAssets) || !strings.Contains(body, c.ownerFinds) {
+				t.Errorf("%s GET %s = %d, want %s and %s (body %.400s)", who.name, c.path, status, c.ownerAssets, c.ownerFinds, body)
+			}
+		}
 	}
-	if !sawA || sawB {
-		t.Errorf("restricted cross-tenant activity: sawA=%v (want true) sawB=%v (want false)", sawA, sawB)
-	}
-	items, err = dash.GetFilteredRecentActivity(ctx, []string{h.tenant.String()}, nil, "", 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sawB = false
-	for _, it := range items {
-		sawB = sawB || it.Description == dsMarkerFindingB
-	}
-	if !sawB {
-		t.Error("unrestricted cross-tenant activity must include FB")
+	// A member with no scope row sees the group with nothing in it.
+	_, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/asset-groups/"+g, nil)
+	if !strings.Contains(body, `"asset_count":0`) || !strings.Contains(body, `"finding_count":0`) {
+		t.Errorf("scopeless member GET group: want zero counts (body %.400s)", body)
 	}
 }

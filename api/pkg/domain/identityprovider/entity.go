@@ -24,6 +24,21 @@ func (p Provider) IsValid() bool {
 	return false
 }
 
+// Label is the provider's display name ("Google Workspace"), for text a
+// person reads: change summaries, notifications, audit messages. An unknown
+// provider has no label.
+func (p Provider) Label() string {
+	switch p {
+	case ProviderEntraID:
+		return "Microsoft Entra ID"
+	case ProviderOkta:
+		return "Okta"
+	case ProviderGoogleWorkspace:
+		return "Google Workspace"
+	}
+	return ""
+}
+
 // AuthEndpoints returns the authorization and token URLs for the provider.
 func (p Provider) AuthEndpoints(tenantIdentifier string) (authURL, tokenURL, userInfoURL string) {
 	switch p {

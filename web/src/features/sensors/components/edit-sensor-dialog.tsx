@@ -6,19 +6,20 @@ import { formatDistanceToNowStrict } from 'date-fns'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogHeaderBar,
   DialogTitle,
-  focusDialogBody,
+  DialogHeader,
+  DialogBody,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { DangerZone, DangerZoneItem } from '@/features/shared/components/danger-zone'
@@ -37,10 +38,8 @@ import {
 } from '@/lib/api/sensor-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 
-import { useSensorFormOptions } from '../hooks'
-import { sensorCapacity, toolsNotInstalled } from '../lib/capabilities'
+import { sensorCapacity } from '../lib/capabilities'
 import {
   isSensorEditDirty,
   MAX_JOBS_LIMIT,
@@ -52,6 +51,8 @@ import {
   type SensorEditDraft,
 } from '../lib/sensor-edit'
 import { normalizeSensorVersion } from '../lib/sensor-version'
+
+import { ToggleChip } from './toggle-chip'
 
 interface EditSensorDialogProps {
   open: boolean
@@ -101,36 +102,6 @@ function FieldError({ id, message }: { id: string; message?: string }) {
     <p id={id} className="text-xs text-destructive">
       {message}
     </p>
-  )
-}
-
-/** Toggle chip (aria-pressed), the same look as the install flow's tool chips. */
-function Chip({
-  pressed,
-  onToggle,
-  disabled,
-  children,
-}: {
-  pressed: boolean
-  onToggle: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      disabled={disabled}
-      onClick={onToggle}
-      className={cn(
-        'rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60',
-        pressed
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'bg-background text-muted-foreground hover:bg-accent'
-      )}
-    >
-      {children}
-    </button>
   )
 }
 
@@ -201,7 +172,6 @@ export function EditSensorDialog({
     [zones, sensor.id]
   )
 
-  const { getCapabilitiesForTools } = useSensorFormOptions()
   const { trigger: updateSensor } = useUpdateSensor(sensor.id)
   const { trigger: revokeSensor, isMutating: isRevoking } = useRevokeSensor()
   const { trigger: deleteSensor, isMutating: isDeleting } = useDeleteSensor()
@@ -210,13 +180,13 @@ export function EditSensorDialog({
   const [draft, setDraft] = useState<Draft>(base)
   const [saving, setSaving] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
+  const { t } = useTranslation()
   const [revokeOpen, setRevokeOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   // Reset when the dialog opens or another sensor is edited, but not when the
   // same sensor is refetched while open (that would wipe the user's edits).
   const latest = useRef(sensor)
-  const bodyRef = useRef<HTMLFormElement>(null)
   useEffect(() => {
     latest.current = sensor
   })
@@ -238,7 +208,6 @@ export function EditSensorDialog({
   const reportedVersions = new Map(
     (sensor.reported?.tools ?? []).filter((t) => t.installed).map((t) => [t.name, t.version])
   )
-  const missingTools = toolsNotInstalled(sensor)
   const capacity = sensorCapacity(sensor)
   const revoked = sensor.status === 'revoked'
   const mode = EXECUTION_MODE_TEXT[sensor.execution_mode] ?? EXECUTION_MODE_TEXT.daemon
@@ -258,7 +227,7 @@ export function EditSensorDialog({
     if (!dirty || hasErrors || revoked) return
     setSaving(true)
     try {
-      const body = sensorUpdateBody(sensor, current, initial, getCapabilitiesForTools)
+      const body = sensorUpdateBody(current, initial)
       if (Object.keys(body).length > 0) await updateSensor(body)
       const { join, leave } = zoneChanges(current, initial)
       if (join.length || leave.length) {
@@ -310,287 +279,239 @@ export function EditSensorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : requestClose())}>
-        <DialogContent
-          showCloseButton={false}
-          onOpenAutoFocus={(e) => focusDialogBody(e, bodyRef.current)}
-          className="flex max-h-[90svh] flex-col gap-0 overflow-hidden p-0 sm:p-0 sm:max-w-2xl"
-        >
-          <DialogHeaderBar>
+        <DialogContent size="lg">
+          <DialogHeader>
             <DialogTitle>Edit sensor</DialogTitle>
             <DialogDescription className="truncate">{sensor.name}</DialogDescription>
-          </DialogHeaderBar>
+          </DialogHeader>
 
-          <form
-            id={ids.form}
-            ref={bodyRef}
-            tabIndex={-1}
-            className="min-h-0 flex-1 space-y-8 overflow-y-auto px-4 py-5 outline-none sm:px-6"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void handleSave()
-            }}
-          >
-            <AboutSensor sensor={sensor} />
+          <DialogBody className="py-5">
+            <form
+              id={ids.form}
+              className="space-y-8"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void handleSave()
+              }}
+            >
+              <AboutSensor sensor={sensor} />
 
-            {revoked ? (
-              <Alert>
-                <Ban className="h-4 w-4" aria-hidden />
-                <AlertTitle>This sensor is revoked</AlertTitle>
-                <AlertDescription>
-                  Its key no longer works and its settings can&apos;t be changed. Install a new
-                  sensor to replace it, then delete this one.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <>
-                <Section title="General">
-                  <div className="space-y-1.5">
-                    <Label htmlFor={ids.name}>Name</Label>
-                    <Input
-                      id={ids.name}
-                      value={draft.name}
-                      onChange={(e) => set('name', e.target.value)}
-                      autoComplete="off"
-                      aria-invalid={!!errors.name}
-                      aria-describedby={errors.name ? `${ids.name}-error` : undefined}
-                    />
-                    <FieldError id={`${ids.name}-error`} message={errors.name} />
-                  </div>
+              {revoked ? (
+                <Alert>
+                  <Ban className="h-4 w-4" aria-hidden />
+                  <AlertTitle>This sensor is revoked</AlertTitle>
+                  <AlertDescription>
+                    Its key no longer works and its settings can&apos;t be changed. Install a new
+                    sensor to replace it, then delete this one.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <>
+                  <Section title="General">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={ids.name}>Name</Label>
+                      <Input
+                        id={ids.name}
+                        value={draft.name}
+                        onChange={(e) => set('name', e.target.value)}
+                        autoComplete="off"
+                        aria-invalid={!!errors.name}
+                        aria-describedby={errors.name ? `${ids.name}-error` : undefined}
+                      />
+                      <FieldError id={`${ids.name}-error`} message={errors.name} />
+                    </div>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor={ids.description}>
-                      Description{' '}
-                      <span className="font-normal text-muted-foreground">(optional)</span>
-                    </Label>
-                    <Textarea
-                      id={ids.description}
-                      value={draft.description}
-                      onChange={(e) => set('description', e.target.value)}
-                      placeholder="What does this sensor do?"
-                      className="resize-none"
-                      rows={2}
-                      aria-invalid={!!errors.description}
-                    />
-                    <FieldError id={`${ids.description}-error`} message={errors.description} />
-                    {descriptionCleared && (
-                      <p className="text-xs text-muted-foreground">
-                        A description can be replaced but not removed yet; an empty one keeps the
-                        current text.
-                      </p>
-                    )}
-                  </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={ids.description}>
+                        Description{' '}
+                        <span className="font-normal text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Textarea
+                        id={ids.description}
+                        value={draft.description}
+                        onChange={(e) => set('description', e.target.value)}
+                        placeholder="What does this sensor do?"
+                        className="resize-none"
+                        rows={2}
+                        aria-invalid={!!errors.description}
+                      />
+                      <FieldError id={`${ids.description}-error`} message={errors.description} />
+                      {descriptionCleared && (
+                        <p className="text-xs text-muted-foreground">
+                          A description can be replaced but not removed yet; an empty one keeps the
+                          current text.
+                        </p>
+                      )}
+                    </div>
 
-                  <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <Label htmlFor={ids.enabled}>Enabled</Label>
+                    <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <Label htmlFor={ids.enabled}>Enabled</Label>
+                        <p className="text-sm text-muted-foreground">
+                          A disabled sensor keeps its key but gets no work until you enable it
+                          again.
+                        </p>
+                      </div>
+                      <Switch
+                        id={ids.enabled}
+                        checked={draft.enabled}
+                        onCheckedChange={(v) => set('enabled', v)}
+                      />
+                    </div>
+                  </Section>
+
+                  <Section
+                    title="Work"
+                    description="The sensor reports what it has. You can limit how much the platform sends it."
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Execution mode</p>
                       <p className="text-sm text-muted-foreground">
-                        A disabled sensor keeps its key but gets no work until you enable it again.
+                        <span className="text-foreground">{mode.label}</span>: {mode.text}. Set by
+                        the role chosen at install.
                       </p>
                     </div>
-                    <Switch
-                      id={ids.enabled}
-                      checked={draft.enabled}
-                      onCheckedChange={(v) => set('enabled', v)}
-                    />
-                  </div>
-                </Section>
 
-                <Section
-                  title="Work"
-                  description="The sensor reports what it has. You can narrow what the platform sends it."
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Execution mode</p>
-                    <p className="text-sm text-muted-foreground">
-                      <span className="text-foreground">{mode.label}</span>: {mode.text}. Set by the
-                      role chosen at install.
-                    </p>
-                  </div>
-
-                  <fieldset className="space-y-2">
-                    <legend className="text-sm font-medium">Tools</legend>
-                    {reported == null ? (
-                      <p className="text-sm text-muted-foreground">
-                        This sensor hasn&apos;t reported its tools yet. Once it connects, its tools
-                        show here and you can limit which ones the platform uses.
-                        {base.tools.length > 0 && <> Current limit: {base.tools.join(', ')}.</>}
-                      </p>
-                    ) : reported.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        The sensor reports no scanning tools installed.
-                      </p>
-                    ) : (
-                      <>
-                        <RadioGroup
-                          value={draft.toolMode}
-                          onValueChange={(v) => set('toolMode', v as Draft['toolMode'])}
-                          aria-label="Limit to"
-                          className="gap-2"
-                        >
-                          <div className="flex items-center gap-2">
-                            <RadioGroupItem value="all" id={`${ids.form}-all`} />
-                            <Label htmlFor={`${ids.form}-all`} className="font-normal">
-                              All reported tools
-                            </Label>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <RadioGroupItem value="only" id={`${ids.form}-only`} />
-                            <Label htmlFor={`${ids.form}-only`} className="font-normal">
-                              Only the tools selected below
-                            </Label>
-                          </div>
-                        </RadioGroup>
-                        <div
-                          className="flex flex-wrap gap-2 pt-1"
-                          role="group"
-                          aria-label="Reported tools"
-                        >
-                          {reported.map((t) => {
-                            const v = reportedVersions.get(t)
-                            const label = v ? `${t} ${v}` : t
-                            if (draft.toolMode === 'all') {
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Tools</p>
+                      {reported == null ? (
+                        <p className="text-sm text-muted-foreground">
+                          This sensor hasn&apos;t reported its tools yet. Once it connects, the
+                          tools it has installed show here and the platform can send it work for
+                          them.
+                        </p>
+                      ) : reported.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          The sensor reports no scanning tools installed.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-sm text-muted-foreground">
+                            The platform uses every tool the sensor reports installed. To narrow
+                            them, edit the sensor&apos;s grant.
+                          </p>
+                          <ul className="flex flex-wrap gap-2 pt-1" aria-label="Reported tools">
+                            {reported.map((t) => {
+                              const v = reportedVersions.get(t)
                               return (
-                                <span
+                                <li
                                   key={t}
                                   className="rounded-full border bg-muted/50 px-3 py-1 text-sm"
                                 >
-                                  {label}
-                                </span>
+                                  {v ? `${t} ${v}` : t}
+                                </li>
                               )
-                            }
-                            const on = draft.tools.includes(t)
+                            })}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={ids.maxJobs}>Concurrent jobs</Label>
+                      <p className="text-sm text-muted-foreground">
+                        {capacity.reported != null
+                          ? `The sensor reports ${capacity.reported} ${capacity.reported === 1 ? 'slot' : 'slots'}. `
+                          : "The sensor hasn't reported its capacity. "}
+                        The platform sends at most the smaller of that and this limit.
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          id={ids.maxJobs}
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={MAX_JOBS_LIMIT}
+                          value={draft.maxJobs}
+                          onChange={(e) => set('maxJobs', e.target.value)}
+                          className="w-24 tabular-nums"
+                          aria-invalid={!!errors.maxJobs}
+                          aria-describedby={errors.maxJobs ? `${ids.maxJobs}-error` : undefined}
+                        />
+                        <span className="text-sm text-muted-foreground tabular-nums">
+                          Now: {capacity.effective} at once
+                        </span>
+                      </div>
+                      <FieldError id={`${ids.maxJobs}-error`} message={errors.maxJobs} />
+                    </div>
+
+                    {canReadZones && zones.length > 0 && (
+                      <fieldset className="space-y-2">
+                        <legend className="text-sm font-medium">Scan zones</legend>
+                        <p className="text-sm text-muted-foreground">
+                          Scans of a zone&apos;s ranges go only to the zone&apos;s sensors.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {zones.map((z) => {
+                            const on = current.zoneIds.includes(z.id)
                             return (
-                              <Chip
-                                key={t}
+                              <ToggleChip
+                                key={z.id}
                                 pressed={on}
+                                disabled={!canWriteZones}
                                 onToggle={() =>
                                   set(
-                                    'tools',
+                                    'zoneIds',
                                     on
-                                      ? draft.tools.filter((x) => x !== t)
-                                      : [...draft.tools, t].sort()
+                                      ? current.zoneIds.filter((x) => x !== z.id)
+                                      : [...current.zoneIds, z.id].sort()
                                   )
                                 }
                               >
-                                {label}
-                              </Chip>
+                                {z.name}
+                              </ToggleChip>
                             )
                           })}
                         </div>
-                        <FieldError id={`${ids.form}-tools`} message={errors.tools} />
-                      </>
+                      </fieldset>
                     )}
-                    {missingTools.length > 0 && (
-                      <p className="text-xs text-warning">
-                        Allowed but not installed on the sensor: {missingTools.join(', ')}.
-                      </p>
-                    )}
-                  </fieldset>
+                  </Section>
+                </>
+              )}
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor={ids.maxJobs}>Concurrent jobs</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {capacity.reported != null
-                        ? `The sensor reports ${capacity.reported} ${capacity.reported === 1 ? 'slot' : 'slots'}. `
-                        : "The sensor hasn't reported its capacity. "}
-                      The platform sends at most the smaller of that and this limit.
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        id={ids.maxJobs}
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        max={MAX_JOBS_LIMIT}
-                        value={draft.maxJobs}
-                        onChange={(e) => set('maxJobs', e.target.value)}
-                        className="w-24 tabular-nums"
-                        aria-invalid={!!errors.maxJobs}
-                        aria-describedby={errors.maxJobs ? `${ids.maxJobs}-error` : undefined}
-                      />
-                      <span className="text-sm text-muted-foreground tabular-nums">
-                        Now: {capacity.effective} at once
-                      </span>
-                    </div>
-                    <FieldError id={`${ids.maxJobs}-error`} message={errors.maxJobs} />
-                  </div>
-
-                  {canReadZones && zones.length > 0 && (
-                    <fieldset className="space-y-2">
-                      <legend className="text-sm font-medium">Scan zones</legend>
-                      <p className="text-sm text-muted-foreground">
-                        Scans of a zone&apos;s ranges go only to the zone&apos;s sensors.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {zones.map((z) => {
-                          const on = current.zoneIds.includes(z.id)
-                          return (
-                            <Chip
-                              key={z.id}
-                              pressed={on}
-                              disabled={!canWriteZones}
-                              onToggle={() =>
-                                set(
-                                  'zoneIds',
-                                  on
-                                    ? current.zoneIds.filter((x) => x !== z.id)
-                                    : [...current.zoneIds, z.id].sort()
-                                )
-                              }
-                            >
-                              {z.name}
-                            </Chip>
-                          )
-                        })}
-                      </div>
-                    </fieldset>
+              {canDelete && (
+                <DangerZone as="h3">
+                  {!revoked && (
+                    <DangerZoneItem
+                      title="Revoke access"
+                      description="The key stops working at once and for good. The sensor can't be enabled again; you install a new one instead."
+                      action={
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setRevokeOpen(true)}
+                          disabled={busy}
+                        >
+                          <Ban className="h-4 w-4" aria-hidden />
+                          Revoke
+                        </Button>
+                      }
+                    />
                   )}
-                </Section>
-              </>
-            )}
-
-            {canDelete && (
-              <DangerZone as="h3">
-                {!revoked && (
                   <DangerZoneItem
-                    title="Revoke access"
-                    description="The key stops working at once and for good. The sensor can't be enabled again; you install a new one instead."
+                    title="Delete sensor"
+                    description="Removes the sensor from the platform. Its key stops working."
                     action={
                       <Button
                         type="button"
-                        variant="destructive"
+                        variant="outline"
                         size="sm"
-                        onClick={() => setRevokeOpen(true)}
+                        className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setDeleteOpen(true)}
                         disabled={busy}
                       >
-                        <Ban className="h-4 w-4" aria-hidden />
-                        Revoke
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                        Delete
                       </Button>
                     }
                   />
-                )}
-                <DangerZoneItem
-                  title="Delete sensor"
-                  description="Removes the sensor from the platform. Its key stops working."
-                  action={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => setDeleteOpen(true)}
-                      disabled={busy}
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                      Delete
-                    </Button>
-                  }
-                />
-              </DangerZone>
-            )}
-          </form>
+                </DangerZone>
+              )}
+            </form>
+          </DialogBody>
 
-          <div className="flex shrink-0 flex-col-reverse gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={requestClose} disabled={busy}>
               {revoked ? 'Close' : 'Cancel'}
             </Button>
@@ -600,17 +521,17 @@ export function EditSensorDialog({
                 Save changes
               </Button>
             )}
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <ConfirmDialog
         open={discardOpen}
         onOpenChange={setDiscardOpen}
-        title="Discard changes?"
-        desc="Your changes to this sensor have not been saved."
-        cancelBtnText="Keep editing"
-        confirmText="Discard"
+        title={t('confirm.discardTitle', 'Discard your changes?')}
+        desc={t('confirm.sensor.discardDesc', 'Your changes to this sensor have not been saved.')}
+        cancelBtnText={t('confirm.keepEditing', 'Keep editing')}
+        confirmText={t('confirm.discard', 'Discard')}
         destructive
         handleConfirm={() => {
           setDiscardOpen(false)
@@ -621,17 +542,19 @@ export function EditSensorDialog({
       <ConfirmDialog
         open={revokeOpen}
         onOpenChange={setRevokeOpen}
-        title="Revoke sensor access"
+        title={t('confirm.sensor.revokeTitle', 'Revoke the sensor {name}?', { name: sensor.name })}
         desc={
           <div className="space-y-2">
             <p>
-              <strong>{sensor.name}</strong> loses access at once. This can&apos;t be undone: to
-              bring it back you install a new sensor with a new key.
+              {t(
+                'confirm.sensor.revokeDesc',
+                'It loses access at once and for good: its key is revoked and it cannot be re-enabled. To use the machine again, enroll a new sensor. This cannot be undone.'
+              )}
             </p>
-            <p>To pause it instead, turn off Enabled.</p>
+            <p>{t('confirm.sensor.revokePauseHint', 'To pause it instead, turn off Enabled.')}</p>
           </div>
         }
-        confirmText="Revoke access"
+        confirmText={t('confirm.revoke', 'Revoke')}
         destructive
         isLoading={isRevoking}
         typeToConfirm={sensor.name}
@@ -641,14 +564,12 @@ export function EditSensorDialog({
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete sensor"
-        desc={
-          <p>
-            Delete <strong>{sensor.name}</strong>? This can&apos;t be undone and its key stops
-            working.
-          </p>
-        }
-        confirmText="Delete sensor"
+        title={t('confirm.sensor.deleteTitle', 'Delete the sensor {name}?', { name: sensor.name })}
+        desc={t(
+          'confirm.sensor.deleteDesc',
+          'Its API key stops working at once and it can no longer claim jobs or send results. Findings it reported stay. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         typeToConfirm={sensor.name}

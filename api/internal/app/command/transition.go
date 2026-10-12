@@ -17,6 +17,7 @@ import (
 	"reflect"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -53,6 +54,11 @@ type TransitionInput struct {
 	CommandID    string
 	Result       json.RawMessage // complete
 	ErrorMessage string          // fail
+	// Refusal is the structured policy refusal of a fail (v2), or nil.
+	Refusal *sensordom.DispatchRefusal
+	// LeaseEpoch is the lease epoch the sensor holds the command under, when
+	// it says (complete, fail): a command claimed again since is refused.
+	LeaseEpoch *int
 }
 
 // TransitionResult is the command after the transition. Replayed is true when
@@ -99,6 +105,16 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		if !sameTransitionBody(t, cmd, in) {
 			return nil, ErrTransitionConflict
 		}
+		if t == TransitionClaim && s.jobs != nil {
+			// The repeat of a claim is handed out signed too. The sensor
+			// already holds the command, so a refusal leaves it as it is
+			// (its lease runs out unless the sensor goes on).
+			signed, err := s.signJob(ctx, in.SensorID, cmd, s.enforcesLimitsFor(ctx, cmd.TenantID, in.SensorID))
+			if err != nil {
+				return nil, err
+			}
+			cmd = signed
+		}
 		return &TransitionResult{Command: cmd, Replayed: true}, nil
 	}
 	if !transitionAllowed(t, cmd, mine) {
@@ -112,12 +128,22 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	case TransitionStart:
 		out, err = s.Start(ctx, in.TenantID, in.SensorID, in.CommandID)
 	case TransitionComplete:
-		out, err = s.Complete(ctx, CompleteInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, Result: in.Result})
+		out, err = s.Complete(ctx, CompleteInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, Result: in.Result, LeaseEpoch: in.LeaseEpoch})
 	case TransitionFail:
-		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage})
+		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch, Refusal: in.Refusal})
 	}
 	if err != nil {
 		return nil, s.transitionError(ctx, t, in, err)
+	}
+	if t == TransitionClaim && s.jobs != nil {
+		signed, err := s.signJob(ctx, in.SensorID, out, s.enforcesLimitsFor(ctx, out.TenantID, in.SensorID))
+		if err != nil {
+			// Not handed out unsigned: back to pending, still addressed to
+			// this sensor only if it was before the claim.
+			s.unclaim(ctx, out.TenantID, out.ID, in.SensorID, cmd.SensorID != nil)
+			return nil, err
+		}
+		out = signed
 	}
 	return &TransitionResult{Command: out}, nil
 }

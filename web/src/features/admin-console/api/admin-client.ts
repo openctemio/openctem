@@ -12,7 +12,9 @@ export class AdminApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    /** The API's structured detail for the refusal, when it sends one. */
+    readonly details?: unknown
   ) {
     super(message)
     this.name = 'AdminApiError'
@@ -35,7 +37,9 @@ export async function adminFetch<T>(
 ): Promise<T> {
   const method = init.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
-  if (init.body !== undefined) headers['Content-Type'] = 'application/json'
+  // A FormData body (a file upload) sets its own multipart content type.
+  const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData
+  if (init.body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   if (method !== 'GET' && method !== 'HEAD') {
     const csrf = readCookie(ADMIN_CSRF_COOKIE)
     if (csrf) headers['X-CSRF-Token'] = csrf
@@ -44,7 +48,12 @@ export async function adminFetch<T>(
   const res = await fetch(`${ADMIN_API}${path}`, {
     method,
     headers,
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    body:
+      init.body === undefined
+        ? undefined
+        : isForm
+          ? (init.body as FormData)
+          : JSON.stringify(init.body),
     credentials: 'same-origin',
     cache: 'no-store',
   })
@@ -60,8 +69,18 @@ export async function adminFetch<T>(
     }
   }
   if (!res.ok) {
-    const body = (data ?? {}) as { message?: string; error?: string; code?: string }
-    throw new AdminApiError(body.message || body.error || res.statusText, res.status, body.code)
+    const body = (data ?? {}) as {
+      message?: string
+      error?: string
+      code?: string
+      details?: unknown
+    }
+    throw new AdminApiError(
+      body.message || body.error || res.statusText,
+      res.status,
+      body.code,
+      body.details
+    )
   }
   return data as T
 }

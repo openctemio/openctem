@@ -81,7 +81,7 @@ func TestTenantSensorStats_CountsWhatTheListShows(t *testing.T) {
 		t.Fatalf("flag platform sensor: %v", err)
 	}
 
-	listed, err := repo.List(ctx, sensor.Filter{TenantID: &tenantID, ExcludePlatform: true}, pagination.New(1, 100))
+	listed, err := repo.List(ctx, sensor.Filter{TenantID: &tenantID}, pagination.New(1, 100))
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -99,9 +99,8 @@ func TestTenantSensorStats_CountsWhatTheListShows(t *testing.T) {
 		t.Errorf("online_active = %d, want 1", stats.OnlineActive)
 	}
 
-	// Without the flag the repository still returns both (other callers).
-	all, err := repo.List(ctx, sensor.Filter{TenantID: &tenantID}, pagination.New(1, 100))
-	if err != nil || all.Total != 2 {
-		t.Errorf("unfiltered list: total=%d err=%v, want 2", all.Total, err)
+	// Nor can a tenant read it by id, though its row carries the tenant.
+	if got, err := repo.GetByTenantAndID(ctx, tenantID, platform); err == nil || got != nil {
+		t.Errorf("platform sensor read by its row's tenant: %v, %v", got, err)
 	}
 }

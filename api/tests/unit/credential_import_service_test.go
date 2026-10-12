@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -126,7 +126,7 @@ func (m *credImportMockExposureRepo) Update(_ context.Context, event *exposure.E
 	return nil
 }
 
-func (m *credImportMockExposureRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *credImportMockExposureRepo) Delete(_ context.Context, _, id shared.ID) error {
 	m.deleteCalls++
 	if m.deleteErr != nil {
 		return m.deleteErr
@@ -181,10 +181,23 @@ func (m *credImportMockExposureRepo) List(_ context.Context, filter exposure.Fil
 	}, nil
 }
 
-func (m *credImportMockExposureRepo) Count(_ context.Context, _ exposure.Filter) (int64, error) {
+func (m *credImportMockExposureRepo) Count(_ context.Context, f exposure.Filter) (int64, error) {
 	m.countCalls++
 	if m.countErr != nil {
 		return 0, m.countErr
+	}
+	// Stats count per state and per severity over the credential filter.
+	if len(f.States) == 1 {
+		if m.countStateErr != nil {
+			return 0, m.countStateErr
+		}
+		return m.countByStateResult[f.States[0]], nil
+	}
+	if len(f.Severities) == 1 {
+		if m.countSevErr != nil {
+			return 0, m.countSevErr
+		}
+		return m.countBySeverityResult[f.Severities[0]], nil
 	}
 	return int64(len(m.events)), nil
 }
@@ -303,11 +316,11 @@ func (m *credImportMockStateHistoryRepo) GetLatest(_ context.Context, exposureEv
 // Test Helper Functions
 // =============================================================================
 
-func newCredImportTestService() (*app.CredentialImportService, *credImportMockExposureRepo, *credImportMockStateHistoryRepo) {
+func newCredImportTestService() (*integration.CredentialImportService, *credImportMockExposureRepo, *credImportMockStateHistoryRepo) {
 	repo := newCredImportMockExposureRepo()
 	historyRepo := newCredImportMockStateHistoryRepo()
 	log := logger.NewNop()
-	svc := app.NewCredentialImportService(repo, historyRepo, log)
+	svc := integration.NewCredentialImportService(repo, historyRepo, log)
 	return svc, repo, historyRepo
 }
 
@@ -1307,7 +1320,7 @@ func TestCredentialImportService_List_Success(t *testing.T) {
 	repo.addExistingEvent(event1)
 	repo.addExistingEvent(event2)
 
-	result, err := svc.List(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 20)
+	result, err := svc.List(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 20)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1333,7 +1346,7 @@ func TestCredentialImportService_List_WithFilters(t *testing.T) {
 	event := createCredImportTestEvent(tenantID, "user@test.com", "data_breach")
 	repo.addExistingEvent(event)
 
-	opts := app.CredentialListOptions{
+	opts := integration.CredentialListOptions{
 		Severities: []string{"high"},
 		States:     []string{"active"},
 		Search:     "user",
@@ -1355,7 +1368,7 @@ func TestCredentialImportService_List_RepoError(t *testing.T) {
 
 	repo.listErr = fmt.Errorf("database unavailable")
 
-	_, err := svc.List(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 20)
+	_, err := svc.List(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 20)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -1371,7 +1384,7 @@ func TestCredentialImportService_List_TotalPages(t *testing.T) {
 		repo.addExistingEvent(event)
 	}
 
-	result, err := svc.List(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 2)
+	result, err := svc.List(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1861,7 +1874,7 @@ func TestCredentialImportService_ListByIdentity_Success(t *testing.T) {
 	repo.addExistingEvent(event2)
 	repo.addExistingEvent(event3)
 
-	result, err := svc.ListByIdentity(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 20)
+	result, err := svc.ListByIdentity(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 20)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1907,7 +1920,7 @@ func TestCredentialImportService_ListByIdentity_SortsBySeverity(t *testing.T) {
 	repo.addExistingEvent(lowEvent)
 	repo.addExistingEvent(critEvent)
 
-	result, err := svc.ListByIdentity(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 20)
+	result, err := svc.ListByIdentity(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 20)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1946,7 +1959,7 @@ func TestCredentialImportService_ListByIdentity_Pagination(t *testing.T) {
 	}
 
 	// Page 1 with page size 2
-	result, err := svc.ListByIdentity(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 2)
+	result, err := svc.ListByIdentity(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1962,7 +1975,7 @@ func TestCredentialImportService_ListByIdentity_Pagination(t *testing.T) {
 	}
 
 	// Page 2
-	result2, err := svc.ListByIdentity(context.Background(), tenantID.String(), app.CredentialListOptions{}, 2, 2)
+	result2, err := svc.ListByIdentity(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 2, 2)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1977,7 +1990,7 @@ func TestCredentialImportService_ListByIdentity_RepoError(t *testing.T) {
 
 	repo.listErr = fmt.Errorf("database error")
 
-	_, err := svc.ListByIdentity(context.Background(), tenantID.String(), app.CredentialListOptions{}, 1, 20)
+	_, err := svc.ListByIdentity(context.Background(), tenantID.String(), integration.CredentialListOptions{}, 1, 20)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

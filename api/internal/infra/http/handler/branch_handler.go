@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
@@ -17,14 +17,14 @@ import (
 
 // BranchHandler handles branch-related HTTP requests.
 type BranchHandler struct {
-	service      *app.BranchService
-	assetService *app.AssetService // for tenant ownership validation (S-2)
+	service      *asset.BranchService
+	assetService *asset.AssetService // for tenant ownership validation (S-2)
 	validator    *validator.Validator
 	logger       *logger.Logger
 }
 
 // NewBranchHandler creates a new branch handler.
-func NewBranchHandler(svc *app.BranchService, v *validator.Validator, log *logger.Logger) *BranchHandler {
+func NewBranchHandler(svc *asset.BranchService, v *validator.Validator, log *logger.Logger) *BranchHandler {
 	return &BranchHandler{
 		service:   svc,
 		validator: v,
@@ -34,7 +34,7 @@ func NewBranchHandler(svc *app.BranchService, v *validator.Validator, log *logge
 
 // SetAssetService wires the asset service used for repository ownership checks
 // (S-2: branch handler must verify the URL repo belongs to caller's tenant).
-func (h *BranchHandler) SetAssetService(svc *app.AssetService) {
+func (h *BranchHandler) SetAssetService(svc *asset.AssetService) {
 	h.assetService = svc
 }
 
@@ -56,7 +56,10 @@ func (h *BranchHandler) ensureRepoOwnedByTenant(w http.ResponseWriter, r *http.R
 		apierror.BadRequest("Invalid repository ID").WriteJSON(w)
 		return false
 	}
-	if _, err := h.assetService.GetAsset(r.Context(), tenantID, repoIDStr); err != nil {
+	// The repository must also be in the caller's data scope (Layer 2):
+	// its branches carry commit authors and scan state, and the writes
+	// change it. Out of scope answers 404, like a missing repository.
+	if _, err := h.assetService.GetAssetInCallerScope(r.Context(), tenantID, repoIDStr); err != nil {
 		// Asset service returns shared.ErrNotFound when the repo doesn't exist
 		// OR isn't owned by this tenant. Either way the answer is 404 — never
 		// 403 (would leak that the resource exists in another tenant).
@@ -215,15 +218,19 @@ func (h *BranchHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	input := app.ListBranchesInput{
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := asset.ListBranchesInput{
 		RepositoryID: repositoryID,
 		Name:         query.Get("name"),
 		BranchTypes:  parseQueryArray(query.Get("types")),
 		IsDefault:    parseQueryBoolPtr(query.Get("is_default")),
 		ScanStatus:   query.Get("scan_status"),
 		Sort:         query.Get("sort"),
-		Page:         parseQueryInt(query.Get("page"), 1),
-		PerPage:      parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:         paging.Page,
+		PerPage:      paging.PerPage,
 	}
 
 	if err := h.validator.Validate(input); err != nil {
@@ -291,7 +298,7 @@ func (h *BranchHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateBranchInput{
+	input := asset.CreateBranchInput{
 		RepositoryID:  repositoryID,
 		Name:          req.Name,
 		BranchType:    req.BranchType,
@@ -387,7 +394,7 @@ func (h *BranchHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateBranchInput{
+	input := asset.UpdateBranchInput{
 		IsProtected:            req.IsProtected,
 		LastCommitSHA:          req.LastCommitSHA,
 		LastCommitMessage:      req.LastCommitMessage,

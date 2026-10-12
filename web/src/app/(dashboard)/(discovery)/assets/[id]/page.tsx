@@ -7,74 +7,48 @@
  *
  * Behavior:
  *  - Fetch asset by id.
- *  - Repository assets have a rich dedicated page at /assets/repositories/{id};
- *    redirect there.
+ *  - A repository opens its workspace here (branches, findings by branch,
+ *    scan settings): one URL per asset, whatever its type.
  *  - Other asset types: render a minimal detail layout (header + key fields)
- *    plus a CTA back to the typed listing.
+ *    plus a link to the inventory filtered to the asset's type.
  */
 
 'use client'
 
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertCircle, ArrowLeft, Globe, Loader2, Server, Shield } from 'lucide-react'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DetailSections, PageHeader } from '@/features/shared'
-import { AssetIdentitySections, useAsset } from '@/features/assets'
+import {
+  AssetAttributeSourcesSection,
+  AssetFreshnessSection,
+  AssetAttributionSection,
+  AssetIdentitySections,
+  AssetTimeline,
+  useAsset,
+} from '@/features/assets'
+import { AssetScanWindowCard } from '@/features/scan-windows'
+import { AssetWebEvidenceCard } from '@/features/attack-surface'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
+import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
 import { CRITICALITY_TEXT_COLORS } from '@/lib/criticality-colors'
 
 const CRITICALITY_COLOR: Record<string, string> = CRITICALITY_TEXT_COLORS
-
-// Map asset_type → category route slug used in /assets/<slug>/ listings.
-// Matches the directory structure in app/(dashboard)/(discovery)/assets/.
-const TYPE_TO_LISTING_SLUG: Record<string, string> = {
-  repository: 'repositories',
-  web_application: 'web-applications',
-  website: 'websites',
-  api: 'apis',
-  mobile_app: 'mobile',
-  domain: 'domains',
-  subdomain: 'domains',
-  certificate: 'certificates',
-  ip_address: 'ip-addresses',
-  host: 'hosts',
-  server: 'hosts',
-  container: 'containers',
-  kubernetes_cluster: 'cloud-resources',
-  kubernetes_namespace: 'cloud-resources',
-  database: 'databases',
-  data_store: 'databases',
-  s3_bucket: 'storage',
-  storage: 'storage',
-  cloud_account: 'cloud-accounts',
-  compute: 'cloud-resources',
-  serverless: 'serverless',
-  service: 'services',
-  network: 'networks',
-  vpc: 'vpcs',
-  iam_user: 'iam-users',
-  iam_role: 'iam-roles',
-  service_account: 'service-accounts',
-}
 
 export default function AssetDetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
   const assetId = params?.id ?? null
 
+  const { t } = useTranslation()
   const { asset, isLoading, error } = useAsset(assetId)
-
-  // Repository has a rich dedicated page — redirect there.
-  React.useEffect(() => {
-    if (asset && asset.type === 'repository') {
-      router.replace(`/assets/repositories/${asset.id}`)
-    }
-  }, [asset, router])
+  useBreadcrumbTitle(asset?.name)
 
   if (isLoading) {
     return (
@@ -109,7 +83,13 @@ export default function AssetDetailPage() {
     )
   }
 
-  const listingSlug = TYPE_TO_LISTING_SLUG[asset.type] ?? null
+  if (asset.type === 'repository') {
+    return <RepositoryWorkspace repositoryId={asset.id} />
+  }
+
+  // The inventory filtered to this asset's type (and alias sub-type).
+  const listingQuery = new URLSearchParams({ types: asset.type })
+  if (asset.subType) listingQuery.set('sub_type', asset.subType)
   const typeLabel = asset.type.replace(/_/g, ' ')
 
   return (
@@ -169,7 +149,7 @@ export default function AssetDetailPage() {
           </CardHeader>
           <CardContent>
             <Link
-              href={`/findings?assetId=${assetId}`}
+              href={`/findings?asset_id=${assetId}`}
               className={cn(
                 'inline-block text-2xl font-bold hover:underline',
                 asset.findingCount > 0 ? 'text-destructive' : ''
@@ -223,12 +203,19 @@ export default function AssetDetailPage() {
         </CardContent>
       </Card>
 
-      <Card className="mt-4">
+      <Card className="mt-4" id="asset-identity">
         <CardHeader>
           <CardTitle>Identity</CardTitle>
         </CardHeader>
         <CardContent>
           <DetailSections>
+            <AssetAttributionSection
+              assetId={asset.id}
+              assetName={asset.name}
+              assetType={asset.type}
+            />
+            <AssetAttributeSourcesSection assetId={asset.id} />
+            <AssetFreshnessSection assetId={asset.id} />
             <AssetIdentitySections
               assetId={asset.id}
               assetName={asset.name}
@@ -238,22 +225,40 @@ export default function AssetDetailPage() {
         </CardContent>
       </Card>
 
-      {/* CTA to richer typed listing */}
-      {listingSlug && (
-        <Card className="mt-4 bg-muted/30">
-          <CardContent className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm font-medium">Looking for richer details?</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                The {typeLabel} listing page has full filters, scans, and findings context.
-              </p>
-            </div>
-            <Button variant="outline" onClick={() => router.push(`/assets/${listingSlug}`)}>
-              Open {typeLabel} list
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>{t('assetTimeline.tab', 'Timeline')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AssetTimeline
+            assetId={asset.id}
+            onWhy={() =>
+              document
+                .getElementById('asset-identity')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          />
+        </CardContent>
+      </Card>
+      {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
+      <AssetWebEvidenceCard assetId={asset.id} className="mt-4" />
+      {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
+      <AssetScanWindowCard assetId={asset.id} className="mt-4" />
+
+      {/* The inventory filtered to this type */}
+      <Card className="mt-4 bg-muted/30">
+        <CardContent className="flex items-center justify-between py-4">
+          <div>
+            <p className="text-sm font-medium">Looking for richer details?</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              The inventory lists every {typeLabel} with its filters, columns and actions.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => router.push(`/assets?${listingQuery}`)}>
+            Open {typeLabel} list
+          </Button>
+        </CardContent>
+      </Card>
     </Main>
   )
 }

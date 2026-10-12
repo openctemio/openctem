@@ -25,18 +25,15 @@ services:
     restart: on-failure
     ports:
       - "8080:8080" # HTTP API
-      - "9090:9090" # gRPC
       - "2345:2345" # Delve debugger
     environment:
       # Application
       APP_NAME: openctem
       APP_ENV: development
-      APP_DEBUG: "true"
       # Server
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
       SERVER_REQUEST_TIMEOUT: 30s
-      GRPC_PORT: 9090
       # Database
       DB_HOST: postgres
       DB_PORT: 5432
@@ -59,7 +56,7 @@ services:
       AUTH_ACCESS_TOKEN_DURATION: 15m
       AUTH_REFRESH_TOKEN_DURATION: 168h
       AUTH_SESSION_DURATION: 720h
-      AUTH_PASSWORD_MIN_LENGTH: "8"
+      AUTH_PASSWORD_MIN_LENGTH: "12"
       AUTH_PASSWORD_REQUIRE_UPPERCASE: "true"
       AUTH_PASSWORD_REQUIRE_LOWERCASE: "true"
       AUTH_PASSWORD_REQUIRE_NUMBER: "true"
@@ -67,8 +64,6 @@ services:
       AUTH_MAX_LOGIN_ATTEMPTS: "5"
       AUTH_LOCKOUT_DURATION: 15m
       AUTH_MAX_ACTIVE_SESSIONS: "10"
-      # Self-registration is off by default; set true for an open dev instance.
-      AUTH_ALLOW_REGISTRATION: ${AUTH_ALLOW_REGISTRATION:-false}
       # Who creates organizations: admin_only (platform administrator: console or
       # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
       TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
@@ -86,16 +81,9 @@ services:
       # Encryption (optional in dev - credentials stored in plaintext if not set)
       # Generate with: openssl rand -hex 32
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
-      # SMTP (optional - use env vars from host)
-      SMTP_ENABLED: ${SMTP_ENABLED:-false}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@openctem.io}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-OpenCTEM}
-      SMTP_TLS: ${SMTP_TLS:-true}
-      SMTP_SKIP_VERIFY: ${SMTP_SKIP_VERIFY:-false}
+      # Old key(s) while rotating APP_ENCRYPTION_KEY (docs/deployment/encryption-key-rotation.md).
+      APP_ENCRYPTION_KEY_PREVIOUS: ${APP_ENCRYPTION_KEY_PREVIOUS:-}
+      # Platform e-mail (SMTP) is set in the admin console: System > E-mail.
       SMTP_BASE_URL: ${SMTP_BASE_URL:-http://localhost:3000}
       # AI Triage (optional - provide at least one LLM API key)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -113,10 +101,10 @@ services:
       - go-mod-cache:/go/pkg/mod
       # Preserve build cache
       - go-build-cache:/root/.cache/go-build
-      # Mount SDK source
-      - ../sdk:/app/sdk
-      # Mount Docker-specific go.work (paths adjusted for container)
-      - ./go.work.docker:/app/go.work
+      # No SDK mount and no go.work: the API requires only the
+      # github.com/openctemio/sdk-go/pkg/transfer module, resolved from its
+      # go.mod pin, and dev-entrypoint.sh builds with GOWORK=off, exactly
+      # like CI and the release image.
     depends_on:
       postgres:
         condition: service_healthy

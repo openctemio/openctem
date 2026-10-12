@@ -60,7 +60,8 @@ func backfillCredentialSecretBatch(ctx context.Context, db *sql.DB, p *credentia
 			return 0, fmt.Errorf("encode details of exposure %s: %w", row.id, err)
 		}
 		// updated_at is left alone: sealing does not change what the row says.
-		if _, err := tx.ExecContext(ctx, `UPDATE exposure_events SET details = $1 WHERE id = $2`, raw, row.id); err != nil {
+		// The row is pinned to the tenant it was read with.
+		if _, err := tx.ExecContext(ctx, `UPDATE exposure_events SET details = $1 WHERE id = $2 AND tenant_id = $3`, raw, row.id, row.tenantID); err != nil {
 			return 0, fmt.Errorf("update exposure %s: %w", row.id, err)
 		}
 		updated++
@@ -72,8 +73,9 @@ func backfillCredentialSecretBatch(ctx context.Context, db *sql.DB, p *credentia
 }
 
 type pendingSecretRow struct {
-	id      string
-	details map[string]any
+	id       string
+	tenantID string
+	details  map[string]any
 }
 
 // selectPlaintextSecrets locks one batch of rows whose secret still needs
@@ -81,7 +83,7 @@ type pendingSecretRow struct {
 // otherwise those rows are already in their final form for this key state.
 func selectPlaintextSecrets(ctx context.Context, tx *sql.Tx, canEncrypt bool) ([]pendingSecretRow, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, details
+		SELECT id, tenant_id, details
 		FROM exposure_events
 		WHERE COALESCE(details->>'secret_value', '') <> ''
 		   OR ($1 AND details->>'secret_enc_scheme' = 'none')
@@ -95,16 +97,16 @@ func selectPlaintextSecrets(ctx context.Context, tx *sql.Tx, canEncrypt bool) ([
 
 	var batch []pendingSecretRow
 	for rows.Next() {
-		var id string
+		var id, tenantID string
 		var raw []byte
-		if err := rows.Scan(&id, &raw); err != nil {
+		if err := rows.Scan(&id, &tenantID, &raw); err != nil {
 			return nil, fmt.Errorf("scan credential secret row: %w", err)
 		}
 		details := map[string]any{}
 		if err := json.Unmarshal(raw, &details); err != nil {
 			return nil, fmt.Errorf("decode details of exposure %s: %w", id, err)
 		}
-		batch = append(batch, pendingSecretRow{id: id, details: details})
+		batch = append(batch, pendingSecretRow{id: id, tenantID: tenantID, details: details})
 	}
 	return batch, rows.Err()
 }

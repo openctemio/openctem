@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { AlertTriangle, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -10,10 +10,11 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScopeExclusionsApi } from '@/features/scope'
 import type { CharterExclusion } from '../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * The charter's exclusions, picked from the scope exclusions scans enforce
- * (Scoping › Boundaries) instead of typed as free text. Each picked exclusion
+ * (Scoping › Scope) instead of typed as free text. Each picked exclusion
  * is stored as `{item: pattern, reason}`, so the charter keeps its own
  * wording of why, and the reason defaults to the exclusion's.
  *
@@ -30,6 +31,7 @@ export function CharterExclusionsField({
   onChange: (next: CharterExclusion[]) => void
   editable: boolean
 }) {
+  const { t } = useTranslation()
   const { data, error, isLoading } = useScopeExclusionsApi({ per_page: 100 })
   const exclusions = useMemo(() => data?.data ?? [], [data])
   const enforced = useMemo(
@@ -78,14 +80,13 @@ export function CharterExclusionsField({
         <Skeleton className="h-20 w-full" />
       ) : error ? (
         <p className="text-sm text-muted-foreground">
-          Scope exclusions could not be loaded (the Boundaries module may be off), so none can be
-          picked here.
+          {t('scope.cycles.exclusionsLoadFailed', 'Scope exclusions could not be loaded.')}
         </p>
       ) : exclusions.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No exclusions yet.{' '}
-          <Link href="/scope-config?tab=exclusions" className="underline">
-            Add them under Boundaries
+          <Link href="/scope?tab=exclusions" className="underline">
+            Add them under Scope
           </Link>{' '}
           so scans honour them, then pick them here.
         </p>

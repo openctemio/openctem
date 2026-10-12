@@ -75,6 +75,8 @@ export const Permission = {
   // CORE MODULES
   // ===========================================
   DashboardRead: 'dashboard:read',
+  /** Organization-wide dashboard totals for a viewer with a restricted data scope (D6). */
+  DashboardAggregate: 'dashboard:aggregate',
   AuditRead: 'audit:read',
   SettingsRead: 'settings:read',
   SettingsWrite: 'settings:write',
@@ -97,7 +99,6 @@ export const Permission = {
   // Note: Components (SBOM) is a separate module with its own permissions
   ComponentsRead: 'assets:components:read',
   ComponentsWrite: 'assets:components:write',
-  ComponentsDelete: 'assets:components:delete',
 
   // Note: Repositories and Branches use general assets:* permissions
   // as they are just asset types, not separate security boundaries
@@ -116,6 +117,8 @@ export const Permission = {
   FindingsApprove: 'findings:approve',
   FindingsFixApply: 'findings:fix_apply',
   FindingsVerify: 'findings:verify',
+  FindingsComment: 'findings:comment',
+  FindingsSeverity: 'findings:severity',
 
   // Exposures (findings:exposures:*)
   ExposuresRead: 'findings:exposures:read',
@@ -131,8 +134,6 @@ export const Permission = {
 
   // Vulnerabilities (findings:vulnerabilities:*)
   VulnerabilitiesRead: 'findings:vulnerabilities:read',
-  VulnerabilitiesWrite: 'findings:vulnerabilities:write',
-  VulnerabilitiesDelete: 'findings:vulnerabilities:delete',
 
   // Credentials (findings:credentials:*)
   CredentialsRead: 'findings:credentials:read',
@@ -140,6 +141,9 @@ export const Permission = {
   // Reveal a leaked credential's plaintext secret (audited). Reads return only
   // a mask and a fingerprint; owners and admins hold this by default.
   CredentialsReveal: 'findings:credentials:reveal',
+  // Reveal secret values masked out of finding evidence (auth headers,
+  // cookies, tokens). Step-up and audited; owners and admins by default.
+  EvidenceReveal: 'findings:evidence:reveal',
 
   // Remediation (findings:remediation:*)
   RemediationRead: 'findings:remediation:read',
@@ -149,11 +153,6 @@ export const Permission = {
   WorkflowsRead: 'findings:workflows:read',
   WorkflowsWrite: 'findings:workflows:write',
 
-  // Policies (findings:policies:*)
-  PoliciesRead: 'findings:policies:read',
-  PoliciesWrite: 'findings:policies:write',
-  PoliciesDelete: 'findings:policies:delete',
-
   // ===========================================
   // SCANS MODULE
   // ===========================================
@@ -161,6 +160,7 @@ export const Permission = {
   ScansWrite: 'scans:write',
   ScansDelete: 'scans:delete',
   ScansExecute: 'scans:execute',
+  ScansApprove: 'scans:approve',
 
   // Scan Profiles (scans:profiles:*)
   ScanProfilesRead: 'scans:profiles:read',
@@ -180,12 +180,15 @@ export const Permission = {
   // Tenant Tools (scans:tenant_tools:*)
   TenantToolsRead: 'scans:tenant_tools:read',
   TenantToolsWrite: 'scans:tenant_tools:write',
-  TenantToolsDelete: 'scans:tenant_tools:delete',
 
   // Scanner Templates (scans:templates:*)
   ScannerTemplatesRead: 'scans:templates:read',
   ScannerTemplatesWrite: 'scans:templates:write',
   ScannerTemplatesDelete: 'scans:templates:delete',
+
+  // Content packs (scans:content:*, RFC-061)
+  ContentPacksRead: 'scans:content:read',
+  ContentPacksWrite: 'scans:content:write',
 
   // Template Sources (scans:sources:* - shared with Sources)
   TemplateSourcesRead: 'scans:sources:read',
@@ -196,6 +199,15 @@ export const Permission = {
   SecretStoreRead: 'scans:secret_store:read',
   SecretStoreWrite: 'scans:secret_store:write',
   SecretStoreDelete: 'scans:secret_store:delete',
+  // CI runs, trust configurations and the gate (RFC-051); write and
+  // override are admin-only.
+  CIRead: 'scans:ci:read',
+  CIWrite: 'scans:ci:write',
+  CIOverride: 'scans:ci:override',
+  // Scan window policies (RFC-067): change them; lift them for a short
+  // time in an emergency (fresh authenticator code, audited).
+  ScanWindowsManage: 'scans:windows:manage',
+  ScanWindowsOverride: 'scans:windows:override',
 
   // ===========================================
   // SENSORS MODULE
@@ -207,12 +219,18 @@ export const Permission = {
   // Commands (sensors:commands:*)
   CommandsRead: 'sensors:commands:read',
   CommandsWrite: 'sensors:commands:write',
-  CommandsDelete: 'sensors:commands:delete',
 
   // Scan zones (sensors:zones:*): RFC-023
   ScanZonesRead: 'sensors:zones:read',
   ScanZonesWrite: 'sensors:zones:write',
   ScanZonesDelete: 'sensors:zones:delete',
+
+  // Pairing and per-sensor grants (RFC-052)
+  SensorsPair: 'sensors:pair',
+  SensorsApprove: 'sensors:approve',
+  SensorsGrantNarrow: 'sensors:grant:narrow',
+  SensorsGrantWiden: 'sensors:grant:widen',
+  SensorsRevoke: 'sensors:revoke',
 
   // ===========================================
   // TEAM MODULE (Access Control)
@@ -239,11 +257,6 @@ export const Permission = {
   RolesDelete: 'team:roles:delete',
   RolesAssign: 'team:roles:assign',
 
-  // Permission Sets (team:permission_sets:*)
-  PermissionSetsRead: 'team:permission_sets:read',
-  PermissionSetsWrite: 'team:permission_sets:write',
-  PermissionSetsDelete: 'team:permission_sets:delete',
-
   // Assignment Rules (team:assignment_rules:*)
   AssignmentRulesRead: 'team:assignment_rules:read',
   AssignmentRulesWrite: 'team:assignment_rules:write',
@@ -265,27 +278,17 @@ export const Permission = {
   NotificationsWrite: 'integrations:notifications:write',
   NotificationsDelete: 'integrations:notifications:delete',
 
-  // Webhooks (integrations:webhooks:*)
-  WebhooksRead: 'integrations:webhooks:read',
-  WebhooksWrite: 'integrations:webhooks:write',
-  WebhooksDelete: 'integrations:webhooks:delete',
-
   // API Keys (integrations:api_keys:*)
   ApiKeysRead: 'integrations:api_keys:read',
   ApiKeysWrite: 'integrations:api_keys:write',
   ApiKeysDelete: 'integrations:api_keys:delete',
 
-  // Pipelines (integrations:pipelines:*)
-  PipelinesRead: 'integrations:pipelines:read',
-  PipelinesWrite: 'integrations:pipelines:write',
-  PipelinesDelete: 'integrations:pipelines:delete',
-  PipelinesExecute: 'integrations:pipelines:execute',
+  // Scan workflows (scans:workflows:*)
+  ScanWorkflowsRead: 'scans:workflows:read',
+  ScanWorkflowsWrite: 'scans:workflows:write',
+  ScanWorkflowsDelete: 'scans:workflows:delete',
 
   // ===========================================
-  // SETTINGS MODULE
-  // ===========================================
-  BillingRead: 'settings:billing:read',
-  BillingWrite: 'settings:billing:write',
 
   // SLA (settings:sla:*)
   SLARead: 'settings:sla:read',
@@ -298,6 +301,15 @@ export const Permission = {
   ScopeRead: 'attack_surface:scope:read',
   ScopeWrite: 'attack_surface:scope:write',
   ScopeDelete: 'attack_surface:scope:delete',
+  // Approve or reject a pending scope exclusion. scope:write only requests
+  // one; owners and admins hold this by default.
+  ScopeExclusionsApprove: 'attack_surface:scope:exclusions:approve',
+  // Create effective scope entries and approve or reject scope requests and
+  // widenings (RFC-054). Without it, scope:write only requests a one-off.
+  ScopeApprove: 'attack_surface:scope:approve',
+  // Bug-bounty programs (RFC-065): view; import, re-import, pause, resume, end and attest.
+  ProgramsRead: 'attack_surface:programs:read',
+  ProgramsWrite: 'attack_surface:programs:write',
 
   // ===========================================
   // VALIDATION MODULE (CTEM)
@@ -343,7 +355,6 @@ export const Permission = {
   // LEGACY ALIASES (for backward compatibility)
   // ===========================================
   MembersManage: 'team:members:write', // Alias for MembersWrite
-  BillingManage: 'settings:billing:write', // Alias for BillingWrite
   PentestRead: 'validation:read', // Alias for ValidationRead (legacy)
   PentestWrite: 'validation:write', // Alias for ValidationWrite (legacy)
   GroupsPermissions: 'team:groups:write', // Alias for GroupsWrite
@@ -360,15 +371,14 @@ export const Permission = {
   PentestTemplatesRead: 'pentest:templates:read',
   PentestTemplatesWrite: 'pentest:templates:write',
   PentestReportsWrite: 'pentest:reports:write',
+  PentestChecklistsManage: 'pentest:checklists:manage',
 
   // Compliance permissions
   ComplianceFrameworksRead: 'compliance:frameworks:read',
-  ComplianceFrameworksWrite: 'compliance:frameworks:write',
   ComplianceAssessmentsRead: 'compliance:assessments:read',
   ComplianceAssessmentsWrite: 'compliance:assessments:write',
   ComplianceMappingsRead: 'compliance:mappings:read',
   ComplianceMappingsWrite: 'compliance:mappings:write',
-  ComplianceReportsRead: 'compliance:reports:read',
 
   // Legacy project permissions (mapped to assets)
   ProjectsRead: 'assets:read',
@@ -380,6 +390,25 @@ export const Permission = {
  * Permission string type
  */
 export type PermissionString = (typeof Permission)[keyof typeof Permission]
+
+/**
+ * Permissions only the system owner and admin roles carry (settings decision
+ * B1): the API refuses them on a custom role. Mirrors
+ * api/pkg/domain/permission/admin_only.go.
+ */
+export const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
+  Permission.SensorsWrite,
+  Permission.SensorsDelete,
+  Permission.ScanZonesWrite,
+  Permission.ScanZonesDelete,
+  Permission.SensorsPair,
+  Permission.SensorsApprove,
+  Permission.SensorsGrantNarrow,
+  Permission.SensorsGrantWiden,
+  Permission.SensorsRevoke,
+  Permission.CIWrite,
+  Permission.CIOverride,
+]
 
 /**
  * All permission values as an array
@@ -412,15 +441,16 @@ export const PermissionGroups = {
     Permission.CredentialsRead,
     Permission.RemediationRead,
     Permission.WorkflowsRead,
-    Permission.PoliciesRead,
     Permission.ScansRead,
     Permission.ScanProfilesRead,
     Permission.SourcesRead,
     Permission.ToolsRead,
     Permission.TenantToolsRead,
     Permission.ScannerTemplatesRead,
+    Permission.ContentPacksRead,
     Permission.TemplateSourcesRead,
     Permission.SecretStoreRead,
+    Permission.CIRead,
     Permission.SensorsRead,
     Permission.CommandsRead,
     Permission.ScanZonesRead,
@@ -428,15 +458,12 @@ export const PermissionGroups = {
     Permission.MembersRead,
     Permission.GroupsRead,
     Permission.RolesRead,
-    Permission.PermissionSetsRead,
     Permission.AssignmentRulesRead,
     Permission.IntegrationsRead,
     Permission.ScmConnectionsRead,
     Permission.NotificationsRead,
-    Permission.WebhooksRead,
     Permission.ApiKeysRead,
-    Permission.PipelinesRead,
-    Permission.BillingRead,
+    Permission.ScanWorkflowsRead,
     Permission.SLARead,
     Permission.ScopeRead,
     Permission.ValidationRead,
@@ -447,7 +474,6 @@ export const PermissionGroups = {
     Permission.ComplianceFrameworksRead,
     Permission.ComplianceAssessmentsRead,
     Permission.ComplianceMappingsRead,
-    Permission.ComplianceReportsRead,
     Permission.ReportsRead,
     Permission.ThreatIntelRead,
     Permission.AITriageRead,
@@ -462,19 +488,22 @@ export const PermissionGroups = {
     Permission.FindingsWrite,
     Permission.ExposuresWrite,
     Permission.SuppressionsWrite,
-    Permission.VulnerabilitiesWrite,
     Permission.CredentialsWrite,
     Permission.RemediationWrite,
     Permission.WorkflowsWrite,
-    Permission.PoliciesWrite,
     Permission.ScansWrite,
     Permission.ScanProfilesWrite,
     Permission.SourcesWrite,
     Permission.ToolsWrite,
     Permission.TenantToolsWrite,
     Permission.ScannerTemplatesWrite,
+    Permission.ContentPacksWrite,
     Permission.TemplateSourcesWrite,
     Permission.SecretStoreWrite,
+    Permission.CIWrite,
+    Permission.CIOverride,
+    Permission.ScanWindowsManage,
+    Permission.ScanWindowsOverride,
     Permission.SensorsWrite,
     Permission.CommandsWrite,
     Permission.ScanZonesWrite,
@@ -482,14 +511,11 @@ export const PermissionGroups = {
     Permission.MembersWrite,
     Permission.GroupsWrite,
     Permission.RolesWrite,
-    Permission.PermissionSetsWrite,
     Permission.AssignmentRulesWrite,
     Permission.ScmConnectionsWrite,
     Permission.NotificationsWrite,
-    Permission.WebhooksWrite,
     Permission.ApiKeysWrite,
-    Permission.PipelinesWrite,
-    Permission.BillingWrite,
+    Permission.ScanWorkflowsWrite,
     Permission.SLAWrite,
     Permission.ScopeWrite,
     Permission.ValidationWrite,
@@ -498,7 +524,7 @@ export const PermissionGroups = {
     Permission.PentestRetestsWrite,
     Permission.PentestTemplatesWrite,
     Permission.PentestReportsWrite,
-    Permission.ComplianceFrameworksWrite,
+    Permission.PentestChecklistsManage,
     Permission.ComplianceAssessmentsWrite,
     Permission.ComplianceMappingsWrite,
     Permission.ReportsWrite,
@@ -509,33 +535,26 @@ export const PermissionGroups = {
   AllDelete: [
     Permission.AssetsDelete,
     Permission.AssetGroupsDelete,
-    Permission.ComponentsDelete,
     Permission.FindingsDelete,
     Permission.ExposuresDelete,
     Permission.SuppressionsDelete,
-    Permission.VulnerabilitiesDelete,
-    Permission.PoliciesDelete,
     Permission.ScansDelete,
     Permission.ScanProfilesDelete,
     Permission.SourcesDelete,
     Permission.ToolsDelete,
-    Permission.TenantToolsDelete,
     Permission.ScannerTemplatesDelete,
     Permission.TemplateSourcesDelete,
     Permission.SecretStoreDelete,
     Permission.SensorsDelete,
-    Permission.CommandsDelete,
     Permission.ScanZonesDelete,
     Permission.TeamDelete,
     Permission.GroupsDelete,
     Permission.RolesDelete,
-    Permission.PermissionSetsDelete,
     Permission.AssignmentRulesDelete,
     Permission.ScmConnectionsDelete,
     Permission.NotificationsDelete,
-    Permission.WebhooksDelete,
     Permission.ApiKeysDelete,
-    Permission.PipelinesDelete,
+    Permission.ScanWorkflowsDelete,
     Permission.SLADelete,
     Permission.ScopeDelete,
     Permission.PentestCampaignsDelete,
@@ -556,8 +575,6 @@ export const PermissionGroups = {
     Permission.RolesRead,
     Permission.RolesWrite,
     Permission.RolesAssign,
-    Permission.PermissionSetsRead,
-    Permission.PermissionSetsWrite,
   ],
 
   // Security/vulnerability permissions
@@ -568,7 +585,6 @@ export const PermissionGroups = {
     Permission.ExposuresRead,
     Permission.ExposuresWrite,
     Permission.VulnerabilitiesRead,
-    Permission.VulnerabilitiesWrite,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,
     Permission.ValidationRead,
@@ -586,6 +602,7 @@ export const PermissionGroups = {
 export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   // Core
   [Permission.DashboardRead]: 'View Dashboard',
+  [Permission.DashboardAggregate]: 'View Organization Totals',
   [Permission.AuditRead]: 'View Audit Logs',
   [Permission.SettingsRead]: 'View Settings',
   [Permission.SettingsWrite]: 'Manage Settings',
@@ -601,7 +618,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.AssetGroupsDelete]: 'Delete Asset Groups',
   [Permission.ComponentsRead]: 'View Components',
   [Permission.ComponentsWrite]: 'Edit Components',
-  [Permission.ComponentsDelete]: 'Delete Components',
 
   // Findings
   [Permission.FindingsRead]: 'View Findings',
@@ -609,8 +625,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.FindingsDelete]: 'Delete Findings',
   [Permission.FindingsAssign]: 'Assign Findings',
   [Permission.FindingsTriage]: 'Triage Findings',
-  [Permission.FindingsStatus]: 'Change Finding Status',
   [Permission.FindingsExport]: 'Export Findings',
+  [Permission.FindingsStatus]: 'Change Finding Status',
   [Permission.FindingsBulkUpdate]: 'Bulk Update Findings',
   [Permission.FindingsApprove]: 'Approve Findings',
   [Permission.ExposuresRead]: 'View Exposures',
@@ -622,23 +638,19 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SuppressionsDelete]: 'Delete Suppressions',
   [Permission.SuppressionsApprove]: 'Approve Suppressions',
   [Permission.VulnerabilitiesRead]: 'View Vulnerabilities',
-  [Permission.VulnerabilitiesWrite]: 'Edit Vulnerabilities',
-  [Permission.VulnerabilitiesDelete]: 'Delete Vulnerabilities',
   [Permission.CredentialsRead]: 'View Credentials',
   [Permission.CredentialsWrite]: 'Manage Credentials',
   [Permission.RemediationRead]: 'View Remediation',
   [Permission.RemediationWrite]: 'Manage Remediation',
   [Permission.WorkflowsRead]: 'View Workflows',
   [Permission.WorkflowsWrite]: 'Manage Workflows',
-  [Permission.PoliciesRead]: 'View Policies',
-  [Permission.PoliciesWrite]: 'Manage Policies',
-  [Permission.PoliciesDelete]: 'Delete Policies',
 
   // Scans
   [Permission.ScansRead]: 'View Scans',
   [Permission.ScansWrite]: 'Manage Scans',
   [Permission.ScansDelete]: 'Delete Scans',
   [Permission.ScansExecute]: 'Execute Scans',
+  [Permission.ScansApprove]: 'Approve Scans',
   [Permission.ScanProfilesRead]: 'View Scan Profiles',
   [Permission.ScanProfilesWrite]: 'Manage Scan Profiles',
   [Permission.ScanProfilesDelete]: 'Delete Scan Profiles',
@@ -650,15 +662,21 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ToolsDelete]: 'Delete Tools',
   [Permission.TenantToolsRead]: 'View Tool Configs',
   [Permission.TenantToolsWrite]: 'Manage Tool Configs',
-  [Permission.TenantToolsDelete]: 'Delete Tool Configs',
   [Permission.ScannerTemplatesRead]: 'View Scanner Templates',
   [Permission.ScannerTemplatesWrite]: 'Manage Scanner Templates',
   [Permission.ScannerTemplatesDelete]: 'Delete Scanner Templates',
+  [Permission.ContentPacksRead]: 'View Content Packs',
+  [Permission.ContentPacksWrite]: 'Manage Content Packs',
   // Note: TemplateSourcesRead/Write/Delete use the same permission strings as SourcesRead/Write/Delete
   // so they share the same labels
   [Permission.SecretStoreRead]: 'View Secret Store',
   [Permission.SecretStoreWrite]: 'Manage Secret Store',
   [Permission.SecretStoreDelete]: 'Delete Secrets',
+  [Permission.CIRead]: 'View CI Runs',
+  [Permission.CIWrite]: 'Manage CI Trust and Gate',
+  [Permission.CIOverride]: 'Override the CI Gate',
+  [Permission.ScanWindowsManage]: 'Manage Scan Windows',
+  [Permission.ScanWindowsOverride]: 'Override Scan Windows',
 
   // Sensors
   [Permission.SensorsRead]: 'View Sensors',
@@ -666,10 +684,14 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SensorsDelete]: 'Delete Sensors',
   [Permission.CommandsRead]: 'View Commands',
   [Permission.CommandsWrite]: 'Send Commands',
-  [Permission.CommandsDelete]: 'Delete Commands',
   [Permission.ScanZonesRead]: 'View Scan Zones',
   [Permission.ScanZonesWrite]: 'Manage Scan Zones',
   [Permission.ScanZonesDelete]: 'Delete Scan Zones',
+  [Permission.SensorsPair]: 'Pair Sensors',
+  [Permission.SensorsApprove]: 'Approve Sensors',
+  [Permission.SensorsGrantNarrow]: 'Narrow Sensor Grants',
+  [Permission.SensorsGrantWiden]: 'Widen Sensor Grants',
+  [Permission.SensorsRevoke]: 'Revoke Sensors',
 
   // Team
   [Permission.TeamRead]: 'View Team Settings',
@@ -687,9 +709,6 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.RolesWrite]: 'Manage Roles',
   [Permission.RolesDelete]: 'Delete Roles',
   [Permission.RolesAssign]: 'Assign Roles',
-  [Permission.PermissionSetsRead]: 'View Permission Sets',
-  [Permission.PermissionSetsWrite]: 'Manage Permission Sets',
-  [Permission.PermissionSetsDelete]: 'Delete Permission Sets',
   [Permission.AssignmentRulesRead]: 'View Assignment Rules',
   [Permission.AssignmentRulesWrite]: 'Manage Assignment Rules',
   [Permission.AssignmentRulesDelete]: 'Delete Assignment Rules',
@@ -703,20 +722,14 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.NotificationsRead]: 'View Notifications',
   [Permission.NotificationsWrite]: 'Manage Notifications',
   [Permission.NotificationsDelete]: 'Delete Notifications',
-  [Permission.WebhooksRead]: 'View Webhooks',
-  [Permission.WebhooksWrite]: 'Manage Webhooks',
-  [Permission.WebhooksDelete]: 'Delete Webhooks',
   [Permission.ApiKeysRead]: 'View API Keys',
   [Permission.ApiKeysWrite]: 'Manage API Keys',
   [Permission.ApiKeysDelete]: 'Delete API Keys',
-  [Permission.PipelinesRead]: 'View Pipelines',
-  [Permission.PipelinesWrite]: 'Manage Pipelines',
-  [Permission.PipelinesDelete]: 'Delete Pipelines',
-  [Permission.PipelinesExecute]: 'Execute Pipelines',
+  [Permission.ScanWorkflowsRead]: 'View Scan Workflows',
+  [Permission.ScanWorkflowsWrite]: 'Manage Scan Workflows',
+  [Permission.ScanWorkflowsDelete]: 'Delete Scan Workflows',
 
   // Settings
-  [Permission.BillingRead]: 'View Billing',
-  [Permission.BillingWrite]: 'Manage Billing',
   [Permission.SLARead]: 'View SLA',
   [Permission.SLAWrite]: 'Manage SLA',
   [Permission.SLADelete]: 'Delete SLA',
@@ -725,6 +738,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.ScopeRead]: 'View Scope',
   [Permission.ScopeWrite]: 'Manage Scope',
   [Permission.ScopeDelete]: 'Delete Scope',
+  [Permission.ScopeExclusionsApprove]: 'Approve Scope Exclusions',
+  [Permission.ScopeApprove]: 'Approve Scope Changes',
 
   // Validation (legacy)
   [Permission.ValidationRead]: 'View Validation',
@@ -742,15 +757,14 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.PentestTemplatesRead]: 'View Pentest Templates',
   [Permission.PentestTemplatesWrite]: 'Manage Pentest Templates',
   [Permission.PentestReportsWrite]: 'Manage Pentest Reports',
+  [Permission.PentestChecklistsManage]: 'Manage Pentest Checklists',
 
   // Compliance
   [Permission.ComplianceFrameworksRead]: 'View Compliance Frameworks',
-  [Permission.ComplianceFrameworksWrite]: 'Manage Compliance Frameworks',
   [Permission.ComplianceAssessmentsRead]: 'View Compliance Assessments',
   [Permission.ComplianceAssessmentsWrite]: 'Manage Compliance Assessments',
   [Permission.ComplianceMappingsRead]: 'View Compliance Mappings',
   [Permission.ComplianceMappingsWrite]: 'Manage Compliance Mappings',
-  [Permission.ComplianceReportsRead]: 'View Compliance Reports',
 
   // Reports
   [Permission.ReportsRead]: 'View Reports',
@@ -764,9 +778,11 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.AITriageRead]: 'View AI Triage',
   [Permission.AITriageTrigger]: 'Trigger AI Triage',
 
-  // Note: Legacy aliases (MembersManage, BillingManage, etc.) map to
+  // Note: Legacy aliases (MembersManage, etc.) map to
   // the same permission IDs as their canonical counterparts, so their
   // labels are inherited automatically.
+  [Permission.FindingsComment]: 'Comment on Findings',
+  [Permission.FindingsSeverity]: 'Change Finding Severity',
 }
 
 /**
@@ -793,6 +809,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
   [Role.Owner]: [
     // Core
     Permission.DashboardRead,
+    Permission.DashboardAggregate,
     Permission.AuditRead,
     Permission.SettingsRead,
     Permission.SettingsWrite,
@@ -807,7 +824,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.AssetGroupsDelete,
     Permission.ComponentsRead,
     Permission.ComponentsWrite,
-    Permission.ComponentsDelete,
     // Findings
     Permission.FindingsRead,
     Permission.FindingsWrite,
@@ -827,22 +843,18 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsDelete,
     Permission.SuppressionsApprove,
     Permission.VulnerabilitiesRead,
-    Permission.VulnerabilitiesWrite,
-    Permission.VulnerabilitiesDelete,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,
     Permission.RemediationRead,
     Permission.RemediationWrite,
     Permission.WorkflowsRead,
     Permission.WorkflowsWrite,
-    Permission.PoliciesRead,
-    Permission.PoliciesWrite,
-    Permission.PoliciesDelete,
     // Scans
     Permission.ScansRead,
     Permission.ScansWrite,
     Permission.ScansDelete,
     Permission.ScansExecute,
+    Permission.ScansApprove,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
     Permission.ScanProfilesDelete,
@@ -854,23 +866,33 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ToolsDelete,
     Permission.TenantToolsRead,
     Permission.TenantToolsWrite,
-    Permission.TenantToolsDelete,
     Permission.ScannerTemplatesRead,
     Permission.ScannerTemplatesWrite,
     Permission.ScannerTemplatesDelete,
+    Permission.ContentPacksRead,
+    Permission.ContentPacksWrite,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
+    Permission.CIRead,
+    Permission.CIWrite,
+    Permission.CIOverride,
+    Permission.ScanWindowsManage,
+    Permission.ScanWindowsOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
     Permission.SensorsDelete,
     Permission.CommandsRead,
     Permission.CommandsWrite,
-    Permission.CommandsDelete,
     Permission.ScanZonesRead,
     Permission.ScanZonesWrite,
     Permission.ScanZonesDelete,
+    Permission.SensorsPair,
+    Permission.SensorsApprove,
+    Permission.SensorsGrantNarrow,
+    Permission.SensorsGrantWiden,
+    Permission.SensorsRevoke,
     // Team
     Permission.TeamRead,
     Permission.TeamUpdate,
@@ -887,9 +909,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.RolesWrite,
     Permission.RolesDelete,
     Permission.RolesAssign,
-    Permission.PermissionSetsRead,
-    Permission.PermissionSetsWrite,
-    Permission.PermissionSetsDelete,
     Permission.AssignmentRulesRead,
     Permission.AssignmentRulesWrite,
     Permission.AssignmentRulesDelete,
@@ -902,19 +921,13 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.NotificationsRead,
     Permission.NotificationsWrite,
     Permission.NotificationsDelete,
-    Permission.WebhooksRead,
-    Permission.WebhooksWrite,
-    Permission.WebhooksDelete,
     Permission.ApiKeysRead,
     Permission.ApiKeysWrite,
     Permission.ApiKeysDelete,
-    Permission.PipelinesRead,
-    Permission.PipelinesWrite,
-    Permission.PipelinesDelete,
-    Permission.PipelinesExecute,
+    Permission.ScanWorkflowsRead,
+    Permission.ScanWorkflowsWrite,
+    Permission.ScanWorkflowsDelete,
     // Settings
-    Permission.BillingRead,
-    Permission.BillingWrite,
     Permission.SLARead,
     Permission.SLAWrite,
     Permission.SLADelete,
@@ -922,6 +935,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScopeRead,
     Permission.ScopeWrite,
     Permission.ScopeDelete,
+    Permission.ScopeExclusionsApprove,
+    Permission.ScopeApprove,
     // Validation (legacy)
     Permission.ValidationRead,
     Permission.ValidationWrite,
@@ -937,14 +952,13 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.PentestTemplatesRead,
     Permission.PentestTemplatesWrite,
     Permission.PentestReportsWrite,
+    Permission.PentestChecklistsManage,
     // Compliance (all)
     Permission.ComplianceFrameworksRead,
-    Permission.ComplianceFrameworksWrite,
     Permission.ComplianceAssessmentsRead,
     Permission.ComplianceAssessmentsWrite,
     Permission.ComplianceMappingsRead,
     Permission.ComplianceMappingsWrite,
-    Permission.ComplianceReportsRead,
     // Reports
     Permission.ReportsRead,
     Permission.ReportsWrite,
@@ -959,6 +973,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
   [Role.Admin]: [
     // Core
     Permission.DashboardRead,
+    Permission.DashboardAggregate,
     Permission.AuditRead,
     Permission.SettingsRead,
     Permission.SettingsWrite,
@@ -973,7 +988,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.AssetGroupsDelete,
     Permission.ComponentsRead,
     Permission.ComponentsWrite,
-    Permission.ComponentsDelete,
     // Findings
     Permission.FindingsRead,
     Permission.FindingsWrite,
@@ -992,22 +1006,18 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SuppressionsWrite,
     Permission.SuppressionsDelete,
     Permission.VulnerabilitiesRead,
-    Permission.VulnerabilitiesWrite,
-    Permission.VulnerabilitiesDelete,
     Permission.CredentialsRead,
     Permission.CredentialsWrite,
     Permission.RemediationRead,
     Permission.RemediationWrite,
     Permission.WorkflowsRead,
     Permission.WorkflowsWrite,
-    Permission.PoliciesRead,
-    Permission.PoliciesWrite,
-    Permission.PoliciesDelete,
     // Scans
     Permission.ScansRead,
     Permission.ScansWrite,
     Permission.ScansDelete,
     Permission.ScansExecute,
+    Permission.ScansApprove,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
     Permission.ScanProfilesDelete,
@@ -1019,23 +1029,33 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ToolsDelete,
     Permission.TenantToolsRead,
     Permission.TenantToolsWrite,
-    Permission.TenantToolsDelete,
     Permission.ScannerTemplatesRead,
     Permission.ScannerTemplatesWrite,
     Permission.ScannerTemplatesDelete,
+    Permission.ContentPacksRead,
+    Permission.ContentPacksWrite,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
     Permission.SecretStoreDelete,
+    Permission.CIRead,
+    Permission.CIWrite,
+    Permission.CIOverride,
+    Permission.ScanWindowsManage,
+    Permission.ScanWindowsOverride,
     // Sensors
     Permission.SensorsRead,
     Permission.SensorsWrite,
     Permission.SensorsDelete,
     Permission.CommandsRead,
     Permission.CommandsWrite,
-    Permission.CommandsDelete,
     Permission.ScanZonesRead,
     Permission.ScanZonesWrite,
     Permission.ScanZonesDelete,
+    Permission.SensorsPair,
+    Permission.SensorsApprove,
+    Permission.SensorsGrantNarrow,
+    Permission.SensorsGrantWiden,
+    Permission.SensorsRevoke,
     // Team (no team:delete)
     Permission.TeamRead,
     Permission.TeamUpdate,
@@ -1051,9 +1071,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.RolesWrite,
     Permission.RolesDelete,
     Permission.RolesAssign,
-    Permission.PermissionSetsRead,
-    Permission.PermissionSetsWrite,
-    Permission.PermissionSetsDelete,
     Permission.AssignmentRulesRead,
     Permission.AssignmentRulesWrite,
     Permission.AssignmentRulesDelete,
@@ -1066,18 +1083,13 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.NotificationsRead,
     Permission.NotificationsWrite,
     Permission.NotificationsDelete,
-    Permission.WebhooksRead,
-    Permission.WebhooksWrite,
-    Permission.WebhooksDelete,
     Permission.ApiKeysRead,
     Permission.ApiKeysWrite,
     Permission.ApiKeysDelete,
-    Permission.PipelinesRead,
-    Permission.PipelinesWrite,
-    Permission.PipelinesDelete,
-    Permission.PipelinesExecute,
+    Permission.ScanWorkflowsRead,
+    Permission.ScanWorkflowsWrite,
+    Permission.ScanWorkflowsDelete,
     // Settings (billing read only)
-    Permission.BillingRead,
     Permission.SLARead,
     Permission.SLAWrite,
     Permission.SLADelete,
@@ -1085,6 +1097,8 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ScopeRead,
     Permission.ScopeWrite,
     Permission.ScopeDelete,
+    Permission.ScopeExclusionsApprove,
+    Permission.ScopeApprove,
     // Validation (legacy)
     Permission.ValidationRead,
     Permission.ValidationWrite,
@@ -1100,14 +1114,13 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.PentestTemplatesRead,
     Permission.PentestTemplatesWrite,
     Permission.PentestReportsWrite,
+    Permission.PentestChecklistsManage,
     // Compliance (all)
     Permission.ComplianceFrameworksRead,
-    Permission.ComplianceFrameworksWrite,
     Permission.ComplianceAssessmentsRead,
     Permission.ComplianceAssessmentsWrite,
     Permission.ComplianceMappingsRead,
     Permission.ComplianceMappingsWrite,
-    Permission.ComplianceReportsRead,
     // Reports
     Permission.ReportsRead,
     Permission.ReportsWrite,
@@ -1143,22 +1156,22 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.RemediationRead,
     Permission.RemediationWrite,
     Permission.WorkflowsRead,
-    Permission.PoliciesRead,
     // Scans (read + write, no delete)
     Permission.ScansRead,
     Permission.ScansWrite,
     Permission.ScansExecute,
     Permission.ScanProfilesRead,
     Permission.ScanProfilesWrite,
+    // Template sources and scanner templates: read only (custom templates
+    // are code the sensors run; writing one is owner/admin only)
     Permission.SourcesRead,
-    Permission.SourcesWrite,
     Permission.ToolsRead,
     Permission.TenantToolsRead,
     Permission.TenantToolsWrite,
     Permission.ScannerTemplatesRead,
-    Permission.ScannerTemplatesWrite,
     Permission.SecretStoreRead,
     Permission.SecretStoreWrite,
+    Permission.CIRead,
     // Sensors: read only (creating sensors and their keys is owner/admin only)
     Permission.SensorsRead,
     Permission.CommandsRead,
@@ -1169,16 +1182,14 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.MembersRead,
     Permission.GroupsRead,
     Permission.RolesRead,
-    Permission.PermissionSetsRead,
     // Integrations (read + limited write)
     Permission.IntegrationsRead,
     Permission.ScmConnectionsRead,
     Permission.ScmConnectionsWrite,
     Permission.NotificationsRead,
-    Permission.WebhooksRead,
     Permission.ApiKeysRead,
-    Permission.PipelinesRead,
-    Permission.PipelinesWrite,
+    Permission.ScanWorkflowsRead,
+    Permission.ScanWorkflowsWrite,
     // Settings (read only; billing is owner/admin only)
     Permission.SLARead,
     // Attack Surface (read + write)
@@ -1203,7 +1214,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ComplianceAssessmentsWrite,
     Permission.ComplianceMappingsRead,
     Permission.ComplianceMappingsWrite,
-    Permission.ComplianceReportsRead,
     // Reports (read + write)
     Permission.ReportsRead,
     Permission.ReportsWrite,
@@ -1230,7 +1240,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.CredentialsRead,
     Permission.RemediationRead,
     Permission.WorkflowsRead,
-    Permission.PoliciesRead,
     // Scans (read only)
     Permission.ScansRead,
     Permission.ScanProfilesRead,
@@ -1239,6 +1248,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.TenantToolsRead,
     Permission.ScannerTemplatesRead,
     Permission.SecretStoreRead,
+    Permission.CIRead,
     // Sensors (read only)
     Permission.SensorsRead,
     Permission.CommandsRead,
@@ -1248,14 +1258,12 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.MembersRead,
     Permission.GroupsRead,
     Permission.RolesRead,
-    Permission.PermissionSetsRead,
     // Integrations (read only)
     Permission.IntegrationsRead,
     Permission.ScmConnectionsRead,
     Permission.NotificationsRead,
-    Permission.WebhooksRead,
     Permission.ApiKeysRead,
-    Permission.PipelinesRead,
+    Permission.ScanWorkflowsRead,
     // Settings (read only; billing is owner/admin only)
     Permission.SLARead,
     // Attack Surface (read only)
@@ -1271,7 +1279,6 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.ComplianceFrameworksRead,
     Permission.ComplianceAssessmentsRead,
     Permission.ComplianceMappingsRead,
-    Permission.ComplianceReportsRead,
     // Reports (read only)
     Permission.ReportsRead,
     // Threat Intel (read only)

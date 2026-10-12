@@ -42,23 +42,23 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				COALESCE(AVG(risk_score) FILTER(WHERE risk_score > 0), 0) AS avg_risk,
 				COALESCE(MAX(risk_score), 0) AS max_risk,
 				CASE WHEN COUNT(*) = 0 THEN 0
-					ELSE COUNT(*) FILTER(WHERE owner_id IS NOT NULL) * 100.0 / COUNT(*)
+					ELSE COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) * 100.0 / COUNT(*)
 				END AS ownership_pct
-			FROM assets GROUP BY tenant_id
+			FROM assets WHERE deleted_at IS NULL GROUP BY tenant_id
 		),
 		finding_metrics AS (
 			SELECT tenant_id,
-				COUNT(*) FILTER(WHERE status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS open_count,
+				COUNT(*) FILTER(WHERE status NOT IN ('resolved','false_positive','accepted','duplicate')) AS open_count,
 				COUNT(*) FILTER(WHERE resolved_at >= CURRENT_DATE AND resolved_at < CURRENT_DATE + 1) AS closed_today,
-				COUNT(*) FILTER(WHERE priority_class = 'P0' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p0,
-				COUNT(*) FILTER(WHERE priority_class = 'P1' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p1,
-				COUNT(*) FILTER(WHERE priority_class = 'P2' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p2,
-				COUNT(*) FILTER(WHERE priority_class = 'P3' AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS p3,
-				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) = 0 THEN 100
-					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk'))
-						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')), 0)
+				COUNT(*) FILTER(WHERE priority_class = 'P0' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p0,
+				COUNT(*) FILTER(WHERE priority_class = 'P1' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p1,
+				COUNT(*) FILTER(WHERE priority_class = 'P2' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p2,
+				COUNT(*) FILTER(WHERE priority_class = 'P3' AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS p3,
+				CASE WHEN COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')) = 0 THEN 100
+					ELSE COUNT(*) FILTER(WHERE sla_status NOT IN ('exceeded','overdue') AND sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate'))
+						* 100.0 / NULLIF(COUNT(*) FILTER(WHERE sla_deadline IS NOT NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')), 0)
 				END AS sla_pct
-			FROM findings GROUP BY tenant_id
+			FROM findings WHERE NOT branch_only GROUP BY tenant_id
 		),
 		mttr_metrics AS (
 			SELECT tenant_id,
@@ -67,12 +67,14 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 				AVG(EXTRACT(epoch FROM resolved_at - first_detected_at)/3600) FILTER(WHERE severity = 'medium') AS mttr_m,
 				AVG(EXTRACT(epoch FROM resolved_at - first_detected_at)/3600) FILTER(WHERE severity = 'low') AS mttr_l
 			FROM findings
-			WHERE resolved_at >= CURRENT_DATE - 30
+			WHERE resolved_at >= CURRENT_DATE - 30 AND NOT branch_only
 			GROUP BY tenant_id
 		),
 		exposure_metrics AS (
 			SELECT tenant_id, COUNT(*) AS active_count
-			FROM exposure_events WHERE state = 'active'
+			FROM exposure_events e WHERE e.state = 'active'
+			  -- exposures of a soft-deleted asset are history, not active work
+			  AND NOT EXISTS (SELECT 1 FROM assets d WHERE d.id = e.asset_id AND d.deleted_at IS NOT NULL)
 			GROUP BY tenant_id
 		)
 		INSERT INTO risk_snapshots (
@@ -97,6 +99,11 @@ func (c *RiskSnapshotController) Reconcile(ctx context.Context) (int, error) {
 		LEFT JOIN finding_metrics f ON f.tenant_id = t.id
 		LEFT JOIN mttr_metrics m ON m.tenant_id = t.id
 		LEFT JOIN exposure_metrics e ON e.tenant_id = t.id
+		-- Lock each tenant row against deletion while it is inserted for: a
+		-- tenant deleted after the statement's snapshot is then skipped
+		-- (READ COMMITTED re-check) instead of failing the whole batch on the
+		-- risk_snapshots tenant foreign key.
+		FOR KEY SHARE OF t
 		ON CONFLICT (tenant_id, snapshot_date)
 		DO UPDATE SET
 			risk_score_avg = EXCLUDED.risk_score_avg,

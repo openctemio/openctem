@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -48,8 +49,20 @@ type ValidationHandler struct {
 	ingest   *validation.EvidenceIngestService
 	coverage CoverageReader
 	commands ValidationCommandLookup
+	policy   EvidencePolicyReader
 	logger   *logger.Logger
 }
+
+// EvidencePolicyReader reads the tenant's policy for sensor results without a
+// command (RFC-040 §5.3), which says whether advisory evidence is accepted.
+// Implemented by *ingest.Service.
+type EvidencePolicyReader interface {
+	ResultPolicy(ctx context.Context, tenantID shared.ID) sensorresult.Policy
+}
+
+// SetEvidencePolicy wires the policy reader. Unset, advisory evidence (no
+// command_id) is refused.
+func (h *ValidationHandler) SetEvidencePolicy(p EvidencePolicyReader) { h.policy = p }
 
 // ValidationCommandLookup resolves the validate command a sensor cites as its
 // authority to submit evidence. Implemented by *postgres.CommandRepository.
@@ -58,7 +71,7 @@ type ValidationCommandLookup interface {
 }
 
 // SetCommandLookup wires the command store used to authorize evidence that
-// cites a command_id. When unset, every direct submission is advisory-only.
+// cites a command_id. When unset, evidence that cites one is refused.
 func (h *ValidationHandler) SetCommandLookup(c ValidationCommandLookup) { h.commands = c }
 
 // NewValidationHandler creates the handler.
@@ -86,8 +99,9 @@ type evidenceRequest struct {
 	FindingID string `json:"finding_id"`
 	// CommandID is the validate command (assigned to the submitting sensor, not
 	// yet finished, for this finding) that authorizes the evidence to change
-	// the finding's status. Optional: without it the evidence is recorded as
-	// advisory only (no status change).
+	// the finding's status. Required unless the tenant's sensor result policy
+	// allows advisory evidence (RFC-040 §5.3); the evidence is then recorded
+	// as advisory only (no status change).
 	CommandID       string           `json:"command_id,omitempty"`
 	SimulationRunID string           `json:"simulation_run_id,omitempty"`
 	ExecutorKind    string           `json:"executor_kind"`
@@ -186,6 +200,16 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 	// sensor key in the tenant could resolve / downgrade / reopen any finding by
 	// posting an outcome for its id.
 	authorized := false
+	if req.CommandID == "" && (h.policy == nil || !h.policy.ResultPolicy(r.Context(), tenantID).AllowAdvisoryEvidence) {
+		// RFC-040 §5.3: evidence without the validate command assigned to
+		// this sensor is refused unless an administrator allowed advisory
+		// evidence for the tenant.
+		h.logger.Warn("validation evidence refused: no command_id and advisory evidence is off",
+			"sensor_id", agt.ID.String(), "finding_id", findingID.String())
+		apierror.New(http.StatusForbidden, "COMMAND_REQUIRED",
+			"Evidence must cite the validate command assigned to this sensor (command_id).").WriteJSON(w)
+		return
+	}
 	if req.CommandID != "" {
 		cmd, ok := h.authorizeEvidenceCommand(r.Context(), w, agt.ID, tenantID, findingID, req.CommandID)
 		if !ok {
@@ -193,6 +217,32 @@ func (h *ValidationHandler) IngestEvidence(w http.ResponseWriter, r *http.Reques
 		}
 		authorized = true
 		ev.CorrelationID = cmd.ID
+		// The command, not the body, names the simulation run and the asset:
+		// a body that disagrees is refused, a missing value is taken from it.
+		bound, ok := bindEvidenceToCommand(cmd, simRunID, target.AssetID)
+		if !ok {
+			h.logger.Warn("validation evidence rejected: simulation run or asset differs from the cited command",
+				"sensor_id", agt.ID.String(), "command_id", cmd.ID.String(), "finding_id", findingID.String())
+			apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
+			return
+		}
+		simRunID, ev.Target.AssetID = bound.simRunID, bound.assetID
+		// A retest check (RFC-039) never moves the finding on its own: the
+		// retest service reads both of the retest's commands when they
+		// complete. Its evidence is recorded, not applied.
+		var payload validation.ValidateCommandPayload
+		if json.Unmarshal(cmd.Payload, &payload) == nil && payload.RetestID != "" {
+			authorized = false
+		}
+	}
+
+	if req.CommandID == "" && simRunID != nil {
+		// Advisory evidence has no server-issued job behind it, so it cannot
+		// attach to (or finalize) a simulation run.
+		h.logger.Warn("validation evidence rejected: advisory evidence cites a simulation run",
+			"sensor_id", agt.ID.String(), "finding_id", findingID.String())
+		apierror.Forbidden("command does not authorize evidence for this finding").WriteJSON(w)
+		return
 	}
 
 	var result validation.IngestResult
@@ -269,6 +319,45 @@ func (h *ValidationHandler) authorizeEvidenceCommand(
 	return cmd, true
 }
 
+type boundEvidence struct {
+	simRunID *shared.ID
+	assetID  shared.ID
+}
+
+// bindEvidenceToCommand takes the simulation run and the asset from the
+// cited command's payload. A body value that differs from the payload is
+// refused (ok=false); a missing one is filled from it.
+func bindEvidenceToCommand(cmd *commanddom.Command, bodySimRun *shared.ID, bodyAsset shared.ID) (boundEvidence, bool) {
+	var payload validation.ValidateCommandPayload
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
+		return boundEvidence{}, false
+	}
+	var out boundEvidence
+	if payload.SimulationRunID != "" {
+		id, err := shared.IDFromString(payload.SimulationRunID)
+		if err != nil {
+			return boundEvidence{}, false
+		}
+		out.simRunID = &id
+	}
+	switch {
+	case bodySimRun == nil:
+	case out.simRunID == nil || !bodySimRun.Equals(*out.simRunID):
+		return boundEvidence{}, false
+	}
+	if payload.Target.AssetID != "" {
+		id, err := shared.IDFromString(payload.Target.AssetID)
+		if err != nil {
+			return boundEvidence{}, false
+		}
+		out.assetID = id
+	}
+	if !bodyAsset.IsZero() && !bodyAsset.Equals(out.assetID) {
+		return boundEvidence{}, false
+	}
+	return out, true
+}
+
 func (h *ValidationHandler) writeIngestError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
@@ -310,7 +399,7 @@ type storedEvidenceOut struct {
 	// client cannot get the comparison wrong.
 	DetectionIsGap bool `json:"detection_is_gap"`
 	// DetectionDetail explains how the verdict was reached (match mode,
-	// window bounds, pipeline liveness).
+	// window bounds, scan workflow liveness).
 	DetectionDetail map[string]any `json:"detection_detail,omitempty"`
 }
 

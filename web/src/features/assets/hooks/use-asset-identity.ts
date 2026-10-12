@@ -40,7 +40,7 @@ export function useAssetRenames(assetId: string | null, limit = 20) {
   const { can } = usePermissions()
   const key =
     assetId && can(Permission.AssetsRead)
-      ? `/api/v1/assets/${assetId}/state-history?change_type=renamed&limit=${limit}`
+      ? `/api/v1/assets/${assetId}/state-history?change_type=renamed&per_page=${limit}`
       : null
   const { data, error, isLoading } = useSWR<StateHistoryResponse>(key, get, {
     revalidateOnFocus: false,

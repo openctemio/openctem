@@ -190,48 +190,48 @@ func TestPentestStatusTransitionRoles_AllowedTransitions(t *testing.T) {
 		{"lead: draft→confirmed", "draft", "confirmed", pentest.CampaignRoleLead},
 		{"lead: draft→in_review", "draft", "in_review", pentest.CampaignRoleLead},
 		{"lead: draft→false_positive", "draft", "false_positive", pentest.CampaignRoleLead},
-		{"lead: draft→accepted_risk", "draft", "accepted_risk", pentest.CampaignRoleLead},
+		{"lead: draft→accepted", "draft", "accepted", pentest.CampaignRoleLead},
 		{"lead: in_review→confirmed", "in_review", "confirmed", pentest.CampaignRoleLead},
 		{"lead: in_review→false_positive", "in_review", "false_positive", pentest.CampaignRoleLead},
-		{"lead: in_review→accepted_risk", "in_review", "accepted_risk", pentest.CampaignRoleLead},
-		{"lead: confirmed→remediation", "confirmed", "remediation", pentest.CampaignRoleLead},
+		{"lead: in_review→accepted", "in_review", "accepted", pentest.CampaignRoleLead},
+		{"lead: confirmed→in_progress", "confirmed", "in_progress", pentest.CampaignRoleLead},
 		{"lead: confirmed→false_positive", "confirmed", "false_positive", pentest.CampaignRoleLead},
-		{"lead: confirmed→accepted_risk", "confirmed", "accepted_risk", pentest.CampaignRoleLead},
-		{"lead: remediation→retest", "remediation", "retest", pentest.CampaignRoleLead},
-		{"lead: remediation→false_positive", "remediation", "false_positive", pentest.CampaignRoleLead},
-		{"lead: remediation→accepted_risk", "remediation", "accepted_risk", pentest.CampaignRoleLead},
-		{"lead: retest→verified", "retest", "verified", pentest.CampaignRoleLead},
-		{"lead: retest→remediation", "retest", "remediation", pentest.CampaignRoleLead},
-		{"lead: retest→false_positive", "retest", "false_positive", pentest.CampaignRoleLead},
-		{"lead: retest→accepted_risk", "retest", "accepted_risk", pentest.CampaignRoleLead},
-		{"lead: verified→remediation", "verified", "remediation", pentest.CampaignRoleLead},
+		{"lead: confirmed→accepted", "confirmed", "accepted", pentest.CampaignRoleLead},
+		{"lead: in_progress→retest", "in_progress", "fix_applied", pentest.CampaignRoleLead},
+		{"lead: in_progress→false_positive", "in_progress", "false_positive", pentest.CampaignRoleLead},
+		{"lead: in_progress→accepted", "in_progress", "accepted", pentest.CampaignRoleLead},
+		{"lead: fix_applied→resolved", "fix_applied", "resolved", pentest.CampaignRoleLead},
+		{"lead: fix_applied→in_progress", "fix_applied", "in_progress", pentest.CampaignRoleLead},
+		{"lead: fix_applied→false_positive", "fix_applied", "false_positive", pentest.CampaignRoleLead},
+		{"lead: fix_applied→accepted", "fix_applied", "accepted", pentest.CampaignRoleLead},
+		{"lead: resolved→in_progress", "resolved", "in_progress", pentest.CampaignRoleLead},
 		{"lead: false_positive→draft", "false_positive", "draft", pentest.CampaignRoleLead},
 		{"lead: false_positive→confirmed", "false_positive", "confirmed", pentest.CampaignRoleLead},
-		{"lead: accepted_risk→draft", "accepted_risk", "draft", pentest.CampaignRoleLead},
-		{"lead: accepted_risk→confirmed", "accepted_risk", "confirmed", pentest.CampaignRoleLead},
+		{"lead: accepted→draft", "accepted", "draft", pentest.CampaignRoleLead},
+		{"lead: accepted→confirmed", "accepted", "confirmed", pentest.CampaignRoleLead},
 
 		// === TESTER: limited to submit + remediation flow ===
 		{"tester: draft→in_review", "draft", "in_review", pentest.CampaignRoleTester},
-		{"tester: confirmed→remediation", "confirmed", "remediation", pentest.CampaignRoleTester},
-		{"tester: remediation→retest", "remediation", "retest", pentest.CampaignRoleTester},
+		{"tester: confirmed→in_progress", "confirmed", "in_progress", pentest.CampaignRoleTester},
+		{"tester: in_progress→retest", "in_progress", "fix_applied", pentest.CampaignRoleTester},
 
 		// === REVIEWER: quality assurance transitions ===
 		{"reviewer: in_review→confirmed", "in_review", "confirmed", pentest.CampaignRoleReviewer},
-		{"reviewer: confirmed→remediation", "confirmed", "remediation", pentest.CampaignRoleReviewer},
-		{"reviewer: remediation→retest", "remediation", "retest", pentest.CampaignRoleReviewer},
-		{"reviewer: retest→verified", "retest", "verified", pentest.CampaignRoleReviewer},
+		{"reviewer: confirmed→in_progress", "confirmed", "in_progress", pentest.CampaignRoleReviewer},
+		{"reviewer: in_progress→retest", "in_progress", "fix_applied", pentest.CampaignRoleReviewer},
+		{"reviewer: fix_applied→resolved", "fix_applied", "resolved", pentest.CampaignRoleReviewer},
 		{"reviewer: confirmed→false_positive", "confirmed", "false_positive", pentest.CampaignRoleReviewer},
-		{"reviewer: confirmed→accepted_risk", "confirmed", "accepted_risk", pentest.CampaignRoleReviewer},
-		{"reviewer: remediation→false_positive", "remediation", "false_positive", pentest.CampaignRoleReviewer},
-		{"reviewer: remediation→accepted_risk", "remediation", "accepted_risk", pentest.CampaignRoleReviewer},
-		{"reviewer: retest→false_positive", "retest", "false_positive", pentest.CampaignRoleReviewer},
-		{"reviewer: retest→accepted_risk", "retest", "accepted_risk", pentest.CampaignRoleReviewer},
-		{"reviewer: retest→remediation", "retest", "remediation", pentest.CampaignRoleReviewer},
-		{"reviewer: verified→remediation", "verified", "remediation", pentest.CampaignRoleReviewer},
+		{"reviewer: confirmed→accepted", "confirmed", "accepted", pentest.CampaignRoleReviewer},
+		{"reviewer: in_progress→false_positive", "in_progress", "false_positive", pentest.CampaignRoleReviewer},
+		{"reviewer: in_progress→accepted", "in_progress", "accepted", pentest.CampaignRoleReviewer},
+		{"reviewer: fix_applied→false_positive", "fix_applied", "false_positive", pentest.CampaignRoleReviewer},
+		{"reviewer: fix_applied→accepted", "fix_applied", "accepted", pentest.CampaignRoleReviewer},
+		{"reviewer: fix_applied→in_progress", "fix_applied", "in_progress", pentest.CampaignRoleReviewer},
+		{"reviewer: resolved→in_progress", "resolved", "in_progress", pentest.CampaignRoleReviewer},
 		{"reviewer: false_positive→draft", "false_positive", "draft", pentest.CampaignRoleReviewer},
 		{"reviewer: false_positive→confirmed", "false_positive", "confirmed", pentest.CampaignRoleReviewer},
-		{"reviewer: accepted_risk→draft", "accepted_risk", "draft", pentest.CampaignRoleReviewer},
-		{"reviewer: accepted_risk→confirmed", "accepted_risk", "confirmed", pentest.CampaignRoleReviewer},
+		{"reviewer: accepted→draft", "accepted", "draft", pentest.CampaignRoleReviewer},
+		{"reviewer: accepted→confirmed", "accepted", "confirmed", pentest.CampaignRoleReviewer},
 	}
 
 	for _, tc := range allowed {
@@ -252,13 +252,13 @@ func TestPentestStatusTransitionRoles_DeniedTransitions(t *testing.T) {
 		// === TESTER cannot confirm/verify/false_positive/accepted_risk ===
 		{"tester: draft→confirmed DENIED (bypass review)", "draft", "confirmed", pentest.CampaignRoleTester},
 		{"tester: in_review→confirmed DENIED", "in_review", "confirmed", pentest.CampaignRoleTester},
-		{"tester: retest→verified DENIED (bypass reviewer)", "retest", "verified", pentest.CampaignRoleTester},
+		{"tester: fix_applied→resolved DENIED (bypass reviewer)", "fix_applied", "resolved", pentest.CampaignRoleTester},
 		{"tester: draft→false_positive DENIED", "draft", "false_positive", pentest.CampaignRoleTester},
 		{"tester: confirmed→false_positive DENIED", "confirmed", "false_positive", pentest.CampaignRoleTester},
-		{"tester: confirmed→accepted_risk DENIED", "confirmed", "accepted_risk", pentest.CampaignRoleTester},
-		{"tester: verified→remediation DENIED", "verified", "remediation", pentest.CampaignRoleTester},
+		{"tester: confirmed→accepted DENIED", "confirmed", "accepted", pentest.CampaignRoleTester},
+		{"tester: resolved→in_progress DENIED", "resolved", "in_progress", pentest.CampaignRoleTester},
 		{"tester: false_positive→draft DENIED", "false_positive", "draft", pentest.CampaignRoleTester},
-		{"tester: accepted_risk→draft DENIED", "accepted_risk", "draft", pentest.CampaignRoleTester},
+		{"tester: accepted→draft DENIED", "accepted", "draft", pentest.CampaignRoleTester},
 
 		// === REVIEWER cannot create (draft→in_review) ===
 		{"reviewer: draft→in_review DENIED", "draft", "in_review", pentest.CampaignRoleReviewer},
@@ -268,11 +268,11 @@ func TestPentestStatusTransitionRoles_DeniedTransitions(t *testing.T) {
 		{"observer: draft→in_review DENIED", "draft", "in_review", pentest.CampaignRoleObserver},
 		{"observer: draft→confirmed DENIED", "draft", "confirmed", pentest.CampaignRoleObserver},
 		{"observer: in_review→confirmed DENIED", "in_review", "confirmed", pentest.CampaignRoleObserver},
-		{"observer: confirmed→remediation DENIED", "confirmed", "remediation", pentest.CampaignRoleObserver},
-		{"observer: remediation→retest DENIED", "remediation", "retest", pentest.CampaignRoleObserver},
-		{"observer: retest→verified DENIED", "retest", "verified", pentest.CampaignRoleObserver},
+		{"observer: confirmed→in_progress DENIED", "confirmed", "in_progress", pentest.CampaignRoleObserver},
+		{"observer: in_progress→fix_applied DENIED", "in_progress", "fix_applied", pentest.CampaignRoleObserver},
+		{"observer: fix_applied→resolved DENIED", "fix_applied", "resolved", pentest.CampaignRoleObserver},
 		{"observer: confirmed→false_positive DENIED", "confirmed", "false_positive", pentest.CampaignRoleObserver},
-		{"observer: verified→remediation DENIED", "verified", "remediation", pentest.CampaignRoleObserver},
+		{"observer: resolved→in_progress DENIED", "resolved", "in_progress", pentest.CampaignRoleObserver},
 	}
 
 	for _, tc := range denied {
@@ -284,23 +284,23 @@ func TestPentestStatusTransitionRoles_DeniedTransitions(t *testing.T) {
 }
 
 func TestPentestStatusTransitionRoles_InvalidTransition(t *testing.T) {
-	// Transition not in domain (e.g., draft→verified) should be denied for ALL roles
+	// Transition not in domain (e.g., draft→resolved) should be denied for ALL roles
 	allRoles := []pentest.CampaignRole{
 		pentest.CampaignRoleLead, pentest.CampaignRoleTester,
 		pentest.CampaignRoleReviewer, pentest.CampaignRoleObserver,
 	}
 	invalidTransitions := []struct{ from, to string }{
-		{"draft", "verified"},
-		{"draft", "remediation"},
-		{"draft", "retest"},
-		{"in_review", "remediation"},
-		{"in_review", "retest"},
-		{"in_review", "verified"},
-		{"confirmed", "verified"},
-		{"confirmed", "retest"},
-		{"remediation", "confirmed"},
-		{"verified", "confirmed"},
-		{"verified", "draft"},
+		{"draft", "resolved"},
+		{"draft", "in_progress"},
+		{"draft", "fix_applied"},
+		{"in_review", "in_progress"},
+		{"in_review", "fix_applied"},
+		{"in_review", "resolved"},
+		{"confirmed", "resolved"},
+		{"confirmed", "fix_applied"},
+		{"in_progress", "confirmed"},
+		{"resolved", "confirmed"},
+		{"resolved", "draft"},
 	}
 	for _, tr := range invalidTransitions {
 		for _, role := range allRoles {
@@ -568,19 +568,19 @@ func TestCTEMStatusMapping_ConfirmedPassthrough(t *testing.T) {
 }
 
 func TestCTEMStatusMapping_RemediationToInProgress(t *testing.T) {
-	mapped, excluded := pentest.MapToCTEMStatus("remediation")
+	mapped, excluded := pentest.MapToCTEMStatus("in_progress")
 	assert.False(t, excluded)
-	assert.Equal(t, "in_progress", mapped, "E27: remediation → in_progress")
+	assert.Equal(t, "in_progress", mapped, "E27: in_progress → in_progress")
 }
 
 func TestCTEMStatusMapping_RetestToFixApplied(t *testing.T) {
-	mapped, excluded := pentest.MapToCTEMStatus("retest")
+	mapped, excluded := pentest.MapToCTEMStatus("fix_applied")
 	assert.False(t, excluded)
-	assert.Equal(t, "fix_applied", mapped, "E28: retest → fix_applied (fix done, awaiting verify)")
+	assert.Equal(t, "fix_applied", mapped, "E28: fix_applied → fix_applied (fix done, awaiting verify)")
 }
 
 func TestCTEMStatusMapping_VerifiedToResolved(t *testing.T) {
-	mapped, excluded := pentest.MapToCTEMStatus("verified")
+	mapped, excluded := pentest.MapToCTEMStatus("resolved")
 	assert.False(t, excluded)
 	assert.Equal(t, "resolved", mapped, "E22: verified → resolved")
 }
@@ -592,9 +592,9 @@ func TestCTEMStatusMapping_FalsePositivePassthrough(t *testing.T) {
 }
 
 func TestCTEMStatusMapping_AcceptedRiskPassthrough(t *testing.T) {
-	mapped, excluded := pentest.MapToCTEMStatus("accepted_risk")
+	mapped, excluded := pentest.MapToCTEMStatus("accepted")
 	assert.False(t, excluded)
-	assert.Equal(t, "accepted_risk", mapped)
+	assert.Equal(t, "accepted", mapped)
 }
 
 func TestCTEMStatusMapping_UnknownStatus(t *testing.T) {
@@ -656,12 +656,12 @@ func TestValidateFindingScope_InAssetGroup(t *testing.T) {
 
 func TestResolveRetestFindingStatus_PassedByLead(t *testing.T) {
 	status := pentest.ResolveRetestFindingStatus("passed", pentest.CampaignRoleLead)
-	assert.Equal(t, "verified", status, "lead passed → verified")
+	assert.Equal(t, "resolved", status, "lead passed → verified")
 }
 
 func TestResolveRetestFindingStatus_PassedByReviewer(t *testing.T) {
 	status := pentest.ResolveRetestFindingStatus("passed", pentest.CampaignRoleReviewer)
-	assert.Equal(t, "verified", status, "reviewer passed → verified")
+	assert.Equal(t, "resolved", status, "reviewer passed → verified")
 }
 
 func TestResolveRetestFindingStatus_PassedByTester_NoAutoVerify(t *testing.T) {
@@ -678,7 +678,7 @@ func TestResolveRetestFindingStatus_FailedByAnyRole(t *testing.T) {
 	}
 	for _, role := range roles {
 		status := pentest.ResolveRetestFindingStatus("failed", role)
-		assert.Equal(t, "remediation", status, "failed → remediation for %s", role)
+		assert.Equal(t, "in_progress", status, "failed → remediation for %s", role)
 	}
 }
 

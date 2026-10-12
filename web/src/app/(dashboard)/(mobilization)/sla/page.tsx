@@ -1,5 +1,6 @@
 'use client'
 
+import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -28,14 +29,7 @@ import { AGING_BUCKETS, agingBucketFor, formatDueRelative, isBreach } from '@/fe
 // Terminal statuses are dropped: an SLA breach is only actionable while the
 // finding is still open.
 const OPEN_FINDINGS_FILTER = {
-  exclude_statuses: [
-    'resolved',
-    'false_positive',
-    'accepted',
-    'accepted_risk',
-    'duplicate',
-    'verified',
-  ],
+  exclude_statuses: findingStatusesInCategory('closed'),
   // MaxPerPage on the API is 100. There is no server-side sla_status filter yet
   // (see note in the UI), so we score one prioritized page client-side rather
   // than paginating the whole finding set.

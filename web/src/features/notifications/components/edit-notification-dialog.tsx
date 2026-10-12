@@ -5,12 +5,16 @@ import { csrfFetch } from '@/lib/api/client'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { enabledEventTypesSchema, enabledSeveritiesSchema } from '../lib/notification-filters'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -47,53 +51,12 @@ import {
 import { useTenantEventTypes } from '@/features/integrations/api/use-event-types'
 import { EventTypeSelector } from './event-type-selector'
 import { cn } from '@/lib/utils'
+import { useAppOrigin } from '@/hooks/use-app-origin'
+import { TEMPLATE_PRESETS, renderMessageTemplatePreview } from '../lib/message-template'
 import { SEVERITY_TEXT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 // Template presets for different use cases
-const TEMPLATE_PRESETS = [
-  {
-    id: 'default',
-    name: 'Default',
-    template: '',
-    description: 'Use system default template',
-  },
-  {
-    id: 'detailed',
-    name: 'Detailed Report',
-    template: `**{severity} Alert: {title}**
-
-{body}
-
----
-View details: {url}
-Timestamp: {timestamp}`,
-    description: 'Full details with all fields',
-  },
-  {
-    id: 'minimal',
-    name: 'Minimal Alert',
-    template: `{title}
-{url}`,
-    description: 'Title and link only',
-  },
-  {
-    id: 'emoji',
-    name: 'With Severity Emoji',
-    template: `{severity_emoji} [{severity}] {title}
-
-{body}
-
-{url}`,
-    description: 'Includes severity emoji indicator',
-  },
-  {
-    id: 'custom',
-    name: 'Custom',
-    template: '',
-    description: 'Write your own template',
-  },
-]
 
 const formSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
@@ -102,9 +65,9 @@ const formSchema = z.object({
   channel_id: z.string().optional(),
   channel_name: z.string().optional(),
   // Severity filters (dynamic JSONB array)
-  enabled_severities: z.array(z.enum(['critical', 'high', 'medium', 'low', 'info', 'none'])),
+  enabled_severities: enabledSeveritiesSchema,
   // Event type filters (dynamic JSONB array)
-  enabled_event_types: z.array(z.string()),
+  enabled_event_types: enabledEventTypesSchema,
   // Advanced settings
   message_template: z.string().max(2000).optional(),
   include_details: z.boolean(),
@@ -204,25 +167,9 @@ export function EditNotificationDialog({
     }
   }
 
-  // Preview template with sample data
-  const renderTemplatePreview = (template: string) => {
-    if (!template) return 'Using default system template'
-
-    const sampleData: Record<string, string> = {
-      title: 'SQL Injection Vulnerability Detected',
-      severity: 'CRITICAL',
-      severity_emoji: '\u{1F6A8}',
-      body: 'A potential SQL injection vulnerability was found in the login endpoint.',
-      url: 'https://app.openctem.io/findings/123',
-      timestamp: new Date().toLocaleString(),
-    }
-
-    let preview = template
-    Object.entries(sampleData).forEach(([key, value]) => {
-      preview = preview.replace(new RegExp(`\\{${key}\\}`, 'g'), value)
-    })
-    return preview
-  }
+  const appOrigin = useAppOrigin()
+  const renderTemplatePreview = (template: string) =>
+    renderMessageTemplatePreview(template, appOrigin)
 
   const {
     register,
@@ -333,7 +280,6 @@ export function EditNotificationDialog({
             to_emails: toEmailsList.length > 0 ? toEmailsList : undefined,
             use_tls: data.use_tls,
             use_starttls: data.use_starttls,
-            skip_verify: false,
           })
         }
       }
@@ -378,7 +324,7 @@ export function EditNotificationDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <div
@@ -396,9 +342,8 @@ export function EditNotificationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-          {/* Scrollable content area */}
-          <div className="space-y-4 py-4 overflow-y-auto flex-1 pe-1">
+        <DialogForm onSubmit={handleSubmit(onSubmit)}>
+          <DialogBody className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input id="name" placeholder="e.g., Security Alerts" {...register('name')} />
@@ -531,12 +476,12 @@ export function EditNotificationDialog({
                 </Label>
                 <Input
                   id="channel_id"
-                  placeholder="e.g., -1001234567890 or @channelname"
+                  placeholder="e.g., -1001274567890 or @channelname"
                   {...register('channel_id', { required: integration.provider === 'telegram' })}
                 />
                 <p className="text-xs text-muted-foreground">
                   Get your chat ID: Add @userinfobot to your group/channel. For groups/channels, use
-                  the numeric ID (e.g., -1001234567890).
+                  the numeric ID (e.g., -1001274567890).
                 </p>
               </div>
             )}
@@ -603,6 +548,9 @@ export function EditNotificationDialog({
                   )
                 })}
               </div>
+              {errors.enabled_severities && (
+                <p className="text-sm text-destructive">{errors.enabled_severities.message}</p>
+              )}
             </div>
 
             <EventTypeSelector
@@ -614,6 +562,10 @@ export function EditNotificationDialog({
               isLoading={eventTypesLoading}
               error={eventTypesError}
             />
+
+            {errors.enabled_event_types && (
+              <p className="text-sm text-destructive">{errors.enabled_event_types.message}</p>
+            )}
 
             {/* Advanced Settings */}
             <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
@@ -727,10 +679,9 @@ export function EditNotificationDialog({
                 </div>
               </CollapsibleContent>
             </Collapsible>
-          </div>
+          </DialogBody>
 
-          {/* Fixed footer with buttons */}
-          <div className="flex justify-end gap-2 pt-4 border-t mt-2">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
             </Button>
@@ -738,8 +689,8 @@ export function EditNotificationDialog({
               {isSubmitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               Save Changes
             </Button>
-          </div>
-        </form>
+          </DialogFooter>
+        </DialogForm>
       </DialogContent>
     </Dialog>
   )

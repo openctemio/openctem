@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
@@ -18,7 +18,7 @@ import (
 // and the admin_users link; everything about the account itself stays with
 // AuthService.
 type adminAccountDirectory struct {
-	auth *app.AuthService
+	auth *authapp.AuthService
 }
 
 var _ adminconsole.AccountDirectory = adminAccountDirectory{}
@@ -49,7 +49,7 @@ func (d adminAccountDirectory) EndSignIn(ctx context.Context, refreshToken strin
 func (d adminAccountDirectory) CreateAccount(ctx context.Context, email, name string) (shared.ID, string, error) {
 	acc, err := d.auth.CreateLocalAccount(ctx, email, name)
 	if err != nil {
-		if errors.Is(err, app.ErrEmailAlreadyExists) {
+		if errors.Is(err, authapp.ErrEmailAlreadyExists) {
 			return shared.ID{}, "", admin.ErrEmailHasAccount
 		}
 		return shared.ID{}, "", err
@@ -62,7 +62,7 @@ func (d adminAccountDirectory) AccountActive(ctx context.Context, userID shared.
 }
 
 func (d adminAccountDirectory) ChangePassword(ctx context.Context, userID shared.ID, current, next string) error {
-	return d.auth.ChangePassword(ctx, userID.String(), app.ChangePasswordInput{CurrentPassword: current, NewPassword: next})
+	return d.auth.ChangePassword(ctx, userID.String(), authapp.ChangePasswordInput{CurrentPassword: current, NewPassword: next})
 }
 
 // platformAdminChecker tells login and /users/me whether an account is linked

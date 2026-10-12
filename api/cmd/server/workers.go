@@ -3,14 +3,28 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/command"
+	"github.com/openctemio/openctem/api/internal/app/commandlog"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/app/tenablesc"
+	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
+
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
@@ -18,10 +32,23 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
+
+// sensorStaleTimeout is the shortest time from a sensor's heartbeat deadline
+// to offline on the heartbeat ladder (sensordom.LadderOfflineFloor; each
+// sensor is judged against its own deadline, pkg/domain/sensor/liveness.go).
+// The doorbell never advises an interval above half of it
+// (heartbeatDoorbellConfig), which is also below half of every sensor's own
+// offline distance.
+const sensorStaleTimeout = sensordom.LadderOfflineFloor
 
 // ddTenantSyncerAdapter adapts *defectdojo.SyncService (which returns a
 // SyncResult) to the scheduler's error-only TenantSyncer, so the controller
@@ -49,12 +76,12 @@ type Workers struct {
 	JobWorker                 *jobs.Worker
 	SensorHealthChecker       *jobs.SensorHealthChecker
 	AITriageRecoveryJob       *jobs.AITriageRecoveryJob
-	ScanScheduler             *app.ScanScheduler
+	ScanScheduler             *scan.ScanScheduler
 	CommandExpirationChecker  *command.ExpirationChecker
 	OutboxScheduler           *outbox.Scheduler
-	FindingLifecycleScheduler *app.FindingLifecycleScheduler
+	FindingLifecycleScheduler *finding.FindingLifecycleScheduler
 	NotificationCleanupTicker *time.Ticker
-	notificationService       *app.NotificationService
+	notificationService       *integration.NotificationService
 	// SessionCleanupTicker periodically deletes expired/revoked
 	// sessions and refresh tokens. Without this the tables grow
 	// unboundedly because logout marks rows as 'revoked' (not deleted)
@@ -62,7 +89,7 @@ type Workers struct {
 	// SessionService.CleanupExpiredSessions() exists in the codebase
 	// but was never wired into a worker until this hookup.
 	SessionCleanupTicker *time.Ticker
-	sessionService       *app.SessionService
+	sessionService       *auth.SessionService
 	ControllerManager    *controller.Manager
 
 	// cleanupStopCh signals the ticker-driven cleanup goroutines (notification
@@ -107,6 +134,61 @@ func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controll
 	}
 }
 
+// registerPurgeControllers schedules the time-based deletes that had no caller:
+// expired invitations, expired platform-admin sessions and reviewed quarantined
+// sensor results. Each runs under its controller lease, so one replica at a
+// time; a missing dependency leaves that purge unregistered.
+func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) {
+	if svc.Tenant != nil {
+		m.Register(controller.NewPurgeController("invitation-purge", cfg.Worker.InvitationPurgeInterval,
+			svc.Tenant.CleanupExpiredInvitations, log.With("controller", "invitation-purge")))
+	}
+	if repos.AdminConsole != nil {
+		console := repos.AdminConsole
+		m.Register(controller.NewPurgeController("admin-session-purge", cfg.Worker.AdminSessionPurgeInterval,
+			func(ctx context.Context) (int64, error) { return console.DeleteExpiredSessions(ctx, time.Now()) },
+			log.With("controller", "admin-session-purge")))
+	}
+	if repos.MCPOAuth != nil {
+		// Ended MCP OAuth requests, tokens, grants and unused clients (RFC-062).
+		mcp := repos.MCPOAuth
+		m.Register(controller.NewPurgeController("mcp-oauth-purge", time.Hour,
+			func(ctx context.Context) (int64, error) { return mcp.PurgeForPlatform(ctx, time.Now()) },
+			log.With("controller", "mcp-oauth-purge")))
+	}
+	if repos.SensorResult != nil {
+		quarantine := repos.SensorResult
+		retention := cfg.Worker.QuarantineRetention
+		if retention <= 0 {
+			retention = 30 * 24 * time.Hour
+		}
+		m.Register(controller.NewPurgeController("sensor-result-quarantine-purge", cfg.Worker.QuarantinePurgeInterval,
+			func(ctx context.Context) (int64, error) {
+				n, err := quarantine.PurgeReviewed(ctx, time.Now().Add(-retention))
+				return int64(n), err
+			},
+			log.With("controller", "sensor-result-quarantine-purge")))
+	}
+}
+
+// signerLedgerSyncInterval is how often the job signer's ledger is narrowed
+// to the database (RFC-040 P2).
+const signerLedgerSyncInterval = 10 * time.Minute
+
+// registerSignerLedgerSync narrows the job signer's scope ledger to the
+// database on a schedule: a narrowing that did not reach the signer, or a
+// change written outside the scope service, is caught here. The signer
+// never widens from it. Only with a job signer (SIGNER_SOCKET).
+func registerSignerLedgerSync(m *controller.Manager, svc *Services, log *logger.Logger) {
+	if svc.JobSigner == nil || svc.Scope == nil {
+		return
+	}
+	scopeSvc := svc.Scope
+	m.Register(controller.NewPurgeController("signer-ledger-sync", signerLedgerSyncInterval,
+		func(ctx context.Context) (int64, error) { return 0, scopeSvc.SyncLedger(ctx) },
+		log.With("controller", "signer-ledger-sync")))
+}
+
 // NewWorkers initializes all background workers.
 func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	cfg := deps.Config
@@ -148,24 +230,22 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// Initialize scan scheduler
-	w.ScanScheduler = app.NewScanScheduler(
+	w.ScanScheduler = scan.NewScanScheduler(
 		repos.Scan,
-		svc.Scan,
-		app.ScanSchedulerConfig{
+		svc.Scan, scan.ScanSchedulerConfig{
 			CheckInterval: time.Minute,
 			BatchSize:     50,
-		},
-		log,
+		}, log,
 	)
 
 	// Initialize command expiration checker
 	w.CommandExpirationChecker = command.NewExpirationChecker(
 		repos.Command,
-		svc.Pipeline,
+		svc.ScanRun,
 		command.ExpirationCheckerConfig{
 			CheckInterval: time.Minute,
 			// Owns platform-job queue expiry too, because expiring a job has to
-			// tell the owning pipeline run why. Previously JobRecoveryController's
+			// tell the owning scan run why. Previously JobRecoveryController's
 			// MaxQueueMinutes, where the expiry notified nobody.
 			MaxQueueMinutes: 60,
 		},
@@ -181,10 +261,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// Initialize finding lifecycle scheduler
 	// Handles feature branch finding expiry
-	w.FindingLifecycleScheduler = app.NewFindingLifecycleScheduler(
+	w.FindingLifecycleScheduler = finding.NewFindingLifecycleScheduler(
 		repos.Finding,
 		repos.Tenant,
-		app.DefaultFindingLifecycleSchedulerConfig(),
+		finding.DefaultFindingLifecycleSchedulerConfig(),
 		log,
 	)
 
@@ -210,6 +290,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	w.ControllerManager = controller.NewManager(&controller.ManagerConfig{
 		Logger:  log.With("component", "controller-manager"),
 		Metrics: controllerMetrics(),
+		// Exclusive controllers (retention sweeps, threat-intel refresh) run
+		// on one replica at a time under a controller lease (RFC-046 P1.8).
+		Leases:      postgres.NewControllerLeaseRepository(&postgres.DB{DB: deps.DB}),
+		LeaseHolder: postgres.LeaseHolderID(),
 	})
 
 	// Register controllers
@@ -218,7 +302,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.Audit,
 		&controller.SensorHealthControllerConfig{
 			Interval:     30 * time.Second,
-			StaleTimeout: 90 * time.Second,
+			StaleTimeout: sensorStaleTimeout,
 			Logger:       log.With("controller", "sensor-health"),
 		},
 	)
@@ -231,9 +315,50 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc.Sensor != nil {
 		sensorHealth.SetEventRecorder(svc.Sensor)
 	}
+	// No offline conviction while the platform itself is degraded (RFC-035
+	// D3): just started, stalled, or slow to handle heartbeats.
+	sensorHealth.SetPlatformHealth(svc.SensorPlatformHealth)
 	w.ControllerManager.Register(sensorHealth)
 
-	w.ControllerManager.Register(controller.NewJobRecoveryController(
+	// CI alerts (RFC-051 §10.6): missed schedules, lost coverage, failing
+	// default branches and outdated runners, once each while they hold; and
+	// findings only a stale CI pipeline reported become not observed.
+	if repos.CIRun != nil {
+		var notifier cirunapp.Notifier
+		if svc.Outbox != nil {
+			notifier = svc.Outbox
+		}
+		var auditor cirunapp.Auditor
+		if svc.Audit != nil {
+			auditor = svc.Audit
+		}
+		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, cirun.StatusPolicy{
+			LatestVersion: sensordom.NormalizeVersion(deps.Config.SensorConfig.LatestVersion),
+			MinVersion:    sensordom.NormalizeVersion(deps.Config.SensorConfig.MinVersion),
+		}, log)
+		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
+		// Retention: expired run token hashes, run findings after 90 days,
+		// runs after 400 days (each scan workflow keeps its latest runs).
+		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
+		// The OpenCTEM gate as a GitHub check run or GitLab commit status, and
+		// the pull or merge request comment (RFC-077).
+		if repos.SCMApp != nil {
+			var poster cirunapp.GitHubPoster
+			if app := newGitHubApp(deps.Config, log); app != nil {
+				poster = app
+			}
+			job := cirunapp.NewDecorationJob(repos.CIRun, repos.SCMApp, poster, deps.Config.SMTP.BaseURL, log)
+			gl := scmappsvc.NewService(repos.SCMApp, nil, deps.Config.Auth.JWTSecret, nil, log)
+			gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+			job.SetGitLab(gl)
+			if svc.Outbox != nil {
+				job.SetNotifier(svc.Outbox)
+			}
+			w.ControllerManager.Register(controller.NewCIDecorationController(job, 0))
+		}
+	}
+
+	jobRecovery := controller.NewJobRecoveryController(
 		repos.Command,
 		&controller.JobRecoveryControllerConfig{
 			Interval:              60 * time.Second,
@@ -241,21 +366,54 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			MaxRetries:            3,
 			Logger:                log.With("controller", "job-recovery"),
 		},
-	))
+	)
+	// A poison command (dispatch attempts exhausted) fails its workflow step.
+	if svc.ScanRun != nil {
+		jobRecovery.SetStepFailureNotifier(svc.ScanRun)
+	}
+	w.ControllerManager.Register(jobRecovery)
 
-	// Scan timeout controller: enforces per-scan timeout_seconds on running pipeline_runs
-	w.ControllerManager.Register(controller.NewScanTimeoutController(
-		repos.PipelineRun,
+	// Automation runs a restart left pending or running end as failed (on
+	// start and every 15 minutes), so they stop holding the active-run cap.
+	w.ControllerManager.Register(controller.NewAutomationRunReaper(repos.WorkflowRun, 0, log))
+
+	// One-off scans that never ran are archived after 30 days (audited).
+	w.ControllerManager.Register(controller.NewOneOffScanArchiveController(svc.Scan, 0, 0))
+
+	// Scan timeout controller: enforces per-scan timeout_seconds on running scan_runs
+	scanTimeout := controller.NewScanTimeoutController(
+		repos.ScanRun,
 		&controller.ScanTimeoutControllerConfig{
 			Interval: 60 * time.Second,
 			Logger:   log.With("controller", "scan-timeout"),
 		},
-	))
+	)
+	// A run the reaper ends fires the run-finished event (automations) like
+	// any other (research/62 P0-11).
+	if svc.ScanRun != nil {
+		scanTimeout.SetReapedRunListener(svc.ScanRun.NotifyRunsReaped)
+	}
+	w.ControllerManager.Register(scanTimeout)
+
+	// Scan windows (RFC-067 §6.4): a running job whose window closed gets
+	// its grace, then goes back to the queue for the next opening.
+	if svc.Command != nil && repos.ScanWindowPolicy != nil {
+		w.ControllerManager.Register(controller.NewScanWindowClosingController(
+			svc.Command, repos.ScanWindowPolicy, time.Minute, log.With("controller", "scan-window-closing")))
+	}
+
+	// Stalled run repair (research/62 SG-10): a run whose chained step waits
+	// for a report that failed or expired, or whose plan was saved without
+	// its commands, is advanced again.
+	if svc.ScanRun != nil {
+		w.ControllerManager.Register(controller.NewStalledRunRepairController(
+			svc.ScanRun, time.Minute, log.With("controller", "stalled-run-repair")))
+	}
 
 	// Scan retry controller: dispatches automatic retries for failed scans
 	// with retry budget remaining (uses exponential backoff)
 	w.ControllerManager.Register(controller.NewScanRetryController(
-		repos.PipelineRun,
+		repos.ScanRun,
 		svc.Scan, // scan service implements RetryDispatcher
 		&controller.ScanRetryControllerConfig{
 			Interval:  60 * time.Second,
@@ -264,26 +422,31 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
-	// Coverage scheduler: license-aware rolling Tenable scan coverage (RFC-007).
-	// Dispatches license-sized batches to runners for coverage-enabled, unlimited
-	// (Nessus Pro) Tenable integrations and advances the rotation cursor. Capped
-	// engines (Tenable.sc) are skipped until active-IP accounting ships.
-	w.ControllerManager.Register(controller.NewCoverageScheduler(
-		repos.Integration,
-		repos.ScanCoverage,
-		scancoverage.NewDispatcher(repos.Command),
-		&controller.CoverageSchedulerConfig{
-			Interval: 5 * time.Minute,
-			Logger:   log.With("controller", "coverage-scheduler"),
-		},
-	))
+	// Coverage scheduler: license-aware rolling coverage (RFC-007), rebuilt on
+	// the Tenable.sc sensor connector (RFC-047 §9): each batch is a
+	// connector_scan sized against Tenable.sc's own license numbers. Behind
+	// the connector switch (integrationdom.TenableConnectorEnabled, D-14).
+	if integrationdom.TenableConnectorEnabled && svc.TenableSC != nil {
+		w.ControllerManager.Register(controller.NewCoverageScheduler(
+			repos.Integration,
+			repos.ScanCoverage,
+			connectorCoverageDispatcher{svc: svc.TenableSC},
+			&controller.CoverageSchedulerConfig{
+				Interval: 5 * time.Minute,
+				// Each batch passes a scan trigger's target checks (RFC-042 F16).
+				Gate:      svc.Scan,
+				Connector: svc.TenableSC,
+				Logger:    log.With("controller", "coverage-scheduler"),
+			},
+		))
+	}
 
 	// Report scheduler: runs due report_schedules, renders the executive summary,
 	// and emails it to recipients. Only registered when email is configured
 	// (otherwise every run would fail delivery). This is the controller that was
 	// missing — schedules could be created in the UI but never executed.
 	if svc.Email != nil && svc.Email.IsConfigured() {
-		w.ControllerManager.Register(controller.NewReportScheduler(
+		reportScheduler := controller.NewReportScheduler(
 			repos.ReportSchedule,
 			repos.Finding,
 			svc.Email,
@@ -291,19 +454,40 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.Module, // ModuleGuard: skip tenants without the reports module
 			controller.ReportSchedulerConfig{Interval: time.Minute},
 			log,
+		)
+		// Recipients are re-checked at send time: members or allowed domains (D12).
+		reportScheduler.SetRecipientPolicy(repos.Tenant)
+		// Each report renders under its creator's data scope (D6).
+		reportScheduler.SetScopeResolver(svc.DataScope)
+		w.ControllerManager.Register(reportScheduler)
+	}
+
+	// Continuous retest (RFC-039): settle stale retests and serve due
+	// auto-retest ticks. Auto-retest is per tenant and off by default
+	// (settings.retest.auto_enabled); each tick is claimed by compare-and-set,
+	// so every replica can run this controller without double-firing.
+	if svc.Retest != nil {
+		w.ControllerManager.Register(controller.NewRetestScheduler(
+			svc.Retest, repos.FindingRetest, time.Minute, log,
 		))
 	}
 
 	w.ControllerManager.Register(controller.NewDataExpirationController(
 		repos.Suppression,
 		repos.ScopeExcl,
-		repos.Audit,
+		svc.Audit,
 		&controller.DataExpirationControllerConfig{
 			Interval:           1 * time.Hour,
-			AuditRetentionDays: 365,
+			AuditRetentionDays: cfg.AuditRetention.Days,
+			AuditArchiveDir:    cfg.AuditRetention.ArchiveDir,
 			Logger:             log.With("controller", "data-expiration"),
 		},
-	))
+	).SetScopeTargetExpirer(repos.ScopeTarget))
+
+	// Asset change timeline (RFC-069): partitions, retention, TTL expiry.
+	w.ControllerManager.Register(controller.NewAssetChangeTimelineController(
+		repos.AssetChangeEvents, svc.Asset, cfg.AssetChangeRetentionDays,
+		log.With("controller", "asset-change-timeline")))
 
 	w.ControllerManager.Register(controller.NewRoleSyncController(
 		deps.DB,
@@ -312,6 +496,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger:   log.With("controller", "role-sync"),
 		},
 	))
+
+	// VEX statements past their expiry are withdrawn: their findings reopen.
+	if svc.VEX != nil {
+		w.ControllerManager.Register(controller.NewVEXStatementExpiryController(
+			svc.VEX, log.With("controller", "vex-statement-expiry")))
+	}
+
+	// Access requests: unconfirmed ones go after 24 h, decided ones after 90 days.
+	if svc.AccessRequest != nil {
+		w.ControllerManager.Register(controller.NewAccessRequestRetentionController(
+			svc.AccessRequest, log.With("controller", "access-request-retention")))
+	}
 
 	// Domain re-verify sweep (SSO P1): periodically re-checks verified domains;
 	// a domain whose TXT record vanished is downgraded to failed (fail-closed),
@@ -327,6 +523,28 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			},
 		))
 	}
+
+	// External members' access end dates (RFC-058): an expired membership is
+	// suspended within a minute.
+	if svc.Tenant != nil {
+		w.ControllerManager.Register(controller.NewMemberAccessExpiryController(svc.Tenant, time.Minute, 200,
+			log.With("controller", "member-access-expiry")))
+	}
+
+	// Team memberships with an end date (RFC-050 W22): removed within a minute.
+	if svc.Group != nil {
+		w.ControllerManager.Register(controller.NewTeamMembershipExpiryController(svc.Group, time.Minute, 200,
+			log.With("controller", "team-membership-expiry")))
+	}
+
+	// Idle Free workspaces: reminder, read-only, warnings, deletion due.
+	if svc.IdleWorkspaces != nil {
+		w.ControllerManager.Register(controller.NewIdleWorkspaceController(svc.IdleWorkspaces, 6*time.Hour,
+			log.With("controller", "idle-workspaces")))
+	}
+
+	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
+	registerSignerLedgerSync(w.ControllerManager, svc, log)
 
 	w.ControllerManager.Register(controller.NewApprovalExpirationController(
 		repos.FindingApproval,
@@ -354,6 +572,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Tenable.sc sensor connector (RFC-047): settle finished connector_sync
+	// commands and queue the next sync of each connector integration when due.
+	if svc.TenableSC != nil && integrationdom.TenableConnectorEnabled {
+		w.ControllerManager.Register(controller.NewTenableSCSyncController(repos.Integration, svc.TenableSC, log))
+	}
+
 	// RFC-013 Phase 2c: periodically pull due DefectDojo integrations so the
 	// co-existence sync is hands-off (nil-safe when the sync service is absent).
 	if svc.DefectDojoSync != nil {
@@ -372,6 +596,31 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.With("controller", "threat-intel-refresh"),
 	))
 
+	// Vulnerability bundles (RFC-066 §5.5): verified and imported into the
+	// CVE corpus; nothing happens until VULNFEED_ROOT_KEY_ID is set and a
+	// platform admin enables the "vulnfeed" source.
+	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
+		im, err := vulnfeed.NewImporter(vulnfeed.Config{
+			RootKeyID: cfg.Worker.VulnFeedRootKeyID, BaseURL: cfg.Worker.VulnFeedBaseURL, BundleDir: cfg.Worker.VulnFeedBundleDir,
+		}, repos.CVECorpus, repos.ThreatIntel.SyncStatus(), repos.Software, log.With("component", "vulnfeed"))
+		if err != nil {
+			log.Error("vulnerability bundle import disabled", "error", err)
+		} else {
+			// Chunked (v2) bundles are fetched with retries, resume and mirror
+			// fall-back and applied chunk by chunk with a durable checkpoint
+			// (docs/architecture/feed-transfer.md); v1 stays the fallback.
+			im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
+				Client: httpsec.SafeHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
+			w.ControllerManager.Register(controller.NewVulnFeedImportController(im, log.With("controller", "vuln-feed-import")))
+		}
+	}
+
+	// Inventory vulnerability matching (RFC-066): versions × CVE ranges, then
+	// each organization's findings.
+	if svc.VulnMatch != nil {
+		w.ControllerManager.Register(controller.NewVulnMatchController(svc.VulnMatch, log.With("controller", "vuln-match")))
+	}
+
 	// CTEM-ID catalog — daily fail-open refresh of the standardized exposure
 	// catalog (https://ctem.org/source.json), mirroring the threat-intel refresh.
 	w.ControllerManager.Register(controller.NewCTEMIDRefreshController(
@@ -384,19 +633,111 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits
 	// subdomain_discovered + certificate_expiring ExposureEvents. Inert until a
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
+	// Names a permanent scope target or seed covers are confirmed: once at
+	// start-up (the backfill) and every 6 h (RFC-054 §4.3).
+	if svc.ScopeJoin != nil {
+		if svc.Module != nil {
+			svc.ScopeJoin.SetModuleGuard(svc.Module) // skip tenants with attack_surface off
+		}
+		w.ControllerManager.Register(controller.NewScopeJoinController(svc.ScopeJoin, 0))
+		// Programs with a scope source are read again every 6 hours (RFC-065 §14).
+		if svc.BountyProgram != nil {
+			w.ControllerManager.Register(controller.NewProgramSyncController(svc.BountyProgram, 0))
+		}
+		// The public program feed (RFC-065 §16), when a bundle directory and
+		// the root key id are configured.
+		if svc.ProgramFeed != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed", svc.ProgramFeed))
+		}
+		// The operator's local bundle (owner option A): imported only while
+		// a platform administrator has the source enabled.
+		if svc.ProgramFeedLocal != nil {
+			w.ControllerManager.Register(controller.NewProgramFeedController("program-feed-local", svc.ProgramFeedLocal))
+		}
+		// Program data scope: assets a program covers stay assigned to its
+		// group (RFC-065 §7), also those that arrived by discovery.
+		if svc.ProgramAssigner != nil {
+			w.ControllerManager.Register(controller.NewProgramAssignmentController(svc.ProgramAssigner, 0))
+		}
+	}
+	// Long intrusive (t2) scope entries are re-attested or fall back to t1
+	// (RFC-054 §12.5).
+	if svc.Scope != nil {
+		w.ControllerManager.Register(controller.NewScopeAttestationController(svc.Scope, 0))
+		// Scope rows left pending where approvals are no longer required
+		// take effect through the signer's ledger (RFC-073 §6).
+		w.ControllerManager.Register(controller.NewScopePendingController(svc.Scope, 0))
+	}
+
 	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
 		w.ControllerManager.Register(controller.NewCertMonitorController(
 			svc.CertMonitor,
 			repos.Tenant,
 			&controller.CertMonitorControllerConfig{
-				Interval:    cfg.Worker.CertMonitorInterval,
+				Interval:    easmTick(cfg.Worker.CertMonitorInterval),
 				Logger:      log.With("controller", "cert-monitor"),
 				ModuleGuard: svc.Module, // skip tenants without the attack-surface module
+				DNSFollowUp: dnsFollowUp(svc.EASMDNS),
 			},
 		))
 	}
 
-	// Owner resolution — resolve owner_ref (email) to owner_id for assets
+	// EASM DNS-only checks — daily, fail-open, passive (RFC-036 P1): dangling
+	// CNAME/NS and email posture of the tenant's own domains. On by default
+	// (research/22 E3); disable platform-wide with EASM_DNS_CHECKS_ENABLED=false.
+	// The CT controller also runs them for a tenant right after its CT sweep,
+	// so names CT just promoted are checked in the same pass.
+	if svc.EASMDNS != nil {
+		w.ControllerManager.Register(controller.NewEASMDNSController(
+			svc.EASMDNS,
+			repos.Tenant,
+			&controller.EASMDNSControllerConfig{
+				Interval:    easmTick(cfg.Worker.EASMDNSInterval),
+				Logger:      log.With("controller", "easm-dns-checks"),
+				ModuleGuard: svc.Module,
+			},
+		))
+	}
+
+	// Passive lookalike-domain checks (RFC-083): hourly, bounded batches.
+	if svc.EASMLookalikes != nil {
+		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
+	}
+
+	// Network seeds (RFC-082): re-expanded weekly from public routing data.
+	if svc.EASMNetworkSeeds != nil {
+		w.ControllerManager.Register(controller.NewEASMNetworkSeedController(svc.EASMNetworkSeeds, svc.Module, 0))
+	}
+
+	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
+	// files of deleted rows, capture text after a year.
+	if svc.WebEvidence != nil {
+		w.ControllerManager.Register(controller.NewWebEvidenceRetentionController(svc.WebEvidence, 0, log))
+	}
+
+	// Weekly "what changed" digest of the attack surface (RFC-080): hourly
+	// tick, once per organization and slot, on unless the organization turns
+	// it off in its attack-surface settings.
+	if repos.EASMChange != nil && svc.Tenant != nil {
+		var ob easmapp.DigestEnqueuer
+		if svc.Outbox != nil {
+			ob = svc.Outbox
+		}
+		var inApp easmapp.DigestInApp
+		if svc.Notification != nil {
+			inApp = svc.Notification
+		}
+		var admins easmapp.DigestAdmins
+		if repos.MemberLifecycle != nil {
+			admins = repos.MemberLifecycle
+		}
+		w.ControllerManager.Register(controller.NewEASMWeeklyDigestController(
+			easmapp.NewDigestJob(repos.EASMChange, svc.Tenant, ob, inApp, admins, log.With("job", "easm-weekly-digest")),
+			repos.Tenant, svc.Module, 0, log,
+		))
+	}
+
+	// Owner resolution — make the member whose email is owner_ref a primary owner (asset_owners)
 	w.ControllerManager.Register(controller.NewOwnerResolutionController(
 		deps.DB,
 		log.With("controller", "owner-resolution"),
@@ -425,7 +766,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ReclassifyQueue,
 			svc.Reclassifier,
 			&controller.PriorityReclassifyConfig{
-				Logger: log.With("controller", "priority-reclassify"),
+				// Drained every minute: an attribution decision reclassifies
+				// its assets' findings within two minutes (research/22 P0-9).
+				Interval: time.Minute,
+				Logger:   log.With("controller", "priority-reclassify"),
 			},
 		))
 
@@ -471,6 +815,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Remediation progress — periodically refresh campaign finding counts and
 	// auto-complete campaigns whose findings are all resolved.
 	if svc != nil && svc.RemediationCampaign != nil {
+		if svc.Module != nil {
+			svc.RemediationCampaign.SetModuleGuard(svc.Module) // skip tenants with remediation off
+		}
 		w.ControllerManager.Register(controller.NewRemediationProgressController(
 			svc.RemediationCampaign,
 			30*time.Minute,
@@ -501,6 +848,37 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// Deleted-asset purge: assets a person deleted (soft delete, no findings)
+	// are hard-deleted 30 days later. Findings are never purged with them.
+	if repos.Asset != nil {
+		w.ControllerManager.Register(controller.NewAssetPurgeController(
+			repos.Asset,
+			&controller.AssetPurgeConfig{
+				Interval:      24 * time.Hour,
+				RetentionDays: 30,
+				Logger:        log.With("controller", "asset-purge"),
+			},
+		))
+	}
+
+	// Scanner output retention: plugin output of findings closed more than
+	// 365 days ago is dropped (research 24 P0-2, owner decision C9).
+	if repos.Finding != nil {
+		w.ControllerManager.Register(controller.NewScannerOutputRetentionController(
+			repos.Finding,
+			&controller.ScannerOutputRetentionConfig{
+				Logger: log.With("controller", "finding-scanner-output-retention"),
+			},
+		))
+	}
+
+	// Finding evidence retention: encrypted secret values past the tenant's
+	// secret retention, evidence past 365 days (finding-evidence.md).
+	if svc.Evidence != nil {
+		w.ControllerManager.Register(controller.NewEvidenceRetentionController(
+			svc.Evidence, time.Hour, log.With("controller", "finding-evidence-retention")))
+	}
+
 	// Sensor activity timeline retention: sensor_events past 90 days.
 	if repos.SensorEvent != nil {
 		w.ControllerManager.Register(controller.NewSensorEventRetentionController(
@@ -511,6 +889,38 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 				Logger:        log.With("controller", "sensor-event-retention"),
 			},
 		))
+	}
+
+	// Run timelines: command_events past 30 days (research/62 P0-4).
+	if repos.CommandEvent != nil {
+		w.ControllerManager.Register(controller.NewCommandEventRetentionController(
+			repos.CommandEvent,
+			&controller.CommandEventRetentionConfig{
+				Interval:      6 * time.Hour,
+				RetentionDays: 30,
+				Logger:        log.With("controller", "command-event-retention"),
+			},
+		))
+	}
+
+	// Web surface (RFC-056 WS14): unseen 30 days -> gone, gone a year ->
+	// deleted, change feed kept 90 days.
+	if repos.WebEndpoint != nil {
+		w.ControllerManager.Register(controller.NewWebSurfaceRetentionController(
+			repos.WebEndpoint, log.With("controller", "web-surface-retention")))
+	}
+
+	// Per-task sensor logs (RFC-029 §4.4.1): kept 14 days.
+	if repos.CommandLog != nil {
+		w.ControllerManager.Register(controller.NewCommandLogRetentionController(
+			repos.CommandLog, commandlog.Retention, log.With("controller", "command-log-retention")))
+	}
+
+	// Heartbeat history retention: buckets past 48 h (RFC-035, the Control
+	// channel sparkline reads 24 h).
+	if repos.SensorHeartbeatHistory != nil {
+		w.ControllerManager.Register(controller.NewHeartbeatHistoryRetentionController(
+			repos.SensorHeartbeatHistory, log.With("controller", "sensor-heartbeat-history-retention")))
 	}
 
 	// Platform job queue priority rebalancing. Without this the platform
@@ -554,11 +964,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		svc.Audit,
 		repos.Tenant,
 		&controller.AuditChainVerifyControllerConfig{
-			Interval:       time.Hour,
-			PerTenantLimit: 10000,
-			Logger:         log.With("controller", "audit-chain-verify"),
+			Interval: time.Hour,
+			// PerTenantLimit unset: walk every chain in full. A cap here
+			// left everything past the first 10,000 entries unverified.
+			// Logger: the controller adds its own "controller" attribute.
+			Logger: log,
 		},
 	))
+
+	// Automatic passive enrichment of new assets (RFC-075).
+	if cfg.Worker.AssetEnrichmentEnabled && svc.AssetEnricher != nil {
+		w.ControllerManager.Register(controller.NewAssetEnrichmentController(svc.AssetEnricher, 0))
+	}
 
 	// Asset lifecycle worker. Demotes assets that no scanner or
 	// integration has re-observed within each tenant's configured
@@ -831,4 +1248,38 @@ func (w *Workers) Stop(log *logger.Logger) {
 		log.Error("controller manager stop error", "error", err)
 	}
 	log.Info("controller manager stopped")
+}
+
+// connectorCoverageDispatcher dispatches a coverage batch as a connector_scan
+// of the batch's Tenable.sc connector (RFC-047 §9).
+type connectorCoverageDispatcher struct {
+	svc *tenablesc.Service
+}
+
+func (d connectorCoverageDispatcher) DispatchTenableScan(ctx context.Context, in scancoverage.DispatchTenableInput) (shared.ID, string, error) {
+	if in.IntegrationID == nil {
+		return shared.ID{}, "", errors.New("coverage batch names no Tenable.sc connector")
+	}
+	session := in.SessionID
+	if session == "" {
+		session = shared.NewID().String()
+	}
+	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session)
+	return id, session, err
+}
+
+// easmTick is how often the CT and DNS controllers wake up: hourly (or the
+// interval, when shorter), so a tenant's own interval (6 h and up, P0-11)
+// takes effect; each name is re-queried only once its window has passed.
+func easmTick(interval time.Duration) time.Duration {
+	return min(interval, time.Hour)
+}
+
+// dnsFollowUp returns the DNS checks for the CT controller to run after each
+// tenant's CT sweep, or nil when they are off (a typed nil would not be nil).
+func dnsFollowUp(s *easmdnsapp.Service) controller.EASMDNSChecker {
+	if s == nil {
+		return nil
+	}
+	return s
 }

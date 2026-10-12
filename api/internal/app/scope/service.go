@@ -3,10 +3,8 @@ package scope
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math"
-	"net"
-	"net/url"
 	"strings"
 	"time"
 
@@ -21,23 +19,56 @@ import (
 type Service struct {
 	targetRepo    scopedom.TargetRepository
 	exclusionRepo scopedom.ExclusionRepository
-	scheduleRepo  scopedom.ScheduleRepository
 	assetRepo     asset.Repository
 	logger        *logger.Logger
+
+	// Entry policy (entries.go): settings, administrators, notices, step-up.
+	settings SettingsReader
+	admins   AdminDirectory
+	inApp    InAppNotifier
+	stepUp   shared.RecentAuthGate
+	// Approvers (approvers.go): who may approve, the authenticator check
+	// for an owner's own approval, approval emails and channels.
+	approvers  ApproverDirectory
+	totp       TOTPVerifier
+	mail       ApprovalMailer
+	channels   ChannelNotifier
+	webBaseURL string
+	// auditor records the system decisions (attestation.go).
+	auditor SystemAuditor
+	// governance is the scan approval mode source (entries.go).
+	governance GovernanceSource
+	// guardrails are the platform's scope guardrails (nil: the defaults).
+	guardrails *scopedom.Guardrails
+	// programExcl lists program exclusions for the authority check (RFC-065).
+	programExcl ProgramExclusionReader
+	// programs names the programs of a scope snapshot (snapshot.go).
+	programs ProgramLister
+	// letters are the authorization letters letter entries name (letters.go).
+	letters scopedom.LetterRepository
+	// Coverage of the inventory (GetStats): counted in SQL over the
+	// caller's data scope.
+	coverage  CoverageCounter
+	dataScope DataScopeResolver
+	// The scope join after a committed change (join.go).
+	joiner  ScopeJoiner
+	visible VisibleAssetCounter
+	// ledger is the job signer's scope ledger (ledger.go); nil: none.
+	ledger LedgerFeed
+	// ledgerTemplates lists the approved template versions for snapshots.
+	ledgerTemplates LedgerTemplateSource
 }
 
 // NewService creates a new Service.
 func NewService(
 	targetRepo scopedom.TargetRepository,
 	exclusionRepo scopedom.ExclusionRepository,
-	scheduleRepo scopedom.ScheduleRepository,
 	assetRepo asset.Repository,
 	log *logger.Logger,
 ) *Service {
 	return &Service{
 		targetRepo:    targetRepo,
 		exclusionRepo: exclusionRepo,
-		scheduleRepo:  scheduleRepo,
 		assetRepo:     assetRepo,
 		logger:        log.With("service", "scope"),
 	}
@@ -56,11 +87,37 @@ type CreateTargetInput struct {
 	Priority    int      `validate:"min=0,max=100"`
 	Tags        []string `validate:"max=20,dive,max=50"`
 	CreatedBy   string   `validate:"max=200"`
+
+	// Entry fields (RFC-054 §6.1).
+	Reason        string `validate:"max=1000"`
+	ExpiresAt     *time.Time
+	ExpiresInDays *int
+	MaxTier       string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
+	// Actor is the caller (zero: a system path, effective at once).
+	Actor Actor
+	// Origin is the creating path (empty: manual, request or system from
+	// the actor).
+	Origin scopedom.Origin
+	// Discovery: discovery from the entry (nil: on). It runs only for a
+	// permanent domain entry (research/53 SC1).
+	Discovery *bool
+	// AuthorizationSource: ownership (default), self_attestation or
+	// authorization_letter; all follow the organization's approval policy.
+	// Program entries are created only by the programs service (RFC-065).
+	AuthorizationSource string
+	// LetterID names the letter of an authorization_letter entry: the
+	// tenant's, valid now (RFC-065 §13).
+	LetterID string
+
+	// batch: one of several entries added in one request (CreateTargets),
+	// which tells the administrators once for the whole batch.
+	batch bool
 }
 
-// CreateTarget creates a new scope target.
+// CreateTarget creates a scope entry: effective at once, pending approval,
+// or a member's pending request (entries.go).
 func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*scopedom.Target, error) {
-	s.logger.Info("creating scope target", "type", input.TargetType, "pattern", input.Pattern)
+	s.logger.Info("creating scope target", "type", logSafe(input.TargetType), "pattern", logSafe(input.Pattern))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -69,19 +126,34 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 
 	targetType, err := scopedom.ParseTargetType(input.TargetType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
-
-	// Check if pattern already exists
-	exists, err := s.targetRepo.ExistsByPattern(ctx, tenantID, targetType, input.Pattern)
+	source, err := scopedom.ParseGeneralSource(input.AuthorizationSource)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check target existence: %w", err)
-	}
-	if exists {
-		return nil, scopedom.ErrTargetAlreadyExists
+		return nil, err
 	}
 
-	target, err := scopedom.NewTarget(tenantID, targetType, input.Pattern, input.Description, input.CreatedBy)
+	if err := s.targetDuplicate(ctx, tenantID, targetType, input.Pattern); err != nil {
+		return nil, err
+	}
+
+	g := scopedom.DefaultGuardrails()
+	if s.guardrails != nil {
+		g = *s.guardrails
+	}
+	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	d, err := s.decideNewEntry(ctx, tenantID, targetType, input, now, false)
+	if err != nil {
+		return nil, err
+	}
+	target, err := scopedom.NewEntry(tenantID, targetType, input.Pattern, input.Description, input.CreatedBy, scopedom.EntryOptions{
+		Reason: input.Reason, ExpiresAt: d.expiresAt, MaxTier: d.tier, ApprovalsRequired: d.approvals,
+		IntrusivePermanent: d.intrusivePermanent, Now: now,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -95,13 +167,72 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	if len(input.Tags) > 0 {
 		target.UpdateTags(input.Tags)
 	}
-
-	if err := s.targetRepo.Create(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to create scope target: %w", err)
+	target.SetOrigin(entryOrigin(input.Origin, input.Actor, d.request))
+	var ref *shared.ID
+	if source == scopedom.AuthLetter {
+		if ref, err = s.letterRef(ctx, tenantID, input.LetterID); err != nil {
+			return nil, err
+		}
+	}
+	if err := target.SetAuthorization(source, ref); err != nil {
+		return nil, err
+	}
+	if input.Discovery != nil {
+		target.SetDiscovery(*input.Discovery)
 	}
 
-	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", input.Pattern)
+	if err := s.commitEntry(ctx, nil, target, false, func() error {
+		if err := s.targetRepo.Create(ctx, target); err != nil {
+			return fmt.Errorf("failed to create scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		// A concurrent create won the unique key: name the row it made.
+		if errors.Is(err, scopedom.ErrTargetAlreadyExists) {
+			if dup := s.targetDuplicate(ctx, tenantID, targetType, input.Pattern); dup != nil {
+				return nil, dup
+			}
+		}
+		return nil, err
+	}
+
+	switch {
+	case target.IsPending():
+		s.notifyRequested(ctx, target)
+	case !input.Actor.system() && !input.batch:
+		s.notifyWidened(ctx, target, "Scope entry added")
+	}
+	if target.IsActive() {
+		s.scheduleJoin(tenantID)
+	}
+	s.logger.Info("scope target created", "id", target.ID().String(), "pattern", logSafe(input.Pattern), "status", target.Status().String())
 	return target, nil
+}
+
+// targetDuplicate refuses a new entry whose pattern the tenant already has
+// (no port or protocol limit), naming the existing entry so the caller can
+// act on it. The lookup is the tenant's own rows only.
+func (s *Service) targetDuplicate(ctx context.Context, tenantID shared.ID, targetType scopedom.TargetType, pattern string) error {
+	existing, err := s.targetRepo.FindByPattern(ctx, tenantID, targetType, pattern)
+	if err != nil {
+		return fmt.Errorf("failed to check target existence: %w", err)
+	}
+	if existing != nil {
+		return scopedom.NewTargetDuplicate(*existing)
+	}
+	return nil
+}
+
+// exclusionDuplicate is targetDuplicate for exclusions.
+func (s *Service) exclusionDuplicate(ctx context.Context, tenantID shared.ID, exclusionType scopedom.ExclusionType, pattern string) error {
+	existing, err := s.exclusionRepo.FindByPattern(ctx, tenantID, exclusionType, pattern)
+	if err != nil {
+		return fmt.Errorf("failed to check exclusion existence: %w", err)
+	}
+	if existing != nil {
+		return scopedom.NewExclusionDuplicate(*existing)
+	}
+	return nil
 }
 
 // GetTarget retrieves a scope target by tenant ID and ID.
@@ -122,6 +253,28 @@ type UpdateTargetInput struct {
 	Description *string  `validate:"omitempty,max=1000"`
 	Priority    *int     `validate:"omitempty,min=0,max=100"`
 	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
+
+	// Entry fields (RFC-054 §6.1). A later or removed expiry, or a higher
+	// tier, widens: it needs step-up, and in Strict the approval permission;
+	// it sends the entry back to review when approvals are required.
+	Reason        *string `validate:"omitempty,max=1000"`
+	ExpiresAt     *time.Time
+	ExpiresInDays *int
+	ClearExpiry   bool
+	MaxTier       *string `validate:"omitempty,oneof=t0 t1 t2 T0 T1 T2"`
+	// Discovery switches discovery on or off. Turning it on widens what is
+	// discovered (names under the entry join the inventory): step-up (and
+	// in Strict the approval permission), and every administrator is told;
+	// it does not send the entry back to review (discovery is passive).
+	Discovery *bool
+	Actor     Actor
+}
+
+// changesEntry reports whether the update touches the entry fields (expiry,
+// tier, reason, discovery): a program entry takes those from its program.
+func (in UpdateTargetInput) changesEntry() bool {
+	return in.Reason != nil || in.ExpiresAt != nil || in.ExpiresInDays != nil || in.ClearExpiry ||
+		in.MaxTier != nil || in.Discovery != nil
 }
 
 // UpdateTarget updates an existing scope target.
@@ -139,6 +292,10 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	if err != nil {
 		return nil, err
 	}
+	if target.IsProgramEntry() && input.changesEntry() {
+		return nil, scopedom.ErrProgramManaged
+	}
+	before := ledgerEntryOf(target, time.Now())
 
 	if input.Description != nil {
 		target.UpdateDescription(*input.Description)
@@ -151,13 +308,145 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	if input.Tags != nil {
 		target.UpdateTags(input.Tags)
 	}
-
-	if err := s.targetRepo.Update(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to update scope target: %w", err)
+	discoveryOn, err := s.applyDiscovery(ctx, target, input)
+	if err != nil {
+		return nil, err
+	}
+	widened, err := s.applyEntryUpdate(ctx, target, input)
+	if err != nil {
+		return nil, err
 	}
 
-	s.logger.Info("scope target updated", "id", targetID)
+	if err := s.commitEntry(ctx, before, target, false, func() error {
+		if err := s.targetRepo.Update(ctx, target); err != nil {
+			return fmt.Errorf("failed to update scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if widened {
+		if target.IsPending() {
+			s.notifyRequested(ctx, target)
+		} else if !input.Actor.system() {
+			s.notifyWidened(ctx, target, "Scope entry widened")
+		}
+	} else if discoveryOn && !input.Actor.system() {
+		s.notifyWidened(ctx, target, "Discovery turned on for a scope entry")
+	}
+
+	if target.IsActive() {
+		s.scheduleJoin(target.TenantID())
+	}
+	s.logger.Info("scope target updated", "id", logSafe(targetID), "widened", widened)
 	return target, nil
+}
+
+// applyDiscovery applies a discovery switch and reports whether it went from
+// off to on (a widening: step-up, and in Strict approvers only).
+func (s *Service) applyDiscovery(ctx context.Context, t *scopedom.Target, in UpdateTargetInput) (bool, error) {
+	if in.Discovery == nil || *in.Discovery == t.DiscoverySetting() {
+		return false, nil
+	}
+	if !*in.Discovery {
+		t.SetDiscovery(false) // narrowing
+		return false, nil
+	}
+	if !in.Actor.system() && !in.Actor.mayWiden(s.entriesNeedApproval(ctx, t.TenantID())) {
+		return false, ErrWideningNeedsApprove
+	}
+	if err := s.requireStepUp(ctx, in.Actor); err != nil {
+		return false, err
+	}
+	t.SetDiscovery(true)
+	return true, nil
+}
+
+// applyEntryUpdate applies the entry fields of an update and reports whether
+// the change widened the entry. Nothing is changed when the caller may not
+// make the change.
+func (s *Service) applyEntryUpdate(ctx context.Context, t *scopedom.Target, in UpdateTargetInput) (bool, error) {
+	now := time.Now().UTC()
+	tier := t.MaxTier()
+	if in.MaxTier != nil {
+		parsed, err := scopedom.ParseTier(*in.MaxTier)
+		if err != nil {
+			return false, err
+		}
+		tier = parsed
+	}
+	expiryChange := in.ClearExpiry || in.ExpiresAt != nil || in.ExpiresInDays != nil
+	next := t.ExpiresAt()
+	var pol *policy
+	if expiryChange || tier == scopedom.TierIntrusive {
+		p, err := s.loadPolicy(ctx, t.TenantID())
+		if err != nil {
+			return false, err
+		}
+		pol = &p
+	}
+	if expiryChange {
+		next = nil
+		if !in.ClearExpiry {
+			var err error
+			if next, err = resolveExpiry(*pol, tier, now, in.ExpiresAt, in.ExpiresInDays); err != nil {
+				return false, err
+			}
+		}
+	}
+	if tier == scopedom.TierIntrusive {
+		// The organization's t2 bound (RFC-054 §12.4) applies to the
+		// expiry the entry will have, also when only the tier is raised.
+		if next == nil && !pol.intrusivePermanent() {
+			return false, scopedom.ErrIntrusiveNeeds
+		}
+		if maxDays, _ := pol.settings.T2Max(); next != nil && !pol.intrusivePermanent() &&
+			tier > t.MaxTier() && next.After(now.Add(time.Duration(maxDays)*24*time.Hour+time.Minute)) {
+			return false, fmt.Errorf("%w: at most %d days", scopedom.ErrIntrusiveTooLong, maxDays)
+		}
+	}
+	// A higher tier, a later or removed expiry, or renewing an expired entry
+	// widens.
+	widen := tier > t.MaxTier() ||
+		(expiryChange && (t.ExtendsExpiry(next) || t.Status() == scopedom.StatusExpired || t.ExpiredAt(now)))
+	if widen {
+		if t.Status() == scopedom.StatusRejected {
+			return false, scopedom.ErrEntryRejected
+		}
+		if !in.Actor.system() && !in.Actor.mayWiden(s.entriesNeedApproval(ctx, t.TenantID())) {
+			return false, ErrWideningNeedsApprove
+		}
+		if err := s.requireStepUp(ctx, in.Actor); err != nil {
+			return false, err
+		}
+	}
+	if in.Reason != nil {
+		if err := t.SetReason(*in.Reason, now); err != nil {
+			return false, err
+		}
+	}
+	t.SetMaxTier(tier, now)
+	if expiryChange {
+		t.SetExpiry(next, now)
+	}
+	if !widen {
+		return false, nil
+	}
+	if t.Status() == scopedom.StatusInactive {
+		// Widening the fields of a deactivated entry does not activate it;
+		// activating it later is its own widening.
+		return true, nil
+	}
+	p, err := s.loadPolicy(ctx, t.TenantID())
+	if err != nil {
+		return false, err
+	}
+	approvals := 0
+	if !in.Actor.system() {
+		approvals = p.approvals(t.MaxTier(), false)
+	}
+	t.Widen(in.Actor.UserID, approvals, now)
+	return true, nil
 }
 
 // DeleteTarget deletes a scope target by ID with atomic tenant verification.
@@ -172,7 +461,13 @@ func (s *Service) DeleteTarget(ctx context.Context, targetID string, tenantID st
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	if err := s.targetRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+	target, err := s.targetRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return err
+	}
+	if err := s.commitEntry(ctx, ledgerEntryOf(target, time.Now()), target, true, func() error {
+		return s.targetRepo.Delete(ctx, parsedTenantID, parsedID)
+	}); err != nil {
 		return err
 	}
 
@@ -184,11 +479,13 @@ func (s *Service) DeleteTarget(ctx context.Context, targetID string, tenantID st
 type ListTargetsInput struct {
 	TenantID    string   `validate:"omitempty,uuid"`
 	TargetTypes []string `validate:"max=20"`
-	Statuses    []string `validate:"max=3"`
+	Statuses    []string `validate:"max=5"`
 	Tags        []string `validate:"max=20,dive,max=50"`
 	Search      string   `validate:"max=255"`
 	Page        int      `validate:"min=0"`
 	PerPage     int      `validate:"min=0,max=100"`
+	// ExcludeProgramIDs: entries of these programs are not listed.
+	ExcludeProgramIDs []string
 }
 
 // ListTargets retrieves scope targets with filtering and pagination.
@@ -224,22 +521,40 @@ func (s *Service) ListTargets(ctx context.Context, input ListTargetsInput) (pagi
 	if input.Search != "" {
 		filter.Search = &input.Search
 	}
+	filter.ExcludeProgramIDs = input.ExcludeProgramIDs
 
 	page := pagination.New(input.Page, input.PerPage)
 	return s.targetRepo.List(ctx, filter, page)
 }
 
-// ListActiveTargets retrieves all active scope targets for a tenant.
+// ListActiveTargets retrieves the tenant's scope targets in effect: active
+// and not past their expiry. The repository filters on both; re-checking
+// here keeps an expired or pending entry from ever reaching a matcher,
+// whatever the repository returns.
 func (s *Service) ListActiveTargets(ctx context.Context, tenantID string) ([]*scopedom.Target, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	return s.targetRepo.ListActive(ctx, parsedID)
+	all, err := s.targetRepo.ListActive(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	out := all[:0:0]
+	for _, t := range all {
+		if t != nil && t.InEffect(now) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
-// ActivateTarget activates a scope target.
-func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID string) (*scopedom.Target, error) {
+// ActivateTarget activates a scope target. Activation widens: an approver
+// re-authenticates and the entry needs the tenant's approvals; anyone else
+// may not activate (they request a new entry). An expired entry is renewed
+// with a new expiry instead.
+func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID string, actor Actor) (*scopedom.Target, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -254,13 +569,46 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, err
 	}
 
-	target.Activate()
-
-	if err := s.targetRepo.Update(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to activate scope target: %w", err)
+	now := time.Now().UTC()
+	switch {
+	case target.Status() == scopedom.StatusRejected:
+		return nil, scopedom.ErrEntryRejected
+	case target.Status() == scopedom.StatusExpired || target.ExpiredAt(now):
+		return nil, scopedom.ErrEntryExpired
+	case target.Status() == scopedom.StatusActive:
+		return target, nil // nothing to widen
+	case target.IsProgramEntry():
+		return nil, scopedom.ErrProgramManaged
+	case target.IsPending() && s.entriesNeedApproval(ctx, parsedTenantID):
+		return target, nil // it waits for its approvals
+	}
+	// A pending entry left from a time the organization required approvals
+	// (it no longer does, RFC-073 §6) is put into effect like a new entry:
+	// the caller's scope:write and step-up, no second person. Nothing puts
+	// it into effect without a person asking.
+	before := ledgerEntryOf(target, now)
+	if err := s.widenEntry(ctx, target, actor, now); err != nil {
+		return nil, err
 	}
 
-	s.logger.Info("scope target activated", "id", targetID)
+	if err := s.commitEntry(ctx, before, target, false, func() error {
+		if err := s.targetRepo.Update(ctx, target); err != nil {
+			return fmt.Errorf("failed to activate scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if target.IsPending() {
+		s.notifyRequested(ctx, target)
+	} else if !actor.system() {
+		s.notifyWidened(ctx, target, "Scope entry activated")
+	}
+
+	if target.IsActive() {
+		s.scheduleJoin(parsedTenantID)
+	}
+	s.logger.Info("scope target activated", "id", logSafe(targetID), "status", target.Status().String())
 	return target, nil
 }
 
@@ -280,10 +628,16 @@ func (s *Service) DeactivateTarget(ctx context.Context, targetID string, tenantI
 		return nil, err
 	}
 
+	before := ledgerEntryOf(target, time.Now())
 	target.Deactivate()
 
-	if err := s.targetRepo.Update(ctx, target); err != nil {
-		return nil, fmt.Errorf("failed to deactivate scope target: %w", err)
+	if err := s.commitEntry(ctx, before, target, false, func() error {
+		if err := s.targetRepo.Update(ctx, target); err != nil {
+			return fmt.Errorf("failed to deactivate scope target: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	s.logger.Info("scope target deactivated", "id", targetID)
@@ -302,11 +656,31 @@ type CreateExclusionInput struct {
 	Reason        string     `validate:"required,max=1000"`
 	ExpiresAt     *time.Time `validate:"omitempty"`
 	CreatedBy     string     `validate:"max=200"`
+	// PathPrefix and Methods make a `path` exclusion's web rule (RFC-056):
+	// the pattern is then a host pattern.
+	PathPrefix *string
+	Methods    []string
+	// Origin is the creating path (empty: manual).
+	Origin scopedom.Origin
+}
+
+// entryOrigin is the origin a new entry records: the path's own when it
+// names one, else a member's request, a system write, or a manual add.
+func entryOrigin(given scopedom.Origin, actor Actor, request bool) scopedom.Origin {
+	switch {
+	case given.Valid():
+		return given
+	case request:
+		return scopedom.OriginRequest
+	case actor.system():
+		return scopedom.OriginSystem
+	}
+	return scopedom.OriginManual
 }
 
 // CreateExclusion creates a new scope exclusion.
 func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInput) (*scopedom.Exclusion, error) {
-	s.logger.Info("creating scope exclusion", "type", input.ExclusionType, "pattern", input.Pattern)
+	s.logger.Info("creating scope exclusion", "type", logSafe(input.ExclusionType), "pattern", logSafe(input.Pattern))
 
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
@@ -315,19 +689,51 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 
 	exclusionType, err := scopedom.ParseExclusionType(input.ExclusionType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 
-	exclusion, err := scopedom.NewExclusion(tenantID, exclusionType, input.Pattern, input.Reason, input.ExpiresAt, input.CreatedBy)
+	web, err := webRuleFor(exclusionType, input.Pattern, input.PathPrefix, input.Methods)
 	if err != nil {
 		return nil, err
 	}
-
-	if err := s.exclusionRepo.Create(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to create scope exclusion: %w", err)
+	pattern := input.Pattern
+	if web != nil {
+		pattern = scopedom.PathRulePattern(pattern, web.PathPrefix)
+	}
+	exclusion, err := scopedom.NewExclusion(tenantID, exclusionType, pattern, input.Reason, input.ExpiresAt, input.CreatedBy)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); err != nil {
+		return nil, err
+	}
+	exclusion.SetWeb(web)
+	exclusion.SetOrigin(input.Origin)
+	// In Off and On (RFC-073 §6) the creator's scope:write is enough: the
+	// exclusion is in effect at once, recorded as approved by its creator.
+	// In Strict it waits for an exclusion approver other than the creator.
+	if !s.entriesNeedApproval(ctx, tenantID) {
+		if err := exclusion.TakeEffect(input.CreatedBy); err != nil {
+			return nil, err
+		}
 	}
 
-	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", input.Pattern)
+	if err := s.commitExclusion(ctx, nil, exclusion, false, input.CreatedBy, func() error {
+		if err := s.exclusionRepo.Create(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to create scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		// A concurrent create won the unique key: name the row it made.
+		if errors.Is(err, scopedom.ErrExclusionAlreadyExists) {
+			if dup := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); dup != nil {
+				return nil, dup
+			}
+		}
+		return nil, err
+	}
+
+	s.logger.Info("scope exclusion created", "id", exclusion.ID().String(), "pattern", logSafe(input.Pattern))
 	return exclusion, nil
 }
 
@@ -348,6 +754,9 @@ func (s *Service) GetExclusion(ctx context.Context, tenantID string, exclusionID
 type UpdateExclusionInput struct {
 	Reason    *string    `validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `validate:"omitempty"`
+	// Reviewer is the caller; shortening the window of an exclusion in
+	// effect needs Reviewer.CanApprove and someone other than the requester.
+	Reviewer scopedom.Reviewer
 }
 
 // UpdateExclusion updates an existing scope exclusion.
@@ -365,24 +774,45 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 	if err != nil {
 		return nil, err
 	}
+	before := ledgerExclusionOf(exclusion, time.Now())
+	needsReview := s.entriesNeedApproval(ctx, parsedTenantID)
 
+	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
+		if err := exclusion.AuthorizeReduction(input.Reviewer, needsReview); err != nil {
+			return nil, err
+		}
+		// Shortening an exclusion in effect widens scope: step-up (RFC-054 §6.2).
+		if exclusion.InEffect() {
+			if err := s.requireStepUp(ctx, Actor{UserID: input.Reviewer.UserID}); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if input.Reason != nil {
 		exclusion.UpdateReason(*input.Reason)
 	}
 	if input.ExpiresAt != nil {
-		exclusion.UpdateExpiresAt(input.ExpiresAt)
+		exclusion.UpdateExpiresAt(input.ExpiresAt, needsReview)
 	}
 
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to update scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, before, exclusion, false, input.Reviewer.UserID, func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to update scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	s.logger.Info("scope exclusion updated", "id", exclusionID)
+	s.scheduleJoin(parsedTenantID) // a shorter exclusion may let a name join
+	s.logger.Info("scope exclusion updated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
 
-// DeleteExclusion deletes a scope exclusion by ID with atomic tenant verification.
-func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenantID string) error {
+// DeleteExclusion deletes a scope exclusion by ID with atomic tenant
+// verification. In Strict, deleting an exclusion in effect needs the approval
+// permission and someone other than the requester (AuthorizeReduction).
+func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenantID string, reviewer scopedom.Reviewer) error {
 	parsedID, err := shared.IDFromString(exclusionID)
 	if err != nil {
 		return shared.ErrNotFound
@@ -393,11 +823,22 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
-	if err := s.exclusionRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return err
+	}
+	if err := exclusion.AuthorizeReduction(reviewer, s.entriesNeedApproval(ctx, parsedTenantID)); err != nil {
 		return err
 	}
 
-	s.logger.Info("scope exclusion deleted", "id", exclusionID)
+	if err := s.commitExclusion(ctx, ledgerExclusionOf(exclusion, time.Now()), exclusion, true, reviewer.UserID, func() error {
+		return s.exclusionRepo.Delete(ctx, parsedTenantID, parsedID)
+	}); err != nil {
+		return err
+	}
+
+	s.scheduleJoin(parsedTenantID)
+	s.logger.Info("scope exclusion deleted", "id", logSafe(exclusionID))
 	return nil
 }
 
@@ -405,7 +846,7 @@ func (s *Service) DeleteExclusion(ctx context.Context, exclusionID string, tenan
 type ListExclusionsInput struct {
 	TenantID       string   `validate:"omitempty,uuid"`
 	ExclusionTypes []string `validate:"max=20"`
-	Statuses       []string `validate:"max=3"`
+	Statuses       []string `validate:"max=5"`
 	IsApproved     *bool
 	Search         string `validate:"max=255"`
 	Page           int    `validate:"min=0"`
@@ -456,10 +897,12 @@ func (s *Service) ListActiveExclusions(ctx context.Context, tenantID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	return s.exclusionRepo.ListActive(ctx, parsedID)
+	return s.effectiveExclusions(ctx, parsedID)
 }
 
-// ApproveExclusion approves a scope exclusion.
+// ApproveExclusion approves a pending scope exclusion and puts it into effect.
+// The route requires attack_surface:scope:exclusions:approve; the requester
+// cannot approve their own exclusion.
 func (s *Service) ApproveExclusion(ctx context.Context, exclusionID string, tenantID string, approvedBy string) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
@@ -475,20 +918,27 @@ func (s *Service) ApproveExclusion(ctx context.Context, exclusionID string, tena
 		return nil, err
 	}
 
+	before := ledgerExclusionOf(exclusion, time.Now())
 	if err := exclusion.Approve(approvedBy); err != nil {
 		return nil, err
 	}
 
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to approve scope exclusion: %w", err)
+	if err := s.commitExclusion(ctx, before, exclusion, false, approvedBy, func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to approve scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
-	s.logger.Info("scope exclusion approved", "id", exclusionID, "approvedBy", approvedBy)
+	s.logger.Info("scope exclusion approved", "id", logSafe(exclusionID), "approvedBy", logSafe(approvedBy))
 	return exclusion, nil
 }
 
-// ActivateExclusion activates a scope exclusion.
-func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scopedom.Exclusion, error) {
+// RejectExclusion declines a pending scope exclusion; it never takes effect.
+// The route requires attack_surface:scope:exclusions:approve.
+func (s *Service) RejectExclusion(ctx context.Context, exclusionID string, tenantID string, rejectedBy string) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -503,18 +953,23 @@ func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, ten
 		return nil, err
 	}
 
-	exclusion.Activate()
-
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to activate scope exclusion: %w", err)
+	if err := exclusion.Reject(rejectedBy); err != nil {
+		return nil, err
 	}
 
-	s.logger.Info("scope exclusion activated", "id", exclusionID)
+	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+		return nil, fmt.Errorf("failed to reject scope exclusion: %w", err)
+	}
+
+	s.logger.Info("scope exclusion rejected", "id", logSafe(exclusionID), "rejectedBy", logSafe(rejectedBy))
 	return exclusion, nil
 }
 
-// DeactivateExclusion deactivates a scope exclusion.
-func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, tenantID string) (*scopedom.Exclusion, error) {
+// ActivateExclusion puts an approved scope exclusion back into effect. A
+// pending exclusion left from a time the organization required approvals
+// (it no longer does, RFC-073 §6) takes effect as a new one would, recorded
+// as approved by the caller (by).
+func (s *Service) ActivateExclusion(ctx context.Context, exclusionID string, tenantID string, by string) (*scopedom.Exclusion, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
@@ -529,13 +984,65 @@ func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, t
 		return nil, err
 	}
 
-	exclusion.Deactivate()
-
-	if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
-		return nil, fmt.Errorf("failed to deactivate scope exclusion: %w", err)
+	before := ledgerExclusionOf(exclusion, time.Now())
+	if exclusion.IsPending() && !exclusion.IsApproved() && !s.entriesNeedApproval(ctx, parsedTenantID) {
+		if err := exclusion.TakeEffect(by); err != nil {
+			return nil, err
+		}
+	} else if err := exclusion.Activate(); err != nil {
+		return nil, err
 	}
 
-	s.logger.Info("scope exclusion deactivated", "id", exclusionID)
+	if err := s.commitExclusion(ctx, before, exclusion, false, "", func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to activate scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info("scope exclusion activated", "id", logSafe(exclusionID))
+	return exclusion, nil
+}
+
+// DeactivateExclusion takes a scope exclusion out of effect. In Strict that
+// needs the approval permission and someone other than the requester
+// (AuthorizeReduction).
+func (s *Service) DeactivateExclusion(ctx context.Context, exclusionID string, tenantID string, reviewer scopedom.Reviewer) (*scopedom.Exclusion, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	parsedID, err := shared.IDFromString(exclusionID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+
+	exclusion, err := s.exclusionRepo.GetByID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := exclusion.AuthorizeReduction(reviewer, s.entriesNeedApproval(ctx, parsedTenantID)); err != nil {
+		return nil, err
+	}
+	before := ledgerExclusionOf(exclusion, time.Now())
+	if err := exclusion.Deactivate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.commitExclusion(ctx, before, exclusion, false, reviewer.UserID, func() error {
+		if err := s.exclusionRepo.Update(ctx, exclusion); err != nil {
+			return fmt.Errorf("failed to deactivate scope exclusion: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	s.scheduleJoin(parsedTenantID)
+	s.logger.Info("scope exclusion deactivated", "id", logSafe(exclusionID))
 	return exclusion, nil
 }
 
@@ -549,382 +1056,6 @@ func (s *Service) ExpireOldExclusions(ctx context.Context) error {
 }
 
 // =============================================================================
-// Schedule Operations
-// =============================================================================
-
-// CreateScheduleInput represents the input for creating a scan schedule.
-type CreateScheduleInput struct {
-	TenantID             string                 `validate:"required,uuid"`
-	Name                 string                 `validate:"required,min=1,max=200"`
-	Description          string                 `validate:"max=1000"`
-	ScanType             string                 `validate:"required"`
-	TargetScope          string                 `validate:"omitempty"`
-	TargetIDs            []string               `validate:"max=100"`
-	TargetTags           []string               `validate:"max=20,dive,max=50"`
-	ScannerConfigs       map[string]interface{} `validate:"omitempty"`
-	ScheduleType         string                 `validate:"required"`
-	CronExpression       string                 `validate:"max=100"`
-	IntervalHours        int                    `validate:"min=0,max=8760"`
-	NotifyOnCompletion   bool
-	NotifyOnFindings     bool
-	NotificationChannels []string `validate:"max=10,dive,max=50"`
-	CreatedBy            string   `validate:"max=200"`
-}
-
-// CreateSchedule creates a new scan schedule.
-func (s *Service) CreateSchedule(ctx context.Context, input CreateScheduleInput) (*scopedom.Schedule, error) {
-	s.logger.Info("creating scan schedule", "name", input.Name, "type", input.ScheduleType)
-
-	tenantID, err := shared.IDFromString(input.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	scanType, err := scopedom.ParseScanType(input.ScanType)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
-	}
-
-	scheduleType := scopedom.ScheduleType(input.ScheduleType)
-	if !scheduleType.IsValid() {
-		return nil, fmt.Errorf("%w: invalid schedule type", shared.ErrValidation)
-	}
-
-	schedule, err := scopedom.NewSchedule(tenantID, input.Name, scanType, scheduleType, input.CreatedBy)
-	if err != nil {
-		return nil, err
-	}
-
-	// Apply optional settings
-	if input.Description != "" {
-		schedule.UpdateDescription(input.Description)
-	}
-
-	// Set schedule timing
-	if input.ScheduleType == string(scopedom.ScheduleTypeCron) && input.CronExpression != "" {
-		if err := schedule.SetCronSchedule(input.CronExpression); err != nil {
-			return nil, err
-		}
-	} else if input.ScheduleType == string(scopedom.ScheduleTypeInterval) && input.IntervalHours > 0 {
-		if err := schedule.SetIntervalSchedule(input.IntervalHours); err != nil {
-			return nil, err
-		}
-	}
-
-	// Set target scope
-	if input.TargetScope != "" {
-		targetIDs := make([]shared.ID, 0, len(input.TargetIDs))
-		for _, idStr := range input.TargetIDs {
-			if id, err := shared.IDFromString(idStr); err == nil {
-				targetIDs = append(targetIDs, id)
-			}
-		}
-		schedule.SetTargetScope(scopedom.TargetScope(input.TargetScope), targetIDs, input.TargetTags)
-	}
-
-	// Set scanner configs
-	if input.ScannerConfigs != nil {
-		schedule.UpdateScannerConfigs(input.ScannerConfigs)
-	}
-
-	// Set notifications
-	schedule.UpdateNotifications(input.NotifyOnCompletion, input.NotifyOnFindings, input.NotificationChannels)
-
-	if err := s.scheduleRepo.Create(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to create scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule created", "id", schedule.ID().String(), "name", input.Name)
-	return schedule, nil
-}
-
-// GetSchedule retrieves a scan schedule by tenant ID and ID.
-func (s *Service) GetSchedule(ctx context.Context, tenantID string, scheduleID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-	return s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-}
-
-// UpdateScheduleInput represents the input for updating a scan schedule.
-type UpdateScheduleInput struct {
-	Name                 *string                `validate:"omitempty,min=1,max=200"`
-	Description          *string                `validate:"omitempty,max=1000"`
-	TargetScope          *string                `validate:"omitempty"`
-	TargetIDs            []string               `validate:"omitempty,max=100"`
-	TargetTags           []string               `validate:"omitempty,max=20,dive,max=50"`
-	ScannerConfigs       map[string]interface{} `validate:"omitempty"`
-	ScheduleType         *string                `validate:"omitempty"`
-	CronExpression       *string                `validate:"omitempty,max=100"`
-	IntervalHours        *int                   `validate:"omitempty,min=0,max=8760"`
-	NotifyOnCompletion   *bool
-	NotifyOnFindings     *bool
-	NotificationChannels []string `validate:"omitempty,max=10,dive,max=50"`
-}
-
-// UpdateSchedule updates an existing scan schedule.
-func (s *Service) UpdateSchedule(ctx context.Context, scheduleID string, tenantID string, input UpdateScheduleInput) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	if input.Name != nil {
-		schedule.UpdateName(*input.Name)
-	}
-	if input.Description != nil {
-		schedule.UpdateDescription(*input.Description)
-	}
-
-	// Update schedule timing
-	if input.ScheduleType != nil {
-		if *input.ScheduleType == string(scopedom.ScheduleTypeCron) && input.CronExpression != nil {
-			if err := schedule.SetCronSchedule(*input.CronExpression); err != nil {
-				return nil, err
-			}
-		} else if *input.ScheduleType == string(scopedom.ScheduleTypeInterval) && input.IntervalHours != nil {
-			if err := schedule.SetIntervalSchedule(*input.IntervalHours); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	// Update target scope
-	if input.TargetScope != nil {
-		targetIDs := make([]shared.ID, 0, len(input.TargetIDs))
-		for _, idStr := range input.TargetIDs {
-			if id, err := shared.IDFromString(idStr); err == nil {
-				targetIDs = append(targetIDs, id)
-			}
-		}
-		schedule.SetTargetScope(scopedom.TargetScope(*input.TargetScope), targetIDs, input.TargetTags)
-	}
-
-	// Update scanner configs
-	if input.ScannerConfigs != nil {
-		schedule.UpdateScannerConfigs(input.ScannerConfigs)
-	}
-
-	// Update notifications
-	if input.NotifyOnCompletion != nil || input.NotifyOnFindings != nil || input.NotificationChannels != nil {
-		onCompletion := schedule.NotifyOnCompletion()
-		onFindings := schedule.NotifyOnFindings()
-		channels := schedule.NotificationChannels()
-
-		if input.NotifyOnCompletion != nil {
-			onCompletion = *input.NotifyOnCompletion
-		}
-		if input.NotifyOnFindings != nil {
-			onFindings = *input.NotifyOnFindings
-		}
-		if input.NotificationChannels != nil {
-			channels = input.NotificationChannels
-		}
-		schedule.UpdateNotifications(onCompletion, onFindings, channels)
-	}
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to update scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule updated", "id", scheduleID)
-	return schedule, nil
-}
-
-// DeleteSchedule deletes a scan schedule by ID with atomic tenant verification.
-func (s *Service) DeleteSchedule(ctx context.Context, scheduleID string, tenantID string) error {
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return shared.ErrNotFound
-	}
-
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-
-	if err := s.scheduleRepo.Delete(ctx, parsedTenantID, parsedID); err != nil {
-		return err
-	}
-
-	s.logger.Info("scan schedule deleted", "id", scheduleID)
-	return nil
-}
-
-// ListSchedulesInput represents the input for listing scan schedules.
-type ListSchedulesInput struct {
-	TenantID      string   `validate:"omitempty,uuid"`
-	ScanTypes     []string `validate:"max=20"`
-	ScheduleTypes []string `validate:"max=3"`
-	Enabled       *bool
-	Search        string `validate:"max=255"`
-	Page          int    `validate:"min=0"`
-	PerPage       int    `validate:"min=0,max=100"`
-}
-
-// ListSchedules retrieves scan schedules with filtering and pagination.
-func (s *Service) ListSchedules(ctx context.Context, input ListSchedulesInput) (pagination.Result[*scopedom.Schedule], error) {
-	filter := scopedom.ScheduleFilter{}
-
-	if input.TenantID != "" {
-		filter.TenantID = &input.TenantID
-	}
-
-	if len(input.ScanTypes) > 0 {
-		types := make([]scopedom.ScanType, 0, len(input.ScanTypes))
-		for _, t := range input.ScanTypes {
-			if parsed, err := scopedom.ParseScanType(t); err == nil {
-				types = append(types, parsed)
-			}
-		}
-		filter.ScanTypes = types
-	}
-
-	if len(input.ScheduleTypes) > 0 {
-		types := make([]scopedom.ScheduleType, 0, len(input.ScheduleTypes))
-		for _, t := range input.ScheduleTypes {
-			types = append(types, scopedom.ScheduleType(t))
-		}
-		filter.ScheduleTypes = types
-	}
-
-	if input.Enabled != nil {
-		filter.Enabled = input.Enabled
-	}
-
-	if input.Search != "" {
-		filter.Search = &input.Search
-	}
-
-	page := pagination.New(input.Page, input.PerPage)
-	return s.scheduleRepo.List(ctx, filter, page)
-}
-
-// ListDueSchedules retrieves all enabled schedules that are due to run.
-func (s *Service) ListDueSchedules(ctx context.Context) ([]*scopedom.Schedule, error) {
-	return s.scheduleRepo.ListDue(ctx)
-}
-
-// EnableSchedule enables a scan schedule.
-func (s *Service) EnableSchedule(ctx context.Context, scheduleID string, tenantID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	schedule.Enable()
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to enable scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule enabled", "id", scheduleID)
-	return schedule, nil
-}
-
-// DisableSchedule disables a scan schedule.
-func (s *Service) DisableSchedule(ctx context.Context, scheduleID string, tenantID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	schedule.Disable()
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to disable scan schedule: %w", err)
-	}
-
-	s.logger.Info("scan schedule disabled", "id", scheduleID)
-	return schedule, nil
-}
-
-// RunScheduleNow triggers an immediate run of a scan schedule.
-func (s *Service) RunScheduleNow(ctx context.Context, scheduleID string, tenantID string) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Record a run with "running" status
-	schedule.RecordRun("running", nil)
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to run schedule now: %w", err)
-	}
-
-	s.logger.Info("scan schedule triggered manually", "id", scheduleID)
-	return schedule, nil
-}
-
-// RecordScheduleRun records a scan run for a schedule.
-func (s *Service) RecordScheduleRun(ctx context.Context, tenantID string, scheduleID string, status string, nextRunAt *time.Time) (*scopedom.Schedule, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
-	}
-	parsedID, err := shared.IDFromString(scheduleID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-
-	schedule, err := s.scheduleRepo.GetByID(ctx, parsedTenantID, parsedID)
-	if err != nil {
-		return nil, err
-	}
-
-	schedule.RecordRun(status, nextRunAt)
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return nil, fmt.Errorf("failed to record schedule run: %w", err)
-	}
-
-	s.logger.Info("scan schedule run recorded", "id", scheduleID, "status", status)
-	return schedule, nil
-}
-
-// =============================================================================
 // Stats & Coverage Operations
 // =============================================================================
 
@@ -932,7 +1063,6 @@ func (s *Service) RecordScheduleRun(ctx context.Context, tenantID string, schedu
 func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stats, error) {
 	targetFilter := scopedom.TargetFilter{TenantID: &tenantID}
 	exclusionFilter := scopedom.ExclusionFilter{TenantID: &tenantID}
-	scheduleFilter := scopedom.ScheduleFilter{TenantID: &tenantID}
 
 	totalTargets, err := s.targetRepo.Count(ctx, targetFilter)
 	if err != nil {
@@ -962,26 +1092,9 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stat
 		return nil, fmt.Errorf("failed to count active exclusions: %w", err)
 	}
 
-	totalSchedules, err := s.scheduleRepo.Count(ctx, scheduleFilter)
+	inventory, err := s.inventoryCoverage(ctx, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count schedules: %w", err)
-	}
-
-	enabled := true
-	enabledScheduleFilter := scopedom.ScheduleFilter{
-		TenantID: &tenantID,
-		Enabled:  &enabled,
-	}
-	enabledSchedules, err := s.scheduleRepo.Count(ctx, enabledScheduleFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count enabled schedules: %w", err)
-	}
-
-	// Calculate real coverage: (assets in scope / total assets) * 100
-	coverage, err := s.calculateCoverage(ctx, tenantID)
-	if err != nil {
-		s.logger.Warn("failed to calculate coverage, using 0", "error", err)
-		coverage = 0
+		return nil, err
 	}
 
 	return &scopedom.Stats{
@@ -989,147 +1102,103 @@ func (s *Service) GetStats(ctx context.Context, tenantID string) (*scopedom.Stat
 		ActiveTargets:    activeTargets,
 		TotalExclusions:  totalExclusions,
 		ActiveExclusions: activeExclusions,
-		TotalSchedules:   totalSchedules,
-		EnabledSchedules: enabledSchedules,
-		Coverage:         coverage,
+		Coverage:         inventory.Percent(),
+		Inventory:        inventory,
 	}, nil
 }
 
-// calculateCoverage calculates the percentage of discovered assets that are covered by scope targets.
-// Formula: (assets matching active scope targets / total active assets) * 100
-func (s *Service) calculateCoverage(ctx context.Context, tenantID string) (float64, error) {
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return 0, fmt.Errorf("invalid tenant id: %w", err)
-	}
-
-	// Get total count of active assets for this tenant
-	assetFilter := asset.Filter{
-		TenantID: &tenantID,
-		Statuses: []asset.Status{asset.StatusActive},
-	}
-	totalAssets, err := s.assetRepo.Count(ctx, assetFilter)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count assets: %w", err)
-	}
-
-	// If no assets, coverage is 0%
-	if totalAssets == 0 {
-		return 0, nil
-	}
-
-	// Get all active scope targets for this tenant
-	targets, err := s.targetRepo.ListActive(ctx, parsedTenantID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list active targets: %w", err)
-	}
-
-	// If no active targets, coverage is 0%
-	if len(targets) == 0 {
-		return 0, nil
-	}
-
-	// Get active exclusions for this tenant
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list active exclusions: %w", err)
-	}
-
-	// Count assets in scope using pagination
-	assetsInScope, err := s.countAssetsInScope(ctx, assetFilter, targets, exclusions)
-	if err != nil {
-		return 0, err
-	}
-
-	// Calculate coverage percentage (rounded to 2 decimal places)
-	coverage := (float64(assetsInScope) / float64(totalAssets)) * 100
-	coverage = math.Round(coverage*100) / 100
-	return coverage, nil
+// CoverageCounter counts the scope coverage of the internet-facing
+// inventory in the database (*postgres.ScopeCoverageRepository).
+type CoverageCounter interface {
+	CountCoverage(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (scopedom.InventoryCoverage, error)
 }
 
-// countAssetsInScope counts assets that are in scope and not excluded.
-func (s *Service) countAssetsInScope(
-	ctx context.Context,
-	assetFilter asset.Filter,
-	targets []*scopedom.Target,
-	exclusions []*scopedom.Exclusion,
-) (int64, error) {
-	var assetsInScope int64
-	pageSize := 100
-	page := 1
-
-	for {
-		pager := pagination.New(page, pageSize)
-		result, err := s.assetRepo.List(ctx, assetFilter, asset.NewListOptions(), pager)
-		if err != nil {
-			return 0, fmt.Errorf("failed to list assets: %w", err)
-		}
-
-		for _, a := range result.Data {
-			if s.checkAssetCoverage(a, targets, exclusions) {
-				assetsInScope++
-			}
-		}
-
-		// Check if we've processed all assets
-		if int64(page*pageSize) >= result.Total {
-			break
-		}
-		page++
-	}
-
-	return assetsInScope, nil
+// DataScopeResolver resolves the caller's Layer 2 data scope
+// (*datascope.Enforcer); nil means unrestricted.
+type DataScopeResolver interface {
+	Resolve(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error)
 }
 
-// checkAssetCoverage checks if an asset is in scope and not excluded.
-func (s *Service) checkAssetCoverage(
-	a *asset.Asset,
-	targets []*scopedom.Target,
-	exclusions []*scopedom.Exclusion,
-) bool {
-	assetValues := s.getAssetValues(a)
+// SetCoverage wires the coverage count and the caller's data scope. Without
+// a counter the coverage is reported as zero; without a resolver the count
+// is refused (fail closed), so a restricted caller never sees tenant-wide
+// numbers.
+func (s *Service) SetCoverage(c CoverageCounter, ds DataScopeResolver) {
+	s.coverage, s.dataScope = c, ds
+}
 
-	if !s.isAssetInScope(assetValues, targets) {
-		return false
+// inventoryCoverage counts, in SQL and over the caller's data scope only,
+// the internet-facing inventory and the part of it the active scope targets
+// cover (research/53 S-3, SC8).
+func (s *Service) inventoryCoverage(ctx context.Context, tenantID string) (scopedom.InventoryCoverage, error) {
+	if s.coverage == nil {
+		return scopedom.InventoryCoverage{}, nil
 	}
-
-	return !s.isAssetExcluded(assetValues, exclusions)
+	if s.dataScope == nil {
+		return scopedom.InventoryCoverage{}, fmt.Errorf("scope coverage: the data scope is not configured")
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return scopedom.InventoryCoverage{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	ds, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return scopedom.InventoryCoverage{}, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.coverage.CountCoverage(ctx, tid, ds)
 }
 
 // getAssetValues returns all values to check for an asset (name, URLs, etc).
 func (s *Service) getAssetValues(a *asset.Asset) []string {
-	values := []string{a.Name()}
+	return AssetMatchValues(a.Type().String(), a.Name(), a.Properties())
+}
 
-	// Add additional values based on asset type
-	if a.Type() != asset.AssetTypeRepository {
+// repositoryMatchKeys are the repository properties that name the repository
+// besides its asset name.
+var repositoryMatchKeys = []string{"full_name", "web_url", "clone_url"}
+
+// AssetMatchValues returns the values a scope target or exclusion is tested
+// against for an asset: its name and, for a repository, its URLs.
+func AssetMatchValues(assetType, name string, props map[string]any) []string {
+	values := []string{name}
+	if assetType != asset.AssetTypeRepository.String() || props == nil {
 		return values
 	}
-
-	props := a.Properties()
-	if props == nil {
-		return values
-	}
-
-	// Add repository-specific properties
-	for _, key := range []string{"full_name", "web_url", "clone_url"} {
+	for _, key := range repositoryMatchKeys {
 		if val, ok := props[key].(string); ok && val != "" {
 			values = append(values, val)
 		}
 	}
-
 	return values
 }
 
-// isAssetInScope checks if any asset value matches any scope target.
-func (s *Service) isAssetInScope(assetValues []string, targets []*scopedom.Target) bool {
-	for _, assetValue := range assetValues {
-		for _, target := range targets {
-			if scopedom.MatchesPattern(target.TargetType(), target.Pattern(), assetValue) {
-				return true
-			}
+// AssetExclusionValues is AssetMatchValues plus the addresses the asset is
+// known to resolve to (asset.IPAddresses: ip_addresses and every synonym of
+// it). A scanner handed the asset's name reaches those addresses, so an
+// exclusion of any of them must exclude the asset. Matching more values can
+// only exclude more (fail closed); it is used for exclusions only, never to
+// put an asset in scope.
+func AssetExclusionValues(assetType, name string, props map[string]any) []string {
+	values := AssetMatchValues(assetType, name, props)
+	return append(values, asset.IPAddresses(props)...)
+}
+
+// effectiveExclusions returns the tenant's exclusions that are in effect:
+// approved, active and unexpired. The repository already filters on that;
+// re-checking here keeps a pending or rejected exclusion from ever reaching a
+// matcher, whatever the repository implementation returns.
+func (s *Service) effectiveExclusions(ctx context.Context, tenantID shared.ID) ([]*scopedom.Exclusion, error) {
+	all, err := s.exclusionRepo.ListActive(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0:0]
+	for _, e := range all {
+		if e != nil && e.IsActive() {
+			out = append(out, e)
 		}
 	}
-	return false
+	return out, nil
 }
 
 // isAssetExcluded checks if any asset value matches any exclusion.
@@ -1137,7 +1206,7 @@ func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.E
 	for _, raw := range assetValues {
 		for _, av := range exclusionMatchForms(raw) {
 			for _, exclusion := range exclusions {
-				if scopedom.MatchesExclusionPattern(exclusion.ExclusionType(), exclusion.Pattern(), av) {
+				if exclusion.Matches(av) {
 					return true
 				}
 			}
@@ -1151,23 +1220,7 @@ func (s *Service) isAssetExcluded(assetValues []string, exclusions []*scopedom.E
 // host; without this a scan target written as a URL or with a port slipped past
 // a domain/IP/CIDR exclusion of that same host. Matching more forms can only
 // exclude more, never less (fail closed).
-func exclusionMatchForms(value string) []string {
-	v := strings.TrimSpace(value)
-	forms := []string{v}
-	host := ""
-	if strings.Contains(v, "://") {
-		if u, err := url.Parse(v); err == nil {
-			host = u.Hostname()
-		}
-	} else if h, _, err := net.SplitHostPort(v); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if host != "" && !strings.EqualFold(host, v) {
-		forms = append(forms, strings.ToLower(host))
-	}
-	return forms
-}
+func exclusionMatchForms(value string) []string { return scopedom.ExclusionForms(value) }
 
 // ExclusionCandidate is a minimal asset projection used to test scope
 // exclusions from the scan target-selection path without importing the full
@@ -1189,7 +1242,7 @@ func (s *Service) ExcludedTargets(ctx context.Context, tenantID string, candidat
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list active scope exclusions: %w", err)
 	}
@@ -1216,7 +1269,7 @@ func (s *Service) FilterExcludedTargets(ctx context.Context, tenantID string, ca
 		return excluded
 	}
 
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		s.logger.Warn("scope exclusion lookup failed; scanning all assets (fail-open)",
 			"tenant_id", parsedTenantID.String(), "error", err)
@@ -1248,7 +1301,7 @@ func (s *Service) CheckScope(ctx context.Context, tenantID string, assetType str
 	}
 
 	// Get active exclusions
-	exclusions, err := s.exclusionRepo.ListActive(ctx, parsedTenantID)
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active exclusions: %w", err)
 	}
@@ -1295,7 +1348,7 @@ func (s *Service) CheckPatternOverlaps(ctx context.Context, tenantID string, tar
 
 	parsedTargetType, err := scopedom.ParseTargetType(targetType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
+		return nil, err // wraps shared.ErrValidation
 	}
 
 	// Get all active targets for this tenant
@@ -1312,7 +1365,7 @@ func (s *Service) CheckPatternOverlaps(ctx context.Context, tenantID string, tar
 		}
 
 		if existing.Pattern() == pattern {
-			continue // Exact duplicate handled by ExistsByPattern check
+			continue // Exact duplicate handled by FindByPattern check
 		}
 
 		// Check bidirectional: does the new pattern match the existing one, or vice versa?
@@ -1330,4 +1383,12 @@ func (s *Service) CheckPatternOverlaps(ctx context.Context, tenantID string, tar
 	}
 
 	return warnings, nil
+}
+
+// logSafe strips CR and LF so a request-derived value cannot forge log lines.
+// strings.ReplaceAll of "\n" and "\r" is the sanitizer CodeQL's
+// go/log-injection query recognizes.
+func logSafe(v string) string {
+	v = strings.ReplaceAll(v, "\n", "")
+	return strings.ReplaceAll(v, "\r", "")
 }

@@ -14,46 +14,24 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
-import { cn } from '@/lib/utils'
 
 import { SlaPolicyDialog } from '@/features/sla/components/sla-policy-dialog'
+import { SlaWindows } from '@/features/sla/components/sla-windows'
 import {
   useSlaPoliciesApi,
   useDeleteSlaPolicy,
   invalidateSlaPoliciesCache,
   type SlaPolicy,
 } from '@/features/sla/api/use-sla-policies-api'
-
-const WINDOW_FIELDS: {
-  key: keyof SlaPolicy
-  label: string
-  dot: 'critical' | 'high' | 'medium' | 'low' | 'info'
-}[] = [
-  { key: 'critical_days', label: 'C', dot: 'critical' },
-  { key: 'high_days', label: 'H', dot: 'high' },
-  { key: 'medium_days', label: 'M', dot: 'medium' },
-  { key: 'low_days', label: 'L', dot: 'low' },
-  { key: 'info_days', label: 'I', dot: 'info' },
-]
-
-function WindowCells({ policy }: { policy: SlaPolicy }) {
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      {WINDOW_FIELDS.map((f) => (
-        <div key={f.key} className="flex items-center gap-1.5 text-sm tabular-nums" title={f.label}>
-          <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[f.dot])} />
-          <span className="text-muted-foreground">{f.label}</span>
-          <span className="font-medium">{policy[f.key] as number}d</span>
-        </div>
-      ))}
-    </div>
-  )
-}
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function SlaPoliciesPage() {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSlaPoliciesApi()
   const policies = useMemo(() => data?.data ?? [], [data])
+  // Only the default policy governs findings (asset overrides have no editor
+  // yet), so creating is offered only while there is no default.
+  const hasDefault = policies.some((p) => p.is_default && !p.asset_id)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<SlaPolicy | null>(null)
@@ -104,6 +82,15 @@ export default function SlaPoliciesPage() {
                     Asset override
                   </Badge>
                 )}
+                {!p.is_default && !p.asset_id && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs text-muted-foreground"
+                    title="Only the default policy applies to findings. Make this the default to use it."
+                  >
+                    Not applied
+                  </Badge>
+                )}
               </div>
               {p.description && (
                 <span className="text-xs text-muted-foreground line-clamp-1">{p.description}</span>
@@ -116,7 +103,7 @@ export default function SlaPoliciesPage() {
         id: 'windows',
         header: 'Remediation windows',
         enableSorting: false,
-        cell: ({ row }) => <WindowCells policy={row.original} />,
+        cell: ({ row }) => <SlaWindows policy={row.original} />,
       },
       {
         accessorKey: 'warning_threshold_pct',
@@ -127,7 +114,7 @@ export default function SlaPoliciesPage() {
       },
       {
         accessorKey: 'escalation_enabled',
-        header: 'Escalation',
+        header: 'Notifications',
         cell: ({ row }) =>
           row.original.escalation_enabled ? (
             <Badge variant="outline">On</Badge>
@@ -154,17 +141,20 @@ export default function SlaPoliciesPage() {
                   <Pencil className="h-4 w-4" />
                 </Button>
               </Can>
-              <Can permission={Permission.SLADelete}>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive"
-                  aria-label={`Delete ${p.name}`}
-                  onClick={() => setDeleteTarget(p)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </Can>
+              {/* The server refuses to delete the default policy. */}
+              {!p.is_default && (
+                <Can permission={Permission.SLADelete}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive"
+                    aria-label={`Delete ${p.name}`}
+                    onClick={() => setDeleteTarget(p)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </Can>
+              )}
             </div>
           )
         },
@@ -176,15 +166,20 @@ export default function SlaPoliciesPage() {
   return (
     <Main>
       <PageHeader
-        title="SLA policies"
-        description="Define per-severity remediation windows that drive finding SLA deadlines."
+        title={t('settings.slaPolicies.title', 'SLA policies')}
+        description={t(
+          'settings.slaPolicies.description',
+          'Remediation windows per priority class (P0–P3), and per severity for findings without a class.'
+        )}
       >
-        <Can permission={Permission.SLAWrite}>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            New policy
-          </Button>
-        </Can>
+        {!isLoading && !error && !hasDefault && (
+          <Can permission={Permission.SLAWrite}>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              New policy
+            </Button>
+          </Can>
+        )}
       </PageHeader>
 
       <div className="mt-5">
@@ -208,7 +203,7 @@ export default function SlaPoliciesPage() {
           <EmptyState
             icon={Timer}
             title="No SLA policies yet"
-            description="Create a policy to set remediation deadlines by severity. The default policy applies to every asset without a specific one."
+            description="Without a policy the platform defaults apply (P0 2 days, P1 5, P2 15, P3 30). Create the default policy to set your own windows."
             action={
               <Can permission={Permission.SLAWrite}>
                 <Button size="sm" onClick={openCreate}>
@@ -233,14 +228,14 @@ export default function SlaPoliciesPage() {
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete SLA policy"
-        desc={
-          <>
-            Delete <strong>{deleteTarget?.name}</strong>? Assets using it fall back to the default
-            policy. This action cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.slaPolicy.deleteTitle', 'Delete the SLA policy "{name}"?', {
+          name: deleteTarget?.name ?? '',
+        })}
+        desc={t(
+          'confirm.slaPolicy.deleteDesc',
+          'It does not apply to any finding (only the default policy does). This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDelete}

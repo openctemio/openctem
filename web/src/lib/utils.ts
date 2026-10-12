@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { nanoid, customAlphabet } from 'nanoid'
+import { safeHref } from './safe-href'
 
 // Alphabet without '-' to avoid breaking slug-nanoid format when splitting by '-'
 const stepKeyId = customAlphabet(
@@ -39,7 +40,7 @@ export function slugify(text: string, maxLength: number = 40): string {
 }
 
 /**
- * Generate a unique step key for pipeline steps
+ * Generate a unique step key for scan workflow steps
  * Format: {slug}-{nanoid(8)} e.g., "semgrep-V1StGXnO", "nuclei-scan-x9K2mNpQ"
  *
  * nanoid(8) provides:
@@ -61,7 +62,7 @@ export function generateStepKey(name: string): string {
 }
 
 /**
- * Generate a temporary client-side ID for pipeline steps
+ * Generate a temporary client-side ID for scan workflow steps
  * Format: temp-{nanoid(12)} e.g., "temp-V1StGXnO9_cK"
  *
  * @security This is a TEMPORARY ID for UI state management only.
@@ -74,18 +75,19 @@ export function generateTempStepId(): string {
   return `temp-${nanoid(12)}`
 }
 
+/** True for an id made by generateTempStepId (a step not saved yet). */
+export function isTempStepId(id: string | undefined): boolean {
+  return !id || id.startsWith('temp-')
+}
+
 /**
  * Sanitize an external URL to prevent XSS via javascript: or data: protocols.
- * Only allows http: and https: protocols. Returns '#' for anything else.
+ * Only allows http: and https: (a bare host gets https). Returns '#' for
+ * anything else. Prefer `safeHref` / `<SafeExternalLink>` for new code: they
+ * return `undefined` so the link is not rendered at all.
  */
 export function sanitizeExternalUrl(url: string): string {
-  try {
-    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href
-    return '#'
-  } catch {
-    return '#'
-  }
+  return safeHref(url, { allowRelative: false }) ?? '#'
 }
 
 export function sleep(ms: number = 1000) {
@@ -206,7 +208,7 @@ function escapeCSVField(value: string): string {
   // @, tab, or CR is interpreted as a formula by Excel/Sheets and can execute
   // (e.g. =cmd|'/C calc'!A1). Scanner- and user-controlled strings end up in
   // exports, so prefix such values with a single quote to force a literal.
-  if (/^[=+\-@\t\r]/.test(v)) {
+  if (/^\s*[=+\-@\t\r]/.test(v)) {
     v = "'" + v
   }
   // If value contains comma, quote, or newline, wrap in quotes and escape internal quotes

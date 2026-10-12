@@ -1,0 +1,40 @@
+# Sensor protocol v3 with its gRPC binding on the same port 443
+# (docs/rfcs/RFC-059-sensor-transport-v3.md §5). The gateway is built with the
+# layer4 module and passes a TLS connection that offers the sensor ALPN id
+# (openctem-sensor/3) through to the API's mTLS listener; every other
+# connection is served as before. Works with an IP address, one host name or
+# no DNS at all; no extra port. The API derives the endpoint from its public
+# URL (APP_URL) and advertises it once its self-probe passes through here.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.sensor-passthrough.yml up -d --build
+#
+# Optional dedicated sensor host name, also routed by SNI (sensors that do not
+# offer the ALPN id yet). It must resolve to this host and differ from
+# OPENCTEM_HOSTNAME:
+#
+#   OPENCTEM_SENSOR_GATEWAY=passthrough SENSOR_PUBLIC_HOSTNAME=sensors.example.com \
+#   SENSOR_PUBLIC_HOST=sensors.example.com:443 docker compose ... up -d --build
+#
+# No public certificate is needed for the sensor endpoint: the API mints the
+# server certificate from its sensor CA, and sensors pin that CA.
+services:
+  gateway:
+    build:
+      context: ./gateway
+    image: ${GATEWAY_L4_IMAGE:-openctem-gateway-l4:local}
+    environment:
+      OPENCTEM_SENSOR_GATEWAY: ${OPENCTEM_SENSOR_GATEWAY:-alpn}
+      SENSOR_PUBLIC_HOSTNAME: ${SENSOR_PUBLIC_HOSTNAME:-}
+      SENSOR_MTLS_UPSTREAM: api:8443
+
+  api:
+    expose:
+      - "8443"
+    environment:
+      # Empty: the platform URL's host and port (APP_URL), through the ALPN
+      # routing above.
+      SENSOR_PUBLIC_HOST: ${SENSOR_PUBLIC_HOST:-}
+      SENSOR_MTLS_LISTEN_ADDR: ":8443"
+      # The gateway's PROXY protocol header carries the sensor's address;
+      # it is believed from the gateway only.
+      SENSOR_MTLS_TRUSTED_PROXIES: ${OPENCTEM_NET_PREFIX:-172.30.80}.10/32

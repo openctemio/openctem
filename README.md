@@ -15,16 +15,34 @@ the two parts that ship together:
 | [`deploy/allinone/`](deploy/allinone/) | API + web + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
 Released separately, in their own repositories:
-[sensor](https://github.com/openctemio/sensor) (scanning agent),
+[sensor](https://github.com/openctemio/sensor) (runs scans and collectors),
 [sdk-go](https://github.com/openctemio/sdk-go),
 [ctis](https://github.com/openctemio/ctis) (shared contract),
 [helm-charts](https://github.com/openctemio/helm-charts),
-[docs](https://github.com/openctemio/docs) (public documentation).
+[docs](https://github.com/openctemio/docs) (public documentation, published at
+[docs.openctem.io](https://docs.openctem.io)).
 
-> This repository was `openctemio/api` until the merge; old links to it redirect
-> here. The web console's earlier history lives in the archived
-> [openctemio/ui](https://github.com/openctemio/ui) and is imported under `web/`
-> (its tags as `ui/v*`).
+## Repository layout & history
+
+The monorepo was formed on 2026-10-02
+([RFC-020](api/docs/rfcs/RFC-020-api-ui-monorepo.md)):
+
+- **`openctemio/api` → this repository.** It was renamed, so its issues, pull
+  requests, releases (v0.1.x–v0.8.0) and old links carry over and redirect here.
+  Its Go code moved to `api/`; the module path is now
+  `github.com/openctemio/openctem/api`.
+- **`openctemio/ui` → `web/`.** Its full history was imported under `web/`, and
+  [openctemio/ui](https://github.com/openctemio/ui) is archived (read-only); its
+  old releases stay there. Cite its PRs as `openctemio/ui#NNN`: a bare `#NNN`
+  means this repository.
+- **`ui/vX.Y.Z` tags** are the ui repository's tags, imported for history only.
+  They release nothing; only `vX.Y.Z` tags do (see [Releases](#releases)).
+- **Images** moved from `ghcr.io/openctemio/api` / `ui` to `openctem-api` /
+  `openctem-web`; the old names are mirrored for a transition window.
+- `openctemio/agent` had already become [openctemio/sensor](https://github.com/openctemio/sensor) (RFC-023).
+
+More: [repository map](api/docs/development/repositories.md),
+[CI/CD and releases](api/docs/development/ci-cd.md).
 
 ## Quick start (development)
 
@@ -43,32 +61,60 @@ make check     # what CI runs, both components
 - **All-in-one image:** `ghcr.io/openctemio/openctem` embeds the same gateway.
   ```bash
   docker run -d -p 443:443 -v openctem-data:/data \
-    -e OPENCTEM_HOSTNAME=ctem.example.com -e DB_HOST=... -e DB_PASSWORD=... -e REDIS_HOST=... \
-    -e AUTH_JWT_SECRET=... -e APP_ENCRYPTION_KEY=... ghcr.io/openctemio/openctem:vX.Y.Z
+    -e OPENCTEM_HOSTNAME=ctem.example.com \
+    -e DB_HOST=db.example.com -e DB_PASSWORD=... -e DB_SSLMODE=require \
+    -e REDIS_HOST=redis.example.com -e REDIS_PASSWORD=... -e REDIS_TLS_ENABLED=true \
+    -e AUTH_JWT_SECRET=... -e APP_ENCRYPTION_KEY=... \
+    ghcr.io/openctemio/openctem:vX.Y.Z
   ```
+  An unset `APP_ENV` means `production`, so the container refuses to start
+  until the production checks pass: `DB_SSLMODE` `require` or `verify-full`, a
+  Redis password of 32+ characters with `REDIS_TLS_ENABLED=true` (plus
+  `REDIS_TLS_CA_FILE` for a private CA), an `AUTH_JWT_SECRET` of 64+ characters
+  (`openssl rand -hex 64`), an `APP_ENCRYPTION_KEY` (`openssl rand -hex 32`;
+  keep it, the stored credentials need it), and no secret left at example text.
+  For a throwaway trial without TLS to the datastores, set `APP_ENV=development`
+  explicitly; never for real data.
+  `--entrypoint /opt/openctem/api/server ... -check-config` validates the
+  settings without starting anything.
   `GATEWAY=on` (default) serves only :443 (`OPENCTEM_TLS_MODE` internal | acme |
   files | http, as in the Compose gateway); `GATEWAY=off` serves the API on :8080
   and the web on :3000 for your own proxy. `/data` keeps attachments and the
   gateway's CA: mount a volume.
 - **Kubernetes:** [helm-charts](https://github.com/openctemio/helm-charts).
 
+Installation, configuration and operations are documented at
+[docs.openctem.io/install](https://docs.openctem.io/install/).
+
 ## Releases
 
 One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
 `openctem-web`, `openctem` (all-in-one), `migrations`, `seed`, `admin-cli`, all
-multi-arch (amd64, arm64), signed with cosign, with SBOMs on the release. The
-pre-monorepo names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` keep
+multi-arch (amd64, arm64), signed with cosign, with a signed SPDX SBOM
+attestation per image (also attached to the release). The release notes carry
+the `cosign verify` and `cosign verify-attestation --type spdxjson` commands for
+the tag. The pre-monorepo names `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` keep
 receiving identical copies for two releases. See
 [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).
 
 ## The API contract
 
 `api/api/openapi/swagger.yaml` is generated from the Go handler annotations
-(`make -C api swagger`, gated by `api/scripts/check-openapi.sh`). The web wire
-types in `web/src/lib/api/generated/api.types.ts` are generated from that same
-file (`make api-types`), and CI fails if they differ — so a change to the API
-contract and the web code that consumes it land in one pull request.
+(gated by `api/scripts/check-openapi.sh`), and the web wire types in
+`web/src/lib/api/generated/api.types.ts` are generated from that file. Neither
+is committed: run `make generate` after cloning or pulling (`make
+generate-docker` needs only Docker). CI type-checks the web against the
+contract a pull request produces, so a change to the API contract and the web
+code that consumes it land in one pull request, and it posts the contract
+changes (breaking changes, route gate changes) on the pull request.
+
+## Documentation
+
+- User and operator documentation: [docs.openctem.io](https://docs.openctem.io)
+- Engineering documentation (architecture, development, RFCs): [`api/docs/`](api/docs/README.md)
+  and [`web/docs/`](web/docs/README.md)
 
 ## Contributing / security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as described
+in [SECURITY.md](SECURITY.md), never in a public issue.

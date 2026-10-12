@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,7 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -20,12 +22,12 @@ import (
 
 // RemediationCampaignHandler handles remediation campaign endpoints.
 type RemediationCampaignHandler struct {
-	service *app.RemediationCampaignService
+	service *exposure.RemediationCampaignService
 	logger  *logger.Logger
 }
 
 // NewRemediationCampaignHandler creates a new handler.
-func NewRemediationCampaignHandler(svc *app.RemediationCampaignService, log *logger.Logger) *RemediationCampaignHandler {
+func NewRemediationCampaignHandler(svc *exposure.RemediationCampaignService, log *logger.Logger) *RemediationCampaignHandler {
 	return &RemediationCampaignHandler{service: svc, logger: log}
 }
 
@@ -33,13 +35,10 @@ func NewRemediationCampaignHandler(svc *app.RemediationCampaignService, log *log
 func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	filter := remediation.CampaignFilter{}
 	if s := r.URL.Query().Get("status"); s != "" {
@@ -62,7 +61,7 @@ func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request
 
 	// Batch-load linked Jira epics so the list shows what's already ticketed
 	// (avoids N+1). Best-effort: a lookup failure just omits the links.
-	var tickets map[string]*app.CampaignTicketLink
+	var tickets map[string]*exposure.CampaignTicketLink
 	if tid, terr := shared.IDFromString(tenantID); terr == nil {
 		ids := make([]shared.ID, 0, len(result.Data))
 		for _, c := range result.Data {
@@ -77,13 +76,20 @@ func (h *RemediationCampaignHandler) List(w http.ResponseWriter, r *http.Request
 
 	resp := make([]RemediationCampaignResponse, 0, len(result.Data))
 	for _, c := range result.Data {
-		item := toRemediationCampaignResp(c)
+		item := h.campaignResp(r.Context(), c)
 		if t := tickets[c.ID().String()]; t != nil {
 			item.Ticket = t
 		}
 		resp = append(resp, item)
 	}
 	writeJSON(w, http.StatusOK, pagination.NewResult(resp, result.Total, page))
+}
+
+// campaignResp builds a campaign response with the progress counts the
+// caller may see: a restricted member's in-scope findings only (L-18).
+func (h *RemediationCampaignHandler) campaignResp(ctx context.Context, c *remediation.Campaign) RemediationCampaignResponse {
+	h.service.ApplyViewerScope(ctx, c)
+	return toRemediationCampaignResp(c)
 }
 
 // Create creates a new campaign.
@@ -97,7 +103,7 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	campaign, err := h.service.CreateCampaign(r.Context(), app.CreateRemediationCampaignInput{
+	campaign, err := h.service.CreateCampaign(r.Context(), exposure.CreateRemediationCampaignInput{
 		TenantID:      tenantID,
 		Name:          req.Name,
 		Description:   req.Description,
@@ -109,13 +115,13 @@ func (h *RemediationCampaignHandler) Create(w http.ResponseWriter, r *http.Reque
 		DueDate:       req.DueDate,
 		Tags:          req.Tags,
 		ActorID:       userID,
-	})
+	}, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusCreated, h.campaignResp(r.Context(), campaign))
 }
 
 // Get retrieves a campaign.
@@ -129,7 +135,7 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp := toRemediationCampaignResp(campaign)
+	resp := h.campaignResp(r.Context(), campaign)
 	if tid, terr := shared.IDFromString(tenantID); terr == nil {
 		if link, lerr := h.service.CampaignTicketFor(r.Context(), tid, campaign.ID()); lerr == nil {
 			resp.Ticket = link
@@ -138,6 +144,38 @@ func (h *RemediationCampaignHandler) Get(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// ListFindings handles GET /api/v1/remediation/campaigns/{id}/findings: the
+// findings the campaign's finding count counts, on the caller's in-scope
+// assets when restricted, so the count and the list always agree.
+// @Summary      List a remediation campaign's findings
+// @Description  The findings the campaign tracks (its finding filter or remediation key, any status), restricted to the caller's data scope. The total equals the campaign's finding_count for the same caller.
+// @Tags         Remediation
+// @Produce      json
+// @Param        id        path   string  true   "Campaign ID"
+// @Param        page      query  int     false  "Page number" default(1)
+// @Param        per_page  query  int     false  "Items per page" default(20)
+// @Success      200  {object}  pagination.Result[FindingResponse]
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /remediation/campaigns/{id}/findings [get]
+func (h *RemediationCampaignHandler) ListFindings(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	result, err := h.service.ListCampaignFindings(r.Context(), tenantID, chi.URLParam(r, "id"), page)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	items := make([]FindingResponse, 0, len(result.Data))
+	for _, f := range result.Data {
+		items = append(items, toFindingResponse(f))
+	}
+	writeJSON(w, http.StatusOK, pagination.NewResult(items, result.Total, page))
 }
 
 // UpdateStatus transitions campaign status.
@@ -163,7 +201,7 @@ func (h *RemediationCampaignHandler) Resolve(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, app.CampaignResolveInput{
+	resolved, err := h.service.ResolveCampaignFindings(r.Context(), tenantID, id, exposure.CampaignResolveInput{
 		Status:              req.Status,
 		Resolution:          req.Resolution,
 		ActorID:             middleware.GetUserID(r.Context()),
@@ -189,12 +227,12 @@ func (h *RemediationCampaignHandler) UpdateStatus(w http.ResponseWriter, r *http
 		return
 	}
 
-	campaign, err := h.service.UpdateCampaignStatus(r.Context(), tenantID, id, req.Status)
+	campaign, err := h.service.UpdateCampaignStatus(r.Context(), tenantID, id, req.Status, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusOK, h.campaignResp(r.Context(), campaign))
 }
 
 // Update updates campaign fields (name, description, priority, tags, due_date).
@@ -208,22 +246,31 @@ func (h *RemediationCampaignHandler) Update(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, app.UpdateRemediationCampaignInput{
+	startDate, ok := optionalDateField(w, "start_date", req.StartDate)
+	if !ok {
+		return
+	}
+	dueDate, ok := optionalDateField(w, "due_date", req.DueDate)
+	if !ok {
+		return
+	}
+
+	campaign, err := h.service.UpdateCampaign(r.Context(), tenantID, id, exposure.UpdateRemediationCampaignInput{
 		Name:          req.Name,
 		Description:   req.Description,
 		Priority:      req.Priority,
 		Tags:          req.Tags,
-		StartDate:     req.StartDate,
-		DueDate:       req.DueDate,
+		StartDate:     startDate,
+		DueDate:       dueDate,
 		FindingFilter: req.FindingFilter,
 		AssignedTo:    req.AssignedTo,
 		AssignedTeam:  req.AssignedTeam,
-	})
+	}, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusOK, h.campaignResp(r.Context(), campaign))
 }
 
 // Refresh recomputes a campaign's finding counts/progress on demand and
@@ -232,12 +279,12 @@ func (h *RemediationCampaignHandler) Refresh(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	campaign, err := h.service.RefreshCampaignProgress(r.Context(), tenantID, id)
+	campaign, err := h.service.RefreshCampaignProgress(r.Context(), tenantID, id, h.buildAuditContext(r))
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toRemediationCampaignResp(campaign))
+	writeJSON(w, http.StatusOK, h.campaignResp(r.Context(), campaign))
 }
 
 // CreateTicket creates (or returns the existing) Jira epic for a campaign.
@@ -270,11 +317,24 @@ func (h *RemediationCampaignHandler) Delete(w http.ResponseWriter, r *http.Reque
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	if err := h.service.DeleteCampaign(r.Context(), tenantID, id); err != nil {
+	if err := h.service.DeleteCampaign(r.Context(), tenantID, id, h.buildAuditContext(r)); err != nil {
 		h.handleError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// buildAuditContext names who changed a campaign and from where. Forwarding
+// headers count only from a trusted proxy (S-4), as for every audit context.
+func (h *RemediationCampaignHandler) buildAuditContext(r *http.Request) audit.AuditContext {
+	return audit.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
 }
 
 func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err error) {
@@ -283,10 +343,32 @@ func (h *RemediationCampaignHandler) handleError(w http.ResponseWriter, err erro
 		apierror.NotFound("campaign not found").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		// e.g. resolving the campaign's findings without findings:verify.
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("remediation campaign error", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 	}
+}
+
+// optionalDateField reads a nullable date of a PATCH body: nil when absent,
+// a pointer to "" for null (clear), the string otherwise. Any other JSON
+// value answers 400 and returns false.
+func optionalDateField(w http.ResponseWriter, field string, raw json.RawMessage) (*string, bool) {
+	if len(raw) == 0 {
+		return nil, true
+	}
+	if string(raw) == "null" {
+		empty := ""
+		return &empty, true
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		apierror.BadRequest(field + " must be an RFC 3339 timestamp, a date (YYYY-MM-DD) or null").WriteJSON(w)
+		return nil, false
+	}
+	return &s, true
 }
 
 // Request/Response types
@@ -304,15 +386,17 @@ type CreateRemCampaignRequest struct {
 }
 
 type UpdateRemCampaignRequest struct {
-	Name          *string        `json:"name,omitempty"`
-	Description   *string        `json:"description,omitempty"`
-	Priority      *string        `json:"priority,omitempty"`
-	Tags          []string       `json:"tags,omitempty"`
-	StartDate     *time.Time     `json:"start_date,omitempty"`
-	DueDate       *time.Time     `json:"due_date,omitempty"`
-	FindingFilter map[string]any `json:"finding_filter,omitempty"`
-	AssignedTo    *string        `json:"assigned_to,omitempty"`
-	AssignedTeam  *string        `json:"assigned_team,omitempty"`
+	Name        *string  `json:"name,omitempty"`
+	Description *string  `json:"description,omitempty"`
+	Priority    *string  `json:"priority,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	// StartDate and DueDate: absent = unchanged, null = clear, otherwise an
+	// RFC 3339 timestamp or a date (YYYY-MM-DD).
+	StartDate     json.RawMessage `json:"start_date,omitempty"`
+	DueDate       json.RawMessage `json:"due_date,omitempty"`
+	FindingFilter map[string]any  `json:"finding_filter,omitempty"`
+	AssignedTo    *string         `json:"assigned_to,omitempty"`
+	AssignedTeam  *string         `json:"assigned_team,omitempty"`
 }
 
 type RemediationCampaignResponse struct {
@@ -340,7 +424,7 @@ type RemediationCampaignResponse struct {
 
 	// Ticket is the linked external tracker epic (e.g. Jira), or null when the
 	// campaign has no linked ticket. Lets the UI show/relink the epic.
-	Ticket *app.CampaignTicketLink `json:"ticket,omitempty"`
+	Ticket *exposure.CampaignTicketLink `json:"ticket,omitempty"`
 }
 
 func toRemediationCampaignResp(c *remediation.Campaign) RemediationCampaignResponse {

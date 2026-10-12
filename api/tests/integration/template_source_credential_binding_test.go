@@ -14,7 +14,8 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -76,8 +77,8 @@ func TestTemplateSourceCredentialBinding(t *testing.T) {
 
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(postgres.NewAuditRepository(pg), log)
-	secrets, err := app.NewSecretStoreService(postgres.NewSecretStoreRepository(pg), make([]byte, 32), auditSvc, log)
+	auditSvc := audit.NewAuditService(postgres.NewAuditRepository(pg), log)
+	secrets, err := integrationapp.NewSecretStoreService(postgres.NewSecretStoreRepository(pg), make([]byte, 32), auditSvc, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func TestTemplateSourceCredentialBinding(t *testing.T) {
 	tid := shared.MustIDFromString(tenantID)
 	storeCred := func(creator, name string) string {
 		t.Helper()
-		c, err := secrets.CreateCredential(ctx, app.CreateCredentialInput{
+		c, err := secrets.CreateCredential(ctx, integrationapp.CreateCredentialInput{
 			TenantID: tid, UserID: shared.MustIDFromString(creator), Name: name,
 			CredentialType: secretstore.CredentialTypeBearerToken,
 			Data:           &secretstore.BearerTokenData{Token: "s3cr3t-" + name},

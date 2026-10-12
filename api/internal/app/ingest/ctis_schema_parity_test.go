@@ -63,45 +63,11 @@ func TestCTISSchemaParity(t *testing.T) {
 }
 
 // schemaParityExceptions are reviewed differences between the ctis Go structs
-// and the published schema, found when this test was written (ctis v1.1.0).
-// Each must still exist (the test fails on a stale entry), so the list shrinks
-// as ctis fixes them; nothing may be added without a reason. The schema-only
-// members matter most: the strict v2 decoder refuses them, so a producer that
-// follows the published schema for them gets a 422 until ctis is fixed.
-var schemaParityExceptions = map[string]string{
-	"enum asset.json#/properties/type":                                 "schemas/v1 lists other, the Go enum lists server: a schema-valid other asset is refused",
-	"go-only ArtifactLocation@finding.json.index":                      "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.branch":                   "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.commit_sha":               "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.context_snippet":          "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.context_start_line":       "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.end_column":               "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.end_line":                 "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.logical_location":         "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.snippet":                  "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.start_column":             "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@dependency.json.start_line":               "in the ctis structs, not in schemas/v1",
-	"go-only FindingLocation@finding.json.context_start_line":          "in the ctis structs, not in schemas/v1",
-	"go-only LogicalLocation@finding.json.parent_index":                "in the ctis structs, not in schemas/v1",
-	"go-only SecretDetails@finding.json.age_in_days":                   "in the ctis structs, not in schemas/v1",
-	"go-only SecretDetails@finding.json.commit_count":                  "in the ctis structs, not in schemas/v1",
-	"go-only SecretDetails@finding.json.revoked_at":                    "in the ctis structs, not in schemas/v1",
-	"go-only SecretDetails@finding.json.verified_at":                   "in the ctis structs, not in schemas/v1",
-	"go-only Suppression@finding.json.kind":                            "in the ctis structs, not in schemas/v1",
-	"go-only Suppression@finding.json.status":                          "in the ctis structs, not in schemas/v1",
-	"go-only VulnerabilityDetails@finding.json.advisories":             "in the ctis structs, not in schemas/v1",
-	"go-only VulnerabilityDetails@finding.json.affected_version_range": "in the ctis structs, not in schemas/v1",
-	"go-only VulnerabilityDetails@finding.json.fixed_versions":         "in the ctis structs, not in schemas/v1",
-	"go-only VulnerabilityDetails@finding.json.is_direct":              "in the ctis structs, not in schemas/v1",
-	"schema-only Attachment@finding.json.rectangles":                   "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only Dependency@dependency.json.properties":                "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only Dependency@dependency.json.target_index":              "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only FindingLocation@dependency.json.column":               "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only FindingLocation@dependency.json.line":                 "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only Suppression@finding.json.expires_at":                  "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only Suppression@finding.json.reason":                      "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-	"schema-only Suppression@finding.json.state":                       "in schemas/v1, not in the ctis structs: the strict decoder refuses it",
-}
+// and the published schema. Each must still exist (the test fails on a stale
+// entry), and nothing may be added without a reason. Empty since ctis v1.3.0,
+// whose own test makes the schema and the Go types agree field by field and
+// enum by enum; the 32 entries recorded against v1.1.0 were all fixed there.
+var schemaParityExceptions = map[string]string{}
 
 func stringsOf[T ~string](in []T) []string {
 	out := make([]string, len(in))

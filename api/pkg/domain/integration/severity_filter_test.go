@@ -101,31 +101,35 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		// Fixed label set by the asset-discovery notifier (attack-surface
 		// growth, not a finding).
 		EventTypeNewAsset: true,
+		// Fixed "info" set by the weekly attack-surface digest.
+		EventTypeAttackSurfaceDigest: true,
 		// Fixed label set by the sensor-health controller.
 		EventTypeSensorOffline: true,
+		// Fixed "medium" set by the SLA warning adapter (urgency of an
+		// approaching deadline, not the finding's severity).
+		EventTypeSLAWarning: true,
+		// Constant severities chosen by the CI alert job per signal.
+		EventTypeCIScheduleMissed:     true,
+		EventTypeCICoverageRegression: true,
+		EventTypeCIGateFailing:        true,
+		EventTypeCIRunnerOutdated:     true,
+		EventTypeCIBreakGlass:         true,
+		EventTypeCIUngatedMerge:       true,
+		EventTypeCITokenRefusals:      true,
 	}
 
 	// Severity describes a finding/exposure, so the operator's filter is real.
 	filterable := map[EventType]bool{
 		EventTypeSecurityAlert:            true,
-		EventTypeSystemError:              true,
-		EventTypeAssetChanged:             true,
-		EventTypeAssetDeleted:             true,
-		EventTypeScanStarted:              true,
 		EventTypeScanCompleted:            true,
-		EventTypeScanFailed:               true,
 		EventTypeNewFinding:               true,
-		EventTypeFindingConfirmed:         true,
-		EventTypeFindingTriaged:           true,
 		EventTypeFindingFixed:             true,
 		EventTypeFindingReopened:          true,
 		EventTypeFindingPriorityEscalated: true,
 		EventTypeFindingAssigned:          true,
 		EventTypeSLABreach:                true,
-		EventTypeSLAWarning:               true,
 		EventTypeWorkflowNotification:     true,
 		EventTypeNewExposure:              true,
-		EventTypeExposureResolved:         true,
 	}
 
 	for _, info := range AllEventTypes() {
@@ -146,5 +150,24 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 				"`notFilterable` AND to SeverityFilterApplies). Inheriting the "+
 				"default silently is how approval_requested became undeliverable.", et)
 		}
+	}
+}
+
+// sla_warning is opt-in: it is not default-on, so an operator only receives it
+// after ticking it. The warning adapter stamps a constant Severity "medium"
+// (sla/breach_outbox_adapter.go). With the default critical+high severity set,
+// the severity gate then dropped every one, so ticking the box changed nothing.
+func TestSLAWarning_SurvivesSeverityGateWhenOptedIn(t *testing.T) {
+	ext := &NotificationExtension{enabledEventTypes: []EventType{EventTypeSLAWarning}} // default severities
+
+	if !ext.ShouldNotifyEventType(EventTypeSLAWarning) {
+		t.Fatal("blocked by the event-type gate")
+	}
+	const enqueuedSeverity = "medium" // sla.buildWarningParams
+	if ext.ShouldNotify(enqueuedSeverity) {
+		t.Fatal("test is not exercising the bug: the default severity set now includes medium")
+	}
+	if SeverityFilterApplies(EventTypeSLAWarning) {
+		t.Fatal("sla_warning is still severity-filtered, so an operator who opted in never receives one")
 	}
 }

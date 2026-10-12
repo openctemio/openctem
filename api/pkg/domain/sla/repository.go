@@ -11,9 +11,6 @@ type Repository interface {
 	// Create persists a new SLA policy.
 	Create(ctx context.Context, policy *Policy) error
 
-	// GetByID retrieves a policy by ID.
-	GetByID(ctx context.Context, id shared.ID) (*Policy, error)
-
 	// GetByTenantAndID retrieves a policy by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Policy, error)
 
@@ -28,11 +25,12 @@ type Repository interface {
 	// policies except exceptID, enforcing a single default per tenant.
 	UnsetTenantDefaults(ctx context.Context, tenantID, exceptID shared.ID) error
 
-	// Update updates an existing policy.
+	// Update updates an existing policy. Only the row of the policy's own
+	// tenant is written; another tenant's id is not found.
 	Update(ctx context.Context, policy *Policy) error
 
-	// Delete removes a policy.
-	Delete(ctx context.Context, id shared.ID) error
+	// Delete removes a policy of the tenant.
+	Delete(ctx context.Context, tenantID, id shared.ID) error
 
 	// ListByTenant returns all policies for a tenant.
 	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*Policy, error)

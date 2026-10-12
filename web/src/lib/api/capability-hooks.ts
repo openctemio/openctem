@@ -10,7 +10,7 @@ import useSWR, { type SWRConfiguration, mutate } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, post, put, del } from './client'
 import { handleApiError } from './error-handler'
-import { capabilityEndpoints, customCapabilityEndpoints } from './endpoints'
+import { capabilityEndpoints } from './endpoints'
 import type {
   Capability,
   CapabilityListResponse,
@@ -20,7 +20,6 @@ import type {
   CreateCapabilityRequest,
   UpdateCapabilityRequest,
   CapabilityUsageStats,
-  CapabilityUsageStatsBatchResponse,
 } from './capability-types'
 import {
   getCapabilityIcon,
@@ -64,14 +63,35 @@ export const capabilityKeys = {
   all: ['capabilities'] as const,
   lists: () => [...capabilityKeys.all, 'list'] as const,
   list: (filters?: CapabilityListFilters) => [...capabilityKeys.lists(), filters] as const,
-  allCapabilities: () => [...capabilityKeys.all, 'all'] as const,
+  allCapabilities: (usage = false) => [...capabilityKeys.all, 'all', usage] as const,
   categories: () => [...capabilityKeys.all, 'categories'] as const,
-  byCategory: (category: string) => [...capabilityKeys.all, 'by-category', category] as const,
   details: () => [...capabilityKeys.all, 'detail'] as const,
   detail: (id: string) => [...capabilityKeys.details(), id] as const,
   usageStats: (id: string) => [...capabilityKeys.all, 'usage-stats', id] as const,
-  usageStatsBatch: (ids: string[]) =>
-    [...capabilityKeys.all, 'usage-stats-batch', ids.sort().join(',')] as const,
+}
+
+/** The list's page size cap. */
+const CAPABILITY_PAGE_SIZE = 100
+/** Pages read at most for "every capability" (the platform catalog is small). */
+const CAPABILITY_MAX_PAGES = 20
+
+/**
+ * Every capability the organization sees, page by page.
+ */
+export async function fetchAllCapabilities(usage = false): Promise<Capability[]> {
+  const all: Capability[] = []
+  for (let page = 1; page <= CAPABILITY_MAX_PAGES; page++) {
+    const resp = await get<CapabilityListResponse>(
+      capabilityEndpoints.list({
+        page,
+        per_page: CAPABILITY_PAGE_SIZE,
+        ...(usage ? { include: 'usage' } : {}),
+      })
+    )
+    all.push(...(resp?.items ?? []))
+    if (page >= (resp?.total_pages ?? 1)) break
+  }
+  return all
 }
 
 // ============================================
@@ -103,12 +123,14 @@ export function useCapabilities(filters?: CapabilityListFilters, config?: SWRCon
 }
 
 /**
- * Fetch all capabilities for dropdowns (no pagination)
+ * Every capability the organization sees (all pages). With `usage`, each
+ * carries which of the organization's tools and sensors have it (counts).
  */
-export function useAllCapabilities(config?: SWRConfiguration) {
+export function useAllCapabilities(config?: SWRConfiguration, opts?: { usage?: boolean }) {
+  const usage = opts?.usage ?? false
   return useSWR<CapabilityAllResponse>(
-    capabilityKeys.allCapabilities(),
-    () => get<CapabilityAllResponse>(capabilityEndpoints.all()),
+    capabilityKeys.allCapabilities(usage),
+    async () => ({ items: await fetchAllCapabilities(usage) }),
     { ...defaultConfig, ...config }
   )
 }
@@ -136,47 +158,17 @@ export function useCapabilityCategories(config?: SWRConfiguration) {
 }
 
 /**
- * Fetch capabilities by category
- */
-export function useCapabilitiesByCategory(
-  category: string | null | undefined,
-  config?: SWRConfiguration
-) {
-  return useSWR<CapabilityAllResponse>(
-    category ? capabilityKeys.byCategory(category) : null,
-    () => get<CapabilityAllResponse>(capabilityEndpoints.byCategory(category!)),
-    { ...defaultConfig, ...config }
-  )
-}
-
-/**
- * Fetch usage stats for a single capability
+ * Usage of one capability, with the tool and sensor names
+ * (GET /capabilities/{id}?include=usage). Undefined when the caller may not
+ * read it (the include is left out): unknown, never "unused".
  */
 export function useCapabilityUsageStats(
   capabilityId: string | null | undefined,
   config?: SWRConfiguration
 ) {
-  return useSWR<CapabilityUsageStats>(
+  return useSWR<CapabilityUsageStats | undefined>(
     capabilityId ? capabilityKeys.usageStats(capabilityId) : null,
-    () => get<CapabilityUsageStats>(capabilityEndpoints.usageStats(capabilityId!)),
-    { ...defaultConfig, ...config }
-  )
-}
-
-/**
- * Fetch usage stats for multiple capabilities (batch)
- */
-export function useCapabilitiesUsageStatsBatch(
-  capabilityIds: string[] | undefined,
-  config?: SWRConfiguration
-) {
-  const hasIds = capabilityIds && capabilityIds.length > 0
-  return useSWR<CapabilityUsageStatsBatchResponse>(
-    hasIds ? capabilityKeys.usageStatsBatch(capabilityIds) : null,
-    () =>
-      post<CapabilityUsageStatsBatchResponse>(capabilityEndpoints.usageStatsBatch(), {
-        ids: capabilityIds,
-      }),
+    async () => (await get<Capability>(capabilityEndpoints.get(capabilityId!, 'usage'))).usage,
     { ...defaultConfig, ...config }
   )
 }
@@ -192,7 +184,7 @@ export function useCreateCapability() {
   return useSWRMutation<Capability, Error, string, CreateCapabilityRequest>(
     'create-capability',
     async (_key, { arg }) => {
-      const response = await post<Capability>(customCapabilityEndpoints.create(), arg)
+      const response = await post<Capability>(capabilityEndpoints.create(), arg)
       await invalidateCapabilitiesCache()
       return response
     }
@@ -206,7 +198,7 @@ export function useUpdateCapability(capabilityId: string) {
   return useSWRMutation<Capability, Error, string, UpdateCapabilityRequest>(
     `update-capability-${capabilityId}`,
     async (_key, { arg }) => {
-      const response = await put<Capability>(customCapabilityEndpoints.update(capabilityId), arg)
+      const response = await put<Capability>(capabilityEndpoints.update(capabilityId), arg)
       await invalidateCapabilitiesCache()
       return response
     }
@@ -221,7 +213,7 @@ export function useDeleteCapability(capabilityId: string) {
   return useSWRMutation<void, Error, string, { force?: boolean }>(
     `delete-capability-${capabilityId}`,
     async (_key, { arg }) => {
-      await del(customCapabilityEndpoints.delete(capabilityId, arg?.force))
+      await del(capabilityEndpoints.delete(capabilityId, arg?.force))
       await invalidateCapabilitiesCache()
     }
   )

@@ -19,7 +19,13 @@ const COOKIES =
 function call(handler: typeof POST, method: string, path: string[]) {
   const req = new NextRequest(`http://ui.test/api/v1/admin/${path.join('/')}`, {
     method,
-    headers: { cookie: COOKIES, authorization: 'Bearer tenant-access' },
+    // A same-origin browser write: Origin and the admin double-submit pair.
+    headers: {
+      cookie: COOKIES,
+      authorization: 'Bearer tenant-access',
+      origin: 'http://ui.test',
+      'x-csrf-token': 'c1',
+    },
   })
   return handler(req, { params: Promise.resolve({ path }) })
 }
@@ -67,6 +73,66 @@ describe('admin API proxy', () => {
     await call(POST, 'POST', ['auth', 'idp', 'callback'])
     expect(sentCookie()).toContain('admin_idp=idp-state')
     expect(sentCookie()).not.toContain('refresh_token')
+  })
+
+  function send(method: string, path: string[], body: BodyInit, contentLength: number) {
+    const req = new NextRequest('http://ui.test/api/v1/admin/' + path.join('/'), {
+      method,
+      body,
+      headers: {
+        cookie: COOKIES,
+        origin: 'http://ui.test',
+        'x-csrf-token': 'c1',
+        'content-length': String(contentLength),
+      },
+    })
+    return POST(req, { params: Promise.resolve({ path }) })
+  }
+
+  it('forwards an upload body byte for byte (binary archives survive)', async () => {
+    const bytes = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0xff, 0xfe, 0x80, 0x00])
+    await send('POST', ['content-packs'], bytes, bytes.length)
+    const sent = new Uint8Array(fetchMock.mock.calls[0][1].body as ArrayBuffer)
+    expect(Array.from(sent)).toEqual(Array.from(bytes))
+  })
+
+  it('allows a large body only for a content pack upload', async () => {
+    const big = 5 * 1024 * 1024
+    const tooBigElsewhere = await send('POST', ['tenants'], 'x', big)
+    expect(tooBigElsewhere.status).toBe(413)
+    expect(fetchMock).not.toHaveBeenCalled()
+    const tooBigUpload = await send('POST', ['content-packs'], 'x', 200 * 1024 * 1024)
+    expect(tooBigUpload.status).toBe(413)
+  })
+
+  it('passes a download through as bytes with its file name', async () => {
+    const archive = new Uint8Array([0x1f, 0x8b, 0x00, 0xff])
+    fetchMock.mockResolvedValueOnce(
+      new Response(archive, {
+        status: 200,
+        headers: {
+          'content-type': 'application/gzip',
+          'content-disposition': 'attachment; filename="pack.tar.gz"',
+        },
+      })
+    )
+    const res = await call(GET, 'GET', ['content-packs', 'abc', 'download'])
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="pack.tar.gz"')
+    expect(res.headers.get('content-type')).toBe('application/gzip')
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual(Array.from(archive))
+  })
+
+  it("keeps the API's CSP on the console API reference page", async () => {
+    const csp = "default-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+    fetchMock.mockResolvedValueOnce(
+      new Response('<!DOCTYPE html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': csp },
+      })
+    )
+    const res = await call(GET, 'GET', ['docs'])
+    expect(res.headers.get('content-security-policy')).toBe(csp)
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8')
   })
 
   describe('client IP headers', () => {

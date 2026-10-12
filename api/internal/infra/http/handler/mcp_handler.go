@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appcompliance "github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -59,19 +60,19 @@ type jsonrpcError struct {
 // the handler can never widen scope beyond the authenticated key's tenant.
 
 type mcpFindingReader interface {
-	ListFindings(ctx context.Context, in app.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error)
+	ListFindings(ctx context.Context, in finding.ListFindingsInput) (pagination.Result[*vulnerability.Finding], error)
 	// GetFindingWithScope enforces the caller's data-scope + pentest membership
 	// (never the admin-bypass GetFinding).
 	GetFindingWithScope(ctx context.Context, tenantID, findingID, actingUserID string, isAdmin bool) (*vulnerability.Finding, error)
 	// GetFindingStatsWithScope applies the caller's group data-scope (isAdmin=false),
 	// so aggregate posture is confined exactly like list_findings — never the
 	// admin-wide GetFindingStats.
-	GetFindingStatsWithScope(ctx context.Context, input app.GetFindingStatsInput) (*vulnerability.FindingStats, error)
-	ListActiveCVEs(ctx context.Context, in app.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
+	GetFindingStatsWithScope(ctx context.Context, input finding.GetFindingStatsInput) (*vulnerability.FindingStats, error)
+	ListActiveCVEs(ctx context.Context, in finding.ListActiveCVEsInput) (pagination.Result[vulnerability.ActiveCVE], error)
 }
 
 type mcpPriorityExplainer interface {
-	ExplainFinding(ctx context.Context, tenantID, findingID shared.ID) (*app.PriorityExplanation, error)
+	ExplainFinding(ctx context.Context, tenantID, findingID shared.ID) (*finding.PriorityExplanation, error)
 }
 
 type mcpSurfaceReader interface {
@@ -87,7 +88,7 @@ type mcpComplianceReader interface {
 }
 
 type mcpAssetReader interface {
-	ListAssets(ctx context.Context, in app.ListAssetsInput) (pagination.Result[*assetdom.Asset], error)
+	ListAssets(ctx context.Context, in asset.ListAssetsInput) (pagination.Result[*assetdom.Asset], error)
 	GetAsset(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error)
 }
 
@@ -116,9 +117,18 @@ type mcpTool struct {
 	// this tool. Enforced by handleToolsCall via the same HasPermission check the
 	// REST routes use — so an MCP key can do exactly what its scopes allow.
 	RequiredPerm string
+	// Module is the module the tool belongs to ("" = core): the same module
+	// that gates the tool's REST route. A tool of a module the organization
+	// has off is neither listed nor run.
+	Module string
 	// call runs the tool for a single tenant. args is the raw JSON `arguments`
 	// object; the return value is JSON-marshaled into the tool's text result.
 	call func(ctx context.Context, tenantID string, args json.RawMessage) (any, error)
+	// Write marks a tool that changes data: it runs only after the person
+	// confirmed the exact action (mcp_write_tools.go).
+	Write bool
+	// prepare checks a write action and describes it for the person.
+	prepare func(ctx context.Context, tenantID string, args json.RawMessage) (string, error)
 }
 
 // MCPHandler serves a read-only Model Context Protocol endpoint over JSON-RPC,
@@ -141,6 +151,32 @@ type MCPHandler struct {
 	// handler behaves identically minus the audit trail, so tests and stub builds
 	// need not provide one.
 	audit *auditapp.AuditService
+	// resourceMetadata is the Protected Resource Metadata URL named in
+	// insufficient_scope challenges (empty: no challenges).
+	resourceMetadata string
+	// confirmer and comments back the write tools (SetWriteTools).
+	confirmer mcpConfirmer
+	comments  mcpFindingCommenter
+	// modules answers whether a module is on for the organization (the
+	// route module gate). nil: every module counts as on (tests, stub builds).
+	modules mcpModuleChecker
+}
+
+// mcpModuleChecker is the route module gate (*middleware.ModuleGate).
+type mcpModuleChecker interface {
+	IsEnabled(ctx context.Context, tenantID, moduleID string) bool
+}
+
+// mcpModuleNotEnabled is the message of a tool or prompt of a module the
+// organization has off, worded as the REST MODULE_NOT_ENABLED error.
+const mcpModuleNotEnabled = "This module is not enabled for your team"
+
+// SetModuleGate makes tools and prompts follow the organization's modules,
+// as the REST routes of the same data do.
+func (h *MCPHandler) SetModuleGate(g mcpModuleChecker) { h.modules = g }
+
+func (h *MCPHandler) moduleEnabled(ctx context.Context, tenantID, moduleID string) bool {
+	return moduleID == "" || h.modules == nil || h.modules.IsEnabled(ctx, tenantID, moduleID)
 }
 
 // NewMCPHandler builds the handler and its tool registry from existing services.
@@ -246,15 +282,26 @@ func (h *MCPHandler) initializeResult() map[string]any {
 // A scopeless/narrow key therefore never even sees tools it cannot call.
 func (h *MCPHandler) toolsListResult(ctx context.Context) map[string]any {
 	list := make([]map[string]any, 0, len(h.tools))
+	tenantID := middleware.GetTenantID(ctx)
 	for _, t := range h.tools {
 		if t.RequiredPerm != "" && !middleware.HasPermission(ctx, t.RequiredPerm) {
 			continue
 		}
-		list = append(list, map[string]any{
+		if !h.moduleEnabled(ctx, tenantID, t.Module) {
+			continue
+		}
+		if t.Write && !h.writeToolsUsable(ctx) {
+			continue
+		}
+		entry := map[string]any{
 			"name":        t.Name,
 			"description": t.Description,
 			"inputSchema": t.InputSchema,
-		})
+		}
+		if t.Write {
+			entry["annotations"] = map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+		}
+		list = append(list, entry)
 	}
 	return map[string]any{"tools": list}
 }
@@ -282,13 +329,37 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
+	// A tool of a module the organization has off answers as the module's REST
+	// route does (the module gate runs before the permission check there too).
+	if !h.moduleEnabled(ctx, tenantID, tool.Module) {
+		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
+		h.writeResult(w, req.ID, toolResult(mcpModuleNotEnabled, true))
+		return
+	}
+
 	// Enforce the key's scope: an MCP key can call a tool only if it carries the
 	// tool's required permission — the same gate the equivalent REST route uses.
 	// API keys are never admin, so HasPermission consults only the key's scopes.
 	if tool.RequiredPerm != "" && !middleware.HasPermission(ctx, tool.RequiredPerm) {
 		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
-		h.writeResult(w, req.ID, toolResult("permission denied: this API key lacks the scope required for this tool ("+tool.RequiredPerm+")", true))
+		if h.writeScopeChallenge(w, r, req.ID, tool.RequiredPerm) {
+			return
+		}
+		h.writeResult(w, req.ID, toolResult("permission denied: this credential lacks the permission this tool needs ("+tool.RequiredPerm+")", true))
 		return
+	}
+
+	if tool.Write {
+		if res, done := h.runWriteTool(r, tool, tenantID, p.Arguments); done {
+			isErr, _ := res["isError"].(bool)
+			outcome := auditdom.ResultSuccess
+			if isErr {
+				outcome = auditdom.ResultFailure
+			}
+			h.auditToolCall(r, tenantID, tool.Name, p.Arguments, outcome, isErr, 0)
+			h.writeResult(w, req.ID, res)
+			return
+		}
 	}
 
 	result, err := tool.call(ctx, tenantID, p.Arguments)
@@ -341,6 +412,7 @@ func (h *MCPHandler) auditToolCall(r *http.Request, tenantID, toolName string, a
 			"api_key_prefix": middleware.GetAPIKeyPrefix(ctx),
 		},
 	}
+	oauthAuditMetadata(r, event.Metadata)
 	actx := auditapp.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(ctx),
@@ -375,6 +447,7 @@ func (h *MCPHandler) auditPromptGet(r *http.Request, tenantID, promptName string
 			"api_key_prefix": middleware.GetAPIKeyPrefix(ctx),
 		},
 	}
+	oauthAuditMetadata(r, event.Metadata)
 	actx := auditapp.AuditContext{
 		TenantID:   tenantID,
 		ActorID:    middleware.GetUserID(ctx),
@@ -396,6 +469,8 @@ var mcpAuditSafeArgs = map[string]bool{
 	"min_epss": true, "limit": true,
 	// pentest report-writing tools/prompts: ids + enum-like filters only.
 	"campaign_id": true, "finding_id": true, "section": true, "category": true,
+	// write tools: the confirmation the call presents.
+	"confirmation_id": true,
 }
 
 // sanitizeMCPArgs reduces raw tool arguments to an audit-safe summary: every

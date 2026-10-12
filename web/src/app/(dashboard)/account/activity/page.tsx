@@ -1,17 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useDisplayUser } from '@/hooks/use-display-user'
+import { useListParams } from '@/hooks/use-list-params'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   History,
   Key,
@@ -26,7 +20,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { formatRelative, formatDateSafe } from '@/lib/format-date'
-import { useUser } from '@/stores/auth-store'
 import { EmptyState } from '@/features/shared'
 import { useAccountActivity } from '@/features/account'
 import {
@@ -34,6 +27,7 @@ import {
   formatAction,
   RESULT_DISPLAY,
 } from '@/features/organization/types/audit.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Icon per action category (action looks like "auth.login", "user.updated", …)
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -58,40 +52,17 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: 'bg-muted text-muted-foreground',
 }
 
-// Filter options map to action categories (the prefix before the first dot).
-const FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: 'all', label: 'All Activity' },
-  { value: 'auth', label: 'Authentication' },
-  { value: 'user', label: 'Account' },
-  { value: 'settings', label: 'Settings' },
-  { value: 'permission', label: 'Permissions' },
-]
-
 const PER_PAGE = 10
 
 export default function ActivityPage() {
-  const user = useUser()
-  const [filter, setFilter] = useState<string>('all')
-  const [page, setPage] = useState(1)
+  const { t } = useTranslation()
+  const user = useDisplayUser()
+  // The page lives in the URL (one list convention).
+  const { page, setPage } = useListParams({ defaultPageSize: PER_PAGE })
 
-  const { activities, isLoading } = useAccountActivity(user?.id)
-
-  // Filter by action category, then paginate client-side.
-  const filteredActivities = useMemo(
-    () =>
-      filter === 'all'
-        ? activities
-        : activities.filter((a) => getActionCategory(a.action) === filter),
-    [activities, filter]
-  )
-
-  const totalPages = Math.ceil(filteredActivities.length / PER_PAGE)
-  const paginatedActivities = filteredActivities.slice((page - 1) * PER_PAGE, page * PER_PAGE)
-
-  const handleFilterChange = (value: string) => {
-    setFilter(value)
-    setPage(1)
-  }
+  // Paged on the server (the user-activity endpoint has no category filter,
+  // so the old browser-side "type" filter is gone with the browser paging).
+  const { activities, total, totalPages, isLoading } = useAccountActivity(user?.id, page, PER_PAGE)
 
   return (
     <div className="grid gap-6">
@@ -108,18 +79,6 @@ export default function ActivityPage() {
                 View your recent account activity and security events
               </CardDescription>
             </div>
-            <Select value={filter} onValueChange={handleFilterChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                {FILTER_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </CardHeader>
         <CardContent>
@@ -129,11 +88,11 @@ export default function ActivityPage() {
                 <Skeleton key={i} className="h-20 w-full" />
               ))}
             </div>
-          ) : paginatedActivities.length === 0 ? (
+          ) : activities.length === 0 ? (
             <EmptyState icon={History} title="No activity found" card={false} />
           ) : (
             <div className="space-y-4">
-              {paginatedActivities.map((activity) => {
+              {activities.map((activity) => {
                 const category = getActionCategory(activity.action)
                 const Icon = CATEGORY_ICONS[category] ?? History
                 const colorClass = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other
@@ -179,9 +138,8 @@ export default function ActivityPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-6">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PER_PAGE + 1} to{' '}
-                {Math.min(page * PER_PAGE, filteredActivities.length)} of{' '}
-                {filteredActivities.length} activities
+                Showing {(page - 1) * PER_PAGE + 1} to {Math.min(page * PER_PAGE, total)} of {total}{' '}
+                activities
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -217,10 +175,12 @@ export default function ActivityPage() {
               <Shield className="h-5 w-5 text-blue-500" />
             </div>
             <div>
-              <p className="font-medium">Security Tip</p>
+              <p className="font-medium">{t('settings.account.securityTip', 'Security tip')}</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Review your activity regularly to detect unauthorized access. If you see any
-                suspicious activity, change your password immediately and contact support.
+                {t(
+                  'settings.account.securityTipBody',
+                  'Sign-ins and active sessions are under Security. If you see anything you do not recognise, change your password and sign out your other sessions.'
+                )}
               </p>
             </div>
           </div>

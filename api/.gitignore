@@ -96,3 +96,4 @@ data/
 scripts/tests/.e2e_results.tsv
 scripts/tests/.e2e_results.tsv.fails
 scripts/tests/.e2e_runlog.txt
+.proto-tools/

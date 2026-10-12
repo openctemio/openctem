@@ -24,7 +24,7 @@ const (
 	// DefaultCommandTTL is the expiry every command gets unless the caller asks
 	// for a different one. It is a BACKSTOP, not a scheduling knob: it exists so
 	// a command that nothing ever answers eventually reaches
-	// ExpirationChecker -> pipeline.OnStepFailed("COMMAND_EXPIRED") instead of
+	// ExpirationChecker -> scanrun.OnStepFailed("COMMAND_EXPIRED") instead of
 	// leaving the owning run waiting forever.
 	//
 	// Every command used to be created with expires_at NULL, and both consumers
@@ -66,6 +66,21 @@ const (
 	// content (trivy DB, nuclei templates, semgrep rules) under the tenant's
 	// content policy (RFC-031). Always pinned to the sensor.
 	CommandTypeRefreshContent CommandType = "refresh_content"
+	// CommandTypeConnectorSync asks the sensor named by a connector
+	// integration to pull data from the product it connects to (Tenable.sc:
+	// hosts, vulnerabilities, plugins) and push it as CTIS reports bound to
+	// the command (docs/rfcs/RFC-047-tenable-sc-sensor-connector.md). Always
+	// pinned to the sensor; the payload names the tool in "scanner".
+	CommandTypeConnectorSync CommandType = "connector_sync"
+	// CommandTypeConnectorScan asks a connector sensor to launch one scan in
+	// the product it connects to on probe-gated targets (RFC-047).
+	CommandTypeConnectorScan CommandType = "connector_scan"
+	// CommandTypeRetest asks a sensor to re-check known findings with the
+	// retest handler of the tool that produced them (RFC-039, tool retest).
+	// The payload names the tool, the targets (each finding's own asset
+	// address, active-probe gated) and the items; the result carries one
+	// verdict per item: still_present, fixed or unverifiable.
+	CommandTypeRetest CommandType = "retest"
 )
 
 // CommandStatus represents the status of a command.
@@ -118,13 +133,30 @@ type Command struct {
 	ScheduledAt *time.Time
 	ScheduleID  *shared.ID
 
-	// Pipeline tracking
-	StepRunID *shared.ID // Reference to pipeline step run (for progression tracking)
+	// Scan workflow tracking
+	StepRunID *shared.ID // Reference to workflow step run (for progression tracking)
 
 	// ScanZoneID is the scan zone the command was routed to (RFC-023). When
 	// set, only a sensor assigned to that zone may poll or claim it, even after
 	// the reaper unpins it. Never sent on the protocol-v1 wire.
 	ScanZoneID *shared.ID
+
+	// HostKeys are the hosts an active workflow chunk sends traffic to.
+	// While the command is acknowledged or running, no other command of
+	// the tenant with one of these keys is claimed (platform-side per-host
+	// politeness, research/49 §3.12.3). Nil: no per-host limit. Written on
+	// create only; never sent to a sensor.
+	HostKeys []string
+
+	// DispatchGate is what the dispatch gate checked the targets with; the
+	// claim re-checks them with it (dispatch_gate.go). Nil: not recorded.
+	// Written on create only; never sent to a sensor.
+	DispatchGate *DispatchGate
+
+	// SignedJob is the signer's envelope for this delivery of the command
+	// (docs/architecture/job-signing.md): set on the copy a claim hands a
+	// sensor, never stored and never read back.
+	SignedJob json.RawMessage
 
 	// ==========================================================================
 	// Platform Job Fields (v3.2)
@@ -168,13 +200,20 @@ type Command struct {
 
 	// LastDispatchAt is the last time dispatch was attempted
 	LastDispatchAt *time.Time
+
+	// LeaseEpoch counts the claims of the command: every claim starts a new
+	// lease epoch. A sensor-side state change is applied only under the
+	// epoch it read (no completion after a re-queue). LeaseExpiresAt is when
+	// the holder's lease runs out unless renewed; nil when nobody holds it.
+	LeaseEpoch     int
+	LeaseExpiresAt *time.Time
 }
 
 // NewCommand creates a new Command entity.
 //
 // The expiry default is applied here rather than at the call sites because this
 // constructor is the single seam every command creation goes through
-// (scan/trigger, scan/coverage dispatch, pipeline/run, validation/dispatcher and
+// (scan/trigger, scan/coverage dispatch, scan workflow/run, validation/dispatcher and
 // the command service). Setting it per-site is what left expires_at NULL
 // everywhere. Callers that need a different deadline override it afterwards with
 // SetExpiration.
@@ -212,7 +251,7 @@ func (c *Command) SetScanZone(zoneID shared.ID) {
 	c.ScanZoneID = &zoneID
 }
 
-// SetStepRunID sets the pipeline step run ID for tracking.
+// SetStepRunID sets the workflow step run ID for tracking.
 func (c *Command) SetStepRunID(stepRunID shared.ID) {
 	c.StepRunID = &stepRunID
 }

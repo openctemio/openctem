@@ -1,4 +1,4 @@
-.PHONY: all build run test lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev
+.PHONY: all build run test test-db lint clean docker-build docker-dev docker-prod docker-down migrate generate seed help seed-required docker-seed docker-seed-required db-setup db-setup-dev swagger contract swagger-check swagger-install env-docs
 
 # Variables
 APP_NAME := openctem
@@ -6,7 +6,6 @@ BUILD_DIR := bin
 MAIN_PATH := cmd/server/main.go
 COMPOSE_BASE := docker-compose.yml
 COMPOSE_DEV := docker-compose.dev.yml
-COMPOSE_PROD := docker-compose.prod.yml
 
 # Load .env file if exists
 ifneq (,$(wildcard ./.env))
@@ -57,15 +56,26 @@ run:
 	@echo "Running $(APP_NAME)..."
 	$(GORUN) $(MAIN_PATH)
 
-## test: Run tests
+# DB-backed tests write and delete rows, so they never take DATABASE_URL from
+# .env (that is the dev or live database). `make test` runs them only when
+# TEST_DATABASE_URL names a *_test database; `make test-db` requires it.
+TEST_DATABASE_URL ?=
+
+## test: Run tests (DB-backed tests skip unless TEST_DATABASE_URL is set)
 test:
 	@echo "Running tests..."
-	$(GOTEST) -v -race -cover ./...
+	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "NOTE: TEST_DATABASE_URL is unset: DB-backed tests are SKIPPED (use make test-db)."; fi
+	DATABASE_URL="$(TEST_DATABASE_URL)" $(GOTEST) -v -race -cover ./...
+
+## test-db: Run all tests against TEST_DATABASE_URL (a migrated *_test database); nothing skips
+test-db:
+	@if [ -z "$(TEST_DATABASE_URL)" ]; then echo "TEST_DATABASE_URL is required, e.g. postgres://postgres@localhost:55432/app_test?sslmode=disable"; exit 1; fi
+	DATABASE_URL="$(TEST_DATABASE_URL)" OPENCTEM_TEST_DB_REQUIRED=1 $(GOTEST) -race -timeout 20m ./...
 
 ## test-coverage: Run tests with coverage report
 test-coverage:
 	@echo "Running tests with coverage..."
-	$(GOTEST) -v -race -coverprofile=coverage.out ./...
+	DATABASE_URL="$(TEST_DATABASE_URL)" $(GOTEST) -v -race -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
@@ -126,13 +136,11 @@ tidy:
 	@echo "Tidying dependencies..."
 	$(GOMOD) tidy
 
-## swagger: Regenerate api/openapi/swagger.yaml from the handler annotations.
-## The spec is a GENERATED artifact — never hand-edit it. The UI generates its
-## API types from the committed file, and scripts/check-openapi.sh fails CI when
-## the annotations, the spec and the registered routes stop agreeing.
-##
-## Previously this target printed "swag not installed" and exited 0, so a
-## regeneration that never happened looked exactly like one that succeeded.
+## swagger: Generate api/openapi/swagger.yaml from the handler annotations.
+## The spec is generated and NOT committed (nor hand-edited): CI, release
+## builds and `make generate` at the repository root produce it, and
+## scripts/check-openapi.sh fails CI when the annotations, the spec and the
+## registered routes stop agreeing.
 swagger: swagger-install
 	@echo "Generating Swagger documentation..."
 	@# --parseDependency walks into dependency packages — the asset-type enum
@@ -146,18 +154,40 @@ swagger: swagger-install
 	@# why the gate compares sets of operations rather than bytes. See
 	@# tools/lint/openapicontract.
 	@GOWORK=off go mod download
+	@# The list query params come from the field registries (RFC-048).
+	@GOWORK=off go run ./tools/gen/filterparams
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
 	@echo "Swagger docs generated in api/openapi/"
 
-## swagger-check: Fail if the annotations, the spec and the routes disagree.
-## Compares SETS of operations, not the bytes of the generated file — swag is
-## not reproducible enough across environments for a byte diff to hold. See
+## contract: Generate every contract file derived from the Go source. None of
+## them is committed:
+##   api/openapi/swagger.yaml                    the OpenAPI spec (swagger)
+##   api/openapi/routes.txt                      every registered route (web endpoint check)
+##   ../web/src/config/api-route-permissions.json  the web console's route gate map
+##   ../web/src/config/authz-matrix.json           the authorization reference (roles,
+##                                                 templates, per-feature gates)
+## The web API types are generated from the spec by `npm run generate:api-types`
+## in web/; `make generate` at the repository root runs both halves.
+contract: swagger
+	@GOWORK=off UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$$' -count=1 >/dev/null
+	@GOWORK=off UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run '^TestRoutePermissionMap$$' -count=1 >/dev/null
+	@GOWORK=off go run ./cmd/gen-authz-docs
+	@echo "Route manifest, route permission map and authorization reference generated"
+
+## authz-docs: Write the authorization reference as markdown pages into DIR
+##             (the documentation site adds FRONT_MATTER=1)
+authz-docs:
+	@test -n "$(DIR)" || { echo "usage: make authz-docs DIR=<output dir> [FRONT_MATTER=1]" >&2; exit 2; }
+	@GOWORK=off go run ./cmd/gen-authz-docs -json "" -md "$(DIR)" $(if $(FRONT_MATTER),-front-matter,)
+
+## swagger-check: Generate the spec, then fail if the annotations, the spec and
+## the routes disagree. Compares SETS of operations, not bytes — see
 ## tools/lint/openapicontract for why.
 swagger-check:
 	@bash scripts/check-openapi.sh
 
 ## swagger-install: Install the pinned swag CLI (no-op if already present).
-## Pinned: an upstream release must not be able to change the committed contract
+## Pinned: an upstream release must not be able to change the generated contract
 ## or turn every PR red. Bump here and in scripts/check-openapi.sh together.
 SWAG_VERSION ?= v1.16.4
 SWAG := $(shell command -v swag 2>/dev/null || echo "$$(go env GOPATH)/bin/swag")
@@ -194,37 +224,31 @@ docker-dev-d:
 	@echo "Starting development environment (detached)..."
 	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) up -d --build
 
-## docker-prod: Start production environment
+## docker-prod: Production runs from api/deploy (one HTTPS port): see its docker-compose.yml
 docker-prod:
-	@echo "Starting production environment..."
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) up -d --build
+	@echo "Production deployment, from the repository root: cd api/deploy && cp .env.example .env && docker compose up -d"
 
 ## docker-down: Stop all Docker Compose services
 docker-down:
 	@echo "Stopping services..."
 	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) down 2>/dev/null || true
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) down 2>/dev/null || true
 
 ## docker-logs: View Docker Compose logs
 docker-logs:
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) logs -f 2>/dev/null || \
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) logs -f
+	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) logs -f
 
 ## docker-logs-app: View only app logs
 docker-logs-app:
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) logs -f app 2>/dev/null || \
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) logs -f app
+	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) logs -f app
 
 ## docker-ps: Show running containers
 docker-ps:
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) ps 2>/dev/null || \
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) ps
+	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) ps
 
 ## docker-clean: Remove all containers, volumes, and images
 docker-clean:
 	@echo "Cleaning Docker resources..."
 	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) down -v --rmi local 2>/dev/null || true
-	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_PROD) down -v --rmi local 2>/dev/null || true
 
 ## migrate-up: Run database migrations (local)
 migrate-up:
@@ -239,10 +263,6 @@ migrate-up:
 		echo "migrate not installed. Run: make install-tools"; \
 		exit 1; \
 	fi
-
-## migrate-preflight: Run data pre-flight checks, then migrate only if clean (recommended for prod)
-migrate-preflight:
-	@DATABASE_URL="$(DATABASE_URL)" ./scripts/preflight-migrate.sh
 
 ## migrate-down: Rollback database migrations (local)
 migrate-down:
@@ -350,14 +370,59 @@ generate-relationships:
 	@echo "Generating relationship types from configs/relationship-types.yaml..."
 	@GOWORK=off $(GOCMD) run ./cmd/gen-relationships
 
-## proto: Generate protobuf code
+## generate-modules: Regenerate the module registry (Go + TS) from YAML
+##
+## Single source of truth: configs/modules/<id>.yaml (RFC-064). Edit the YAML, run
+## this target, commit YAML + the two generated files. If a catalog row
+## changed (id, name, core, release, parent, order...), also add a migration
+## whose body is `make modules-sql`.
+generate-modules:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-modules
+
+## modules-sql: Print the SQL block that writes the modules rows (the body of a registry migration)
+modules-sql:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-modules -sql
+
+## modules-check: Fail when the generated module files or the newest registry migration drifted
+modules-check:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-modules -check
+
+## env-docs: Regenerate .env.example and docs/configuration/environment-variables.md
+##
+## Single source of truth: internal/config/env_registry.yaml. Edit the registry,
+## run this target, commit the registry and the two generated files
+## (TestEnvDocsUpToDate fails when they are stale).
+env-docs:
+	@GOWORK=off $(GOCMD) run ./cmd/envdoc
+
+## generate-asset-types: Regenerate the asset type registry (Go + TS) from YAML
+##
+## Single source of truth: configs/asset-types.yaml (RFC-042 §6.3).
+## Edit the YAML, run this target, commit YAML + the two generated files. If
+## class, lens or alias data changed, also add a migration whose body is
+## `make asset-types-sql`.
+generate-asset-types:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types
+
+## asset-types-sql: Print the SQL block that seeds asset_types and re-derives
+##                  assets.asset_class / asset_lens (the body of a registry migration)
+asset-types-sql:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types -sql
+
+## asset-types-check: Fail if the YAML, the generated files or the newest
+##                    registry migration block disagree (CI: Asset Types Drift)
+asset-types-check:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types -check
+
+## proto: Regenerate the sensor protocol v3 Go code (api/pkg/sensorproto/v3)
+##        from api/proto with pinned buf and plugins (commit the result)
 proto:
-	@echo "Generating protobuf..."
-	@if [ -d "api/proto" ]; then \
-		protoc --go_out=. --go-grpc_out=. api/proto/*.proto; \
-	else \
-		echo "No proto files found in api/proto/"; \
-	fi
+	@bash scripts/check-proto.sh --generate
+
+## proto-check: buf lint, buf breaking against develop, generated code current
+##              (CI: Sensor Protocol v3)
+proto-check:
+	@bash scripts/check-proto.sh
 
 ## dev: Run with hot reload (requires air)
 dev:
@@ -383,9 +448,13 @@ install-tools:
 # PRE-COMMIT & SECURITY
 # =============================================================================
 
-## pre-commit-install: Install pre-commit hooks
+# Commit-time hooks are the repository's .githooks/ (root Makefile: `make hooks`).
+# `pre-commit install` refuses to run while core.hooksPath is set, and would
+# expect a .pre-commit-config.yaml at the repository root; the config in api/
+# runs on demand with `make pre-commit-run`.
+## pre-commit-install: Install the security tools and enable the repository git hooks (.githooks)
 pre-commit-install:
-	@echo "Installing pre-commit hooks..."
+	@echo "Installing security tools (pre-commit, betterleaks, trivy, hadolint)..."
 	@if ! command -v pre-commit >/dev/null 2>&1; then \
 		echo "Installing pre-commit..."; \
 		if command -v apt-get >/dev/null 2>&1; then \
@@ -430,8 +499,8 @@ pre-commit-install:
 			brew install hadolint; \
 		fi; \
 	fi
-	pre-commit install
-	@echo "Pre-commit hooks installed successfully!"
+	git config core.hooksPath .githooks
+	@echo "Tools installed; git hooks enabled (.githooks). Run the full hook set with: make pre-commit-run"
 
 ## pre-commit-run: Run all pre-commit hooks on all files
 pre-commit-run:

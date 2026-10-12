@@ -10,6 +10,7 @@ import {
   SEVERITY_BORDER_COLORS,
   type SeverityLevel as SeverityColorLevel,
 } from '@/lib/severity-colors'
+import type { RatedCriticality } from '@/lib/criticality'
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info' | 'none'
 
@@ -18,7 +19,8 @@ export type Status =
 
 export type Environment = 'production' | 'staging' | 'development' | 'testing'
 
-export type Criticality = 'critical' | 'high' | 'medium' | 'low'
+/** Criticality of always-rated records (groups); assets use CriticalityLevel. */
+export type Criticality = RatedCriticality
 
 // Security Process Steps
 export type SecurityProcessStep =
@@ -60,8 +62,8 @@ export const SEVERITY_CONFIG = {
   medium: sevEntry('Medium', 'medium'),
   low: sevEntry('Low', 'low'),
   info: sevEntry('Info', 'info'),
-  // "none" reuses the neutral info palette.
-  none: sevEntry('None', 'info'),
+  // "none" (CVSS 0.0) reads and looks like Info, as everywhere else.
+  none: sevEntry('Info', 'info'),
 } as const
 
 // Risk level thresholds interface

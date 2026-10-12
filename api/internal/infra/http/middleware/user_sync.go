@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -29,7 +29,9 @@ const syncInterval = 24 * time.Hour
 // - User-specific data (preferences, profile) stored locally
 // - Future migration away from Keycloak
 // Supports both local auth (LocalClaimsKey) and OIDC auth (ClaimsKey).
-func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handler) http.Handler {
+//
+//nolint:gocognit // existing middleware; only its import changed here
+func UserSync(userService *tenant.UserService, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -100,6 +102,15 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 					return
 				}
 
+				// A disabled or erased account (users.status other than
+				// active) is refused on every request, not only at login: a
+				// token minted before the change must not outlive it.
+				if !localUser.IsActive() {
+					log.Warn("inactive user attempted access", "user_id", localUser.ID().String())
+					apierror.Unauthorized("Authentication required").WriteJSON(w)
+					return
+				}
+
 				// Add local user to context and continue
 				ctx = context.WithValue(ctx, LocalUserKey, localUser)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -139,6 +150,12 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 					}
 				}
 
+				if localUser == nil || !localUser.IsActive() {
+					log.Warn("inactive user attempted access", "keycloak_id", keycloakID)
+					apierror.Unauthorized("Authentication required").WriteJSON(w)
+					return
+				}
+
 				// Add local user to context and continue
 				ctx = context.WithValue(ctx, LocalUserKey, localUser)
 				next.ServeHTTP(w, r.WithContext(ctx))
@@ -164,16 +181,14 @@ func UserSync(userService *app.UserService, log *logger.Logger) func(http.Handle
 				"email", localUser.Email(),
 			)
 
-			// Check the platform-level user status. The OSS product has
-			// no UI to set this; only direct DB intervention can. We log
-			// the access attempt but do not block here — the auth flow
-			// already rejects suspended users at login. This is a warn
-			// for forensic visibility.
-			if localUser.Status() == user.StatusSuspended {
-				log.Warn("suspended user attempted access",
+			// A disabled or erased account is refused here too (fail closed).
+			if !localUser.IsActive() {
+				log.Warn("inactive user attempted access",
 					"user_id", localUser.ID().String(),
 					"keycloak_id", keycloakID,
 				)
+				apierror.Unauthorized("Authentication required").WriteJSON(w)
+				return
 			}
 
 			// Add local user to context

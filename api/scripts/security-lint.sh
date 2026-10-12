@@ -87,6 +87,11 @@ check_http_client() {
     local allow_sites=(
         # pkg/httpsec itself builds the SafeHTTPClient wrapper.
         'api/pkg/httpsec/ssrf.go'
+        # `server -healthcheck`: the container healthcheck probes this
+        # process's own loopback listener (fixed 127.0.0.1, SERVER_PORT
+        # validated, no proxy, no redirects), which SafeHTTPClient refuses by
+        # design. No URL comes from a tenant or the network.
+        'api/cmd/server/healthcheck.go'
         # Admin CLI talks to its own API over an operator-provided URL
         # (same trust domain as the server). Not tenant-facing.
         'api/cmd/openctem-admin/cmd/client.go'
@@ -101,10 +106,21 @@ check_http_client() {
         # SafeHTTPClient is used in production; the plain &http.Client
         # fires only on the AllowLoopback test path (httptest 127.0.0.1).
         'api/internal/infra/notifier/splunk.go'
+        # Sensor Tenable.sc connector (RFC-047): reaches an operator-configured
+        # Tenable.sc that usually sits on a private address, so the RFC1918
+        # block of SafeHTTPClient cannot apply. Its own dialer resolves once
+        # and dials the checked IP (no DNS rebinding), refuses redirects, and
+        # requires a configured CA or certificate pin; the URL comes only from
+        # the sensor-local config, never from the platform.
+        agent/internal/connector/tenablesc/client.go
         # Workflow HTTPRequestHandler implements its own SSRF guard
         # inline (validateURL + safeDialer + CheckRedirect). Functionally
         # equivalent to SafeHTTPClient; consolidation is a follow-up.
-        'api/internal/app/workflow/handlers.go'
+        'api/internal/app/automation/handlers.go'
+        # Job signer client (RFC-040 §5.6): its transport dials only the
+        # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
+        # the request host, so no network destination exists to guard.
+        'api/internal/infra/signer/client.go'
     )
 
     local hits
@@ -136,7 +152,7 @@ check_http_client() {
         printf '%s' "$filtered" | sed 's/^/       /'
         return
     fi
-    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; 5 documented exceptions)"
+    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (api/, agent/; 6 documented exceptions)"
 }
 
 # ---------------------------------------------------------------------------
@@ -162,6 +178,11 @@ check_dev_default_secrets() {
         'docker-compose.yml'
         'docker-compose.monitoring.yml'
         'docker-compose.dev.yml'
+        # The development env template (APP_ENV=development); the API
+        # refuses both values whenever APP_ENV is not development.
+        'api/.env.example'
+        # The registry api/.env.example is generated from (its dev examples).
+        'api/internal/config/env_registry.yaml'
         # Expected: config validator explicitly lists these as the
         # forbidden values — it MUST hold the exact literal.
         'api/internal/config/config.go'
@@ -259,18 +280,20 @@ check_env_files_tracked() {
 }
 
 # ---------------------------------------------------------------------------
-# Rule 4: agent dangerousToolFlags must include the audit-required set.
+# Rule 4: the scanner extra-args guard must include the audit-required set.
 #
 # The audit (Pass-6 P6-1, P6-10) identified the flag classes attackers
 # abuse for SSRF / path-traversal / privilege escalation via user-
 # supplied ExtraArgs. If someone refactors the map and drops a flag,
 # the runtime validator will silently permit that arg on the scanner
-# CLI. We pin the minimum viable set here.
+# CLI. We pin the minimum viable set here. The set lives in sdk-go
+# (core.DangerousToolFlags, applied by every SDK scanner); it moved there
+# from the sensor's platform-mode executor when sensor#107 removed that mode.
 # ---------------------------------------------------------------------------
 check_agent_dangerous_flags() {
-    local f="agent/internal/executor/vulnscan.go"
+    local f="sdk-go/pkg/core/extra_args.go"
     if [[ ! -f "$f" ]]; then
-        say_skip "Rule 4: $f not found; cannot verify agent dangerous-flag set"
+        say_skip "Rule 4: $f not found; cannot verify the scanner extra-args flag set"
         return
     fi
     local required=(
@@ -288,10 +311,10 @@ check_agent_dangerous_flags() {
         fi
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-        say_fail "Rule 4: agent dangerousToolFlags missing required entries: ${missing[*]}"
+        say_fail "Rule 4: core.DangerousToolFlags missing required entries: ${missing[*]}"
         return
     fi
-    say_pass "Rule 4: agent dangerousToolFlags contains required SSRF/RCE flag set"
+    say_pass "Rule 4: core.DangerousToolFlags contains the required SSRF/RCE flag set"
 }
 
 # ---------------------------------------------------------------------------
@@ -390,6 +413,120 @@ check_httpsec_drift() {
 }
 
 # ---------------------------------------------------------------------------
+# Rule 7: client-IP forwarding headers are read only by pkg/httpsec.
+#
+# httpsec.ClientIP believes X-Real-IP / X-Forwarded-For only when the TCP peer
+# is a configured trusted proxy, and walks X-Forwarded-For from the right. Code
+# that reads one of these headers itself lets any caller choose the IP that
+# lands in the audit log, keys a rate limit, or passes an IP allowlist (the
+# scan zone handler copied raw X-Forwarded-For into the audit log). Use
+# getClientIP (handler, middleware) or middleware.ClientIP instead.
+#
+# The match is the header name as a quoted Go string, any case, so a
+# r.Header.Get, r.Header["..."], r.Header.Values or a named constant are all
+# caught. Exceptions: tests, pkg/httpsec itself, and the sites listed below.
+# ---------------------------------------------------------------------------
+check_client_ip_headers() {
+    local allow_sites=(
+        # Outbound workflow HTTP action: refuses to let a workflow author SET
+        # these headers on the request it sends. Nothing is read from a
+        # client request.
+        'api/internal/app/automation/handlers.go'
+        # Job signer client (RFC-040 §5.6): its transport dials only the
+        # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
+        # the request host, so no network destination exists to guard.
+        'api/internal/infra/signer/client.go'
+    )
+
+    local hits
+    hits="$(grep -RniE '"(x-forwarded-for|x-real-ip|forwarded|cf-connecting-ip|true-client-ip|x-client-ip|x-cluster-client-ip|fastly-client-ip)"' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        api/ 2>/dev/null | grep -v '^api/pkg/httpsec/' || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == "$a" ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "$filtered" ]]; then
+        say_fail "Rule 7: client-IP forwarding header read outside pkg/httpsec — use getClientIP / middleware.ClientIP (trusted-proxy aware):"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 7: client-IP forwarding headers read only through pkg/httpsec (api/; 1 documented exception)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 8: an HTTP response body is never read without a size limit.
+#
+# io.ReadAll(resp.Body) or json.NewDecoder(resp.Body) buffers whatever an
+# upstream sends (a hostile SCM, ticketing, OAuth or LLM endpoint, or a feed),
+# so one response can exhaust the API's memory (RFC-049 F-12). Read through
+# httpsec.ReadLimited / httpsec.DecodeJSON (oversize is an error, never
+# truncated data), or httpsec.NewLimitedReader for a stream parsed as it is
+# read. Inbound request bodies are capped by the BodyLimit middleware and are
+# not matched (r.Body / req.Body). Tests are excluded.
+# ---------------------------------------------------------------------------
+check_bounded_response_reads() {
+    local hits
+    hits="$(grep -RnE '(io|ioutil)\.ReadAll\([A-Za-z_]*(resp|res|response|Resp)\.Body\)|(json|xml|yaml)\.NewDecoder\([A-Za-z_]*(resp|res|response|Resp)\.Body\)' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        api/ 2>/dev/null | grep -v '^api/tests/' || true)"
+
+    if [[ -n "$hits" ]]; then
+        say_fail "Rule 8: unbounded read of an HTTP response body — use httpsec.ReadLimited / httpsec.DecodeJSON:"
+        printf '%s\n' "$hits" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 8: every HTTP response body read is bounded (api/)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 9: an upstream response body never goes into an error.
+#
+# Errors reach API responses, audit entries and the tenant's UI; a third-party
+# body can echo request data, tokens or upstream internals (RFC-049 F-2).
+# Return httpsec.NewUpstreamStatusError (provider + status; the body is logged
+# at debug level, bounded and sanitized). Tests are excluded.
+# ---------------------------------------------------------------------------
+check_upstream_body_in_errors() {
+    local hits
+    hits="$(grep -RnE 'Errorf\(.*string\((resp|res|response)?[Bb]ody\)|Errorf\(.*string\(respBody\)' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        api/ 2>/dev/null | grep -v '^api/tests/' | grep -v '/includetest/' || true)"
+
+    if [[ -n "$hits" ]]; then
+        say_fail "Rule 9: an upstream response body in an error — use httpsec.NewUpstreamStatusError:"
+        printf '%s\n' "$hits" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 9: no upstream response body in errors (api/)"
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 printf '== security-lint ==\n'
@@ -409,6 +546,9 @@ check_env_files_tracked
 check_agent_dangerous_flags
 check_httpsec_used
 check_httpsec_drift
+check_client_ip_headers
+check_bounded_response_reads
+check_upstream_body_in_errors
 printf '\n'
 if [[ $fail -ne 0 ]]; then
     printf '%sSecurity lint FAILED.%s Fix the rules above before merging.\n' "$RED" "$RST"

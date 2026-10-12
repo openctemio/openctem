@@ -3,6 +3,7 @@
  *
  * Type definitions for OpenCTEM API requests and responses
  */
+import type { CriticalityLevel } from '@/lib/criticality'
 
 // ============================================
 // COMMON TYPES
@@ -73,6 +74,8 @@ export interface ApiRequestOptions extends RequestInit {
    * Used to prevent infinite retry loops
    */
   _skipRefreshRetry?: boolean
+  /** Internal: already retried after a step-up re-authentication. */
+  _skipStepUpRetry?: boolean
 }
 
 // ============================================
@@ -271,7 +274,7 @@ export interface Asset {
   ipAddresses?: string[]
   operatingSystem?: string
   owner?: string
-  criticality?: 'critical' | 'high' | 'medium' | 'low'
+  criticality?: CriticalityLevel
   status: 'active' | 'inactive' | 'decommissioned'
   createdAt: string
   updatedAt: string

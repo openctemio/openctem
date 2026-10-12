@@ -49,8 +49,8 @@ func ValidationCoverageByPriority(
 		    )
 		  ) AS with_ev
 		FROM findings f
-		WHERE f.tenant_id = $1
-		  AND f.status IN ('resolved','verified','accepted','false_positive')` + windowSQL + `
+		WHERE f.tenant_id = $1 AND NOT f.branch_only
+		  AND f.status IN ('resolved','accepted','false_positive')` + windowSQL + `
 		GROUP BY COALESCE(f.priority_class, '')
 	`
 	rows, err := db.QueryContext(ctx, q, args...)

@@ -25,7 +25,8 @@ import {
   type PriorityExplanation,
   type PriorityScoreBreakdown,
 } from '../../api/use-finding-priority-explanation'
-import { PRIORITY_CLASS_CONFIG, type PriorityClass } from '../../types'
+import type { PriorityClass } from '../../types'
+import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 
 interface PriorityExplanationCardProps {
   findingId: string
@@ -105,7 +106,7 @@ function SubScoreRow({ label, value }: { label: string; value: number }) {
  * EXPLAINS the class above, it does not decide it — the P0-P3 cascade stays
  * authoritative. Shown only when the backend supplies the breakdown.
  */
-function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdown }) {
+export function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdown }) {
   const reductionPct = Math.round(breakdown.control_reduction * 100)
   return (
     <div className="space-y-2 rounded-md border p-3">
@@ -192,9 +193,7 @@ export function PriorityExplanationCard({
               </Badge>
             )}
             {isPriorityClass(cls) && (
-              <span className="text-muted-foreground text-xs">
-                SLA: {PRIORITY_CLASS_CONFIG[cls].sla}
-              </span>
+              <PriorityClassSla priorityClass={cls} className="text-muted-foreground text-xs" />
             )}
           </div>
 

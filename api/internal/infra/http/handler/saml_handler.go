@@ -11,7 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -25,16 +26,23 @@ import (
 // metadata an admin registers with their IdP, admin config CRUD, and the
 // SP-initiated browser login (login redirect + ACS).
 type SAMLHandler struct {
-	svc         *app.SAMLService
+	svc         *auth.SAMLService
 	cookieCfg   CookieConfig
 	frontendURL string // origin the browser is redirected to after login
 	publicURL   string // configured public origin (APP_URL); see samlBaseURL
-	audit       *app.AuditService
+	audit       *auditsvc.AuditService
+	changes     *auth.SSOChangeService
 	logger      *logger.Logger
 }
 
+// SetChangeApproval routes SAML changes made from the platform admin console
+// through an owner's approval (RFC-022).
+func (h *SAMLHandler) SetChangeApproval(svc *auth.SSOChangeService) {
+	h.changes = svc
+}
+
 // SetAuditService records SAML config changes in the organization's audit log.
-func (h *SAMLHandler) SetAuditService(svc *app.AuditService) {
+func (h *SAMLHandler) SetAuditService(svc *auditsvc.AuditService) {
 	h.audit = svc
 }
 
@@ -47,7 +55,7 @@ func (h *SAMLHandler) SetPublicURL(publicURL string) {
 
 // NewSAMLHandler creates the handler. cookieCfg + frontendURL drive the
 // browser login flow (session cookies + post-login redirect).
-func NewSAMLHandler(svc *app.SAMLService, cookieCfg CookieConfig, frontendURL string, log *logger.Logger) *SAMLHandler {
+func NewSAMLHandler(svc *auth.SAMLService, cookieCfg CookieConfig, frontendURL string, log *logger.Logger) *SAMLHandler {
 	return &SAMLHandler{svc: svc, cookieCfg: cookieCfg, frontendURL: frontendURL, logger: log.With("handler", "saml")}
 }
 
@@ -57,17 +65,41 @@ func NewSAMLHandler(svc *app.SAMLService, cookieCfg CookieConfig, frontendURL st
 // (Lax cookies are not sent on cross-site POST) — SAML therefore requires HTTPS.
 func samlRequestCookieName(org string) string { return "saml_authn_" + org }
 
+// The request-tracking cookie holds the AuthnRequest ID, followed by
+// samlForcedSuffix when the request asked for ForceAuthn. Stripping the
+// suffix only relaxes the freshness refusal for one's own sign-in: whether
+// the session may run sensitive actions depends on the signed AuthnInstant.
+const samlForcedSuffix = ".force"
+
+func samlRequestCookieValue(requestID string, forced bool) string {
+	if forced {
+		return requestID + samlForcedSuffix
+	}
+	return requestID
+}
+
+func parseSAMLRequestCookie(v string) (requestID string, forced bool) {
+	if id, ok := strings.CutSuffix(v, samlForcedSuffix); ok {
+		return id, true
+	}
+	return v, false
+}
+
+// isTrueParam reads a boolean query parameter ("true" or "1").
+func isTrueParam(v string) bool { return v == "true" || v == "1" }
+
 // Login handles GET /api/v1/auth/saml/{org}/login — SP-initiated login.
 func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
-	redirectURL, requestID, err := h.svc.Login(r.Context(), org, h.baseURL(r))
+	forceAuthn := isTrueParam(r.URL.Query().Get("reauth"))
+	redirectURL, requestID, err := h.svc.Login(r.Context(), org, h.baseURL(r), forceAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     samlRequestCookieName(org),
-		Value:    requestID,
+		Value:    samlRequestCookieValue(requestID, forceAuthn),
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
@@ -84,8 +116,10 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
 
 	var possibleRequestIDs []string
+	forcedAuthn := false
 	if c, cerr := r.Cookie(samlRequestCookieName(org)); cerr == nil && c.Value != "" {
-		possibleRequestIDs = []string{c.Value}
+		id, forced := parseSAMLRequestCookie(c.Value)
+		possibleRequestIDs, forcedAuthn = []string{id}, forced
 	}
 	// Clear the single-use request cookie regardless of the outcome.
 	http.SetCookie(w, &http.Cookie{
@@ -95,7 +129,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// A SAML response is a few KB; cap the form body the service parses.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	result, err := h.svc.ACS(r.Context(), org, h.baseURL(r), r, possibleRequestIDs)
+	result, err := h.svc.ACS(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), org, h.baseURL(r), r, possibleRequestIDs, forcedAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
@@ -266,7 +300,7 @@ func (h *SAMLHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 // SetConfig handles PUT /api/v1/settings/saml (JWT admin).
 // @Summary Set an organization's SAML config
-// @Description Platform admin console (RFC-022): runs against the organization in the path.
+// @Description Platform admin console (RFC-022): runs against the organization in the path. When the organization has an owner, the change is stored as pending (202, SSOChangeResponse) and takes effect only after an owner approves it; an organization without an owner yet gets it applied directly (200).
 // @Tags Admin Organization SSO
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -283,7 +317,7 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid JSON body").WriteJSON(w)
 		return
 	}
-	p, err := h.svc.UpsertConfig(r.Context(), tenantID, app.SAMLConfigInput{
+	in := auth.SAMLConfigInput{
 		IDPEntityID:    body.IDPEntityID,
 		IDPSSOURL:      body.IDPSSOURL,
 		IDPCertificate: body.IDPCertificate,
@@ -291,28 +325,53 @@ func (h *SAMLHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultRole:    body.DefaultRole,
 		AutoProvision:  body.AutoProvision,
 		Enabled:        body.Enabled,
-	})
-	if err != nil {
-		if errors.Is(err, shared.ErrValidation) {
-			apierror.BadRequest("invalid SAML configuration").WriteJSON(w)
+	}
+
+	// From the platform admin console the change waits for an owner of the
+	// organization, unless it has no owner yet (then SubmitSAML applies it).
+	var p *samldom.SAMLProvider
+	if by := ssoChangeRequester(r); by != nil {
+		if h.changes == nil {
+			writeSSOChangeApprovalUnavailable(w)
 			return
 		}
-		h.logger.Error("set saml config failed", "error", err)
-		apierror.InternalServerError("failed to save SAML configuration").WriteJSON(w)
+		res, serr := h.changes.SubmitSAML(r.Context(), tenantID, in, *by)
+		if serr != nil {
+			h.writeSetError(w, serr)
+			return
+		}
+		if !res.Applied {
+			writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+			return
+		}
+		p, err = h.svc.GetConfig(r.Context(), tenantID)
+	} else {
+		p, err = h.svc.UpsertConfig(r.Context(), tenantID, in)
+	}
+	if err != nil {
+		h.writeSetError(w, err)
 		return
 	}
-	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionSSOSAMLConfigUpdated, audit.ResourceTypeSAMLConfig, p.ID().String()).
-			WithResourceName(p.IDPEntityID()).
-			WithMessage("SAML single sign-on configuration saved").
-			WithMetadata("idp_entity_id", p.IDPEntityID()).
-			WithMetadata("idp_sso_url", p.IDPSSOURL()).
-			WithMetadata("idp_certificate_sha256", certificateFingerprint(p.IDPCertificate())).
-			WithMetadata("allowed_domains", p.AllowedDomains()).
-			WithMetadata("default_role", p.DefaultRole()).
-			WithMetadata("auto_provision", p.AutoProvision()).
-			WithMetadata("enabled", p.Enabled()))
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOSAMLConfigUpdated, audit.ResourceTypeSAMLConfig, p.ID().String()).
+		WithResourceName(p.IDPEntityID()).
+		WithMessage("SAML single sign-on configuration saved").
+		WithMetadata("idp_entity_id", p.IDPEntityID()).
+		WithMetadata("idp_sso_url", p.IDPSSOURL()).
+		WithMetadata("idp_certificate_sha256", certificateFingerprint(p.IDPCertificate())).
+		WithMetadata("allowed_domains", p.AllowedDomains()).
+		WithMetadata("default_role", p.DefaultRole()).
+		WithMetadata("auto_provision", p.AutoProvision()).
+		WithMetadata("enabled", p.Enabled()))
 	writeJSON(w, http.StatusOK, toSAMLConfigView(p))
+}
+
+func (h *SAMLHandler) writeSetError(w http.ResponseWriter, err error) {
+	if errors.Is(err, shared.ErrValidation) {
+		apierror.BadRequest("invalid SAML configuration").WriteJSON(w)
+		return
+	}
+	h.logger.Error("set saml config failed", "error", err)
+	apierror.InternalServerError("failed to save SAML configuration").WriteJSON(w)
 }
 
 // DeleteConfig handles DELETE /api/v1/settings/saml (JWT admin).
@@ -334,8 +393,7 @@ func (h *SAMLHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalServerError("failed to delete SAML configuration").WriteJSON(w)
 		return
 	}
-	logOrgSSOEvent(r.Context(), h.audit, h.logger, r,
-		app.NewSuccessEvent(audit.ActionSSOSAMLConfigDeleted, audit.ResourceTypeSAMLConfig, tenantID.String()).
-			WithMessage("SAML single sign-on configuration deleted"))
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOSAMLConfigDeleted, audit.ResourceTypeSAMLConfig, tenantID.String()).
+		WithMessage("SAML single sign-on configuration deleted"))
 	w.WriteHeader(http.StatusNoContent)
 }

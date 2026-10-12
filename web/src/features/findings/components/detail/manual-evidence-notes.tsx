@@ -8,16 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { usePermissions } from '@/context/permission-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
@@ -26,6 +16,9 @@ import {
   useDeleteFindingEvidence,
   type FindingEvidenceNote,
 } from '../../api/use-finding-evidence'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ManualEvidenceNotesSectionProps {
   findingId: string
@@ -73,15 +66,13 @@ function NoteCard({
         <div className="min-w-0 flex-1 space-y-2">
           <p className="text-sm whitespace-pre-wrap break-words">{note.description}</p>
           {hasUrl && (
-            <a
+            <SafeExternalLink
               href={note.url}
-              target="_blank"
-              rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm text-blue-400 hover:underline break-all"
             >
               {note.url}
               <ExternalLink className="h-3 w-3 shrink-0" />
-            </a>
+            </SafeExternalLink>
           )}
           <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
             {note.type && (
@@ -122,6 +113,7 @@ function NoteCard({
  * Backed by GET/POST /api/v1/findings/{id}/evidence{,/notes}.
  */
 export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSectionProps) {
+  const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const canWrite = hasPermission('findings:write')
 
@@ -266,42 +258,30 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
         )
       )}
 
-      <AlertDialog
+      <ConfirmDialog
         open={!!noteToDelete}
         onOpenChange={(open) => {
           if (!open && !isDeleting) setNoteToDelete(null)
         }}
-      >
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-start">Delete evidence note?</AlertDialogTitle>
-            <AlertDialogDescription className="text-sm">
-              This will permanently remove this evidence note from the finding. This action cannot
-              be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="mt-2">
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault()
-                void handleConfirmDelete()
-              }}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        destructive
+        title={t('confirm.evidenceNote.deleteTitle', 'Delete this evidence note?')}
+        desc={t(
+          'confirm.evidenceNote.deleteDesc',
+          'The note is permanently removed from the finding. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? (
+            <>
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              {t('confirm.deleting', 'Deleting…')}
+            </>
+          ) : (
+            t('confirm.delete', 'Delete')
+          )
+        }
+        isLoading={isDeleting}
+        handleConfirm={() => handleConfirmDelete()}
+      />
     </div>
   )
 }

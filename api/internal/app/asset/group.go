@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/metrics"
 
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -58,7 +59,7 @@ type CreateAssetGroupInput struct {
 	Owner        string   `validate:"max=255"`
 	OwnerEmail   string   `validate:"omitempty,email,max=255"`
 	Tags         []string `validate:"max=20,dive,max=50"`
-	AssetIDs     []string `validate:"dive,uuid"`
+	AssetIDs     []string `validate:"max=1000,dive,uuid"`
 }
 
 // UpdateAssetGroupInput represents input for updating an asset group.
@@ -139,47 +140,73 @@ func (s *AssetGroupService) CreateAssetGroup(ctx context.Context, input CreateAs
 		group.SetTags(input.Tags)
 	}
 
+	// Members are checked before the group exists, so a refused id never
+	// leaves a half-created group behind.
+	assetIDs, err := s.memberAssetIDs(ctx, tenantID, input.AssetIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.repo.Create(ctx, group); err != nil {
 		return nil, err
 	}
 
-	// Add assets to group if provided
-	if len(input.AssetIDs) > 0 {
-		assetIDs := make([]shared.ID, 0, len(input.AssetIDs))
-		for _, idStr := range input.AssetIDs {
-			id, err := shared.IDFromString(idStr)
-			if err != nil {
-				s.logger.Warn("invalid asset ID", "id", idStr, "error", err)
-				continue
-			}
-			assetIDs = append(assetIDs, id)
+	if len(assetIDs) > 0 {
+		if _, err := s.repo.AddAssets(ctx, group.ID(), assetIDs); err != nil {
+			s.logger.Error("failed to add assets to group", "group_id", group.ID(), "error", err)
 		}
-		if len(assetIDs) > 0 {
-			if err := s.repo.AddAssets(ctx, group.ID(), assetIDs); err != nil {
-				s.logger.Error("failed to add assets to group", "group_id", group.ID(), "error", err)
-			}
-			// Recalculate counts
-			if err := s.repo.RecalculateCounts(ctx, group.ID()); err != nil {
-				s.logger.Error("failed to recalculate counts", "group_id", group.ID(), "error", err)
-			}
-			// Refresh group from database
-			if refreshed, err := s.repo.GetByTenantAndID(ctx, tenantID, group.ID()); err == nil && refreshed != nil {
-				group = refreshed
-			}
+		// Recalculate counts
+		if err := s.repo.RecalculateCounts(ctx, group.ID()); err != nil {
+			s.logger.Error("failed to recalculate counts", "group_id", group.ID(), "error", err)
+		}
+		// Refresh group from database
+		if refreshed, err := s.repo.GetByTenantAndID(ctx, tenantID, group.ID()); err == nil && refreshed != nil {
+			group = refreshed
 		}
 	}
 
 	s.logger.Info("asset group created", "id", group.ID(), "name", input.Name)
-	return group, nil
+	return s.readerView(ctx, tenantID, group)
 }
 
-// GetAssetGroup retrieves an asset group by tenant and ID.
+// GetAssetGroup retrieves an asset group by tenant and ID, as the caller
+// sees it: for a restricted reader the counts, risk and findings cover only
+// the members in their data scope (L-18).
 func (s *AssetGroupService) GetAssetGroup(ctx context.Context, tenantIDStr string, id shared.ID) (*assetgroupdom.AssetGroup, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
-	return s.repo.GetByTenantAndID(ctx, tenantID, id)
+	group, err := s.repo.GetByTenantAndID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.readerView(ctx, tenantID, group)
+}
+
+// readerView returns group with the counts the caller may see. An
+// unrestricted caller gets the stored row; a restricted one gets the group
+// re-read with the counts computed over the members in their data scope.
+// Every handler response that carries a group goes through it.
+func (s *AssetGroupService) readerView(ctx context.Context, tenantID shared.ID, group *assetgroupdom.AssetGroup) (*assetgroupdom.AssetGroup, error) {
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	if scope == nil {
+		return group, nil
+	}
+	filter := assetgroupdom.NewFilter().WithTenantID(tenantID.String())
+	filter.IDs = []shared.ID{group.ID()}
+	filter.DataScope = scope
+	res, err := s.repo.List(ctx, filter, assetgroupdom.NewListOptions(), pagination.New(1, 1))
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Data) == 0 {
+		return nil, shared.ErrNotFound
+	}
+	return res.Data[0], nil
 }
 
 // UpdateAssetGroup updates an existing asset group.
@@ -257,7 +284,7 @@ func (s *AssetGroupService) UpdateAssetGroup(ctx context.Context, tenantIDStr st
 	}
 
 	s.logger.Info("asset group updated", "id", id)
-	return group, nil
+	return s.readerView(ctx, tenantID, group)
 }
 
 // DeleteAssetGroup deletes an asset group within the given tenant scope.
@@ -337,6 +364,16 @@ func (s *AssetGroupService) ListAssetGroups(ctx context.Context, input ListAsset
 
 	page := pagination.New(input.Page, input.PerPage)
 
+	// A restricted reader's counts, risk, findings (and the filters and
+	// sorts on them) cover only the members in their data scope (L-18).
+	if tid, err := shared.IDFromString(input.TenantID); err == nil {
+		scope, err := s.dataScope.Resolve(ctx, tid)
+		if err != nil {
+			return nil, fmt.Errorf("resolve data scope: %w", err)
+		}
+		filter.DataScope = scope
+	}
+
 	result, err := s.repo.List(ctx, filter, opts, page)
 	if err != nil {
 		return nil, err
@@ -356,7 +393,63 @@ func (s *AssetGroupService) GetAssetGroupStats(ctx context.Context, tenantID str
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-	return s.repo.GetStats(ctx, tid)
+	scope, err := s.dataScope.Resolve(ctx, tid)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetStats(ctx, tid, scope)
+}
+
+// errAssetsNotFound is the one answer for any member id the caller may not
+// add: unknown, another tenant's, or outside the caller's data scope. The
+// three are indistinguishable, so the response confirms nothing about ids
+// the caller cannot see.
+var errAssetsNotFound = fmt.Errorf("%w: one or more assets do not exist", shared.ErrValidation)
+
+// parseAssetIDs parses and de-duplicates asset id strings, dropping
+// unparseable ones (the handlers already reject those).
+func parseAssetIDs(raw []string) []shared.ID {
+	seen := make(map[shared.ID]struct{}, len(raw))
+	ids := make([]shared.ID, 0, len(raw))
+	for _, idStr := range raw {
+		id, err := shared.IDFromString(idStr)
+		if err != nil || id.IsZero() {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// memberAssetIDs parses the asset ids a caller asks to add to a group and
+// refuses the whole request unless every one is an asset of tenantID inside
+// the caller's data scope.
+func (s *AssetGroupService) memberAssetIDs(ctx context.Context, tenantID shared.ID, raw []string) ([]shared.ID, error) {
+	ids := parseAssetIDs(raw)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	own, err := s.repo.FilterTenantAssetIDs(ctx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	if len(own) != len(ids) {
+		return nil, errAssetsNotFound
+	}
+	inScope, err := s.dataScope.FilterForCaller(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	for _, id := range ids {
+		if !inScope(id) {
+			return nil, errAssetsNotFound
+		}
+	}
+	return ids, nil
 }
 
 // verifyGroupTenant ensures the group belongs to the given tenant before any
@@ -380,22 +473,24 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID strin
 	if err := s.verifyGroupTenant(ctx, tenantID, groupID); err != nil {
 		return err
 	}
+	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
 
-	ids := make([]shared.ID, 0, len(assetIDs))
-	for _, idStr := range assetIDs {
-		id, err := shared.IDFromString(idStr)
-		if err != nil {
-			continue
-		}
-		ids = append(ids, id)
+	ids, err := s.memberAssetIDs(ctx, tid, assetIDs)
+	if err != nil {
+		return err
 	}
-
 	if len(ids) == 0 {
 		return nil
 	}
 
-	if err := s.repo.AddAssets(ctx, groupID, ids); err != nil {
+	matched, err := s.repo.AddAssets(ctx, groupID, ids)
+	if err != nil {
 		return err
+	}
+	if matched != len(ids) {
+		// The repository admits only the group's tenant; a mismatch here
+		// means an asset moved or vanished since the check above.
+		return errAssetsNotFound
 	}
 
 	// Recalculate counts
@@ -409,10 +504,11 @@ func (s *AssetGroupService) AddAssetsToGroup(ctx context.Context, tenantID strin
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_reconcile")
 					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
 				}
 			}()
-			s.scopeRuleReconciler(context.Background(), gid)
+			s.scopeRuleReconciler(context.Background(), tid, gid)
 		}()
 	}
 
@@ -425,14 +521,22 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 		return err
 	}
 
-	ids := make([]shared.ID, 0, len(assetIDs))
-	for _, idStr := range assetIDs {
-		id, err := shared.IDFromString(idStr)
-		if err != nil {
-			continue
-		}
-		ids = append(ids, id)
+	tid, _ := shared.IDFromString(tenantID) // validated by verifyGroupTenant
+
+	// A scoped member removes only the members they can see; out-of-scope
+	// ids are skipped exactly like ids that are not members.
+	ids := parseAssetIDs(assetIDs)
+	inScope, err := s.dataScope.FilterForCaller(ctx, tid, ids)
+	if err != nil {
+		return fmt.Errorf("resolve data scope: %w", err)
 	}
+	kept := ids[:0]
+	for _, id := range ids {
+		if inScope(id) {
+			kept = append(kept, id)
+		}
+	}
+	ids = kept
 
 	if len(ids) == 0 {
 		return nil
@@ -453,10 +557,11 @@ func (s *AssetGroupService) RemoveAssetsFromGroup(ctx context.Context, tenantID 
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
+					metrics.RecordPanic("scope_reconcile")
 					s.logger.Error("panic in scope rule reconciliation", "group_id", gid.String(), "recover", r)
 				}
 			}()
-			s.scopeRuleReconciler(context.Background(), gid)
+			s.scopeRuleReconciler(context.Background(), tid, gid)
 		}()
 	}
 

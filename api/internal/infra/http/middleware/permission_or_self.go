@@ -3,7 +3,6 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 )
 
@@ -31,7 +30,7 @@ func RequirePermissionOrSelf(perm permission.Permission, param string) func(http
 					return
 				}
 			}
-			apierror.Forbidden("Insufficient permissions").WriteJSON(w)
+			permissionDenied(perm.String()).WriteJSON(w)
 		})
 	}
 }

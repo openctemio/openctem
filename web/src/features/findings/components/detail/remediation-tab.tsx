@@ -42,6 +42,8 @@ import type { Remediation, RemediationStepStatus, FindingDetail } from '../../ty
 import { CodeHighlighter } from './code-highlighter'
 import { MobilizationBriefCard } from './mobilization-brief-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface RemediationTabProps {
   remediation: Remediation
@@ -63,6 +65,7 @@ const EFFORT_CONFIG: Record<string, { label: string; color: string }> = {
 }
 
 export function RemediationTab({ remediation, finding }: RemediationTabProps) {
+  const { t } = useTranslation()
   const [copiedCode, setCopiedCode] = useState(false)
 
   const { hasPermission } = usePermissions()
@@ -345,11 +348,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
         ) : (
           <div className="rounded-lg border border-dashed p-4 text-center">
             <p className="text-muted-foreground text-sm">
-              No remediation recommendation available from the scanner.
-            </p>
-            <p className="text-muted-foreground text-xs mt-1">
-              Consult the vulnerability documentation or security guidelines for fix
-              recommendations.
+              {t('findings.remediation.none', 'The scanner gave no remediation advice.')}
             </p>
           </div>
         )}
@@ -400,12 +399,14 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                   </button>
                 </div>
                 {/* Code content */}
-                <ScrollArea className="p-3 max-h-[400px]">
-                  <CodeHighlighter
-                    code={fixCode.trim()}
-                    className="bg-transparent"
-                    showLineNumbers={true}
-                  />
+                <ScrollArea className="max-h-[400px]">
+                  <div className="p-3">
+                    <CodeHighlighter
+                      code={fixCode.trim()}
+                      className="bg-transparent"
+                      showLineNumbers={true}
+                    />
+                  </div>
                 </ScrollArea>
               </div>
               <p className="text-muted-foreground text-xs mt-2">
@@ -605,15 +606,13 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
             <ul className="space-y-2">
               {remediationReferences.map((ref, index) => (
                 <li key={index}>
-                  <a
+                  <SafeExternalLink
                     href={ref}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-blue-400 hover:underline break-all"
                   >
                     <ExternalLink className="h-3 w-3 shrink-0" />
                     {ref}
-                  </a>
+                  </SafeExternalLink>
                 </li>
               ))}
             </ul>

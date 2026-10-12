@@ -59,3 +59,19 @@ func SensorKeyPeppers(explicit, encryptionKey string, previous ...string) (peppe
 	add(encryptionKey)
 	return pepper, legacy
 }
+
+// RotatedEncryptionKeyPeppers returns the peppers sensor keys may have been
+// hashed with under encryption keys that are being rotated out
+// (APP_ENCRYPTION_KEY_PREVIOUS): for each, the pepper derived from it and the
+// key itself (the pepper before RFC-032 Phase 0). Pass them as previous to
+// SensorKeyPeppers so sensors keep authenticating through a key rotation.
+func RotatedEncryptionKeyPeppers(previousKeys []string) []string {
+	out := make([]string, 0, 2*len(previousKeys))
+	for _, k := range previousKeys {
+		if k == "" {
+			continue
+		}
+		out = append(out, DeriveSensorKeyPepper(k), k)
+	}
+	return out
+}

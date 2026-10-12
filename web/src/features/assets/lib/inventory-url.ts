@@ -12,6 +12,8 @@
  */
 
 import type { SortingState } from '@tanstack/react-table'
+import { isPropertyKey } from '@/features/asset-types/lib/property-schema'
+import { ASSET_LENSES, type AssetLens } from '@/features/asset-types/registry.generated'
 import type { AssetSearchFilters } from '../hooks/use-assets'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
 
@@ -20,11 +22,16 @@ export type InventoryFilters = Pick<
   AssetSearchFilters,
   | 'search'
   | 'types'
+  | 'minRiskScore'
+  | 'subType'
+  | 'propertiesFilter'
   | 'criticalities'
   | 'statuses'
   | 'scopes'
   | 'exposures'
   | 'tags'
+  | 'tagsMode'
+  | 'excludeTags'
   | 'dataClassifications'
   | 'environments'
   | 'providers'
@@ -33,13 +40,32 @@ export type InventoryFilters = Pick<
   | 'isControlPlane'
   | 'isInternetAccessible'
   | 'isCrownJewel'
+  | 'programAssets'
+  | 'freshness'
   | 'hasFindings'
   | 'lastSeenBefore'
   | 'lastSeenAfter'
+  | 'expiresBefore'
+  | 'expiresAfter'
+  | 'attribution'
   | 'sort'
   | 'page'
   | 'pageSize'
->
+> & {
+  /** One registry lens (`?lens=code`): every type of it, aliases included. */
+  lens?: AssetLens
+}
+
+/** The risk score from which an asset counts as high risk (the API's high_risk_count). */
+export const HIGH_RISK_SCORE = 70
+
+const LENS_PARAM = 'lens'
+const TAGS_MODE_PARAM = 'tags_mode'
+const MIN_RISK_PARAM = 'min_risk_score'
+
+function isLens(v: string): v is AssetLens {
+  return ASSET_LENSES.some((l) => l.id === v)
+}
 
 // Array-valued filter keys and their URL param names.
 const ARRAY_PARAMS = {
@@ -49,10 +75,12 @@ const ARRAY_PARAMS = {
   scopes: 'scopes',
   exposures: 'exposures',
   tags: 'tags',
+  excludeTags: 'exclude_tags',
   dataClassifications: 'data_classifications',
   environments: 'environments',
   providers: 'providers',
   businessUnitIds: 'business_unit_ids',
+  attribution: 'attribution',
 } as const
 
 // Boolean-valued filter keys and their URL param names.
@@ -67,9 +95,14 @@ const BOOL_PARAMS = {
 // String-valued filter keys and their URL param names.
 const STRING_PARAMS = {
   search: 'q',
+  subType: 'sub_type',
   sort: 'sort',
   lastSeenBefore: 'last_seen_before',
   lastSeenAfter: 'last_seen_after',
+  expiresBefore: 'expires_before',
+  expiresAfter: 'expires_after',
+  programAssets: 'program_assets',
+  freshness: 'freshness',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS
@@ -106,6 +139,19 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
     if (raw) out[key] = raw
   }
 
+  const props = parsePropertiesParam(sp.get(PROPERTIES_PARAM))
+  if (props) out.propertiesFilter = props
+
+  // An unknown lens would only ever match nothing: drop it.
+  const lens = sp.get(LENS_PARAM)
+  if (lens && isLens(lens)) out.lens = lens
+  // "any" is the default and never written; anything else is ignored.
+  if (sp.get(TAGS_MODE_PARAM) === 'all') out.tagsMode = 'all'
+  const minRisk = Number(sp.get(MIN_RISK_PARAM))
+  if (sp.get(MIN_RISK_PARAM) && Number.isInteger(minRisk) && minRisk >= 0 && minRisk <= 100) {
+    out.minRiskScore = minRisk
+  }
+
   const page = Number(sp.get('page'))
   if (Number.isFinite(page) && page > 0) out.page = page
   const perPage = Number(sp.get('per_page'))
@@ -130,10 +176,121 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
     const v = f[key]
     if (v) sp.set(STRING_PARAMS[key], v)
   }
+  const props = serializePropertiesParam(f.propertiesFilter)
+  if (props) sp.set(PROPERTIES_PARAM, props)
+  if (f.lens) sp.set(LENS_PARAM, f.lens)
+  if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
+  if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
 
   return sp
+}
+
+/**
+ * Attribute filters, as the API takes them: `properties=key:value,key:value`
+ * (repeat a key for OR). Only schema keys are kept: a key outside the
+ * registry can never match and is dropped from the URL.
+ */
+export const PROPERTIES_PARAM = 'properties'
+
+function parsePropertiesParam(raw: string | null): Record<string, string[]> | undefined {
+  if (!raw) return undefined
+  const out: Record<string, string[]> = {}
+  for (const pair of raw.split(',')) {
+    const i = pair.indexOf(':')
+    if (i <= 0) continue
+    const key = pair.slice(0, i).trim()
+    const value = pair.slice(i + 1).trim()
+    if (!value || !isPropertyKey(key)) continue
+    const list = (out[key] ??= [])
+    if (!list.includes(value)) list.push(value)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function serializePropertiesParam(p: Record<string, string[]> | undefined): string | undefined {
+  if (!p) return undefined
+  const parts: string[] = []
+  for (const key of Object.keys(p).sort()) {
+    for (const v of p[key] ?? []) parts.push(`${key}:${v}`)
+  }
+  return parts.length > 0 ? parts.join(',') : undefined
+}
+
+/** The filter with one attribute value toggled (a key with no value left is removed). */
+export function togglePropertyFilter(
+  f: InventoryFilters,
+  key: string,
+  value: string
+): InventoryFilters {
+  const current = { ...(f.propertiesFilter ?? {}) }
+  const values = current[key] ?? []
+  const next = values.includes(value) ? values.filter((v) => v !== value) : [...values, value]
+  if (next.length > 0) current[key] = next
+  else delete current[key]
+  return {
+    ...f,
+    propertiesFilter: Object.keys(current).length > 0 ? current : undefined,
+    page: 1,
+  }
+}
+
+/**
+ * The filter with one tag toggled in the include list. A tag that was
+ * excluded becomes included (one tag is never both). Match mode is kept
+ * while two or more tags remain.
+ */
+export function toggleIncludedTag(f: InventoryFilters, tag: string): InventoryFilters {
+  const tags = f.tags ?? []
+  const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]
+  const excluded = (f.excludeTags ?? []).filter((t) => t !== tag)
+  return {
+    ...f,
+    tags: next.length > 0 ? next : undefined,
+    tagsMode: next.length > 0 ? f.tagsMode : undefined,
+    excludeTags: excluded.length > 0 ? excluded : undefined,
+    page: 1,
+  }
+}
+
+/** The filter with one tag toggled in the exclude list (removed from the include list). */
+export function toggleExcludedTag(f: InventoryFilters, tag: string): InventoryFilters {
+  const excluded = f.excludeTags ?? []
+  const next = excluded.includes(tag) ? excluded.filter((t) => t !== tag) : [...excluded, tag]
+  const tags = (f.tags ?? []).filter((t) => t !== tag)
+  return {
+    ...f,
+    tags: tags.length > 0 ? tags : undefined,
+    tagsMode: tags.length > 0 ? f.tagsMode : undefined,
+    excludeTags: next.length > 0 ? next : undefined,
+    page: 1,
+  }
+}
+
+/**
+ * Attribution values the inventory offers (RFC-036). With none selected the
+ * inventory shows only assets that are the organisation's: confirmed
+ * (including assets with no attribution record), dependency and monitor only
+ * (the API alias `approved`). Names awaiting review and rejected names are
+ * hidden until asked for.
+ */
+export const ATTRIBUTION_FILTER_VALUES = [
+  'confirmed',
+  'unknown',
+  'needs_review',
+  'candidate',
+  'dependency',
+  'monitor_only',
+  'rejected',
+] as const
+
+/** What the inventory asks the API for when no attribution is selected. */
+export const DEFAULT_ATTRIBUTION = ['approved']
+
+/** The attribution query for the current filters. */
+export function attributionQuery(f: InventoryFilters): string[] {
+  return f.attribution?.length ? f.attribution : DEFAULT_ATTRIBUTION
 }
 
 /** Same default as the other server-paginated lists (Findings). */
@@ -145,7 +302,19 @@ export function isInventoryFilterEmpty(f: InventoryFilters): boolean {
     (k) => !(f[k] as string[] | undefined)?.length
   )
   const boolsEmpty = (Object.keys(BOOL_PARAMS) as BoolKey[]).every((k) => f[k] === undefined)
-  return arraysEmpty && boolsEmpty && !f.search && !f.lastSeenBefore && !f.lastSeenAfter
+  return (
+    arraysEmpty &&
+    boolsEmpty &&
+    !f.search &&
+    !f.subType &&
+    !f.lens &&
+    f.minRiskScore === undefined &&
+    !f.propertiesFilter &&
+    !f.lastSeenBefore &&
+    !f.lastSeenAfter &&
+    !f.expiresBefore &&
+    !f.expiresAfter
+  )
 }
 
 /** Count of active filter dimensions (for the "N filters" affordance). */
@@ -158,7 +327,12 @@ export function countActiveFilters(f: InventoryFilters): number {
     if (f[k] !== undefined) n += 1
   }
   if (f.search) n += 1
+  if (f.subType) n += 1
+  if (f.lens) n += 1
+  if (f.minRiskScore !== undefined) n += 1
+  for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
+  if (f.expiresBefore || f.expiresAfter) n += 1
   return n
 }
 

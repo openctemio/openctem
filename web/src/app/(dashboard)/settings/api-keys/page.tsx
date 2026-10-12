@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -12,68 +12,31 @@ import {
   StackedCell,
   ErrorState,
 } from '@/features/shared'
-import { StatsCard } from '@/features/shared/components/stats-card'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { Can, usePermissions, useCanMutate } from '@/lib/permissions'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  KeyRound,
-  Plus,
-  ShieldCheck,
-  AlertTriangle,
-  Eye,
-  Ban,
-  Trash2,
-  Copy,
-  Check,
-} from 'lucide-react'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
+import { useDebounce } from '@/hooks/use-debounce'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { KeyRound, Plus, Ban, Trash2 } from 'lucide-react'
 import {
   useApiKeys,
   useCreateApiKey,
   useRevokeApiKey,
   useDeleteApiKey,
 } from '@/features/api-keys/api/use-api-keys'
+import {
+  GenerateKeyDialog,
+  RevealKeyDialog,
+} from '@/features/api-keys/components/generate-key-dialog'
 import type { APIKey } from '@/features/api-keys/types/api-key.types'
 import { toast } from 'sonner'
-import { copyToClipboard } from '@/lib/clipboard'
-
-const AVAILABLE_SCOPES = [
-  'assets:read',
-  'findings:read',
-  'scans:read',
-  'integrations:read',
-  'assets:write',
-  'findings:write',
-  'scans:write',
-]
-
-const EXPIRY_OPTIONS = [
-  { value: '30', label: '30 days' },
-  { value: '90', label: '90 days' },
-  { value: '365', label: '1 year' },
-  { value: '0', label: 'Never' },
-]
+import { useTranslation } from '@/context/i18n-provider'
 
 function isExpired(k: APIKey): boolean {
   return !!k.expires_at && new Date(k.expires_at).getTime() < Date.now()
@@ -100,154 +63,13 @@ function StatusBadge({ k }: { k: APIKey }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// Generate dialog + one-time reveal
-// ─────────────────────────────────────────────────────────
-
-function GenerateKeyDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  onCreated: (plaintext: string) => void
-}) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [expires, setExpires] = useState('90')
-  const [scopes, setScopes] = useState<string[]>(['assets:read', 'findings:read'])
-  const { trigger, isMutating } = useCreateApiKey()
-
-  function toggleScope(s: string) {
-    setScopes((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name) return toast.error('Name is required')
-    if (scopes.length === 0) return toast.error('Select at least one scope')
-    try {
-      const res = await trigger({
-        name,
-        description: description || undefined,
-        scopes,
-        expires_in_days: Number(expires),
-      })
-      onCreated(res?.key ?? '')
-      onOpenChange(false)
-      setName('')
-      setDescription('')
-      setExpires('90')
-      setScopes(['assets:read', 'findings:read'])
-    } catch {
-      toast.error('Failed to create API key')
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Generate API key</DialogTitle>
-          <DialogDescription>
-            Scope the key to the minimum permissions needed. The secret is shown once.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="key-name">Name</Label>
-            <Input
-              id="key-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="CI pipeline"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key-desc">Description (optional)</Label>
-            <Input
-              id="key-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key-expiry">Expires</Label>
-            <Select value={expires} onValueChange={setExpires}>
-              <SelectTrigger id="key-expiry">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {EXPIRY_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Scopes</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {AVAILABLE_SCOPES.map((s) => (
-                <label key={s} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
-                  <span className="font-mono text-xs">{s}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isMutating}>
-              {isMutating ? 'Generating...' : 'Generate'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function RevealKeyDialog({ value, onClose }: { value: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
-  async function copy() {
-    await copyToClipboard(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-  return (
-    <Dialog open={!!value} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Copy your API key</DialogTitle>
-          <DialogDescription>
-            This is the only time the full key is shown. Store it securely.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <code className="flex-1 break-all text-xs">{value}</code>
-          <Button size="icon" variant="ghost" onClick={copy} title="Copy">
-            {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-          </Button>
-        </div>
-        <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ─────────────────────────────────────────────────────────
 // Row actions (revoke / delete) — inline prominent buttons
 // ─────────────────────────────────────────────────────────
 
 function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
+  const { t } = useTranslation()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [revokeOpen, setRevokeOpen] = useState(false)
   const { trigger: revoke, isMutating: revoking } = useRevokeApiKey()
   const { trigger: del, isMutating: deleting } = useDeleteApiKey()
 
@@ -255,9 +77,10 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
     try {
       await revoke(k.id)
       toast.success('Key revoked')
+      setRevokeOpen(false)
       onChanged()
-    } catch {
-      toast.error('Failed to revoke')
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to revoke the key'))
     }
   }
   async function handleDelete() {
@@ -266,45 +89,65 @@ function KeyRowActions({ k, onChanged }: { k: APIKey; onChanged: () => void }) {
       toast.success('Key deleted')
       setDeleteOpen(false)
       onChanged()
-    } catch {
-      toast.error('Failed to delete')
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to delete the key'))
     }
   }
 
   return (
     <div className="flex justify-end gap-1">
       {isActive(k) && (
-        <Can permission={Permission.ApiKeysWrite}>
+        <Can route="POST /api/v1/api-keys">
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleRevoke}
+            onClick={() => setRevokeOpen(true)}
             disabled={revoking}
-            title="Revoke"
+            title={t('confirm.revoke', 'Revoke')}
+            aria-label={t('confirm.apiKey.revokeLabel', 'Revoke {name}', { name: k.name })}
           >
             <Ban className="h-4 w-4 text-warning" />
           </Button>
         </Can>
       )}
-      <Can permission={Permission.ApiKeysDelete}>
+      <Can route="DELETE /api/v1/api-keys/{id}">
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setDeleteOpen(true)}
-          title="Delete"
+          title={t('confirm.delete', 'Delete')}
+          aria-label={t('confirm.apiKey.deleteLabel', 'Delete {name}', { name: k.name })}
           className="text-destructive hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
       </Can>
       <ConfirmDialog
+        open={revokeOpen}
+        onOpenChange={setRevokeOpen}
+        title={t('confirm.apiKey.revokeTitle', 'Revoke the API key {name}?', { name: k.name })}
+        desc={t(
+          'confirm.apiKey.revokeDesc',
+          'Every client using this key stops working at once. A revoked key cannot be re-enabled.'
+        )}
+        confirmText={revoking ? t('confirm.revoking', 'Revoking…') : t('confirm.revoke', 'Revoke')}
+        destructive
+        isLoading={revoking}
+        typeToConfirm={k.name}
+        handleConfirm={() => void handleRevoke()}
+      />
+      <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={`Delete ${k.name}?`}
-        desc="Any client using this key will immediately lose access. This cannot be undone."
-        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        title={t('confirm.apiKey.deleteTitle', 'Delete the API key {name}?', { name: k.name })}
+        desc={t(
+          'confirm.apiKey.deleteDesc',
+          'Every client using this key loses access at once, and the key leaves the list. This cannot be undone.'
+        )}
+        confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
         destructive
         isLoading={deleting}
+        typeToConfirm={k.name}
         handleConfirm={() => void handleDelete()}
       />
     </div>
@@ -329,15 +172,27 @@ function LoadingSkeleton() {
   )
 }
 
+const API_KEY_PAGE_SIZES = [10, 20, 50, 100]
+
 export default function APIKeysPage() {
-  const { data, error, isLoading, mutate } = useApiKeys()
+  const list = useListParams({ pageSizes: API_KEY_PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
+  const resetPage = useCallback(() => setPage(1), [setPage])
+  const [searchParam, setSearchParam] = useUrlFilter('q', '')
+  const search = useDebounce(searchParam.trim(), 300)
+  const { data, error, isLoading, mutate } = useApiKeys({
+    page: pagination.pageIndex + 1,
+    perPage: pagination.pageSize,
+    search: search || undefined,
+  })
   // Owners and administrators see every key of the organization; anyone else
   // gets only their own keys from the API, and cannot mint or revoke keys.
-  const { can, isAdmin } = usePermissions()
-  const canGenerate = can(Permission.ApiKeysWrite)
+  const { isAdmin } = usePermissions()
+  const canGenerate = useCanMutate('POST /api/v1/api-keys')
   const ownKeysOnly = !isAdmin()
   const [genOpen, setGenOpen] = useState(false)
   const [newKey, setNewKey] = useState('')
+  const { trigger: createKey, isMutating: creating } = useCreateApiKey()
 
   const keys = useMemo(() => data?.data ?? [], [data])
 
@@ -409,13 +264,7 @@ export default function APIKeysPage() {
     [mutate]
   )
 
-  const stats = useMemo(() => {
-    const active = keys.filter(isActive).length
-    const expired = keys.filter(isExpired).length
-    const scopes = new Set<string>()
-    keys.forEach((k) => k.scopes.forEach((s) => scopes.add(s)))
-    return { total: keys.length, active, expired, scopes: scopes.size }
-  }, [keys])
+  const total = data?.total ?? 0
 
   if (isLoading) return <LoadingSkeleton />
   // A failed read must not render as "No API keys yet" with all-zero stats —
@@ -439,30 +288,6 @@ export default function APIKeysPage() {
         )}
       </PageHeader>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <StatsCard title="Total Keys" value={stats.total} icon={KeyRound} description="All keys" />
-        <StatsCard
-          title="Active Keys"
-          value={stats.active}
-          icon={ShieldCheck}
-          changeType={stats.active > 0 ? 'positive' : 'neutral'}
-          description="Currently valid"
-        />
-        <StatsCard
-          title="Expired Keys"
-          value={stats.expired}
-          icon={AlertTriangle}
-          changeType={stats.expired > 0 ? 'negative' : 'neutral'}
-          description="Need rotation"
-        />
-        <StatsCard
-          title="Unique Scopes"
-          value={stats.scopes}
-          icon={Eye}
-          description="Permissions granted"
-        />
-      </div>
-
       <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -476,7 +301,7 @@ export default function APIKeysPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {keys.length === 0 ? (
+          {total === 0 && !search ? (
             <EmptyState
               icon={KeyRound}
               title="No API keys yet"
@@ -499,7 +324,26 @@ export default function APIKeysPage() {
             <DataTable
               columns={columns}
               data={keys}
-              searchPlaceholder="Search API keys..."
+              getRowId={(k) => k.id}
+              manualPagination
+              rowCount={total}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageSizeOptions={API_KEY_PAGE_SIZES}
+              paginationNoun="keys"
+              showSearch={false}
+              toolbarStart={
+                <Input
+                  placeholder="Search API keys..."
+                  value={searchParam}
+                  onChange={(e) => {
+                    setSearchParam(e.target.value)
+                    resetPage()
+                  }}
+                  className="h-9 max-w-sm"
+                  aria-label="Search API keys"
+                />
+              }
               emptyMessage="No API keys"
               emptyDescription="No API keys match your search."
             />
@@ -510,6 +354,8 @@ export default function APIKeysPage() {
       <GenerateKeyDialog
         open={genOpen}
         onOpenChange={setGenOpen}
+        onSubmit={(req) => createKey(req)}
+        isMutating={creating}
         onCreated={(plaintext) => {
           setNewKey(plaintext)
           mutate()

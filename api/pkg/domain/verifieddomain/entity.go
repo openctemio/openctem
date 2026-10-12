@@ -32,6 +32,24 @@ func (s Status) IsValid() bool {
 	return false
 }
 
+// Purpose is what a verified domain is trusted for (research/22 owner
+// decision E6). Both prove the tenant controls the domain's DNS; only an
+// SSO-purpose domain admits users by email domain (SSO JIT, SCIM).
+type Purpose string
+
+const (
+	// PurposeEASM: a tenant verified the domain itself for attack-surface
+	// management. It strengthens attribution (fqdn_under_verified_root) and
+	// never admits anyone to sign in.
+	PurposeEASM Purpose = "easm"
+	// PurposeSSO: set up by a platform administrator. Admits SSO JIT and
+	// SCIM users of the domain, and counts for EASM too.
+	PurposeSSO Purpose = "sso"
+)
+
+// IsValid reports whether p is a known purpose.
+func (p Purpose) IsValid() bool { return p == PurposeEASM || p == PurposeSSO }
+
 // VerifiedDomain is a tenant's claim over an email domain, proven via DNS TXT.
 type VerifiedDomain struct {
 	id                shared.ID
@@ -39,10 +57,21 @@ type VerifiedDomain struct {
 	domain            string
 	verificationToken string
 	status            Status
+	purpose           Purpose
 	verifiedAt        *time.Time
 	lastCheckedAt     *time.Time
-	createdAt         time.Time
-	updatedAt         time.Time
+	// lapsedAt is when a verified row last lost its DNS proof; another
+	// organization may claim the domain only ClaimDisputeWindow after it.
+	lapsedAt *time.Time
+	// claimConflict marks a row of a domain that several organizations had
+	// verified for SSO before claims were exclusive (migration 001303). The
+	// platform administrator resolves it; until then the row keeps working.
+	claimConflict bool
+	// jitDisabled / jitRole: per-domain just-in-time provisioning (jit.go).
+	jitDisabled bool
+	jitRole     string
+	createdAt   time.Time
+	updatedAt   time.Time
 }
 
 // New creates a pending VerifiedDomain. The domain is normalized and validated;
@@ -63,6 +92,7 @@ func New(id, tenantID shared.ID, domain, token string) (*VerifiedDomain, error) 
 		domain:            normalized,
 		verificationToken: token,
 		status:            StatusPending,
+		purpose:           PurposeSSO,
 		createdAt:         now,
 		updatedAt:         now,
 	}, nil
@@ -82,6 +112,7 @@ func Reconstruct(
 		domain:            domain,
 		verificationToken: token,
 		status:            status,
+		purpose:           PurposeSSO,
 		verifiedAt:        verifiedAt,
 		lastCheckedAt:     lastCheckedAt,
 		createdAt:         createdAt,
@@ -100,6 +131,49 @@ func (d *VerifiedDomain) LastCheckedAt() *time.Time { return d.lastCheckedAt }
 func (d *VerifiedDomain) CreatedAt() time.Time      { return d.createdAt }
 func (d *VerifiedDomain) UpdatedAt() time.Time      { return d.updatedAt }
 func (d *VerifiedDomain) IsVerified() bool          { return d.status == StatusVerified }
+func (d *VerifiedDomain) Purpose() Purpose          { return d.purpose }
+
+// AdmitsSSO reports whether the domain may admit users by email domain:
+// verified, and set up for SSO (E6). An EASM-purpose domain never does.
+func (d *VerifiedDomain) AdmitsSSO() bool { return d.IsVerified() && d.purpose == PurposeSSO }
+
+// WithClaimState sets the claim bookkeeping of a reconstructed row.
+func (d *VerifiedDomain) WithClaimState(lapsedAt *time.Time, conflict bool) *VerifiedDomain {
+	d.lapsedAt = lapsedAt
+	d.claimConflict = conflict
+	return d
+}
+
+// LapsedAt is when the row last lost its DNS proof (nil when it never did or
+// has been verified again since).
+func (d *VerifiedDomain) LapsedAt() *time.Time { return d.lapsedAt }
+
+// ClaimConflict reports whether another organization also held this domain
+// verified for SSO when claims became exclusive.
+func (d *VerifiedDomain) ClaimConflict() bool { return d.claimConflict }
+
+// ClearClaimConflict drops the conflict flag once no other organization holds
+// the domain.
+func (d *VerifiedDomain) ClearClaimConflict(t time.Time) {
+	d.claimConflict = false
+	d.updatedAt = t.UTC()
+}
+
+// WithPurpose sets the purpose of a new or reconstructed row; an unknown
+// value is ignored.
+func (d *VerifiedDomain) WithPurpose(p Purpose) *VerifiedDomain {
+	if p.IsValid() {
+		d.purpose = p
+	}
+	return d
+}
+
+// PromoteToSSO makes an EASM-purpose domain an SSO one (platform admin only;
+// the verification state is kept).
+func (d *VerifiedDomain) PromoteToSSO(t time.Time) {
+	d.purpose = PurposeSSO
+	d.updatedAt = t.UTC()
+}
 
 // MarkVerified stamps the domain as verified at t and records the check time.
 func (d *VerifiedDomain) MarkVerified(t time.Time) {
@@ -107,6 +181,7 @@ func (d *VerifiedDomain) MarkVerified(t time.Time) {
 	d.status = StatusVerified
 	d.verifiedAt = &t
 	d.lastCheckedAt = &t
+	d.lapsedAt = nil
 	d.updatedAt = t
 }
 
@@ -117,6 +192,7 @@ func (d *VerifiedDomain) MarkChecked(t time.Time) {
 	t = t.UTC()
 	if d.status == StatusVerified {
 		d.status = StatusFailed
+		d.lapsedAt = &t
 	}
 	d.lastCheckedAt = &t
 	d.updatedAt = t

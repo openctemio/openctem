@@ -23,11 +23,8 @@ import {
   type BusinessUnit,
 } from '@/features/business-units/api/use-business-units'
 import { useCrownJewels } from '@/features/crown-jewels/api/use-crown-jewels'
-import {
-  CRITICALITY_DOT_COLORS,
-  CRITICALITY_LABELS,
-  CRITICALITY_ORDER,
-} from '@/lib/criticality-colors'
+import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
+import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
 function StatsCardSkeleton() {
   return (
@@ -119,10 +116,10 @@ export default function BusinessImpactPage() {
     return [...assets].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0)).slice(0, 5)
   }, [crownData])
 
-  // Asset criticality breakdown — sorted critical→low
+  // Asset criticality breakdown — sorted critical→low, then Not rated
   const criticalityBreakdown = useMemo(() => {
     const total = assetStats.total || 1
-    return CRITICALITY_ORDER.map((level) => {
+    return ASSET_CRITICALITY_LEVELS.map((level) => {
       const count = assetStats.byCriticality[level] || 0
       return { level, count, percentage: Math.round((count / total) * 100) }
     })

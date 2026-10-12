@@ -32,8 +32,8 @@ func (r *ReportScheduleRepository) Create(ctx context.Context, s *reportschedule
 		INSERT INTO report_schedules (
 			id, tenant_id, name, report_type, format, options, recipients,
 			delivery_channel, integration_id, cron_expression, timezone,
-			is_active, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			is_active, created_by, created_at, updated_at, next_run_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		s.ID().String(), s.TenantID().String(), s.Name(), s.ReportType(), s.Format(),
@@ -42,6 +42,9 @@ func (r *ReportScheduleRepository) Create(ctx context.Context, s *reportschedule
 		s.CronExpression(), s.Timezone(),
 		s.IsActive(), nullIDPtr(s.CreatedBy()),
 		s.CreatedAt(), s.UpdatedAt(),
+		// The first cron slot. Leaving it NULL made ListDue (NULLS FIRST)
+		// deliver every new schedule on the next tick.
+		s.NextRunAt(),
 	)
 	if err != nil {
 		return fmt.Errorf("create report schedule: %w", err)
@@ -184,6 +187,29 @@ func (r *ReportScheduleRepository) ListDue(ctx context.Context, now time.Time) (
 		return nil, err
 	}
 	return items, nil
+}
+
+// ClaimDue claims one due slot of a schedule for this caller. It moves
+// next_run_at from the value the caller listed (seen) to next, and succeeds only
+// if next_run_at still holds seen. Every API replica runs the report scheduler
+// and lists the same due rows; a concurrent claim blocks on the row lock, then
+// re-reads next_run_at, finds it moved, and matches no row. So exactly one
+// replica delivers each slot, and no lock is held while the report renders and
+// is emailed.
+func (r *ReportScheduleRepository) ClaimDue(ctx context.Context, tenantID, id shared.ID, seen *time.Time, next time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE report_schedules
+		SET next_run_at = $3, updated_at = now()
+		WHERE id = $1 AND tenant_id = $4 AND is_active = true AND next_run_at IS NOT DISTINCT FROM $2`,
+		id.String(), seen, next, tenantID.String())
+	if err != nil {
+		return false, fmt.Errorf("claim report schedule: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("claim report schedule: %w", err)
+	}
+	return n == 1, nil
 }
 
 type reportScanner interface {

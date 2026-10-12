@@ -55,14 +55,18 @@ func seedGroupsUser(ctx context.Context, t *testing.T, db *sql.DB, email string)
 func seedOwnedAsset(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID, ownerID *shared.ID) shared.ID {
 	t.Helper()
 	id := shared.NewID()
-	var owner any
-	if ownerID != nil {
-		owner = ownerID.String()
-	}
 	if _, err := db.ExecContext(ctx,
-		`INSERT INTO assets (id, tenant_id, name, asset_type, owner_id) VALUES ($1, $2, $3, 'host', $4)`,
-		id.String(), tenantID.String(), "asset-"+id.String(), owner); err != nil {
+		`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, $3, 'host')`,
+		id.String(), tenantID.String(), "asset-"+id.String()); err != nil {
 		t.Fatalf("seed owned asset: %v", err)
+	}
+	if ownerID != nil {
+		// asset_owners is the only owner store: the owner is a primary RACI row.
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($1, $2, 'primary')`,
+			id.String(), ownerID.String()); err != nil {
+			t.Fatalf("seed asset owner: %v", err)
+		}
 	}
 	return id
 }

@@ -7,16 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
-
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // B3 wire tests. The hook is the wire; these cover its orchestration
-// (cooldown, scanner lookup, nil-safety). The underlying
-// RequestVerificationScan is covered by its own unit tests.
+// (cooldown, status check, nil-safety). The proof-of-fix retest itself is
+// covered in internal/app/retest.
 
 type fakeFindingReader struct {
 	f   *vulnerability.Finding
@@ -30,21 +28,20 @@ func (r *fakeFindingReader) GetByID(_ context.Context, _, _ shared.ID) (*vulnera
 	return r.f, nil
 }
 
-// fakeRequester captures RequestVerificationScan calls directly —
-// avoids instantiating the full FindingActionsService graph.
+// fakeRequester captures proof-of-fix requests.
 type fakeRequester struct {
 	calls       int32
 	err         error
-	lastScanner string
+	lastFinding shared.ID
 }
 
-func (f *fakeRequester) RequestVerificationScan(_ context.Context, _, _ string, input app.RequestVerificationScanInput) (*app.RequestVerificationScanResult, error) {
+func (f *fakeRequester) ValidateFinding(_ context.Context, _, findingID shared.ID) (shared.ID, error) {
 	atomic.AddInt32(&f.calls, 1)
-	f.lastScanner = input.ScannerName
+	f.lastFinding = findingID
 	if f.err != nil {
-		return nil, f.err
+		return shared.ID{}, f.err
 	}
-	return &app.RequestVerificationScanResult{FindingID: input.FindingID}, nil
+	return shared.NewID(), nil
 }
 
 func newHookWithFinding(t *testing.T, toolName string) (*RescanHook, *fakeRequester, *vulnerability.Finding) {
@@ -142,10 +139,20 @@ func TestJiraRescanHook_DifferentFindingsIndependentCooldown(t *testing.T) {
 	}
 }
 
-// NOTE: domain forbids creating a Finding with empty ToolName
-// (NewFinding returns ErrValidation). The "empty scanner → skip"
-// branch in the hook guards against legacy DB rows only and is
-// covered by integration tests, not unit.
+// A finding that something else already moved off fix_applied is not
+// re-verified.
+func TestJiraRescanHook_SkipsFindingNoLongerFixApplied(t *testing.T) {
+	hook, trigger, f := newHookWithFinding(t, "nuclei")
+	if err := f.TransitionStatus(vulnerability.FindingStatusResolved, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := hook.Hook(context.Background(), f.TenantID(), f.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if atomic.LoadInt32(&trigger.calls) != 0 {
+		t.Fatalf("a resolved finding was sent for proof of fix")
+	}
+}
 
 func TestJiraRescanHook_FindingLookupError_Propagates(t *testing.T) {
 	boom := errors.New("db down")

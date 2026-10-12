@@ -1,10 +1,9 @@
 // Package adminconsole implements the platform admin console session
 // (RFC-022, docs/rfcs/RFC-022-platform-admin-console.md).
 //
-// Following Tenable Security Center, a platform administrator is a normal user
-// account with a system-level role: it signs in on the same /login page as
-// everyone else, then this service opens a console session after a mandatory
-// TOTP code. admin_users holds the role, the TOTP secret and the audit trail,
+// A platform administrator is a normal user account with a system-level
+// role: it signs in on the same /login page as everyone else, then this
+// service opens a console session after a mandatory TOTP code. admin_users holds the role, the TOTP secret and the audit trail,
 // linked to the users row. Only a password sign-in can open the console: no
 // organization's SSO/SAML identity provider can authenticate an administrator.
 //
@@ -39,6 +38,8 @@ const (
 	ActionAdminProvisioned = "console.admin_provisioned"
 	ActionPasswordChanged  = "console.password_changed"
 	ActionCredentialsReset = "console.credentials_reset"
+	ActionStepUp           = "console.step_up"
+	ActionStepUpFailed     = "console.step_up_failed"
 )
 
 // StatusSignedIn is the IdP callback outcome when the IdP's MFA was trusted
@@ -349,6 +350,39 @@ func (s *Service) VerifyMFA(ctx context.Context, pendingToken, code string, clie
 	return token, a, nil
 }
 
+// StepUp re-confirms the signed-in administrator with a fresh code from the
+// console authenticator before an irreversible action (purpose names it in the
+// admin audit log). The console session alone is not enough: it may be hours
+// old, or opened through the platform identity provider without this
+// authenticator. A code can be used once (the same replay guard as sign-in), and
+// a wrong code counts toward the same lockout as a wrong password.
+func (s *Service) StepUp(ctx context.Context, a *admin.AdminUser, code, purpose string, client ClientInfo) error {
+	if a == nil {
+		return admin.ErrInvalidMFACode
+	}
+	creds, err := s.console.GetCredentials(ctx, a.ID())
+	if err != nil || !creds.MFAEnabled || creds.MFASecretEncrypted == "" {
+		return admin.ErrStepUpUnavailable
+	}
+	secret, err := s.encryptor.DecryptString(creds.MFASecretEncrypted)
+	if err != nil {
+		return fmt.Errorf("decrypt mfa secret: %w", err)
+	}
+	step, ok := totp.Verify(secret, code, s.now())
+	if ok {
+		ok, err = s.console.AdvanceMFAStep(ctx, a.ID(), step)
+		if err != nil {
+			return err
+		}
+	}
+	if !ok {
+		s.recordFailure(ctx, a, client, ActionStepUpFailed, "wrong or reused code for "+purpose)
+		return admin.ErrInvalidMFACode
+	}
+	s.recordNote(ctx, a, ActionStepUp, client, purpose)
+	return nil
+}
+
 // openVerifiedSession issues a verified console session and records the
 // sign-in. A break-glass sign-in is alerted every time.
 func (s *Service) openVerifiedSession(ctx context.Context, a *admin.AdminUser, authMethod string, client ClientInfo, note string) (string, error) {
@@ -577,11 +611,6 @@ func (s *Service) ResetCredentials(ctx context.Context, actor *admin.AdminUser, 
 		}
 	}
 	return nil
-}
-
-// PurgeExpiredSessions deletes sessions past their absolute expiry.
-func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
-	return s.console.DeleteExpiredSessions(ctx, s.now())
 }
 
 func (s *Service) newSession(ctx context.Context, adminID shared.ID, verified bool, ttl time.Duration, authMethod string, client ClientInfo) (string, error) {

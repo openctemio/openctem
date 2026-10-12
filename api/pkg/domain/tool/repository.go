@@ -31,21 +31,16 @@ type TenantToolConfigFilter struct {
 	IsEnabled *bool
 }
 
-// ToolExecutionFilter defines filtering options for tool execution queries.
-type ToolExecutionFilter struct {
-	TenantID      shared.ID
-	ToolID        *shared.ID
-	SensorID      *shared.ID
-	PipelineRunID *shared.ID
-	Status        *ExecutionStatus
-}
-
 // Repository defines the interface for tool persistence.
 type Repository interface {
 	// Tool operations (system-wide)
 	Create(ctx context.Context, tool *Tool) error
 	GetByID(ctx context.Context, id shared.ID) (*Tool, error)
-	GetByName(ctx context.Context, name string) (*Tool, error)
+	// GetByName resolves a tool name as the given tenant sees it: the platform
+	// tool of that name, else the tenant's own custom tool. Another tenant's
+	// custom tool is never returned. A zero tenantID resolves platform tools
+	// only.
+	GetByName(ctx context.Context, tenantID shared.ID, name string) (*Tool, error)
 	List(ctx context.Context, filter ToolFilter, page pagination.Pagination) (pagination.Result[*Tool], error)
 	ListByNames(ctx context.Context, names []string) ([]*Tool, error)
 	ListByCategoryID(ctx context.Context, categoryID shared.ID) ([]*Tool, error)
@@ -111,53 +106,6 @@ type TenantToolConfigRepository interface {
 	// Bulk enable/disable tools for tenant
 	BulkEnable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error
 	BulkDisable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error
-}
-
-// ToolExecutionRepository defines the interface for tool execution persistence.
-type ToolExecutionRepository interface {
-	Create(ctx context.Context, execution *ToolExecution) error
-
-	// GetByID retrieves a tool execution by ID without tenant scoping.
-	//
-	// F-4: This method is UNSAFE for user-facing handlers — it would allow
-	// an IDOR because the tool_executions row contains cross-tenant
-	// sensitive data (error_message, output_summary, targets). Callers from
-	// HTTP handlers MUST use GetByIDInTenant instead. Safe uses are limited
-	// to sensor/platform-authenticated internal lifecycle flows where tenant
-	// identity is validated elsewhere, and audits / retention controllers
-	// that iterate the whole table.
-	GetByID(ctx context.Context, id shared.ID) (*ToolExecution, error)
-
-	// GetByIDInTenant retrieves a tool execution restricted to one tenant.
-	// Prefer this for any handler exposed to user input.
-	GetByIDInTenant(ctx context.Context, tenantID, id shared.ID) (*ToolExecution, error)
-
-	List(ctx context.Context, filter ToolExecutionFilter, page pagination.Pagination) (pagination.Result[*ToolExecution], error)
-	Update(ctx context.Context, execution *ToolExecution) error
-
-	// Statistics
-	GetToolStats(ctx context.Context, tenantID, toolID shared.ID, days int) (*ToolStats, error)
-	GetTenantStats(ctx context.Context, tenantID shared.ID, days int) (*TenantToolStats, error)
-}
-
-// ToolStats holds statistics for a specific tool.
-type ToolStats struct {
-	ToolID         shared.ID
-	TotalRuns      int64
-	SuccessfulRuns int64
-	FailedRuns     int64
-	TotalFindings  int64
-	AvgDurationMs  int64
-}
-
-// TenantToolStats holds aggregated tool statistics for a tenant.
-type TenantToolStats struct {
-	TenantID       shared.ID
-	TotalRuns      int64
-	SuccessfulRuns int64
-	FailedRuns     int64
-	TotalFindings  int64
-	ToolBreakdown  []ToolStats
 }
 
 // EmbeddedCategory contains minimal category info for embedding in tool responses.

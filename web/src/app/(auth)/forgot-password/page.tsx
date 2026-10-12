@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ArrowLeft, Loader2, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -21,10 +21,15 @@ import { Input } from '@/components/ui/input'
 
 import { forgotPasswordSchema, type ForgotPasswordInput } from '@/features/auth/schemas/auth.schema'
 import { forgotPasswordAction } from '@/features/auth/actions/local-auth-actions'
+import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
+import { formatLinkLifetime } from '@/features/auth/lib/password-policy'
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function ForgotPasswordPage() {
   const [isPending, startTransition] = useTransition()
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const passwordPolicy = usePasswordPolicy()
+  const { t } = useTranslation()
 
   const form = useForm<ForgotPasswordInput>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -41,7 +46,9 @@ export default function ForgotPasswordPage() {
         setIsSubmitted(true)
         toast.success(result.message)
       } else {
-        toast.error('error' in result ? result.error : 'Something went wrong')
+        toast.error(
+          'error' in result ? result.error : t('auth.forgot.failed', 'Something went wrong')
+        )
       }
     })
   }
@@ -50,17 +57,26 @@ export default function ForgotPasswordPage() {
     return (
       <Card className="gap-4">
         <CardHeader>
-          <CardTitle className="text-lg tracking-tight">Check your email</CardTitle>
+          <CardTitle className="text-lg tracking-tight">
+            {t('auth.forgot.sentTitle', 'Check your email')}
+          </CardTitle>
           <CardDescription>
-            If an account exists with the email you entered, we&apos;ve sent a password reset link.
-            Please check your inbox and spam folder. The link will expire in 24 hours.
+            {t(
+              'auth.forgot.sentBody',
+              "If an account exists with the email you entered, we've sent a password reset link. Please check your inbox and spam folder."
+            )}
+            {passwordPolicy &&
+              ' ' +
+                t('auth.forgot.expiresIn', 'The link expires in {lifetime}.', {
+                  lifetime: formatLinkLifetime(passwordPolicy.reset_link_valid_minutes),
+                })}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">
           <Button variant="outline" asChild>
             <Link href="/login">
               <ArrowLeft className="h-4 w-4" />
-              Back to sign in
+              {t('auth.common.backToSignIn', 'Back to sign in')}
             </Link>
           </Button>
         </CardContent>
@@ -71,9 +87,14 @@ export default function ForgotPasswordPage() {
   return (
     <Card className="gap-4">
       <CardHeader>
-        <CardTitle className="text-lg tracking-tight">Forgot password</CardTitle>
+        <CardTitle className="text-lg tracking-tight">
+          {t('auth.forgot.title', 'Forgot password')}
+        </CardTitle>
         <CardDescription>
-          Enter your email address and we&apos;ll send you a link to reset your password.
+          {t(
+            'auth.forgot.description',
+            "Enter your email address and we'll send you a link to reset your password."
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -84,7 +105,7 @@ export default function ForgotPasswordPage() {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>{t('auth.forgot.email', 'Email')}</FormLabel>
                   <FormControl>
                     <Input
                       placeholder="name@example.com"
@@ -105,13 +126,13 @@ export default function ForgotPasswordPage() {
               ) : (
                 <Mail className="h-4 w-4" />
               )}
-              Send reset link
+              {t('auth.forgot.submit', 'Send reset link')}
             </Button>
 
             <Button variant="link" size="sm" asChild className="mt-1">
               <Link href="/login">
                 <ArrowLeft className="h-4 w-4" />
-                Back to sign in
+                {t('auth.common.backToSignIn', 'Back to sign in')}
               </Link>
             </Button>
           </form>

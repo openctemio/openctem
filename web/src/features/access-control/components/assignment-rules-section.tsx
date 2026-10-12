@@ -25,6 +25,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -58,7 +59,10 @@ import {
 import { AssignmentRuleDetailSheet } from '@/features/access-control/components/assignment-rule-detail-sheet'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { fetcherWithOptions } from '@/lib/api/client'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
+import { SEVERITY_LEVELS } from '@/lib/severity'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 type FilterType = 'all' | 'active' | 'inactive'
 
@@ -89,7 +93,7 @@ const CONDITION_OPTIONS: Record<string, string[]> = {
     'container',
     'api_endpoint',
   ],
-  finding_severity: ['critical', 'high', 'medium', 'low', 'info'],
+  finding_severity: [...SEVERITY_LEVELS],
   // NOTE: asset_status / asset_criticality were phantom condition keys — the
   // backend AssignmentConditions only accepts asset_type, file_path_pattern,
   // finding_severity, finding_type, finding_source, asset_tags, and silently
@@ -108,6 +112,7 @@ interface SectionProps {
 
 /** The Assignment rules tab of /settings/teams (moved from its own page; content unchanged). */
 export function AssignmentRulesSection({ header }: SectionProps) {
+  const { t } = useTranslation()
   // API Hooks
   const { assignmentRules, isLoading, isError, mutate: mutateRules } = useAssignmentRules()
   const { createAssignmentRule, isCreating } = useCreateAssignmentRule()
@@ -261,13 +266,13 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               {
                 label: 'Edit',
                 icon: Pencil,
-                permission: Permission.AssignmentRulesWrite,
+                route: 'PUT /api/v1/assignment-rules/{id}',
                 onClick: () => setSelectedRuleId(rule.id),
               },
               {
                 label: 'Test rule',
                 icon: Play,
-                permission: Permission.AssignmentRulesWrite,
+                route: 'POST /api/v1/assignment-rules/{id}/test',
                 onClick: async () => {
                   try {
                     const result = await fetcherWithOptions<{ matching_findings: number }>(
@@ -287,7 +292,8 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
-                permission: Permission.AssignmentRulesDelete,
+                // Owner only on the API (RequireOwner), so admins do not see it.
+                route: 'DELETE /api/v1/assignment-rules/{id}',
                 onClick: () => {
                   setRuleToDelete(rule)
                   setDeleteDialogOpen(true)
@@ -352,7 +358,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
     <>
       {header(
         <>
-          <Can permission={Permission.AssignmentRulesWrite} mode="disable">
+          <Can route="POST /api/v1/assignment-rules" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create rule
@@ -415,9 +421,9 @@ export function AssignmentRulesSection({ header }: SectionProps) {
               <EmptyState
                 icon={GitBranch}
                 title="No assignment rules yet"
-                description="Rules assign assets to teams automatically, in priority order."
+                description="Rules route new findings to teams automatically, in priority order."
                 action={
-                  <Can permission={Permission.AssignmentRulesWrite}>
+                  <Can route="POST /api/v1/assignment-rules">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       Create rule
@@ -480,7 +486,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
       {/* Create Rule Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Create assignment rule</DialogTitle>
             <DialogDescription>
@@ -488,108 +494,110 @@ export function AssignmentRulesSection({ header }: SectionProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="rule-name">Name</Label>
-              <Input
-                id="rule-name"
-                placeholder="e.g., Critical assets to Security team"
-                value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-              />
+          <DialogBody className="grid gap-4">
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="rule-name">Name</Label>
+                <Input
+                  id="rule-name"
+                  placeholder="e.g., Critical assets to Security team"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rule-description">Description (optional)</Label>
+                <Textarea
+                  id="rule-description"
+                  placeholder="Describe what this rule does..."
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rule-priority">Priority</Label>
+                <Input
+                  id="rule-priority"
+                  type="number"
+                  value={createForm.priority}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, priority: parseInt(e.target.value) || 0 })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">Lower numbers have higher priority</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Target team</Label>
+                <Select
+                  value={createForm.target_group_id}
+                  onValueChange={(v) => setCreateForm({ ...createForm, target_group_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="rule-description">Description (optional)</Label>
-              <Textarea
-                id="rule-description"
-                placeholder="Describe what this rule does..."
-                value={createForm.description}
-                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                rows={2}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rule-priority">Priority</Label>
-              <Input
-                id="rule-priority"
-                type="number"
-                value={createForm.priority}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, priority: parseInt(e.target.value) || 0 })
-                }
-              />
-              <p className="text-xs text-muted-foreground">Lower numbers have higher priority</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Target team</Label>
-              <Select
-                value={createForm.target_group_id}
-                onValueChange={(v) => setCreateForm({ ...createForm, target_group_id: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Conditions Builder */}
-          <div className="space-y-3 py-2">
-            <Label>Conditions (optional)</Label>
-            <p className="text-xs text-muted-foreground">
-              Assets matching these conditions will be automatically assigned to the target group.
-            </p>
-            <div className="space-y-3">
-              {Object.entries(CONDITION_OPTIONS).map(([condKey, options]) => {
-                const selected = createForm.conditions[condKey] || []
-                return (
-                  <div key={condKey} className="space-y-1.5">
-                    <Label className="text-xs font-medium">
-                      {CONDITION_LABELS[condKey] || condKey}
-                    </Label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {options.map((opt) => {
-                        const isSelected = selected.includes(opt)
-                        return (
-                          <Badge
-                            key={opt}
-                            variant={isSelected ? 'default' : 'outline'}
-                            className="cursor-pointer text-xs"
-                            onClick={() => {
-                              const newValues = isSelected
-                                ? selected.filter((v) => v !== opt)
-                                : [...selected, opt]
-                              setCreateForm({
-                                ...createForm,
-                                conditions: {
-                                  ...createForm.conditions,
-                                  [condKey]: newValues,
-                                },
-                              })
-                            }}
-                          >
-                            {opt.replace(/_/g, ' ')}
-                          </Badge>
-                        )
-                      })}
+            {/* Conditions Builder */}
+            <div className="space-y-3 py-2">
+              <Label>Conditions (optional)</Label>
+              <p className="text-xs text-muted-foreground">
+                Assets matching these conditions will be automatically assigned to the target group.
+              </p>
+              <div className="space-y-3">
+                {Object.entries(CONDITION_OPTIONS).map(([condKey, options]) => {
+                  const selected = createForm.conditions[condKey] || []
+                  return (
+                    <div key={condKey} className="space-y-1.5">
+                      <Label className="text-xs font-medium">
+                        {CONDITION_LABELS[condKey] || condKey}
+                      </Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {options.map((opt) => {
+                          const isSelected = selected.includes(opt)
+                          return (
+                            <Badge
+                              key={opt}
+                              variant={isSelected ? 'default' : 'outline'}
+                              className="cursor-pointer text-xs"
+                              onClick={() => {
+                                const newValues = isSelected
+                                  ? selected.filter((v) => v !== opt)
+                                  : [...selected, opt]
+                                setCreateForm({
+                                  ...createForm,
+                                  conditions: {
+                                    ...createForm.conditions,
+                                    [condKey]: newValues,
+                                  },
+                                })
+                              }}
+                            >
+                              {opt.replace(/_/g, ' ')}
+                            </Badge>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="ghost" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
@@ -609,37 +617,26 @@ export function AssignmentRulesSection({ header }: SectionProps) {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete assignment rule</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{ruleToDelete?.name}&quot;? This action cannot
-              be undone.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setDeleteDialogOpen(false)
-                setRuleToDelete(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteRule} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setRuleToDelete(null)
+        }}
+        destructive
+        title={t('confirm.assignmentRule.deleteTitle', 'Delete the assignment rule "{name}"?', {
+          name: ruleToDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.assignmentRule.deleteDesc',
+          'New findings are no longer routed by it. Findings it already assigned keep their owner. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDeleteRule}
+      />
     </>
   )
 }

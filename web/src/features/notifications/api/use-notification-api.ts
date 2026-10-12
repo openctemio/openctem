@@ -7,10 +7,13 @@
 
 'use client'
 
+import { useEffect, useRef } from 'react'
 import useSWR, { type SWRConfiguration } from 'swr'
 import { get, patch, post, put } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
+import { useWebSocket } from '@/context/websocket-provider'
 import { notificationEndpoints } from '@/lib/api/endpoints'
 
 // ============================================
@@ -147,18 +150,39 @@ export function useNotificationsApi(
 /**
  * Fetch unread notification count
  */
+/** Unread-count poll used only while the WebSocket is disconnected. */
+export const UNREAD_COUNT_FALLBACK_POLL_MS = 120_000
+
 export function useUnreadCountApi(config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
-  const key = currentTenant ? notificationEndpoints.unreadCount() : null
+  // The session bootstrap carries the count and seeds this key
+  // (context/bootstrap-session.ts): wait for it rather than ask in parallel.
+  const bootstrapPending = useBootstrapPending()
+  const key = currentTenant && !bootstrapPending ? notificationEndpoints.unreadCount() : null
 
-  // The badge is kept live by the tenant WebSocket (the bell revalidates on a
-  // notification event); this slow poll is only a fallback for a dropped socket.
-  return useSWR<UnreadCountResponse>(key, fetchUnreadCount, {
+  // The badge is kept live by the WebSocket (the bell revalidates on a
+  // notification event), so the slow poll runs only while the socket is down.
+  const { isConnected } = useWebSocket()
+  const swr = useSWR<UnreadCountResponse>(key, fetchUnreadCount, {
     ...defaultConfig,
-    refreshInterval: 120000,
+    // A seeded or cached count is not fetched again on mount.
+    revalidateIfStale: false,
+    refreshInterval: isConnected ? 0 : UNREAD_COUNT_FALLBACK_POLL_MS,
     ...config,
   })
+
+  // Events sent while the socket was down are lost, so catch up once on a
+  // REconnect (not the first connect, which the initial fetch already covers).
+  const { mutate } = swr
+  const everConnectedRef = useRef(false)
+  useEffect(() => {
+    if (!isConnected) return
+    if (everConnectedRef.current) void mutate()
+    everConnectedRef.current = true
+  }, [isConnected, mutate])
+
+  return swr
 }
 
 /**

@@ -23,6 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -32,6 +33,7 @@ import { PriorityClassBadge } from '@/features/findings/components/priority-clas
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import { AlertTriangle, ArrowRight, FlaskConical, ListChecks } from 'lucide-react'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
+import { useTranslation } from '@/context/i18n-provider'
 
 type FieldKey =
   | 'is_in_kev'
@@ -143,7 +145,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="size-5" />
@@ -154,25 +156,27 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Target priority */}
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Would reclassify matching findings to</span>
-            <PriorityClassBadge priorityClass={rule.priority_class} />
-          </div>
+        <DialogBody>
+          <div className="space-y-4 py-2">
+            {/* Target priority */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Would reclassify matching findings to</span>
+              <PriorityClassBadge priorityClass={rule.priority_class} />
+            </div>
 
-          {state.status === 'loading' ? (
-            <LoadingState />
-          ) : state.status === 'error' ? (
-            <Alert variant="destructive">
-              <AlertTriangle className="size-4" />
-              <AlertTitle>Could not evaluate the rule</AlertTitle>
-              <AlertDescription>{state.message}</AlertDescription>
-            </Alert>
-          ) : state.status === 'done' ? (
-            <ResultView result={state.result} targetClass={rule.priority_class} />
-          ) : null}
-        </div>
+            {state.status === 'loading' ? (
+              <LoadingState />
+            ) : state.status === 'error' ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="size-4" />
+                <AlertTitle>Could not evaluate the rule</AlertTitle>
+                <AlertDescription>{state.message}</AlertDescription>
+              </Alert>
+            ) : state.status === 'done' ? (
+              <ResultView result={state.result} targetClass={rule.priority_class} />
+            ) : null}
+          </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -201,6 +205,7 @@ function LoadingState() {
 }
 
 function ResultView({ result, targetClass }: { result: DryRunResult; targetClass: PriorityClass }) {
+  const { t } = useTranslation()
   const { evaluated, matched, capped, cap, sample, would_be_distribution } = result
 
   // Nothing to evaluate — no open findings were in scope at all.
@@ -295,8 +300,10 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
       </div>
 
       <p className="text-muted-foreground border-t pt-3 text-xs">
-        Dry run is a preview only. To actually change priorities, save the rule and trigger a
-        reclassification sweep from the Cycles page (admin).
+        {t(
+          'prioritization.dryRun.previewNote',
+          'A preview only. Saving the rule reclassifies the matching findings.'
+        )}
       </p>
     </>
   )

@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
+import dynamic from 'next/dynamic'
 import {
   Plus,
   ChevronDown,
@@ -17,7 +18,10 @@ import {
 import { useSWRConfig } from 'swr'
 
 import { Main } from '@/components/layout'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader } from '@/features/shared'
 // (Run scan removed from the dashboard header — kept clean; scans live in the Scans nav.)
@@ -32,9 +36,7 @@ import {
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { CtemDashboard } from '@/features/dashboard/components/ctem-dashboard'
-import { ClassicDashboard } from '@/features/dashboard/components/classic-dashboard'
-import { DashboardCanvas } from '@/features/dashboards/components/dashboard-canvas'
-import { DashboardCanvasEditor } from '@/features/dashboards/components/dashboard-canvas-editor'
+import { DashboardOverviewProvider } from '@/features/dashboard/api/dashboard-overview'
 import {
   useMyDashboards,
   useRevalidateDashboards,
@@ -42,17 +44,60 @@ import {
   deleteDashboard,
 } from '@/features/dashboards/api/use-dashboards-api'
 
+/** Placeholder while an on-demand dashboard view's code loads. */
+function DashboardViewSkeleton() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-busy="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <Skeleton key={i} className="h-32" />
+      ))}
+    </div>
+  )
+}
+
+// Only one view renders at a time and CTEM is the default, so the other views
+// load on demand: the Classic view and the custom canvas pull in their own
+// widgets, and the editor adds the drag-and-drop kit (@dnd-kit) that only
+// "Customize" needs. Statically imported, all of it was in every visit's JS.
+const ClassicDashboard = dynamic(
+  () => import('@/features/dashboard/components/classic-dashboard').then((m) => m.ClassicDashboard),
+  { ssr: false, loading: () => <DashboardViewSkeleton /> }
+)
+const DashboardCanvas = dynamic(
+  () => import('@/features/dashboards/components/dashboard-canvas').then((m) => m.DashboardCanvas),
+  { ssr: false, loading: () => <DashboardViewSkeleton /> }
+)
+const DashboardCanvasEditor = dynamic(
+  () =>
+    import('@/features/dashboards/components/dashboard-canvas-editor').then(
+      (m) => m.DashboardCanvasEditor
+    ),
+  { ssr: false, loading: () => <DashboardViewSkeleton /> }
+)
+
 const STORAGE_KEY = 'openctem:dashboard-view'
 const BUILTINS = ['ctem', 'classic'] as const
 const BUILTIN_LABEL: Record<string, string> = { ctem: 'CTEM', classic: 'Classic' }
 
 /**
- * Main dashboard shell with a Tenable-style dashboard switcher. Two built-in views
+ * Main dashboard shell with a dashboard switcher. Two built-in views
  * (CTEM / Classic) plus the user's saved custom dashboards are all selectable from
  * one "Switch Dashboard" menu; the chosen view persists in localStorage and falls
  * back to the user's default custom dashboard on first load.
  */
-export default function Dashboard() {
+/**
+ * The dashboard's reads come in one request (GET /dashboard/overview) and are
+ * handed to its widgets' hooks; widgets of other views fetch their own.
+ */
+export default function DashboardPage() {
+  return (
+    <DashboardOverviewProvider loading={<DashboardViewSkeleton />}>
+      <Dashboard />
+    </DashboardOverviewProvider>
+  )
+}
+
+function Dashboard() {
   const { data, isLoading } = useMyDashboards()
   const revalidate = useRevalidateDashboards()
   const { mutate } = useSWRConfig()
@@ -62,6 +107,8 @@ export default function Dashboard() {
   const [restored, setRestored] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [customizing, setCustomizing] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
+  const { t } = useTranslation()
 
   // Refresh all — re-fetch every dashboard/finding/stats query on the page (the
   // widgets self-fetch via SWR, so revalidating their keys refreshes the view).
@@ -132,7 +179,8 @@ export default function Dashboard() {
       await deleteDashboard(id)
       await revalidate()
       choose('ctem')
-      toast.success(`Deleted "${name}"`)
+      setPendingDelete(null)
+      toast.success(t('confirm.dashboard.deleted', 'Dashboard "{name}" deleted', { name }))
     } catch (e) {
       toast.error(getErrorMessage(e))
     }
@@ -238,7 +286,9 @@ export default function Dashboard() {
                     )}
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
-                      onClick={() => remove(activeCustom.id, activeCustom.name)}
+                      onSelect={() =>
+                        setPendingDelete({ id: activeCustom.id, name: activeCustom.name })
+                      }
                     >
                       <Trash2 className="me-2 h-4 w-4" /> Delete
                     </DropdownMenuItem>
@@ -264,6 +314,22 @@ export default function Dashboard() {
           <CtemDashboard />
         )}
       </div>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        destructive
+        title={t('confirm.dashboard.deleteTitle', 'Delete dashboard "{name}"?', {
+          name: pendingDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.dashboard.deleteDesc',
+          'The dashboard and its widget layout are deleted for everyone who can see it. Your data is not affected. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
+        handleConfirm={() =>
+          pendingDelete ? remove(pendingDelete.id, pendingDelete.name) : undefined
+        }
+      />
     </Main>
   )
 }

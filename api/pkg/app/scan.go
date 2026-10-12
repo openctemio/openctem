@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scansession"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -71,16 +70,4 @@ type ScanService interface {
 
 	// Disable disables a scheduled scan.
 	Disable(ctx context.Context, tenantID, scanID shared.ID) error
-}
-
-// ScanSessionService defines the interface for scan session operations.
-type ScanSessionService interface {
-	// GetSession retrieves a specific scan session.
-	GetSession(ctx context.Context, tenantID, sessionID shared.ID) (*scansession.ScanSession, error)
-
-	// ListSessions returns scan sessions for a scan.
-	ListSessions(ctx context.Context, tenantID, scanID shared.ID, page, perPage int) (*ListResult[*scansession.ScanSession], error)
-
-	// GetLatestSession returns the latest session for a scan.
-	GetLatestSession(ctx context.Context, tenantID, scanID shared.ID) (*scansession.ScanSession, error)
 }

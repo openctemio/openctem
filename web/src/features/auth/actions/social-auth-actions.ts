@@ -17,8 +17,10 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { setServerCookie } from '@/lib/cookies-server'
 import { authEndpoints } from '@/lib/api/endpoints'
 import { validateRedirectUrl } from '@/lib/redirect'
@@ -69,6 +71,17 @@ export interface OAuthCallbackResult {
 // HELPER FUNCTIONS
 // ============================================
 
+/** A refused backend call, with the API's error code when it sent one. */
+class BackendError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string
+  ) {
+    super(message)
+    this.name = 'BackendError'
+  }
+}
+
 async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${env.api.url}${endpoint}`
 
@@ -76,13 +89,17 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(await browserContextHeaders()),
       ...options.headers,
     },
   })
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    throw new BackendError(
+      errorData.message || errorData.error || `HTTP ${response.status}`,
+      typeof errorData.code === 'string' ? errorData.code : undefined
+    )
   }
 
   return response.json()
@@ -224,6 +241,7 @@ export async function handleOAuthCallback(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'OAuth authentication failed',
+      code: error instanceof BackendError ? error.code : undefined,
     }
   }
 }
@@ -244,8 +262,8 @@ export async function initiateSocialLogin(
 
   if (!result.success) {
     // If we can't get the authorization URL, redirect back to the login page
-    // with the error so the login form surfaces it via toast (?error= handler).
-    redirect(`/login?error=${encodeURIComponent(result.error)}`)
+    // with an error code; the login form shows the matching message.
+    redirect(loginErrorHref('start_failed'))
   }
 
   redirect(result.data.authorizationUrl)

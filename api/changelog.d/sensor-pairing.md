@@ -1,0 +1,8 @@
+### Security: interactive sensor pairing, no key handled by a person (RFC-052)
+
+- A new sensor needs only the platform URL: it creates its own Ed25519 key, asks to pair (`POST /api/v2/sensor/pairings`, signed by that key, capped per address and platform-wide, no organization until approved) and prints a code and a fingerprint (three digits and three words). An administrator enters the code (or uses "expect a sensor"), compares the fingerprint, host facts and source address, re-authenticates (TOTP, else password, else a sign-in younger than 10 minutes) and ticks "the fingerprint matches". The approval needs `sensors:approve` and the code; the sensor confirms with a signed statement and its key becomes active. Every approval is audited at high severity and every administrator is notified.
+- Re-pairing an existing sensor revokes its earlier keys at approval and keeps its history.
+- New permissions `sensors:pair`, `sensors:approve`, `sensors:grant:narrow`, `sensors:grant:widen` and `sensors:revoke`, held by owners and administrators, admin-only. Revoking a sensor accepts `sensors:revoke`.
+- **Behaviour change:** new organizations require key-bound identity: `POST /api/v1/sensors` (a sensor with an API key) answers `403 BEARER_KEYS_DISABLED`; pair the sensor instead. Existing organizations keep the option; switch it with `PUT /api/v1/sensors/identity-policy`.
+- New: `GET /api/v1/sensors/{id}/keys`, `POST /api/v1/sensors/{id}/keys/{key_id}/revoke`.
+- Migration **001101** adds `sensor_pairings`, `tenants.sensor_bearer_keys_allowed` (true for existing organizations, false for new ones) and the five permissions.

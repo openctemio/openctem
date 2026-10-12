@@ -1,16 +1,16 @@
 # RFC-015 — Remediation groups (fix a whole "solution family" in one action)
 
-> Status: **Phase 1 shipped** (derivation + side-table + group list/resolve API)
-> Problem owner request: "Tenable groups CVEs into a solution family; one patch
-> fixes the whole family. In OpenCTEM you have to close each finding one by one."
+> Status: **Phase 1–2 shipped, Phase 3 partial** (checked 2026-10-04): derivation + side-table + group list/resolve API (#288); the Remediations page with Resolve all (openctemio/ui#231); campaign resolve (#291, openctemio/ui#232) and a campaign from a group (#297, openctemio/ui#233). Not built: richer keys (Tenable solution id, OS advisory id); a group resolve to `fix_applied` does not queue the proof-of-fix retest.
+> Problem: one patch fixes a whole family of CVEs, but in OpenCTEM each finding
+> had to be closed one by one.
 
 ## Problem
 
 A single fix almost always closes **many** findings:
 
 - **OS / infra (Nessus/Tenable):** one *solution* — "Update the RHEL kernel
-  package" — resolves every plugin/CVE that patch covers. Tenable exposes this as
-  its **Remediations / Solutions** view.
+  package" — resolves every plugin/CVE that patch covers (Nessus reports this as the
+  plugin `<solution>`).
 - **SCA / containers:** upgrading one dependency (`lodash → 4.17.21`) resolves
   every finding on that package below the fixed version.
 
@@ -88,7 +88,7 @@ change until populated.
 
 - `GET /api/v1/findings/remediation-groups` — `GROUP BY remediation_key` over
   **open** findings; returns `{key, title (the fix action), finding_count,
-  asset_count, severity_rollup, fix_available}`. The Tenable "Remediations" tab.
+  asset_count, severity_rollup, fix_available}`.
 - `POST /api/v1/findings/remediation-groups/{key}/resolve` — resolves all open
   findings in the group. Body: `{status: "fix_applied"|"resolved", note}`.
   Internally: resolve the group's open finding IDs → `BulkGuard.CheckBulk` →
@@ -104,7 +104,7 @@ operator can choose `resolved` for immediate close.
 
 | Phase | Work |
 |---|---|
-| **1** (this PR) | `remediation_key` column + derivation at ingest + group query/repo + `GET /remediation-groups` + `POST /remediation-groups/{key}/resolve` (reuses BulkGuard+BulkUpdate) + backfill. Tests incl. DB round-trip. |
+| **1** (#288) | `remediation_key` column + derivation at ingest + group query/repo + `GET /remediation-groups` + `POST /remediation-groups/{key}/resolve` (reuses BulkGuard+BulkUpdate) + backfill. Tests incl. DB round-trip. |
 | **2** | UI "Remediations / By solution" view with per-group **Resolve all**; wire the `fix_applied → verified-on-rescan` loop end to end. |
 | **3** (partial) | Unify with Remediation Campaigns — **campaign can now actively resolve its open findings** (`POST /remediation/campaigns/{id}/resolve`, reuses the finding bulk path + abuse guard; was a passive tracker). Remaining: group→campaign/ticket spawn; richer keys (Tenable solution-id, OS advisory id). |
 

@@ -21,8 +21,11 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/auth/domainverify"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -101,14 +104,14 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
-	auditSvc := app.NewAuditService(postgres.NewAuditRepository(pg), log)
+	auditSvc := audit.NewAuditService(postgres.NewAuditRepository(pg), log)
 	tenantRepo := postgres.NewTenantRepository(pg)
-	sso := app.NewSSOService(postgres.NewIdentityProviderRepository(pg), tenantRepo, postgres.NewUserRepository(pg),
+	sso := auth.NewSSOService(postgres.NewIdentityProviderRepository(pg), tenantRepo, postgres.NewUserRepository(pg),
 		postgres.NewSessionRepository(db), postgres.NewRefreshTokenRepository(db), crypto.NewNoOpEncryptor(),
 		config.AuthConfig{JWTSecret: strings.Repeat("s", 64), JWTIssuer: "it"}, log)
 	resolver := &txtResolver{}
 	domains := domainverify.NewService(postgres.NewVerifiedDomainRepository(pg), resolver, log)
-	saml := app.NewSAMLService(postgres.NewSAMLProviderRepository(pg), tenantRepo, sso, log)
+	saml := auth.NewSAMLService(postgres.NewSAMLProviderRepository(pg), tenantRepo, sso, log)
 
 	ssoH := handler.NewSSOHandler(sso, log)
 	ssoH.SetAuditService(auditSvc)
@@ -116,6 +119,11 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 	domainH.SetAuditService(auditSvc)
 	samlH := handler.NewSAMLHandler(saml, handler.CookieConfig{}, "https://app.example.test", log)
 	samlH.SetAuditService(auditSvc)
+	// Admin-console SSO changes go through the owner-approval service (RFC-022
+	// revision 8). The test organization has no owner, so they apply directly.
+	ssoChanges := auth.NewSSOChangeService(postgres.NewSSOChangeRepository(pg), saml, sso, tenantRepo, tenantRepo, log)
+	samlH.SetChangeApproval(ssoChanges)
+	ssoH.SetChangeApproval(ssoChanges)
 
 	operator, err := admin.NewAdminUser("ops@platform.example.test", "Ops", admin.AdminRoleSuperAdmin, nil)
 	if err != nil {
@@ -167,7 +175,7 @@ func TestAdminOrgSSOChangesReachOrganizationAuditLog(t *testing.T) {
 	call(http.MethodPut, "/saml", map[string]any{
 		"idp_entity_id": "https://idp.example.test/entity", "idp_sso_url": "https://idp.example.test/sso",
 		"idp_certificate": cert, "allowed_domains": []string{"victim.example.test"},
-		"default_role": "admin", "auto_provision": true, "enabled": true,
+		"default_role": "member", "auto_provision": true, "enabled": true,
 	}, http.StatusOK)
 	idp := call(http.MethodPost, "/identity-providers", map[string]any{
 		"provider": "google_workspace", "display_name": "Rogue IdP", "client_id": "cid",
@@ -263,9 +271,9 @@ func TestCreatedOrgUserReportsEffectiveRole(t *testing.T) {
 	pg := &postgres.DB{DB: db}
 	log := logger.NewNop()
 	tenantRepo := postgres.NewTenantRepository(pg)
-	roles := app.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), log,
-		app.WithRoleMembershipReader(tenantRepo))
-	svc := app.NewUserProvisioningService(tenantRepo, postgres.NewUserRepository(pg), roles, nil, nil, log)
+	roles := accesscontrol.NewRoleService(postgres.NewRoleRepository(pg), postgres.NewPermissionRepository(pg), log,
+		accesscontrol.WithRoleMembershipReader(tenantRepo))
+	svc := tenant.NewUserProvisioningService(tenantRepo, postgres.NewUserRepository(pg), roles, nil, nil, log)
 
 	for _, tc := range []struct{ roleID, want string }{
 		{"00000000-0000-0000-0000-000000000002", "admin"},
@@ -273,9 +281,9 @@ func TestCreatedOrgUserReportsEffectiveRole(t *testing.T) {
 		{"00000000-0000-0000-0000-000000000004", "viewer"},
 	} {
 		email := "role-" + tc.want + "-" + uuid.NewString()[:8] + "@created.example.test"
-		res, err := svc.CreateUser(ctx, app.CreateUserInput{
+		res, err := svc.CreateUser(ctx, tenant.CreateUserInput{
 			TenantID: tenantID, Email: email, Name: "Created", RoleIDs: []string{tc.roleID},
-		}, app.AuditContext{ActorEmail: "platform-admin:ops@platform.example.test"})
+		}, audit.AuditContext{ActorEmail: "platform-admin:ops@platform.example.test"})
 		if err != nil {
 			t.Fatalf("create %s: %v", tc.want, err)
 		}

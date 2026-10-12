@@ -5,27 +5,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/openctemio/ctis"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
+
+const (
+	// DiscoverySourceSensor is the discovery source of an asset a sensor
+	// reported without naming one.
+	DiscoverySourceSensor = "sensor"
+	// CodeNoTenantContext refuses ingest from a sensor without a tenant
+	// (a platform sensor outside a job).
+	CodeNoTenantContext = "NO_TENANT_CONTEXT"
+
+	// ctisDefaultDiscoverySource is how the ctis recon converter labels a
+	// discovery by default. Sensors embed that converter and still send it
+	// (over protocol v2 too), so it is stored as DiscoverySourceSensor.
+	ctisDefaultDiscoverySource = "agent"
+)
+
+// normalizeDiscoverySource maps the ctis converter's default label onto the
+// stored value; any other value passes through unchanged.
+func normalizeDiscoverySource(s string) string {
+	if s == ctisDefaultDiscoverySource {
+		return DiscoverySourceSensor
+	}
+	return s
+}
 
 // Service handles ingestion of assets and findings from various formats.
 // This is the unified service that uses CTIS as the internal format.
@@ -37,14 +61,19 @@ type Service struct {
 	cveProcessor       *CVEProcessor
 	validator          *Validator
 
-	assetRepo   asset.Repository
-	findingRepo vulnerability.FindingRepository
-	vulnRepo    vulnerability.VulnerabilityRepository
-	compRepo    component.Repository
-	sensorRepo  sensor.Repository
-	branchRepo  branch.Repository
-	tenantRepo  tenant.Repository
-	auditRepo   audit.Repository
+	assetRepo    asset.Repository
+	findingRepo  vulnerability.FindingRepository
+	vulnRepo     vulnerability.VulnerabilityRepository
+	compRepo     software.PackageWriter
+	webEndpoints webendpoint.Repository
+	software     *softwareRecorder
+	attributes   AttributeReconciler
+	sets         SetReconciler
+	webRules     WebRuleSource
+	sensorRepo   sensor.Repository
+	branchRepo   branch.Repository
+	tenantRepo   tenant.Repository
+	auditRepo    audit.Repository
 
 	// auditSvc is the SHARED application audit service. Ingest audit
 	// events are tenant-scoped, so they must go through it rather than
@@ -58,13 +87,50 @@ type Service struct {
 	// instance would have its own mutex and could interleave appends.
 	auditSvc *auditapp.AuditService
 
-	activityService *app.FindingActivityService
+	activityService *activity.FindingActivityService
 
 	// assetExposureProjector promotes recon-discovered assets (open ports,
 	// exposed services, TLS certificates) into the Exposure Register. Runs
 	// post-asset-insert, best-effort. Nil-safe: when unwired, recon assets are
 	// not projected (prior behavior).
 	assetExposureProjector AssetExposureProjector
+
+	// scanAttribution stamps tenant_scanned attribution evidence on the
+	// assets of command-bound reports (RFC-036 O8). Nil-safe.
+	scanAttribution ScanAttributionStamper
+
+	// takeoverConfirmer raises subdomain_takeover from nuclei takeover
+	// findings of command-bound reports (RFC-036 P1). Nil-safe.
+	takeoverConfirmer TakeoverConfirmer
+
+	// stepOutputs records what command-bound reports of workflow steps
+	// wrote, for chained stages; commandIngested is told when a v2 report
+	// of a command finished (step_outputs.go). Nil-safe.
+	stepOutputs     StepOutputRecorder
+	commandIngested CommandIngestedHook
+
+	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
+	// non-repository findings (coverage_autoresolve.go). The zero mode is
+	// dry_run.
+	coverageMode  CoverageAutoResolveMode
+	coverageGuard BlindingGuard
+
+	// commands binds reports to the commands they name; results holds the
+	// tenant policy for unsolicited reports and their quarantine (RFC-040
+	// §5.3). Without results every tenant behaves as in "warn" mode.
+	commands     commandReader
+	results      sensorresult.Repository
+	resultLimits sensorresult.Limits
+	// grants and pushRefusals enforce the sensor's push-ingest grant before
+	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
+	grants       GrantReader
+	pushRefusals PushRefusalObserver
+	// contracts reads the submitting sensor's manifest, where a ported
+	// tool declares what it produces (output_binding.go). Nil-safe.
+	contracts ToolContractSource
+	// reach reads what a sensor's lookups may answer about
+	// (sensor_reach.go); nil: nothing outside the tenant-wide roles.
+	reach ReachSource
 
 	logger *logger.Logger
 
@@ -84,7 +150,7 @@ func NewService(
 	assetRepo asset.Repository,
 	findingRepo vulnerability.FindingRepository,
 	vulnRepo vulnerability.VulnerabilityRepository,
-	compRepo component.Repository,
+	compRepo software.PackageWriter,
 	sensorRepo sensor.Repository,
 	branchRepo branch.Repository,
 	tenantRepo tenant.Repository,
@@ -109,6 +175,8 @@ func NewService(
 		tenantRepo:  tenantRepo,
 		auditRepo:   auditRepo,
 
+		coverageGuard: DefaultBlindingGuard(),
+
 		logger: l,
 	}
 }
@@ -130,7 +198,7 @@ func (s *Service) SetDataFlowRepository(repo vulnerability.DataFlowRepository) {
 }
 
 // SetComponentRepository sets the component repository for linking findings to components.
-func (s *Service) SetComponentRepository(repo component.Repository) {
+func (s *Service) SetComponentRepository(repo software.PackageWriter) {
 	s.findingProcessor.SetComponentRepository(repo)
 }
 
@@ -147,7 +215,7 @@ func (s *Service) SetRelationshipRepository(repo asset.RelationshipRepository) {
 }
 
 // SetAssetStateHistoryRepository wires the asset state-history store so the
-// discovery pipeline records appeared/recovered events. Optional.
+// discovery scan workflow records appeared/recovered events. Optional.
 func (s *Service) SetAssetStateHistoryRepository(repo asset.StateHistoryRepository) {
 	s.assetProcessor.SetStateHistoryRepository(repo)
 }
@@ -170,7 +238,7 @@ func (s *Service) SetIdentityStore(store IdentityStore, reviewer IdentityReviewe
 }
 
 // SetActivityService sets the finding activity service for audit trail during ingestion.
-func (s *Service) SetActivityService(activityService *app.FindingActivityService) {
+func (s *Service) SetActivityService(activityService *activity.FindingActivityService) {
 	s.activityService = activityService
 	s.findingProcessor.SetActivityService(activityService)
 }
@@ -179,6 +247,17 @@ func (s *Service) SetActivityService(activityService *app.FindingActivityService
 // This is used to trigger workflows when new findings are ingested.
 func (s *Service) SetFindingCreatedCallback(callback FindingCreatedCallback) {
 	s.findingProcessor.SetFindingCreatedCallback(callback)
+}
+
+// SetWebEvidenceRecorder enables web evidence captures (RFC-081).
+func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
+	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
+// SetAssetsObservedCallback sets the callback for every asset an ingest
+// wrote, with the report's tool and observation time (asset freshness).
+func (s *Service) SetAssetsObservedCallback(callback AssetsObservedCallback) {
+	s.assetProcessor.SetAssetsObservedCallback(callback)
 }
 
 // SetAssetsDiscoveredCallback sets the callback for assets an ingest newly
@@ -199,6 +278,13 @@ func (s *Service) SetPriorityClassifier(classifier PriorityClassifier) {
 	s.findingProcessor.SetPriorityClassifier(classifier)
 }
 
+// SetRegressionHandler wires the follow-up on findings a scan reopened as
+// regressions: a fresh SLA deadline and a ticket comment + notification
+// (RFC-039 D2).
+func (s *Service) SetRegressionHandler(h RegressionHandler) {
+	s.findingProcessor.SetRegressionHandler(h)
+}
+
 // SetSLAApplier wires the SLA-deadline calculator used after priority
 // classification (F3 wire). Nil-safe: when not wired, findings persist
 // with NULL sla_deadline, matching pre-F3 behavior.
@@ -215,6 +301,20 @@ func (s *Service) SetAssignmentApplier(applier AssignmentApplier) {
 
 // SetRemediationKeyApplier wires post-insert remediation-group key derivation
 // (RFC-015). Nil-safe: when not wired, findings are not grouped.
+// SetLicenseEvaluator wires the license policy evaluation after each write
+// of an asset's packages.
+func (s *Service) SetLicenseEvaluator(e LicenseEvaluator) {
+	if s.componentProcessor != nil {
+		s.componentProcessor.SetLicenseEvaluator(e)
+	}
+}
+
+// SetVEXStatementApplier wires the organization's VEX statements, applied
+// to the findings of every report.
+func (s *Service) SetVEXStatementApplier(a VEXStatementApplier) {
+	s.findingProcessor.SetVEXStatementApplier(a)
+}
+
 func (s *Service) SetRemediationKeyApplier(applier RemediationKeyApplier) {
 	s.findingProcessor.SetRemediationKeyApplier(applier)
 }
@@ -226,12 +326,24 @@ func (s *Service) SetExposureBridge(bridge ExposureBridge) {
 	s.findingProcessor.SetExposureBridge(bridge)
 }
 
+// SetSecretFingerprinter wires the keyed fingerprint stored for secret
+// findings. Without it, secret findings carry no fingerprint.
+func (s *Service) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) {
+	s.findingProcessor.SetSecretFingerprinter(fp)
+}
+
 // SetSuppressionChecker wires approved suppression-rule enforcement into the
 // ingest finding path: a new finding matching an active (approved, non-expired)
 // rule lands resolved+suppressed. Nil-safe: when not wired, findings are never
 // suppressed at ingest (prior behavior).
 func (s *Service) SetSuppressionChecker(checker SuppressionChecker) {
 	s.findingProcessor.SetSuppressionChecker(checker)
+}
+
+// SetSuppressionModuleGuard makes ingest suppression honor the tenant's
+// suppressions module toggle (off = findings land as reported).
+func (s *Service) SetSuppressionModuleGuard(guard ModuleGuard) {
+	s.findingProcessor.SetSuppressionModuleGuard(guard)
 }
 
 // SetAssetExposureProjector wires the post-insert recon-asset → exposure-store
@@ -271,6 +383,65 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if err := s.validator.ValidateReport(report); err != nil {
 		return nil, err
 	}
+	// SECURITY: mask a secret scanner's raw match wherever a finding
+	// repeats it (title, description, message, tags, properties), before
+	// anything is stored, fingerprinted, quarantined or logged.
+	redactReportSecrets(report)
+	// Fill the normalized members a CTIS 1.4 report left empty from its
+	// typed ids and native identity (interop.go), before the CVE catalog
+	// step and the identity recipes read them.
+	for i := range report.Findings {
+		fillFromInterop(&report.Findings[i])
+		webLocationFallback(&report.Findings[i])
+	}
+	// Cap sensor-supplied text before anything is stored or fingerprinted:
+	// an oversized value is cut with a marker, the finding still lands
+	// (RFC-040 §5.4).
+	if n := capReportText(report); n > 0 {
+		s.logger.Warn("ingest: capped oversized finding text",
+			"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(),
+			"report_id", sanitizeIngestLogField(report.Metadata.ID), "values_capped", n)
+	}
+
+	// Result binding (RFC-040 §5.3). A server-side ingest (synthetic sensor,
+	// zero id) is trusted. A sensor report without a command passes the
+	// unsolicited gate unless the accept side ran it already: quarantined
+	// (stored, not applied) or applied with the unsolicited limits.
+	opts := input.Options
+	if opts.Actor != nil {
+		// An upload's findings land only on the assets its rows name, never
+		// on an asset made up from the metadata or on "the only asset".
+		opts.RequireAssetForFindings = true
+	}
+	binding := opts.Binding
+	// A server-side ingest (synthetic sensor, zero id) is trusted, except a
+	// CI run's report: it has no sensor row either, and keeps its binding.
+	if agt.ID.IsZero() && binding.Kind != BindingCIRun {
+		binding = TrustedBinding()
+	}
+	if binding.Kind == BindingCommand && binding.Tool != "" &&
+		(report.Tool == nil || !tooldom.SameTool(binding.Tool, report.Tool.Name)) {
+		return nil, ErrToolNotPermitted
+	}
+	unsolicitedWarned := false
+	if binding.Kind == BindingUnsolicited && !opts.Admitted {
+		warned, err := s.admitUnsolicited(ctx, agt, tenantID, unsolicitedSubmission{
+			Protocol: sensorresult.ProtocolV1, Route: opts.Route, ReportID: report.Metadata.ID, Report: report,
+		})
+		if err != nil {
+			return nil, err
+		}
+		unsolicitedWarned = warned
+	}
+	// An unsolicited report never auto-resolves in a tenant whose mode is
+	// quarantine (owner decision Q6 (a)); in warn mode it keeps the previous
+	// behavior until the tenant switches.
+	unsolicitedMayResolve := binding.Kind != BindingUnsolicited ||
+		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
+	// Output-type binding (research/27 G12): a command-bound report may
+	// carry only the asset types its tool produces or takes.
+	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	scope := newAlterScope(binding).withActor(ctx, opts.Actor)
 
 	// report.Metadata.ID and SourceType come from the CTIS payload
 	// submitted by the sensor. A compromised/malicious sensor can
@@ -286,12 +457,18 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
-		ReportID: report.Metadata.ID,
+		ReportID:          report.Metadata.ID,
+		Binding:           binding.String(),
+		UnsolicitedWarned: unsolicitedWarned,
 	}
+	// Web endpoints (and legacy discovered_url assets) go to the web surface
+	// sub-inventory under their origin asset, never one asset per URL.
+	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing
 	var tenantRules branch.BranchTypeRules
 	var assetIdentityCfg *CorrelationConfig
+	reconcilePolicy := asset.DefaultReconciliationPolicy()
 	if s.tenantRepo != nil {
 		if t, err := s.tenantRepo.GetByID(ctx, tenantID); err == nil && t != nil {
 			settings := t.TypedSettings()
@@ -302,12 +479,24 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 				aiSettings.StaleAssetDays, aiSettings.MaxIPsPerAsset,
 			)
 			assetIdentityCfg = &cfg
+			if p, perr := settings.AssetReconciliation.Policy(); perr == nil {
+				reconcilePolicy = p
+			}
 		}
 	}
+	// Who this report is for attribute reconciliation (RFC-069), and when
+	// its source saw what it reports.
+	sourceKind, sourceName := reportSource(binding, opts, report)
+	clampReportTimestamp(report, binding, time.Now())
+	observedAt := reportObservedAt(report, time.Now())
+	sourceRun := binding.Run()
+	if binding.Kind == BindingTrusted {
+		sourceRun = opts.SourceRun
+	}
+	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind, sourceName)
 
 	// Step 1: Process assets using batch operations
-	opts := input.Options
-	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings)
+	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
@@ -317,7 +506,25 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		addError(output, fmt.Sprintf("assets: %v", err))
 	}
 
+	// A restricted upload creates no asset, so every asset it maps must be
+	// one its actor may change; drop any other (an id a concurrent create
+	// race remapped to an existing row) with its findings.
+	if scope.actorRestricted() {
+		for ref, id := range assetMap {
+			if scope.actorDenies(id) {
+				delete(assetMap, ref)
+				skipOutOfScope(output, ref)
+			}
+		}
+	}
+
 	output.AssetMap = assetMap
+
+	// The tracked values this report states (RFC-069), before findings are
+	// prioritized on the assets' criticality and exposure.
+	src := attributeSource{kind: sourceKind, name: sourceName, run: sourceRun}
+	s.recordAttributes(ctx, tenantID, scope, src, observedAt, report, assetMap)
+	s.recordSets(ctx, tenantID, scope, src, observedAt, report, binding, assetMap)
 
 	s.logger.Debug("asset processing complete",
 		"assets_created", output.AssetsCreated,
@@ -325,18 +532,38 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"asset_map_size", len(assetMap),
 	)
 
+	// Step 1a: attribution of what a sensor report wrote (RFC-036 §6.4,
+	// research/22 E7): command-bound and unsolicited sensor reports.
+	// Best-effort.
+	if binding.Kind == BindingCommand || binding.Kind == BindingUnsolicited {
+		toolName := ""
+		if report.Tool != nil {
+			toolName = report.Tool.Name
+		}
+		s.stampScanAttribution(ctx, agt, tenantID, binding, scope, toolName, report.Metadata.ID, assetMap)
+	}
+	// What a workflow step's report wrote, for the stages chained after it.
+	s.recordStepOutputs(ctx, tenantID, binding, scope)
+
 	// Step 1b: Project recon-discovered assets (open ports, exposed services,
 	// TLS certificates) into the Exposure Register. Best-effort — a failure here
 	// must never abort ingest. Only the relevant CTIS asset types are re-loaded
 	// (by their AUTHORITATIVE persisted id, so the exposure→asset FK is valid),
 	// keeping non-recon scans (which create no such assets) free of extra work.
-	if s.assetExposureProjector != nil {
+	if s.assetExposureProjector != nil && !opts.NoExposureProjection {
 		s.projectAssetExposures(ctx, tenantID, report, assetMap)
 	}
 
+	// Step 1c: the web endpoints, under their persisted origin assets.
+	s.recordEndpoints(ctx, agt, tenantID, binding, scope, endpoints, assetMap, report, output)
+
+	// Step 1d: the software the assets run (RFC-066). Best-effort.
+	s.recordSoftware(ctx, tenantID, scope, report, assetMap)
+
 	// Step 2: Process dependencies/components (SBOM)
 	if s.compRepo != nil && s.componentProcessor != nil && len(report.Dependencies) > 0 {
-		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap, output); err != nil {
+		if err := s.componentProcessor.ProcessBatch(ctx, tenantID, report, assetMap,
+			PackageChannel(!agt.ID.IsZero() && binding.Kind != BindingCIRun, report.Metadata.SourceType), output); err != nil {
 			s.logger.Error("failed to process components batch", "error", err)
 			// Continue with partial results
 		}
@@ -365,73 +592,40 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		addError(output, fmt.Sprintf("cve upsert failed: %v", cveErr))
 	}
 
+	// The version-match tool name belongs to the inventory matcher (RFC-066):
+	// only it may create findings under it, and only its own findings are
+	// closed when software changes. A report claiming it is refused.
+	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
+		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		report.Findings = nil
+	}
+
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {
-		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings); err != nil {
+		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings, scope); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}
+		if report.Tool != nil {
+			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
+			s.auditVEX(ctx, tenantID, binding, report.Tool.Name, output)
+		}
 	}
 
-	// Step 3: Auto-resolve stale findings (only for full coverage scans on default branch)
-	// This marks findings as 'resolved' if they were not seen in this scan.
-	// Protected statuses (false_positive, accepted) are never auto-resolved.
-	//
-	// Auto-resolve conditions (all must be true):
-	// 1. CoverageType = full (not incremental or partial)
-	// 2. Scan is on default branch (main/master) - feature branch scans never auto-resolve
-	// 3. Tool name available for scoping
-	//
-	// This follows GitHub/GitLab best practices where default branch is source of truth.
-	// Protocol v2 defers both auto-resolve steps to the report's commit.
-	autoResolveEligible := !opts.DeferAutoResolve && input.ShouldAutoResolve() && s.findingRepo != nil && report.Tool != nil && report.Metadata.ID != ""
-	switch {
-	case opts.DeferAutoResolve:
-		s.logger.Debug("auto-resolve deferred to the report commit")
-	case autoResolveEligible && s.sensorMayAutoResolveTool(ctx, agt, report.Tool.Name):
-		toolName := report.Tool.Name
-		scanID := report.Metadata.ID
+	// Step 2d: takeover-template findings confirm open dangling CNAMEs
+	// (RFC-036 P1); command-bound reports only. Best-effort.
+	s.confirmTakeovers(ctx, agt, tenantID, binding, scope, report, assetMap)
 
-		s.logger.Info("auto-resolve enabled for default branch full scan",
-			"tool_name", toolName,
-			"scan_id", scanID,
-			"branch", input.GetBranchInfo().Name,
-		)
-
-		// Auto-resolve across all assets in a single query rather than one per
-		// asset. Pass nil branchID to resolve findings on any default branch.
-		assetIDs := make([]shared.ID, 0, len(assetMap))
-		for _, assetID := range assetMap {
-			assetIDs = append(assetIDs, assetID)
-		}
-
-		var allResolvedIDs []shared.ID
-		resolvedIDs, err := s.findingRepo.AutoResolveStaleByAssets(ctx, tenantID, assetIDs, toolName, scanID, nil)
-		if err != nil {
-			s.logger.Warn("failed to auto-resolve stale findings",
-				"tool_name", toolName,
-				"asset_count", len(assetIDs),
-				"error", err,
-			)
-		} else if len(resolvedIDs) > 0 {
-			output.FindingsAutoResolved += len(resolvedIDs)
-			app.FindingsAutoResolved.WithLabelValues(tenantID.String()).Add(float64(len(resolvedIDs)))
-			s.logger.Info("auto-resolved stale findings",
-				"tool_name", toolName,
-				"asset_count", len(assetIDs),
-				"count", len(resolvedIDs),
-			)
-			allResolvedIDs = append(allResolvedIDs, resolvedIDs...)
-		}
-
-		// Record audit trail once for all auto-resolved findings (single batch INSERT)
-		if s.activityService != nil && len(allResolvedIDs) > 0 {
-			if err := s.activityService.RecordBatchAutoResolved(ctx, tenantID, allResolvedIDs, toolName, scanID); err != nil {
-				s.logger.Warn("failed to record auto-resolve activities", "error", err)
-			}
-		}
-	case s.findingRepo != nil && report.Tool != nil:
-		s.logAutoResolveSkipped(input, report, autoResolveEligible)
+	// Step 3: a protocol v1 report never closes findings (research 18 F3). A
+	// scan closes default-branch findings only through the per-command
+	// evaluation of a protocol v2 run (evaluateRepoCoverage): the command
+	// completed with exit 0, nothing was rejected, the same tool and scan
+	// profile, behind the blinding guard. A v1 report proves none of that,
+	// and an unbound report or a tenant upload never closes (owner decision
+	// O11). The per-branch occurrence sweep below is unchanged.
+	if !opts.DeferAutoResolve && s.findingRepo != nil && report.Tool != nil && input.ShouldAutoResolve() {
+		s.logger.Info("auto-resolve skipped: only a protocol v2 run bound to a command closes findings",
+			"tool_name", sanitizeIngestLogField(report.Tool.Name), "binding", binding.String())
 	}
 
 	// Step 3b: Per-branch occurrence auto-resolve (branch-aware occurrence model).
@@ -440,13 +634,16 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// the scan no longer reports as auto_fixed — so per-branch state reflects what
 	// is actually present on that branch. Additive: it only touches occurrence
 	// rows, never the finding's headline status. Best-effort.
-	if !opts.DeferAutoResolve && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
+	if !opts.DeferAutoResolve && unsolicitedMayResolve && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil && report.Metadata.ID != "" &&
 		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
 		toolName := report.Tool.Name
 		scanID := report.Metadata.ID
 		branchName := report.Metadata.Branch.Name
 		for _, assetID := range assetMap {
+			if (binding.Kind == BindingCommand || binding.Kind == BindingCIRun) && !scope.allowedAsset(assetID) {
+				continue
+			}
 			br, err := s.branchRepo.GetByName(ctx, assetID, branchName)
 			if err != nil || br == nil {
 				continue // not a repository asset / branch not tracked — skip
@@ -491,6 +688,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		"dependencies_linked", output.DependenciesLinked,
 		"errors", len(output.Errors),
 	)
+
+	recordWithheld(output)
 
 	// Step 6: Create audit log for ingestion
 	s.createIngestAuditLog(ctx, agt, tenantID, report, output)
@@ -546,98 +745,9 @@ func (s *Service) projectAssetExposures(ctx context.Context, tenantID shared.ID,
 	}
 }
 
-// logAutoResolveSkipped says why a report did not auto-resolve stale findings.
-// toolGateBlocked means every report-level condition held and only the
-// sensor/tool gate (sensorMayAutoResolveTool) refused; that gate already logged
-// its reason, so nothing more is said here. Before, that case fell through to
-// "coverage type not full", which was false for a full default-branch scan.
-func (s *Service) logAutoResolveSkipped(input Input, report *ctis.Report, toolGateBlocked bool) {
-	branchInfo := input.GetBranchInfo()
-	switch {
-	case toolGateBlocked:
-		return
-	case branchInfo == nil:
-		s.logger.Debug("auto-resolve skipped: no branch info provided")
-	case !branchInfo.IsDefaultBranch:
-		s.logger.Debug("auto-resolve skipped: not default branch",
-			"branch", sanitizeIngestLogField(branchInfo.Name),
-		)
-	case report.Metadata.ID == "":
-		// Without a scan identity we cannot tell which findings belong to
-		// THIS scan, so the "not seen in this scan" staleness test would
-		// match (and resolve) the tenant's entire existing finding set.
-		s.logger.Warn("auto-resolve skipped: report metadata.id is empty",
-			"tool_name", sanitizeIngestLogField(report.Tool.Name),
-		)
-	default:
-		coverageType := input.CoverageType
-		if coverageType == "" && report.Metadata.CoverageType != "" {
-			coverageType = CoverageType(report.Metadata.CoverageType)
-		}
-		s.logger.Debug("auto-resolve skipped: coverage type not full",
-			"coverage_type", sanitizeIngestLogField(string(coverageType)),
-		)
-	}
-}
-
-// IngestSARIF processes a SARIF log and ingests it as findings.
-//
-// The findings are attached to the repository the log was produced from:
-// repo.URL when the request names it, else the log's
-// versionControlProvenance, else a git-hosted repository its artifact URIs
-// agree on. A log with results that identifies no repository is refused with
-// ErrSARIFNoRepository rather than filed under a shared per-tool pseudo-asset,
-// where findings of unrelated repositories would deduplicate into each other.
-func (s *Service) IngestSARIF(ctx context.Context, agt *sensor.Sensor, sarifData []byte, repo SARIFRepository) (*Output, error) {
-	s.logger.Info("ingesting SARIF data",
-		"sensor_id", agt.ID.String(),
-	)
-
-	if err := validateSARIFRepositoryInput(repo); err != nil {
-		return nil, err
-	}
-	resolved, identified, err := resolveSARIFRepository(sarifData, repo)
-	if err != nil {
-		return nil, err
-	}
-	var opts *ctis.ConvertOptions
-	if identified {
-		opts = sarifConvertOptions(resolved)
-	}
-
-	// Convert SARIF to CTIS
-	report, err := ctis.FromSARIF(sarifData, opts)
-	if err != nil {
-		// The sensor sent something that is not SARIF: a client error.
-		return nil, fmt.Errorf("%w: failed to parse SARIF: %v", shared.ErrValidation, err) //nolint:errorlint // the parse error is detail, the class is validation
-	}
-	if !identified && len(report.Findings) > 0 {
-		return nil, ErrSARIFNoRepository
-	}
-
-	// Use the unified ingestion pipeline
-	return s.Ingest(ctx, agt, Input{Report: report})
-}
-
-// IngestRecon processes recon data and ingests it.
-func (s *Service) IngestRecon(ctx context.Context, agt *sensor.Sensor, reconInput *ctis.ReconToCTISInput) (*Output, error) {
-	s.logger.Info("ingesting recon data",
-		"sensor_id", agt.ID.String(),
-	)
-
-	// Convert Recon to CTIS using SDK
-	opts := ctis.DefaultReconConverterOptions()
-	opts.DiscoverySource = legacyv1.DiscoverySourceSensor
-	report, err := ctis.ConvertReconToCTIS(reconInput, opts)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to convert recon data: %v", shared.ErrValidation, err) //nolint:errorlint // the conversion error is detail, the class is validation
-	}
-
-	// Use the unified ingestion pipeline
-	return s.Ingest(ctx, agt, Input{Report: report})
-}
-
-// CheckFingerprints checks which fingerprints already exist in the database.
+// CheckFingerprints checks which fingerprints already exist in the database,
+// among the findings on assets the sensor reaches (sensor_reach.go): a
+// fingerprint outside its reach is answered as missing.
 func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, input CheckFingerprintsInput) (*CheckFingerprintsOutput, error) {
 	// Platform sensors must have tenant context from job assignment
 	if agt.TenantID == nil {
@@ -645,9 +755,25 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, inp
 	}
 	tenantID := *agt.TenantID
 
-	existing, missing, err := s.findingProcessor.CheckFingerprints(ctx, tenantID, input.Fingerprints)
+	reach, err := s.reachOf(ctx, agt, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	known, err := s.findingProcessor.knownFingerprints(ctx, tenantID, input.Fingerprints)
+	if err != nil {
+		return nil, err
+	}
+	if known, err = s.reachableFingerprints(ctx, tenantID, reach, known); err != nil {
+		return nil, err
+	}
+	existing := make([]string, 0, len(input.Fingerprints))
+	missing := make([]string, 0, len(input.Fingerprints))
+	for _, fp := range input.Fingerprints {
+		if _, ok := known[fp]; ok {
+			existing = append(existing, fp)
+		} else {
+			missing = append(missing, fp)
+		}
 	}
 
 	return &CheckFingerprintsOutput{
@@ -661,7 +787,8 @@ func (s *Service) CheckFingerprints(ctx context.Context, agt *sensor.Sensor, inp
 // branch is pre-existing tech debt — not introduced by the PR — so a PR gate /
 // inline comments should focus on the genuinely-new set. Tenant-scoped via the
 // authenticated sensor. If the repository or base branch is unknown (no history),
-// every fingerprint is treated as new.
+// every fingerprint is treated as new; so is a repository outside the sensor's
+// reach (sensor_reach.go), with the same answer, so it is no existence oracle.
 func (s *Service) BaselineDiff(ctx context.Context, agt *sensor.Sensor, input BaselineDiffInput) (*BaselineDiffOutput, error) {
 	if agt == nil || agt.TenantID == nil {
 		return nil, fmt.Errorf("sensor has no tenant context: platform sensors require job assignment")
@@ -679,9 +806,16 @@ func (s *Service) BaselineDiff(ctx context.Context, agt *sensor.Sensor, input Ba
 		return allNew(), nil
 	}
 
+	reach, err := s.reachOf(ctx, agt, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	repoAsset, err := s.assetRepo.GetByName(ctx, tenantID, input.Repository)
 	if err != nil || repoAsset == nil {
 		return allNew(), nil // unknown repo → no base history
+	}
+	if !reach.covers(repoAsset.Name(), repoAsset.Properties()) {
+		return allNew(), nil // outside the sensor's reach: answered as unknown
 	}
 	baseBranch, err := s.branchRepo.GetByName(ctx, repoAsset.ID(), input.BaseBranch)
 	if err != nil || baseBranch == nil {
@@ -734,57 +868,6 @@ var reservedAutoResolveTools = map[string]struct{}{
 	"csv_import":     {}, // CSV finding import (pentest)
 }
 
-// sensorMayAutoResolveTool decides whether a report attributed to toolName may
-// auto-resolve stale findings of that tool. Auto-resolve is keyed on the
-// sensor-SUPPLIED tool name, so without this any sensor key in the tenant could
-// close another tool's findings by claiming its name in a "full" scan.
-//
-//   - Server-side ingests (synthetic sensor, zero ID: tenant uploads, platform
-//     imports) are trusted — the server chose the tool name.
-//   - Reserved non-scanner tool names are never auto-resolved by a sensor.
-//   - A sensor may only auto-resolve its effective tools: what it reports
-//     installed narrowed by its tool limit, or its declared tools when it
-//     never reported (RFC-029 §4.3.1).
-//   - A legacy sensor that declares no tools and reports none keeps the previous behavior
-//     (backward compatibility with old SDKs / unconfigured sensors), with a
-//     warning so operators can see which sensors should declare their tools.
-func (s *Service) sensorMayAutoResolveTool(ctx context.Context, agt *sensor.Sensor, toolName string) bool {
-	if agt == nil || agt.ID.IsZero() {
-		return true
-	}
-	if _, reserved := reservedAutoResolveTools[strings.ToLower(strings.TrimSpace(toolName))]; reserved {
-		s.logger.Warn("auto-resolve skipped: tool name is reserved for non-sensor sources",
-			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
-		return false
-	}
-
-	tools := agt.EffectiveTools()
-	reported := agt.Reported.Tools != nil
-	// The async ingest worker rebuilds a minimal sensor from the job (ID +
-	// tenant only); load the sensor row in that case.
-	if len(tools) == 0 && !reported && s.sensorRepo != nil {
-		if stored, err := s.sensorRepo.GetByID(ctx, agt.ID); err == nil && stored != nil {
-			tools = stored.EffectiveTools()
-			reported = stored.Reported.Tools != nil
-		}
-	}
-
-	if len(tools) == 0 && !reported {
-		s.logger.Warn("auto-resolve allowed for legacy sensor with no declared tools; declare the sensor's tools to scope auto-resolve",
-			"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName))
-		return true
-	}
-	for _, t := range tools {
-		if tooldom.SameTool(t, toolName) {
-			return true
-		}
-	}
-	s.logger.Warn("auto-resolve skipped: reported tool is not among the sensor's declared tools",
-		"sensor_id", agt.ID.String(), "tool_name", sanitizeIngestLogField(toolName),
-		"declared_tools", sanitizeIngestLogField(strings.Join(tools, ",")))
-	return false
-}
-
 // validateSensor checks if the sensor is valid for ingestion.
 func (s *Service) validateSensor(agt *sensor.Sensor) error {
 	if agt == nil {
@@ -792,7 +875,7 @@ func (s *Service) validateSensor(agt *sensor.Sensor) error {
 	}
 
 	if agt.TenantID == nil {
-		return shared.NewDomainError(legacyv1.CodeNoTenantContext, "sensor has no tenant context: platform sensors require job assignment", nil)
+		return shared.NewDomainError(CodeNoTenantContext, "sensor has no tenant context: platform sensors require job assignment", nil)
 	}
 
 	// Check sensor status
@@ -909,6 +992,17 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 		"assets_created":         output.AssetsCreated,
 		"assets_updated":         output.AssetsUpdated,
 		"error_count":            len(output.Errors),
+		"binding":                output.Binding,
+	}
+	if output.AssetsLimited > 0 {
+		metadata["assets_limited"] = output.AssetsLimited
+	}
+	if output.ReopensWithheld > 0 {
+		metadata["reopens_withheld"] = output.ReopensWithheld
+	}
+	if output.UnsolicitedWarned {
+		// Tenant mode warn: quarantine mode would have held this report.
+		metadata["unsolicited_warned"] = true
 	}
 
 	// Include first few errors for debugging (limit to 5 to avoid huge audit logs)

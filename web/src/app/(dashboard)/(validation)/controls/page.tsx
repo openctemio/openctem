@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -45,6 +46,7 @@ import {
   type ControlType,
   type TestResult,
 } from '@/features/controls/vocabulary'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface CompensatingControl {
   id: string
@@ -88,6 +90,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export default function CompensatingControlsPage() {
+  const { t } = useTranslation()
   const {
     data: response,
     isLoading,
@@ -329,69 +332,74 @@ export default function CompensatingControlsPage() {
             <DialogTitle>New compensating control</DialogTitle>
             <DialogDescription>Add a control that reduces finding risk scores.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., WAF Rate Limiting"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="What this control does"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+          <DialogBody>
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="control_type">Control type</Label>
-                <Select
-                  value={formData.control_type}
-                  onValueChange={(value) =>
-                    setFormData({
-                      ...formData,
-                      control_type: value as ControlType,
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Driven from the shared vocabulary so the form cannot
-                        offer a value the backend rejects. */}
-                    {CONTROL_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="reduction_percent">Risk reduction (%)</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
-                  id="reduction_percent"
-                  type="number"
-                  min={MIN_REDUCTION_PERCENT}
-                  max={MAX_REDUCTION_PERCENT}
-                  value={formData.reduction_percent}
-                  onChange={(e) => setFormData({ ...formData, reduction_percent: e.target.value })}
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., WAF Rate Limiting"
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Input
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="What this control does"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="control_type">Control type</Label>
+                  <Select
+                    value={formData.control_type}
+                    onValueChange={(value) =>
+                      setFormData({
+                        ...formData,
+                        control_type: value as ControlType,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* Driven from the shared vocabulary so the form cannot
+                        offer a value the backend rejects. */}
+                      {CONTROL_TYPES.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reduction_percent">Risk reduction (%)</Label>
+                  <Input
+                    id="reduction_percent"
+                    type="number"
+                    min={MIN_REDUCTION_PERCENT}
+                    max={MAX_REDUCTION_PERCENT}
+                    value={formData.reduction_percent}
+                    onChange={(e) =>
+                      setFormData({ ...formData, reduction_percent: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  'validation.controls.capHint',
+                  'Findings on the linked assets are held at P2 rather than P1. The percentage is shown as the rationale only.'
+                )}
+              </p>
             </div>
-            <p className="text-muted-foreground text-xs">
-              A control caps the priority of findings on the assets you link to it — a protected
-              asset is held at P2 rather than P1. The percentage is recorded and shown as the
-              rationale; it does not currently scale the result further.
-            </p>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
               Cancel
@@ -412,32 +420,34 @@ export default function CompensatingControlsPage() {
               Record the result of a control effectiveness test.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="test_result">Test result</Label>
-              <Select
-                value={testResult}
-                onValueChange={(v) => setTestResult(v as typeof testResult)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEST_RESULTS.map((result) => (
-                    <SelectItem key={result} value={result}>
-                      {humanizeControlValue(result)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="test_result">Test result</Label>
+                <Select
+                  value={testResult}
+                  onValueChange={(v) => setTestResult(v as typeof testResult)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TEST_RESULTS.map((result) => (
+                      <SelectItem key={result} value={result}>
+                        {humanizeControlValue(result)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {testResult === 'fail' && (
+                <p className="text-muted-foreground text-xs">
+                  Recording a failure deactivates this control — it will stop reducing the priority
+                  of findings on its linked assets.
+                </p>
+              )}
             </div>
-            {testResult === 'fail' && (
-              <p className="text-muted-foreground text-xs">
-                Recording a failure deactivates this control — it will stop reducing the priority of
-                findings on its linked assets.
-              </p>
-            )}
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTestControlId(null)}>
               Cancel
@@ -460,14 +470,11 @@ export default function CompensatingControlsPage() {
       <ConfirmDialog
         open={!!deleteControl}
         onOpenChange={(open) => !open && setDeleteControl(null)}
-        title="Delete control?"
-        desc={
-          <>
-            Are you sure you want to delete &quot;{deleteControl?.name}&quot;? This action cannot be
-            undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.control.deleteTitle', 'Delete the control "{name}"?', {
+          name: deleteControl?.name ?? '',
+        })}
+        desc={t('confirm.control.deleteDesc', 'This cannot be undone.')}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         handleConfirm={handleDelete}
       />

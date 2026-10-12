@@ -117,9 +117,8 @@ const strongHexSecret = "ff00112233445566778899aabbccddeeff00112233445566778899a
 func minimalValidConfig() *Config {
 	return &Config{
 		App: AppConfig{
-			Name:  "openctem",
-			Env:   "development",
-			Debug: false,
+			Name: "openctem",
+			Env:  "development",
 		},
 		Server: ServerConfig{
 			Host: "0.0.0.0",
@@ -185,6 +184,32 @@ func TestLoad_TenantCreationModeDefaultsToAdminOnly(t *testing.T) {
 	} {
 		if got := (AuthConfig{TenantCreationMode: mode}).SelfServiceTenantCreation(); got != want {
 			t.Fatalf("mode %q: SelfServiceTenantCreation=%v, want %v", mode, got, want)
+		}
+	}
+}
+
+// APP_ENCRYPTION_KEY_PREVIOUS entries must be valid keys and differ from the
+// current key; the error never echoes the key.
+func TestValidate_PreviousEncryptionKeys(t *testing.T) {
+	const current = "ab00112233445566778899aabbccddeeff00112233445566778899aabbccddee"
+	const previous = "cd00112233445566778899aabbccddeeff00112233445566778899aabbccddee"
+	for name, tc := range map[string]struct {
+		prev    []string
+		wantErr bool
+	}{
+		"valid previous":   {[]string{previous}, false},
+		"malformed":        {[]string{"not-a-key-value"}, true},
+		"equal to current": {[]string{current}, true},
+	} {
+		c := minimalValidConfig()
+		c.Encryption.Key = current
+		c.Encryption.PreviousKeys = tc.prev
+		err := c.Validate()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("%s: err=%v, wantErr=%v", name, err, tc.wantErr)
+		}
+		if err != nil && strings.Contains(err.Error(), tc.prev[0]) {
+			t.Errorf("%s: the error must not echo the key", name)
 		}
 	}
 }

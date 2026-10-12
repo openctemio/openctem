@@ -186,7 +186,13 @@ func (f *S3Fetcher) Fetch(ctx context.Context, opts FetchOptions) (*FetchResult,
 				return nil, fmt.Errorf("failed to download %s: %w", key, err)
 			}
 
-			content, err := io.ReadAll(resp.Body)
+			// The listed size is the store's claim; the download is capped on
+			// its own so a changed or lying object cannot exhaust memory.
+			limit := int64(maxHTTPResponseSize)
+			if opts.MaxFileSize > 0 && opts.MaxFileSize < limit {
+				limit = opts.MaxFileSize
+			}
+			content, err := httpsec.ReadLimited(resp.Body, limit)
 			resp.Body.Close()
 			if err != nil {
 				return nil, fmt.Errorf("failed to read %s: %w", key, err)

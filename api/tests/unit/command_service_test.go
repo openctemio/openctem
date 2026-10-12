@@ -145,7 +145,7 @@ func (m *cmdMockRepo) Update(_ context.Context, cmd *commanddom.Command) error {
 	return nil
 }
 
-func (m *cmdMockRepo) Delete(_ context.Context, id shared.ID) error {
+func (m *cmdMockRepo) Delete(_ context.Context, _ shared.ID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
@@ -276,7 +276,7 @@ func (m *cmdMockRepo) GetStatsByTenant(_ context.Context, _ shared.ID) (commandd
 	return commanddom.CommandStats{}, nil
 }
 
-func (m *cmdMockRepo) CancelByPipelineRunID(_ context.Context, _ shared.ID, _ shared.ID) (int64, error) {
+func (m *cmdMockRepo) CancelByScanRunID(_ context.Context, _ shared.ID, _ shared.ID) (int64, error) {
 	return 0, nil
 }
 

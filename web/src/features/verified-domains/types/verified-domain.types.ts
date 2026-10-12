@@ -31,6 +31,25 @@ export interface VerifiedDomain {
   last_checked_at?: string | null
   created_at: string
   updated_at?: string
+  /**
+   * Another organization also held this domain verified for SSO when domain
+   * claims became exclusive (one organization per SSO domain). Both keep
+   * working until a platform administrator removes one of the claims.
+   */
+  claim_conflict?: boolean
+  /** SSO admits new people on this domain (just-in-time provisioning, RFC-058). */
+  jit_enabled?: boolean
+  /** Their role: viewer or member; absent = the identity provider default. */
+  jit_role?: DomainJITRole
+}
+
+export type DomainJITRole = 'viewer' | 'member'
+
+/** PATCH .../sso/verified-domains/{id} */
+export interface UpdateDomainJITRequest {
+  jit_enabled: boolean
+  /** '' = the identity provider default. */
+  jit_role: DomainJITRole | ''
 }
 
 /** GET list response is wrapped in a `verified_domains` envelope. */

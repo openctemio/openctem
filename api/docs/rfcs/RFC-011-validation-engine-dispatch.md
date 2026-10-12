@@ -5,7 +5,7 @@
 
 ## Problem
 
-OpenCTEM sells the 5-phase CTEM loop, but **Validation** was the only phase that
+OpenCTEM implements the 5-phase CTEM loop, but **Validation** was the only phase that
 did not *do* anything. `POST /simulations/{id}/run` returns a canned in-process
 result; the real engine contracts (`ValidationDispatcher`, `ProofOfFixService`,
 `Selector`, `ValidationJob`) existed and were unit-tested but were never wired

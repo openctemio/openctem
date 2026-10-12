@@ -14,7 +14,15 @@ type fakeAccess struct {
 	perms   map[string]bool // permission -> granted
 	groups  map[string]bool // group id -> member
 	hidden  map[string]bool // finding id -> outside the user's data scope
+	runs    map[string]bool // run id -> the user may read it (another tenant's or out of scope: absent)
 	failAll bool
+}
+
+func (f fakeAccess) CanSeeRun(_ context.Context, _, _, runID string) (bool, error) {
+	if f.failAll {
+		return false, errors.New("lookup failed")
+	}
+	return f.runs[runID], nil
 }
 
 func (f fakeAccess) CanSeeFinding(_ context.Context, _, _, findingID string) (bool, error) {
@@ -52,6 +60,10 @@ func TestDefaultAuthorize_Channels(t *testing.T) {
 		hidden: map[string]bool{"f-other-group": true},
 	}
 	noPerms := fakeAccess{}
+	runReader := fakeAccess{
+		perms: map[string]bool{permission.ScansRead.String(): true},
+		runs:  map[string]bool{"r-mine": true},
+	}
 
 	cases := []struct {
 		name    string
@@ -83,6 +95,12 @@ func TestDefaultAuthorize_Channels(t *testing.T) {
 		{"group member", member, "group:g-mine", true},
 		{"group non-member without groups:read", member, "group:g-other", false},
 		{"group non-member with groups:read", fakeAccess{perms: map[string]bool{permission.GroupsRead.String(): true}}, "group:g-other", true},
+		// A run's change notices: scans:read and a run the user may read.
+		{"own run with scans:read", runReader, "run:r-mine", true},
+		{"run of another tenant or out of scope", runReader, "run:r-other", false},
+		{"own run without scans:read", fakeAccess{runs: map[string]bool{"r-mine": true}}, "run:r-mine", false},
+		{"no checker: run refused", nil, "run:r-mine", false},
+		{"run lookup error refused", fakeAccess{perms: runReader.perms, failAll: true}, "run:r-mine", false},
 		// Fail closed.
 		{"no checker: finding refused", nil, "finding:f1", false},
 		{"no checker: group refused", nil, "group:g-mine", false},

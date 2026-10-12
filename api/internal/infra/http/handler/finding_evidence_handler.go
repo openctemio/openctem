@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -61,7 +61,7 @@ func (h *VulnerabilityHandler) AddFindingEvidence(w http.ResponseWriter, r *http
 		return
 	}
 
-	evidence, err := h.service.AddFindingEvidence(r.Context(), app.AddEvidenceInput{
+	evidence, err := h.service.AddFindingEvidence(r.Context(), finding.AddEvidenceInput{
 		FindingID:   id,
 		TenantID:    tenantID,
 		UserID:      middleware.GetUserID(r.Context()),

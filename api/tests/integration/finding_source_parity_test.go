@@ -37,12 +37,14 @@ func checkConstraintValues(t *testing.T, db *sql.DB) map[string]bool {
 	// row then has to satisfy both. That is exactly how migration 000196 first
 	// failed, and reading only one of the two constraints would have let it
 	// through — a test that cannot catch the bug it was written for.
+	// The column as a whole word: other columns merely containing "source"
+	// (source_meta, source_extra, vex_source) are not findings.source.
 	var constraintCount int
 	if err := db.QueryRow(`
 		SELECT count(*) FROM pg_constraint
 		WHERE conrelid = 'findings'::regclass
 		  AND contype = 'c'
-		  AND pg_get_constraintdef(oid) LIKE '%source%'`).Scan(&constraintCount); err != nil {
+		  AND pg_get_constraintdef(oid) ~ '\msource\M'`).Scan(&constraintCount); err != nil {
 		t.Fatalf("count findings.source CHECK constraints: %v", err)
 	}
 	if constraintCount != 1 {
@@ -57,7 +59,7 @@ func checkConstraintValues(t *testing.T, db *sql.DB) map[string]bool {
 		FROM pg_constraint
 		WHERE conrelid = 'findings'::regclass
 		  AND contype = 'c'
-		  AND pg_get_constraintdef(oid) LIKE '%source%'`).Scan(&def)
+		  AND pg_get_constraintdef(oid) ~ '\msource\M'`).Scan(&def)
 	if err != nil {
 		t.Fatalf("read findings.source CHECK constraint: %v", err)
 	}

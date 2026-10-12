@@ -31,6 +31,17 @@ const (
 	EventTypeSSLIssue            EventType = "ssl_issue"
 	EventTypeHeaderMissing       EventType = "header_missing"
 
+	// EASM DNS-only checks (RFC-036 P1).
+	EventTypeDanglingCNAME     EventType = "dangling_cname"
+	EventTypeDanglingNS        EventType = "dangling_ns"
+	EventTypeEmailSecurityWeak EventType = "email_security_weak"
+	// EventTypeSubdomainTakeover: a dangling CNAME a sensor takeover check
+	// (nuclei takeover template, tenant scan) confirmed (RFC-036 P1).
+	EventTypeSubdomainTakeover EventType = "subdomain_takeover"
+	// EventTypeLookalikeDomain: a registered lookalike of one of the
+	// organization's root domains, found by passive checks (RFC-083).
+	EventTypeLookalikeDomain EventType = "lookalike_domain"
+
 	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
 	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
 	// discovery source (see docs/rfcs/RFC-018). These are posture weaknesses on
@@ -70,6 +81,11 @@ func AllEventTypes() []EventType {
 		EventTypeIdentityMFAGap,
 		EventTypeIdentityStalePrincipal,
 		EventTypeIdentityOverprivileged,
+		EventTypeDanglingCNAME,
+		EventTypeDanglingNS,
+		EventTypeEmailSecurityWeak,
+		EventTypeSubdomainTakeover,
+		EventTypeLookalikeDomain,
 		EventTypeCustom,
 	}
 }
@@ -102,7 +118,9 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeSSLIssue, EventTypeHeaderMissing, EventTypeCertificateExpiring,
 		EventTypeCertificateExpired,
 		EventTypeIdentityMFAGap, EventTypeIdentityStalePrincipal,
-		EventTypeIdentityOverprivileged:
+		EventTypeIdentityOverprivileged,
+		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak,
+		EventTypeSubdomainTakeover, EventTypeLookalikeDomain:
 		return true
 	default:
 		return false

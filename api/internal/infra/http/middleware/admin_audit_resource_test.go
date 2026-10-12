@@ -101,3 +101,35 @@ func TestAuditCreate_URLParamWins(t *testing.T) {
 func TestSetAuditResource_NoAuditContext(t *testing.T) {
 	middleware.SetAuditResource(context.Background(), shared.NewID(), "x")
 }
+
+// The first-owner route's body can select owner recovery; the handler renames
+// the audit row so recovery is distinguishable (and high severity), including
+// a refused attempt.
+func TestAuditAction_HandlerOverridesAction(t *testing.T) {
+	log := runAudit(t, func(am *middleware.AuditMiddleware) func(http.Handler) http.Handler {
+		return am.AuditLog("organization.user_create", "tenant", "tenantId")
+	}, "/t/{tenantId}/users", "/t/"+shared.NewID().String()+"/users", func(w http.ResponseWriter, r *http.Request) {
+		middleware.SetAuditAction(r.Context(), "organization.owner_recovery", true)
+		w.WriteHeader(http.StatusForbidden)
+	})
+	if log.Action != "organization.owner_recovery" {
+		t.Fatalf("action: got %q", log.Action)
+	}
+	if log.Severity != admin.SeverityHigh {
+		t.Errorf("severity: got %q, want high", log.Severity)
+	}
+	if log.Success {
+		t.Errorf("a refused recovery must be recorded as failed")
+	}
+}
+
+func TestAuditAction_RouteActionKeptWithoutOverride(t *testing.T) {
+	log := runAudit(t, func(am *middleware.AuditMiddleware) func(http.Handler) http.Handler {
+		return am.AuditLog("organization.user_create", "tenant", "tenantId")
+	}, "/t/{tenantId}/users", "/t/"+shared.NewID().String()+"/users", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	if log.Action != "organization.user_create" {
+		t.Fatalf("action: got %q", log.Action)
+	}
+}

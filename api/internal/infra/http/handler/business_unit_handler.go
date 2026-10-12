@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/businessunit"
@@ -19,25 +19,22 @@ import (
 
 // BusinessUnitHandler handles business unit endpoints.
 type BusinessUnitHandler struct {
-	service *app.BusinessUnitService
+	service *asset.BusinessUnitService
 	logger  *logger.Logger
 }
 
 // NewBusinessUnitHandler creates a new handler.
-func NewBusinessUnitHandler(svc *app.BusinessUnitService, log *logger.Logger) *BusinessUnitHandler {
+func NewBusinessUnitHandler(svc *asset.BusinessUnitService, log *logger.Logger) *BusinessUnitHandler {
 	return &BusinessUnitHandler{service: svc, logger: log}
 }
 
 // List lists business units.
 func (h *BusinessUnitHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 
 	filter := businessunit.Filter{}
 	if q := r.URL.Query().Get("search"); q != "" {
@@ -65,7 +62,7 @@ func (h *BusinessUnitHandler) Create(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	bu, err := h.service.Create(r.Context(), app.CreateBusinessUnitInput{
+	bu, err := h.service.Create(r.Context(), asset.CreateBusinessUnitInput{
 		TenantID: tenantID, Name: req.Name, Description: req.Description,
 		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail,
 		Criticality: req.Criticality, RiskTolerance: req.RiskTolerance, ParentID: req.ParentID,
@@ -98,7 +95,7 @@ func (h *BusinessUnitHandler) Update(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
 		return
 	}
-	bu, err := h.service.Update(r.Context(), app.UpdateBusinessUnitInput{
+	bu, err := h.service.Update(r.Context(), asset.UpdateBusinessUnitInput{
 		TenantID: tenantID, ID: buID, Name: req.Name, Description: req.Description,
 		OwnerName: req.OwnerName, OwnerEmail: req.OwnerEmail,
 		Criticality: req.Criticality, RiskTolerance: req.RiskTolerance, ParentID: req.ParentID,

@@ -34,7 +34,7 @@ func TestBusinessContextLookupRepo_GetForAssets(t *testing.T) {
 
 	tenantID := shared.NewID()
 	mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`,
-		tenantID.String(), "bizctx-test", "bizctx-"+tenantID.String()[:8])
+		tenantID.String(), "bizctx-test", "bizctx-"+tenantID.String()[28:])
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID.String()) })
 
 	// Asset.
@@ -106,7 +106,7 @@ func TestBusinessContextLookupRepo_ControlPlanePropagation(t *testing.T) {
 
 	tenantID := shared.NewID()
 	mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`,
-		tenantID.String(), "cp-test", "cp-"+tenantID.String()[:8])
+		tenantID.String(), "cp-test", "cp-"+tenantID.String()[28:])
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID.String()) })
 
 	// served: a CRITICAL business service asset (the SOURCE of the edge).
@@ -174,7 +174,7 @@ func TestBusinessContextLookupRepo_ControlPlaneMultiHop(t *testing.T) {
 
 	tenantID := shared.NewID()
 	mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`,
-		tenantID.String(), "cp-multi", "cpm-"+tenantID.String()[:8])
+		tenantID.String(), "cp-multi", "cpm-"+tenantID.String()[28:])
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID.String()) })
 
 	mkAsset := func(name, crit string) shared.ID {
@@ -263,7 +263,7 @@ func TestBusinessContextLookupRepo_BUHierarchyInheritance(t *testing.T) {
 
 	tenantID := shared.NewID()
 	mustExec(t, db, `INSERT INTO tenants (id, name, slug) VALUES ($1,$2,$3)`,
-		tenantID.String(), "bu-hier", "buh-"+tenantID.String()[:8])
+		tenantID.String(), "bu-hier", "buh-"+tenantID.String()[28:])
 	t.Cleanup(func() { _, _ = db.ExecContext(ctx, `DELETE FROM tenants WHERE id=$1`, tenantID.String()) })
 
 	mkAsset := func(name string) shared.ID {

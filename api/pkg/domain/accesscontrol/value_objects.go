@@ -19,6 +19,19 @@ const (
 	OwnershipInformed OwnershipType = "informed"
 )
 
+// Values of asset_owners.assignment_source: who created the owner row.
+const (
+	// AssignmentSourceManual is an owner set by a person (the asset's Owners
+	// tab or a group's asset assignment).
+	AssignmentSourceManual = "manual"
+	// AssignmentSourceScopeRule is a group owner created by a group scope rule.
+	AssignmentSourceScopeRule = "scope_rule"
+	// AssignmentSourceOwnerRef is the primary user owner matched from the
+	// asset's owner_ref (an email of a tenant member). It follows owner_ref:
+	// it is replaced when owner_ref changes, and never grants data access.
+	AssignmentSourceOwnerRef = "owner_ref"
+)
+
 // AllOwnershipTypes returns all valid ownership types.
 func AllOwnershipTypes() []OwnershipType {
 	return []OwnershipType{
@@ -57,26 +70,6 @@ func (t OwnershipType) ReceivesNotifications() bool {
 // ReceivesAllNotifications checks if this ownership type receives all notifications.
 func (t OwnershipType) ReceivesAllNotifications() bool {
 	return t == OwnershipPrimary || t == OwnershipSecondary
-}
-
-// PermissionEffect represents the effect of a permission grant.
-type PermissionEffect string
-
-const (
-	// EffectAllow grants the permission.
-	EffectAllow PermissionEffect = "allow"
-	// EffectDeny denies the permission (overrides allow).
-	EffectDeny PermissionEffect = "deny"
-)
-
-// IsValid checks if the effect is valid.
-func (e PermissionEffect) IsValid() bool {
-	return e == EffectAllow || e == EffectDeny
-}
-
-// String returns the string representation.
-func (e PermissionEffect) String() string {
-	return string(e)
 }
 
 // ScopeType represents the type of permission scope.

@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/openctemio/openctem/api/internal/app/attack"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
@@ -39,7 +40,26 @@ type Service struct {
 	rels     asset.RelationshipRepository
 	profiles tmdom.AttackerProfileReader
 	findings tmdom.FindingReader
-	logger   *logger.Logger
+	// dataScope limits reads to the caller's data scope (nil: unrestricted).
+	dataScope *datascope.Enforcer
+	logger    *logger.Logger
+}
+
+// SetDataScope wires the Layer 2 data-scope enforcer: a restricted caller
+// sees only crown-jewel models of in-scope assets and only the threats whose
+// assets (entry point, target, hop, evidence finding) are all in scope.
+// Generation still reads the whole graph (reachability needs it).
+func (s *Service) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+// assertModelInScope hides a crown-jewel model of an out-of-scope asset.
+func (s *Service) assertModelInScope(ctx context.Context, tenantID shared.ID, m *tmdom.ThreatModel) error {
+	if s.dataScope == nil || m.ScopeType != tmdom.ScopeCrownJewel || m.ScopeRefID == nil {
+		return nil
+	}
+	if err := s.dataScope.AssertAsset(ctx, tenantID, *m.ScopeRefID); err != nil {
+		return tmdom.ErrNotFound // the same answer as a missing model
+	}
+	return nil
 }
 
 // NewService wires the generation service.
@@ -65,7 +85,25 @@ func NewService(
 
 // List returns threat models for the tenant, filtered and paginated.
 func (s *Service) List(ctx context.Context, tenantID shared.ID, filter tmdom.ModelFilter, page pagination.Pagination) ([]*tmdom.ThreatModel, int, error) {
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	filter.DataScope = scope
 	return s.repo.ListModels(ctx, tenantID, filter, page)
+}
+
+// scopedThreats loads a model's threats under the caller's data scope.
+func (s *Service) scopedThreats(ctx context.Context, tenantID shared.ID, m *tmdom.ThreatModel, filter tmdom.ThreatFilter) ([]*tmdom.ThreatModelThreat, error) {
+	if err := s.assertModelInScope(ctx, tenantID, m); err != nil {
+		return nil, err
+	}
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	filter.DataScope = scope
+	return s.repo.ListThreats(ctx, tenantID, m.ID, filter)
 }
 
 // Get returns a model and its (optionally filtered) threats, tenant-scoped.
@@ -74,7 +112,7 @@ func (s *Service) Get(ctx context.Context, tenantID, id shared.ID, filter tmdom.
 	if err != nil {
 		return nil, nil, err
 	}
-	threats, err := s.repo.ListThreats(ctx, tenantID, id, filter)
+	threats, err := s.scopedThreats(ctx, tenantID, model, filter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -90,7 +128,7 @@ func (s *Service) Coverage(ctx context.Context, tenantID, id shared.ID) (*tmdom.
 	if err != nil {
 		return nil, Coverage{}, err
 	}
-	threats, err := s.repo.ListThreats(ctx, tenantID, id, tmdom.ThreatFilter{})
+	threats, err := s.scopedThreats(ctx, tenantID, model, tmdom.ThreatFilter{})
 	if err != nil {
 		return nil, Coverage{}, err
 	}
@@ -224,6 +262,13 @@ func (s *Service) resolveScope(ctx context.Context, tenantID shared.ID, scopeTyp
 			if scopeRefID == nil {
 				return "", nil, false, fmt.Errorf("%w: scope_ref_id is required for a crown_jewel scope", shared.ErrValidation)
 			}
+			// The model is named after the asset: a caller who may not see
+			// it gets not-found, like an unknown id.
+			if s.dataScope != nil {
+				if serr := s.dataScope.AssertAsset(ctx, tenantID, *scopeRefID); serr != nil {
+					return "", nil, false, serr
+				}
+			}
 			a, gerr := s.assets.GetByID(ctx, tenantID, *scopeRefID)
 			if gerr != nil {
 				return "", nil, false, fmt.Errorf("resolve crown-jewel asset: %w", gerr)
@@ -321,7 +366,7 @@ func (s *Service) enumerate(
 				if hopIndex > 0 {
 					et = edgeType[edgeKey(ch.Hops[hopIndex-1].AssetID, hop.AssetID)]
 				}
-				techs := applicableTechniques(hop.AssetType, et, prof.Capabilities, applic)
+				techs := applicableTechniques(hop.AssetType, hop.SubType, et, prof.Capabilities, applic)
 				if len(techs) > maxTechniquesPerHop {
 					sort.SliceStable(techs, func(i, j int) bool { return techs[i].Weight > techs[j].Weight })
 					techs = techs[:maxTechniquesPerHop]

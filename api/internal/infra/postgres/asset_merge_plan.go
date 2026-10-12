@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -48,23 +49,65 @@ var assetMergeRefs = []mergeRef{
 	{table: "exposures", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "suppression_rules", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "sla_policies", column: "asset_id", tenantCol: "tenant_id"},
-	{table: "scan_sessions", column: "asset_id", tenantCol: "tenant_id"},
-	{table: "pipeline_runs", column: "asset_id", tenantCol: "tenant_id"},
+	{table: "scan_runs", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "exposure_events", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "runtime_telemetry_events", column: "endpoint_asset_id", tenantCol: "tenant_id"},
-	{table: "attack_path_nodes", column: "asset_id"},
 	{table: "threat_model_threats", column: "entry_point_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "hop_asset_id", tenantCol: "tenant_id"},
 	{table: "threat_model_threats", column: "target_asset_id", tenantCol: "tenant_id"},
+	// A retest's asset follows its finding (RFC-039): the per-asset in-flight
+	// cap counts by asset_id.
+	{table: "finding_retests", column: "asset_id", tenantCol: "tenant_id"},
+	// CI runs and break-glass overrides (RFC-051) follow their repository.
+	{table: "ci_runs", column: "repository_asset_id", tenantCol: "tenant_id"},
+	{table: "ci_gate_overrides", column: "repository_asset_id", tenantCol: "tenant_id"},
+	// A CI pipeline follows its repository (its identity is the provider's
+	// repository id, not the asset).
+	{table: "ci_pipelines", column: "repository_asset_id", tenantCol: "tenant_id"},
+	{table: "web_endpoint_events", column: "origin_asset_id", tenantCol: "tenant_id"},
+	{table: "api_specs", column: "origin_asset_id", tenantCol: "tenant_id"},
+	// The merged asset's change timeline (RFC-069) joins the kept asset's.
+	{table: "asset_change_events", column: "asset_id", tenantCol: "tenant_id"},
+	// Web evidence captures (RFC-081) follow the asset; the newest per asset
+	// are what the asset page shows, so the kept asset gains the history.
+	{table: "asset_web_evidence", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"port", "protocol"}}}},
-	{table: "asset_components", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
-		keys: []mergeKey{
-			{cols: []string{"component_id", "path"}},
-			{cols: []string{"name", "version"}, nullSafe: []string{"branch_id"}},
-		}},
+	// Web endpoints of a merged origin (RFC-056); a template the kept origin
+	// already has is dropped with its parameters.
+	{table: "web_endpoints", column: "origin_asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"template_hash"}}}},
+	// Software links (RFC-066): a version the kept asset already runs at the
+	// same location is dropped.
+	{table: "asset_software", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"software_version_id", "location"}}}},
+	// Package dependency edges follow their links (moved just above; a
+	// duplicate link was dropped and its edges with it).
+	{table: "asset_software_edges", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid"},
+	// VEX statements for one asset (RFC-070) follow it; a statement the kept
+	// asset already has for the same subject wins. Findings that carried a
+	// dropped statement lose it (ON DELETE SET NULL) and are re-decided on
+	// the next ingest or statement change.
+	{table: "vex_statements", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"vuln_id", "product_id", "versions", "version_range"}, nullSafe: []string{"version_range"}}}},
+	// Per-source attribute values (RFC-069): the kept asset's own value of a
+	// source wins; a merged asset's value from a source the kept one never
+	// heard from moves.
+	{table: "asset_attribute_sources", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name"}}}},
+	// Per-source set elements (RFC-069): the kept asset's record of an
+	// element from a source wins; others move.
+	{table: "asset_attribute_set_elements", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"attribute", "source_kind", "source_name", "element"}}}},
+	// Freshness of each attribute class (RFC-075): the kept asset's record of
+	// a class wins; a class only a merged asset observed moves.
+	{table: "asset_attribute_freshness", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"class"}}}},
+	// One enrichment request per asset (RFC-075): the kept asset's request wins.
+	{table: "asset_enrichment_requests", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
@@ -73,19 +116,52 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"user_id"}}, {cols: []string{"group_id"}}}},
 	{table: "user_accessible_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"user_id"}}}},
-	{table: "asset_sources", column: "asset_id", idCol: "id",
-		keys: []mergeKey{{cols: []string{"source_type", "source_id"}}}},
+	// Explicit data-scope grants follow the asset: whoever could see a merged
+	// asset by a grant sees the kept one.
+	{table: "asset_access_grants", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"user_id"}}}},
+	// Program provenance (RFC-065 §16.5) follows the asset; a program the
+	// kept asset is already linked to keeps the kept link. The program
+	// assignment pass derives system tags and program_only again.
+	{table: "asset_program_links", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"program_id"}}}},
+	// A program target (RFC-065 §16.8) follows the asset the same way.
+	{table: "bounty_program_target_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"program_id"}}}},
 	{table: "business_service_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"service_id", "dependency_type"}}}},
 	{table: "compensating_control_assets", column: "asset_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"control_id"}}}},
 	{table: "scan_coverage_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// One gate policy per repository: the kept repository keeps its own,
+	// else it takes a merged one's.
+	{table: "ci_gate_policies", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{}}},
+	// One expectation per repository: the kept repository keeps its own.
+	{table: "ci_coverage_expectations", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	// The kept asset takes the merged assets' identifiers, so later reports
 	// carrying them land on it. A strong identifier is unique per tenant and
 	// so is never on both.
 	{table: "asset_identifiers", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"kind", "value"}}}},
+	// Attribution evidence (RFC-036): the kept asset takes every reason the
+	// merged ones had; the same (rule, source) on both is one piece of
+	// evidence, and the kept row keeps the earliest first sighting.
+	{table: "easm_evidence", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"rule", "source"}}}},
+	// DNS-check rotation state (RFC-036): the kept asset's own state wins;
+	// a merged asset's state for a check the kept one never ran moves.
+	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"check_kind"}}}},
+	// Scan stage chaining (research/27 P0-3): what a step produced follows
+	// the asset (one row per step run and asset), and a run's target
+	// provenance names the kept asset.
+	{table: "scan_step_outputs", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"scan_run_step_id"}}}},
+	{table: "scan_run_targets", column: "asset_id", tenantCol: "tenant_id"},
+	{table: "scan_run_targets", column: "parent_asset_id", tenantCol: "tenant_id"},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between
@@ -104,6 +180,7 @@ var assetMergeSpecialRefs = map[string]string{
 	"pentest_campaigns.asset_ids":              "array: merged ids replaced by the kept id",
 	"asset_dedup_review.keep_asset_id":         "other pending reviews about a merged asset are dropped",
 	"asset_dedup_review.merge_asset_ids":       "other pending reviews about a merged asset are dropped",
+	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
 }
 
 // assetMergeLeftAlone are references a merge deliberately does not move.
@@ -121,8 +198,21 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := checkMergeTenant(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	// Findings first, while they still sit on the merged assets: re-key them for
+	// the kept asset and fold duplicates into one survivor (never a delete).
+	if err := rekeyMergedFindings(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	// Branches first: their components and findings are moved below by asset.
 	if err := mergeRepositoryExtension(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
+	if err := mergeAttribution(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
+	// Exposure events embed the asset id in their fingerprint: re-key them for
+	// the kept asset before they move, folding duplicates into one event.
+	if err := rekeyMergedExposures(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
 	for _, ref := range assetMergeRefs {
@@ -144,7 +234,7 @@ func checkMergeTenant(ctx context.Context, tx *sql.Tx, tenantID, keepID string, 
 	all := append([]string{keepID}, mergeIDs...)
 	var n int
 	if err := tx.QueryRowContext(ctx,
-		`SELECT count(*) FROM assets WHERE tenant_id = $1 AND id = ANY($2)`,
+		`SELECT count(*) FROM assets WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL`,
 		tenantID, pq.Array(all)).Scan(&n); err != nil {
 		return fmt.Errorf("check merge assets: %w", err)
 	}
@@ -290,8 +380,6 @@ func mergeRepositoryExtension(ctx context.Context, tx *sql.Tx, tenantID, keepID 
 		{table: "findings", column: "branch_id", tenantCol: "tenant_id"},
 		{table: "finding_branch_occurrences", column: "branch_id", tenantCol: "tenant_id", idCol: "id",
 			keys: []mergeKey{{cols: []string{"finding_id"}}}},
-		{table: "asset_components", column: "branch_id", tenantCol: "tenant_id", idCol: "id",
-			keys: []mergeKey{{cols: []string{"asset_id", "name", "version"}}}},
 	}
 	for _, p := range pairs {
 		for _, ref := range branchRefs {
@@ -368,6 +456,58 @@ func repointNonFKRefs(ctx context.Context, tx *sql.Tx, tenantID, reviewID, keepI
 		  AND (keep_asset_id = ANY($1) OR merge_asset_ids && $1::uuid[])`,
 		merge, tenantID, reviewID); err != nil {
 		return fmt.Errorf("drop stale pending reviews: %w", err)
+	}
+	return nil
+}
+
+// mergeAttribution settles the attribution record (one per asset) before the
+// merged assets are deleted, which would cascade their records away:
+//
+//   - a person's decision is never lost to a merge: of all human decisions
+//     on the kept and merged assets, the most recent one ends up on the kept
+//     asset (older ones remain in the audit log);
+//   - without any human decision, the kept asset keeps its own record (or
+//     none: a legacy asset counts as confirmed and must not be demoted by a
+//     merged asset's needs_review), and merged assets' automatic records are
+//     dropped — their evidence moves to the kept asset, and the next
+//     collector run re-derives the state from it.
+//
+// It also folds the earliest first sighting of duplicate evidence into the
+// kept asset's row before repointRef drops the duplicate.
+func mergeAttribution(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	merge := pq.Array(mergeIDs)
+	var winner sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT asset_id FROM asset_attributions
+		WHERE tenant_id = $3 AND decided_at IS NOT NULL AND (asset_id = $1 OR asset_id = ANY($2))
+		ORDER BY decided_at DESC, (asset_id = $1) DESC
+		LIMIT 1`, keepID, merge, tenantID).Scan(&winner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("pick attribution decision: %w", err)
+	}
+	if winner.Valid && winner.String != keepID {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM asset_attributions WHERE asset_id = $1 AND tenant_id = $2`,
+			keepID, tenantID); err != nil {
+			return fmt.Errorf("replace kept attribution: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE asset_attributions SET asset_id = $1, updated_at = now()
+			WHERE asset_id = $2 AND tenant_id = $3`, keepID, winner.String, tenantID); err != nil {
+			return fmt.Errorf("move attribution decision: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_attributions WHERE tenant_id = $2 AND asset_id = ANY($1)`,
+		merge, tenantID); err != nil {
+		return fmt.Errorf("drop merged attribution: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE easm_evidence k SET
+			first_observed_at = LEAST(k.first_observed_at, m.first_seen),
+			last_observed_at  = GREATEST(k.last_observed_at, m.last_seen)
+		FROM (SELECT rule, source, min(first_observed_at) AS first_seen, max(last_observed_at) AS last_seen
+		      FROM easm_evidence WHERE tenant_id = $3 AND asset_id = ANY($2) GROUP BY rule, source) m
+		WHERE k.asset_id = $1 AND k.tenant_id = $3 AND k.rule = m.rule AND k.source = m.source`,
+		keepID, merge, tenantID); err != nil {
+		return fmt.Errorf("fold duplicate evidence: %w", err)
 	}
 	return nil
 }

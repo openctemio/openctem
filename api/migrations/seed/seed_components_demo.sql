@@ -6,17 +6,15 @@
 -- realistic demo data:
 --   - 50 CVEs (global vulnerabilities)
 --   - 6 assets (web/api/service/mobile/iac/k8s)
---   - 200 global components (PURL-deduplicated registry)
---   - 200 asset_components links (per-asset SBOM rows)
---   - 80 findings tying assets × components × CVEs
+--   - ~55 package versions (software catalog, private to the tenant)
+--   - 200 package links (asset_software rows with source package)
+--   - 80 findings tying assets × package versions × CVEs
 --
--- Architecture note (very important):
---   Schema (migration 000044) splits "components" into two tables:
---     1. components        — global PURL-based registry (one row per unique pkg+version)
---     2. asset_components  — per-asset link (many rows possible per global component)
---   findings.component_id FK → components(id).
---   This seed populates BOTH and links them correctly so blast-radius
---   queries (component → assets, CVE → assets) work end-to-end.
+-- Architecture note (RFC-070): packages are software catalog products
+-- (software_products, software_versions) and where an asset uses one is an
+-- asset_software row; findings.component_id references software_versions(id).
+-- The rows are staged in temporary tables and converted, so blast-radius
+-- queries (package -> assets, CVE -> assets) work end-to-end.
 --
 -- Idempotent: ON CONFLICT (id) DO NOTHING / unique keys.
 -- Tenant-scoped data attaches to the first tenant whose name/slug matches
@@ -27,12 +25,26 @@
 --
 -- Cleanup (manual):
 --   DELETE FROM findings           WHERE id::text LIKE 'dcdc3%';
---   DELETE FROM asset_components   WHERE id::text LIKE 'dcdc2%';
---   DELETE FROM component_licenses WHERE component_id::text LIKE 'dcdcc%';
---   DELETE FROM components         WHERE id::text LIKE 'dcdcc%';
+--   DELETE FROM asset_software     WHERE id::text LIKE 'dcdc2%';
+--   DELETE FROM software_versions  WHERE id::text LIKE 'dcdcc%';
 --   DELETE FROM assets             WHERE id::text LIKE 'dcdc1%';
 --   DELETE FROM vulnerabilities    WHERE id::text LIKE 'dcdca%';
 -- =============================================================================
+
+-- The demo rows below are staged in two temporary tables (the shape of the
+-- retired components / asset_components tables) and converted into the
+-- software catalog (RFC-070) before the findings are written: products per
+-- package URL, versions keeping the demo component ids (dcdcc...), links
+-- keeping the demo link ids (dcdc2...).
+CREATE TEMP TABLE IF NOT EXISTS seed_demo_components (
+  id UUID PRIMARY KEY, purl TEXT UNIQUE NOT NULL, name TEXT NOT NULL, version TEXT,
+  ecosystem TEXT, vulnerability_count INT DEFAULT 0
+);
+CREATE TEMP TABLE IF NOT EXISTS seed_demo_asset_components (
+  id UUID PRIMARY KEY, tenant_id UUID, asset_id UUID, component_id UUID, name TEXT, version TEXT,
+  ecosystem TEXT, package_manager TEXT, license TEXT, purl TEXT, dependency_type TEXT, is_direct BOOLEAN,
+  depth INT, manifest_file TEXT, status TEXT
+);
 
 DO $$
 DECLARE
@@ -64,213 +76,213 @@ END $$;
 
 INSERT INTO vulnerabilities
   (id, cve_id, title, description, severity, cvss_score, cvss_vector,
-   epss_score, epss_percentile, cisa_kev_date_added, cisa_kev_due_date,
+   epss_score, epss_percentile, cisa_kev_date_added, cisa_kev_due_date,  -- epss_score 0–1 probability, epss_percentile 0–100 rank (the API contract)
    exploit_available, exploit_maturity, fixed_versions, published_at, status)
 VALUES
 ('dcdcaaaa-0000-0000-0000-000000000001', 'CVE-2021-44228', 'Apache Log4j2 Remote Code Execution (Log4Shell)',
   'Apache Log4j2 <=2.14.1 JNDI features used in configuration, log messages, and parameters do not protect against attacker controlled LDAP and other JNDI related endpoints.',
   'critical', 10.0, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
-  0.97565, 0.99971, '2021-12-10T00:00:00Z', '2021-12-24T00:00:00Z',
+  0.97565, 99.971, '2021-12-10T00:00:00Z', '2021-12-24T00:00:00Z',
   true, 'weaponized', ARRAY['2.15.0','2.16.0','2.17.0'], '2021-12-10T10:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000002', 'CVE-2022-22965', 'Spring Framework RCE (Spring4Shell)',
   'Spring Framework allows RCE via data binding when running on JDK 9+.',
   'critical', 9.8, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.97443, 0.99947, '2022-04-04T00:00:00Z', '2022-04-25T00:00:00Z',
+  0.97443, 99.947, '2022-04-04T00:00:00Z', '2022-04-25T00:00:00Z',
   true, 'weaponized', ARRAY['5.2.20.RELEASE','5.3.18'], '2022-04-01T23:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000003', 'CVE-2023-34362', 'MOVEit Transfer SQL Injection',
   'MOVEit Transfer SQL injection vulnerability exploited in mass data exfiltration by Cl0p ransomware.',
   'critical', 9.8, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.96234, 0.99821, '2023-06-02T00:00:00Z', '2023-06-23T00:00:00Z',
+  0.96234, 99.821, '2023-06-02T00:00:00Z', '2023-06-23T00:00:00Z',
   true, 'weaponized', ARRAY['2021.0.6','2021.1.4','2022.0.4','2022.1.5','2023.0.1'], '2023-06-02T15:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000004', 'CVE-2024-3094', 'XZ Utils Backdoor (liblzma)',
   'Malicious backdoor inserted into upstream XZ Utils 5.6.0/5.6.1 enabling SSH RCE on systemd-linked sshd.',
   'critical', 10.0, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
-  0.78234, 0.98432, '2024-03-29T00:00:00Z', '2024-04-19T00:00:00Z',
+  0.78234, 98.432, '2024-03-29T00:00:00Z', '2024-04-19T00:00:00Z',
   true, 'weaponized', ARRAY['5.6.2'], '2024-03-29T17:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000005', 'CVE-2023-22515', 'Atlassian Confluence Privilege Escalation',
   'Broken access control in Confluence Data Center and Server allows unauthenticated admin account creation.',
   'critical', 10.0, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
-  0.94567, 0.99645, '2023-10-04T00:00:00Z', '2023-10-13T00:00:00Z',
+  0.94567, 99.645, '2023-10-04T00:00:00Z', '2023-10-13T00:00:00Z',
   true, 'weaponized', ARRAY['8.3.3','8.4.3','8.5.2'], '2023-10-04T17:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000006', 'CVE-2024-21762', 'Fortinet FortiOS Out-of-bounds Write',
   'OOB write in FortiOS sslvpnd allows unauthenticated RCE.',
   'critical', 9.6, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.92345, 0.99421, '2024-02-09T00:00:00Z', '2024-02-16T00:00:00Z',
+  0.92345, 99.421, '2024-02-09T00:00:00Z', '2024-02-16T00:00:00Z',
   true, 'weaponized', ARRAY['7.4.3','7.2.7','7.0.14','6.4.15'], '2024-02-08T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000007', 'CVE-2024-3400', 'Palo Alto PAN-OS Command Injection',
   'Command injection in GlobalProtect feature of PAN-OS allows unauthenticated RCE.',
   'critical', 10.0, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
-  0.95678, 0.99812, '2024-04-12T00:00:00Z', '2024-04-19T00:00:00Z',
+  0.95678, 99.812, '2024-04-12T00:00:00Z', '2024-04-19T00:00:00Z',
   true, 'weaponized', ARRAY['10.2.9-h1','11.0.4-h1','11.1.2-h3'], '2024-04-12T08:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000008', 'CVE-2023-46604', 'Apache ActiveMQ RCE',
   'OpenWire protocol marshaller in ActiveMQ allows RCE via deserialization.',
   'critical', 10.0, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
-  0.96234, 0.99756, '2023-11-02T00:00:00Z', '2023-11-23T00:00:00Z',
+  0.96234, 99.756, '2023-11-02T00:00:00Z', '2023-11-23T00:00:00Z',
   true, 'weaponized', ARRAY['5.15.16','5.16.7','5.17.6','5.18.3'], '2023-10-27T18:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000009', 'CVE-2024-6387', 'OpenSSH regreSSHion Remote Code Execution',
   'Race condition in sshd signal handler allows unauthenticated RCE on glibc-based Linux systems.',
   'critical', 8.1, 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.45123, 0.92341, '2024-07-01T00:00:00Z', NULL,
+  0.45123, 92.341, '2024-07-01T00:00:00Z', NULL,
   true, 'functional', ARRAY['9.8p1'], '2024-07-01T11:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000000a', 'CVE-2024-23897', 'Jenkins Arbitrary File Read',
   'CLI command parser in Jenkins reads files from controller filesystem via @ character.',
   'critical', 9.8, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.93421, 0.99523, '2024-01-29T00:00:00Z', '2024-02-19T00:00:00Z',
+  0.93421, 99.523, '2024-01-29T00:00:00Z', '2024-02-19T00:00:00Z',
   true, 'weaponized', ARRAY['2.442','2.426.3'], '2024-01-24T18:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000000b', 'CVE-2024-21538', 'cross-spawn ReDoS',
   'Regular expression denial of service in cross-spawn package via crafted argument.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00234, 0.65432, NULL, NULL,
+  0.00234, 65.432, NULL, NULL,
   false, 'poc', ARRAY['7.0.5','6.0.6'], '2024-11-08T05:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000000c', 'CVE-2024-4068', 'braces Resource Consumption',
   'Uncontrolled resource consumption in micromatch braces parser causes memory exhaustion.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00321, 0.71234, NULL, NULL,
+  0.00321, 71.234, NULL, NULL,
   false, 'poc', ARRAY['3.0.3'], '2024-05-14T15:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000000d', 'CVE-2024-37890', 'ws DoS via Connection',
   'ws WebSocket library DoS when handling many crafted HTTP headers.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00543, 0.78421, NULL, NULL,
+  0.00543, 78.421, NULL, NULL,
   false, 'poc', ARRAY['8.17.1','7.5.10','6.2.3','5.2.4'], '2024-06-17T21:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000000e', 'CVE-2024-24790', 'tar-fs Path Traversal',
   'Path traversal in tar-fs allows arbitrary file write outside extraction directory.',
   'high', 8.1, 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.01234, 0.85432, NULL, NULL,
+  0.01234, 85.432, NULL, NULL,
   false, 'poc', ARRAY['2.1.2','3.0.7'], '2024-06-04T20:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000000f', 'CVE-2024-29415', 'ip SSRF Bypass',
   'ip package isPublic() function returns false for IPs that should be considered public.',
   'high', 8.1, 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.00876, 0.81234, NULL, NULL,
+  0.00876, 81.234, NULL, NULL,
   false, 'poc', ARRAY['2.0.1'], '2024-05-27T05:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000010', 'CVE-2024-43788', 'webpack Cross-Site Scripting',
   'webpack dev server XSS via crafted URL in default error page.',
   'medium', 6.4, 'CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:L',
-  0.00123, 0.45123, NULL, NULL,
+  0.00123, 45.123, NULL, NULL,
   false, 'none', ARRAY['5.94.0'], '2024-08-27T19:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000011', 'CVE-2024-39338', 'axios SSRF',
   'Server-side request forgery in axios when handling protocol-relative URLs.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
-  0.00543, 0.74321, NULL, NULL,
+  0.00543, 74.321, NULL, NULL,
   false, 'poc', ARRAY['1.7.4'], '2024-08-12T16:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000012', 'CVE-2024-37168', 'grpc-js Unbounded Memory Allocation',
   '@grpc/grpc-js can allocate excessive memory when receiving messages exceeding configured limits.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00432, 0.72145, NULL, NULL,
+  0.00432, 72.145, NULL, NULL,
   false, 'none', ARRAY['1.8.22','1.9.15','1.10.9'], '2024-06-10T18:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000013', 'CVE-2024-3651', 'idna Quadratic Complexity',
   'Crafted unicode strings cause quadratic time complexity in idna.encode().',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00321, 0.68543, NULL, NULL,
+  0.00321, 68.543, NULL, NULL,
   false, 'poc', ARRAY['3.7'], '2024-04-11T19:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000014', 'CVE-2024-35195', 'requests Session Verification Bypass',
   'requests Session.verify=False persists across requests after first call.',
   'medium', 5.6, 'CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N',
-  0.00432, 0.71234, NULL, NULL,
+  0.00432, 71.234, NULL, NULL,
   false, 'none', ARRAY['2.32.0'], '2024-05-20T17:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000015', 'CVE-2024-37891', 'urllib3 Proxy Authorization Leak',
   'urllib3 proxy-authorization header sent to destination after redirect.',
   'medium', 4.4, 'CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N',
-  0.00234, 0.61234, NULL, NULL,
+  0.00234, 61.234, NULL, NULL,
   false, 'none', ARRAY['1.26.19','2.2.2'], '2024-06-17T20:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000016', 'CVE-2024-22195', 'Jinja2 XSS via xmlattr',
   'Jinja2 xmlattr filter allowed keys with spaces, enabling injection of arbitrary HTML attributes.',
   'medium', 6.1, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
-  0.00543, 0.75432, NULL, NULL,
+  0.00543, 75.432, NULL, NULL,
   false, 'poc', ARRAY['3.1.3'], '2024-01-11T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000017', 'CVE-2024-1135', 'gunicorn HTTP Request Smuggling',
   'gunicorn fails to properly validate Transfer-Encoding header values, enabling smuggling.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
-  0.01234, 0.85432, NULL, NULL,
+  0.01234, 85.432, NULL, NULL,
   false, 'poc', ARRAY['22.0.0'], '2024-04-16T00:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000019', 'CVE-2024-49767', 'Werkzeug Resource Exhaustion',
   'Werkzeug multipart parser allocates unbounded memory when handling crafted requests.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00876, 0.81543, NULL, NULL,
+  0.00876, 81.543, NULL, NULL,
   false, 'poc', ARRAY['3.0.6'], '2024-10-25T20:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000001a', 'CVE-2024-24762', 'python-multipart ReDoS',
   'python-multipart parser exhibits ReDoS via crafted Content-Type header.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00432, 0.72341, NULL, NULL,
+  0.00432, 72.341, NULL, NULL,
   false, 'poc', ARRAY['0.0.7'], '2024-04-09T19:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000001b', 'CVE-2023-44487', 'HTTP/2 Rapid Reset DDoS',
   'HTTP/2 protocol allows rapid stream reset attack causing DDoS, affecting many implementations.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.94321, 0.99645, '2023-10-10T00:00:00Z', '2023-10-31T00:00:00Z',
+  0.94321, 99.645, '2023-10-10T00:00:00Z', '2023-10-31T00:00:00Z',
   true, 'weaponized', ARRAY['netty-4.1.100'], '2023-10-10T14:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000001c', 'CVE-2024-22243', 'Spring Framework Open Redirect',
   'UriComponentsBuilder failed to validate URLs, enabling open redirect / SSRF.',
   'high', 8.1, 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H',
-  0.00543, 0.74321, NULL, NULL,
+  0.00543, 74.321, NULL, NULL,
   false, 'poc', ARRAY['5.3.32','6.0.17','6.1.4'], '2024-02-23T05:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000001d', 'CVE-2024-29133', 'Apache POI Resource Consumption',
   'Apache POI HSLF parser allocates excessive memory on crafted PowerPoint files.',
   'medium', 5.5, 'CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H',
-  0.00234, 0.61432, NULL, NULL,
+  0.00234, 61.432, NULL, NULL,
   false, 'none', ARRAY['5.2.4'], '2024-04-08T08:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000001e', 'CVE-2024-25710', 'Apache Commons Compress DoS',
   'Loop with unreachable exit condition in commons-compress DUMP file parser.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00432, 0.72341, NULL, NULL,
+  0.00432, 72.341, NULL, NULL,
   false, 'poc', ARRAY['1.26.0'], '2024-02-19T09:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000020', 'CVE-2024-21733', 'Tomcat Information Disclosure',
   'Apache Tomcat exposes part of previous response body to client when error in chunked encoding.',
   'medium', 5.3, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
-  0.00543, 0.75432, NULL, NULL,
+  0.00543, 75.432, NULL, NULL,
   false, 'poc', ARRAY['8.5.94','9.0.81','10.1.16'], '2024-01-19T17:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000021', 'CVE-2024-24786', 'Go protobuf Infinite Loop',
   'google.golang.org/protobuf json unmarshaler enters infinite loop on crafted JSON.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00321, 0.68543, NULL, NULL,
+  0.00321, 68.543, NULL, NULL,
   false, 'poc', ARRAY['1.33.0'], '2024-03-05T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000023', 'CVE-2024-24557', 'Moby Build Cache Poisoning',
   'Moby (Docker) classic builder cache reuses image layer despite differing content.',
   'medium', 6.9, 'CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:N',
-  0.00123, 0.45612, NULL, NULL,
+  0.00123, 45.612, NULL, NULL,
   false, 'none', ARRAY['25.0.2','24.0.9'], '2024-02-01T17:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000024', 'CVE-2024-45337', 'crypto/ssh Authorization Bypass',
   'golang.org/x/crypto/ssh ServerConfig.PublicKeyCallback may be incorrectly invoked.',
   'critical', 9.1, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N',
-  0.01432, 0.87543, NULL, NULL,
+  0.01432, 87.543, NULL, NULL,
   false, 'poc', ARRAY['0.31.0'], '2024-12-11T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000026', 'CVE-2024-30105', '.NET System.Text.Json DoS',
   'Crafted JSON causes excessive CPU consumption in System.Text.Json deserialization.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00432, 0.72341, NULL, NULL,
+  0.00432, 72.341, NULL, NULL,
   false, 'none', ARRAY['8.0.4'], '2024-07-09T17:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000029', 'CVE-2024-32465', 'PHP Symfony HttpFoundation Path Traversal',
   'BinaryFileResponse in Symfony HttpFoundation allows path traversal via crafted filename.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
-  0.00432, 0.72341, NULL, NULL,
+  0.00432, 72.341, NULL, NULL,
   false, 'poc', ARRAY['5.4.40','6.4.8','7.0.8'], '2024-05-31T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000002a', 'CVE-2024-26146', 'rack URI Parsing ReDoS',
   'Rack request URI parsing exhibits ReDoS via crafted Range header.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00321, 0.68543, NULL, NULL,
+  0.00321, 68.543, NULL, NULL,
   false, 'poc', ARRAY['2.2.8.1','3.0.9.1'], '2024-02-26T16:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000002c', 'CVE-2024-21626', 'runc Container Escape (Leaky Vessels)',
   'runc internal file descriptor leak allows container breakout to host filesystem.',
   'high', 8.6, 'CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H',
-  0.78123, 0.98123, NULL, NULL,
+  0.78123, 98.123, NULL, NULL,
   true, 'functional', ARRAY['1.1.12'], '2024-01-31T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000002d', 'CVE-2024-23652', 'BuildKit Mount Cache Privilege Escalation',
   'BuildKit cache mount runs with elevated privileges, enabling host write.',
   'high', 8.7, 'CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H',
-  0.45123, 0.92341, NULL, NULL,
+  0.45123, 92.341, NULL, NULL,
   false, 'poc', ARRAY['0.12.5'], '2024-01-31T22:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-00000000002f', 'CVE-2024-10220', 'Kubernetes gitRepo Volume RCE',
   'gitRepo volume plugin executes arbitrary commands via crafted git hooks.',
   'critical', 8.1, 'CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H',
-  0.12345, 0.88543, NULL, NULL,
+  0.12345, 88.543, NULL, NULL,
   false, 'poc', ARRAY['1.32.0'], '2024-11-22T01:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000030', 'CVE-2023-50387', 'KeyTrap DNSSEC DoS',
   'KeyTrap vulnerability exhausts DNS resolver CPU via crafted DNSSEC responses.',
   'high', 7.5, 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.34567, 0.91234, NULL, NULL,
+  0.34567, 91.234, NULL, NULL,
   false, 'functional', ARRAY['9.16.48','9.18.24','9.19.21'], '2024-02-13T19:15:00Z', 'open'),
 ('dcdcaaaa-0000-0000-0000-000000000031', 'CVE-2024-2511', 'OpenSSL Unbounded Memory',
   'OpenSSL TLS 1.3 session caching causes unbounded memory growth.',
   'medium', 5.9, 'CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H',
-  0.00432, 0.72341, NULL, NULL,
+  0.00432, 72.341, NULL, NULL,
   false, 'poc', ARRAY['3.0.13','3.1.5','3.2.1'], '2024-04-08T15:15:00Z', 'open')
 ON CONFLICT (cve_id) DO NOTHING;
 
@@ -295,29 +307,40 @@ BEGIN
   -- ---------------------------------------------------------------------------
   -- Step 3a: Assets (6 covering common types)
   -- ---------------------------------------------------------------------------
-  INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, scope,
-                      exposure, risk_score, description, owner_id,
+  -- Asset types are stored as (core type, sub_type); aliases such as
+  -- web_application or firewall are input names only (RFC-042 §6.3.8).
+  INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, criticality, status, scope,
+                      exposure, risk_score, description,
                       is_internet_accessible, source_type, discovery_source)
   VALUES
-    ('dcdc1111-0000-0000-0000-000000000001', v_tenant_id, 'demo-web-storefront', 'web_application', 'critical', 'active',
-      'external', 'public', 87, 'Customer-facing e-commerce storefront (React + Node.js)', v_owner_id,
+    ('dcdc1111-0000-0000-0000-000000000001', v_tenant_id, 'demo-web-storefront', 'application', 'web_application', 'critical', 'active',
+      'external', 'public', 87, 'Customer-facing e-commerce storefront (React + Node.js)',
       true, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000002', v_tenant_id, 'demo-api-gateway', 'api', 'critical', 'active',
-      'external', 'public', 79, 'Public API gateway routing customer requests to microservices', v_owner_id,
+    ('dcdc1111-0000-0000-0000-000000000002', v_tenant_id, 'demo-api-gateway', 'application', 'api', 'critical', 'active',
+      'external', 'public', 79, 'Public API gateway routing customer requests to microservices',
       true, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000003', v_tenant_id, 'demo-payment-service', 'service', 'critical', 'active',
-      'internal', 'restricted', 72, 'Internal payment processing service (Java/Spring Boot)', v_owner_id,
+    ('dcdc1111-0000-0000-0000-000000000003', v_tenant_id, 'demo-payment-service', 'service', NULL, 'critical', 'active',
+      'internal', 'restricted', 72, 'Internal payment processing service (Java/Spring Boot)',
       false, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000004', v_tenant_id, 'demo-mobile-app', 'mobile_app', 'high', 'active',
-      'external', 'public', 58, 'iOS/Android mobile companion app', v_owner_id,
+    ('dcdc1111-0000-0000-0000-000000000004', v_tenant_id, 'demo-mobile-app', 'application', 'mobile_app', 'high', 'active',
+      'external', 'public', 58, 'iOS/Android mobile companion app',
       true, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000005', v_tenant_id, 'demo-iac-infra', 'repository', 'high', 'active',
-      'internal', 'private', 41, 'Terraform/Helm IaC monorepo for production infrastructure', v_owner_id,
+    ('dcdc1111-0000-0000-0000-000000000005', v_tenant_id, 'demo-iac-infra', 'repository', NULL, 'high', 'active',
+      'internal', 'private', 41, 'Terraform/Helm IaC monorepo for production infrastructure',
       false, 'manual', 'manual'),
-    ('dcdc1111-0000-0000-0000-000000000006', v_tenant_id, 'demo-k8s-prod', 'kubernetes_cluster', 'critical', 'active',
-      'cloud', 'restricted', 65, 'Production Kubernetes cluster (AWS EKS, 3 AZs)', v_owner_id,
+    ('dcdc1111-0000-0000-0000-000000000006', v_tenant_id, 'demo-k8s-prod', 'kubernetes', 'cluster', 'critical', 'active',
+      'cloud', 'restricted', 65, 'Production Kubernetes cluster (AWS EKS, 3 AZs)',
       false, 'manual', 'manual')
   ON CONFLICT (id) DO NOTHING;
+
+  -- Owner: asset_owners is the only owner store (primary user owner).
+  IF v_owner_id IS NOT NULL THEN
+    INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source)
+    SELECT a.id, v_owner_id, 'primary', 'owner_ref'
+    FROM assets a
+    WHERE a.tenant_id = v_tenant_id AND a.id::text LIKE 'dcdc1111-%'
+    ON CONFLICT DO NOTHING;
+  END IF;
 
   RAISE NOTICE 'Inserted assets: %', (SELECT COUNT(*) FROM assets WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc1111-%');
 END $$;
@@ -328,7 +351,7 @@ END $$;
 -- UUIDs use prefix 'dcdcc' (c = component-global) for easy cleanup.
 -- =============================================================================
 
-INSERT INTO components (id, purl, name, version, ecosystem, vulnerability_count)
+INSERT INTO seed_demo_components (id, purl, name, version, ecosystem, vulnerability_count)
 VALUES
   -- npm
   ('dcdcc001-0000-0000-0000-000000000001', 'pkg:npm/react@18.2.0',                     'react',                   '18.2.0',         'npm', 0),
@@ -434,110 +457,6 @@ VALUES
 ON CONFLICT (purl) DO NOTHING;
 
 -- =============================================================================
--- Step 5: Component Licenses (junction)
--- =============================================================================
-
-INSERT INTO component_licenses (component_id, license_id) VALUES
-  -- npm: mostly MIT
-  ('dcdcc001-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000002', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000003', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000004', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000005', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000006', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000007', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000008', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000009', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000000a', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000000b', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000000c', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000000d', 'Apache-2.0'),
-  ('dcdcc001-0000-0000-0000-00000000000e', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000000f', 'Apache-2.0'),
-  ('dcdcc001-0000-0000-0000-000000000010', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000011', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000012', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000013', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000014', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000015', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000016', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000017', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000018', 'MIT'),
-  ('dcdcc001-0000-0000-0000-000000000019', 'Apache-2.0'),
-  ('dcdcc001-0000-0000-0000-00000000001a', 'GPL-2.0'),
-  ('dcdcc001-0000-0000-0000-00000000001b', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000001c', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000001d', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000001e', 'MIT'),
-  ('dcdcc001-0000-0000-0000-00000000001f', 'MIT'),
-  -- maven: Apache-2.0 dominant
-  ('dcdcc002-0000-0000-0000-000000000001', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000002', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000003', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000004', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000005', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000006', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000007', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000008', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-000000000009', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-00000000000a', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-00000000000b', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-00000000000c', 'Apache-2.0'),
-  ('dcdcc002-0000-0000-0000-00000000000d', 'LGPL-2.1'),
-  ('dcdcc002-0000-0000-0000-00000000000e', 'GPL-2.0'),
-  -- pypi
-  ('dcdcc003-0000-0000-0000-000000000001', 'Apache-2.0'),
-  ('dcdcc003-0000-0000-0000-000000000002', 'MIT'),
-  ('dcdcc003-0000-0000-0000-000000000003', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-000000000004', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-000000000005', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-000000000006', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-000000000007', 'MIT'),
-  ('dcdcc003-0000-0000-0000-000000000008', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-000000000009', 'MIT'),
-  ('dcdcc003-0000-0000-0000-00000000000a', 'Apache-2.0'),
-  ('dcdcc003-0000-0000-0000-00000000000b', 'Apache-2.0'),
-  ('dcdcc003-0000-0000-0000-00000000000c', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-00000000000d', 'BSD-3-Clause'),
-  ('dcdcc003-0000-0000-0000-00000000000e', 'MIT'),
-  ('dcdcc003-0000-0000-0000-00000000000f', 'Apache-2.0'),
-  -- go
-  ('dcdcc004-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc004-0000-0000-0000-000000000002', 'BSD-3-Clause'),
-  ('dcdcc004-0000-0000-0000-000000000003', 'BSD-3-Clause'),
-  ('dcdcc004-0000-0000-0000-000000000004', 'Apache-2.0'),
-  ('dcdcc004-0000-0000-0000-000000000005', 'Apache-2.0'),
-  ('dcdcc004-0000-0000-0000-000000000006', 'Apache-2.0'),
-  ('dcdcc004-0000-0000-0000-000000000007', 'Apache-2.0'),
-  ('dcdcc004-0000-0000-0000-000000000008', 'Apache-2.0'),
-  ('dcdcc004-0000-0000-0000-000000000009', 'Apache-2.0'),
-  -- nuget / composer / cargo / rubygems / cocoapods / gradle / swiftpm
-  ('dcdcc005-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc005-0000-0000-0000-000000000002', 'MIT'),
-  ('dcdcc005-0000-0000-0000-000000000003', 'MIT'),
-  ('dcdcc005-0000-0000-0000-000000000004', 'MIT'),
-  ('dcdcc005-0000-0000-0000-000000000005', 'Apache-2.0'),
-  ('dcdcc006-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc006-0000-0000-0000-000000000002', 'MIT'),
-  ('dcdcc006-0000-0000-0000-000000000003', 'MIT'),
-  ('dcdcc006-0000-0000-0000-000000000004', 'MIT'),
-  ('dcdcc007-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc007-0000-0000-0000-000000000002', 'MIT'),
-  ('dcdcc007-0000-0000-0000-000000000003', 'Apache-2.0'),
-  ('dcdcc007-0000-0000-0000-000000000004', 'MIT'),
-  ('dcdcc008-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc008-0000-0000-0000-000000000002', 'MIT'),
-  ('dcdcc008-0000-0000-0000-000000000003', 'MIT'),
-  ('dcdcc008-0000-0000-0000-000000000004', 'LGPL-3.0'),
-  ('dcdcc009-0000-0000-0000-000000000001', 'MIT'),
-  ('dcdcc009-0000-0000-0000-000000000002', 'Apache-2.0'),
-  ('dcdcc00a-0000-0000-0000-000000000001', 'Apache-2.0'),
-  ('dcdcc00a-0000-0000-0000-000000000002', 'Apache-2.0'),
-  ('dcdcc00b-0000-0000-0000-000000000001', 'Apache-2.0'),
-  ('dcdcc00b-0000-0000-0000-000000000002', 'Apache-2.0')
-ON CONFLICT (component_id, license_id) DO NOTHING;
-
--- =============================================================================
 -- Step 6: asset_components — links assets to global components
 -- (Same components can repeat across assets — that's the blast-radius story.)
 -- =============================================================================
@@ -554,7 +473,7 @@ BEGIN
   -- (name, version, ecosystem, license, purl) so the existing list query
   -- works even before a JOIN. component_id is the FK to global components.
 
-  INSERT INTO asset_components (id, tenant_id, asset_id, component_id, name, version, ecosystem, package_manager,
+  INSERT INTO seed_demo_asset_components (id, tenant_id, asset_id, component_id, name, version, ecosystem, package_manager,
                                 license, purl, dependency_type, is_direct, depth, manifest_file, status)
   VALUES
     -- web-storefront — npm (~30)
@@ -659,12 +578,56 @@ BEGIN
     ('dcdc2005-0000-0000-0000-000000000009', v_tenant_id, 'dcdc1111-0000-0000-0000-000000000006', 'dcdcc004-0000-0000-0000-000000000009', 'go.etcd.io/etcd/client/v3', '3.5.11', 'go', 'go', 'Apache-2.0', 'pkg:golang/go.etcd.io/etcd/client/v3@3.5.11', 'direct', true, 0, 'go.mod', 'active')
   ON CONFLICT (id) DO NOTHING;
 
-  RAISE NOTICE 'Inserted asset_components: %', (SELECT COUNT(*) FROM asset_components WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
+  RAISE NOTICE 'Staged package links: %', (SELECT COUNT(*) FROM seed_demo_asset_components WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
 
   -- ---------------------------------------------------------------------------
   -- Step 7: Findings — link assets × global_components × CVEs (~50)
   -- findings.component_id references components(id) (global, not asset_components)
   -- ---------------------------------------------------------------------------
+  -- Convert the staged rows into the software catalog.
+  INSERT INTO software_products (tenant_id, part, vendor, name, purl_type, purl_namespace, purl_name, source)
+  SELECT DISTINCT ON (x.pt, x.pns, x.pn) v_tenant_id, 'a', left(x.pns, 128), x.pn, x.pt, x.pns, x.pn, 'observed'
+  FROM (
+    SELECT lower(split_part(path, '/', 1)) AS pt,
+           CASE WHEN position('/' in rest) > 0 THEN replace(regexp_replace(rest, '/[^/]*$', ''), '%40', '@') ELSE '' END AS pns,
+           replace(regexp_replace(rest, '^.*/', ''), '%40', '@') AS pn
+    FROM (
+      SELECT path, substr(path, length(split_part(path, '/', 1)) + 2) AS rest
+      FROM (SELECT regexp_replace(substr(purl, 5), '@[^@/]*$', '') AS path FROM seed_demo_components) a
+    ) b
+  ) x
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO software_versions (id, product_id, tenant_id, raw, normalized, scheme, purl)
+  SELECT c.id, p.id, v_tenant_id, COALESCE(c.version, ''), NULLIF(c.version, ''),
+         CASE x.pt WHEN 'npm' THEN 'npm' WHEN 'pypi' THEN 'pep440' WHEN 'maven' THEN 'maven'
+                   WHEN 'golang' THEN 'go' WHEN 'cargo' THEN 'semver' WHEN 'nuget' THEN 'semver' ELSE 'generic' END,
+         c.purl
+  FROM seed_demo_components c
+  CROSS JOIN LATERAL (
+    SELECT lower(split_part(path, '/', 1)) AS pt,
+           CASE WHEN position('/' in rest) > 0 THEN replace(regexp_replace(rest, '/[^/]*$', ''), '%40', '@') ELSE '' END AS pns,
+           replace(regexp_replace(rest, '^.*/', ''), '%40', '@') AS pn
+    FROM (SELECT path, substr(path, length(split_part(path, '/', 1)) + 2) AS rest
+          FROM (SELECT regexp_replace(substr(c.purl, 5), '@[^@/]*$', '') AS path) a) b
+  ) x
+  JOIN software_products p ON p.tenant_id = v_tenant_id AND p.purl_type = x.pt
+                          AND p.purl_namespace = x.pns AND p.purl_name = x.pn
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO asset_software (id, tenant_id, asset_id, product_id, software_version_id, location, source,
+                              evidence, confidence, relationship, dep_scope, depth, licenses)
+  SELECT ac.id, ac.tenant_id, ac.asset_id, v.product_id, v.id, COALESCE(ac.manifest_file, ''), 'package',
+         left(COALESCE(ac.purl, ac.name), 512), 100,
+         CASE WHEN ac.is_direct THEN 'direct' ELSE 'transitive' END,
+         CASE ac.dependency_type WHEN 'dev' THEN 'development' WHEN 'optional' THEN 'optional'
+                                 WHEN 'build' THEN 'build' WHEN 'peer' THEN 'optional' ELSE NULL END,
+         LEAST(GREATEST(COALESCE(ac.depth, 0), 0), 32),
+         CASE WHEN COALESCE(ac.license, '') = '' THEN '{}'::text[] ELSE ARRAY[ac.license] END
+  FROM seed_demo_asset_components ac
+  JOIN software_versions v ON v.id = ac.component_id
+  ON CONFLICT DO NOTHING;
+
   INSERT INTO findings (id, tenant_id, asset_id, component_id, vulnerability_id,
                         source, tool_name, tool_version, message, severity,
                         cvss_score, cve_id, status, fingerprint, finding_type,
@@ -806,73 +769,13 @@ BEGIN
 
   RAISE NOTICE 'Inserted findings: %', (SELECT COUNT(*) FROM findings WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc3%');
 
-  -- ---------------------------------------------------------------------------
-  -- Step 8: Recompute aggregated columns on asset_components
-  -- ---------------------------------------------------------------------------
-  UPDATE asset_components ac
-  SET
-    vulnerability_count = COALESCE(agg.cnt, 0),
-    has_known_vulnerabilities = (COALESCE(agg.cnt, 0) > 0),
-    highest_severity = agg.max_sev,
-    risk_score = LEAST(100, COALESCE(agg.cnt, 0) * 15
-                            + CASE agg.max_sev
-                                WHEN 'critical' THEN 40
-                                WHEN 'high'     THEN 25
-                                WHEN 'medium'   THEN 10
-                                WHEN 'low'      THEN 3
-                                ELSE 0
-                              END)
-  FROM (
-    SELECT f.component_id,
-           ac2.id AS ac_id,
-           COUNT(*) FILTER (WHERE f.status IN ('new','confirmed','in_progress')) AS cnt,
-           (
-             ARRAY['critical','high','medium','low','info','none']::text[]
-           )[
-             LEAST(
-               COALESCE(MIN(CASE f.severity
-                              WHEN 'critical' THEN 1
-                              WHEN 'high'     THEN 2
-                              WHEN 'medium'   THEN 3
-                              WHEN 'low'      THEN 4
-                              WHEN 'info'     THEN 5
-                              ELSE 6 END
-                       ) FILTER (WHERE f.status IN ('new','confirmed','in_progress')), 6),
-               6
-             )
-           ] AS max_sev
-    FROM findings f
-    JOIN asset_components ac2
-      ON ac2.tenant_id = f.tenant_id
-     AND ac2.asset_id  = f.asset_id
-     AND ac2.component_id = f.component_id
-    WHERE f.tenant_id = v_tenant_id
-      AND f.component_id IS NOT NULL
-    GROUP BY f.component_id, ac2.id
-  ) agg
-  WHERE ac.id = agg.ac_id
-    AND ac.tenant_id = v_tenant_id;
-
-  -- Also update global components.vulnerability_count to count distinct CVEs
-  UPDATE components c
-  SET vulnerability_count = COALESCE(agg.cnt, c.vulnerability_count)
-  FROM (
-    SELECT component_id, COUNT(DISTINCT vulnerability_id) AS cnt
-    FROM findings
-    WHERE tenant_id = v_tenant_id
-      AND component_id IS NOT NULL
-      AND vulnerability_id IS NOT NULL
-      AND status IN ('new','confirmed','in_progress')
-    GROUP BY component_id
-  ) agg
-  WHERE c.id = agg.component_id;
-
   RAISE NOTICE '=== Demo Seed Complete ===';
   RAISE NOTICE 'Tenant: %', v_tenant_id;
   RAISE NOTICE 'CVEs (global): %',     (SELECT COUNT(*) FROM vulnerabilities WHERE id::text LIKE 'dcdcaaaa-%');
-  RAISE NOTICE 'Components (global): %', (SELECT COUNT(*) FROM components WHERE id::text LIKE 'dcdcc%');
+  RAISE NOTICE 'Package versions: %', (SELECT COUNT(*) FROM software_versions WHERE id::text LIKE 'dcdcc%');
   RAISE NOTICE 'Assets: %',            (SELECT COUNT(*) FROM assets WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc1111-%');
-  RAISE NOTICE 'asset_components: %',  (SELECT COUNT(*) FROM asset_components WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
+  RAISE NOTICE 'Package links: %',     (SELECT COUNT(*) FROM asset_software WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc2%');
   RAISE NOTICE 'Findings: %',          (SELECT COUNT(*) FROM findings WHERE tenant_id = v_tenant_id AND id::text LIKE 'dcdc3%');
-  RAISE NOTICE 'Vulnerable components (per-asset): %', (SELECT COUNT(*) FROM asset_components WHERE tenant_id = v_tenant_id AND has_known_vulnerabilities = true);
+  RAISE NOTICE 'Vulnerable package links: %', (SELECT COUNT(*) FROM asset_software s WHERE s.tenant_id = v_tenant_id AND s.source = 'package'
+    AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = s.tenant_id AND f.asset_id = s.asset_id AND f.component_id = s.software_version_id));
 END $$;

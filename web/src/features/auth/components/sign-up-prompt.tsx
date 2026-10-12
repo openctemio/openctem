@@ -1,6 +1,6 @@
 'use client'
 
-import Link from 'next/link'
+import Link from '@/components/link'
 
 import { useCanSelfRegister } from '../hooks/use-can-self-register'
 import { registerHref } from '../lib/self-register'

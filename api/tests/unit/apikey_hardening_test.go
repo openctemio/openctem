@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/apikey"
+	"github.com/openctemio/openctem/api/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -27,10 +27,11 @@ func TestCreateAPIKey_RejectsScopeNotHeldByCaller(t *testing.T) {
 	svc := newTestAPIKeyService(repo)
 
 	_, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID:    shared.NewID().String(),
-		Name:        "escalate",
-		Scopes:      []string{"findings:read", "team:delete"},
-		CallerHolds: holds("findings:read"),
+		TenantID:      shared.NewID().String(),
+		ExpiresInDays: 90,
+		Name:          "escalate",
+		Scopes:        []string{"findings:read", "team:delete"},
+		CallerHolds:   holds("findings:read"),
 	})
 	if err == nil {
 		t.Fatal("expected creation with a scope the caller lacks to fail")
@@ -48,10 +49,11 @@ func TestCreateAPIKey_AllowsScopesHeldByCaller(t *testing.T) {
 	svc := newTestAPIKeyService(repo)
 
 	res, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID:    shared.NewID().String(),
-		Name:        "ok",
-		Scopes:      []string{"findings:read"},
-		CallerHolds: holds("findings:read", "assets:read"),
+		TenantID:      shared.NewID().String(),
+		ExpiresInDays: 90,
+		Name:          "ok",
+		Scopes:        []string{"findings:read"},
+		CallerHolds:   holds("findings:read", "assets:read"),
 	})
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
@@ -66,10 +68,11 @@ func TestCreateAPIKey_AllowsScopesHeldByCaller(t *testing.T) {
 func TestCreateAPIKey_AdminCallerMayGrantAnyValidScope(t *testing.T) {
 	svc := newTestAPIKeyService(newMockAPIKeyRepo())
 	_, err := svc.Create(context.Background(), apikey.CreateInput{
-		TenantID:    shared.NewID().String(),
-		Name:        "admin-key",
-		Scopes:      []string{"findings:read", "team:delete"},
-		CallerHolds: func(string) bool { return true },
+		TenantID:      shared.NewID().String(),
+		ExpiresInDays: 90,
+		Name:          "admin-key",
+		Scopes:        []string{"findings:read", "team:delete"},
+		CallerHolds:   func(string) bool { return true },
 	})
 	if err != nil {
 		t.Fatalf("admin caller should be able to grant valid scopes: %v", err)
@@ -84,10 +87,11 @@ func TestAPIKeyLifecycle_WritesAuditEvents(t *testing.T) {
 
 	tenantID := shared.NewID()
 	actor := shared.NewID()
-	actx := &app.AuditContext{TenantID: tenantID.String(), ActorID: actor.String()}
+	actx := &audit.AuditContext{TenantID: tenantID.String(), ActorID: actor.String()}
 
 	res, err := svc.Create(context.Background(), apikey.CreateInput{
 		TenantID: tenantID.String(), Name: "audited", AuditContext: actx,
+		ExpiresInDays: 90,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)

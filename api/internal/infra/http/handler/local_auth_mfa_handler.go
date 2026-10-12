@@ -4,11 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Two-factor authentication endpoints: the second login step under
@@ -26,7 +31,7 @@ type MFAChallengeResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 }
 
-func writeMFAChallenge(w http.ResponseWriter, c *app.MFAChallengeInfo) {
+func writeMFAChallenge(w http.ResponseWriter, c *auth.MFAChallengeInfo) {
 	expires := int64(time.Until(c.ExpiresAt).Seconds())
 	if expires < 0 {
 		expires = 0
@@ -44,8 +49,8 @@ func writeMFAChallenge(w http.ResponseWriter, c *app.MFAChallengeInfo) {
 
 // selfAuditContext builds the audit context for a user acting on their own
 // account.
-func selfAuditContext(r *http.Request) app.AuditContext {
-	return app.AuditContext{
+func selfAuditContext(r *http.Request) audit.AuditContext {
+	return audit.AuditContext{
 		ActorID:    middleware.GetUserID(r.Context()),
 		ActorEmail: middleware.GetEmail(r.Context()),
 		ActorIP:    getClientIP(r),
@@ -88,7 +93,7 @@ func (h *LocalAuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("code or recovery_code is required").WriteJSON(w)
 		return
 	}
-	result, err := h.authService.VerifyMFALogin(r.Context(), app.VerifyMFAInput{
+	result, err := h.authService.VerifyMFALogin(r.Context(), auth.VerifyMFAInput{
 		Token:        req.MFAToken,
 		Code:         req.Code,
 		RecoveryCode: req.RecoveryCode,
@@ -170,7 +175,7 @@ func (h *LocalAuthHandler) ConfirmMFAEnrollment(w http.ResponseWriter, r *http.R
 		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
 		return
 	}
-	result, codes, err := h.authService.CompleteMFAEnrollmentFromChallenge(r.Context(), app.CompleteMFAEnrollmentInput{
+	result, codes, err := h.authService.CompleteMFAEnrollmentFromChallenge(r.Context(), auth.CompleteMFAEnrollmentInput{
 		Token:     req.MFAToken,
 		Code:      req.Code,
 		IPAddress: getClientIP(r),
@@ -193,6 +198,13 @@ type MFACodeRequest struct {
 	Code string `json:"code" validate:"required,max=16"`
 }
 
+// MFAEnableRequest confirms 2FA setup. The current password is required:
+// a stolen session alone must not be able to bind an authenticator.
+type MFAEnableRequest struct {
+	Password string `json:"password" validate:"required,max=128"`
+	Code     string `json:"code" validate:"required,max=16"`
+}
+
 // MFADisableRequest turns 2FA off. code may be an authenticator code or an
 // unused recovery code.
 type MFADisableRequest struct {
@@ -210,7 +222,7 @@ type MFARecoveryCodesResponse struct {
 // @Tags         Users
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  app.MFAStatus
+// @Success      200  {object}  auth.MFAStatus
 // @Failure      401  {object}  map[string]string
 // @Router       /users/me/2fa [get]
 func (h *LocalAuthHandler) GetMFAStatus(w http.ResponseWriter, r *http.Request) {
@@ -253,12 +265,12 @@ func (h *LocalAuthHandler) SetupMFA(w http.ResponseWriter, r *http.Request) {
 
 // EnableMFA confirms setup with a code and turns 2FA on.
 // @Summary      Enable 2FA
-// @Description  Confirms the authenticator with a code and turns 2FA on. Signs out every other session. Returns recovery codes, shown once.
+// @Description  Confirms the authenticator with a code and turns 2FA on. Needs the current password. Signs out every other session. Returns recovery codes, shown once.
 // @Tags         Users
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request  body      MFACodeRequest  true  "Authenticator code"
+// @Param        request  body      MFAEnableRequest  true  "Current password and authenticator code"
 // @Success      200  {object}  MFARecoveryCodesResponse
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
@@ -269,7 +281,7 @@ func (h *LocalAuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("User not authenticated").WriteJSON(w)
 		return
 	}
-	var req MFACodeRequest
+	var req MFAEnableRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
@@ -278,7 +290,7 @@ func (h *LocalAuthHandler) EnableMFA(w http.ResponseWriter, r *http.Request) {
 		apierror.ValidationFailed("Validation failed", err).WriteJSON(w)
 		return
 	}
-	codes, err := h.authService.EnableMFA(r.Context(), selfAuditContext(r), userID, req.Code)
+	codes, err := h.authService.EnableMFA(r.Context(), selfAuditContext(r), userID, req.Password, req.Code)
 	if err != nil {
 		h.handleSelfServiceMFAError(w, err)
 		return
@@ -360,7 +372,7 @@ func (h *LocalAuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *htt
 // a 401 as an expired session (they sign the user out). The public login step
 // keeps 401 for a wrong code (handleAuthError).
 func (h *LocalAuthHandler) handleSelfServiceMFAError(w http.ResponseWriter, err error) {
-	if errors.Is(err, app.ErrMFACodeInvalid) {
+	if errors.Is(err, auth.ErrMFACodeInvalid) {
 		apierror.BadRequest("Invalid verification code").WriteJSON(w)
 		return
 	}
@@ -374,4 +386,60 @@ func writeNoStoreJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// ResetMemberMFA turns off a member's two-factor authentication.
+// @Summary      Reset a member's two-factor authentication
+// @Description  An owner or administrator turns off the second factor of a member of their organization who lost their authenticator and recovery codes. The member is signed out everywhere and e-mailed. An owner or administrator target needs the owner; a member who also belongs to another organization needs the same authority there; nobody resets their own factor here.
+// @Tags         Tenants
+// @Produce      json
+// @Param        member_id  path  string  true  "Membership ID"
+// @Success      200  {object}  map[string]string
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/members/{member_id}/mfa [delete]
+func (h *LocalAuthHandler) ResetMemberMFA(w http.ResponseWriter, r *http.Request) {
+	membershipID := chi.URLParam(r, "member_id")
+	tenantID := middleware.GetTenantID(r.Context())
+	if membershipID == "" || tenantID == "" {
+		apierror.BadRequest("Member ID is required").WriteJSON(w)
+		return
+	}
+	actx := audit.AuditContext{
+		ActorIP:   getClientIP(r),
+		UserAgent: r.UserAgent(),
+		RequestID: r.Header.Get("X-Request-ID"),
+		TenantID:  tenantID,
+	}
+	if u := middleware.GetLocalUser(r.Context()); u != nil {
+		actx.ActorID = u.ID().String()
+		actx.ActorEmail = u.Email()
+	}
+	if actx.ActorID == "" {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
+		return
+	}
+	if err := h.authService.ResetMemberMFA(r.Context(), actx, tenantID, membershipID); err != nil {
+		switch {
+		case errors.Is(err, shared.ErrNotFound):
+			apierror.NotFound("Member").WriteJSON(w)
+		case errors.Is(err, shared.ErrForbidden), errors.Is(err, shared.ErrValidation):
+			msg := err.Error()
+			if i := strings.Index(msg, ": "); i != -1 {
+				msg = msg[i+2:]
+			}
+			if errors.Is(err, shared.ErrForbidden) {
+				apierror.Forbidden(msg).WriteJSON(w)
+			} else {
+				apierror.BadRequest(msg).WriteJSON(w)
+			}
+		default:
+			h.handleAuthError(w, err)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Two-factor authentication reset"})
 }

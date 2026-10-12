@@ -44,18 +44,20 @@ var auditTables = map[string]bool{
 	"asset_state_history":      true,
 	"exposure_state_history":   true,
 	"finding_activities":       true,
-	"permission_set_versions":  true,
 	"suppression_rule_audit":   true,
 	"finding_status_approvals": true,
 }
 
 // orphanAllowlist lists tables with a tenant_id column whose rows are meant
-// to outlive the tenant, because they are audit evidence.
+// to outlive the tenant: audit evidence, or a deletion queue that must
+// outlive it to remove stored files.
 var orphanAllowlist = map[string]string{
 	"audit_log_chain":                "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
 	"audit_chain_rebaselines":        "record of an admin re-signing the audit chain; evidence, no FK to tenants by design",
 	"audit_chain_rebaseline_entries": "hashes a chain rebaseline overwrote; evidence, no FK to tenants by design",
+	"audit_chain_anchors":            "chain head left by an audit retention prune; evidence, no FK to tenants by design",
 	"priority_class_audit_log":       "append-only priority audit trail; no FK to tenants by design",
+	"asset_web_evidence_orphans":     "queue of screenshot files to delete; filled when the tenant's evidence rows cascade away, drained by the retention job so no stored image outlives the tenant",
 }
 
 func openDeleteTestDB(t *testing.T) *sql.DB {
@@ -212,8 +214,28 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
+	},
 	"ai_triage_budgets": func(*schemaSeeder) map[string]any {
 		return map[string]any{"period_start": "2026-01-01", "period_end": "2026-02-01"}
+	},
+	// An edge joins two package links of one asset (the scope trigger checks
+	// both ends): add a second link next to the seeded one.
+	"asset_software_edges": func(s *schemaSeeder) map[string]any {
+		first := s.rows["asset_software"]
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO asset_software (tenant_id, asset_id, product_id, software_version_id,
+				location, source, confidence)
+			SELECT tenant_id, asset_id, product_id, software_version_id, $2, 'package', 100 FROM asset_software WHERE id = $1
+			RETURNING id`, first["id"], s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second package link: %v", err)
+		}
+		return map[string]any{"parent_id": first["id"], "child_id": second, "asset_id": first["asset_id"]}
+	},
+	"vex_statements": func(*schemaSeeder) map[string]any {
+		return map[string]any{"vuln_id": "CVE-2026-0001", "status": "affected", "origin": "manual",
+			"justification": nil, "versions": "{}", "version_range": nil}
 	},
 	"asset_relationships": func(s *schemaSeeder) map[string]any {
 		var second string
@@ -226,15 +248,124 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"audit_log_chain": func(*schemaSeeder) map[string]any {
 		return map[string]any{"hash": strings.Repeat("ab", 32), "prev_hash": ""}
 	},
+	"audit_chain_anchors": func(*schemaSeeder) map[string]any {
+		h := strings.Repeat("ab", 32)
+		return map[string]any{"anchor_hash": h, "archive_sha256": h, "pruned_count": 1}
+	},
 	"audit_chain_rebaseline_entries": func(*schemaSeeder) map[string]any {
 		h := strings.Repeat("ab", 32)
 		return map[string]any{"old_hash": h, "old_prev_hash": "", "new_hash": h, "new_prev_hash": ""}
 	},
+	// filename_sha256 has a lower-case hex CHECK.
+	"content_pack_blobs": func(*schemaSeeder) map[string]any {
+		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "size_bytes": "1", "file_count": "1"}
+	},
+	"content_packs": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "seed", "version": "1", "kind": "wordlist", "tier": "T0", "status": "active", "source": "upload"}
+	},
+	"finding_imports": func(*schemaSeeder) map[string]any {
+		return map[string]any{"filename_sha256": strings.Repeat("ab", 32)}
+	},
+	// fingerprint has a NOT LIKE CHECK; its literal is the excluded pattern.
+	"finding_fingerprints": func(s *schemaSeeder) map[string]any { return map[string]any{"fingerprint": s.uniq()} },
+	// target_version has a range CHECK.
+	"finding_rekey_runs": func(*schemaSeeder) map[string]any { return map[string]any{"target_version": "2"} },
+	// emoji has a length CHECK.
+	"comment_reactions": func(*schemaSeeder) map[string]any { return map[string]any{"emoji": "👍"} },
+	// kind is a closed set and redirect_uris must list 1 to 20 URIs (RFC-062).
+	"mcp_oauth_clients": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "organization", "redirect_uris": "{https://client.example/cb}"}
+	},
 	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
 	"sensors":    func(*schemaSeeder) map[string]any { return map[string]any{"status": "active"} },
+	"scan_window_policies": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "allow", "timezone": "UTC", "slots": `[{"days":[1],"start":"09:00","end":"17:00"}]`}
+	},
+	"scan_window_overrides": func(*schemaSeeder) map[string]any {
+		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
+	},
+	// public_key is 32 bytes (lib/pq sends a string to a bytea parameter as raw
+	// bytes), thumbprint 43 base64url characters, status a
+	// closed set (CHECKs; RFC-052).
+	"sensor_keys": func(*schemaSeeder) map[string]any {
+		return map[string]any{"public_key": strings.Repeat("k", 32), "thumbprint": strings.Repeat("A", 43), "status": "active"}
+	},
+	// profile has a format CHECK (RFC-052 grants). The insert trigger on
+	// sensors already gave the seeded sensor its grant; replace it with one
+	// that names the seeded user (updated_by).
+	"sensor_grants": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM sensor_grants WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear trigger grants: %v", err)
+		}
+		return map[string]any{"profile": "internal-network-scanner"}
+	},
 	// type has a format CHECK, not a list of literals.
 	"sensor_events": func(*schemaSeeder) map[string]any { return map[string]any{"type": "online"} },
+	// Definitions (RFC-044): namespace has a format CHECK; a tenant
+	// definition is not a CVE and comes from a report or a user.
+	"vulnerabilities": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"kind": "exposure", "namespace": "NUCLEI", "external_id": s.uniq(), "origin": "report"}
+	},
+	"definition_identifiers": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"namespace": "NUCLEI", "external_id": s.uniq(), "is_primary": "false", "asserted_by": "report"}
+	},
+	"definition_taxonomy": func(*schemaSeeder) map[string]any {
+		return map[string]any{"namespace": "CWE", "external_id": "CWE-79", "asserted_by": "report"}
+	},
+	// An edge needs two different definitions in the tenant's scope.
+	"definition_relations": func(s *schemaSeeder) map[string]any {
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO vulnerabilities (tenant_id, kind, namespace, external_id, title, origin)
+			VALUES ($1, 'exposure', 'NUCLEI', $2, 't', 'report') RETURNING id`, s.tenantID, s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second definition: %v", err)
+		}
+		return map[string]any{"to_id": second, "to_scope": s.tenantID, "scope_tenant_id": s.tenantID, "asserted_by": "report"}
+	},
+	// The primary link is ord 0.
+	"finding_definitions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"role": "primary", "ord": "0", "asserted_by": "report"}
+	},
+	// findings.definition_id must name one of the finding's own links, which
+	// do not exist yet when the finding is seeded.
+	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
+	// A CI gate policy names its repository or business unit only for that
+	// scope (chk_ci_gate_policies_scope).
+	"ci_gate_policies": func(*schemaSeeder) map[string]any {
+		return map[string]any{"scope_type": "tenant", "repository_asset_id": nil, "business_unit_id": nil}
+	},
 	// digest has a format CHECK; manifest and ignored have type CHECKs.
+	// digest and health have CHECKs; report must be an object.
+	"sensor_config_reports": func(*schemaSeeder) map[string]any {
+		return map[string]any{"digest": "sha256:" + strings.Repeat("cd", 32), "health": "ok", "report": "{}"}
+	},
+	// Bug-bounty programs (RFC-065): hex hashes, an https URL, typed JSON.
+	"bounty_programs": func(*schemaSeeder) map[string]any {
+		return map[string]any{"terms_sha256": strings.Repeat("ab", 32), "program_url": "https://p.example/policy",
+			"status": "active", "scope_source": "paste", "rules": "{}", "scope_items": "[]", "group_id": nil,
+			"public_program_id": nil}
+	},
+	// A person accepting a program's terms (RFC-065 §15): a hex hash.
+	"bounty_program_attestations": func(*schemaSeeder) map[string]any {
+		return map[string]any{"terms_sha256": strings.Repeat("cd", 32)}
+	},
+	"bounty_program_exclusions": func(s *schemaSeeder) map[string]any {
+		return map[string]any{"target_type": "domain", "pattern": s.uniq() + ".example"}
+	},
+	// A program entry needs its program; an ownership entry has none.
+	"scope_targets": func(*schemaSeeder) map[string]any {
+		return map[string]any{"authorization_source": "program", "letter_id": nil}
+	},
+	// A letter has a hex file hash and a window of at most 2 years.
+	"authorization_letters": func(*schemaSeeder) map[string]any {
+		return map[string]any{"file_sha256": strings.Repeat("ab", 32), "valid_from": "2026-01-01T00:00:00Z",
+			"valid_until": "2026-06-01T00:00:00Z", "title": "seed"}
+	},
+	"scope_snapshots": func(*schemaSeeder) map[string]any {
+		return map[string]any{"sha256": strings.Repeat("ab", 32), "body": "{}"}
+	},
+	"scan_run_scope_snapshots": func(*schemaSeeder) map[string]any {
+		return map[string]any{"sha256": strings.Repeat("ab", 32)}
+	},
 	"sensor_manifests": func(*schemaSeeder) map[string]any {
 		return map[string]any{"digest": "sha256:" + strings.Repeat("ab", 32), "manifest": "{}", "ignored": "[]"}
 	},
@@ -496,6 +627,12 @@ func (s *schemaSeeder) fkValues(st *seedTable, strict bool) (map[string]any, boo
 		if fk.ref == st.name {
 			continue // self reference: leave NULL
 		}
+		if st.name == "admin_users" && fk.ref == "users" {
+			// A platform administrator cannot also be an organization member
+			// (000226 trigger), and the seeded user is one: leave user_id NULL,
+			// an API-key administrator identity.
+			continue
+		}
 		row := s.refRow(fk.ref)
 		if row == nil {
 			if ref, ok := s.tables[fk.ref]; ok && !ref.hasTn {
@@ -508,7 +645,10 @@ func (s *schemaSeeder) fkValues(st *seedTable, strict bool) (map[string]any, boo
 		required := false
 		for _, c := range fk.cols {
 			for _, col := range st.cols {
-				if col.name == c && col.notNull && !col.hasDef {
+				// tenant_id is always the seeded tenant, so it never makes a
+				// key required: findings (id, tenant_id, definition_id) ->
+				// finding_definitions is optional while definition_id is NULL.
+				if col.name == c && c != "tenant_id" && col.notNull && !col.hasDef {
 					required = true
 				}
 			}
@@ -785,15 +925,16 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 		}
 		return tenantID, userID, historyID
 	}
-	inTx := func(t *testing.T, fn func(tx *sql.Tx)) {
+	inTxOn := func(t *testing.T, conn *sql.DB, fn func(tx *sql.Tx)) {
 		t.Helper()
-		tx, err := db.BeginTx(ctx, nil)
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			t.Fatalf("begin: %v", err)
 		}
 		defer func() { _ = tx.Rollback() }()
 		fn(tx)
 	}
+	inTx := func(t *testing.T, fn func(tx *sql.Tx)) { t.Helper(); inTxOn(t, db, fn) }
 	mustFail := func(t *testing.T, tx *sql.Tx, want, q string, args ...any) {
 		t.Helper()
 		mustExecTx(t, tx, "SAVEPOINT expect_fail")
@@ -842,7 +983,12 @@ func TestAssetStateHistory_AuditTriggers(t *testing.T) {
 	// is reached while its asset still exists. Recreate the assets FK to get
 	// that order and check the delete does not depend on it.
 	t.Run("deleting the tenant does not depend on cascade order", func(t *testing.T) {
-		inTx(t, func(tx *sql.Tx) {
+		// Recreating the FK is DDL: the schema owner, not the app role.
+		inTxOn(t, testdb.OpenMigrator(t), func(tx *sql.Tx) {
+			// The ALTER locks assets and tenants, which concurrently running
+			// packages use all the time: take both up front, never waiting
+			// while holding one, or the ALTER deadlocks with them.
+			testdb.LockForDDL(t, ctx, tx, "tenants", "assets")
 			mustExecTx(t, tx, `ALTER TABLE assets DROP CONSTRAINT assets_tenant_id_fkey,
 				ADD CONSTRAINT assets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE`)
 			tenantID, _, _ := seed(t, tx)

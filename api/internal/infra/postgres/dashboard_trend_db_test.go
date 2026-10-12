@@ -38,7 +38,7 @@ func TestGetFindingTrend_MonthBuckets(t *testing.T) {
 	seed(tenant, asset, "critical", "new", "8 months")   // outside 6-month window
 	seed(other, otherAsset, "critical", "new", "0 days") // other tenant
 
-	trend, err := repo.GetFindingTrend(ctx, tenant, 6)
+	trend, err := repo.GetFindingTrend(ctx, tenant, nil, 6)
 	if err != nil {
 		t.Fatalf("GetFindingTrend: %v", err)
 	}

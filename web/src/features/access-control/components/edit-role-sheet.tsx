@@ -14,6 +14,7 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
+  SheetBody,
   SheetTitle,
   SheetFooter,
 } from '@/components/ui/sheet'
@@ -87,7 +88,12 @@ function getPermissionType(permissionId: string): string {
 
 export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleSheetProps) {
   const { updateRole, isUpdating } = useUpdateRole(role?.id || null)
-  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules()
+  const { modules: permissionModules, isLoading: isLoadingModules } = useTenantPermissionModules(
+    true,
+    {
+      forCustomRole: true,
+    }
+  )
 
   // Form state
   const [form, setForm] = useState({
@@ -249,7 +255,8 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
     try {
       await updateRole({
         name: form.name,
-        description: form.description || undefined,
+        // "" clears the description (absent would mean unchanged).
+        description: form.description.trim(),
         has_full_data_access: form.hasFullDataAccess,
         permissions: form.permissions,
       })
@@ -279,9 +286,9 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="sm:max-w-4xl p-0 flex flex-col h-full max-h-screen">
+      <SheetContent className="sm:max-w-4xl">
         {/* Header */}
-        <SheetHeader className="px-6 py-4 border-b shrink-0 pe-12">
+        <SheetHeader>
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-blue-100 dark:bg-blue-900 p-2">
               <Pencil className="h-5 w-5 text-blue-600" />
@@ -294,7 +301,7 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
         </SheetHeader>
 
         {/* Content - Two columns */}
-        <div className="flex-1 flex min-h-0">
+        <SheetBody className="flex overflow-hidden p-0 sm:p-0">
           {/* Left Column - Form */}
           <div className="flex-1 flex flex-col min-h-0 border-r">
             <ScrollArea className="flex-1 h-full">
@@ -617,10 +624,10 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
               </div>
             </ScrollArea>
           </div>
-        </div>
+        </SheetBody>
 
         {/* Footer */}
-        <SheetFooter className="px-6 py-4 border-t shrink-0">
+        <SheetFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>

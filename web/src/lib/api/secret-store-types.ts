@@ -141,14 +141,23 @@ export interface CreateSecretStoreCredentialRequest {
 }
 
 /**
- * Update secret store credential request
- * Credential data can be updated by providing the appropriate field
+ * Update a credential's metadata (PUT /secret-store/{id}).
+ * Every field is optional and an absent field is left unchanged:
+ * `description: ''` clears the description and `expires_at: null` clears the
+ * expiry. The secret itself is replaced with POST /secret-store/{id}/rotate.
  */
 export interface UpdateSecretStoreCredentialRequest {
   name?: string
   description?: string
-  expires_at?: string
-  // Credential data fields (only one should be set based on credential_type)
+  /** RFC 3339 timestamp in the future, or null to remove the expiry. */
+  expires_at?: string | null
+}
+
+/**
+ * Replace a credential's secret (POST /secret-store/{id}/rotate). Set the one
+ * field that matches the credential's type; the type cannot change.
+ */
+export interface RotateSecretStoreCredentialRequest {
   api_key?: APIKeyData
   basic_auth?: BasicAuthData
   bearer_token?: BearerTokenData
@@ -158,6 +167,20 @@ export interface UpdateSecretStoreCredentialRequest {
   azure_service_principal?: AzureServicePrincipalData
   github_app?: GitHubAppData
   gitlab_token?: GitLabTokenData
+}
+
+/**
+ * Turns the value of a date input (YYYY-MM-DD) into the RFC 3339 timestamp
+ * the API expects: the end of that day in UTC. An empty value gives null
+ * (no expiry). The API used to receive the bare date and answer 400.
+ */
+export function expiryDateToRFC3339(date: string | undefined | null): string | null {
+  const d = (date ?? '').trim()
+  if (!d) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    throw new Error('Expiry must be a date (YYYY-MM-DD)')
+  }
+  return `${d}T23:59:59Z`
 }
 
 /**

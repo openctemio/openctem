@@ -50,8 +50,26 @@ func NewAssetDedupRepository(db *DB) *AssetDedupRepository {
 	return &AssetDedupRepository{db: db}
 }
 
-// ListPendingReviews returns pending dedup reviews for a tenant.
-func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID string) ([]AssetDedupReview, error) {
+// dedupReviewInScope is the predicate "every asset of the review (the kept
+// one and each one to merge) is in the data scope" for the review aliased
+// as the table itself. A review that would merge an asset the caller cannot
+// see is out of scope as a whole: listing it would reveal that asset and
+// approving it would delete it. A nil scope returns "TRUE".
+func dedupReviewInScope(scope *shared.DataScope, args []any) (string, []any) {
+	if scope == nil {
+		return sqlTrue, args
+	}
+	keep, scopeArgs := dataScopeCondAt("keep_asset_id", scope, len(args)+1)
+	merge, _ := dataScopeCondAt("m.id", scope, len(args)+1)
+	return "(" + keep + " AND NOT EXISTS (SELECT 1 FROM unnest(merge_asset_ids) AS m(id) WHERE NOT " + merge + "))",
+		append(args, scopeArgs...)
+}
+
+// ListPendingReviews returns the pending dedup reviews of a tenant whose
+// assets are all in scope (nil = every review).
+func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID string, scope *shared.DataScope) ([]AssetDedupReview, error) {
+	scopeCond, args := dedupReviewInScope(scope, []any{tenantID})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT id, tenant_id, normalized_name, asset_type,
 			keep_asset_id, keep_asset_name, keep_finding_count,
@@ -59,11 +77,11 @@ func (r *AssetDedupRepository) ListPendingReviews(ctx context.Context, tenantID 
 			status, reviewed_by, reviewed_at, merged_at, created_at,
 			reason, COALESCE(evidence, '{}'::jsonb)
 		FROM asset_dedup_review
-		WHERE tenant_id = $1 AND status = 'pending'
+		WHERE tenant_id = $1 AND status = 'pending' AND ` + scopeCond + `
 		ORDER BY merge_finding_count DESC, created_at ASC
 		LIMIT 100
 	`
-	rows, err := r.db.QueryContext(ctx, query, tenantID)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list pending reviews: %w", err)
 	}
@@ -219,9 +237,9 @@ func (r *AssetDedupRepository) EnqueueIdentityReview(ctx context.Context, tenant
 				merge_asset_ids = $2, merge_asset_names = $3,
 				merge_finding_count = merge_finding_count + $4,
 				reason = $5, evidence = $6
-			WHERE id = $1`,
+			WHERE id = $1 AND tenant_id = $7`,
 			existingID, pq.Array(existingIDs), pq.Array(existingNames), rev.MergeFindingCount,
-			rev.Reason, evidence); err != nil {
+			rev.Reason, evidence, tenantID); err != nil {
 			return false, fmt.Errorf("extend identity review: %w", err)
 		}
 	}
@@ -260,38 +278,28 @@ func openDuplicateCandidates(ctx context.Context, tx *sql.Tx, tenantID, keepID s
 	return open, nil
 }
 
-// ReviewKeepAssetID returns the surviving (keep) asset ID for a review. Used by
-// the handler to recompute finding fingerprints on the keep asset after a merge.
-// Tenant-scoped to prevent cross-tenant access.
-func (r *AssetDedupRepository) ReviewKeepAssetID(ctx context.Context, tenantID, reviewID string) (string, error) {
-	var keepID string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT keep_asset_id FROM asset_dedup_review WHERE id = $1 AND tenant_id = $2`,
-		reviewID, tenantID).Scan(&keepID)
-	if err != nil {
-		return "", fmt.Errorf("get review keep asset id: %w", err)
-	}
-	return keepID, nil
-}
-
 // ApproveAndMerge executes a merge: moves every row that references the merge
 // assets onto the keep asset, then deletes the merge assets.
-// tenantID is verified against the review to prevent cross-tenant access.
-func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID string, reviewID string, reviewedBy string) error {
+// tenantID is verified against the review to prevent cross-tenant access,
+// and a non-nil scope must cover every asset of the review (checked on the
+// locked row, so a concurrent refresh of the review cannot slip past it).
+func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID string, reviewID string, reviewedBy string, scope *shared.DataScope) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Lock and get the review — tenant_id enforced
+	// Lock and get the review — tenant_id and data scope enforced
 	var rev AssetDedupReview
+	scopeCond, args := dedupReviewInScope(scope, []any{reviewID, tenantID})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	err = tx.QueryRowContext(ctx, `
 		SELECT id, tenant_id, keep_asset_id, merge_asset_ids, status
 		FROM asset_dedup_review
-		WHERE id = $1 AND tenant_id = $2
+		WHERE id = $1 AND tenant_id = $2 AND `+scopeCond+`
 		FOR UPDATE
-	`, reviewID, tenantID).Scan(&rev.ID, &rev.TenantID, &rev.KeepAssetID, pq.Array(&rev.MergeAssetIDs), &rev.Status)
+	`, args...).Scan(&rev.ID, &rev.TenantID, &rev.KeepAssetID, pq.Array(&rev.MergeAssetIDs), &rev.Status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: dedup review not found", shared.ErrNotFound)
 	}
@@ -315,7 +323,14 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 
 	// Touch the keep asset. Finding counts are computed on read (JOIN), not
 	// stored on the assets row — there is no assets.finding_count column.
-	_, err = tx.ExecContext(ctx, `UPDATE assets SET updated_at = NOW() WHERE id = $1 AND tenant_id = $2`, keepID, tenantID)
+	// A crown-jewel designation on a merged asset carries over to the kept
+	// one, so a merge never silently demotes a crown jewel.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE assets SET updated_at = NOW(),
+		       is_crown_jewel = is_crown_jewel OR EXISTS (
+		           SELECT 1 FROM assets m
+		            WHERE m.tenant_id = $2 AND m.id = ANY($3::uuid[]) AND m.is_crown_jewel)
+		 WHERE id = $1 AND tenant_id = $2`, keepID, tenantID, pq.Array(mergeIDs))
 	if err != nil {
 		return fmt.Errorf("touch keep asset: %w", err)
 	}
@@ -358,8 +373,8 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 			reviewed_by = $2,
 			reviewed_at = $3,
 			merged_at = $3
-		WHERE id = $1
-	`, reviewID, reviewedBy, now)
+		WHERE id = $1 AND tenant_id = $4
+	`, reviewID, reviewedBy, now, tenantID)
 	if err != nil {
 		return fmt.Errorf("update review status: %w", err)
 	}
@@ -368,16 +383,18 @@ func (r *AssetDedupRepository) ApproveAndMerge(ctx context.Context, tenantID str
 }
 
 // RejectReview marks a review as rejected (keep assets separate).
-// tenantID is verified to prevent cross-tenant access.
-func (r *AssetDedupRepository) RejectReview(ctx context.Context, tenantID string, reviewID string, reviewedBy string) error {
+// tenantID is verified to prevent cross-tenant access; a non-nil scope must
+// cover every asset of the review.
+func (r *AssetDedupRepository) RejectReview(ctx context.Context, tenantID string, reviewID string, reviewedBy string, scope *shared.DataScope) error {
 	now := time.Now()
+	scopeCond, args := dedupReviewInScope(scope, []any{reviewID, tenantID, reviewedBy, now})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE asset_dedup_review SET
 			status = 'rejected',
 			reviewed_by = $3,
 			reviewed_at = $4
-		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
-	`, reviewID, tenantID, reviewedBy, now)
+		WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND `+scopeCond, args...)
 	if err != nil {
 		return err
 	}
@@ -389,20 +406,23 @@ func (r *AssetDedupRepository) RejectReview(ctx context.Context, tenantID string
 	return nil
 }
 
-// GetMergeLog returns recent merge events.
-func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string, limit int) ([]map[string]any, error) {
+// GetMergeLog returns recent merge events. A non-nil scope keeps the events
+// whose kept asset is in it (the merged asset no longer exists).
+func (r *AssetDedupRepository) GetMergeLog(ctx context.Context, tenantID string, limit int, scope *shared.DataScope) ([]map[string]any, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	scopeCond, args := dataScopeCond("kept_asset_id", scope, []any{tenantID, limit})
+	//nolint:gosec // G202: scopeCond is built from fixed SQL and numbered placeholders
 	query := `
 		SELECT id, kept_asset_id, kept_asset_name, merged_asset_id, merged_asset_name,
 			correlation_type, correlation_value, action, old_name, new_name, source, created_at
 		FROM asset_merge_log
-		WHERE tenant_id = $1
+		WHERE tenant_id = $1 AND ` + scopeCond + `
 		ORDER BY created_at DESC
 		LIMIT $2
 	`
-	rows, err := r.db.QueryContext(ctx, query, tenantID, limit)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

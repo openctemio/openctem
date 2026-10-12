@@ -24,6 +24,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { Plus, Trash2, Eye, Pencil, Loader2, AlertCircle, FolderKey, RefreshCw } from 'lucide-react'
@@ -36,9 +37,10 @@ import {
   generateSlug,
 } from '@/features/access-control'
 import { GroupDetailSheet } from '@/features/access-control/components/group-detail-sheet'
-import { NoTeamAccessCard } from '@/features/access-control/components/no-team-access-card'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -59,6 +61,7 @@ interface SectionProps {
 
 /** The Teams tab of /settings/teams (moved from its own page; content unchanged). */
 export function TeamsSection({ header }: SectionProps) {
+  const { t } = useTranslation()
   const { mutate } = useSWRConfig()
 
   // API Hooks
@@ -136,7 +139,7 @@ export function TeamsSection({ header }: SectionProps) {
               {
                 label: 'Edit team',
                 icon: Pencil,
-                permission: Permission.GroupsWrite,
+                route: 'PUT /api/v1/groups/{groupId}',
                 onClick: () => setSelectedGroupId(group.id),
               },
               {
@@ -144,7 +147,8 @@ export function TeamsSection({ header }: SectionProps) {
                 icon: Trash2,
                 destructive: true,
                 separatorBefore: true,
-                permission: Permission.GroupsDelete,
+                // Owner only on the API (RequireOwner), so admins do not see it.
+                route: 'DELETE /api/v1/groups/{groupId}',
                 onClick: () => {
                   setGroupToDelete(group)
                   setDeleteDialogOpen(true)
@@ -204,7 +208,7 @@ export function TeamsSection({ header }: SectionProps) {
     <>
       {header(
         <>
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups" mode="disable">
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create team
@@ -251,7 +255,7 @@ export function TeamsSection({ header }: SectionProps) {
                 title="No teams yet"
                 description="Create a team to group users and scope their access to assets."
                 action={
-                  <Can permission={Permission.GroupsWrite}>
+                  <Can route="POST /api/v1/groups">
                     <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       Create team
@@ -272,7 +276,12 @@ export function TeamsSection({ header }: SectionProps) {
             )}
           </div>
 
-          <NoTeamAccessCard className="mt-5" />
+          {/* Members in no team see nothing (owner decision D2); there is
+              no per-organization "see everything" switch. */}
+          <p className="mt-5 text-sm text-muted-foreground" data-testid="no-team-access-note">
+            Members who are in no team see no assets or findings until you add them to a team or
+            grant them an asset. Owners, admins and roles with full data access see everything.
+          </p>
         </>
       )}
 
@@ -286,7 +295,7 @@ export function TeamsSection({ header }: SectionProps) {
 
       {/* Create Group Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Create team</DialogTitle>
             <DialogDescription>
@@ -294,30 +303,32 @@ export function TeamsSection({ header }: SectionProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="group-name">Team name</Label>
-              <Input
-                id="group-name"
-                placeholder="e.g., Security Team, DevOps"
-                value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-              />
-            </div>
+          <DialogBody>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="group-name">Team name</Label>
+                <Input
+                  id="group-name"
+                  placeholder="e.g., Security Team, DevOps"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="group-description">Description (optional)</Label>
-              <Textarea
-                id="group-description"
-                placeholder="Describe the purpose of this group..."
-                value={createForm.description}
-                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                rows={3}
-              />
+              <div className="space-y-2">
+                <Label htmlFor="group-description">Description (optional)</Label>
+                <Textarea
+                  id="group-description"
+                  placeholder="Describe the purpose of this group..."
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
             </div>
-          </div>
+          </DialogBody>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
@@ -334,37 +345,33 @@ export function TeamsSection({ header }: SectionProps) {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete team</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete the team &quot;{groupToDelete?.name}&quot;? This
-              action cannot be undone. Members will lose access to assets owned by this team.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false)
-                setGroupToDelete(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteGroup} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete team
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setGroupToDelete(null)
+        }}
+        destructive
+        title={t('confirm.team.deleteTitle', 'Delete the team "{name}"?', {
+          name: groupToDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.deleteDesc',
+          'Members lose the access this team gives them, including to assets the team owns. This cannot be undone.'
+        )}
+        confirmText={
+          <>
+            {isDeleting ? (
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="me-2 h-4 w-4" />
+            )}
+            {t('confirm.team.delete', 'Delete team')}
+          </>
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDeleteGroup}
+      />
     </>
   )
 }

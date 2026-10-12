@@ -22,7 +22,8 @@ export interface ReleaseChannel {
 }
 
 /** What a health reason is about, for the "Needs attention" caption. */
-export type AttentionKind = 'backlog' | 'key' | 'version' | 'sdk' | 'tools' | 'content' | 'error'
+export type AttentionKind =
+  'backlog' | 'key' | 'version' | 'sdk' | 'heartbeat' | 'tools' | 'content' | 'error'
 
 function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKind[] {
   const kinds: AttentionKind[] = []
@@ -35,13 +36,15 @@ function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKin
           ? 'version'
           : r.code === 'sdk_unsupported'
             ? 'sdk'
-            : r.code === 'no_tools'
-              ? 'tools'
-              : r.code.startsWith('content_')
-                ? 'content'
-                : r.code === 'error_reported'
-                  ? 'error'
-                  : null
+            : r.code === 'heartbeat_late' || r.code === 'control_slow'
+              ? 'heartbeat'
+              : r.code === 'no_tools'
+                ? 'tools'
+                : r.code.startsWith('content_')
+                  ? 'content'
+                  : r.code === 'error_reported'
+                    ? 'error'
+                    : null
     if (kind && !kinds.includes(kind)) kinds.push(kind)
   }
   // Older APIs send no reasons: derive what the page can see itself.
@@ -75,7 +78,7 @@ export interface FleetSummary {
   /** Not disabled or revoked. */
   enabled: number
   byState: Record<SensorState, number>
-  /** Long-running and online or degraded: the platform can dispatch to them. */
+  /** Long-running and online, degraded or late: the platform can dispatch to them. */
   canTakeJobs: number
   needsAttention: number
   attentionKinds: AttentionKind[]
@@ -168,17 +171,35 @@ export function summarizeFleet(
   }
 }
 
-/**
- * The tenant's own sensors. Shared platform sensors have their own page
- * (/sensors/platform); the API leaves them out of GET /sensors, and this keeps
- * an older API from mixing them into the tenant's list and counts.
- */
-export function tenantSensors<T extends Pick<Sensor, 'is_platform_sensor'>>(sensors: T[]): T[] {
-  return sensors.filter((s) => !s.is_platform_sensor)
-}
-
 /** Execution mode facet: long-running daemons vs one-shot CI runs. */
 export type SensorModeFilter = 'daemon' | 'ci'
+
+/**
+ * Local policy facet (api RFC-040 §5.7): what the sensor reports. "unknown"
+ * is a sensor that never reported one (an SDK before RFC-040).
+ */
+export type SensorPolicyFilter = 'enforced' | 'absent' | 'paused' | 'unknown'
+
+export const SENSOR_POLICY_FILTERS: SensorPolicyFilter[] = [
+  'enforced',
+  'absent',
+  'paused',
+  'unknown',
+]
+
+/** The local policy facet value of a sensor. */
+export function sensorPolicyOf(sensor: Pick<Sensor, 'local_policy'>): SensorPolicyFilter {
+  switch (sensor.local_policy?.state) {
+    case 'enforced':
+      return 'enforced'
+    case 'absent':
+      return 'absent'
+    case 'paused':
+      return 'paused'
+    default:
+      return 'unknown'
+  }
+}
 
 export interface FleetFilters {
   q: string
@@ -187,6 +208,8 @@ export interface FleetFilters {
   versions: SensorVersionStatus[]
   modes: SensorModeFilter[]
   protocols: SensorProtocolFilter[]
+  /** Local policy states; "absent" + "unknown" is "no local policy". */
+  policies: SensorPolicyFilter[]
   /** Exact SDK versions ("v0.9.0") or "unknown", as GET /sensors?sdk_version= takes them. */
   sdkVersions: string[]
   /** The "Needs attention" metric. */
@@ -200,6 +223,7 @@ export const EMPTY_FLEET_FILTERS: FleetFilters = {
   versions: [],
   modes: [],
   protocols: [],
+  policies: [],
   sdkVersions: [],
   attention: false,
 }
@@ -212,6 +236,7 @@ export function activeFilterCount(f: FleetFilters): number {
     f.versions.length +
     f.modes.length +
     f.protocols.length +
+    f.policies.length +
     f.sdkVersions.length +
     (f.attention ? 1 : 0)
   )
@@ -225,7 +250,6 @@ function searchText(s: Sensor): string {
     s.ip_address,
     normalizeSensorVersion(s.version),
     sensorSdkVersion(s),
-    ...(s.tools ?? []),
     ...dispatchTools(s),
   ]
     .filter(Boolean)
@@ -253,11 +277,11 @@ export function filterSensors(
       return false
     }
     if (f.modes.length) {
-      const mode: SensorModeFilter =
-        s.execution_mode === 'standalone' || s.type === 'runner' ? 'ci' : 'daemon'
+      const mode: SensorModeFilter = s.execution_mode === 'standalone' ? 'ci' : 'daemon'
       if (!f.modes.includes(mode)) return false
     }
     if (f.protocols.length && !f.protocols.includes(sensorProtocolOf(s))) return false
+    if (f.policies.length && !f.policies.includes(sensorPolicyOf(s))) return false
     if (f.sdkVersions.length && !f.sdkVersions.includes(sensorSdkVersionKey(s))) return false
     if (f.attention && !needsAttention(s, now, thresholds, channel)) return false
     return true

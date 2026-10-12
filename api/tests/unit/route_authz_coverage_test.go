@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -44,26 +43,37 @@ var gateFuncs = map[string]bool{
 // source, with {param} placeholders). Adding a route here is a SECURITY-
 // sensitive change — it declares a route public/self/machine-scoped.
 var routeAuthzAllowlist = map[string]string{
-	"GET /api/v1/version": "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
+	"POST /api/v1/client-errors": "public on purpose: the web console reports an error kind (fixed set, nothing else accepted or stored) for operator alerting, also before sign-in; per-address and overall rate limits",
+	"GET /api/v1/announcements":  "any signed-in user (authMiddleware): the platform operator's active notices for the banner; plain text, no tenant data",
+	"GET /api/v1/version":        "any signed-in user (authMiddleware): build identity for Help > About; no tenant data, and kept off the public /health",
+	"GET /api/v1/legal":          "public on purpose: the operator's legal links, legal page values and security.txt contact, shown to visitors before sign-in; no secret, no tenant data; written only by the admin console (RFC-079)",
+	// CI runner identity (RFC-051): machine credentials, not permissions.
+	"POST /api/v1/ci/oidc/exchange":           "public: a CI provider's signed OIDC token is the credential, verified against the tenant's trust configurations; per-IP rate limit; every refusal is the same 401",
+	"POST /api/v1/ci/runs/{id}/results":       "CI run token (AuthenticateRun): 15-minute token bound to one run on one repository asset; tenant from the token",
+	"POST /api/v1/ci/runs/{id}/baseline-diff": "CI run token (AuthenticateRun): the run's repository only",
+	"POST /api/v1/ci/runs/{id}/evaluate":      "CI run token (AuthenticateRun): the run's own verdict",
+	"POST /api/v1/hooks/github-app":           "public: the GitHub App webhook secret (HMAC-SHA256 over the raw body) is the credential, verified before anything is read; per-IP limit; only installation status events change anything (RFC-077)",
 }
 
 // allowlistPrefixes: groups of routes authenticated by a non-permission gate
 // (public auth flow, sensor API-key, SCIM/MCP bearer, webhooks HMAC, or
 // self-scoped /me + /users/me where the handler scopes to the caller).
 var allowlistPrefixes = []struct{ prefix, reason string }{
-	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout, ws-token)"},
+	{"/api/v1/auth", "public auth flow / self-scoped (login, register, oauth, sso, saml, logout)"},
 	{"/api/v1/users/me", "self-scoped: acts only on the authenticated user"},
 	{"/api/v1/me/", "self-scoped: /me/* reads the caller's own perms/modules/roles"},
 	{"/api/v1/notifications", "tenant+user-scoped in handler"},
 	{"/api/v1/invitations/", "invitation token IS the authorization"},
-	{"/api/v1/agent/", "sensor protocol v1: sensor API-key auth (AuthenticateSource); tenant from key"},
 	{"/api/v2/sensor", "sensor protocol v2 (RFC-026): only the sensor authenticator (SensorResultsV2Handler.Authenticate); tenant from the key, user JWT/cookie/oct_ refused"},
-	{"/api/v1/agents", "deprecated management path: 308 redirect to /api/v1/sensors, whose routes are permission-gated"},
 	{"/api/v1/platform/", "platform sensor API-key / self-scoped stats"},
 	{"/api/v1/admin", "platform-admin realm: AdminAuthMiddleware (X-Admin-API-Key or console session cookie, RFC-022) + RequireRole; /admin/auth/login|mfa|logout are the public console login steps (rate-limited); not tenant-permission-gated"},
 	{"/scim/v2", "SCIM per-tenant bearer token auth (routes live at /scim/v2, not /api/v1)"},
 	{"/api/v1/scim", "SCIM per-tenant bearer token auth"},
 	{"/api/v1/mcp", "MCP oct_ API-key auth"},
+	{"/.well-known/oauth-protected-resource", "public OAuth Protected Resource Metadata of the MCP endpoint (RFC 9728, RFC-062): static, no tenant data"},
+	{"/.well-known/oauth-authorization-server", "public OAuth authorization server metadata of the MCP endpoint (RFC 8414, RFC-062): static, no tenant data"},
+	{"/oauth/", "OAuth endpoints of the MCP authorization server (RFC-062): public by protocol; authorize only stores a request for the consent page, token and revoke are bound to a PKCE-protected code or a hashed token of the presenting client"},
+	{"/api/v1/oauth/", "self-scoped (RFC-062 consent): the signed-in session answers its own MCP consent request in its current organization; the grant never exceeds what the user holds, API keys refused (APIKeyRouteDenied)"},
 	{"/api/v1/webhooks/incoming", "inbound webhook HMAC per-tenant"},
 	{"/api/v1/tenants", "base-auth + RequireMembership/RequireTeam* (role-gated, not permission-gated)"},
 	{"/api/v1/module-presets", "auth-only catalog read (public preset list)"},
@@ -71,13 +81,13 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/health", "public liveness"},
 	{"/ready", "public readiness"},
 	{"/metrics", "MetricsAuth bearer (fail-closed 404)"},
-	{"/openapi.yaml", "public API spec"},
-	{"/docs", "public API docs"},
-	{"/api/v1/ws", "WS ticket / JWT auth"},
+	{"/openapi.yaml", "API spec: public outside production, signed-in users in production"},
+	{"/docs", "API reference page: outside production only"},
+	{"/api/v1/ws", "session (cookie or Bearer, no API keys) through the tenant chain: SSO enforcement, IP allowlist, RequireTenant, active membership (realtimeMiddlewares, RFC-045); socket bound to the session and closed on revocation or expiry; channels authorized per subscription by Hub.defaultAuthorize"},
 }
 
 // routePathArg resolves a route path argument: a string literal, or one of the
-// legacyv1 / protov2 path constants the sensor protocol mounts are named by.
+// protov2 path constants the sensor protocol mounts are named by.
 func routePathArg(e ast.Expr) (string, bool) {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -87,10 +97,6 @@ func routePathArg(e ast.Expr) (string, bool) {
 		p, err := strconv.Unquote(v.Value)
 		return p, err == nil
 	case *ast.SelectorExpr:
-		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "legacyv1" {
-			p, ok := legacyv1.Paths[v.Sel.Name]
-			return p, ok
-		}
 		if pkg, ok := v.X.(*ast.Ident); ok && pkg.Name == "protov2" {
 			p, ok := protov2.Paths[v.Sel.Name]
 			return p, ok
@@ -102,6 +108,65 @@ func routePathArg(e ast.Expr) (string, bool) {
 type routeRec struct {
 	method, path, pos string
 	gated             bool
+	// stepUp: requireStepUp() is in the route's or an enclosing group's
+	// middleware arguments.
+	stepUp bool
+	// handlerType and handlerMethod name the handler argument, e.g.
+	// TenantHandler and OffboardMember for tenantH.OffboardMember. The type
+	// is resolved from the registering function's parameters; it is "" when
+	// the receiver is a local variable.
+	handlerType, handlerMethod string
+	// fn is the function that registers the route (registerXRoutes).
+	fn string
+	// module is the module gate in the route's or an enclosing group's
+	// middleware: "const:<ModuleX constant>" for a RequireModule(moduledom.X)
+	// call, "param:<name>" for a gate parameter of the registering function
+	// (a parameter whose name ends in Gate, resolved at its call sites), ""
+	// for none.
+	module string
+}
+
+// exprContainsCall reports whether e calls a function or method named name.
+func exprContainsCall(e ast.Expr, name string) bool {
+	found := false
+	ast.Inspect(e, func(n ast.Node) bool {
+		if ce, ok := n.(*ast.CallExpr); ok {
+			switch f := ce.Fun.(type) {
+			case *ast.Ident:
+				found = found || f.Name == name
+			case *ast.SelectorExpr:
+				found = found || f.Sel.Name == name
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// paramTypes maps each parameter of fn to its type name without package or
+// pointer: h *handler.TenantHandler gives "h": "TenantHandler".
+func paramTypes(fn *ast.FuncDecl) map[string]string {
+	out := map[string]string{}
+	if fn.Type.Params == nil {
+		return out
+	}
+	for _, field := range fn.Type.Params.List {
+		t := field.Type
+		if st, ok := t.(*ast.StarExpr); ok {
+			t = st.X
+		}
+		var name string
+		switch v := t.(type) {
+		case *ast.Ident:
+			name = v.Name
+		case *ast.SelectorExpr:
+			name = v.Sel.Name
+		}
+		for _, n := range field.Names {
+			out[n.Name] = name
+		}
+	}
+	return out
 }
 
 func exprContainsGate(e ast.Expr) bool {
@@ -122,7 +187,14 @@ func exprContainsGate(e ast.Expr) bool {
 	return found
 }
 
-func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
+// parseRoutes reads every route registered in internal/infra/http/routes from
+// the source: method, full path (chi groups resolved), whether a permission
+// gate applies, and where it is registered. Shared by the authz coverage gate
+// and the data-surface classification gate.
+//
+//nolint:cyclop,gocognit // the AST walk, moved unchanged out of TestEveryRouteIsGatedOrAllowlisted
+func parseRoutes(t *testing.T) []routeRec {
+	t.Helper()
 	root := repoRoot(t)
 	routesDir := filepath.Join(root, "internal", "infra", "http", "routes")
 	entries, err := os.ReadDir(routesDir)
@@ -182,9 +254,54 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 		// process walks a block, resolving chi .Group(prefix, fn, mws...) nesting
 		// so a route's recorded path is the FULL path and it inherits any gate
 		// applied at the group level.
-		var process func(block *ast.BlockStmt, prefix string, inheritedGated bool, gatedVars map[string]bool)
-		process = func(block *ast.BlockStmt, prefix string, inheritedGated bool, gatedVars map[string]bool) {
+		stepUpArgs := func(args []ast.Expr) bool {
+			for _, a := range args {
+				if exprContainsCall(a, "requireStepUp") {
+					return true
+				}
+			}
+			return false
+		}
+		var params map[string]string // the enclosing FuncDecl's parameter types
+		var curFn string             // the enclosing FuncDecl's name
+
+		// moduleVars maps a middleware-slice var to the module gate its RHS
+		// contains (see routeRec.module).
+		collectModuleVars := func(block *ast.BlockStmt, parent map[string]string) map[string]string {
+			mv := map[string]string{}
+			for k, v := range parent {
+				mv[k] = v
+			}
+			ast.Inspect(block, func(m ast.Node) bool {
+				if as, ok := m.(*ast.AssignStmt); ok {
+					for i, lhs := range as.Lhs {
+						if id, ok := lhs.(*ast.Ident); ok && i < len(as.Rhs) {
+							if mod := moduleGateOf(as.Rhs[i], mv); mod != "" {
+								mv[id.Name] = mod
+							}
+						}
+					}
+				}
+				return true
+			})
+			return mv
+		}
+		argModule := func(args []ast.Expr, mv map[string]string) string {
+			for _, a := range args {
+				if mod := moduleGateOf(a, mv); mod != "" {
+					return mod
+				}
+			}
+			return ""
+		}
+		var moduleVars map[string]string
+
+		var process func(block *ast.BlockStmt, prefix string, inheritedGated, inheritedStepUp bool, gatedVars map[string]bool)
+		process = func(block *ast.BlockStmt, prefix string, inheritedGated, inheritedStepUp bool, gatedVars map[string]bool) {
 			gv := collectGatedVars(block, gatedVars)
+			outerModuleVars := moduleVars
+			moduleVars = collectModuleVars(block, moduleVars)
+			defer func() { moduleVars = outerModuleVars }()
 			ast.Inspect(block, func(m ast.Node) bool {
 				ce, ok := m.(*ast.CallExpr)
 				if !ok {
@@ -213,8 +330,18 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 						}
 					}
 					groupGated := inheritedGated || argGates(ce.Args[2:], gv)
+					if mod := argModule(ce.Args[2:], moduleVars); mod != "" {
+						saved := moduleVars
+						moduleVars = map[string]string{}
+						for k, v := range saved {
+							moduleVars[k] = v
+						}
+						moduleVars[groupModuleKey] = mod
+						defer func() { moduleVars = saved }()
+					}
+					groupStepUp := inheritedStepUp || stepUpArgs(ce.Args[2:])
 					if body != nil {
-						process(body, prefix+gp, groupGated, gv)
+						process(body, prefix+gp, groupGated, groupStepUp, gv)
 					}
 					return false // children handled by the recursive call
 				}
@@ -231,19 +358,37 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 				if !ok {
 					return true
 				}
-				routes = append(routes, routeRec{
+				rec := routeRec{
 					method: sel.Sel.Name,
 					path:   prefix + p,
 					gated:  inheritedGated || argGates(ce.Args[1:], gv),
+					stepUp: inheritedStepUp || stepUpArgs(ce.Args[1:]),
 					pos:    fileName + ":" + itoa(fset.Position(ce.Pos()).Line),
-				})
+					fn:     curFn,
+				}
+				rec.module = argModule(ce.Args[1:], moduleVars)
+				if rec.module == "" {
+					rec.module = moduleVars[groupModuleKey]
+				}
+				if len(ce.Args) > 1 {
+					if hs, ok := ce.Args[1].(*ast.SelectorExpr); ok {
+						rec.handlerMethod = hs.Sel.Name
+						if id, ok := hs.X.(*ast.Ident); ok {
+							rec.handlerType = params[id.Name]
+						}
+					}
+				}
+				routes = append(routes, rec)
 				return true
 			})
 		}
 
 		ast.Inspect(f, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok && fn.Body != nil {
-				process(fn.Body, "", false, map[string]bool{})
+				params = paramTypes(fn)
+				curFn = fn.Name.Name
+				moduleVars = map[string]string{}
+				process(fn.Body, "", false, false, map[string]bool{})
 			}
 			return true
 		})
@@ -252,6 +397,11 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 	if len(routes) < 100 {
 		t.Fatalf("parsed only %d routes — the AST matcher is broken, not the code", len(routes))
 	}
+	return routes
+}
+
+func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
+	routes := parseRoutes(t)
 
 	allowed := func(p string) bool {
 		for _, ap := range allowlistPrefixes {
@@ -285,4 +435,42 @@ func TestEveryRouteIsGatedOrAllowlisted(t *testing.T) {
 			"— add a middleware.Require*, or (if intentionally public) add it to allowlistPrefixes/routeAuthzAllowlist with a reason:\n  %s",
 			strings.Join(ungated, "\n  "))
 	}
+}
+
+// groupModuleKey carries an enclosing group's module gate in moduleVars.
+const groupModuleKey = "\x00group"
+
+// moduleGateOf reports the module gate an expression contains: a
+// X.RequireModule(moduledom.ModuleY) call ("const:ModuleY"), a gate
+// parameter ("param:<name>": an identifier ending in Gate), or a var already
+// known to hold one.
+func moduleGateOf(e ast.Expr, vars map[string]string) string {
+	found := ""
+	ast.Inspect(e, func(n ast.Node) bool {
+		if found != "" {
+			return false
+		}
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "RequireModule" && len(x.Args) == 1 {
+				if c, ok := x.Args[0].(*ast.SelectorExpr); ok {
+					found = "const:" + c.Sel.Name
+					return false
+				}
+			}
+		case *ast.SelectorExpr:
+			return false // h.ModuleGate and the like: not a gate value by itself
+		case *ast.Ident:
+			if strings.HasSuffix(x.Name, "Gate") {
+				found = "param:" + x.Name
+				return false
+			}
+			if v, ok := vars[x.Name]; ok {
+				found = v
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }

@@ -2,23 +2,15 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { devLog } from '@/lib/logger'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import { Textarea } from '@/components/ui/textarea'
+import { TabsCount } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
-import { Users, Calendar, Loader2, Trash2, Box } from 'lucide-react'
+import { Hash, Loader2, Pencil, Save, ShieldCheck, Users } from 'lucide-react'
 import {
   useGroup,
   useGroupMembers,
@@ -28,17 +20,30 @@ import {
   useRemoveGroupMember,
   useAssignAssetToGroup,
   useUnassignAssetFromGroup,
-  type GroupMemberRole,
   formatDate,
+  getGroupType,
+  GroupTypeConfig,
 } from '@/features/access-control'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SheetDetailToolbar } from '@/features/shared'
+import {
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  DetailStat,
+  DetailStatGrid,
+  DetailTabs,
+  type DetailMenuItem,
+  type DetailTab,
+} from '@/features/shared'
 import { useMembers } from '@/features/organization'
 import { useTenant } from '@/context/tenant-provider'
+import { Permission, useCanMutate, usePermissions } from '@/lib/permissions'
 
 import {
-  GroupHeader,
-  OverviewTab,
   MembersTab,
   AssetsTab,
   ScopeRulesTab,
@@ -46,7 +51,19 @@ import {
   AddMemberDialog,
   AddAssetDialog,
   BulkAddAssetsDialog,
+  RolesTab,
+  MembershipEndDialog,
+  membershipEndISO,
+  DEFAULT_EXTERNAL_MEMBERSHIP_DAYS,
+  type NewGroupMember,
 } from './group-detail-sheet/index'
+import { dateInputDaysFromNow } from '@/features/organization/lib/external-access'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
+
+type GroupTab = 'overview' | 'members' | 'roles' | 'assets' | 'scope-rules'
+
+const EMPTY_NEW_MEMBER: NewGroupMember = { userId: '', role: 'member', endsOn: '', reason: '' }
 
 interface GroupDetailSheetProps {
   groupId: string | null
@@ -56,6 +73,7 @@ interface GroupDetailSheetProps {
 }
 
 export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: GroupDetailSheetProps) {
+  const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug
 
@@ -92,8 +110,26 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
   )
 
   // UI State
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState<GroupTab>('overview')
   const [isEditing, setIsEditing] = useState(false)
+  // Each control follows the API gate of the route it calls, so a viewer
+  // sees a read-only sheet instead of controls that answer 403.
+  const canEditGroup = useCanMutate('PUT /api/v1/groups/{groupId}')
+  const canAddMember = useCanMutate('POST /api/v1/groups/{groupId}/members')
+  const canRemoveMember = useCanMutate('DELETE /api/v1/groups/{groupId}/members/{userId}')
+  const canAddAsset = useCanMutate('POST /api/v1/groups/{groupId}/assets')
+  const canBulkAddAssets = useCanMutate('POST /api/v1/groups/{groupId}/assets/bulk')
+  const canRemoveAsset = useCanMutate('DELETE /api/v1/groups/{groupId}/assets/{assetId}')
+  const canSetMemberEnd = useCanMutate('PATCH /api/v1/groups/{groupId}/members/{userId}')
+  const canBindRole = useCanMutate('POST /api/v1/groups/{groupId}/roles')
+  const canUnbindRole = useCanMutate('DELETE /api/v1/groups/{groupId}/roles/{roleId}')
+  const { canAll } = usePermissions()
+  const canViewRoles = canAll(Permission.GroupsRead, Permission.RolesRead)
+  const [memberEnd, setMemberEnd] = useState<{
+    userId: string
+    name: string
+    expiresAt?: string
+  } | null>(null)
   const [editForm, setEditForm] = useState({ name: '', description: '' })
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false)
   const [addAssetDialogOpen, setAddAssetDialogOpen] = useState(false)
@@ -102,7 +138,7 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
     null
   )
   const [assetToRemove, setAssetToRemove] = useState<{ id: string; name: string } | null>(null)
-  const [newMember, setNewMember] = useState({ userId: '', role: 'member' as GroupMemberRole })
+  const [newMember, setNewMember] = useState<NewGroupMember>(EMPTY_NEW_MEMBER)
 
   // Remove hooks
   const { removeMember, isRemoving: isRemovingMember } = useRemoveGroupMember(
@@ -119,6 +155,8 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
     if (open && groupId) {
       setMembersOffset(0)
       setAssetsOffset(0)
+      setActiveTab('overview')
+      setIsEditing(false)
       mutateGroup()
       mutateMembers()
       mutateAssets()
@@ -157,7 +195,8 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
     try {
       await updateGroup({
         name: editForm.name,
-        description: editForm.description || undefined,
+        // "" clears the description (absent would mean unchanged).
+        description: editForm.description.trim(),
       })
       toast.success('Team updated successfully')
       setIsEditing(false)
@@ -179,10 +218,12 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       await addMember({
         user_id: newMember.userId,
         role: newMember.role,
+        expires_at: membershipEndISO(newMember.endsOn),
+        expiry_reason: newMember.endsOn ? newMember.reason.trim() || undefined : undefined,
       })
       toast.success('Member added successfully')
       setAddMemberDialogOpen(false)
-      setNewMember({ userId: '', role: 'member' })
+      setNewMember(EMPTY_NEW_MEMBER)
       mutateMembers()
       mutateGroup()
       onUpdate?.()
@@ -252,146 +293,242 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       })
   )
 
+  const groupType = group ? getGroupType(group) : null
+  const typeLabel = groupType ? GroupTypeConfig[groupType]?.label : undefined
+  const memberCount = group?.member_count ?? membersTotalCount ?? 0
+  const assetCount = group?.asset_count ?? assetsTotalCount ?? 0
+
+  const tabs: DetailTab<GroupTab>[] = [
+    { value: 'overview', label: 'Overview' },
+    {
+      value: 'members',
+      label: (
+        <>
+          Members
+          <TabsCount value={memberCount} />
+        </>
+      ),
+    },
+    {
+      value: 'assets',
+      label: (
+        <>
+          Assets
+          <TabsCount value={assetCount} />
+        </>
+      ),
+    },
+    ...(canViewRoles ? [{ value: 'roles' as const, label: 'Roles' }] : []),
+    { value: 'scope-rules', label: 'Scope rules' },
+  ]
+
+  const menu: DetailMenuItem[] = group
+    ? [
+        {
+          label: 'Copy ID',
+          icon: Hash,
+          onSelect: () => {
+            copyToClipboard(group.id)
+            toast.success('Team ID copied to clipboard')
+          },
+        },
+      ]
+    : []
+
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          className="sm:max-w-lg p-0 overflow-y-auto [&>button]:hidden"
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          <VisuallyHidden>
-            <SheetTitle>Team Details</SheetTitle>
-          </VisuallyHidden>
+      <DetailSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        panel={group ? activeTab : undefined}
+        header={
+          <DetailHeader
+            title={
+              group && isEditing ? (
+                <Input
+                  autoFocus
+                  aria-label="Team name"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="h-8 text-base font-semibold"
+                  placeholder="Team name"
+                />
+              ) : (
+                (group?.name ?? 'Team')
+              )
+            }
+            badges={
+              typeLabel ? (
+                <Badge variant="outline" className="gap-1 text-xs font-normal">
+                  {groupType === 'security_team' ? (
+                    <ShieldCheck className="h-3 w-3" />
+                  ) : (
+                    <Users className="h-3 w-3" />
+                  )}
+                  {typeLabel}
+                </Badge>
+              ) : undefined
+            }
+            meta={group ? [`Created ${formatDate(group.created_at)}`] : undefined}
+            actions={
+              group ? (
+                isEditing ? (
+                  <>
+                    <Button size="sm" onClick={handleSaveChanges} disabled={isUpdating}>
+                      {isUpdating ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      Save
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setIsEditing(false)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : canEditGroup ? (
+                  <Button size="sm" onClick={handleStartEdit}>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </Button>
+                ) : undefined
+              ) : undefined
+            }
+            menu={menu}
+            onClose={() => onOpenChange(false)}
+          />
+        }
+        tabs={
+          group ? (
+            <DetailTabs tabs={tabs} value={activeTab} onValueChange={setActiveTab} />
+          ) : undefined
+        }
+      >
+        {groupLoading ? (
+          <div className="space-y-3" aria-hidden>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : groupError ? (
+          <ErrorDisplay
+            error={groupErrorDetails}
+            onClose={() => onOpenChange(false)}
+            onRetry={() => mutateGroup()}
+          />
+        ) : !group ? (
+          <ErrorDisplay
+            error={{ status: 404 }}
+            onClose={() => onOpenChange(false)}
+            onRetry={() => mutateGroup()}
+          />
+        ) : (
+          <>
+            {activeTab === 'overview' && (
+              <div className="space-y-5">
+                <DetailStatGrid aria-label="Key numbers">
+                  <DetailStat label="Members" value={memberCount} />
+                  <DetailStat label="Assets" value={assetCount} />
+                  <DetailStat label="Created" value={formatDate(group.created_at)} />
+                </DetailStatGrid>
 
-          <TooltipProvider>
-            <SheetDetailToolbar
-              title="Group Details"
-              onClose={() => onOpenChange(false)}
-              onCopyId={
-                group
-                  ? () => {
-                      copyToClipboard(group.id)
-                    }
-                  : undefined
-              }
-            />
-          </TooltipProvider>
+                <DetailSections>
+                  <DetailSection title="Description">
+                    {isEditing ? (
+                      <Textarea
+                        aria-label="Description"
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        placeholder="Add a description..."
+                        rows={3}
+                      />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        {group.description || 'No description provided.'}
+                      </p>
+                    )}
+                  </DetailSection>
 
-          {groupLoading ? (
-            <div className="p-6 space-y-4">
-              <Skeleton className="h-20 w-20 rounded-full mx-auto" />
-              <Skeleton className="h-6 w-48 mx-auto" />
-              <Skeleton className="h-4 w-32 mx-auto" />
-              <div className="space-y-2 mt-8">
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
-                <Skeleton className="h-12 w-full" />
+                  <DetailSection title="Details">
+                    <DetailFieldGrid>
+                      <DetailField label="Type">{typeLabel ?? '—'}</DetailField>
+                      <DetailField label="Last updated">{formatDate(group.updated_at)}</DetailField>
+                      <DetailField label="Team ID" full>
+                        <DetailCopyId id={group.id} label="Team ID" />
+                      </DetailField>
+                    </DetailFieldGrid>
+                  </DetailSection>
+                </DetailSections>
               </div>
-            </div>
-          ) : groupError ? (
-            <ErrorDisplay
-              error={groupErrorDetails}
-              onClose={() => onOpenChange(false)}
-              onRetry={() => mutateGroup()}
-            />
-          ) : group ? (
-            <div className="flex flex-col h-full">
-              <GroupHeader
-                group={group}
-                isEditing={isEditing}
-                editForm={editForm}
-                isUpdating={isUpdating}
-                onStartEdit={handleStartEdit}
-                onCancelEdit={() => setIsEditing(false)}
-                onSave={handleSaveChanges}
-                onEditFormChange={setEditForm}
+            )}
+
+            {activeTab === 'members' && (
+              <MembersTab
+                members={members}
+                totalCount={membersTotalCount}
+                isLoading={membersLoading}
+                limit={PAGE_SIZE}
+                offset={membersOffset}
+                onPageChange={setMembersOffset}
+                onAddMember={
+                  canAddMember
+                    ? () => {
+                        // An external team proposes an end date; the API requires one.
+                        setNewMember({
+                          ...EMPTY_NEW_MEMBER,
+                          endsOn:
+                            groupType === 'external'
+                              ? dateInputDaysFromNow(DEFAULT_EXTERNAL_MEMBERSHIP_DAYS)
+                              : '',
+                        })
+                        setAddMemberDialogOpen(true)
+                      }
+                    : undefined
+                }
+                onChangeEnd={
+                  canSetMemberEnd
+                    ? (userId, name, expiresAt) => setMemberEnd({ userId, name, expiresAt })
+                    : undefined
+                }
+                onRemoveMember={
+                  canRemoveMember
+                    ? (userId, name) => setMemberToRemove({ userId, name })
+                    : undefined
+                }
               />
+            )}
 
-              {/* Stats */}
-              <div className="px-6 py-4 grid grid-cols-3 gap-4 border-b">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Users className="h-4 w-4" />
-                    <span className="text-xs">Members</span>
-                  </div>
-                  <p className="text-lg font-semibold">
-                    {group.member_count ?? members?.length ?? 0}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Box className="h-4 w-4" />
-                    <span className="text-xs">Assets</span>
-                  </div>
-                  <p className="text-lg font-semibold">
-                    {group.asset_count ?? assetsTotalCount ?? 0}
-                  </p>
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                    <Calendar className="h-4 w-4" />
-                    <span className="text-xs">Created</span>
-                  </div>
-                  <p className="text-sm font-semibold">{formatDate(group.created_at)}</p>
-                </div>
-              </div>
+            {activeTab === 'assets' && (
+              <AssetsTab
+                assets={assets}
+                totalCount={assetsTotalCount}
+                isLoading={assetsLoading}
+                limit={PAGE_SIZE}
+                offset={assetsOffset}
+                onPageChange={setAssetsOffset}
+                onAddAsset={canAddAsset ? () => setAddAssetDialogOpen(true) : undefined}
+                onBulkAddAssets={
+                  canBulkAddAssets ? () => setBulkAddAssetsDialogOpen(true) : undefined
+                }
+                onRemoveAsset={
+                  canRemoveAsset ? (id, name) => setAssetToRemove({ id, name }) : undefined
+                }
+              />
+            )}
 
-              {/* Tabs */}
-              <div className="flex-1 px-6 py-4">
-                <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList>
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="members">Members</TabsTrigger>
-                    <TabsTrigger value="assets">Assets</TabsTrigger>
-                    <TabsTrigger value="scope-rules">Scope Rules</TabsTrigger>
-                  </TabsList>
+            {activeTab === 'roles' && groupId && (
+              <RolesTab
+                groupId={groupId}
+                canBind={canBindRole}
+                canUnbind={canUnbindRole}
+                onChanged={onUpdate}
+              />
+            )}
 
-                  <TabsContent value="overview">
-                    <OverviewTab group={group} />
-                  </TabsContent>
-
-                  <TabsContent value="members">
-                    <MembersTab
-                      members={members}
-                      totalCount={membersTotalCount}
-                      isLoading={membersLoading}
-                      limit={PAGE_SIZE}
-                      offset={membersOffset}
-                      onPageChange={setMembersOffset}
-                      onAddMember={() => setAddMemberDialogOpen(true)}
-                      onRemoveMember={(userId, name) => setMemberToRemove({ userId, name })}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="assets">
-                    <AssetsTab
-                      assets={assets}
-                      totalCount={assetsTotalCount}
-                      isLoading={assetsLoading}
-                      limit={PAGE_SIZE}
-                      offset={assetsOffset}
-                      onPageChange={setAssetsOffset}
-                      onAddAsset={() => setAddAssetDialogOpen(true)}
-                      onBulkAddAssets={() => setBulkAddAssetsDialogOpen(true)}
-                      onRemoveAsset={(id, name) => setAssetToRemove({ id, name })}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="scope-rules">
-                    <ScopeRulesTab groupId={groupId} />
-                  </TabsContent>
-                </Tabs>
-              </div>
-            </div>
-          ) : (
-            <ErrorDisplay
-              error={{ status: 404 }}
-              onClose={() => onOpenChange(false)}
-              onRetry={() => mutateGroup()}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+            {activeTab === 'scope-rules' && <ScopeRulesTab groupId={groupId} />}
+          </>
+        )}
+      </DetailSheet>
 
       <AddMemberDialog
         open={addMemberDialogOpen}
@@ -401,7 +538,18 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
         isAddingMember={isAddingMember}
         onAddMember={handleAddMember}
         availableMembers={availableMembers}
+        requireEnd={groupType === 'external'}
       />
+
+      {groupId && (
+        <MembershipEndDialog
+          groupId={groupId}
+          member={memberEnd}
+          required={groupType === 'external'}
+          onOpenChange={(o) => !o && setMemberEnd(null)}
+          onSaved={() => mutateMembers()}
+        />
+      )}
 
       <AddAssetDialog
         open={addAssetDialogOpen}
@@ -424,60 +572,42 @@ export function GroupDetailSheet({ groupId, open, onOpenChange, onUpdate }: Grou
       />
 
       {/* Remove Member Confirmation */}
-      <Dialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-500">Remove Member</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove &quot;{memberToRemove?.name}&quot; from this team?
-              They will lose access to assets owned by this team.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setMemberToRemove(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleRemoveMember} disabled={isRemovingMember}>
-              {isRemovingMember ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!memberToRemove}
+        onOpenChange={(open) => !open && setMemberToRemove(null)}
+        destructive
+        title={t('confirm.team.removeMemberTitle', 'Remove {name} from this team?', {
+          name: memberToRemove?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.removeMemberDesc',
+          'They lose the access this team gives them, including to assets the team owns. You can add them again later.'
+        )}
+        confirmText={
+          isRemovingMember ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+        }
+        isLoading={isRemovingMember}
+        handleConfirm={handleRemoveMember}
+      />
 
       {/* Remove Asset Confirmation */}
-      <Dialog open={!!assetToRemove} onOpenChange={(open) => !open && setAssetToRemove(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-500">Remove Asset</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove the asset &quot;{assetToRemove?.name}&quot; from this
-              team? The team will lose access to this asset.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setAssetToRemove(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleUnassignAsset}
-              disabled={isUnassigningAsset}
-            >
-              {isUnassigningAsset ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!assetToRemove}
+        onOpenChange={(open) => !open && setAssetToRemove(null)}
+        destructive
+        title={t('confirm.team.removeAssetTitle', 'Remove the asset {name} from this team?', {
+          name: assetToRemove?.name ?? '',
+        })}
+        desc={t(
+          'confirm.team.removeAssetDesc',
+          'The team and its members lose access to this asset unless another grant covers it. The asset itself stays.'
+        )}
+        confirmText={
+          isUnassigningAsset ? t('confirm.removing', 'Removing…') : t('confirm.remove', 'Remove')
+        }
+        isLoading={isUnassigningAsset}
+        handleConfirm={handleUnassignAsset}
+      />
     </>
   )
 }

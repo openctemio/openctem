@@ -9,6 +9,7 @@
 import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
+import { SWR_REFERENCE } from '@/lib/swr-config'
 import type {
   Group,
   GroupWithDetails,
@@ -18,15 +19,27 @@ import type {
   AddGroupMemberInput,
   UpdateGroupMemberInput,
   AssignAssetInput,
-  AssignPermissionSetInput,
   GroupMember,
   GroupAsset,
   BulkAssignAssetsInput,
   BulkAssignAssetsResult,
 } from '../types'
-import type { PermissionSet } from '../types/permission-set.types'
 
 const API_BASE = '/api/v1/groups'
+/**
+ * The caller's own groups: GET /api/v1/me/groups. Not `${API_BASE}/me`, which
+ * the API reads as group id "me" and answers 400 (invalid group id format).
+ */
+export const MY_GROUPS_URL = '/api/v1/me/groups'
+
+/**
+ * The list query for an offset window: the API pages with page / per_page
+ * (one list convention); callers here keep their offset state.
+ */
+export function pageQuery(limit: number, offset: number): string {
+  const perPage = Math.max(1, limit)
+  return `page=${Math.floor(Math.max(0, offset) / perPage) + 1}&per_page=${perPage}`
+}
 
 // Generic API response type - using Record for flexible property access
 type ApiResponse<T> = T[] | Record<string, T[] | unknown>
@@ -42,8 +55,8 @@ interface GroupListResponse {
   groups: Group[]
   total_count: number
   unique_member_count: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export function useGroups(filters?: GroupFilters) {
@@ -76,13 +89,16 @@ export function useGroups(filters?: GroupFilters) {
 /**
  * Fetch groups the current user is a member of
  */
-export function useMyGroups() {
+export function useMyGroups(enabled = true) {
+  // Group membership is reference data: cached for the session, refreshed by
+  // the group mutations that change it. `enabled` lets a caller load it only
+  // when the UI that needs it opens (the saved-view "share with" picker).
   const { data, error, isLoading, mutate } = useSWR<{ groups: Group[] } | Group[]>(
-    `${API_BASE}/me`,
+    enabled ? MY_GROUPS_URL : null,
     fetcher,
     {
+      ...SWR_REFERENCE,
       revalidateOnFocus: false,
-      dedupingInterval: 30000,
     }
   )
 
@@ -136,8 +152,8 @@ export function useGroup(groupId: string | null, options?: UseGroupOptions) {
 interface PaginatedMembersResponse {
   items: GroupMember[]
   total_count: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export function useGroupMembers(
@@ -148,7 +164,7 @@ export function useGroupMembers(
   const limit = options?.limit ?? 20
   const offset = options?.offset ?? 0
 
-  const url = shouldFetch ? `${API_BASE}/${groupId}/members?limit=${limit}&offset=${offset}` : null
+  const url = shouldFetch ? `${API_BASE}/${groupId}/members?${pageQuery(limit, offset)}` : null
 
   const { data, error, isLoading, mutate } = useSWR<
     PaginatedMembersResponse | ApiResponse<GroupMember>
@@ -189,46 +205,13 @@ export function useGroupMembers(
 }
 
 /**
- * Fetch group's assigned permission sets
- */
-export function useGroupPermissionSets(groupId: string | null, options?: UseGroupOptions) {
-  const shouldFetch = !options?.skip && groupId
-
-  const { data, error, isLoading, mutate } = useSWR<ApiResponse<PermissionSet>>(
-    shouldFetch ? `${API_BASE}/${groupId}/permission-sets` : null,
-    fetcher,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 30000,
-    }
-  )
-
-  let permissionSets: PermissionSet[] = []
-  if (Array.isArray(data)) {
-    permissionSets = data
-  } else if (data?.permission_sets && Array.isArray(data.permission_sets)) {
-    permissionSets = data.permission_sets
-  } else if (data?.data && Array.isArray(data.data)) {
-    permissionSets = data.data
-  }
-
-  return {
-    permissionSets,
-    isLoading: shouldFetch ? isLoading : false,
-    isError: !!error,
-    error,
-    mutate,
-  }
-}
-
-/**
  * Fetch group's assets (paginated)
  */
 interface PaginatedAssetsResponse {
   items: GroupAsset[]
   total_count: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 export function useGroupAssets(
@@ -239,7 +222,7 @@ export function useGroupAssets(
   const limit = options?.limit ?? 20
   const offset = options?.offset ?? 0
 
-  const url = shouldFetch ? `${API_BASE}/${groupId}/assets?limit=${limit}&offset=${offset}` : null
+  const url = shouldFetch ? `${API_BASE}/${groupId}/assets?${pageQuery(limit, offset)}` : null
 
   const { data, error, isLoading, mutate } = useSWR<
     PaginatedAssetsResponse | ApiResponse<GroupAsset>
@@ -495,61 +478,6 @@ export function useBulkAssignAssets(groupId: string | null) {
 }
 
 // ============================================
-// PERMISSION SET MUTATIONS
-// ============================================
-
-async function assignPermissionSetMutation(
-  url: string,
-  { arg }: { arg: AssignPermissionSetInput }
-) {
-  return fetcherWithOptions<void>(url, {
-    method: 'POST',
-    body: JSON.stringify(arg),
-  })
-}
-
-/**
- * Hook to assign a permission set to a group
- */
-export function useAssignPermissionSetToGroup(groupId: string | null) {
-  const { trigger, isMutating, error } = useSWRMutation(
-    groupId ? `${API_BASE}/${groupId}/permission-sets` : null,
-    assignPermissionSetMutation
-  )
-
-  return {
-    assignPermissionSet: trigger,
-    isAssigning: isMutating,
-    error,
-  }
-}
-
-async function unassignPermissionSetMutation(url: string) {
-  return fetcherWithOptions<void>(url, {
-    method: 'DELETE',
-  })
-}
-
-/**
- * Hook to unassign a permission set from a group
- */
-export function useUnassignPermissionSetFromGroup(
-  groupId: string | null,
-  permissionSetId: string | null
-) {
-  const { trigger, isMutating, error } = useSWRMutation(
-    groupId && permissionSetId ? `${API_BASE}/${groupId}/permission-sets/${permissionSetId}` : null,
-    unassignPermissionSetMutation
-  )
-
-  return {
-    unassignPermissionSet: trigger,
-    isUnassigning: isMutating,
-    error,
-  }
-}
-
-// ============================================
 // CACHE KEYS
 // ============================================
 
@@ -567,10 +495,6 @@ export function getGroupKey(groupId: string) {
 
 export function getGroupMembersKey(groupId: string) {
   return `${API_BASE}/${groupId}/members`
-}
-
-export function getGroupPermissionSetsKey(groupId: string) {
-  return `${API_BASE}/${groupId}/permission-sets`
 }
 
 export function getGroupAssetsKey(groupId: string) {

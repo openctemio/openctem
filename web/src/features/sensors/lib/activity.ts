@@ -9,6 +9,7 @@ import {
   DatabaseZap,
   FileText,
   Gauge,
+  HeartPulse,
   KeyRound,
   Package,
   Pencil,
@@ -18,12 +19,15 @@ import {
   PowerOff,
   RotateCcw,
   Trash2,
+  Undo2,
   User,
   Wifi,
   WifiOff,
   Wrench,
   XCircle,
   type LucideIcon,
+  Lock,
+  ShieldX,
 } from 'lucide-react'
 
 import type { ActivityTimelineTone } from '@/features/shared'
@@ -95,6 +99,8 @@ const AUDIT_ICONS: Record<string, LucideIcon> = {
   'sensor.revoked': Ban,
   'sensor.key_regenerated': KeyRound,
   'sensor.key_renewed': KeyRound,
+  'sensor.key_renewal_refused': Ban,
+  'sensor.commands_released': Undo2,
   'sensor.connected': Wifi,
   'sensor.disconnected': WifiOff,
 }
@@ -108,6 +114,8 @@ const AUDIT_LABELS: Record<string, string> = {
   'sensor.revoked': 'Access revoked',
   'sensor.key_regenerated': 'API key rotated',
   'sensor.key_renewed': 'API key renewed',
+  'sensor.key_renewal_refused': 'API key renewal refused (the key was revoked)',
+  'sensor.commands_released': 'Jobs it held taken back (re-queued or failed)',
   'sensor.connected': 'Sensor connected',
   'sensor.disconnected': 'Sensor disconnected',
 }
@@ -181,6 +189,30 @@ export function describeSensorActivity(
         details: seen
           ? [t('sensors.activity.lastHeartbeat', 'Last heartbeat {time}', { time: seen })]
           : [],
+      }
+    }
+    case 'heartbeat_recovered': {
+      const was = str(d.was)
+      const wasLabel =
+        was === 'stale'
+          ? t('sensors.activity.wasStale', 'stale')
+          : was === 'offline'
+            ? t('sensors.activity.wasOffline', 'offline')
+            : t('sensors.activity.wasLate', 'late')
+      return {
+        icon: HeartPulse,
+        tone: 'success',
+        title: t('sensors.activity.heartbeatRecovered', 'Heartbeats back on time (was {state})', {
+          state: wasLabel,
+        }),
+        details:
+          typeof d.gap_seconds === 'number'
+            ? [
+                t('sensors.activity.heartbeatGap', 'No heartbeat for {duration}', {
+                  duration: formatDurationShort(d.gap_seconds),
+                }),
+              ]
+            : [],
       }
     }
     case 'restarted': {
@@ -289,6 +321,34 @@ export function describeSensorActivity(
           to: str(d.to),
         }),
         details: d.from !== undefined ? [fromTo(str(d.from), str(d.to))] : [],
+      }
+    case 'local_policy_changed': {
+      const to = str(d.to)
+      return {
+        icon: Lock,
+        tone: to === 'enforced' ? 'success' : to === 'paused' ? 'destructive' : 'warning',
+        title: t('sensors.activity.localPolicyChanged', '{summary}', { summary: item.summary }),
+        details: d.digest_to
+          ? [
+              t('sensors.activity.policyDigest', 'Policy {digest}', {
+                digest: str(d.digest_to).replace('sha256:', '').slice(0, 12),
+              }),
+            ]
+          : [],
+      }
+    }
+    case 'job_refused_local_policy':
+      return {
+        icon: ShieldX,
+        tone: 'destructive',
+        title: t(
+          'sensors.activity.jobRefusedLocalPolicy',
+          'Refused a job under its local policy ({rule})',
+          {
+            rule: str(d.rule),
+          }
+        ),
+        details: d.reason ? [str(d.reason)] : [],
       }
     case 'manifest_changed':
       return {

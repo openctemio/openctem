@@ -46,8 +46,8 @@ import {
   // Access Control icons
   // Integration icons
   Shield,
-  // Pipeline icons
-  GitMerge,
+  // Automation icons
+  Zap,
   // Template & Secret Store icons
   // Attack path icons
   Route,
@@ -68,7 +68,10 @@ import { type SidebarData } from '@/components/types'
 import { Permission, Role } from '@/lib/permissions'
 import {
   ASSETS_SECTION_TABS,
+  SCANS_SECTION_TABS,
+  ATTACK_SURFACE_SECTION_TABS,
   BUSINESS_CONTEXT_SECTION_TABS,
+  SCOPE_SECTION_TABS,
   EXPOSURES_SECTION_TABS,
   REMEDIATION_SECTION_TABS,
   THREAT_MODEL_SECTION_TABS,
@@ -140,7 +143,8 @@ export const sidebarData: SidebarData = {
       title: 'Scoping',
       icon: Goal,
       cluster: 'cycle',
-      // The header opens the overview (D7).
+      // The rail flyout heading opens the overview; the expanded header only
+      // folds the section, and the Overview row below opens /scoping.
       url: '/scoping',
       items: [
         {
@@ -173,13 +177,16 @@ export const sidebarData: SidebarData = {
           sections: BUSINESS_CONTEXT_SECTION_TABS,
         },
         {
-          // Was "Scope Config": in-scope targets and the exclusions scans
-          // enforce. Its old Schedules tab never ran; Scans owns scheduling.
-          title: 'Boundaries',
-          url: '/scope-config',
+          // What scans may touch: scope entries and exclusions (RFC-054,
+          // research/53). Was "Boundaries" under the old URL (no redirect: the
+          // owner chose a clean rename).
+          title: 'Scope',
+          url: '/scope',
           icon: Fence,
-          permission: Permission.ScopeRead,
-          module: 'scope_config',
+          // Scope | Programs (RFC-065): the row shows while either tab is
+          // open to the user (a researcher holds only programs:read) and
+          // links to the first such tab; SCOPE_SECTION_TABS carries the gates.
+          sections: SCOPE_SECTION_TABS,
         },
         {
           // Threats per crown jewel, and the attacker profiles they are
@@ -208,17 +215,29 @@ export const sidebarData: SidebarData = {
           icon: Radar,
           permission: Permission.ScansRead,
           module: 'scans',
+          // Scans | Runs | Workflows are route tabs (SCANS_SECTION_TABS).
+          sections: SCANS_SECTION_TABS,
         },
         // Sensors are a fleet operators open daily (offline sensors, keys,
         // zones), not a preference, so they sit next to Scans rather than in
-        // Settings, as in Tenable VM (left nav > Sensors) and Rapid7 (Data
-        // Collection Management).
+        // Settings.
         {
           title: 'Sensors',
           url: '/sensors',
           icon: RadioTower,
           permission: Permission.SensorsRead,
           module: 'sensors',
+        },
+        // CI/CD integration: the pipelines that scan repositories from
+        // GitHub Actions and GitLab CI (api RFC-051), their runs, repository
+        // coverage, and trust and gate setup. Not sensors: a pipeline has no
+        // key and no heartbeat.
+        {
+          title: 'CI/CD',
+          url: '/ci-cd',
+          icon: Workflow,
+          permission: Permission.CIRead,
+          module: 'scans',
         },
         // What is exposed, summarised from the inventory below (moved from
         // Scoping: it is a Discovery output, not a scoping decision).
@@ -228,11 +247,14 @@ export const sidebarData: SidebarData = {
           icon: Target,
           permission: Permission.AssetsRead,
           module: 'attack_surface',
+          // Overview | Review (the ownership queue); the row's badge is the
+          // number of names waiting for review (useDynamicBadges).
+          sections: ATTACK_SURFACE_SECTION_TABS,
         },
         // ----------------------------------------
         // ASSETS: one row for the inventory and what organises it. Its views
-        // are in-page route tabs (ASSETS_SECTION_TABS): Inventory | Groups |
-        // What changed | Suggestions. What changed is the delta of the
+        // are in-page route tabs (ASSETS_SECTION_TABS), all under /assets:
+        // Inventory | Groups | What changed | Suggestions. What changed is the delta of the
         // inventory (fed by the same scans); groups organise it into scan
         // targets and RBAC scopes; relationship suggestions curate the asset
         // graph. The row has no gate of its own: each tab carries its module
@@ -245,7 +267,8 @@ export const sidebarData: SidebarData = {
           sections: ASSETS_SECTION_TABS,
         },
         // /assets opens on the full, filterable list; the category cards are a
-        // view switch on the same page (?view=categories). /assets/all redirects.
+        // view switch on the same page (?view=categories). Every asset type is a
+        // filter of this list (/assets?types=host), never a page of its own.
         // ----------------------------------------
         // EXPOSURES (CVEs + non-CVE security issues)
         // ----------------------------------------
@@ -458,7 +481,7 @@ export const sidebarData: SidebarData = {
           url: '/remediation',
           icon: Wrench,
           permission: Permission.RemediationRead,
-          module: 'remediation_tasks',
+          module: 'remediation',
           sections: REMEDIATION_SECTION_TABS,
         },
         {
@@ -473,21 +496,17 @@ export const sidebarData: SidebarData = {
           url: '/exceptions',
           icon: ShieldQuestion,
           permission: Permission.SuppressionsRead,
-          module: 'findings',
+          module: 'suppressions',
         },
         {
-          title: 'Workflows',
-          url: '/workflows',
-          icon: Workflow,
+          // When something happens, do something: notify, assign, open a
+          // ticket or run a saved scan.
+          title: 'Automations',
+          url: '/automations',
+          icon: Zap,
           permission: Permission.WorkflowsRead,
           module: 'workflows',
-        },
-        {
-          title: 'Scan Pipelines',
-          url: '/pipelines',
-          icon: GitMerge,
-          permission: Permission.PipelinesRead,
-          module: 'scan_pipelines',
+          keywords: ['workflow', 'playbook', 'rule'],
         },
       ],
     },

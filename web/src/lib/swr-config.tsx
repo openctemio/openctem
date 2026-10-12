@@ -53,6 +53,47 @@ export const swrDefaultConfig: SWRConfiguration = {
   // loadingTimeout: 3000, // Show loading state after 3s
 }
 
+/**
+ * Freshness by data class. Spread one into a hook's options instead of
+ * hand-picking `dedupingInterval` / `revalidate*` per hook.
+ *
+ * - `SWR_STATIC`: catalogs that change only with a deploy or a platform
+ *   change (finding sources, asset-type and tool registries, enum catalogs).
+ *   Fetched once per session; a mounted hook with cached data never refetches.
+ * - `SWR_REFERENCE`: tenant configuration that changes by a user action
+ *   (saved views, groups, tags, business units). Served from cache when a
+ *   page mounts; the mutation that changes it calls `mutate(key)`, and a
+ *   WebSocket event may too.
+ * - live data (lists, stats, statuses): the global defaults above.
+ */
+export const SWR_STATIC: SWRConfiguration = {
+  revalidateIfStale: false,
+  revalidateOnReconnect: false,
+  dedupingInterval: 60 * 60 * 1000,
+}
+
+export const SWR_REFERENCE: SWRConfiguration = {
+  revalidateIfStale: false,
+  dedupingInterval: 5 * 60 * 1000,
+}
+
+type GlobalMutate = (
+  matcher: (key: unknown) => boolean,
+  data?: undefined,
+  opts?: { revalidate?: boolean }
+) => Promise<unknown>
+
+/**
+ * Drops every cached answer, then refetches what is mounted. For a change of
+ * session identity (organization switch): SWR keys are endpoint URLs, the
+ * identity is in the cookie, so nothing of the previous organization may stay
+ * in the cache or on screen.
+ */
+export async function clearSwrCache(mutate: GlobalMutate): Promise<void> {
+  await mutate(() => true, undefined, { revalidate: false })
+  void mutate(() => true)
+}
+
 interface SWRProviderProps {
   children: ReactNode
   config?: SWRConfiguration

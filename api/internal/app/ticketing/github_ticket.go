@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
 // ErrNoGitHubIntegration is returned when the tenant has no connected GitHub
@@ -74,14 +75,17 @@ type GitHubTicketService struct {
 	// clientFactory builds an issueCreator from a resolved access token and
 	// base URL. Overridable in tests; defaults to the real SCM client.
 	clientFactory func(token, baseURL string) (issueCreator, error)
+
+	// activity records inbound status changes with the integration as actor.
+	activity statusActivityRecorder
 }
 
 // NewGitHubTicketService constructs a GitHubTicketService.
 //
 // The encryptor is used to decrypt the integration's stored credential the
 // same way the SCM integration layer does (IntegrationService.decryptCredentials):
-// encryptor.DecryptString, falling back to the stored value as plaintext when
-// decryption fails. If encryptor is nil, credentials are treated as plaintext.
+// encryptor.DecryptString; a value that does not decrypt is skipped, never
+// used as is. If encryptor is nil, credentials are treated as plaintext.
 func NewGitHubTicketService(
 	findingRepo vulnerability.FindingRepository,
 	integrationRepo integration.Repository,
@@ -160,7 +164,7 @@ func (s *GitHubTicketService) CreateTicketFromFinding(ctx context.Context, in Gi
 		return nil, fmt.Errorf("%w: failed to build GitHub client: %v", shared.ErrValidation, err)
 	}
 
-	title := RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title()))
+	title := issueTitle(finding)
 	body := buildIssueBody(finding)
 	labels := []string{"openctem", "security", string(finding.Severity())}
 
@@ -248,7 +252,7 @@ func firstGitHubIssue(uris []string) (owner, repo string, number int, url string
 // resolveCredential lists the tenant's GitHub integrations, picks the first
 // connected one, and decrypts its stored credential. This mirrors how the SCM
 // layer resolves the access token (IntegrationService.decryptCredentials):
-// intg.CredentialsEncrypted() → decrypt, with plaintext fallback on failure.
+// intg.CredentialsEncrypted() → decrypt; an undecryptable value is skipped.
 func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID shared.ID) (token, baseURL string, err error) {
 	intgs, err := s.integrationRepo.ListByProvider(ctx, tenantID, integration.ProviderGitHub)
 	if err != nil {
@@ -265,11 +269,10 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 		}
 		decrypted, decErr := s.decrypt(encrypted)
 		if decErr != nil {
-			// Decryption failed — assume the stored value is plaintext
-			// (backward compatibility), matching IntegrationService.
-			s.logger.Debug("github credential not encrypted, using plaintext",
-				"integration_id", intg.ID().String())
-			decrypted = encrypted
+			// Fail closed: never send an undecryptable value upstream.
+			s.logger.Warn("github credential cannot be decrypted; skipping the integration",
+				"tenant_id", tenantID.String(), "integration_id", intg.ID().String())
+			continue
 		}
 		if strings.TrimSpace(decrypted) == "" {
 			continue
@@ -280,25 +283,37 @@ func (s *GitHubTicketService) resolveCredential(ctx context.Context, tenantID sh
 	return "", "", ErrNoGitHubIntegration
 }
 
+// issueTitle is the GitHub issue title (plain text, at most 256 characters):
+// secret-redacted, cleaned of control and bidi characters, one line, capped.
+func issueTitle(finding *vulnerability.Finding) string {
+	return safetext.SingleLine(RedactSecrets(fmt.Sprintf("[%s] %s", finding.Severity(), finding.Title())), safetext.MaxTitleRunes)
+}
+
 // buildIssueBody renders the markdown body of the issue, mirroring the
 // semantics of the Jira description. For secret findings the raw description is
 // OMITTED — only the masked value and a pointer to the platform are included,
 // so the credential is never written into a third-party ticket.
+//
+// Every value from the finding is attacker-influenced (a scanned page, a file
+// path, a sensor report). One-line values go into code spans and the
+// description into a fenced code block, inside which GitHub renders no links,
+// images, HTML, @mentions or #references (RFC-040 §5.4).
 func buildIssueBody(finding *vulnerability.Finding) string {
 	var b strings.Builder
 
+	// Severity and status are domain enums, not scanner text.
 	fmt.Fprintf(&b, "**Severity:** %s\n", finding.Severity())
 	fmt.Fprintf(&b, "**Status:** %s\n", finding.Status())
 
 	if loc := findingLocation(finding); loc != "" {
-		fmt.Fprintf(&b, "**Location:** %s\n", loc)
+		fmt.Fprintf(&b, "**Location:** %s\n", safetext.MarkdownInline(RedactSecrets(loc), safetext.MaxInlineRunes))
 	}
 	b.WriteString("\n")
 
 	if isSecretFinding(finding) {
 		b.WriteString("> A secret/credential was detected. The raw value is intentionally omitted from this issue.\n\n")
 		if masked := finding.SecretMaskedValue(); masked != "" {
-			fmt.Fprintf(&b, "**Masked value:** `%s`\n\n", masked)
+			fmt.Fprintf(&b, "**Masked value:** %s\n\n", safetext.MarkdownInline(masked, safetext.MaxInlineRunes))
 		}
 		b.WriteString("Open the finding in the OpenCTEM platform for full details.\n")
 		appendMobilizationBrief(&b, finding)
@@ -306,7 +321,7 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 	}
 
 	if desc := strings.TrimSpace(finding.Description()); desc != "" {
-		b.WriteString(RedactSecrets(desc))
+		b.WriteString(safetext.MarkdownBlock(RedactSecrets(desc), safetext.MaxDescriptionRunes))
 		b.WriteString("\n")
 	}
 
@@ -317,8 +332,10 @@ func buildIssueBody(finding *vulnerability.Finding) string {
 // appendMobilizationBrief appends the CTEM Mobilization brief (definition of
 // done + acceptable fixes) to the issue body when the finding carries one. The
 // brief holds only operator-entered guidance — never a finding-embedded secret.
+// It keeps its markdown (it is written for the ticket) but loses control and
+// bidi characters.
 func appendMobilizationBrief(b *strings.Builder, finding *vulnerability.Finding) {
-	brief := finding.Remediation().MobilizationBrief()
+	brief := safetext.Clean(finding.Remediation().MobilizationBrief())
 	if brief == "" {
 		return
 	}
@@ -389,6 +406,11 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 		return fmt.Errorf("lookup finding by issue url: %w", err)
 	}
 
+	// A ticket never closes a finding (see IsTicketInboundTarget).
+	if !target.IsTicketInboundTarget() {
+		return nil
+	}
+	oldStatus := finding.Status()
 	note := fmt.Sprintf("Synced from GitHub issue (%s)", action)
 	if terr := finding.TransitionStatus(target, note, nil); terr != nil {
 		// Not a hard error — the transition may be blocked (e.g. accepted/false_positive).
@@ -401,8 +423,23 @@ func (s *GitHubTicketService) HandleIssueEvent(ctx context.Context, tenantID sha
 	}
 	s.logger.Info("github webhook synced finding status",
 		"finding_id", finding.ID().String(), "issue_url", issueHTMLURL, "action", action, "status", target)
+	if s.activity != nil && oldStatus != target {
+		if aerr := s.activity.RecordIntegrationStatusChange(ctx, tenantID, finding.ID(),
+			oldStatus.String(), target.String(), "github", issueKeyFromURL(issueHTMLURL)); aerr != nil {
+			s.logger.Warn("github webhook: failed to record activity", "finding_id", finding.ID().String(), "error", aerr)
+		}
+	}
 	return nil
 }
+
+// statusActivityRecorder records a status change whose actor is an
+// integration (see activity.FindingActivityService.RecordIntegrationStatusChange).
+type statusActivityRecorder interface {
+	RecordIntegrationStatusChange(ctx context.Context, tenantID, findingID shared.ID, oldStatus, newStatus, integration, ref string) error
+}
+
+// SetActivityRecorder wires the finding-activity recorder for inbound changes.
+func (s *GitHubTicketService) SetActivityRecorder(r statusActivityRecorder) { s.activity = r }
 
 // issueActionToStatus maps a GitHub issues webhook action to a finding status.
 // closed → fix_applied (pending verification, mirrors Jira Done); reopened →

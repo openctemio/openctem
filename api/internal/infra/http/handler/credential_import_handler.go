@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -25,7 +25,7 @@ const queryParamFalse = "false"
 
 // CredentialImportHandler handles credential import HTTP requests.
 type CredentialImportHandler struct {
-	service   *app.CredentialImportService
+	service   *integration.CredentialImportService
 	validator *validator.Validator
 	logger    *logger.Logger
 	// audit records every reveal of a plaintext leaked secret. The read
@@ -71,7 +71,7 @@ func (h *CredentialImportHandler) auditReveal(r *http.Request, id, identifier st
 
 // NewCredentialImportHandler creates a new credential import handler.
 func NewCredentialImportHandler(
-	svc *app.CredentialImportService,
+	svc *integration.CredentialImportService,
 	v *validator.Validator,
 	log *logger.Logger,
 ) *CredentialImportHandler {
@@ -220,8 +220,9 @@ func (h *CredentialImportHandler) Import(w http.ResponseWriter, r *http.Request)
 func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Parse multipart form (max 10MB)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
+	// The global body limit (10 MiB) bounds the form; at most 1 MiB of it is
+	// held in memory, the rest is spooled to a temporary file.
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		apierror.BadRequest("Invalid multipart form").WriteJSON(w)
 		return
 	}
@@ -269,34 +270,26 @@ func (h *CredentialImportHandler) ImportCSV(w http.ResponseWriter, r *http.Reque
 // @Tags Credentials
 // @Produce json
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Param severity query string false "Filter by severity (comma-separated)"
 // @Param state query string false "Filter by state (comma-separated)"
 // @Param source query string false "Filter by source (comma-separated)"
 // @Param search query string false "Search in identifier"
 // @Param sort query string false "Sort field (prefix - for desc)"
-// @Success 200 {object} app.CredentialListResult
+// @Success 200 {object} integration.CredentialListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials [get]
 func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := parseIntParam(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := parseIntParam(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Parse filters
-	opts := app.CredentialListOptions{
+	opts := integration.CredentialListOptions{
 		Search:    r.URL.Query().Get("search"),
 		SortField: r.URL.Query().Get("sort"),
 	}
@@ -329,7 +322,7 @@ func (h *CredentialImportHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Tags Credentials
 // @Produce json
 // @Param id path string true "Credential ID"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 404 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/{id} [get]
@@ -392,7 +385,7 @@ func (h *CredentialImportHandler) RevealSecret(w http.ResponseWriter, r *http.Re
 	secret, err := h.service.RevealSecret(r.Context(), tenantID, id)
 	switch {
 	case err == nil:
-	case errors.Is(err, app.ErrCredentialNoSecret):
+	case errors.Is(err, integration.ErrNoSecret):
 		apierror.NotFound("credential has no stored secret").WriteJSON(w)
 		return
 	case errors.Is(err, credential.ErrSecretUnreadable):
@@ -447,31 +440,23 @@ func (h *CredentialImportHandler) GetStats(w http.ResponseWriter, r *http.Reques
 // @Tags Credentials
 // @Produce json
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Param state query string false "Filter by state (comma-separated)"
 // @Param search query string false "Search in identifier"
-// @Success 200 {object} app.IdentityListResult
+// @Success 200 {object} integration.IdentityListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/identities [get]
 func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := parseIntParam(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := parseIntParam(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Parse filters
-	opts := app.CredentialListOptions{
+	opts := integration.CredentialListOptions{
 		Search: r.URL.Query().Get("search"),
 	}
 
@@ -497,7 +482,7 @@ func (h *CredentialImportHandler) ListByIdentity(w http.ResponseWriter, r *http.
 // @Tags Credentials
 // @Produce json
 // @Param id path string true "Credential ID"
-// @Success 200 {array} app.CredentialItem
+// @Success 200 {array} integration.CredentialItem
 // @Failure 404 {object} apierror.Error
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/{id}/related [get]
@@ -528,8 +513,8 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 // @Produce json
 // @Param identity path string true "Identity (username or email)"
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
-// @Success 200 {object} app.CredentialListResult
+// @Param per_page query int false "Page size (max 100)" default(20)
+// @Success 200 {object} integration.CredentialListResult
 // @Failure 401 {object} apierror.Error
 // @Router /credentials/identities/{identity}/exposures [get]
 func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter, r *http.Request) {
@@ -540,19 +525,11 @@ func (h *CredentialImportHandler) GetExposuresForIdentity(w http.ResponseWriter,
 		return
 	}
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := parseIntParam(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := parseIntParam(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	result, err := h.service.GetExposuresForIdentity(r.Context(), tenantID, identity, page, pageSize)
 	if err != nil {
@@ -842,18 +819,6 @@ func (h *CredentialImportHandler) handleValidationError(w http.ResponseWriter, e
 	apierror.BadRequest("Validation error").WriteJSON(w)
 }
 
-// parseIntParam parses an integer from a string query parameter.
-func parseIntParam(s string) (int, error) {
-	var result int
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, errors.New("invalid integer")
-		}
-		result = result*10 + int(c-'0')
-	}
-	return result, nil
-}
-
 // splitCommaSeparated splits a comma-separated string into a slice.
 func splitCommaSeparated(s string) []string {
 	if s == "" {
@@ -904,7 +869,7 @@ type CredentialStateChangeRequest struct {
 // @Produce json
 // @Param id path string true "Credential ID"
 // @Param request body CredentialStateChangeRequest false "Resolution notes"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/resolve [post]
@@ -943,7 +908,7 @@ func (h *CredentialImportHandler) Resolve(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Param id path string true "Credential ID"
 // @Param request body CredentialStateChangeRequest false "Acceptance notes"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/accept [post]
@@ -982,7 +947,7 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 // @Produce json
 // @Param id path string true "Credential ID"
 // @Param request body CredentialStateChangeRequest false "Notes"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/false-positive [post]
@@ -1019,7 +984,7 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 // @Tags Credentials
 // @Produce json
 // @Param id path string true "Credential ID"
-// @Success 200 {object} app.CredentialItem
+// @Success 200 {object} integration.CredentialItem
 // @Failure 400 {object} apierror.Error
 // @Failure 404 {object} apierror.Error
 // @Router /credentials/{id}/reactivate [post]

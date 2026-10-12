@@ -50,8 +50,11 @@ type PriorityFactors struct {
 	AssetExposure        string   `json:"asset_exposure,omitempty"`
 	AssetIsCrownJewel    bool     `json:"asset_is_crown_jewel"`
 	AssetUnowned         bool     `json:"asset_unowned"`
-	IsProtected          bool     `json:"is_protected"`
-	ControlReductionPct  float64  `json:"control_reduction_pct"`
+	// AttributionUnconfirmed is the asset's attribution state when it caps
+	// the class at P2 (needs_review, candidate, rejected); empty otherwise.
+	AttributionUnconfirmed string  `json:"attribution_unconfirmed,omitempty"`
+	IsProtected            bool    `json:"is_protected"`
+	ControlReductionPct    float64 `json:"control_reduction_pct"`
 
 	// CIA business-impact rating from the asset's critical-asset register. Score
 	// is the 0–5 impact contribution (MAX leg); Detail names the highest leg
@@ -99,6 +102,9 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(a))
 	}
 	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), aiFP, hasOwner)
+	if a != nil {
+		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{a.ID()})[a.ID()]
+	}
 
 	// Compensating-control reduction (same as the live classify path — shared
 	// helper, so the explanation cannot drift from what ClassifyFinding does).
@@ -116,26 +122,27 @@ func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tena
 		Source:    classification.Source,
 		RuleName:  ruleName,
 		Factors: PriorityFactors{
-			Severity:             string(pctx.Severity),
-			CVEID:                pctx.CVEID,
-			EPSSScore:            pctx.EPSSScore,
-			EPSSPercentile:       pctx.EPSSPercentile,
-			IsInKEV:              pctx.IsInKEV,
-			IsReachable:          pctx.IsReachable,
-			IsInternetAccessible: pctx.IsInternetAccessible,
-			IsNetworkAccessible:  pctx.IsNetworkAccessible,
-			OnOpenThreatPath:     pctx.OnOpenThreatPath,
-			ReachableFromCount:   pctx.ReachableFromCount,
-			AssetCriticality:     pctx.AssetCriticality,
-			AssetExposure:        pctx.AssetExposure,
-			AssetIsCrownJewel:    pctx.AssetIsCrownJewel,
-			AssetUnowned:         pctx.AssetUnowned,
-			IsProtected:          pctx.IsProtected,
-			ControlReductionPct:  pctx.ControlReductionFactor * 100,
-			CIAImpactScore:       pctx.CIAImpactScore,
-			CIAImpactDetail:      pctx.CIAImpactDetail,
-			Reachable:            pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
-			CriticalAsset:        pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
+			Severity:               string(pctx.Severity),
+			CVEID:                  pctx.CVEID,
+			EPSSScore:              pctx.EPSSScore,
+			EPSSPercentile:         pctx.EPSSPercentile,
+			IsInKEV:                pctx.IsInKEV,
+			IsReachable:            pctx.IsReachable,
+			IsInternetAccessible:   pctx.IsInternetAccessible,
+			IsNetworkAccessible:    pctx.IsNetworkAccessible,
+			OnOpenThreatPath:       pctx.OnOpenThreatPath,
+			ReachableFromCount:     pctx.ReachableFromCount,
+			AssetCriticality:       pctx.AssetCriticality,
+			AssetExposure:          pctx.AssetExposure,
+			AssetIsCrownJewel:      pctx.AssetIsCrownJewel,
+			AssetUnowned:           pctx.AssetUnowned,
+			AttributionUnconfirmed: pctx.AttributionUnconfirmed,
+			IsProtected:            pctx.IsProtected,
+			ControlReductionPct:    pctx.ControlReductionFactor * 100,
+			CIAImpactScore:         pctx.CIAImpactScore,
+			CIAImpactDetail:        pctx.CIAImpactDetail,
+			Reachable:              pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
+			CriticalAsset:          pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
 		},
 		// Transparent composite score derived from the SAME context — additive
 		// explanation only, never changes the class above.
@@ -160,13 +167,7 @@ func (s *PriorityClassificationService) classifyWithRules(
 	for _, rule := range rules {
 		if rule.Matches(pctx) {
 			name := rule.Name()
-			ruleID := rule.ID()
-			return vulnerability.PriorityClassification{
-				Class:  rule.PriorityClass(),
-				Reason: fmt.Sprintf("Rule: %s", rule.Name()),
-				Source: "rule",
-				RuleID: &ruleID,
-			}, &name
+			return ruleClassification(rule, pctx, true), &name
 		}
 	}
 	return vulnerability.ClassifyPriority(pctx), nil

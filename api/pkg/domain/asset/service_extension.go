@@ -593,6 +593,9 @@ type ListAssetServicesOptions struct {
 	IsPublic    *bool
 	Port        *int
 	Product     *string
+	// Scope, when non-nil, keeps only services of assets in the caller's
+	// data scope.
+	Scope *shared.DataScope
 
 	// Pagination
 	Limit  int

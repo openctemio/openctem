@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { Lock, NotebookPen, ScrollText, ShieldQuestion, Swords } from 'lucide-react'
@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   DataTable,
@@ -323,12 +324,14 @@ export function CycleProfilesTab({ cycle }: { cycle: CtemCycle }) {
       )}
 
       <Dialog open={editing} onOpenChange={(o) => !saving && setEditing(o)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Attacker profiles</DialogTitle>
             <DialogDescription>Choose the attackers {cycle.name} assumes.</DialogDescription>
           </DialogHeader>
-          <CharterAttackerProfilesField value={draft} onChange={setDraft} editable />
+          <DialogBody>
+            <CharterAttackerProfilesField value={draft} onChange={setDraft} editable />
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>
               Cancel
@@ -415,17 +418,19 @@ export function CycleOutcomeTab({ cycle, onSaved }: { cycle: CtemCycle; onSaved:
               What {cycle.name} taught about scope. Shown when the next cycle is created.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="scope-notes">Notes</Label>
-            <Textarea
-              id="scope-notes"
-              rows={6}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Add exposed RDP to scope next cycle; the legacy VPN exclusion held up."
-              disabled={saving}
-            />
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label htmlFor="scope-notes">Notes</Label>
+              <Textarea
+                id="scope-notes"
+                rows={6}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Add exposed RDP to scope next cycle; the legacy VPN exclusion held up."
+                disabled={saving}
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditing(false)} disabled={saving}>
               Cancel

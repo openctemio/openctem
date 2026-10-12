@@ -126,3 +126,63 @@ func TestCVEProcessor_RepoErrorReturnsEmptyMap(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, m)
 }
+
+// linkingFakeVulnRepo records the CVEs the processor asks to link.
+type linkingFakeVulnRepo struct {
+	*fakeVulnRepo
+	linked []string
+}
+
+func (f *linkingFakeVulnRepo) LinkUnlinkedFindings(_ context.Context, cves []string) (int64, error) {
+	f.linked = append(f.linked, cves...)
+	return int64(len(cves)), nil
+}
+
+func (f *linkingFakeVulnRepo) IDsByCVE(_ context.Context, cves []string) (map[string]shared.ID, error) {
+	out := map[string]shared.ID{}
+	for _, c := range cves {
+		if id, ok := f.idFor[c]; ok {
+			out[c] = id
+		}
+	}
+	return out, nil
+}
+
+// A scanner that reports "cve-2021-44228" must reach the same catalog entry,
+// EPSS and KEV as "CVE-2021-44228". The lower-case id used to fail
+// IsValidCVE, so it got no catalog entry and the finding no link.
+func TestCVEProcessor_NormalizesCaseAndLinksStoredFindings(t *testing.T) {
+	repo := &linkingFakeVulnRepo{fakeVulnRepo: newFakeRepo()}
+	p := NewCVEProcessor(repo, logger.NewNop())
+	report := &ctis.Report{Findings: []ctis.Finding{
+		{Severity: ctis.SeverityHigh, Vulnerability: &ctis.VulnerabilityDetails{CVEID: " cve-2099-3001"}},
+	}}
+
+	m, err := p.ProcessBatch(context.Background(), report, &Output{})
+	require.NoError(t, err)
+	require.Contains(t, m, "CVE-2099-3001")
+	assert.Equal(t, []string{"CVE-2099-3001"}, repo.linked,
+		"findings stored before the entry existed are linked")
+
+	// Protocol v2 only reads the catalog, and links stored findings too.
+	repo.linked = nil
+	m, err = p.LookupBatch(context.Background(), report)
+	require.NoError(t, err)
+	require.Contains(t, m, "CVE-2099-3001")
+	assert.Equal(t, []string{"CVE-2099-3001"}, repo.linked)
+
+	// The finding built from the report picks up the link through the
+	// normalized key.
+	fp := NewFindingProcessor(&stubFindingRepository{}, nil, stubAssetRepoGetByID{}, logger.NewNop())
+	cf := &report.Findings[0]
+	cf.RuleID = "r1"
+	tool := &ctis.Tool{Name: "trivy"}
+	assetID := shared.NewID()
+	fingerprint, base := generateFindingFingerprint(assetID, cf, tool)
+	f, err := fp.buildFinding(context.Background(), shared.NewID(), assetID, nil, shared.NewID(),
+		&ctis.Report{Tool: tool}, cf, fingerprint, base, m)
+	require.NoError(t, err)
+	assert.Equal(t, "CVE-2099-3001", f.CVEID())
+	require.NotNil(t, f.VulnerabilityID())
+	assert.Equal(t, m["CVE-2099-3001"], *f.VulnerabilityID())
+}

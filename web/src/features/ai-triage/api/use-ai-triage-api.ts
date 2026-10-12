@@ -98,8 +98,8 @@ function transformHistoryResponse(api: ApiTriageHistoryResponse): TriageHistoryR
   return {
     data: api.data.map(transformTriageResult),
     total: api.total,
-    limit: api.limit,
-    offset: api.offset,
+    limit: api.per_page,
+    offset: (api.page - 1) * api.per_page,
   }
 }
 
@@ -112,9 +112,12 @@ function buildTriageEndpoint(findingId: string): string {
 }
 
 function buildTriageHistoryEndpoint(findingId: string, limit?: number, offset?: number): string {
+  // The API pages with page / per_page; an offset is turned into its page.
   const params = new URLSearchParams()
-  if (limit) params.set('limit', limit.toString())
-  if (offset) params.set('offset', offset.toString())
+  if (limit) {
+    params.set('per_page', limit.toString())
+    if (offset) params.set('page', String(Math.floor(offset / limit) + 1))
+  }
   const query = params.toString()
   return `/api/v1/findings/${findingId}/ai-triage/history${query ? `?${query}` : ''}`
 }

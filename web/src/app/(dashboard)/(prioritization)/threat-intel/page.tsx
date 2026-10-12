@@ -33,6 +33,7 @@ import {
 import { EPSSScoreBadge, EPSSScoreMeter } from '@/features/shared/components/epss-score-badge'
 import { KEVIndicatorBadge, KEVStatus } from '@/features/shared/components/kev-indicator-badge'
 import type { CVEEnrichment } from '@/lib/api/threatintel-types'
+import { SafeExternalLink } from '@/components/safe-external-link'
 
 const TABS = ['overview', 'actors', 'lookup', 'sync']
 
@@ -150,16 +151,14 @@ function InfoCard({ title, icon: Icon, description, links }: InfoCardProps) {
         {links && links.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {links.map((link) => (
-              <a
+              <SafeExternalLink
                 key={link.url}
                 href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 {link.label}
                 <ExternalLink className="h-3 w-3" />
-              </a>
+              </SafeExternalLink>
             ))}
           </div>
         )}

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -120,52 +121,80 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	return rl.keyedMiddleware(getClientIP)
 }
 
+// UserMiddleware returns the rate limiting middleware keyed by the
+// authenticated user (the client IP when there is none). Mount it after the
+// auth middleware.
+func (rl *RateLimiter) UserMiddleware() func(http.Handler) http.Handler {
+	return rl.keyedMiddleware(UserKeyFunc)
+}
+
+// TenantMiddleware returns the rate limiting middleware keyed by the tenant
+// of the request, so every member of one organization shares the bucket
+// (the user, then the client IP, when there is no tenant). Mount it after
+// the auth middleware.
+func (rl *RateLimiter) TenantMiddleware() func(http.Handler) http.Handler {
+	return rl.keyedMiddleware(TenantKeyFunc)
+}
+
+// TenantKeyFunc keys a bucket by the request's tenant.
+func TenantKeyFunc(r *http.Request) string {
+	if tid := GetTenantID(r.Context()); tid != "" {
+		return "tenant:" + tid
+	}
+	return UserKeyFunc(r)
+}
+
 // keyedMiddleware rate limits by the bucket key returns. The client IP is
 // still what gets logged.
 func (rl *RateLimiter) keyedMiddleware(key func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := getClientIP(r)
-			limiter := rl.getVisitor(key(r))
-
-			// Get current tokens before Allow() consumes one
-			tokens := limiter.Tokens()
-			remaining := int(math.Max(0, math.Floor(tokens)-1)) // -1 because Allow() will consume one
-
-			// Calculate reset time (time until bucket is full)
-			tokensToRefill := float64(rl.burst) - tokens
-			var resetTime time.Time
-			if tokensToRefill > 0 && rl.rate > 0 {
-				secondsToRefill := tokensToRefill / float64(rl.rate)
-				resetTime = time.Now().Add(time.Duration(secondsToRefill * float64(time.Second)))
-			} else {
-				resetTime = time.Now()
-			}
-
-			// Set rate limit headers on all responses
-			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.burst))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
-
-			if !limiter.Allow() {
-				if rl.log != nil {
-					rl.log.Warn("rate limit exceeded",
-						"ip", ip,
-						"path", r.URL.Path,
-						"request_id", GetRequestID(r.Context()),
-					)
-				}
-
-				// Update remaining to 0 since we're rate limited
-				w.Header().Set("X-RateLimit-Remaining", "0")
-				w.Header().Set("Retry-After", strconv.Itoa(rl.retryAfterSeconds()))
-				apierror.RateLimitExceeded().WriteJSON(w)
-				return
-			}
-
-			next.ServeHTTP(w, r)
+			rl.serveKeyed(w, r, key(r), next)
 		})
 	}
+}
+
+// serveKeyed applies the in-memory bucket for k, then calls next or writes 429.
+func (rl *RateLimiter) serveKeyed(w http.ResponseWriter, r *http.Request, k string, next http.Handler) {
+	ip := getClientIP(r)
+	limiter := rl.getVisitor(k)
+
+	// Get current tokens before Allow() consumes one
+	tokens := limiter.Tokens()
+	remaining := int(math.Max(0, math.Floor(tokens)-1)) // -1 because Allow() will consume one
+
+	// Calculate reset time (time until bucket is full)
+	tokensToRefill := float64(rl.burst) - tokens
+	var resetTime time.Time
+	if tokensToRefill > 0 && rl.rate > 0 {
+		secondsToRefill := tokensToRefill / float64(rl.rate)
+		resetTime = time.Now().Add(time.Duration(secondsToRefill * float64(time.Second)))
+	} else {
+		resetTime = time.Now()
+	}
+
+	// Set rate limit headers on all responses
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.burst))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
+
+	if !limiter.Allow() {
+		if rl.log != nil {
+			rl.log.Warn("rate limit exceeded",
+				"ip", logSafe(ip),
+				"path", logSafe(RedactPath(r.URL.Path)),
+				"request_id", logSafe(GetRequestID(r.Context())),
+			)
+		}
+
+		// Update remaining to 0 since we're rate limited
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("Retry-After", strconv.Itoa(rl.retryAfterSeconds()))
+		apierror.RateLimitExceeded().WriteJSON(w)
+		return
+	}
+
+	next.ServeHTTP(w, r)
 }
 
 // retryAfterSeconds is how long until one request is allowed again.
@@ -327,13 +356,18 @@ func EndpointKeyFunc(r *http.Request) string {
 
 // AuthRateLimiter provides stricter rate limiting for authentication endpoints.
 // This is critical for preventing brute-force attacks.
+//
+// Each bucket is in-memory by default. Built with NewDistributedAuthRateLimiter
+// it counts in a shared store (Redis) instead, so every API replica spends the
+// same budget; the in-memory bucket is then only the fallback for a store
+// error (see authBucket).
 type AuthRateLimiter struct {
-	loginLimiter         *RateLimiter // Very strict: 5 attempts per minute per IP
-	registerLimiter      *RateLimiter // Strict: 3 attempts per minute per IP
-	passwordLimiter      *RateLimiter // Very strict: 3 attempts per minute per IP
-	tokenExchangeLimiter *RateLimiter // Moderate: 20 per minute per IP (tenant switch)
-	mfaLimiter           *RateLimiter // Second login step: 10 per minute per challenge
-	mfaIPLimiter         *RateLimiter // Second login step: 30 per minute per IP
+	loginLimiter         *authBucket // Very strict: 5 attempts per minute per IP
+	registerLimiter      *authBucket // Strict: 3 attempts per minute per IP
+	passwordLimiter      *authBucket // Very strict: 3 attempts per minute per IP
+	tokenExchangeLimiter *authBucket // Moderate: 20 per minute per IP (tenant switch)
+	mfaLimiter           *authBucket // Second login step: 10 per minute per challenge
+	mfaIPLimiter         *authBucket // Second login step: 30 per minute per IP
 	log                  *logger.Logger
 }
 
@@ -379,8 +413,20 @@ func DefaultAuthRateLimitConfig() AuthRateLimitConfig {
 	}
 }
 
-// NewAuthRateLimiter creates a rate limiter specialized for authentication endpoints.
+// NewAuthRateLimiter creates an in-memory rate limiter specialized for
+// authentication endpoints. Its budgets are per process: with N API replicas a
+// client gets N times the budget. Production wiring uses
+// NewDistributedAuthRateLimiter.
 func NewAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger) *AuthRateLimiter {
+	return NewDistributedAuthRateLimiter(cfg, log, nil, "")
+}
+
+// NewDistributedAuthRateLimiter creates an auth rate limiter whose buckets
+// count in backend, shared by every API replica. scope names this limiter's
+// buckets in the store ("auth", "console", ...), so limiters mounted on
+// different routes keep separate budgets, while the same scope on another
+// replica shares them. A nil backend gives the in-memory limiter.
+func NewDistributedAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger, backend AuthRateLimitBackend, scope string) *AuthRateLimiter {
 	if cfg.LoginRatePerMin == 0 {
 		cfg.LoginRatePerMin = 5
 	}
@@ -402,68 +448,38 @@ func NewAuthRateLimiter(cfg AuthRateLimitConfig, log *logger.Logger) *AuthRateLi
 	if cfg.MFAIPRatePerMin == 0 {
 		cfg.MFAIPRatePerMin = 30
 	}
+	if scope == "" {
+		scope = "auth"
+	}
 
-	// Convert per-minute rates to per-second for rate.Limit
-	loginRate := float64(cfg.LoginRatePerMin) / 60.0
-	registerRate := float64(cfg.RegisterRatePerMin) / 60.0
-	passwordRate := float64(cfg.PasswordResetRatePerMin) / 60.0
-	tokenExchangeRate := float64(cfg.TokenExchangeRatePerMin) / 60.0
-
+	bucket := func(name string, perMin int) *authBucket {
+		return newAuthBucket(scope+":"+name, perMin, cfg.CleanupInterval, backend, log)
+	}
 	return &AuthRateLimiter{
-		loginLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  loginRate,
-			Burst:           cfg.LoginRatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		registerLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  registerRate,
-			Burst:           cfg.RegisterRatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		passwordLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  passwordRate,
-			Burst:           cfg.PasswordResetRatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		tokenExchangeLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  tokenExchangeRate,
-			Burst:           cfg.TokenExchangeRatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		mfaLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  float64(cfg.MFARatePerMin) / 60.0,
-			Burst:           cfg.MFARatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		mfaIPLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  float64(cfg.MFAIPRatePerMin) / 60.0,
-			Burst:           cfg.MFAIPRatePerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
-		log: log,
+		loginLimiter:         bucket("login", cfg.LoginRatePerMin),
+		registerLimiter:      bucket("register", cfg.RegisterRatePerMin),
+		passwordLimiter:      bucket("password", cfg.PasswordResetRatePerMin),
+		tokenExchangeLimiter: bucket("token", cfg.TokenExchangeRatePerMin),
+		mfaLimiter:           bucket("mfa", cfg.MFARatePerMin),
+		mfaIPLimiter:         bucket("mfa-ip", cfg.MFAIPRatePerMin),
+		log:                  log,
 	}
 }
 
 // Stop gracefully shuts down all rate limiters.
 func (a *AuthRateLimiter) Stop() {
-	a.loginLimiter.Stop()
-	a.registerLimiter.Stop()
-	a.passwordLimiter.Stop()
-	a.tokenExchangeLimiter.Stop()
-	a.mfaLimiter.Stop()
-	a.mfaIPLimiter.Stop()
+	a.loginLimiter.local.Stop()
+	a.registerLimiter.local.Stop()
+	a.passwordLimiter.local.Stop()
+	a.tokenExchangeLimiter.local.Stop()
+	a.mfaLimiter.local.Stop()
+	a.mfaIPLimiter.local.Stop()
 }
 
 // LoginMiddleware returns middleware for login endpoints.
 // Applies strict rate limiting to prevent brute-force attacks.
 func (a *AuthRateLimiter) LoginMiddleware() func(http.Handler) http.Handler {
-	return a.loginLimiter.Middleware()
+	return a.loginLimiter.middleware(getClientIP)
 }
 
 // MFAMiddleware returns middleware for the second login step
@@ -472,8 +488,8 @@ func (a *AuthRateLimiter) LoginMiddleware() func(http.Handler) http.Handler {
 // (the mfa_token in the JSON body, hashed) and a looser per-IP ceiling across
 // challenges. A request without a token is limited by IP only.
 func (a *AuthRateLimiter) MFAMiddleware() func(http.Handler) http.Handler {
-	perIP := a.mfaIPLimiter.keyedMiddleware(func(r *http.Request) string { return "mfa-ip:" + getClientIP(r) })
-	perChallenge := a.mfaLimiter.keyedMiddleware(mfaChallengeKey)
+	perIP := a.mfaIPLimiter.middleware(func(r *http.Request) string { return "mfa-ip:" + getClientIP(r) })
+	perChallenge := a.mfaLimiter.middleware(mfaChallengeKey)
 	return func(next http.Handler) http.Handler {
 		return perIP(perChallenge(next))
 	}
@@ -507,17 +523,17 @@ const mfaBodyLimit = 4096
 // Uses a higher rate limit than login because token exchange requires a valid
 // refresh token (not brute-forceable) and is used for tenant switching.
 func (a *AuthRateLimiter) TokenExchangeMiddleware() func(http.Handler) http.Handler {
-	return a.tokenExchangeLimiter.Middleware()
+	return a.tokenExchangeLimiter.middleware(getClientIP)
 }
 
 // RegisterMiddleware returns middleware for registration endpoints.
 func (a *AuthRateLimiter) RegisterMiddleware() func(http.Handler) http.Handler {
-	return a.registerLimiter.Middleware()
+	return a.registerLimiter.middleware(getClientIP)
 }
 
 // PasswordMiddleware returns middleware for password reset/forgot endpoints.
 func (a *AuthRateLimiter) PasswordMiddleware() func(http.Handler) http.Handler {
-	return a.passwordLimiter.Middleware()
+	return a.passwordLimiter.middleware(getClientIP)
 }
 
 // =============================================================================
@@ -730,13 +746,12 @@ func (afl *AuthFailureLimiter) GetStats() (trackedIPs int, bannedIPs int) {
 }
 
 // =============================================================================
-// Trigger Rate Limiting (Pipeline/Scan Execution)
+// Trigger Rate Limiting (Scan workflow/Scan Execution)
 // =============================================================================
 
-// TriggerRateLimiter provides rate limiting for pipeline and scan trigger endpoints.
+// TriggerRateLimiter provides rate limiting for scan trigger endpoints.
 // This prevents abuse and ensures fair resource usage.
 type TriggerRateLimiter struct {
-	pipelineLimiter  *RateLimiter // Per-tenant pipeline triggers
 	scanLimiter      *RateLimiter // Per-tenant scan triggers
 	quickScanLimiter *RateLimiter // Per-tenant quick scan triggers (stricter)
 	log              *logger.Logger
@@ -744,9 +759,6 @@ type TriggerRateLimiter struct {
 
 // TriggerRateLimitConfig configures trigger-specific rate limits.
 type TriggerRateLimitConfig struct {
-	// PipelineTriggersPerMin is the max pipeline triggers per minute per tenant.
-	// Default: 30
-	PipelineTriggersPerMin int
 	// ScanTriggersPerMin is the max scan triggers per minute per tenant.
 	// Default: 20
 	ScanTriggersPerMin int
@@ -761,7 +773,6 @@ type TriggerRateLimitConfig struct {
 // DefaultTriggerRateLimitConfig returns secure defaults for trigger rate limiting.
 func DefaultTriggerRateLimitConfig() TriggerRateLimitConfig {
 	return TriggerRateLimitConfig{
-		PipelineTriggersPerMin:  30,
 		ScanTriggersPerMin:      20,
 		QuickScanTriggersPerMin: 10,
 		CleanupInterval:         time.Minute,
@@ -770,9 +781,6 @@ func DefaultTriggerRateLimitConfig() TriggerRateLimitConfig {
 
 // NewTriggerRateLimiter creates a rate limiter specialized for trigger endpoints.
 func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *TriggerRateLimiter {
-	if cfg.PipelineTriggersPerMin == 0 {
-		cfg.PipelineTriggersPerMin = 30
-	}
 	if cfg.ScanTriggersPerMin == 0 {
 		cfg.ScanTriggersPerMin = 20
 	}
@@ -784,17 +792,10 @@ func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *Trig
 	}
 
 	// Convert per-minute rates to per-second for rate.Limit
-	pipelineRate := float64(cfg.PipelineTriggersPerMin) / 60.0
 	scanRate := float64(cfg.ScanTriggersPerMin) / 60.0
 	quickScanRate := float64(cfg.QuickScanTriggersPerMin) / 60.0
 
 	return &TriggerRateLimiter{
-		pipelineLimiter: NewRateLimiter(&config.RateLimitConfig{
-			Enabled:         true,
-			RequestsPerSec:  pipelineRate,
-			Burst:           cfg.PipelineTriggersPerMin,
-			CleanupInterval: cfg.CleanupInterval,
-		}, log),
 		scanLimiter: NewRateLimiter(&config.RateLimitConfig{
 			Enabled:         true,
 			RequestsPerSec:  scanRate,
@@ -813,15 +814,8 @@ func NewTriggerRateLimiter(cfg TriggerRateLimitConfig, log *logger.Logger) *Trig
 
 // Stop gracefully shuts down all rate limiters.
 func (t *TriggerRateLimiter) Stop() {
-	t.pipelineLimiter.Stop()
 	t.scanLimiter.Stop()
 	t.quickScanLimiter.Stop()
-}
-
-// PipelineMiddleware returns middleware for pipeline trigger endpoints.
-// Uses tenant ID as the rate limit key for per-tenant limiting.
-func (t *TriggerRateLimiter) PipelineMiddleware() func(http.Handler) http.Handler {
-	return t.wrapWithTenantKey(t.pipelineLimiter)
 }
 
 // ScanMiddleware returns middleware for scan trigger endpoints.
@@ -924,7 +918,7 @@ func (f *FindingActivityRateLimiter) ListMiddleware() func(http.Handler) http.Ha
 			if !limiter.Allow() {
 				f.log.Warn("finding activity rate limit exceeded",
 					"key", key,
-					"path", r.URL.Path,
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1062,7 +1056,7 @@ func (a *AnalyticsRateLimiter) wrapWithKey(rl *RateLimiter, category string) fun
 				a.log.Warn("analytics rate limit exceeded",
 					"category", category,
 					"key", key,
-					"path", r.URL.Path,
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1172,7 +1166,7 @@ func (a *AITriageRateLimiter) RequestMiddleware() func(http.Handler) http.Handle
 			if !limiter.Allow() {
 				a.log.Warn("AI triage rate limit exceeded",
 					"tenant_key", tenantID,
-					"path", r.URL.Path,
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1224,7 +1218,7 @@ func (t *TriggerRateLimiter) wrapWithTenantKey(rl *RateLimiter) func(http.Handle
 			if !limiter.Allow() {
 				t.log.Warn("trigger rate limit exceeded",
 					"tenant_key", tenantID,
-					"path", r.URL.Path,
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1335,7 +1329,7 @@ func (a *AdminMappingRateLimiter) WriteMiddleware() func(http.Handler) http.Hand
 			if !limiter.Allow() {
 				a.log.Warn("admin mapping rate limit exceeded",
 					"key", key,
-					"path", r.URL.Path,
+					"path", logSafe(RedactPath(r.URL.Path)),
 					"request_id", GetRequestID(r.Context()),
 				)
 
@@ -1462,7 +1456,7 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 				if rel.log != nil {
 					rel.log.Warn("read endpoint rate limit exceeded",
 						"key", key,
-						"path", r.URL.Path,
+						"path", logSafe(RedactPath(r.URL.Path)),
 						"request_id", GetRequestID(r.Context()),
 					)
 				}
@@ -1473,7 +1467,25 @@ func (rel *ReadEndpointRateLimiter) Middleware() func(http.Handler) http.Handler
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), readCostKey{}, limiter)))
 		})
 	}
+}
+
+// readCostKey carries the caller's read limiter to the handler.
+type readCostKey struct{}
+
+// ChargeReadCost takes n more tokens from the caller's read budget for a
+// read that costs more than one request (an expensive include=). It reports
+// false, having taken nothing, when the budget cannot cover it; the caller
+// then answers 429. Without a read limiter (rate limiting off) it is free.
+func ChargeReadCost(ctx context.Context, n int) bool {
+	if n <= 0 {
+		return true
+	}
+	lim, ok := ctx.Value(readCostKey{}).(*rate.Limiter)
+	if !ok || lim == nil {
+		return true
+	}
+	return lim.AllowN(time.Now(), n)
 }

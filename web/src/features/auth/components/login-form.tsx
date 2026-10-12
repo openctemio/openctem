@@ -11,7 +11,7 @@
 import { useEffect, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
@@ -31,6 +31,9 @@ import { PasswordInput } from '@/components/password-input'
 import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
 
 import { validateRedirectUrl } from '@/lib/redirect'
+import { loginErrorMessage } from '@/features/auth/lib/login-error'
+import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Import schema and server actions
 import { loginSchema, type LoginInput } from '../schemas/auth.schema'
@@ -41,8 +44,10 @@ import { initiateSocialLogin, type SocialProvider } from '../actions/social-auth
 // SSO imports
 import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
+import { useEmailDiscovery } from '../hooks/use-email-discovery'
 import { initiateSSOLogin } from '@/features/sso/actions/sso-auth-actions'
-import { getProviderLabel, type SSOProviderType } from '@/features/sso/types/sso.types'
+import { type SSOProviderType } from '@/features/sso/types/sso.types'
+import { identityProviderLabel } from '@/lib/identity-provider-label'
 
 // ============================================
 // TYPES
@@ -66,6 +71,12 @@ interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
    * When set, fetches and displays tenant-specific SSO providers
    */
   orgSlug?: string
+
+  /**
+   * Step-up for an SSO account (?reauth=1): the identity provider is asked to
+   * authenticate the user again instead of reusing its session.
+   */
+  reauth?: boolean
 }
 
 // ============================================
@@ -99,6 +110,7 @@ export function LoginForm({
   redirectTo = '/',
   showSocialLogin = true,
   orgSlug,
+  reauth = false,
   ...props
 }: LoginFormProps) {
   const [isPending, startTransition] = useTransition()
@@ -112,9 +124,6 @@ export function LoginForm({
   // Validate redirectTo to prevent open redirect attacks
   const safeRedirectTo = validateRedirectUrl(redirectTo, '/')
 
-  // Fetch tenant-specific SSO providers when ?org= is present
-  const { data: ssoProviders } = useTenantSSOProviders(orgSlug ?? null)
-
   // Fetch which social providers the backend actually has configured, so we
   // only render buttons that will work (no 404 dead-affordances). Buttons are
   // hidden while loading (data undefined) and only shown for providers === true.
@@ -124,12 +133,15 @@ export function LoginForm({
     : []
 
   // Check for error from OAuth/SSO callback
+  // Only a known code's message is shown, never the raw parameter: a crafted
+  // link must not put arbitrary text on the sign-in page.
   const errorParam = searchParams.get('error')
+  const { t } = useTranslation()
+  const loginError = errorParam ? loginErrorMessage(errorParam) : null
+  const errorMessage = loginError ? t(loginError.key, loginError.fallback) : null
   useEffect(() => {
-    if (errorParam) {
-      toast.error(errorParam)
-    }
-  }, [errorParam])
+    if (errorMessage) toast.error(errorMessage)
+  }, [errorMessage])
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
@@ -139,6 +151,15 @@ export function LoginForm({
       password: '',
     },
   })
+
+  // Email-first sign-in: when the typed email's domain signs in through an
+  // organization's SSO, offer that organization's SSO like ?org= does.
+  const typedEmail = form.watch('email') ?? ''
+  const discoveredOrg = useEmailDiscovery(typedEmail, !orgSlug)
+  const ssoOrg = orgSlug ?? discoveredOrg ?? undefined
+
+  // Fetch the organization's SSO providers (?org= or discovered)
+  const { data: ssoProviders } = useTenantSSOProviders(ssoOrg ?? null)
 
   /**
    * Handle form submission for local auth
@@ -190,7 +211,7 @@ export function LoginForm({
 
       // Case 1: Multiple tenants - redirect to tenant selection
       if (result.requiresTenantSelection) {
-        toast.success('Please select a team to continue')
+        toast.success(t('auth.login.selectTeam', 'Please select a team to continue'))
         router.push('/select-tenant')
         return
       }
@@ -198,15 +219,15 @@ export function LoginForm({
       // Case 2: No tenants - check if user has a specific destination (e.g., invitation)
       if (result.tenants && result.tenants.length === 0) {
         // If returnTo is an invitation page, go there first (user can accept and get a tenant)
-        if (safeRedirectTo.includes('/invitations/')) {
-          toast.success('Logged in successfully')
+        if (isInvitationReturnTo(safeRedirectTo)) {
+          toast.success(t('auth.login.success', 'Signed in'))
           hardNavigate(safeRedirectTo)
           return
         }
         // Otherwise, onboarding: the create-team form, or (when only the
         // platform administrator creates organizations) a notice to ask for
         // access. The page decides, so this toast stays neutral.
-        toast.success('Logged in successfully')
+        toast.success(t('auth.login.success', 'Signed in'))
         hardNavigate('/onboarding/create-team')
         return
       }
@@ -214,10 +235,10 @@ export function LoginForm({
       // Case 3: Single tenant - proceed to dashboard
       // IMPORTANT: Use window.location.href for full page navigation
       // to ensure cookies set by Server Action are picked up properly
-      toast.success('Logged in successfully')
+      toast.success(t('auth.login.success', 'Signed in'))
       hardNavigate(safeRedirectTo)
     } else {
-      toast.error(result.error || 'Login failed')
+      toast.error(result.error || t('auth.login.failed', 'Sign-in failed'))
     }
   }
 
@@ -232,7 +253,7 @@ export function LoginForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(`Failed to sign in with ${provider}. Please try again.`)
+      toast.error(`Failed to sign in with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 
@@ -240,14 +261,14 @@ export function LoginForm({
    * Handle SSO login (Entra ID, Okta, Google Workspace)
    */
   async function handleSSOLogin(provider: SSOProviderType) {
-    if (!orgSlug) return
+    if (!ssoOrg) return
     setLoadingSSOProvider(provider)
     try {
-      await initiateSSOLogin(provider, orgSlug, safeRedirectTo)
+      await initiateSSOLogin(provider, ssoOrg, safeRedirectTo, reauth)
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)
-      toast.error(`Failed to sign in with ${getProviderLabel(provider)}. Please try again.`)
+      toast.error(`Failed to sign in with ${identityProviderLabel(provider)}. Please try again.`)
     }
   }
 
@@ -271,6 +292,7 @@ export function LoginForm({
   return (
     <Form {...form}>
       <form
+        method="post"
         onSubmit={form.handleSubmit(onSubmit)}
         className={cn('grid gap-3', className)}
         {...props}
@@ -281,7 +303,7 @@ export function LoginForm({
           name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>{t('auth.login.email', 'Email')}</FormLabel>
               <FormControl>
                 <Input
                   placeholder="name@example.com"
@@ -302,10 +324,10 @@ export function LoginForm({
           name="password"
           render={({ field }) => (
             <FormItem className="relative">
-              <FormLabel>Password</FormLabel>
+              <FormLabel>{t('auth.login.password', 'Password')}</FormLabel>
               <FormControl>
                 <PasswordInput
-                  placeholder="Enter your password"
+                  placeholder={t('auth.login.passwordPlaceholder', 'Enter your password')}
                   autoComplete="current-password"
                   disabled={isLoading}
                   {...field}
@@ -340,7 +362,9 @@ export function LoginForm({
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">Or continue with</span>
+                <span className="bg-background text-muted-foreground px-2">
+                  {t('auth.login.orContinueWith', 'Or continue with')}
+                </span>
               </div>
             </div>
 
@@ -372,7 +396,7 @@ export function LoginForm({
         )}
 
         {/* SSO Providers (when ?org= parameter is present) */}
-        {orgSlug && ssoProviders && ssoProviders.length > 0 && (
+        {ssoOrg && ssoProviders && ssoProviders.length > 0 && (
           <>
             <div className="relative my-2">
               <div className="absolute inset-0 flex items-center">

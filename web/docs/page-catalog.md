@@ -22,10 +22,10 @@ plus top-level `insights/`, `findings/`, `reports/`, `settings/`, `account/`,
 Grouped by CTEM stage in `src/config/sidebar-data.ts`:
 
 - **Dashboard** — `/`
-- **Scoping** (docs/ui/scoping-ia-2026-10.md) — Overview (`/scoping`, the
-  readiness hub; the section header opens it), Cycles (`/cycles`, detail
+- **Scoping** — Overview (`/scoping`, the
+  readiness hub, its first row; the section header only expands), Cycles (`/cycles`, detail
   `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
-  Boundaries (`/scope-config`: Targets · Exclusions), Threat model (tabs
+  Scope (`/scope`: Targets · Exclusions · Seeds), Threat model (tabs
   Threats · Attacker profiles).
 - **Discovery** — Scans, Sensors, Attack surface (+ external), Assets (one row;
   tabs Inventory · Groups · What changed · Suggestions), Exposures (one row; its
@@ -60,9 +60,10 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 
 ## 2. Reachable, intentionally NOT in the sidebar (not orphaned)
 
-- **Asset types (~30)** `/assets/<type>` (hosts, domains, certificates, containers,
-  cloud-accounts, iam-users, repositories, …) plus `/assets/all` and
-  `/assets/duplicates` → reached from the **/assets** hub cards + `?type=` filter.
+- **Asset types** are filters of the one inventory, never pages: `/assets?types=host`,
+  `/assets?types=identity&sub_type=iam_user` (registry-driven typed mode).
+  `/assets/duplicates` and every asset at `/assets/{id}` (a repository opens its workspace there) →
+  reached from the **/assets** hub and its rows.
 - **Exposures / Components sub-views** `/exposures/{vulnerabilities,misconfigurations,secrets,code}`
   (the Exposures section tabs, `EXPOSURES_SECTION_TABS`) and `/components/{all,vulnerable,ecosystems,licenses,sbom-export}`
   → reached from the parent page's tabs/cards.
@@ -73,17 +74,12 @@ That is now wrong. Each is sidebar-linked and backed by a real, domain-scoped ho
 - **Detail / new / edit** `[id]`, `/new`, `/edit`, `/notifications` → reached from
   their list pages / notification bell.
 
-## 3. Genuine scaffolds — dashboard-total only, NOT sidebar-linked
+## 3. Genuine scaffolds — none left
 
-Only three pages remain that render `useDashboardStats` totals under a domain title
-with no domain-scoped data source of their own. They are intentionally **not** in
-the sidebar, so they mislead no one; keep the route and either build the feature or
-replace with `ComingSoonPage`.
-
-- `/progress` — `useDashboardStats` only.
-- `/trending` — `useDashboardStats` (has one generic `useSWR` fetch but is still
-  dashboard-total heavy).
-- `/insights/analytics/mttr` — `useDashboardStats` + `useMTTRMetrics`.
+The last pages that rendered `useDashboardStats` totals under a domain title
+(`/progress`, `/trending`, `/insights/analytics/mttr`, `/simulation/scenarios`)
+were deleted and redirect to the real page for the same
+question (`LEGACY_ORPHAN_ROUTE_REDIRECTS` in `src/config/legacy-routes.ts`).
 
 The wide "hidden placeholder" clusters listed in older revisions
 (`/collaboration/*`, `/response/*`, `/threats/*`, `/identity/*`,

@@ -1,142 +1,22 @@
 /**
- * WebSocket Hook
+ * WebSocket channel hooks
  *
- * A React hook for managing WebSocket connections with automatic
- * reconnection, subscription management, and state tracking.
+ * Subscribe components to real-time channels on the global connection, which
+ * WebSocketProvider owns (authentication, reconnection, session binding).
  */
 
 'use client'
 
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { devLog } from '@/lib/logger'
 import {
   WebSocketClient,
-  initWebSocketClient,
-  destroyWebSocketClient,
   getWebSocketClient,
-  type ConnectionState,
   type ChannelType,
   makeChannel,
   userChannelId,
 } from '@/lib/websocket'
 import { useWebSocket } from '@/context/websocket-provider'
-import { env } from '@/lib/env'
-
-// ============================================
-// TYPES
-// ============================================
-
-interface UseWebSocketOptions {
-  /** Whether to auto-connect on mount (default: true) */
-  autoConnect?: boolean
-  /** Authentication token */
-  token?: string
-  /** Callback when connection state changes */
-  onStateChange?: (state: ConnectionState) => void
-  /** Callback when an error occurs */
-  onError?: (error: Error) => void
-}
-
-interface UseWebSocketReturn {
-  /** Current connection state */
-  state: ConnectionState
-  /** Whether currently connected */
-  isConnected: boolean
-  /** Connect to WebSocket server */
-  connect: () => void
-  /** Disconnect from WebSocket server */
-  disconnect: () => void
-  /** Subscribe to a channel */
-  subscribe: <T = unknown>(channel: string, callback: (data: T) => void) => Promise<void>
-  /** Unsubscribe from a channel */
-  unsubscribe: (channel: string, callback?: (data: unknown) => void) => Promise<void>
-  /** Update authentication token */
-  updateToken: (token: string) => void
-}
-
-// ============================================
-// WEBSOCKET PROVIDER HOOK
-// ============================================
-
-/**
- * Hook to manage the global WebSocket connection.
- * Should be called once at the app level (e.g., in providers.tsx).
- */
-export function useWebSocketProvider(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const { autoConnect = true, token, onStateChange, onError } = options
-
-  const [state, setState] = useState<ConnectionState>('disconnected')
-  const clientRef = useRef<WebSocketClient | null>(null)
-
-  // Build WebSocket URL
-  const wsUrl = useMemo(() => {
-    if (typeof window === 'undefined') return ''
-
-    // Use WebSocket base URL (direct backend connection bypassing proxy)
-    // Or fall back to window origin
-    const apiBaseUrl = env.api.wsBaseUrl || window.location.origin
-    const wsProtocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws'
-    const wsHost = apiBaseUrl.replace(/^https?:\/\//, '')
-    return `${wsProtocol}://${wsHost}/api/v1/ws`
-  }, [])
-
-  // Initialize client
-  useEffect(() => {
-    if (!wsUrl) return
-
-    clientRef.current = initWebSocketClient({
-      url: wsUrl,
-      token,
-      onStateChange: (newState) => {
-        setState(newState)
-        onStateChange?.(newState)
-      },
-      onError,
-    })
-
-    if (autoConnect && token) {
-      clientRef.current.connect()
-    }
-
-    return () => {
-      destroyWebSocketClient()
-    }
-  }, [wsUrl, token, autoConnect, onStateChange, onError])
-
-  // Connection methods
-  const connect = useCallback(() => {
-    clientRef.current?.connect()
-  }, [])
-
-  const disconnect = useCallback(() => {
-    clientRef.current?.disconnect()
-  }, [])
-
-  const subscribe = useCallback(
-    async <T = unknown>(channel: string, callback: (data: T) => void) => {
-      await clientRef.current?.subscribe(channel, callback)
-    },
-    []
-  )
-
-  const unsubscribe = useCallback(async (channel: string, callback?: (data: unknown) => void) => {
-    await clientRef.current?.unsubscribe(channel, callback)
-  }, [])
-
-  const updateToken = useCallback((newToken: string) => {
-    clientRef.current?.updateToken(newToken)
-  }, [])
-
-  return {
-    state,
-    isConnected: state === 'connected',
-    connect,
-    disconnect,
-    subscribe,
-    unsubscribe,
-    updateToken,
-  }
-}
 
 // ============================================
 // CHANNEL SUBSCRIPTION HOOK
@@ -280,6 +160,57 @@ export function useScanChannel<T = unknown>(
     channelId: scanId,
     ...options,
   })
+}
+
+/**
+ * Subscribe to the run:{id} channel of every run in `runIds` (the live runs
+ * of a list) and call `onChange` on any of their change notices. Returns true
+ * while every one of them is subscribed: the list may then stop polling for
+ * them and rely on the notices; while it is false (socket down, a subscription
+ * refused) it keeps polling as the fallback.
+ *
+ * The server checks each subscription like a read of that run (tenant, and
+ * findings:read plus data scope for a run about a finding); a notice carries
+ * only the run id, and the list re-reads through the gated endpoints.
+ */
+export function useRunChannels(runIds: string[], onChange: () => void): boolean {
+  const { isConnected } = useWebSocket()
+  const [subscribed, setSubscribed] = useState<string>('')
+  const callbackRef = useRef(onChange)
+  useEffect(() => {
+    callbackRef.current = onChange
+  }, [onChange])
+
+  const idsKey = [...new Set(runIds)].sort().join(',')
+
+  useEffect(() => {
+    if (!idsKey || !isConnected) return
+    let client: WebSocketClient | null = null
+    try {
+      client = getWebSocketClient()
+    } catch {
+      return
+    }
+    if (!client) return
+    const channels = idsKey.split(',').map((id) => makeChannel('run', id))
+    const handler = () => callbackRef.current?.()
+    let cancelled = false
+    Promise.all(channels.map((c) => client!.subscribe(c, handler)))
+      .then(() => {
+        if (!cancelled) setSubscribed(idsKey)
+      })
+      .catch((error) => {
+        devLog.error('[useRunChannels] Subscribe error:', error)
+        if (!cancelled) setSubscribed('')
+      })
+    return () => {
+      cancelled = true
+      setSubscribed('')
+      for (const c of channels) client?.unsubscribe(c, handler).catch(() => {})
+    }
+  }, [idsKey, isConnected])
+
+  return isConnected && idsKey !== '' && subscribed === idsKey
 }
 
 /**

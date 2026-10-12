@@ -14,6 +14,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Form,
@@ -76,7 +78,7 @@ export function CloneScanProfileDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Copy className="h-5 w-5" />
@@ -88,20 +90,22 @@ export function CloneScanProfileDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="new_name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>New Profile Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter a name for the cloned profile" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <DialogForm onSubmit={form.handleSubmit(onSubmit)}>
+            <DialogBody className="space-y-4">
+              <FormField
+                control={form.control}
+                name="new_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>New Profile Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter a name for the cloned profile" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </DialogBody>
 
             <DialogFooter>
               <Button
@@ -117,7 +121,7 @@ export function CloneScanProfileDialog({
                 Clone Profile
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </Form>
       </DialogContent>
     </Dialog>

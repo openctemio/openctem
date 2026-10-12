@@ -81,7 +81,15 @@ export function TeamSwitcher() {
   // The organizations to list. If the API returned none but we know the
   // current one (from the cookie), list that.
   const organizations = React.useMemo<OrgCardOrganization[]>(() => {
-    if (tenants.length > 0) return tenants.map((o) => ({ id: o.id, name: o.name, role: o.role }))
+    if (tenants.length > 0)
+      return tenants.map((o) => ({
+        id: o.id,
+        name: o.name,
+        role: o.role,
+        external: o.kind === 'external',
+        accessExpiresAt: o.access_expires_at,
+        blockedReason: o.blocked_reason,
+      }))
     if (currentTenant) {
       return [
         {
@@ -124,7 +132,7 @@ export function TeamSwitcher() {
       const match = event.code.match(/^Digit([1-9])$/)
       if (!match) return
       const index = parseInt(match[1], 10) - 1
-      if (index < organizations.length) {
+      if (index < organizations.length && !organizations[index].blockedReason) {
         event.preventDefault()
         handleSelect(organizations[index].id)
       }

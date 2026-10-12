@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted, implemented |
 | Repos | sdk-go, sensor, api (migration 000241), ui, helm-charts, docs |
-| Upgrade notes | [docs: Upgrading gitleaks → Betterleaks](https://github.com/openctemio/docs/blob/main/operations/upgrade-gitleaks-to-betterleaks.md) |
+| Upgrade notes | [docs: Upgrading gitleaks → Betterleaks](https://github.com/openctemio/docs/blob/2d04e895f4233d502fa63976f8b9f32971c64147/operations/upgrade-gitleaks-to-betterleaks.md) |
 | Architecture | [secret-scanning.md](../architecture/secret-scanning.md) |
 
 ## 1. Decision

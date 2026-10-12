@@ -31,7 +31,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	appjira "github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
@@ -254,20 +253,20 @@ func (r *fakeFindingByIDReader) GetByID(_ context.Context, _, _ shared.ID) (*vul
 }
 
 type fakeRescanRequester struct {
-	calls      int32
-	lastInput  app.RequestVerificationScanInput
-	lastTenant string
-	returnErr  error
+	calls       int32
+	lastFinding shared.ID
+	lastTenant  shared.ID
+	returnErr   error
 }
 
-func (r *fakeRescanRequester) RequestVerificationScan(_ context.Context, tenantID, _ string, input app.RequestVerificationScanInput) (*app.RequestVerificationScanResult, error) {
+func (r *fakeRescanRequester) ValidateFinding(_ context.Context, tenantID, findingID shared.ID) (shared.ID, error) {
 	atomic.AddInt32(&r.calls, 1)
-	r.lastInput = input
+	r.lastFinding = findingID
 	r.lastTenant = tenantID
 	if r.returnErr != nil {
-		return nil, r.returnErr
+		return shared.ID{}, r.returnErr
 	}
-	return &app.RequestVerificationScanResult{FindingID: input.FindingID}, nil
+	return shared.NewID(), nil
 }
 
 // TestCTEM_B3_JiraDoneTriggersRescan wires the Jira sync-service hook to
@@ -308,13 +307,10 @@ func TestCTEM_B3_JiraDoneTriggersRescan(t *testing.T) {
 	if atomic.LoadInt32(&requester.calls) != 1 {
 		t.Fatalf("rescan requester calls = %d, want 1", requester.calls)
 	}
-	if requester.lastInput.ScannerName != "trivy" {
-		t.Fatalf("scanner name = %q, want trivy (derived from finding.tool_name)", requester.lastInput.ScannerName)
+	if requester.lastFinding != f.ID() {
+		t.Fatalf("finding id mismatch: got %s, want %s", requester.lastFinding, f.ID())
 	}
-	if requester.lastInput.FindingID != f.ID().String() {
-		t.Fatalf("finding id mismatch: got %s, want %s", requester.lastInput.FindingID, f.ID())
-	}
-	if requester.lastTenant != tenantID.String() {
+	if requester.lastTenant != tenantID {
 		t.Fatalf("tenant id mismatch: got %s, want %s", requester.lastTenant, tenantID)
 	}
 }

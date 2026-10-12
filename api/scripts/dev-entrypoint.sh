@@ -57,18 +57,11 @@ main() {
     # Clean old binary to ensure fresh build
     rm -rf /app/tmp/openctem 2>/dev/null || true
 
-    # Create go.work for local SDK development
-    if [ -d "/app/sdk-go" ]; then
-        echo "Creating go.work for local SDK..."
-        cat > /app/go.work <<GOWORK
-go $(grep '^go ' /app/go.mod | awk '{print $2}')
-
-use (
-	.
-	./sdk-go
-)
-GOWORK
-    fi
+    # Build from the go.mod pins only, exactly like CI and the release image
+    # (both run with GOWORK=off). The API needs one SDK module,
+    # github.com/openctemio/sdk-go/pkg/transfer, resolved from its tag; a
+    # mounted SDK checkout or a stale go.work in the source mount is ignored.
+    export GOWORK=off
 
     # Ensure go dependencies are in sync
     echo "Syncing Go dependencies..."

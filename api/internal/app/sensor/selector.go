@@ -52,7 +52,7 @@ type SensorSelector struct {
 
 	// weights drive selectLeastLoaded's scoring. Defaults to the compiled-in
 	// weight set; SetLoadBalancingWeights installs the operator-configured
-	// AGENT_LB_* values at boot.
+	// SENSOR_LB_* values at boot.
 	weights sensordom.LoadBalancingWeights
 }
 
@@ -73,7 +73,7 @@ func NewSensorSelector(
 }
 
 // SetLoadBalancingWeights installs the operator-configured load-balancing
-// weights (AGENT_LB_*). Call once at boot, before the selector serves traffic.
+// weights (SENSOR_LB_*). Call once at boot, before the selector serves traffic.
 // An all-zero weight set is ignored — it would score every sensor at 0 and make
 // selection arbitrary.
 func (s *SensorSelector) SetLoadBalancingWeights(w sensordom.LoadBalancingWeights) {
@@ -149,7 +149,7 @@ func (s *SensorSelector) selectTenantSensor(ctx context.Context, req SelectSenso
 //
 // The score is the same formula the sensor's persisted load_score column uses
 // (Sensor.ComputeLoadScoreWithWeights), evaluated with the deployment's
-// AGENT_LB_* weights. Scoring here rather than reading load_score keeps the
+// SENSOR_LB_* weights. Scoring here rather than reading load_score keeps the
 // decision consistent even for rows written before the weights changed.
 //
 // Sensors at or above their concurrency limit are skipped, matching the

@@ -45,9 +45,9 @@ func TestGet_ReleaseLdflags(t *testing.T) {
 }
 
 func TestGet_DevLdflags(t *testing.T) {
-	resetFallback(t, "v0.8.0-dev", "4d2f4b0", "")
+	resetFallback(t, "v0.8.0-dev+4d2f4b0", "4d2f4b0", "")
 	got := Get()
-	if got.Version != "v0.8.0-dev" || got.Commit != "4d2f4b0" || got.Channel != ChannelDevelopment {
+	if got.Version != "v0.8.0-dev+4d2f4b0" || got.Commit != "4d2f4b0" || got.Channel != ChannelDev {
 		t.Fatalf("Get() = %+v", got)
 	}
 }
@@ -61,7 +61,7 @@ func TestGet_NoLdflagsFallsBackToCheckout(t *testing.T) {
 
 	resetFallback(t, "", "", "")
 	got := Get()
-	want := Info{Version: "v0.8.0-dev", Commit: "4d2f4b02", Channel: ChannelDevelopment}
+	want := Info{Version: "v0.8.0-dev+4d2f4b02", Commit: "4d2f4b02", Channel: ChannelDev}
 	if got != want {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
@@ -71,7 +71,7 @@ func TestGet_NoLdflagsNoGit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	resetFallback(t, "", "", "")
 	got := Get()
-	want := Info{Version: DevVersion, Commit: UnknownCommit, Channel: ChannelDevelopment}
+	want := Info{Version: DevVersion, Commit: UnknownCommit, Channel: ChannelDev}
 	if got != want {
 		t.Fatalf("Get() = %+v, want %+v", got, want)
 	}
@@ -79,17 +79,39 @@ func TestGet_NoLdflagsNoGit(t *testing.T) {
 
 func TestChannelOf(t *testing.T) {
 	cases := map[string]string{
-		"v0.9.0":         ChannelRelease,
-		"v1.2.3-rc.1":    ChannelRelease,
-		"v0.9.0-staging": ChannelRelease,
-		"v0.8.0-dev":     ChannelDevelopment,
-		"dev":            ChannelDevelopment,
-		"":               ChannelDevelopment,
-		"main":           ChannelDevelopment,
+		"v0.9.0":              ChannelRelease,
+		"0.9.0":               ChannelRelease,
+		"v1.2.3-rc.1":         ChannelRC,
+		"v0.9.0-staging":      ChannelRC,
+		"v0.8.0-dev":          ChannelDev,
+		"v0.8.0-dev+4d2f4b02": ChannelDev,
+		"v0.8.0-dev.3":        ChannelDev,
+		"v0.8.0-devel":        ChannelDev,
+		"dev":                 ChannelDev,
+		"":                    ChannelDev,
+		"main":                ChannelDev,
 	}
 	for v, want := range cases {
 		if got := channelOf(v); got != want {
 			t.Errorf("channelOf(%q) = %q, want %q", v, got, want)
+		}
+	}
+}
+
+func TestDevBuildVersion(t *testing.T) {
+	cases := []struct{ tag, commit, want string }{
+		{"v0.8.0", shaA, "v0.8.0-dev+4d2f4b02"},
+		{"v0.8.0", "ABCDEF12", "v0.8.0-dev+abcdef12"},
+		{"v0.8.0", "", "v0.8.0-dev"},
+		{"v0.8.0", UnknownCommit, "v0.8.0-dev"},
+		{"", shaA, "v0.0.0-dev+4d2f4b02"},
+	}
+	for _, c := range cases {
+		if got := DevBuildVersion(c.tag, c.commit); got != c.want {
+			t.Errorf("DevBuildVersion(%q, %q) = %q, want %q", c.tag, c.commit, got, c.want)
+		}
+		if ch := channelOf(DevBuildVersion(c.tag, c.commit)); ch != ChannelDev {
+			t.Errorf("channel of %q = %q, want dev", DevBuildVersion(c.tag, c.commit), ch)
 		}
 	}
 }

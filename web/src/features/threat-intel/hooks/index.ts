@@ -14,6 +14,5 @@ export {
   useKEVStats,
   // Enrichment
   enrichCVE,
-  enrichCVEs,
   useCVEEnrichment,
 } from './use-threat-intel'

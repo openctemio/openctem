@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,8 +44,10 @@ func NewBreachOutboxAdapter(outbox NotificationEnqueuer) *BreachOutboxAdapter {
 // Publish enqueues a single breach notification. Implements
 // controller.SLABreachPublisher.
 //
-// Severity is fixed at "high" — SLA breach is always notable; channels
-// can still filter it out via their integration config.
+// Severity is max(high, finding severity): a breach is always at least
+// "high", so a default critical+high channel receives every breach, and a
+// critical finding's breach is "critical", so it also reaches critical-only
+// channels.
 func (a *BreachOutboxAdapter) Publish(ctx context.Context, event controller.SLABreachEvent) error {
 	if a == nil || a.outbox == nil {
 		return nil // misconfigured → silent no-op, escalation is advisory
@@ -162,7 +165,7 @@ func buildBreachParams(event controller.SLABreachEvent) (outbox.EnqueueParams, e
 			overdue,
 			event.At.UTC().Format(time.RFC3339),
 		),
-		Severity: "high",
+		Severity: breachSeverity(event.FindingSeverity),
 		Metadata: map[string]any{
 			"finding_id":        event.FindingID.String(),
 			"sla_deadline":      event.SLADeadline.UTC().Format(time.RFC3339),
@@ -172,4 +175,13 @@ func buildBreachParams(event controller.SLABreachEvent) (outbox.EnqueueParams, e
 			"escalation_source": "sla_escalation_controller",
 		},
 	}, nil
+}
+
+// breachSeverity is max(high, finding severity). Only "critical" outranks
+// "high"; anything else (including an unknown or empty value) is "high".
+func breachSeverity(findingSeverity string) string {
+	if strings.EqualFold(strings.TrimSpace(findingSeverity), "critical") {
+		return "critical"
+	}
+	return "high"
 }

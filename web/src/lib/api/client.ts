@@ -5,13 +5,17 @@
  * Automatically injects auth headers and handles errors
  */
 
-import { useAuthStore } from '@/stores/auth-store'
+import { endSessionAndSignIn, useAuthStore } from '@/stores/auth-store'
 import type { ApiError, ApiRequestOptions, ApiResponse } from './types'
 import { ApiClientError } from './error-handler'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
+import { isStepUpRequired, requestStepUp } from './step-up'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
 import { devLog } from '@/lib/logger'
+import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
+import { coalesceGet } from './request-dedupe'
+import { readCsrfCookie } from '@/lib/csrf-client'
 
 // ============================================
 // CONFIGURATION
@@ -25,21 +29,12 @@ function isServer(): boolean {
 }
 
 /**
- * Read the csrf_token cookie from the browser. The backend sets this
- * at login with HttpOnly=false expressly so client JS can read it;
- * the value is re-sent in the X-CSRF-Token header on mutations under
- * the double-submit-cookie pattern. See api/internal/infra/http/
- * middleware/csrf.go for the validator.
- *
- * Returns empty string on the server (cookies access goes through
- * next/headers there, not document.cookie) or when the cookie is
- * absent (pre-login, anonymous routes).
+ * The JS-readable csrf_token cookie (set on every page by src/proxy.ts and
+ * rotated by the API at login), re-sent in X-CSRF-Token on mutations under
+ * the double-submit-cookie pattern; see src/lib/server-auth-cookies.ts.
+ * Empty on the server or when the cookie is absent.
  */
-function readCSRFToken(): string {
-  if (isServer()) return ''
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : ''
-}
+const readCSRFToken = readCsrfCookie
 
 /**
  * CSRF-aware drop-in replacement for `fetch`, for the handful of call sites
@@ -133,14 +128,18 @@ async function tryRefreshToken(): Promise<boolean> {
     return refreshPromise
   }
 
-  // Create a new refresh promise
+  // Create a new refresh promise. The cross-tab lock keeps two tabs from
+  // spending the same rotating refresh token at once (reuse revokes the
+  // whole token family).
   refreshPromise = (async () => {
     try {
       devLog.log('[API Client] Starting token refresh...')
-      const response = await csrfFetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-      })
+      const response = await withAuthRefreshLock(() =>
+        csrfFetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+        })
+      )
 
       const data = await response.json()
 
@@ -165,6 +164,17 @@ async function tryRefreshToken(): Promise<boolean> {
   })()
 
   return refreshPromise
+}
+
+/**
+ * Refreshes the session (access-token cookie) once, shared with the REST
+ * client's 401 handling: concurrent callers in a tab share one refresh, and
+ * tabs take turns (withAuthRefreshLock). The WebSocket client calls it when a
+ * reconnect after a 4401 close fails (RFC-045). Resolves false when the
+ * session cannot be refreshed.
+ */
+export function refreshSession(): Promise<boolean> {
+  return tryRefreshToken()
 }
 
 /**
@@ -195,9 +205,11 @@ function redirectToLoginOnce(): void {
   useAuthStore.getState().clearAuth()
 
   // Delay redirect slightly to allow other in-flight requests to see the lock
-  // This prevents multiple simultaneous 401 responses from racing
+  // This prevents multiple simultaneous 401 responses from racing. The
+  // session cookies are cleared before /login loads (see endSessionAndSignIn),
+  // and the user comes back to this page after signing in.
   setTimeout(() => {
-    window.location.href = '/login'
+    endSessionAndSignIn()
   }, 100)
 }
 
@@ -236,6 +248,7 @@ export async function apiClient<T = unknown>(
     timeout = DEFAULT_TIMEOUT,
     retry: _retry, // Reserved for future retry implementation
     _skipRefreshRetry = false,
+    _skipStepUpRetry = false,
     ...fetchOptions
   } = options
 
@@ -336,6 +349,15 @@ export async function apiClient<T = unknown>(
       }
 
       const error = await parseErrorResponse(response)
+
+      // A sensitive route needs a recent sign-in or step-up in this session:
+      // ask the user to re-authenticate (one shared dialog), then retry the
+      // original request once. Cancelling throws the original error.
+      if (isStepUpRequired(error) && !_skipStepUpRetry && !skipAuth && !isServer()) {
+        if (await requestStepUp()) {
+          return apiClient<T>(endpoint, { ...options, _skipStepUpRetry: true })
+        }
+      }
 
       // The organization's IP allowlist blocked this request. Replace the
       // server text with a message that says what happened, and toast once.
@@ -506,10 +528,15 @@ function isApiResponse<T>(data: unknown): data is ApiResponse<T> {
  * GET request
  */
 export async function get<T = unknown>(endpoint: string, options?: ApiRequestOptions): Promise<T> {
-  return apiClient<T>(endpoint, {
-    ...options,
-    method: 'GET',
-  })
+  const run = () =>
+    apiClient<T>(endpoint, {
+      ...options,
+      method: 'GET',
+    })
+  // Only a plain GET (no per-call headers, signal or other options) depends on
+  // the URL alone, so only that one may share an identical request in flight.
+  if (options && Object.keys(options).length > 0) return run()
+  return coalesceGet<T>(endpoint, run)
 }
 
 /**
@@ -616,6 +643,11 @@ export async function uploadFile<T = unknown>(
     if (accessToken) {
       xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`)
     }
+    // XHR does not go through the fetch wrapper (src/lib/csrf-client.ts).
+    const csrfToken = readCSRFToken()
+    if (csrfToken) {
+      xhr.setRequestHeader('X-CSRF-Token', csrfToken)
+    }
 
     // Progress handler
     if (onProgress) {
@@ -705,7 +737,7 @@ export function isAuthenticated(): boolean {
  * ```
  */
 export async function fetcher<T = unknown>(url: string): Promise<T> {
-  return apiClient<T>(url, { method: 'GET' })
+  return get<T>(url)
 }
 
 /**

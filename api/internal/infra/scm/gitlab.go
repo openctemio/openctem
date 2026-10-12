@@ -2,7 +2,6 @@ package scm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -155,7 +154,7 @@ func (c *GitLabClient) GetUser(ctx context.Context) (*User, error) {
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(ctx, "gitlab", resp.StatusCode, body)
 	}
 
 	var glUser struct {
@@ -166,7 +165,7 @@ func (c *GitLabClient) GetUser(ctx context.Context) (*User, error) {
 		AvatarURL string `json:"avatar_url"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&glUser); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &glUser); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -210,7 +209,7 @@ func (c *GitLabClient) ListOrganizations(ctx context.Context, opts ListOptions) 
 		AvatarURL   string `json:"avatar_url"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&glGroups); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &glGroups); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -319,11 +318,11 @@ func (c *GitLabClient) parseProjectsResponse(resp *http.Response) (*ListResult, 
 	if resp.StatusCode != http.StatusOK {
 		// SECURITY: Limit response body to 1MB to prevent memory exhaustion
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("unexpected status: %d, body: %s", resp.StatusCode, string(body))
+		return nil, httpsec.NewUpstreamStatusError(context.Background(), "gitlab", resp.StatusCode, body)
 	}
 
 	var glProjects []glProject
-	if err := json.NewDecoder(resp.Body).Decode(&glProjects); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &glProjects); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -376,7 +375,7 @@ func (c *GitLabClient) GetRepository(ctx context.Context, fullName string) (*Rep
 	}
 
 	var projectData glProject
-	if err := json.NewDecoder(resp.Body).Decode(&projectData); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &projectData); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -413,7 +412,7 @@ func (c *GitLabClient) getProjectLanguages(ctx context.Context, fullName string)
 
 	// GitLab returns languages as {"Go": 45.5, "JavaScript": 30.2} (percentages)
 	var languagePercentages map[string]float64
-	if err := json.NewDecoder(resp.Body).Decode(&languagePercentages); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &languagePercentages); err != nil {
 		return nil, fmt.Errorf("failed to decode languages: %w", err)
 	}
 
@@ -454,7 +453,7 @@ func (c *GitLabClient) getGroup(ctx context.Context, path string) (*Organization
 		ProjectCount int    `json:"projects_count"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&glGroup); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &glGroup); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -489,7 +488,7 @@ func (c *GitLabClient) getUserNamespace(ctx context.Context, username string) (*
 		AvatarURL string `json:"avatar_url"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+	if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &users); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -631,7 +630,7 @@ func (c *GitLabClient) ListBranches(ctx context.Context, fullName string, opts L
 				ID string `json:"id"`
 			} `json:"commit"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&pageData); err != nil {
+		if err := httpsec.DecodeJSON(resp.Body, httpsec.MaxResponseBytes, &pageData); err != nil {
 			resp.Body.Close()
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}

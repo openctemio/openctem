@@ -5,6 +5,8 @@
  * API endpoint: /api/v1/audit-logs
  */
 
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
+
 // ============================================
 // VALUE OBJECTS
 // ============================================
@@ -12,7 +14,7 @@
 // ----------------------------------------------------------------------------
 // Sensor events before and after the sensor rename
 //
-// RFC-023 §9.5 (openctemio/api, docs/rfcs/RFC-023-sensor-rename-contract.md §5).
+// RFC-023 §9.5 (api/docs/rfcs/RFC-023-sensor-rename-contract.md §5).
 // New events are sensor.* on resource type "sensor" with sensor_* metadata.
 // Rows written before the upgrade keep the old action prefix, resource type and
 // metadata keys (the HISTORICAL_SENSOR_* constants below) for good:
@@ -30,7 +32,10 @@ export const SENSOR_AUDIT_VERBS = [
   'revoked',
   'key_regenerated',
   'key_renewed',
+  'key_renewal_refused',
   'identity_cloned',
+  'job_refused_local_policy',
+  'commands_released',
   'connected',
   'disconnected',
 ] as const
@@ -118,6 +123,7 @@ export type AuditAction =
   | 'finding.unassigned'
   | 'finding.commented'
   | 'finding.bulk_updated'
+  | 'finding.duplicate_marked'
   // Branch actions
   | 'branch.created'
   | 'branch.updated'
@@ -128,6 +134,9 @@ export type AuditAction =
   | 'sla_policy.created'
   | 'sla_policy.updated'
   | 'sla_policy.deleted'
+  | 'saved_view.created'
+  | 'saved_view.updated'
+  | 'saved_view.deleted'
   // Scan actions
   | 'scan.started'
   | 'scan.completed'
@@ -150,6 +159,67 @@ export type AuditAction =
   | 'scan_zone.deleted'
   | 'scan_zone.sensor_assigned'
   | 'scan_zone.sensor_unassigned'
+  // Scope, tool and scanner template changes (RFC-040)
+  | 'scope_target.created'
+  | 'scope_target.updated'
+  | 'scope_target.deleted'
+  | 'scope_target.activated'
+  | 'scope_target.deactivated'
+  | 'scope_exclusion.created'
+  | 'scope_exclusion.updated'
+  | 'scope_exclusion.deleted'
+  | 'scope_exclusion.activated'
+  | 'scope_exclusion.deactivated'
+  | 'scope_exclusion.approved'
+  | 'scope_exclusion.rejected'
+  | 'suppression_rule.approved'
+  | 'suppression_rule.self_approved'
+  | 'easm_seed.created'
+  | 'easm_seed.updated'
+  | 'easm_seed.deleted'
+  | 'report_schedule.created'
+  | 'report_schedule.activated'
+  | 'report_schedule.deleted'
+  | 'tool.created'
+  | 'tool.updated'
+  | 'tool.deleted'
+  | 'tool.activated'
+  | 'tool.deactivated'
+  | 'tool.config_updated'
+  | 'tool.config_deleted'
+  | 'scanner_template.created'
+  | 'scanner_template.updated'
+  | 'scanner_template.deprecated'
+  | 'scanner_template.deleted'
+  // Remediation campaigns (Mobilization "tasks")
+  | 'remediation_campaign.created'
+  | 'remediation_campaign.updated'
+  | 'remediation_campaign.status_changed'
+  | 'remediation_campaign.deleted'
+  // Configuration changes (audited with a before/after diff)
+  | 'invitation.resent'
+  | 'scim_token.created'
+  | 'scim_token.revoked'
+  | 'storage_config.updated'
+  | 'integration.created'
+  | 'integration.updated'
+  | 'integration.deleted'
+  | 'integration.enabled'
+  | 'integration.disabled'
+  | 'integration.credentials_changed'
+  | 'integration.webhook_secret_read'
+  | 'integration.webhook_secret_rotated'
+  | 'notification_outbox.retried'
+  | 'notification_outbox.deleted'
+  | 'priority_rule.created'
+  | 'priority_rule.updated'
+  | 'priority_rule.deleted'
+  | 'scope_rule.created'
+  | 'scope_rule.updated'
+  | 'scope_rule.deleted'
+  | 'assignment_rule.created'
+  | 'assignment_rule.updated'
+  | 'assignment_rule.deleted'
 
 /**
  * Resource types - maps to backend audit.ResourceType
@@ -166,12 +236,28 @@ export type AuditResourceType =
   | 'finding'
   | 'finding_comment'
   | 'sla_policy'
+  | 'saved_view'
   | 'scan'
   | 'asset'
   | 'settings'
   | 'token'
   | 'sensor'
   | 'scan_zone'
+  | 'scope_target'
+  | 'scope_exclusion'
+  | 'suppression_rule'
+  | 'easm_seed'
+  | 'report_schedule'
+  | 'tool'
+  | 'scanner_template'
+  | 'remediation_campaign'
+  | 'integration'
+  | 'scim_token'
+  | 'storage_config'
+  | 'notification_outbox'
+  | 'priority_rule'
+  | 'scope_rule'
+  | 'assignment_rule'
   | typeof HISTORICAL_SENSOR_RESOURCE_TYPE
 
 /**
@@ -219,153 +305,51 @@ export interface AuditLog {
 }
 
 // ============================================
-// LIST RESPONSE & FILTERS
-// ============================================
-
-/**
- * Audit log list response
- */
-export interface AuditLogListResponse {
-  items: AuditLog[]
-  total: number
-  page: number
-  page_size: number
-}
-
-/**
- * Audit log list filters
- */
-export interface AuditLogListFilters {
-  resource_type?: AuditResourceType
-  resource_id?: string
-  action?: AuditAction
-  actor_id?: string
-  result?: AuditResult
-  severity?: AuditSeverity
-  from_date?: string
-  to_date?: string
-  search?: string
-  page?: number
-  page_size?: number
-}
-
-// ============================================
-// STATS
-// ============================================
-
-/**
- * Audit log statistics
- */
-export interface AuditLogStats {
-  total_logs: number
-  logs_today: number
-  logs_this_week: number
-  logs_this_month: number
-  by_action: Record<string, number>
-  by_resource_type: Record<string, number>
-  by_result: Record<string, number>
-  by_severity: Record<string, number>
-}
-
-// ============================================
 // HELPERS
 // ============================================
 
 /**
- * Get display label for action
+ * Audit actions whose label is not just their words: the event reads better
+ * phrased differently, or the identifier uses an internal term. Every other
+ * action is labelled by `humanizeIdentifier` ("sso.change_requested" ->
+ * "SSO change requested"). Sentence case, like every console label.
  */
-export function getActionLabel(action: AuditAction): string {
-  const labels: Partial<Record<AuditAction, string>> = {
-    // User actions
-    'user.created': 'User Created',
-    'user.updated': 'User Updated',
-    'user.deleted': 'User Deleted',
-    'user.suspended': 'User Suspended',
-    'user.activated': 'User Activated',
-    'user.deactivated': 'User Deactivated',
-    'user.login': 'User Login',
-    'user.logout': 'User Logout',
-    // Tenant actions
-    'tenant.created': 'Team Created',
-    'tenant.updated': 'Team Updated',
-    'tenant.deleted': 'Team Deleted',
-    'tenant.settings_updated': 'Team Settings Updated',
-    // Membership actions
-    'member.added': 'Member Added',
-    'member.removed': 'Member Removed',
-    'member.role_changed': 'Member Role Changed',
-    // Invitation actions
-    'invitation.created': 'Invitation Created',
-    'invitation.accepted': 'Invitation Accepted',
-    'invitation.deleted': 'Invitation Deleted',
-    'invitation.expired': 'Invitation Expired',
-    // Repository actions
-    'repository.created': 'Repository Created',
-    'repository.updated': 'Repository Updated',
-    'repository.deleted': 'Repository Deleted',
-    'repository.archived': 'Repository Archived',
-    // Component actions
-    'component.created': 'Component Created',
-    'component.updated': 'Component Updated',
-    'component.deleted': 'Component Deleted',
-    // Vulnerability actions
-    'vulnerability.created': 'Vulnerability Created',
-    'vulnerability.updated': 'Vulnerability Updated',
-    'vulnerability.deleted': 'Vulnerability Deleted',
-    // Finding actions
-    'finding.created': 'Finding Created',
-    'finding.updated': 'Finding Updated',
-    'finding.deleted': 'Finding Deleted',
-    'finding.status_changed': 'Finding Status Changed',
-    'finding.triaged': 'Finding Triaged',
-    'finding.assigned': 'Finding Assigned',
-    'finding.unassigned': 'Finding Unassigned',
-    'finding.commented': 'Finding Commented',
-    'finding.bulk_updated': 'Findings Bulk Updated',
-    // Branch actions
-    'branch.created': 'Branch Created',
-    'branch.updated': 'Branch Updated',
-    'branch.deleted': 'Branch Deleted',
-    'branch.scanned': 'Branch Scanned',
-    'branch.set_default': 'Default Branch Set',
-    // SLA Policy actions
-    'sla_policy.created': 'SLA Policy Created',
-    'sla_policy.updated': 'SLA Policy Updated',
-    'sla_policy.deleted': 'SLA Policy Deleted',
-    // Scan actions
-    'scan.started': 'Scan Started',
-    'scan.completed': 'Scan Completed',
-    'scan.failed': 'Scan Failed',
-    // Security actions
-    'auth.failed': 'Authentication Failed',
-    'permission.denied': 'Permission Denied',
-    'token.revoked': 'Token Revoked',
-    // Settings actions
-    'settings.updated': 'Settings Updated',
-    // Data actions
-    'data.exported': 'Data Exported',
-    'data.imported': 'Data Imported',
-    // Sensor actions (pre-rename rows are mapped onto these first)
-    'sensor.created': 'Sensor Created',
-    'sensor.updated': 'Sensor Updated',
-    'sensor.deleted': 'Sensor Deleted',
-    'sensor.activated': 'Sensor Activated',
-    'sensor.deactivated': 'Sensor Deactivated',
-    'sensor.revoked': 'Sensor Revoked',
-    'sensor.key_regenerated': 'Sensor API Key Regenerated',
-    'sensor.key_renewed': 'Sensor API Key Renewed',
-    'sensor.identity_cloned': 'Sensor Key Used by Two Processes',
-    'sensor.connected': 'Sensor Connected',
-    'sensor.disconnected': 'Sensor Disconnected',
-    // Scan zone actions
-    'scan_zone.created': 'Scan Zone Created',
-    'scan_zone.updated': 'Scan Zone Updated',
-    'scan_zone.deleted': 'Scan Zone Deleted',
-    'scan_zone.sensor_assigned': 'Sensor Assigned to Scan Zone',
-    'scan_zone.sensor_unassigned': 'Sensor Unassigned from Scan Zone',
-  }
+const ACTION_LABEL_OVERRIDES: Record<string, string> = {
+  'auth.failed': 'Authentication failed',
+  'finding.bulk_updated': 'Findings bulk updated',
+  'finding.duplicate_marked': 'Finding marked duplicate',
+  'branch.set_default': 'Default branch set',
+  'sensor.key_regenerated': 'Sensor API key regenerated',
+  'sensor.key_renewed': 'Sensor API key renewed',
+  'sensor.key_renewal_refused': 'Sensor API key renewal refused',
+  'sensor.identity_cloned': 'Sensor key used by two processes',
+  'sensor.job_refused_local_policy': 'Sensor refused a job (local policy)',
+  // Revoking or disabling a sensor re-queues or fails the jobs it held
+  'sensor.commands_released': 'Sensor jobs taken back (revoked or disabled)',
+  'scan_zone.sensor_assigned': 'Sensor assigned to scan zone',
+  'scan_zone.sensor_unassigned': 'Sensor unassigned from scan zone',
+  'scope_exclusion.created': 'Scope exclusion requested',
+  'suppression_rule.self_approved': 'Suppression rule self-approved by owner',
+  'easm_seed.created': 'EASM seed added',
+  'easm_seed.updated': 'EASM seed changed',
+  'easm_seed.deleted': 'EASM seed removed',
+  'tool.config_updated': 'Tool configuration updated',
+  'tool.config_deleted': 'Tool configuration reset',
+  'storage_config.updated': 'Evidence storage changed',
+  'integration.webhook_secret_read': 'Webhook secret viewed',
+  'integration.webhook_secret_rotated': 'Webhook secret rotated',
+  'notification_outbox.retried': 'Notification retried',
+  'notification_outbox.deleted': 'Notification deleted',
+}
+
+/**
+ * Display label for an audit action, the one used wherever an action is
+ * shown (audit log, account activity, sensor activity). A sensor event
+ * written before the sensor rename reads the same as a new one.
+ */
+export function getActionLabel(action: AuditAction | string): string {
   const canonical = canonicalAuditAction(action)
-  return labels[canonical] || action
+  return ACTION_LABEL_OVERRIDES[canonical] ?? humanizeIdentifier(canonical)
 }
 
 /**

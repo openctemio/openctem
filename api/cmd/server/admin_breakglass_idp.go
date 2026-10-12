@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
@@ -31,7 +31,7 @@ func newPlatformIdPClient() *oidc.Client {
 // console service always writes the WARN line with alert=break_glass_sign_in,
 // so alerting works from logs when SMTP is not configured.
 type breakGlassMailer struct {
-	email   *app.EmailService
+	email   *auth.EmailService
 	appName string
 	log     *logger.Logger
 }

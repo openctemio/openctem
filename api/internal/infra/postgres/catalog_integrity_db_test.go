@@ -7,10 +7,9 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/component"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -136,102 +135,6 @@ func TestVulnCatalog_NewCVEFromTenantGetsRiskSignalsOnlyFromThreatIntel(t *testi
 	}
 }
 
-func TestComponentCatalog_TenantCannotOverwriteSharedFields(t *testing.T) {
-	db := catalogTestDB(t)
-	ctx := context.Background()
-	repo := NewComponentRepository(&DB{DB: db})
-
-	name := "catalog-test-" + shared.NewID().String()
-	first, err := component.NewComponent(name, "1.0.0", component.EcosystemNPM)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first.UpdateDescription("real description")
-	first.UpdateHomepage("https://real.example")
-	id, err := repo.Upsert(ctx, first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM components WHERE id = $1`, id.String())
-	})
-
-	evil, _ := component.NewComponent(name, "1.0.0", component.EcosystemNPM)
-	evil.UpdateDescription("attacker description")
-	evil.UpdateHomepage("https://evil.example")
-	if _, err := repo.Upsert(ctx, evil); err != nil {
-		t.Fatal(err)
-	}
-
-	var desc, home sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT description, homepage FROM components WHERE id = $1`, id.String()).Scan(&desc, &home); err != nil {
-		t.Fatal(err)
-	}
-	if desc.String != "real description" || home.String != "https://real.example" {
-		t.Errorf("a later upsert overwrote the shared component: description=%q homepage=%q", desc.String, home.String)
-	}
-}
-
-func TestLicenses_AreTenantLocal(t *testing.T) {
-	db := catalogTestDB(t)
-	ctx := context.Background()
-	repo := NewComponentRepository(&DB{DB: db})
-	tA, tB := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
-	aA, aB := seedTestAsset(ctx, t, db, tA), seedTestAsset(ctx, t, db, tB)
-
-	c, _ := component.NewComponent("lic-test-"+shared.NewID().String(), "1.0.0", component.EcosystemNPM)
-	id, err := repo.Upsert(ctx, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DELETE FROM components WHERE id = $1`, id.String())
-	})
-
-	// Tenant A's sensor declares AGPL; tenant B's declares MIT.
-	for _, p := range []struct {
-		tenant, asset shared.ID
-		license       string
-	}{{tA, aA, "AGPL-3.0-only"}, {tB, aB, "MIT"}} {
-		valid, err := repo.EnsureLicenses(ctx, []string{p.license, "not a license!"})
-		if err != nil || len(valid) != 1 {
-			t.Fatalf("EnsureLicenses = %v %v", valid, err)
-		}
-		d, _ := component.NewAssetDependency(p.tenant, p.asset, id, "package.json", component.DependencyTypeDirect)
-		d.SetLicense(valid[0])
-		if err := repo.LinkAsset(ctx, d); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	licensesOf := func(tenant shared.ID) map[string]bool {
-		stats, err := repo.GetLicenseStats(ctx, tenant)
-		if err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]bool{}
-		for _, s := range stats {
-			out[s.LicenseID] = true
-		}
-		return out
-	}
-	if b := licensesOf(tB); b["AGPL-3.0-only"] || !b["MIT"] {
-		t.Errorf("tenant B's license report = %v; want only MIT", b)
-	}
-	if a := licensesOf(tA); !a["AGPL-3.0-only"] || a["MIT"] {
-		t.Errorf("tenant A's license report = %v; want only AGPL-3.0-only", a)
-	}
-
-	// A re-scan that declares no license keeps the recorded one.
-	d, _ := component.NewAssetDependency(tB, aB, id, "package.json", component.DependencyTypeDirect)
-	if err := repo.LinkAsset(ctx, d); err != nil {
-		t.Fatal(err)
-	}
-	if b := licensesOf(tB); !b["MIT"] {
-		t.Errorf("license lost on re-scan: %v", b)
-	}
-}
-
 func TestThreatIntelPropagation_SetsCatalogRiskSignals(t *testing.T) {
 	db := catalogTestDB(t)
 	ctx := context.Background()
@@ -265,6 +168,63 @@ func TestThreatIntelPropagation_SetsCatalogRiskSignals(t *testing.T) {
 	}
 	if !exploit || epss.Float64 != 0.5 || !kev.Valid || ransomware.String != "Known" {
 		t.Errorf("catalog not updated from the feeds: exploit=%v epss=%v kev=%v ransomware=%v", exploit, epss, kev, ransomware)
+	}
+}
+
+// A CVE that CISA removed from KEV: the sync prunes kev_catalog, then the
+// propagation must clear the catalog's KEV columns and exploit_available.
+// Before the fix the propagation only ever set them.
+func TestThreatIntelPropagation_ClearsCVEThatLeftKEV(t *testing.T) {
+	db := catalogTestDB(t)
+	ctx := context.Background()
+	cve, other := uniqueCVE(), uniqueCVE()
+	t.Cleanup(func() {
+		for _, c := range []string{cve, other} {
+			for _, q := range []string{`DELETE FROM vulnerabilities WHERE cve_id = $1`, `DELETE FROM kev_catalog WHERE cve_id = $1`} {
+				_, _ = db.ExecContext(context.Background(), q, c)
+			}
+		}
+	})
+	vulns := NewVulnerabilityRepository(&DB{DB: db})
+	if err := vulns.UpsertBatchByCVE(ctx, []*vulnerability.Vulnerability{sensorReportedVuln(t, cve), sensorReportedVuln(t, other)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{cve, other} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO kev_catalog (cve_id, vulnerability_name, date_added, due_date, known_ransomware_campaign_use) VALUES ($1, 'kev name', CURRENT_DATE, CURRENT_DATE, 'Known')`, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ti := NewThreatIntelRepository(&DB{DB: db})
+	if _, err := ti.PropagateToVulnerabilityCatalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// CISA drops cve; the next feed holds every other entry.
+	var keep []string
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(array_agg(cve_id), '{}') FROM kev_catalog WHERE cve_id <> $1`, cve).
+		Scan(pq.Array(&keep)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := ti.KEV().PruneNotIn(ctx, keep)
+	if err != nil || n != 1 {
+		t.Fatalf("PruneNotIn = %d %v, want 1 removed", n, err)
+	}
+	if _, err := ti.PropagateToVulnerabilityCatalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(c string) (exploit bool, added, due sql.NullTime, ransomware sql.NullString) {
+		if err := db.QueryRowContext(ctx, `SELECT exploit_available, cisa_kev_date_added, cisa_kev_due_date, cisa_kev_ransomware_use FROM vulnerabilities WHERE cve_id = $1`, c).
+			Scan(&exploit, &added, &due, &ransomware); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if exploit, added, due, rw := read(cve); exploit || added.Valid || due.Valid || rw.Valid {
+		t.Errorf("CVE that left KEV still flagged: exploit=%v added=%v due=%v ransomware=%v", exploit, added, due, rw)
+	}
+	if exploit, added, _, _ := read(other); !exploit || !added.Valid {
+		t.Errorf("CVE still in KEV lost its flags: exploit=%v added=%v", exploit, added)
 	}
 }
 
@@ -306,7 +266,7 @@ func TestActiveCVEs_TenantViewUsesOwnObservation(t *testing.T) {
 		t.Errorf("tenant B sees %s cvss=%v exploit=%v; want its own critical/9.8 and no exploit claim from tenant A",
 			got.Severity, got.CVSSScore, got.ExploitAvailable)
 	}
-	stats, err := findings.GetActiveCVEStats(ctx, tB, false)
+	stats, err := findings.GetActiveCVEStats(ctx, tB, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

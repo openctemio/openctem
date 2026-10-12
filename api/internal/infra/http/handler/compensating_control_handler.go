@@ -210,8 +210,10 @@ func scanControl(s controlRowScanner) (CompensatingControlResponse, error) {
 func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	// Count total
 	var total int64
@@ -239,7 +241,7 @@ func (h *CompensatingControlHandler) List(w http.ResponseWriter, r *http.Request
 	}
 	defer rows.Close() //nolint:errcheck
 
-	items := make([]CompensatingControlResponse, 0, perPage)
+	items := make([]CompensatingControlResponse, 0, pagination.MaxPerPage)
 	for rows.Next() {
 		c, err := scanControl(rows)
 		if err != nil {
@@ -507,7 +509,7 @@ func (h *CompensatingControlHandler) LinkAssets(w http.ResponseWriter, r *http.R
 	for _, assetID := range req.AssetIDs {
 		_, err := h.db.ExecContext(r.Context(),
 			`INSERT INTO compensating_control_assets (control_id, asset_id)
-			 SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM assets WHERE id = $2 AND tenant_id = $3)
+			 SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM assets WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL)
 			 ON CONFLICT DO NOTHING`,
 			id, assetID, tenantID,
 		)

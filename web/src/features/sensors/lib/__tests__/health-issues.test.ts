@@ -14,7 +14,7 @@ const base: Sensor = {
   name: 'sensor-docker-01',
   type: 'worker',
   capabilities: [],
-  tools: ['nuclei'],
+  effective: { tools: ['nuclei'], capabilities: [], max_concurrent_jobs: 5 },
   execution_mode: 'daemon',
   status: 'active',
   health: 'online',
@@ -125,5 +125,34 @@ describe('sensorHealthIssues', () => {
     expect(issues).toEqual([
       expect.objectContaining({ title: 'Needs attention', text: 'Disk almost full' }),
     ])
+  })
+})
+
+describe('the heartbeat ladder (api RFC-035)', () => {
+  it('a late sensor is a warning that still takes work, against its own deadline', () => {
+    const s: Sensor = {
+      ...base,
+      state: 'late',
+      health: 'late',
+      last_seen_at: new Date(NOW - 50_000).toISOString(),
+      heartbeat_due_at: new Date(NOW - 20_000).toISOString(),
+      heartbeat_interval_seconds: 30,
+    }
+    const [issue] = issuesOf(s)
+    expect(issue.title).toBe('Heartbeat late')
+    expect(issue.severity).toBe('warning')
+    expect(issue.text).toBe('Last heartbeat 50s ago, due 20s ago (every 30s). It still takes work.')
+    expect(issue.since).toBe(s.last_seen_at)
+  })
+
+  it('a stale sensor is a warning that takes no new work', () => {
+    const [issue] = issuesOf({
+      ...base,
+      state: 'stale',
+      last_seen_at: new Date(NOW - 110_000).toISOString(),
+    })
+    expect(issue.title).toBe('Heartbeat well overdue')
+    expect(issue.severity).toBe('warning')
+    expect(issue.text).toContain('takes no new work')
   })
 })

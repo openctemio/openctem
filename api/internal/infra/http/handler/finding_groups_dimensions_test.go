@@ -7,14 +7,14 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // The groups endpoint accepts exactly the dimensions the repository groups by.
 func TestFindingGroupByDimensions_MatchRepository(t *testing.T) {
-	want := []string{"cve_id", "asset_id", "owner_id", "component_id", "severity", "source", "finding_type"}
+	want := []string{"cve_id", "rule_id", "asset_id", "owner_id", "component_id", "severity", "source", "finding_type", "family"}
 	if len(findingGroupByDimensions) != len(want) {
 		t.Fatalf("got %d dimensions, want %d", len(findingGroupByDimensions), len(want))
 	}
@@ -28,7 +28,7 @@ func TestFindingGroupByDimensions_MatchRepository(t *testing.T) {
 // Values the repository cannot group by are rejected before any service call
 // ("status" and "type" used to pass and fail in the repository with a 500).
 func TestListFindingGroups_RejectsUnknownDimension(t *testing.T) {
-	svc := app.NewFindingActionsService(nil, nil, nil, nil, nil, nil, logger.NewNop())
+	svc := finding.NewFindingActionsService(nil, nil, nil, nil, nil, nil, logger.NewNop())
 	h := NewFindingActionsHandler(svc, logger.NewNop())
 
 	for _, dim := range []string{"status", "type", "assignee", "cve_id OR 1=1"} {

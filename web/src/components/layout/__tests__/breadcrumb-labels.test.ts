@@ -21,7 +21,7 @@ describe('breadcrumbLabel', () => {
   })
 
   it('names sub-pages the sidebar does not list', () => {
-    expect(breadcrumbLabel('/sensors/platform', 'platform')).toBe('Platform sensors')
+    expect(breadcrumbLabel('/crown-jewels', 'crown-jewels')).toBe('Crown jewels')
   })
 
   it('names settings pages as the settings rail does', () => {

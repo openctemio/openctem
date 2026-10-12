@@ -24,7 +24,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -51,6 +50,8 @@ func (d *stubDispatcher) Submit(_ context.Context, job validation.ValidationJob)
 		Technique:    job.Technique,
 		Outcome:      d.outcome,
 		Summary:      "stub evidence",
+		// The re-run reached the target (RFC-039 D3: a miss only counts then).
+		RawMeta: map[string]any{"reachable": true},
 	}, nil
 }
 
@@ -127,30 +128,31 @@ func (memoryEvidenceRepo) ListByFinding(_ context.Context, _, _ shared.ID) ([]va
 	return nil, nil
 }
 
-// TestCTEM_F4_OutcomeNotDetectedResolves — the happy path: sensor says
-// the exposure is gone, finding goes to resolved, notifier stays
+// TestCTEM_F4_OutcomeNotDetectedHolds — the sensor says the exposure is gone,
+// but that run's reachability is the sensor's own claim (research 18 F6), so
+// the finding stays fix_applied for a retest or a reviewer; the notifier stays
 // quiet.
-func TestCTEM_F4_OutcomeNotDetectedResolves(t *testing.T) {
+func TestCTEM_F4_OutcomeNotDetectedHolds(t *testing.T) {
 	f := findingAtFixApplied(t)
 	repo := &mutableFindingRepo{current: f}
 	disp := &stubDispatcher{outcome: validation.OutcomeNotDetected}
 	notif := &captureNotifier{}
 
-	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindSafeCheck}}, notif, repo)
+	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindNuclei}}, notif, repo)
 
 	ev, stood, err := svc.Retest(context.Background(), f.TenantID(), f.ID(),
-		validation.TechniqueID("T1"), validation.Target{}, validation.KindSafeCheck, nil)
+		validation.TechniqueID("T1"), validation.Target{}, validation.KindNuclei, nil)
 	if err != nil {
 		t.Fatalf("retest: %v", err)
 	}
-	if !stood {
-		t.Fatal("OutcomeNotDetected must report fix-stood=true")
+	if stood {
+		t.Fatal("a sensor-asserted OutcomeNotDetected must not report fix-stood")
 	}
 	if ev.Outcome != validation.OutcomeNotDetected {
 		t.Fatalf("evidence outcome = %s, want not_detected", ev.Outcome)
 	}
-	if repo.current.Status() != vulnerability.FindingStatusResolved {
-		t.Fatalf("finding should be resolved, got %s", repo.current.Status())
+	if repo.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("finding should stay fix_applied, got %s", repo.current.Status())
 	}
 	if atomic.LoadInt32(&notif.calls) != 0 {
 		t.Fatal("notifier must NOT fire on a passing retest")
@@ -166,10 +168,10 @@ func TestCTEM_F4_OutcomeDetectedRevertsAndNotifies(t *testing.T) {
 	disp := &stubDispatcher{outcome: validation.OutcomeDetected}
 	notif := &captureNotifier{}
 
-	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindSafeCheck}}, notif, repo)
+	svc := newProofSvc(disp, staticCapability{kinds: []validation.ExecutorKind{validation.KindNuclei}}, notif, repo)
 
 	_, stood, err := svc.Retest(context.Background(), f.TenantID(), f.ID(),
-		validation.TechniqueID("T1"), validation.Target{}, validation.KindSafeCheck, nil)
+		validation.TechniqueID("T1"), validation.Target{}, validation.KindNuclei, nil)
 	if err != nil {
 		t.Fatalf("retest: %v", err)
 	}
@@ -246,13 +248,13 @@ func TestCTEM_F4_MissingTechniqueRejectedUpfront(t *testing.T) {
 // and P1 has evidence, 90% of P2 do, and P3 has none (P3 is not
 // enforced) must not be blocked.
 func TestCTEM_Coverage_MeetsThresholdsPasses(t *testing.T) {
-	cov := app.ValidationCoverage{
+	cov := validation.ValidationCoverage{
 		P0Total: 10, P0WithEvidence: 10,
 		P1Total: 20, P1WithEvidence: 20,
 		P2Total: 10, P2WithEvidence: 9, // 90% ≥ 80% target
 		P3Total: 50, P3WithEvidence: 0, // not enforced
 	}
-	if err := app.Enforce(cov, app.DefaultThresholds); err != nil {
+	if err := validation.Enforce(cov, validation.DefaultThresholds); err != nil {
 		t.Fatalf("coverage should meet SLO, got %v", err)
 	}
 }
@@ -261,16 +263,16 @@ func TestCTEM_Coverage_MeetsThresholdsPasses(t *testing.T) {
 // evidence record breaks the SLO. The error must name the class so
 // the operator knows exactly which priority is failing.
 func TestCTEM_Coverage_BelowP0ThresholdBlocks(t *testing.T) {
-	cov := app.ValidationCoverage{
+	cov := validation.ValidationCoverage{
 		P0Total: 10, P0WithEvidence: 9, // 90% < 100%
 		P1Total: 20, P1WithEvidence: 20,
 		P2Total: 10, P2WithEvidence: 10,
 	}
-	err := app.Enforce(cov, app.DefaultThresholds)
+	err := validation.Enforce(cov, validation.DefaultThresholds)
 	if err == nil {
 		t.Fatal("should reject when P0 is below 100%")
 	}
-	if !errors.Is(err, app.ErrCoverageBelowSLO) {
+	if !errors.Is(err, validation.ErrCoverageBelowSLO) {
 		t.Fatalf("want ErrCoverageBelowSLO, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "P0") {
@@ -282,12 +284,12 @@ func TestCTEM_Coverage_BelowP0ThresholdBlocks(t *testing.T) {
 // P2 fail the SLO, the message must call out both so the operator
 // isn't blind to the second breach after fixing the first.
 func TestCTEM_Coverage_BelowMultipleClassesListsEach(t *testing.T) {
-	cov := app.ValidationCoverage{
+	cov := validation.ValidationCoverage{
 		P0Total: 1, P0WithEvidence: 1,
 		P1Total: 10, P1WithEvidence: 8, // 80% < 100%
 		P2Total: 10, P2WithEvidence: 5, // 50% < 80%
 	}
-	err := app.Enforce(cov, app.DefaultThresholds)
+	err := validation.Enforce(cov, validation.DefaultThresholds)
 	if err == nil {
 		t.Fatal("should reject when multiple classes fail")
 	}
@@ -300,12 +302,12 @@ func TestCTEM_Coverage_BelowMultipleClassesListsEach(t *testing.T) {
 // TestCTEM_Coverage_ZeroTotalIsTriviallyMet — a tenant with NO P0/P1
 // findings this cycle must not be blocked. Zero total = 100%.
 func TestCTEM_Coverage_ZeroTotalIsTriviallyMet(t *testing.T) {
-	cov := app.ValidationCoverage{
+	cov := validation.ValidationCoverage{
 		P0Total: 0, P0WithEvidence: 0,
 		P1Total: 0, P1WithEvidence: 0,
 		P2Total: 0, P2WithEvidence: 0,
 	}
-	if err := app.Enforce(cov, app.DefaultThresholds); err != nil {
+	if err := validation.Enforce(cov, validation.DefaultThresholds); err != nil {
 		t.Fatalf("zero-total coverage must be a no-op, got %v", err)
 	}
 	if cov.Pct("P0") != 100 {
@@ -317,12 +319,12 @@ func TestCTEM_Coverage_ZeroTotalIsTriviallyMet(t *testing.T) {
 // config, not a constant. A tenant operating with relaxed P1 (80%
 // instead of 100%) must pass at 85% P1.
 func TestCTEM_Coverage_CustomThresholdsHonored(t *testing.T) {
-	cov := app.ValidationCoverage{
+	cov := validation.ValidationCoverage{
 		P0Total: 1, P0WithEvidence: 1,
 		P1Total: 20, P1WithEvidence: 17, // 85%
 	}
-	thresholds := app.CoverageThresholds{P0: 100, P1: 80, P2: 0, P3: 0}
-	if err := app.Enforce(cov, thresholds); err != nil {
+	thresholds := validation.CoverageThresholds{P0: 100, P1: 80, P2: 0, P3: 0}
+	if err := validation.Enforce(cov, thresholds); err != nil {
 		t.Fatalf("85%% P1 should pass under 80%% threshold: %v", err)
 	}
 }

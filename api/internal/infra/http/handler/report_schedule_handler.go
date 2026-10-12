@@ -6,23 +6,53 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // ReportScheduleHandler handles report schedule HTTP requests.
 type ReportScheduleHandler struct {
-	service *app.ReportScheduleService
-	logger  *logger.Logger
+	service      *module.ReportScheduleService
+	auditService *auditapp.AuditService
+	logger       *logger.Logger
+}
+
+// SetAuditService records schedule creation, activation and deletion with
+// the recipients (a schedule mails organization posture out).
+func (h *ReportScheduleHandler) SetAuditService(a *auditapp.AuditService) { h.auditService = a }
+
+func (h *ReportScheduleHandler) audit(r *http.Request, action auditdom.Action, scheduleID string, recipients []reportschedule.Recipient) {
+	if h.auditService == nil {
+		return
+	}
+	emails := make([]string, 0, len(recipients))
+	for _, rc := range recipients {
+		emails = append(emails, rc.Email)
+	}
+	event := auditapp.NewSuccessEvent(action, auditdom.ResourceTypeReportSchedule, scheduleID).
+		WithSeverity(auditdom.SeverityForAction(action))
+	if recipients != nil {
+		event = event.WithMetadata("recipients", emails)
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	_ = h.auditService.LogEvent(r.Context(), actx, event)
 }
 
 // NewReportScheduleHandler creates a new ReportScheduleHandler.
-func NewReportScheduleHandler(svc *app.ReportScheduleService, log *logger.Logger) *ReportScheduleHandler {
+func NewReportScheduleHandler(svc *module.ReportScheduleService, log *logger.Logger) *ReportScheduleHandler {
 	return &ReportScheduleHandler{service: svc, logger: log}
 }
 
@@ -58,17 +88,10 @@ func toReportScheduleResponse(s *reportschedule.ReportSchedule) reportScheduleRe
 // List handles GET /api/v1/reports/schedules
 func (h *ReportScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if perPage < 1 {
-		perPage = 1
-	}
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		perPage,
-	)
 
 	result, err := h.service.ListSchedules(r.Context(), tenantID, page)
 	if err != nil {
@@ -110,7 +133,7 @@ func (h *ReportScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schedule, err := h.service.CreateSchedule(r.Context(), app.CreateReportScheduleInput{
+	schedule, err := h.service.CreateSchedule(r.Context(), module.CreateReportScheduleInput{
 		TenantID: tenantID, Name: req.Name,
 		ReportType: req.ReportType, Format: req.Format,
 		CronExpression: req.CronExpression, Timezone: req.Timezone,
@@ -121,6 +144,7 @@ func (h *ReportScheduleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
+	h.audit(r, auditdom.ActionReportScheduleCreated, schedule.ID().String(), schedule.Recipients())
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -151,6 +175,7 @@ func (h *ReportScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
+	h.audit(r, auditdom.ActionReportScheduleDeleted, id, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -170,6 +195,9 @@ func (h *ReportScheduleHandler) Toggle(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.ToggleSchedule(r.Context(), tenantID, id, req.Active); err != nil {
 		h.handleError(w, err)
 		return
+	}
+	if req.Active {
+		h.audit(r, auditdom.ActionReportScheduleActivated, id, nil)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

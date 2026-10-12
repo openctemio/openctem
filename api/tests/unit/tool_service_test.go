@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/tool"
 
@@ -51,7 +50,7 @@ func (m *toolSvcMockToolRepo) GetByID(_ context.Context, id shared.ID) (*tooldom
 	return t, nil
 }
 
-func (m *toolSvcMockToolRepo) GetByName(_ context.Context, name string) (*tooldom.Tool, error) {
+func (m *toolSvcMockToolRepo) GetByName(_ context.Context, _ shared.ID, name string) (*tooldom.Tool, error) {
 	for _, t := range m.tools {
 		if t.Name == name {
 			return t, nil
@@ -435,166 +434,11 @@ func (m *toolSvcMockConfigRepo) BulkDisable(_ context.Context, tenantID shared.I
 	return nil
 }
 
-// toolSvcMockExecutionRepo implements tooldom.ToolExecutionRepository for testing.
-type toolSvcMockExecutionRepo struct {
-	executions map[string]*tooldom.ToolExecution
-}
+// toolSvcFailingSensors is a SensorLister whose reads fail.
+type toolSvcFailingSensors struct{}
 
-func newToolSvcMockExecutionRepo() *toolSvcMockExecutionRepo {
-	return &toolSvcMockExecutionRepo{
-		executions: make(map[string]*tooldom.ToolExecution),
-	}
-}
-
-func (m *toolSvcMockExecutionRepo) Create(_ context.Context, exec *tooldom.ToolExecution) error {
-	m.executions[exec.ID.String()] = exec
-	return nil
-}
-
-func (m *toolSvcMockExecutionRepo) GetByID(_ context.Context, id shared.ID) (*tooldom.ToolExecution, error) {
-	e, ok := m.executions[id.String()]
-	if !ok {
-		return nil, shared.ErrNotFound
-	}
-	return e, nil
-}
-
-func (m *toolSvcMockExecutionRepo) GetByIDInTenant(_ context.Context, tenantID, id shared.ID) (*tooldom.ToolExecution, error) {
-	e, ok := m.executions[id.String()]
-	if !ok {
-		return nil, shared.ErrNotFound
-	}
-	if e.TenantID != tenantID {
-		return nil, shared.ErrNotFound
-	}
-	return e, nil
-}
-
-func (m *toolSvcMockExecutionRepo) List(_ context.Context, filter tooldom.ToolExecutionFilter, page pagination.Pagination) (pagination.Result[*tooldom.ToolExecution], error) {
-	var result []*tooldom.ToolExecution
-	for _, e := range m.executions {
-		if e.TenantID != filter.TenantID {
-			continue
-		}
-		if filter.ToolID != nil && e.ToolID != *filter.ToolID {
-			continue
-		}
-		if filter.Status != nil && e.Status != *filter.Status {
-			continue
-		}
-		result = append(result, e)
-	}
-	total := int64(len(result))
-	return pagination.Result[*tooldom.ToolExecution]{
-		Data:       result,
-		Total:      total,
-		Page:       page.Page,
-		PerPage:    page.PerPage,
-		TotalPages: int((total + int64(page.PerPage) - 1) / int64(page.PerPage)),
-	}, nil
-}
-
-func (m *toolSvcMockExecutionRepo) Update(_ context.Context, exec *tooldom.ToolExecution) error {
-	if _, ok := m.executions[exec.ID.String()]; !ok {
-		return shared.ErrNotFound
-	}
-	m.executions[exec.ID.String()] = exec
-	return nil
-}
-
-func (m *toolSvcMockExecutionRepo) GetToolStats(_ context.Context, _ shared.ID, toolID shared.ID, _ int) (*tooldom.ToolStats, error) {
-	return &tooldom.ToolStats{ToolID: toolID}, nil
-}
-
-func (m *toolSvcMockExecutionRepo) GetTenantStats(_ context.Context, tenantID shared.ID, _ int) (*tooldom.TenantToolStats, error) {
-	return &tooldom.TenantToolStats{TenantID: tenantID}, nil
-}
-
-// toolSvcMockSensorRepo is a minimal mock for sensor.Repository.
-type toolSvcMockSensorRepo struct {
-	availableTools []string
-}
-
-func newToolSvcMockSensorRepo() *toolSvcMockSensorRepo {
-	return &toolSvcMockSensorRepo{}
-}
-
-func (m *toolSvcMockSensorRepo) Create(_ context.Context, _ *sensor.Sensor) error { return nil }
-func (m *toolSvcMockSensorRepo) CountByTenant(_ context.Context, _ shared.ID) (int, error) {
-	return 0, nil
-}
-func (m *toolSvcMockSensorRepo) GetByID(_ context.Context, _ shared.ID) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) GetByTenantAndID(_ context.Context, _, _ shared.ID) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) GetByAPIKeyHash(_ context.Context, _ string) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) List(_ context.Context, _ sensor.Filter, _ pagination.Pagination) (pagination.Result[*sensor.Sensor], error) {
-	return pagination.Result[*sensor.Sensor]{}, nil
-}
-func (m *toolSvcMockSensorRepo) Update(_ context.Context, _ *sensor.Sensor) error { return nil }
-func (m *toolSvcMockSensorRepo) UpdateKeyExpiry(_ context.Context, _ shared.ID, _ *time.Time) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) UpdateHeartbeat(_ context.Context, _ shared.ID, _ sensor.HeartbeatUpdate) (bool, error) {
-	return true, nil
-}
-func (m *toolSvcMockSensorRepo) UpdateAPIKey(_ context.Context, _ shared.ID, _, _ string, _ *time.Time, _ bool) (bool, error) {
-	return true, nil
-}
-func (m *toolSvcMockSensorRepo) Delete(_ context.Context, _ shared.ID) error { return nil }
-func (m *toolSvcMockSensorRepo) UpdateLastSeen(_ context.Context, _ shared.ID) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) IncrementStats(_ context.Context, _ shared.ID, _, _, _ int64) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) FindByCapabilities(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) FindAvailable(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) FindAvailableWithTool(_ context.Context, _ shared.ID, _ string) (*sensor.Sensor, error) {
-	return nil, shared.ErrNotFound
-}
-func (m *toolSvcMockSensorRepo) MarkStaleAsOffline(_ context.Context, _ time.Duration) (int64, error) {
-	return 0, nil
-}
-func (m *toolSvcMockSensorRepo) FindAvailableWithCapacity(_ context.Context, _ shared.ID, _ []string, _ string) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) ClaimJob(_ context.Context, _ shared.ID) error   { return nil }
-func (m *toolSvcMockSensorRepo) ReleaseJob(_ context.Context, _ shared.ID) error { return nil }
-func (m *toolSvcMockSensorRepo) UpdateOfflineTimestamp(_ context.Context, _ shared.ID) error {
-	return nil
-}
-func (m *toolSvcMockSensorRepo) MarkStaleSensorsOffline(_ context.Context, _ time.Duration) ([]shared.ID, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) GetSensorsOfflineSince(_ context.Context, _ time.Time) ([]*sensor.Sensor, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) GetAvailableToolsForTenant(_ context.Context, _ shared.ID) ([]string, error) {
-	return m.availableTools, nil
-}
-func (m *toolSvcMockSensorRepo) HasSensorForTool(_ context.Context, _ shared.ID, _ string) (bool, error) {
-	return false, nil
-}
-func (m *toolSvcMockSensorRepo) GetAvailableCapabilitiesForTenant(_ context.Context, _ shared.ID) ([]string, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) HasSensorForCapability(_ context.Context, _ shared.ID, _ string) (bool, error) {
-	return false, nil
-}
-func (m *toolSvcMockSensorRepo) GetPlatformSensorStats(_ context.Context, _ shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	return nil, nil
-}
-func (m *toolSvcMockSensorRepo) GetTenantSensorStats(_ context.Context, _ shared.ID) (*sensor.TenantSensorStats, error) {
-	return nil, nil
+func (toolSvcFailingSensors) ListAllSensors(_ context.Context, _ string) ([]*sensor.Sensor, error) {
+	return nil, errors.New("sensor store down")
 }
 
 // toolSvcMockCategoryRepo is a minimal mock for toolcategory.Repository.
@@ -676,20 +520,20 @@ func (m *toolSvcMockCategoryRepo) AddCategory(cat *toolcategory.ToolCategory) {
 	m.categories[cat.ID.String()] = cat
 }
 
-// toolSvcMockPipelineDeactivator implements app.PipelineDeactivator for testing.
-type toolSvcMockPipelineDeactivator struct {
+// toolSvcMockScanWorkflowDeactivator implements app.ScanWorkflowDeactivator for testing.
+type toolSvcMockScanWorkflowDeactivator struct {
 	deactivatedCount int
 	deactivatedIDs   []shared.ID
 	err              error
-	calledWith       string    // tracks the tool name passed to DeactivatePipelinesByTool
-	calledForTenant  shared.ID // tracks the tenant passed to DeactivatePipelinesByTool
+	calledWith       string    // tracks the tool name passed to DeactivateScanWorkflowsByTool
+	calledForTenant  shared.ID // tracks the tenant passed to DeactivateScanWorkflowsByTool
 }
 
-func newToolSvcMockPipelineDeactivator() *toolSvcMockPipelineDeactivator {
-	return &toolSvcMockPipelineDeactivator{}
+func newToolSvcMockScanWorkflowDeactivator() *toolSvcMockScanWorkflowDeactivator {
+	return &toolSvcMockScanWorkflowDeactivator{}
 }
 
-func (m *toolSvcMockPipelineDeactivator) DeactivatePipelinesByTool(_ context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error) {
+func (m *toolSvcMockScanWorkflowDeactivator) DeactivateScanWorkflowsByTool(_ context.Context, tenantID shared.ID, toolName string) (int, []shared.ID, error) {
 	m.calledWith = toolName
 	m.calledForTenant = tenantID
 	if m.err != nil {
@@ -698,7 +542,7 @@ func (m *toolSvcMockPipelineDeactivator) DeactivatePipelinesByTool(_ context.Con
 	return m.deactivatedCount, m.deactivatedIDs, nil
 }
 
-func (m *toolSvcMockPipelineDeactivator) GetPipelinesUsingTool(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
+func (m *toolSvcMockScanWorkflowDeactivator) GetScanWorkflowsUsingTool(_ context.Context, _ shared.ID, _ string) ([]shared.ID, error) {
 	return m.deactivatedIDs, m.err
 }
 
@@ -706,20 +550,19 @@ func (m *toolSvcMockPipelineDeactivator) GetPipelinesUsingTool(_ context.Context
 // Test Helpers
 // ============================================================================
 
-func newToolSvcTestService() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockConfigRepo, *toolSvcMockExecutionRepo) {
+func newToolSvcTestService() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockConfigRepo) {
 	toolRepo := newToolSvcMockToolRepo()
 	configRepo := newToolSvcMockConfigRepo()
-	execRepo := newToolSvcMockExecutionRepo()
 	log := logger.NewDevelopment()
-	svc := tool.NewService(toolRepo, configRepo, execRepo, log)
-	return svc, toolRepo, configRepo, execRepo
+	svc := tool.NewService(toolRepo, configRepo, log)
+	return svc, toolRepo, configRepo
 }
 
-func newToolSvcTestServiceFull() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockConfigRepo, *toolSvcMockExecutionRepo, *toolSvcMockPipelineDeactivator) {
-	svc, toolRepo, configRepo, execRepo := newToolSvcTestService()
-	deactivator := newToolSvcMockPipelineDeactivator()
-	svc.SetPipelineDeactivator(deactivator)
-	return svc, toolRepo, configRepo, execRepo, deactivator
+func newToolSvcTestServiceFull() (*tool.Service, *toolSvcMockToolRepo, *toolSvcMockConfigRepo, *toolSvcMockScanWorkflowDeactivator) {
+	svc, toolRepo, configRepo := newToolSvcTestService()
+	deactivator := newToolSvcMockScanWorkflowDeactivator()
+	svc.SetScanWorkflowDeactivator(deactivator)
+	return svc, toolRepo, configRepo, deactivator
 }
 
 func createPlatformTool(name string, installMethod tooldom.InstallMethod) *tooldom.Tool {
@@ -738,7 +581,7 @@ func createTenantTool(tenantID shared.ID, name string, installMethod tooldom.Ins
 // ============================================================================
 
 func TestToolService_CreateTool_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateInput{
 		Name:          "nuclei",
@@ -783,7 +626,7 @@ func TestToolService_CreateTool_AllInstallMethods(t *testing.T) {
 
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
-			svc, _, _, _ := newToolSvcTestService()
+			svc, _, _ := newToolSvcTestService()
 
 			input := tool.CreateInput{
 				Name:          "tool-" + method,
@@ -802,7 +645,7 @@ func TestToolService_CreateTool_AllInstallMethods(t *testing.T) {
 }
 
 func TestToolService_CreateTool_InvalidInstallMethod(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateInput{
 		Name:          "bad-tool",
@@ -819,7 +662,7 @@ func TestToolService_CreateTool_InvalidInstallMethod(t *testing.T) {
 }
 
 func TestToolService_CreateTool_EmptyName(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateInput{
 		Name:          "",
@@ -833,7 +676,7 @@ func TestToolService_CreateTool_EmptyName(t *testing.T) {
 }
 
 func TestToolService_CreateTool_WithCategoryID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	catID := shared.NewID()
 
 	input := tool.CreateInput{
@@ -852,7 +695,7 @@ func TestToolService_CreateTool_WithCategoryID(t *testing.T) {
 }
 
 func TestToolService_CreateTool_InvalidCategoryID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateInput{
 		Name:          "semgrep",
@@ -870,7 +713,7 @@ func TestToolService_CreateTool_InvalidCategoryID(t *testing.T) {
 }
 
 func TestToolService_CreateTool_WithOptionalFields(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateInput{
 		Name:             "nuclei",
@@ -901,7 +744,7 @@ func TestToolService_CreateTool_WithOptionalFields(t *testing.T) {
 // ============================================================================
 
 func TestToolService_GetTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	existing := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
@@ -916,7 +759,7 @@ func TestToolService_GetTool_Success(t *testing.T) {
 }
 
 func TestToolService_GetTool_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetTool(context.Background(), shared.NewID().String())
 	if err == nil {
@@ -928,7 +771,7 @@ func TestToolService_GetTool_NotFound(t *testing.T) {
 }
 
 func TestToolService_GetTool_InvalidID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetTool(context.Background(), "invalid-uuid")
 	if err == nil {
@@ -944,12 +787,12 @@ func TestToolService_GetTool_InvalidID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_GetToolByName_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	existing := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
 
-	result, err := svc.GetToolByName(context.Background(), "nuclei")
+	result, err := svc.GetToolByName(context.Background(), "", "nuclei")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -959,18 +802,18 @@ func TestToolService_GetToolByName_Success(t *testing.T) {
 }
 
 func TestToolService_GetToolByName_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
-	_, err := svc.GetToolByName(context.Background(), "nonexistent")
+	_, err := svc.GetToolByName(context.Background(), "", "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for non-existent tool")
 	}
 }
 
 func TestToolService_GetToolByName_EmptyName(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
-	_, err := svc.GetToolByName(context.Background(), "")
+	_, err := svc.GetToolByName(context.Background(), "", "")
 	if err == nil {
 		t.Fatal("expected error for empty name")
 	}
@@ -984,7 +827,7 @@ func TestToolService_GetToolByName_EmptyName(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListTools_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	repo.AddTool(createPlatformTool("nuclei", tooldom.InstallGo))
 	repo.AddTool(createPlatformTool("semgrep", tooldom.InstallPip))
@@ -1006,7 +849,7 @@ func TestToolService_ListTools_Success(t *testing.T) {
 }
 
 func TestToolService_ListTools_FilterByActive(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	active := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(active)
@@ -1037,7 +880,7 @@ func TestToolService_ListTools_FilterByActive(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListToolsByCategory_EmptyCategory(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.ListToolsByCategory(context.Background(), "")
 	if err == nil {
@@ -1049,7 +892,7 @@ func TestToolService_ListToolsByCategory_EmptyCategory(t *testing.T) {
 }
 
 func TestToolService_ListToolsByCategory_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	result, err := svc.ListToolsByCategory(context.Background(), "sast")
 	if err != nil {
@@ -1066,7 +909,7 @@ func TestToolService_ListToolsByCategory_Success(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListToolsByCapability_EmptyCapability(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.ListToolsByCapability(context.Background(), "")
 	if err == nil {
@@ -1078,7 +921,7 @@ func TestToolService_ListToolsByCapability_EmptyCapability(t *testing.T) {
 }
 
 func TestToolService_ListToolsByCapability_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	nuclei := createPlatformTool("nuclei", tooldom.InstallGo)
 	nuclei.Capabilities = []string{"vuln-scan", "web-scan"}
@@ -1105,7 +948,7 @@ func TestToolService_ListToolsByCapability_Success(t *testing.T) {
 // ============================================================================
 
 func TestToolService_UpdateTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1136,7 +979,7 @@ func TestToolService_UpdateTool_Success(t *testing.T) {
 }
 
 func TestToolService_UpdateTool_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.UpdateInput{
 		ToolID:      shared.NewID().String(),
@@ -1150,7 +993,7 @@ func TestToolService_UpdateTool_NotFound(t *testing.T) {
 }
 
 func TestToolService_UpdateTool_InvalidID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.UpdateInput{
 		ToolID:      "bad-id",
@@ -1164,7 +1007,7 @@ func TestToolService_UpdateTool_InvalidID(t *testing.T) {
 }
 
 func TestToolService_UpdateTool_Capabilities(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1191,7 +1034,7 @@ func TestToolService_UpdateTool_Capabilities(t *testing.T) {
 // ============================================================================
 
 func TestToolService_DeleteTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	// A tenant's own custom tool can be deleted by that tenant.
 	tenantID := shared.NewID()
@@ -1212,7 +1055,7 @@ func TestToolService_DeleteTool_Success(t *testing.T) {
 }
 
 func TestToolService_DeleteTool_BuiltinFails(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	builtin := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(builtin)
@@ -1228,7 +1071,7 @@ func TestToolService_DeleteTool_BuiltinFails(t *testing.T) {
 }
 
 func TestToolService_DeleteTool_CrossTenantForbidden(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	ownerTenant := shared.NewID()
 	existing := createTenantTool(ownerTenant, "victim-tool", tooldom.InstallBinary)
@@ -1244,7 +1087,7 @@ func TestToolService_DeleteTool_CrossTenantForbidden(t *testing.T) {
 }
 
 func TestToolService_DeleteTool_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	err := svc.DeleteTool(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
@@ -1253,16 +1096,16 @@ func TestToolService_DeleteTool_NotFound(t *testing.T) {
 }
 
 func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
-	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
+	svc, repo, _, deactivator := newToolSvcTestServiceFull()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "custom-scanner", tooldom.InstallBinary)
 	existing.IsBuiltin = false
 	repo.AddTool(existing)
 
-	pipelineID := shared.NewID()
+	scanWorkflowID := shared.NewID()
 	deactivator.deactivatedCount = 2
-	deactivator.deactivatedIDs = []shared.ID{pipelineID, shared.NewID()}
+	deactivator.deactivatedIDs = []shared.ID{scanWorkflowID, shared.NewID()}
 
 	err := svc.DeleteTool(context.Background(), tenantID.String(), existing.ID.String())
 	if err != nil {
@@ -1272,16 +1115,16 @@ func TestToolService_DeleteTool_CascadeDeactivation(t *testing.T) {
 	if deactivator.calledWith != "custom-scanner" {
 		t.Errorf("expected deactivator called with custom-scanner, got %s", deactivator.calledWith)
 	}
-	// Only the tool's own tenant's pipelines may be deactivated: tool names
+	// Only the tool's own tenant's scan workflows may be deactivated: tool names
 	// are unique per tenant, so a tenant's custom "nuclei" used to switch
-	// off every other tenant's nuclei pipelines.
+	// off every other tenant's nuclei scan workflows.
 	if deactivator.calledForTenant != tenantID {
 		t.Errorf("deactivation must be scoped to the tool's tenant %s, got %s", tenantID, deactivator.calledForTenant)
 	}
 }
 
 func TestToolService_DeleteTool_CascadeDeactivationError(t *testing.T) {
-	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
+	svc, repo, _, deactivator := newToolSvcTestServiceFull()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "custom-scanner", tooldom.InstallBinary)
@@ -1302,7 +1145,7 @@ func TestToolService_DeleteTool_CascadeDeactivationError(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ActivateTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1323,7 +1166,7 @@ func TestToolService_ActivateTool_Success(t *testing.T) {
 }
 
 func TestToolService_ActivateTool_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.ActivateTool(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
@@ -1332,7 +1175,7 @@ func TestToolService_ActivateTool_NotFound(t *testing.T) {
 }
 
 func TestToolService_ActivateTool_AlreadyActive(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1352,7 +1195,7 @@ func TestToolService_ActivateTool_AlreadyActive(t *testing.T) {
 // ============================================================================
 
 func TestToolService_DeactivateTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1368,7 +1211,7 @@ func TestToolService_DeactivateTool_Success(t *testing.T) {
 }
 
 func TestToolService_DeactivateTool_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.DeactivateTool(context.Background(), shared.NewID().String(), shared.NewID().String())
 	if err == nil {
@@ -1377,7 +1220,7 @@ func TestToolService_DeactivateTool_NotFound(t *testing.T) {
 }
 
 func TestToolService_DeactivateTool_CascadeDeactivation(t *testing.T) {
-	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
+	svc, repo, _, deactivator := newToolSvcTestServiceFull()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1399,7 +1242,7 @@ func TestToolService_DeactivateTool_CascadeDeactivation(t *testing.T) {
 }
 
 func TestToolService_DeactivateTool_CascadeError(t *testing.T) {
-	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
+	svc, repo, _, deactivator := newToolSvcTestServiceFull()
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1418,8 +1261,8 @@ func TestToolService_DeactivateTool_CascadeError(t *testing.T) {
 }
 
 func TestToolService_DeactivateTool_NoPipelineDeactivator(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
-	// No pipeline deactivator set
+	svc, repo, _ := newToolSvcTestService()
+	// No scan workflow deactivator set
 
 	tenantID := shared.NewID()
 	existing := createTenantTool(tenantID, "nuclei", tooldom.InstallGo)
@@ -1439,7 +1282,7 @@ func TestToolService_DeactivateTool_NoPipelineDeactivator(t *testing.T) {
 // ============================================================================
 
 func TestToolService_UpdateToolVersion_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	existing := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
@@ -1466,7 +1309,7 @@ func TestToolService_UpdateToolVersion_Success(t *testing.T) {
 }
 
 func TestToolService_UpdateToolVersion_SameVersion(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 
 	existing := createPlatformTool("nuclei", tooldom.InstallGo)
 	repo.AddTool(existing)
@@ -1487,7 +1330,7 @@ func TestToolService_UpdateToolVersion_SameVersion(t *testing.T) {
 }
 
 func TestToolService_UpdateToolVersion_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.UpdateToolVersionInput{
 		ToolID:         shared.NewID().String(),
@@ -1506,7 +1349,7 @@ func TestToolService_UpdateToolVersion_NotFound(t *testing.T) {
 // ============================================================================
 
 func TestToolService_CreateCustomTool_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
@@ -1539,7 +1382,7 @@ func TestToolService_CreateCustomTool_Success(t *testing.T) {
 }
 
 func TestToolService_CreateCustomTool_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateCustomToolInput{
 		TenantID:      "invalid-uuid",
@@ -1557,7 +1400,7 @@ func TestToolService_CreateCustomTool_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_CreateCustomTool_InvalidCreatedBy(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.CreateCustomToolInput{
@@ -1574,7 +1417,7 @@ func TestToolService_CreateCustomTool_InvalidCreatedBy(t *testing.T) {
 }
 
 func TestToolService_CreateCustomTool_InvalidInstallMethod(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.CreateCustomToolInput{
@@ -1590,7 +1433,7 @@ func TestToolService_CreateCustomTool_InvalidInstallMethod(t *testing.T) {
 }
 
 func TestToolService_CreateCustomTool_WithCategoryID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 	catID := shared.NewID()
 
@@ -1611,7 +1454,7 @@ func TestToolService_CreateCustomTool_WithCategoryID(t *testing.T) {
 }
 
 func TestToolService_CreateCustomTool_InvalidCategoryID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.CreateCustomToolInput{
@@ -1628,7 +1471,7 @@ func TestToolService_CreateCustomTool_InvalidCategoryID(t *testing.T) {
 }
 
 func TestToolService_CreateCustomTool_NoCreatedBy(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.CreateCustomToolInput{
@@ -1652,7 +1495,7 @@ func TestToolService_CreateCustomTool_NoCreatedBy(t *testing.T) {
 // ============================================================================
 
 func TestToolService_GetCustomTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -1668,7 +1511,7 @@ func TestToolService_GetCustomTool_Success(t *testing.T) {
 }
 
 func TestToolService_GetCustomTool_WrongTenant(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -1682,7 +1525,7 @@ func TestToolService_GetCustomTool_WrongTenant(t *testing.T) {
 }
 
 func TestToolService_GetCustomTool_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetCustomTool(context.Background(), "bad-uuid", shared.NewID().String())
 	if err == nil {
@@ -1691,7 +1534,7 @@ func TestToolService_GetCustomTool_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_GetCustomTool_InvalidToolID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetCustomTool(context.Background(), shared.NewID().String(), "bad-uuid")
 	if err == nil {
@@ -1704,7 +1547,7 @@ func TestToolService_GetCustomTool_InvalidToolID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListPlatformTools_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	repo.AddTool(createPlatformTool("nuclei", tooldom.InstallGo))
@@ -1731,7 +1574,7 @@ func TestToolService_ListPlatformTools_Success(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListCustomTools_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -1756,7 +1599,7 @@ func TestToolService_ListCustomTools_Success(t *testing.T) {
 }
 
 func TestToolService_ListCustomTools_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.ListCustomToolsInput{
 		TenantID: "invalid",
@@ -1775,7 +1618,7 @@ func TestToolService_ListCustomTools_InvalidTenantID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListAvailableTools_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -1800,7 +1643,7 @@ func TestToolService_ListAvailableTools_Success(t *testing.T) {
 }
 
 func TestToolService_ListAvailableTools_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.ListAvailableToolsInput{
 		TenantID: "bad",
@@ -1819,7 +1662,7 @@ func TestToolService_ListAvailableTools_InvalidTenantID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_UpdateCustomTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -1842,7 +1685,7 @@ func TestToolService_UpdateCustomTool_Success(t *testing.T) {
 }
 
 func TestToolService_UpdateCustomTool_TenantIsolation(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -1862,7 +1705,7 @@ func TestToolService_UpdateCustomTool_TenantIsolation(t *testing.T) {
 }
 
 func TestToolService_UpdateCustomTool_CannotUpdatePlatform(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	// Platform tool
@@ -1883,7 +1726,7 @@ func TestToolService_UpdateCustomTool_CannotUpdatePlatform(t *testing.T) {
 }
 
 func TestToolService_UpdateCustomTool_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.UpdateCustomToolInput{
 		TenantID:    "bad",
@@ -1902,7 +1745,7 @@ func TestToolService_UpdateCustomTool_InvalidTenantID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_DeleteCustomTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -1921,7 +1764,7 @@ func TestToolService_DeleteCustomTool_Success(t *testing.T) {
 }
 
 func TestToolService_DeleteCustomTool_TenantIsolation(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -1935,7 +1778,7 @@ func TestToolService_DeleteCustomTool_TenantIsolation(t *testing.T) {
 }
 
 func TestToolService_DeleteCustomTool_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	err := svc.DeleteCustomTool(context.Background(), "bad", shared.NewID().String())
 	if err == nil {
@@ -1944,7 +1787,7 @@ func TestToolService_DeleteCustomTool_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_DeleteCustomTool_InvalidToolID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	err := svc.DeleteCustomTool(context.Background(), tenantID.String(), "bad")
@@ -1954,7 +1797,7 @@ func TestToolService_DeleteCustomTool_InvalidToolID(t *testing.T) {
 }
 
 func TestToolService_DeleteCustomTool_CascadeDeactivation(t *testing.T) {
-	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
+	svc, repo, _, deactivator := newToolSvcTestServiceFull()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -1977,7 +1820,7 @@ func TestToolService_DeleteCustomTool_CascadeDeactivation(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ActivateCustomTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -1994,7 +1837,7 @@ func TestToolService_ActivateCustomTool_Success(t *testing.T) {
 }
 
 func TestToolService_ActivateCustomTool_TenantIsolation(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -2009,7 +1852,7 @@ func TestToolService_ActivateCustomTool_TenantIsolation(t *testing.T) {
 }
 
 func TestToolService_ActivateCustomTool_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.ActivateCustomTool(context.Background(), "bad", shared.NewID().String())
 	if err == nil {
@@ -2022,7 +1865,7 @@ func TestToolService_ActivateCustomTool_InvalidTenantID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_DeactivateCustomTool_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -2038,7 +1881,7 @@ func TestToolService_DeactivateCustomTool_Success(t *testing.T) {
 }
 
 func TestToolService_DeactivateCustomTool_TenantIsolation(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenant1 := shared.NewID()
 	tenant2 := shared.NewID()
 
@@ -2052,7 +1895,7 @@ func TestToolService_DeactivateCustomTool_TenantIsolation(t *testing.T) {
 }
 
 func TestToolService_DeactivateCustomTool_CascadeDeactivation(t *testing.T) {
-	svc, repo, _, _, deactivator := newToolSvcTestServiceFull()
+	svc, repo, _, deactivator := newToolSvcTestServiceFull()
 	tenantID := shared.NewID()
 
 	existing := createTenantTool(tenantID, "my-scanner", tooldom.InstallDocker)
@@ -2078,7 +1921,7 @@ func TestToolService_DeactivateCustomTool_CascadeDeactivation(t *testing.T) {
 // ============================================================================
 
 func TestToolService_CreateTenantToolConfig_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2104,7 +1947,7 @@ func TestToolService_CreateTenantToolConfig_Success(t *testing.T) {
 }
 
 func TestToolService_CreateTenantToolConfig_ToolNotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.CreateTenantToolConfigInput{
@@ -2119,7 +1962,7 @@ func TestToolService_CreateTenantToolConfig_ToolNotFound(t *testing.T) {
 }
 
 func TestToolService_CreateTenantToolConfig_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.CreateTenantToolConfigInput{
 		TenantID: "bad",
@@ -2133,7 +1976,7 @@ func TestToolService_CreateTenantToolConfig_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_GetTenantToolConfig_Success(t *testing.T) {
-	svc, repo, configRepo, _ := newToolSvcTestService()
+	svc, repo, configRepo := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2152,7 +1995,7 @@ func TestToolService_GetTenantToolConfig_Success(t *testing.T) {
 }
 
 func TestToolService_DeleteTenantToolConfig_Success(t *testing.T) {
-	svc, repo, configRepo, _ := newToolSvcTestService()
+	svc, repo, configRepo := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2168,7 +2011,7 @@ func TestToolService_DeleteTenantToolConfig_Success(t *testing.T) {
 }
 
 func TestToolService_UpdateTenantToolConfig_CreateNew(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2191,7 +2034,7 @@ func TestToolService_UpdateTenantToolConfig_CreateNew(t *testing.T) {
 }
 
 func TestToolService_UpdateTenantToolConfig_UpdateExisting(t *testing.T) {
-	svc, repo, configRepo, _ := newToolSvcTestService()
+	svc, repo, configRepo := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2222,7 +2065,7 @@ func TestToolService_UpdateTenantToolConfig_UpdateExisting(t *testing.T) {
 // ============================================================================
 
 func TestToolService_EnableToolForTenant_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
@@ -2233,7 +2076,7 @@ func TestToolService_EnableToolForTenant_Success(t *testing.T) {
 }
 
 func TestToolService_EnableToolForTenant_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	err := svc.EnableToolForTenant(context.Background(), "bad", shared.NewID().String())
 	if err == nil {
@@ -2242,7 +2085,7 @@ func TestToolService_EnableToolForTenant_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_DisableToolForTenant_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
@@ -2253,7 +2096,7 @@ func TestToolService_DisableToolForTenant_Success(t *testing.T) {
 }
 
 func TestToolService_DisableToolForTenant_InvalidToolID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	err := svc.DisableToolForTenant(context.Background(), shared.NewID().String(), "bad")
 	if err == nil {
@@ -2266,7 +2109,7 @@ func TestToolService_DisableToolForTenant_InvalidToolID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_BulkEnableTools_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.BulkEnableToolsInput{
@@ -2281,7 +2124,7 @@ func TestToolService_BulkEnableTools_Success(t *testing.T) {
 }
 
 func TestToolService_BulkEnableTools_InvalidToolID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.BulkEnableToolsInput{
@@ -2296,7 +2139,7 @@ func TestToolService_BulkEnableTools_InvalidToolID(t *testing.T) {
 }
 
 func TestToolService_BulkDisableTools_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.BulkDisableToolsInput{
@@ -2311,323 +2154,45 @@ func TestToolService_BulkDisableTools_Success(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: Tool Execution Operations
+// Tests: SetAvailabilitySources / SetCategoryRepo / SetScanWorkflowDeactivator
 // ============================================================================
 
-func TestToolService_RecordToolExecution_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-
-	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
-	repo.AddTool(platformTool)
-
-	input := tool.RecordToolExecutionInput{
-		TenantID:     tenantID.String(),
-		ToolID:       platformTool.ID.String(),
-		InputConfig:  map[string]any{"targets": []string{"example.com"}},
-		TargetsCount: 1,
+// Availability that cannot be read never blocks a picker: the tools list
+// still answers and RunnableToolNames reports the error (trigger time
+// refuses for real).
+func TestToolService_AvailabilitySourcesFailing(t *testing.T) {
+	svc, _, _ := newToolSvcTestService()
+	svc.SetAvailabilitySources(toolSvcFailingSensors{}, nil, nil)
+	tenantID := shared.NewID().String()
+	if _, err := svc.ListToolsWithConfig(context.Background(), tool.ListToolsWithConfigInput{TenantID: tenantID, Page: 1, PerPage: 10}); err != nil {
+		t.Fatalf("tools list failed with the sensor store down: %v", err)
 	}
-
-	result, err := svc.RecordToolExecution(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != tooldom.ExecutionStatusRunning {
-		t.Errorf("expected status running, got %s", result.Status)
-	}
-	if result.TargetsCount != 1 {
-		t.Errorf("expected 1 target, got %d", result.TargetsCount)
+	if _, err := svc.RunnableToolNames(context.Background(), tenantID); err == nil {
+		t.Fatal("RunnableToolNames hid the sensor store error")
 	}
 }
 
-func TestToolService_RecordToolExecution_WithSensor(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-	sensorID := shared.NewID()
-
-	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
-	repo.AddTool(platformTool)
-
-	input := tool.RecordToolExecutionInput{
-		TenantID:     tenantID.String(),
-		ToolID:       platformTool.ID.String(),
-		SensorID:     sensorID.String(),
-		TargetsCount: 5,
+// Without availability sources availability is unknown (nil), not "none".
+func TestToolService_RunnableToolNamesWithoutSources(t *testing.T) {
+	svc, _, _ := newToolSvcTestService()
+	got, err := svc.RunnableToolNames(context.Background(), shared.NewID().String())
+	if err != nil || got != nil {
+		t.Fatalf("RunnableToolNames = %v, %v; want nil, nil", got, err)
 	}
-
-	result, err := svc.RecordToolExecution(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.SensorID == nil || *result.SensorID != sensorID {
-		t.Error("expected sensor ID to be set")
-	}
-}
-
-func TestToolService_RecordToolExecution_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-
-	input := tool.RecordToolExecutionInput{
-		TenantID: "bad",
-		ToolID:   shared.NewID().String(),
-	}
-
-	_, err := svc.RecordToolExecution(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for invalid tenant ID")
-	}
-}
-
-func TestToolService_CompleteToolExecution_Success(t *testing.T) {
-	svc, _, _, execRepo := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	exec := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 10)
-	execRepo.executions[exec.ID.String()] = exec
-
-	input := tool.CompleteToolExecutionInput{
-		ExecutionID:   exec.ID.String(),
-		FindingsCount: 5,
-		OutputSummary: map[string]any{"critical": 2, "high": 3},
-	}
-
-	result, err := svc.CompleteToolExecution(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != tooldom.ExecutionStatusCompleted {
-		t.Errorf("expected status completed, got %s", result.Status)
-	}
-	if result.FindingsCount != 5 {
-		t.Errorf("expected 5 findings, got %d", result.FindingsCount)
-	}
-}
-
-func TestToolService_CompleteToolExecution_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-
-	input := tool.CompleteToolExecutionInput{
-		ExecutionID: shared.NewID().String(),
-	}
-
-	_, err := svc.CompleteToolExecution(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for non-existent execution")
-	}
-}
-
-func TestToolService_FailToolExecution_Success(t *testing.T) {
-	svc, _, _, execRepo := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	exec := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 10)
-	execRepo.executions[exec.ID.String()] = exec
-
-	input := tool.FailToolExecutionInput{
-		ExecutionID:  exec.ID.String(),
-		ErrorMessage: "connection refused",
-	}
-
-	result, err := svc.FailToolExecution(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != tooldom.ExecutionStatusFailed {
-		t.Errorf("expected status failed, got %s", result.Status)
-	}
-	if result.ErrorMessage != "connection refused" {
-		t.Errorf("expected error message, got %s", result.ErrorMessage)
-	}
-}
-
-func TestToolService_TimeoutToolExecution_Success(t *testing.T) {
-	svc, _, _, execRepo := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	exec := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 10)
-	execRepo.executions[exec.ID.String()] = exec
-
-	result, err := svc.TimeoutToolExecution(context.Background(), exec.ID.String())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Status != tooldom.ExecutionStatusTimeout {
-		t.Errorf("expected status timeout, got %s", result.Status)
-	}
-}
-
-func TestToolService_TimeoutToolExecution_InvalidID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-
-	_, err := svc.TimeoutToolExecution(context.Background(), "bad-id")
-	if err == nil {
-		t.Fatal("expected error for invalid execution ID")
-	}
-}
-
-// ============================================================================
-// Tests: GetToolStats / GetTenantToolStats
-// ============================================================================
-
-func TestToolService_GetToolStats_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	stats, err := svc.GetToolStats(context.Background(), tenantID.String(), toolID.String(), 30)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if stats == nil {
-		t.Fatal("expected stats, got nil")
-	}
-}
-
-func TestToolService_GetToolStats_DefaultDays(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	// days=0 should default to 30
-	stats, err := svc.GetToolStats(context.Background(), tenantID.String(), toolID.String(), 0)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if stats == nil {
-		t.Fatal("expected stats, got nil")
-	}
-}
-
-func TestToolService_GetToolStats_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-
-	_, err := svc.GetToolStats(context.Background(), "bad", shared.NewID().String(), 30)
-	if err == nil {
-		t.Fatal("expected error for invalid tenant ID")
-	}
-}
-
-func TestToolService_GetTenantToolStats_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-
-	stats, err := svc.GetTenantToolStats(context.Background(), tenantID.String(), 30)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if stats == nil {
-		t.Fatal("expected stats, got nil")
-	}
-}
-
-func TestToolService_GetTenantToolStats_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-
-	_, err := svc.GetTenantToolStats(context.Background(), "bad", 30)
-	if err == nil {
-		t.Fatal("expected error for invalid tenant ID")
-	}
-}
-
-// ============================================================================
-// Tests: ListToolExecutions
-// ============================================================================
-
-func TestToolService_ListToolExecutions_Success(t *testing.T) {
-	svc, _, _, execRepo := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	exec1 := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 5)
-	execRepo.executions[exec1.ID.String()] = exec1
-
-	exec2 := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 10)
-	execRepo.executions[exec2.ID.String()] = exec2
-
-	input := tool.ListToolExecutionsInput{
-		TenantID: tenantID.String(),
-		Page:     1,
-		PerPage:  10,
-	}
-
-	result, err := svc.ListToolExecutions(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Total != 2 {
-		t.Errorf("expected 2 executions, got %d", result.Total)
-	}
-}
-
-func TestToolService_ListToolExecutions_FilterByStatus(t *testing.T) {
-	svc, _, _, execRepo := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-
-	exec1 := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 5)
-	execRepo.executions[exec1.ID.String()] = exec1
-
-	exec2 := tooldom.NewToolExecution(tenantID, toolID, nil, nil, 10)
-	exec2.Complete(3, nil)
-	execRepo.executions[exec2.ID.String()] = exec2
-
-	input := tool.ListToolExecutionsInput{
-		TenantID: tenantID.String(),
-		Status:   "completed",
-		Page:     1,
-		PerPage:  10,
-	}
-
-	result, err := svc.ListToolExecutions(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.Total != 1 {
-		t.Errorf("expected 1 completed execution, got %d", result.Total)
-	}
-}
-
-func TestToolService_ListToolExecutions_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-
-	input := tool.ListToolExecutionsInput{
-		TenantID: "bad",
-		Page:     1,
-		PerPage:  10,
-	}
-
-	_, err := svc.ListToolExecutions(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for invalid tenant ID")
-	}
-}
-
-// ============================================================================
-// Tests: SetSensorRepo / SetCategoryRepo / SetPipelineDeactivator
-// ============================================================================
-
-func TestToolService_SetSensorRepo(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	sensorRepo := newToolSvcMockSensorRepo()
-	// Should not panic
-	svc.SetSensorRepo(sensorRepo)
 }
 
 func TestToolService_SetCategoryRepo(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	catRepo := newToolSvcMockCategoryRepo()
 	// Should not panic
 	svc.SetCategoryRepo(catRepo)
 }
 
 func TestToolService_SetPipelineDeactivator(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	deactivator := newToolSvcMockPipelineDeactivator()
+	svc, _, _ := newToolSvcTestService()
+	deactivator := newToolSvcMockScanWorkflowDeactivator()
 	// Should not panic
-	svc.SetPipelineDeactivator(deactivator)
+	svc.SetScanWorkflowDeactivator(deactivator)
 }
 
 // ============================================================================
@@ -2635,7 +2200,7 @@ func TestToolService_SetPipelineDeactivator(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListToolsWithConfig_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	input := tool.ListToolsWithConfigInput{
@@ -2655,7 +2220,7 @@ func TestToolService_ListToolsWithConfig_Success(t *testing.T) {
 }
 
 func TestToolService_ListToolsWithConfig_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.ListToolsWithConfigInput{
 		TenantID: "bad",
@@ -2674,7 +2239,7 @@ func TestToolService_ListToolsWithConfig_InvalidTenantID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_GetToolWithConfig_Success(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2697,7 +2262,7 @@ func TestToolService_GetToolWithConfig_Success(t *testing.T) {
 }
 
 func TestToolService_GetToolWithConfig_WithCategory(t *testing.T) {
-	svc, repo, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 	catRepo := newToolSvcMockCategoryRepo()
 	svc.SetCategoryRepo(catRepo)
@@ -2732,7 +2297,7 @@ func TestToolService_GetToolWithConfig_WithCategory(t *testing.T) {
 }
 
 func TestToolService_GetToolWithConfig_NotFound(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	_, err := svc.GetToolWithConfig(context.Background(), tenantID.String(), shared.NewID().String())
@@ -2742,7 +2307,7 @@ func TestToolService_GetToolWithConfig_NotFound(t *testing.T) {
 }
 
 func TestToolService_GetToolWithConfig_InvalidIDs(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetToolWithConfig(context.Background(), "bad", shared.NewID().String())
 	if err == nil {
@@ -2760,7 +2325,7 @@ func TestToolService_GetToolWithConfig_InvalidIDs(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListEnabledToolsForTenant_Success(t *testing.T) {
-	svc, repo, configRepo, _ := newToolSvcTestService()
+	svc, repo, configRepo := newToolSvcTestService()
 	tenantID := shared.NewID()
 
 	platformTool := createPlatformTool("nuclei", tooldom.InstallGo)
@@ -2780,7 +2345,7 @@ func TestToolService_ListEnabledToolsForTenant_Success(t *testing.T) {
 }
 
 func TestToolService_ListEnabledToolsForTenant_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.ListEnabledToolsForTenant(context.Background(), "bad")
 	if err == nil {
@@ -2789,94 +2354,16 @@ func TestToolService_ListEnabledToolsForTenant_InvalidTenantID(t *testing.T) {
 }
 
 // ============================================================================
-// Tests: RecordToolExecution with PipelineRunID and StepRunID
-// ============================================================================
-
-func TestToolService_RecordToolExecution_WithPipelineContext(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-	toolID := shared.NewID()
-	pipelineRunID := shared.NewID()
-	stepRunID := shared.NewID()
-
-	input := tool.RecordToolExecutionInput{
-		TenantID:      tenantID.String(),
-		ToolID:        toolID.String(),
-		PipelineRunID: pipelineRunID.String(),
-		StepRunID:     stepRunID.String(),
-		TargetsCount:  3,
-	}
-
-	result, err := svc.RecordToolExecution(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result.PipelineRunID == nil || *result.PipelineRunID != pipelineRunID {
-		t.Error("expected pipeline run ID to be set")
-	}
-	if result.StepRunID == nil || *result.StepRunID != stepRunID {
-		t.Error("expected step run ID to be set")
-	}
-}
-
-func TestToolService_RecordToolExecution_InvalidSensorID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-
-	input := tool.RecordToolExecutionInput{
-		TenantID: tenantID.String(),
-		ToolID:   shared.NewID().String(),
-		SensorID: "bad-uuid",
-	}
-
-	_, err := svc.RecordToolExecution(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for invalid sensor ID")
-	}
-}
-
-func TestToolService_RecordToolExecution_InvalidPipelineRunID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-
-	input := tool.RecordToolExecutionInput{
-		TenantID:      tenantID.String(),
-		ToolID:        shared.NewID().String(),
-		PipelineRunID: "bad-uuid",
-	}
-
-	_, err := svc.RecordToolExecution(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for invalid pipeline run ID")
-	}
-}
-
-func TestToolService_RecordToolExecution_InvalidStepRunID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
-	tenantID := shared.NewID()
-
-	input := tool.RecordToolExecutionInput{
-		TenantID:  tenantID.String(),
-		ToolID:    shared.NewID().String(),
-		StepRunID: "bad-uuid",
-	}
-
-	_, err := svc.RecordToolExecution(context.Background(), input)
-	if err == nil {
-		t.Fatal("expected error for invalid step run ID")
-	}
-}
-
-// ============================================================================
 // Tests: GetEffectiveToolConfig
 // ============================================================================
 
 func TestToolService_GetEffectiveToolConfig_Success(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, repo, _ := newToolSvcTestService()
 	tenantID := shared.NewID()
-	toolID := shared.NewID()
+	platform := createPlatformTool("effective-config-tool", tooldom.InstallDocker)
+	repo.AddTool(platform)
 
-	config, err := svc.GetEffectiveToolConfig(context.Background(), tenantID.String(), toolID.String())
+	config, err := svc.GetEffectiveToolConfig(context.Background(), tenantID.String(), platform.ID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -2886,7 +2373,7 @@ func TestToolService_GetEffectiveToolConfig_Success(t *testing.T) {
 }
 
 func TestToolService_GetEffectiveToolConfig_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetEffectiveToolConfig(context.Background(), "bad", shared.NewID().String())
 	if err == nil {
@@ -2895,7 +2382,7 @@ func TestToolService_GetEffectiveToolConfig_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_GetEffectiveToolConfig_InvalidToolID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	_, err := svc.GetEffectiveToolConfig(context.Background(), shared.NewID().String(), "bad")
 	if err == nil {
@@ -2908,7 +2395,7 @@ func TestToolService_GetEffectiveToolConfig_InvalidToolID(t *testing.T) {
 // ============================================================================
 
 func TestToolService_ListTenantToolConfigs_Success(t *testing.T) {
-	svc, _, configRepo, _ := newToolSvcTestService()
+	svc, _, configRepo := newToolSvcTestService()
 	tenantID := shared.NewID()
 	toolID := shared.NewID()
 
@@ -2931,7 +2418,7 @@ func TestToolService_ListTenantToolConfigs_Success(t *testing.T) {
 }
 
 func TestToolService_ListTenantToolConfigs_InvalidTenantID(t *testing.T) {
-	svc, _, _, _ := newToolSvcTestService()
+	svc, _, _ := newToolSvcTestService()
 
 	input := tool.ListTenantToolConfigsInput{
 		TenantID: "bad",
@@ -2946,7 +2433,7 @@ func TestToolService_ListTenantToolConfigs_InvalidTenantID(t *testing.T) {
 }
 
 func TestToolService_ListTenantToolConfigs_WithToolFilter(t *testing.T) {
-	svc, _, configRepo, _ := newToolSvcTestService()
+	svc, _, configRepo := newToolSvcTestService()
 	tenantID := shared.NewID()
 	toolID1 := shared.NewID()
 	toolID2 := shared.NewID()
@@ -2973,6 +2460,73 @@ func TestToolService_ListTenantToolConfigs_WithToolFilter(t *testing.T) {
 	}
 }
 
-func (m *toolSvcMockSensorRepo) KnownCapabilityNames(_ context.Context, _ *shared.ID, _, _ []string) (map[string]bool, map[string]bool, error) {
-	return map[string]bool{}, map[string]bool{}, nil
+// A custom tool may not take a platform tool name: names resolve to the
+// platform tool first, so the custom one would never run (settings audit SC-M5).
+func TestToolService_CreateCustomTool_PlatformNameReserved(t *testing.T) {
+	svc, repo, _ := newToolSvcTestService()
+	platform := &tooldom.Tool{ID: shared.NewID(), Name: "nuclei", IsBuiltin: true}
+	repo.tools[platform.ID.String()] = platform
+
+	_, err := svc.CreateCustomTool(context.Background(), tool.CreateCustomToolInput{
+		TenantID: shared.NewID().String(), Name: "nuclei", DisplayName: "Nuclei", InstallMethod: "docker",
+	})
+	if !errors.Is(err, shared.ErrConflict) {
+		t.Fatalf("custom tool named like a platform tool: err = %v, want ErrConflict", err)
+	}
+}
+
+// Security test: the tool settings and views load a tool by id. Another
+// tenant's custom tool must answer not-found (its definition and default
+// config never cross the tenant boundary, and no tenant may attach a config
+// to it); platform tools and the caller's own custom tools still work.
+func TestToolService_TenantToolEndpoints_HideOtherTenantsCustomTool(t *testing.T) {
+	svc, repo, _ := newToolSvcTestService()
+	ctx := context.Background()
+	owner, other := shared.NewID(), shared.NewID()
+
+	custom := createTenantTool(owner, "owner-secret-scanner", tooldom.InstallDocker)
+	repo.AddTool(custom)
+	platform := createPlatformTool("platform-scanner", tooldom.InstallDocker)
+	repo.AddTool(platform)
+
+	notFound := func(name string, err error) {
+		t.Helper()
+		if !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s on another tenant's custom tool: err = %v, want not found", name, err)
+		}
+	}
+	_, err := svc.GetToolWithConfig(ctx, other.String(), custom.ID.String())
+	notFound("GetToolWithConfig", err)
+	_, err = svc.GetEffectiveToolConfig(ctx, other.String(), custom.ID.String())
+	notFound("GetEffectiveToolConfig", err)
+	_, err = svc.CreateTenantToolConfig(ctx, tool.CreateTenantToolConfigInput{TenantID: other.String(), ToolID: custom.ID.String(), IsEnabled: true})
+	notFound("CreateTenantToolConfig", err)
+	_, err = svc.UpdateTenantToolConfig(ctx, tool.UpdateTenantToolConfigInput{TenantID: other.String(), ToolID: custom.ID.String(), IsEnabled: true})
+	notFound("UpdateTenantToolConfig", err)
+
+	if _, err := svc.GetToolWithConfig(ctx, owner.String(), custom.ID.String()); err != nil {
+		t.Errorf("owner reads its own custom tool: %v", err)
+	}
+	if _, err := svc.GetToolWithConfig(ctx, other.String(), platform.ID.String()); err != nil {
+		t.Errorf("any tenant reads a platform tool: %v", err)
+	}
+	if _, err := svc.GetEffectiveToolConfig(ctx, other.String(), platform.ID.String()); err != nil {
+		t.Errorf("any tenant reads a platform tool's effective config: %v", err)
+	}
+}
+
+// The catalog minimum version is a release version, stored normalized.
+func TestToolService_CustomToolMinVersion(t *testing.T) {
+	svc, _, _ := newToolSvcTestService()
+	tenantID := shared.NewID().String()
+	_, err := svc.CreateCustomTool(context.Background(), tool.CreateCustomToolInput{
+		TenantID: tenantID, Name: "min-bad", InstallMethod: "binary", MinVersion: "latest"})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("min_version \"latest\": err %v, want a validation error", err)
+	}
+	created, err := svc.CreateCustomTool(context.Background(), tool.CreateCustomToolInput{
+		TenantID: tenantID, Name: "min-ok", InstallMethod: "binary", MinVersion: "3.2"})
+	if err != nil || created.MinVersion != "v3.2.0" {
+		t.Fatalf("min_version 3.2: %v %q, want v3.2.0", err, created.MinVersion)
+	}
 }

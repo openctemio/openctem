@@ -2,8 +2,11 @@
 package ingest
 
 import (
+	"context"
+
 	"github.com/openctemio/ctis"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -24,8 +27,9 @@ const (
 	// MaxPropertiesPerAsset is the maximum number of properties per asset.
 	MaxPropertiesPerAsset = 100
 
-	// MaxTagsPerAsset is the maximum number of tags per asset.
-	MaxTagsPerAsset = 50
+	// MaxTagsPerAsset is the maximum number of tags per asset: the one limit
+	// the domain, the API and the web share.
+	MaxTagsPerAsset = asset.MaxTagsPerAsset
 
 	// MaxErrorsToReturn limits the number of errors returned in the response.
 	MaxErrorsToReturn = 100
@@ -98,6 +102,42 @@ type Options struct {
 	// report counts once, as one scan, when it completes (it may arrive in
 	// many segments).
 	DeferSensorStats bool
+	// Binding is the authority behind the report (RFC-040 §5.3). The zero
+	// value is an unsolicited sensor report: it never changes an existing
+	// asset and never reopens a finding a person resolved.
+	Binding Binding
+	// Admitted: the accept side already ran the unsolicited-results gate
+	// (quarantine or warn) for this report, so Ingest does not run it again.
+	Admitted bool
+	// Route names the ingest route for a quarantined report (ctis, sarif,
+	// recon, scan, chunk).
+	Route string
+	// Actor, when set, limits an ingest a person started (an upload) to the
+	// assets that person may change: an existing asset outside it is not
+	// touched at all (not even marked seen), a host the report names that
+	// is not an existing in-scope asset is not created, and the findings of
+	// both are skipped. Both cases count as AssetsSkippedOutOfScope, so the
+	// response does not tell a hidden asset from a missing one. Nil means
+	// unrestricted.
+	Actor ActorScope
+	// SourceKind and SourceName say what a server-side ingest is (an
+	// import, an integration) for attribute reconciliation (RFC-069). Only
+	// a trusted binding may set them; every sensor and CI report is a scan.
+	SourceKind asset.SourceKind
+	SourceName string
+	// SourceRun is the import, sync run or feed sequence of a server-side
+	// ingest (trusted binding only; informational).
+	SourceRun string
+	// NoExposureProjection: the report lists targets someone published, not
+	// what was observed (program targets, RFC-065 §16.8), so its service
+	// assets open no exposure.
+	NoExposureProjection bool
+}
+
+// ActorScope is the data scope of the person behind an upload.
+type ActorScope interface {
+	// AssetsInScope returns the subset of assetIDs the actor may change.
+	AssetsInScope(ctx context.Context, assetIDs []shared.ID) ([]shared.ID, error)
 }
 
 // GetBranchInfo returns branch info from Input or Report metadata.
@@ -142,24 +182,80 @@ func (i Input) IsFullCoverage() bool {
 
 // Output represents the result of ingestion.
 type Output struct {
-	ReportID             string   `json:"report_id"`
-	AssetsCreated        int      `json:"assets_created"`
-	AssetsUpdated        int      `json:"assets_updated"`
-	FindingsCreated      int      `json:"findings_created"`
-	FindingsUpdated      int      `json:"findings_updated"`
-	FindingsSkipped      int      `json:"findings_skipped"`
-	FindingsAutoResolved int      `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened int      `json:"findings_auto_reopened,omitempty"`
-	FindingsSuppressed   int      `json:"findings_suppressed,omitempty"`
-	ComponentsCreated    int      `json:"components_created,omitempty"`
-	ComponentsUpdated    int      `json:"components_updated,omitempty"`
-	DependenciesLinked   int      `json:"dependencies_linked,omitempty"`
-	LicensesDiscovered   int      `json:"licenses_discovered,omitempty"`
-	LicensesLinked       int      `json:"licenses_linked,omitempty"`
-	CVEsCreated          int      `json:"cves_created,omitempty"`
-	CVEsUpdated          int      `json:"cves_updated,omitempty"`
-	Errors               []string `json:"errors,omitempty"`
-	Warnings             []string `json:"warnings,omitempty"`
+	ReportID      string `json:"report_id"`
+	AssetsCreated int    `json:"assets_created"`
+	AssetsUpdated int    `json:"assets_updated"`
+	// AssetsSkippedExcluded counts new assets not added because they match
+	// an active scope exclusion (RFC-042 F16).
+	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`
+	// AssetsSkippedOutOfScope counts report assets an upload's actor may not
+	// change (Options.Actor): existing assets outside their data scope and
+	// hosts that would have been new. Their findings are skipped.
+	AssetsSkippedOutOfScope int `json:"assets_skipped_out_of_scope,omitempty"`
+	FindingsCreated         int `json:"findings_created"`
+	FindingsUpdated         int `json:"findings_updated"`
+	FindingsSkipped         int `json:"findings_skipped"`
+	FindingsAutoResolved    int `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened    int `json:"findings_auto_reopened,omitempty"`
+	// FindingsSourceResolved counts open findings resolved because their
+	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
+	// FindingsSourceWouldResolve counts them instead.
+	FindingsSourceResolved     int `json:"findings_source_resolved,omitempty"`
+	FindingsSourceWouldResolve int `json:"findings_source_would_resolve,omitempty"`
+	// FindingsSourceMitigated counts the report's findings its source said
+	// are mitigated; they are never created or updated as sightings.
+	FindingsSourceMitigated int `json:"findings_source_mitigated,omitempty"`
+	// SourceResolveIDs are the findings source-asserted resolve closed (or,
+	// in dry_run, would close); SourceResolveMode is the mode it ran in.
+	SourceResolveIDs  []shared.ID       `json:"-"`
+	SourceResolveMode SourceResolveMode `json:"-"`
+	// FindingsVEXNotAffected counts the report's findings with a VEX
+	// not_affected statement; FindingsVEXClosed counts the open findings it
+	// closed (enforce), FindingsVEXWouldClose those it would close
+	// (dry_run). VEXIDs and VEXMode feed the audit record.
+	FindingsVEXNotAffected int         `json:"findings_vex_not_affected,omitempty"`
+	FindingsVEXClosed      int         `json:"findings_vex_closed,omitempty"`
+	FindingsVEXWouldClose  int         `json:"findings_vex_would_close,omitempty"`
+	VEXIDs                 []shared.ID `json:"-"`
+	VEXMode                VEXMode     `json:"-"`
+	FindingsSuppressed     int         `json:"findings_suppressed,omitempty"`
+	ComponentsCreated      int         `json:"components_created,omitempty"`
+	ComponentsUpdated      int         `json:"components_updated,omitempty"`
+	DependenciesLinked     int         `json:"dependencies_linked,omitempty"`
+	LicensesDiscovered     int         `json:"licenses_discovered,omitempty"`
+	LicensesLinked         int         `json:"licenses_linked,omitempty"`
+	CVEsCreated            int         `json:"cves_created,omitempty"`
+	CVEsUpdated            int         `json:"cves_updated,omitempty"`
+	// EndpointsCreated and EndpointsUpdated count web endpoints written to
+	// the sub-inventory; EndpointsRefused those dropped (unparseable, an
+	// origin the report may not write to); EndpointsStatic static files
+	// counted and not stored; EndpointsOverCap new endpoints or parameters
+	// beyond the per-origin caps; LegacyURLAssetsFolded discovered_url
+	// assets turned into endpoints instead of assets.
+	EndpointsCreated      int      `json:"endpoints_created,omitempty"`
+	EndpointsUpdated      int      `json:"endpoints_updated,omitempty"`
+	EndpointsRefused      int      `json:"endpoints_refused,omitempty"`
+	EndpointsStatic       int      `json:"endpoints_static,omitempty"`
+	EndpointsOverCap      int      `json:"endpoints_over_cap,omitempty"`
+	LegacyURLAssetsFolded int      `json:"legacy_url_assets_folded,omitempty"`
+	Errors                []string `json:"errors,omitempty"`
+	Warnings              []string `json:"warnings,omitempty"`
+
+	// Binding is the authority the report was applied under: command,
+	// unsolicited or trusted (RFC-040 §5.3).
+	Binding string `json:"binding,omitempty"`
+	// AssetsLimited counts existing assets the report matched but was not
+	// allowed to change (no command covering them): they were only marked
+	// seen, and only while active.
+	AssetsLimited int `json:"assets_limited,omitempty"`
+	// ReopensWithheld counts re-detected findings a person had resolved that
+	// were left resolved because no command covering their asset stood
+	// behind the report.
+	ReopensWithheld int `json:"reopens_withheld,omitempty"`
+	// UnsolicitedWarned: an unsolicited report from a sensor whose role may
+	// not push results on its own, applied because the tenant's mode is
+	// "warn"; in "quarantine" mode it would have been held for review.
+	UnsolicitedWarned bool `json:"unsolicited_warned,omitempty"`
 
 	// FailedFindings contains detailed info about findings that failed to save.
 	// This is used for audit logging and debugging purposes.
@@ -168,6 +264,21 @@ type Output struct {
 	// AssetMap maps each CTIS asset id of the report to the persisted asset
 	// it was merged into. Not exposed; v2 derives per-item outcomes from it.
 	AssetMap map[string]shared.ID `json:"-"`
+
+	// SightedFingerprints are the stored fingerprints of the findings this
+	// report sighted (after alias resolution). Not exposed; the CI gate
+	// records them for its run (RFC-051).
+	SightedFingerprints []string `json:"-"`
+
+	// ExcludedAssetRefs are the CTIS asset ids of the report that were not
+	// added because they match a scope exclusion. Their findings are skipped,
+	// never attached to another asset of the report.
+	ExcludedAssetRefs map[string]bool `json:"-"`
+
+	// OutOfScopeAssetRefs are the CTIS asset ids of the report skipped
+	// because the upload's actor may not change them (Options.Actor). Their
+	// findings are skipped, never attached to another asset of the report.
+	OutOfScopeAssetRefs map[string]bool `json:"-"`
 }
 
 // FailedFinding contains details about a finding that failed during ingestion.

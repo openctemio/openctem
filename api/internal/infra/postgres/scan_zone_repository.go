@@ -312,17 +312,18 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		SELECT zs.zone_id, s.id, s.name, `+sensorActiveCommandsSQL("s")+`, s.effective_max_jobs,
 		       (SELECT count(*) FROM commands c
 		        WHERE c.tenant_id = $1 AND c.sensor_id = s.id
-		          AND c.status IN `+activeCommandStatuses+`) AS active_commands
+		          AND c.status IN `+activeCommandStatuses+`) AS active_commands,
+		       s.reported_local_policy
 		FROM scan_zone_sensors zs
 		JOIN sensors s ON s.id = zs.sensor_id AND s.tenant_id = zs.tenant_id
 		WHERE zs.tenant_id = $1
 		  AND zs.zone_id = ANY($2::uuid[])
 		  AND s.status = 'active'
-		  AND s.health = 'online'
+		  AND s.health IN `+sensorDispatchableHealthSQL+`
 		  AND s.last_seen_at IS NOT NULL
-		  AND (s.key_expires_at IS NULL OR s.key_expires_at > NOW())
+		  AND `+sensorKeyUsableSQL("s")+`
 		  AND (s.execution_mode = 'daemon' OR s.type IN ('worker', 'collector'))
-		  AND ($3::text = '' OR $3::text = ANY(s.effective_tools))
+		  AND ($3::text = '' OR $3::text = ANY(`+sensorDispatchTools("s")+`))
 		ORDER BY zs.zone_id, active_commands ASC,
 		         `+sensorFreeSlotsSQL("s")+` DESC,
 		         `+sensorToolThroughputSQL("s", "$3")+` DESC NULLS LAST,
@@ -336,8 +337,9 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		var (
 			zoneID, sensorID string
 			c                scanzone.SensorCandidate
+			localPolicy      []byte
 		)
-		if err := rows.Scan(&zoneID, &sensorID, &c.Name, &c.CurrentJobs, &c.MaxConcurrentJobs, &c.ActiveCommands); err != nil {
+		if err := rows.Scan(&zoneID, &sensorID, &c.Name, &c.CurrentJobs, &c.MaxConcurrentJobs, &c.ActiveCommands, &localPolicy); err != nil {
 			return nil, fmt.Errorf("scan routable sensor: %w", err)
 		}
 		zid, err := shared.IDFromString(zoneID)
@@ -347,6 +349,7 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		if c.ID, err = shared.IDFromString(sensorID); err != nil {
 			return nil, err
 		}
+		c.LocalPolicy, _ = scanLocalPolicy(c.ID, localPolicy, sql.NullTime{})
 		out[zid] = append(out[zid], c)
 	}
 	return out, rows.Err()
@@ -359,7 +362,7 @@ const coverageAddresses = `
 	WITH addrs AS (
 		SELECT DISTINCT a.name::inet AS ip
 		FROM assets a
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.asset_type IN ('ip_address', 'host')
 		  AND position('/' IN a.name) = 0
 		  AND pg_input_is_valid(a.name, 'inet')
@@ -397,8 +400,8 @@ func (r *ScanZoneRepository) Coverage(ctx context.Context, tenantID shared.ID) (
 		       (SELECT count(*) FROM scan_zone_sensors zs
 		        JOIN sensors s ON s.id = zs.sensor_id AND s.tenant_id = zs.tenant_id
 		        WHERE zs.tenant_id = z.tenant_id AND zs.zone_id = z.id
-		          AND s.status = 'active' AND s.health = 'online'
-		          AND (s.key_expires_at IS NULL OR s.key_expires_at > NOW())),
+		          AND s.status = 'active' AND s.health IN `+sensorDispatchableHealthSQL+`
+		          AND `+sensorKeyUsableSQL("s")+`),
 		       (SELECT count(*) FROM addrs ad
 		        WHERE EXISTS (SELECT 1 FROM unnest(z.ranges) AS r(c) WHERE ad.ip <<= r.c))
 		FROM scan_zones z

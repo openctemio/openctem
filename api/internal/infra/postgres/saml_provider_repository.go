@@ -52,6 +52,12 @@ func (r *SAMLProviderRepository) GetByTenant(ctx context.Context, tenantID share
 
 // Upsert inserts or replaces the tenant's SAML config (one per tenant).
 func (r *SAMLProviderRepository) Upsert(ctx context.Context, p *samlprovider.SAMLProvider) error {
+	return upsertSAMLProvider(ctx, r.db, p)
+}
+
+// upsertSAMLProvider is Upsert on any executor, so an approved pending SSO
+// change can write the live config inside its own transaction.
+func upsertSAMLProvider(ctx context.Context, exec executor, p *samlprovider.SAMLProvider) error {
 	const q = `
 		INSERT INTO saml_providers
 		    (id, tenant_id, idp_entity_id, idp_sso_url, idp_certificate, allowed_domains, default_role, auto_provision, enabled, created_at, updated_at)
@@ -72,7 +78,7 @@ func (r *SAMLProviderRepository) Upsert(ctx context.Context, p *samlprovider.SAM
 	if domains == nil {
 		domains = []string{}
 	}
-	_, err := r.db.ExecContext(ctx, q,
+	_, err := exec.ExecContext(ctx, q,
 		p.ID().String(), p.TenantID().String(), p.IDPEntityID(), p.IDPSSOURL(), p.IDPCertificate(),
 		pq.Array(domains), p.DefaultRole(), p.AutoProvision(), p.Enabled(),
 	)

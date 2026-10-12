@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { legalConfig } from '@/lib/legal'
+import { legalSettings } from '@/lib/legal-settings'
 import {
   Card,
   CardContent,
@@ -10,21 +12,29 @@ import {
 } from '@/components/ui/card'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
+import { hasSessionCookie } from '@/lib/middleware/auth'
 
 // Use refactored LoginForm from features directory
 import { LoginForm } from '@/features/auth/components/login-form'
 import { SignUpPrompt } from '@/features/auth/components/sign-up-prompt'
 import { LegalNotice } from '@/features/auth/components/legal-notice'
+import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 
 interface LoginPageProps {
   searchParams: Promise<{
+    // The page to return to: `next` from the proxy (src/proxy.ts), `redirect`
+    // from the client after a session ends, `returnTo` from invitations.
+    next?: string
     redirect?: string
     returnTo?: string
     org?: string
+    // Set by the step-up dialog for an SSO account: sign in again at the
+    // identity provider (it is asked to authenticate the user again).
+    reauth?: string
     error?: string
     // Preserved from the invitation flow — when a user clicks an
     // invite link and doesn't have an account, the invitation page
-    // redirects to /login?email=alice@co.com&returnTo=/invitations/{token}.
+    // redirects to /login?email=alice@co.com&returnTo=/invitations.
     // The login page passes this email (and the invitation returnTo)
     // through to the "Sign up" link so the register form can pre-fill it
     // and send the invitation token.
@@ -33,16 +43,16 @@ interface LoginPageProps {
 }
 
 export default async function SignIn({ searchParams }: LoginPageProps) {
-  // Get redirect URL from search params (support both 'redirect' and 'returnTo')
+  const legal = legalConfig(await legalSettings())
   const params = await searchParams
-  const redirectTo = validateRedirectUrl(params.returnTo || params.redirect, '/')
+  const returnTo = params.returnTo || params.next || params.redirect
+  const redirectTo = validateRedirectUrl(returnTo, '/')
 
-  // Check if user is already authenticated
+  // Already signed in? The same check as the proxy (cookie present and shaped
+  // like a token): if the two disagreed, a cookie the proxy rejects but this
+  // page accepts would bounce the browser between them.
   const cookieStore = await cookies()
-  const hasAuthToken = cookieStore.get(env.auth.cookieName)?.value
-  const hasRefreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
-
-  if (hasAuthToken || hasRefreshToken) {
+  if (hasSessionCookie((name) => cookieStore.get(name)?.value)) {
     // User is authenticated - determine where to redirect
     const hasTenant = cookieStore.get(env.cookies.tenant)?.value
     const hasPendingTenants = cookieStore.get(env.cookies.pendingTenants)?.value
@@ -53,7 +63,7 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
     } else if (hasPendingTenants) {
       // User has multiple teams but hasn't selected one - redirect to select-tenant
       redirect('/select-tenant')
-    } else if (redirectTo.includes('/invitations/')) {
+    } else if (isInvitationReturnTo(redirectTo)) {
       // Special case: invitation links — let them through with current auth
       // so the invitation acceptance flow can issue a fresh tenant cookie.
       redirect(redirectTo)
@@ -85,14 +95,18 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
           {/* Sign-up is offered only when the server allows it, or when the
               visitor came from an invitation (accounts are otherwise created
               by an administrator). */}
-          <SignUpPrompt returnTo={params.returnTo || params.redirect} email={params.email} />
+          <SignUpPrompt returnTo={returnTo} email={params.email} />
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm redirectTo={redirectTo} orgSlug={params.org} />
+        <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
       </CardContent>
       <CardFooter className="justify-center empty:hidden">
-        <LegalNotice action="clicking sign in" />
+        <LegalNotice
+          action="clicking sign in"
+          termsUrl={legal.termsUrl}
+          privacyUrl={legal.privacyUrl}
+        />
       </CardFooter>
     </Card>
   )

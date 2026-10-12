@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -19,12 +19,12 @@ import (
 
 // SimulationHandler handles attack simulation and control test HTTP endpoints.
 type SimulationHandler struct {
-	service *app.SimulationService
+	service *compliance.SimulationService
 	logger  *logger.Logger
 }
 
 // NewSimulationHandler creates a new simulation handler.
-func NewSimulationHandler(svc *app.SimulationService, log *logger.Logger) *SimulationHandler {
+func NewSimulationHandler(svc *compliance.SimulationService, log *logger.Logger) *SimulationHandler {
 	return &SimulationHandler{service: svc, logger: log}
 }
 
@@ -34,13 +34,10 @@ func NewSimulationHandler(svc *app.SimulationService, log *logger.Logger) *Simul
 func (h *SimulationHandler) ListSimulations(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 	filter := simulation.SimulationFilter{}
 
 	if t := r.URL.Query().Get("type"); t != "" {
@@ -80,7 +77,7 @@ func (h *SimulationHandler) CreateSimulation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sim, err := h.service.CreateSimulation(r.Context(), app.CreateSimulationInput{
+	sim, err := h.service.CreateSimulation(r.Context(), compliance.CreateSimulationInput{
 		TenantID:           tenantID,
 		Name:               req.Name,
 		Description:        req.Description,
@@ -126,7 +123,7 @@ func (h *SimulationHandler) UpdateSimulation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	sim, err := h.service.UpdateSimulation(r.Context(), app.UpdateSimulationInput{
+	sim, err := h.service.UpdateSimulation(r.Context(), compliance.UpdateSimulationInput{
 		TenantID:           tenantID,
 		SimulationID:       simID,
 		Name:               req.Name,
@@ -137,6 +134,7 @@ func (h *SimulationHandler) UpdateSimulation(w http.ResponseWriter, r *http.Requ
 		TargetAssets:       req.TargetAssets,
 		Config:             req.Config,
 		Tags:               req.Tags,
+		ActorID:            middleware.GetUserID(r.Context()),
 	})
 	if err != nil {
 		h.handleError(w, err)
@@ -188,10 +186,10 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 	tenantID := middleware.MustGetTenantID(r.Context())
 	simID := chi.URLParam(r, "id")
 
-	page := pagination.New(
-		parseQueryInt(r.URL.Query().Get("page"), 1),
-		parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
-	)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	result, err := h.service.ListSimulationRuns(r.Context(), tenantID, simID, page)
 	if err != nil {
@@ -230,13 +228,10 @@ func (h *SimulationHandler) ListSimulationRuns(w http.ResponseWriter, r *http.Re
 func (h *SimulationHandler) ListControlTests(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	perPage := parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage)
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	page := pagination.New(max(parseQueryInt(r.URL.Query().Get("page"), 1), 1), perPage)
 	filter := simulation.ControlTestFilter{}
 
 	if f := r.URL.Query().Get("framework"); f != "" {
@@ -286,7 +281,7 @@ func (h *SimulationHandler) CreateControlTest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	ct, err := h.service.CreateControlTest(r.Context(), app.CreateControlTestInput{
+	ct, err := h.service.CreateControlTest(r.Context(), compliance.CreateControlTestInput{
 		TenantID:       tenantID,
 		Name:           req.Name,
 		Description:    req.Description,
@@ -319,7 +314,7 @@ func (h *SimulationHandler) RecordControlTestResult(w http.ResponseWriter, r *ht
 		return
 	}
 
-	ct, err := h.service.RecordControlTestResult(r.Context(), app.RecordControlTestResultInput{
+	ct, err := h.service.RecordControlTestResult(r.Context(), compliance.RecordControlTestResultInput{
 		TenantID:   tenantID,
 		ControlID:  ctID,
 		Status:     req.Status,

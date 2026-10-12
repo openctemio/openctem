@@ -1,8 +1,10 @@
 package jira
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -84,9 +86,15 @@ func DefaultMappingConfig() MappingConfig {
 			"high":     "High",
 			"medium":   "Medium",
 			"low":      "Low",
+			// Informational findings carry no remediation obligation, so a
+			// ticket raised for one lands at the bottom of the backlog.
+			"info": "Lowest",
+			"none": "Lowest",
 		},
 		// INBOUND (Jira status name → finding status). Lower-cased keys.
 		//
+		// Only FindingStatus.IsTicketInboundTarget values (confirmed,
+		// in_progress, fix_applied) may appear here or in a tenant overlay.
 		// Two domain rules shape this map and are intentional, not omissions:
 		//   1. false_positive / accepted REQUIRE APPROVAL (RequiresApproval) — a
 		//      webhook has no approving actor, so Jira "Won't Do"/"Rejected" is
@@ -115,8 +123,10 @@ func DefaultMappingConfig() MappingConfig {
 			"backlog":  vulnerability.FindingStatusConfirmed,
 			"selected": vulnerability.FindingStatusConfirmed,
 			"reopened": vulnerability.FindingStatusConfirmed,
-			// Duplicate is a valid webhook-settable terminal (no approval needed).
-			"duplicate": vulnerability.FindingStatusDuplicate,
+			// "duplicate" is NOT mapped: marking a duplicate closes the finding
+			// and is a triage decision that names the surviving finding
+			// (POST /findings/{id}/duplicates, findings:triage), which a
+			// webhook cannot make.
 		},
 		// OUTBOUND (finding status → Jira status NAME). Stock Jira workflow names
 		// ("To Do" / "In Progress" / "Done") so it works out-of-box for default
@@ -125,7 +135,7 @@ func DefaultMappingConfig() MappingConfig {
 		// LOSSY BY NATURE: OpenCTEM has a richer lifecycle than Jira's 3 stock
 		// statuses, so several finding states fold onto "Done" / "In Progress".
 		// Deliberately UNMAPPED here (→ no auto-push; sync comments instead):
-		//   - false_positive / accepted / accepted_risk — no stock Jira status;
+		//   - false_positive / accepted — no stock Jira status;
 		//     customers map these to their "Won't Do"/"Acknowledged" resolution.
 		//   - draft / in_review — internal pentest states, hidden pre-publication.
 		//   - duplicate — usually linked, not a board move.
@@ -133,11 +143,8 @@ func DefaultMappingConfig() MappingConfig {
 			"new":         "To Do",
 			"confirmed":   "To Do",
 			"in_progress": "In Progress",
-			"remediation": "In Progress", // pentest: dev fixing
-			"retest":      "In Progress", // pentest: awaiting re-verification
 			"fix_applied": "Done",
 			"resolved":    "Done",
-			"verified":    "Done", // pentest resolve
 		},
 		SyncEnabled:      false,
 		DefaultPriority:  "Medium",
@@ -165,8 +172,9 @@ func (m MappingConfig) FindingStatusForJira(jiraStatus string) (vulnerability.Fi
 	if !ok {
 		return "", false
 	}
-	// Defend against invalid override values reaching the domain.
-	if _, err := vulnerability.ParseFindingStatus(string(s)); err != nil {
+	// Defend against invalid override values reaching the domain, and never
+	// let a ticket close a finding (see IsTicketInboundTarget).
+	if _, err := vulnerability.ParseFindingStatus(string(s)); err != nil || !s.IsTicketInboundTarget() {
 		return "", false
 	}
 	return s, true
@@ -181,6 +189,41 @@ func (m MappingConfig) JiraStatusForFinding(findingStatus string) (string, bool)
 		return "", false
 	}
 	return s, true
+}
+
+// ValidateTicketingConfig checks the parts of an integration's
+// config["ticketing"] a person can get wrong in a way that weakens a control.
+// Today: every status_inbound target must be a valid finding status that a
+// ticket may set (IsTicketInboundTarget). A Jira "Done" mapped to resolved,
+// or "Won't Do" to false_positive / accepted, would close findings with no
+// findings:verify holder and no approval, so the save is refused (ErrValidation).
+func ValidateTicketingConfig(config map[string]any) error {
+	section, ok := config["ticketing"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	raw, ok := section["status_inbound"]
+	if !ok || raw == nil {
+		return nil
+	}
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%w: ticketing.status_inbound must be an object of Jira status to finding status", shared.ErrValidation)
+	}
+	for jiraStatus, target := range m {
+		t, ok := target.(string)
+		if !ok {
+			return fmt.Errorf("%w: ticketing.status_inbound[%q] must be a string", shared.ErrValidation, jiraStatus)
+		}
+		fs, err := vulnerability.ParseFindingStatus(t)
+		if err != nil {
+			return fmt.Errorf("%w: ticketing.status_inbound[%q]: %q is not a finding status", shared.ErrValidation, jiraStatus, t)
+		}
+		if !fs.IsTicketInboundTarget() {
+			return fmt.Errorf("%w: ticketing.status_inbound[%q] = %q: a ticket may only set confirmed, in_progress or fix_applied; resolving needs findings:verify and false_positive / accepted need an approval", shared.ErrValidation, jiraStatus, t)
+		}
+	}
+	return nil
 }
 
 // ParseMappingConfig builds a MappingConfig from an integration's JSONB config.
@@ -232,8 +275,12 @@ func ParseMappingConfig(config map[string]any) MappingConfig {
 				continue
 			}
 			fs, err := vulnerability.ParseFindingStatus(t)
-			if err != nil {
-				continue // skip invalid target, keep the rest
+			if err != nil || !fs.IsTicketInboundTarget() {
+				// Skip an invalid or closing target (resolved, false_positive,
+				// accepted, duplicate), keep the rest. Saving such a config is
+				// refused (ValidateTicketingConfig); this covers rows stored
+				// before that check.
+				continue
 			}
 			m.StatusInbound[strings.ToLower(strings.TrimSpace(jiraStatus))] = fs
 		}

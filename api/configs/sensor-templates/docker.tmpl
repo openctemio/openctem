@@ -6,7 +6,7 @@
 #
 # The command reads the sensor's API key from OPENCTEM_API_KEY. The key is
 # shown once, when the sensor is created or its key is rotated:
-#   export OPENCTEM_API_KEY='rda_...'
+#   export OPENCTEM_API_KEY='octs_...'
 {{- end}}
 {{- if .CACert}}
 
@@ -18,7 +18,15 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 {{- end}}
 {{- if isDaemon .Sensor}}
 
-# {{if .CACert}}2. {{end}}Start the sensor. It connects out to the platform (no inbound port)
+# {{if .CACert}}2{{else}}1{{end}}. Install the sensor-local policy (the "Local policy" tab, saved as
+# sensor-policy.yaml), reviewed by the owner of the network this sensor scans.
+# The sensor refuses every job outside it; without the file it does not start.
+# This needs a sensor release later than v0.8.0: v0.8.0 and older ignore the
+# policy and the kill switch, and scan without a local policy.
+sudo install -d -m 0755 /etc/openctem
+sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
+
+# {{if .CACert}}3{{else}}2{{end}}. Start the sensor. It connects out to the platform (no inbound port)
 # and runs the scans the platform dispatches. Results that cannot be delivered
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
 # The {{$slug}}-state volume keeps the sensor's state, including the API key
@@ -26,23 +34,34 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 # starts with the key above, which a renewal has retired). {{$slug}}-content
 # caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
 # container does not download it again; it can be deleted at any time.
+# Hardened: read-only root filesystem, no capabilities, no privilege
+# escalation (add --cap-add NET_RAW only for naabu SYN scans). The sensor
+# writes only /tmp besides its volumes, and its tools keep their settings
+# there (XDG_*); the image's home directory stays as built, with the
+# nuclei-templates release the sensor scans with until its first update.
+# /etc/openctem is mounted read-only: the policy, and the kill switch the
+# host owner creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
-  -e API_URL={{shellQuote .BaseURL}} \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache \
+  -e SENSOR_API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
-  -e API_KEY={{shellQuote .APIKey}} \
+  -e SENSOR_API_KEY={{shellQuote .APIKey}} \
 {{- else}}
-  -e API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
+  -e SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
   -e SENSOR_TOOLS={{.}} \
+{{- end}}
+  -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
+{{- if .Policy.AllowPrivate}}
+  -e SENSOR_ALLOW_PRIVATE_TARGETS=1 \
 {{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
-  -v /etc/openctem/certs:/etc/openctem/certs:ro \
 {{- end}}
-  -v {{$slug}}-outbox:/var/lib/openctem/outbox \
-  -v {{$slug}}-state:/var/lib/openctem/state \
-  -v {{$slug}}-content:/var/lib/openctem/content \
+  -v /etc/openctem:/etc/openctem:ro \
+  -v {{$slug}}-data:/var/lib/openctem \
   {{.Image}}
 
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
@@ -52,11 +71,11 @@ docker run -d --name {{$slug}} --restart unless-stopped \
 # {{if .CACert}}2. {{end}}Run one scan of the current directory and send the results (CI or a
 # shell). Arguments after the image replace the default command.
 docker run --rm \
-  -e API_URL={{shellQuote .BaseURL}} \
+  -e SENSOR_API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
-  -e API_KEY={{shellQuote .APIKey}} \
+  -e SENSOR_API_KEY={{shellQuote .APIKey}} \
 {{- else}}
-  -e API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
+  -e SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
 {{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \
@@ -64,5 +83,5 @@ docker run --rm \
 {{- end}}
   -v "$PWD":/scan \
   {{.Image}} \
-  -tool {{firstTool .Sensor.Tools}} -target /scan -push
+  -tool {{firstTool .Sensor.EffectiveTools}} -target /scan -push
 {{- end}}

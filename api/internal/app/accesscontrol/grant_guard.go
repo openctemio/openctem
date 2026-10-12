@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -26,7 +27,13 @@ import (
 //   - only an owner may change the role set of another administrator (a user
 //     holding the system admin role): administrators manage members and
 //     viewers, not their peers. Changing one's own role set is not a peer
-//     change and stays subject to the rules above.
+//     change and stays subject to the rules above;
+//   - only an owner may make someone an administrator (settings decision B2):
+//     granting the system admin role to a user who does not hold it yet needs
+//     an owner, on every path (AssignRole, SetUserRoles, BulkAssign, and so
+//     user creation and invitations);
+//   - no custom role may carry an admin-only permission (settings decision
+//     B1, permission.AdminOnlyPermissions), whoever builds it.
 //
 // The handler-level check (assertCanGrantPermissions) lets administrators
 // through, so this is where the rule is enforced. An empty actor is a system
@@ -61,9 +68,10 @@ func (s *RoleService) loadGrantActor(ctx context.Context, tid roledom.ID, actorI
 		if r.ID() == roledom.OwnerRoleID {
 			a.owner = true
 		}
-		if r.HasFullDataAccess() {
-			a.fullData = true
-		}
+	}
+	// Full data access may also come through a team's role binding.
+	if a.fullData, err = s.roleRepo.HasFullDataAccess(ctx, tid, uid); err != nil {
+		return grantActor{}, fmt.Errorf("load actor full data access: %w", err)
 	}
 	perms, err := s.roleRepo.GetUserPermissions(ctx, tid, uid)
 	if err != nil {
@@ -109,6 +117,147 @@ func (a grantActor) mayCarry(perms []string, fullData bool) error {
 	}
 	if fullData && !a.fullData {
 		return fmt.Errorf("%w: it carries full data access, which you do not have", ErrGrantForbidden)
+	}
+	return nil
+}
+
+// ErrExternalRoleCeiling refuses a role an external member may not hold.
+var ErrExternalRoleCeiling = fmt.Errorf("%w: someone outside your organization can be a viewer or a member, never an administrator or owner, and cannot get full data access", ErrGrantForbidden)
+
+// capExternalTarget enforces the external-member role ceiling (RFC-058): a
+// member whose email domain the organization does not own may not hold the
+// owner or admin role, nor a role with full data access. It applies to every
+// actor, system paths included; the owner role is also refused by a
+// database trigger. No-op when no membership reader is wired.
+func (s *RoleService) capExternalTarget(ctx context.Context, tid, uid roledom.ID, r *roledom.Role) error {
+	if r == nil {
+		return nil
+	}
+	privileged := r.ID() == roledom.OwnerRoleID || r.ID() == roledom.AdminRoleID || r.HasFullDataAccess()
+	// A service account is held to the same ceiling as an external member.
+	if privileged && s.serviceAccounts != nil {
+		svc, err := s.serviceAccounts.IsServiceAccount(ctx, asSharedID(uid))
+		if err != nil {
+			return fmt.Errorf("check service account: %w", err)
+		}
+		if svc {
+			return ErrServiceAccountRoleCeiling
+		}
+	}
+	if s.membershipReader == nil {
+		return nil
+	}
+	if !privileged && (s.externalCeiling == nil || r.ID() == roledom.ViewerRoleID) {
+		return nil
+	}
+	t, err := shared.IDFromString(tid.String())
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	u, err := shared.IDFromString(uid.String())
+	if err != nil {
+		return fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	m, err := s.membershipReader.GetMembership(ctx, u, t)
+	if err != nil {
+		if shared.IsNotFound(err) {
+			return nil // not a member: ensureTenantMember refuses it
+		}
+		return fmt.Errorf("load membership: %w", err)
+	}
+	if m == nil || !m.IsExternal() {
+		return nil
+	}
+	if privileged {
+		return ErrExternalRoleCeiling
+	}
+	// The trust with the member's home may cap them at viewer.
+	if m.HomeTenantID() != nil {
+		ceiling, cerr := s.externalCeiling(ctx, t, *m.HomeTenantID())
+		if cerr != nil {
+			return fmt.Errorf("load the trust ceiling: %w", cerr)
+		}
+		if ceiling == "viewer" {
+			return ErrExternalViewerCeiling
+		}
+	}
+	return nil
+}
+
+// ErrServiceAccountRoleCeiling refuses the owner or administrator role, or a
+// role with full data access, for a service account.
+var ErrServiceAccountRoleCeiling = fmt.Errorf("%w: a service account cannot be an owner or administrator or have full data access", ErrGrantForbidden)
+
+// SetServiceAccountReader wires the check that applies the service-account
+// role ceiling.
+func (s *RoleService) SetServiceAccountReader(r serviceAccountReader) { s.serviceAccounts = r }
+
+type serviceAccountReader interface {
+	IsServiceAccount(ctx context.Context, userID shared.ID) (bool, error)
+}
+
+// ErrExternalViewerCeiling refuses more than viewer for an external member
+// whose home organization's trust caps them at viewer.
+var ErrExternalViewerCeiling = fmt.Errorf("%w: the trust with this member's organization allows the viewer role only", ErrGrantForbidden)
+
+// SetExternalRoleCeiling wires the trust ceiling for external members:
+// ceiling returns "viewer" or "member" for members homed in home.
+func (s *RoleService) SetExternalRoleCeiling(ceiling func(ctx context.Context, host, home shared.ID) (string, error)) {
+	s.externalCeiling = ceiling
+}
+
+// ErrAdminPromotionOwnerOnly is returned when someone other than an owner tries
+// to make a user an administrator.
+var ErrAdminPromotionOwnerOnly = fmt.Errorf("%w: only the organization owner can make someone an administrator", ErrGrantForbidden)
+
+// rejectAdminOnlyPermissions refuses a custom-role permission set that carries
+// a permission only the system owner and admin roles may hold.
+func rejectAdminOnlyPermissions(perms []string) error {
+	for _, p := range perms {
+		if permission.IsAdminOnly(p) {
+			return fmt.Errorf("%w: %s is reserved for owners and administrators and cannot be put on a custom role", shared.ErrValidation, p)
+		}
+	}
+	return nil
+}
+
+// authorizeAdminPromotion checks that the actor may give user uid the role set
+// newRoles as far as the system admin and owner roles are concerned: if the
+// set adds the admin role to a user who does not hold it yet, the actor must
+// be an owner (only an owner may grant the owner role at all, mayGrant), and
+// making someone an administrator or an owner needs the actor's recent
+// re-authentication (step-up). A system path (no actor: SCIM, SSO, invitation
+// acceptance without an inviter) is bounded by its own rules and is not
+// checked here.
+func (s *RoleService) authorizeAdminPromotion(ctx context.Context, a grantActor, tid, uid roledom.ID, newRoles []roledom.ID) error {
+	if a.system {
+		return nil
+	}
+	addsAdmin, addsOwner := false, false
+	for _, id := range newRoles {
+		switch id {
+		case roledom.AdminRoleID:
+			addsAdmin = true
+		case roledom.OwnerRoleID:
+			addsOwner = true
+		}
+	}
+	if !addsAdmin && !addsOwner {
+		return nil
+	}
+	isOwner, isAdmin, err := s.holdsPrivilegedRoles(ctx, tid, uid)
+	if err != nil {
+		return err
+	}
+	promotesAdmin, promotesOwner := addsAdmin && !isAdmin, addsOwner && !isOwner
+	if !promotesAdmin && !promotesOwner {
+		return nil
+	}
+	if promotesAdmin && !a.owner {
+		return ErrAdminPromotionOwnerOnly
+	}
+	if s.stepUp != nil {
+		return s.stepUp.RequireRecentAuth(ctx, a.id)
 	}
 	return nil
 }

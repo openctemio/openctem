@@ -8,12 +8,21 @@
 
 ## Quick Setup
 
+The API is the `api/` directory of the
+[`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo; the web
+console is `web/`. Every command on this page runs **in `api/`** (the compose
+files, `.env.example` and this Makefile are there, not at the repository root).
+From the root, `make setup` installs both components and enables the git hooks
+(`.githooks/`), `make dev-api` / `make dev-web` run each side, and
+`make api-<target>` runs any target below. See
+[Repositories](repositories.md) for the layout.
+
 ### Option 1: Docker (Recommended)
 
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem
+cd openctem/api   # the API lives in api/ of the openctem monorepo
 
 # 2. Setup env
 cp .env.example .env
@@ -28,7 +37,7 @@ make docker-dev
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem
+cd openctem/api   # the API lives in api/ of the openctem monorepo
 
 # 2. Install tools
 make install-tools
@@ -75,7 +84,6 @@ Key variables (see `.env.example` for full list):
 # Application
 APP_NAME=openctem
 APP_ENV=development
-APP_DEBUG=true
 
 # Server
 SERVER_HOST=0.0.0.0
@@ -120,7 +128,7 @@ make tidy             # Tidy go.mod
 ```bash
 make docker-dev       # Start dev environment (hot reload)
 make docker-dev-d     # Start dev environment (background)
-make docker-prod      # Start production environment
+make docker-prod      # Prints how to start the production stack (api/deploy)
 make docker-down      # Stop all containers
 make docker-logs      # View logs
 make docker-logs-app  # View app logs only
@@ -145,44 +153,20 @@ make proto            # Generate protobuf (if using gRPC)
 
 ---
 
-## Monorepo Structure
+## Monorepo and Go workspaces
 
-This project uses a Go workspace for local development with shared SDK:
+`api/` is one Go module (`github.com/openctemio/openctem/api`) and does not
+depend on sdk-go; the monorepo has no `go.work`. A `go.work` in a parent
+directory (for example a checkout that also holds `sdk-go` or `sensor`) would
+still be picked up, so run Go commands from `api/` with `GOWORK=off`, as CI
+and the root `Makefile` do:
 
-```
-openctemio/
-├── go.work          # Go workspace file
-├── api/             # API service (this repo)
-├── sdk/             # Shared SDK module
-└── agent/           # Agent service
-```
-
-### Local Development
-
-`go.work` automatically resolves SDK from local filesystem:
-
-```go
-// go.work
-go 1.25.0
-
-use (
-  ./sdk
-  ./api
-  ./agent
-)
+```bash
+GOWORK=off go build ./...
+GOWORK=off go test ./...
 ```
 
-### Docker Development
-
-Docker uses `go.work.docker` with adjusted paths:
-
-```go
-// api/go.work.docker
-use (
-  .       // API at /app
-  ./sdk   // SDK at /app/sdk
-)
-```
+The development container builds without a workspace too.
 
 ---
 
@@ -258,7 +242,7 @@ make test
 make test-coverage
 
 # Run specific package
-go test ./internal/domain/asset/...
+go test ./pkg/domain/asset/...
 
 # Run with verbose output
 go test -v ./...

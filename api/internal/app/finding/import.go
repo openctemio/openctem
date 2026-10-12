@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -29,6 +31,9 @@ func NewFindingImportService(repo vulnerability.FindingRepository, log *logger.L
 // issues/rows, each becoming a synchronous DB insert — a connection-pool
 // exhaustion DoS. Reject oversized imports up front.
 const MaxImportFindings = 5000
+
+// maxImportBytes caps the size of an imported report read into memory.
+const maxImportBytes = 50 << 20
 
 // ImportResult contains the result of an import operation.
 type ImportResult struct {
@@ -126,7 +131,10 @@ func (s *FindingImportService) ImportBurpXML(ctx context.Context, tenantID, camp
 		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
 	}
 
-	data, err := io.ReadAll(reader)
+	data, err := httpsec.ReadLimited(reader, maxImportBytes)
+	if errors.Is(err, httpsec.ErrBodyTooLarge) {
+		return nil, fmt.Errorf("%w: report exceeds %d MB", shared.ErrValidation, maxImportBytes>>20)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read XML: %w", err)
 	}
@@ -223,7 +231,10 @@ func (s *FindingImportService) ImportCSV(ctx context.Context, tenantID, campaign
 		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
 	}
 
-	data, err := io.ReadAll(reader)
+	data, err := httpsec.ReadLimited(reader, maxImportBytes)
+	if errors.Is(err, httpsec.ErrBodyTooLarge) {
+		return nil, fmt.Errorf("%w: CSV exceeds %d MB", shared.ErrValidation, maxImportBytes>>20)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CSV: %w", err)
 	}

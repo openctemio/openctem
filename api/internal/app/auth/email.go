@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -115,7 +116,9 @@ func (s *EmailService) SendVerificationEmail(ctx context.Context, userEmail, use
 		return nil
 	}
 
-	verificationURL := fmt.Sprintf("%s/auth/verify-email?token=%s", s.config.BaseURL, token)
+	// The token goes in the URL fragment (as for invitations): the browser
+	// never sends it to a server. The web app's /verify-email page reads it.
+	verificationURL := fmt.Sprintf("%s/verify-email#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), url.QueryEscape(token))
 
 	data := emaildom.VerifyEmailData{
 		UserName:        userName,
@@ -148,7 +151,10 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, userEmail, us
 		return nil
 	}
 
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.config.BaseURL, token)
+	// The token goes in the URL fragment, as for verification and invitation
+	// links: the browser never sends it to a server, so it stays out of access
+	// logs and Referer headers.
+	resetURL := fmt.Sprintf("%s/reset-password#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
 
 	data := emaildom.PasswordResetData{
 		UserName:    userName,
@@ -183,15 +189,12 @@ func (s *EmailService) SendPasswordChangedEmail(ctx context.Context, userEmail, 
 		return nil
 	}
 
-	supportURL := fmt.Sprintf("%s/support", s.config.BaseURL)
-
 	data := emaildom.PasswordChangedData{
-		UserName:   userName,
-		Email:      userEmail,
-		ChangedAt:  time.Now().Format("January 2, 2006 at 3:04 PM MST"),
-		IPAddress:  ipAddress,
-		AppName:    s.appName,
-		SupportURL: supportURL,
+		UserName:  userName,
+		Email:     userEmail,
+		ChangedAt: time.Now().Format("January 2, 2006 at 3:04 PM MST"),
+		IPAddress: ipAddress,
+		AppName:   s.appName,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplatePasswordChanged, data); err != nil {
@@ -217,15 +220,13 @@ func (s *EmailService) SendWelcomeEmail(ctx context.Context, userEmail, userName
 		return nil
 	}
 
-	loginURL := fmt.Sprintf("%s/auth/login", s.config.BaseURL)
-	supportURL := fmt.Sprintf("%s/support", s.config.BaseURL)
+	loginURL := fmt.Sprintf("%s/login", strings.TrimSuffix(s.config.BaseURL, "/"))
 
 	data := emaildom.WelcomeData{
-		UserName:   userName,
-		Email:      userEmail,
-		LoginURL:   loginURL,
-		AppName:    s.appName,
-		SupportURL: supportURL,
+		UserName: userName,
+		Email:    userEmail,
+		LoginURL: loginURL,
+		AppName:  s.appName,
 	}
 
 	if err := s.sender.SendTemplate(ctx, userEmail, emaildom.TemplateWelcome, data); err != nil {
@@ -325,7 +326,7 @@ func (s *EmailService) CanDeliverTo(ctx context.Context, tenantID string) bool {
 
 // AccountSetupURL is the UI page that consumes a one-time set-password token.
 func (s *EmailService) AccountSetupURL(token string) string {
-	return fmt.Sprintf("%s/set-password?token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
+	return fmt.Sprintf("%s/set-password#token=%s", strings.TrimSuffix(s.config.BaseURL, "/"), token)
 }
 
 // SendAccountSetupEmail sends the one-time set-password link for an account an
@@ -371,7 +372,10 @@ func (s *EmailService) SendTeamInvitationEmail(ctx context.Context, recipientEma
 		return nil
 	}
 
-	invitationURL := fmt.Sprintf("%s/invitations/%s", s.config.BaseURL, token)
+	// The token goes in the URL fragment, which the browser never sends to a
+	// server: it stays out of access logs, proxies and Referer headers
+	// (RFC-041). The web app reads it from the fragment and removes it.
+	invitationURL := fmt.Sprintf("%s/invitations#token=%s", s.config.BaseURL, url.QueryEscape(token))
 
 	data := emaildom.TeamInvitationData{
 		InviterName:   inviterName,
@@ -450,6 +454,15 @@ func (s *EmailService) NotifyPasswordChanged(ctx context.Context, userEmail, use
 	}()
 }
 
+// NotifySSOChangePending tells an organization owner that a platform
+// administrator proposed an SSO change that waits for their approval. summary
+// never contains a secret.
+func (s *EmailService) NotifySSOChangePending(ctx context.Context, ownerEmail, ownerName, orgName, summary string) {
+	s.sendSecurityNotice(ctx, ownerEmail, ownerName, "",
+		"An SSO change for "+orgName+" is waiting for your approval",
+		summary+" Review it under Settings > SSO approvals. If you did not expect this change, reject it.")
+}
+
 func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userName, ipAddress, subject, message string) {
 	if !s.IsConfigured() {
 		return
@@ -462,7 +475,6 @@ func (s *EmailService) sendSecurityNotice(ctx context.Context, userEmail, userNa
 		OccurredAt: time.Now().UTC().Format("January 2, 2006 at 3:04 PM MST"),
 		IPAddress:  ipAddress,
 		AppName:    s.appName,
-		SupportURL: fmt.Sprintf("%s/support", s.config.BaseURL),
 	}
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	go func() {
