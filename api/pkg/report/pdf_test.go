@@ -96,3 +96,27 @@ func TestGeneratePDF_ExcludePOC(t *testing.T) {
 		t.Fatalf("GeneratePDF exclude-poc: %v", err)
 	}
 }
+
+// Vietnamese (and any non-Latin-1 text) must reach the PDF: the embedded
+// Unicode font replaces the cp1252 core fonts that dropped it.
+func TestGeneratePDF_EmbedsUnicodeFont(t *testing.T) {
+	in := ReportInput{
+		Campaign: CampaignData{Name: "Đánh giá bảo mật ứng dụng", ClientName: "Công ty Cổ phần Ví dụ"},
+		Findings: []FindingData{{Title: "Lỗ hổng SQL injection ở trang đăng nhập", Severity: "high",
+			Description: "Tham số tên đăng nhập được ghép trực tiếp vào câu truy vấn."}},
+		ReportType: TypeTechnical,
+	}
+	data, err := GeneratePDF(in)
+	if err != nil {
+		t.Fatalf("GeneratePDF: %v", err)
+	}
+	if !bytes.Contains(data, []byte("FontFile2")) {
+		t.Fatal("the PDF does not embed a TrueType font")
+	}
+	if bytes.Contains(data, []byte("/BaseFont /Helvetica")) {
+		t.Fatal("the PDF still uses a core font")
+	}
+	if len(data) > 2<<20 {
+		t.Fatalf("PDF is %d bytes: the font should be subset", len(data))
+	}
+}
