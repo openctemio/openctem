@@ -50,6 +50,9 @@ const settings = {
   last_ct_sweep_at: '2026-10-05T01:00:00Z',
   enrichment_enabled: true,
   enrichment_available: true,
+  weekly_digest_enabled: true,
+  digest_weekday: 1,
+  digest_hour_utc: 8,
 }
 
 beforeEach(() => {
@@ -63,6 +66,26 @@ beforeEach(() => {
 })
 
 describe('EASMMonitoringCard', () => {
+  it('turns the weekly digest off with only that field changed', async () => {
+    wrap(<EASMMonitoringCard />)
+    const digest = await screen.findByRole('switch', { name: 'Weekly digest' })
+    expect(digest).toBeChecked()
+    await userEvent.click(digest)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
+      ct_enabled: true,
+      dns_checks_enabled: true,
+      ct_interval_hours: 0,
+      dns_interval_hours: 12,
+      weekly_digest_enabled: false,
+    })
+  })
+
+  it('cannot change the digest without settings:write', async () => {
+    perms.settings = false
+    wrap(<EASMMonitoringCard />)
+    expect(await screen.findByRole('switch', { name: 'Weekly digest' })).toBeDisabled()
+  })
+
   it('turns CT off keeping the other settings', async () => {
     wrap(<EASMMonitoringCard />)
     const ct = await screen.findByRole('switch', { name: 'Certificate Transparency discovery' })
