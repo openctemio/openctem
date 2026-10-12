@@ -84,7 +84,6 @@ GET /api/v1/assignment-rules/{}
 GET /api/v1/attachments
 GET /api/v1/attachments/storage-config
 GET /api/v1/attachments/{}
-GET /api/v1/attachments/{}/meta
 GET /api/v1/attack-surface/exposure-chains
 GET /api/v1/attacker-profiles
 GET /api/v1/attacker-profiles/{}
@@ -172,7 +171,6 @@ GET /api/v1/priority-rules
 GET /api/v1/priority-rules/{}
 GET /api/v1/relationships/suggestions
 GET /api/v1/relationships/suggestions/count
-GET /api/v1/relationships/usage-stats
 GET /api/v1/relationships/{}
 GET /api/v1/remediation/campaigns
 GET /api/v1/remediation/campaigns/{}

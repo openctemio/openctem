@@ -88,7 +88,9 @@ export function buildCsp(options: CspOptions): string {
     "font-src 'self' data: https://fonts.gstatic.com",
     connectSrc(options),
     "object-src 'none'",
-    "frame-src 'none'",
+    // Cloudflare Turnstile, the CAPTCHA on the public sign-up forms, runs in
+    // an iframe from this origin. Nothing else may be framed.
+    'frame-src https://challenges.cloudflare.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
