@@ -10,7 +10,7 @@ code that defines them is the source of truth:
 
 | Where | What |
 |---|---|
-| `internal/app/module/dashboard.go` | `ProgramMetrics`, `DurationMetric`, `OwnerAcceptanceMetric`: the written definitions |
+| `internal/app/module/dashboard.go` | `ProgramMetrics`, `DurationMetric`, `OwnerAcceptanceMetric`, `CycleCompletionMetric`, `ControlCoverageMetric`: the written definitions |
 | `internal/infra/postgres/dashboard_program_metrics.go` | The SQL |
 | `internal/infra/postgres/dashboard_program_metrics_db_test.go` | Fixtures with known answers, tenant-leak checks, and the empty-tenant case |
 
@@ -91,6 +91,61 @@ code that defines them is the source of truth:
 - `rate_pct = accepted / (accepted + missed) × 100`. It is `null` when nothing
   has been decided yet.
 
+### 4. MTTV: time to validate priority exposures (`mttv`)
+
+- **Population:** findings of priority class P0 or P1 whose
+  `first_detected_at` is in the window, except `false_positive` and
+  `duplicate`.
+- **Start:** `findings.first_detected_at`.
+- **Stop:** the first conclusive `validation_evidence` row of the finding:
+  `outcome` `detected` (reproduced) or `not_detected` (not reproduced).
+  `inconclusive`, `error` and `skipped` rows are not evidence.
+- A stop before the start counts as 0 h (a re-detected finding validated
+  earlier). Findings without conclusive evidence yet are counted in
+  `unmeasured`, not averaged.
+
+### 5. Time to assign an owner to new internet-facing assets (`time_to_owner_internet_facing`)
+
+- **Population:** the MTTD population (section 1).
+- **Start:** `assets.first_seen`.
+- **Stop:** the earliest `asset_owners.assigned_at` of the asset (any
+  ownership type, user or group).
+- An owner assigned before `first_seen` counts as 0 h. Assets that still have
+  no owner are counted in `unmeasured`: the "unknown owner" backlog.
+- `asset_owners` has no tenant column; every owner row is reached through an
+  asset id that is already filtered to the tenant.
+
+### 6. Cycle completion rate (`cycle_completion`)
+
+- **Population:** CTEM cycles whose `end_date` is in the window (from the
+  window start to today, inclusive).
+- **Classification:** `closed_on_time` (closed before the end of `end_date`,
+  UTC), `closed_late` (closed after it) and `open` (not closed yet).
+- `rate_pct = closed_on_time / due × 100`, `null` when no cycle is due.
+- `mean_charter_completion_pct` is the mean of
+  `charter_evaluation.completion_rate` (met / (met + unmet) success criteria,
+  computed at close) over the closed cycles that have one; `null` when none
+  has.
+
+### 7. Critical assets lacking a control (`control_coverage`)
+
+A snapshot of the inventory now, not windowed. One row per control:
+
+| `control` | Attribute | Asset types |
+|---|---|---|
+| `edr` | `has_edr` | `host`, `endpoint` |
+| `mfa` | `has_mfa` | `cloud_account`, `identity` |
+| `logging` | `has_logging` | `storage` |
+
+- **Population:** non-archived assets of those types with criticality
+  `critical` or flagged as a crown jewel.
+- Each asset counts once: `covered` (attribute true), `lacking` (false) or
+  `unknown` (not recorded, or not a boolean). Booleans and the strings
+  `true`/`false`/`1`/`0`/`yes`/`no` are read.
+- `gap_pct = (lacking + unknown) / total × 100`, `null` when `total` is 0.
+  An unknown value counts as a gap: no source has reported the control, which
+  is a blind spot, not proof of coverage.
+
 ### Not computed: time to break an attack path
 
 The platform has no data for this, so it is not reported. Here is why:
@@ -109,13 +164,18 @@ measure how long each chain existed.
 Checked with `EXPLAIN ANALYZE` on a throwaway database seeded with 100k assets,
 400k findings, 120k activities, 20k validation evidence rows and 50k exposure
 events across 5 tenants. Every query takes about 5–30 ms, and every lookup uses
-an index:
+an index (MTTV, time to owner, cycle completion and control coverage were
+checked later on 50k assets and 200k findings in one tenant: under 25 ms):
 
 | Metric | Driving scan | Per-row lookups |
 |---|---|---|
 | MTTD | `idx_assets_stale_check` ∪ `idx_assets_internet` | `idx_asset_state_history_asset_time`, `idx_exposure_events_asset`, `idx_findings_tenant_asset_status` |
 | MTTR validated | `idx_validation_evidence_tenant_created` hash-joined to findings (`idx_findings_resolved_at` ∧ `idx_findings_dashboard`) | none |
 | Owner acceptance | `idx_finding_activities_tenant_created` ∧ `idx_finding_activities_type` | `idx_finding_activities_tenant_finding`, `idx_findings_tenant_id_pk` |
+| MTTV | `idx_findings_first_detected` (window) | `idx_validation_evidence_finding` |
+| Time to owner | as MTTD | `idx_asset_owners_asset` |
+| Cycle completion | `idx_ctem_cycles_tenant` | none |
+| Control coverage | `idx_assets_tenant_type_crit_status` ∪ `idx_assets_crown_jewel` | none |
 
 The CTE that the aggregates read several times is marked `MATERIALIZED`.
 Without it, Postgres inlined the CTE and repeated the correlated lookups once
