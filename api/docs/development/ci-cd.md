@@ -22,7 +22,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
 | Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z`, opens and queues the release PR (see [Releases](#releases)) | — |
 | Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z`, starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
-| API CI step "Changelog fragments" | PR, merge queue, push | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
+| API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
 | Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`) | — |
@@ -145,14 +145,23 @@ takes effect for pull requests opened against the base after it merges.
 ### Path filtering
 
 One rule set, in [`.github/scripts/changed.sh`](../../../.github/scripts/changed.sh),
-decides two outputs, `api` and `web`, for every workflow:
+decides the outputs `api` and `web` for every workflow (`docs` is informational):
 
 | Changed path | api | web |
 |--------------|-----|-----|
+| Documentation: `*.md` anywhere, `api/docs/**`, `.claude/**`, `web/.claude/**` | | |
 | `api/**` | ✓ | |
 | `web/**` | | ✓ |
 | Shared: root `Makefile`, `go.work*`, `.github/**`, `deploy/**` | ✓ | ✓ |
-| Anything else (root docs, `.githooks/`) | | |
+| Anything else (`.githooks/`) | | |
+
+Documentation is matched first, so an RFC, a changelog fragment or a README
+never starts the Go or web suites, also in the merge queue. A docs-only PR runs
+Docs check, Secret Scanning, Workflow Lint, the security gate and API CI's
+`changes` job (which also runs the changelog check), and the `… OK`
+aggregators pass. One exception: `api/docs/configuration/environment-variables.md`
+is generated and compared by a Go test (`TestEnvDocsUpToDate`), so it counts as
+API code. Tests: `.github/scripts/changed.test.sh` (run by Workflow Lint).
 
 The diff range depends on the event:
 
@@ -172,8 +181,8 @@ How each workflow uses the outputs:
 | CodeQL | Go when `api`, JS/TS when `web` (PR); nothing in the merge queue; both on push and weekly |
 | All-in-one CI | always starts; builds when `api` or `web` (both images are built from the whole component directory), in the merge queue and on pushes only |
 | Repository Security | always runs (secret scan diff-scoped on PR and merge queue) |
-| API Security | `on.paths`: `api/**` + shared files. Does not start at all for a web-only change |
-| Web Security | `on.paths`: `web/**` + shared files. Does not start at all for an API-only change |
+| API Security | `on.paths`: `api/**` + shared files, minus `**/*.md` and `api/docs/**`. Does not start at all for a web-only or docs-only change |
+| Web Security | `on.paths`: `web/**` + shared files, minus `**/*.md`. Does not start at all for an API-only or docs-only change |
 
 Workflows that carry a required check never use `on.<event>.paths`: a workflow
 skipped that way leaves its required checks *Pending* forever. They always start,
@@ -332,7 +341,8 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 |-----|-------|
 | *All of the rows down to Test shards are steps of one job, `API static checks`.* | |
 | Migration Safety | PRs only. Flags destructive migrations against the base. |
-| Migration Versions | `.github/scripts/check-migration-versions.sh` (tests: `check-migration-versions.test.sh`). Fails if two migrations share a version, and, on a PR or in the merge queue, if a migration the change adds is not above the base's highest version (golang-migrate silently skips lower versions on databases already past them). In the queue the base is `merge_group.base_sha`, so two queued PRs that picked the same number cannot both land: the second is told to renumber to max+1. A migration baseline (`NNNNNN_baseline`, RFC-053) may sit at or below the base's highest version when it is the lowest version left in the tree. |
+| Migration Versions | `.github/scripts/check-migration-versions.sh` (tests: `check-migration-versions.test.sh`). Fails if two migrations share a version, and, on a PR or in the merge queue, if a migration the change adds is not above the base's highest version (golang-migrate silently skips lower versions on databases already past them). In the queue the base is `merge_group.base_sha`, so two queued PRs that picked the same number cannot both land: the second is told to renumber to max+1. A migration baseline (`NNNNNN_baseline`, RFC-053) may sit at or below the base's highest version when it is the lowest version left in the tree. On a PR, a version below the base's highest, or one a base migration also uses, is only a warning: the PR's migrations are renumbered when it is queued. Two migrations of the same PR with one version still fail. |
+| Renumber this PR's clashing migrations | PR only, in `API static checks` and every DB test shard: `.github/scripts/pr-migration-renumber.sh` (tests: `pr-migration-renumber.test.sh`). CI tests the PR merged into its base; when develop has taken one of the PR's migration numbers since, the runner's copy of the PR's added migrations is renumbered above the base (in order, same width, references to the old file stems rewritten), and a byte-identical copy of a base migration (a stacked PR's inherited file) is ignored. Nothing is committed; each change is a warning annotation. The PR stays green, and the real renumber happens when the PR is queued. The merge queue and pushes never renumber: there, a clash fails `Migration Versions`. |
 | SQL Schema Drift | `api/scripts/check-sql-schema.sh`: prepares every SQL statement against a migrations-only database. |
 | Security Gates | `api/scripts/security-lint.sh` (checks out `sensor` and `sdk-go` alongside), tenant-scope analyzer, sensor vocabulary guard. |
 | OpenAPI Contract | See above. |
@@ -340,7 +350,7 @@ files stale, so run `make generate-docker` (or `scripts/generate-in-docker.sh
 | Test shards | `.github/scripts/go-shard.sh check` proves the test shards below cover every package and every top-level test of `tests/unit` exactly once. |
 | Lint (job `API lint`, parallel to the static checks; the golangci-lint cache and the staticcheck binary are cached) | `go vet`, staticcheck, and golangci-lint v1.64.8 on **new** code only (PRs: `make lint-new` with `--new-from-rev` against `.github/scripts/effective-base.sh`). `make -C api lint-ci` runs the same locally. |
 | Tests (Postgres + Redis) | PRs (when `api/` or shared files change), merge queue and pushes. `go test -race -timeout 20m` against Postgres 17 + Redis 7 service containers, split into eight parallel shards (four of `tests/unit`, which is most of the run time, and four groups of the other packages; `.github/scripts/go-shard.sh`), each with `OPENCTEM_TEST_DB_REQUIRED=1` so `internal/testdb` fails instead of skipping, then `.github/scripts/check-db-test-skips.sh` fails the job if any test skipped itself for a missing or unreachable database. |
-| Tests (least-privilege DB role) | Sharded the same way (3 + 3 shards). Every event (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
+| Tests (least-privilege DB role) | Sharded the same way (one `tests/unit` shard + three package shards). Every event (when `api/` or shared files change). Bootstraps a fresh database with `api/deploy/postgres/least-privilege-roles.sql`, applies every migration as `openctem_migrator`, then runs the DB-backed suite as `openctem_app` (DML only). It fails if a migration needs a superuser or the API needs more than DML. See `api/docs/deployment/database-roles.md`. |
 | Release Binaries | Merge queue and pushes. Builds and uploads static linux/amd64 `cmd/server` and `cmd/bootstrap-admin` binaries. |
 | Docker Build | Pushes to `main` only; builds the image, does not push it. |
 
