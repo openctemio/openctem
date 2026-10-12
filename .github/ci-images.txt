@@ -1,0 +1,33 @@
+# Third-party images that CI pulls, mirrored to ghcr.io/openctemio/mirror/
+# by .github/workflows/ci-image-mirror.yml.
+#
+# Why: shared GitHub runner IPs exhaust the anonymous pull quotas of
+# public.ecr.aws ("toomanyrequests: Data limit exceeded") and Docker Hub, and a
+# job then fails before it runs anything. Pulls from GHCR with the job's
+# GITHUB_TOKEN are not subject to those quotas. The mirror packages are public,
+# so fork pull requests and the other openctemio repositories pull them too.
+#
+# Format: one image per line, `<source>@sha256:<digest> <mirror name>:<tag>`.
+# The source is pinned by digest, and the copy keeps the manifest bytes, so
+# ghcr.io/openctemio/mirror/<name>:<tag>@sha256:<digest> is the exact upstream
+# image. A `docker.io/library/` source falls back to public.ecr.aws/docker/library/
+# (same digests) when Docker Hub refuses.
+#
+# To bump an image: `crane digest <source>:<tag>`, update the digest here (and
+# in any workflow or Dockerfile that pins it), and merge; the push to develop
+# runs the mirror. The weekly run re-copies anything missing and prints a
+# notice when an upstream tag has moved on from the pinned digest.
+
+# CI service containers (api-ci, allinone-ci, docker-publish, web e2e stack).
+docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24 postgres:17-alpine
+docker.io/library/redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 redis:7-alpine
+docker.io/migrate/migrate:v4.18.1@sha256:f21c436af23c282f4516b00ba3e93bccf5c5fe5cd52530fd5c319a936998f539 migrate:v4.18.1
+
+# Job containers.
+docker.io/semgrep/semgrep:1.178.0@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b semgrep:1.178.0
+
+# Digest-pinned base images of openctemio/sensor (its CI builds swap them for
+# these copies, same digest) and the sdk-go sandbox test container.
+docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 debian:bookworm-slim
+docker.io/library/golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade golang:1.26.9-alpine
+docker.io/library/python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016 python:3.12-slim

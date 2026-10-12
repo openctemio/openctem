@@ -26,6 +26,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
 | Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`) | — |
+| CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the script; weekly (Mon 04:23 UTC); manual | Copies the third-party images CI pulls to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
 
 Scheduled runs (weekly security, nightly fuzz) run from the default branch, `main`.
 
@@ -238,6 +239,36 @@ the queue (no required check; the PR and the push scan the change).
 - **Node:** every `actions/setup-node` step uses `node-version-file: web/.nvmrc`
   (`26`), the same major as `web/Dockerfile` (`node:26-alpine`). Node 25+ ships
   its own `localStorage`; `web/src/test/setup.ts` points Vitest back at jsdom's.
+
+### CI image mirror
+
+Shared GitHub runner IPs exhaust the anonymous pull quotas of `public.ecr.aws`
+(`toomanyrequests: Data limit exceeded`) and Docker Hub, and a job then fails
+before it runs a single step. CI therefore pulls its third-party images from
+GHCR, authenticated with the job's `GITHUB_TOKEN`:
+
+- `.github/ci-images.txt` lists each image as `<source>@sha256:<digest> <name>:<tag>`.
+  `ci-image-mirror.yml` copies it with `crane copy` to
+  `ghcr.io/openctemio/mirror/<name>:<tag>` (manifest bytes kept, so the digest is
+  the upstream one) and verifies the digest. A `docker.io/library/` source falls
+  back to `public.ecr.aws/docker/library/`. The weekly run re-copies anything
+  missing and adds a notice when an upstream tag has moved past its pin.
+- Service containers (`api-ci.yml`, `allinone-ci.yml`, `docker-publish.yml`), the
+  Semgrep job container and the e2e stack (`web/e2e/ci/compose.yml`) use the
+  mirror with `credentials:` from `GITHUB_TOKEN` (workflow `packages: read`).
+- The mirror packages are **public**, so fork pull requests and the other
+  openctemio repositories (sensor base images, the sdk-go sandbox test) pull
+  them anonymously. A new package starts private: make it public once in the
+  organisation's package settings; the mirror run warns while one is not.
+- Jobs that build our Dockerfiles (their `FROM` lines stay on the upstream
+  registries) log in first through `.github/actions/registry-login` (GHCR
+  always, Docker Hub when `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` are set; both
+  non-fatal), and direct `docker build` / `docker compose pull` steps run through
+  `.github/scripts/retry.sh`, which retries with backoff only on registry
+  rate limits and transient network errors.
+- To add or bump an image: `crane digest <source>:<tag>`, edit the list (and any
+  reference that pins the digest), merge; the push to `develop` mirrors it
+  before the next CI run needs it.
 
 ### Workflow security
 
