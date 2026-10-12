@@ -184,6 +184,35 @@ class VerdictTest(unittest.TestCase):
             sg.merge_group_pr("refs/heads/develop")
 
 
+class DigestTest(unittest.TestCase):
+    def digest(self, *files: sg.ChangedFile) -> str:
+        files_ = list(files)
+        findings, _ = sg.review(files_)
+        return sg.sensitive_digest(files_, CONFIG, findings)
+
+    def test_context_and_position_do_not_count(self):
+        a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch="@@ -10,2 +10,3 @@\n ctx\n+x := 1\n ctx2")
+        b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch="@@ -40,2 +52,3 @@\n other\n+x := 1\n other2")
+        self.assertEqual(self.digest(a), self.digest(b))
+
+    def test_changed_line_counts(self):
+        a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 2"))
+        self.assertNotEqual(self.digest(a), self.digest(b))
+
+    def test_plain_files_do_not_count_new_sensitive_files_do(self):
+        s = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        plain = sg.ChangedFile("web/src/app/page.tsx", patch=patch("y"))
+        self.assertEqual(self.digest(s), self.digest(s, plain))
+        mig = sg.ChangedFile("api/migrations/000999_x.up.sql", status="added", patch=patch("GRANT SELECT ON t TO app;"))
+        self.assertNotEqual(self.digest(s), self.digest(s, mig))
+
+    def test_missing_patch_uses_the_blob(self):
+        a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="a" * 40)
+        b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="b" * 40)
+        self.assertNotEqual(self.digest(a), self.digest(b))
+
+
 class FakeGitHub:
     """Serves canned API responses and records writes."""
 
@@ -285,6 +314,66 @@ class GateTest(unittest.TestCase):
         event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
         code, _ = self.run_gate("pull_request", event, routes)
         self.assertEqual(code, 1)
+
+    # The ack covers the sensitive diff, recorded as a digest in the gate comment.
+
+    def comment(self, files, login="github-actions[bot]"):
+        fs = [sg.changed_file(f) for f in files]
+        d = sg.sensitive_digest(fs, CONFIG, sg.review(fs)[0])
+        body = f"{sg.COMMENT_MARKER}\nold\n<!-- security-gate:ack-digest={d} -->\n"
+        return [{"id": 5, "body": body, "user": {"login": login}}]
+
+    def test_ack_label_event_records_the_digest(self):
+        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
+        event = {"action": "labeled", "label": {"name": "security-ack"}, "pull_request": {"number": 7}}
+        code, fake = self.run_gate("pull_request", event, routes)
+        self.assertEqual(code, 0)
+        posted = [b["body"] for m, p, b in fake.writes if m == "POST" and p == "issues/7/comments"]
+        self.assertEqual(len(posted), 1)
+        self.assertIn(self.comment(self.SENSITIVE)[0]["body"].splitlines()[-1], posted[0])
+
+    def test_base_merge_touching_the_sensitive_file_keeps_ack(self):
+        # develop changed other lines of the same file: the compare lists it, the PR's own lines are the same.
+        moved = [dict(self.SENSITIVE[0], patch=patch("x := 1", start=80))]
+        routes = self.routes(self.pr(labels=("security-ack",)), moved, self.ACK_BY_OWNER)
+        routes["issues/7/comments"] = self.comment(self.SENSITIVE)
+        routes["compare/a...b"] = {"status": "ahead", "files": [{"filename": "api/pkg/httpsec/ssrf.go", "deletions": 3}]}
+        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
+        code, fake = self.run_gate("pull_request", event, routes)
+        self.assertEqual(code, 0)
+        self.assertFalse(any(m == "DELETE" for m, _, _ in fake.writes))
+
+    def test_changed_sensitive_line_drops_ack(self):
+        changed = [dict(self.SENSITIVE[0], patch=patch("x := 2"))]
+        routes = self.routes(self.pr(labels=("security-ack",)), changed, self.ACK_BY_OWNER)
+        routes["issues/7/comments"] = self.comment(self.SENSITIVE)
+        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
+        code, fake = self.run_gate("pull_request", event, routes)
+        self.assertEqual(code, 1)
+        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
+        patched = [b["body"] for m, p, b in fake.writes if m == "PATCH"]
+        self.assertTrue(patched and "ack-digest" not in patched[0] and "was removed" in patched[0])
+
+    def test_digest_in_a_comment_someone_else_wrote_is_ignored(self):
+        # A planted marker comment cannot vouch for a push that touches the sensitive file.
+        routes = self.routes(self.pr(labels=("security-ack",)), self.SENSITIVE, self.ACK_BY_OWNER)
+        routes["issues/7/comments"] = self.comment(self.SENSITIVE, login="someone")
+        routes["compare/a...b"] = {"status": "ahead", "files": [{"filename": "api/pkg/httpsec/ssrf.go", "deletions": 1}]}
+        event = {"action": "synchronize", "before": "a", "after": "b", "pull_request": {"number": 7}}
+        code, fake = self.run_gate("pull_request", event, routes)
+        self.assertEqual(code, 1)
+        self.assertIn(("DELETE", "issues/7/labels/security-ack", None), fake.writes)
+
+    def test_merge_group_with_a_changed_digest_blocks_without_writing(self):
+        event = {"merge_group": {"head_ref": "refs/heads/gh-readonly-queue/develop/pr-7-abc123"}}
+        changed = [dict(self.SENSITIVE[0], patch=patch("x := 2"))]
+        routes = self.routes(self.pr(labels=("security-ack",)), changed, self.ACK_BY_OWNER)
+        routes["issues/7/comments"] = self.comment(self.SENSITIVE)
+        code, fake = self.run_gate("merge_group", event, routes)
+        self.assertEqual((code, fake.writes), (1, []))
+        routes["pulls/7/files"] = self.SENSITIVE
+        code, fake = self.run_gate("merge_group", event, routes)
+        self.assertEqual((code, fake.writes), (0, []))
 
     def test_fork_pr_is_read_only(self):
         code, fake = self.run_gate("pull_request", {"pull_request": {"number": 7}},

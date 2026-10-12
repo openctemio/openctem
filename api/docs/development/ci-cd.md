@@ -102,9 +102,20 @@ re-runs on the label and turns green; queue the pull request as usual. In the
 merge queue the gate runs again (`merge_group`), finds the pull request from the
 queue branch name and reads its labels and code-scanning alerts through the API.
 
-- A later push that changes a security-sensitive file of the pull request
-  removes `security-ack` (a force-push always does); merging the base branch
-  into the pull request does not. Ack again after reviewing the new commits.
+- The ack covers the pull request's security-sensitive lines. On the label
+  event the gate records a digest of them in its comment: every added and
+  removed line (no context, no line numbers) of each file that makes the pull
+  request sensitive, taken from the diff against the merge base. A later run
+  whose digest differs removes `security-ack`; one with the same digest keeps
+  it. So merging the base branch in, rebasing, or pushing changes to other
+  files keeps the ack, while changing a sensitive line, adding a sensitive file
+  or resolving a conflict inside one drops it. Ack again after reviewing the
+  new commits. Only the comment the workflow wrote counts (a digest in anyone
+  else's comment is ignored), and in the merge queue a digest that no longer
+  matches blocks the group. An ack given before the gate recorded digests
+  falls back to the earlier rule on its next push (a push that changes a
+  sensitive file, or any force-push, removes it), and records the digest when
+  it survives.
 - A HIGH diff finding is resolved by changing the line, or, for a reviewed false
   positive, by a comment on the same line:
   `security-review: allow <RULE-ID> <reason>` (visible in the diff and in git
