@@ -691,6 +691,25 @@ func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler,
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
 
+// registerEASMLookalikeRoutes registers passive lookalike-domain monitoring
+// (RFC-083): scope permissions, behind the attack_surface module.
+func registerEASMLookalikeRoutes(
+	router Router,
+	h *handler.EASMLookalikeHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/lookalikes", func(r Router) {
+		r.GET("/watches", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/watches", h.Create, middleware.Require(permission.ScopeWrite))
+		r.PUT("/watches/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/watches/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+		r.GET("/watches/{id}/registered", h.Registered, middleware.Require(permission.ScopeRead))
+	}, tenantMiddlewares...)
+}
+
 // registerEASMNetworkSeedRoutes registers network seeds (RFC-082): scope
 // permissions like the verified domains, behind the attack_surface module.
 // A seed never authorizes a probe; suggested prefixes are added through

@@ -722,6 +722,8 @@ type Services struct {
 	// Pentest
 	Pentest    *compliance.PentestService
 	Attachment *integration.AttachmentService
+	// EASMLookalikes runs passive lookalike-domain monitoring (RFC-083).
+	EASMLookalikes *easmapp.LookalikeService
 	// EASMNetworkSeeds manages AS number and organization seeds (RFC-082).
 	EASMNetworkSeeds *easmapp.NetworkSeedService
 	// WebEvidence stores and serves web assets' captures (RFC-081).
@@ -1163,6 +1165,26 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	var sweepDNS easmapp.SweepDNS
 	if s.EASMDNS != nil {
 		sweepDNS = s.EASMDNS
+	}
+	// Passive lookalike-domain monitoring (RFC-083): its own resolver client
+	// (low rate), crt.sh through the SSRF guard, exposures through the EASM
+	// writer (alerts) and the DNS repository's auto-resolve.
+	var (
+		lookalikeDNS       easmapp.LookalikeDNS
+		lookalikeCT        easmapp.CTCounter
+		lookalikeExposures easmapp.LookalikeExposures
+		lookalikeResolver  easmapp.LookalikeResolver
+		lookalikeLog       = log
+	)
+	if d, err := dnsprobe.New(dnsprobe.Config{Server: cfg.Worker.EASMDNSResolver, QPS: 5}); err != nil {
+		log.Warn("lookalike checks disabled: no resolver", "error", err)
+	} else {
+		lookalikeDNS, lookalikeCT, lookalikeExposures, lookalikeResolver = d, easmapp.NewCrtSh(), easmExposures, repos.EASMDNS
+		lookalikeLog = log.With("service", "easm-lookalikes")
+	}
+	s.EASMLookalikes = easmapp.NewLookalikeService(repos.EASMLookalike, lookalikeDNS, lookalikeCT, lookalikeExposures, lookalikeResolver, lookalikeLog)
+	if lookalikeDNS != nil {
+		s.EASMLookalikes.SetSettings(s.Tenant) // per-organization opt-out of crt.sh queries
 	}
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)

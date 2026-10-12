@@ -42,6 +42,7 @@ var EASMExposureTypes = []string{
 	"subdomain_discovered", "certificate_expiring", "certificate_expired",
 	"port_open", "service_detected", "ssl_issue",
 	"dangling_cname", "dangling_ns", "email_security_weak", "subdomain_takeover",
+	"lookalike_domain",
 }
 
 // notRejected excludes assets a person marked as not the tenant's: they stay
