@@ -232,7 +232,7 @@ by the v2 code it reuses.
 | `SENSOR_PUBLIC_HOST` | host and port (default 443) of the platform URL (`SENSOR_PUBLIC_API_URL`, else `APP_URL`, https only), a name or an address | Endpoint sensors dial for gRPC. Unset: the platform's own port through the gateway's ALPN routing. Set it for a dedicated sensor host (`sensors.example.com:443`) or a port of its own (`192.0.2.10:8444`) |
 | `SENSOR_MTLS_LISTEN_ADDR` | `:8443` | mTLS listener |
 | `SENSOR_MTLS_CA_CERT_FILE` / `SENSOR_MTLS_CA_KEY_FILE` | — | Sensor CA (PEM) |
-| `SENSOR_MTLS_CA_DIR` | `data/sensor-ca` (in the image: `/app/data/sensor-ca`, on the `api-data` volume) | Where the CA is created when the files are unset |
+| `SENSOR_MTLS_CA_DIR` | `data/sensor-ca` (in the API image: `/app/data/sensor-ca`, on the `api-data` volume; in the all-in-one image: `/data/sensor-ca`, on its `/data` volume) | Where the CA is created when the files are unset |
 | `SENSOR_MTLS_CERT_TTL` | `168h` | Client certificate lifetime (1h–720h) |
 | `SERVER_TLS_CERT_FILE` / `SERVER_TLS_KEY_FILE` | — (plain HTTP) | PEM paths: the API listener terminates TLS itself and serves the gRPC binding on the same port to ClientHellos offering `openctem-sensor/3` (T17). Set both or neither |
 | `SENSOR_MTLS_TRUSTED_PROXIES` | — | CIDRs whose PROXY protocol header is believed on the mTLS listener (the gateway's fixed address); required behind the layer4 gateway, which always sends one |

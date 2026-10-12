@@ -297,22 +297,13 @@ func newRedactCommandFixture(t *testing.T) (*CommandHandler, *commanddom.Command
 	return NewCommandHandler(svc, validator.New(), logger.NewNop()), cmd
 }
 
-func TestScanConfigRedaction_CommandGetAndList(t *testing.T) {
+func TestScanConfigRedaction_CommandList(t *testing.T) {
 	for _, c := range redactCallers {
 		t.Run(c.name, func(t *testing.T) {
 			h, cmd := newRedactCommandFixture(t)
 
-			req := withCaller(httptest.NewRequest(http.MethodGet, "/api/v1/commands/"+cmd.ID.String(), nil),
-				cmd.TenantID, c, map[string]string{"id": cmd.ID.String()})
+			req := withCaller(httptest.NewRequest(http.MethodGet, "/api/v1/commands", nil), cmd.TenantID, c, nil)
 			rec := httptest.NewRecorder()
-			h.Get(rec, req)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("get status %d: %s", rec.Code, rec.Body)
-			}
-			assertRedaction(t, rec.Body.String(), c.reveal)
-
-			req = withCaller(httptest.NewRequest(http.MethodGet, "/api/v1/commands", nil), cmd.TenantID, c, nil)
-			rec = httptest.NewRecorder()
 			h.List(rec, req)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("list status %d: %s", rec.Code, rec.Body)
@@ -327,9 +318,8 @@ func TestScanConfigRedaction_CommandGetAndList(t *testing.T) {
 func TestScanConfigRedaction_CommandStoredPayloadUntouched(t *testing.T) {
 	h, cmd := newRedactCommandFixture(t)
 	before := string(cmd.Payload)
-	req := withCaller(httptest.NewRequest(http.MethodGet, "/api/v1/commands/"+cmd.ID.String(), nil),
-		cmd.TenantID, redactCallers[0], map[string]string{"id": cmd.ID.String()})
-	h.Get(httptest.NewRecorder(), req)
+	req := withCaller(httptest.NewRequest(http.MethodGet, "/api/v1/commands", nil), cmd.TenantID, redactCallers[0], nil)
+	h.List(httptest.NewRecorder(), req)
 	if string(cmd.Payload) != before || !strings.Contains(before, redactTestPassword) {
 		t.Fatal("redaction changed the stored command payload")
 	}

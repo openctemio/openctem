@@ -13,6 +13,9 @@
   "findings.status.duplicate": "Duplicate",
   "findings.status.draft": "Draft",
   "findings.status.in_review": "In Review",
+  "findings.pentest.clientNotice": "Client access: you see the published findings of this campaign, read-only.",
+  "findings.pentest.role.client": "Client",
+  "findings.pentest.role.clientHint": "Client — published findings, read-only",
   "findings.statusCategory.open": "Open",
   "findings.statusCategory.in_progress": "In progress",
   "findings.statusCategory.closed": "Closed",
@@ -21,5 +24,10 @@
   "findings.dataFlow.emptyTitle": "No data flow",
   "findings.dataFlow.empty": "The scanner sent no source-to-sink trace for this finding. Semgrep sends one when run with --dataflow-traces.",
   "findings.dataFlow.hint": "How untrusted data reaches the vulnerable code, from source to sink.",
+  "findings.retest.manual.passed": "Tester retest: fixed",
+  "findings.retest.manual.failed": "Tester retest: still vulnerable",
+  "findings.retest.manual.partial": "Tester retest: partially fixed",
+  "findings.retest.manual.pending": "Tester retest pending",
+  "findings.retest.manual.canceled": "Tester retest canceled",
   "findings.remediation.none": "The scanner gave no remediation advice."
 }
