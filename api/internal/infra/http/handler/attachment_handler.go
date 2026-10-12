@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -46,6 +47,10 @@ type FindingCampaignAccessChecker interface {
 	// removing evidence: the caller must be able to edit the finding (or
 	// write to the campaign), and the campaign must not be locked.
 	CheckFindingEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
+	// CheckRetestEvidenceWrite gates retest evidence: the right to submit a
+	// retest, allowed while the campaign's remediation is open (completed
+	// included).
+	CheckRetestEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
 	CheckCampaignEvidenceWrite(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
 }
 
@@ -77,9 +82,11 @@ func (h *AttachmentHandler) SetAccessChecker(checker FindingCampaignAccessChecke
 }
 
 // verifyContextWrite checks the caller may add evidence to (upload/link into)
-// the given context: finding/retest contexts need the right to edit the
-// finding, campaign contexts a role that can upload evidence, and in both the
-// campaign must not be completed or canceled. Observers stay read-only.
+// the given context: finding contexts need the right to edit the finding and
+// a campaign that is not completed or canceled; retest contexts the right to
+// submit a retest and open remediation (completed allowed, canceled or
+// archived refused); campaign contexts a role that can upload evidence on a
+// campaign that is not completed or canceled. Observers stay read-only.
 // Empty/unknown context (a private orphan attachment owned by the uploader) is
 // allowed. No-op when no checker is configured.
 // Both "finding" and "retest" contexts use finding ID as context_id.
@@ -91,8 +98,10 @@ func (h *AttachmentHandler) verifyContextWrite(r *http.Request, contextType, con
 	userID := middleware.GetUserID(r.Context())
 	isAdmin := middleware.IsAdmin(r.Context())
 	switch contextType {
-	case attachmentCtxFinding, attachmentCtxRetest:
+	case attachmentCtxFinding:
 		return h.accessChecker.CheckFindingEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
+	case attachmentCtxRetest:
+		return h.accessChecker.CheckRetestEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
 	case attachmentCtxCampaign:
 		return h.accessChecker.CheckCampaignEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
 	default:
@@ -368,6 +377,68 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, reader); err != nil {
 		h.logger.Warn("attachment stream interrupted", "error", err, "id", id)
 	}
+}
+
+// DownloadURL hands out a short-lived signed URL for the attachment's file in
+// its bucket, after the same checks as Download (tenant-scoped lookup, then
+// the finding/campaign/uploader rules). The URL works for 60 seconds, for
+// this one object, and forces an attachment download. A file the malware
+// scanner flagged never gets one; a storage that cannot sign (local
+// storage, an endpoint without HTTPS) or direct downloads turned off answer
+// 409 DIRECT_DOWNLOAD_UNAVAILABLE, and the caller uses Download.
+//
+// @Summary      Signed download URL for an attachment
+// @Description  A 60-second URL signed for this one file in its bucket, after the same checks as a download. 409 DIRECT_DOWNLOAD_UNAVAILABLE: download through GET /attachments/{id}.
+// @Tags         Attachments
+// @Produce      json
+// @Param        id   path      string  true  "Attachment ID"
+// @Success      200  {object}  AttachmentSignedURLResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /attachments/{id}/signed-url [get]
+func (h *AttachmentHandler) DownloadURL(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+	att, err := h.service.GetByID(r.Context(), tenantID, id)
+	if err != nil {
+		apierror.NotFound("Attachment not found").WriteJSON(w)
+		return
+	}
+	if h.accessChecker != nil {
+		if err := h.authorizeAttachment(r, att); err != nil {
+			apierror.NotFound("Attachment not found").WriteJSON(w)
+			return
+		}
+	}
+	url, expires, err := h.service.DirectDownloadURL(r.Context(), att)
+	if err != nil {
+		switch {
+		case errors.Is(err, attachment.ErrInfected):
+			apierror.New(http.StatusConflict, "MALWARE_DETECTED",
+				"The malware scanner flagged this file; download it through the API with ?confirm=malware").WriteJSON(w)
+		case errors.Is(err, attachment.ErrStorageUnavailable):
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
+		default:
+			apierror.New(http.StatusConflict, "DIRECT_DOWNLOAD_UNAVAILABLE",
+				"This file downloads through the API").WriteJSON(w)
+		}
+		return
+	}
+	// The signed URL is a bearer credential for one object until it expires:
+	// never cached, never sent on as a referrer.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	writeJSON(w, http.StatusOK, AttachmentSignedURLResponse{URL: url, ExpiresAt: expires.UTC()})
+}
+
+// AttachmentSignedURLResponse is a signed download URL and when it expires.
+type AttachmentSignedURLResponse struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // Delete removes an attachment and its stored file.
