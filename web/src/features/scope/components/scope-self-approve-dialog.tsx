@@ -80,7 +80,7 @@ export function ScopeSelfApproveDialog({ entry, onOpenChange }: ScopeSelfApprove
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <form id={formId} onSubmit={submit} className="space-y-4">
+          <form method="post" id={formId} onSubmit={submit} className="space-y-4">
             {error && (
               <div
                 role="alert"
