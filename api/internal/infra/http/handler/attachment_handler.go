@@ -377,7 +377,7 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 // scanner flagged never gets one; a storage that cannot sign (local
 // storage, an endpoint without HTTPS) or direct downloads turned off answer
 // 409 DIRECT_DOWNLOAD_UNAVAILABLE, and the caller uses Download.
-// GET /api/v1/attachments/{id}/download-url
+// GET /api/v1/attachments/{id}/signed-url
 func (h *AttachmentHandler) DownloadURL(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")

@@ -115,7 +115,7 @@ carries `X-Content-Type-Options: nosniff` and
 images are served `Content-Disposition: attachment`.
 
 **Short-lived direct downloads** (`STORAGE_DIRECT_DOWNLOAD`, off by
-default). `GET /api/v1/attachments/{id}/download-url` runs the same checks
+default). `GET /api/v1/attachments/{id}/signed-url` runs the same checks
 as the download (permission, tenant-scoped lookup, campaign/finding/uploader
 rules) and returns `{url, expires_at}`: a GET signed by the storage driver
 for that one object (`{tenant id}/{key}`, both from the row, never from the

@@ -35,7 +35,7 @@ func registerAttachmentRoutes(
 		// Download — requires read permission (images served inline for markdown)
 		r.GET("/{id}", h.Download, middleware.Require(permission.PentestFindingsRead))
 		// Short-lived signed URL in the bucket — same permission and checks as download
-		r.GET("/{id}/download-url", h.DownloadURL, middleware.Require(permission.PentestFindingsRead))
+		r.GET("/{id}/signed-url", h.DownloadURL, middleware.Require(permission.PentestFindingsRead))
 		// Delete — requires write permission
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PentestFindingsWrite))
 		// Link orphan attachments to a finding after creation
