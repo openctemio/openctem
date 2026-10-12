@@ -18,6 +18,7 @@ export type {
 export { PathGraph, EASMOverview } from './components'
 export { useEASMSummary } from './hooks/use-easm-summary'
 export { EASMReviewQueue } from './components/easm-review-queue'
+export { EASMLookalikes } from './components/easm-lookalikes'
 export { AssetWebEvidenceCard } from './components/asset-web-evidence-card'
 export { EASMChanges } from './components/easm-changes'
 export { AttackSurfaceSectionTabs } from './components/attack-surface-section-tabs'

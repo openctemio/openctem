@@ -182,6 +182,8 @@ type GatePolicyInput struct {
 	EPSSThreshold   *float64
 	// Modes, when set, replaces the policy's modes.
 	Modes *cirun.PolicyModes
+	// AllowRepoPolicy, when set, allows or forbids repository files.
+	AllowRepoPolicy *bool
 }
 
 // ListGatePolicies returns the tenant's gate policies.
@@ -195,7 +197,7 @@ func (s *Service) CreateGatePolicy(ctx context.Context, tenantID shared.ID, in G
 	now := s.now().UTC()
 	p := &cirun.GatePolicy{ID: shared.NewID(), TenantID: tenantID, ScopeType: in.ScopeType, ScopeID: in.ScopeID,
 		Enabled: true, Mode: def.Mode, FailOnSeverity: def.FailOnSeverity, NewFindingsOnly: def.NewFindingsOnly,
-		FailOnKEV: def.FailOnKEV, CreatedAt: now, UpdatedAt: now}
+		FailOnKEV: def.FailOnKEV, AllowRepoPolicy: true, CreatedAt: now, UpdatedAt: now}
 	applyPolicyInput(p, in)
 	if uid, err := shared.IDFromString(a.UserID); err == nil {
 		p.CreatedBy, p.UpdatedBy = &uid, &uid
@@ -284,6 +286,9 @@ func applyPolicyInput(p *cirun.GatePolicy, in GatePolicyInput) {
 	if in.Modes != nil {
 		p.Modes = *in.Modes
 	}
+	if in.AllowRepoPolicy != nil {
+		p.AllowRepoPolicy = *in.AllowRepoPolicy
+	}
 }
 
 // checkPolicyScope makes sure a policy's repository or business unit is the
@@ -323,7 +328,7 @@ func policyName(p *cirun.GatePolicy) string {
 func policySnapshot(p *cirun.GatePolicy) map[string]any {
 	return map[string]any{"scope_type": p.ScopeType, "enabled": p.Enabled, "mode": p.Mode,
 		"fail_on_severity": p.FailOnSeverity, "new_findings_only": p.NewFindingsOnly, "fail_on_kev": p.FailOnKEV,
-		"epss_threshold": p.EPSSThreshold, "modes": p.Modes}
+		"epss_threshold": p.EPSSThreshold, "modes": p.Modes, "allow_repo_policy": p.AllowRepoPolicy}
 }
 
 // ---------------------------------------------------------------- overrides --

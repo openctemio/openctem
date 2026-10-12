@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -39,7 +40,17 @@ type ReviewNetwork struct {
 	// OrgMatches: the ASN organization matches this organization's name, so
 	// the range around the address is offered as a fix.
 	OrgMatches bool `json:"org_matches"`
+	// Seeded: the address is in one of the organization's network seeds
+	// (a seeded AS, its announced prefixes, or a seeded organization name,
+	// RFC-082); the range around it is offered as a fix too.
+	Seeded bool `json:"seeded"`
 }
+
+// SeededNetworks returns the organization's network seeds (RFC-082).
+type SeededNetworks func(ctx context.Context, tenantID shared.ID) (easmseed.Networks, error)
+
+// SetSeededNetworks lets address rows use the organization's network seeds.
+func (s *ReviewService) SetSeededNetworks(f SeededNetworks) { s.seeded = f }
 
 // ReviewCaller is what the caller may do with a fix (set by the handler from
 // the token; never from the request).
@@ -134,6 +145,14 @@ func (s *ReviewService) explainAddresses(ctx context.Context, tenantID shared.ID
 			return fmt.Errorf("organization name: %w", err)
 		}
 	}
+	var seeds *easmseed.Networks
+	if s.seeded != nil {
+		n, err := s.seeded(ctx, tenantID)
+		if err != nil {
+			return fmt.Errorf("network seeds: %w", err)
+		}
+		seeds = &n
+	}
 	for _, addr := range addrs {
 		from := make([]string, 0, maxResolvedFrom)
 		for _, n := range resolved[addr] {
@@ -142,6 +161,9 @@ func (s *ReviewService) explainAddresses(ctx context.Context, tenantID shared.ID
 			}
 		}
 		net := addressNetwork(props[addr], org)
+		if !net.Shared && seeds != nil && seededNetwork(*seeds, addr, net.ASN, net.Org) {
+			net.Seeded = true
+		}
 		for _, i := range rows[addr] {
 			it := &page.Items[i]
 			it.ResolvedFrom = from
@@ -177,7 +199,7 @@ func addressFixes(addr string, net *ReviewNetwork, caller ReviewCaller) []scoped
 	case caller.CanApprove:
 		out = append(out, scopedom.Fix{Action: scopedom.FixAddEntry, TargetType: string(scopedom.TargetTypeIPAddress),
 			Pattern: addr, Requires: permission.ScopeApprove.String()})
-		if net != nil && net.OrgMatches {
+		if net != nil && (net.OrgMatches || net.Seeded) {
 			if r := rangeAround(addr); r != "" {
 				out = append(out, scopedom.Fix{Action: scopedom.FixAddEntry, TargetType: string(scopedom.TargetTypeCIDR),
 					Pattern: r, Requires: permission.ScopeApprove.String()})

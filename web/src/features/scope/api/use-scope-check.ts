@@ -12,7 +12,12 @@ import useSWR from 'swr'
 import { post } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
-import type { ApiCheckScopeResponse, ApiScopeCheckResult, CheckScopeInput } from './scope-api.types'
+import type {
+  ApiCheckScopeResponse,
+  ApiScopeCheckResult,
+  ApiScopeCheckRouting,
+  CheckScopeInput,
+} from './scope-api.types'
 
 /** Targets per POST /scope/check request (the API's limit). */
 export const SCOPE_CHECK_BATCH = 200
@@ -42,12 +47,25 @@ export async function checkScope(
   return (await checkScopeAt(targets, opts)).results
 }
 
-/** The results, and the probe tier the server checked them at. */
+/**
+ * Where the scan would run, over several batches: a batch whose unverified
+ * targets move the job to the organization's own sensor decides, since the
+ * whole scan runs together; otherwise the first batch's answer.
+ */
+export function mergeRouting(
+  answers: (ApiScopeCheckRouting | undefined)[]
+): ApiScopeCheckRouting | undefined {
+  const known = answers.filter((r): r is ApiScopeCheckRouting => !!r?.runs_on)
+  return known.find((r) => r.reason === 'platform_needs_proof') ?? known[0]
+}
+
+/** The results, the probe tier the server checked them at, and the routing. */
 export async function checkScopeAt(
   targets: string[],
   opts: Omit<CheckScopeInput, 'targets'> = {}
-): Promise<{ results: ApiScopeCheckResult[]; tier?: number }> {
+): Promise<{ results: ApiScopeCheckResult[]; tier?: number; routing?: ApiScopeCheckRouting }> {
   const results: ApiScopeCheckResult[] = []
+  const routings: (ApiScopeCheckRouting | undefined)[] = []
   let tier: number | undefined
   for (let i = 0; i < targets.length; i += SCOPE_CHECK_BATCH) {
     const res = await post<ApiCheckScopeResponse>('/api/v1/scope/check', {
@@ -55,9 +73,10 @@ export async function checkScopeAt(
       targets: targets.slice(i, i + SCOPE_CHECK_BATCH),
     })
     results.push(...(res?.results ?? []))
+    routings.push(res?.routing)
     tier ??= res?.tier
   }
-  return { results, tier }
+  return { results, tier, routing: mergeRouting(routings) }
 }
 
 export interface UseScopeCheckOptions extends Omit<CheckScopeInput, 'targets'> {
@@ -112,6 +131,8 @@ export function useScopeCheck(targets: readonly string[], opts: UseScopeCheckOpt
     results: data,
     /** The probe tier the server checked at (0 passive, 1 safe active, 2 intrusive). */
     tier: answer?.tier,
+    /** Where the scan would run and why (the trigger's decision). */
+    routing: answer?.routing,
     /** The result for a target (case-insensitive), if checked. */
     resultFor,
     error,

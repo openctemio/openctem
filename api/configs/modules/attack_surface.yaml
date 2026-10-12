@@ -20,6 +20,8 @@
     - AssetEnrichmentController
     - CertMonitorController
     - EASMDNSController
+    - EASMLookalikeController
+    - EASMNetworkSeedController
     - WebEvidenceRetentionController
     - EASMWeeklyDigestController
     - GraphEnrichmentController

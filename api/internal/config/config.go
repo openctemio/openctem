@@ -2,6 +2,9 @@
 package config
 
 import (
+	"crypto/hkdf"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -576,7 +579,10 @@ type AuthConfig struct {
 	Provider AuthProvider
 
 	// JWT settings for local auth
-	JWTSecret            string        // Secret key for signing JWTs (required for local/hybrid)
+	JWTSecret string // Secret key for signing JWTs (required for local/hybrid)
+	// JWTSecretDerived reports that AUTH_JWT_SECRET was unset and JWTSecret
+	// was derived from APP_ENCRYPTION_KEY (see deriveSecrets).
+	JWTSecretDerived     bool
 	JWTIssuer            string        // Token issuer claim
 	AccessTokenDuration  time.Duration // Access token lifetime (default: 15m)
 	RefreshTokenDuration time.Duration // Refresh token lifetime (default: 7d)
@@ -704,43 +710,18 @@ func (c *OAuthConfig) HasAnyProvider() bool {
 	return c.Google.IsConfigured() || c.GitHub.IsConfigured() || c.Microsoft.IsConfigured()
 }
 
-// SMTPConfig holds SMTP configuration for sending emails.
+// SMTPConfig is what the e-mail templates need from the deployment: the base
+// URL of links. The SMTP server itself is the platform e-mail setting in the
+// admin console (System > E-mail, RFC-079), not an environment variable.
 type SMTPConfig struct {
-	Host       string
-	Port       int
-	User       string
-	Password   string
-	From       string
-	FromName   string
-	TLS        bool
-	SkipVerify bool
-	Enabled    bool
-	BaseURL    string // Frontend base URL for email links (e.g., https://app.openctem.io)
-	Timeout    time.Duration
+	BaseURL string // Frontend base URL for email links (e.g., https://app.openctem.io)
 }
 
-// SMTPFromEnv reads the system SMTP settings (SMTP_*) on their own, for tools
-// such as bootstrap-admin that send email without loading (and validating) the
-// whole server configuration.
+// SMTPFromEnv reads SMTP_BASE_URL on its own, for tools such as bootstrap-admin
+// that send e-mail without loading (and validating) the whole server
+// configuration.
 func SMTPFromEnv() SMTPConfig {
-	return SMTPConfig{
-		Enabled:    getEnvBool("SMTP_ENABLED", false),
-		Host:       getEnv("SMTP_HOST", ""),
-		Port:       getEnvInt("SMTP_PORT", 587),
-		User:       getEnv("SMTP_USER", ""),
-		Password:   getEnv("SMTP_PASSWORD", ""),
-		From:       getEnv("SMTP_FROM", ""),
-		FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
-		TLS:        getEnvBool("SMTP_TLS", true),
-		SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
-		BaseURL:    getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000")), // Frontend URL for email links
-		Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
-	}
-}
-
-// IsConfigured returns true if SMTP is properly configured.
-func (c *SMTPConfig) IsConfigured() bool {
-	return c.Enabled && c.Host != "" && c.Port > 0 && c.From != ""
+	return SMTPConfig{BaseURL: getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000"))}
 }
 
 // KeycloakConfig holds Keycloak authentication configuration.
@@ -1068,14 +1049,6 @@ type EncryptionConfig struct {
 	// Default: auto-detected based on key length
 	KeyFormat string
 
-	// AllowPlaintext, when true, lets non-production deployments fall
-	// back to plaintext credential storage if Key is empty. Required
-	// to make the security trade-off intentional and visible — without
-	// this opt-in, a missing APP_ENCRYPTION_KEY refuses to boot even
-	// in dev. Production NEVER allows plaintext (initEncryptor enforces).
-	// Env var: APP_ALLOW_PLAINTEXT_CREDENTIALS
-	AllowPlaintext bool
-
 	// PreviousKeys are earlier encryption keys, kept only while a key
 	// rotation is in progress: values encrypted under them stay readable,
 	// and token hashes peppered with them keep verifying, while new values
@@ -1280,7 +1253,7 @@ func Load() (*Config, error) {
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "openctem"),
-			Password:        getEnv("DB_PASSWORD", "secret"),
+			Password:        getEnv("DB_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
@@ -1450,10 +1423,9 @@ func Load() (*Config, error) {
 			},
 		},
 		Encryption: EncryptionConfig{
-			Key:            getEnv("APP_ENCRYPTION_KEY", ""),
-			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
-			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
-			PreviousKeys:   getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
+			Key:          getEnv("APP_ENCRYPTION_KEY", ""),
+			KeyFormat:    getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
+			PreviousKeys: getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
@@ -1536,6 +1508,8 @@ func Load() (*Config, error) {
 
 	cfg.EnvWarnings = envWarnings
 
+	deriveSecrets(cfg)
+
 	// SSO redirect-URI allow-list (OAuth 2.1 / RFC 9700): pin the caller-supplied
 	// redirect_uri to trusted frontend origins. An explicit SSO_ALLOWED_REDIRECT_URIS
 	// wins; otherwise derive the origins already trusted elsewhere in config so the
@@ -1589,7 +1563,14 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if c.App.Env == EnvProduction {
-		return c.validateProduction()
+		if err := c.validateProduction(); err != nil {
+			return err
+		}
+	}
+	// There is no default database password: outside development an unset
+	// DB_PASSWORD is a missing setting, not a wish for an empty password.
+	if c.Database.Password == "" && !c.IsDevelopment() {
+		return errors.New("DB_PASSWORD is required")
 	}
 	return nil
 }
@@ -1857,7 +1838,7 @@ func (c *Config) validateAuth() error {
 	// Local auth requires JWT secret
 	if c.Auth.Provider.SupportsLocal() {
 		if c.Auth.JWTSecret == "" {
-			return fmt.Errorf("AUTH_JWT_SECRET is required when using local or hybrid authentication")
+			return fmt.Errorf("AUTH_JWT_SECRET is empty: set APP_ENCRYPTION_KEY (the session secret is derived from it) or AUTH_JWT_SECRET")
 		}
 		if len(c.Auth.JWTSecret) < 32 {
 			return fmt.Errorf("AUTH_JWT_SECRET must be at least 32 characters")
@@ -1993,10 +1974,7 @@ func (c *Config) validateOAuth() error {
 	// If any provider is enabled, we need state secret for CSRF protection
 	if c.OAuth.HasAnyProvider() {
 		if c.OAuth.StateSecret == "" {
-			// Generate a warning but don't fail in development
-			if c.App.Env == EnvProduction {
-				return fmt.Errorf("OAUTH_STATE_SECRET is required when OAuth providers are enabled")
-			}
+			return fmt.Errorf("OAUTH_STATE_SECRET is empty and could not be derived: set AUTH_JWT_SECRET or APP_ENCRYPTION_KEY")
 		}
 		if c.OAuth.FrontendCallbackURL == "" {
 			return fmt.Errorf("OAUTH_FRONTEND_CALLBACK_URL is required when OAuth providers are enabled")
@@ -2205,6 +2183,9 @@ var retiredEnv = []struct{ Old, New, Hint string }{
 	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
 }
 
+// smtpMoved is the hint for the SMTP_* variables.
+const smtpMoved = "unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
+
 // removedEnv lists settings that were removed without a replacement
 // variable. Startup refuses to run while one is set, saying what to do
 // instead, so an operator never believes a removed setting still applies.
@@ -2215,6 +2196,18 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	// The platform SMTP server is set in the admin console (RFC-079).
+	{"SMTP_ENABLED", smtpMoved},
+	{"SMTP_HOST", smtpMoved},
+	{"SMTP_PORT", smtpMoved},
+	{"SMTP_USER", smtpMoved},
+	{"SMTP_PASSWORD", smtpMoved},
+	{"SMTP_FROM", smtpMoved},
+	{"SMTP_FROM_NAME", smtpMoved},
+	{"SMTP_TLS", smtpMoved},
+	{"SMTP_SKIP_VERIFY", smtpMoved},
+	{"SMTP_TIMEOUT", smtpMoved},
+	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
 	{"CTEM_ENFORCE_COVERAGE_SLO", "unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles)"},
 	// Cookie names are fixed: the API, the web console and the gateway must
 	// agree on them.
@@ -2250,6 +2243,38 @@ func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 		return fmt.Errorf("retired environment variables are set and no longer read: %s", strings.Join(bad, ", "))
 	}
 	return nil
+}
+
+// HKDF labels of the secrets derived when their variable is unset. Changing a
+// label changes the derived secret: every session (or OAuth state) issued
+// under the old one stops verifying.
+const (
+	sessionJWTInfo = "openctem/session-jwt/v1"
+	oauthStateInfo = "openctem/oauth-state/v1"
+)
+
+// deriveSecrets fills the secrets an operator need not set:
+//
+//   - AUTH_JWT_SECRET unset: derived from APP_ENCRYPTION_KEY (HKDF-SHA256,
+//     64 bytes, hex). Rotating the encryption key then also signs every user
+//     out; set AUTH_JWT_SECRET to rotate the two independently.
+//   - OAUTH_STATE_SECRET unset: derived from the session secret under its own
+//     label, so the OAuth state MAC key is never the session signing key.
+//
+// The derivation is one-way: knowing a derived secret reveals nothing about
+// the key it came from.
+func deriveSecrets(cfg *Config) {
+	if cfg.Auth.JWTSecret == "" && cfg.Encryption.Key != "" {
+		if d, err := hkdf.Key(sha256.New, []byte(cfg.Encryption.Key), nil, sessionJWTInfo, 64); err == nil {
+			cfg.Auth.JWTSecret = hex.EncodeToString(d)
+			cfg.Auth.JWTSecretDerived = true
+		}
+	}
+	if cfg.OAuth.StateSecret == "" && cfg.Auth.JWTSecret != "" {
+		if d, err := hkdf.Key(sha256.New, []byte(cfg.Auth.JWTSecret), nil, oauthStateInfo, 32); err == nil {
+			cfg.OAuth.StateSecret = hex.EncodeToString(d)
+		}
+	}
 }
 
 // parsePublicURL parses APP_URL: an absolute http(s) URL with a host and no

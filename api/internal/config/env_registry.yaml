@@ -153,10 +153,10 @@ vars:
     component: api
     group: "Database (PostgreSQL)"
     type: string
-    default: "secret"
     required: yes
     secret: true
-    description: "Password of `DB_USER`. Always set it; the default exists for local development only."
+    example: "secret"
+    description: "Password of `DB_USER`. Required outside `APP_ENV=development`; there is no default."
   - name: DB_PORT
     component: api
     group: "Database (PostgreSQL)"
@@ -334,12 +334,6 @@ vars:
     type: int
     default: "5"
     description: "A request slower than this is logged at WARN as `slow http request`. `0` turns it off."
-  - name: APP_ALLOW_PLAINTEXT_CREDENTIALS
-    component: api
-    group: "Encryption keys"
-    type: bool
-    default: "false"
-    description: "Only with `APP_ENV=development`: `true` lets the API start without `APP_ENCRYPTION_KEY` and store credentials in plaintext. Never use it for real data; every other environment refuses to start without a key."
   - name: APP_ENCRYPTION_KEY
     component: api
     group: "Encryption keys"
@@ -412,10 +406,8 @@ vars:
     component: api
     group: "Authentication"
     type: string
-    required: yes
     secret: true
-    example: "this-is-a-development-secret-key-at-least-64-characters-long-for-security"
-    description: "HMAC secret that signs session tokens. Required with `local` or `hybrid`; at least 32 characters, 64 in production: `openssl rand -hex 64`. Changing it signs every user out."
+    description: "HMAC secret that signs session tokens. Unset: derived from `APP_ENCRYPTION_KEY` (HKDF, 64 bytes), so rotating the encryption key also signs every user out; set it (at least 64 characters in production: `openssl rand -hex 64`) to rotate the two independently. Changing it signs every user out."
   - name: AUTH_LOCKOUT_DURATION
     component: api
     group: "Authentication"
@@ -651,9 +643,8 @@ vars:
     component: api
     group: "Single sign-on and social login"
     type: string
-    required: production
     secret: true
-    description: "Secret that signs the OAuth `state` parameter. Required in production when a social-login provider is enabled."
+    description: "Secret that signs the OAuth `state` parameter. Unset: derived from the session secret under its own label."
   - name: SSO_ALLOWED_REDIRECT_URIS
     component: api
     group: "Single sign-on and social login"
@@ -786,63 +777,6 @@ vars:
     default: "APP_URL, else http://localhost:3000"
     example: "http://localhost:3000"
     description: "Base URL of links in e-mails. Set it only when the console is not at `APP_URL`."
-  - name: SMTP_ENABLED
-    component: api
-    group: "Email (SMTP)"
-    type: bool
-    default: "false"
-    description: "Send system email (invitations, verification, password reset, set-password links)."
-  - name: SMTP_FROM
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    description: "Sender address. Email is sent only when `SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT` and `SMTP_FROM` are all set."
-  - name: SMTP_FROM_NAME
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    default: "OpenCTEM"
-    description: "Sender display name."
-  - name: SMTP_HOST
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    description: "SMTP server."
-  - name: SMTP_PASSWORD
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    secret: true
-    description: "SMTP password."
-  - name: SMTP_PORT
-    component: api
-    group: "Email (SMTP)"
-    type: int
-    default: "587"
-    description: "SMTP port."
-  - name: SMTP_SKIP_VERIFY
-    component: api
-    group: "Email (SMTP)"
-    type: bool
-    default: "false"
-    description: "Skip verification of the SMTP server's certificate."
-  - name: SMTP_TIMEOUT
-    component: api
-    group: "Email (SMTP)"
-    type: duration
-    default: "30s"
-    description: "Timeout of an SMTP delivery."
-  - name: SMTP_TLS
-    component: api
-    group: "Email (SMTP)"
-    type: bool
-    default: "true"
-    description: "Use TLS."
-  - name: SMTP_USER
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    description: "SMTP user name."
   - name: STORAGE_ACCESS_KEY
     component: api
     group: "Attachment storage"
@@ -1583,6 +1517,42 @@ vars:
     type: string
     secret: true
     description: "Platform key for the `openai` provider."
+  - name: BOOTSTRAP_SMTP_HOST
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail)."
+  - name: BOOTSTRAP_SMTP_PORT
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: SMTP port (default 587)."
+  - name: BOOTSTRAP_SMTP_USER
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: SMTP user name."
+  - name: BOOTSTRAP_SMTP_PASSWORD
+    component: tool
+    group: "Administration tools"
+    type: string
+    secret: true
+    description: "`bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`."
+  - name: BOOTSTRAP_SMTP_FROM
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: sender address."
+  - name: BOOTSTRAP_SMTP_FROM_NAME
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: sender name (default OpenCTEM)."
+  - name: BOOTSTRAP_SMTP_STARTTLS
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: `false` turns STARTTLS off (default on)."
   - name: ADMIN_BACKUP_EMAIL
     component: tool
     group: "Administration tools"
@@ -1771,16 +1741,6 @@ vars:
     group: "Web console"
     type: string
     description: "Page description meta tag."
-  - name: NEXT_PUBLIC_PRIVACY_URL
-    component: web
-    group: "Web console"
-    type: string
-    description: "Privacy notice link on the sign-in and sign-up pages."
-  - name: NEXT_PUBLIC_TERMS_URL
-    component: web
-    group: "Web console"
-    type: string
-    description: "Terms of service link on the sign-in and sign-up pages."
   - name: NEXT_PUBLIC_COOKIE_DOMAIN
     component: web
     group: "Web console"
@@ -1797,83 +1757,6 @@ vars:
     group: "Web console"
     type: string
     description: "Development server only: extra origins allowed to load the dev bundle."
-  - name: LEGAL_TERMS_URL
-    component: web
-    group: "Web console"
-    type: url
-    description: "Terms of service link (https) on the sign-in and register pages. Read at request time."
-  - name: LEGAL_PRIVACY_URL
-    component: web
-    group: "Web console"
-    type: url
-    description: "Privacy policy link (https) on the sign-in and register pages. Read at request time."
-  - name: LEGAL_PAGES_ENABLED
-    component: web
-    group: "Web console"
-    type: bool
-    default: "false"
-    description: "`true` serves the built-in legal templates (/terms, /acceptable-use, /privacy, /dpa, /subprocessors); review them with counsel."
-  - name: LEGAL_ORGANIZATION_NAME
-    component: web
-    group: "Web console"
-    type: string
-    description: "Legal name of the operator in the built-in templates. Unset: a marked placeholder."
-  - name: LEGAL_SERVICE_NAME
-    component: web
-    group: "Web console"
-    type: string
-    default: "OpenCTEM"
-    description: "Service name in the built-in templates."
-  - name: LEGAL_CONTACT_EMAIL
-    component: web
-    group: "Web console"
-    type: string
-    default: "info@openctem.io"
-    description: "General contact e-mail in the built-in templates."
-  - name: LEGAL_WEBSITE_URL
-    component: web
-    group: "Web console"
-    type: url
-    default: "https://openctem.io"
-    description: "Website in the built-in templates (https)."
-  - name: LEGAL_DOCS_URL
-    component: web
-    group: "Web console"
-    type: url
-    default: "https://docs.openctem.io"
-    description: "Documentation link in the built-in templates (https)."
-  - name: LEGAL_ADDRESS
-    component: web
-    group: "Web console"
-    type: string
-    description: "Postal address in the built-in templates. Unset: a marked placeholder."
-  - name: LEGAL_JURISDICTION
-    component: web
-    group: "Web console"
-    type: string
-    description: "Governing law in the built-in templates. Unset: a marked placeholder."
-  - name: LEGAL_EFFECTIVE_DATE
-    component: web
-    group: "Web console"
-    type: string
-    description: "Effective date of the built-in templates. Unset: a marked placeholder."
-  - name: SECURITY_CONTACT
-    component: web
-    group: "Web console"
-    type: string
-    default: "security@openctem.io"
-    description: "Contact (e-mail address or https URL) in /.well-known/security.txt."
-  - name: SECURITY_POLICY_URL
-    component: web
-    group: "Web console"
-    type: url
-    description: "https URL of the security policy, added to security.txt."
-  - name: SECURITY_TXT_ENABLED
-    component: web
-    group: "Web console"
-    type: bool
-    default: "true"
-    description: "`false` stops serving /.well-known/security.txt."
   - name: OPENCTEM_TLS_MODE
     component: gateway
     group: "Gateway"
