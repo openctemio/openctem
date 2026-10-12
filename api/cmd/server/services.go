@@ -1379,6 +1379,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Attachment = integration.NewAttachmentService(repos.Attachment, fileStorage, log)
 	s.Attachment.SetTenantQuota(cfg.Storage.TenantQuotaMB << 20)
+	// Retention: evidence of deleted findings/campaigns and never-linked
+	// uploads are purged by the attachment-retention controller.
+	s.Attachment.SetRetention(repos.Attachment, integration.RetentionSettings{
+		OrphanGrace:       time.Duration(cfg.Storage.OrphanGraceDays) * 24 * time.Hour,
+		UnlinkedRetention: time.Duration(cfg.Storage.UnlinkedRetentionHours) * time.Hour,
+	}, s.Audit)
 	s.Pentest.SetEvidenceImageReader(s.Attachment) // evidence images in reports
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
