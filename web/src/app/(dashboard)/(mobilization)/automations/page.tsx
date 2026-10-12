@@ -965,8 +965,10 @@ export default function WorkflowsPage() {
           <DialogHeader>
             <DialogTitle>Create workflow</DialogTitle>
             <DialogDescription>
-              Create a new automation workflow. You can add nodes and configure triggers in the
-              visual builder after creation.
+              {t(
+                'automations.createHint',
+                'Add the trigger and steps in the builder after you create it.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
