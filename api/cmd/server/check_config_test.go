@@ -41,3 +41,24 @@ func TestReportConfigCheck(t *testing.T) {
 		t.Fatalf("development not flagged: %q", out.String())
 	}
 }
+
+// The preflight warns about a trusted-proxy range as wide as a container
+// network (every container on it could set the client IP).
+func TestReportConfigCheck_WarnsAboutWideTrustedProxies(t *testing.T) {
+	var out, errOut bytes.Buffer
+	cfg := &config.Config{}
+	cfg.App.Env = config.EnvProduction
+	cfg.Server.TrustedProxies = []string{"172.18.0.0/16"}
+	if rc := reportConfigCheck(&out, &errOut, cfg, nil); rc != 0 {
+		t.Fatalf("exit = %d, want 0 (a warning, not a failure)", rc)
+	}
+	if !strings.Contains(out.String(), "warning: SERVER_TRUSTED_PROXIES=172.18.0.0/16") {
+		t.Fatalf("stdout = %q, want the wide range named", out.String())
+	}
+	out.Reset()
+	cfg.Server.TrustedProxies = []string{"172.18.0.10", "172.18.0.11/32"}
+	reportConfigCheck(&out, &errOut, cfg, nil)
+	if strings.Contains(out.String(), "warning:") {
+		t.Fatalf("pinned addresses must not warn: %q", out.String())
+	}
+}
