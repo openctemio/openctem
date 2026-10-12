@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 )
@@ -233,5 +235,53 @@ func TestRequireCampaignWritable_InProgressOK(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+// --- CampaignRoleResolver ---
+
+type fakeCampaignRoles map[string]pentest.CampaignRole // userID -> role
+
+func (f fakeCampaignRoles) GetUserRole(_ context.Context, _, _, userID string) (pentest.CampaignRole, error) {
+	return f[userID], nil
+}
+
+func resolvedRole(t *testing.T, roles fakeCampaignRoles, userID string, admin bool) pentest.CampaignRole {
+	t.Helper()
+	var got pentest.CampaignRole
+	h := middleware.CampaignRoleResolver(roles)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = middleware.GetCampaignRole(r.Context())
+	}))
+	r := chi.NewRouter()
+	r.Handle("/campaigns/{id}", h)
+	ctx := context.WithValue(context.Background(), middleware.UserIDKey, userID)
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, "11111111-1111-1111-1111-111111111111")
+	if admin {
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, true)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/campaigns/22222222-2222-2222-2222-222222222222", nil).WithContext(ctx)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	return got
+}
+
+// An org admin who is a member keeps their campaign role, so handlers that
+// need membership (test credentials, sign-off) accept an admin lead.
+func TestCampaignRoleResolver_AdminMemberGetsRole(t *testing.T) {
+	roles := fakeCampaignRoles{"admin-lead": pentest.CampaignRoleLead}
+	if got := resolvedRole(t, roles, "admin-lead", true); got != pentest.CampaignRoleLead {
+		t.Errorf("admin lead: expected lead, got %q", got)
+	}
+}
+
+func TestCampaignRoleResolver_AdminNonMemberHasNoRole(t *testing.T) {
+	if got := resolvedRole(t, fakeCampaignRoles{}, "admin", true); got != "" {
+		t.Errorf("admin non-member: expected no role, got %q", got)
+	}
+}
+
+func TestCampaignRoleResolver_Member(t *testing.T) {
+	roles := fakeCampaignRoles{"tester": pentest.CampaignRoleTester}
+	if got := resolvedRole(t, roles, "tester", false); got != pentest.CampaignRoleTester {
+		t.Errorf("member: expected tester, got %q", got)
 	}
 }
