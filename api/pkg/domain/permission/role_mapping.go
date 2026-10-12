@@ -71,7 +71,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
 		PentestRetestsRead, PentestRetestsWrite,
 		PentestTemplatesRead, PentestTemplatesWrite,
-		PentestReportsWrite,
+		PentestReportsWrite, PentestChecklistsManage,
 		// Compliance (all)
 		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
@@ -150,7 +150,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
 		PentestRetestsRead, PentestRetestsWrite,
 		PentestTemplatesRead, PentestTemplatesWrite,
-		PentestReportsWrite,
+		PentestReportsWrite, PentestChecklistsManage,
 		// Compliance (all)
 		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,

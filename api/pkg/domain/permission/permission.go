@@ -357,6 +357,10 @@ const (
 	PentestTemplatesRead   Permission = "pentest:templates:read"
 	PentestTemplatesWrite  Permission = "pentest:templates:write"
 	PentestReportsWrite    Permission = "pentest:reports:write"
+	// PentestChecklistsManage creates, imports, edits and archives the
+	// organization's methodology checklist templates (RFC-087). Testers use
+	// templates with campaign permissions; this is the pentest manager's.
+	PentestChecklistsManage Permission = "pentest:checklists:manage"
 )
 
 // =============================================================================
@@ -504,7 +508,7 @@ func AllPermissions() []Permission {
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
 		PentestRetestsRead, PentestRetestsWrite,
 		PentestTemplatesRead, PentestTemplatesWrite,
-		PentestReportsWrite,
+		PentestReportsWrite, PentestChecklistsManage,
 
 		// Compliance module
 		ComplianceFrameworksRead,

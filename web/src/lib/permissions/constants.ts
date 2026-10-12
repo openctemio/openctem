@@ -371,6 +371,7 @@ export const Permission = {
   PentestTemplatesRead: 'pentest:templates:read',
   PentestTemplatesWrite: 'pentest:templates:write',
   PentestReportsWrite: 'pentest:reports:write',
+  PentestChecklistsManage: 'pentest:checklists:manage',
 
   // Compliance permissions
   ComplianceFrameworksRead: 'compliance:frameworks:read',
@@ -523,6 +524,7 @@ export const PermissionGroups = {
     Permission.PentestRetestsWrite,
     Permission.PentestTemplatesWrite,
     Permission.PentestReportsWrite,
+    Permission.PentestChecklistsManage,
     Permission.ComplianceAssessmentsWrite,
     Permission.ComplianceMappingsWrite,
     Permission.ReportsWrite,
@@ -755,6 +757,7 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.PentestTemplatesRead]: 'View Pentest Templates',
   [Permission.PentestTemplatesWrite]: 'Manage Pentest Templates',
   [Permission.PentestReportsWrite]: 'Manage Pentest Reports',
+  [Permission.PentestChecklistsManage]: 'Manage Pentest Checklists',
 
   // Compliance
   [Permission.ComplianceFrameworksRead]: 'View Compliance Frameworks',
@@ -949,6 +952,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.PentestTemplatesRead,
     Permission.PentestTemplatesWrite,
     Permission.PentestReportsWrite,
+    Permission.PentestChecklistsManage,
     // Compliance (all)
     Permission.ComplianceFrameworksRead,
     Permission.ComplianceAssessmentsRead,
@@ -1110,6 +1114,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.PentestTemplatesRead,
     Permission.PentestTemplatesWrite,
     Permission.PentestReportsWrite,
+    Permission.PentestChecklistsManage,
     // Compliance (all)
     Permission.ComplianceFrameworksRead,
     Permission.ComplianceAssessmentsRead,
