@@ -69,7 +69,7 @@ run the scan, write GitLab security reports and ask OpenCTEM for the verdict.
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/openctemio/ci/v0.1.0/gitlab/templates/all.yml
+  - remote: https://raw.githubusercontent.com/openctemio/ci/v0.2.0/gitlab/templates/all.yml
 ```
 
 `all.yml` runs `openctem-sast` (semgrep), `openctem-sca` (trivy),
@@ -83,7 +83,7 @@ runs in your pipeline with your project's identity.
 Optional variables: `OPENCTEM_FAIL_ON` (local gate threshold when the platform
 cannot decide), `OPENCTEM_SCAN_ARGS` (extra `openctem-ci scan` flags, e.g.
 `--target services/api`), `OPENCTEM_DISABLED` (`"true"` turns every job off).
-Full reference: [openctemio/ci docs/gitlab.md](https://github.com/openctemio/ci/blob/v0.1.0/docs/gitlab.md).
+Full reference: [openctemio/ci docs/gitlab.md](https://github.com/openctemio/ci/blob/v0.2.0/docs/gitlab.md).
 
 What the jobs do: run the scanners on the checkout, convert the output to CTIS
 on the runner, exchange `OPENCTEM_ID_TOKEN` for a run token, upload the
@@ -168,7 +168,7 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
   never the value, whatever the upload contains.
 - **Pinned, verified images.** The templates run the per-tool images of the
   pinned `openctemio/ci` release; images are cosign-signed with SBOMs (see
-  [openctemio/ci docs/images.md](https://github.com/openctemio/ci/blob/v0.1.0/docs/images.md)).
+  [openctemio/ci docs/images.md](https://github.com/openctemio/ci/blob/v0.2.0/docs/images.md)).
 - **Minimum runner version.** A release older than the platform's minimum
   supported version is refused (`403 RUNNER_OUTDATED`): update the pinned tag.
 - **Enforce the gate.** If you started with `allow_failure: exit_codes: [1]`,
