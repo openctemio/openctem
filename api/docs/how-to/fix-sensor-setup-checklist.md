@@ -46,8 +46,9 @@ from the platform.
 
 | Check | What it means | Usual fix |
 |---|---|---|
-| `identity.state_persistent` | The sensor keeps its renewed API key in a directory that is not on a volume. Recreating the container loses the key. | Mount a volume at the state directory (`SENSOR_STATE_DIR`, default `/var/lib/openctem/state`); Helm: `sensor.state.persistence.enabled: true`. |
-| `identity.key_renewal` `off_not_persistent` | Key renewal is off because the state is not kept. | Mount the state volume; then `PLATFORM_KEY_AUTORENEW=true` (Helm: `sensor.keyAutoRenew`). |
+| `identity.state_persistent` | The sensor keeps its renewed API key in a directory that is not on a volume. Recreating the container loses the key. | Mount the data volume at `/var/lib/openctem` (or a volume on `SENSOR_STATE_DIR` itself); Helm: `sensor.data.persistence.enabled: true`. |
+| `identity.key_renewal` `off_not_persistent` | Key renewal is off because the state is not kept. | Mount the data volume; then `PLATFORM_KEY_AUTORENEW=true` (Helm: `sensor.keyAutoRenew`). |
+| `storage.outbox_persistent` | The outbox (results the platform has not accepted yet) is not on a volume. Recreating the container during an outage loses them. | Mount the data volume at `/var/lib/openctem` (or a volume on `SENSOR_OUTBOX_DIR` itself); Helm: `sensor.data.persistence.enabled: true`. |
 | `tool.<name>.binary` | The scanner is not installed, or it is installed but does not start (the excerpt shows its output). | Use an image that ships it (the default image carries semgrep, betterleaks, trivy and nuclei), or remove it from `SENSOR_TOOLS`. |
 | `tools.available` `none` | No scanner is installed and allowed, so the sensor gets no scans. | Set `SENSOR_TOOLS` (Helm: `sensor.tools`) to scanners the image has. |
 | `network.scan_proxy_inherit` `inherits_proxy` | `HTTPS_PROXY` and friends are set, so scanners send scan traffic through that proxy. | Say what you want: `SENSOR_SCAN_PROXY=direct`, or set it explicitly to keep the proxy. |

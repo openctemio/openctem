@@ -18,7 +18,6 @@ R3 DELETE /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}
 R3 DELETE /api/v1/assets/{id}/owners/{ownerId}
 R3 DELETE /api/v1/business-services/{id}/assets/{assetId}
 R3 DELETE /api/v1/business-units/{id}/assets/{assetId}
-R3 DELETE /api/v1/commands/{id}
 R3 DELETE /api/v1/compliance/findings/{findingId}/controls/{mappingId}
 R3 DELETE /api/v1/ctem-cycles/{id}/profiles/{profileId}
 R3 DELETE /api/v1/findings/{id}/evidence/notes/{noteId}
@@ -34,7 +33,6 @@ R3 POST /api/v1/organization/members/{member_id}/erase
 R3 POST /api/v1/organization/members/{member_id}/offboard
 R3 DELETE /api/v1/pentest/campaigns/{id}/members/{userId}
 R3 DELETE /api/v1/pentest/findings/{findingId}
-R3 DELETE /api/v1/pentest/reports/{reportId}
 R3 DELETE /api/v1/pentest/templates/{templateId}
 R3 DELETE /api/v1/scan-workflows/{id}/steps/{stepId}
 R3 DELETE /api/v1/relationships/{relationshipId}
@@ -55,11 +53,9 @@ R3 GET /api/v1/admin/tenants/{tenantId}/sso/saml
 R3 GET /api/v1/admin/tenants/{tenantId}/sso/verified-domains
 R3 GET /api/v1/admin/tenants/{tenantId}/users
 R3 GET /api/v1/assets/{assetId}/sla-policy
-R3 GET /api/v1/commands/{id}
 R3 GET /api/v1/commands/{id}/logs
 R3 GET /api/v1/compliance/findings/{findingId}/controls
 R3 GET /api/v1/findings/{id}/ai-triage/{triageId}
-R3 GET /api/v1/finding-sources/categories/{categoryId}
 R3 GET /api/v1/findings/related-cves/{cveId}
 R3 GET /api/v1/groups/{groupId}
 R3 GET /api/v1/groups/{groupId}/assets
@@ -68,8 +64,6 @@ R3 GET /api/v1/groups/{groupId}/scope-rules
 R3 GET /api/v1/groups/{groupId}/scope-rules/{ruleId}
 R3 GET /api/v1/pentest/findings/{findingId}
 R3 GET /api/v1/pentest/findings/{findingId}/retests
-R3 GET /api/v1/pentest/reports/{reportId}
-R3 GET /api/v1/pentest/reports/{reportId}/download
 R3 GET /api/v1/pentest/templates/{templateId}
 R3 GET /api/v1/relationships/{relationshipId}
 R3 GET /api/v1/repositories/{repositoryId}/branches
@@ -94,7 +88,6 @@ R3 POST /api/v1/admin/tenants/{tenantId}/sso/identity-providers
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/verified-domains/{id}/verify
 R3 POST /api/v1/admin/tenants/{tenantId}/users
-R3 POST /api/v1/commands/{id}/cancel
 R3 POST /api/v1/compliance/findings/{findingId}/controls
 R3 POST /api/v1/compliance/findings/{findingId}/controls/auto-map
 R3 POST /api/v1/groups/{groupId}/assets
@@ -137,10 +130,8 @@ R4 DELETE /api/v1/secret-store/{id}
 R4 GET /api/v1/audit-logs/resource/{type}/{id}
 R4 GET /api/v1/audit-logs/user/{id}
 R4 GET /api/v1/findings/{id}/ai-triage/{triageId}
-R4 GET /api/v1/finding-sources/code/{code}
 R4 GET /api/v1/notification-outbox/{id}
 R4 GET /api/v1/secret-store/{id}
-R4 GET /api/v1/state-history/{id}
 R4 GET /api/v1/threat-intel/enrich/{cveId}
 R4 GET /api/v1/threat-intel/kev/{cveId}
 R4 GET /api/v1/threat-intel/sync/{source}
@@ -162,7 +153,6 @@ R5 GET /api/v1/threat-intel/sync
 R5 GET /api/v1/threat-intel/sync/{source}
 R5 PATCH /api/v1/admin/threat-intel/sync/{source}
 R5 PATCH /api/v1/findings/{id}/classify
-R5 PATCH /api/v1/findings/{id}/triage
 R5 PATCH /api/v1/notifications/{id}/read
 R5 PATCH /api/v1/reports/schedules/{id}/toggle
 R5 POST /api/v1/admin/auth/logout
@@ -248,7 +238,6 @@ R6 PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
 R6 PATCH /api/v1/tenants/{tenant}/settings/security
 R6 POST /api/v1/tenants/{tenant}/invitations
 R6 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
-R6 POST /api/v1/tenants/{tenant}/members
 R6 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R6 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
 R6 POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run
@@ -303,7 +292,6 @@ R9 PATCH /api/v1/tenants/{tenant}/settings/risk-scoring
 R9 PATCH /api/v1/tenants/{tenant}/settings/security
 R9 POST /api/v1/tenants/{tenant}/invitations
 R9 POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend
-R9 POST /api/v1/tenants/{tenant}/members
 R9 POST /api/v1/tenants/{tenant}/members/{userId}/reactivate
 R9 POST /api/v1/tenants/{tenant}/members/{userId}/suspend
 R9 POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run
