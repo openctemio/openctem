@@ -166,6 +166,19 @@ func (s *UserProvisioningService) CreateUser(ctx context.Context, in CreateUserI
 		if class.Kind == tenantdom.MemberKindExternal {
 			return nil, ErrExternalNeedsInvitation
 		}
+		// The new account is email-verified and its set-password link can
+		// come back to the administrator (or travel through the
+		// organization's own SMTP relay): only an organization that
+		// verified the address's domain may create it. Otherwise any
+		// organization could mint a signed-in account for an address it
+		// does not own, ahead of its real holder.
+		held, herr := s.classifier.HeldBy(ctx, tenantID, email)
+		if herr != nil {
+			return nil, herr
+		}
+		if !held {
+			return nil, ErrDirectAddNeedsVerifiedDomain
+		}
 	}
 
 	if _, err := s.users.GetByEmail(ctx, email); err == nil {

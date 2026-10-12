@@ -122,6 +122,19 @@ describe('admin API proxy', () => {
     expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual(Array.from(archive))
   })
 
+  it("keeps the API's CSP on the console API reference page", async () => {
+    const csp = "default-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+    fetchMock.mockResolvedValueOnce(
+      new Response('<!DOCTYPE html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': csp },
+      })
+    )
+    const res = await call(GET, 'GET', ['docs'])
+    expect(res.headers.get('content-security-policy')).toBe(csp)
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8')
+  })
+
   describe('client IP headers', () => {
     afterEach(() => vi.unstubAllEnvs())
 
