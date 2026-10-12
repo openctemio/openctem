@@ -386,7 +386,7 @@ Read by the command-line tools shipped with the server (`bootstrap-admin`, `reke
 | `ADMIN_BACKUP_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the backup administrator. |
 | `ADMIN_EMAIL` | string | empty |  |  | `bootstrap-admin`: e-mail of the first platform administrator (or `-email`). |
 | `ADMIN_NAME` | string | empty |  |  | `bootstrap-admin`: display name of the first platform administrator. |
-| `DATABASE_URL` | string | `built from `DB_*`` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. |
+| `DATABASE_URL` | string | `built from `DB_*`` |  |  | Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. A password in it must be percent-encoded (`@` is `%40`, `:` is `%3A`, `/` is `%2F`, `%` is `%25`); the URL built from `DB_*` is encoded for you. |
 | `ORG_NAME` | string | empty |  |  | `bootstrap-admin`: create the first organization with this name (needs `ORG_OWNER_EMAIL`). |
 | `ORG_OWNER_EMAIL` | string | empty |  |  | `bootstrap-admin`: owner of the first organization; a new account gets a one-time set-password link. |
 | `ORG_OWNER_NAME` | string | empty |  |  | `bootstrap-admin`: display name of a new owner account. |
@@ -495,7 +495,7 @@ Read by the all-in-one image's supervisor.
 |---|---|---|---|---|---|
 | `GATEWAY` | string | `on` |  |  | `on`: only the gateway listens on a routable address (port 443); the API and console bind to `127.0.0.1`. `off`: the API listens on 8080 and the console on 3000, without the gateway. |
 | `MIGRATE_ON_START` | string | `true` |  |  | Apply database migrations before starting, under a PostgreSQL advisory lock so several replicas do not migrate at once. |
-| `DATABASE_MIGRATE_URL` | string | `built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD`` |  |  | Connection URL of the schema owner for the start-up migrations. |
+| `DATABASE_MIGRATE_URL` | string | `built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD`` |  |  | Connection URL of the schema owner for the start-up migrations. A password in it must be percent-encoded; the URL built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD` is encoded for you. |
 | `WEB_HOSTNAME` | string | `127.0.0.1` |  |  | Listen address of the web console. |
 
 ## Retired and removed names
@@ -514,8 +514,8 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AGENT_LB_NETWORK_WEIGHT` | rename it to `SENSOR_LB_NETWORK_WEIGHT` |
 | `AGENT_LB_MAX_DISK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS` |
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
-| `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto|off` |
-| `SCOPE_ACTIVE_PROOF` | rename it to `` |
+| `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto\|off` |
+| `SCOPE_ACTIVE_PROOF` | remove it; a platform administrator sets "Require a verified domain before platform sensors scan a target" in Console > System > Platform scanning |
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |

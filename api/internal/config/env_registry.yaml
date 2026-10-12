@@ -1595,7 +1595,7 @@ vars:
     group: "Administration tools"
     type: string
     default: "built from `DB_*`"
-    description: "Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset."
+    description: "Connection URL the start-up migrations use when `DATABASE_MIGRATE_URL` and `DB_MIGRATE_USER` are unset. A password in it must be percent-encoded (`@` is `%40`, `:` is `%3A`, `/` is `%2F`, `%` is `%25`); the URL built from `DB_*` is encoded for you."
   - name: ORG_NAME
     component: tool
     group: "Administration tools"
@@ -2066,7 +2066,7 @@ vars:
     group: "All-in-one image"
     type: string
     default: "built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD`"
-    description: "Connection URL of the schema owner for the start-up migrations."
+    description: "Connection URL of the schema owner for the start-up migrations. A password in it must be percent-encoded; the URL built from `DB_MIGRATE_USER` / `DB_MIGRATE_PASSWORD` is encoded for you."
   - name: WEB_HOSTNAME
     component: allinone
     group: "All-in-one image"

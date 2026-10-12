@@ -2183,7 +2183,7 @@ const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 // pre-sensor names, and knobs that became console settings. Startup refuses to run while one is set: silently ignoring,
 // say, AGENT_KEY_TTL would turn short-lived sensor keys back into
 // non-expiring ones without the operator noticing.
-var retiredEnv = []struct{ Old, New, Hint string }{
+var retiredEnv = []retiredName{
 	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR", ""},
 	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL", ""},
 	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL", ""},
@@ -2198,6 +2198,18 @@ var retiredEnv = []struct{ Old, New, Hint string }{
 	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off", ""},
 	// The proof requirement is a platform setting edited in the console.
 	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
+}
+
+// retiredName is a retired variable: its replacement (New) or, when there is
+// none, a note on what to do instead (Hint). Hint wins when both are set.
+type retiredName struct{ Old, New, Hint string }
+
+// instead says what to do with a retired variable that is still set.
+func (r retiredName) instead() string {
+	if r.Hint != "" {
+		return r.Hint
+	}
+	return "rename it to " + r.New
 }
 
 // smtpMoved is the hint for the SMTP_* variables.
@@ -2245,11 +2257,7 @@ func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 		if _, ok := lookup(r.Old); !ok {
 			continue
 		}
-		if r.Hint != "" {
-			bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.Hint))
-			continue
-		}
-		bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+		bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.instead()))
 	}
 	for _, r := range removedEnv {
 		if _, ok := lookup(r.Name); ok {
