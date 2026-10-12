@@ -9,12 +9,12 @@ vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
 describe('buildSetupLink', () => {
   it('points at /set-password with the token encoded', () => {
     expect(buildSetupLink('a b/c', 'https://ctem.example')).toBe(
-      'https://ctem.example/set-password?token=a%20b%2Fc'
+      'https://ctem.example/set-password#token=a%20b%2Fc'
     )
   })
 
   it('defaults to the current origin', () => {
-    expect(buildSetupLink('tok')).toBe(`${window.location.origin}/set-password?token=tok`)
+    expect(buildSetupLink('tok')).toBe(`${window.location.origin}/set-password#token=tok`)
   })
 })
 
@@ -23,7 +23,7 @@ describe('OneTimeSetupLink', () => {
 
   it('shows the link once with a copy button and the hand-over note', async () => {
     render(<OneTimeSetupLink token="tok-1" expiresAt="2026-10-08T10:00:00Z" email="bob@co.com" />)
-    const link = `${window.location.origin}/set-password?token=tok-1`
+    const link = `${window.location.origin}/set-password#token=tok-1`
     expect(screen.getByTestId('setup-link')).toHaveTextContent(link)
     expect(screen.getByText('Shown once')).toBeInTheDocument()
     expect(screen.getByText(/trusted channel/i)).toBeInTheDocument()
@@ -47,7 +47,7 @@ describe('SetupLinkResult', () => {
         email="a@co.com"
       />
     )
-    expect(screen.getByTestId('setup-link')).toHaveTextContent('/set-password?token=tok-2')
+    expect(screen.getByTestId('setup-link')).toHaveTextContent('/set-password#token=tok-2')
   })
 
   it('says the email failed, without a link, when the API reports email_failed', () => {

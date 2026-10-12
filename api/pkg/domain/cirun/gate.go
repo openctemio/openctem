@@ -37,6 +37,9 @@ const (
 	ReasonScanFailure = "scan_failure"
 	ReasonOverride    = "override"
 	ReasonNoBaseline  = "no_baseline"
+	// ReasonSecretPreExisting notes a secret already open on the baseline
+	// branch: it blocks default-branch runs, not pull requests.
+	ReasonSecretPreExisting = "secret_pre_existing"
 )
 
 // Break-glass limits.
@@ -72,10 +75,12 @@ type GatePolicy struct {
 	// EPSSThreshold fails a finding whose EPSS score is at least this
 	// (0..1); nil disables it.
 	EPSSThreshold *float64
-	CreatedBy     *shared.ID
-	UpdatedBy     *shared.ID
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// Modes sets block, comment or monitor per capability and rule.
+	Modes     PolicyModes
+	CreatedBy *shared.ID
+	UpdatedBy *shared.ID
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // DefaultGatePolicy is the built-in policy: new findings of high severity
@@ -111,7 +116,7 @@ func (p *GatePolicy) Validate() error {
 	if p.EPSSThreshold != nil && (*p.EPSSThreshold < 0 || *p.EPSSThreshold > 1) {
 		return invalid("epss_threshold must be between 0 and 1")
 	}
-	return nil
+	return p.Modes.Validate()
 }
 
 // Strictest merges several policies of the same specificity (a repository
@@ -138,6 +143,7 @@ func Strictest(ps []GatePolicy) GatePolicy {
 			v := *p.EPSSThreshold
 			out.EPSSThreshold = &v
 		}
+		out.Modes = strictestModes(out.Modes, p.Modes)
 	}
 	return out
 }
@@ -213,9 +219,12 @@ type GateInput struct {
 	NewFingerprints map[string]bool
 	BaselineBranch  string
 	BaselineKnown   bool
-	ScanFailures    int
-	Override        *GateOverride
-	Now             time.Time
+	// DefaultBranch: the run is on the repository's default branch, where
+	// every open secret blocks.
+	DefaultBranch bool
+	ScanFailures  int
+	Override      *GateOverride
+	Now           time.Time
 	// FindingURL builds a link to a finding ("" for none).
 	FindingURL func(id shared.ID) string
 }
@@ -232,6 +241,9 @@ type GateReason struct {
 	File        string `json:"file,omitempty"`
 	Line        int    `json:"line,omitempty"`
 	URL         string `json:"url,omitempty"`
+	// Mode is "comment" for a reason the policy lists without failing the
+	// gate (FindingModeComment); empty for a blocking reason.
+	Mode string `json:"mode,omitempty"`
 }
 
 // GateSummary counts the run's findings.
@@ -241,6 +253,8 @@ type GateSummary struct {
 	PreExisting int `json:"pre_existing"`
 	Accepted    int `json:"accepted"`
 	Blocking    int `json:"blocking"`
+	// Monitored counts findings in monitor mode (recorded, not listed).
+	Monitored int `json:"monitored,omitempty"`
 }
 
 // GatePolicyView is the policy a verdict used.
@@ -251,6 +265,8 @@ type GatePolicyView struct {
 	NewFindingsOnly bool     `json:"new_findings_only"`
 	FailOnKEV       bool     `json:"fail_on_kev"`
 	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
+	// Modes are the policy's per-capability and per-rule modes, when set.
+	Modes *PolicyModes `json:"modes,omitempty"`
 }
 
 // GateBaselineView says what the run was compared with.
@@ -300,7 +316,7 @@ func Evaluate(in GateInput) GateVerdict {
 	p := in.Policy
 	v := GateVerdict{
 		Reasons: []GateReason{},
-		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity,
+		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity, Modes: modesView(p.Modes),
 			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold},
 		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown},
 	}
@@ -308,6 +324,13 @@ func Evaluate(in GateInput) GateVerdict {
 	listed := 0
 	add := func(r GateReason) {
 		blocking++
+		if listed < maxReasons {
+			v.Reasons = append(v.Reasons, r)
+			listed++
+		}
+	}
+	// note lists a reason that does not block.
+	note := func(r GateReason) {
 		if listed < maxReasons {
 			v.Reasons = append(v.Reasons, r)
 			listed++
@@ -337,27 +360,51 @@ func Evaluate(in GateInput) GateVerdict {
 		}
 		// A secret in the code fails whatever its age and severity.
 		if f.FindingType == "secret" {
-			r := base
-			r.Code, r.Message = ReasonSecret, "a secret is committed to the repository"
-			add(r)
+			// A new secret always blocks. One already open on the baseline
+			// branch blocks the default branch, and is a note on any other
+			// branch: a pull request did not add it and cannot remove it from
+			// history, so it must not block every pull request.
+			if isNew || in.DefaultBranch {
+				r := base
+				r.Code, r.Message = ReasonSecret, "a secret is committed to the repository"
+				add(r)
+			} else {
+				note(GateReason{Code: ReasonSecretPreExisting, FindingID: base.FindingID, Fingerprint: base.Fingerprint,
+					Title: base.Title, File: base.File, Line: base.Line, URL: base.URL,
+					Message: "a secret already committed on the default branch: rotate it; it fails default-branch runs"})
+			}
 			continue
 		}
 		if p.NewFindingsOnly && !isNew {
 			continue
 		}
+		// The policy's mode for this finding: block fails the gate, comment
+		// lists it without failing, monitor only records it.
+		mode := p.Modes.For(f)
+		if mode == FindingModeMonitor {
+			v.Summary.Monitored++
+			continue
+		}
+		emit := add
+		if mode == FindingModeComment {
+			emit = func(r GateReason) {
+				r.Mode = FindingModeComment
+				note(r)
+			}
+		}
 		switch {
 		case p.FailOnKEV && f.IsInKEV:
 			r := base
 			r.Code, r.Message = ReasonKEV, "the vulnerability is on the known-exploited (KEV) list"
-			add(r)
+			emit(r)
 		case p.EPSSThreshold != nil && f.EPSSScore != nil && *f.EPSSScore >= *p.EPSSThreshold:
 			r := base
 			r.Code, r.Message = ReasonEPSS, fmt.Sprintf("EPSS %.3f is at or above %.3f", *f.EPSSScore, *p.EPSSThreshold)
-			add(r)
+			emit(r)
 		case severityRank[strings.ToLower(f.Severity)] >= threshold && threshold != 99:
 			r := base
 			r.Code, r.Message = ReasonSeverity, fmt.Sprintf("severity %s is at or above %s", strings.ToLower(f.Severity), p.FailOnSeverity)
-			add(r)
+			emit(r)
 		}
 	}
 	v.Summary.Blocking = blocking
@@ -387,4 +434,11 @@ func Evaluate(in GateInput) GateVerdict {
 		v.Verdict = VerdictPass
 	}
 	return v
+}
+
+func modesView(m PolicyModes) *PolicyModes {
+	if len(m.Capabilities) == 0 && len(m.Rules) == 0 {
+		return nil
+	}
+	return &m
 }

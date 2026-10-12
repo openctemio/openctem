@@ -12,8 +12,6 @@ import { Card, CardContent } from '@/components/ui/card'
 
 export function proofStepText(activeProof: string | undefined): string {
   switch (activeProof) {
-    case 'all':
-      return 'Required to scan: every active probe needs a verified domain.'
     case 'platform_sensors':
       return "Required for scans on the platform's shared sensors; optional on your own sensors."
     default:
