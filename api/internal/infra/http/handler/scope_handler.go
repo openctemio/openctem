@@ -36,8 +36,8 @@ type ScopeHandler struct {
 	settings  ScopeSettingsStore
 	dryRun    ScopeDryRunner
 	coverage  ScopeCoverage
-	// activeProof is the operator's SCOPE_ACTIVE_PROOF (read-only view).
-	activeProof string
+	// proofPolicy is the platform's proof requirement (read-only view).
+	proofPolicy ScopeProofPolicy
 	actors      MemberNamer
 	sweeper     DiscoverySweeper
 	waitStarter ScopeWaitStarter
@@ -1477,7 +1477,7 @@ func (h *ScopeHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 // ScopeDryRunner runs the active-probe gate without dispatching
 // (*scan.Service).
 type ScopeDryRunner interface {
-	DryRunTargets(ctx context.Context, in scansvc.DryRunInput) ([]scansvc.DryRunResult, error)
+	DryRun(ctx context.Context, in scansvc.DryRunInput) (*scansvc.DryRunOutcome, error)
 }
 
 // ScopeCoverage names what covers each target (*easm.ActiveGate).
@@ -1535,6 +1535,30 @@ type ScopeCheckResult struct {
 	Message string            `json:"message,omitempty"`
 	Rule    *scopedom.RuleRef `json:"rule,omitempty"`
 	Fixes   []scopedom.Fix    `json:"fixes,omitempty"`
+	// Resolved: for zone_none, the private addresses the hostname resolved
+	// to (when the platform may show them).
+	Resolved []string `json:"resolved,omitempty"`
+}
+
+// ScopeCheckRouting says where a scan of these targets would run and why.
+type ScopeCheckRouting struct {
+	// Preference: auto, tenant or platform (as sent).
+	Preference string `json:"preference" enums:"auto,tenant,platform"`
+	// RunsOn: tenant (the organization's own sensors), platform, or waits
+	// (no sensor can take the job now).
+	RunsOn string `json:"runs_on" enums:"tenant,platform,waits"`
+	// Reason: platform_needs_proof, tenant_first, tenant_busy,
+	// internal_targets, no_tenant_sensor or platform_sensors.
+	Reason string `json:"reason" enums:"platform_needs_proof,tenant_first,tenant_busy,internal_targets,no_tenant_sensor,platform_sensors"`
+	// Sensor: the organization's own sensor that would take the job (never
+	// a platform sensor).
+	Sensor *ScopeCheckSensor `json:"sensor,omitempty"`
+}
+
+// ScopeCheckSensor names one of the organization's sensors.
+type ScopeCheckSensor struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // CheckScopeResponse lists the answers in input order.
@@ -1544,6 +1568,8 @@ type CheckScopeResponse struct {
 	// active, 2 intrusive): the request tier, else the scanner tier. A client
 	// compares it with a pending entry tier to say what still blocks.
 	Tier int `json:"tier"`
+	// Routing: where the scan would run and why.
+	Routing ScopeCheckRouting `json:"routing"`
 }
 
 // CheckScope handles POST /api/v1/scope/check
@@ -1599,11 +1625,13 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 	case req.ScannerName != "":
 		tier = int(scansvc.ProbeTier(req.ScannerName))
 	}
-	results, err := h.dryRun.DryRunTargets(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, AssetIDs: assetIDs, SensorPreference: req.SensorPreference, Tier: tier})
+	outcome, err := h.dryRun.DryRun(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, AssetIDs: assetIDs,
+		SensorPreference: req.SensorPreference, Tier: tier, Tool: req.ScannerName})
 	if err != nil {
 		h.handleServiceError(w, "Scope check", err)
 		return
 	}
+	results := outcome.Results
 	explain, err := h.service.NewExplainer(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("scope check: explain", "error", logger.SanitizeError(err))
@@ -1625,7 +1653,11 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	has := func(p string) bool { return middleware.HasPermission(ctx, p) }
-	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results)), Tier: tier}
+	out := CheckScopeResponse{Results: make([]ScopeCheckResult, 0, len(results)), Tier: tier, Routing: ScopeCheckRouting{
+		Preference: outcome.Routing.Preference, RunsOn: outcome.Routing.RunsOn, Reason: outcome.Routing.Reason}}
+	if outcome.Routing.SensorID != "" {
+		out.Routing.Sensor = &ScopeCheckSensor{ID: outcome.Routing.SensorID, Name: outcome.Routing.SensorName}
+	}
 	for _, res := range results {
 		item := ScopeCheckResult{Target: res.Target, AssetID: res.AssetID, Allowed: res.Allowed}
 		if res.Allowed {
@@ -1659,8 +1691,13 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		if ref.Message == "" {
 			ref.Message = res.Reason
 		}
-		item.Code, item.Message, item.Rule = ref.Code, ref.Message, ref.Rule
+		item.Code, item.Message, item.Rule, item.Resolved = ref.Code, ref.Message, ref.Rule, res.Resolved
 		item.Fixes = scopedom.FilterFixes(ref.Fixes, has)
+		if code == scopedom.RefusalProofRequired && tier >= int(scopedom.TierIntrusive) {
+			// Intrusive probes need proof on the organization's own sensors
+			// too: "use your own sensor" would not help.
+			item.Fixes = withoutFix(item.Fixes, scopedom.FixUseTenantSensor)
+		}
 		out.Results = append(out.Results, item)
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1779,4 +1816,14 @@ func (h *ScopeHandler) bulkDeleteItems(
 		FailedIDs:     failedIDs,
 		Errors:        errs,
 	}
+}
+
+func withoutFix(fixes []scopedom.Fix, action string) []scopedom.Fix {
+	out := fixes[:0:0]
+	for _, f := range fixes {
+		if f.Action != action {
+			out = append(out, f)
+		}
+	}
+	return out
 }

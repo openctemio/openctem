@@ -101,6 +101,19 @@ jobs:
           DB_HOST: localhost
           REDIS_HOST: localhost
         run: bash .github/scripts/smoke-allinone.sh local/openctem:ci
+      - name: Set up trivy (image guard)
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.68.2
+      # Size budget, non-root user, no setuid file, no fixable HIGH/CRITICAL
+      # advisory in OS packages (.github/scripts/image-guard.sh).
+      - name: Image guard
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2
+        run: |
+          bash .github/scripts/image-guard.sh openctem-api local/openctem-api:ci
+          bash .github/scripts/image-guard.sh openctem-web local/openctem-web:ci
+          bash .github/scripts/image-guard.sh openctem local/openctem:ci
       - name: Image sizes
         run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep '^local/'
 
