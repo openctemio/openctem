@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
 
 var (
@@ -261,46 +263,85 @@ func Inspect(data []byte) (*Info, error) {
 // mode the returned Info lists tag paths the data does not have, which a
 // preview with sample data reports as warnings.
 func Render(template []byte, data Data, strict bool) ([]byte, *Info, error) {
+	return RenderWithImages(template, data, nil, strict)
+}
+
+// RenderWithImages is Render with the evidence images Markdown values may
+// embed (keyed by the URL the Markdown cites). Images are embedded in the
+// document body only; headers and footers show the alt text.
+func RenderWithImages(template []byte, data Data, images map[string]markdown.Image, strict bool) ([]byte, *Info, error) {
 	entries, err := readPackage(template)
 	if err != nil {
 		return nil, nil, err
 	}
 	info := &Info{}
 	r := &renderer{maxOut: MaxOutputBytes, strict: strict, missing: map[string]bool{}}
+	sink := newMediaSink(images)
+	rendered := map[string][]byte{}
+	for _, e := range entries {
+		if !templateParts.MatchString(e.name) {
+			continue
+		}
+		root, err := parseXML(string(e.data))
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", e.name, err)
+		}
+		_, warnings, err := prepare(root)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", e.name, err)
+		}
+		info.Warnings = append(info.Warnings, warnings...)
+		r.out.Reset()
+		r.media = nil
+		if e.name == "word/document.xml" {
+			r.media = sink
+		}
+		if err := r.renderChildren(root, []any{data}); err != nil {
+			return nil, nil, err
+		}
+		out := r.out.String()
+		if err := wellFormed(out); err != nil {
+			return nil, nil, fmt.Errorf("%w: %s renders invalid XML; check that sections open and close around whole paragraphs or rows", ErrInvalidTemplate, e.name)
+		}
+		rendered[e.name] = []byte(out)
+	}
+
+	var media []mediaFile
+	if sink != nil {
+		media = sink.used
+	}
+	extra, err := packageMedia(entries, rendered, media)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
-	for _, e := range entries {
-		content := e.data
-		if templateParts.MatchString(e.name) {
-			root, err := parseXML(string(e.data))
-			if err != nil {
-				return nil, nil, fmt.Errorf("%s: %w", e.name, err)
-			}
-			_, warnings, err := prepare(root)
-			if err != nil {
-				return nil, nil, fmt.Errorf("%s: %w", e.name, err)
-			}
-			info.Warnings = append(info.Warnings, warnings...)
-			r.out.Reset()
-			if err := r.renderChildren(root, []any{data}); err != nil {
-				return nil, nil, err
-			}
-			rendered := r.out.String()
-			if err := wellFormed(rendered); err != nil {
-				return nil, nil, fmt.Errorf("%w: %s renders invalid XML; check that sections open and close around whole paragraphs or rows", ErrInvalidTemplate, e.name)
-			}
-			content = []byte(rendered)
-		}
-		method := e.method
+	write := func(name string, method uint16, content []byte) error {
 		if method != zip.Store {
 			method = zip.Deflate
 		}
-		w, err := zw.CreateHeader(&zip.FileHeader{Name: e.name, Method: method})
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: method})
 		if err != nil {
-			return nil, nil, fmt.Errorf("write report: %w", err)
+			return fmt.Errorf("write report: %w", err)
 		}
 		if _, err := w.Write(content); err != nil {
-			return nil, nil, fmt.Errorf("write report: %w", err)
+			return fmt.Errorf("write report: %w", err)
+		}
+		return nil
+	}
+	for _, e := range entries {
+		content := e.data
+		if c, ok := rendered[e.name]; ok {
+			content = c
+		}
+		if err := write(e.name, e.method, content); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, x := range extra {
+		if err := write(x.name, zip.Deflate, x.data); err != nil {
+			return nil, nil, err
 		}
 	}
 	if err := zw.Close(); err != nil {
@@ -310,4 +351,55 @@ func Render(template []byte, data Data, strict bool) ([]byte, *Info, error) {
 		info.Warnings = append(info.Warnings, fmt.Sprintf("{%s} is not in the report data and renders empty", p))
 	}
 	return out.Bytes(), info, nil
+}
+
+type newPart struct {
+	name string
+	data []byte
+}
+
+// packageMedia adds the embedded images to the package: the media parts,
+// their relationships from the document (creating the relationships part
+// when the template has none) and the image content types. It edits the
+// rendered map in place for parts it changes and returns parts to append.
+func packageMedia(entries []entry, rendered map[string][]byte, media []mediaFile) ([]newPart, error) {
+	if len(media) == 0 {
+		return nil, nil
+	}
+	const relsName = "word/_rels/document.xml.rels"
+	extra := make([]newPart, 0, len(media)+1)
+	var rels strings.Builder
+	exts := map[string]bool{}
+	for _, m := range media {
+		extra = append(extra, newPart{name: "word/media/" + m.name, data: m.img.Data})
+		rels.WriteString(`<Relationship Id="` + m.relID + `" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/` + m.name + `"/>`)
+		exts[m.ext] = true
+	}
+	if rel := find(entries, relsName); rel != nil {
+		s := string(rel.data)
+		i := strings.LastIndex(s, "</Relationships>")
+		if i < 0 {
+			return nil, fmt.Errorf("%w: unreadable document relationships", ErrInvalidTemplate)
+		}
+		rendered[relsName] = []byte(s[:i] + rels.String() + s[i:])
+	} else {
+		extra = append(extra, newPart{name: relsName, data: []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+			`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` + rels.String() + `</Relationships>`)})
+	}
+	ct := find(entries, "[Content_Types].xml")
+	s := string(ct.data)
+	var defaults strings.Builder
+	for _, ext := range []string{"png", "jpeg", "gif"} {
+		if exts[ext] && !strings.Contains(strings.ToLower(s), `extension="`+ext+`"`) {
+			defaults.WriteString(`<Default Extension="` + ext + `" ContentType="image/` + ext + `"/>`)
+		}
+	}
+	if defaults.Len() > 0 {
+		i := strings.LastIndex(s, "</Types>")
+		if i < 0 {
+			return nil, fmt.Errorf("%w: unreadable content types", ErrInvalidTemplate)
+		}
+		rendered["[Content_Types].xml"] = []byte(s[:i] + defaults.String() + s[i:])
+	}
+	return extra, nil
 }
