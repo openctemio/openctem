@@ -1,89 +1,129 @@
 'use client'
 
-import { useMemo } from 'react'
+/**
+ * One scan (research 20 §4.3): the durable object of the Scans area. The run
+ * history is paged on the server; a run opens in the shared run drawer. The
+ * configuration and details use the same Detail* vocabulary as the scan
+ * drawer, and the numbers the same formulas (lib/format, lib/run-display).
+ */
+
+import { IntensityBadge, IntensityLabel } from '@/features/scans/components/intensity-badge'
+import { useMemo, useState } from 'react'
+import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { Main } from '@/components/layout'
-import {
-  StatusBadge,
-  RunStatusBadge,
-  DataTable,
-  DataTableColumnHeader,
-  DangerZone,
-  DangerZoneItem,
-} from '@/features/shared'
-import { Button } from '@/components/ui/button'
+import Link from '@/components/link'
+import { toast } from 'sonner'
+import { AlertTriangle, ArrowLeft, RefreshCw, Tag, Trash2, XCircle } from 'lucide-react'
+
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { toast } from 'sonner'
-import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import {
-  ArrowLeft,
-  Play,
-  Pause,
-  RefreshCw,
-  Trash2,
-  CheckCircle,
-  Clock,
-  Target,
-  Calendar,
-  Layers,
-  Copy,
-  Tag,
-  AlertTriangle,
-  XCircle,
-  Radar,
-  Settings,
-  Activity,
-} from 'lucide-react'
-import { copyToClipboard } from '@/lib/clipboard'
-import { triggerErrorHint } from '@/features/scan-zones'
+  DangerZone,
+  DangerZoneItem,
+  DataTable,
+  DetailCopyId,
+  DetailField,
+  DetailFieldGrid,
+  DetailSection,
+  DetailSections,
+  MetricStrip,
+  PageHeader,
+  RunStatusBadge,
+  TruncatedText,
+  type MetricStripItem,
+} from '@/features/shared'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
-import { Can, Permission } from '@/lib/permissions'
-import { useScanConfig, useScanRuns, invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
-import { post, del } from '@/lib/api/client'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { scanEndpoints, pipelineRunEndpoints } from '@/lib/api/endpoints'
+import { LastRunCell } from '@/features/scans/components/last-run-cell'
+import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
+import { ScanApprovalPanel } from '@/features/scans/components/approval/scan-approval-panel'
+import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
+import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
-  SCAN_TYPE_LABELS,
-  SCHEDULE_TYPE_LABELS,
-  SENSOR_PREFERENCE_LABELS,
-  type PipelineRun,
-} from '@/lib/api/scan-types'
-import { PIPELINE_TRIGGER_LABELS, type PipelineTriggerType } from '@/lib/api/pipeline-types'
-import {
+  IDLE_RUN_LIST_REFRESH_MS,
+  elapsedMs,
   isRunInProgress,
+  liveRunIds,
+  runListRefreshInterval,
+  runTaskProgress,
   runTriggeredByLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { useRunChannels } from '@/hooks/use-websocket'
+import { del, post } from '@/lib/api/client'
+import { scanRunEndpoints, scanEndpoints } from '@/lib/api/endpoints'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import {
+  SCAN_RUN_TRIGGER_LABELS,
+  type ScanWorkflowTriggerType,
+} from '@/lib/api/scan-workflow-types'
+import { useScanConfig, useScanRuns } from '@/lib/api/scan-hooks'
+import {
+  SCAN_CONFIG_STATUS_LABELS,
+  SCAN_TYPE_LABELS,
+  SCHEDULE_TYPE_LABELS,
+  SENSOR_PREFERENCE_LABELS,
+  type ScanRun,
+} from '@/lib/api/scan-types'
+import { useAssetGroup } from '@/lib/api/security-hooks'
+import { Can, Permission } from '@/lib/permissions'
+import { SchedulePreview } from '@/features/scans/components/schedule-preview'
+import { schedulePreviewRequestFromConfig } from '@/features/scans/lib/schedule-preview'
 
-// Format date helper
-function formatDate(dateString: string | undefined) {
-  if (!dateString) return '-'
-  return new Date(dateString).toLocaleString()
+const TABS = ['runs', 'configuration', 'details'] as const
+type Tab = (typeof TABS)[number]
+
+/** Run history page sizes (style contract §3). */
+const RUN_PAGE_SIZES = [25, 50, 100]
+
+/** A run's duration, "so far" while it is still going. */
+function runDuration(run: ScanRun): string {
+  const ms = elapsedMs(run)
+  if (ms === undefined) return run.status === 'pending' ? 'Not started' : '-'
+  const label = ms < 1000 ? '<1s' : formatScanDuration(ms)
+  return run.completed_at ? label : `${label} so far`
 }
 
-// Format duration helper
-function formatDuration(ms: number | undefined) {
-  if (!ms) return '-'
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  if (hours > 0) return `${hours}h ${minutes % 60}m`
-  if (minutes > 0) return `${minutes}m ${seconds % 60}s`
-  return `${seconds}s`
+/**
+ * An asset group by name (scoped read: a group the viewer cannot see shows
+ * its short id, never an error).
+ */
+function AssetGroupName({ id }: { id: string }) {
+  const { data } = useAssetGroup(id, { shouldRetryOnError: false, onError: () => {} })
+  const name = (data as { name?: string } | undefined)?.name
+  return (
+    <Badge variant="outline" className="max-w-[16rem]">
+      <TruncatedText value={name || `${id.slice(0, 8)}…`} label="Asset group" />
+    </Badge>
+  )
 }
 
-// A pipeline run reports timestamps, not a duration_ms, so derive it. A run
-// that has started but not finished shows elapsed time so far.
-function formatRunDuration(run: PipelineRun) {
-  if (!run.started_at) return '-'
-  const end = run.completed_at ? new Date(run.completed_at) : new Date()
-  return formatDuration(end.getTime() - new Date(run.started_at).getTime())
+/** Direct targets: the first few, then all of them on request. */
+function TargetList({ targets }: { targets: string[] }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? targets : targets.slice(0, 12)
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {shown.map((target, i) => (
+          <Badge key={i} variant="secondary" className="max-w-[20rem] font-normal">
+            <TruncatedText value={target} label="Target" />
+          </Badge>
+        ))}
+      </div>
+      {targets.length > 12 && (
+        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${targets.length}`}
+        </Button>
+      )}
+    </div>
+  )
 }
 
 export default function ScanDetailPage() {
@@ -91,99 +131,73 @@ export default function ScanDetailPage() {
   const router = useRouter()
   const scanId = params.id as string
 
-  const [isTriggering, setIsTriggering] = useState(false)
-  const [isPausing, setIsPausing] = useState(false)
-  const [isActivating, setIsActivating] = useState(false)
+  const [tabParam, setTabParam] = useUrlFilter('tab', 'runs')
+  const tab: Tab = (TABS as readonly string[]).includes(tabParam) ? (tabParam as Tab) : 'runs'
+  // The run history is an embedded list: its paging is local state, and
+  // "View all runs" opens the Runs list filtered to this scan (a linkable,
+  // plain page / per_page URL).
+  const [runPage, setRunPage] = useState(1)
+  const [runPerPage, setRunPerPage] = useState(25)
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null)
-  // Run detail sheet (dispatch: routing, targets not scanned and why).
+  const [pendingStop, setPendingStop] = useState<ScanRun | null>(null)
+  const { t } = useTranslation()
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
-  // Fetch scan config
   const { data: config, isLoading, error } = useScanConfig(scanId)
+  useBreadcrumbTitle(config?.name)
 
-  // Runs of THIS scan. This used to list scan sessions, which are a sensor's
-  // execution records and carry no scan_id — so the list showed the tenant's
-  // last 10 sessions no matter which scan you opened. Pipeline runs carry
-  // scan_id, so this endpoint answers the question the page is asking.
+  // The latest runs, for the numbers above the tabs (runs still in progress
+  // are the newest), whichever history page is open.
+  // A live run's change notices (run:{id}) refresh both lists; they poll
+  // every 10 s only while a run is live and its notices cannot arrive (socket
+  // down), and every 2 min otherwise, to notice a run a schedule or someone
+  // else starts.
+  const [liveIds, setLiveIds] = useState<string[]>([])
+  const { mutate: mutateCache } = useSWRConfig()
+  const runsPrefix = scanId ? `/api/v1/scans/${scanId}/runs` : ''
+  const realtime = useRunChannels(liveIds, () => {
+    void mutateCache((key) => typeof key === 'string' && key.startsWith(runsPrefix))
+  })
+  const { data: latestRuns, mutate: refetchLatest } = useScanRuns(scanId, 1, 10, {
+    refreshInterval: runListRefreshInterval(10000, IDLE_RUN_LIST_REFRESH_MS, realtime),
+    onSuccess: (page) => setLiveIds(liveRunIds(page?.data)),
+  })
+  const latestLive = (latestRuns?.data ?? []).some(isRunInProgress)
+  // The history page only changes while a run is live; the latest runs above
+  // notice a new one.
   const {
     data: runsResponse,
     isLoading: isLoadingRuns,
     mutate: refetchRuns,
-  } = useScanRuns(scanId, 10, { refreshInterval: 10000 })
+  } = useScanRuns(scanId, runPage, runPerPage, {
+    refreshInterval: latestLive && !realtime ? 10000 : 0,
+    keepPreviousData: true,
+  })
+  const runs = useMemo(() => runsResponse?.data ?? [], [runsResponse])
+  const refetchAll = () => Promise.all([refetchLatest(), refetchRuns()])
 
-  const recentRuns = useMemo(() => runsResponse?.data || [], [runsResponse])
-
-  // Run counts. The scan's counters only move when a run finishes, so the
-  // total adds the runs still in progress (see scanRunCounts).
+  // The scan's run counts come from its runs (the total includes runs in
+  // progress). Success rate is null before any run settled.
   const counts = useMemo(
-    () => (config ? scanRunCounts(config, recentRuns) : null),
-    [config, recentRuns]
+    () => (config ? scanRunCounts(config, latestRuns?.data ?? []) : null),
+    [config, latestRuns]
   )
-  const progress = counts?.successRate ?? 0
+  const activeRun = (latestRuns?.data ?? []).find(isRunInProgress)
 
-  // Action handlers
-  const handleTriggerScan = async () => {
-    if (!config) return
-    setIsTriggering(true)
-    try {
-      await post(scanEndpoints.trigger(config.id), {})
-      toast.success(`Scan "${config.name}" triggered successfully`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to trigger scan:', error)
-      toast.error(getErrorMessage(error, `Failed to trigger scan "${config.name}"`), {
-        description: triggerErrorHint(error),
-      })
-    } finally {
-      setIsTriggering(false)
-    }
-  }
-
-  // Cancel an active run. Backend cascade-cancels all in-flight commands.
-  // This posted to /scan-sessions/{id}/stop, a route that does not exist —
-  // the scan-sessions group has no /stop. Pipeline runs do have /cancel.
-  const handleStopRun = async (run: PipelineRun) => {
+  const handleStopRun = async (run: ScanRun) => {
     setStoppingRunId(run.id)
     try {
-      await post(pipelineRunEndpoints.cancel(run.id), {})
-      toast.success('Run cancelled. In-flight commands will stop shortly.')
-      await refetchRuns()
+      await post(scanRunEndpoints.cancel(run.id), {})
+      toast.success('Run canceled. In-flight tasks stop at their next heartbeat.')
+      setPendingStop(null)
+      await refetchAll()
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to cancel run'))
     } finally {
       setStoppingRunId(null)
-    }
-  }
-
-  const handlePauseConfig = async () => {
-    if (!config) return
-    setIsPausing(true)
-    try {
-      await post(scanEndpoints.pause(config.id), {})
-      toast.success(`Scan "${config.name}" paused`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to pause scan:', error)
-      toast.error(getErrorMessage(error, `Failed to pause scan "${config.name}"`))
-    } finally {
-      setIsPausing(false)
-    }
-  }
-
-  const handleActivateConfig = async () => {
-    if (!config) return
-    setIsActivating(true)
-    try {
-      await post(scanEndpoints.activate(config.id), {})
-      toast.success(`Scan "${config.name}" activated`)
-      await invalidateScanConfigsCache()
-    } catch (error) {
-      console.error('Failed to activate scan:', error)
-      toast.error(getErrorMessage(error, `Failed to activate scan "${config.name}"`))
-    } finally {
-      setIsActivating(false)
     }
   }
 
@@ -194,53 +208,53 @@ export default function ScanDetailPage() {
       await del(scanEndpoints.delete(config.id))
       toast.success(`Scan "${config.name}" deleted`)
       router.push('/scans')
-    } catch (error) {
-      console.error('Failed to delete scan:', error)
-      toast.error(getErrorMessage(error, `Failed to delete scan "${config.name}"`))
+    } catch (err) {
+      toast.error(getErrorMessage(err, `Failed to delete scan "${config.name}"`))
     } finally {
       setIsDeleting(false)
       setDeleteConfirmOpen(false)
     }
   }
 
-  // All ten recent runs are on the client, so the headers sort them. Rebuilt
-  // each render: the cancel action reads the in-flight run id.
-  const runColumns: ColumnDef<PipelineRun>[] = [
+  // Rebuilt each render: the cancel action reads the in-flight run id. No
+  // column sorts: this endpoint lists newest first, and sorting one page of
+  // the history would misrepresent the rest.
+  const runColumns: ColumnDef<ScanRun>[] = [
     {
       id: 'started',
-      accessorFn: (run) => (run.started_at ? new Date(run.started_at).getTime() : 0),
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Started" />,
-      cell: ({ row }) => <span className="font-medium">{formatDate(row.original.started_at)}</span>,
+      header: 'Started',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="font-medium">
+          {formatScanDate(row.original.started_at || row.original.created_at)}
+        </span>
+      ),
     },
     {
-      accessorKey: 'status',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => {
-        const run = row.original
-        return (
-          <div className="flex items-center gap-1">
-            <RunStatusBadge status={run.status} />
-            {run.failed_steps > 0 && (
-              <Badge
-                variant="outline"
-                className="text-xs text-destructive"
-                title={run.error_message || `${run.failed_steps} step(s) failed`}
-              >
-                <AlertTriangle className="h-3 w-3 me-0.5" />
-                {run.failed_steps}
-              </Badge>
-            )}
-          </div>
-        )
-      },
+      id: 'status',
+      header: 'Status',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="space-y-0.5">
+          <RunStatusBadge status={row.original.status} />
+          {row.original.error_message && (
+            <TruncatedText
+              value={row.original.error_message}
+              label="Run message"
+              className="max-w-[240px] text-xs text-muted-foreground"
+            />
+          )}
+        </div>
+      ),
     },
     {
-      accessorKey: 'trigger_type',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Trigger" />,
+      id: 'trigger',
+      header: 'Trigger',
+      enableSorting: false,
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span>
-            {PIPELINE_TRIGGER_LABELS[row.original.trigger_type as PipelineTriggerType] ??
+            {SCAN_RUN_TRIGGER_LABELS[row.original.trigger_type as ScanWorkflowTriggerType] ??
               row.original.trigger_type}
           </span>
           {runTriggeredByLabel(row.original) && (
@@ -252,29 +266,26 @@ export default function ScanDetailPage() {
       ),
     },
     {
-      id: 'steps',
-      header: 'Steps',
-      cell: ({ row }) => (
-        <>
+      id: 'tasks',
+      header: 'Tasks',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const r = row.original
+        const progress = runTaskProgress(r.task_summary)
+        return (
           <span className="tabular-nums">
-            {row.original.completed_steps}/{row.original.total_steps}
+            {progress ? progress.label : `${r.completed_steps}/${r.total_steps} steps`}
           </span>
-          {row.original.skipped_steps > 0 && (
-            <span className="ms-1 text-xs text-muted-foreground">
-              ({row.original.skipped_steps} skipped)
-            </span>
-          )}
-        </>
-      ),
+        )
+      },
     },
     {
-      accessorKey: 'total_findings',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
+      id: 'findings',
+      header: 'Findings',
+      enableSorting: false,
       cell: ({ row }) =>
         row.original.total_findings > 0 ? (
-          <Badge variant="secondary" className="tabular-nums">
-            {row.original.total_findings}
-          </Badge>
+          <span className="tabular-nums">{row.original.total_findings}</span>
         ) : (
           <span className="text-muted-foreground">-</span>
         ),
@@ -282,7 +293,10 @@ export default function ScanDetailPage() {
     {
       id: 'duration',
       header: 'Duration',
-      cell: ({ row }) => <span className="tabular-nums">{formatRunDuration(row.original)}</span>,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="tabular-nums text-muted-foreground">{runDuration(row.original)}</span>
+      ),
     },
     {
       id: 'actions',
@@ -291,22 +305,17 @@ export default function ScanDetailPage() {
         const run = row.original
         if (!isRunInProgress(run)) return null
         return (
-          // PipelinesWrite, not ScansWrite. Cancel posts to
-          // POST /pipeline-runs/{id}/cancel, and that route
-          // requires pipelines:write. Gating on scans:write
-          // showed an enabled button to users the API would
-          // reject with a 403 — the button changed endpoint
-          // in #335 and the permission gate did not follow.
-          <Can permission={Permission.PipelinesWrite}>
+          // POST /scan-runs/{id}/cancel needs scans:write (D12).
+          <Can permission={Permission.ScansWrite}>
             <Button
               size="sm"
               variant="ghost"
               disabled={stoppingRunId === run.id}
-              onClick={() => handleStopRun(run)}
-              aria-label={`Cancel run ${run.id}`}
+              onClick={() => setPendingStop(run)}
+              aria-label={`Cancel run started ${formatScanDate(run.started_at || run.created_at)}`}
             >
               {stoppingRunId === run.id ? (
-                <RefreshCw className="me-1 h-4 w-4 animate-spin" />
+                <RefreshCw className="me-1 h-4 w-4 animate-spin motion-reduce:animate-none" />
               ) : (
                 <XCircle className="me-1 h-4 w-4" />
               )}
@@ -318,34 +327,30 @@ export default function ScanDetailPage() {
     },
   ]
 
-  // Loading state
   if (isLoading) {
     return (
       <Main>
-        <div className="space-y-6">
+        <div className="space-y-5" aria-busy="true" aria-label="Loading scan">
           <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-[200px] w-full" />
+          <Skeleton className="h-20 w-full" />
           <Skeleton className="h-[400px] w-full" />
         </div>
       </Main>
     )
   }
 
-  // Error state
   if (error || !config) {
     return (
       <Main>
-        <div className="flex flex-col items-center justify-center py-12">
-          <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Scan Not Found</h2>
-          <p className="text-muted-foreground mb-4">
-            The scan configuration you&apos;re looking for doesn&apos;t exist or you don&apos;t have
-            access to it.
+        <PageHeader title="Scan not found" />
+        <div className="mt-5 flex flex-col items-start gap-4">
+          <p className="text-sm text-muted-foreground">
+            This scan does not exist, or you do not have access to it.
           </p>
-          <Button asChild>
+          <Button asChild variant="outline" size="sm">
             <Link href="/scans">
               <ArrowLeft className="me-2 h-4 w-4" />
-              Back to Scans
+              Back to scans
             </Link>
           </Button>
         </div>
@@ -353,449 +358,260 @@ export default function ScanDetailPage() {
     )
   }
 
+  const groupIds =
+    config.asset_group_ids && config.asset_group_ids.length > 0
+      ? config.asset_group_ids
+      : config.asset_group_id
+        ? [config.asset_group_id]
+        : []
+  const targets = config.targets ?? []
+  const rate = counts?.successRate ?? null
+
+  const metrics: MetricStripItem[] = [
+    {
+      key: 'runs',
+      label: 'Runs',
+      value: counts?.total ?? config.total_runs,
+      hint: counts && counts.inProgress > 0 ? `${counts.inProgress} in progress` : undefined,
+    },
+    {
+      key: 'rate',
+      label: 'Success rate',
+      // A rate needs a settled run: "n/a", never a red 0%.
+      value: rate === null ? 'n/a' : `${rate}%`,
+      hint: rate === null ? 'No finished run yet' : undefined,
+    },
+    { key: 'ok', label: 'Successful', value: config.successful_runs },
+    { key: 'partial', label: 'Partial', value: config.partial_runs ?? 0, tone: 'warning' },
+    { key: 'failed', label: 'Failed', value: config.failed_runs, tone: 'danger' },
+    {
+      key: 'next',
+      label: 'Next run',
+      value: config.next_run_at ? formatScanDate(config.next_run_at) : '-',
+      hint:
+        config.status === 'paused' && config.next_run_at
+          ? 'If resumed'
+          : config.schedule_type === 'manual'
+            ? 'Manual only'
+            : undefined,
+    },
+  ]
+
   return (
     <Main>
-      {/* Header */}
-      <div className="mb-6">
-        <Button variant="ghost" size="sm" asChild className="mb-4">
-          <Link href="/scans">
-            <ArrowLeft className="me-2 h-4 w-4" />
-            Back to Scans
-          </Link>
-        </Button>
+      <Button variant="ghost" size="sm" asChild className="mb-3 -ms-2">
+        <Link href="/scans">
+          <ArrowLeft className="me-2 h-4 w-4" />
+          Scans
+        </Link>
+      </Button>
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4">
-            <div
-              className={`h-12 w-12 rounded-xl flex items-center justify-center shrink-0 ${
-                config.status === 'active'
-                  ? 'bg-blue-500/10'
-                  : config.status === 'paused'
-                    ? 'bg-yellow-500/10'
-                    : 'bg-gray-500/10'
-              }`}
-            >
-              <Radar
-                className={`h-6 w-6 ${
-                  config.status === 'active'
-                    ? 'text-blue-500'
-                    : config.status === 'paused'
-                      ? 'text-yellow-500'
-                      : 'text-gray-500'
-                }`}
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-2xl font-bold">{config.name}</h1>
-                <StatusBadge
-                  status={
-                    config.status === 'active'
-                      ? 'active'
-                      : config.status === 'paused'
-                        ? 'pending'
-                        : 'inactive'
-                  }
-                />
-              </div>
-              {config.description && <p className="text-muted-foreground">{config.description}</p>}
-              <div className="flex items-center gap-2 mt-2">
-                <Badge variant="outline">{SCAN_TYPE_LABELS[config.scan_type]}</Badge>
-                <Badge variant="outline">{SCHEDULE_TYPE_LABELS[config.schedule_type]}</Badge>
-              </div>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-2">
-            {config.status === 'active' && (
-              <>
-                <Button onClick={handleTriggerScan} disabled={isTriggering || isPausing}>
-                  {isTriggering ? (
-                    <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="me-2 h-4 w-4" />
-                  )}
-                  Trigger
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={handlePauseConfig}
-                  disabled={isPausing || isTriggering}
-                >
-                  {isPausing ? (
-                    <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Pause className="me-2 h-4 w-4" />
-                  )}
-                  Pause
-                </Button>
-              </>
-            )}
-            {config.status === 'paused' && (
-              <>
-                <Button onClick={handleActivateConfig} disabled={isActivating || isTriggering}>
-                  {isActivating ? (
-                    <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="me-2 h-4 w-4" />
-                  )}
-                  Resume
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleTriggerScan}
-                  disabled={isTriggering || isActivating}
-                >
-                  {isTriggering ? (
-                    <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="me-2 h-4 w-4" />
-                  )}
-                  Trigger Once
-                </Button>
-              </>
-            )}
-            {config.status === 'disabled' && (
-              <Button onClick={handleActivateConfig} disabled={isActivating}>
-                {isActivating ? (
-                  <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="me-2 h-4 w-4" />
-                )}
-                Enable
+      <PageHeader
+        title={config.name}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            <LastRunCell run={lastRunOf(config)} onOpen={setOpenRunId} />
+            <span>{scanTypeLabel(config).label}</span>
+            <span aria-hidden="true">·</span>
+            <span>{SCHEDULE_TYPE_LABELS[config.schedule_type]}</span>
+            <span aria-hidden="true">·</span>
+            <span>{scanStateLabel(config)}</span>
+            {activeRun && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0"
+                onClick={() => setOpenRunId(activeRun.id)}
+              >
+                <RefreshCw className="me-1 h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />A
+                run is in progress
               </Button>
             )}
-          </div>
-        </div>
+          </span>
+        }
+      >
+        {/* Run now, schedule on/off, enable: the same controls as the scan
+            drawer, gated as the API gates them. */}
+        <ScanControls
+          config={config}
+          onViewRun={setOpenRunId}
+          onChanged={() => void refetchAll()}
+        />
+      </PageHeader>
+
+      <MetricStrip className="mt-5" items={metrics} />
+
+      <div className="mt-5 empty:hidden">
+        <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Target className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{counts?.total ?? config.total_runs}</p>
-                <p className="text-xs text-muted-foreground">
-                  Total Runs
-                  {counts && counts.inProgress > 0 && <> · {counts.inProgress} in progress</>}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{config.successful_runs}</p>
-                <p className="text-xs text-muted-foreground">Successful</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center">
-                <XCircle className="h-5 w-5 text-red-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{config.failed_runs}</p>
-                <p className="text-xs text-muted-foreground">Failed</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <Activity className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <p
-                  className={`text-2xl font-bold ${
-                    progress >= 80
-                      ? 'text-green-500'
-                      : progress >= 50
-                        ? 'text-yellow-500'
-                        : progress === 0
-                          ? 'text-muted-foreground'
-                          : 'text-red-500'
-                  }`}
-                >
-                  {progress}%
-                </p>
-                <p className="text-xs text-muted-foreground">Success Rate</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabs */}
-      <Tabs defaultValue="runs" className="space-y-4">
+      <Tabs value={tab} onValueChange={setTabParam} className="mt-5">
         <TabsList>
-          <TabsTrigger value="runs">Run History</TabsTrigger>
+          <TabsTrigger value="runs">Runs</TabsTrigger>
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
-        {/* Runs Tab */}
-        <TabsContent value="runs" className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            The ten most recent executions of this scan
-          </p>
+        <TabsContent value="runs" className="mt-5">
           <DataTable
             columns={runColumns}
-            data={recentRuns}
+            data={runs}
             getRowId={(run) => run.id}
-            isLoading={isLoadingRuns}
+            isLoading={isLoadingRuns && !runsResponse}
             showSearch={false}
             onRowClick={(run) => setOpenRunId(run.id)}
+            manualPagination
+            rowCount={runsResponse?.total ?? 0}
+            pagination={{ pageIndex: runPage - 1, pageSize: runPerPage }}
+            onPaginationChange={(next) => {
+              if (next.pageSize !== runPerPage) {
+                setRunPerPage(next.pageSize)
+                setRunPage(1)
+              } else {
+                setRunPage(next.pageIndex + 1)
+              }
+            }}
+            pageSize={runPerPage}
+            pageSizeOptions={RUN_PAGE_SIZES}
+            paginationNoun="runs"
             emptyMessage="No runs yet"
-            emptyDescription="Trigger this scan to see run history"
+            emptyDescription="Trigger this scan to see its first run here."
+            toolbarEnd={
+              <Button variant="outline" size="sm" className="h-9" asChild>
+                <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
+                  View all runs
+                </Link>
+              </Button>
+            }
           />
         </TabsContent>
 
-        {/* Configuration Tab */}
-        <TabsContent value="configuration">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Schedule Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">Frequency</span>
-                  </div>
-                  <span className="text-sm font-medium">
-                    {SCHEDULE_TYPE_LABELS[config.schedule_type]}
-                  </span>
-                </div>
+        <TabsContent value="configuration" className="mt-5">
+          <DetailSections>
+            <DetailSection title="Schedule">
+              <DetailFieldGrid>
+                <DetailField label="Frequency">
+                  {SCHEDULE_TYPE_LABELS[config.schedule_type]}
+                </DetailField>
                 {config.schedule_time && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Time</span>
-                    </div>
-                    <span className="text-sm font-medium">{config.schedule_time}</span>
-                  </div>
+                  <DetailField label="Time">{config.schedule_time}</DetailField>
                 )}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">Timezone</span>
-                  </div>
-                  <span className="text-sm font-medium">{config.schedule_timezone}</span>
-                </div>
+                <DetailField label="Timezone">{config.schedule_timezone}</DetailField>
                 {config.next_run_at && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Next Run</span>
-                    </div>
-                    <span className="text-sm font-medium">{formatDate(config.next_run_at)}</span>
-                  </div>
+                  <DetailField label="Next run">{formatScanDate(config.next_run_at)}</DetailField>
                 )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Sensor Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Settings className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">Sensor Preference</span>
-                  </div>
-                  <span className="text-sm font-medium">
-                    {SENSOR_PREFERENCE_LABELS[config.sensor_preference]}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">Targets per Job</span>
-                  </div>
-                  <span className="text-sm font-medium">{config.targets_per_job}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Tags */}
-            {config.tags && config.tags.length > 0 && (
-              <Card className="md:col-span-2">
-                <CardHeader>
-                  <CardTitle className="text-base">Tags</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {config.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="gap-1">
-                        <Tag className="h-3 w-3" />
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Targets - show asset groups and/or direct targets */}
-            {((config.asset_group_ids && config.asset_group_ids.length > 0) ||
-              config.asset_group_id ||
-              (config.targets && config.targets.length > 0)) && (
-              <Card className="md:col-span-2">
-                <CardHeader>
-                  <CardTitle className="text-base">Targets</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Asset Groups */}
-                  {config.asset_group_ids && config.asset_group_ids.length > 0 ? (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Asset Groups</p>
-                      <div className="flex flex-wrap gap-2">
-                        {config.asset_group_ids.map((id) => (
-                          <Badge key={id} variant="outline">
-                            {id}
-                          </Badge>
+                {config.schedule_rrule && (
+                  <DetailField label="Rule" full>
+                    <code className="text-xs break-all">{config.schedule_rrule}</code>
+                  </DetailField>
+                )}
+              </DetailFieldGrid>
+              <div className="mt-4">
+                <SchedulePreview
+                  request={schedulePreviewRequestFromConfig(config)}
+                  paused={config.status !== 'active'}
+                />
+              </div>
+            </DetailSection>
+            <DetailSection title="Execution">
+              <DetailFieldGrid>
+                <DetailField label="Scan type">{SCAN_TYPE_LABELS[config.scan_type]}</DetailField>
+                <DetailField label={<IntensityLabel />}>
+                  <IntensityBadge intensity={config.intensity} />
+                </DetailField>
+                <DetailField label="Sensor preference">
+                  {SENSOR_PREFERENCE_LABELS[config.sensor_preference]}
+                </DetailField>
+                <DetailField label="Targets per job">{config.targets_per_job}</DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+            {(groupIds.length > 0 || targets.length > 0) && (
+              <DetailSection title="Targets">
+                <DetailFieldGrid>
+                  {groupIds.length > 0 && (
+                    <DetailField
+                      label={groupIds.length === 1 ? 'Asset group' : 'Asset groups'}
+                      full
+                    >
+                      <span className="flex flex-wrap gap-1.5">
+                        {groupIds.map((id) => (
+                          <AssetGroupName key={id} id={id} />
                         ))}
-                      </div>
-                    </div>
-                  ) : config.asset_group_id ? (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Asset Group</p>
-                      <Badge variant="outline">{config.asset_group_id}</Badge>
-                    </div>
-                  ) : null}
-                  {/* Direct Targets */}
-                  {config.targets && config.targets.length > 0 && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Direct Targets ({config.targets.length})
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {config.targets.map((target, i) => (
-                          <Badge key={i} variant="secondary">
-                            {target}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
+                      </span>
+                    </DetailField>
                   )}
-                </CardContent>
-              </Card>
+                  {targets.length > 0 && (
+                    <DetailField label={`Direct targets (${targets.length})`} full>
+                      <TargetList targets={targets} />
+                    </DetailField>
+                  )}
+                </DetailFieldGrid>
+              </DetailSection>
             )}
-          </div>
+            {config.tags && config.tags.length > 0 && (
+              <DetailSection title="Tags" count={config.tags.length}>
+                <div className="flex flex-wrap gap-1.5">
+                  {config.tags.map((tag) => (
+                    <Badge key={tag} variant="secondary" className="max-w-[16rem] gap-1">
+                      <Tag className="h-3 w-3 shrink-0" />
+                      <TruncatedText value={tag} label="Tag" />
+                    </Badge>
+                  ))}
+                </div>
+              </DetailSection>
+            )}
+          </DetailSections>
         </TabsContent>
 
-        {/* Details Tab */}
-        <TabsContent value="details">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Timeline</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="h-6 w-6 rounded-full bg-green-500/20 flex items-center justify-center mt-0.5">
-                    <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Created</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(config.created_at)}</p>
-                  </div>
-                </div>
-                {config.last_run_at && (
-                  <div className="flex items-start gap-3">
-                    <div className="h-6 w-6 rounded-full bg-blue-500/20 flex items-center justify-center mt-0.5">
-                      <Play className="h-3.5 w-3.5 text-blue-500" />
+        <TabsContent value="details" className="mt-5">
+          <DetailSections>
+            {config.description && (
+              <DetailSection title="Description">
+                <p
+                  dir="auto"
+                  className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground [unicode-bidi:isolate]"
+                >
+                  {config.description}
+                </p>
+              </DetailSection>
+            )}
+            <DetailSection title="Timeline">
+              <DetailFieldGrid>
+                <DetailField label="Created">{formatScanDate(config.created_at)}</DetailField>
+                <DetailField label="Last run">
+                  {config.last_run_at ? formatScanDate(config.last_run_at) : 'Never'}
+                </DetailField>
+                <DetailField label="Status">{SCAN_CONFIG_STATUS_LABELS[config.status]}</DetailField>
+              </DetailFieldGrid>
+            </DetailSection>
+            <DetailSection title="Identity">
+              <DetailFieldGrid>
+                <DetailField label="Created by">{config.created_by_name || 'System'}</DetailField>
+                <DetailField label="Scan ID" full>
+                  <DetailCopyId id={config.id} label="Scan ID" />
+                </DetailField>
+                {config.scan_workflow_id && (
+                  <DetailField label="Scan workflow" full>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Can permission={Permission.ScanWorkflowsRead}>
+                        <Link
+                          href={`/scans/workflows/${encodeURIComponent(config.scan_workflow_id)}`}
+                          className="text-primary text-sm font-medium hover:underline"
+                        >
+                          Open scan workflow
+                        </Link>
+                      </Can>
+                      <DetailCopyId id={config.scan_workflow_id} label="Scan workflow ID" />
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Last Run</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(config.last_run_at)}
-                      </p>
-                    </div>
-                  </div>
+                  </DetailField>
                 )}
-                {config.next_run_at && (
-                  <div className="flex items-start gap-3">
-                    <div className="h-6 w-6 rounded-full bg-yellow-500/20 flex items-center justify-center mt-0.5">
-                      <Clock className="h-3.5 w-3.5 text-yellow-500" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">Next Scheduled</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(config.next_run_at)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Technical Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Config ID</span>
-                  <div className="flex items-center gap-2">
-                    <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[180px]">
-                      {config.id}
-                    </code>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                      onClick={() => {
-                        copyToClipboard(config.id)
-                        toast.success('ID copied to clipboard')
-                      }}
-                    >
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-                {config.pipeline_id && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Pipeline</span>
-                    <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[180px]">
-                      {config.pipeline_id}
-                    </code>
-                  </div>
-                )}
-                {(config.created_by_name || config.created_by) && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Created By</span>
-                    <span className="text-sm font-medium">
-                      {config.created_by_name || config.created_by}
-                    </span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
+              </DetailFieldGrid>
+            </DetailSection>
             <Can permission={Permission.ScansDelete}>
-              <DangerZone className="md:col-span-2">
+              <DangerZone>
                 <DangerZoneItem
-                  title="Delete configuration"
-                  description="Permanently delete this configuration and all associated data."
+                  title="Delete scan"
+                  description="Deletes this scan and its schedule. Past runs and findings stay."
                   action={
                     <Button
                       variant="destructive"
@@ -804,31 +620,54 @@ export default function ScanDetailPage() {
                       disabled={isDeleting}
                     >
                       <Trash2 className="me-2 h-4 w-4" />
-                      Delete configuration
+                      Delete scan
                     </Button>
                   }
                 />
               </DangerZone>
             </Can>
-          </div>
+          </DetailSections>
         </TabsContent>
       </Tabs>
 
-      {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title="Delete Scan Configuration"
+        title={t('confirm.scan.deleteTitle', 'Delete scan "{name}"?', { name: config.name })}
         desc={
           <>
-            Are you sure you want to delete &quot;{config.name}&quot;? This action cannot be undone
-            and will remove all associated run history.
+            <span className="flex items-center gap-1.5 font-medium text-foreground">
+              <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden="true" />
+              {config.name}
+            </span>
+            {t(
+              'confirm.scan.deleteDesc',
+              'The scan and its schedule are deleted. Past runs and findings stay. This cannot be undone.'
+            )}
           </>
         }
-        confirmText={isDeleting ? 'Deleting...' : 'Delete'}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfig}
+      />
+      <ConfirmDialog
+        open={pendingStop !== null}
+        onOpenChange={(open) => !open && !stoppingRunId && setPendingStop(null)}
+        destructive
+        title={t('confirm.scan.cancelRunTitle', 'Cancel this run of "{name}"?', {
+          name: config.name,
+        })}
+        desc={t(
+          'confirm.scan.cancelRunDesc',
+          'No new tasks start and running tasks stop at their next heartbeat. Results already received stay. A canceled run cannot be resumed; start a new run instead.'
+        )}
+        cancelBtnText={t('confirm.keepRunning', 'Keep running')}
+        confirmText={t('confirm.scan.cancelRun', 'Cancel run')}
+        isLoading={stoppingRunId !== null}
+        handleConfirm={() => (pendingStop ? handleStopRun(pendingStop) : undefined)}
       />
       <RunDetailSheet runId={openRunId} onOpenChange={(o) => !o && setOpenRunId(null)} />
     </Main>

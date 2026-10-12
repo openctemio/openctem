@@ -1,0 +1,14 @@
+- id: sensors
+  const: ModuleSensors
+  slug: sensors
+  name: Sensors
+  description: "Sensors: scanners, agents and collectors that report to the platform"
+  icon: Cpu
+  category: settings
+  order: 61
+  core: true
+  permission: "sensors:read"
+  jobs:
+    - SensorHealthController
+    - SensorEventRetentionController
+    - HeartbeatHistoryRetentionController

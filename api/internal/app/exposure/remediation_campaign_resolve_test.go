@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -33,7 +34,7 @@ func TestResolveCampaignFindings_NoResolver(t *testing.T) {
 		TenantID:      tid.String(),
 		Name:          "No resolver",
 		FindingFilter: map[string]any{"severity": "high"},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)
 	}
@@ -55,7 +56,7 @@ func TestResolveCampaignFindings_DelegatesWithFilter(t *testing.T) {
 		TenantID:      tid.String(),
 		Name:          "Fix all high",
 		FindingFilter: map[string]any{"severity": "high"},
-	})
+	}, auditapp.AuditContext{})
 	if err != nil {
 		t.Fatalf("create campaign: %v", err)
 	}

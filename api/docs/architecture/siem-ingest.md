@@ -1,5 +1,11 @@
 # SIEM ingest → CTEM Detect/Respond
 
+> **Retired 2026-10-05.** This route was part of sensor protocol v1
+> (`/api/v1/agent/telemetry-events`), which was removed
+> ([RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
+> Protocol v2 has no telemetry route yet, so SIEM inbound is unavailable
+> until one ships. Stored events and the IOC catalogue are kept.
+
 How a SIEM/EDR/XDR (Splunk, Sentinel, CrowdStrike, …) pushes detections **into**
 OpenCTEM so they close the CTEM Stage-4 Detect/Respond loop: a runtime detection
 that matches a known indicator auto-reopens the finding it came from.
@@ -23,9 +29,8 @@ runtime_telemetry_events  ──►  IOC Correlator  ──►  auto-reopen sour
 Rather than build a second, separate ingest endpoint (more attack surface, a new
 auth path, duplicated tenant-scoping), a SIEM forwarder authenticates as a
 **collector agent** — an agent whose capability is `collect` — and posts to the
-same endpoint. This mirrors how Elastic (Agent + Fleet) and OpenCTI (connectors)
-model external data sources, and reuses the security controls that path already
-enforces:
+same endpoint. An external data source is then just another authenticated
+collector, and it reuses the security controls that path already enforces:
 
 - tenant is taken from the agent's identity, **never** from the request body — a
   compromised forwarder cannot write into another tenant;

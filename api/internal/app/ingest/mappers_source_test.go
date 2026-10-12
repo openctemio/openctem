@@ -113,7 +113,7 @@ func TestDetectFindingSource_AlwaysReturnsAValidSource(t *testing.T) {
 }
 
 // The provenance channel comes from ctis.ReportMetadata.SourceType, which the
-// pipeline already carried and the processor discarded. Unrecognized values
+// scan workflow already carried and the processor discarded. Unrecognized values
 // must not be guessed: the column stays NULL, which reads as "unrecorded"
 // rather than as a confident wrong answer.
 func TestIngestChannelFromCTIS(t *testing.T) {

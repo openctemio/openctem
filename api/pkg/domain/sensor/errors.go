@@ -33,6 +33,12 @@ var (
 
 	// ErrInvalidAPIKey is returned when an API key is invalid.
 	ErrInvalidAPIKey = fmt.Errorf("%w: invalid API key", shared.ErrUnauthorized)
+
+	// ErrPresentedKeyInvalid is returned by a key renewal that, holding the
+	// per-sensor key lock, finds the key it authenticated with no longer
+	// valid: revoked, expired, or replaced by an administrator's
+	// regeneration since. Nothing was written.
+	ErrPresentedKeyInvalid = fmt.Errorf("%w: presented sensor key is no longer valid", shared.ErrUnauthorized)
 )
 
 // =============================================================================

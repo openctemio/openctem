@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/jira"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/internal/infra/notifier"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
@@ -79,6 +80,10 @@ type IntegrationService struct {
 	// leave "pending", and the per-tenant client resolver only uses connected
 	// integrations — so it would be stored but never used.
 	ticketingTester TicketingConnectionTester
+
+	// tenableConnector validates Tenable.sc sensor connector configs
+	// (RFC-047). nil: Tenable integrations cannot be created.
+	tenableConnector TenableConnectorValidator
 
 	// Rate limiting for test notifications
 	testRateLimitMu  sync.RWMutex
@@ -195,6 +200,21 @@ type CreateIntegrationInput struct {
 	SCMOrganization string
 }
 
+// tenableConnectorSyncMinutes is a new Tenable.sc connector's sync interval
+// (tenablesc.DefaultSyncIntervalMinutes; not imported, to keep this package
+// free of the connector).
+const tenableConnectorSyncMinutes = 360
+
+// TenableConnectorValidator validates a Tenable.sc sensor connector config for
+// a tenant (tenablesc.Service).
+type TenableConnectorValidator interface {
+	ValidateConnector(ctx context.Context, tenantID shared.ID, cfg map[string]any) error
+}
+
+// SetTenableConnector wires the Tenable.sc connector validator; without it
+// Tenable integrations are refused.
+func (s *IntegrationService) SetTenableConnector(v TenableConnectorValidator) { s.tenableConnector = v }
+
 // CreateIntegration creates a new integration.
 func (s *IntegrationService) CreateIntegration(ctx context.Context, input CreateIntegrationInput) (*integrationdom.IntegrationWithSCM, error) {
 	tenantID, err := shared.IDFromString(input.TenantID)
@@ -220,8 +240,14 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 
 	// Refuse providers that are declared but have no client: the row would be
-	// accepted, shown as an integration, and then never do anything.
-	if !provider.HasClient() {
+	// accepted, shown as an integration, and then never do anything. Tenable
+	// is served only as the Tenable.sc sensor connector (RFC-047), and only
+	// when the connector is wired.
+	if provider == integrationdom.ProviderTenable {
+		if s.tenableConnector == nil {
+			return nil, unsupportedProviderError(provider)
+		}
+	} else if !provider.HasClient() {
 		return nil, unsupportedProviderError(provider)
 	}
 
@@ -243,11 +269,19 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, input.Credentials != "", input.BaseURL); cfgErr != nil {
 			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
 		}
+		if err := s.tenableConnector.ValidateConnector(ctx, tenantID, input.Config); err != nil {
+			return nil, err
+		}
 		if input.Config == nil {
 			input.Config = map[string]any{}
 		}
 		input.Config["execution_mode"] = string(tcfg.ExecutionMode)
 		input.Config["engine"] = string(tcfg.Engine)
+	}
+
+	// A ticket's inbound status map may never target a closing status.
+	if err := jira.ValidateTicketingConfig(input.Config); err != nil {
+		return nil, err
 	}
 
 	// Check for duplicate integration name within tenant
@@ -279,14 +313,16 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	if len(input.Config) > 0 {
 		intg.SetConfig(input.Config)
 	}
+	if provider == integrationdom.ProviderTenable {
+		// The connector syncs on a schedule (every 6 hours by default); the
+		// first sync is due at once.
+		intg.SetSyncInterval(tenableConnectorSyncMinutes)
+	}
 	if input.Credentials != "" {
 		// Defense-in-depth: warn loudly when persisting credentials
-		// while the encryptor is the NoOp implementation. The boot-time
-		// check (initEncryptor) already requires APP_ALLOW_PLAINTEXT_
-		// CREDENTIALS=true to permit NoOp at all, but a single startup
-		// warning is easy to miss — emitting at each credential write
-		// gives visibility in audit logs that something sensitive is
-		// being persisted in plaintext.
+		// while the encryptor is the NoOp implementation. The server never
+		// wires NoOp (initEncryptor requires APP_ENCRYPTION_KEY); this
+		// catches a test or tool that does.
 		if crypto.IsNoOp(s.encryptor) {
 			s.logger.Warn("PERSISTING INTEGRATION CREDENTIAL IN PLAINTEXT — APP_ENCRYPTION_KEY is not configured",
 				"tenant_id", input.TenantID,
@@ -471,6 +507,12 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		return nil, err
 	}
 
+	// The stored token was issued for the current host: a new host needs new
+	// credentials, so a manager cannot redirect the token to a server they run.
+	if err := requireCredentialsForHostChange(intg, input.BaseURL, input.Credentials); err != nil {
+		return nil, err
+	}
+
 	// Apply updates to integration
 	if input.Name != nil {
 		intg.SetName(*input.Name)
@@ -507,10 +549,21 @@ func (s *IntegrationService) UpdateIntegration(ctx context.Context, id string, t
 		if cfgErr := scancoverage.ValidateTenableIntegration(tcfg, willHaveCreds, effURL); cfgErr != nil {
 			return nil, fmt.Errorf("%w: %v", shared.ErrValidation, cfgErr)
 		}
+		// A connector's settings (sensor, instance, ...) are re-checked when
+		// they change; rows stored before the connector keep loading.
+		if input.Config != nil && s.tenableConnector != nil {
+			if err := s.tenableConnector.ValidateConnector(ctx, tid, merged); err != nil {
+				return nil, err
+			}
+		}
 		merged["execution_mode"] = string(tcfg.ExecutionMode)
 		merged["engine"] = string(tcfg.Engine)
 		intg.SetConfig(merged)
 	} else if input.Config != nil {
+		// A ticket's inbound status map may never target a closing status.
+		if err := jira.ValidateTicketingConfig(input.Config); err != nil {
+			return nil, err
+		}
 		intg.SetConfig(input.Config)
 	}
 
@@ -677,8 +730,14 @@ func (s *IntegrationService) TestIntegration(ctx context.Context, id string, ten
 		scmOrg = scmExt.SCMOrganization()
 	}
 
-	// Decrypt credentials (falls back to plaintext for backward compatibility)
-	credentials := s.decryptCredentials(intg)
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		intg.SetError(err.Error())
+		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
+			s.logger.Error("Failed to update integration after decrypt error", "error", updateErr)
+		}
+		return integrationdom.NewIntegrationWithSCM(intg, scmExt), nil
+	}
 
 	// Create SCM client and test connection
 	client, err := s.scmFactory.CreateClient(scm.Config{
@@ -859,6 +918,11 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 	if !intg.IsSCM() {
 		return nil, fmt.Errorf("%w: not an SCM integration", shared.ErrValidation)
 	}
+	// A disabled integration is not used: no call to the provider with its
+	// stored token, and no status change from a read.
+	if intg.Status() == integrationdom.StatusDisabled {
+		return nil, ErrIntegrationDisabled
+	}
 
 	// Get SCM extension for organization
 	scmExt, _ := s.scmExtRepo.GetByIntegrationID(ctx, intgID)
@@ -873,8 +937,10 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 		baseURL = s.getDefaultBaseURL(intg.Provider())
 	}
 
-	// Decrypt credentials (falls back to plaintext for backward compatibility)
-	credentials := s.decryptCredentials(intg)
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{
@@ -958,23 +1024,31 @@ func (s *IntegrationService) ListSCMRepositories(ctx context.Context, input Inte
 	}, nil
 }
 
-// decryptCredentials decrypts the stored credentials from an integration.
-// If decryption fails (e.g., credentials stored in plaintext), returns the original value.
-// This provides backward compatibility with existing unencrypted credentials.
-func (s *IntegrationService) decryptCredentials(intg *integrationdom.Integration) string {
+// ErrCredentialsUnreadable: the stored credential does not open under the
+// configured APP_ENCRYPTION_KEY (a key mismatch, a corrupt value, or a legacy
+// plaintext row; cmd/encrypt-credentials encrypts those). It wraps
+// scm.ErrAuthFailed so the API answers "re-enter the credentials".
+var ErrCredentialsUnreadable = fmt.Errorf("%w: stored credentials cannot be decrypted with the configured key", scm.ErrAuthFailed)
+
+// decryptCredentials decrypts the stored credentials of an integration. It
+// fails closed: a value that does not decrypt is never used as is, so a key
+// mismatch cannot send ciphertext (or a legacy plaintext value) upstream
+// (RFC-049 F-8). With the no-op encryptor (tests only) every value
+// "decrypts" to itself.
+func (s *IntegrationService) decryptCredentials(intg *integrationdom.Integration) (string, error) {
 	encrypted := intg.CredentialsEncrypted()
 	if encrypted == "" {
-		return ""
+		return "", nil
 	}
 	decrypted, err := s.encryptor.DecryptString(encrypted)
 	if err != nil {
-		// Decryption failed - assume plaintext (backward compatibility)
-		s.logger.Debug("credentials not encrypted, using plaintext",
+		s.logger.Warn("integration credentials cannot be decrypted; not using them",
+			"tenant_id", intg.TenantID().String(),
 			"integration_id", intg.ID().String(),
 		)
-		return encrypted
+		return "", ErrCredentialsUnreadable
 	}
-	return decrypted
+	return decrypted, nil
 }
 
 // EmailCredentials represents the JSON structure for email SMTP credentials (full input from frontend).
@@ -988,9 +1062,15 @@ type EmailCredentials struct {
 	ToEmails    []string `json:"to_emails"`
 	UseTLS      bool     `json:"use_tls"`
 	UseSTARTTLS bool     `json:"use_starttls"`
-	SkipVerify  bool     `json:"skip_verify"`
-	ReplyTo     string   `json:"reply_to,omitempty"`
+	// SkipVerify is accepted only to refuse it: a tenant may not turn off
+	// certificate verification for the relay it sends its SMTP password to
+	// (RFC-049 F-5). It is never stored or used.
+	SkipVerify bool   `json:"skip_verify"`
+	ReplyTo    string `json:"reply_to,omitempty"`
 }
+
+// errSMTPSkipVerify refuses a tenant request to turn off TLS verification.
+var errSMTPSkipVerify = fmt.Errorf("%w: skip_verify is not supported: the SMTP server certificate is always verified (use a certificate from a trusted CA)", shared.ErrValidation)
 
 // EmailMetadata represents non-sensitive email config stored in integration.metadata.
 // This allows the frontend to display current config when editing without exposing secrets.
@@ -1002,7 +1082,6 @@ type EmailMetadata struct {
 	ToEmails    []string `json:"to_emails"`
 	UseTLS      bool     `json:"use_tls"`
 	UseSTARTTLS bool     `json:"use_starttls"`
-	SkipVerify  bool     `json:"skip_verify"`
 	ReplyTo     string   `json:"reply_to,omitempty"`
 }
 
@@ -1022,7 +1101,6 @@ func splitEmailCredentials(creds *EmailCredentials) (*EmailMetadata, *EmailSensi
 		ToEmails:    creds.ToEmails,
 		UseTLS:      creds.UseTLS,
 		UseSTARTTLS: creds.UseSTARTTLS,
-		SkipVerify:  creds.SkipVerify,
 		ReplyTo:     creds.ReplyTo,
 	}
 	sensitive := &EmailSensitiveCredentials{
@@ -1042,7 +1120,6 @@ func mergeEmailConfig(metadata *EmailMetadata, sensitive *EmailSensitiveCredenti
 		ToEmails:    metadata.ToEmails,
 		UseTLS:      metadata.UseTLS,
 		UseSTARTTLS: metadata.UseSTARTTLS,
-		SkipVerify:  metadata.SkipVerify,
 		ReplyTo:     metadata.ReplyTo,
 	}
 	if sensitive != nil {
@@ -1083,7 +1160,6 @@ func (s *IntegrationService) parseEmailCredentials(credentials string) (*notifie
 		ToEmails:    emailCreds.ToEmails,
 		UseTLS:      emailCreds.UseTLS,
 		UseSTARTTLS: emailCreds.UseSTARTTLS,
-		SkipVerify:  emailCreds.SkipVerify,
 		ReplyTo:     emailCreds.ReplyTo,
 	}, nil
 }
@@ -1093,11 +1169,13 @@ func (s *IntegrationService) buildNotificationConfig(intg *integrationdom.Integr
 	// Populate metadata from credentials for backward compatibility (existing integrations)
 	s.populateMetadataFromCredentials(intg)
 
-	credentials := s.decryptCredentials(intg)
 	provider := intg.Provider()
-
 	config := notifier.Config{
 		Provider: notifier.Provider(provider.String()),
+	}
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		return config, err
 	}
 
 	switch provider {
@@ -1152,7 +1230,6 @@ func (s *IntegrationService) buildEmailConfig(intg *integrationdom.Integration, 
 			FromName:    getStringFromMap(metadata, "from_name"),
 			UseTLS:      getBoolFromMap(metadata, "use_tls"),
 			UseSTARTTLS: getBoolFromMap(metadata, "use_starttls"),
-			SkipVerify:  getBoolFromMap(metadata, "skip_verify"),
 			ReplyTo:     getStringFromMap(metadata, "reply_to"),
 		}
 
@@ -1212,6 +1289,9 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
 	}
+	if emailCreds.SkipVerify {
+		return errSMTPSkipVerify
+	}
 
 	// Validate required fields
 	if emailCreds.SMTPHost == "" {
@@ -1239,7 +1319,6 @@ func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integratio
 		"to_emails":    metadata.ToEmails,
 		"use_tls":      metadata.UseTLS,
 		"use_starttls": metadata.UseSTARTTLS,
-		"skip_verify":  metadata.SkipVerify,
 		"reply_to":     metadata.ReplyTo,
 	})
 
@@ -1262,6 +1341,9 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
 		return fmt.Errorf("parse email credentials: %w", err)
+	}
+	if emailCreds.SkipVerify {
+		return errSMTPSkipVerify
 	}
 
 	// Get existing metadata to merge
@@ -1310,7 +1392,6 @@ func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integra
 	// Boolean flags - use from input (these have default values, so always set)
 	newMetadata["use_tls"] = emailCreds.UseTLS
 	newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
-	newMetadata["skip_verify"] = emailCreds.SkipVerify
 
 	// Reply To
 	if emailCreds.ReplyTo != "" {
@@ -1445,8 +1526,8 @@ func (s *IntegrationService) populateMetadataFromCredentials(intg *integrationdo
 		}
 
 		// Try to extract from credentials (legacy format: all config in credentials_encrypted)
-		credentials := s.decryptCredentials(intg)
-		if credentials == "" {
+		credentials, err := s.decryptCredentials(intg)
+		if err != nil || credentials == "" {
 			return
 		}
 
@@ -1472,7 +1553,6 @@ func (s *IntegrationService) populateMetadataFromCredentials(intg *integrationdo
 		newMetadata["to_emails"] = emailCreds.ToEmails
 		newMetadata["use_tls"] = emailCreds.UseTLS
 		newMetadata["use_starttls"] = emailCreds.UseSTARTTLS
-		newMetadata["skip_verify"] = emailCreds.SkipVerify
 		if emailCreds.ReplyTo != "" {
 			newMetadata["reply_to"] = emailCreds.ReplyTo
 		}
@@ -1619,6 +1699,11 @@ func (s *IntegrationService) GetSCMRepository(ctx context.Context, input GetSCMR
 	if !intg.IsSCM() {
 		return nil, fmt.Errorf("%w: not an SCM integration", shared.ErrValidation)
 	}
+	// A disabled integration is not used: no call to the provider with its
+	// stored token, and no status change from a read.
+	if intg.Status() == integrationdom.StatusDisabled {
+		return nil, ErrIntegrationDisabled
+	}
 
 	// Get SCM extension for organization
 	scmExt, _ := s.scmExtRepo.GetByIntegrationID(ctx, intgID)
@@ -1633,8 +1718,10 @@ func (s *IntegrationService) GetSCMRepository(ctx context.Context, input GetSCMR
 		baseURL = s.getDefaultBaseURL(intg.Provider())
 	}
 
-	// Decrypt credentials (falls back to plaintext for backward compatibility)
-	credentials := s.decryptCredentials(intg)
+	credentials, err := s.decryptCredentials(intg)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create SCM client
 	client, err := s.scmFactory.CreateClient(scm.Config{
@@ -1777,7 +1864,7 @@ type CreateNotificationIntegrationInput struct {
 	ChannelID          string
 	ChannelName        string
 	EnabledSeverities  []string // Severity levels to notify on (critical, high, medium, low, info, none)
-	EnabledEventTypes  []string // Event types to receive notifications for (security_alert, new_finding, etc.)
+	EnabledEventTypes  []string // Event types to receive notifications for (new_finding, sla_breach, etc.)
 	MessageTemplate    string
 	IncludeDetails     bool
 	MinIntervalMinutes int
@@ -1881,11 +1968,15 @@ func (s *IntegrationService) CreateNotificationIntegration(ctx context.Context, 
 	// hec_url/index/sourcetype) without clobbering keys a provider already set
 	// above (Slack channel_name, Telegram chat_id).
 	if len(input.Metadata) > 0 {
+		callerMeta, err := sanitizeCallerMetadata(input.Metadata)
+		if err != nil {
+			return nil, err
+		}
 		merged := intg.Metadata()
 		if merged == nil {
-			merged = make(map[string]any, len(input.Metadata))
+			merged = make(map[string]any, len(callerMeta))
 		}
-		for k, v := range input.Metadata {
+		for k, v := range callerMeta {
 			merged[k] = v
 		}
 		intg.SetMetadata(merged)
@@ -2083,11 +2174,15 @@ func (s *IntegrationService) UpdateNotificationIntegration(ctx context.Context, 
 	// Merge caller-supplied non-sensitive metadata (e.g. Splunk HEC
 	// hec_url/index/sourcetype) onto whatever the provider branch set above.
 	if input.Metadata != nil {
+		callerMeta, err := sanitizeCallerMetadata(input.Metadata)
+		if err != nil {
+			return nil, err
+		}
 		merged := intg.Metadata()
 		if merged == nil {
-			merged = make(map[string]any, len(input.Metadata))
+			merged = make(map[string]any, len(callerMeta))
 		}
-		for k, v := range input.Metadata {
+		for k, v := range callerMeta {
 			merged[k] = v
 		}
 		intg.SetMetadata(merged)

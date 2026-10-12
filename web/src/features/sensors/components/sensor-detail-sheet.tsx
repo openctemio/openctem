@@ -1,19 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
-  CheckCircle2,
-  ChevronRight,
   CircleAlert,
-  Copy,
   History,
   Info,
   KeyRound,
   Loader2,
   Lock,
-  MoreHorizontal,
   Pencil,
   Power,
   PowerOff,
@@ -21,26 +17,20 @@ import {
   ShieldOff,
   Terminal,
   Trash2,
-  X,
 } from 'lucide-react'
-import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DetailCallout,
+  DetailChecklist,
+  DetailCopyId,
+  DetailDisclosure,
+  DetailHeader,
+  DetailSheet,
+  DetailTabs,
   DetailField,
   DetailFieldGrid,
   DetailSection,
@@ -50,24 +40,42 @@ import {
   EmptyState,
   RelativeTime,
   type DetailCalloutTone,
+  type DetailCheck,
+  type DetailMenuItem,
+  type DetailTab,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
-import { useIsMobile } from '@/hooks/use-mobile'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
-import { useSensor, useSensorCommands, SENSOR_REFRESH_MS } from '@/lib/api/sensor-hooks'
+import {
+  useSensor,
+  useSensorCommands,
+  useSensorHeartbeatHistory,
+  SENSOR_REFRESH_MS,
+} from '@/lib/api/sensor-hooks'
 import type { Sensor, SensorCommand } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
-import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { redactUrlQueries } from '@/lib/redact-url'
 import { cn } from '@/lib/utils'
+import { useToolAvailability } from '@/lib/api/tool-hooks'
+import { sensorToolExclusions } from '@/features/tools/lib/availability'
 
-import { SensorActivity, SensorRecentActivity } from './sensor-activity'
+import { SensorRecentActivity } from './sensor-activity'
+import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { requestSensorContentRefresh, SensorContentSection } from './sensor-content-section'
+import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-section'
+import { SensorLocalPolicySection } from './sensor-local-policy-section'
+import { SensorPostureSection } from './sensor-posture'
+import { SensorGrantSection } from './sensor-grant-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
+import { SensorSetupTab } from './config-check-list'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
+  ConfigHealthTag,
+  SensorPostureTag,
   distinctHostname,
+  LEGACY_KEY_EXPLANATION,
   ProtocolTag,
   PROTOCOL_V1_SUNSET,
   PROTOCOL_V2_SENSOR_VERSION,
@@ -77,7 +85,6 @@ import {
   SensorVersionCell,
 } from './sensor-cells'
 import { SensorInstallSnippets } from './sensor-install-snippets'
-import { SensorToolsNotAllowedNotice } from './sensor-tool-review'
 import { SENSOR_TYPE_LABELS } from './sensor-type-icon'
 import {
   capacityLabel,
@@ -85,14 +92,10 @@ import {
   sensorCapacity,
   sensorToolRows,
 } from '../lib/capabilities'
+import { configHealthNeedsAttention } from '../lib/config-report'
 import { agoShort, exactTime, formatDurationShort } from '../lib/format'
 import type { ReleaseChannel } from '../lib/fleet'
-import {
-  sensorHealthChecks,
-  type HealthCheck,
-  type HealthCheckAction,
-  type HealthCheckStatus,
-} from '../lib/health-checks'
+import { sensorHealthChecks, type HealthCheck, type HealthCheckAction } from '../lib/health-checks'
 import {
   sensorHealthIssues,
   worstIssueSeverity,
@@ -104,6 +107,8 @@ import {
   canTakeJobs,
   isOneShotSensor,
   sensorState,
+  stateIsHeartbeating,
+  stateTakesJobs,
   type FleetThresholds,
 } from '../lib/sensor-state'
 
@@ -127,18 +132,36 @@ interface SensorDetailSheetProps {
   fleet?: Sensor[]
 }
 
-type DrawerTab = 'overview' | 'jobs' | 'activity' | 'manifest' | 'config'
+// Activity is not a tab: the Overview's activity summary opens the shared
+// ActivityPanel (web/docs/ui/activity-panel.md).
+type DrawerTab = 'setup' | 'overview' | 'jobs' | 'manifest' | 'config'
+
+const DRAWER_TABS: DetailTab<DrawerTab>[] = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'jobs', label: 'Jobs' },
+  { value: 'manifest', label: 'Manifest' },
+  { value: 'config', label: 'Config' },
+]
+const SETUP_TAB: DetailTab<DrawerTab> = { value: 'setup', label: 'Setup & health' }
+
+/**
+ * The drawer's tabs. Setup & health only on APIs that report config health
+ * (the field is present, null before the first report); first, and the tab
+ * the drawer opens on, when the setup needs someone.
+ */
+function drawerTabs(sensor: Pick<Sensor, 'config_health'>): DetailTab<DrawerTab>[] {
+  if (sensor.config_health === undefined) return DRAWER_TABS
+  if (configHealthNeedsAttention(sensor.config_health)) return [SETUP_TAB, ...DRAWER_TABS]
+  return [...DRAWER_TABS, SETUP_TAB]
+}
+
+function initialTab(sensor: Pick<Sensor, 'config_health'>): DrawerTab {
+  return configHealthNeedsAttention(sensor.config_health) ? 'setup' : 'overview'
+}
 
 // ---------------------------------------------------------------------------
 // Health: the callout (what is wrong) and the full checklist behind a toggle
 // ---------------------------------------------------------------------------
-
-const CHECK_ICON: Record<HealthCheckStatus, { icon: typeof CheckCircle2; className: string }> = {
-  ok: { icon: CheckCircle2, className: 'text-success' },
-  warning: { icon: AlertTriangle, className: 'text-warning' },
-  critical: { icon: CircleAlert, className: 'text-destructive' },
-  info: { icon: Info, className: 'text-muted-foreground' },
-}
 
 const ACTION_LABEL: Record<HealthIssueAction, string> = {
   rotate_key: 'Rotate key',
@@ -154,74 +177,45 @@ const CALLOUT: Record<HealthIssueSeverity, { tone: DetailCalloutTone; icon: type
   info: { tone: 'info', icon: Info },
 }
 
-function HealthChecklist({
-  checks,
-  canManage,
-  onAction,
-}: {
-  checks: HealthCheck[]
-  canManage: boolean
+/**
+ * A sensor health check as a checklist row. Key rotation and editing are
+ * admin actions; reading the install command and the zones are not.
+ */
+function toDetailCheck(
+  c: HealthCheck,
+  canManage: boolean,
   onAction: (action: HealthCheckAction) => void
-}) {
-  return (
-    <ul className="divide-y rounded-lg border" aria-label="Health">
-      {checks.map((c) => {
-        const { icon: Icon, className } = CHECK_ICON[c.status]
-        // Key rotation and editing are admin actions; reading the install
-        // command and the zones are not.
-        const showAction =
-          !!c.action && (c.action === 'install' || c.action === 'zones' || canManage)
-        const right =
-          showAction && c.action ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => onAction(c.action as HealthCheckAction)}
-            >
-              {ACTION_LABEL[c.action]}
-            </Button>
-          ) : c.aside ? (
-            <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-              {c.aside}
-            </span>
-          ) : null
-        return (
-          <li
-            key={c.key}
-            className="flex items-start gap-2.5 px-3 py-2 text-sm"
-            data-check={c.key}
-            data-status={c.status}
-          >
-            <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', className)} aria-label={c.status} />
-            {/* Phones: the label above the text and the action under it;
-                wider: label | text | action in one row. */}
-            <div className="min-w-0 flex-1 sm:grid sm:grid-cols-[5.5rem_minmax(0,1fr)] sm:gap-x-2.5">
-              <span className="block text-muted-foreground">{c.label}</span>
-              <span className="block min-w-0 break-words">{c.text}</span>
-              {right && <div className="mt-1.5 sm:hidden">{right}</div>}
-            </div>
-            {right && <div className="hidden shrink-0 sm:flex">{right}</div>}
-          </li>
-        )
-      })}
-    </ul>
-  )
+): DetailCheck {
+  const showAction = !!c.action && (c.action === 'install' || c.action === 'zones' || canManage)
+  return {
+    key: c.key,
+    status: c.status,
+    label: c.label,
+    text: c.text,
+    aside: c.aside,
+    action:
+      showAction && c.action ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => onAction(c.action as HealthCheckAction)}
+        >
+          {ACTION_LABEL[c.action]}
+        </Button>
+      ) : undefined,
+  }
 }
 
 /** "Show error": the raw error a sensor reported, folded away. */
 function RawError({ error }: { error: string }) {
   return (
-    <details className="group mt-1 text-xs">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" aria-hidden />
-        Show the error
-      </summary>
+    <DetailDisclosure summary="Show the error" className="mt-1 text-xs">
       <p className="mt-1 rounded-md bg-background/60 p-2 font-mono break-all text-foreground">
         {redactUrlQueries(error)}
       </p>
-    </details>
+    </DetailDisclosure>
   )
 }
 
@@ -263,11 +257,8 @@ function HealthSummary({
   onAction: (action: HealthCheckAction) => void
   onActivity: () => void
 }) {
-  const [checksOpen, setChecksOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const worst = worstIssueSeverity(issues)
-  const passing = checks.filter((c) => c.status === 'ok').length
-  const failing = checks.filter((c) => c.status === 'warning' || c.status === 'critical').length
 
   // One button per distinct fix the viewer may use.
   const allowed = (a: HealthIssueAction) =>
@@ -347,31 +338,10 @@ function HealthSummary({
         </DetailCallout>
       )}
 
-      <Collapsible open={checksOpen} onOpenChange={setChecksOpen}>
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-start text-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            <ChevronRight
-              className={cn('h-4 w-4 shrink-0 transition-transform', checksOpen && 'rotate-90')}
-              aria-hidden
-            />
-            {failing === 0 && !worst ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden />
-            ) : null}
-            <span className="min-w-0 flex-1 tabular-nums">
-              {failing === 0
-                ? `All ${checks.length} health checks passing`
-                : `Health checks: ${passing} of ${checks.length} passing`}
-            </span>
-            <span className="shrink-0 text-xs">{checksOpen ? 'Hide' : 'Show'}</span>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="pt-1">
-          <HealthChecklist checks={checks} canManage={canManage} onAction={onAction} />
-        </CollapsibleContent>
-      </Collapsible>
+      <DetailChecklist
+        checks={checks.map((c) => toDetailCheck(c, canManage, onAction))}
+        passIcon={!worst}
+      />
     </div>
   )
 }
@@ -404,7 +374,7 @@ function SensorStats({
 }) {
   const state = sensorState(sensor, now, thresholds)
   const oneShot = isOneShotSensor(sensor)
-  const running = state === 'online' || state === 'degraded' || state === 'stale'
+  const running = stateIsHeartbeating(state)
   const cap = sensorCapacity(sensor)
   const current = sensor.current_jobs ?? 0
   const takesJobs = canTakeJobs(sensor, now, thresholds)
@@ -428,7 +398,13 @@ function SensorStats({
           label={oneShot ? 'Last run' : 'Last heartbeat'}
           value={agoShort(sensor.last_seen_at, now)}
           title={exactTime(sensor.last_seen_at)}
-          tone={state === 'offline' ? 'destructive' : state === 'stale' ? 'warning' : 'default'}
+          tone={
+            state === 'offline'
+              ? 'destructive'
+              : state === 'late' || state === 'stale'
+                ? 'warning'
+                : 'default'
+          }
           caption={
             Number.isNaN(new Date(sensor.last_seen_at).getTime())
               ? undefined
@@ -457,20 +433,25 @@ function ToolsAndCapacity({
   sensor,
   now,
   thresholds,
-  canManage,
 }: {
   sensor: Sensor
   now: number
   thresholds?: FleetThresholds
-  canManage: boolean
 }) {
   const cap = sensorCapacity(sensor)
   const reported = hasReportedTools(sensor)
+  // Which installed tools its grant or local policy refuses: the same
+  // availability view the Tools page and the scan pickers read.
+  const { data: availability } = useToolAvailability()
+  const exclusions = useMemo(
+    () => sensorToolExclusions(availability?.items, sensor.id),
+    [availability, sensor.id]
+  )
   const platform = sensor.reported?.os
     ? [sensor.reported.os, sensor.reported.arch].filter(Boolean).join('/')
     : null
   const state = sensorState(sensor, now, thresholds)
-  const live = state === 'online' || state === 'degraded'
+  const live = stateTakesJobs(state)
   const load =
     live && (sensor.cpu_percent > 0 || sensor.memory_percent > 0)
       ? { cpu: Math.round(sensor.cpu_percent), mem: Math.round(sensor.memory_percent) }
@@ -478,12 +459,11 @@ function ToolsAndCapacity({
   return (
     <DetailSection title="Tools & capacity">
       <div className="space-y-2">
-        <SensorToolList rows={sensorToolRows(sensor)} />
-        <SensorToolsNotAllowedNotice sensor={sensor} canManage={canManage} />
+        <SensorToolList rows={sensorToolRows(sensor, exclusions)} />
         <p className="text-xs text-muted-foreground">
           {reported
-            ? 'As the sensor reported. Scans go only to tools it has installed and its limit allows.'
-            : 'Set on the sensor; it has not reported its tools yet.'}
+            ? 'As the sensor reported. Scans go only to tools it has installed and its grant allows.'
+            : 'It has not reported its tools yet, so it gets no scans.'}
         </p>
       </div>
       <DetailFieldGrid>
@@ -519,31 +499,15 @@ function ToolsAndCapacity({
   )
 }
 
-function CopyId({ id }: { id: string }) {
-  return (
-    <button
-      type="button"
-      aria-label="Copy sensor ID"
-      className="inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      onClick={() => {
-        copyToClipboard(id)
-        toast.success('Sensor ID copied')
-      }}
-    >
-      <span className="truncate">{id}</span>
-      <Copy className="h-3 w-3 shrink-0" aria-hidden />
-    </button>
-  )
-}
-
 function ProtocolValue({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
   const p = sensor.protocol
   if (!p) return null
   const v1 = p.deprecated || p.version < 2
   const badge = (
     <SensorTag tone={v1 ? 'warning' : 'muted'}>
       v{p.version}
-      {v1 ? ' · deprecated' : ''}
+      {v1 ? ` · ${t('sensors.protocol.deprecated', 'deprecated')}` : ''}
     </SensorTag>
   )
   return (
@@ -554,7 +518,10 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
             <span
               tabIndex={0}
               className="w-fit rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label={`Protocol v${p.version}, ${p.user_agent}`}
+              aria-label={t('sensors.protocol.label', 'Protocol v{version}, {client}', {
+                version: p.version,
+                client: p.user_agent,
+              })}
             >
               {badge}
             </span>
@@ -566,9 +533,72 @@ function ProtocolValue({ sensor }: { sensor: Sensor }) {
       )}
       {v1 && (
         <span className="text-xs text-warning">
-          Upgrade to {PROTOCOL_V2_SENSOR_VERSION} before {PROTOCOL_V1_SUNSET}
+          {t('sensors.protocol.upgrade', 'Upgrade to {version} before {date}', {
+            version: PROTOCOL_V2_SENSOR_VERSION,
+            date: PROTOCOL_V1_SUNSET,
+          })}
         </span>
       )}
+      <TransportValue protocol={p} />
+    </span>
+  )
+}
+
+/** Bindings a heartbeat reports (api RFC-059). */
+const TRANSPORT_BINDINGS = new Set(['grpc', 'https', 'v2'])
+
+/** Fallback reasons a sensor reports (sdk-go pkg/client transport_v3_manager.go). */
+const TRANSPORT_REASONS = new Set([
+  'forced_by_config',
+  'not_key_bound',
+  'platform_without_v3',
+  'platform_without_grpc',
+  'certificates_unavailable',
+  'grpc_unreachable',
+  'handshake_failed',
+  'http2_refused',
+  'stream_reset',
+  'grpc_unimplemented',
+  'grpc_failed',
+  'https_binding_unavailable',
+  'identity_refused',
+  'platform_certificate_refused',
+  'platform_unreachable',
+])
+
+/**
+ * The transport of the last heartbeat and, when it is not gRPC, why, in
+ * plain words; the reason code is in the tooltip.
+ */
+function TransportValue({ protocol }: { protocol: NonNullable<Sensor['protocol']> }) {
+  const { t } = useTranslation()
+  if (!protocol.binding) return null
+  const binding = TRANSPORT_BINDINGS.has(protocol.binding)
+    ? t(`sensors.transport.binding.${protocol.binding}`, protocol.binding)
+    : protocol.binding
+  const reason = protocol.fallback_reason
+  return (
+    <span className="text-xs text-muted-foreground" data-testid="sensor-transport">
+      {t('sensors.transport.label', 'Transport: {binding}', { binding })}
+      {reason ? (
+        <>
+          {' · '}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                tabIndex={0}
+                className="rounded-sm underline decoration-dotted underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                data-testid="sensor-transport-reason"
+              >
+                {t(`sensors.transport.reason.${TRANSPORT_REASONS.has(reason) ? reason : 'other'}`)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="font-mono text-xs">
+              {t('sensors.transport.code', 'Reason code: {code}', { code: reason })}
+            </TooltipContent>
+          </Tooltip>
+        </>
+      ) : null}
     </span>
   )
 }
@@ -610,6 +640,9 @@ function ConnectionAndIdentity({
             <span className="text-xs [&>span]:text-xs">
               <SensorKeyCell sensor={sensor} now={now} />
             </span>
+            {sensor.legacy_key && (
+              <span className="text-xs text-muted-foreground">{LEGACY_KEY_EXPLANATION}</span>
+            )}
           </span>
         </DetailField>
         {sensor.ip_address && (
@@ -650,15 +683,11 @@ function ConnectionAndIdentity({
           </DetailField>
         )}
         <DetailField label="ID" full>
-          <CopyId id={sensor.id} />
+          <DetailCopyId id={sensor.id} label="Sensor ID" />
         </DetailField>
       </DetailFieldGrid>
 
-      <details className="group text-sm">
-        <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs text-muted-foreground select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" aria-hidden />
-          More details
-        </summary>
+      <DetailDisclosure summary="More details">
         <DetailFieldGrid className="mt-3">
           <DetailField label="Type (legacy)">
             {SENSOR_TYPE_LABELS[sensor.type] ?? sensor.type}
@@ -685,7 +714,7 @@ function ConnectionAndIdentity({
             </DetailField>
           )}
         </DetailFieldGrid>
-      </details>
+      </DetailDisclosure>
     </DetailSection>
   )
 }
@@ -838,18 +867,21 @@ export function SensorDetailSheet({
   const { data: live } = useSensor(open && sensorProp ? sensorProp.id : null, {
     refreshInterval: SENSOR_REFRESH_MS,
   })
+  // The Control channel sparkline (RFC-035): the last 24 h of heartbeats.
+  const { data: heartbeatHistory } = useSensorHeartbeatHistory(
+    open && sensorProp ? sensorProp.id : null
+  )
   const now = useNow()
   const router = useRouter()
-  // Phones get a bottom sheet, larger screens the side drawer.
-  const isPhone = useIsMobile()
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const canDelete = useHasPermission(Permission.SensorsDelete)
   const [tab, setTab] = useState<DrawerTab>('overview')
+  const activityRef = useRef<EntityActivityHandle>(null)
   const [shownId, setShownId] = useState<string | null>(null)
   if (sensorProp && sensorProp.id !== shownId) {
-    // Another sensor: start on its overview.
+    // Another sensor: start on its overview, or on its setup when that needs someone.
     setShownId(sensorProp.id)
-    setTab('overview')
+    setTab(initialTab(sensorProp))
   }
   if (!sensorProp) return null
   const sensor = live && live.id === sensorProp.id ? live : sensorProp
@@ -887,200 +919,131 @@ export function SensorDetailSheet({
     zoneNames.length > 0 ? `zone ${zoneNames.join(', ')}` : null,
   ].filter((p): p is string => !!p)
 
-  const pad = isPhone ? 'px-4' : 'px-5'
+  const menu: DetailMenuItem[] = []
+  if (canWrite) {
+    menu.push({ label: 'Rotate key', icon: KeyRound, onSelect: () => onRegenerateKey(sensor) })
+    if (sensor.status === 'active' && onDeactivate)
+      menu.push({ label: 'Disable', icon: PowerOff, onSelect: () => onDeactivate(sensor) })
+    if (sensor.status !== 'active' && onActivate)
+      menu.push({ label: 'Enable', icon: Power, onSelect: () => onActivate(sensor) })
+  }
+  if (canDelete) {
+    if (sensor.status !== 'revoked' && onRevoke)
+      menu.push({
+        label: 'Revoke access',
+        icon: ShieldOff,
+        destructive: true,
+        separatorBefore: true,
+        onSelect: () => onRevoke(sensor),
+      })
+    menu.push({
+      label: 'Delete',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: !(sensor.status !== 'revoked' && onRevoke),
+      onSelect: () => {
+        onDelete(sensor)
+        onOpenChange(false)
+      },
+    })
+  }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side={isPhone ? 'bottom' : 'right'}
-        className={cn(
-          'flex w-full flex-col gap-0 overflow-hidden p-0 [&>button]:hidden',
-          isPhone ? 'max-h-[92svh] rounded-t-2xl' : 'sm:max-w-xl'
-        )}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        {isPhone && (
-          <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-border" />
-        )}
-        {/* Header: who, state, the two everyday actions, the tabs. It stays
-            put while the body scrolls. */}
-        <div className={cn('shrink-0 border-b pt-4', pad)}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <SheetTitle className="min-w-0 truncate text-lg leading-tight font-semibold">
-                  {sensor.name}
-                </SheetTitle>
-                <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
-                {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
-                <ProtocolTag sensor={sensor} />
-              </div>
-              <SheetDescription className="mt-1 truncate text-xs text-muted-foreground tabular-nums">
-                {subline.join(' · ')}
-              </SheetDescription>
-            </div>
-            <div className="-me-2 flex shrink-0 items-center">
-              {(canWrite || canDelete) && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      aria-label="More actions"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    {canWrite && (
-                      <DropdownMenuItem onClick={() => onRegenerateKey(sensor)}>
-                        <KeyRound className="h-4 w-4" />
-                        Rotate key
-                      </DropdownMenuItem>
-                    )}
-                    {canWrite && sensor.status === 'active' && onDeactivate && (
-                      <DropdownMenuItem onClick={() => onDeactivate(sensor)}>
-                        <PowerOff className="h-4 w-4" />
-                        Disable
-                      </DropdownMenuItem>
-                    )}
-                    {canWrite && sensor.status !== 'active' && onActivate && (
-                      <DropdownMenuItem onClick={() => onActivate(sensor)}>
-                        <Power className="h-4 w-4" />
-                        Enable
-                      </DropdownMenuItem>
-                    )}
-                    {canDelete && (
-                      <>
-                        <DropdownMenuSeparator />
-                        {sensor.status !== 'revoked' && onRevoke && (
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => onRevoke(sensor)}
-                          >
-                            <ShieldOff className="h-4 w-4" />
-                            Revoke access
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => {
-                            onDelete(sensor)
-                            onOpenChange(false)
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      panel={tab}
+      header={
+        <DetailHeader
+          title={sensor.name}
+          badges={
+            <>
+              <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
+              <ProtocolTag sensor={sensor} />
+              <ConfigHealthTag health={sensor.config_health} />
+              <SensorPostureTag sensor={sensor} />
+            </>
+          }
+          meta={subline}
+          menu={menu}
+          onClose={() => onOpenChange(false)}
+          actions={
+            <>
+              {canWrite && (
+                <Button size="sm" onClick={() => onEdit(sensor)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Button>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                aria-label="Close"
-                onClick={() => onOpenChange(false)}
-              >
-                <X className="h-4 w-4" />
+              <Button size="sm" variant="outline" onClick={() => setTab('config')}>
+                <Terminal className="h-4 w-4" />
+                Install command
               </Button>
-            </div>
-          </div>
+              {!canWrite && (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Lock className="h-3 w-3" aria-hidden />
+                  Editing, keys and disabling need an admin
+                </span>
+              )}
+            </>
+          }
+        />
+      }
+      tabs={<DetailTabs tabs={drawerTabs(sensor)} value={tab} onValueChange={setTab} />}
+    >
+      {tab === 'overview' && (
+        <div className="space-y-5">
+          <HealthSummary
+            sensor={sensor}
+            issues={issues}
+            checks={checks}
+            canManage={canWrite}
+            onAction={handleAction}
+            onActivity={() => activityRef.current?.open()}
+          />
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {canWrite && (
-              <Button size="sm" onClick={() => onEdit(sensor)}>
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Button>
+          <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
+
+          <DetailSections>
+            {(!oneShot || sensorToolRows(sensor).length > 0) && (
+              <ToolsAndCapacity sensor={sensor} now={now} thresholds={thresholds} />
             )}
-            <Button size="sm" variant="outline" onClick={() => setTab('config')}>
-              <Terminal className="h-4 w-4" />
-              Install command
-            </Button>
-            {!canWrite && (
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Lock className="h-3 w-3" aria-hidden />
-                Editing, keys and disabling need an admin
-              </span>
+            {(sensor.content?.length ?? 0) > 0 && (
+              <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
             )}
-          </div>
-
-          <Tabs value={tab} onValueChange={(v) => setTab(v as DrawerTab)} className="mt-3">
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="jobs">Jobs</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-              <TabsTrigger value="manifest">Manifest</TabsTrigger>
-              <TabsTrigger value="config">Config</TabsTrigger>
-            </TabsList>
-          </Tabs>
+            {(sensor.control || hasHeartbeatHistory(heartbeatHistory)) && (
+              <SensorControlSection sensor={sensor} now={now} history={heartbeatHistory} />
+            )}
+            {sensor.posture && <SensorPostureSection sensor={sensor} />}
+            {sensor.local_policy && <SensorLocalPolicySection sensor={sensor} />}
+            <SensorGrantSection sensorId={sensor.id} />
+            <SensorRecentActivity ref={activityRef} sensorId={sensor.id} sensorName={sensor.name} />
+            <ConnectionAndIdentity
+              sensor={sensor}
+              now={now}
+              channel={channel}
+              zoneNames={zoneNames}
+            />
+          </DetailSections>
         </div>
+      )}
 
-        {/* Body */}
-        <div
-          className={cn('min-h-0 flex-1 overflow-y-auto pt-4 pb-6', pad)}
-          role="tabpanel"
-          aria-label={tab}
-        >
-          {tab === 'overview' && (
-            <div className="space-y-5">
-              <HealthSummary
-                sensor={sensor}
-                issues={issues}
-                checks={checks}
-                canManage={canWrite}
-                onAction={handleAction}
-                onActivity={() => setTab('activity')}
-              />
+      {tab === 'setup' && <SensorSetupTab sensor={sensor} />}
 
-              <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
+      {tab === 'jobs' && <SensorJobs sensor={sensor} />}
 
-              <DetailSections>
-                {(!oneShot || sensorToolRows(sensor).length > 0) && (
-                  <ToolsAndCapacity
-                    sensor={sensor}
-                    now={now}
-                    thresholds={thresholds}
-                    canManage={canWrite}
-                  />
-                )}
-                {(sensor.content?.length ?? 0) > 0 && (
-                  <SensorContentSection sensor={sensor} now={now} canManage={canWrite} />
-                )}
-                <SensorRecentActivity sensorId={sensor.id} onAll={() => setTab('activity')} />
-                <ConnectionAndIdentity
-                  sensor={sensor}
-                  now={now}
-                  channel={channel}
-                  zoneNames={zoneNames}
-                />
-              </DetailSections>
-            </div>
-          )}
+      {tab === 'manifest' && <SensorManifestTab sensor={sensor} now={now} />}
 
-          {tab === 'jobs' && <SensorJobs sensor={sensor} />}
-
-          {tab === 'activity' && <SensorActivity sensorId={sensor.id} />}
-
-          {tab === 'manifest' && <SensorManifestTab sensor={sensor} now={now} />}
-
-          {tab === 'config' && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Run one of these on the host that should scan. The key is shown only when it is
-                issued, so the commands read it from{' '}
-                <span className="font-mono">OPENCTEM_API_KEY</span>.
-                {canWrite ? ' Rotate the key (⋯ menu) to get a new one.' : ''}
-              </p>
-              <SensorInstallSnippets sensorId={sensor.id} />
-            </div>
-          )}
+      {tab === 'config' && (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Run one of these on the host that should scan. The key is shown only when it is issued,
+            so the commands read it from <span className="font-mono">OPENCTEM_API_KEY</span>.
+            {canWrite ? ' Rotate the key (⋯ menu) to get a new one.' : ''}
+          </p>
+          <SensorInstallSnippets sensorId={sensor.id} />
         </div>
-      </SheetContent>
-    </Sheet>
+      )}
+    </DetailSheet>
   )
 }

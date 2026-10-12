@@ -1,11 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { forwardRef, useMemo, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
+import {
+  EntityActivity,
+  type EntityActivityHandle,
+} from '@/features/activity/components/entity-activity'
+import type { ActivityItem } from '@/features/activity/types'
 import {
   ActivityTimeline,
   DetailSection,
@@ -106,54 +108,55 @@ export function SensorActivity({ sensorId }: { sensorId: string }) {
 }
 
 /**
- * The latest few events, on the drawer's Overview tab: the shared timeline in
- * its compact form (who did it for an administrator action, no other
- * details), and "All activity" to the Activity tab.
+ * The drawer's activity: on the Overview, a one-line summary of the latest
+ * event that opens the shared ActivityPanel, which holds the full log above
+ * (chips, cursor pages). Same trigger + panel as every other activity feed;
+ * there is no Activity tab.
  */
-export function SensorRecentActivity({ sensorId, onAll }: { sensorId: string; onAll: () => void }) {
+export const SensorRecentActivity = forwardRef<
+  EntityActivityHandle,
+  { sensorId: string; sensorName?: string }
+>(function SensorRecentActivity({ sensorId, sensorName }, ref) {
   const { t, locale } = useTranslation()
   const { items, isLoading, error } = useSensorActivity(sensorId, [], { limit: 5 })
-  const entries = useMemo(
+  const events = useMemo(
     () =>
-      items.slice(0, 5).map((it): ActivityTimelineEntry => {
-        const actor = it.type === 'audit' && it.actor && it.actor !== 'system' ? it.actor : null
-        return { ...toEntry(it, t, locale), detail: actor ? `by ${actor}` : undefined }
+      items.slice(0, 5).map((it): ActivityItem => {
+        const view = describeSensorActivity(it, t, locale)
+        const actor = it.type === 'audit' && it.actor && it.actor !== 'system' ? it.actor : ''
+        const repeated = (it.repeat_count ?? 1) > 1 ? ` ×${it.repeat_count}` : ''
+        return {
+          kind: 'event',
+          id: it.id,
+          at: it.last_at && repeated ? it.last_at : it.at,
+          // Sensor events read as sentences ("Went offline"); only an
+          // administrator action names who did it.
+          actor: { name: actor, kind: actor ? 'user' : 'system' },
+          icon: view.icon,
+          tone: view.tone,
+          summary: `${view.title}${repeated}`,
+        }
       }),
     [items, t, locale]
   )
+
   return (
-    <DetailSection
-      title={t('sensors.activity.recent', 'Recent activity')}
-      actions={
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={onAll}
-        >
-          {t('sensors.activity.all', 'All activity')}
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-        </Button>
-      }
-    >
-      {isLoading ? (
-        <Skeleton className="h-24 w-full" />
-      ) : error ? (
-        <p className="text-sm text-muted-foreground">
-          {t('sensors.activity.recentError', 'Could not load the activity.')}
-        </p>
-      ) : entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {t('sensors.activity.nothingYet', 'Nothing recorded yet.')}
-        </p>
-      ) : (
-        <ActivityTimeline
-          entries={entries}
-          density="compact"
-          emptyTitle={t('sensors.activity.nothingYet', 'Nothing recorded yet.')}
-        />
-      )}
+    <DetailSection title={t('sensors.activity.title', 'Activity')}>
+      <EntityActivity
+        ref={ref}
+        entityKey={`sensor:${sensorId}`}
+        subject={sensorName}
+        items={events}
+        loading={isLoading}
+        error={error}
+        urlParam={false}
+        triggerHeadline={
+          error
+            ? t('sensors.activity.recentError', 'Could not load the activity.')
+            : t('sensors.activity.latest', 'Latest events')
+        }
+        customBody={<SensorActivity sensorId={sensorId} />}
+      />
     </DetailSection>
   )
-}
+})

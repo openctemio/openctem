@@ -5,11 +5,12 @@ import { FleetHealthStrip } from '../fleet-health-strip'
 import type { FleetSummary } from '../../lib/fleet'
 
 const summary: FleetSummary = {
-  total: 7,
-  enabled: 6,
+  total: 8,
+  enabled: 7,
   byState: {
     online: 3,
     degraded: 1,
+    late: 1,
     stale: 1,
     offline: 1,
     idle: 0,
@@ -51,9 +52,11 @@ describe('FleetHealthStrip', () => {
   it('shows how many sensors can take jobs, with the state mix', () => {
     renderStrip()
     expect(screen.getByText('Fleet health')).toBeInTheDocument()
-    expect(screen.getByText('of 6 can take jobs')).toBeInTheDocument()
+    expect(screen.getByText('of 7 can take jobs')).toBeInTheDocument()
     expect(
-      screen.getByRole('img', { name: '3 online, 2 degraded or stale, 1 offline, 1 disabled' })
+      screen.getByRole('img', {
+        name: '3 online, 3 degraded, late or stale, 1 offline, 1 disabled',
+      })
     ).toBeInTheDocument()
   })
 

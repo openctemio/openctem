@@ -1,0 +1,4 @@
+### Security: whitespace-prefixed formulas in the findings CSV, Telegram messages as escaped HTML
+
+- **Findings CSV export** (`/api/v1/findings/export`). The export checked only a cell's first character, so a sensor-supplied title such as ` =HYPERLINK(…)` still opened as a formula in a spreadsheet. It now uses the same rule as every other export: leading whitespace is skipped before the check.
+- **Telegram notifications** used legacy Markdown, which cannot escape characters inside bold text. A finding title with an underscore (for example a rule name like `generic_api_key`) made Telegram reject the whole message, and a sensor could pick titles that suppressed alerts this way. Messages are now sent as HTML: every value is escaped, so it cannot form a tag, link or entity, and URLs from scan data are defanged.

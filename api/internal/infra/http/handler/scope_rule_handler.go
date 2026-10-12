@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -19,6 +21,7 @@ import (
 
 // ScopeRuleHandler handles HTTP requests for scope rules.
 type ScopeRuleHandler struct {
+	configAuditor
 	svc       *scope.RuleService
 	validator *validator.Validator
 	logger    *logger.Logger
@@ -42,19 +45,11 @@ func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	limit := 50
-	offset := 0
-
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	paging, ok := listPage(w, r, 50)
+	if !ok {
+		return
 	}
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
-			offset = parsed
-		}
-	}
+	limit, offset := paging.Limit(), paging.Offset()
 
 	filter := accesscontrol.ScopeRuleFilter{
 		Limit:  limit,
@@ -77,8 +72,8 @@ func (h *ScopeRuleHandler) ListScopeRules(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"rules":       mapScopeRules(rules),
 		"total_count": totalCount,
-		"limit":       limit,
-		"offset":      offset,
+		"page":        paging.Page,
+		"per_page":    paging.PerPage,
 	})
 }
 
@@ -110,6 +105,9 @@ func (h *ScopeRuleHandler) CreateScopeRule(w http.ResponseWriter, r *http.Reques
 		h.handleServiceError(w, err)
 		return
 	}
+	created := mapScopeRule(rule)
+	h.recordChange(r, h.logger, auditdom.ActionScopeRuleCreated, auditdom.ResourceTypeScopeRule, rule.ID().String(), rule.Name(),
+		nil, created, auditdom.SeverityHigh, "Scope rule created")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -174,11 +172,18 @@ func (h *ScopeRuleHandler) UpdateScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	var before any
+	if prev, gerr := h.svc.GetRule(r.Context(), tenantID, ruleID); gerr == nil {
+		before = mapScopeRule(prev)
+	}
 	rule, err := h.svc.UpdateRule(r.Context(), tenantID, ruleID, input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	updated := mapScopeRule(rule)
+	h.recordChange(r, h.logger, auditdom.ActionScopeRuleUpdated, auditdom.ResourceTypeScopeRule, rule.ID().String(), rule.Name(),
+		before, updated, auditdom.SeverityHigh, "Scope rule updated")
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(mapScopeRule(rule))
@@ -205,10 +210,18 @@ func (h *ScopeRuleHandler) DeleteScopeRule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	var before any
+	name := ""
+	if prev, gerr := h.svc.GetRule(r.Context(), tenantID, ruleID); gerr == nil {
+		view := mapScopeRule(prev)
+		before, name = view, prev.Name()
+	}
 	if err := h.svc.DeleteRule(r.Context(), tenantID, ruleID); err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordChange(r, h.logger, auditdom.ActionScopeRuleDeleted, auditdom.ResourceTypeScopeRule, ruleID, name,
+		before, nil, auditdom.SeverityHigh, "Scope rule deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -270,6 +283,8 @@ func (h *ScopeRuleHandler) handleServiceError(w http.ResponseWriter, err error) 
 		apierror.NotFound("Scope rule").WriteJSON(w)
 	case shared.IsValidation(err):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, scope.ErrRuleNeedsFullScope):
+		apierror.Forbidden("Scope rules can add any matching asset; only someone who sees every asset can create or change them").WriteJSON(w)
 	default:
 		h.logger.Error("scope rule handler error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

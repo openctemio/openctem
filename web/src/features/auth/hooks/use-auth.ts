@@ -16,6 +16,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { useAuthStore, forceLogin } from '@/stores/auth-store'
 import { refreshTokenAction } from '../actions/auth-actions'
+import { withAuthRefreshLock } from '@/lib/auth-refresh-lock'
 import {
   DEFAULT_LOGIN_REDIRECT,
   DEFAULT_LOGOUT_REDIRECT,
@@ -113,7 +114,8 @@ export function useAuth(): UseAuthReturn {
     isRefreshingRef.current = true
 
     try {
-      const result = await refreshTokenAction()
+      // Tabs take turns: the refresh token rotates and reuse revokes it.
+      const result = await withAuthRefreshLock(() => refreshTokenAction())
 
       if (result.success && result.accessToken) {
         // Update auth store with new token

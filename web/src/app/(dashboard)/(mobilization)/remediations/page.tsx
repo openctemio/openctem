@@ -21,8 +21,9 @@ import {
   CreateCampaignFromGroupDialog,
   type RemediationGroup,
 } from '@/features/remediation-groups'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 
-const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
+const SEVERITY_ORDER: Severity[] = [...SEVERITY_LEVELS]
 
 function SeverityBreakdown({ group }: { group: RemediationGroup }) {
   const present = SEVERITY_ORDER.filter((s) => (group.severity_counts[s] ?? 0) > 0)

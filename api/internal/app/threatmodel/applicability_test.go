@@ -9,7 +9,7 @@ import (
 func cat() []tmdom.TechniqueApplicability {
 	return []tmdom.TechniqueApplicability{
 		// Public web exploit — any external attacker, needs the 'exposes' edge.
-		{TechniqueID: "T1190", AssetType: "web_application", EdgeType: "exposes", MinNetwork: "external", MinCredential: "none"},
+		{TechniqueID: "T1190", AssetType: "application", SubType: "website", EdgeType: "exposes", MinNetwork: "external", MinCredential: "none"},
 		// Recon on a domain — external, no edge required.
 		{TechniqueID: "T1595", AssetType: "domain", EdgeType: "", MinNetwork: "external", MinCredential: "none"},
 		// Credential dumping on a host — internal + admin + persistence.
@@ -31,19 +31,19 @@ func TestApplicableTechniques_ExternalUnauthGate(t *testing.T) {
 	caps := tmdom.AttackerCapabilities{NetworkAccess: "external", CredentialLevel: "none"}
 
 	// web_application reached via 'exposes' → T1190 included.
-	got := techIDs(applicableTechniques("web_application", "exposes", caps, cat()))
+	got := techIDs(applicableTechniques("application", "website", "exposes", caps, cat()))
 	if !got["T1190"] {
 		t.Errorf("expected T1190 for external-unauth on exposed web_application, got %v", got)
 	}
 
 	// Same asset but wrong incoming edge → T1190 excluded (edge constraint).
-	got = techIDs(applicableTechniques("web_application", "depends_on", caps, cat()))
+	got = techIDs(applicableTechniques("application", "website", "depends_on", caps, cat()))
 	if got["T1190"] {
 		t.Errorf("T1190 must not match when incoming edge is not 'exposes'")
 	}
 
 	// host via authenticates_to but attacker has no creds → T1078 excluded.
-	got = techIDs(applicableTechniques("host", "authenticates_to", caps, cat()))
+	got = techIDs(applicableTechniques("host", "", "authenticates_to", caps, cat()))
 	if got["T1078"] {
 		t.Errorf("T1078 requires user creds; external-unauth must not unlock it")
 	}
@@ -56,7 +56,7 @@ func TestApplicableTechniques_ExternalUnauthGate(t *testing.T) {
 func TestApplicableTechniques_InsiderUnlocksDeeperTechniques(t *testing.T) {
 	insider := tmdom.AttackerCapabilities{NetworkAccess: "internal", CredentialLevel: "admin", Persistence: true}
 
-	got := techIDs(applicableTechniques("host", "", insider, cat()))
+	got := techIDs(applicableTechniques("host", "", "", insider, cat()))
 	if !got["T1003"] {
 		t.Errorf("insider (internal+admin+persistence) should unlock T1003, got %v", got)
 	}
@@ -65,7 +65,7 @@ func TestApplicableTechniques_InsiderUnlocksDeeperTechniques(t *testing.T) {
 	if got["T1078"] {
 		t.Errorf("T1078 requires 'authenticates_to' edge; must not match entry hop")
 	}
-	got = techIDs(applicableTechniques("host", "authenticates_to", insider, cat()))
+	got = techIDs(applicableTechniques("host", "", "authenticates_to", insider, cat()))
 	if !got["T1078"] {
 		t.Errorf("insider over authenticates_to should unlock T1078")
 	}
@@ -74,7 +74,7 @@ func TestApplicableTechniques_InsiderUnlocksDeeperTechniques(t *testing.T) {
 func TestApplicableTechniques_PersistenceGate(t *testing.T) {
 	// internal + admin but NO persistence → T1003 excluded.
 	noPersist := tmdom.AttackerCapabilities{NetworkAccess: "internal", CredentialLevel: "admin", Persistence: false}
-	if techIDs(applicableTechniques("host", "", noPersist, cat()))["T1003"] {
+	if techIDs(applicableTechniques("host", "", "", noPersist, cat()))["T1003"] {
 		t.Errorf("T1003 requires persistence; attacker without persistence must be excluded")
 	}
 }
@@ -82,10 +82,10 @@ func TestApplicableTechniques_PersistenceGate(t *testing.T) {
 func TestApplicableTechniques_AssetTypeExact(t *testing.T) {
 	caps := tmdom.AttackerCapabilities{NetworkAccess: "external", CredentialLevel: "none"}
 	// domain recon technique should not appear on a web_application.
-	if techIDs(applicableTechniques("web_application", "", caps, cat()))["T1595"] {
+	if techIDs(applicableTechniques("application", "website", "", caps, cat()))["T1595"] {
 		t.Errorf("T1595 is domain-scoped; must not match web_application")
 	}
-	if !techIDs(applicableTechniques("domain", "", caps, cat()))["T1595"] {
+	if !techIDs(applicableTechniques("domain", "", "", caps, cat()))["T1595"] {
 		t.Errorf("T1595 should match a domain over any edge")
 	}
 }
@@ -99,5 +99,32 @@ func TestTechniqueWeight_Ordering(t *testing.T) {
 	}
 	if techniqueWeight(hard) < 0.1 {
 		t.Errorf("weight must be floored at 0.1, got %v", techniqueWeight(hard))
+	}
+}
+
+// RFC-042 §6.3.8: the catalog is keyed by stored (type, sub_type). Its rows
+// used to name alias types (website, web_application, api ...) that ingest
+// never stores, so 30 of 98 rows never fired. A stored (application, website)
+// hop must match a website row; a row without a sub-type matches every
+// sub-type; another sub-type must not match.
+func TestApplicableTechniques_KeyedByStoredTypeAndSubType(t *testing.T) {
+	caps := tmdom.AttackerCapabilities{NetworkAccess: "external", CredentialLevel: "none"}
+	catalog := []tmdom.TechniqueApplicability{
+		{TechniqueID: "T1595", AssetType: "application", SubType: "website", MinNetwork: "external", MinCredential: "none"},
+		{TechniqueID: "T1592", AssetType: "application", MinNetwork: "external", MinCredential: "none"},
+		{TechniqueID: "T1606", AssetType: "application", SubType: "api", MinNetwork: "external", MinCredential: "none"},
+	}
+	got := techIDs(applicableTechniques("application", "website", "", caps, catalog))
+	if !got["T1595"] || !got["T1592"] || got["T1606"] {
+		t.Fatalf("(application, website): %v", got)
+	}
+	// a row still stored under the alias name reads as its pair
+	got = techIDs(applicableTechniques("website", "", "", caps, catalog))
+	if !got["T1595"] || !got["T1592"] || got["T1606"] {
+		t.Fatalf("legacy website row: %v", got)
+	}
+	got = techIDs(applicableTechniques("application", "", "", caps, catalog))
+	if got["T1595"] || !got["T1592"] {
+		t.Fatalf("(application, none): %v", got)
 	}
 }

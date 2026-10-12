@@ -38,6 +38,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -62,6 +63,7 @@ import {
   type SuppressionRule,
   type SuppressionStatus,
 } from '@/features/exceptions'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Approve action accent in the row menu. There is no success token, so the
 // palette-drift gate is told to allow it here.
@@ -92,6 +94,7 @@ function TableSkeleton() {
 const STATUS_VALUES: TabValue[] = ['all', 'pending', 'approved', 'rejected', 'expired']
 
 export default function ExceptionsPage() {
+  const { t } = useTranslation()
   // The status filter lives in the URL so a filtered view survives reload and
   // can be shared (e.g. a link straight to the pending-approval queue).
   const [statusParam, setStatusParam] = useUrlFilter('status', 'all')
@@ -179,7 +182,7 @@ export default function ExceptionsPage() {
   const confirmApprove = async () => {
     if (!selectedRule) return
     try {
-      await triggerApprove()
+      await triggerApprove({ reviewed_updated_at: selectedRule.updated_at })
       toast.success('Suppression rule approved')
       setDetailOpen(false)
       await mutate()
@@ -471,20 +474,21 @@ export default function ExceptionsPage() {
       <ConfirmDialog
         open={approveOpen}
         onOpenChange={setApproveOpen}
-        title="Approve suppression rule"
-        desc={
-          selectedRule
-            ? `Approve "${selectedRule.name}"? Matching findings will be suppressed while this rule is active.`
-            : ''
-        }
+        title={t('confirm.suppression.approveTitle', 'Approve the suppression rule "{name}"?', {
+          name: selectedRule?.name ?? '',
+        })}
+        desc={t(
+          'confirm.suppression.approveDesc',
+          'Matching findings are suppressed while this rule is active.'
+        )}
         confirmText={
           isApproving ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Approving...
+              {t('confirm.suppression.approving', 'Approving…')}
             </>
           ) : (
-            'Approve'
+            t('confirm.suppression.approve', 'Approve')
           )
         }
         isLoading={isApproving}
@@ -493,29 +497,33 @@ export default function ExceptionsPage() {
 
       {/* Reject dialog */}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Reject suppression rule</DialogTitle>
             <DialogDescription>Provide a reason for rejecting this rule.</DialogDescription>
           </DialogHeader>
-          {selectedRule && (
-            <div className="rounded-lg border bg-muted/50 p-3">
-              <p className="text-sm font-medium">{selectedRule.name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {suppressionScopeSummary(selectedRule)}
+          <DialogBody className="grid gap-4">
+            {selectedRule && (
+              <div className="rounded-lg border bg-muted/50 p-3">
+                <p className="text-sm font-medium">{selectedRule.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {suppressionScopeSummary(selectedRule)}
+                </p>
+              </div>
+            )}
+            <div className="grid gap-2">
+              <Textarea
+                placeholder="Reason for rejection..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={3}
+                maxLength={2000}
+              />
+              <p className="text-xs text-muted-foreground text-end">
+                {rejectionReason.length}/2000
               </p>
             </div>
-          )}
-          <div className="grid gap-2">
-            <Textarea
-              placeholder="Reason for rejection..."
-              value={rejectionReason}
-              onChange={(e) => setRejectionReason(e.target.value)}
-              rows={3}
-              maxLength={2000}
-            />
-            <p className="text-xs text-muted-foreground text-end">{rejectionReason.length}/2000</p>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectOpen(false)} disabled={isRejecting}>
               Cancel
@@ -542,18 +550,23 @@ export default function ExceptionsPage() {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete suppression rule"
-        desc={selectedRule ? `Delete "${selectedRule.name}"? This cannot be undone.` : ''}
+        title={t('confirm.suppression.deleteTitle', 'Delete the suppression rule "{name}"?', {
+          name: selectedRule?.name ?? '',
+        })}
+        desc={t(
+          'confirm.suppression.deleteDesc',
+          'Findings it suppressed are no longer suppressed by it. This cannot be undone.'
+        )}
         destructive
-        cancelBtnText="Keep rule"
+        cancelBtnText={t('confirm.suppression.keep', 'Keep rule')}
         confirmText={
           isDeleting ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Deleting...
+              {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            'Delete'
+            t('confirm.delete', 'Delete')
           )
         }
         isLoading={isDeleting}

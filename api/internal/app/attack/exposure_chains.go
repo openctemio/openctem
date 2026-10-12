@@ -24,6 +24,7 @@ type ChainHop struct {
 	AssetID   string `json:"asset_id"`
 	Name      string `json:"name"`
 	AssetType string `json:"asset_type"`
+	SubType   string `json:"sub_type,omitempty"`
 	Exposure  string `json:"exposure"`
 }
 
@@ -231,6 +232,7 @@ func considerChain(
 			AssetID:   n.ID,
 			Name:      n.Name,
 			AssetType: n.AssetType,
+			SubType:   n.SubType,
 			Exposure:  n.Exposure,
 		})
 	}

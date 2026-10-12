@@ -33,6 +33,11 @@ const ipSelectFields = `
 `
 
 func (r *IdentityProviderRepository) Create(ctx context.Context, ip *identityprovider.IdentityProvider) error {
+	return createIdentityProvider(ctx, r.db, ip)
+}
+
+// createIdentityProvider is Create on any executor (see upsertSAMLProvider).
+func createIdentityProvider(ctx context.Context, exec executor, ip *identityprovider.IdentityProvider) error {
 	metadataJSON, err := json.Marshal(ip.Metadata())
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
@@ -46,7 +51,7 @@ func (r *IdentityProviderRepository) Create(ctx context.Context, ip *identitypro
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
-	_, err = r.db.ExecContext(ctx, query,
+	_, err = exec.ExecContext(ctx, query,
 		ip.ID(), ip.TenantID(), string(ip.Provider()), ip.DisplayName(),
 		ip.ClientID(), ip.ClientSecretEncrypted(),
 		nullString(ip.IssuerURL()), nullString(ip.TenantIdentifier()),
@@ -76,6 +81,11 @@ func (r *IdentityProviderRepository) GetByTenantAndProvider(ctx context.Context,
 }
 
 func (r *IdentityProviderRepository) Update(ctx context.Context, ip *identityprovider.IdentityProvider) error {
+	return updateIdentityProvider(ctx, r.db, ip)
+}
+
+// updateIdentityProvider is Update on any executor (see upsertSAMLProvider).
+func updateIdentityProvider(ctx context.Context, exec executor, ip *identityprovider.IdentityProvider) error {
 	metadataJSON, err := json.Marshal(ip.Metadata())
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
@@ -89,7 +99,7 @@ func (r *IdentityProviderRepository) Update(ctx context.Context, ip *identitypro
 		WHERE id = $1 AND tenant_id = $13
 	`
 
-	result, err := r.db.ExecContext(ctx, query,
+	result, err := exec.ExecContext(ctx, query,
 		ip.ID(), ip.DisplayName(), ip.ClientID(), ip.ClientSecretEncrypted(),
 		nullString(ip.IssuerURL()), nullString(ip.TenantIdentifier()),
 		pq.Array(ip.Scopes()), pq.Array(ip.AllowedDomains()),

@@ -13,7 +13,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 )
 
 // A single-scanner scan is the shape essentially every real scan takes, and
@@ -21,11 +20,11 @@ import (
 // seven runs over the feature's whole history, none completed. Two independent
 // defects combined —
 //
-//  1. the run was created with total_steps=1 and no step_runs at all, so
+//  1. the run was created with total_steps=1 and no scan_run_steps at all, so
 //     OnStepCompleted/OnStepFailed looked the step up by key, found nothing, and
 //     could never advance the run; and
 //  2. the command payload carried `run_id`, while the command handler routes on
-//     `pipeline_run_id` + `step_key` and silently returns for anything else. Not
+//     `scan_run_id` + `step_key` and silently returns for anything else. Not
 //     one command in the production database carried the key the reader wanted.
 //
 // Either alone is enough to make a finished scan never reach its run. The
@@ -83,10 +82,10 @@ func newTriggerService(db *sql.DB) *scansvc.Service {
 	pg := &postgres.DB{DB: db}
 	return scansvc.NewService(
 		postgres.NewScanRepository(pg),
-		postgres.NewPipelineTemplateRepository(pg),
+		postgres.NewScanWorkflowRepository(pg),
 		nil, // assetGroupRepo — unused without targetMappingRepo
-		postgres.NewPipelineRunRepository(pg),
-		postgres.NewPipelineStepRepository(pg),
+		postgres.NewScanRunRepository(pg),
+		postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewStepRunRepository(pg),
 		postgres.NewCommandRepository(pg),
 		nil, // scannerTemplateRepo
@@ -96,6 +95,7 @@ func newTriggerService(db *sql.DB) *scansvc.Service {
 		availableSensors{},
 		nil, // securityValidator
 		logger.New(logger.Config{Level: "error"}),
+		allowAllTargetChecks()...,
 	)
 }
 
@@ -144,10 +144,10 @@ func seedLifecycleScan(ctx context.Context, t *testing.T, db *sql.DB, tenantID s
 // routingProbe mirrors what both sides of the contract care about, including the
 // legacy key, so one decode asserts the new keys arrived AND the old one stayed.
 type routingProbe struct {
-	PipelineRunID string `json:"pipeline_run_id"`
-	StepKey       string `json:"step_key"`
-	StepRunID     string `json:"step_run_id"`
-	RunID         string `json:"run_id"`
+	ScanRunID string `json:"scan_run_id"`
+	StepKey   string `json:"step_key"`
+	StepRunID string `json:"scan_run_step_id"`
+	RunID     string `json:"run_id"`
 }
 
 // The whole fix in one test: triggering a single scan must leave behind a run
@@ -174,7 +174,7 @@ func TestTriggerSingleScan_ProducesAReportableRun(t *testing.T) {
 	var stepCommandID sql.NullString
 	if err := db.QueryRowContext(ctx,
 		`SELECT count(*), min(step_key), min(status), min(command_id::text)
-		 FROM step_runs WHERE pipeline_run_id = $1`,
+		 FROM scan_run_steps WHERE scan_run_id = $1`,
 		run.ID.String()).Scan(&stepCount, &stepKey, &stepStatus, &stepCommandID); err != nil {
 		t.Fatalf("query step runs: %v", err)
 	}
@@ -217,28 +217,27 @@ func TestTriggerSingleScan_ProducesAReportableRun(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 
-	if routed.PipelineRunID != run.ID.String() {
-		t.Errorf("payload pipeline_run_id = %q, want the run id %q — without it the handler "+
+	if routed.ScanRunID != run.ID.String() {
+		t.Errorf("payload scan_run_id = %q, want the run id %q — without it the handler "+
 			"treats the command as 'not a pipeline command' and throws the result away",
-			routed.PipelineRunID, run.ID.String())
+			routed.ScanRunID, run.ID.String())
 	}
 	if routed.StepKey != quickScanStepKey {
 		t.Errorf("payload step_key = %q, want %q", routed.StepKey, quickScanStepKey)
 	}
 	if routed.StepRunID == "" {
-		t.Error("payload step_run_id is empty")
+		t.Error("payload scan_run_step_id is empty")
 	}
 	// The legacy key must survive: the sensor SDK reads it.
 	if routed.RunID != run.ID.String() {
 		t.Errorf("payload run_id = %q, want %q — the sensor SDK still reads this key",
 			routed.RunID, run.ID.String())
 	}
-	// Protocol v1: deployed sensors read the selection mode under its
-	// pre-rename key (pkg/sensorproto/legacyv1).
+	// The selection mode stays on the platform: the retired v1 key is gone.
 	var keys map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &keys)
-	if _, ok := keys[legacyv1.PayloadKeySensorPreference]; !ok {
-		t.Errorf("payload lacks %q — v1 sensors read the selection mode from it", legacyv1.PayloadKeySensorPreference)
+	if _, ok := keys["agent_preference"]; ok {
+		t.Error("payload still carries the retired agent_preference key")
 	}
 	// And the command the step points at must be the one we just read.
 	var payloadCommandID string

@@ -18,7 +18,7 @@ type DomainMetadata struct {
 
 	// DNS Information
 	DNSRecordTypes []string `json:"dns_record_types"` // A, AAAA, CNAME, MX, NS, TXT, etc.
-	ResolvedIPs    []string `json:"resolved_ips"`     // IP addresses this domain resolves to
+	ResolvedIPs    []string `json:"ip_addresses"`     // IP addresses this domain resolves to (PropKeyIPAddresses)
 	Nameservers    []string `json:"nameservers"`      // NS records
 	MXRecords      []string `json:"mx_records"`       // Mail exchange records
 	CNAMETarget    string   `json:"cname_target"`     // CNAME target if applicable

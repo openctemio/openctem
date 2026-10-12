@@ -63,6 +63,9 @@ func New(cfg Config) *Logger {
 	// Apply sampling middleware if enabled
 	handler = NewSamplingHandler(handler, cfg.Sampling)
 
+	// Count WARN/ERROR records before sampling can drop them.
+	handler = newCountingHandler(handler)
+
 	return &Logger{
 		Logger: slog.New(handler),
 	}

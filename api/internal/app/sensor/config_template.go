@@ -6,12 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -37,7 +40,7 @@ type SensorConfigTemplateService struct {
 }
 
 // templateFormats is every format, in response order.
-var templateFormats = []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm"}
+var templateFormats = []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm", "policy"}
 
 // SensorTemplateData is the data passed to every sensor config template.
 type SensorTemplateData struct {
@@ -56,6 +59,49 @@ type SensorTemplateData struct {
 	// certificate. The snippets install it and point SSL_CERT_DIR at it.
 	CACert      string
 	GeneratedAt string // RFC3339 timestamp
+
+	// Policy is what the sensor-local policy template (RFC-040 §5.7,
+	// policy.tmpl) is prefilled with; PolicyFromZones builds it.
+	Policy PolicyTemplateData
+}
+
+// PolicyTemplateData prefills the sensor-local policy the install dialog
+// offers the network owner: the ranges of the sensor's scan zones.
+type PolicyTemplateData struct {
+	// Ranges are the CIDRs of the sensor's zones (targets.allow). Empty with
+	// Open false: the sensor has no zone yet and the owner lists them.
+	Ranges []string
+	// Open: one of the sensor's zones is the default zone, which receives
+	// public targets no range covers, so the policy sets no allow list.
+	Open bool
+	// AllowPrivate: a range is private (RFC 1918, ULA); the policy allows
+	// private targets and the snippets set SENSOR_ALLOW_PRIVATE_TARGETS=1.
+	AllowPrivate bool
+}
+
+// PolicyFromZones builds the policy prefill from the tenant's zones: the
+// ranges of the zones sensorID is assigned to.
+func PolicyFromZones(zones []*scanzone.Zone, sensorID shared.ID) PolicyTemplateData {
+	var out PolicyTemplateData
+	for _, z := range zones {
+		if z == nil || !slices.Contains(z.SensorIDs, sensorID) {
+			continue
+		}
+		if z.IsDefault {
+			out.Open = true
+		}
+		for _, r := range z.Ranges {
+			s := r.Masked().String()
+			if !slices.Contains(out.Ranges, s) {
+				out.Ranges = append(out.Ranges, s)
+			}
+			if r.Addr().IsPrivate() {
+				out.AllowPrivate = true
+			}
+		}
+	}
+	slices.Sort(out.Ranges)
+	return out
 }
 
 // NewSensorConfigTemplateService loads templates from the given directory.
@@ -123,6 +169,8 @@ type RenderedTemplates struct {
 	Compose    string `json:"compose"`
 	Kubernetes string `json:"kubernetes"`
 	Helm       string `json:"helm"`
+	// Policy is the sensor-local policy template (sensor-policy.yaml).
+	Policy string `json:"policy"`
 }
 
 // Render renders every template format with the given sensor data.
@@ -155,7 +203,7 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	}
 	return &RenderedTemplates{
 		YAML: out["yaml"], Env: out["env"], Docker: out["docker"], CLI: out["cli"],
-		Compose: out["compose"], Kubernetes: out["kubernetes"], Helm: out["helm"],
+		Compose: out["compose"], Kubernetes: out["kubernetes"], Helm: out["helm"], Policy: out["policy"],
 	}, nil
 }
 

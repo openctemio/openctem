@@ -278,8 +278,9 @@ func TestNewExclusion(t *testing.T) {
 		if exc.Reason() != "Internal only" {
 			t.Errorf("expected reason 'Internal only', got %s", exc.Reason())
 		}
-		if exc.Status() != scope.StatusActive {
-			t.Errorf("expected active, got %s", exc.Status())
+		// A new exclusion is a request: pending, unapproved, not in effect.
+		if exc.Status() != scope.StatusPending {
+			t.Errorf("expected pending, got %s", exc.Status())
 		}
 		if exc.ExpiresAt() != nil {
 			t.Error("expected nil ExpiresAt")
@@ -287,8 +288,8 @@ func TestNewExclusion(t *testing.T) {
 		if exc.IsApproved() {
 			t.Error("expected unapproved")
 		}
-		if !exc.IsActive() {
-			t.Error("expected active")
+		if exc.IsActive() {
+			t.Error("a pending exclusion must not be in effect")
 		}
 	})
 
@@ -301,8 +302,14 @@ func TestNewExclusion(t *testing.T) {
 		if exc.ExpiresAt() == nil {
 			t.Fatal("expected non-nil ExpiresAt")
 		}
+		if exc.IsActive() {
+			t.Error("a pending exclusion must not be in effect")
+		}
+		if err := exc.Approve("admin1"); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
 		if !exc.IsActive() {
-			t.Error("expected active (not yet expired)")
+			t.Error("expected active once approved (not yet expired)")
 		}
 	})
 
@@ -344,7 +351,7 @@ func TestExclusionUpdateMethods(t *testing.T) {
 
 	t.Run("UpdateExpiresAt", func(t *testing.T) {
 		future := time.Now().Add(48 * time.Hour)
-		exc.UpdateExpiresAt(&future)
+		exc.UpdateExpiresAt(&future, true)
 		if exc.ExpiresAt() == nil {
 			t.Fatal("expected non-nil ExpiresAt")
 		}
@@ -366,7 +373,9 @@ func TestExclusionUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("Deactivate", func(t *testing.T) {
-		exc.Deactivate()
+		if err := exc.Deactivate(); err != nil {
+			t.Fatalf("deactivate: %v", err)
+		}
 		if exc.Status() != scope.StatusInactive {
 			t.Errorf("expected inactive, got %s", exc.Status())
 		}
@@ -376,7 +385,9 @@ func TestExclusionUpdateMethods(t *testing.T) {
 	})
 
 	t.Run("Activate", func(t *testing.T) {
-		exc.Activate()
+		if err := exc.Activate(); err != nil {
+			t.Fatalf("activate: %v", err)
+		}
 		if exc.Status() != scope.StatusActive {
 			t.Errorf("expected active, got %s", exc.Status())
 		}
@@ -401,6 +412,7 @@ func TestExclusionIsActive(t *testing.T) {
 
 	t.Run("ActiveNoExpiry", func(t *testing.T) {
 		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
+		_ = exc.Approve("admin1")
 		if !exc.IsActive() {
 			t.Error("expected active (no expiry)")
 		}
@@ -409,6 +421,7 @@ func TestExclusionIsActive(t *testing.T) {
 	t.Run("ActiveFutureExpiry", func(t *testing.T) {
 		future := time.Now().Add(time.Hour)
 		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", &future, "user1")
+		_ = exc.Approve("admin1")
 		if !exc.IsActive() {
 			t.Error("expected active (future expiry)")
 		}
@@ -419,223 +432,31 @@ func TestExclusionIsActive(t *testing.T) {
 		id := shared.NewID()
 		exc := scope.ReconstituteExclusion(
 			id, tenantID, scope.ExclusionTypeDomain, "test.com", "reason",
-			scope.StatusActive, &past, "", nil, "user1", time.Now(), time.Now(),
+			scope.StatusActive, &past, "admin1", &past, "user1", time.Now(), time.Now(),
 		)
 		if exc.IsActive() {
 			t.Error("expected inactive (past expiry)")
 		}
 	})
 
+	t.Run("ActiveStatusButNeverApproved", func(t *testing.T) {
+		// Defense in depth: a row that says 'active' but carries no approval
+		// (e.g. written by an old pod mid-rollout) is not in effect.
+		exc := scope.ReconstituteExclusion(
+			shared.NewID(), tenantID, scope.ExclusionTypeDomain, "test.com", "reason",
+			scope.StatusActive, nil, "", nil, "user1", time.Now(), time.Now(),
+		)
+		if exc.IsActive() {
+			t.Error("an unapproved exclusion must not be in effect")
+		}
+	})
+
 	t.Run("InactiveByStatus", func(t *testing.T) {
 		exc, _ := scope.NewExclusion(tenantID, scope.ExclusionTypeDomain, "test.com", "reason", nil, "user1")
-		exc.Deactivate()
+		_ = exc.Approve("admin1")
+		_ = exc.Deactivate()
 		if exc.IsActive() {
 			t.Error("expected inactive (deactivated)")
-		}
-	})
-}
-
-// =============================================================================
-// Schedule Entity Tests
-// =============================================================================
-
-// TestNewSchedule tests creating new scan schedules.
-//
-// Run with: go test -v ./tests/unit -run TestNewSchedule
-func TestNewSchedule(t *testing.T) {
-	tenantID := shared.NewID()
-
-	t.Run("ValidSchedule", func(t *testing.T) {
-		sched, err := scope.NewSchedule(tenantID, "Daily Scan", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if sched.ID().IsZero() {
-			t.Error("expected non-zero ID")
-		}
-		if sched.Name() != "Daily Scan" {
-			t.Errorf("expected name 'Daily Scan', got %s", sched.Name())
-		}
-		if sched.ScanType() != scope.ScanTypeFull {
-			t.Errorf("expected scan type full, got %s", sched.ScanType())
-		}
-		if sched.ScheduleType() != scope.ScheduleTypeCron {
-			t.Errorf("expected schedule type cron, got %s", sched.ScheduleType())
-		}
-		if !sched.Enabled() {
-			t.Error("expected enabled by default")
-		}
-		if sched.TargetScope() != scope.TargetScopeAll {
-			t.Errorf("expected target scope all, got %s", sched.TargetScope())
-		}
-		if !sched.NotifyOnCompletion() {
-			t.Error("expected notify on completion by default")
-		}
-		if !sched.NotifyOnFindings() {
-			t.Error("expected notify on findings by default")
-		}
-		if len(sched.NotificationChannels()) != 1 || sched.NotificationChannels()[0] != "email" {
-			t.Errorf("expected [email], got %v", sched.NotificationChannels())
-		}
-		if len(sched.TargetIDs()) != 0 {
-			t.Errorf("expected empty target IDs, got %d", len(sched.TargetIDs()))
-		}
-		if len(sched.TargetTags()) != 0 {
-			t.Errorf("expected empty target tags, got %d", len(sched.TargetTags()))
-		}
-		if sched.ScannerConfigs() == nil {
-			t.Error("expected non-nil scanner configs")
-		}
-	})
-
-	t.Run("ZeroTenantIDReturnsError", func(t *testing.T) {
-		_, err := scope.NewSchedule(shared.ID{}, "Test", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
-		if err != scope.ErrInvalidTenantID {
-			t.Errorf("expected ErrInvalidTenantID, got %v", err)
-		}
-	})
-
-	t.Run("EmptyNameReturnsError", func(t *testing.T) {
-		_, err := scope.NewSchedule(tenantID, "", scope.ScanTypeFull, scope.ScheduleTypeCron, "user1")
-		if err != scope.ErrNameRequired {
-			t.Errorf("expected ErrNameRequired, got %v", err)
-		}
-	})
-
-	t.Run("InvalidScanTypeReturnsError", func(t *testing.T) {
-		_, err := scope.NewSchedule(tenantID, "Test", scope.ScanType("invalid"), scope.ScheduleTypeCron, "user1")
-		if err != scope.ErrInvalidScanType {
-			t.Errorf("expected ErrInvalidScanType, got %v", err)
-		}
-	})
-
-	t.Run("InvalidScheduleTypeReturnsError", func(t *testing.T) {
-		_, err := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleType("invalid"), "user1")
-		if err != scope.ErrInvalidScheduleType {
-			t.Errorf("expected ErrInvalidScheduleType, got %v", err)
-		}
-	})
-}
-
-// TestScheduleUpdateMethods tests Schedule entity update methods.
-//
-// Run with: go test -v ./tests/unit -run TestScheduleUpdateMethods
-func TestScheduleUpdateMethods(t *testing.T) {
-	tenantID := shared.NewID()
-	sched, _ := scope.NewSchedule(tenantID, "Test", scope.ScanTypeFull, scope.ScheduleTypeManual, "user1")
-
-	t.Run("UpdateName", func(t *testing.T) {
-		sched.UpdateName("Updated Name")
-		if sched.Name() != "Updated Name" {
-			t.Errorf("expected 'Updated Name', got %s", sched.Name())
-		}
-	})
-
-	t.Run("UpdateDescription", func(t *testing.T) {
-		sched.UpdateDescription("Some description")
-		if sched.Description() != "Some description" {
-			t.Errorf("expected 'Some description', got %s", sched.Description())
-		}
-	})
-
-	t.Run("SetCronSchedule", func(t *testing.T) {
-		sched.SetCronSchedule("0 2 * * *")
-		if sched.ScheduleType() != scope.ScheduleTypeCron {
-			t.Errorf("expected cron, got %s", sched.ScheduleType())
-		}
-		if sched.CronExpression() != "0 2 * * *" {
-			t.Errorf("expected '0 2 * * *', got %s", sched.CronExpression())
-		}
-		if sched.IntervalHours() != 0 {
-			t.Errorf("expected interval 0, got %d", sched.IntervalHours())
-		}
-	})
-
-	t.Run("SetIntervalSchedule", func(t *testing.T) {
-		if err := sched.SetIntervalSchedule(6); err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if sched.ScheduleType() != scope.ScheduleTypeInterval {
-			t.Errorf("expected interval, got %s", sched.ScheduleType())
-		}
-		if sched.IntervalHours() != 6 {
-			t.Errorf("expected 6 hours, got %d", sched.IntervalHours())
-		}
-		if sched.CronExpression() != "" {
-			t.Errorf("expected empty cron, got %s", sched.CronExpression())
-		}
-	})
-
-	t.Run("SetIntervalScheduleOutOfBounds", func(t *testing.T) {
-		if err := sched.SetIntervalSchedule(0); err == nil {
-			t.Error("expected error for interval 0")
-		}
-		if err := sched.SetIntervalSchedule(8761); err == nil {
-			t.Error("expected error for interval 8761")
-		}
-	})
-
-	t.Run("SetTargetScope", func(t *testing.T) {
-		ids := []shared.ID{shared.NewID(), shared.NewID()}
-		tags := []string{"web", "api"}
-		sched.SetTargetScope(scope.TargetScopeSelected, ids, tags)
-		if sched.TargetScope() != scope.TargetScopeSelected {
-			t.Errorf("expected selected, got %s", sched.TargetScope())
-		}
-		if len(sched.TargetIDs()) != 2 {
-			t.Errorf("expected 2 target IDs, got %d", len(sched.TargetIDs()))
-		}
-		if len(sched.TargetTags()) != 2 {
-			t.Errorf("expected 2 tags, got %d", len(sched.TargetTags()))
-		}
-	})
-
-	t.Run("UpdateScannerConfigs", func(t *testing.T) {
-		configs := map[string]interface{}{"threads": 10, "timeout": "30s"}
-		sched.UpdateScannerConfigs(configs)
-		if len(sched.ScannerConfigs()) != 2 {
-			t.Errorf("expected 2 config entries, got %d", len(sched.ScannerConfigs()))
-		}
-	})
-
-	t.Run("Disable", func(t *testing.T) {
-		sched.Disable()
-		if sched.Enabled() {
-			t.Error("expected disabled")
-		}
-	})
-
-	t.Run("Enable", func(t *testing.T) {
-		sched.Enable()
-		if !sched.Enabled() {
-			t.Error("expected enabled")
-		}
-	})
-
-	t.Run("RecordRun", func(t *testing.T) {
-		next := time.Now().Add(6 * time.Hour)
-		sched.RecordRun("completed", &next)
-		if sched.LastRunAt() == nil {
-			t.Error("expected non-nil LastRunAt")
-		}
-		if sched.LastRunStatus() != "completed" {
-			t.Errorf("expected status 'completed', got %s", sched.LastRunStatus())
-		}
-		if sched.NextRunAt() == nil {
-			t.Error("expected non-nil NextRunAt")
-		}
-	})
-
-	t.Run("UpdateNotifications", func(t *testing.T) {
-		sched.UpdateNotifications(false, true, []string{"slack", "email"})
-		if sched.NotifyOnCompletion() {
-			t.Error("expected no completion notification")
-		}
-		if !sched.NotifyOnFindings() {
-			t.Error("expected findings notification")
-		}
-		if len(sched.NotificationChannels()) != 2 {
-			t.Errorf("expected 2 channels, got %d", len(sched.NotificationChannels()))
 		}
 	})
 }
@@ -748,45 +569,6 @@ func TestStatusIsValid(t *testing.T) {
 	}
 }
 
-// TestScanTypeIsValid tests ScanType validation.
-//
-// Run with: go test -v ./tests/unit -run TestScanTypeIsValid
-func TestScanTypeIsValid(t *testing.T) {
-	validScanTypes := []scope.ScanType{
-		scope.ScanTypeFull, scope.ScanTypeIncremental, scope.ScanTypeTargeted,
-		scope.ScanTypeVulnerability, scope.ScanTypeCompliance, scope.ScanTypeSecret,
-		scope.ScanTypeSAST, scope.ScanTypeDAST, scope.ScanTypeSCA,
-	}
-
-	for _, st := range validScanTypes {
-		if !st.IsValid() {
-			t.Errorf("expected %s to be valid", st)
-		}
-	}
-
-	if scope.ScanType("invalid").IsValid() {
-		t.Error("expected 'invalid' to be invalid scan type")
-	}
-}
-
-// TestScheduleTypeIsValid tests ScheduleType validation.
-//
-// Run with: go test -v ./tests/unit -run TestScheduleTypeIsValid
-func TestScheduleTypeIsValid(t *testing.T) {
-	if !scope.ScheduleTypeCron.IsValid() {
-		t.Error("cron should be valid")
-	}
-	if !scope.ScheduleTypeInterval.IsValid() {
-		t.Error("interval should be valid")
-	}
-	if !scope.ScheduleTypeManual.IsValid() {
-		t.Error("manual should be valid")
-	}
-	if scope.ScheduleType("hourly").IsValid() {
-		t.Error("hourly should be invalid")
-	}
-}
-
 // =============================================================================
 // Pattern Validation Tests
 // =============================================================================
@@ -876,10 +658,10 @@ func TestMatchesPatternDomain(t *testing.T) {
 		{"NoMatch", "example.com", "other.com", false},
 		{"WildcardMatchSubdomain", "*.example.com", "sub.example.com", true},
 		{"WildcardMatchDeepSubdomain", "*.example.com", "deep.sub.example.com", true},
-		{"WildcardMatchRootDomain", "*.example.com", "example.com", true},
+		{"WildcardMatchesApex", "*.example.com", "example.com", true},
 		{"WildcardNoMatch", "*.example.com", "other.com", false},
 		{"DoubleWildcardMatch", "**.example.com", "a.b.c.example.com", true},
-		{"DoubleWildcardMatchRoot", "**.example.com", "example.com", true},
+		{"DoubleWildcardMatchesApex", "**.example.com", "example.com", true},
 		{"DoubleWildcardNoMatch", "**.example.com", "notexample.com", false},
 		{"SubdomainType", "*.test.org", "api.test.org", true},
 	}
@@ -1080,84 +862,4 @@ func TestParseExclusionType(t *testing.T) {
 			t.Fatal("expected error for invalid type")
 		}
 	})
-}
-
-// TestParseScanType tests parsing scan type strings.
-//
-// Run with: go test -v ./tests/unit -run TestParseScanType
-func TestParseScanType(t *testing.T) {
-	t.Run("Valid", func(t *testing.T) {
-		st, err := scope.ParseScanType("full")
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if st != scope.ScanTypeFull {
-			t.Errorf("expected full, got %s", st)
-		}
-	})
-
-	t.Run("ValidUppercase", func(t *testing.T) {
-		st, err := scope.ParseScanType("SAST")
-		if err != nil {
-			t.Fatalf("expected no error, got: %v", err)
-		}
-		if st != scope.ScanTypeSAST {
-			t.Errorf("expected sast, got %s", st)
-		}
-	})
-
-	t.Run("Invalid", func(t *testing.T) {
-		_, err := scope.ParseScanType("invalid")
-		if err == nil {
-			t.Fatal("expected error for invalid scan type")
-		}
-	})
-}
-
-// TestReconstituteSchedule tests recreating Schedule from persistence data.
-//
-// Run with: go test -v ./tests/unit -run TestReconstituteSchedule
-func TestReconstituteSchedule(t *testing.T) {
-	id := shared.NewID()
-	tenantID := shared.NewID()
-	targetIDs := []shared.ID{shared.NewID()}
-	now := time.Now()
-	nextRun := now.Add(time.Hour)
-	configs := map[string]interface{}{"key": "value"}
-
-	sched := scope.ReconstituteSchedule(
-		id, tenantID, "Test Schedule", "desc",
-		scope.ScanTypeFull, scope.TargetScopeSelected, targetIDs, []string{"tag1"},
-		configs, scope.ScheduleTypeCron, "0 */6 * * *", 0,
-		true, &now, "completed", &nextRun,
-		true, true, []string{"slack"}, "user1", now, now,
-	)
-
-	if sched.ID() != id {
-		t.Errorf("expected ID %s, got %s", id, sched.ID())
-	}
-	if sched.Name() != "Test Schedule" {
-		t.Errorf("expected 'Test Schedule', got %s", sched.Name())
-	}
-	if sched.Description() != "desc" {
-		t.Errorf("expected 'desc', got %s", sched.Description())
-	}
-	if sched.TargetScope() != scope.TargetScopeSelected {
-		t.Errorf("expected selected, got %s", sched.TargetScope())
-	}
-	if len(sched.TargetIDs()) != 1 {
-		t.Errorf("expected 1 target ID, got %d", len(sched.TargetIDs()))
-	}
-	if sched.CronExpression() != "0 */6 * * *" {
-		t.Errorf("expected '0 */6 * * *', got %s", sched.CronExpression())
-	}
-	if sched.LastRunStatus() != "completed" {
-		t.Errorf("expected 'completed', got %s", sched.LastRunStatus())
-	}
-	if len(sched.NotificationChannels()) != 1 || sched.NotificationChannels()[0] != "slack" {
-		t.Errorf("expected [slack], got %v", sched.NotificationChannels())
-	}
-	if sched.ScannerConfigs()["key"] != "value" {
-		t.Errorf("expected config key=value, got %v", sched.ScannerConfigs())
-	}
 }

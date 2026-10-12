@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -13,6 +13,8 @@ import {
 } from '@/features/shared'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Can, Permission } from '@/lib/permissions'
@@ -26,33 +28,41 @@ import {
 } from '../api/use-asset-dedup'
 import { dedupReasonLabel, describeEvidence } from '../lib/asset-identity'
 
-// DedupReviewPage surfaces the identity/dedup pipeline that was previously
+// DedupReviewPage surfaces the identity/dedup flow that was previously
 // invisible: the correlator enqueues a pending review when several assets share
 // identity, and an operator approves (merge) or rejects (keep separate). The
 // backend + hooks already existed; this is the missing operator UI.
 export function DedupReviewPage() {
   const { data, isLoading, error, mutate } = useDedupReviews()
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Merging deletes the duplicates, so it asks first; keeping them separate does not.
+  const [pendingMerge, setPendingMerge] = useState<DedupReview | null>(null)
+  const { t } = useTranslation()
 
   const reviews = data?.data ?? []
 
-  const act = async (id: string, action: 'approve' | 'reject') => {
-    setBusyId(id)
-    try {
-      if (action === 'approve') {
-        await approveDedupReview(id)
-        toast.success('Duplicates merged')
-      } else {
-        await rejectDedupReview(id)
-        toast.success('Kept as separate assets')
+  // useCallback so the columns memo can depend on it; mutate is stable (SWR).
+  const act = useCallback(
+    async (id: string, action: 'approve' | 'reject') => {
+      setBusyId(id)
+      try {
+        if (action === 'approve') {
+          await approveDedupReview(id)
+          setPendingMerge(null)
+          toast.success('Duplicates merged')
+        } else {
+          await rejectDedupReview(id)
+          toast.success('Kept as separate assets')
+        }
+        await mutate()
+      } catch {
+        toast.error(`Failed to ${action} review`)
+      } finally {
+        setBusyId(null)
       }
-      await mutate()
-    } catch {
-      toast.error(`Failed to ${action} review`)
-    } finally {
-      setBusyId(null)
-    }
-  }
+    },
+    [mutate]
+  )
 
   const columns = useMemo<ColumnDef<DedupReview>[]>(
     () => [
@@ -129,7 +139,7 @@ export function DedupReviewPage() {
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <Can permission={Permission.AssetsWrite}>
+          <Can permission={Permission.AssetsDelete}>
             <div className="flex justify-end gap-2">
               <Button
                 size="sm"
@@ -143,7 +153,7 @@ export function DedupReviewPage() {
               <Button
                 size="sm"
                 disabled={busyId === row.original.id}
-                onClick={() => act(row.original.id, 'approve')}
+                onClick={() => setPendingMerge(row.original)}
               >
                 <GitMerge className="me-1 h-3.5 w-3.5" />
                 Merge
@@ -153,16 +163,17 @@ export function DedupReviewPage() {
         ),
       },
     ],
-    // act is stable within a render; busyId drives the disabled state
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busyId]
+    [busyId, act]
   )
 
   return (
     <Main>
       <PageHeader
-        title="Duplicate Review"
-        description="Approve or reject asset merges the correlator flagged as likely duplicates."
+        title={t('assets.duplicates.title', 'Duplicate review')}
+        description={t(
+          'assets.duplicates.description',
+          'Approve or reject merges of assets that look like duplicates.'
+        )}
       />
 
       {isLoading ? (
@@ -192,6 +203,32 @@ export function DedupReviewPage() {
         Merging preserves findings from all assets on the kept asset; rejecting leaves them
         separate.
       </p>
+      <ConfirmDialog
+        open={pendingMerge !== null}
+        onOpenChange={(o) => !o && setPendingMerge(null)}
+        destructive
+        title={
+          pendingMerge?.merge_asset_ids.length === 1
+            ? t('confirm.dedup.mergeTitleOne', 'Merge 1 asset into {keep}?', {
+                keep: pendingMerge?.keep_asset_name ?? '',
+              })
+            : t('confirm.dedup.mergeTitle', 'Merge {count} assets into {keep}?', {
+                count: pendingMerge?.merge_asset_ids.length ?? 0,
+                keep: pendingMerge?.keep_asset_name ?? '',
+              })
+        }
+        desc={t(
+          'confirm.dedup.mergeDesc',
+          '{names} are removed from the inventory and their findings move to {keep}. This cannot be undone.',
+          {
+            names: pendingMerge?.merge_asset_names.join(', ') ?? '',
+            keep: pendingMerge?.keep_asset_name ?? '',
+          }
+        )}
+        confirmText={t('confirm.dedup.merge', 'Merge')}
+        isLoading={busyId !== null}
+        handleConfirm={() => (pendingMerge ? act(pendingMerge.id, 'approve') : undefined)}
+      />
     </Main>
   )
 }

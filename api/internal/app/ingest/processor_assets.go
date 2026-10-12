@@ -11,12 +11,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/openctemio/ctis"
 
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -37,11 +39,16 @@ type AssetProcessor struct {
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
 	correlator    *AssetCorrelator             // RFC-001: IP-based correlation (nil = disabled)
 	dedupEnqueuer DedupReviewEnqueuer          // RFC-001: enqueue multi-match dupes for review (nil = disabled)
+	exclusions    ExclusionSource              // scope exclusions: new excluded assets are not added (nil = not checked)
 	// Asset identity model: identifier matching (nil = name and IP only).
 	identityStore    IdentityStore
 	identityReviewer IdentityReviewer
 	propsValidator   *validator.PropertiesValidator
 	logger           *logger.Logger
+	// trackSets: set attributes (IP addresses, technologies, open ports)
+	// are reconciled per source (attribute_sets.go), so a merge leaves the
+	// sets of an existing asset to that reconciliation.
+	trackSets bool
 
 	// assetsDiscoveredCallback receives the assets THIS ingest actually
 	// inserted (nil = disabled). It drives the `asset_discovered` workflow
@@ -51,6 +58,14 @@ type AssetProcessor struct {
 	// assetsExposedCallback receives EXISTING assets a re-scan turned
 	// internet-facing (nil = disabled). Drives the newly-exposed notification.
 	assetsExposedCallback AssetsDiscoveredCallback
+
+	// assetsObservedCallback receives every asset THIS ingest wrote (created
+	// or updated) with the report's tool and observation time, for the
+	// freshness of their attribute classes (docs/architecture/asset-freshness.md).
+	assetsObservedCallback AssetsObservedCallback
+
+	// webEvidence stores the reserved web_evidence captures (nil = dropped).
+	webEvidence WebEvidenceRecorder
 }
 
 // AssetsDiscoveredCallback is invoked once per ingest batch with the assets the
@@ -59,6 +74,15 @@ type AssetProcessor struct {
 // announced exactly once. Implementations must not block: ingest calls it
 // inline.
 type AssetsDiscoveredCallback func(ctx context.Context, tenantID shared.ID, assets []*asset.Asset)
+
+// AssetsObservedCallback is invoked once per ingest batch with the assets
+// the batch wrote, the report's tool name and when the tool observed them.
+type AssetsObservedCallback func(ctx context.Context, tenantID shared.ID, tool string, observedAt time.Time, assets []*asset.Asset)
+
+// SetAssetsObservedCallback wires the consumer of written assets.
+func (p *AssetProcessor) SetAssetsObservedCallback(cb AssetsObservedCallback) {
+	p.assetsObservedCallback = cb
+}
 
 // SetAssetsDiscoveredCallback wires the consumer of newly-created assets.
 func (p *AssetProcessor) SetAssetsDiscoveredCallback(cb AssetsDiscoveredCallback) {
@@ -92,7 +116,7 @@ func (p *AssetProcessor) SetRelationshipRepository(repo asset.RelationshipReposi
 }
 
 // SetStateHistoryRepository wires the asset state-history store. When set, the
-// discovery pipeline records an `appeared` entry for each newly-created asset
+// discovery scan workflow records an `appeared` entry for each newly-created asset
 // and a `recovered` entry when a scan re-observes a stale/inactive asset
 // (reactivating it). Optional: nil → no history (preserves prior behaviour).
 func (p *AssetProcessor) SetStateHistoryRepository(repo asset.StateHistoryRepository) {
@@ -239,6 +263,7 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	existing *asset.Asset,
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
+	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
 ) []*asset.AssetStateChange {
@@ -246,7 +271,7 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
-	p.mergeCTISIntoAsset(existing, ctisAsset, tool, recovered)
+	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -310,14 +335,17 @@ func (p *AssetProcessor) ProcessBatch(
 	output *Output,
 	tenantCfg *CorrelationConfig, // nil = use system defaults
 ) (map[string]shared.ID, error) {
-	return p.processBatch(ctx, tenantID, report, output, tenantCfg, false)
+	return p.processBatch(ctx, tenantID, report, output, tenantCfg, false, fullScope())
 }
 
 // processBatch is ProcessBatch; noAutoAsset (protocol v2,
 // Options.RequireAssetForFindings) skips the metadata-derived asset a report
-// with findings but no assets would otherwise get.
+// with findings but no assets would otherwise get. scope says which existing
+// assets the report may change (RFC-040 §5.3); an existing asset outside it
+// is only marked seen, and only while it is active. scope.allowed is filled
+// with the persisted ids of the assets the report may change.
 //
-//nolint:gocognit,cyclop // the existing batch pipeline, unchanged apart from the gate
+//nolint:gocognit,cyclop // the existing batch scan workflow, unchanged apart from the gate
 func (p *AssetProcessor) processBatch(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -325,8 +353,31 @@ func (p *AssetProcessor) processBatch(
 	output *Output,
 	tenantCfg *CorrelationConfig,
 	noAutoAsset bool,
+	scope *alterScope,
 ) (map[string]shared.ID, error) {
 	assetMap := make(map[string]shared.ID)
+	// CTIS ids of the report assets this report created or may change.
+	alterRefs := map[string]bool{}
+	defer func() {
+		for ref := range alterRefs {
+			if id, ok := assetMap[ref]; ok {
+				scope.allow(id)
+			}
+		}
+	}()
+
+	// Open ports listed on an address become open_port assets that go
+	// through the rules below like any reported asset (research/22 P0-6).
+	if n := expandOpenPorts(report); n > 0 {
+		p.logger.Debug("expanded open ports into port assets", "count", n)
+	}
+	// One key per concept, and a key on the wrong asset (a port on a
+	// domain) moved to the asset it belongs on (RFC-042 §6.3.9).
+	if added, dropped, unknown := routeMisplacedProperties(report); added > 0 || dropped > 0 || len(unknown) > 0 {
+		p.logger.Warn("report asset properties outside the asset type schema",
+			"routed_services", added, "dropped_keys", dropped,
+			"unknown_keys", logger.SanitizeValue(strings.Join(unknown, ",")))
+	}
 
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
@@ -384,9 +435,8 @@ func (p *AssetProcessor) processBatch(
 			continue
 		}
 		// Normalize name before lookup so it matches existing normalized assets
-		assetType := mapCTISAssetType(ctisAsset.Type)
-		coreType, subType := asset.ResolveTypeAlias(assetType)
-		name = asset.NormalizeName(name, coreType, subType)
+		rt := resolveCTISAssetType(ctisAsset)
+		name = asset.NormalizeName(name, rt.normType, rt.normSubType)
 		if name == "" {
 			continue
 		}
@@ -397,6 +447,13 @@ func (p *AssetProcessor) processBatch(
 		"report_assets_count", len(report.Assets),
 		"valid_names_count", len(names),
 	)
+
+	// Scope exclusions in effect: a new asset that matches one is not added
+	// (exclusions.go). Without them nothing is created (fail closed).
+	excl, err := p.loadExclusions(ctx, tenantID)
+	if err != nil {
+		return assetMap, err
+	}
 
 	// Step 2: Batch lookup existing assets
 	existingMap, err := p.repo.GetByNames(ctx, tenantID, names)
@@ -439,6 +496,9 @@ func (p *AssetProcessor) processBatch(
 		source = report.Tool.Name
 	}
 	allKinds := len(asset.AllIdentifierKinds())
+	// When the report's source saw what it reports: last_seen and the
+	// property merge keep the newer observation, whatever the arrival order.
+	observedAt := reportObservedAt(report, time.Now())
 	isNew := map[string]bool{}
 	queued := map[string]bool{}
 	var renames []pendingRename
@@ -451,27 +511,51 @@ func (p *AssetProcessor) processBatch(
 		}
 
 		// Normalize name (same as Step 1)
-		assetType := mapCTISAssetType(ctisAsset.Type)
-		coreType, subType := asset.ResolveTypeAlias(assetType)
-		normalizedName := asset.NormalizeName(name, coreType, subType)
+		rt := resolveCTISAssetType(ctisAsset)
+		normalizedName := asset.NormalizeName(name, rt.normType, rt.normSubType)
+		coreType := rt.stored.Type
 		if normalizedName == "" {
 			continue
 		}
 
-		// mergeInto folds this report asset into an existing one.
+		// mergeInto folds this report asset into an existing one. A report
+		// that may not change the asset (RFC-040 §5.3) only marks it seen,
+		// and only while it is active: no flags, exposure, classification,
+		// ownership, identifiers or reactivation.
 		mergeInto := func(existing *asset.Asset) {
-			exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, &recoveredIDs, &becameExposed)...)
-			if id := existing.ID().String(); !isNew[id] && !queued[id] {
+			id := existing.ID().String()
+			// An upload's actor may not touch an existing asset outside
+			// their data scope at all (Options.Actor).
+			if !isNew[id] && scope.actorDenies(existing.ID()) {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
+			alterable := isNew[id] || scope.mayAlter(existing)
+			if alterable {
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, observedAt, &recoveredIDs, &becameExposed)...)
+				alterRefs[ctisAsset.ID] = true
+			} else {
+				output.AssetsLimited++
+				if existing.Status() != asset.StatusActive {
+					assetMap[ctisAsset.ID] = existing.ID()
+					return
+				}
+				existing.MarkSeenAt(observedAt)
+			}
+			if !isNew[id] && !queued[id] {
 				updateAssets = append(updateAssets, existing)
 				queued[id] = true
 			}
 			assetMap[ctisAsset.ID] = existing.ID()
-			if idx != nil {
+			if idx != nil && alterable {
 				idx.attach(i, existing, coreType, normalizedName, source)
 			}
 		}
 		// rename gives a matched asset the name the report uses now.
 		rename := func(existing *asset.Asset, via string) {
+			if !isNew[existing.ID().String()] && !scope.mayAlter(existing) {
+				return
+			}
 			oldName := existing.Name()
 			if err := existing.UpdateName(normalizedName); err != nil || existing.Name() == oldName {
 				return
@@ -482,13 +566,30 @@ func (p *AssetProcessor) processBatch(
 		}
 		// createNew inserts this report asset as a new asset.
 		createNew := func() {
+			// A restricted upload's actor creates no asset: it could not see
+			// it, and skipping it answers like a hidden existing asset.
+			if scope.actorRestricted() {
+				skipOutOfScope(output, ctisAsset.ID)
+				return
+			}
 			newAsset, createErr := p.createAssetFromCTIS(tenantID, ctisAsset, report.Tool)
+			if createErr == nil && (scope == nil || !scope.all) {
+				sensorProvenance(newAsset)
+			}
 			if createErr != nil {
 				addError(output, fmt.Sprintf("asset %s (%s): %v", ctisAsset.ID, shortName(normalizedName), createErr))
 				return
 			}
+			scope.dropUntrustedClaims(newAsset)
+			// Seen when its source saw it, so a later report observed earlier
+			// cannot pass it.
+			newAsset.MarkSeenAt(observedAt)
+			if skipExcluded(excl, newAsset, ctisAsset.ID, output) {
+				return
+			}
 			newAssets = append(newAssets, newAsset)
 			assetMap[ctisAsset.ID] = newAsset.ID()
+			alterRefs[ctisAsset.ID] = true
 			existingMap[normalizedName] = newAsset
 			isNew[newAsset.ID().String()] = true
 			if idx != nil {
@@ -589,8 +690,7 @@ func (p *AssetProcessor) processBatch(
 			switch coreType {
 			case asset.AssetTypeRepository:
 				result, corrErr = p.correlator.CorrelateRepository(ctx, tenantID, normalizedName, "")
-			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity,
-				asset.AssetTypeIAMUser, asset.AssetTypeIAMRole, asset.AssetTypeServiceAccount:
+			case asset.AssetTypeCloudAccount, asset.AssetTypeIdentity:
 				// Try external_id from properties (account_id, arn, etc.)
 				props := p.buildPropertiesFromCTIS(ctisAsset)
 				externalID := ""
@@ -724,16 +824,54 @@ func (p *AssetProcessor) processBatch(
 	}
 
 	// Step 5.5: Auto-create root domain assets for orphaned subdomains
-	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output, &discovered)
+	p.ensureRootDomainAssets(ctx, tenantID, report, existingMap, output, &discovered, excl)
 
 	// Step 6: Create subdomain-to-domain relationships
 	if p.relRepo != nil {
 		p.createSubdomainRelationships(ctx, tenantID, report, existingMap)
 	}
 
+	// mayChange says whether this report may change an existing asset
+	// (RFC-040 §5.3): derived edges change their source.
+	mayChange := func(id shared.ID) bool {
+		if scope == nil || scope.all {
+			return true
+		}
+		for ref := range alterRefs {
+			if mid, ok := assetMap[ref]; ok && mid == id {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Step 7: Create resolves_to relationships for DNS records (domain/subdomain → IP)
 	if p.relRepo != nil {
-		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered)
+		p.createDNSResolvesToRelationships(ctx, tenantID, report, existingMap, output, &discovered, excl, mayChange)
+	}
+
+	// Step 9: Ports: address → port edges, host name → address, and ports a
+	// port scan no longer sees are closed (research/22 P0-6).
+	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange)
+
+	// Step 10: Web evidence (status, title, snippet, optional screenshot) of
+	// the assets this report may change (RFC-081).
+	p.recordWebEvidence(ctx, tenantID, report, existingMap, mayChange)
+
+	// Step 8: Typed edges from related_assets (service -> the certificate
+	// it served).
+	if p.relRepo != nil {
+		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
+	}
+
+	// What this ingest wrote, for attribution (scan_attribution.go): every
+	// asset it created (report assets, root domains, resolved addresses) and
+	// every existing one it updated.
+	for _, a := range discovered {
+		scope.note(a, a.ID(), true)
+	}
+	for _, a := range updateAssets {
+		scope.note(a, a.ID(), false)
 	}
 
 	// Announce every asset this ingest created (report assets plus the root
@@ -744,6 +882,12 @@ func (p *AssetProcessor) processBatch(
 	}
 	if p.assetsExposedCallback != nil && len(exposedPersisted) > 0 {
 		p.assetsExposedCallback(ctx, tenantID, exposedPersisted)
+	}
+	if p.assetsObservedCallback != nil && source != "" && len(discovered)+len(updateAssets) > 0 {
+		written := make([]*asset.Asset, 0, len(discovered)+len(updateAssets))
+		written = append(written, discovered...)
+		written = append(written, updateAssets...)
+		p.assetsObservedCallback(ctx, tenantID, source, observedAt, written)
 	}
 
 	return assetMap, nil
@@ -815,6 +959,7 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 	existingMap map[string]*asset.Asset,
 	output *Output,
 	discovered *[]*asset.Asset,
+	excl *scopeapp.ExclusionMatcher,
 ) {
 	// Collect unique root domains that need to be created
 	needed := make(map[string]bool)
@@ -830,6 +975,15 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		}
 
 		if !isValidDomainName(rootDomain) {
+			continue
+		}
+		// The report names the root; it must be a registrable parent of the
+		// name it came with, or a sensor could create any domain (and through
+		// it a Certificate Transparency watch) it likes (research/22b S2).
+		rootDomain = strings.ToLower(strings.TrimSuffix(rootDomain, "."))
+		if !isRegistrableParent(rootDomain, getAssetName(ctisAsset)) {
+			p.logger.Warn("ingest: root_domain is not a registrable parent of the subdomain; not created",
+				"root_domain", logger.SanitizeValue(rootDomain), "subdomain", logger.SanitizeValue(getAssetName(ctisAsset)))
 			continue
 		}
 
@@ -887,6 +1041,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 
 		metadata := asset.BuildDomainMetadata(domainName, asset.DiscoverySourceDNS)
 		domainAsset.SetProperties(metadata)
+		if skipExcluded(excl, domainAsset, "", output) {
+			continue
+		}
 		// Same exposure inference as scanner-reported domains (public by nature).
 		if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
 			domainAsset.SetExposure(inferred)
@@ -921,6 +1078,21 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		"created", created,
 		"domains", domainNames,
 	)
+}
+
+// isRegistrableParent reports whether root is a strict parent of name and
+// is itself registrable: at or below its public suffix plus one label
+// (example.com, example.co.uk; never com or co.uk).
+func isRegistrableParent(root, name string) bool {
+	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	if root == "" || !strings.HasSuffix(name, "."+root) {
+		return false
+	}
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(root)
+	if err != nil {
+		return false
+	}
+	return root == etld1 || strings.HasSuffix(root, "."+etld1)
 }
 
 // createSubdomainRelationships creates member_of relationships between subdomain and parent domain assets.
@@ -1012,7 +1184,10 @@ func (p *AssetProcessor) createSubdomainRelationships(
 
 // createDNSResolvesToRelationships creates resolves_to relationships between domain/subdomain
 // assets and their resolved IP addresses. If IP assets don't exist yet, they are auto-created.
-// This maps the DNS resolution graph for attack surface analysis.
+// This maps the DNS resolution graph for attack surface analysis: the domain's
+// ip_addresses property is the summary, the edges (first seen = created_at,
+// last seen = last_verified) are the record. An edge changes its domain, so
+// a report that may not change the domain (RFC-040 §5.3) adds none.
 func (p *AssetProcessor) createDNSResolvesToRelationships(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -1020,6 +1195,8 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 	existingMap map[string]*asset.Asset,
 	output *Output,
 	discovered *[]*asset.Asset,
+	excl *scopeapp.ExclusionMatcher,
+	mayChange func(shared.ID) bool,
 ) {
 	// Collect domain→IP mappings from report assets
 	type dnsMapping struct {
@@ -1031,38 +1208,25 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
-		if ctisAsset.Type != ctis.AssetTypeDomain && ctisAsset.Type != ctis.AssetTypeSubdomain {
+		name := getAssetName(ctisAsset)
+		if name == "" {
+			continue
+		}
+		// The stored asset decides: a report asset of another type that
+		// landed on a domain by name (a nuclei result named by its host)
+		// carries that domain's addresses too.
+		rt := resolveCTISAssetType(ctisAsset)
+		domainName := asset.NormalizeName(name, rt.normType, rt.normSubType)
+		stored, ok := existingMap[domainName]
+		if !ok || (stored.Type() != asset.AssetTypeDomain && stored.Type() != asset.AssetTypeSubdomain) {
+			continue
+		}
+		if mayChange != nil && !mayChange(stored.ID()) {
 			continue
 		}
 
-		domainName := getAssetName(ctisAsset)
-		if domainName == "" {
-			continue
-		}
-
-		// Check if domain exists in our map
-		if _, ok := existingMap[domainName]; !ok {
-			continue
-		}
-
-		// Extract resolved IPs from properties
-		ips, ok := ctisAsset.Properties["resolved_ips"].([]string)
-		if !ok {
-			// Try []any (JSON unmarshaling produces this)
-			if ifaces, ok := ctisAsset.Properties["resolved_ips"].([]any); ok {
-				ips = make([]string, 0, len(ifaces))
-				for _, iface := range ifaces {
-					if s, ok := iface.(string); ok && s != "" {
-						ips = append(ips, s)
-					}
-				}
-			}
-		}
-
-		for _, ip := range ips {
-			if ip == "" || !isValidIP(ip) {
-				continue
-			}
+		// ip_addresses and every synonym of it (resolved_ips, ip, ...).
+		for _, ip := range asset.IPAddresses(ctisAsset.Properties) {
 			mappings = append(mappings, dnsMapping{domainName: domainName, ip: ip})
 			ipSet[ip] = true
 		}
@@ -1099,6 +1263,9 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 			continue
 		}
 		ipAsset.SetTenantID(tenantID)
+		if skipExcluded(excl, ipAsset, "", output) {
+			continue
+		}
 		ipAsset.UpdateDescription("IP address auto-created from DNS resolution")
 
 		now := time.Now()
@@ -1143,6 +1310,7 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 		}
 		rel.SetDescription(fmt.Sprintf("%s resolves to %s", m.domainName, m.ip))
 		_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+		rel.Verify() // seen now: refreshes last_verified on an existing edge
 		rels = append(rels, rel)
 	}
 
@@ -1162,15 +1330,6 @@ func (p *AssetProcessor) createDNSResolvesToRelationships(
 			"skipped", len(rels)-created,
 		)
 	}
-}
-
-// isValidIP performs basic IP address validation (IPv4 and IPv6).
-func isValidIP(ip string) bool {
-	if ip == "" {
-		return false
-	}
-	// Simple validation: must contain dots (IPv4) or colons (IPv6)
-	return strings.Contains(ip, ".") || strings.Contains(ip, ":")
 }
 
 // isValidDomainName validates a basic domain name format.
@@ -1647,9 +1806,13 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	ctisAsset *ctis.Asset,
 	tool *ctis.Tool,
 ) (*asset.Asset, error) {
-	rawType := mapCTISAssetType(ctisAsset.Type)
-	// Resolve type aliases: e.g., "firewall" → type=network, sub_type=firewall
-	coreType, subType := asset.ResolveTypeAlias(rawType)
+	// Resolve aliases and legacy sub-types to the stored (type, sub_type):
+	// e.g. "firewall" → (network, firewall). Aliases are never stored.
+	rt := resolveCTISAssetType(ctisAsset)
+	if rt.stored.NativeSubType != "" {
+		p.logger.Warn("unknown asset sub_type from sensor kept as x_native_sub_type",
+			"asset_type", string(rt.stored.Type), "sub_type", logger.SanitizeValue(rt.stored.NativeSubType))
+	}
 	criticality := mapCTISCriticality(ctisAsset.Criticality)
 
 	name := getAssetName(ctisAsset)
@@ -1661,14 +1824,11 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// normalization); the caller reports that as an error of this one asset.
 	// It used to truncate at 1024 bytes, which still overflowed
 	// assets.name varchar(255) and failed the whole report's upsert.
-	newAsset, err := asset.NewAsset(name, coreType, criticality)
+	// Create with the sub-type so the stored name is normalized with the same
+	// (type, sub-type) key the lookup above used (RFC-043 section 10).
+	newAsset, err := asset.NewAssetWithSubType(name, rt.normType, rt.normSubType, criticality)
 	if err != nil {
 		return nil, err
-	}
-
-	// Set sub_type from TypeAliases or from properties
-	if subType != "" {
-		newAsset.SetSubType(subType)
 	}
 
 	newAsset.SetTenantID(tenantID)
@@ -1702,31 +1862,27 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.AddTag(tag)
 	}
 
-	// Promote sub_type from properties if not already set via TypeAliases
-	if newAsset.SubType() == "" {
-		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
-			newAsset.SetSubType(st)
-			delete(ctisAsset.Properties, "sub_type")
-		}
-	}
+	// properties.sub_type was resolved with the type above; it is a column,
+	// not a property.
+	delete(ctisAsset.Properties, "sub_type")
 
 	// Set discovery info
-	discoverySource := legacyv1.DiscoverySourceSensor
+	discoverySource := DiscoverySourceSensor
 	discoveryTool := ""
 	if tool != nil {
 		discoveryTool = tool.Name
 	}
 	if source, ok := ctisAsset.Properties[asset.PropKeyDiscoverySource].(string); ok {
-		// v1 sensors label their own discoveries "agent".
-		discoverySource = legacyv1.NormalizeDiscoverySource(source)
+		discoverySource = normalizeDiscoverySource(source)
 	}
 	if toolName, ok := ctisAsset.Properties[asset.PropKeyDiscoveryTool].(string); ok {
 		discoveryTool = toolName
 	}
 
+	// A discovery time in the future would keep the asset out of the
+	// lifecycle's grace check for as long as the reporter likes.
 	discoveredAt := ctisAsset.DiscoveredAt
-	if discoveredAt == nil {
-		now := time.Now()
+	if now := time.Now(); discoveredAt == nil || discoveredAt.After(now) {
 		discoveredAt = &now
 	}
 	newAsset.SetDiscoveryInfo(discoverySource, discoveryTool, discoveredAt)
@@ -1737,15 +1893,18 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.SetOwnerRef(ownerRef)
 	}
 
-	// Build and set properties (with validation)
+	// Build and set properties (with validation), then what the input type
+	// implied (sub-type, provider, attributes) where nothing is set.
 	properties := p.buildPropertiesFromCTIS(ctisAsset)
+	dropMisplacedProperties(newAsset.Type(), newAsset.SubType(), properties)
 	newAsset.SetProperties(properties)
+	newAsset.ApplyResolvedType(rt.stored)
 
 	// Carry the scanner's explicit CTEM signals that were previously dropped at
 	// this seam — internet-exposure, compliance scope, data classification, and
 	// PII/PHI all feed the prioritization engine's reachability + business-
 	// context gates. Before this, only regulatory_owner was read.
-	p.applyCTEMSignals(newAsset, ctisAsset)
+	p.applyCTEMSignals(newAsset, ctisAsset, true)
 
 	// Infer internet exposure when the scanner didn't provide one. Exposure is
 	// the reachability signal the prioritization engine reads, and it was
@@ -1765,7 +1924,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 // engine; before this they were silently dropped at the ingest mapping seam
 // (only regulatory_owner was consumed). Trusting an explicit
 // is_internet_accessible also beats the heuristic exposure inference.
-func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset) {
+//
+// The data classification is applied only to a new asset (classify);
+// an existing asset's is decided by attribute reconciliation (RFC-069).
+func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset, classify bool) {
 	if ctisAsset.IsInternetAccessible {
 		a.SetInternetAccessible(true)
 		if a.Exposure() == asset.ExposureUnknown {
@@ -1780,7 +1942,7 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 	if len(c.Frameworks) > 0 {
 		a.SetComplianceScope(c.Frameworks)
 	}
-	if c.DataClassification != "" {
+	if classify && c.DataClassification != "" {
 		if err := a.SetDataClassification(asset.DataClassification(c.DataClassification)); err != nil {
 			p.logger.Warn("invalid data_classification from scanner",
 				"value", logger.SanitizeValue(c.DataClassification), "asset", logger.SanitizeValue(a.Name()), "error", err)
@@ -1803,10 +1965,11 @@ func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset)
 // normalisation (normalizeHostIPProperties) moves the legacy `ip` string into
 // `ip_addresses` and deletes `ip`, so reading `ip` alone never saw a host's IP.
 func inferAssetExposure(a *asset.Asset) asset.Exposure {
-	switch a.Type() {
-	case asset.AssetTypeDomain, asset.AssetTypeSubdomain, asset.AssetTypeCertificate,
-		asset.AssetTypeWebsite, asset.AssetTypeAPI:
-		return asset.ExposurePublic
+	// Internet-facing by nature, declared in the registry (exposure_default):
+	// it used to compare against website/api, which ingest never stores, so
+	// web applications and APIs were never marked public (RFC-042 §6.3.8).
+	if e := asset.DefaultExposure(a.Type(), a.SubType()); e != asset.ExposureUnknown {
+		return e
 	}
 	for _, ip := range ExtractAllIPs(a.Properties(), a.Name()) {
 		if isPublicIP(ip) {
@@ -1827,21 +1990,18 @@ func isPublicIP(s string) bool {
 }
 
 // mergeCTISIntoAsset merges CTIS data into an existing asset.
-func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, recovered *[]shared.ID) {
+// observedAt is when the report's source saw the asset (reportObservedAt).
+func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ctis.Asset, tool *ctis.Tool, observedAt time.Time, recovered *[]shared.ID) {
 	// Mark as seen. Capture the prior status first so we can tell when this
 	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
 	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
-	existing.MarkSeen()
+	existing.MarkSeenAt(observedAt)
 	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
 		*recovered = append(*recovered, existing.ID())
 	}
 
-	// Update owner ref if provided and not already set
-	if existing.OwnerRef() == "" {
-		if ownerRef := p.extractOwnerRef(ctisAsset); ownerRef != "" {
-			existing.SetOwnerRef(ownerRef)
-		}
-	}
+	// owner_ref and data classification of an existing asset are decided
+	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
 	// Merge tags
 	for _, tag := range ctisAsset.Tags {
@@ -1852,12 +2012,21 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	existingProps := existing.Properties()
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
+	// The stored asset's schema decides (the report asset may be of another
+	// type that landed here by name): technical blocks an older row still
+	// holds are promoted to flat keys, synonyms fold, and a key only another
+	// class may hold is not kept here.
+	asset.NormalizeAssetProperties(existing.Type(), existing.SubType(), mergedProps)
+	dropMisplacedProperties(existing.Type(), existing.SubType(), mergedProps)
+	if p.trackSets {
+		keepReconciledSets(existingProps, mergedProps)
+	}
 	existing.SetProperties(mergedProps)
 
 	// Re-apply the scanner's explicit CTEM signals on re-scan (compliance /
 	// classification / PII-PHI / internet-exposure) so a later scan that learns
 	// them updates the inventory instead of dropping them.
-	p.applyCTEMSignals(existing, ctisAsset)
+	p.applyCTEMSignals(existing, ctisAsset, false)
 
 	// Backfill exposure on re-scan for assets that predate exposure inference
 	// (or that had no signal before) — only when still unknown, never overriding.
@@ -1867,18 +2036,10 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 		}
 	}
 
-	// Promote sub_type if existing asset doesn't have one
-	if existing.SubType() == "" {
-		// Try explicit sub_type from CTIS properties
-		if st, ok := ctisAsset.Properties["sub_type"].(string); ok && st != "" {
-			existing.SetSubType(st)
-		} else if ctisAsset.Type != "" {
-			// Try TypeAliases inference (e.g., "firewall" → network + firewall)
-			if _, subType := asset.ResolveTypeAlias(asset.AssetType(ctisAsset.Type)); subType != "" {
-				existing.SetSubType(subType)
-			}
-		}
-	}
+	// Fill the sub-type (and provider, attributes) the report implies when the
+	// existing asset has none; only from the registry's closed list, and
+	// only for an asset of the same type.
+	existing.ApplyResolvedType(resolveCTISAssetType(ctisAsset).stored)
 
 	// Update discovery tool if not set
 	if existing.DiscoveryTool() == "" && tool != nil {
@@ -1913,6 +2074,12 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		propCount++
 	}
 
+	// Identity hints a scanner observed (CTIS 1.4), bounded, for display and
+	// correlation; matching reads them in identifiersFor.
+	if h := identityHintProperties(ctisAsset.IdentityHints); h != nil {
+		props["identity_hints"] = h
+	}
+
 	// Add technical details based on asset type
 	if ctisAsset.Technical != nil {
 		if ctisAsset.Technical.Domain != nil {
@@ -1929,11 +2096,13 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 		}
 	}
 
-	// Normalize IP storage for host assets:
-	// - Convert properties.ip (string) → properties.ip_addresses (array)
-	// - Extract IP from asset value/name if host type
-	// - Extract hostname from ip_address.hostname into top-level hostname
-	if ctisAsset.Type == ctis.AssetTypeHost || ctisAsset.Type == "host" {
+	// One key per concept (RFC-042 §6.3.9): ip, ips, resolved_ips, a plain
+	// ip_address string, the technical ip_address block's address, ... all
+	// fold into ip_addresses; nameserver into nameservers, and so on.
+	asset.NormalizeProperties(props)
+
+	// A host also records the address it is named by.
+	if ctisAsset.Type == ctis.AssetTypeHost {
 		normalizeHostIPProperties(props, getAssetName(ctisAsset))
 	}
 
@@ -1943,10 +2112,13 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 	// Keep it in ip_addresses, the array IP correlation searches.
 	if ctisAsset.Type == ctis.AssetTypeHost || ctisAsset.Type == ctis.AssetTypeIPAddress {
 		if v := strings.TrimSpace(ctisAsset.Value); v != "" && v != getAssetName(ctisAsset) {
-			if ip := net.ParseIP(v); ip != nil {
-				addIPAddress(props, ip.String())
-			}
+			asset.AddIPAddress(props, v)
 		}
+	}
+
+	// An IP address asset is its own address: ip_addresses lists only others.
+	if ctisAsset.Type == ctis.AssetTypeIPAddress {
+		dropOwnAddress(props, getAssetName(ctisAsset))
 	}
 
 	// Validate properties based on asset type
@@ -1956,6 +2128,14 @@ func (p *AssetProcessor) buildPropertiesFromCTIS(ctisAsset *ctis.Asset) map[stri
 			"asset_value", ctisAsset.Value,
 			"errors", errs.Error(),
 		)
+	}
+
+	// Properties are flat (RFC-042 §6.3.10): the technical blocks' facts
+	// move to the stored type's keys, and the blocks go.
+	stored := resolveCTISAssetType(ctisAsset).stored
+	asset.NormalizeAssetProperties(stored.Type, stored.SubType, props)
+	if stored.Type == asset.AssetTypeCertificate {
+		capCertificateProperties(props)
 	}
 
 	return props
@@ -1989,90 +2169,46 @@ func (p *AssetProcessor) extractOwnerRef(ctisAsset *ctis.Asset) string {
 	return ""
 }
 
-// normalizeHostIPProperties standardizes IP storage for host assets.
-// Ensures all IPs are in `ip_addresses` (array), removes legacy `ip` (string).
-// Promotes ip_address.hostname to top-level `hostname`.
+// normalizeHostIPProperties completes a host's properties once synonyms
+// are folded (asset.NormalizeProperties): a host named by an address records
+// that address in ip_addresses. (The hostname of its technical ip_address
+// block reaches `hostname` through asset.PromoteTechnicalBlocks.)
 func normalizeHostIPProperties(props map[string]any, assetName string) {
-	// Collect all known IPs into a set
-	ipSet := make(map[string]bool)
-
-	// From legacy properties.ip (string)
-	if ip, ok := props["ip"].(string); ok && ip != "" {
-		ipSet[ip] = true
-		delete(props, "ip") // Remove legacy key
-	}
-
-	// From existing ip_addresses array
-	if ips, ok := props["ip_addresses"].([]any); ok {
-		for _, v := range ips {
-			if s, ok := v.(string); ok && s != "" {
-				ipSet[s] = true
-			}
-		}
-	}
-	if ips, ok := props["ip_addresses"].([]string); ok {
-		for _, s := range ips {
-			if s != "" {
-				ipSet[s] = true
-			}
-		}
-	}
-
-	// From ip_address as a plain string (sdk-go's Nessus / Tenable parser).
-	// The key is left in place; only the index array gains the address, so IP
-	// correlation can find this host after it is renamed.
-	if ip, ok := props["ip_address"].(string); ok && net.ParseIP(ip) != nil {
-		ipSet[ip] = true
-	}
-
-	// From ip_address technical data (structured object)
-	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
-		if addr, ok := ipAddr["address"].(string); ok && addr != "" {
-			ipSet[addr] = true
-		}
-		// Promote hostname to top-level if not already set
-		if hostname, ok := ipAddr["hostname"].(string); ok && hostname != "" {
-			if _, exists := props["hostname"]; !exists {
-				props["hostname"] = hostname
-			}
-		}
-	}
-
-	// From asset name if it looks like an IP
 	if looksLikeIPv4(assetName) {
-		ipSet[assetName] = true
-	}
-
-	// Write back as standardized array
-	if len(ipSet) > 0 {
-		ips := make([]string, 0, len(ipSet))
-		for ip := range ipSet {
-			ips = append(ips, ip)
-		}
-		props["ip_addresses"] = ips
+		asset.AddIPAddress(props, assetName)
 	}
 }
 
-// addIPAddress adds ip to props["ip_addresses"], keeping the array free of
-// duplicates whichever slice type it currently holds.
-func addIPAddress(props map[string]any, ip string) {
-	var ips []string
-	switch v := props["ip_addresses"].(type) {
-	case []string:
-		ips = append(ips, v...)
-	case []any:
-		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				ips = append(ips, s)
-			}
+// dropMisplacedProperties removes the keys only assets of other classes may
+// hold (routeMisplacedProperties moved the report's own to their asset).
+func dropMisplacedProperties(t asset.AssetType, subType string, props map[string]any) {
+	for _, k := range asset.MisplacedPropertyKeys(t, subType, props) {
+		delete(props, k)
+	}
+}
+
+// dropOwnAddress removes an IP address asset's own address from its
+// ip_addresses (the key goes when nothing else is left).
+func dropOwnAddress(props map[string]any, assetName string) {
+	own := net.ParseIP(strings.TrimSpace(assetName))
+	if own == nil {
+		return
+	}
+	ips := asset.IPAddresses(props)
+	if len(ips) == 0 {
+		return
+	}
+	rest := make([]any, 0, len(ips))
+	for _, ip := range ips {
+		if ip != own.String() {
+			rest = append(rest, ip)
 		}
 	}
-	for _, existing := range ips {
-		if existing == ip {
-			return
-		}
+	if len(rest) == 0 {
+		delete(props, asset.PropKeyIPAddresses)
+		return
 	}
-	props["ip_addresses"] = append(ips, ip)
+	props[asset.PropKeyIPAddresses] = rest
 }
 
 // looksLikeIPv4 returns true if s matches basic IPv4 pattern.
@@ -2092,4 +2228,18 @@ func looksLikeIPv4(s string) bool {
 		}
 	}
 	return true
+}
+
+// sensorProvenance keeps a sensor's report from claiming a provenance that
+// is not a scan. The lifecycle worker leaves assets of the manual, import
+// and integration categories alone by default (assetProvenanceSQL), so a
+// sensor that labels a planted asset "manual" would keep it from ever going
+// stale and show it as made by a person. Such a claim is recorded as
+// "sensor"; scanner categories (dns, cert_transparency, …) are kept.
+func sensorProvenance(a *asset.Asset) {
+	switch strings.ToLower(strings.TrimSpace(a.DiscoverySource())) {
+	case "", asset.DiscoverySourceManual, "import", "nessus", "kubernetes",
+		"integration", "aws", "gcp", "azure", "git-host":
+		a.SetDiscoveryInfo(DiscoverySourceSensor, a.DiscoveryTool(), a.DiscoveredAt())
+	}
 }

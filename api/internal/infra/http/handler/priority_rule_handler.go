@@ -1,19 +1,24 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -33,6 +38,44 @@ type PriorityRuleHandler struct {
 	// the real classification engine (POST /priority-rules/dry-run). Nil = the
 	// dry-run endpoint returns 503 (no classifier wired, e.g. no database).
 	dryRunner priorityRuleDryRunner
+	audit     *auditapp.AuditService
+}
+
+// SetAuditService wires the audit log for priority rule changes. A rule can
+// re-classify every finding (and so stretch SLA deadlines): changes are High.
+func (h *PriorityRuleHandler) SetAuditService(a *auditapp.AuditService) { h.audit = a }
+
+// ruleAuditView loads a rule as recorded in audit diffs (nil when missing).
+func (h *PriorityRuleHandler) ruleAuditView(ctx context.Context, tenantID, id string) *priorityRuleResponse {
+	var resp priorityRuleResponse
+	var createdAt, updatedAt time.Time
+	err := h.db.QueryRowContext(ctx, `
+		SELECT id, name, COALESCE(description,''), priority_class, conditions,
+			is_active, evaluation_order, created_at, updated_at
+		FROM priority_override_rules
+		WHERE tenant_id = $1 AND id = $2
+	`, tenantID, id).Scan(&resp.ID, &resp.Name, &resp.Description, &resp.PriorityClass,
+		&resp.Conditions, &resp.IsActive, &resp.EvaluationOrder, &createdAt, &updatedAt)
+	if err != nil {
+		return nil
+	}
+	return &resp
+}
+
+func (h *PriorityRuleHandler) auditRule(r *http.Request, action auditdom.Action, id string, before, after *priorityRuleResponse, message string) {
+	name := ""
+	var b, a any
+	if before != nil {
+		name, b = before.Name, before
+	}
+	if after != nil {
+		name, a = after.Name, after
+	}
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewChangeEvent(action, auditdom.ResourceTypePriorityRule, id, b, a).
+			WithResourceName(name).
+			WithSeverity(auditdom.SeverityHigh).
+			WithMessage(message))
 }
 
 // priorityRuleDryRunner is the read-only slice of the priority-classification
@@ -76,6 +119,63 @@ func (h *PriorityRuleHandler) enqueueReclassifyForTenant(ctx context.Context, te
 		return
 	}
 	h.publisher.PublishTenantChange(ctx, tenantID, controller.ReasonRuleChanged, reason)
+}
+
+// Bounds on a priority rule's free text (name is varchar(100) in the table).
+const (
+	maxPriorityRuleName        = 100
+	maxPriorityRuleDescription = 1000
+)
+
+// parseRuleConditions decodes and validates a rule's conditions. Every write
+// goes through the domain validator: an empty list would match every finding
+// (the first matching rule wins, so one such rule re-classes the whole tenant),
+// and an unknown field, operator or key would be stored and silently never
+// match. Unknown keys inside a condition are refused rather than dropped.
+func parseRuleConditions(raw json.RawMessage) ([]byte, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, fmt.Errorf("%w: at least one condition is required", shared.ErrValidation)
+	}
+	dec := json.NewDecoder(bytes.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	var conds []vulnerability.RuleCondition
+	if err := dec.Decode(&conds); err != nil {
+		return nil, fmt.Errorf("%w: conditions must be a list of {field, operator, value}", shared.ErrValidation)
+	}
+	if err := vulnerability.ValidateRuleConditions(conds); err != nil {
+		return nil, err
+	}
+	normalized, err := json.Marshal(conds)
+	if err != nil {
+		return nil, fmt.Errorf("marshal conditions: %w", err)
+	}
+	return normalized, nil
+}
+
+func validatePriorityRuleText(name, description *string) error {
+	if name != nil {
+		if *name == "" {
+			return fmt.Errorf("%w: name is required", shared.ErrValidation)
+		}
+		if len(*name) > maxPriorityRuleName {
+			return fmt.Errorf("%w: name must be at most %d characters", shared.ErrValidation, maxPriorityRuleName)
+		}
+	}
+	if description != nil && len(*description) > maxPriorityRuleDescription {
+		return fmt.Errorf("%w: description must be at most %d characters", shared.ErrValidation, maxPriorityRuleDescription)
+	}
+	return nil
+}
+
+// priorityRuleValidationText is the user-facing text of a domain validation error
+// (without the generic "validation" prefix).
+func priorityRuleValidationText(err error) string {
+	return strings.TrimPrefix(err.Error(), shared.ErrValidation.Error()+": ")
+}
+
+func writePriorityRuleValidation(w http.ResponseWriter, err error) {
+	apierror.ValidationFailed(priorityRuleValidationText(err), nil).WriteJSON(w)
 }
 
 type priorityRuleResponse struct {
@@ -183,12 +283,19 @@ func (h *PriorityRuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("priority_class must be P0, P1, P2, or P3").WriteJSON(w)
 		return
 	}
-	if len(req.Conditions) == 0 {
-		req.Conditions = []byte("[]")
+	if err := validatePriorityRuleText(&req.Name, &req.Description); err != nil {
+		writePriorityRuleValidation(w, err)
+		return
 	}
+	conditions, err := parseRuleConditions(req.Conditions)
+	if err != nil {
+		writePriorityRuleValidation(w, err)
+		return
+	}
+	req.Conditions = conditions
 
 	var id string
-	err := h.db.QueryRowContext(r.Context(), `
+	err = h.db.QueryRowContext(r.Context(), `
 		INSERT INTO priority_override_rules (tenant_id, name, description, priority_class,
 			conditions, is_active, evaluation_order, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -207,6 +314,7 @@ func (h *PriorityRuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if tid, perr := shared.IDFromString(tenantID); perr == nil {
 		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule created")
 	}
+	h.auditRule(r, auditdom.ActionPriorityRuleCreated, id, nil, h.ruleAuditView(r.Context(), tenantID, id), "Priority rule created")
 
 	writeJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
@@ -237,7 +345,43 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := validatePriorityRuleText(req.Name, req.Description); err != nil {
+		writePriorityRuleValidation(w, err)
+		return
+	}
+	if req.Conditions != nil {
+		conditions, err := parseRuleConditions(*req.Conditions)
+		if err != nil {
+			writePriorityRuleValidation(w, err)
+			return
+		}
+		normalized := json.RawMessage(conditions)
+		req.Conditions = &normalized
+	} else if req.IsActive != nil && *req.IsActive {
+		// Re-enabling keeps the stored conditions, so they must be valid too: a
+		// rule switched off by migration 000942 for having none must not come
+		// back on unchanged.
+		var stored json.RawMessage
+		err := h.db.QueryRowContext(r.Context(),
+			`SELECT conditions FROM priority_override_rules WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id).Scan(&stored)
+		if errors.Is(err, sql.ErrNoRows) {
+			apierror.NotFound("rule not found").WriteJSON(w)
+			return
+		}
+		if err != nil {
+			h.logger.Error("load priority rule conditions", "error", err)
+			apierror.InternalServerError("internal error").WriteJSON(w)
+			return
+		}
+		if _, err := parseRuleConditions(stored); err != nil {
+			writePriorityRuleValidation(w, fmt.Errorf("%w: fix the rule's conditions before enabling it (%s)",
+				shared.ErrValidation, priorityRuleValidationText(err)))
+			return
+		}
+	}
 
+	before := h.ruleAuditView(r.Context(), tenantID, id)
 	result, err := h.db.ExecContext(r.Context(), `
 		UPDATE priority_override_rules SET
 			name = COALESCE($3, name),
@@ -266,6 +410,7 @@ func (h *PriorityRuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if tid, perr := shared.IDFromString(tenantID); perr == nil {
 		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule updated")
 	}
+	h.auditRule(r, auditdom.ActionPriorityRuleUpdated, id, before, h.ruleAuditView(r.Context(), tenantID, id), "Priority rule updated")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -275,6 +420,7 @@ func (h *PriorityRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	beforeDelete := h.ruleAuditView(r.Context(), tenantID, id)
 	result, err := h.db.ExecContext(r.Context(),
 		"DELETE FROM priority_override_rules WHERE tenant_id = $1 AND id = $2",
 		tenantID, id,
@@ -294,6 +440,7 @@ func (h *PriorityRuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if tid, perr := shared.IDFromString(tenantID); perr == nil {
 		h.enqueueReclassifyForTenant(r.Context(), tid, "priority rule deleted")
 	}
+	h.auditRule(r, auditdom.ActionPriorityRuleDeleted, id, beforeDelete, nil, "Priority rule deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }

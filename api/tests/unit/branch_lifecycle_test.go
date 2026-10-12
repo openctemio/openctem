@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -100,7 +100,7 @@ func (m *MockFindingRepoForLifecycle) ListAffectedAssetsByVulnerabilityID(_ cont
 func (m *MockFindingRepoForLifecycle) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *MockFindingRepoForLifecycle) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *MockFindingRepoForLifecycle) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 func (m *MockFindingRepoForLifecycle) Count(ctx context.Context, filter vulnerability.FindingFilter) (int64, error) {
@@ -125,7 +125,7 @@ func (m *MockFindingRepoForLifecycle) ExistsByFingerprint(ctx context.Context, t
 func (m *MockFindingRepoForLifecycle) CheckFingerprintsExist(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]bool, error) {
 	return make(map[string]bool), nil
 }
-func (m *MockFindingRepoForLifecycle) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID string) (int64, error) {
+func (m *MockFindingRepoForLifecycle) UpdateScanIDBatchByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string, scanID, _ string) (int64, error) {
 	return 0, nil
 }
 func (m *MockFindingRepoForLifecycle) UpdateSnippetBatchByFingerprints(ctx context.Context, tenantID shared.ID, snippets map[string]string) (int64, error) {
@@ -138,7 +138,7 @@ func (m *MockFindingRepoForLifecycle) BatchCountByAssetIDs(ctx context.Context, 
 }
 
 // Security: UpdateStatusBatch now requires tenantID for tenant isolation
-func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID) error {
+func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 
@@ -158,8 +158,8 @@ func (m *MockFindingRepoForLifecycle) CountBySeverityForScan(ctx context.Context
 func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprint(ctx context.Context, tenantID shared.ID, fingerprint string) (*shared.ID, error) {
 	return nil, nil
 }
-func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]shared.ID, error) {
-	return make(map[string]shared.ID), nil
+func (m *MockFindingRepoForLifecycle) AutoReopenByFingerprintsBatch(ctx context.Context, tenantID shared.ID, fingerprints []string) (map[string]vulnerability.ReopenedFinding, error) {
+	return make(map[string]vulnerability.ReopenedFinding), nil
 }
 func (m *MockFindingRepoForLifecycle) CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
 	return &vulnerability.BatchCreateResult{Created: len(findings), Errors: make(map[int]string)}, nil
@@ -180,7 +180,7 @@ func (m *MockFindingRepoForLifecycle) EnrichBatchByFingerprints(ctx context.Cont
 	return 0, nil
 }
 
-// MockTenantLister implements app.TenantLister for tests.
+// MockTenantLister implements finding.TenantLister for tests.
 type MockTenantLister struct {
 	TenantIDs []shared.ID
 	Error     error
@@ -207,10 +207,10 @@ func TestFindingLifecycleScheduler_ExpiresFeatureBranchFindings(t *testing.T) {
 
 	log := logger.New(logger.Config{Level: "error"})
 
-	scheduler := app.NewFindingLifecycleScheduler(
+	scheduler := finding.NewFindingLifecycleScheduler(
 		mockFindingRepo,
 		mockTenantLister,
-		app.FindingLifecycleSchedulerConfig{
+		finding.FindingLifecycleSchedulerConfig{
 			CheckInterval:     time.Hour,
 			DefaultExpiryDays: 30,
 			Enabled:           true,
@@ -329,7 +329,7 @@ func TestBranch_Retention(t *testing.T) {
 // =============================================================================
 
 func TestDefaultFindingLifecycleSchedulerConfig(t *testing.T) {
-	cfg := app.DefaultFindingLifecycleSchedulerConfig()
+	cfg := finding.DefaultFindingLifecycleSchedulerConfig()
 
 	if cfg.CheckInterval != time.Hour {
 		t.Errorf("CheckInterval = %v, want %v", cfg.CheckInterval, time.Hour)
@@ -396,7 +396,7 @@ func (m *MockFindingRepoForLifecycle) ListFindingGroups(_ context.Context, _ sha
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *MockFindingRepoForLifecycle) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *MockFindingRepoForLifecycle) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 

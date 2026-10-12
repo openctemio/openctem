@@ -35,6 +35,11 @@ func (p Permission) String() string {
 const (
 	// Dashboard permissions
 	DashboardRead Permission = "dashboard:read"
+	// DashboardAggregate shows organization-wide dashboard totals to a viewer
+	// whose data scope is restricted (owner decision D6, research doc 15):
+	// without it, a restricted viewer's dashboard counts only their own
+	// assets and findings. Breakdowns under 5 are left out (k-floor).
+	DashboardAggregate Permission = "dashboard:aggregate"
 
 	// Audit log permissions
 	AuditRead Permission = "audit:read"
@@ -65,9 +70,8 @@ const (
 
 	// Component permissions (assets:components:*)
 	// Note: Components (SBOM) is a separate module with its own permissions
-	ComponentsRead   Permission = "assets:components:read"
-	ComponentsWrite  Permission = "assets:components:write"
-	ComponentsDelete Permission = "assets:components:delete"
+	ComponentsRead  Permission = "assets:components:read"
+	ComponentsWrite Permission = "assets:components:write"
 
 	// Note: Repositories and Branches use general assets:* permissions
 	// as they are just asset types, not separate security boundaries
@@ -90,6 +94,14 @@ const (
 	FindingsApprove    Permission = "findings:approve"
 	FindingsFixApply   Permission = "findings:fix_apply" // in_progress → fix_applied (dev/owner action)
 	FindingsVerify     Permission = "findings:verify"    // fix_applied → resolved (security/scanner action)
+	// FindingsComment: comment on a finding and react to comments. Split
+	// from findings:write so a person can discuss a finding without the
+	// other writes (migration 001534).
+	FindingsComment Permission = "findings:comment"
+	// FindingsSeverity: change a finding's severity or classification. Split
+	// from findings:write so whoever fixes a finding need not be able to
+	// re-score it (migration 001534).
+	FindingsSeverity Permission = "findings:severity"
 
 	// Exposure permissions (findings:exposures:*)
 	ExposuresRead   Permission = "findings:exposures:read"
@@ -104,9 +116,7 @@ const (
 	SuppressionsApprove Permission = "findings:suppressions:approve"
 
 	// Vulnerability permissions (findings:vulnerabilities:*)
-	VulnerabilitiesRead   Permission = "findings:vulnerabilities:read"
-	VulnerabilitiesWrite  Permission = "findings:vulnerabilities:write"
-	VulnerabilitiesDelete Permission = "findings:vulnerabilities:delete"
+	VulnerabilitiesRead Permission = "findings:vulnerabilities:read"
 
 	// Credential leak permissions (findings:credentials:*)
 	CredentialsRead  Permission = "findings:credentials:read"
@@ -114,6 +124,10 @@ const (
 	// CredentialsReveal returns a leaked credential's plaintext secret. Read
 	// returns only a mask and a fingerprint; every reveal is audited.
 	CredentialsReveal Permission = "findings:credentials:reveal"
+	// EvidenceReveal returns the plaintext of secret values masked out of a
+	// finding's evidence (request headers, cookies, tokens). Needs step-up;
+	// every reveal is audited and shown on the finding's timeline.
+	EvidenceReveal Permission = "findings:evidence:reveal"
 
 	// Remediation permissions (findings:remediation:*)
 	RemediationRead  Permission = "findings:remediation:read"
@@ -122,11 +136,6 @@ const (
 	// Workflow permissions (findings:workflows:*)
 	WorkflowsRead  Permission = "findings:workflows:read"
 	WorkflowsWrite Permission = "findings:workflows:write"
-
-	// Policies permissions (findings:policies:*)
-	PoliciesRead   Permission = "findings:policies:read"
-	PoliciesWrite  Permission = "findings:policies:write"
-	PoliciesDelete Permission = "findings:policies:delete"
 )
 
 // =============================================================================
@@ -139,16 +148,19 @@ const (
 	ScansWrite   Permission = "scans:write"
 	ScansDelete  Permission = "scans:delete"
 	ScansExecute Permission = "scans:execute"
+	// ScansApprove approves or rejects scan approval requests and starts
+	// emergency runs (RFC-073). Owners and administrators by default.
+	ScansApprove Permission = "scans:approve"
 
 	// Scan Profile permissions (scans:profiles:*)
 	ScanProfilesRead   Permission = "scans:profiles:read"
 	ScanProfilesWrite  Permission = "scans:profiles:write"
 	ScanProfilesDelete Permission = "scans:profiles:delete"
 
-	// Source permissions (scans:sources:*)
-	SourcesRead   Permission = "scans:sources:read"
-	SourcesWrite  Permission = "scans:sources:write"
-	SourcesDelete Permission = "scans:sources:delete"
+	// Template source permissions (scans:sources:*)
+	TemplateSourcesRead   Permission = "scans:sources:read"
+	TemplateSourcesWrite  Permission = "scans:sources:write"
+	TemplateSourcesDelete Permission = "scans:sources:delete"
 
 	// Tool Registry permissions (scans:tools:*)
 	ToolsRead   Permission = "scans:tools:read"
@@ -156,19 +168,38 @@ const (
 	ToolsDelete Permission = "scans:tools:delete"
 
 	// Tenant Tool Config permissions (scans:tenant_tools:*)
-	TenantToolsRead   Permission = "scans:tenant_tools:read"
-	TenantToolsWrite  Permission = "scans:tenant_tools:write"
-	TenantToolsDelete Permission = "scans:tenant_tools:delete"
+	TenantToolsRead  Permission = "scans:tenant_tools:read"
+	TenantToolsWrite Permission = "scans:tenant_tools:write"
 
 	// Scanner Template permissions (scans:templates:*)
 	ScannerTemplatesRead   Permission = "scans:templates:read"
 	ScannerTemplatesWrite  Permission = "scans:templates:write"
 	ScannerTemplatesDelete Permission = "scans:templates:delete"
 
+	// Content pack permissions (scans:content:*, RFC-061)
+	ContentPacksRead  Permission = "scans:content:read"
+	ContentPacksWrite Permission = "scans:content:write"
+
 	// Secret Store permissions (scans:secret_store:*)
 	SecretStoreRead   Permission = "scans:secret_store:read"
 	SecretStoreWrite  Permission = "scans:secret_store:write"
 	SecretStoreDelete Permission = "scans:secret_store:delete"
+
+	// CI runs, CI trust configurations and the CI gate (scans:ci:*,
+	// RFC-051). Write (trust configurations issue upload credentials, gate
+	// policies decide what blocks a scan workflow) and override (break-glass) are
+	// admin-only.
+	CIRead     Permission = "scans:ci:read"
+	CIWrite    Permission = "scans:ci:write"
+	CIOverride Permission = "scans:ci:override"
+
+	// ScanWindowsManage creates, edits and deletes scan window policies
+	// (RFC-067): when scans may touch which targets.
+	ScanWindowsManage Permission = "scans:windows:manage"
+	// ScanWindowsOverride suspends scan window policies for a short time,
+	// with a fresh authenticator code and a reason (audited, notified).
+	// Program testing windows are never suspended.
+	ScanWindowsOverride Permission = "scans:windows:override"
 )
 
 // =============================================================================
@@ -182,15 +213,25 @@ const (
 	SensorsDelete Permission = "sensors:delete"
 
 	// Command permissions (sensors:commands:*)
-	CommandsRead   Permission = "sensors:commands:read"
-	CommandsWrite  Permission = "sensors:commands:write"
-	CommandsDelete Permission = "sensors:commands:delete"
+	CommandsRead  Permission = "sensors:commands:read"
+	CommandsWrite Permission = "sensors:commands:write"
 
 	// Scan zone permissions (sensors:zones:*, RFC-023 D16). Write covers
 	// creating/editing zones and assigning sensors to them.
 	ScanZonesRead   Permission = "sensors:zones:read"
 	ScanZonesWrite  Permission = "sensors:zones:write"
 	ScanZonesDelete Permission = "sensors:zones:delete"
+
+	// Pairing and per-sensor grants (RFC-052). Pair: look up a pairing
+	// code, expect a sensor, deny a request. Approve: bind a sensor key to
+	// the organization (with step-up). GrantNarrow / GrantWiden: narrow or
+	// widen a sensor's grant and demote or promote its trust level. Revoke:
+	// revoke a sensor or one of its keys.
+	SensorsPair        Permission = "sensors:pair"
+	SensorsApprove     Permission = "sensors:approve"
+	SensorsGrantNarrow Permission = "sensors:grant:narrow"
+	SensorsGrantWiden  Permission = "sensors:grant:widen"
+	SensorsRevoke      Permission = "sensors:revoke"
 )
 
 // =============================================================================
@@ -221,11 +262,6 @@ const (
 	RolesDelete Permission = "team:roles:delete"
 	RolesAssign Permission = "team:roles:assign"
 
-	// Permission Set permissions (team:permission_sets:*)
-	PermissionSetsRead   Permission = "team:permission_sets:read"
-	PermissionSetsWrite  Permission = "team:permission_sets:write"
-	PermissionSetsDelete Permission = "team:permission_sets:delete"
-
 	// Assignment Rules permissions (team:assignment_rules:*)
 	AssignmentRulesRead   Permission = "team:assignment_rules:read"
 	AssignmentRulesWrite  Permission = "team:assignment_rules:write"
@@ -251,21 +287,15 @@ const (
 	NotificationsWrite  Permission = "integrations:notifications:write"
 	NotificationsDelete Permission = "integrations:notifications:delete"
 
-	// Webhook permissions (integrations:webhooks:*)
-	WebhooksRead   Permission = "integrations:webhooks:read"
-	WebhooksWrite  Permission = "integrations:webhooks:write"
-	WebhooksDelete Permission = "integrations:webhooks:delete"
-
 	// API Keys permissions (integrations:api_keys:*)
 	APIKeysRead   Permission = "integrations:api_keys:read"
 	APIKeysWrite  Permission = "integrations:api_keys:write"
 	APIKeysDelete Permission = "integrations:api_keys:delete"
 
-	// Pipeline permissions (integrations:pipelines:*)
-	PipelinesRead    Permission = "integrations:pipelines:read"
-	PipelinesWrite   Permission = "integrations:pipelines:write"
-	PipelinesDelete  Permission = "integrations:pipelines:delete"
-	PipelinesExecute Permission = "integrations:pipelines:execute"
+	// Scan workflow permissions (scans:workflows:*): the graph of steps a Scan runs
+	ScanWorkflowsRead   Permission = "scans:workflows:read"
+	ScanWorkflowsWrite  Permission = "scans:workflows:write"
+	ScanWorkflowsDelete Permission = "scans:workflows:delete"
 )
 
 // =============================================================================
@@ -273,9 +303,6 @@ const (
 // =============================================================================
 
 const (
-	// Billing permissions (settings:billing:*)
-	BillingRead  Permission = "settings:billing:read"
-	BillingWrite Permission = "settings:billing:write"
 
 	// SLA permissions (settings:sla:*)
 	SLARead   Permission = "settings:sla:read"
@@ -292,6 +319,20 @@ const (
 	ScopeRead   Permission = "attack_surface:scope:read"
 	ScopeWrite  Permission = "attack_surface:scope:write"
 	ScopeDelete Permission = "attack_surface:scope:delete"
+	// ScopeExclusionsApprove approves or rejects a pending scope exclusion.
+	// An exclusion suppresses scanning, so scope:write only requests one;
+	// owners and admins hold this by default.
+	ScopeExclusionsApprove Permission = "attack_surface:scope:exclusions:approve"
+	// ScopeApprove creates effective scope entries and approves or rejects
+	// scope requests and widenings (RFC-054). Without it, scope:write only
+	// requests a one-off entry; owners and admins hold it by default.
+	ScopeApprove Permission = "attack_surface:scope:approve"
+
+	// ProgramsRead views bug-bounty programs; ProgramsWrite imports,
+	// re-imports, pauses, resumes and ends them and attests to their terms
+	// (RFC-065). Neither widens the organization's own scope.
+	ProgramsRead  Permission = "attack_surface:programs:read"
+	ProgramsWrite Permission = "attack_surface:programs:write"
 )
 
 // =============================================================================
@@ -299,9 +340,10 @@ const (
 // =============================================================================
 
 const (
-	// Pentest/Validation permissions (validation:* - legacy)
-	ValidationRead  Permission = "validation:read"
-	ValidationWrite Permission = "validation:write"
+	// Pentest/validation permissions (validation:*): the module-wide gate
+	// of pentest, simulations and control tests.
+	PentestRead  Permission = "validation:read"
+	PentestWrite Permission = "validation:write"
 
 	// Granular pentest permissions (pentest:*)
 	PentestCampaignsRead   Permission = "pentest:campaigns:read"
@@ -315,6 +357,10 @@ const (
 	PentestTemplatesRead   Permission = "pentest:templates:read"
 	PentestTemplatesWrite  Permission = "pentest:templates:write"
 	PentestReportsWrite    Permission = "pentest:reports:write"
+	// PentestChecklistsManage creates, imports, edits and archives the
+	// organization's methodology checklist templates (RFC-087). Testers use
+	// templates with campaign permissions; this is the pentest manager's.
+	PentestChecklistsManage Permission = "pentest:checklists:manage"
 )
 
 // =============================================================================
@@ -323,12 +369,10 @@ const (
 
 const (
 	ComplianceFrameworksRead   Permission = "compliance:frameworks:read"
-	ComplianceFrameworksWrite  Permission = "compliance:frameworks:write"
 	ComplianceAssessmentsRead  Permission = "compliance:assessments:read"
 	ComplianceAssessmentsWrite Permission = "compliance:assessments:write"
 	ComplianceMappingsRead     Permission = "compliance:mappings:read"
 	ComplianceMappingsWrite    Permission = "compliance:mappings:write"
-	ComplianceReportsRead      Permission = "compliance:reports:read"
 )
 
 // =============================================================================
@@ -392,109 +436,84 @@ const (
 	AITriageTrigger Permission = "ai_triage:trigger"
 )
 
-// =============================================================================
-// LEGACY ALIASES (for backward compatibility in code)
-// These map to new standardized permissions but keep old constant names
-// =============================================================================
-
-const (
-	// MembersManage is an alias for MembersWrite (team:members:write)
-	MembersManage Permission = "team:members:write"
-
-	// BillingManage is an alias for BillingWrite (settings:billing:write)
-	BillingManage Permission = "settings:billing:write"
-
-	// PentestRead/Write are aliases for ValidationRead/Write
-	PentestRead  Permission = "validation:read"
-	PentestWrite Permission = "validation:write"
-
-	// GroupsPermissions is an alias for GroupsWrite (team:groups:write)
-	GroupsPermissions Permission = "team:groups:write"
-
-	// TemplateSources are aliases for Sources (same permission strings)
-	TemplateSourcesRead   Permission = "scans:sources:read"
-	TemplateSourcesWrite  Permission = "scans:sources:write"
-	TemplateSourcesDelete Permission = "scans:sources:delete"
-)
-
 // AllPermissions returns all defined permissions.
 // Useful for validation and documentation.
 func AllPermissions() []Permission {
 	return []Permission{
 		// Core
-		DashboardRead,
+		DashboardRead, DashboardAggregate,
 		AuditRead,
 		SettingsRead, SettingsWrite,
 
 		// Assets module
 		AssetsRead, AssetsWrite, AssetsDelete, AssetsImport, AssetsExport,
 		AssetGroupsRead, AssetGroupsWrite, AssetGroupsDelete,
-		ComponentsRead, ComponentsWrite, ComponentsDelete,
+		ComponentsRead, ComponentsWrite,
 
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
-		VulnerabilitiesRead, VulnerabilitiesWrite, VulnerabilitiesDelete,
-		CredentialsRead, CredentialsWrite, CredentialsReveal,
+		VulnerabilitiesRead,
+		CredentialsRead, CredentialsWrite, CredentialsReveal, EvidenceReveal,
 		RemediationRead, RemediationWrite,
 		WorkflowsRead, WorkflowsWrite,
-		PoliciesRead, PoliciesWrite, PoliciesDelete,
 
 		// Scans module
-		ScansRead, ScansWrite, ScansDelete, ScansExecute,
+		ScansRead, ScansWrite, ScansDelete, ScansExecute, ScansApprove,
 		ScanProfilesRead, ScanProfilesWrite, ScanProfilesDelete,
-		SourcesRead, SourcesWrite, SourcesDelete,
+		TemplateSourcesRead, TemplateSourcesWrite, TemplateSourcesDelete,
 		ToolsRead, ToolsWrite, ToolsDelete,
-		TenantToolsRead, TenantToolsWrite, TenantToolsDelete,
+		TenantToolsRead, TenantToolsWrite,
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
+		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
+		CIRead, CIWrite, CIOverride,
+		ScanWindowsManage, ScanWindowsOverride,
 
 		// Sensors module
 		SensorsRead, SensorsWrite, SensorsDelete,
-		CommandsRead, CommandsWrite, CommandsDelete,
+		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
+		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 
 		// Team module
 		TeamRead, TeamUpdate, TeamDelete,
-		MembersRead, MembersInvite, MembersWrite, MembersManage,
-		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets, GroupsPermissions,
+		MembersRead, MembersInvite, MembersWrite,
+		GroupsRead, GroupsWrite, GroupsDelete, GroupsMembers, GroupsAssets,
 		RolesRead, RolesWrite, RolesDelete, RolesAssign,
-		PermissionSetsRead, PermissionSetsWrite, PermissionSetsDelete,
 		AssignmentRulesRead, AssignmentRulesWrite, AssignmentRulesDelete,
 
 		// Integrations module
 		IntegrationsRead, IntegrationsManage,
 		SCMConnectionsRead, SCMConnectionsWrite, SCMConnectionsDelete,
 		NotificationsRead, NotificationsWrite, NotificationsDelete,
-		WebhooksRead, WebhooksWrite, WebhooksDelete,
 		APIKeysRead, APIKeysWrite, APIKeysDelete,
-		PipelinesRead, PipelinesWrite, PipelinesDelete, PipelinesExecute,
+		ScanWorkflowsRead, ScanWorkflowsWrite, ScanWorkflowsDelete,
 
 		// Settings module
-		BillingRead, BillingWrite, BillingManage,
 		SLARead, SLAWrite, SLADelete,
 
 		// Attack Surface module
-		ScopeRead, ScopeWrite, ScopeDelete,
+		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
+		ProgramsRead, ProgramsWrite,
 
 		// Validation module (legacy)
-		ValidationRead, ValidationWrite, PentestRead, PentestWrite,
+		PentestRead, PentestWrite,
 
 		// Pentest module (granular)
 		PentestCampaignsRead, PentestCampaignsWrite, PentestCampaignsDelete,
 		PentestFindingsRead, PentestFindingsWrite, PentestFindingsDelete,
 		PentestRetestsRead, PentestRetestsWrite,
 		PentestTemplatesRead, PentestTemplatesWrite,
-		PentestReportsWrite,
+		PentestReportsWrite, PentestChecklistsManage,
 
 		// Compliance module
-		ComplianceFrameworksRead, ComplianceFrameworksWrite,
+		ComplianceFrameworksRead,
 		ComplianceAssessmentsRead, ComplianceAssessmentsWrite,
 		ComplianceMappingsRead, ComplianceMappingsWrite,
-		ComplianceReportsRead,
 
 		// Reports module
 		ReportsRead, ReportsWrite,

@@ -4,13 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/openctemio/openctem/api/internal/infra/http/include"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,6 +26,7 @@ import (
 // ToolHandler handles HTTP requests for tool registry.
 type ToolHandler struct {
 	service   *tool.Service
+	audit     *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
@@ -33,21 +40,65 @@ func NewToolHandler(service *tool.Service, v *validator.Validator, log *logger.L
 	}
 }
 
+// SetAuditService records changes to tools and to the tenant's tool
+// configuration in the tenant's audit log, with the state before and after
+// (RFC-040 §5.11).
+func (h *ToolHandler) SetAuditService(svc *auditsvc.AuditService) {
+	h.audit = svc
+}
+
+func (h *ToolHandler) auditTool(r *http.Request, action audit.Action, id string, before, after *tooldom.Tool) {
+	name := ""
+	var b, a map[string]any
+	if before != nil {
+		b, name = auditSnapshot(toToolResponse(before)), before.Name
+	}
+	if after != nil {
+		a, name = auditSnapshot(toToolResponse(after)), after.Name
+	}
+	auditResourceChange(h.audit, h.logger, r, action, audit.ResourceTypeTool, id, name, b, a)
+}
+
+// toolBefore reads the custom tool a change starts from; a failed read
+// answers the request (a platform tool or another tenant's tool is not
+// found), as the change would fail the same way.
+func (h *ToolHandler) toolBefore(w http.ResponseWriter, r *http.Request, id string) (*tooldom.Tool, bool) {
+	t, err := h.service.GetCustomTool(r.Context(), middleware.GetTenantID(r.Context()), id)
+	if err != nil {
+		h.handleServiceError(w, err, "Tool")
+		return nil, false
+	}
+	return t, true
+}
+
+// tenantConfigSnapshot is the tenant's config of a tool for the audit log,
+// nil when there is none yet.
+func (h *ToolHandler) tenantConfigSnapshot(r *http.Request, tenantID, toolID string) map[string]any {
+	c, err := h.service.GetTenantToolConfig(r.Context(), tenantID, toolID)
+	if err != nil || c == nil {
+		return nil
+	}
+	return auditSnapshot(toTenantToolConfigResponse(c))
+}
+
 // =============================================================================
 // Request/Response Types
 // =============================================================================
 
 // CreateToolRequest represents the request body for creating a tool.
 type CreateToolRequest struct {
-	Name             string         `json:"name" validate:"required,min=1,max=50"`
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // UUID reference to tool_categories table
-	InstallMethod    string         `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	Name          string `json:"name" validate:"required,min=1,max=50"`
+	DisplayName   string `json:"display_name" validate:"max=100"`
+	Description   string `json:"description" validate:"max=1000"`
+	CategoryID    string `json:"category_id" validate:"omitempty,uuid"` // UUID reference to tool_categories table
+	InstallMethod string `json:"install_method" validate:"required,oneof=go pip npm docker binary"`
+	InstallCmd    string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd     string `json:"update_cmd" validate:"max=500"`
+	VersionCmd    string `json:"version_cmd" validate:"max=500"`
+	VersionRegex  string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -61,13 +112,16 @@ type CreateToolRequest struct {
 
 // UpdateToolRequest represents the request body for updating a tool.
 type UpdateToolRequest struct {
-	DisplayName      string         `json:"display_name" validate:"max=100"`
-	Description      string         `json:"description" validate:"max=1000"`
-	CategoryID       string         `json:"category_id" validate:"omitempty,uuid"` // Optional: link to tool_categories table
-	InstallCmd       string         `json:"install_cmd" validate:"max=500"`
-	UpdateCmd        string         `json:"update_cmd" validate:"max=500"`
-	VersionCmd       string         `json:"version_cmd" validate:"max=500"`
-	VersionRegex     string         `json:"version_regex" validate:"max=200"`
+	DisplayName  string `json:"display_name" validate:"max=100"`
+	Description  string `json:"description" validate:"max=1000"`
+	CategoryID   string `json:"category_id" validate:"omitempty,uuid"` // Optional: link to tool_categories table
+	InstallCmd   string `json:"install_cmd" validate:"max=500"`
+	UpdateCmd    string `json:"update_cmd" validate:"max=500"`
+	VersionCmd   string `json:"version_cmd" validate:"max=500"`
+	VersionRegex string `json:"version_regex" validate:"max=200"`
+	// MinVersion is the oldest tool version the catalog accepts (a release
+	// version such as "3.2.0"; empty: no minimum).
+	MinVersion       string         `json:"min_version" validate:"max=50"`
 	ConfigSchema     map[string]any `json:"config_schema"`
 	DefaultConfig    map[string]any `json:"default_config"`
 	Capabilities     []string       `json:"capabilities" validate:"max=20,dive,max=50"`
@@ -105,6 +159,7 @@ type ToolResponse struct {
 	VersionRegex     string                    `json:"version_regex,omitempty"`
 	CurrentVersion   string                    `json:"current_version,omitempty"`
 	LatestVersion    string                    `json:"latest_version,omitempty"`
+	MinVersion       string                    `json:"min_version,omitempty"`
 	HasUpdate        bool                      `json:"has_update"`
 	ConfigFilePath   string                    `json:"config_file_path,omitempty"`
 	ConfigSchema     map[string]any            `json:"config_schema,omitempty"`
@@ -112,22 +167,19 @@ type ToolResponse struct {
 	Capabilities     []string                  `json:"capabilities"`
 	SupportedTargets []string                  `json:"supported_targets"`
 	OutputFormats    []string                  `json:"output_formats"`
-	DocsURL          string                    `json:"docs_url,omitempty"`
-	GithubURL        string                    `json:"github_url,omitempty"`
-	IsActive         bool                      `json:"is_active"`
-	IsBuiltin        bool                      `json:"is_builtin"`
-	IsPlatformTool   bool                      `json:"is_platform_tool"` // true for platform tools, false for custom
-	Tags             []string                  `json:"tags"`
-	Metadata         map[string]any            `json:"metadata,omitempty"`
-	CreatedBy        *string                   `json:"created_by,omitempty"` // User ID who created the tool (for custom tools)
-	CreatedAt        string                    `json:"created_at"`
-	UpdatedAt        string                    `json:"updated_at"`
-}
-
-// TenantToolConfigRequest represents the request for tenant tool config.
-type TenantToolConfigRequest struct {
-	Config    map[string]any `json:"config"`
-	IsEnabled bool           `json:"is_enabled"`
+	// OutputTypes are the asset types a report of the tool may create
+	// (scan stage catalog); read-only.
+	OutputTypes    []string       `json:"output_types"`
+	DocsURL        string         `json:"docs_url,omitempty"`
+	GithubURL      string         `json:"github_url,omitempty"`
+	IsActive       bool           `json:"is_active"`
+	IsBuiltin      bool           `json:"is_builtin"`
+	IsPlatformTool bool           `json:"is_platform_tool"` // true for platform tools, false for custom
+	Tags           []string       `json:"tags"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	CreatedBy      *string        `json:"created_by,omitempty"` // User ID who created the tool (for custom tools)
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at"`
 }
 
 // TenantToolConfigResponse represents the response for tenant tool config.
@@ -157,194 +209,260 @@ type CustomPatternResponse struct {
 	Pattern string `json:"pattern"`
 }
 
-// BulkToolIDsRequest represents request for bulk tool operations.
-type BulkToolIDsRequest struct {
-	ToolIDs []string `json:"tool_ids" validate:"required,min=1,dive,uuid"`
+// ToolSettingsResponse is the tenant's settings of one tool.
+type ToolSettingsResponse struct {
+	// IsEnabled is the tenant's switch (a tool never configured is on).
+	IsEnabled bool `json:"is_enabled"`
+	// Config is the tenant's overrides of the tool's default config.
+	Config map[string]any `json:"config"`
+	// EffectiveConfig is the default config with the overrides applied.
+	EffectiveConfig map[string]any           `json:"effective_config"`
+	CustomTemplates []CustomTemplateResponse `json:"custom_templates,omitempty"`
+	CustomPatterns  []CustomPatternResponse  `json:"custom_patterns,omitempty"`
+	UpdatedBy       *string                  `json:"updated_by,omitempty"`
+	UpdatedAt       *string                  `json:"updated_at,omitempty"`
 }
 
-// ToolWithConfigResponse represents a tool with its tenant config.
-type ToolWithConfigResponse struct {
-	Tool            *ToolResponse             `json:"tool"`
-	TenantConfig    *TenantToolConfigResponse `json:"tenant_config,omitempty"`
-	EffectiveConfig map[string]any            `json:"effective_config"`
-	IsEnabled       bool                      `json:"is_enabled"`
-	IsAvailable     bool                      `json:"is_available"` // True if at least one sensor supports this tool
+// ToolViewResponse is one tool of the tenant's view of the catalog: the
+// catalog entry plus what was asked for with include=.
+type ToolViewResponse struct {
+	ToolResponse
+	// Source: platform (shared, managed by the platform) or custom (this
+	// organization's own tool).
+	Source string `json:"source" enums:"platform,custom"`
+	// Settings: include=settings.
+	Settings *ToolSettingsResponse `json:"settings,omitempty"`
+	// Availability: include=availability.
+	Availability *ToolAvailabilityInfo `json:"availability,omitempty"`
+	// Meta lists the includes left out (GET /tools/{id} only).
+	Meta *include.Meta `json:"meta,omitempty"`
 }
 
-// ToolStatsResponse represents tool statistics.
-type ToolStatsResponse struct {
-	ToolID         string `json:"tool_id"`
-	TotalRuns      int64  `json:"total_runs"`
-	SuccessfulRuns int64  `json:"successful_runs"`
-	FailedRuns     int64  `json:"failed_runs"`
-	TotalFindings  int64  `json:"total_findings"`
-	AvgDurationMs  int64  `json:"avg_duration_ms"`
+// ToolListAvailability is the availability view of every tool (filters not
+// applied), returned with include=availability.
+type ToolListAvailability struct {
+	// Summary counts the tools per status (every status present).
+	Summary map[string]int `json:"summary"`
+	// ZoneID is the scan zone the view is limited to.
+	ZoneID     string `json:"zone_id,omitempty"`
+	ComputedAt string `json:"computed_at"`
+	// Unlisted are the tools the sensors report that the catalog does not
+	// list (never enabled; not filtered or paginated).
+	Unlisted []UnlistedToolResponse `json:"unlisted"`
 }
 
-// TenantToolStatsResponse represents tenant tool statistics.
-type TenantToolStatsResponse struct {
-	TenantID       string              `json:"tenant_id"`
-	TotalRuns      int64               `json:"total_runs"`
-	SuccessfulRuns int64               `json:"successful_runs"`
-	FailedRuns     int64               `json:"failed_runs"`
-	TotalFindings  int64               `json:"total_findings"`
-	ToolBreakdown  []ToolStatsResponse `json:"tool_breakdown"`
+// ToolListResponse is a page of the tenant's view of the catalog.
+type ToolListResponse struct {
+	Items        []ToolViewResponse    `json:"items"`
+	Total        int64                 `json:"total"`
+	Page         int                   `json:"page"`
+	PerPage      int                   `json:"per_page"`
+	TotalPages   int                   `json:"total_pages"`
+	Availability *ToolListAvailability `json:"availability,omitempty"`
+	// Meta lists the includes asked for but left out.
+	Meta include.Meta `json:"meta"`
+}
+
+// ToolSettingsRequest changes the tenant's settings of one tool. An omitted
+// (or null) field is left as it is; "config": {} clears the overrides.
+// Config overrides need scans:tools:write and never carry secrets.
+type ToolSettingsRequest struct {
+	IsEnabled *bool          `json:"is_enabled"`
+	Config    map[string]any `json:"config"`
+}
+
+// BulkToolSettingsRequest switches several tools on or off for the tenant.
+// Ids of tools the tenant cannot see are ignored.
+type BulkToolSettingsRequest struct {
+	ToolIDs   []string `json:"tool_ids" validate:"required,min=1,max=500,dive,uuid"`
+	IsEnabled *bool    `json:"is_enabled" validate:"required"`
 }
 
 // =============================================================================
-// Tool Handlers (System-wide)
+// Tool Handlers: the tenant's view of the catalog
 // =============================================================================
+
+// Include values of GET /tools and GET /tools/{id}.
+const (
+	includeSettings     = "settings"
+	includeAvailability = "availability"
+)
+
+// ToolIncludes is the tool resource's include whitelist. Each include needs
+// the permission of its former standalone route: scans:tenant_tools:read.
+// The sensor names and zones inside the availability additionally need
+// sensors:read (otherwise counts only). Availability is expensive: it costs 2
+// more read-limiter tokens and caps the page at 50.
+var ToolIncludes = include.NewRegistry(
+	include.Spec{Name: includeSettings, Permissions: []permission.Permission{permission.TenantToolsRead}},
+	include.Spec{Name: includeAvailability, Permissions: []permission.Permission{permission.TenantToolsRead}, Cost: 2, Expensive: true},
+)
+
+// Bounds of the list: the filters, and the page size, lower when an include
+// that reads sensors is loaded.
+const (
+	maxToolSearchLen     = 255
+	maxToolCategoryLen   = 50
+	toolTenantFilterNeed = "the enabled and available filters need "
+)
+
+// optionalBool reads a true/false query parameter (nil when absent).
+func optionalBool(r *http.Request, name string) (*bool, *apierror.Error) {
+	switch r.URL.Query().Get(name) {
+	case "":
+		return nil, nil
+	case queryParamTrue:
+		v := true
+		return &v, nil
+	case "false":
+		v := false
+		return &v, nil
+	}
+	return nil, apierror.BadRequest(name + " must be true or false")
+}
 
 // List handles GET /api/v1/tools
 // @Summary      List tools
-// @Description  Get a paginated list of available tools
+// @Description  The organization's view of the tool catalog: platform tools and its own custom tools. include= adds the organization's settings (credential-like config values masked) and the availability from its sensors (sensor names and zones only with sensors:read); each needs scans:tenant_tools:read and is otherwise left out and listed in meta.omitted_includes. A response that took include= is Cache-Control: private, no-store; availability costs 2 more read-limit tokens. The enabled/available filters need scans:tenant_tools:read. With include=availability the response also carries the availability summary and the tools the sensors report that the catalog does not list.
 // @Tags         Tools
-// @Accept       json
 // @Produce      json
-// @Param        category      query     string   false  "Filter by category"
-// @Param        capabilities  query     string   false  "Filter by capabilities (comma-separated)"
-// @Param        is_active     query     boolean  false  "Filter by active status"
-// @Param        is_builtin    query     boolean  false  "Filter by builtin status"
-// @Param        search        query     string   false  "Search by name or description"
-// @Param        tags          query     string   false  "Filter by tags (comma-separated)"
-// @Param        page          query     int      false  "Page number" default(1)
-// @Param        per_page      query     int      false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ToolResponse]
+// @Param        source     query     string   false  "platform or custom"  Enums(platform, custom)
+// @Param        category   query     string   false  "Category name"
+// @Param        q          query     string   false  "Search the name, display name and description"
+// @Param        enabled    query     boolean  false  "Active in the catalog and switched on for the organization"
+// @Param        available  query     boolean  false  "A scan job can be dispatched now (an online sensor may run it)"
+// @Param        zone_id    query     string   false  "Availability from this scan zone's sensors only"
+// @Param        include    query     string   false  "Comma-separated: settings, availability (per_page is capped at 50 with availability); one the caller may not read is left out and listed in meta.omitted_includes"
+// @Param        sort       query     string   false  "name, created_at or updated_at; '-' prefix for descending (default: category, then name)"
+// @Param        page       query     int      false  "Page number" default(1)
+// @Param        per_page   query     int      false  "Items per page (max 100)" default(20)
+// @Success      200  {object}  ToolListResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /tools [get]
 func (h *ToolHandler) List(w http.ResponseWriter, r *http.Request) {
-	input := tool.ListInput{
-		TenantID: middleware.GetTenantID(r.Context()),
-		Category: r.URL.Query().Get("category"),
-		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+	q := r.URL.Query()
+	enabled, aerr := optionalBool(r, "enabled")
+	if aerr != nil {
+		aerr.WriteJSON(w)
+		return
 	}
-
-	if capabilities := r.URL.Query().Get("capabilities"); capabilities != "" {
-		input.Capabilities = parseQueryArray(capabilities)
+	available, aerr := optionalBool(r, "available")
+	if aerr != nil {
+		aerr.WriteJSON(w)
+		return
 	}
-
-	if tags := r.URL.Query().Get("tags"); tags != "" {
-		input.Tags = parseQueryArray(tags)
+	if (enabled != nil || available != nil) && !middleware.HasPermission(r.Context(), permission.TenantToolsRead.String()) {
+		apierror.Forbidden(toolTenantFilterNeed + permission.TenantToolsRead.String()).WriteJSON(w)
+		return
 	}
-
-	if isActive := r.URL.Query().Get("is_active"); isActive != "" {
-		val := isActive == queryParamTrue
-		input.IsActive = &val
+	inc, aerr := ToolIncludes.Parse(r)
+	if aerr != nil {
+		aerr.WriteJSON(w)
+		return
 	}
-
-	if isBuiltin := r.URL.Query().Get("is_builtin"); isBuiltin != "" {
-		val := isBuiltin == queryParamTrue
-		input.IsBuiltin = &val
+	if !include.Prepare(w, r, inc) {
+		return
 	}
-
-	result, err := h.service.ListTools(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool")
+	maxPerPage := inc.PerPageCap(MaxPerPage)
+	if len(q.Get("q")) > maxToolSearchLen || len(q.Get("category")) > maxToolCategoryLen || len(q.Get("sort")) > maxToolCategoryLen {
+		apierror.BadRequest("q is limited to 255 characters, category and sort to 50").WriteJSON(w)
 		return
 	}
 
-	items := make([]*ToolResponse, len(result.Data))
-	for i, t := range result.Data {
-		items[i] = toToolResponse(t)
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	res, err := h.service.ListToolView(r.Context(), tool.ListToolViewInput{
+		TenantID:  middleware.GetTenantID(r.Context()),
+		Source:    q.Get("source"),
+		Category:  q.Get("category"),
+		Search:    q.Get("q"),
+		Enabled:   enabled,
+		Available: available,
+		Sort:      q.Get("sort"),
+		Page:      paging.Page,
+		PerPage:   min(paging.PerPage, maxPerPage),
+		ToolViewOptions: tool.ToolViewOptions{
+			Availability: inc.Has(includeAvailability),
+			ZoneID:       q.Get("zone_id"),
+		},
+	})
+	if err != nil {
+		h.handleViewError(w, err)
+		return
 	}
 
-	resp := map[string]any{
-		"items":    items,
-		"total":    result.Total,
-		"page":     result.Page,
-		"per_page": result.PerPage,
+	withSensors := middleware.HasPermission(r.Context(), permission.SensorsRead.String())
+	resp := ToolListResponse{
+		Items:      make([]ToolViewResponse, 0, len(res.Data)),
+		Total:      res.Total,
+		Page:       res.Page,
+		PerPage:    res.PerPage,
+		TotalPages: res.TotalPages,
+		Meta:       inc.Meta(),
+	}
+	var zones map[shared.ID]string
+	if res.Availability != nil {
+		zones = res.Availability.Zones
+		resp.Availability = toToolListAvailability(res, withSensors)
+	}
+	for _, v := range res.Data {
+		resp.Items = append(resp.Items, toToolViewResponse(v, inc, withSensors, zones))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Get handles GET /api/v1/tools/{id}
 // @Summary      Get tool
-// @Description  Get a single tool by ID
+// @Description  One tool of the organization's view: a platform tool or its own custom tool (any other id is not found). include= as on the list.
 // @Tags         Tools
-// @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      200  {object}  ToolResponse
+// @Param        id       path      string  true   "Tool ID"
+// @Param        zone_id  query     string  false  "Availability from this scan zone's sensors only"
+// @Param        include  query     string  false  "Comma-separated: settings, availability; one the caller may not read is left out and listed in meta.omitted_includes"
+// @Success      200  {object}  ToolViewResponse
 // @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /tools/{id} [get]
 func (h *ToolHandler) Get(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-
-	t, err := h.service.GetTool(r.Context(), toolID)
+	inc, aerr := ToolIncludes.Parse(r)
+	if aerr != nil {
+		aerr.WriteJSON(w)
+		return
+	}
+	if !include.Prepare(w, r, inc) {
+		return
+	}
+	v, err := h.service.GetToolView(r.Context(), middleware.GetTenantID(r.Context()), chi.URLParam(r, "id"),
+		tool.ToolViewOptions{
+			Availability: inc.Has(includeAvailability),
+			ZoneID:       r.URL.Query().Get("zone_id"),
+		})
 	if err != nil {
-		h.handleServiceError(w, err, "Tool")
+		h.handleViewError(w, err)
 		return
 	}
-
-	// A tool fetched by id alone could be another tenant's custom tool. Hide it
-	// behind a 404 (same as not-found) rather than leaking its existence.
-	if !h.toolVisibleToTenant(r, t) {
-		apierror.NotFound("Tool").WriteJSON(w)
-		return
-	}
-
+	withSensors := middleware.HasPermission(r.Context(), permission.SensorsRead.String())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// toolVisibleToTenant reports whether the caller may see this tool. Platform
-// tools (tenant_id IS NULL) are visible to every tenant; a custom tool is
-// visible only to its owning tenant. Fails closed on a missing/invalid tenant.
-func (h *ToolHandler) toolVisibleToTenant(r *http.Request, t *tooldom.Tool) bool {
-	if t.IsPlatformTool() {
-		return true
-	}
-	tid, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
-	if err != nil {
-		return false
-	}
-	return t.BelongsToTenant(tid)
-}
-
-// GetByName handles GET /api/v1/tools/name/{name}
-// @Summary      Get tool by name
-// @Description  Get a single tool by name
-// @Tags         Tools
-// @Accept       json
-// @Produce      json
-// @Param        name  path      string  true  "Tool name"
-// @Success      200   {object}  ToolResponse
-// @Failure      400   {object}  apierror.Error
-// @Failure      404   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tools/name/{name} [get]
-func (h *ToolHandler) GetByName(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	t, err := h.service.GetToolByName(r.Context(), name)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool")
-		return
-	}
-
-	// Same cross-tenant guard as Get: never expose another tenant's custom tool.
-	if !h.toolVisibleToTenant(r, t) {
-		apierror.NotFound("Tool").WriteJSON(w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
+	resp := toToolViewResponse(v, inc, withSensors, v.Zones)
+	meta := inc.Meta()
+	resp.Meta = &meta
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // Create handles POST /api/v1/tools
-// @Summary      Create tool
-// @Description  Create a new tool in the registry (admin only)
+// @Summary      Create custom tool
+// @Description  Create a custom tool owned by the organization. Platform tools are managed by the platform and cannot be created here.
 // @Tags         Tools
 // @Accept       json
 // @Produce      json
@@ -367,12 +485,9 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SECURITY: this tenant-facing endpoint must NOT create a global platform
-	// (is_builtin, tenant_id IS NULL) tool — that would let one tenant inject a
-	// tool visible to and runnable by every tenant. Stamp the caller's tenant so
-	// the created tool is a private custom tool. Platform tools are provisioned
-	// only via the operator/seed path, never from this route.
-	input := tool.CreateCustomToolInput{
+	// The tenant comes from the token, never the body: the tool is always a
+	// private custom tool of the caller's organization.
+	t, err := h.service.CreateCustomTool(r.Context(), tool.CreateCustomToolInput{
 		TenantID:         middleware.GetTenantID(r.Context()),
 		CreatedBy:        middleware.GetUserID(r.Context()),
 		Name:             req.Name,
@@ -384,6 +499,7 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		UpdateCmd:        req.UpdateCmd,
 		VersionCmd:       req.VersionCmd,
 		VersionRegex:     req.VersionRegex,
+		MinVersion:       req.MinVersion,
 		ConfigSchema:     req.ConfigSchema,
 		DefaultConfig:    req.DefaultConfig,
 		Capabilities:     req.Capabilities,
@@ -393,22 +509,21 @@ func (h *ToolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		GithubURL:        req.GithubURL,
 		LogoURL:          req.LogoURL,
 		Tags:             req.Tags,
-	}
-
-	t, err := h.service.CreateCustomTool(r.Context(), input)
+	})
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolCreated, t.ID.String(), nil, t)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toToolResponse(t))
+	_ = json.NewEncoder(w).Encode(toToolResponse(t))
 }
 
 // Update handles PUT /api/v1/tools/{id}
-// @Summary      Update tool
-// @Description  Update an existing tool (admin only)
+// @Summary      Update custom tool
+// @Description  Update one of the organization's custom tools. A platform tool or another organization's tool is not found.
 // @Tags         Tools
 // @Accept       json
 // @Produce      json
@@ -434,7 +549,12 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := tool.UpdateInput{
+	before, ok := h.toolBefore(w, r, toolID)
+	if !ok {
+		return
+	}
+	t, err := h.service.UpdateCustomTool(r.Context(), tool.UpdateCustomToolInput{
+		TenantID:         middleware.GetTenantID(r.Context()),
 		ToolID:           toolID,
 		DisplayName:      req.DisplayName,
 		Description:      req.Description,
@@ -442,6 +562,7 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		UpdateCmd:        req.UpdateCmd,
 		VersionCmd:       req.VersionCmd,
 		VersionRegex:     req.VersionRegex,
+		MinVersion:       req.MinVersion,
 		ConfigSchema:     req.ConfigSchema,
 		DefaultConfig:    req.DefaultConfig,
 		Capabilities:     req.Capabilities,
@@ -451,911 +572,215 @@ func (h *ToolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		GithubURL:        req.GithubURL,
 		LogoURL:          req.LogoURL,
 		Tags:             req.Tags,
-	}
-
-	input.TenantID = middleware.GetTenantID(r.Context())
-
-	t, err := h.service.UpdateTool(r.Context(), input)
+	})
 	if err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolUpdated, toolID, before, t)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
+	_ = json.NewEncoder(w).Encode(toToolResponse(t))
 }
 
 // Delete handles DELETE /api/v1/tools/{id}
-// @Summary      Delete tool
-// @Description  Delete a tool from the registry (admin only, builtin tools cannot be deleted)
+// @Summary      Delete custom tool
+// @Description  Delete one of the organization's custom tools; active workflows using it are deactivated. A platform tool or another organization's tool is not found.
 // @Tags         Tools
-// @Accept       json
-// @Produce      json
 // @Param        id   path      string  true  "Tool ID"
 // @Success      204  "No Content"
 // @Failure      400  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
 // @Security     BearerAuth
 // @Router       /tools/{id} [delete]
 func (h *ToolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
 
-	if err := h.service.DeleteTool(r.Context(), tenantID, toolID); err != nil {
+	before, ok := h.toolBefore(w, r, toolID)
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteCustomTool(r.Context(), middleware.GetTenantID(r.Context()), toolID); err != nil {
 		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	h.auditTool(r, audit.ActionToolDeleted, toolID, before, nil)
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Activate handles POST /api/v1/tools/{id}/activate
-// @Summary      Activate tool
-// @Description  Activate a tool to make it available for use
+// UpdateSettings handles PATCH /api/v1/tools/{id}/settings
+// @Summary      Change tool settings
+// @Description  Change the organization's switch (scans:tenant_tools:write) and config overrides (also scans:tools:write: they change what the sensors run) of a platform tool or of its own custom tool. An omitted field is left as it is; "config": {} clears the overrides. A config holding a secret (by key or by value) is refused: credentials belong in the secret store, referenced by id.
 // @Tags         Tools
 // @Accept       json
 // @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      200  {object}  ToolResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tools/{id}/activate [post]
-func (h *ToolHandler) Activate(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-
-	t, err := h.service.ActivateTool(r.Context(), middleware.GetTenantID(r.Context()), toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// Deactivate handles POST /api/v1/tools/{id}/deactivate
-// @Summary      Deactivate tool
-// @Description  Deactivate a tool to make it unavailable for use
-// @Tags         Tools
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      200  {object}  ToolResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tools/{id}/deactivate [post]
-func (h *ToolHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-
-	t, err := h.service.DeactivateTool(r.Context(), middleware.GetTenantID(r.Context()), toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// =============================================================================
-// Platform Tools Handlers
-// =============================================================================
-
-// ListPlatformTools handles GET /api/v1/tools/platform
-// @Summary      List platform tools
-// @Description  Get a paginated list of platform-provided tools (available to all tenants)
-// @Tags         Tools
-// @Accept       json
-// @Produce      json
-// @Param        category      query     string   false  "Filter by category"
-// @Param        capabilities  query     string   false  "Filter by capabilities (comma-separated)"
-// @Param        is_active     query     boolean  false  "Filter by active status"
-// @Param        search        query     string   false  "Search by name or description"
-// @Param        tags          query     string   false  "Filter by tags (comma-separated)"
-// @Param        page          query     int      false  "Page number" default(1)
-// @Param        per_page      query     int      false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ToolResponse]
-// @Failure      400  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tools/platform [get]
-func (h *ToolHandler) ListPlatformTools(w http.ResponseWriter, r *http.Request) {
-	input := tool.ListPlatformToolsInput{
-		Category: r.URL.Query().Get("category"),
-		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
-	}
-
-	if capabilities := r.URL.Query().Get("capabilities"); capabilities != "" {
-		input.Capabilities = parseQueryArray(capabilities)
-	}
-
-	if tags := r.URL.Query().Get("tags"); tags != "" {
-		input.Tags = parseQueryArray(tags)
-	}
-
-	if isActive := r.URL.Query().Get("is_active"); isActive != "" {
-		val := isActive == queryParamTrue
-		input.IsActive = &val
-	}
-
-	result, err := h.service.ListPlatformTools(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Platform tools")
-		return
-	}
-
-	items := make([]*ToolResponse, len(result.Data))
-	for i, t := range result.Data {
-		items[i] = toToolResponse(t)
-	}
-
-	resp := map[string]any{
-		"items":    items,
-		"total":    result.Total,
-		"page":     result.Page,
-		"per_page": result.PerPage,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// =============================================================================
-// Tenant Custom Tools Handlers
-// =============================================================================
-
-// ListCustomTools handles GET /api/v1/custom-tools
-// @Summary      List custom tools
-// @Description  Get a paginated list of tenant's custom tools
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        category      query     string   false  "Filter by category"
-// @Param        capabilities  query     string   false  "Filter by capabilities (comma-separated)"
-// @Param        is_active     query     boolean  false  "Filter by active status"
-// @Param        search        query     string   false  "Search by name or description"
-// @Param        tags          query     string   false  "Filter by tags (comma-separated)"
-// @Param        page          query     int      false  "Page number" default(1)
-// @Param        per_page      query     int      false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ToolResponse]
-// @Failure      400  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /custom-tools [get]
-func (h *ToolHandler) ListCustomTools(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-
-	input := tool.ListCustomToolsInput{
-		TenantID: tenantID,
-		Category: r.URL.Query().Get("category"),
-		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
-	}
-
-	if capabilities := r.URL.Query().Get("capabilities"); capabilities != "" {
-		input.Capabilities = parseQueryArray(capabilities)
-	}
-
-	if tags := r.URL.Query().Get("tags"); tags != "" {
-		input.Tags = parseQueryArray(tags)
-	}
-
-	if isActive := r.URL.Query().Get("is_active"); isActive != "" {
-		val := isActive == queryParamTrue
-		input.IsActive = &val
-	}
-
-	result, err := h.service.ListCustomTools(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Custom tools")
-		return
-	}
-
-	items := make([]*ToolResponse, len(result.Data))
-	for i, t := range result.Data {
-		items[i] = toToolResponse(t)
-	}
-
-	resp := map[string]any{
-		"items":    items,
-		"total":    result.Total,
-		"page":     result.Page,
-		"per_page": result.PerPage,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// CreateCustomTool handles POST /api/v1/custom-tools
-// @Summary      Create custom tool
-// @Description  Create a new tenant custom tool
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        body  body      CreateToolRequest  true  "Tool data"
-// @Success      201   {object}  ToolResponse
+// @Param        id    path      string               true  "Tool ID"
+// @Param        body  body      ToolSettingsRequest  true  "Settings to change"
+// @Success      200   {object}  ToolViewResponse
 // @Failure      400   {object}  apierror.Error
-// @Failure      409   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /custom-tools [post]
-func (h *ToolHandler) CreateCustomTool(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-
-	var req CreateToolRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := tool.CreateCustomToolInput{
-		TenantID:         tenantID,
-		CreatedBy:        userID,
-		Name:             req.Name,
-		DisplayName:      req.DisplayName,
-		Description:      req.Description,
-		CategoryID:       req.CategoryID,
-		InstallMethod:    req.InstallMethod,
-		InstallCmd:       req.InstallCmd,
-		UpdateCmd:        req.UpdateCmd,
-		VersionCmd:       req.VersionCmd,
-		VersionRegex:     req.VersionRegex,
-		ConfigSchema:     req.ConfigSchema,
-		DefaultConfig:    req.DefaultConfig,
-		Capabilities:     req.Capabilities,
-		SupportedTargets: req.SupportedTargets,
-		OutputFormats:    req.OutputFormats,
-		DocsURL:          req.DocsURL,
-		GithubURL:        req.GithubURL,
-		LogoURL:          req.LogoURL,
-		Tags:             req.Tags,
-	}
-
-	t, err := h.service.CreateCustomTool(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Custom tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// GetCustomTool handles GET /api/v1/custom-tools/{id}
-// @Summary      Get custom tool
-// @Description  Get a single tenant custom tool by ID
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      200  {object}  ToolResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /custom-tools/{id} [get]
-func (h *ToolHandler) GetCustomTool(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	t, err := h.service.GetCustomTool(r.Context(), tenantID, toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Custom tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// UpdateCustomTool handles PUT /api/v1/custom-tools/{id}
-// @Summary      Update custom tool
-// @Description  Update a tenant custom tool
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        id    path      string             true  "Tool ID"
-// @Param        body  body      UpdateToolRequest  true  "Update data"
-// @Success      200   {object}  ToolResponse
-// @Failure      400   {object}  apierror.Error
-// @Failure      403   {object}  apierror.Error
 // @Failure      404   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /custom-tools/{id} [put]
-func (h *ToolHandler) UpdateCustomTool(w http.ResponseWriter, r *http.Request) {
+// @Router       /tools/{id}/settings [patch]
+func (h *ToolHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	toolID := chi.URLParam(r, "id")
 	tenantID := middleware.GetTenantID(r.Context())
 
-	var req UpdateToolRequest
+	var req ToolSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
+	// The switch is scans:tenant_tools:write (the route gate). Config
+	// overrides change what the sensors run (arguments, templates, rates),
+	// so they need the same permission as the custom tool definitions.
+	if req.Config != nil && !middleware.HasPermission(r.Context(), permission.ToolsWrite.String()) {
+		apierror.Forbidden("changing config overrides needs " + permission.ToolsWrite.String()).WriteJSON(w)
 		return
 	}
 
-	input := tool.UpdateCustomToolInput{
-		TenantID:         tenantID,
-		ToolID:           toolID,
-		DisplayName:      req.DisplayName,
-		Description:      req.Description,
-		InstallCmd:       req.InstallCmd,
-		UpdateCmd:        req.UpdateCmd,
-		VersionCmd:       req.VersionCmd,
-		VersionRegex:     req.VersionRegex,
-		ConfigSchema:     req.ConfigSchema,
-		DefaultConfig:    req.DefaultConfig,
-		Capabilities:     req.Capabilities,
-		SupportedTargets: req.SupportedTargets,
-		OutputFormats:    req.OutputFormats,
-		DocsURL:          req.DocsURL,
-		GithubURL:        req.GithubURL,
-		LogoURL:          req.LogoURL,
-		Tags:             req.Tags,
-	}
-
-	t, err := h.service.UpdateCustomTool(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Custom tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// DeleteCustomTool handles DELETE /api/v1/custom-tools/{id}
-// @Summary      Delete custom tool
-// @Description  Delete a tenant custom tool
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      204  "No Content"
-// @Failure      400  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /custom-tools/{id} [delete]
-func (h *ToolHandler) DeleteCustomTool(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	if err := h.service.DeleteCustomTool(r.Context(), tenantID, toolID); err != nil {
-		h.handleServiceError(w, err, "Custom tool")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// ActivateCustomTool handles POST /api/v1/custom-tools/{id}/activate
-// @Summary      Activate custom tool
-// @Description  Activate a tenant custom tool
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      200  {object}  ToolResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /custom-tools/{id}/activate [post]
-func (h *ToolHandler) ActivateCustomTool(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	t, err := h.service.ActivateCustomTool(r.Context(), tenantID, toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Custom tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// DeactivateCustomTool handles POST /api/v1/custom-tools/{id}/deactivate
-// @Summary      Deactivate custom tool
-// @Description  Deactivate a tenant custom tool
-// @Tags         Custom Tools
-// @Accept       json
-// @Produce      json
-// @Param        id   path      string  true  "Tool ID"
-// @Success      200  {object}  ToolResponse
-// @Failure      400  {object}  apierror.Error
-// @Failure      403  {object}  apierror.Error
-// @Failure      404  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /custom-tools/{id}/deactivate [post]
-func (h *ToolHandler) DeactivateCustomTool(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "id")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	t, err := h.service.DeactivateCustomTool(r.Context(), tenantID, toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Custom tool")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toToolResponse(t))
-}
-
-// =============================================================================
-// Tenant Tool Config Handlers
-// =============================================================================
-
-// ListTenantConfigs handles GET /api/v1/tenant-tools
-// @Summary      List tenant tool configs
-// @Description  Get a paginated list of tenant tool configurations
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        tool_id    query     string   false  "Filter by tool ID"
-// @Param        is_enabled query     boolean  false  "Filter by enabled status"
-// @Param        page       query     int      false  "Page number" default(1)
-// @Param        per_page   query     int      false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[TenantToolConfigResponse]
-// @Failure      400  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools [get]
-func (h *ToolHandler) ListTenantConfigs(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-
-	input := tool.ListTenantToolConfigsInput{
-		TenantID: tenantID,
-		ToolID:   r.URL.Query().Get("tool_id"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
-	}
-
-	if isEnabled := r.URL.Query().Get("is_enabled"); isEnabled != "" {
-		val := isEnabled == queryParamTrue
-		input.IsEnabled = &val
-	}
-
-	result, err := h.service.ListTenantToolConfigs(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Tenant tool config")
-		return
-	}
-
-	items := make([]*TenantToolConfigResponse, len(result.Data))
-	for i, c := range result.Data {
-		items[i] = toTenantToolConfigResponse(c)
-	}
-
-	resp := map[string]any{
-		"items":    items,
-		"total":    result.Total,
-		"page":     result.Page,
-		"per_page": result.PerPage,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// GetTenantConfig handles GET /api/v1/tenant-tools/{tool_id}
-// @Summary      Get tenant tool config
-// @Description  Get tenant-specific configuration for a tool
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        tool_id  path      string  true  "Tool ID"
-// @Success      200      {object}  TenantToolConfigResponse
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/{tool_id} [get]
-func (h *ToolHandler) GetTenantConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "toolId")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	config, err := h.service.GetTenantToolConfig(r.Context(), tenantID, toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Tenant tool config")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toTenantToolConfigResponse(config))
-}
-
-// UpdateTenantConfig handles PUT /api/v1/tenant-tools/{tool_id}
-// @Summary      Update tenant tool config
-// @Description  Update or create tenant-specific configuration for a tool
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        tool_id  path      string                   true  "Tool ID"
-// @Param        body     body      TenantToolConfigRequest  true  "Config data"
-// @Success      200      {object}  TenantToolConfigResponse
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/{tool_id} [put]
-func (h *ToolHandler) UpdateTenantConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "toolId")
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-
-	var req TenantToolConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
-		return
-	}
-
-	input := tool.UpdateTenantToolConfigInput{
+	before := h.tenantConfigSnapshot(r, tenantID, toolID)
+	config, err := h.service.UpdateToolSettings(r.Context(), tool.UpdateToolSettingsInput{
 		TenantID:  tenantID,
 		ToolID:    toolID,
-		Config:    req.Config,
 		IsEnabled: req.IsEnabled,
-		UpdatedBy: userID,
-	}
-
-	config, err := h.service.UpdateTenantToolConfig(r.Context(), input)
+		Config:    req.Config,
+		UpdatedBy: middleware.GetUserID(r.Context()),
+	})
 	if err != nil {
-		h.handleServiceError(w, err, "Tenant tool config")
+		h.handleServiceError(w, err, "Tool")
 		return
 	}
+	auditResourceChange(h.audit, h.logger, r, audit.ActionToolConfigUpdated, audit.ResourceTypeTool, toolID, "",
+		before, auditSnapshot(toTenantToolConfigResponse(config)))
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toTenantToolConfigResponse(config))
-}
-
-// DeleteTenantConfig handles DELETE /api/v1/tenant-tools/{tool_id}
-// @Summary      Delete tenant tool config
-// @Description  Delete tenant-specific configuration for a tool
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        tool_id  path      string  true  "Tool ID"
-// @Success      204      "No Content"
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/{tool_id} [delete]
-func (h *ToolHandler) DeleteTenantConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "toolId")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	if err := h.service.DeleteTenantToolConfig(r.Context(), tenantID, toolID); err != nil {
-		h.handleServiceError(w, err, "Tenant tool config")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// GetEffectiveConfig handles GET /api/v1/tenant-tools/{tool_id}/effective-config
-// @Summary      Get effective tool config
-// @Description  Get the merged configuration (default + tenant overrides) for a tool
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        tool_id  path      string  true  "Tool ID"
-// @Success      200      {object}  map[string]any
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/{tool_id}/effective-config [get]
-func (h *ToolHandler) GetEffectiveConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "toolId")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	config, err := h.service.GetEffectiveToolConfig(r.Context(), tenantID, toolID)
+	v, err := h.service.GetToolView(r.Context(), tenantID, toolID, tool.ToolViewOptions{})
 	if err != nil {
-		h.handleServiceError(w, err, "Effective config")
+		h.handleServiceError(w, err, "Tool")
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(config)
+	_ = json.NewEncoder(w).Encode(toToolViewResponse(v, include.Granted(ToolIncludes, includeSettings), false, nil))
 }
 
-// BulkEnable handles POST /api/v1/tenant-tools/bulk-enable
-// @Summary      Bulk enable tools
-// @Description  Enable multiple tools for the current tenant
-// @Tags         Tenant Tools
+// BulkUpdateSettings handles PATCH /api/v1/tools/settings
+// @Summary      Switch tools on or off
+// @Description  Switch several tools on or off for the organization. Ids of tools it cannot see (another organization's custom tools, unknown ids) are ignored.
+// @Tags         Tools
 // @Accept       json
-// @Produce      json
-// @Param        body  body      BulkToolIDsRequest  true  "Tool IDs"
+// @Param        body  body  BulkToolSettingsRequest  true  "Tools and the switch"
 // @Success      204   "No Content"
 // @Failure      400   {object}  apierror.Error
 // @Failure      500   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /tenant-tools/bulk/enable [post]
-func (h *ToolHandler) BulkEnable(w http.ResponseWriter, r *http.Request) {
+// @Router       /tools/settings [patch]
+func (h *ToolHandler) BulkUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	var req BulkToolIDsRequest
+	var req BulkToolSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-
 	if err := h.validator.Validate(req); err != nil {
 		h.handleValidationError(w, err)
 		return
 	}
 
-	input := tool.BulkEnableToolsInput{
-		TenantID: tenantID,
-		ToolIDs:  req.ToolIDs,
+	var err error
+	if *req.IsEnabled {
+		err = h.service.BulkEnableTools(r.Context(), tool.BulkEnableToolsInput{TenantID: tenantID, ToolIDs: req.ToolIDs})
+	} else {
+		err = h.service.BulkDisableTools(r.Context(), tool.BulkDisableToolsInput{TenantID: tenantID, ToolIDs: req.ToolIDs})
 	}
-
-	if err := h.service.BulkEnableTools(r.Context(), input); err != nil {
-		h.handleServiceError(w, err, "Bulk enable")
+	if err != nil {
+		h.handleServiceError(w, err, "Tool settings")
 		return
 	}
+	auditResourceChange(h.audit, h.logger, r, audit.ActionToolConfigUpdated, audit.ResourceTypeTool, "bulk", "",
+		nil, map[string]any{"tool_ids": req.ToolIDs, "is_enabled": *req.IsEnabled})
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// BulkDisable handles POST /api/v1/tenant-tools/bulk-disable
-// @Summary      Bulk disable tools
-// @Description  Disable multiple tools for the current tenant
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        body  body      BulkToolIDsRequest  true  "Tool IDs"
-// @Success      204   "No Content"
-// @Failure      400   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/bulk/disable [post]
-func (h *ToolHandler) BulkDisable(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-
-	var req BulkToolIDsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
+// handleViewError answers a failed read of the view. The only lookup by a
+// caller-given id besides the tool is the scan zone (another tenant's zone
+// reads as missing).
+func (h *ToolHandler) handleViewError(w http.ResponseWriter, err error) {
+	if errors.Is(err, tool.ErrZoneNotFound) {
+		apierror.NotFound("Scan zone").WriteJSON(w)
 		return
 	}
-
-	if err := h.validator.Validate(req); err != nil {
-		h.handleValidationError(w, err)
-		return
-	}
-
-	input := tool.BulkDisableToolsInput{
-		TenantID: tenantID,
-		ToolIDs:  req.ToolIDs,
-	}
-
-	if err := h.service.BulkDisableTools(r.Context(), input); err != nil {
-		h.handleServiceError(w, err, "Bulk disable")
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	h.handleServiceError(w, err, "Tool")
 }
 
-// ListAllTools handles GET /api/v1/tenant-tools/all-tools
-// @Summary      List all tools with tenant config
-// @Description  Get a paginated list of all tools with their tenant-specific enabled status
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        category   query     string   false  "Filter by category"
-// @Param        is_active  query     boolean  false  "Filter by system-wide active status"
-// @Param        is_builtin query     boolean  false  "Filter by builtin status"
-// @Param        search     query     string   false  "Search by name or description"
-// @Param        page       query     int      false  "Page number" default(1)
-// @Param        per_page   query     int      false  "Items per page" default(20)
-// @Success      200  {object}  ListResponse[ToolWithConfigResponse]
-// @Failure      400  {object}  apierror.Error
-// @Failure      500  {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/all-tools [get]
-func (h *ToolHandler) ListAllTools(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-
-	input := tool.ListToolsWithConfigInput{
-		TenantID: tenantID,
-		Category: r.URL.Query().Get("category"),
-		Search:   r.URL.Query().Get("search"),
-		Page:     parseQueryInt(r.URL.Query().Get("page"), 1),
-		PerPage:  parseQueryIntBounded(r.URL.Query().Get("per_page"), 20, 1, MaxPerPage),
+func toolSource(t *tooldom.Tool) string {
+	if t.IsPlatformTool() {
+		return tool.SourcePlatform
 	}
-
-	if isActive := r.URL.Query().Get("is_active"); isActive != "" {
-		val := isActive == queryParamTrue
-		input.IsActive = &val
-	}
-
-	if isBuiltin := r.URL.Query().Get("is_builtin"); isBuiltin != "" {
-		val := isBuiltin == queryParamTrue
-		input.IsBuiltin = &val
-	}
-
-	result, err := h.service.ListToolsWithConfig(r.Context(), input)
-	if err != nil {
-		h.handleServiceError(w, err, "Tools with config")
-		return
-	}
-
-	items := make([]*ToolWithConfigResponse, len(result.Data))
-	for i, twc := range result.Data {
-		resp := &ToolWithConfigResponse{
-			Tool:            toToolResponseWithCategory(twc.Tool, twc.Category),
-			EffectiveConfig: twc.EffectiveConfig,
-			IsEnabled:       twc.IsEnabled,
-			IsAvailable:     twc.IsAvailable,
-		}
-		if twc.TenantConfig != nil {
-			resp.TenantConfig = toTenantToolConfigResponse(twc.TenantConfig)
-		}
-		items[i] = resp
-	}
-
-	respData := map[string]any{
-		"items":    items,
-		"total":    result.Total,
-		"page":     result.Page,
-		"per_page": result.PerPage,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(respData)
+	return tool.SourceCustom
 }
 
-// GetToolWithConfig handles GET /api/v1/tenant-tools/{tool_id}/with-config
-// @Summary      Get tool with tenant config
-// @Description  Get a tool with its tenant-specific configuration and effective config
-// @Tags         Tenant Tools
-// @Accept       json
-// @Produce      json
-// @Param        tool_id  path      string  true  "Tool ID"
-// @Success      200      {object}  ToolWithConfigResponse
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/{tool_id}/with-config [get]
-func (h *ToolHandler) GetToolWithConfig(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "toolId")
-	tenantID := middleware.GetTenantID(r.Context())
-
-	twc, err := h.service.GetToolWithConfig(r.Context(), tenantID, toolID)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool with config")
-		return
+func toToolViewResponse(v *tool.ToolView, inc include.Set, withSensors bool, zones map[shared.ID]string) ToolViewResponse {
+	resp := ToolViewResponse{
+		ToolResponse: *toToolResponseWithCategory(v.Tool, v.Category),
+		Source:       toolSource(v.Tool),
 	}
+	if inc.Has(includeSettings) {
+		resp.Settings = toToolSettingsResponse(v.ToolWithConfig)
+	}
+	if inc.Has(includeAvailability) && v.Availability != nil {
+		info := toToolAvailabilityInfo(*v.Availability, zones, withSensors)
+		resp.Availability = &info
+	}
+	return resp
+}
 
-	resp := &ToolWithConfigResponse{
-		Tool:            toToolResponseWithCategory(twc.Tool, twc.Category),
-		EffectiveConfig: twc.EffectiveConfig,
+func toToolSettingsResponse(twc *tooldom.ToolWithConfig) *ToolSettingsResponse {
+	// Secrets are refused when a config is written; values that still look
+	// like credentials (rows written before that rule) are masked: the
+	// settings are for review and switches, never a way to read a secret.
+	s := &ToolSettingsResponse{
 		IsEnabled:       twc.IsEnabled,
-		IsAvailable:     twc.IsAvailable,
+		Config:          map[string]any{},
+		EffectiveConfig: map[string]any{},
 	}
-
-	if twc.TenantConfig != nil {
-		resp.TenantConfig = toTenantToolConfigResponse(twc.TenantConfig)
+	if twc.EffectiveConfig != nil {
+		s.EffectiveConfig = scan.RedactConfigSecrets(twc.EffectiveConfig)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if c := twc.TenantConfig; c != nil {
+		cr := toTenantToolConfigResponse(c)
+		s.Config = scan.RedactConfigSecrets(cr.Config)
+		s.CustomTemplates = cr.CustomTemplates
+		s.CustomPatterns = cr.CustomPatterns
+		s.UpdatedBy = cr.UpdatedBy
+		s.UpdatedAt = &cr.UpdatedAt
+	}
+	return s
 }
 
-// =============================================================================
-// Stats Handlers
-// =============================================================================
-
-// GetTenantStats handles GET /api/v1/tool-stats
-// @Summary      Get tenant tool stats
-// @Description  Get aggregated tool execution statistics for the current tenant
-// @Tags         Tool Stats
-// @Accept       json
-// @Produce      json
-// @Param        days  query     int  false  "Number of days to include" default(30)
-// @Success      200   {object}  TenantToolStatsResponse
-// @Failure      400   {object}  apierror.Error
-// @Failure      500   {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/stats [get]
-func (h *ToolHandler) GetTenantStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	days := parseQueryInt(r.URL.Query().Get("days"), 30)
-
-	// Enforce maximum days limit to prevent expensive queries
-	const maxDays = 365
-	if days < 1 {
-		days = 1
+func toToolListAvailability(res *tool.ToolViewList, withSensors bool) *ToolListAvailability {
+	av := res.Availability
+	out := &ToolListAvailability{
+		Summary:    make(map[string]int, len(av.Summary)),
+		ComputedAt: av.ComputedAt.UTC().Format(time.RFC3339),
+		Unlisted:   make([]UnlistedToolResponse, 0, len(res.Unlisted)),
 	}
-	if days > maxDays {
-		days = maxDays
+	for st, n := range av.Summary {
+		out.Summary[string(st)] = n
 	}
-
-	stats, err := h.service.GetTenantToolStats(r.Context(), tenantID, days)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool stats")
-		return
+	if av.ZoneID != nil {
+		out.ZoneID = av.ZoneID.String()
 	}
-
-	resp := toTenantToolStatsResponse(stats)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// GetToolStats handles GET /api/v1/tool-stats/{tool_id}
-// @Summary      Get tool stats
-// @Description  Get execution statistics for a specific tool
-// @Tags         Tool Stats
-// @Accept       json
-// @Produce      json
-// @Param        toolId   path      string  true   "Tool ID"
-// @Param        days     query     int     false  "Number of days to include" default(30)
-// @Success      200      {object}  ToolStatsResponse
-// @Failure      400      {object}  apierror.Error
-// @Failure      404      {object}  apierror.Error
-// @Failure      500      {object}  apierror.Error
-// @Security     BearerAuth
-// @Router       /tenant-tools/stats/{toolId} [get]
-func (h *ToolHandler) GetToolStats(w http.ResponseWriter, r *http.Request) {
-	toolID := chi.URLParam(r, "toolId")
-	tenantID := middleware.GetTenantID(r.Context())
-	days := parseQueryInt(r.URL.Query().Get("days"), 30)
-
-	// Enforce maximum days limit to prevent expensive queries
-	const maxDays = 365
-	if days < 1 {
-		days = 1
+	for _, u := range res.Unlisted {
+		out.Unlisted = append(out.Unlisted, UnlistedToolResponse{
+			Name:                 u.Name,
+			ToolAvailabilityInfo: toToolAvailabilityInfo(u.ToolAvailability, av.Zones, withSensors),
+		})
 	}
-	if days > maxDays {
-		days = maxDays
-	}
-
-	stats, err := h.service.GetToolStats(r.Context(), tenantID, toolID, days)
-	if err != nil {
-		h.handleServiceError(w, err, "Tool stats")
-		return
-	}
-
-	resp := &ToolStatsResponse{
-		ToolID:         stats.ToolID.String(),
-		TotalRuns:      stats.TotalRuns,
-		SuccessfulRuns: stats.SuccessfulRuns,
-		FailedRuns:     stats.FailedRuns,
-		TotalFindings:  stats.TotalFindings,
-		AvgDurationMs:  stats.AvgDurationMs,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	return out
 }
 
 // =============================================================================
@@ -1376,6 +801,7 @@ func toToolResponse(t *tooldom.Tool) *ToolResponse {
 		VersionRegex:     t.VersionRegex,
 		CurrentVersion:   t.CurrentVersion,
 		LatestVersion:    t.LatestVersion,
+		MinVersion:       t.MinVersion,
 		HasUpdate:        t.HasUpdateAvailable(),
 		ConfigFilePath:   t.ConfigFilePath,
 		ConfigSchema:     t.ConfigSchema,
@@ -1383,6 +809,7 @@ func toToolResponse(t *tooldom.Tool) *ToolResponse {
 		Capabilities:     t.Capabilities,
 		SupportedTargets: t.SupportedTargets,
 		OutputFormats:    t.OutputFormats,
+		OutputTypes:      t.OutputTypes,
 		DocsURL:          t.DocsURL,
 		GithubURL:        t.GithubURL,
 		IsActive:         t.IsActive,
@@ -1421,6 +848,9 @@ func toToolResponse(t *tooldom.Tool) *ToolResponse {
 	}
 	if resp.OutputFormats == nil {
 		resp.OutputFormats = []string{}
+	}
+	if resp.OutputTypes == nil {
+		resp.OutputTypes = []string{}
 	}
 	if resp.Tags == nil {
 		resp.Tags = []string{}
@@ -1485,34 +915,6 @@ func toTenantToolConfigResponse(c *tooldom.TenantToolConfig) *TenantToolConfigRe
 				Pattern: p.Pattern,
 			}
 		}
-	}
-
-	return resp
-}
-
-func toTenantToolStatsResponse(s *tooldom.TenantToolStats) *TenantToolStatsResponse {
-	resp := &TenantToolStatsResponse{
-		TenantID:       s.TenantID.String(),
-		TotalRuns:      s.TotalRuns,
-		SuccessfulRuns: s.SuccessfulRuns,
-		FailedRuns:     s.FailedRuns,
-		TotalFindings:  s.TotalFindings,
-	}
-
-	if len(s.ToolBreakdown) > 0 {
-		resp.ToolBreakdown = make([]ToolStatsResponse, len(s.ToolBreakdown))
-		for i, ts := range s.ToolBreakdown {
-			resp.ToolBreakdown[i] = ToolStatsResponse{
-				ToolID:         ts.ToolID.String(),
-				TotalRuns:      ts.TotalRuns,
-				SuccessfulRuns: ts.SuccessfulRuns,
-				FailedRuns:     ts.FailedRuns,
-				TotalFindings:  ts.TotalFindings,
-				AvgDurationMs:  ts.AvgDurationMs,
-			}
-		}
-	} else {
-		resp.ToolBreakdown = []ToolStatsResponse{}
 	}
 
 	return resp

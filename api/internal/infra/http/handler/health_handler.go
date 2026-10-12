@@ -53,17 +53,10 @@ type HealthResponse struct {
 
 // Health handles the /health endpoint (liveness probe).
 //
-// Registered on the ROOT router, not under /api/v1 — probes must not require
-// auth or a version prefix. Swagger 2.0 has no per-operation basePath, so the
-// generated spec renders this as /api/v1/health. That is the one known place
-// where the spec cannot be literally true; the real path is /health. Ready
-// below has the same caveat.
-// @Summary      Health check
-// @Description  Returns the health status of the service (liveness probe)
-// @Tags         Health
-// @Produce      json
-// @Success      200  {object}  HealthResponse
-// @Router       /health [get]
+// Registered on the ROOT router as GET /health, not under /api/v1: probes must
+// not require auth or a version prefix. It is deliberately not in the OpenAPI
+// document. Swagger 2.0 has no per-operation basePath, so annotating it made
+// the spec advertise GET /api/v1/health, which 404s. Ready below is the same.
 func (h *HealthHandler) Health(w http.ResponseWriter, _ *http.Request) {
 	response := HealthResponse{
 		Status:    "healthy",
@@ -89,14 +82,9 @@ type CheckResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// Ready handles the /ready endpoint (readiness probe).
-// @Summary      Readiness check
-// @Description  Checks all dependencies and returns 503 if any are unhealthy
-// @Tags         Health
-// @Produce      json
-// @Success      200  {object}  ReadyResponse
-// @Failure      503  {object}  ReadyResponse
-// @Router       /ready [get]
+// Ready handles GET /ready (readiness probe) on the root router. It checks
+// every dependency and returns 503 if any is unhealthy. Not in the OpenAPI
+// document, for the same reason as Health.
 func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()

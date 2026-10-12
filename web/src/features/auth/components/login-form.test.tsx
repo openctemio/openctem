@@ -13,16 +13,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LoginForm } from './login-form'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
+import { useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 
 vi.mock('../api/use-auth-providers')
 vi.mock('@/features/sso/api/use-sso-api')
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
+}))
 const loginAction = vi.fn()
 const verifyMfaAction = vi.fn()
 const startMfaEnrollmentAction = vi.fn()
 const confirmMfaEnrollmentAction = vi.fn()
 const cancelMfaAction = vi.fn()
 const finishMfaEnrollmentAction = vi.fn()
+const discoverSignInAction = vi.fn(async (_email: string) => ({ next: 'password', org: '' }))
 vi.mock('../actions/local-auth-actions', () => ({
+  discoverSignInAction: (email: string) => discoverSignInAction(email),
   loginAction: (...a: unknown[]) => loginAction(...a),
   verifyMfaAction: (...a: unknown[]) => verifyMfaAction(...a),
   startMfaEnrollmentAction: (...a: unknown[]) => startMfaEnrollmentAction(...a),
@@ -258,5 +265,89 @@ describe('LoginForm two-factor step', () => {
     expect(confirmMfaEnrollmentAction).toHaveBeenCalledWith('654321')
     expect(finishMfaEnrollmentAction).toHaveBeenCalledTimes(1)
     expect(startMfaEnrollmentAction).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ?error= used to be shown verbatim, so a crafted link put any text on the
+// sign-in page. Only a known code's message is shown now.
+describe('LoginForm ?error= message', () => {
+  beforeEach(() => {
+    setAuthProviders(null)
+    mockUseTenantSSOProviders.mockReturnValue({
+      data: undefined,
+    } as ReturnType<typeof useTenantSSOProviders>)
+    vi.mocked(toast.error).mockClear()
+  })
+  afterEach(() => {
+    vi.mocked(useSearchParams).mockImplementation(
+      () => new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>
+    )
+  })
+
+  const withParams = (q: string) =>
+    vi
+      .mocked(useSearchParams)
+      .mockImplementation(
+        () => new URLSearchParams(q) as unknown as ReturnType<typeof useSearchParams>
+      )
+
+  it('shows the message of a known code', () => {
+    withParams('error=callback_failed')
+    render(<LoginForm />)
+    expect(toast.error).toHaveBeenCalledWith(
+      'Sign-in could not be completed. Try again, or contact your administrator.'
+    )
+  })
+
+  it('never shows attacker-chosen text', () => {
+    withParams('error=' + encodeURIComponent('Account locked. Call +1 555 0100 now'))
+    render(<LoginForm />)
+    expect(toast.error).toHaveBeenCalledTimes(1)
+    expect(toast.error).toHaveBeenCalledWith('Sign-in failed. Try again.')
+  })
+})
+
+describe('LoginForm email-first sign-in', () => {
+  beforeEach(() => {
+    setAuthProviders({ google: false, github: false, microsoft: false })
+    mockUseTenantSSOProviders.mockImplementation(
+      (org: string | null) =>
+        ({
+          data:
+            org === 'acme'
+              ? [{ id: 'p1', provider: 'okta', display_name: 'Acme Okta' }]
+              : undefined,
+        }) as ReturnType<typeof useTenantSSOProviders>
+    )
+    discoverSignInAction.mockClear()
+    discoverSignInAction.mockImplementation(async (email: string) =>
+      email.endsWith('@acme.com') ? { next: 'sso', org: 'acme' } : { next: 'password', org: '' }
+    )
+  })
+
+  it('offers the organization SSO once the email domain is claimed', async () => {
+    const user = userEvent.setup()
+    render(<LoginForm />)
+    await user.type(screen.getByLabelText('Email'), 'jane@acme.com')
+    expect(
+      await screen.findByRole('button', { name: /sign in with acme okta/i })
+    ).toBeInTheDocument()
+    expect(discoverSignInAction).toHaveBeenCalledWith('jane@acme.com')
+  })
+
+  it('shows no SSO for an unclaimed domain', async () => {
+    const user = userEvent.setup()
+    render(<LoginForm />)
+    await user.type(screen.getByLabelText('Email'), 'jane@other.com')
+    await new Promise((r) => setTimeout(r, 600))
+    expect(screen.queryByRole('button', { name: /sign in with/i })).not.toBeInTheDocument()
+  })
+
+  it('does not ask while ?org= already names the organization', async () => {
+    const user = userEvent.setup()
+    render(<LoginForm orgSlug="acme" />)
+    await user.type(screen.getByLabelText('Email'), 'jane@acme.com')
+    await new Promise((r) => setTimeout(r, 600))
+    expect(discoverSignInAction).not.toHaveBeenCalled()
   })
 })

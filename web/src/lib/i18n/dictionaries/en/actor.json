@@ -1,0 +1,9 @@
+{
+  "actor.system.upgrade_wildcard_split": "OpenCTEM upgrade (wildcard rule change)",
+  "actor.system.seed_migration": "OpenCTEM upgrade (was a discovery seed)",
+  "actor.system.review_rule": "Accepted from a review rule",
+  "actor.system.refusal_fix": "Allowed from a refused scan",
+  "actor.system.system": "OpenCTEM (automatic)",
+  "actor.former": "Former member",
+  "actor.member": "A team member"
+}

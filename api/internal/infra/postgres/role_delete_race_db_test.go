@@ -104,7 +104,7 @@ func TestRoleRepository_Delete_Conditional(t *testing.T) {
 
 	t.Run("deletes an unused non-system role", func(t *testing.T) {
 		roleID := seedRole(ctx, t, db, tenantID, false)
-		if err := repo.Delete(ctx, role.MustParseID(roleID.String())); err != nil {
+		if err := repo.Delete(ctx, role.MustParseID(tenantID.String()), role.MustParseID(roleID.String())); err != nil {
 			t.Fatalf("expected delete to succeed, got %v", err)
 		}
 		if roleExists(ctx, t, db, roleID) {
@@ -118,7 +118,7 @@ func TestRoleRepository_Delete_Conditional(t *testing.T) {
 		// Simulate a user assignment that arrives between check and delete.
 		assignRole(ctx, t, db, tenantID, userID, roleID)
 
-		err := repo.Delete(ctx, role.MustParseID(roleID.String()))
+		err := repo.Delete(ctx, role.MustParseID(tenantID.String()), role.MustParseID(roleID.String()))
 		if !errors.Is(err, role.ErrRoleInUse) {
 			t.Fatalf("expected ErrRoleInUse, got %v", err)
 		}
@@ -129,7 +129,7 @@ func TestRoleRepository_Delete_Conditional(t *testing.T) {
 
 	t.Run("rejects a system role", func(t *testing.T) {
 		roleID := seedRole(ctx, t, db, tenantID, true)
-		err := repo.Delete(ctx, role.MustParseID(roleID.String()))
+		err := repo.Delete(ctx, role.MustParseID(tenantID.String()), role.MustParseID(roleID.String()))
 		if !errors.Is(err, role.ErrCannotDeleteSystemRole) {
 			t.Fatalf("expected ErrCannotDeleteSystemRole, got %v", err)
 		}
@@ -139,7 +139,7 @@ func TestRoleRepository_Delete_Conditional(t *testing.T) {
 	})
 
 	t.Run("reports not found for a missing role", func(t *testing.T) {
-		err := repo.Delete(ctx, role.MustParseID(shared.NewID().String()))
+		err := repo.Delete(ctx, role.MustParseID(tenantID.String()), role.MustParseID(shared.NewID().String()))
 		if !errors.Is(err, role.ErrRoleNotFound) {
 			t.Fatalf("expected ErrRoleNotFound, got %v", err)
 		}

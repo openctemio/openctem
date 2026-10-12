@@ -16,8 +16,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -124,6 +127,10 @@ export function AddAssetsDialog({
   const [newAssetType, setNewAssetType] = React.useState<string>('domain')
   const [newAssetName, setNewAssetName] = React.useState('')
   const [removingAssetId, setRemovingAssetId] = React.useState<string | null>(null)
+  const [pendingRemove, setPendingRemove] = React.useState<{ id: string; name: string } | null>(
+    null
+  )
+  const { t } = useTranslation()
 
   // Search state
   const [searchInput, setSearchInput] = React.useState('')
@@ -295,6 +302,7 @@ export function AddAssetsDialog({
     setRemovingAssetId(assetId)
     try {
       await onRemove(assetId)
+      setPendingRemove(null)
     } finally {
       setRemovingAssetId(null)
     }
@@ -384,7 +392,10 @@ export function AddAssetsDialog({
               variant="ghost"
               size="icon"
               className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-              onClick={() => handleRemoveAsset(asset.id)}
+              aria-label={t('confirm.assetGroup.removeAssetLabel', 'Remove {name} from the group', {
+                name: asset.name,
+              })}
+              onClick={() => setPendingRemove({ id: asset.id, name: asset.name })}
               disabled={isBusy}
             >
               {isBeingRemoved ? (
@@ -436,10 +447,10 @@ export function AddAssetsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden p-0 flex flex-col">
+      <DialogContent size="lg">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border-b px-6 py-4 shrink-0">
-          <DialogHeader>
+        <DialogHeader className="bg-gradient-to-r from-primary/10 via-primary/5 to-background">
+          <div>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
                 <FolderPlus className="h-5 w-5 text-primary" />
@@ -451,11 +462,11 @@ export function AddAssetsDialog({
                 </DialogDescription>
               </div>
             </div>
-          </DialogHeader>
-        </div>
+          </div>
+        </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <DialogBody className="p-0">
           <Tabs defaultValue="select" className="h-full flex flex-col">
             <div className="px-6 pt-4 shrink-0">
               <TabsList>
@@ -712,10 +723,10 @@ export function AddAssetsDialog({
               )}
             </TabsContent>
           </Tabs>
-        </div>
+        </DialogBody>
 
         {/* Footer */}
-        <DialogFooter className="border-t bg-muted/30 px-6 py-4 shrink-0">
+        <DialogFooter className="bg-muted/30">
           <div className="flex items-center justify-between w-full">
             <div>
               {totalToAdd > 0 && (
@@ -744,6 +755,22 @@ export function AddAssetsDialog({
           </div>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(o) => !o && setPendingRemove(null)}
+        destructive
+        title={t('confirm.assetGroup.removeAssetTitle', 'Remove {name} from {group}?', {
+          name: pendingRemove?.name ?? '',
+          group: groupName,
+        })}
+        desc={t(
+          'confirm.assetGroup.removeAssetDesc',
+          'The asset leaves the group, so scans and rules that target the group no longer cover it. The asset itself is not deleted.'
+        )}
+        confirmText={t('confirm.remove', 'Remove')}
+        isLoading={removingAssetId !== null}
+        handleConfirm={() => (pendingRemove ? handleRemoveAsset(pendingRemove.id) : undefined)}
+      />
     </Dialog>
   )
 }

@@ -96,11 +96,11 @@ func (m *mockSLARepo) Update(_ context.Context, policy *sladom.Policy) error {
 	return nil
 }
 
-func (m *mockSLARepo) Delete(_ context.Context, id shared.ID) error {
+func (m *mockSLARepo) Delete(_ context.Context, tenantID, id shared.ID) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
-	if _, ok := m.policies[id.String()]; !ok {
+	if p, ok := m.policies[id.String()]; !ok || p.TenantID() != tenantID {
 		return sladom.ErrNotFound
 	}
 	delete(m.policies, id.String())
@@ -178,7 +178,7 @@ func validSLACreateInput(tenantID string) sla.CreatePolicyInput {
 		LowDays:             60,
 		InfoDays:            90,
 		WarningThresholdPct: 80,
-		EscalationEnabled:   false,
+		EscalationEnabled:   slaBoolPtr(false),
 	}
 }
 
@@ -383,8 +383,7 @@ func TestCreateSLAPolicy_WithEscalation(t *testing.T) {
 
 	tenantID := shared.NewID()
 	input := validSLACreateInput(tenantID.String())
-	input.EscalationEnabled = true
-	input.EscalationConfig = map[string]any{"notify": "manager@example.com"}
+	input.EscalationEnabled = slaBoolPtr(true)
 
 	policy, err := svc.CreateSLAPolicy(context.Background(), input)
 	if err != nil {
@@ -668,7 +667,7 @@ func TestUpdateSLAPolicy_IDORPrevention(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for IDOR prevention")
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if !errors.Is(err, shared.ErrNotFound) && !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for IDOR, got %v", err)
 	}
 }
@@ -764,7 +763,6 @@ func TestUpdateSLAPolicy_EnableEscalation(t *testing.T) {
 
 	input := sla.UpdatePolicyInput{
 		EscalationEnabled: slaBoolPtr(true),
-		EscalationConfig:  map[string]any{"channel": "#alerts"},
 	}
 	policy, err := svc.UpdateSLAPolicy(context.Background(), existing.ID().String(), tenantID.String(), input)
 	if err != nil {
@@ -903,7 +901,7 @@ func TestDeleteSLAPolicy_IDORPrevention(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for IDOR prevention")
 	}
-	if !errors.Is(err, shared.ErrNotFound) {
+	if !errors.Is(err, shared.ErrNotFound) && !errors.Is(err, sladom.ErrNotFound) {
 		t.Errorf("expected ErrNotFound for IDOR, got %v", err)
 	}
 	// Policy should not be deleted
@@ -1066,7 +1064,8 @@ func TestCalculateSLADeadline_DifferentSeverities(t *testing.T) {
 		{vulnerability.SeverityHigh, 15},
 		{vulnerability.SeverityMedium, 30},
 		{vulnerability.SeverityLow, 60},
-		{vulnerability.SeverityInfo, 90},
+		{vulnerability.SeverityInfo, 0}, // informational: no SLA by default
+		{vulnerability.SeverityNone, 0},
 	}
 
 	for _, tt := range tests {
@@ -1074,6 +1073,12 @@ func TestCalculateSLADeadline_DifferentSeverities(t *testing.T) {
 			deadline, err := svc.CalculateSLADeadline(context.Background(), tenantID.String(), "", tt.severity, detectedAt)
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)
+			}
+			if tt.days == 0 {
+				if !deadline.IsZero() {
+					t.Errorf("expected no deadline, got %v", deadline)
+				}
+				return
 			}
 			expected := detectedAt.Add(time.Duration(tt.days) * 24 * time.Hour)
 			if !deadline.Equal(expected) {
@@ -1234,5 +1239,106 @@ func TestCheckSLACompliance_NoPolicyUsesDefaults(t *testing.T) {
 	}
 	if result.DaysRemaining < 59 {
 		t.Errorf("expected ~60 days remaining, got %d", result.DaysRemaining)
+	}
+}
+
+func TestCreateSLAPolicy_PriorityDays(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	input := validSLACreateInput(shared.NewID().String())
+	input.P0Days = slaIntPtr(1)
+	input.P2Days = slaIntPtr(10)
+	policy, err := svc.CreateSLAPolicy(context.Background(), input)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if policy.P0Days() != 1 || policy.P1Days() != sladom.DefaultPriorityDays["P1"] || policy.P2Days() != 10 {
+		t.Fatalf("priority days = %d/%d/%d, want 1/default/10", policy.P0Days(), policy.P1Days(), policy.P2Days())
+	}
+
+	bad := validSLACreateInput(shared.NewID().String())
+	bad.P0Days = slaIntPtr(40) // longer than the P1 default
+	if _, err := svc.CreateSLAPolicy(context.Background(), bad); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("P0 longer than P1 = %v, want validation error", err)
+	}
+}
+
+func TestUpdateSLAPolicy_PriorityDaysPartial(t *testing.T) {
+	repo := newMockSLARepo()
+	svc := newTestSLAService(repo)
+	tenantID := shared.NewID()
+	created, err := svc.CreateSLAPolicy(context.Background(), validSLACreateInput(tenantID.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.UpdateSLAPolicy(context.Background(), created.ID().String(), tenantID.String(),
+		sla.UpdatePolicyInput{P3Days: slaIntPtr(60)})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.P3Days() != 60 || updated.P0Days() != sladom.DefaultPriorityDays["P0"] {
+		t.Fatalf("P0/P3 = %d/%d, want default/60", updated.P0Days(), updated.P3Days())
+	}
+	if _, err := svc.UpdateSLAPolicy(context.Background(), created.ID().String(), tenantID.String(),
+		sla.UpdatePolicyInput{P1Days: slaIntPtr(1), P0Days: slaIntPtr(2)}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("P0 > P1 update = %v, want validation error", err)
+	}
+}
+
+func TestCreateSLAPolicy_EscalationDefaultsOn(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	input := validSLACreateInput(shared.NewID().String())
+	input.EscalationEnabled = nil
+	policy, err := svc.CreateSLAPolicy(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !policy.EscalationEnabled() {
+		t.Fatal("escalation omitted on create must default to on")
+	}
+}
+
+// Informational findings get no SLA by default: no policy, a fresh default
+// policy, any priority class. The applier therefore leaves sla_deadline NULL.
+func TestCalculateSLADeadlineForPriority_InformationalNoSLA(t *testing.T) {
+	detectedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	tenantID := shared.NewID()
+
+	// No policy configured.
+	svc := newTestSLAService(newMockSLARepo())
+	for _, sev := range []vulnerability.Severity{vulnerability.SeverityInfo, vulnerability.SeverityNone} {
+		for _, class := range []string{"", "P0", "P3"} {
+			d, err := svc.CalculateSLADeadlineForPriority(context.Background(), tenantID.String(), "", class, sev, detectedAt)
+			if err != nil || !d.IsZero() {
+				t.Errorf("no policy, %s/%q: deadline=%v err=%v, want no deadline", sev, class, d, err)
+			}
+		}
+	}
+	// A low finding still gets one.
+	if d, _ := svc.CalculateSLADeadlineForPriority(context.Background(), tenantID.String(), "", "P3", vulnerability.SeverityLow, detectedAt); d.IsZero() {
+		t.Error("low finding got no deadline")
+	}
+
+	// Compliance of a no-SLA finding is not_applicable, never overdue.
+	res, err := svc.CheckSLACompliance(context.Background(), tenantID.String(), "", vulnerability.SeverityInfo, detectedAt.AddDate(-1, 0, 0), nil)
+	if err != nil || res.Status != "not_applicable" || !res.IsCompliant || res.EscalationNeeded {
+		t.Errorf("info compliance = %+v err=%v, want not_applicable", res, err)
+	}
+}
+
+func TestCreateSLAPolicy_InfoNoSLAAccepted(t *testing.T) {
+	svc := newTestSLAService(newMockSLARepo())
+	input := validSLACreateInput(shared.NewID().String())
+	input.InfoDays = 0
+	p, err := svc.CreateSLAPolicy(context.Background(), input)
+	if err != nil {
+		t.Fatalf("info days 0 rejected: %v", err)
+	}
+	if p.InformationalHasSLA() {
+		t.Error("policy with info days 0 gives informational findings an SLA")
+	}
+	// A positive info window still has to be >= low.
+	input.InfoDays = 30
+	if _, err := svc.CreateSLAPolicy(context.Background(), input); err == nil {
+		t.Error("info days 30 < low days 60 accepted")
 	}
 }

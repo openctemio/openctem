@@ -19,8 +19,10 @@ const (
 // Property keys the platform owns. They record decisions made by people or by
 // the platform itself, and the platform reads them as such:
 //
-//   - is_crown_jewel drives the P0 priority rules (priority classification,
-//     the crown-jewel filter, dashboards);
+//   - is_crown_jewel is not a property at all: the flag is the
+//     assets.is_crown_jewel column (migration 000778), written only by
+//     PATCH /assets/{id}/crown-jewel. The key stays reserved so a client or a
+//     sensor cannot plant a look-alike value in properties;
 //   - business_impact_score / business_impact_notes are set on the asset's
 //     business-impact form and feed risk scoring;
 //   - aliases holds the asset's former names, written by asset identity
@@ -33,6 +35,8 @@ const (
 	PropKeyBusinessImpactScore = "business_impact_score"
 	PropKeyBusinessImpactNotes = "business_impact_notes"
 	PropKeyAliases             = "aliases"
+	// PropKeyWebEvidence carries a sensor's web captures (RFC-081).
+	PropKeyWebEvidence = "web_evidence"
 )
 
 // reservedPropertyKeys are the keys ingest drops from sensor-supplied
@@ -45,6 +49,9 @@ var reservedPropertyKeys = map[string]bool{
 	PropKeyAliases:             true,
 	PropKeyDiscoverySource:     true,
 	PropKeyDiscoveryTool:       true,
+	// Web evidence captures go to their own table (RFC-081), never to the
+	// asset's properties.
+	PropKeyWebEvidence: true,
 }
 
 // IsReservedPropertyKey reports whether a top-level property key is owned by

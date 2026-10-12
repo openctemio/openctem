@@ -4,7 +4,13 @@ import useSWR from 'swr'
 import { get, post, put, del } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
 import { usePermissions, Permission } from '@/lib/permissions'
-import type { AssetOwner, OwnershipType, AddAssetOwnerInput, UpdateAssetOwnerInput } from '../types'
+import type {
+  AssetOwner,
+  OwnershipType,
+  OwnerAssignmentSource,
+  AddAssetOwnerInput,
+  UpdateAssetOwnerInput,
+} from '../types'
 
 /**
  * Backend response format for asset owners list
@@ -19,6 +25,7 @@ interface BackendOwnerResponse {
   ownership_type: string
   assigned_at: string
   assigned_by_name?: string
+  assignment_source?: string
 }
 
 interface BackendOwnersListResponse {
@@ -37,7 +44,12 @@ function transformOwner(backend: BackendOwnerResponse): AssetOwner {
     ownershipType: backend.ownership_type as OwnershipType,
     assignedAt: backend.assigned_at,
     assignedByName: backend.assigned_by_name,
+    assignmentSource: toAssignmentSource(backend.assignment_source),
   }
+}
+
+function toAssignmentSource(raw: string | undefined): OwnerAssignmentSource {
+  return raw === 'scope_rule' || raw === 'owner_ref' ? raw : 'manual'
 }
 
 /**

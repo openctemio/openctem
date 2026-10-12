@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Plus,
@@ -48,16 +49,18 @@ import type {
 } from '@/features/access-control/types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can } from '@/lib/permissions'
-import { Permission } from '@/lib/permissions/constants'
 import { useGroupChannel } from '@/hooks/use-websocket'
 import type { ScopeChangeEventData } from '@/lib/websocket/types'
 import { ScopeRuleDialog } from './scope-rule-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ScopeRulesTabProps {
   groupId: string | null
 }
 
 export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
+  const { t } = useTranslation()
   const { scopeRules, isLoading, isError, error, mutate } = useScopeRules(groupId)
   const { createScopeRule, isCreating } = useCreateScopeRule(groupId)
   const { reconcileGroup, isReconciling } = useReconcileGroup(groupId)
@@ -184,11 +187,11 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
   }, [reconcileGroup, mutate])
 
   return (
-    <div className="mt-4">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <h4 className="text-sm font-medium">Scope Rules ({scopeRules.length})</h4>
         <div className="flex items-center gap-2">
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups/{groupId}/scope-rules/reconcile" mode="disable">
             <Button
               size="sm"
               variant="outline"
@@ -203,7 +206,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               Reconcile
             </Button>
           </Can>
-          <Can permission={Permission.GroupsWrite} mode="disable">
+          <Can route="POST /api/v1/groups/{groupId}/scope-rules" mode="disable">
             <Button size="sm" onClick={() => setDialogOpen(true)} disabled={isCreating || !groupId}>
               <Plus className="me-2 h-4 w-4" />
               Add Rule
@@ -260,9 +263,9 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               <div className="flex items-center gap-3 min-w-0">
                 <div className="p-2 rounded-lg bg-muted">
                   {rule.rule_type === 'tag_match' ? (
-                    <Tag className="h-4 w-4 text-blue-500" />
+                    <Tag className="h-4 w-4 text-muted-foreground" />
                   ) : (
-                    <Layers className="h-4 w-4 text-purple-500" />
+                    <Layers className="h-4 w-4 text-muted-foreground" />
                   )}
                 </div>
                 <div className="min-w-0">
@@ -302,14 +305,14 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
                     {
                       label: 'Edit',
                       icon: Pencil,
-                      permission: Permission.GroupsWrite,
+                      route: 'PUT /api/v1/groups/{groupId}/scope-rules/{ruleId}',
                       onClick: () => setEditingRule(rule),
                     },
                     {
                       label: 'Delete',
                       icon: Trash2,
                       destructive: true,
-                      permission: Permission.GroupsDelete,
+                      route: 'DELETE /api/v1/groups/{groupId}/scope-rules/{ruleId}',
                       onClick: () => setDeleteConfirm(rule),
                     },
                   ]}
@@ -338,30 +341,23 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       />
 
       {/* Delete Confirmation */}
-      <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-500">Delete Scope Rule</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete &quot;{deleteConfirm?.name}&quot;? Auto-assigned
-              assets from this rule will be removed from the team.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteConfirm(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        destructive
+        title={t('confirm.scopeRule.deleteTitle', 'Delete the scope rule "{name}"?', {
+          name: deleteConfirm?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scopeRule.deleteDesc',
+          'Assets this rule assigned to the team automatically are removed from it, and the team loses access to them unless another grant covers them. This cannot be undone.'
+        )}
+        confirmText={
+          isDeleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDelete}
+      />
 
       {/* Preview Dialog */}
       <Dialog
@@ -373,35 +369,37 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Preview: {previewingRule?.name}</DialogTitle>
             <DialogDescription>
               Shows how many assets would be affected by this scope rule.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            {isPreviewing || !previewResult ? (
-              <div className="flex items-center justify-center py-8" aria-busy="true">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="p-3 rounded-lg bg-muted">
-                  <p className="text-2xl font-bold">{previewResult.matching_assets}</p>
-                  <p className="text-xs text-muted-foreground">Matching Assets</p>
+          <DialogBody>
+            <div className="py-4">
+              {isPreviewing || !previewResult ? (
+                <div className="flex items-center justify-center py-8" aria-busy="true">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-                <div className="p-3 rounded-lg bg-muted">
-                  <p className="text-2xl font-bold">{previewResult.already_assigned}</p>
-                  <p className="text-xs text-muted-foreground">Already Assigned</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="p-3 rounded-lg bg-muted">
+                    <p className="text-2xl font-bold">{previewResult.matching_assets}</p>
+                    <p className="text-xs text-muted-foreground">Matching Assets</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted">
+                    <p className="text-2xl font-bold">{previewResult.already_assigned}</p>
+                    <p className="text-xs text-muted-foreground">Already Assigned</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-success/10">
+                    <p className="text-2xl font-bold text-success">{previewResult.would_add}</p>
+                    <p className="text-xs text-muted-foreground">Would Add</p>
+                  </div>
                 </div>
-                <div className="p-3 rounded-lg bg-green-500/10">
-                  <p className="text-2xl font-bold text-green-600">{previewResult.would_add}</p>
-                  <p className="text-xs text-muted-foreground">Would Add</p>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button
               variant="ghost"

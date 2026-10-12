@@ -10,23 +10,59 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
-// stubGroupAssetsRepo overrides only GetGroupAssets; the embedded interface
+// stubGroupAssetsRepo overrides only ListScanMembers; the embedded interface
 // panics on any other unexpected call.
 type stubGroupAssetsRepo struct {
 	assetgroup.Repository
 	assets []*assetgroup.GroupAsset
 }
 
-func (s *stubGroupAssetsRepo) GetGroupAssets(_ context.Context, _ shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
-	return pagination.NewResult(s.assets, int64(len(s.assets)), page), nil
+func (s *stubGroupAssetsRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	return scanMemberPage(s.assets, q, 0), nil
 }
+
+// scanMemberPage serves members like the repository's ListScanMembers: in the
+// given order, archived ones left out and counted on the first page, keyset
+// after (AfterName, AfterID), at most limit (or q.Limit when limit is 0).
+// Properties of a member come from groupAssetProps.
+func scanMemberPage(all []*assetgroup.GroupAsset, q assetgroup.ScanMemberQuery, limit int) *assetgroup.ScanMemberPage {
+	if limit == 0 || (q.Limit > 0 && q.Limit < limit) {
+		limit = q.Limit
+	}
+	page := &assetgroup.ScanMemberPage{}
+	first := q.AfterID.IsZero()
+	started := first
+	for _, a := range all {
+		if a.Status == "archived" {
+			if first {
+				page.ArchivedCount++
+			}
+			continue
+		}
+		if !started {
+			started = a.ID == q.AfterID
+			continue
+		}
+		if limit > 0 && len(page.Members) == limit {
+			continue
+		}
+		page.Members = append(page.Members, &assetgroup.ScanMember{
+			ID: a.ID, Name: a.Name, Type: a.Type, Status: a.Status, Properties: groupAssetProps[a.ID],
+		})
+	}
+	return page
+}
+
+// groupAssetProps holds test members' properties by asset id.
+var groupAssetProps = map[shared.ID]map[string]any{}
 
 // stubExclusions excludes candidates by value.
 type stubExclusions struct {
@@ -54,13 +90,13 @@ func testScan(scanner string, targets ...string) *scan.Scan {
 }
 
 func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
-			{ID: shared.NewID(), Name: "10.0.0.5"},
+			{ID: shared.NewID(), Name: "198.51.100.5"},
 			{ID: shared.NewID(), Name: "app.example.com"},
 		}},
 		logger: logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei", "app.example.com", " 203.0.113.9 ")
 	sc.AssetGroupID = shared.NewID()
 
@@ -68,7 +104,7 @@ func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"app.example.com", "203.0.113.9", "10.0.0.5"} // deduped, direct first
+	want := []string{"app.example.com", "203.0.113.9", "198.51.100.5"} // deduped, direct first
 	if !reflect.DeepEqual(got.Targets, want) {
 		t.Fatalf("targets = %v, want %v", got.Targets, want)
 	}
@@ -79,13 +115,13 @@ func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 
 // Exclusions are enforced server-side for direct targets and group members.
 func TestResolveScanTargets_RemovesExcluded(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
 			{ID: shared.NewID(), Name: "prod-db.internal.example.com"},
 		}},
 		scopeExclusions: &stubExclusions{values: map[string]bool{"prod-db.internal.example.com": true, "203.0.113.9": true}},
 		logger:          logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei", "203.0.113.9", "app.example.com")
 	sc.AssetGroupID = shared.NewID()
 
@@ -100,10 +136,10 @@ func TestResolveScanTargets_RemovesExcluded(t *testing.T) {
 
 // A failed exclusion lookup must stop the dispatch, never scan everything.
 func TestResolveScanTargets_ExclusionErrorFailsClosed(t *testing.T) {
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		scopeExclusions: &stubExclusions{err: errors.New("db down")},
 		logger:          logger.NewNop(),
-	}
+	})
 	if _, err := svc.resolveScanTargets(context.Background(), testScan("nuclei", "app.example.com")); err == nil {
 		t.Fatal("exclusion lookup failure must fail the dispatch")
 	}
@@ -124,7 +160,7 @@ func TestRecordResolvedTargets_AllExcludedRefused(t *testing.T) {
 // so the old "only the first target is scanned" warning is gone; the per-run
 // job cap is enforced here instead.
 func TestResolveScanTargets_SingleTargetScanner(t *testing.T) {
-	svc := &Service{logger: logger.NewNop()}
+	svc := allowAllChecks(&Service{logger: logger.NewNop()})
 	got, err := svc.resolveScanTargets(context.Background(), testScan("semgrep", "a", "b", "c"))
 	if err != nil {
 		t.Fatal(err)
@@ -254,13 +290,14 @@ type stubGroupsRepo struct {
 	calls   map[shared.ID]int
 }
 
-func (s *stubGroupsRepo) GetGroupAssets(_ context.Context, id shared.ID, page pagination.Pagination, _ *shared.DataScope) (pagination.Result[*assetgroup.GroupAsset], error) {
+func (s *stubGroupsRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
 	if s.calls == nil {
 		s.calls = map[shared.ID]int{}
 	}
-	s.calls[id]++
-	a := s.byGroup[id]
-	return pagination.NewResult(a, int64(len(a)), page), nil
+	if q.AfterID.IsZero() {
+		s.calls[q.GroupID]++
+	}
+	return scanMemberPage(s.byGroup[q.GroupID], q, 0), nil
 }
 
 func groupAsset(name string) *assetgroup.GroupAsset {
@@ -278,11 +315,11 @@ func TestResolveScanTargets_AllAssetGroups(t *testing.T) {
 		g2: {groupAsset("b.example.com"), {ID: shared1.ID, Name: shared1.Name}, groupAsset("excluded.example.com")},
 		g3: {},
 	}}
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo:  repo,
 		scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}},
 		logger:          logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei")
 	sc.SetAssetGroupIDs([]shared.ID{g1, g2, g3, g2})
 
@@ -318,10 +355,10 @@ func TestResolveScanTargets_CapAcrossGroups(t *testing.T) {
 		return out
 	}
 	half := maxResolvedTargets/2 + 1
-	svc := &Service{
+	svc := allowAllChecks(&Service{
 		assetGroupRepo: &stubGroupsRepo{byGroup: map[shared.ID][]*assetgroup.GroupAsset{g1: mk("a", half), g2: mk("b", half)}},
 		logger:         logger.NewNop(),
-	}
+	})
 	sc := testScan("nuclei")
 	sc.SetAssetGroupIDs([]shared.ID{g1, g2})
 	if _, err := svc.resolveScanTargets(context.Background(), sc); !errors.Is(err, shared.ErrValidation) {
@@ -403,4 +440,211 @@ type errSelector struct{ stubSelector }
 
 func (errSelector) SelectSensor(context.Context, SelectSensorRequest) (*SelectSensorResult, error) {
 	return nil, errors.New("selector down")
+}
+
+// pagedGroupAssetsRepo pages like a repository that returns fewer rows than
+// asked for (100 per page), so the keyset loop must keep reading.
+type pagedGroupAssetsRepo struct {
+	assetgroup.Repository
+	assets []*assetgroup.GroupAsset
+}
+
+func (s *pagedGroupAssetsRepo) ListScanMembers(_ context.Context, q assetgroup.ScanMemberQuery) (*assetgroup.ScanMemberPage, error) {
+	return scanMemberPage(s.assets, q, 100), nil
+}
+
+// A scan of a 250-asset group scans all 250. The member listing asked for
+// pages of 500, pagination clamps to 100, and the page arithmetic then
+// stopped after the first page: only 100 members were ever scanned.
+func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
+	members := make([]*assetgroup.GroupAsset, 250)
+	for i := range members {
+		members[i] = &assetgroup.GroupAsset{ID: shared.NewID(), Name: fmt.Sprintf("h%03d.example.com", i)}
+	}
+	svc := allowAllChecks(&Service{assetGroupRepo: &pagedGroupAssetsRepo{assets: members}, logger: logger.NewNop()})
+	sc := testScan("nuclei")
+	sc.AssetGroupID = shared.NewID()
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Targets) != 250 {
+		t.Fatalf("resolved %d of 250 group members", len(got.Targets))
+	}
+}
+
+// stubGate blocks the given asset ids and typed targets.
+type stubGate struct {
+	blocked      map[string]attribution.State
+	blockedTyped map[string]attribution.State
+	// ceiling is the max_tier of the entry covering a target (absent: at
+	// least every tier).
+	ceiling map[string]scopedom.Tier
+	// uncovered are the targets no scope authority covers (passive check).
+	uncovered  map[string]bool
+	err        error
+	asked      []string
+	askedTyped []string
+}
+
+func (g *stubGate) BlockedTargets(_ context.Context, _ shared.ID, targets []string) (map[string]attribution.State, error) {
+	g.askedTyped = append(g.askedTyped, targets...)
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]attribution.State{}
+	for _, t := range targets {
+		if s, ok := g.blockedTyped[t]; ok {
+			out[t] = s
+		}
+	}
+	return out, nil
+}
+
+func (g *stubGate) TierExceeded(_ context.Context, _ shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error) {
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]*scopedom.RuleRef{}
+	for _, t := range targets {
+		if c, ok := g.ceiling[t]; ok && c < tier {
+			out[t] = &scopedom.RuleRef{Kind: scopedom.RuleScopeTarget, ID: "entry-" + t, Pattern: t}
+		}
+	}
+	return out, nil
+}
+
+func (g *stubGate) ActiveCheckBlocked(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
+	g.asked = append(g.asked, ids...)
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string]attribution.State{}
+	for _, id := range ids {
+		if s, ok := g.blocked[id]; ok {
+			out[id] = s
+		}
+	}
+	return out, nil
+}
+
+// RFC-036 §6.3 / O4: a group member whose ownership is not confirmed (for
+// example a name found only in CT under an unverified domain) is never
+// scanned; a direct target the tenant typed is its own assertion and is.
+func TestResolveScanTargets_SkipsUnconfirmedGroupMembers(t *testing.T) {
+	confirmed := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "www.proven.com"}
+	review := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "www.listed.com"}
+	typed := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "api.listed.com"}
+	gate := &stubGate{blocked: map[string]attribution.State{
+		review.ID.String(): attribution.StateNeedsReview,
+		typed.ID.String():  attribution.StateNeedsReview,
+	}}
+	svc := allowAllChecks(&Service{
+		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{confirmed, review, typed}},
+		attributionGate: gate,
+		logger:          logger.NewNop(),
+	})
+	sc := testScan("nuclei", "api.listed.com")
+	sc.AssetGroupID = shared.NewID()
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Targets, []string{"api.listed.com", "www.proven.com"}) || got.Unconfirmed != 1 {
+		t.Fatalf("targets=%v unconfirmed=%d", got.Targets, got.Unconfirmed)
+	}
+	if len(got.Warnings) != 1 {
+		t.Fatalf("warnings = %v", got.Warnings)
+	}
+
+	// Only unconfirmed members: refused, nothing dispatched.
+	svc.assetGroupRepo = &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{review}}
+	only := testScan("nuclei")
+	only.AssetGroupID = shared.NewID()
+	r, err := svc.resolveScanTargets(context.Background(), only)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recordResolvedTargets(only, r, map[string]any{}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("all-unconfirmed run not refused: %v", err)
+	}
+
+	// The gate failing stops the dispatch (fail closed).
+	svc.attributionGate = &stubGate{err: errors.New("db down")}
+	if _, err := svc.resolveScanTargets(context.Background(), only); err == nil {
+		t.Fatal("attribution lookup failure must fail the dispatch")
+	}
+}
+
+// A group member is an asset: archived members are not scanned, and an
+// exclusion of an address the member resolves to excludes it, also when the
+// member's name was already given as a direct target.
+func TestResolveScanTargets_GroupMemberAddressesAndArchived(t *testing.T) {
+	web := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "web.example.com", Type: "domain", Status: "active"}
+	db := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "db.example.com", Type: "domain", Status: "active"}
+	app := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "app.example.com", Type: "domain", Status: "stale"}
+	old := &assetgroup.GroupAsset{ID: shared.NewID(), Name: "old.example.com", Type: "domain", Status: "archived"}
+	groupAssetProps[web.ID] = map[string]any{"ip_addresses": []any{"10.9.9.10"}}
+	groupAssetProps[db.ID] = map[string]any{"ip": "10.9.9.11"}
+	t.Cleanup(func() { delete(groupAssetProps, web.ID); delete(groupAssetProps, db.ID) })
+
+	svc := allowAllChecks(&Service{
+		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{web, db, app, old}},
+		scopeExclusions: &stubExclusions{values: map[string]bool{"10.9.9.10": true, "10.9.9.11": true}},
+		logger:          logger.NewNop(),
+	})
+	sc := testScan("nuclei", "web.example.com")
+	sc.AssetGroupID = shared.NewID()
+
+	got, err := svc.resolveScanTargets(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Targets, []string{"app.example.com"}) {
+		t.Fatalf("targets = %v, want only app.example.com", got.Targets)
+	}
+	if !reflect.DeepEqual(got.ExcludedNames, []string{"web.example.com", "db.example.com"}) {
+		t.Fatalf("excluded = %v, want web and db (excluded by address)", got.ExcludedNames)
+	}
+	if got.Archived != 1 {
+		t.Fatalf("archived = %d, want 1", got.Archived)
+	}
+	found := false
+	for _, w := range got.Warnings {
+		found = found || strings.Contains(w, "1 archived asset")
+	}
+	if !found {
+		t.Fatalf("want a warning about the skipped archived asset, got %v", got.Warnings)
+	}
+}
+
+// allowAllChecks wires the checks a test does not exercise: no exclusion, no
+// ownership refusal, an actor who may scan everything. resolveScanTargets
+// fails closed without them.
+func allowAllChecks(s *Service) *Service {
+	if s.scopeExclusions == nil {
+		s.scopeExclusions = &stubExclusions{}
+	}
+	if s.attributionGate == nil {
+		s.attributionGate = &stubGate{}
+	}
+	if s.actScope == nil {
+		s.actScope = &stubActScope{}
+	}
+	return s
+}
+
+func (g *stubGate) UncoveredTargets(_ context.Context, _ shared.ID, targets []string) ([]string, error) {
+	if g.err != nil {
+		return nil, g.err
+	}
+	var out []string
+	for _, t := range targets {
+		if g.uncovered[t] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }

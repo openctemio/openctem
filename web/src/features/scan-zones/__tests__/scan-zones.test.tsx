@@ -165,6 +165,35 @@ describe('RunDispatchPanel', () => {
     expect(within(warnings).queryByText(/10\.9\.9\.9/)).not.toBeInTheDocument()
     expect(within(warnings).getByText('other note')).toBeInTheDocument()
     expect(screen.getByText('HQ')).toBeInTheDocument()
+    expect(screen.queryByTestId('run-target-expansion')).not.toBeInTheDocument()
+  })
+
+  it('shows what each dynamic target resolved to when the run started (RFC-068)', () => {
+    perms.granted.clear()
+    render(
+      <RunDispatchPanel
+        dispatch={{
+          resolved_targets: 5001,
+          excluded_targets: 0,
+          target_expansion: [
+            {
+              selector: '*.example.com',
+              kind: 'wildcard',
+              matched: 5000,
+              capped: true,
+              sample: ['a.example.com', 'b.example.com'],
+            },
+            { selector: '203.0.113.0/24', kind: 'cidr', matched: 1 },
+          ],
+        }}
+      />
+    )
+    const list = screen.getByTestId('run-target-expansion')
+    expect(within(list).getByText('*.example.com')).toBeInTheDocument()
+    expect(within(list).getByText(/5,000 known names/)).toBeInTheDocument()
+    expect(within(list).getByText('Capped')).toBeInTheDocument()
+    expect(within(list).getByText('a.example.com, b.example.com')).toBeInTheDocument()
+    expect(within(list).getByText(/1 known host$/)).toBeInTheDocument()
   })
 })
 
@@ -190,6 +219,13 @@ describe('helpers', () => {
     expect(triggerErrorHint(err)).toMatch(/outside every scan zone/)
     expect(describeScanZoneError(err, 'x').status).toBe(400)
     expect(triggerErrorHint(new Error('x'))).toBeUndefined()
+    // research/25: refusals from the sensor policy pre-check and the opt-ins.
+    expect(
+      triggerErrorHint(new ApiClientError('No sensor...', 'SENSOR_POLICY_REFUSED', 400))
+    ).toMatch(/local policy/)
+    expect(triggerErrorHint(new ApiClientError('Off', 'SENSOR_OPT_IN_DISABLED', 400))).toMatch(
+      /owner can turn it on/
+    )
   })
 
   it('tells zone conflicts apart when the server sends the generic CONFLICT code', () => {

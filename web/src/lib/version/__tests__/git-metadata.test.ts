@@ -116,15 +116,15 @@ describe('resolveWebBuildInfo', () => {
     })
   })
 
-  it('reports "<highest tag>-dev" and HEAD from the checkout otherwise', async () => {
+  it('reports "<highest tag>-dev+<short HEAD>" from the checkout otherwise', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_VERSION', '')
     write('.git/HEAD', 'ref: refs/heads/develop\n')
     write('.git/refs/heads/develop', `${SHA_A}\n`)
     write('.git/packed-refs', `${SHA_B} refs/tags/v0.8.0\n`)
     await expect(resolveWebBuildInfo(root)).resolves.toEqual({
-      version: 'v0.8.0-dev',
+      version: 'v0.8.0-dev+4d2f4b02',
       commit: '4d2f4b02',
-      channel: 'development',
+      channel: 'dev',
     })
   })
 
@@ -133,7 +133,7 @@ describe('resolveWebBuildInfo', () => {
     await expect(resolveWebBuildInfo(root)).resolves.toEqual({
       version: 'dev',
       commit: 'unknown',
-      channel: 'development',
+      channel: 'dev',
     })
   })
 

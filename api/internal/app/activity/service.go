@@ -243,33 +243,67 @@ func (s *FindingActivityService) RecordBatchAutoResolved(
 	return nil
 }
 
-// RecordBatchAutoReopened creates activity records for findings that were auto-reopened
-// during ingestion (previously auto-resolved findings seen again in a new scan).
+// RecordBatchAutoReopened creates activity records for findings a scan
+// re-detected and reopened: a regression of a finding closed as fixed (by a scan
+// or by a person), or a scan refuting a validation downgrade. The reopen cleared
+// the finding's resolution fields, so the entry keeps what they were — the
+// previous status, resolution, method and resolver — plus the scanner and scan
+// that saw it again.
 func (s *FindingActivityService) RecordBatchAutoReopened(
 	ctx context.Context,
 	tenantID shared.ID,
-	findingIDs []shared.ID,
+	reopened []vulnerability.ReopenedFinding,
+	scanner, scanID string,
 ) error {
-	if len(findingIDs) == 0 {
+	if len(reopened) == 0 {
 		return nil
 	}
 
-	activities := make([]*vulnerability.FindingActivity, 0, len(findingIDs))
-	for _, fid := range findingIDs {
+	activities := make([]*vulnerability.FindingActivity, 0, len(reopened))
+	for _, rf := range reopened {
+		changes := map[string]any{
+			"reason":          "regression_detected_again",
+			"old_status":      string(rf.PreviousStatus),
+			"new_status":      string(vulnerability.FindingStatusConfirmed),
+			"previous_status": string(rf.PreviousStatus),
+		}
+		switch rf.PreviousStatus {
+		case vulnerability.FindingStatusValidatedFixed:
+			changes["reason"] = "validation_downgrade_refuted_by_scan"
+		case vulnerability.FindingStatusNotObserved:
+			// Not a regression: it was never counted as fixed.
+			changes["reason"] = "observed_again"
+		}
+		if rf.PreviousResolution != "" {
+			changes["previous_resolution"] = rf.PreviousResolution
+		}
+		if rf.PreviousResolutionMethod != "" {
+			changes["previous_resolution_method"] = rf.PreviousResolutionMethod
+		}
+		if rf.PreviousResolvedBy != nil {
+			changes["previous_resolved_by"] = rf.PreviousResolvedBy.String()
+		}
+		if rf.PreviousResolvedAt != nil {
+			changes["previous_resolved_at"] = rf.PreviousResolvedAt.UTC().Format(time.RFC3339)
+		}
+		if scanner != "" {
+			changes["scanner"] = scanner
+		}
+		if scanID != "" {
+			changes["scan_id"] = scanID
+		}
 		activity, err := vulnerability.NewFindingActivity(
 			tenantID,
-			fid,
+			rf.ID,
 			vulnerability.ActivityAutoReopened,
 			nil, // no actor - system action
 			vulnerability.ActorTypeSystem,
-			map[string]any{
-				"reason": "finding_detected_again",
-			},
+			changes,
 			vulnerability.SourceAuto,
 			nil,
 		)
 		if err != nil {
-			s.logger.Warn("failed to create auto-reopened activity", "finding_id", fid.String(), "error", err)
+			s.logger.Warn("failed to create auto-reopened activity", "finding_id", rf.ID.String(), "error", err)
 			continue
 		}
 		activities = append(activities, activity)
@@ -309,6 +343,31 @@ func (s *FindingActivityService) RecordStatusChange(
 		Changes:      changes,
 		Source:       source,
 	})
+}
+
+// RecordIntegrationStatusChange records a status change made by an
+// integration (a Jira or GitHub webhook): actor type integration, source
+// webhook, with the integration and the ticket reference, so the history
+// never shows an actorless change.
+func (s *FindingActivityService) RecordIntegrationStatusChange(
+	ctx context.Context,
+	tenantID, findingID shared.ID,
+	oldStatus, newStatus, integration, ref string,
+) error {
+	_, err := s.RecordActivity(ctx, RecordActivityInput{
+		TenantID:     tenantID.String(),
+		FindingID:    findingID.String(),
+		ActivityType: string(vulnerability.ActivityStatusChanged),
+		ActorType:    string(vulnerability.ActorTypeIntegration),
+		Changes: map[string]any{
+			"old_status": oldStatus,
+			"new_status": newStatus,
+			"reason":     "synced from " + integration + " " + ref,
+		},
+		Source:         string(vulnerability.SourceWebhook),
+		SourceMetadata: map[string]any{"integration": integration, "ticket": ref},
+	})
+	return err
 }
 
 // RecordSeverityChange is a convenience method for recording severity changes.
@@ -392,8 +451,35 @@ func (s *FindingActivityService) RecordCommentAdded(
 	commentID, content string,
 	source string,
 ) (*vulnerability.FindingActivity, error) {
+	return s.recordCommentAdded(ctx, tenantID, findingID, actorID, commentID, content, source, nil)
+}
+
+// RecordCommentAddedWithVisibility is RecordCommentAdded that also records
+// whether the comment is internal (organization-only) as changes.is_internal.
+func (s *FindingActivityService) RecordCommentAddedWithVisibility(
+	ctx context.Context,
+	tenantID, findingID string,
+	actorID *string,
+	commentID, content string,
+	source string,
+	isInternal bool,
+) (*vulnerability.FindingActivity, error) {
+	return s.recordCommentAdded(ctx, tenantID, findingID, actorID, commentID, content, source, &isInternal)
+}
+
+func (s *FindingActivityService) recordCommentAdded(
+	ctx context.Context,
+	tenantID, findingID string,
+	actorID *string,
+	commentID, content string,
+	source string,
+	isInternal *bool,
+) (*vulnerability.FindingActivity, error) {
 	changes := map[string]any{
 		"comment_id": commentID,
+	}
+	if isInternal != nil {
+		changes["is_internal"] = *isInternal
 	}
 	if content != "" {
 		// Store full content for display in activity feed
@@ -604,6 +690,22 @@ func (s *FindingActivityService) resolveActorInfo(ctx context.Context, actorID *
 	}
 
 	return &str, name, email
+}
+
+// BroadcastCommentReactionsUpdated tells subscribers of finding:{id} that a
+// comment's reactions changed. The event names the comment only (no user
+// data); clients refetch the comment's reactions. A no-op when real-time
+// updates are not wired.
+func (s *FindingActivityService) BroadcastCommentReactionsUpdated(tenantID, findingID, commentID shared.ID) {
+	if s == nil || s.broadcaster == nil {
+		return
+	}
+	event := map[string]any{
+		"type":       "reactions_updated",
+		"comment_id": commentID.String(),
+		"finding_id": findingID.String(),
+	}
+	s.broadcaster.BroadcastActivity(fmt.Sprintf("finding:%s", findingID.String()), event, tenantID.String())
 }
 
 // broadcastActivityEvent sends a real-time WebSocket event for a finding activity.

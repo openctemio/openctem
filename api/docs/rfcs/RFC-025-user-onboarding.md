@@ -1,9 +1,14 @@
 # RFC-025 — User onboarding: administrators create users, SSO admits them
 
-> Status: **Accepted** (2026-10-01, product owner decision) — implemented.
+> Status: **Accepted** (2026-10-01) — implemented.
 > Scope: api + ui. Builds on RFC-022 (platform admin console) and the SSO
 > verified-domain work (`docs/architecture/sso-authentication.md`).
 > Operator guide: `docs/architecture/user-onboarding.md`.
+> **Update 2026-10-08:** `AUTH_ALLOW_REGISTRATION` is retired. Who may sign up
+> is the console sign-up policy (RFC-022 revision 10), and every path that
+> creates an account or an organization applies one admission rule
+> (`signup.Admit`; user-onboarding.md, "Admission"). The default is unchanged:
+> no self-registration.
 
 ## Decision
 
@@ -69,6 +74,12 @@ So a person gets an account in exactly one of these ways:
   instead"): attaching an existing account needs its owner's consent, and
   creating over it would let an administrator seize it.
 - Refuses an email outside `Security.AllowedDomains` (400) and the owner role.
+- Refuses an email that is not on an email domain the organization has
+  verified (400, "invite them instead"). The account is email-verified on the
+  administrator's word and its set-password link can come back to that
+  administrator (or travel through the organization's own SMTP relay), so only
+  the holder of the domain may vouch for the address; otherwise any
+  organization could take an address ahead of its real holder.
 - Same anti-escalation as invitations (a non-admin caller may grant only roles
   whose permissions they hold).
 - Creates a local account **without a password** (`NewProvisionedLocalUser`,

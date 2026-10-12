@@ -35,6 +35,7 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { usePermissions } from '@/lib/permissions'
+import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   ROW_HEIGHT,
@@ -78,6 +79,7 @@ export function DashboardCanvasEditor({
 }) {
   const revalidate = useRevalidateDashboards()
   const { can } = usePermissions()
+  const { moduleIds } = useTenantModules()
   const cols = normalizeColumns(dashboard.columns)
   const [draft, setDraft] = useState<DraftWidget[]>(() =>
     dashboard.layout.map((w) => ({ ...w, uid: nextUid() }))
@@ -87,9 +89,11 @@ export function DashboardCanvasEditor({
   const catalog = useMemo(
     () =>
       Object.entries(WIDGET_REGISTRY).filter(
-        ([, def]) => !def.requiredPermission || can(def.requiredPermission)
+        ([, def]) =>
+          (!def.requiredPermission || can(def.requiredPermission)) &&
+          (!def.requiredModule || moduleIds.length === 0 || moduleIds.includes(def.requiredModule))
       ),
-    [can]
+    [can, moduleIds]
   )
 
   const sensors = useSensors(

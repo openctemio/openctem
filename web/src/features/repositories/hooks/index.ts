@@ -6,7 +6,6 @@ export {
   useRepositories,
   useRepository,
   useRepositoryStats,
-  useRepositoryScans,
   useRepositoryBranches,
   // Repository mutations
   useCreateRepository,
@@ -25,10 +24,6 @@ export {
   useDeleteSCMConnection,
   useValidateSCMConnection,
   // Import hooks
-  useImportPreview,
-  useStartImport,
-  useImportJob,
-  useCancelImport,
   // Cache utilities
   getRepositoriesKey,
   getRepositoryKey,

@@ -18,6 +18,7 @@
 /test-results
 /playwright/.cache
 e2e/.env
+e2e/ci/.env
 
 # next.js
 /.next/
@@ -44,8 +45,6 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
-!.env.production.example
-!.env.local.example
 
 # vercel
 .vercel

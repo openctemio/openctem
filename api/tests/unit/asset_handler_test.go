@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -30,6 +32,10 @@ func withTenantContext(req *http.Request) *http.Request {
 // HandlerMockRepository is a mock for handler tests.
 type HandlerMockRepository struct {
 	assets map[string]*asset.Asset
+
+	// The last list filter and tag-list query the service passed down.
+	lastFilter   asset.Filter
+	lastTagQuery asset.TagListQuery
 }
 
 func NewHandlerMockRepository() *HandlerMockRepository {
@@ -75,7 +81,7 @@ func (m *HandlerMockRepository) Update(ctx context.Context, a *asset.Asset) erro
 	return nil
 }
 
-func (m *HandlerMockRepository) Delete(ctx context.Context, tenantID, id shared.ID) error {
+func (m *HandlerMockRepository) Delete(ctx context.Context, tenantID, id shared.ID, _ *shared.ID) error {
 	a, ok := m.assets[id.String()]
 	if !ok {
 		return shared.ErrNotFound
@@ -94,6 +100,7 @@ func (m *HandlerMockRepository) List(
 	opts asset.ListOptions,
 	page pagination.Pagination,
 ) (pagination.Result[*asset.Asset], error) {
+	m.lastFilter = filter
 	var result []*asset.Asset
 	for _, a := range m.assets {
 		result = append(result, a)
@@ -188,8 +195,13 @@ func (m *HandlerMockRepository) UpdateFindingCounts(ctx context.Context, tenantI
 	return nil
 }
 
-func (m *HandlerMockRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
-	return []string{}, nil
+func (m *HandlerMockRepository) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, q asset.TagListQuery) (asset.TagList, error) {
+	m.lastTagQuery = q
+	out := asset.TagList{Tags: []string{"env-prod"}}
+	if q.IncludeSystem {
+		out.SystemTags = []string{"bug-bounty"}
+	}
+	return out, nil
 }
 
 func (m *HandlerMockRepository) GetAssetTypeBreakdown(_ context.Context, _ shared.ID) (map[string]asset.AssetTypeStats, error) {
@@ -208,7 +220,7 @@ func (m *HandlerMockRepository) BulkUpdateStatus(_ context.Context, _ shared.ID,
 	return 0, nil
 }
 
-func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ []string, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
+func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID, _ asset.AccessScope, _, _, _ []string, _ string, _ ...string) (*asset.AggregateStats, error) {
 	return &asset.AggregateStats{
 		ByType:        make(map[string]int),
 		ByStatus:      make(map[string]int),
@@ -218,8 +230,12 @@ func (m *HandlerMockRepository) GetAggregateStats(_ context.Context, _ shared.ID
 	}, nil
 }
 
-func (m *HandlerMockRepository) GetPropertyFacets(_ context.Context, _ shared.ID, _ []string, _ string) ([]asset.PropertyFacet, error) {
+func (m *HandlerMockRepository) GetPropertyFacets(_ context.Context, _ shared.ID, _ asset.AccessScope, _ []string, _ string) ([]asset.PropertyFacet, error) {
 	return nil, nil
+}
+
+func (m *HandlerMockRepository) SetCrownJewel(_ context.Context, _, _ shared.ID, _ bool, _ float64, _ string) error {
+	return nil
 }
 
 func (m *HandlerMockRepository) ListAllNodes(_ context.Context, _ shared.ID) ([]asset.AssetNode, error) {
@@ -230,7 +246,7 @@ func newTestHandler() *handler.AssetHandler {
 	repo := NewHandlerMockRepository()
 	log := logger.NewDevelopment()
 	v := validator.New()
-	svc := app.NewAssetService(repo, log)
+	svc := assetapp.NewAssetService(repo, log)
 	return handler.NewAssetHandler(svc, v, log)
 }
 
@@ -590,7 +606,7 @@ func TestAssetHandler_List_WithFilters(t *testing.T) {
 // to fail with a bare error the handler could not classify → 500.
 func TestAssetHandler_Sync_NonRepositoryIs400(t *testing.T) {
 	h := newTestHandler()
-	h.SetIntegrationService(&app.IntegrationService{})
+	h.SetIntegrationService(&integration.IntegrationService{})
 
 	body, _ := json.Marshal(map[string]any{"name": "sync-host", "type": "host", "criticality": "high"})
 	req := withTenantContext(httptest.NewRequest(http.MethodPost, "/api/v1/assets", bytes.NewReader(body)))
@@ -610,4 +626,12 @@ func TestAssetHandler_Sync_NonRepositoryIs400(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("sync of a host asset: got %d, want 400 (%s)", rec.Code, rec.Body.String())
 	}
+}
+
+func (m *HandlerMockRepository) PurgeDeleted(_ context.Context, _ time.Time, _ int) (int, error) {
+	return 0, nil
+}
+
+func (m *HandlerMockRepository) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	return nil, nil
 }

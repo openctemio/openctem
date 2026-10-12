@@ -58,6 +58,51 @@ http)
 	;;
 esac
 
+# Sensor protocol v3 gRPC binding (RFC-059 §5): layer-4 routing on this
+# port to the API's mTLS listener, by the sensor ALPN id (alpn) or by the
+# ALPN id and a dedicated sensor host name (passthrough).
+need_layer4() {
+	[ "$mode" != http ] || die "OPENCTEM_SENSOR_GATEWAY=$1 needs a TLS mode (the gateway must see the TLS ClientHello to route it)"
+	caddy list-modules 2>/dev/null | grep -q '^layer4$' ||
+		die "OPENCTEM_SENSOR_GATEWAY=$1 needs the gateway image with the layer4 module (deploy/gateway/Dockerfile, docker-compose.sensor-passthrough.yml)"
+}
+case "${OPENCTEM_SENSOR_GATEWAY:-off}" in
+off) ;;
+alpn)
+	need_layer4 alpn
+	[ -z "${SENSOR_PUBLIC_HOSTNAME:-}" ] ||
+		echo "openctem-gateway: SENSOR_PUBLIC_HOSTNAME is ignored with OPENCTEM_SENSOR_GATEWAY=alpn; use passthrough to also route that host name" >&2
+	;;
+passthrough)
+	sensor_host="${SENSOR_PUBLIC_HOSTNAME:-}"
+	[ -n "$sensor_host" ] || die "OPENCTEM_SENSOR_GATEWAY=passthrough needs SENSOR_PUBLIC_HOSTNAME (the DNS name sensors dial for gRPC, without a port); for the ALPN routing alone use alpn"
+	case "$sensor_host" in
+	*:* | */* | *" "*) die "SENSOR_PUBLIC_HOSTNAME=$sensor_host must be a host name only (no port, path or space)" ;;
+	esac
+	[ "$sensor_host" != "${OPENCTEM_HOSTNAME:-}" ] || die "SENSOR_PUBLIC_HOSTNAME must differ from OPENCTEM_HOSTNAME: the gateway routes the sensor host by its name (SNI); for one host name use alpn"
+	need_layer4 passthrough
+	;;
+*) die "OPENCTEM_SENSOR_GATEWAY=${OPENCTEM_SENSOR_GATEWAY} is not one of: off, alpn, passthrough" ;;
+esac
+
+# A non-root gateway needs its data and config directories (certificates, the
+# internal CA, the ACME account, the autosaved config) to be its own. Volumes
+# written by an older gateway that ran as root hold root-owned files it cannot
+# read: say how to fix that instead of failing later with a TLS error.
+uid="$(id -u)"
+if [ "$uid" != 0 ]; then
+	for d in "$data_dir" "${XDG_CONFIG_HOME:-/config}"; do
+		[ -d "$d" ] || continue
+		other="$(find "$d" ! -user "$uid" -print 2>/dev/null | head -n 1)"
+		if [ -n "$other" ] || [ ! -w "$d" ]; then
+			die "$d holds files not owned by uid $uid (${other:-$d}), left by a gateway that ran as root. Change their owner once, e.g.: docker compose run --rm --no-deps --user 0 --entrypoint chown gateway -R $uid:$(id -g) /data /config /ca (api/docs/deployment/docker.md, \"Gateway user\")"
+		fi
+	done
+	if [ "$mode" = internal ] && [ -d "$ca_dir" ] && [ ! -w "$ca_dir" ]; then
+		echo "openctem-gateway: WARNING: $ca_dir is not writable by uid $uid, so the internal CA root is not exported there; chown it to $uid:$(id -g)" >&2
+	fi
+fi
+
 # The internal CA's root certificate, copied where the operator (and sensors)
 # can read it. Caddy writes its copy 0600 under /data; sensors need a
 # world-readable file. Written atomically, refreshed if the CA changes.

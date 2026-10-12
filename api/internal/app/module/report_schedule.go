@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	reportscheduledom "github.com/openctemio/openctem/api/pkg/domain/reportschedule"
@@ -13,8 +14,28 @@ import (
 
 // ReportScheduleService handles report schedule business logic.
 type ReportScheduleService struct {
-	repo   reportscheduledom.Repository
-	logger *logger.Logger
+	repo       reportscheduledom.Repository
+	recipients reportscheduledom.RecipientPolicy
+	logger     *logger.Logger
+}
+
+// SetRecipientPolicy limits recipients to members and the organization's
+// allowed email domains (owner decision D12). Without it, any address is
+// accepted (tests).
+func (s *ReportScheduleService) SetRecipientPolicy(p reportscheduledom.RecipientPolicy) {
+	s.recipients = p
+}
+
+// checkRecipients refuses a recipient the policy does not allow.
+func (s *ReportScheduleService) checkRecipients(ctx context.Context, tenantID shared.ID, recipients []reportscheduledom.Recipient) error {
+	refused, err := reportscheduledom.RefusedRecipients(ctx, s.recipients, tenantID, recipients)
+	if err != nil {
+		return fmt.Errorf("check report recipients: %w", err)
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("%w: not allowed: %s", reportscheduledom.ErrRecipientNotAllowed, strings.Join(refused, ", "))
+	}
+	return nil
 }
 
 // NewReportScheduleService creates a new ReportScheduleService.
@@ -52,6 +73,9 @@ func (s *ReportScheduleService) CreateSchedule(ctx context.Context, input Create
 	}
 
 	if err := reportscheduledom.ValidateRecipients(input.Recipients); err != nil {
+		return nil, err
+	}
+	if err := s.checkRecipients(ctx, tenantID, input.Recipients); err != nil {
 		return nil, err
 	}
 
@@ -140,6 +164,11 @@ func (s *ReportScheduleService) ToggleSchedule(ctx context.Context, tenantID, sc
 	}
 
 	if active {
+		// A schedule made before the recipient policy (or whose recipient
+		// has since left) is not switched back on with them.
+		if err := s.checkRecipients(ctx, tid, schedule.Recipients()); err != nil {
+			return err
+		}
 		schedule.Activate()
 	} else {
 		schedule.Deactivate()

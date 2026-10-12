@@ -10,7 +10,7 @@
  *
  * Pattern matching:
  * - Exact match: '/settings/audit-log' matches only that path
- * - Wildcard: '/assets/*' matches '/assets/domains', '/assets/cloud', etc.
+ * - Wildcard: '/assets/*' matches '/assets/changes', '/assets/web', etc.
  * - Double wildcard: '/settings/**' matches all nested paths
  *
  * Priority:
@@ -55,6 +55,7 @@ export const Module = {
   // mirror that let the toggle 403 the API while leaving the nav visible.
   Exposures: 'exposures',
   Remediation: 'remediation',
+  Suppressions: 'suppressions',
   ThreatIntel: 'threat_intel',
   // IOC catalogue — its own backend module (`iocs`, migration 000156)
   // that gates /api/v1/iocs. Distinct from `threat_intel` so an operator
@@ -86,14 +87,13 @@ export const Module = {
   BusinessImpact: 'business_impact',
   CompensatingControls: 'compensating_controls',
   Workflows: 'workflows',
-  RemediationTasks: 'remediation_tasks',
   ExecutiveSummary: 'executive_summary',
   CTEMMaturity: 'ctem_maturity',
   MITRECoverage: 'mitre_coverage',
   SBOMExport: 'sbom_export',
   ScannerTemplates: 'scanner_templates',
   TemplateSources: 'template_sources',
-  ScanPipelines: 'scan_pipelines',
+  ScanWorkflows: 'scan_workflows',
   AttackSimulation: 'attack_simulation',
   ControlTesting: 'control_testing',
 } as const
@@ -141,13 +141,21 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
   },
-  '/asset-groups': {
-    permission: Permission.AssetGroupsRead,
-    module: Module.Assets,
+  // The attribution review queue (RFC-036). Reading needs assets:read;
+  // deciding needs assets:write, enforced by the API and the page.
+  '/attack-surface/review': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
   },
-  '/asset-groups/**': {
-    permission: Permission.AssetGroupsRead,
-    module: Module.Assets,
+  // Passive lookalike-domain monitoring (RFC-083): watches need scope:read.
+  '/attack-surface/lookalikes': {
+    permission: Permission.ScopeRead,
+    module: Module.AttackSurface,
+  },
+  // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
+  '/attack-surface/changes': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
   },
   '/business-units': {
     permission: Permission.AssetsRead,
@@ -165,8 +173,26 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.CrownJewels,
   },
-  '/scope-config': {
+  '/scope': {
     permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
+  // Letters of authorization (RFC-065 §13).
+  '/scope/letters': {
+    permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
+  // Bug-bounty programs (RFC-065); the API filters what each caller sees.
+  '/programs': {
+    permission: Permission.ProgramsRead,
+    module: Module.ScopeConfig,
+  },
+  '/programs/new': {
+    permission: Permission.ProgramsWrite,
+    module: Module.ScopeConfig,
+  },
+  '/programs/**': {
+    permission: Permission.ProgramsRead,
     module: Module.ScopeConfig,
   },
   '/business-services': {
@@ -201,10 +227,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.ThreatModel,
   },
-  '/relationships/**': {
-    permission: Permission.AssetsRead,
-    module: Module.Relationships,
-  },
 
   // ========================================
   // Discovery Phase - Assets (Module: assets)
@@ -216,6 +238,29 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/assets/**': {
     permission: Permission.AssetsRead,
     module: Module.Assets,
+  },
+  // The Assets tabs live under /assets, but Groups and Suggestions keep their
+  // own guard, not the inventory's. Each needs both entries: the exact one for
+  // the page itself (a ** pattern needs a further segment), and the ** one,
+  // which beats the shorter /assets/** (longest pattern wins).
+  // Asset groups: their own permission (assets:groups:read).
+  '/assets/groups': {
+    permission: Permission.AssetGroupsRead,
+    module: Module.Assets,
+  },
+  '/assets/groups/**': {
+    permission: Permission.AssetGroupsRead,
+    module: Module.Assets,
+  },
+  // Relationship suggestions are the Suggestions tab of Assets, gated on their
+  // own module: turning `relationships` off must still hide them.
+  '/assets/suggestions': {
+    permission: Permission.AssetsRead,
+    module: Module.Relationships,
+  },
+  '/assets/suggestions/**': {
+    permission: Permission.AssetsRead,
+    module: Module.Relationships,
   },
   '/settings/scanning/credentials': {
     // API enforces scans:secret_store:read (SecretStoreRead), not
@@ -234,6 +279,15 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/scans/**': {
     permission: Permission.ScansRead,
     module: Module.Scans,
+  },
+  // Scan workflows are their own module; the longer pattern wins.
+  '/scans/workflows': {
+    permission: Permission.ScanWorkflowsRead,
+    module: Module.ScanWorkflows,
+  },
+  '/scans/workflows/**': {
+    permission: Permission.ScanWorkflowsRead,
+    module: Module.ScanWorkflows,
   },
 
   // ========================================
@@ -348,6 +402,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.PentestRead,
     module: Module.Pentest,
   },
+  // Methodology checklist templates; managing them is checked per action.
+  '/settings/pentest/checklists': {
+    permission: Permission.PentestRead,
+    module: Module.Pentest,
+  },
   '/settings/pentest/templates/new': {
     permission: Permission.PentestTemplatesWrite,
     module: Module.Pentest,
@@ -357,10 +416,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.Pentest,
   },
   '/attack-simulation': {
-    permission: Permission.PentestRead,
-    module: Module.AttackSimulation,
-  },
-  '/simulation/scenarios': {
     permission: Permission.PentestRead,
     module: Module.AttackSimulation,
   },
@@ -382,33 +437,25 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // ========================================
   '/remediation': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/remediation/**': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/remediations': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
   '/remediations/**': {
     permission: Permission.RemediationRead,
-    module: Module.RemediationTasks,
+    module: Module.Remediation,
   },
-  '/pipelines': {
-    permission: Permission.PipelinesRead,
-    module: Module.ScanPipelines,
-  },
-  '/pipelines/**': {
-    permission: Permission.PipelinesRead,
-    module: Module.ScanPipelines,
-  },
-  '/workflows': {
+  '/automations': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
   },
-  '/workflows/**': {
+  '/automations/**': {
     permission: Permission.WorkflowsRead,
     module: Module.Workflows,
   },
@@ -418,11 +465,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/exceptions': {
     permission: Permission.SuppressionsRead,
-    module: Module.Findings,
+    module: Module.Suppressions,
   },
   '/exceptions/**': {
     permission: Permission.SuppressionsRead,
-    module: Module.Findings,
+    module: Module.Suppressions,
   },
 
   // ========================================
@@ -462,10 +509,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ComplianceFrameworksRead,
     module: Module.Compliance,
   },
-  '/insights/reports/compliance': {
-    permission: Permission.ComplianceReportsRead,
-    module: Module.Compliance,
-  },
 
   // ========================================
   // Insights — extended dashboards (each its own module post-000161)
@@ -482,17 +525,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/insights/data-quality': {
     permission: Permission.DashboardRead,
   },
-  // Analytics facades over shared dashboard data — not linked in nav but
-  // reachable by URL, so gate on dashboard read instead of leaving fail-open.
-  '/trending': {
-    permission: Permission.DashboardRead,
-  },
-  '/progress': {
-    permission: Permission.DashboardRead,
-  },
-  '/insights/analytics/mttr': {
-    permission: Permission.DashboardRead,
-  },
   '/insights/executive': {
     permission: Permission.DashboardRead,
     module: Module.ExecutiveSummary,
@@ -500,10 +532,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/insights/ctem-maturity': {
     permission: Permission.DashboardRead,
     module: Module.CTEMMaturity,
-  },
-  '/components/sbom-export': {
-    permission: Permission.ComponentsRead,
-    module: Module.SBOMExport,
   },
 
   // ========================================
@@ -520,11 +548,28 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
-  // /runners renders the same sensor/runner inventory as /sensors (typeFilter)
-  // — mirror its guard so it isn't left fail-open.
-  '/runners': {
-    permission: Permission.SensorsRead,
-    module: Module.Sensors,
+  // Scope policy (RFC-054 §6.3): readable with scope:read; saving needs
+  // scope:approve and step-up, enforced by the API.
+  '/settings/scope': {
+    permission: Permission.ScopeRead,
+    module: Module.ScopeConfig,
+  },
+  '/settings/scanning/scan-windows': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
+  '/settings/scanning/scan-approval': {
+    permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
+  '/ci-cd': {
+    permission: Permission.CIRead,
+    module: Module.Scans,
+  },
+  // GitHub App setup redirect (RFC-077): binding needs scans:ci:write.
+  '/ci-cd/github-app/callback': {
+    permission: Permission.CIWrite,
+    module: Module.Scans,
   },
   '/settings/scanning/profiles': {
     permission: Permission.ScanProfilesRead,
@@ -572,7 +617,21 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
     message: 'You need admin privileges to access authentication settings.',
   },
+  // Owner only in the API (RequireTeamOwner); admins see an "owners only" note.
+  '/settings/sso-approvals': {
+    permission: Permission.TeamUpdate,
+    message: 'Only an owner can approve or reject SSO changes.',
+  },
+  // Owners and admins read trusts; changes are owner only (api RFC-058).
+  '/settings/trusted-organizations': {
+    permission: Permission.TeamUpdate,
+    message: 'Only owners and admins can see trusted organizations.',
+  },
   '/settings/modules': {
+    permission: Permission.TeamUpdate,
+  },
+  // Plan & usage: owners and admins (GET /organization/plan needs admin).
+  '/settings/plan': {
     permission: Permission.TeamUpdate,
   },
   // The user's own notification settings live at /account/notifications
@@ -584,10 +643,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SLARead,
     module: Module.Sla,
   },
+  // Readable by anyone with pentest access; the page itself is read-only
+  // unless the caller may PATCH the settings (organization administrators).
   '/settings/pentest': {
-    permission: Permission.PentestWrite,
+    permission: Permission.PentestRead,
     module: Module.Pentest,
-    message: 'You need pentest write access to manage pentest settings.',
   },
   '/settings/members': {
     permission: Permission.MembersRead,
@@ -611,12 +671,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/teams/**': {
     permission: Permission.GroupsRead,
   },
-  '/settings/access-control/permission-sets': {
-    permission: Permission.PermissionSetsRead,
-  },
-  '/settings/access-control/permission-sets/**': {
-    permission: Permission.PermissionSetsRead,
-  },
 
   // ========================================
   // Settings - Audit Log (Admin/Owner only, no module required)
@@ -629,19 +683,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/audit-log/**': {
     permission: Permission.AuditRead,
     message: 'Audit logs require admin or owner privileges.',
-  },
-
-  // ========================================
-  // Settings - Billing (Admin/Owner only, no module required)
-  // Billing is a core feature, controlled by RBAC only
-  // ========================================
-  '/settings/billing': {
-    permission: Permission.BillingRead,
-    message: 'Billing information requires admin or owner privileges.',
-  },
-  '/settings/billing/**': {
-    permission: Permission.BillingRead,
-    message: 'Billing information requires admin or owner privileges.',
   },
 
   // ========================================
@@ -662,6 +703,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/scim': {
     permission: Permission.MembersRead,
   },
+  // Service accounts: listed with team:members:read, like members (api
+  // routes/access_control.go registerServiceAccountRoutes).
+  '/settings/service-accounts': {
+    permission: Permission.MembersRead,
+  },
 
   // ========================================
   // Settings - Integrations (Module: integrations)
@@ -673,6 +719,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/integrations/**': {
     permission: Permission.IntegrationsRead,
     module: Module.Integrations,
+  },
+  // Delivery history and the outbox queue show every event of the
+  // organization (finding messages, asset names, owner emails) regardless of
+  // data scope: channel managers only, as in the API (integrations:manage).
+  '/settings/integrations/notifications/history': {
+    permission: Permission.IntegrationsManage,
+    module: Module.Integrations,
+    message: 'Only people who manage notification channels can see delivery history.',
+  },
+  '/settings/integrations/notifications/outbox': {
+    permission: Permission.IntegrationsManage,
+    module: Module.Integrations,
+    message: 'Only people who manage notification channels can see the delivery queue.',
   },
 
   // ========================================
@@ -711,6 +770,19 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.TeamUpdate,
   },
   '/settings/asset-lifecycle/**': {
+    permission: Permission.TeamUpdate,
+  },
+
+  // Vulnerability matching policy (RFC-066): owners and admins.
+  '/settings/vulnerability-matching': {
+    permission: Permission.TeamUpdate,
+  },
+  // License policy (RFC-070): settings:read to see, settings:write to save.
+  '/settings/license-policy': {
+    permission: Permission.SettingsRead,
+  },
+  // Asset source precedence (RFC-069): owner/admin on the API.
+  '/settings/asset-sources': {
     permission: Permission.TeamUpdate,
   },
 }

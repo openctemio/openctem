@@ -82,27 +82,16 @@ type DashboardStatsRepository interface {
 	// (a non-nil scope keeps only findings on in-scope assets).
 	GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]ActivityItem, error)
 	// GetFindingTrend returns monthly finding counts by severity for a tenant
-	GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]FindingTrendPoint, error)
+	// (a non-nil scope counts only findings on in-scope assets).
+	GetFindingTrend(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, months int) ([]FindingTrendPoint, error)
 	// GetAllStats returns all dashboard stats in 2 optimized queries (replaces 10+ individual calls)
-	GetAllStats(ctx context.Context, tenantID shared.ID) (*DashboardAllStats, error)
-
-	// Global stats (not tenant-scoped) - deprecated, use filtered versions
-	GetGlobalAssetStats(ctx context.Context) (AssetStatsData, error)
-	GetGlobalFindingStats(ctx context.Context) (FindingStatsData, error)
-	GetGlobalRepositoryStats(ctx context.Context) (RepositoryStatsData, error)
-	GetGlobalRecentActivity(ctx context.Context, limit int) ([]ActivityItem, error)
+	// (a non-nil scope counts only in-scope assets and their findings).
+	GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*DashboardAllStats, error)
 
 	// MTTR & Trending
-	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error)
+	// A non-nil scope averages only findings on in-scope assets.
+	GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error)
 	GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]RiskVelocityPoint, error)
-
-	// Filtered stats (by accessible tenant IDs) - for multi-tenant authorization
-	GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (AssetStatsData, error)
-	GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (FindingStatsData, error)
-	GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (RepositoryStatsData, error)
-	// Findings of tenantIDs are all visible; findings of restrictedTenantIDs
-	// only when their asset is in userID's data scope for that tenant.
-	GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]ActivityItem, error)
 
 	// Data Quality Scorecard (RFC-005)
 	GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*DataQualityScorecard, error)
@@ -112,7 +101,8 @@ type DashboardStatsRepository interface {
 	// Executive Summary (Phase 2)
 	GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*ExecutiveSummary, error)
 	// MTTR Analytics (Phase 2)
-	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error)
+	// A non-nil scope averages only findings on in-scope assets.
+	GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*MTTRAnalytics, error)
 	// Process Metrics (Phase 2)
 	GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*ProcessMetrics, error)
 	// CTEM program metrics (MTTD internet-facing, MTTR validated, owner acceptance)
@@ -167,6 +157,48 @@ type DashboardService struct {
 	repo      DashboardStatsRepository
 	dataScope *datascope.Enforcer // Layer 2 narrowing of row data (nil = unrestricted)
 	logger    *logger.Logger
+	// aggregate reports whether the viewer holds dashboard:aggregate.
+	aggregate func(ctx context.Context) bool
+}
+
+// SetAggregateCheck wires the check for the dashboard:aggregate permission
+// (owner decision D6): a restricted viewer who holds it sees organization
+// totals, with small breakdowns left out. Without the check nobody does.
+func (s *DashboardService) SetAggregateCheck(fn func(ctx context.Context) bool) {
+	s.aggregate = fn
+}
+
+// dashboardKFloor: in organization totals shown to a restricted viewer, a
+// breakdown bucket counting fewer than this many items is left out, so a
+// total does not single out an asset the viewer cannot see.
+const dashboardKFloor = 5
+
+// countScope decides whose data the dashboard counts: nil (the whole
+// organization) for an unrestricted viewer or a restricted viewer holding
+// dashboard:aggregate, else the viewer's scope. aggregated is true in the
+// second case (apply the k-floor).
+func (s *DashboardService) countScope(ctx context.Context, tenantID shared.ID) (scope *shared.DataScope, aggregated bool, err error) {
+	scope, err = s.dataScope.Resolve(ctx, tenantID)
+	if err != nil || !scope.Restricted() {
+		// Unrestricted (nil, or every asset but the private program assets
+		// hidden from the viewer): the organization's totals, no k-floor.
+		return scope, false, err
+	}
+	if s.aggregate != nil && s.aggregate(ctx) {
+		return nil, true, nil
+	}
+	return scope, false, nil
+}
+
+// kFloor drops breakdown buckets under dashboardKFloor.
+func kFloor(m map[string]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for k, v := range m {
+		if v >= dashboardKFloor {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer. Dashboards keep their
@@ -187,8 +219,15 @@ func NewDashboardService(repo DashboardStatsRepository, log *logger.Logger) *Das
 // GetStats returns dashboard statistics for a tenant.
 // Uses optimized batched query (2 queries instead of 10+).
 func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*DashboardStats, error) {
+	// Owner decision D6: the counts follow the viewer. A restricted viewer
+	// counts their own scope, unless they hold dashboard:aggregate (then
+	// organization totals with the k-floor on breakdowns).
+	countScope, aggregated, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
 	// Batched query: all counts + activity in 2 queries
-	all, err := s.repo.GetAllStats(ctx, tenantID)
+	all, err := s.repo.GetAllStats(ctx, tenantID, countScope)
 	if err != nil {
 		s.logger.Error("failed to get dashboard stats", "error", err, "tenant_id", tenantID)
 		// Fallback to empty
@@ -200,8 +239,8 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 	}
 
 	// Layer 2: recent activity is row data (finding titles and messages), so a
-	// restricted member gets it from their in-scope findings only. The counts
-	// above stay tenant-wide aggregates.
+	// restricted member gets it from their in-scope findings only, whatever
+	// their aggregate permission.
 	scope, err := s.dataScope.Resolve(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
@@ -216,10 +255,17 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 	}
 
 	// Finding trend (separate query — different shape, efficient CTE)
-	trend, err := s.repo.GetFindingTrend(ctx, tenantID, 6)
+	trend, err := s.repo.GetFindingTrend(ctx, tenantID, countScope, 6)
 	if err != nil {
 		s.logger.Error("failed to get finding trend", "error", err, "tenant_id", tenantID)
 		trend = []FindingTrendPoint{}
+	}
+	if aggregated {
+		all.Assets.ByType = kFloor(all.Assets.ByType)
+		all.Assets.BySubType = kFloor(all.Assets.BySubType)
+		all.Assets.ByStatus = kFloor(all.Assets.ByStatus)
+		all.Findings.BySeverity = kFloor(all.Findings.BySeverity)
+		all.Findings.ByStatus = kFloor(all.Findings.ByStatus)
 	}
 
 	return &DashboardStats{
@@ -241,8 +287,14 @@ func (s *DashboardService) GetStats(ctx context.Context, tenantID shared.ID) (*D
 }
 
 // GetMTTRMetrics returns MTTR (Mean Time To Remediate) in hours by severity.
+// It follows the viewer like the other dashboard numbers (countScope): a
+// restricted member averages their own findings only (research 24 §5.1).
 func (s *DashboardService) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
-	return s.repo.GetMTTRMetrics(ctx, tenantID, days)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetMTTRMetrics(ctx, tenantID, scope, days)
 }
 
 // GetRiskVelocity returns weekly new vs resolved finding counts.
@@ -270,54 +322,6 @@ type RiskTrendPoint struct {
 	P1Open           int     `json:"p1_open"`
 	P2Open           int     `json:"p2_open"`
 	P3Open           int     `json:"p3_open"`
-}
-
-// GetGlobalStats returns global dashboard statistics (not tenant-scoped).
-// Deprecated: Use GetStatsForTenants for proper multi-tenant authorization.
-func (s *DashboardService) GetGlobalStats(ctx context.Context) (*DashboardStats, error) {
-	// Get global asset stats
-	assetStats, err := s.repo.GetGlobalAssetStats(ctx)
-	if err != nil {
-		s.logger.Error("failed to get global asset stats", "error", err)
-		assetStats = AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get global finding stats
-	findingStats, err := s.repo.GetGlobalFindingStats(ctx)
-	if err != nil {
-		s.logger.Error("failed to get global finding stats", "error", err)
-		findingStats = FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get global repository stats
-	repoStats, err := s.repo.GetGlobalRepositoryStats(ctx)
-	if err != nil {
-		s.logger.Error("failed to get global repository stats", "error", err)
-		repoStats = RepositoryStatsData{}
-	}
-
-	// Get global recent activity
-	activity, err := s.repo.GetGlobalRecentActivity(ctx, 10)
-	if err != nil {
-		s.logger.Error("failed to get global recent activity", "error", err)
-		activity = []ActivityItem{}
-	}
-
-	return &DashboardStats{
-		AssetCount:               assetStats.Total,
-		AssetsByType:             assetStats.ByType,
-		AssetsByStatus:           assetStats.ByStatus,
-		AverageRiskScore:         assetStats.AverageRiskScore,
-		FindingCount:             findingStats.Total,
-		FindingsBySeverity:       findingStats.BySeverity,
-		FindingsByStatus:         findingStats.ByStatus,
-		OverdueFindings:          findingStats.Overdue,
-		AverageCVSS:              findingStats.AverageCVSS,
-		RepositoryCount:          repoStats.Total,
-		RepositoriesWithFindings: repoStats.WithFindings,
-		RecentActivity:           activity,
-		FindingTrend:             []FindingTrendPoint{},
-	}, nil
 }
 
 // ExecutiveSummary holds executive-level metrics for a time period.
@@ -376,15 +380,15 @@ type ProcessMetrics struct {
 
 // ProgramMetrics holds the CTEM program metrics ctem.org asks a program to
 // report that can be computed honestly from data the platform already stores.
-// Every figure is tenant-scoped and windowed to the last PeriodDays days.
+// Every figure is tenant-scoped and windowed to the last PeriodDays days,
+// except ControlCoverage, which describes the inventory as it is now.
 //
 // A nil pointer means "not measurable" (no qualifying sample in the window) —
 // never 0 and never 100%. Clients must render nil as "—".
 //
 // Deliberately NOT here: time-to-break attack paths. Attack paths / exposure
 // chains are computed on demand from the current asset graph
-// (internal/app/attack/exposure_chains.go) and never persisted; the
-// attack_paths table is written only by the demo seeder, and neither asset
+// (internal/app/attack/exposure_chains.go) and never persisted, and neither asset
 // exposure nor asset relationships keep a change history. There is therefore
 // no record of when a path opened or when one of its links was broken, and any
 // "time to break" figure would be invented.
@@ -431,6 +435,92 @@ type ProgramMetrics struct {
 	// OwnerAcceptance — share of assignments the assignee acted on within the
 	// SLA window. See OwnerAcceptanceMetric.
 	OwnerAcceptance OwnerAcceptanceMetric `json:"owner_acceptance"`
+
+	// MTTV — mean time to validate priority exposures.
+	//
+	// Population: findings of priority class P0 or P1 whose first_detected_at
+	// falls in the window, excluding false positives and duplicates.
+	//
+	// Clock start: findings.first_detected_at.
+	// Clock stop: the first CONCLUSIVE validation_evidence row for the finding
+	// (outcome 'detected' — reproduced — or 'not_detected' — not reproduced).
+	// Inconclusive, error and skipped rows are not evidence. A stop before
+	// first_detected_at counts as 0 h. Findings with no conclusive evidence
+	// yet are not averaged; they are counted in Unmeasured.
+	MTTV DurationMetric `json:"mttv"`
+
+	// TimeToOwnerInternetFacing — mean time to assign an owner to new
+	// internet-facing assets.
+	//
+	// Population: the MTTD population (non-archived assets first seen in the
+	// window that are internet-facing now).
+	// Clock start: assets.first_seen. Clock stop: the earliest
+	// asset_owners.assigned_at of the asset (any ownership type, user or
+	// group). An owner assigned before first_seen counts as 0 h. Assets that
+	// still have no owner are counted in Unmeasured.
+	TimeToOwnerInternetFacing DurationMetric `json:"time_to_owner_internet_facing"`
+
+	// CycleCompletion — whether CTEM cycles finish on time. See
+	// CycleCompletionMetric.
+	CycleCompletion CycleCompletionMetric `json:"cycle_completion"`
+
+	// ControlCoverage — critical assets lacking a required control, one row
+	// per control. A snapshot of the current inventory, not windowed. See
+	// ControlCoverageMetric.
+	ControlCoverage []ControlCoverageMetric `json:"control_coverage"`
+}
+
+// CycleCompletionMetric — cycle completion rate.
+//
+// Population: CTEM cycles whose end_date falls in the window (from the window
+// start up to today, inclusive).
+//
+// Outcome of each cycle:
+//   - ClosedOnTime: status 'closed' and closed_at before the end of end_date
+//     (UTC).
+//   - ClosedLate: status 'closed' and closed_at after that.
+//   - Open: not closed yet (end_date has passed or is today).
+//
+// RatePct = ClosedOnTime / Due × 100, nil when Due is 0.
+// MeanCharterCompletionPct is the mean charter completion rate
+// (charter_evaluation.completion_rate: met / (met + unmet) success criteria)
+// over the closed cycles of the population that have one; nil when none has.
+type CycleCompletionMetric struct {
+	Due                      int      `json:"due"`
+	ClosedOnTime             int      `json:"closed_on_time"`
+	ClosedLate               int      `json:"closed_late"`
+	Open                     int      `json:"open"`
+	RatePct                  *float64 `json:"rate_pct"`
+	MeanCharterCompletionPct *float64 `json:"mean_charter_completion_pct"`
+}
+
+// Controls the coverage metric checks. Each one is read from a boolean asset
+// attribute of the asset types it applies to (configs/asset-types.yaml).
+const (
+	ControlEDR     = "edr"     // has_edr on host / endpoint assets
+	ControlMFA     = "mfa"     // has_mfa on cloud_account / identity assets
+	ControlLogging = "logging" // has_logging on storage assets
+)
+
+// ControlCoverageMetric — critical assets lacking a required control.
+//
+// Population: non-archived assets with criticality 'critical' or flagged as a
+// crown jewel, of the asset types the control applies to.
+//
+// Each asset is counted once, by its attribute value:
+//   - Covered: the attribute is true.
+//   - Lacking: the attribute is false.
+//   - Unknown: the attribute is not recorded. No source has reported the
+//     control, which is a blind spot rather than proof of coverage.
+//
+// GapPct = (Lacking + Unknown) / Total × 100, nil when Total is 0.
+type ControlCoverageMetric struct {
+	Control string   `json:"control"`
+	Total   int      `json:"total"`
+	Covered int      `json:"covered"`
+	Lacking int      `json:"lacking"`
+	Unknown int      `json:"unknown"`
+	GapPct  *float64 `json:"gap_pct"`
 }
 
 // DurationMetric is a mean/median duration over a sample, in hours.
@@ -524,98 +614,14 @@ func (s *DashboardService) GetExecutiveSummary(ctx context.Context, tenantID sha
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity and priority class.
+// It follows the viewer like GetMTTRMetrics.
 func (s *DashboardService) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*MTTRAnalytics, error) {
-	return s.repo.GetMTTRAnalytics(ctx, tenantID, days)
+	scope, _, err := s.countScope(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.repo.GetMTTRAnalytics(ctx, tenantID, scope, days)
 }
 
 // dashboardRecentActivityLimit is how many recent findings the dashboards show.
 const dashboardRecentActivityLimit = 10
-
-// splitTenantsByScope splits tenantIDs into those where the request's user is
-// unrestricted and those where their data scope applies.
-func (s *DashboardService) splitTenantsByScope(ctx context.Context, tenantIDs []string) (open, restricted []string) {
-	caller := s.dataScope.CallerOf(ctx)
-	uid, uerr := shared.IDFromString(caller.UserID)
-	if s.dataScope == nil || uerr != nil {
-		return tenantIDs, nil
-	}
-	for _, t := range tenantIDs {
-		tid, err := shared.IDFromString(t)
-		if err != nil {
-			continue
-		}
-		scope, err := s.dataScope.ForUser(ctx, tid, uid)
-		if err == nil && scope == nil {
-			open = append(open, t)
-		} else {
-			restricted = append(restricted, t)
-		}
-	}
-	return open, restricted
-}
-
-// GetStatsForTenants returns dashboard statistics filtered by accessible tenant IDs.
-// This should be used for multi-tenant authorization - only shows data from tenants
-// the user has access to.
-func (s *DashboardService) GetStatsForTenants(ctx context.Context, tenantIDs []string) (*DashboardStats, error) {
-	// If no accessible tenants, return empty stats
-	if len(tenantIDs) == 0 {
-		return &DashboardStats{
-			AssetsByType:       make(map[string]int),
-			AssetsByStatus:     make(map[string]int),
-			FindingsBySeverity: make(map[string]int),
-			FindingsByStatus:   make(map[string]int),
-			RecentActivity:     []ActivityItem{},
-			FindingTrend:       []FindingTrendPoint{},
-		}, nil
-	}
-
-	// Get asset stats filtered by accessible tenants
-	assetStats, err := s.repo.GetFilteredAssetStats(ctx, tenantIDs)
-	if err != nil {
-		s.logger.Error("failed to get filtered asset stats", "error", err, "tenant_count", len(tenantIDs))
-		assetStats = AssetStatsData{ByType: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get finding stats filtered by accessible tenants
-	findingStats, err := s.repo.GetFilteredFindingStats(ctx, tenantIDs)
-	if err != nil {
-		s.logger.Error("failed to get filtered finding stats", "error", err, "tenant_count", len(tenantIDs))
-		findingStats = FindingStatsData{BySeverity: make(map[string]int), ByStatus: make(map[string]int)}
-	}
-
-	// Get repository stats filtered by accessible tenants
-	repoStats, err := s.repo.GetFilteredRepositoryStats(ctx, tenantIDs)
-	if err != nil {
-		s.logger.Error("failed to get filtered repository stats", "error", err, "tenant_count", len(tenantIDs))
-		repoStats = RepositoryStatsData{}
-	}
-
-	// Get recent activity filtered by accessible tenants. Layer 2: the
-	// caller's admin status is per tenant, so the scope is resolved for each
-	// tenant from their membership there; tenants where they are restricted
-	// contribute only in-scope findings. Fails closed: a tenant whose scope
-	// cannot be resolved is treated as restricted.
-	open, restricted := s.splitTenantsByScope(ctx, tenantIDs)
-	activity, err := s.repo.GetFilteredRecentActivity(ctx, open, restricted, s.dataScope.CallerOf(ctx).UserID, dashboardRecentActivityLimit)
-	if err != nil {
-		s.logger.Error("failed to get filtered recent activity", "error", err, "tenant_count", len(tenantIDs))
-		activity = []ActivityItem{}
-	}
-
-	return &DashboardStats{
-		AssetCount:               assetStats.Total,
-		AssetsByType:             assetStats.ByType,
-		AssetsByStatus:           assetStats.ByStatus,
-		AverageRiskScore:         assetStats.AverageRiskScore,
-		FindingCount:             findingStats.Total,
-		FindingsBySeverity:       findingStats.BySeverity,
-		FindingsByStatus:         findingStats.ByStatus,
-		OverdueFindings:          findingStats.Overdue,
-		AverageCVSS:              findingStats.AverageCVSS,
-		RepositoryCount:          repoStats.Total,
-		RepositoriesWithFindings: repoStats.WithFindings,
-		RecentActivity:           activity,
-		FindingTrend:             []FindingTrendPoint{},
-	}, nil
-}

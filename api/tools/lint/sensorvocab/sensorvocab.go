@@ -26,10 +26,8 @@ import (
 // AllowedPaths are repo-relative path prefixes whose code may use the old
 // vocabulary.
 var AllowedPaths = map[string]string{
-	"pkg/sensorproto/legacyv1/": "the frozen protocol v1 / deprecated management path vocabulary lives here and only here",
-	"scripts/rename/":           "the rename tooling names the old vocabulary to find it",
-	"tools/lint/sensorvocab/":   "this guard",
-	"tests/compat/v1/":          "its own module, pinned to the last released sdk-go: it drives protocol v1 with the SDK's identifiers and must not change",
+	"scripts/rename/":         "the rename tooling names the old vocabulary to find it",
+	"tools/lint/sensorvocab/": "this guard",
 }
 
 // AllowedIdents are identifiers that contain "agent" but do not mean a sensor.
@@ -37,6 +35,7 @@ var AllowedIdents = map[string]string{
 	"AIModeAgent":                        "AI triage mode backed by a self-hosted LLM agent",
 	"ModuleAITriageAgent":                "module for that AI agent mode",
 	"TestAITriage_GetAIConfig_AgentMode": "tests that AI agent mode",
+	"ScannerAgentID":                     "a third-party scanner's own endpoint agent id (CTIS identity_hints.agent_id), not a sensor",
 }
 
 // The HTTP User-Agent is not a sensor.

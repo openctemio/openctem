@@ -3,13 +3,14 @@
  *
  * A release image carries NEXT_PUBLIC_APP_VERSION / NEXT_PUBLIC_APP_COMMIT.
  * Anything else (the live `next dev` deployment above all) reads the checkout
- * it runs from: "<highest vX.Y.Z tag>-dev" and HEAD. The result is cached
+ * it runs from: "<highest vX.Y.Z tag>-dev+<short HEAD>", channel dev (RFC-037). The result is cached
  * briefly, so a `git pull` shows up within a minute without a restart.
  */
 import {
   DEV_VERSION,
   UNKNOWN_COMMIT,
   channelOf,
+  devBuildVersion,
   getAppVersion,
   shortCommit,
   type BuildInfo,
@@ -34,9 +35,10 @@ export async function resolveWebBuildInfo(
   }
   const git = await readGitMetadata(dir)
   const info: BuildInfo = {
-    version: git?.latestTag ? `${git.latestTag}-dev` : DEV_VERSION,
+    version:
+      git && (git.latestTag || git.head) ? devBuildVersion(git.latestTag, git.head) : DEV_VERSION,
     commit: git?.head ? shortCommit(git.head) : UNKNOWN_COMMIT,
-    channel: 'development',
+    channel: 'dev',
   }
   cached = { at: now, dir, info }
   return info

@@ -2,6 +2,7 @@ package suppression
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -22,6 +23,12 @@ type auditCall struct {
 	action  string
 	userID  *shared.ID
 	details map[string]any
+}
+
+// reviewedAt is the version an approver saw: the rule's updated_at.
+func reviewedAt(r *Rule) *time.Time {
+	t := r.UpdatedAt()
+	return &t
 }
 
 func newMockRepository() *mockRepository {
@@ -253,9 +260,10 @@ func TestService_ApproveRule(t *testing.T) {
 
 		// Approve it
 		approveInput := ApproveRuleInput{
-			TenantID:   tenantID,
-			RuleID:     rule.ID(),
-			ApprovedBy: approverID,
+			TenantID:          tenantID,
+			RuleID:            rule.ID(),
+			ApprovedBy:        approverID,
+			ReviewedUpdatedAt: reviewedAt(rule),
 		}
 
 		approved, err := svc.ApproveRule(ctx, approveInput)
@@ -263,8 +271,11 @@ func TestService_ApproveRule(t *testing.T) {
 			t.Fatalf("ApproveRule() error = %v", err)
 		}
 
-		if approved.Status() != RuleStatusApproved {
-			t.Errorf("Status = %v, want %v", approved.Status(), RuleStatusApproved)
+		if approved.Rule.Status() != RuleStatusApproved {
+			t.Errorf("Status = %v, want %v", approved.Rule.Status(), RuleStatusApproved)
+		}
+		if approved.SelfApproved {
+			t.Error("an approval by a second person is not a self-approval")
 		}
 	})
 
@@ -272,10 +283,12 @@ func TestService_ApproveRule(t *testing.T) {
 		repo := newMockRepository()
 		svc := NewService(repo, nil)
 
+		now := time.Now().UTC()
 		input := ApproveRuleInput{
-			TenantID:   tenantID,
-			RuleID:     shared.NewID(),
-			ApprovedBy: approverID,
+			TenantID:          tenantID,
+			RuleID:            shared.NewID(),
+			ApprovedBy:        approverID,
+			ReviewedUpdatedAt: &now,
 		}
 
 		_, err := svc.ApproveRule(ctx, input)
@@ -380,9 +393,10 @@ func TestService_UpdateRule(t *testing.T) {
 		}
 		rule, _ := svc.CreateRule(ctx, createInput)
 		svc.ApproveRule(ctx, ApproveRuleInput{
-			TenantID:   tenantID,
-			RuleID:     rule.ID(),
-			ApprovedBy: approverID,
+			TenantID:          tenantID,
+			RuleID:            rule.ID(),
+			ApprovedBy:        approverID,
+			ReviewedUpdatedAt: reviewedAt(rule),
 		})
 
 		// Try to update
@@ -424,9 +438,10 @@ func TestService_ListActiveRules(t *testing.T) {
 		// Approve only first 2
 		if i < 2 {
 			svc.ApproveRule(ctx, ApproveRuleInput{
-				TenantID:   tenantID,
-				RuleID:     rule.ID(),
-				ApprovedBy: approverID,
+				TenantID:          tenantID,
+				RuleID:            rule.ID(),
+				ApprovedBy:        approverID,
+				ReviewedUpdatedAt: reviewedAt(rule),
 			})
 		}
 	}
@@ -482,4 +497,110 @@ func TestService_DeleteRule(t *testing.T) {
 			t.Errorf("DeleteRule() error = %v, want %v", err, ErrRuleNotFound)
 		}
 	})
+}
+
+type fakeApprovers struct {
+	count int
+	owner shared.ID
+}
+
+func (f fakeApprovers) CountEligibleApprovers(context.Context, shared.ID) (int, error) {
+	return f.count, nil
+}
+
+func (f fakeApprovers) IsTenantOwner(_ context.Context, _ shared.ID, user shared.ID) (bool, error) {
+	return user == f.owner, nil
+}
+
+// Owner decision B16: the requester may not approve their own rule while a
+// second person could; a lone owner may, and the approval says so.
+func TestService_ApproveRule_FourEyes(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	requester := shared.NewID()
+
+	newPending := func(svc *Service) *Rule {
+		t.Helper()
+		rule, err := svc.CreateRule(ctx, CreateRuleInput{
+			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+			RuleID: "x", RequestedBy: requester,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rule
+	}
+	approveOwn := func(svc *Service, rule *Rule) (*ApproveResult, error) {
+		return svc.ApproveRule(ctx, ApproveRuleInput{
+			TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: requester, ReviewedUpdatedAt: reviewedAt(rule),
+		})
+	}
+
+	t.Run("refused when two people can approve", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 2, owner: requester})
+		if _, err := approveOwn(svc, newPending(svc)); !errors.Is(err, ErrSelfApproval) || !errors.Is(err, shared.ErrForbidden) {
+			t.Fatalf("self-approval with a second approver = %v, want ErrSelfApproval (forbidden)", err)
+		}
+	})
+	t.Run("lone owner may approve, flagged", func(t *testing.T) {
+		repo := newMockRepository()
+		svc := NewService(repo, nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: requester})
+		res, err := approveOwn(svc, newPending(svc))
+		if err != nil {
+			t.Fatalf("lone owner self-approval: %v", err)
+		}
+		if !res.SelfApproved || res.Rule.Status() != RuleStatusApproved {
+			t.Fatalf("result = %+v, want approved and SelfApproved", res)
+		}
+		last := repo.auditCalls[len(repo.auditCalls)-1]
+		if last.details["self_approved"] != true {
+			t.Fatalf("rule audit details = %v, want self_approved", last.details)
+		}
+	})
+	t.Run("lone non-owner may not", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		svc.SetApproverDirectory(fakeApprovers{count: 1, owner: shared.NewID()})
+		if _, err := approveOwn(svc, newPending(svc)); !errors.Is(err, ErrSelfApproval) {
+			t.Fatalf("lone non-owner self-approval = %v, want ErrSelfApproval", err)
+		}
+	})
+	t.Run("no directory wired fails closed", func(t *testing.T) {
+		svc := NewService(newMockRepository(), nil)
+		if _, err := approveOwn(svc, newPending(svc)); !errors.Is(err, ErrSelfApproval) {
+			t.Fatalf("self-approval without a directory = %v, want ErrSelfApproval", err)
+		}
+	})
+}
+
+// The approval pins the version the approver reviewed.
+func TestService_ApproveRule_PinsReviewedVersion(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	svc := NewService(newMockRepository(), nil)
+	rule, err := svc.CreateRule(ctx, CreateRuleInput{
+		TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+		RuleID: "narrow.rule", RequestedBy: shared.NewID(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := rule.UpdatedAt()
+
+	if _, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: shared.NewID()}); !errors.Is(err, ErrReviewedVersionRequired) {
+		t.Fatalf("approve without a reviewed version = %v, want ErrReviewedVersionRequired", err)
+	}
+
+	// The requester broadens the pending rule after the approver loaded it.
+	time.Sleep(time.Millisecond)
+	broader := "*"
+	if _, err := svc.UpdateRule(ctx, UpdateRuleInput{TenantID: tenantID, RuleID: rule.ID(), RuleIDPat: &broader, UpdatedBy: rule.RequestedBy()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ApproveRule(ctx, ApproveRuleInput{
+		TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: shared.NewID(), ReviewedUpdatedAt: &seen,
+	}); !errors.Is(err, ErrRuleChangedSinceReview) {
+		t.Fatalf("approve a changed rule = %v, want ErrRuleChangedSinceReview", err)
+	}
 }

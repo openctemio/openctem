@@ -27,7 +27,10 @@ type Claims struct {
 
 	// Session info
 	SessionState string `json:"session_state,omitempty"`
-	Azp          string `json:"azp,omitempty"` // Authorized party (client ID)
+	// AuthTime is when the provider last authenticated the user. Step-up
+	// re-authentication accepts the token while it is recent.
+	AuthTime *jwt.NumericDate `json:"auth_time,omitempty"`
+	Azp      string           `json:"azp,omitempty"` // Authorized party (client ID)
 
 	// Multi-tenant support
 	TenantID    string   `json:"tenant_id,omitempty"`

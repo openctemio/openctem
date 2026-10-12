@@ -6,6 +6,7 @@
  */
 
 import { redirect } from 'next/navigation'
+import { loginErrorHref } from '@/features/auth/lib/login-error'
 import { cookies } from 'next/headers'
 
 import { handleSSOCallback } from '@/features/sso/actions/sso-auth-actions'
@@ -44,35 +45,35 @@ function isValidProvider(provider: string): provider is SSOProviderType {
 
 export default async function SSOCallbackPage({ params, searchParams }: SSOCallbackPageProps) {
   const { provider } = await params
-  const { code, state, error, error_description } = await searchParams
+  const { code, state, error } = await searchParams
 
   // Get stored cookies before any processing (they may be deleted during callback)
   const cookieStore = await cookies()
   const orgSlug = cookieStore.get('sso_org')?.value || ''
-  const orgParam = orgSlug ? `&org=${encodeURIComponent(orgSlug)}` : ''
+  const org = orgSlug ? { org: orgSlug } : undefined
   const storedRedirectTo = validateRedirectUrl(cookieStore.get('sso_redirect')?.value, '/')
 
   // Validate provider
   if (!isValidProvider(provider)) {
-    redirect(`/login?error=${encodeURIComponent('Invalid SSO provider')}${orgParam}`)
+    redirect(loginErrorHref('invalid_provider', org))
   }
 
   // Handle OAuth error from provider
   if (error) {
-    const errorMessage = error_description || error || 'SSO authentication failed'
-    redirect(`/login?error=${encodeURIComponent(errorMessage)}${orgParam}`)
+    // error_description is the provider's free text: never echo it on /login.
+    redirect(loginErrorHref('provider_error', org))
   }
 
   // Validate required parameters
   if (!code || !state) {
-    redirect(`/login?error=${encodeURIComponent('Missing SSO parameters')}${orgParam}`)
+    redirect(loginErrorHref('missing_params', org))
   }
 
   // Process the SSO callback
   const result = await handleSSOCallback(provider, code, state)
 
   if (!result.success) {
-    redirect(`/login?error=${encodeURIComponent(result.error)}${orgParam}`)
+    redirect(loginErrorHref('callback_failed', org))
   }
 
   // Redirect to stored destination (read before callback deleted the cookie)

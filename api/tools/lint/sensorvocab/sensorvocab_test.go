@@ -23,8 +23,8 @@ func TestNoAgentVocabularyOutsideAllowList(t *testing.T) {
 		lines[i] = v.String()
 	}
 	t.Fatalf("%d identifier(s) use the pre-sensor 'agent' vocabulary (RFC-023 §9.5):\n  %s\n\n"+
-		"Rename them (scripts/rename/sensor-rename.sh does it type-safely), move protocol v1 wire "+
-		"vocabulary into pkg/sensorproto/legacyv1, or — only if the word means something other than "+
+		"Rename them (scripts/rename/sensor-rename.sh does it type-safely), or — only if the word "+
+		"means something other than "+
 		"a sensor — add the identifier to AllowedIdents with the reason.",
 		len(violations), strings.Join(lines, "\n  "))
 }

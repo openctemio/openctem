@@ -22,6 +22,23 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // "Connected Apps" was a ComingSoonPage that nothing linked to. Deleted; an
   // old bookmark lands on the integrations catalog instead of a 404.
   { source: '/settings/integrations/apps', destination: '/settings/integrations', permanent: true },
+  // Scope approvals became scan approval (RFC-073).
+  {
+    source: '/admin/system/scope-approvals',
+    destination: '/admin/system/scan-approval',
+    permanent: true,
+  },
+  // "CI/CD" was a ComingSoonPage (owner decision D-31). Deleted until a real
+  // page exists for the API's CI snippet and quality-gate endpoints.
+  { source: '/settings/integrations/cicd', destination: '/settings/integrations', permanent: true },
+  // The SAML explainer stub: SSO is configured per organization in the
+  // platform admin console (RFC-022), and Authentication carries the same
+  // explanation as a card.
+  {
+    source: '/settings/integrations/saml',
+    destination: '/settings/authentication',
+    permanent: true,
+  },
   // Personal notification settings moved to the user's own area.
   { source: '/settings/notifications', destination: '/account/notifications', permanent: true },
   // Access group: identity and machine access, out of Integrations.
@@ -34,6 +51,13 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   {
     source: '/settings/access-control/assignment-rules',
     destination: '/settings/teams?tab=assignment-rules',
+    permanent: true,
+  },
+  // Permission sets were removed: permissions come only from roles, and teams
+  // carry only data scope. An old link lands on Roles.
+  {
+    source: '/settings/access-control/permission-sets/:path*',
+    destination: '/settings/roles',
     permanent: true,
   },
   { source: '/settings/integrations/api-keys', destination: '/settings/api-keys', permanent: true },
@@ -67,6 +91,12 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   },
   // Scanning catalogs: configured at onboarding, rarely touched, so they live
   // in Settings › Scanning (owner decision D3). Detail and sub-pages follow.
+  // Scan freeze windows became blackout policies of Scan windows (RFC-067).
+  {
+    source: '/settings/scanning/freeze-windows',
+    destination: '/settings/scanning/scan-windows',
+    permanent: true,
+  },
   {
     source: '/scan-profiles/:path*',
     destination: '/settings/scanning/profiles/:path*',
@@ -117,7 +147,7 @@ export const LEGACY_VALIDATION_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
     destination: '/pentest/campaigns/:campaign?view=findings',
     permanent: true,
   },
-  { source: '/pentest/findings', destination: '/findings?sources=pentest', permanent: true },
+  { source: '/pentest/findings', destination: '/findings?source=pentest', permanent: true },
   {
     source: '/pentest/reports',
     has: [{ type: 'query', key: 'campaign' }],
@@ -168,11 +198,44 @@ export const LEGACY_DISCOVERY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   { source: '/attack-surface/cloud', destination: '/assets?types=cloud_account', permanent: true },
 ]
 
+/**
+ * Orphaned dashboard-total pages, deleted (owner decision D-31). Nothing linked
+ * to them; each rendered the shared dashboard totals under its own heading, so
+ * it looked like a feature without being one. An old bookmark lands on the
+ * real page for the same question.
+ */
+export const LEGACY_ORPHAN_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  // Finding trends and MTTR are on the executive summary.
+  { source: '/trending', destination: '/insights/executive', permanent: true },
+  { source: '/insights/analytics/mttr', destination: '/insights/executive', permanent: true },
+  // Remediation progress is the remediation list.
+  { source: '/progress', destination: '/remediation', permanent: true },
+  // "Scenarios" derived coverage from findings; simulations live here.
+  { source: '/simulation/scenarios', destination: '/attack-simulation', permanent: true },
+]
+
+/**
+ * CI pipelines have their own page, CI/CD integration (api RFC-051). A verdict
+ * links to /ci-runners/{run id}; that link opens the run there. The old
+ * runner-sensor list (/runners) lands there too.
+ */
+export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  {
+    source: '/ci-runners/:id',
+    destination: '/ci-cd?view=runs&run=:id',
+    permanent: true,
+  },
+  { source: '/ci-runners', destination: '/ci-cd', permanent: true },
+  { source: '/runners', destination: '/ci-cd', permanent: true },
+]
+
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   ...LEGACY_SENSOR_ROUTE_REDIRECTS,
   ...LEGACY_SETTINGS_ROUTE_REDIRECTS,
   ...LEGACY_VALIDATION_ROUTE_REDIRECTS,
   ...LEGACY_DISCOVERY_ROUTE_REDIRECTS,
+  ...LEGACY_ORPHAN_ROUTE_REDIRECTS,
+  ...LEGACY_CI_ROUTE_REDIRECTS,
 ]
 
 /**

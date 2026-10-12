@@ -425,7 +425,7 @@ func createTestSensor(t *testing.T, db *sql.DB, tenantID shared.ID, health strin
 
 	_, err := db.Exec(`
 		INSERT INTO sensors (id, tenant_id, name, type, status, health, api_key_hash, api_key_prefix, created_at, updated_at, last_seen_at)
-		VALUES ($1, $2, $3, 'runner', 'active', $4, $5, $6, NOW(), NOW(), NOW())
+		VALUES ($1, $2, $3, 'worker', 'active', $4, $5, $6, NOW(), NOW(), NOW())
 	`, id.String(), tenantID.String(), fmt.Sprintf("Test Sensor %s", health), health, apiKeyHash, apiKeyPrefix)
 	if err != nil {
 		t.Fatalf("Failed to create test sensor: %v", err)

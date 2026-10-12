@@ -1,39 +1,55 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	modulesvc "github.com/openctemio/openctem/api/internal/app/module"
+	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // BootstrapHandler handles the bootstrap endpoint that returns all initial data
 // needed after login in a single API call.
 type BootstrapHandler struct {
-	permCacheSvc   *app.PermissionCacheService
-	permVersionSvc *app.PermissionVersionService
-	moduleSvc      *app.ModuleService
-	tenantSvc      *app.TenantService
+	permCacheSvc   *accesscontrol.PermissionCacheService
+	permVersionSvc *accesscontrol.PermissionVersionService
+	moduleSvc      *modulesvc.ModuleService
+	tenantSvc      *tenantapp.TenantService
+	session        BootstrapSession
 	logger         *logger.Logger
+}
+
+// WithSession wires the session parts of the bootstrap (profile,
+// memberships, organization policy, badge counts).
+func (h *BootstrapHandler) WithSession(s BootstrapSession) *BootstrapHandler {
+	h.session = s
+	return h
 }
 
 // NewBootstrapHandler creates a new bootstrap handler.
 func NewBootstrapHandler(
-	permCacheSvc *app.PermissionCacheService,
-	permVersionSvc *app.PermissionVersionService,
-	moduleSvc *app.ModuleService,
-	tenantSvc *app.TenantService,
+	permCacheSvc *accesscontrol.PermissionCacheService,
+	permVersionSvc *accesscontrol.PermissionVersionService,
+	moduleSvc *modulesvc.ModuleService,
+	tenantSvc *tenantapp.TenantService,
 	log *logger.Logger,
 ) *BootstrapHandler {
 	return &BootstrapHandler{
@@ -50,10 +66,61 @@ func NewBootstrapHandler(
 // =============================================================================
 
 // BootstrapResponse combines all initial data needed after login.
+//
+// It is the one session read of the app shell: everything every page needs
+// (who the caller is, which organizations they belong to, what they may do,
+// which modules are on, the sidebar badge counts) comes in this response, so
+// no page load asks for them separately. Every field is the caller's own:
+// their profile, their memberships, their permissions in the token's tenant,
+// and counts computed with the request context (so data scope applies).
 type BootstrapResponse struct {
 	Permissions BootstrapPermissions    `json:"permissions"`
 	Modules     *TenantModulesResponse  `json:"modules,omitempty"`
 	RiskLevels  *tenant.RiskLevelConfig `json:"risk_levels,omitempty"`
+	// User is the caller's profile, as GET /users/me returns it.
+	User *UserResponse `json:"user,omitempty"`
+	// Tenants are the caller's memberships, as GET /users/me/tenants
+	// returns them (the organization switcher).
+	Tenants []TenantMembershipResponse `json:"tenants,omitempty"`
+	// TenantCreationMode is the installation's organization policy
+	// ("self_service" or "admin_only"), as GET /auth/providers reports it.
+	TenantCreationMode string `json:"tenant_creation_mode,omitempty"`
+	// Badges are the sidebar and header counts.
+	Badges *BootstrapBadges `json:"badges,omitempty"`
+	// Announcements are the platform notices shown now, as GET
+	// /announcements returns them in `data`. Platform-wide, not per tenant.
+	Announcements *[]AnnouncementResponse `json:"announcements,omitempty"`
+}
+
+// BootstrapBadges are the counts the app shell shows on every page. A count
+// the caller may not read (missing permission or module) is omitted.
+type BootstrapBadges struct {
+	// UnreadNotifications is the caller's unread in-app notifications, as
+	// GET /notifications/unread-count returns it.
+	UnreadNotifications *int `json:"unread_notifications,omitempty"`
+	// EASMReview is the external-surface review queue (needs review and
+	// candidates), as GET /easm/candidates reports in `total`.
+	EASMReview *int `json:"easm_review,omitempty"`
+}
+
+// BootstrapSession supplies the session parts of the bootstrap. Each source
+// is optional; a missing one leaves its field out.
+type BootstrapSession struct {
+	// Me is UserHandler.MeResponse (the /users/me body).
+	Me func(ctx context.Context, u *user.User) UserResponse
+	// MyTenants is UserHandler.MyTenantsResponse (the /users/me/tenants body).
+	MyTenants func(ctx context.Context, userID shared.ID) ([]TenantMembershipResponse, error)
+	// UnreadCount is the notification service's GetUnreadCount.
+	UnreadCount func(ctx context.Context, tenantID, userID shared.ID) (int, error)
+	// EASMReviewCount is EASMHandler.ReviewCount (nil when the review queue
+	// is not wired).
+	EASMReviewCount func(ctx context.Context, tenantID shared.ID) (int, error)
+	// TenantCreationMode reports the current organization policy (the sign-up
+	// policy when it is configured, else the configured mode).
+	TenantCreationMode func(ctx context.Context) string
+	// Announcements is AnnouncementHandler.ActiveResponses (the
+	// /announcements body).
+	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -74,6 +141,12 @@ type TenantModulesResponse struct {
 	// bare []string here would be a second, thinner copy of that catalog.
 	ComingSoonModuleIDs []string `json:"coming_soon_module_ids,omitempty"`
 	BetaModuleIDs       []string `json:"beta_module_ids,omitempty"`
+	// NotEntitledModuleIDs are modules the organization's plan does not
+	// include: a page of one says "not in your plan", not "turned off".
+	NotEntitledModuleIDs []string `json:"not_entitled_module_ids,omitempty"`
+	// ReadOnlyModules are modules the organization lost recently, with the end
+	// of their read-only grace: pages read, writes are refused.
+	ReadOnlyModules map[string]time.Time `json:"read_only_modules,omitempty"`
 }
 
 // LicensingModuleResponse represents a module in the response.
@@ -98,7 +171,7 @@ type LicensingModuleResponse struct {
 // It processes top-level modules and their sub-modules, applying permission filtering
 // and organizing sub-modules by parent ID.
 func (h *BootstrapHandler) buildModulesResponse(
-	enabledModules *app.GetTenantEnabledModulesOutput,
+	enabledModules *modulesvc.GetTenantEnabledModulesOutput,
 	userPermissions []string,
 	isAdmin bool,
 ) *TenantModulesResponse {
@@ -155,11 +228,13 @@ func (h *BootstrapHandler) buildModulesResponse(
 	}
 
 	return &TenantModulesResponse{
-		ModuleIDs:           moduleIDs,
-		Modules:             modulesResp,
-		SubModules:          subModulesMap,
-		ComingSoonModuleIDs: comingSoonIDs,
-		BetaModuleIDs:       betaIDs,
+		ModuleIDs:            moduleIDs,
+		Modules:              modulesResp,
+		SubModules:           subModulesMap,
+		ComingSoonModuleIDs:  comingSoonIDs,
+		BetaModuleIDs:        betaIDs,
+		NotEntitledModuleIDs: enabledModules.NotEntitledModuleIDs,
+		ReadOnlyModules:      enabledModules.ReadOnlyModules,
 	}
 }
 
@@ -281,11 +356,115 @@ func (h *BootstrapHandler) Bootstrap(w http.ResponseWriter, r *http.Request) {
 		Modules:    h.buildModulesResponse(enabledModules, userPermissions, isAdmin),
 		RiskLevels: riskLevels,
 	}
+	h.addSession(r, &resp, tenantID, userID)
 
+	// Per-user, per-session data: never stored by a shared cache, and not
+	// reused by the browser either (it is read once per page load).
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Vary", "Cookie, Authorization")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		h.logger.Error("bootstrap: failed to encode response", "error", err)
+	}
+}
+
+// addSession fills the session parts of the bootstrap. They are best effort:
+// a failing part is logged and left out, and the client falls back to the
+// endpoint it replaces, so one slow or broken count never blocks the shell.
+// The parts run concurrently; each reads only the caller's own data.
+func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, tenantIDStr, userIDStr string) {
+	ctx := r.Context()
+	if h.session.TenantCreationMode != nil {
+		resp.TenantCreationMode = h.session.TenantCreationMode(ctx)
+	}
+	tenantID, terr := shared.IDFromString(tenantIDStr)
+	userID, uerr := shared.IDFromString(userIDStr)
+	if terr != nil || uerr != nil {
+		return
+	}
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		badges  BootstrapBadges
+		hasBadg bool
+	)
+	run := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
+	// The profile is the synced user of this request, and only when it is the
+	// token's own user.
+	if u := middleware.GetLocalUser(ctx); h.session.Me != nil && u != nil && u.ID() == userID {
+		run(func() {
+			me := h.session.Me(ctx, u)
+			mu.Lock()
+			resp.User = &me
+			mu.Unlock()
+		})
+	}
+	if h.session.MyTenants != nil {
+		run(func() {
+			tenants, err := h.session.MyTenants(ctx, userID)
+			if err != nil {
+				h.logger.Warn("bootstrap: memberships unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			resp.Tenants = tenants
+			mu.Unlock()
+		})
+	}
+	if h.session.UnreadCount != nil {
+		run(func() {
+			n, err := h.session.UnreadCount(ctx, tenantID, userID)
+			if err != nil {
+				h.logger.Warn("bootstrap: unread count unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			badges.UnreadNotifications = &n
+			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	// The same gates as GET /easm/candidates: assets:read and the
+	// attack_surface module on for the tenant.
+	if h.session.EASMReviewCount != nil &&
+		middleware.HasPermission(ctx, permission.AssetsRead.String()) &&
+		resp.Modules != nil && slices.Contains(resp.Modules.ModuleIDs, module.ModuleAttackSurface) {
+		run(func() {
+			n, err := h.session.EASMReviewCount(ctx, tenantID)
+			if err != nil {
+				h.logger.Warn("bootstrap: review count unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			badges.EASMReview = &n
+			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	if h.session.Announcements != nil {
+		run(func() {
+			list, err := h.session.Announcements(ctx)
+			if err != nil {
+				h.logger.Warn("bootstrap: announcements unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			resp.Announcements = &list
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	if hasBadg {
+		resp.Badges = &badges
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -20,15 +21,16 @@ func testLogger() *logger.Logger { return logger.NewNop() }
 // --- fakes -----------------------------------------------------------------
 
 type fakeAssetRepo struct {
-	assets []*assetdom.Asset
+	assets     []*assetdom.Asset
+	lastFilter assetdom.Filter
 }
 
-func (r *fakeAssetRepo) List(_ context.Context, filter assetdom.Filter, _ assetdom.ListOptions, page pagination.Pagination) (pagination.Result[*assetdom.Asset], error) {
-	// Only return data on the first page; the sweep pages until empty.
-	if page.Page > 1 {
-		return pagination.Result[*assetdom.Asset]{Data: nil, Total: int64(len(r.assets))}, nil
-	}
-	return pagination.Result[*assetdom.Asset]{Data: r.assets, Total: int64(len(r.assets))}, nil
+func (r *fakeAssetRepo) List(_ context.Context, f assetdom.Filter, _ assetdom.ListOptions, page pagination.Pagination) (pagination.Result[*assetdom.Asset], error) {
+	r.lastFilter = f
+	// Pages like the real repository, including pagination's per-page clamp.
+	start := min(page.Offset(), len(r.assets))
+	end := min(start+page.Limit(), len(r.assets))
+	return pagination.Result[*assetdom.Asset]{Data: r.assets[start:end], Total: int64(len(r.assets))}, nil
 }
 
 // fakeExposureRepo mimics the postgres ON CONFLICT(tenant_id, fingerprint)
@@ -100,13 +102,16 @@ func TestCollectDiscoveries_Subdomains(t *testing.T) {
 	future := "2027-01-01T00:00:00"
 	entries := []crtEntry{
 		{CommonName: "example.com", NameValue: "example.com\nwww.example.com", NotAfter: future},
-		{CommonName: "*.API.example.com", NameValue: "*.api.example.com", NotAfter: future}, // wildcard + case
+		{CommonName: "*.API.example.com", NameValue: "*.api.example.com", NotAfter: future}, // wildcard only: no host
+		{CommonName: "Mail.example.com", NameValue: "mail.example.com", NotAfter: future},   // case
 		{CommonName: "shop.example.com", NameValue: "shop.example.com.", NotAfter: future},  // trailing dot
 		{CommonName: "attacker.com", NameValue: "notexample.com", NotAfter: future},         // out of scope
 	}
-	subs, _ := collectDiscoveries("Example.com", entries, now, defaultExpiryWindow, 500)
+	subs := collectDiscoveries("Example.com", entries, now, defaultExpiryWindow, defaultExpiredLookback, 500).subdomains
 
-	want := map[string]bool{"www.example.com": true, "api.example.com": true, "shop.example.com": true}
+	// research/22 P0-13: a wildcard-only name is not a discovered subdomain
+	// (it would be counted with no asset behind it).
+	want := map[string]bool{"www.example.com": true, "mail.example.com": true, "shop.example.com": true}
 	if len(subs) != len(want) {
 		t.Fatalf("want %d subdomains, got %d: %v", len(want), len(subs), subs)
 	}
@@ -128,10 +133,16 @@ func TestCollectDiscoveries_ExpiryUsesNewestCert(t *testing.T) {
 		// host B: newest cert expires in 5 days -> EXPIRING (high).
 		{CommonName: "b.example.com", NotAfter: fmtT(now.Add(-30 * 24 * time.Hour))},
 		{CommonName: "b.example.com", NotAfter: fmtT(now.Add(5 * 24 * time.Hour)), IssuerName: "LE", SerialNumber: "s-b"},
-		// host C: newest cert already lapsed -> expired, NOT "expiring soon" (dropped).
+		// host C: newest cert lapsed yesterday -> expired, NOT "expiring soon".
 		{CommonName: "c.example.com", NotAfter: fmtT(now.Add(-1 * 24 * time.Hour))},
+		// host D: newest cert lapsed a year ago -> a retired host, dropped.
+		{CommonName: "d.example.com", NotAfter: fmtT(now.Add(-365 * 24 * time.Hour))},
 	}
-	_, expiring := collectDiscoveries("example.com", entries, now, defaultExpiryWindow, 500)
+	d := collectDiscoveries("example.com", entries, now, defaultExpiryWindow, defaultExpiredLookback, 500)
+	expiring := d.expiring
+	if len(d.expired) != 1 || d.expired[0].Host != "c.example.com" || d.expired[0].DaysLeft != -1 {
+		t.Fatalf("want only c.example.com expired (1 day ago), got %+v", d.expired)
+	}
 
 	if len(expiring) != 1 {
 		t.Fatalf("want exactly 1 expiring host (b), got %d: %+v", len(expiring), expiring)
@@ -265,5 +276,25 @@ func TestQueryCRTSH_SSRFGuardBlocksInternal(t *testing.T) {
 	svc := NewService(&fakeAssetRepo{}, newFakeExposureRepo(), "http://localhost:9", testLogger())
 	if _, err := svc.queryCRTSH(context.Background(), "example.com"); err == nil {
 		t.Fatalf("SSRF guard should have blocked an internal/localhost feed target")
+	}
+}
+
+// A domain asset awaiting review, a candidate or a rejected one is not a CT
+// root: a domain a sensor report created must not widen the watch list by
+// itself (research/22b S2). The listing asks for approved assets only.
+func TestGatherRoots_OnlyApprovedDomainAssets(t *testing.T) {
+	repo := &fakeAssetRepo{}
+	svc := NewService(repo, newFakeExposureRepo(), "http://127.0.0.1:0", testLogger())
+	if _, _, err := svc.gatherRoots(context.Background(), shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	f := repo.lastFilter.Attribution
+	if f == nil || !f.Unrecorded {
+		t.Fatalf("domain assets listed without the approved attribution filter: %+v", f)
+	}
+	for _, st := range f.States {
+		if st == attribution.StateNeedsReview || st == attribution.StateCandidate || st == attribution.StateRejected {
+			t.Fatalf("CT roots include %s domain assets", st)
+		}
 	}
 }

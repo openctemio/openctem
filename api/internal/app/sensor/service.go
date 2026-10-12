@@ -3,23 +3,24 @@ package sensor
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/sensorkey"
 )
 
 // sensorAuditSystemActor is the actor recorded on sensor lifecycle audit events
@@ -30,9 +31,14 @@ const sensorAuditSystemActor = "system"
 
 // SensorService handles sensor-related business operations.
 type SensorService struct {
+	// keyUse debounces the key-use writes of recordKeyUseAsync.
+	keyUse       keyUseDebouncer
 	repo         sensordom.Repository
 	auditService *auditapp.AuditService
 	logger       *logger.Logger
+	// statusChanged is told when a sensor's status or keys change
+	// (SetStatusNotifier); nil: nobody.
+	statusChanged func(tenantID, sensorID string)
 	// pepper is the server-side secret mixed into the API-key hash via
 	// HMAC-SHA256. Optional — when empty the hash falls back to plain
 	// SHA-256 for backward compatibility with rows written before the
@@ -52,6 +58,12 @@ type SensorService struct {
 	// SetKeyTTL at boot. Only self-renewal honors it; created and
 	// admin-regenerated keys never expire regardless.
 	keyTTL time.Duration
+	// renewGrace is how long the key a sensor presented to renew keeps
+	// authenticating after the renewal (in-flight requests), before it
+	// expires: SENSOR_KEY_RENEW_GRACE, default DefaultRenewGrace. Every other
+	// credential the sensor still held is capped to the same moment, so a
+	// renewal leaves exactly one long-lived key.
+	renewGrace time.Duration
 	// slimHeartbeatOff is the kill switch of slim heartbeats (RFC-033
 	// §6.12, SENSOR_SLIM_HEARTBEAT=false): sensors whose manifest is
 	// acknowledged may leave their tool inventory out of heartbeats unless
@@ -63,9 +75,25 @@ type SensorService struct {
 	// the inline hash — so a renewed key coexists with the one it supersedes. Nil
 	// (the default) keeps the single-inline-key behavior.
 	apiKeyRepo sensordom.APIKeyRepository
+	// signingKeys holds key-bound sensors' public keys (RFC-052); nonces
+	// is the shared store of spent request nonces, memNonces the
+	// per-replica fallback (keybound.go).
+	signingKeys sensordom.SigningKeyRepository
+	// identityPolicy is the organization's sensor identity policy
+	// (RFC-052 D-4); nil allows bearer-key sensors.
+	identityPolicy sensordom.IdentityPolicyRepository
+
+	// stepUp asks for the acting user's recent re-authentication before the
+	// identity policy is widened (allowing bearer keys). nil skips the check
+	// (a service built outside the HTTP server).
+	stepUp shared.RecentAuthGate
+
+	nonces    sensordom.NonceStore
+	nonceOnce sync.Once
+	memNonces *memoryNonceStore
 	// lbWeights are the load-balancing weights used to recompute a sensor's
 	// load_score on every heartbeat. Defaults to the compiled-in set;
-	// SetLoadBalancingWeights installs the operator's AGENT_LB_* values.
+	// SetLoadBalancingWeights installs the operator's SENSOR_LB_* values.
 	lbWeights sensordom.LoadBalancingWeights
 	// events stores the sensor's activity timeline (sensor_events); nil
 	// records nothing. activity reads the merged timeline.
@@ -73,6 +101,103 @@ type SensorService struct {
 	eventLimits sensordom.EventLimits
 	activity    sensordom.ActivityReader
 	now         func() time.Time
+	// leases renews the leases of the commands a heartbeating sensor holds
+	// (RFC-035 D6); nil renews nothing.
+	leases commanddom.LeaseRenewer
+	// holders takes back the commands a sensor holds when it is revoked or
+	// disabled (RFC-040 §5.2); nil leaves them to lease expiry.
+	holders commanddom.HolderReleaser
+	// cancels finds the commands a heartbeating sensor must stop
+	// (cancel_command_ids). Optional; nil sends none.
+	cancels commanddom.CancelFinder
+	// history keeps the per-sensor heartbeat history (the Control channel
+	// sparkline) and gaps observes each heartbeat's gap (metrics); nil
+	// records nothing.
+	history sensordom.HeartbeatHistoryRepository
+	gaps    HeartbeatGapObserver
+}
+
+// HeartbeatGapObserver receives the gap of every heartbeat that had a
+// previous one, with the interval the sensor followed: a metrics sink.
+type HeartbeatGapObserver interface {
+	ObserveHeartbeatGap(gap, interval time.Duration)
+}
+
+// SetHeartbeatHistory wires the heartbeat history (one bucketed write per
+// heartbeat of a tenant sensor). Optional.
+func (s *SensorService) SetHeartbeatHistory(r sensordom.HeartbeatHistoryRepository) {
+	s.history = r
+}
+
+// SetHeartbeatGapObserver wires the heartbeat gap metric. Optional.
+func (s *SensorService) SetHeartbeatGapObserver(o HeartbeatGapObserver) {
+	s.gaps = o
+}
+
+// HeartbeatHistory returns the last window (at most a day) of a tenant
+// sensor's heartbeat history, oldest first; empty when none is kept. The
+// sensor is looked up in the tenant first: another tenant's sensor is not
+// found.
+func (s *SensorService) HeartbeatHistory(ctx context.Context, tenantID, sensorID string, window time.Duration) ([]sensordom.HeartbeatBucket, error) {
+	a, err := s.GetSensor(ctx, tenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	if s.history == nil || a.TenantID == nil {
+		return []sensordom.HeartbeatBucket{}, nil
+	}
+	if window <= 0 || window > sensordom.MaxHeartbeatHistoryWindow {
+		window = sensordom.MaxHeartbeatHistoryWindow
+	}
+	return s.history.HeartbeatHistory(ctx, *a.TenantID, a.ID, s.now().Add(-window))
+}
+
+// SetLeaseRenewer wires command lease renewal into the heartbeat: every
+// accepted heartbeat renews the leases of the commands the sensor says it
+// holds (its running list), or of every command it holds when it does not
+// report one (an SDK without the load report). Optional.
+func (s *SensorService) SetLeaseRenewer(r commanddom.LeaseRenewer) {
+	s.leases = r
+}
+
+// SetHolderReleaser wires the release of a sensor's leased commands when it
+// is revoked or disabled (RFC-040 §5.2). Without it they wait for their
+// lease to run out.
+func (s *SensorService) SetHolderReleaser(r commanddom.HolderReleaser) {
+	s.holders = r
+}
+
+// SetCancelFinder wires the cancel signal into the heartbeat: the answer
+// lists the commands the sensor reports holding but must stop (canceled,
+// timed out, re-queued, held elsewhere), as cancel_command_ids. Optional.
+func (s *SensorService) SetCancelFinder(f commanddom.CancelFinder) {
+	s.cancels = f
+}
+
+// MaxCancelCommandIDs bounds cancel_command_ids in a heartbeat answer
+// (sdk-go reads at most 256).
+const MaxCancelCommandIDs = 256
+
+// CommandsToCancel returns the commands among running (the heartbeat's
+// running list, untrusted) that sensor a must stop. Best effort: nil when
+// nothing is wired, nothing is reported, or the lookup fails (logged), so
+// the heartbeat never fails because of it.
+func (s *SensorService) CommandsToCancel(ctx context.Context, a *sensordom.Sensor, running []string) []string {
+	if s.cancels == nil || a == nil || a.TenantID == nil || len(running) == 0 {
+		return nil
+	}
+	if len(running) > maxRenewedCommands {
+		running = running[:maxRenewedCommands]
+	}
+	ids, err := s.cancels.CommandsToCancel(ctx, *a.TenantID, a.ID, running)
+	if err != nil {
+		s.logger.Warn("commands to cancel not looked up", "sensor_id", a.ID.String(), "error", err)
+		return nil
+	}
+	if len(ids) > MaxCancelCommandIDs {
+		ids = ids[:MaxCancelCommandIDs]
+	}
+	return ids
 }
 
 // SetEventRepository wires the sensor activity store: heartbeat diffs and
@@ -125,6 +250,7 @@ func NewSensorService(repo sensordom.Repository, auditService *auditapp.AuditSer
 		logger:       log.With("service", "sensor"),
 		lbWeights:    sensordom.DefaultLoadBalancingWeights(),
 		eventLimits:  sensordom.DefaultEventLimits(),
+		renewGrace:   DefaultRenewGrace,
 		now:          time.Now,
 	}
 }
@@ -177,11 +303,51 @@ func (s *SensorService) candidateHashes(apiKey string) []string {
 	return slices.Compact(out)
 }
 
+// KeyRehasher is implemented by a key store that can replace a key hash made
+// with an earlier pepper (compare-and-swap on the old hash) and count the
+// active keys still hashed with one.
+type KeyRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+	CountKeysNotUnderPepper(ctx context.Context) (int, error)
+}
+
+// rehashKey stores a key's hash under the current pepper in place of the
+// earlier hash it matched, so the key stops depending on an old pepper
+// (APP_ENCRYPTION_KEY_PREVIOUS, SENSOR_KEY_PEPPER_PREVIOUS) or on the plain
+// SHA-256 of keys from before any pepper. Best effort and never fatal: the
+// key keeps verifying under the old hash if the write fails.
+func (s *SensorService) rehashKey(ctx context.Context, store any, kind string, id shared.ID, oldHash, newHash string) {
+	r, ok := store.(KeyRehasher)
+	if !ok {
+		return
+	}
+	if changed, err := r.RehashKey(ctx, id, oldHash, newHash); err != nil {
+		s.logger.Warn("sensor key re-hash under the current pepper failed", "kind", kind, "id", id.String(), "error", err)
+	} else if changed {
+		s.logger.Info("sensor key re-hashed under the current pepper", "kind", kind, "id", id.String())
+	}
+}
+
 // SetKeyTTL configures how long a self-renewed API key stays valid. Zero (the
 // default) disables expiry — renewed keys never expire. Should be called once
 // at boot before the service handles traffic.
 func (s *SensorService) SetKeyTTL(ttl time.Duration) {
 	s.keyTTL = ttl
+}
+
+// DefaultRenewGrace is how long a renewed-away key keeps working when
+// SENSOR_KEY_RENEW_GRACE is not set.
+const DefaultRenewGrace = 15 * time.Minute
+
+// SetRenewGrace configures how long the key a sensor renewed with keeps
+// authenticating after the renewal. Zero retires it at once; a negative value
+// is ignored (the default stays). Call once at boot.
+func (s *SensorService) SetRenewGrace(d time.Duration) {
+	if d < 0 {
+		s.logger.Warn("ignoring negative sensor key renewal grace; keeping the default", "grace", d.String())
+		return
+	}
+	s.renewGrace = d
 }
 
 // SetAPIKeyRepository wires the multi-key store (RFC-014 Phase 3). Optional;
@@ -194,10 +360,9 @@ func (s *SensorService) SetAPIKeyRepository(repo sensordom.APIKeyRepository) {
 type CreateSensorInput struct {
 	TenantID          string   `json:"tenant_id" validate:"required,uuid"`
 	Name              string   `json:"name" validate:"required,min=1,max=255"`
-	Type              string   `json:"type" validate:"required,oneof=runner worker collector sensor"`
+	Type              string   `json:"type" validate:"required,oneof=worker collector sensor"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
-	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
 	ExecutionMode     string   `json:"execution_mode" validate:"omitempty,oneof=standalone daemon"`
 	MaxConcurrentJobs int      `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
 	// Audit context (optional, for audit logging)
@@ -219,13 +384,24 @@ func (s *SensorService) CreateSensor(ctx context.Context, input CreateSensorInpu
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 
+	// An organization that requires key-bound identity creates no bearer
+	// keys: its sensors pair (RFC-052 D-4). Existing bearer-key sensors are
+	// untouched.
+	allowed, err := s.BearerKeysAllowed(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, sensordom.ErrBearerKeysDisabled
+	}
+
 	sensorType := sensordom.SensorType(input.Type)
 	executionMode := sensordom.ExecutionMode(input.ExecutionMode)
 	if executionMode == "" {
 		executionMode = sensorType.DefaultExecutionMode()
 	}
 
-	a, err := sensordom.NewSensor(tenantID, input.Name, sensorType, input.Description, input.Capabilities, canonicalToolNames(input.Tools), executionMode)
+	a, err := sensordom.NewSensor(tenantID, input.Name, sensorType, input.Description, input.Capabilities, executionMode)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +451,7 @@ func (s *SensorService) GetSensor(ctx context.Context, tenantID, sensorID string
 // ListSensorsInput represents the input for listing sensors.
 type ListSensorsInput struct {
 	TenantID      string   `json:"tenant_id" validate:"required,uuid"`
-	Type          string   `json:"type" validate:"omitempty,oneof=runner worker collector sensor"`
+	Type          string   `json:"type" validate:"omitempty,oneof=worker collector sensor"`
 	Status        string   `json:"status" validate:"omitempty,oneof=active disabled revoked"`      // Admin-controlled
 	Health        string   `json:"health" validate:"omitempty,oneof=unknown online offline error"` // Automatic
 	ExecutionMode string   `json:"execution_mode" validate:"omitempty,oneof=standalone daemon"`
@@ -297,16 +473,14 @@ func (s *SensorService) ListSensors(ctx context.Context, input ListSensorsInput)
 	}
 
 	filter := sensordom.Filter{
-		TenantID: &tenantID,
-		// The tenant's own sensors. Shared platform sensors are not the
-		// tenant's to manage; their capacity has its own view (GET
-		// /platform/stats), and the sensor stats count the same rows.
-		ExcludePlatform: true,
-		Capabilities:    input.Capabilities,
-		Tools:           input.Tools,
-		Search:          input.Search,
-		HasCapacity:     input.HasCapacity,
-		SDKVersion:      input.SDKVersion,
+		// The tenant's own sensors (never shared platform sensors); the
+		// sensor stats count the same rows.
+		TenantID:     &tenantID,
+		Capabilities: input.Capabilities,
+		Tools:        input.Tools,
+		Search:       input.Search,
+		HasCapacity:  input.HasCapacity,
+		SDKVersion:   input.SDKVersion,
 	}
 
 	if input.Type != "" {
@@ -340,7 +514,6 @@ type UpdateSensorInput struct {
 	Name              string   `json:"name" validate:"omitempty,min=1,max=255"`
 	Description       string   `json:"description" validate:"max=1000"`
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
-	Tools             []string `json:"tools" validate:"max=20,dive,max=50"`
 	Status            string   `json:"status" validate:"omitempty,oneof=active disabled revoked"` // Admin-controlled
 	MaxConcurrentJobs *int     `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
 	// Audit context (optional, for audit logging)
@@ -368,18 +541,13 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		a.Description = input.Description
 	}
 
-	// Tools and capabilities are limits on what the sensor reports
-	// (RFC-029 §4.3.1). A list that is present replaces the limit; [] removes
-	// it (every tool / capability the sensor reports may be used). Absent
-	// (nil) leaves it as it is.
+	// Capabilities are a limit on what the sensor reports (RFC-029 §4.3.1).
+	// A list that is present replaces the limit; [] removes it (every
+	// capability the sensor reports may be used). Absent (nil) leaves it as
+	// it is. Tools have no such limit here: the sensor grant narrows them.
 	if input.Capabilities != nil && !slices.Equal(input.Capabilities, a.Capabilities) {
 		changes.Set("capabilities", a.Capabilities, input.Capabilities)
 		a.Capabilities = append([]string{}, input.Capabilities...)
-	}
-
-	if tools := canonicalToolNames(input.Tools); tools != nil && !slices.Equal(tools, a.Tools) {
-		changes.Set("tools", a.Tools, tools)
-		a.Tools = tools
 	}
 
 	// Revocation is permanent (ActivateSensor refuses it too). Without this a
@@ -390,10 +558,20 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 		return nil, shared.NewDomainError("FORBIDDEN", "cannot change the status of a revoked sensor", shared.ErrForbidden)
 	}
 
+	// Revocation has its own route (POST /sensors/{id}/revoke), which records
+	// a reason and a Critical sensor.revoked audit event. The generic update
+	// would log it as a Low sensor.updated, so it may not revoke.
+	if sensordom.SensorStatus(input.Status) == sensordom.SensorStatusRevoked && a.Status != sensordom.SensorStatusRevoked {
+		return nil, shared.NewDomainError("VALIDATION", "revoke a sensor with POST /api/v1/sensors/{id}/revoke", shared.ErrValidation)
+	}
+
+	withdrawn := false
 	if input.Status != "" {
-		oldStatus := string(a.Status)
+		oldStatus := a.Status
 		a.SetStatus(sensordom.SensorStatus(input.Status), "")
-		changes.Set("status", oldStatus, input.Status)
+		changes.Set("status", string(oldStatus), input.Status)
+		withdrawn = a.Status != oldStatus &&
+			(a.Status == sensordom.SensorStatusRevoked || a.Status == sensordom.SensorStatusDisabled)
 	}
 
 	if input.MaxConcurrentJobs != nil {
@@ -412,6 +590,9 @@ func (s *SensorService) UpdateSensor(ctx context.Context, input UpdateSensorInpu
 			sensorName = oldName
 		}
 		s.warnAudit(s.auditService.LogSensorUpdated(ctx, *input.AuditContext, a.ID.String(), sensorName, changes), "LogSensorUpdated", a.ID.String())
+	}
+	if withdrawn {
+		s.releaseHeldCommands(ctx, a, input.AuditContext)
 	}
 
 	return a, nil
@@ -453,10 +634,22 @@ type SensorHeartbeatData struct {
 	// (RFC-029 §5.3). Protocol 0 leaves the stored values untouched.
 	Protocol  int
 	UserAgent string
+	// Binding is the binding the heartbeat arrived on (decided by the
+	// platform, RFC-059); FallbackReason is the sensor's account of why it
+	// is not on gRPC (untrusted, sanitized before it is stored).
+	Binding        string
+	FallbackReason string
 
 	// UptimeSeconds is the process uptime the heartbeat reported; 0 when it
 	// did not report one. Clamped before it is stored.
 	UptimeSeconds int64
+
+	// Running is the ids of the commands the sensor says it holds (the
+	// heartbeat's "running"), untrusted. RunningReported is false for a
+	// sensor that does not report it (an SDK without the load report): its
+	// heartbeat then renews every command it holds.
+	Running         []string
+	RunningReported bool
 
 	// Load is the load report the heartbeat carried (resources, capacity,
 	// local queue), untrusted; nil when it carried none. Clamped here before
@@ -478,28 +671,32 @@ type SensorHeartbeatData struct {
 	// the stored tools' content. nil: none.
 	Content []sensordom.ReportedContent
 
+	// Control is the control-channel report the heartbeat carried
+	// (sensordom.ParseControlReport, already clamped); nil when it carried
+	// none. Stored as the latest report; its interval_s feeds the deadline.
+	Control *sensordom.ControlReport
+
+	// AdvisedSeconds is the next_heartbeat_seconds the doorbell computed for
+	// this heartbeat (0: none), and DoorbellAware whether the sensor follows
+	// that advice (protocol v2, or v1 with the doorbell feature). Together
+	// with Control they give the interval the next deadline is computed
+	// from (sensordom.FollowedHeartbeatInterval).
+	AdvisedSeconds int
+	DoorbellAware  bool
+
+	// LocalPolicy is the local policy report the heartbeat carried
+	// (RFC-040 §5.7), untrusted; nil when it carried none.
+	LocalPolicy *sensordom.LocalPolicyReport
+
 	// ManifestDigest is the manifest digest the sensor echoes (RFC-033); ""
 	// from a sensor that registers no manifest, whose manifest is then
 	// derived from this heartbeat's report.
 	ManifestDigest string
-}
 
-// canonicalToolNames writes tool limits the way sensors report tools:
-// lowercase catalog names, a retired name as its replacement ("gitleaks" is
-// "betterleaks"), so the narrowing (reported ∩ limit) compares like with
-// like. nil stays nil (no change on update).
-func canonicalToolNames(in []string) []string {
-	if in == nil {
-		return nil
-	}
-	out := make([]string, 0, len(in))
-	for _, t := range in {
-		t = strings.ToLower(tooldom.CanonicalName(strings.TrimSpace(t)))
-		if t != "" && !slices.Contains(out, t) {
-			out = append(out, t)
-		}
-	}
-	return out
+	// ConfigReport is the config report summary the heartbeat carried
+	// (research/26), untrusted; nil when it carried none. Only its digest
+	// is stored, validated (sensordom.HeartbeatConfigDigest).
+	ConfigReport *sensordom.ConfigReportSummary
 }
 
 // sanitizeReport turns a heartbeat's capability report into what may be
@@ -603,6 +800,13 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		report.NoCeiling = true
 	}
 
+	// The local policy report: sanitized, and a slim heartbeat's (state,
+	// digest, kill switch) merged with the stored summary of the same policy.
+	localPolicy := sensordom.MergeLocalPolicyReport(a.LocalPolicy, sensordom.SanitizeLocalPolicyReport(data.LocalPolicy))
+	if data.LocalPolicy == nil {
+		localPolicy = nil
+	}
+
 	updated, err := s.repo.UpdateHeartbeat(ctx, a.ID, sensordom.HeartbeatUpdate{
 		TenantID:      a.TenantID,
 		Version:       version,
@@ -620,9 +824,17 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 		Protocol:      data.Protocol,
 		Load:          load,
 		UserAgent:     userAgent,
-		UptimeSeconds: uptime,
-		Report:        report,
-		Build:         build,
+
+		Binding:        heartbeatBinding(data.Binding),
+		FallbackReason: sensordom.SanitizeFallbackReason(data.FallbackReason),
+		UptimeSeconds:  uptime,
+		Report:         report,
+		Build:          build,
+		Interval:       sensordom.FollowedHeartbeatInterval(data.Control, data.AdvisedSeconds, data.DoorbellAware),
+		Control:        data.Control,
+		LocalPolicy:    localPolicy,
+		// The digest the sensor holds: "" (none) marks a stored report stale.
+		ConfigReportDigest: sensordom.HeartbeatConfigDigest(data.ConfigReport),
 	})
 	if err != nil {
 		return err
@@ -636,11 +848,16 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
+	s.renewLeases(ctx, a, data)
+	s.observeHeartbeat(ctx, a, data, now)
 
 	// Record a connect event only on an offline/unknown/error -> online
-	// transition. Tenant sensors only: platform sensors (TenantID == nil) are
-	// shared infrastructure with no owning tenant to scope the audit log to.
-	if s.auditService != nil && prevHealth != sensordom.SensorHealthOnline && a.TenantID != nil {
+	// transition. A late or stale sensor never stopped being connected: its
+	// heartbeat only came after its deadline (RFC-035 §5.6). Tenant sensors
+	// only: platform sensors (TenantID == nil) are shared infrastructure with
+	// no owning tenant to scope the audit log to.
+	reconnected := !prevHealth.IsLive()
+	if s.auditService != nil && reconnected && a.TenantID != nil {
 		ip := "an unknown address"
 		switch {
 		case clientIP != nil:
@@ -663,10 +880,14 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			startedAt = &t
 		}
 		var events []sensordom.Event
-		if prevHealth != sensordom.SensorHealthOnline {
+		if reconnected {
 			if e, ok := sensordom.OnlineEvent(a, now); ok {
 				events = append(events, e)
 			}
+		} else if e, ok := sensordom.RecoveredEvent(a, now); ok {
+			// The heartbeat came after its deadline had made the sensor
+			// late, stale or offline: one entry per recovery.
+			events = append(events, e)
 		}
 		for _, e := range sensordom.DiffHeartbeat(a, sensordom.HeartbeatObservation{
 			At: now, Version: version, Protocol: data.Protocol, StartedAt: startedAt, Report: report, Build: build,
@@ -679,6 +900,11 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 			}
 			events = append(events, e)
 		}
+		if data.LocalPolicy != nil {
+			if e, ok := sensordom.LocalPolicyEvent(a, localPolicy, now); ok {
+				events = append(events, e)
+			}
+		}
 		s.recordEvents(ctx, events)
 	}
 
@@ -689,6 +915,49 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 	}
 
 	return nil
+}
+
+// observeHeartbeat feeds the heartbeat's gap (since the previous heartbeat,
+// from the stored deadline: polls do not shorten it) to the metric and the
+// tenant sensor's heartbeat history. Best effort: failures are logged.
+func (s *SensorService) observeHeartbeat(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData, now time.Time) {
+	var gap time.Duration
+	if prev := a.PreviousHeartbeatAt(); prev != nil && now.After(*prev) {
+		gap = now.Sub(*prev)
+	}
+	interval := a.HeartbeatInterval
+	if gap > 0 && s.gaps != nil {
+		s.gaps.ObserveHeartbeatGap(gap, interval)
+	}
+	if s.history == nil || a.TenantID == nil {
+		return
+	}
+	sample := sensordom.HeartbeatSample{TenantID: *a.TenantID, SensorID: a.ID, At: now, Gap: gap, Interval: interval}
+	if c := data.Control; c != nil {
+		sample.LagMillis, sample.Failures = c.LagMillis, c.Failures
+	}
+	if err := s.history.RecordHeartbeat(ctx, sample); err != nil {
+		s.logger.Warn("heartbeat history not recorded", "sensor_id", a.ID.String(), "error", err)
+	}
+}
+
+// maxRenewedCommands bounds the running list a heartbeat renews.
+const maxRenewedCommands = 1000
+
+// renewLeases renews the leases of the commands a heartbeating tenant
+// sensor holds. Best effort: a failure is logged; the lease then runs out
+// only if the next heartbeats fail too.
+func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData) {
+	if s.leases == nil || a.TenantID == nil {
+		return
+	}
+	ids := data.Running
+	if len(ids) > maxRenewedCommands {
+		ids = ids[:maxRenewedCommands]
+	}
+	if _, err := s.leases.RenewLeases(ctx, *a.TenantID, a.ID, ids, !data.RunningReported); err != nil {
+		s.logger.Warn("command leases not renewed", "sensor_id", a.ID.String(), "error", err)
+	}
 }
 
 // observeInstance feeds the heartbeat's process instance to clone
@@ -846,6 +1115,7 @@ func (s *SensorService) DeleteSensor(ctx context.Context, tenantID, sensorID str
 	if err := s.repo.Delete(ctx, aid); err != nil {
 		return err
 	}
+	s.notifyStatus(a)
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
@@ -867,6 +1137,13 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 	if err != nil {
 		return "", err
 	}
+	// An organization that requires key-bound identity mints no bearer keys,
+	// regenerated ones included (as CreateSensor): the sensor pairs instead.
+	if allowed, err := s.BearerKeysAllowed(ctx, shared.MustIDFromString(tenantID)); err != nil {
+		return "", err
+	} else if !allowed {
+		return "", sensordom.ErrBearerKeysDisabled
+	}
 
 	apiKey, hash, prefix, err := s.generateSensorAPIKey()
 	if err != nil {
@@ -875,7 +1152,16 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 
 	// Targeted write of the key columns only (admin-regenerated keys never
 	// expire). No status guard: an admin may rotate a disabled sensor's key.
-	updated, err := s.repo.UpdateAPIKey(ctx, a.ID, hash, prefix, nil, false)
+	// With the multi-key store, the inline key and the revocation of every
+	// key row are written in one transaction under the per-sensor key lock
+	// that renewals take, so a renewal that authenticated with the old key
+	// cannot mint a row after the revocation (it is refused instead).
+	var updated bool
+	if s.apiKeyRepo != nil {
+		updated, err = s.apiKeyRepo.RegenerateKey(ctx, a.ID, hash, prefix, "regenerated")
+	} else {
+		updated, err = s.repo.UpdateAPIKey(ctx, a.ID, hash, prefix, nil, false)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -883,10 +1169,6 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 		return "", shared.ErrNotFound
 	}
 	a.SetAPIKey(hash, prefix)
-
-	if err := s.revokeAllKeyRows(ctx, a.ID, "regenerated"); err != nil {
-		return "", fmt.Errorf("revoke renewed keys: %w", err)
-	}
 
 	// Copies of the old key can no longer connect: a cloned-identity flag
 	// raised against it is resolved.
@@ -904,33 +1186,13 @@ func (s *SensorService) RegenerateAPIKey(ctx context.Context, tenantID, sensorID
 	return apiKey, nil
 }
 
-// revokeAllKeyRows revokes every still-active sensor_api_keys row for the
-// sensor. No-op when the multi-key store is not wired.
-func (s *SensorService) revokeAllKeyRows(ctx context.Context, sensorID shared.ID, reason string) error {
-	if s.apiKeyRepo == nil {
-		return nil
-	}
-	keys, err := s.apiKeyRepo.GetBySensorID(ctx, sensorID)
-	if err != nil {
-		return err
-	}
-	for _, k := range keys {
-		if !k.IsActive {
-			continue
-		}
-		if err := s.apiKeyRepo.Revoke(ctx, k.ID, reason); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // RenewAPIKey lets an already-authenticated sensor rotate its own credential.
 //
 // Unlike RegenerateAPIKey (an admin action, tenant+id scoped), this is the
-// self-service, kubelet-style renewal a sensor drives itself: it presents its
-// current key, gets authenticated by AuthenticateByAPIKey upstream, and calls
-// this to mint a fresh one. The building block for auto-rotating credentials.
+// self-service renewal a sensor drives itself: it presents its
+// current key, gets authenticated by AuthenticateIdentity upstream, and calls
+// this with that identity to mint a fresh one. The identity says which
+// credential was presented (the inline key or a sensor_api_keys row).
 //
 // The passed sensor is the one resolved from the presented key. We re-read it by
 // ID so a concurrent admin status change (disable/revoke) is not clobbered by a
@@ -938,18 +1200,35 @@ func (s *SensorService) revokeAllKeyRows(ctx context.Context, sensorID shared.ID
 // sensor that was disabled/revoked in the auth→renew window. Works for both
 // tenant and platform (nil-tenant) sensors since the lookup/update key on ID.
 //
+// A renewal has exactly one successor: the presented key, and every other
+// credential the sensor still held, stops authenticating once the renewal
+// grace (SetRenewGrace) has passed. A copied key therefore cannot renew itself
+// a parallel line of long-lived keys: the next renewal by either holder retires
+// the other's keys, and the sensor that lost its key has to be re-enrolled,
+// which an administrator sees.
+//
 // When a key TTL is configured (SetKeyTTL), the new key carries a fresh expiry
 // and the sensor is expected to renew again before it lapses; otherwise the key
 // never expires (today's behavior). Returns the new key and its expiry (nil =
 // never expires) so the sensor can schedule its next renewal.
-func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (string, *time.Time, error) {
+func (s *SensorService) RenewAPIKey(ctx context.Context, id SensorIdentity) (string, *time.Time, error) {
+	a := id.Sensor
 	if a == nil {
 		return "", nil, shared.NewDomainError("UNAUTHORIZED", "no authenticated sensor", shared.ErrUnauthorized)
 	}
 
+	// A key-bound sensor has no bearer key and never gets one (RFC-052,
+	// RFC-032 D3): minting one would hand a bearer secret to a sensor that
+	// proved it can sign.
+	if a.KeyBound() || id.KeyBound() {
+		return "", nil, shared.NewDomainError("FORBIDDEN", "key-bound sensors do not use API keys", shared.ErrForbidden)
+	}
 	fresh, err := s.repo.GetByID(ctx, a.ID)
 	if err != nil {
 		return "", nil, err
+	}
+	if fresh.KeyBound() {
+		return "", nil, shared.NewDomainError("FORBIDDEN", "key-bound sensors do not use API keys", shared.ErrForbidden)
 	}
 	if !fresh.Status.CanAuthenticate() {
 		if fresh.Status == sensordom.SensorStatusRevoked {
@@ -963,31 +1242,56 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 		return "", nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
+	now := s.now()
 	var expiresAt *time.Time
 	if s.keyTTL > 0 {
-		t := time.Now().Add(s.keyTTL)
+		t := now.Add(s.keyTTL)
 		expiresAt = &t
 	}
+	retireAt := now.Add(s.renewGrace)
+	if expiresAt != nil && retireAt.After(*expiresAt) {
+		retireAt = *expiresAt
+	}
+	presented := id.presentedKey(now)
 
 	// Rotation overlap (RFC-014 Phase 3): with the multi-key store wired AND a
 	// TTL configured, issue the new key as its own sensor_api_keys row so the key
-	// it supersedes stays valid until that key's own expiry — zero-downtime
+	// it supersedes keeps working through the renewal grace — zero-downtime
 	// rotation. Without both, fall back to replacing the single inline hash.
 	if s.apiKeyRepo != nil && expiresAt != nil {
-		if err := s.issueOverlappingKey(ctx, fresh, hash, prefix, *expiresAt); err != nil {
+		if err := s.issueOverlappingKey(ctx, fresh, id, presented, hash, prefix, *expiresAt, retireAt); err != nil {
+			if refused := s.renewalRefused(ctx, fresh, id, err); refused != nil {
+				return "", nil, refused
+			}
 			return "", nil, err
 		}
 		s.logger.Info("sensor renewed its API key (overlap)",
-			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
-		s.auditKeyRenewed(ctx, fresh, expiresAt, true)
+			"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+			"presented", id.presentedKeyLabel(), "expires_at", expiresAt, "previous_keys_expire_at", retireAt)
+		s.auditKeyRenewed(ctx, fresh, expiresAt, true, id.presentedLegacy)
 		return apiKey, expiresAt, nil
 	}
 
 	// Targeted, status-guarded write of the key columns only: a full-row
 	// Update would also write back the status read above and could revive an
-	// sensor an admin revoked in the meantime.
-	updated, err := s.repo.UpdateAPIKey(ctx, fresh.ID, hash, prefix, expiresAt, true)
+	// sensor an admin revoked in the meantime. The replaced inline key stops
+	// authenticating at once. With the multi-key store wired, rotating keys
+	// issued while a TTL was configured (the presented key may be one) are
+	// retired in the same transaction, serialized with every other renewal of
+	// the sensor, so none of them outlives the renewal.
+	var updated bool
+	if s.apiKeyRepo != nil {
+		updated, err = s.apiKeyRepo.ReplaceInlineKey(ctx, fresh.ID, presented, hash, prefix, expiresAt, retireAt)
+		if err == nil && !updated {
+			err = sensordom.ErrSensorDisabled
+		}
+	} else {
+		updated, err = s.repo.UpdateAPIKey(ctx, fresh.ID, hash, prefix, expiresAt, true)
+	}
 	if err != nil {
+		if refused := s.renewalRefused(ctx, fresh, id, err); refused != nil {
+			return "", nil, refused
+		}
 		return "", nil, err
 	}
 	if !updated {
@@ -995,65 +1299,103 @@ func (s *SensorService) RenewAPIKey(ctx context.Context, a *sensordom.Sensor) (s
 	}
 
 	s.logger.Info("sensor renewed its API key",
-		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor, "expires_at", expiresAt)
-	s.auditKeyRenewed(ctx, fresh, expiresAt, false)
+		"sensor_id", fresh.ID.String(), "is_platform", fresh.IsPlatformSensor,
+		"presented", id.presentedKeyLabel(), "expires_at", expiresAt)
+	s.auditKeyRenewed(ctx, fresh, expiresAt, false, id.presentedLegacy)
 	return apiKey, expiresAt, nil
 }
 
 // auditKeyRenewed records a sensor self-renewal in the tenant audit log.
-// Platform sensors (no tenant) have no tenant log to write to.
-func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor, expiresAt *time.Time, overlap bool) {
+// fromLegacy marks the renewal that moved the sensor off a legacy rda_ key
+// (the new key is always octs_). Platform sensors (no tenant) have no tenant
+// log to write to, so their move is only logged.
+func (s *SensorService) auditKeyRenewed(ctx context.Context, a *sensordom.Sensor, expiresAt *time.Time, overlap, fromLegacy bool) {
+	if fromLegacy {
+		s.logger.Info("sensor moved from a legacy rda_ key to an octs_ key on renewal",
+			"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor)
+	}
 	if s.auditService == nil || a.TenantID == nil {
 		return
 	}
 	s.warnAudit(s.auditService.LogSensorKeyRenewed(ctx, auditapp.AuditContext{
 		TenantID:   a.TenantID.String(),
 		ActorEmail: sensorAuditSystemActor,
-	}, a.ID.String(), a.Name, expiresAt, overlap), "LogSensorKeyRenewed", a.ID.String())
+	}, a.ID.String(), a.Name, expiresAt, overlap, fromLegacy), "LogSensorKeyRenewed", a.ID.String())
 }
 
-// overlapGrace is how long the superseded static (inline) key stays valid after
-// an overlapping renewal, covering in-flight requests before it is retired.
-const overlapGrace = 15 * time.Minute
+// renewalRefused turns a renewal the repository refused under the per-sensor
+// key lock into the error the sensor gets, and records it: the key it
+// authenticated with was revoked, expired or regenerated, or the sensor
+// disabled or revoked, after the authentication. Nothing was written. A
+// refusal on the key itself is a security signal, because something still
+// holds a key an administrator killed. Returns nil for any other error.
+func (s *SensorService) renewalRefused(ctx context.Context, a *sensordom.Sensor, id SensorIdentity, err error) error {
+	var refused *shared.DomainError
+	switch {
+	case errors.Is(err, sensordom.ErrPresentedKeyInvalid):
+		refused = shared.NewDomainError("UNAUTHORIZED", "the presented API key is no longer valid", shared.ErrUnauthorized)
+	case errors.Is(err, sensordom.ErrSensorRevoked):
+		refused = shared.NewDomainError("FORBIDDEN", "sensor access has been revoked", shared.ErrForbidden)
+	case errors.Is(err, sensordom.ErrSensorDisabled):
+		refused = shared.NewDomainError("FORBIDDEN", "sensor is not active", shared.ErrForbidden)
+	default:
+		return nil
+	}
+	reason := err.Error()
+	s.logger.Warn("sensor key renewal refused",
+		"sensor_id", a.ID.String(), "is_platform", a.IsPlatformSensor,
+		"presented", id.presentedKeyLabel(), "reason", reason)
+	if s.auditService != nil && a.TenantID != nil {
+		s.warnAudit(s.auditService.LogSensorKeyRenewalRefused(ctx, auditapp.AuditContext{
+			TenantID:   a.TenantID.String(),
+			ActorEmail: sensorAuditSystemActor,
+		}, a.ID.String(), a.Name, reason), "LogSensorKeyRenewalRefused", a.ID.String())
+	}
+	return refused
+}
 
-// issueOverlappingKey issues the renewed key as a new sensor_api_keys row so the
-// key it supersedes keeps working during the overlap window (rotation overlap).
-// It also retires the long-lived inline bootstrap key (a short grace, so the
-// static credential doesn't linger valid forever after the first renewal) and
-// prunes already-expired key rows to bound accumulation.
-func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordom.Sensor, hash, prefix string, expiresAt time.Time) error {
+// issueOverlappingKey issues the renewed key as a new sensor_api_keys row and
+// retires every credential it supersedes at retireAt (the renewal grace):
+//
+//   - every other active key row of the sensor, the presented key among them;
+//   - the inline key on the sensor row, guarded by its hash — the presented
+//     key's (any pepper variant), or the one read above when a key row was
+//     presented — so an admin regeneration landing in between is not cut
+//     short.
+//
+// The repository does all of it in one transaction under a per-sensor lock
+// (APIKeyRepository.RotateKey), so concurrent renewals of one sensor run one
+// after another and end with exactly one long-lived key: the last one issued.
+// Done as separate writes, two renewals interleaved and each kept its own key
+// long-lived, so a superseded (possibly leaked) credential outlived the
+// renewal until its own expiry.
+//
+// Retirement only ever brings an expiry earlier (never extends one) and
+// touches only the expiry columns, so it cannot undo a concurrent admin
+// revoke or regeneration. A failure fails the renewal and writes nothing: the
+// sensor keeps its old key and retries, rather than receive a new key while
+// the old one stays long-lived.
+//
+// Under the same lock the repository re-checks presented and the sensor's
+// status, so a key an administrator regenerated after the renewal
+// authenticated is refused instead of renewed (see renewalRefused).
+func (s *SensorService) issueOverlappingKey(ctx context.Context, fresh *sensordom.Sensor, id SensorIdentity, presented sensordom.PresentedKey, hash, prefix string, expiresAt, retireAt time.Time) error {
 	key, err := sensordom.NewAPIKey(fresh.ID, "renewed", scopesForSensor(fresh.Type))
 	if err != nil {
 		return err
 	}
 	key.SetKeyHash(hash, prefix)
 	key.SetExpiration(expiresAt)
-	if err := s.apiKeyRepo.Create(ctx, key); err != nil {
-		return fmt.Errorf("issue overlapping key: %w", err)
-	}
 
-	// Retire the static inline key (best-effort): schedule it to lapse a short
-	// grace from now, so the original never-expiring bootstrap credential does
-	// not remain valid after the sensor has switched to rotating keys.
-	//
-	// Guard on KeyExpiresAt == nil (NOT !IsKeyExpired): retirement must happen
-	// exactly once, on the first overlap renewal while the key is still
-	// never-expiring. Using !IsKeyExpired would re-run on every renewal that
-	// lands before the grace lapses and keep pushing the grace forward — under a
-	// short TTL that would keep the static bootstrap key alive forever.
-	//
-	// UpdateKeyExpiry writes only key_expires_at under a status='active' guard,
-	// so it cannot clobber a concurrent admin revoke back to active (and a
-	// revoked sensor's stale inline key is moot — auth rejects the sensor anyway).
-	if fresh.KeyExpiresAt == nil {
-		grace := time.Now().Add(overlapGrace)
-		if grace.After(expiresAt) {
-			grace = expiresAt
+	inlineHashes := id.keyHashes
+	if id.KeyID != nil || len(inlineHashes) == 0 {
+		inlineHashes = nil
+		if fresh.APIKeyHash != "" {
+			inlineHashes = []string{fresh.APIKeyHash}
 		}
-		if err := s.repo.UpdateKeyExpiry(ctx, fresh.ID, &grace); err != nil {
-			s.logger.Warn("failed to retire inline key after overlap renewal",
-				"sensor_id", fresh.ID.String(), "error", err)
-		}
+	}
+	if err := s.apiKeyRepo.RotateKey(ctx, key, presented, inlineHashes, retireAt); err != nil {
+		return fmt.Errorf("issue overlapping key: %w", err)
 	}
 
 	s.pruneExpiredKeys(ctx, fresh.ID)
@@ -1080,8 +1422,6 @@ func (s *SensorService) pruneExpiredKeys(ctx context.Context, sensorID shared.ID
 // (used when minting a rotated key). Prep for scope enforcement (Phase 4).
 func scopesForSensor(t sensordom.SensorType) []string {
 	switch t {
-	case sensordom.SensorTypeRunner:
-		return sensordom.RunnerScopes()
 	case sensordom.SensorTypeCollector:
 		return sensordom.CollectorScopes()
 	case sensordom.SensorTypeEASM:
@@ -1119,6 +1459,52 @@ type SensorIdentity struct {
 	// reversible, so a disabled sensor may still learn over the heartbeat
 	// that it is paused; every other route keeps rejecting its key.
 	Paused bool
+	// KeyID is the sensor_api_keys row the presented key matched; nil when
+	// it matched the inline key on the sensor row. Renewal retires the
+	// presented key, so it has to know which one that was.
+	KeyID *shared.ID
+	// keyHashes are the hashes the presented inline key can be stored under
+	// (current pepper, earlier peppers, plain SHA-256): authentication may
+	// re-hash the stored value onto the current pepper, so renewal matches
+	// the inline row on any of them. All derive from the presented key, so
+	// a key an administrator regenerated meanwhile never matches. Set only
+	// by authentication, only for the inline key.
+	keyHashes []string
+	// signingKeyID and keyThumbprint are the sensor_keys row a signed
+	// request verified with (RFC-052); nil/"" for a bearer key.
+	signingKeyID  *shared.ID
+	keyThumbprint string
+	// presentedLegacy is true when the presented key is a legacy rda_ key.
+	// A renewal from one is the sensor's move to the octs_ format, which the
+	// renewal audit event records. Set only by authentication.
+	presentedLegacy bool
+}
+
+// PresentedLegacyKey reports whether the sensor authenticated with a legacy
+// rda_ key.
+func (id SensorIdentity) PresentedLegacyKey() bool { return id.presentedLegacy }
+
+// presentedKey is the credential the renewal re-checks under the key lock,
+// expiry judged at at. An identity built without authentication (no key row,
+// no hashes) presents the inline key the sensor held when it was read.
+func (id SensorIdentity) presentedKey(at time.Time) sensordom.PresentedKey {
+	p := sensordom.PresentedKey{KeyID: id.KeyID, InlineKeyHashes: id.keyHashes, At: at}
+	if p.KeyID == nil && len(p.InlineKeyHashes) == 0 && id.Sensor != nil && id.Sensor.APIKeyHash != "" {
+		p.InlineKeyHashes = []string{id.Sensor.APIKeyHash}
+	}
+	return p
+}
+
+// presentedKeyLabel names the presented credential for logs.
+func (id SensorIdentity) presentedKeyLabel() string {
+	switch {
+	case id.KeyID != nil:
+		return "key:" + id.KeyID.String()
+	case len(id.keyHashes) > 0:
+		return "inline"
+	default:
+		return "unknown"
+	}
 }
 
 // AuthenticateIdentity authenticates a sensor key like AuthenticateByAPIKey,
@@ -1140,17 +1526,29 @@ func (s *SensorService) AuthenticateIdentityFrom(ctx context.Context, apiKey, cl
 }
 
 func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP string, allowPaused bool) (SensorIdentity, error) {
+	// Offline format check before any hashing or lookup: an octs_ key whose
+	// checksum fails (mistyped, truncated) and an octe_ enrollment token are
+	// refused here with the same generic error as an unknown key. This is not
+	// a security control (the checksum is public); it only saves the database
+	// round trips. Legacy rda_ keys carry no checksum and go on to the lookup.
+	if !sensorkey.AcceptableSensorKey(apiKey) {
+		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
+	}
+	legacy := sensorkey.IsLegacy(apiKey)
+
 	// Lookup by each stored-hash variant the key may have: current pepper,
 	// earlier peppers (RFC-032 Phase 0), plain SHA-256 (rows from before any
 	// pepper). Each is an equality match on the unique index; the common
 	// case (a key stored under the current pepper) is one query.
 	hashes := s.candidateHashes(apiKey)
 	var (
-		a   *sensordom.Sensor
-		err = shared.ErrNotFound
+		a       *sensordom.Sensor
+		err     = shared.ErrNotFound
+		matched string
 	)
 	for _, h := range hashes {
 		if a, err = s.repo.GetByAPIKeyHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
 	}
@@ -1159,8 +1557,16 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		// reached for keys issued by self-renewal under rotation overlap; the
 		// common inline-key path above is unchanged.
 		if id, rowErr := s.authByAPIKeyRow(ctx, hashes, clientIP, allowPaused); rowErr == nil {
+			id.presentedLegacy = legacy
 			return id, nil
 		}
+		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
+	}
+
+	// A key-bound sensor signs its requests; no bearer key may stand in for
+	// it (RFC-052). Its stored hash is an unmatchable placeholder, so this
+	// only fires if a row was left inconsistent.
+	if a.KeyBound() {
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "invalid API key", shared.ErrUnauthorized)
 	}
 
@@ -1178,11 +1584,14 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 		return SensorIdentity{}, shared.NewDomainError("UNAUTHORIZED", "api key expired", shared.ErrUnauthorized)
 	}
 
+	if matched != hashes[0] {
+		s.rehashKey(ctx, s.repo, "inline", a.ID, matched, hashes[0])
+	}
 	if !paused {
 		s.recordKeyUseAsync(a, clientIP, nil)
 	}
 
-	return SensorIdentity{Sensor: a, KeyExpiresAt: a.KeyExpiresAt, Paused: paused}, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: a.InlineKeyExpiresAt, Paused: paused, keyHashes: hashes, presentedLegacy: legacy}, nil
 }
 
 // recordKeyUseAsync marks the sensor seen and records where the key was
@@ -1192,6 +1601,12 @@ func (s *SensorService) authenticate(ctx context.Context, apiKey, clientIP strin
 func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, keyUsage func(context.Context, string)) {
 	sensorID, tenantID, name := a.ID, a.TenantID, a.Name
 	ip := net.ParseIP(clientIP)
+	// When the key was used, taken on the request path: the goroutines below
+	// can reach the database out of order.
+	usedAt := s.now()
+	if !s.keyUse.due(sensorID.String()+"|"+clientIP, usedAt) {
+		return
+	}
 	go func() {
 		bg, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1203,7 +1618,7 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 			_ = s.repo.UpdateLastSeen(bg, sensorID)
 			return
 		}
-		prev, err := rec.RecordKeyUse(bg, sensorID, ip)
+		prev, err := rec.RecordKeyUse(bg, sensorID, ip, usedAt)
 		if err != nil {
 			s.logger.Debug("failed to record sensor key use", "sensor_id", sensorID.String(), "error", err)
 			return
@@ -1244,11 +1659,13 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	}
 
 	var (
-		key *sensordom.APIKey
-		err = shared.ErrNotFound
+		key     *sensordom.APIKey
+		err     = shared.ErrNotFound
+		matched string
 	)
 	for _, h := range hashes {
 		if key, err = s.apiKeyRepo.GetByHash(ctx, h); err == nil {
+			matched = h
 			break
 		}
 	}
@@ -1260,21 +1677,27 @@ func (s *SensorService) authByAPIKeyRow(ctx context.Context, hashes []string, cl
 	if err != nil {
 		return SensorIdentity{}, shared.ErrUnauthorized
 	}
+	if a.KeyBound() {
+		return SensorIdentity{}, shared.ErrUnauthorized
+	}
 	paused, err := checkSensorStatus(a, allowPaused)
 	if err != nil {
 		return SensorIdentity{}, err
 	}
+	if matched != hashes[0] {
+		s.rehashKey(ctx, s.apiKeyRepo, "row", key.ID, matched, hashes[0])
+	}
+	keyID := key.ID
 	if paused {
-		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true}, nil
+		return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, Paused: true, KeyID: &keyID}, nil
 	}
 
 	// Async per-key usage (count, time, client address) + sensor liveness.
-	keyID := key.ID
 	s.recordKeyUseAsync(a, clientIP, func(bg context.Context, ip string) {
 		_ = s.apiKeyRepo.RecordUsage(bg, keyID, ip)
 	})
 
-	return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt}, nil
+	return SensorIdentity{Sensor: a, KeyExpiresAt: key.ExpiresAt, KeyID: &keyID}, nil
 }
 
 // ActivateSensor activates a sensor (admin action).
@@ -1293,6 +1716,7 @@ func (s *SensorService) ActivateSensor(ctx context.Context, tenantID, sensorID s
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, err
 	}
+	s.notifyStatus(a)
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
@@ -1318,14 +1742,65 @@ func (s *SensorService) DisableSensor(ctx context.Context, tenantID, sensorID, r
 	if err := s.repo.Update(ctx, a); err != nil {
 		return nil, err
 	}
+	s.notifyStatus(a)
 
 	// Audit logging
 	if s.auditService != nil && auditCtx != nil {
 		s.warnAudit(s.auditService.LogSensorDeactivated(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorDeactivated", sensorID)
 	}
+	s.releaseHeldCommands(ctx, a, auditCtx)
 
 	s.logger.Info("sensor disabled", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil
+}
+
+// releaseHeldCommands takes back the commands a sensor that was just revoked
+// or disabled holds under a lease (RFC-040 §5.2): routed scan work is
+// re-queued for another sensor, the rest fails, and the old holder's late
+// writes are fenced off. It runs after the status change is stored, so a
+// failure here cannot undo the revocation; it is logged, and the lease
+// reaper takes the commands back when their lease runs out.
+func (s *SensorService) releaseHeldCommands(ctx context.Context, a *sensordom.Sensor, auditCtx *auditapp.AuditContext) {
+	if s.holders == nil || a == nil || a.TenantID == nil {
+		return
+	}
+	var why, requeueMsg, failMsg string
+	switch a.Status {
+	case sensordom.SensorStatusRevoked:
+		why, requeueMsg, failMsg = "revoked", commanddom.SensorRevokedRequeuedMessage, commanddom.SensorRevokedFailedMessage
+	case sensordom.SensorStatusDisabled:
+		why, requeueMsg, failMsg = "disabled", commanddom.SensorDisabledRequeuedMessage, commanddom.SensorDisabledFailedMessage
+	default:
+		return
+	}
+	released, err := s.holders.ReleaseHeldBySensor(ctx, *a.TenantID, a.ID, requeueMsg, failMsg)
+	if err != nil {
+		s.logger.Error("failed to release the commands of a "+why+" sensor; they wait for their lease to expire",
+			"sensor_id", a.ID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	if len(released) == 0 {
+		return
+	}
+	var requeued, failed []string
+	for _, rc := range released {
+		if rc.Requeued {
+			requeued = append(requeued, rc.ID.String())
+		} else {
+			failed = append(failed, rc.ID.String())
+		}
+	}
+	s.logger.Info("released the commands of a "+why+" sensor",
+		"sensor_id", a.ID.String(), "requeued", len(requeued), "failed", len(failed))
+	if s.auditService == nil {
+		return
+	}
+	actx := auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: sensorAuditSystemActor}
+	if auditCtx != nil {
+		actx = *auditCtx
+	}
+	s.warnAudit(s.auditService.LogSensorCommandsReleased(ctx, actx, a.ID.String(), a.Name, why, requeued, failed),
+		"LogSensorCommandsReleased", a.ID.String())
 }
 
 // RevokeSensor permanently revokes a sensor's access (admin action).
@@ -1348,6 +1823,16 @@ func (s *SensorService) RevokeSensor(ctx context.Context, tenantID, sensorID, re
 	if s.auditService != nil && auditCtx != nil {
 		s.warnAudit(s.auditService.LogSensorRevoked(ctx, *auditCtx, sensorID, a.Name, reason), "LogSensorRevoked", sensorID)
 	}
+	s.releaseHeldCommands(ctx, a, auditCtx)
+	// A revoked sensor's signing keys are revoked too (they already
+	// authenticate nothing once the sensor is revoked; this keeps the key
+	// list honest and survives a later reactivation attempt).
+	if s.signingKeys != nil && a.TenantID != nil {
+		if _, err := s.signingKeys.RevokeAllForSensor(ctx, *a.TenantID, a.ID, sensordom.KeyRevokedSensor, s.now()); err != nil {
+			s.logger.Warn("failed to revoke signing keys of a revoked sensor", "sensor_id", a.ID.String(), "error", err)
+		}
+	}
+	s.notifyStatus(a)
 
 	s.logger.Info("sensor revoked", "sensor_id", logger.SanitizeValue(sensorID), "reason", logger.SanitizeValue(reason))
 	return a, nil
@@ -1405,15 +1890,20 @@ func (s *SensorService) IncrementStats(ctx context.Context, sensorID shared.ID, 
 // generateSensorAPIKey generates a new API key for a sensor and the
 // peppered hash used to look it up. Caller's responsibility to feed
 // the raw key to the sensor and persist only the hash.
+//
+// Every issuing path (create, admin regeneration, self-renewal including the
+// overlapping RotateKey path) comes through here, so every new key is an
+// octs_ key: "octs_" + 32 random bytes in base62 + a base62 CRC32 checksum
+// (pkg/sensorkey). The stored display prefix is the first
+// sensorkey.DisplayPrefixLen characters. Legacy rda_ keys are never issued
+// again; a sensor still on one moves to octs_ on its next renewal.
 func (s *SensorService) generateSensorAPIKey() (key, hash, prefix string, err error) {
-	keyBytes := make([]byte, 32)
-	if _, err := rand.Read(keyBytes); err != nil {
+	key, err = sensorkey.New(sensorkey.PrefixSensorKey)
+	if err != nil {
 		return "", "", "", err
 	}
-
-	key = "rda_" + hex.EncodeToString(keyBytes) // rda = openctem sensor
 	hash = s.hashSensorAPIKey(key)
-	prefix = key[:12] // "rda_" + first 8 hex chars
+	prefix = sensorkey.DisplayPrefix(key)
 
 	return key, hash, prefix, nil
 }
@@ -1469,33 +1959,6 @@ func (s *SensorService) HasCapability(ctx context.Context, tenantID shared.ID, c
 	return s.repo.HasSensorForCapability(ctx, tenantID, capability)
 }
 
-// =============================================================================
-// Platform Sensor Statistics
-// =============================================================================
-
-// PlatformTierStats represents statistics for a single platform sensor tier.
-type PlatformTierStats struct {
-	TotalSensors   int
-	OnlineSensors  int
-	OfflineSensors int
-	TotalCapacity  int
-	CurrentLoad    int
-	AvailableSlots int
-}
-
-// PlatformStatsOutput represents the output for platform stats.
-type PlatformStatsOutput struct {
-	Enabled         bool
-	MaxTier         string
-	AccessibleTiers []string
-	MaxConcurrent   int
-	MaxQueued       int
-	CurrentActive   int
-	CurrentQueued   int
-	AvailableSlots  int
-	TierStats       map[string]PlatformTierStats
-}
-
 // GetTenantSensorStats returns aggregate statistics for the tenant's sensors.
 // Computed via SQL aggregation in a single round-trip — replaces the
 // previous client-side .filter().length pattern that only saw the current
@@ -1535,59 +1998,11 @@ func (s *SensorService) ListAllSensors(ctx context.Context, tenantID string) ([]
 	return all, nil
 }
 
-// GetPlatformStats returns aggregate statistics for platform sensors accessible to the tenant.
-func (s *SensorService) GetPlatformStats(ctx context.Context, tenantID shared.ID) (*PlatformStatsOutput, error) {
-	s.logger.Debug("getting platform stats", "tenant_id", tenantID)
-
-	stats, err := s.repo.GetPlatformSensorStats(ctx, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get platform sensor stats: %w", err)
+// heartbeatBinding keeps a known binding only.
+func heartbeatBinding(b string) string {
+	switch b {
+	case sensordom.BindingGRPC, sensordom.BindingHTTPS, sensordom.BindingV2:
+		return b
 	}
-
-	// If no platform sensors exist, return disabled
-	if stats.TotalSensors == 0 {
-		return &PlatformStatsOutput{
-			Enabled:         false,
-			MaxTier:         "shared",
-			AccessibleTiers: []string{"shared"},
-			TierStats:       make(map[string]PlatformTierStats),
-		}, nil
-	}
-
-	// Build tier stats
-	tierStats := make(map[string]PlatformTierStats)
-	for tier, ts := range stats.TierBreakdown {
-		tierStats[tier] = PlatformTierStats{
-			TotalSensors:   ts.TotalSensors,
-			OnlineSensors:  ts.OnlineSensors,
-			OfflineSensors: ts.TotalSensors - ts.OnlineSensors,
-			TotalCapacity:  ts.TotalCapacity,
-			CurrentLoad:    ts.CurrentLoad,
-			AvailableSlots: ts.TotalCapacity - ts.CurrentLoad,
-		}
-	}
-
-	// Determine accessible tiers (all tenants get shared; add dedicated/premium if sensors exist)
-	accessibleTiers := []string{"shared"}
-	maxTier := "shared"
-	if _, ok := stats.TierBreakdown["dedicated"]; ok {
-		accessibleTiers = append(accessibleTiers, "dedicated")
-		maxTier = "dedicated"
-	}
-	if _, ok := stats.TierBreakdown["premium"]; ok {
-		accessibleTiers = append(accessibleTiers, "premium")
-		maxTier = "premium"
-	}
-
-	return &PlatformStatsOutput{
-		Enabled:         true,
-		MaxTier:         maxTier,
-		AccessibleTiers: accessibleTiers,
-		MaxConcurrent:   stats.TotalCapacity,
-		MaxQueued:       stats.TotalCapacity * 3, // 3x capacity for queue
-		CurrentActive:   stats.CurrentActiveJobs,
-		CurrentQueued:   stats.CurrentQueuedJobs,
-		AvailableSlots:  stats.TotalCapacity - stats.CurrentActiveJobs,
-		TierStats:       tierStats,
-	}, nil
+	return ""
 }

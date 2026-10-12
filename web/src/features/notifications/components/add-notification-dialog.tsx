@@ -4,12 +4,16 @@ import { useState, useEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { enabledEventTypesSchema, enabledSeveritiesSchema } from '../lib/notification-filters'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogBody,
+  DialogFooter,
+  DialogForm,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -46,53 +50,12 @@ import {
 import { useTenantEventTypes } from '@/features/integrations/api/use-event-types'
 import { EventTypeSelector } from './event-type-selector'
 import { cn } from '@/lib/utils'
+import { useAppOrigin } from '@/hooks/use-app-origin'
+import { TEMPLATE_PRESETS, renderMessageTemplatePreview } from '../lib/message-template'
 import { SEVERITY_TEXT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 // Template presets for different use cases
-const TEMPLATE_PRESETS = [
-  {
-    id: 'default',
-    name: 'Default',
-    template: '',
-    description: 'Use system default template',
-  },
-  {
-    id: 'detailed',
-    name: 'Detailed Report',
-    template: `**{severity} Alert: {title}**
-
-{body}
-
----
-View details: {url}
-Timestamp: {timestamp}`,
-    description: 'Full details with all fields',
-  },
-  {
-    id: 'minimal',
-    name: 'Minimal Alert',
-    template: `{title}
-{url}`,
-    description: 'Title and link only',
-  },
-  {
-    id: 'emoji',
-    name: 'With Severity Emoji',
-    template: `{severity_emoji} [{severity}] {title}
-
-{body}
-
-{url}`,
-    description: 'Includes severity emoji indicator',
-  },
-  {
-    id: 'custom',
-    name: 'Custom',
-    template: '',
-    description: 'Write your own template',
-  },
-]
 
 const formSchema = z
   .object({
@@ -103,9 +66,9 @@ const formSchema = z
     channel_id: z.string().optional(),
     channel_name: z.string().optional(),
     // Severity filters (dynamic JSONB array)
-    enabled_severities: z.array(z.enum(['critical', 'high', 'medium', 'low', 'info', 'none'])),
+    enabled_severities: enabledSeveritiesSchema,
     // Event type filters (dynamic JSONB array)
-    enabled_event_types: z.array(z.string()),
+    enabled_event_types: enabledEventTypesSchema,
     // Advanced settings
     message_template: z.string().max(2000).optional(),
     include_details: z.boolean(),
@@ -318,25 +281,9 @@ export function AddNotificationDialog({
     }
   }
 
-  // Preview template with sample data
-  const renderTemplatePreview = (template: string) => {
-    if (!template) return 'Using default system template'
-
-    const sampleData: Record<string, string> = {
-      title: 'SQL Injection Vulnerability Detected',
-      severity: 'CRITICAL',
-      severity_emoji: '\u{1F6A8}',
-      body: 'A potential SQL injection vulnerability was found in the login endpoint.',
-      url: 'https://app.openctem.io/findings/123',
-      timestamp: new Date().toLocaleString(),
-    }
-
-    let preview = template
-    Object.entries(sampleData).forEach(([key, value]) => {
-      preview = preview.replace(new RegExp(`\\{${key}\\}`, 'g'), value)
-    })
-    return preview
-  }
+  const appOrigin = useAppOrigin()
+  const renderTemplatePreview = (template: string) =>
+    renderMessageTemplatePreview(template, appOrigin)
 
   const onSubmit = async (data: FormValues) => {
     try {
@@ -364,7 +311,6 @@ export function AddNotificationDialog({
           to_emails: toEmailsList,
           use_tls: data.use_tls,
           use_starttls: data.use_starttls,
-          skip_verify: false,
         })
       }
 
@@ -396,7 +342,7 @@ export function AddNotificationDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
@@ -412,40 +358,41 @@ export function AddNotificationDialog({
         </DialogHeader>
 
         {step === 'provider' ? (
-          <div className="grid grid-cols-2 gap-3 py-4">
-            {PROVIDERS.map((provider) => {
-              const Icon = provider.icon
-              return (
-                <button
-                  key={provider.id}
-                  type="button"
-                  className={cn(
-                    'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'hover:border-primary hover:bg-primary/5',
-                    'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2'
-                  )}
-                  onClick={() => handleProviderSelect(provider)}
-                >
-                  <div
+          <DialogBody>
+            <div className="grid grid-cols-2 gap-3 py-2">
+              {PROVIDERS.map((provider) => {
+                const Icon = provider.icon
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
                     className={cn(
-                      'flex h-12 w-12 items-center justify-center rounded-lg',
-                      provider.bgColor
+                      'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
+                      'hover:border-primary hover:bg-primary/5',
+                      'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2'
                     )}
+                    onClick={() => handleProviderSelect(provider)}
                   >
-                    <Icon className={cn('h-6 w-6', provider.color)} />
-                  </div>
-                  <span className="font-medium text-sm">{provider.name}</span>
-                  <span className="text-xs text-muted-foreground text-center">
-                    {provider.description}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                    <div
+                      className={cn(
+                        'flex h-12 w-12 items-center justify-center rounded-lg',
+                        provider.bgColor
+                      )}
+                    >
+                      <Icon className={cn('h-6 w-6', provider.color)} />
+                    </div>
+                    <span className="font-medium text-sm">{provider.name}</span>
+                    <span className="text-xs text-muted-foreground text-center">
+                      {provider.description}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </DialogBody>
         ) : (
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-            {/* Scrollable content area */}
-            <div className="space-y-4 py-4 overflow-y-auto flex-1 pe-1">
+          <DialogForm onSubmit={handleSubmit(onSubmit)}>
+            <DialogBody className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
                 <Input id="name" placeholder="e.g., Security Alerts" {...register('name')} />
@@ -584,7 +531,7 @@ export function AddNotificationDialog({
                   </Label>
                   <Input
                     id="channel_id"
-                    placeholder="e.g., -1001234567890 or @channelname"
+                    placeholder="e.g., -1001274567890 or @channelname"
                     {...register('channel_id', { required: selectedProvider?.id === 'telegram' })}
                   />
                   {errors.channel_id && (
@@ -593,7 +540,7 @@ export function AddNotificationDialog({
                   <p className="text-xs text-muted-foreground">
                     Get your chat ID: 1) Add @userinfobot to your group/channel, 2) It will reply
                     with the chat ID. For groups/channels, use the numeric ID (e.g.,
-                    -1001234567890).
+                    -1001274567890).
                   </p>
                 </div>
               )}
@@ -661,6 +608,9 @@ export function AddNotificationDialog({
                     )
                   })}
                 </div>
+                {errors.enabled_severities && (
+                  <p className="text-sm text-destructive">{errors.enabled_severities.message}</p>
+                )}
               </div>
 
               <EventTypeSelector
@@ -672,6 +622,10 @@ export function AddNotificationDialog({
                 isLoading={eventTypesLoading}
                 error={eventTypesError}
               />
+
+              {errors.enabled_event_types && (
+                <p className="text-sm text-destructive">{errors.enabled_event_types.message}</p>
+              )}
 
               {/* Advanced Settings */}
               <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
@@ -784,10 +738,9 @@ export function AddNotificationDialog({
                   </div>
                 </CollapsibleContent>
               </Collapsible>
-            </div>
+            </DialogBody>
 
-            {/* Fixed footer with buttons */}
-            <div className="flex justify-between pt-4 border-t mt-2">
+            <DialogFooter className="sm:justify-between">
               <Button type="button" variant="outline" onClick={handleBack}>
                 Back
               </Button>
@@ -795,8 +748,8 @@ export function AddNotificationDialog({
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                 Create Channel
               </Button>
-            </div>
-          </form>
+            </DialogFooter>
+          </DialogForm>
         )}
       </DialogContent>
     </Dialog>

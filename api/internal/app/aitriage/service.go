@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -134,6 +135,7 @@ type TriageBroadcaster interface {
 
 // AITriageService handles AI-powered vulnerability triage operations.
 type AITriageService struct {
+	modules            AITriageModuleGuard // nil: auto-triage ignores modules
 	triageRepo         aitriagedom.Repository
 	findingRepo        vulnerability.FindingRepository
 	tenantRepo         tenant.Repository
@@ -184,6 +186,16 @@ func NewAITriageService(
 		promptSanitizer: NewPromptSanitizer(),
 	}
 }
+
+// AITriageModuleGuard reports the modules a tenant has off
+// (*module.ModuleService).
+type AITriageModuleGuard interface {
+	TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool
+}
+
+// SetModuleGuard stops auto-triage for a tenant with the ai_triage module
+// off; the manual routes are gated by the route module gate.
+func (s *AITriageService) SetModuleGuard(g AITriageModuleGuard) { s.modules = g }
 
 // SetAuditService sets the audit service for logging AI operations.
 func (s *AITriageService) SetAuditService(auditSvc *auditapp.AuditService) {
@@ -494,7 +506,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		if err := s.budget.Check(ctx, tenantID, estimated); err != nil {
 			if errors.Is(err, ErrBudgetExceeded) {
 				s.logTriageBudgetExhausted(ctx, tenantID.String(), resultID.String(), findingID.String())
-				metrics.AITriageBudgetExhaustedTotal.WithLabelValues(tenantID.String()).Inc()
+				metrics.AITriageBudgetExhaustedTotal.WithLabelValues().Inc()
 				return s.failTriage(ctx, result, "monthly AI token budget exhausted")
 			}
 			// ErrBudgetUnavailable (only returned when strict=true) —
@@ -587,7 +599,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// "info" to suppress it. When the proposed severity differs from
 	// what the scanner originally reported — in either direction — we
 	// flag the result so NeedsReview() is true and downstream
-	// auto-apply pipelines refuse to mutate the finding until a human
+	// auto-apply scan workflows refuse to mutate the finding until a human
 	// signs off. The LLM output is still persisted; only the auto-
 	// apply gate is affected.
 	if analysis.SeverityAssessment != "" {
@@ -612,12 +624,6 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 				"tokens", llmResp.TotalTokens,
 				"error", berr)
 		}
-		// Snapshot the per-tenant running counter for dashboards.
-		// Status() re-reads the row so the gauge reflects the post-
-		// increment value. Best-effort: fetch failure is non-fatal.
-		if status, serr := s.budget.Status(ctx, tenantID); serr == nil && status != nil {
-			metrics.AITriageBudgetUsedTokens.WithLabelValues(tenantID.String()).Set(float64(status.Used))
-		}
 	}
 
 	// Mark completed
@@ -636,7 +642,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 	// the domain enums (invalid severity, missing required fields,
 	// prompt-injection suspected), the TriageAnalysis carries a non-
 	// empty ValidationWarnings slice. A sanitised default (usually
-	// "medium") has been applied so the pipeline doesn't stall, but
+	// "medium") has been applied so the scan workflow doesn't stall, but
 	// downstream automation (workflow dispatcher, auto-apply rules,
 	// severity-change triggers) MUST NOT treat this result as
 	// authoritative. We surface the condition three ways:
@@ -651,7 +657,7 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 			"warnings", analysis.ValidationWarnings,
 		)
 		s.logTriageNeedsReview(ctx, tenantID.String(), resultID.String(), findingID.String(), analysis.ValidationWarnings)
-		metrics.AITriageNeedsReviewTotal.WithLabelValues(tenantID.String()).Inc()
+		metrics.AITriageNeedsReviewTotal.WithLabelValues().Inc()
 	}
 
 	// Record activity
@@ -1048,6 +1054,9 @@ func (s *AITriageService) RequestBulkTriage(ctx context.Context, req BulkTriageR
 // ShouldAutoTriage checks if a finding should be auto-triaged based on tenant settings.
 func (s *AITriageService) ShouldAutoTriage(ctx context.Context, tenantID shared.ID, severity string) (bool, error) {
 	if !s.platformCfg.Enabled {
+		return false, nil
+	}
+	if s.modules != nil && s.modules.TenantDisabledModules(ctx, tenantID.String())[moduledom.ModuleAITriage] {
 		return false, nil
 	}
 

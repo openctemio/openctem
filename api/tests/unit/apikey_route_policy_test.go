@@ -17,21 +17,32 @@ import (
 // keyChainExempt lists allowlisted prefixes that are not mounted on a
 // key-capable chain (buildTokenTenantMiddlewares), with the reason.
 var keyChainExempt = map[string]string{
-	"/api/v1/agent/":              "sensor protocol v1: sensor-key auth only",
 	"/api/v2/sensor":              "sensor protocol v2: sensor authenticator only",
-	"/api/v1/agents":              "308 redirect to /api/v1/sensors",
 	"/scim/v2":                    "SCIM bearer token auth only",
 	"/api/v1/scim":                "SCIM bearer token auth only (token management is /api/v1/scim-tokens, denied)",
 	"/api/v1/mcp":                 "key-only endpoint (the MCP server)",
 	"/api/v1/webhooks/incoming":   "HMAC-verified inbound webhooks",
 	"/api/v1/module-presets":      "JWT-only base chain",
 	"/api/v1/version":             "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/announcements":       "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/client-errors":       "public, no chain: counts a web error kind",
+	"/api/v1/legal":               "public, no chain: the operator's legal information, no tenant data",
 	"/api/v1/validation/evidence": "sensor-key auth only",
-	"/health":                     "public",
-	"/ready":                      "public",
-	"/metrics":                    "MetricsAuth bearer",
-	"/openapi.yaml":               "public",
-	"/docs":                       "public",
+	// CI runner routes (RFC-051): mounted outside every key chain, with
+	// their own authentication (the CI OIDC token, the CI run token).
+	"/api/v1/ci/oidc/exchange":                "own authenticator (CI OIDC token), outside the key chains",
+	"/api/v1/ci/runs/{id}/results":            "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/baseline-diff":      "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/evaluate":           "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/hooks/github-app":                "GitHub App webhook (HMAC), mounted outside every key chain",
+	"/health":                                 "public",
+	"/ready":                                  "public",
+	"/metrics":                                "MetricsAuth bearer",
+	"/openapi.yaml":                           "public outside production; user session (no oct_ keys) in production",
+	"/docs":                                   "public, outside production only",
+	"/.well-known/oauth-protected-resource":   "public metadata, no chain",
+	"/.well-known/oauth-authorization-server": "public metadata, no chain",
+	"/oauth/":                                 "MCP OAuth endpoints, own authentication (PKCE, hashed tokens)",
 }
 
 func TestAPIKeyPolicy_EveryUngatedRouteRefusesKeys(t *testing.T) {
@@ -64,6 +75,7 @@ func TestAPIKeyPolicy_SensitiveAreasDenied(t *testing.T) {
 		"/api/v1/users/me/password", "/api/v1/users/me/mfa", "/api/v1/users/me/sessions",
 		"/api/v1/users/{userId}/roles", "/api/v1/me/permissions", "/api/v1/admin/tenants",
 		"/api/v1/auth/token", "/api/v1/tenants/{tenant}/members", "/api/v1/invitations/{token}",
+		"/api/v1/invitations/accept", "/api/v1/invitations/lookup",
 	} {
 		if !middleware.APIKeyRouteDenied(p) {
 			t.Errorf("%s must refuse API keys", p)

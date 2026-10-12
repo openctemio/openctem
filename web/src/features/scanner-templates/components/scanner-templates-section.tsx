@@ -18,21 +18,13 @@ import {
   GitBranch,
   Cloud,
   Globe,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -63,6 +55,7 @@ import {
   useScannerTemplates,
   useDeleteScannerTemplate,
   useDeprecateScannerTemplate,
+  approveScannerTemplate,
   useTemplateUsage,
   invalidateScannerTemplatesCache,
 } from '@/lib/api/scanner-template-hooks'
@@ -81,6 +74,7 @@ import {
   formatStorageSize,
 } from '@/lib/api/scanner-template-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
   const IconMap: Record<TemplateStatus, React.ElementType> = {
@@ -101,6 +95,7 @@ function TemplateStatusBadge({ status }: { status: TemplateStatus }) {
 }
 
 function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
+  const { t } = useTranslation()
   const isManual = isManuallyUploadedTemplate(template)
   const syncSource = template.sync_source || (isManual ? 'manual' : undefined)
 
@@ -124,7 +119,7 @@ function TemplateSourceBadge({ template }: { template: ScannerTemplate }) {
       </TooltipTrigger>
       <TooltipContent>
         {isManual ? (
-          <p>Uploaded directly and stored in database</p>
+          <p>{t('scans.templates.uploaded', 'Uploaded here')}</p>
         ) : (
           <p>
             Synced from {config.label} source
@@ -154,6 +149,7 @@ function quotaMetric(
 }
 
 export function ScannerTemplatesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -241,6 +237,22 @@ export function ScannerTemplatesSection() {
     }
   }, [selectedTemplate, deprecateTemplate])
 
+  // Approving a version for sensors: once the organization's approval count
+  // is reached, the job signer records it and sensors may run it.
+  const handleApproveClick = useCallback(async (template: ScannerTemplate) => {
+    try {
+      const updated = await approveScannerTemplate(template.id)
+      toast.success(
+        updated?.sensor_approval?.approved
+          ? `"${template.name}" is approved for sensors`
+          : `Approval recorded for "${template.name}"`
+      )
+      await invalidateScannerTemplatesCache()
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to approve template'))
+    }
+  }, [])
+
   const handleDownload = useCallback(async (template: ScannerTemplate) => {
     try {
       const response = await fetch(`/api/v1/scanner-templates/${template.id}/download`)
@@ -320,7 +332,25 @@ export function ScannerTemplatesSection() {
         id: 'status',
         accessorKey: 'status',
         header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-        cell: ({ row }) => <TemplateStatusBadge status={row.original.status} />,
+        cell: ({ row }) => {
+          const approval = row.original.sensor_approval
+          const awaiting = row.original.status === 'active' && approval && !approval.approved
+          return (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <TemplateStatusBadge status={row.original.status} />
+              {awaiting && (
+                <Badge
+                  variant="outline"
+                  className="text-xs font-normal"
+                  title="Sensors refuse this version until it is approved for sensors"
+                >
+                  Awaiting approval {approval.approvals.length}/
+                  {Math.max(approval.approvals_required, 1)}
+                </Badge>
+              )}
+            </div>
+          )
+        },
       },
       {
         id: 'updated',
@@ -346,6 +376,18 @@ export function ScannerTemplatesSection() {
                   icon: Download,
                   onClick: () => handleDownload(template),
                 },
+                ...(template.status === 'active' &&
+                template.sensor_approval &&
+                !template.sensor_approval.approved
+                  ? ([
+                      {
+                        label: 'Approve for sensors',
+                        icon: ShieldCheck,
+                        onClick: () => handleApproveClick(template),
+                        permission: Permission.ScopeApprove,
+                      },
+                    ] satisfies RowAction[])
+                  : []),
                 ...(template.status === 'active'
                   ? ([
                       {
@@ -370,7 +412,7 @@ export function ScannerTemplatesSection() {
         },
       },
     ],
-    [handleDownload, handleDeprecateClick, handleDeleteClick]
+    [handleDownload, handleDeprecateClick, handleDeleteClick, handleApproveClick]
   )
 
   const metrics: MetricStripItem[] = usageData
@@ -491,8 +533,11 @@ export function ScannerTemplatesSection() {
   return (
     <>
       <PageHeader
-        title="Scanner templates"
-        description="Custom Nuclei, Semgrep and Betterleaks templates — uploaded here or synced from template sources, validated and versioned."
+        title={t('scans.templates.title', 'Scanner templates')}
+        description={t(
+          'scans.templates.description',
+          'Custom Nuclei, Semgrep and Betterleaks templates, uploaded here or synced from template sources.'
+        )}
       >
         <Can permission={Permission.ScannerTemplatesWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
@@ -517,38 +562,43 @@ export function ScannerTemplatesSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete scanner template"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedTemplate?.name}</strong>? This action
-            cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.scannerTemplate.deleteTitle', 'Delete the scanner template {name}?', {
+          name: selectedTemplate?.name ?? '',
+        })}
+        desc={t(
+          'confirm.scannerTemplate.deleteDesc',
+          'It can no longer be chosen for scans. To only stop new scans from using it, deprecate it instead. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}
       />
 
       {/* Deprecate Confirmation */}
-      <AlertDialog open={deprecateDialogOpen} onOpenChange={setDeprecateDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deprecate scanner template</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to deprecate <strong>{selectedTemplate?.name}</strong>?
-              Deprecated templates cannot be used in new scans.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeprecating}>Cancel</AlertDialogCancel>
-            <Button variant="secondary" onClick={handleDeprecateConfirm} disabled={isDeprecating}>
-              {isDeprecating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Deprecate
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={deprecateDialogOpen}
+        onOpenChange={setDeprecateDialogOpen}
+        title={t(
+          'confirm.scannerTemplate.deprecateTitle',
+          'Deprecate the scanner template {name}?',
+          {
+            name: selectedTemplate?.name ?? '',
+          }
+        )}
+        desc={t(
+          'confirm.scannerTemplate.deprecateDesc',
+          'Deprecated templates cannot be used in new scans.'
+        )}
+        confirmText={
+          <>
+            {isDeprecating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            {t('confirm.scannerTemplate.deprecate', 'Deprecate')}
+          </>
+        }
+        isLoading={isDeprecating}
+        handleConfirm={handleDeprecateConfirm}
+      />
     </>
   )
 }

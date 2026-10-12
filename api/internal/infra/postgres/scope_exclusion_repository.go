@@ -27,7 +27,9 @@ func NewScopeExclusionRepository(db *DB) *ScopeExclusionRepository {
 
 const scopeExclusionSelectQuery = `
 	SELECT id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
-	       approved_by, approved_at, created_by, created_at, updated_at
+	       approved_by, approved_at, created_by, created_at, updated_at,
+	       rejected_by, rejected_at, origin,
+	       path_prefix, methods, testing, testing_until, testing_changed_by, testing_changed_at
 	FROM scope_exclusions
 `
 
@@ -45,11 +47,22 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		createdBy     sql.NullString
 		createdAt     sql.NullTime
 		updatedAt     sql.NullTime
+		rejectedBy    sql.NullString
+		rejectedAt    sql.NullTime
+		pathPrefix    sql.NullString
+		methods       pq.StringArray
+		testing       string
+		testingUntil  sql.NullTime
+		testingBy     sql.NullString
+		testingAt     sql.NullTime
+		origin        string
 	)
 
 	err := row.Scan(
 		&id, &tenantID, &exclusionType, &pattern, &reason, &status, &expiresAt,
 		&approvedBy, &approvedAt, &createdBy, &createdAt, &updatedAt,
+		&rejectedBy, &rejectedAt, &origin,
+		&pathPrefix, &methods, &testing, &testingUntil, &testingBy, &testingAt,
 	)
 	if err != nil {
 		return nil, err
@@ -68,7 +81,7 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		appAt = &approvedAt.Time
 	}
 
-	return scope.ReconstituteExclusion(
+	e := scope.ReconstituteExclusion(
 		eid,
 		tntID,
 		scope.ExclusionType(exclusionType),
@@ -81,7 +94,46 @@ func (r *ScopeExclusionRepository) scanExclusion(row interface{ Scan(...any) err
 		createdBy.String,
 		createdAt.Time,
 		updatedAt.Time,
-	), nil
+	)
+	if rejectedBy.Valid || rejectedAt.Valid {
+		var rejAt *time.Time
+		if rejectedAt.Valid {
+			rejAt = &rejectedAt.Time
+		}
+		e.SetRejection(rejectedBy.String, rejAt)
+	}
+	if pathPrefix.Valid {
+		web := &scope.WebRule{PathPrefix: pathPrefix.String, Methods: []string(methods),
+			Testing: scope.Testing(testing), TestingChangedBy: testingBy.String}
+		if testingUntil.Valid {
+			t := testingUntil.Time
+			web.TestingUntil = &t
+		}
+		if testingAt.Valid {
+			t := testingAt.Time
+			web.TestingChangedAt = &t
+		}
+		e.SetWeb(web)
+	}
+	e.SetOrigin(scope.Origin(origin))
+	return e, nil
+}
+
+// SetTesting records a path exclusion's testing mode, who set it and when.
+// Tenant-scoped; only a `path` exclusion has one.
+func (r *ScopeExclusionRepository) SetTesting(ctx context.Context, tenantID, id shared.ID, rule *scope.WebRule) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE scope_exclusions
+		SET testing = $3, testing_until = $4, testing_changed_by = $5, testing_changed_at = $6, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND exclusion_type = 'path'`,
+		tenantID.String(), id.String(), string(rule.Testing), nullTime(rule.TestingUntil),
+		nullString(rule.TestingChangedBy), nullTime(rule.TestingChangedAt))
+	if err != nil {
+		return fmt.Errorf("failed to set exclusion testing: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return scope.ErrExclusionNotFound
+	}
+	return nil
 }
 
 // Create persists a new scope exclusion.
@@ -89,9 +141,18 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 	query := `
 		INSERT INTO scope_exclusions (
 			id, tenant_id, exclusion_type, pattern, reason, status, expires_at,
-			approved_by, approved_at, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			approved_by, approved_at, created_by, created_at, updated_at,
+			rejected_by, rejected_at, origin, path_prefix, methods
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
+	var pathPrefix sql.NullString
+	methods := []string{}
+	if web := exclusion.Web(); web != nil {
+		pathPrefix = sql.NullString{String: web.PathPrefix, Valid: true}
+		if web.Methods != nil {
+			methods = web.Methods
+		}
+	}
 
 	_, err := r.db.ExecContext(ctx, query,
 		exclusion.ID().String(),
@@ -106,6 +167,11 @@ func (r *ScopeExclusionRepository) Create(ctx context.Context, exclusion *scope.
 		nullString(exclusion.CreatedBy()),
 		exclusion.CreatedAt(),
 		exclusion.UpdatedAt(),
+		nullString(exclusion.RejectedBy()),
+		nullTime(exclusion.RejectedAt()),
+		string(exclusion.Origin()),
+		pathPrefix,
+		pq.Array(methods),
 	)
 
 	if err != nil {
@@ -143,7 +209,9 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 			expires_at = $4,
 			approved_by = $5,
 			approved_at = $6,
-			updated_at = $7
+			updated_at = $7,
+			rejected_by = $9,
+			rejected_at = $10
 		WHERE id = $1 AND tenant_id = $8
 	`
 
@@ -156,6 +224,8 @@ func (r *ScopeExclusionRepository) Update(ctx context.Context, exclusion *scope.
 		nullTime(exclusion.ApprovedAt()),
 		exclusion.UpdatedAt(),
 		exclusion.TenantID().String(),
+		nullString(exclusion.RejectedBy()),
+		nullTime(exclusion.RejectedAt()),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update scope exclusion: %w", err)
@@ -276,11 +346,15 @@ func (r *ScopeExclusionRepository) List(ctx context.Context, filter scope.Exclus
 	return pagination.NewResult(exclusions, total, page), nil
 }
 
-// ListActive retrieves all active scope exclusions for a tenant.
+// ListActive retrieves the scope exclusions in effect for a tenant: approved,
+// active and unexpired. Pending and rejected exclusions are never returned —
+// this is the single read every exclusion consumer (scan target filtering,
+// scope checks, coverage) goes through.
 func (r *ScopeExclusionRepository) ListActive(ctx context.Context, tenantID shared.ID) ([]*scope.Exclusion, error) {
 	query := scopeExclusionSelectQuery + `
 		WHERE tenant_id = $1
 		AND status = 'active'
+		AND approved_at IS NOT NULL
 		AND (expires_at IS NULL OR expires_at > NOW())
 		ORDER BY created_at DESC`
 
@@ -310,12 +384,10 @@ func (r *ScopeExclusionRepository) ListActive(ctx context.Context, tenantID shar
 func (r *ScopeExclusionRepository) Count(ctx context.Context, filter scope.ExclusionFilter) (int64, error) {
 	var conditions []string
 	var args []any
-	argNum := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argNum))
 		args = append(args, *filter.TenantID)
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", len(args)))
 	}
 
 	if len(filter.Statuses) > 0 {
@@ -323,9 +395,8 @@ func (r *ScopeExclusionRepository) Count(ctx context.Context, filter scope.Exclu
 		for i, s := range filter.Statuses {
 			statuses[i] = s.String()
 		}
-		conditions = append(conditions, fmt.Sprintf("status = ANY($%d)", argNum))
 		args = append(args, pq.StringArray(statuses))
-		argNum++
+		conditions = append(conditions, fmt.Sprintf("status = ANY($%d)", len(args)))
 	}
 
 	whereClause := ""
@@ -356,4 +427,13 @@ func (r *ScopeExclusionRepository) ExpireOld(ctx context.Context) error {
 		return fmt.Errorf("failed to expire old exclusions: %w", err)
 	}
 	return nil
+}
+
+// FindByPattern returns the tenant's exclusion with this type and pattern
+// (an active exclusion past its expiry reads as expired), or nil.
+func (r *ScopeExclusionRepository) FindByPattern(ctx context.Context, tenantID shared.ID, exclusionType scope.ExclusionType, pattern string) (*scope.Existing, error) {
+	query := `SELECT id, CASE WHEN status = 'active' AND expires_at IS NOT NULL AND expires_at <= NOW() THEN 'expired' ELSE status END
+		FROM scope_exclusions
+		WHERE tenant_id = $1 AND exclusion_type = $2 AND pattern = $3`
+	return findExisting(r.db.QueryRowContext(ctx, query, tenantID.String(), exclusionType.String(), pattern))
 }

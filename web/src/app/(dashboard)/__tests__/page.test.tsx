@@ -46,9 +46,10 @@ vi.mock('@/features/scoping/api', () => ({
   useScopingSummary: () => ({ data: undefined, isLoading: false }),
 }))
 
-// Maturity module disabled so the gated section is absent.
+// Maturity (ctem_cycles) disabled so its gated section is absent; the other
+// modules on.
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
-  useModuleEnabled: () => false,
+  useModuleEnabled: (id: string) => id !== 'ctem_cycles',
 }))
 
 const emptyStats = {
@@ -63,6 +64,11 @@ vi.mock('@/features/dashboard', () => ({
 }))
 
 // Custom-dashboards data layer — no saved dashboards, so the shell defaults to CTEM.
+// The overview provider has its own tests (dashboard-overview.test.tsx); here
+// the widgets' hooks are mocked, so it only passes its children through.
+vi.mock('@/features/dashboard/api/dashboard-overview', () => ({
+  DashboardOverviewProvider: ({ children }: { children: React.ReactNode }) => children,
+}))
 vi.mock('@/features/dashboards/api/use-dashboards-api', () => ({
   useMyDashboards: () => ({ data: { data: [] }, isLoading: false }),
   useRevalidateDashboards: () => async () => {},
@@ -150,7 +156,7 @@ vi.mock('@/features/dashboard/hooks/use-ctem-dashboard', () => ({
 }))
 
 describe('CTEM Dashboard page', () => {
-  it('renders the action-first CTEM story sections plus the dashboard switcher header', () => {
+  it('renders the action-first CTEM story sections plus the dashboard switcher header', async () => {
     render(<Dashboard />)
 
     // Header + switcher controls (Refresh / Switch Dashboard / Options)
@@ -167,8 +173,8 @@ describe('CTEM Dashboard page', () => {
     expect(screen.getByText('Threat intel context')).toBeInTheDocument()
     expect(screen.getByText('Coverage & hygiene')).toBeInTheDocument()
 
-    // Retained analyst charts
-    expect(screen.getByText(/Analyst detail/i)).toBeInTheDocument()
+    // Retained analyst charts: loaded on demand (next/dynamic), after the cards
+    expect(await screen.findByText(/Analyst detail/i)).toBeInTheDocument()
     expect(screen.getByText('Findings trend')).toBeInTheDocument()
     expect(screen.getByText('Severity distribution')).toBeInTheDocument()
     expect(screen.getByText('Asset distribution')).toBeInTheDocument()

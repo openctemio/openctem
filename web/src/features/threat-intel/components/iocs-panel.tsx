@@ -12,9 +12,9 @@
  */
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Plus, Eye, Trash2, ShieldAlert, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Plus, Eye, Trash2, ShieldAlert, Loader2, AlertCircle, RefreshCw, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -23,10 +23,16 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  SheetBody,
-  SheetDetailToolbar,
-  SheetInfoRow,
+  DetailField,
+  DetailFieldGrid,
+  DetailHeader,
+  DetailSection,
+  DetailSections,
+  DetailSheet,
+  type DetailMenuItem,
 } from '@/features/shared'
+import { copyToClipboard } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +40,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
 import {
   Dialog,
   DialogContent,
@@ -42,6 +47,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -67,6 +73,7 @@ import {
   type IOCSource,
   type CreateIOCInput,
 } from '../api/use-iocs-api'
+import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 
@@ -301,52 +308,92 @@ function IOCDetailSheet({
   onOpenChange: (open: boolean) => void
   onDelete: (ioc: IOC) => void
 }) {
+  const { can } = usePermissions()
+  const canWrite = can(Permission.ThreatIntelWrite)
+  if (!ioc) return null
+
+  const typeLabel = IOC_TYPE_LABELS[ioc.type] ?? ioc.type
+  const menu: DetailMenuItem[] = [
+    {
+      label: 'Copy value',
+      icon: Copy,
+      onSelect: () => {
+        copyToClipboard(ioc.value)
+        toast.success('Indicator copied to clipboard')
+      },
+    },
+  ]
+  if (canWrite) {
+    menu.push({
+      label: 'Delete indicator',
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(ioc),
+    })
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="[&>button]:hidden w-full gap-0 p-0 sm:max-w-lg">
-        {ioc && (
-          <>
-            <SheetDetailToolbar
-              title={IOC_TYPE_LABELS[ioc.type] ?? ioc.type}
-              onClose={() => onOpenChange(false)}
-              extraActions={[{ label: 'Delete', icon: Trash2, onClick: () => onDelete(ioc) }]}
-            />
-            <SheetBody className="space-y-6 overflow-y-auto">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{IOC_TYPE_LABELS[ioc.type] ?? ioc.type}</Badge>
-                <Badge variant={ioc.active ? 'default' : 'outline'}>
-                  {ioc.active ? 'Active' : 'Inactive'}
+    <DetailSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      width="lg"
+      header={
+        <DetailHeader
+          title={<span className="font-mono break-all">{ioc.value}</span>}
+          badges={
+            <>
+              <Badge variant="outline" className="text-xs">
+                {typeLabel}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-xs',
+                  ioc.active && 'border-success/30 bg-success/10 text-success'
+                )}
+              >
+                {ioc.active ? 'Active' : 'Inactive'}
+              </Badge>
+              {ioc.source && (
+                <Badge variant="secondary" className="text-xs">
+                  {IOC_SOURCE_LABELS[ioc.source] ?? ioc.source}
                 </Badge>
-                {ioc.source && (
-                  <Badge variant="secondary">{IOC_SOURCE_LABELS[ioc.source] ?? ioc.source}</Badge>
-                )}
-              </div>
+              )}
+            </>
+          }
+          meta={[`${ioc.confidence}% confidence`, `Last seen ${formatDate(ioc.last_seen_at)}`]}
+          menu={menu}
+          onClose={() => onOpenChange(false)}
+        />
+      }
+    >
+      <DetailSections>
+        <DetailSection title="Indicator">
+          <DetailFieldGrid>
+            <DetailField label="Type">{typeLabel}</DetailField>
+            <DetailField label="Confidence">{ioc.confidence}%</DetailField>
+            <DetailField label="Normalized" full>
+              <span className="font-mono text-xs break-all">{ioc.normalized}</span>
+            </DetailField>
+            {ioc.source_finding_id && (
+              <DetailField label="Source finding" full>
+                <Link
+                  href={`/findings/${ioc.source_finding_id}`}
+                  className="font-mono text-xs break-all text-primary hover:underline"
+                >
+                  {ioc.source_finding_id}
+                </Link>
+              </DetailField>
+            )}
+            <DetailField label="First seen">{formatDate(ioc.first_seen_at)}</DetailField>
+            <DetailField label="Last seen">{formatDate(ioc.last_seen_at)}</DetailField>
+          </DetailFieldGrid>
+        </DetailSection>
 
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">Value</p>
-                <p className="font-mono text-sm break-all">{ioc.value}</p>
-              </div>
-
-              <div className="space-y-1">
-                <SheetInfoRow label="Confidence">{ioc.confidence}%</SheetInfoRow>
-                <SheetInfoRow label="Normalized">
-                  <span className="font-mono text-xs break-all">{ioc.normalized}</span>
-                </SheetInfoRow>
-                {ioc.source_finding_id && (
-                  <SheetInfoRow label="Source finding">
-                    <span className="font-mono text-xs">{ioc.source_finding_id}</span>
-                  </SheetInfoRow>
-                )}
-                <SheetInfoRow label="First seen">{formatDate(ioc.first_seen_at)}</SheetInfoRow>
-                <SheetInfoRow label="Last seen">{formatDate(ioc.last_seen_at)}</SheetInfoRow>
-              </div>
-
-              <IOCMatchesSection iocId={ioc.id} />
-            </SheetBody>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
+        <IOCMatchesSection iocId={ioc.id} />
+      </DetailSections>
+    </DetailSheet>
   )
 }
 
@@ -361,8 +408,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
   const matches = data?.items ?? []
 
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">Runtime matches</p>
+    <DetailSection title="Runtime matches" count={isLoading ? undefined : matches.length}>
       {isLoading ? (
         <Skeleton className="h-12 w-full" />
       ) : matches.length === 0 ? (
@@ -370,12 +416,19 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
           No runtime telemetry has matched this indicator yet.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="divide-y rounded-lg border">
           {matches.map((m) => (
-            <li key={m.id} className="rounded-lg border p-3 text-sm">
+            <li key={m.id} className="px-3 py-2.5 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">{formatDateTime(m.matched_at)}</span>
-                {m.reopened && <Badge variant="destructive">Reopened finding</Badge>}
+                {m.reopened && (
+                  <Badge
+                    variant="outline"
+                    className="border-destructive/30 bg-destructive/10 text-xs text-destructive"
+                  >
+                    Reopened finding
+                  </Badge>
+                )}
               </div>
               {m.finding_id && (
                 <Link
@@ -389,7 +442,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
           ))}
         </ul>
       )}
-    </div>
+    </DetailSection>
   )
 }
 
@@ -449,7 +502,7 @@ function CreateIOCDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="sm">
         <DialogHeader>
           <DialogTitle>Add indicator</DialogTitle>
           <DialogDescription>
@@ -457,60 +510,62 @@ function CreateIOCDialog({
             type&apos;s format.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="ioc-type">Type</Label>
-            <Select value={type} onValueChange={(v) => setType(v as IOCType)}>
-              <SelectTrigger id="ioc-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {IOC_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {IOC_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ioc-value">Value *</Label>
-            <Input
-              id="ioc-value"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="e.g. 203.0.113.10"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        <DialogBody>
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="ioc-source">Source</Label>
-              <Select value={source} onValueChange={(v) => setSource(v as IOCSource)}>
-                <SelectTrigger id="ioc-source">
+              <Label htmlFor="ioc-type">Type</Label>
+              <Select value={type} onValueChange={(v) => setType(v as IOCType)}>
+                <SelectTrigger id="ioc-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {IOC_SOURCES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {IOC_SOURCE_LABELS[s]}
+                  {IOC_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {IOC_TYPE_LABELS[t]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ioc-confidence">Confidence (0-100)</Label>
+              <Label htmlFor="ioc-value">Value *</Label>
               <Input
-                id="ioc-confidence"
-                type="number"
-                min={0}
-                max={100}
-                value={confidence}
-                onChange={(e) => setConfidence(e.target.value)}
+                id="ioc-value"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="e.g. 203.0.113.10"
               />
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ioc-source">Source</Label>
+                <Select value={source} onValueChange={(v) => setSource(v as IOCSource)}>
+                  <SelectTrigger id="ioc-source">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IOC_SOURCES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {IOC_SOURCE_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ioc-confidence">Confidence (0-100)</Label>
+                <Input
+                  id="ioc-confidence"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={confidence}
+                  onChange={(e) => setConfidence(e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
@@ -535,6 +590,7 @@ function DeleteIOCConfirm({
   onOpenChange: (open: boolean) => void
   onDeleted: () => void
 }) {
+  const { t } = useTranslation()
   const { trigger } = useDeleteIOC(ioc?.id ?? '')
   const [deleting, setDeleting] = useState(false)
 
@@ -556,13 +612,14 @@ function DeleteIOCConfirm({
     <ConfirmDialog
       open={!!ioc}
       onOpenChange={onOpenChange}
-      title="Delete indicator?"
-      desc={
-        ioc
-          ? `"${ioc.value}" will be deactivated. Match history is preserved for the audit trail.`
-          : ''
-      }
-      confirmText={deleting ? 'Deleting...' : 'Delete'}
+      title={t('confirm.ioc.deleteTitle', 'Delete the indicator "{value}"?', {
+        value: ioc?.value ?? '',
+      })}
+      desc={t(
+        'confirm.ioc.deleteDesc',
+        'It is deactivated and stops matching. Its match history is kept for the audit trail.'
+      )}
+      confirmText={deleting ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
       destructive
       handleConfirm={handleConfirm}
     />

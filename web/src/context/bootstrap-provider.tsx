@@ -17,12 +17,14 @@
 
 import * as React from 'react'
 import { ServerCrash, Loader2 } from 'lucide-react'
+import { mutate as globalMutate } from 'swr'
 import { get } from '@/lib/api/client'
 import { devLog } from '@/lib/logger'
 import { Button } from '@/components/ui/button'
 import { useTenant } from './tenant-provider'
 import type { TenantModulesResponse } from '@/features/integrations/api/use-tenant-modules'
 import type { RiskLevelThresholds } from '@/features/shared/types/common.types'
+import { seedSessionCache, type BootstrapSessionData } from './bootstrap-session'
 
 // ============================================
 // TYPES
@@ -35,7 +37,7 @@ export interface BootstrapPermissions {
 
 // NOTE: Dashboard stats are NOT included in bootstrap to reduce query load.
 // Dashboard should be fetched separately via /api/v1/dashboard/stats when needed.
-export interface BootstrapData {
+export interface BootstrapData extends BootstrapSessionData {
   permissions: BootstrapPermissions
   modules?: TenantModulesResponse
   risk_levels?: RiskLevelThresholds
@@ -52,6 +54,12 @@ export interface BootstrapContextValue {
   isBootstrapped: boolean
   /** Refresh bootstrap data */
   refresh: () => Promise<void>
+  /**
+   * Re-read only the organization's modules (after a toggle here or a
+   * `module.updated` event), without the loading state of a full refresh, so
+   * the sidebar and the route guard follow at once.
+   */
+  refreshModules: () => Promise<void>
 }
 
 // ============================================
@@ -104,6 +112,11 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
         const result = await get<BootstrapData>('/api/v1/me/bootstrap')
 
         // Prevent race conditions: ignore response if tenant changed while fetching
+        if (previousTenantIdRef.current !== tenantId) return
+
+        // Profile, organizations and badge counts go into the cache of the
+        // endpoints they replace before anything that reads them is released.
+        await seedSessionCache(result)
         if (previousTenantIdRef.current !== tenantId) return
 
         setData(result)
@@ -192,6 +205,20 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
     await fetchBootstrap()
   }, [fetchBootstrap])
 
+  const refreshModules = React.useCallback(async () => {
+    if (!tenantId) return
+    try {
+      const modules = await get<TenantModulesResponse>('/api/v1/me/modules')
+      // A tenant switch while reading: the new tenant's bootstrap wins.
+      if (previousTenantIdRef.current !== tenantId) return
+      setData((prev) => (prev ? { ...prev, modules } : prev))
+      await globalMutate('/api/v1/me/modules', modules, { revalidate: false })
+    } catch (err) {
+      // Keep the current set; the next toggle event or bootstrap catches up.
+      devLog.error('[BootstrapProvider] Failed to refresh modules:', err)
+    }
+  }, [tenantId])
+
   const value = React.useMemo<BootstrapContextValue>(() => {
     // Synchronize context instantly with currentTenant to prevent stale data
     // leaking during the React render cycle before useEffect runs.
@@ -203,8 +230,9 @@ export function BootstrapProvider({ children }: BootstrapProviderProps) {
       error: isStale ? null : error,
       isBootstrapped: isStale ? false : isBootstrapped,
       refresh,
+      refreshModules,
     }
-  }, [data, isLoading, error, isBootstrapped, fetchedTenantId, tenantId, refresh])
+  }, [data, isLoading, error, isBootstrapped, fetchedTenantId, tenantId, refresh, refreshModules])
 
   return <BootstrapContext.Provider value={value}>{children}</BootstrapContext.Provider>
 }
@@ -295,6 +323,25 @@ const defaultContextValue: BootstrapContextValue = {
   error: null,
   isBootstrapped: false,
   refresh: async () => {},
+  refreshModules: async () => {},
+}
+
+/**
+ * The bootstrap context, or null outside a BootstrapProvider (admin console,
+ * auth pages). Lets a hook tell "no provider" apart from "not loaded yet".
+ */
+export function useBootstrapContextOptional(): BootstrapContextValue | null {
+  return React.useContext(BootstrapContext)
+}
+
+/**
+ * True while the app shell is loading the session bootstrap. A hook whose data
+ * the bootstrap carries (see bootstrap-session.ts) waits for it instead of
+ * sending its own request in parallel. Outside the shell it is always false.
+ */
+export function useBootstrapPending(): boolean {
+  const context = React.useContext(BootstrapContext)
+  return context !== null && context.isLoading
 }
 
 /**
@@ -323,6 +370,8 @@ export function useBootstrapPermissions() {
   }
 }
 
+const NO_READ_ONLY_MODULES: Record<string, string> = {}
+
 /**
  * Get modules from bootstrap
  */
@@ -342,6 +391,8 @@ export function useBootstrapModules() {
     // event-type catalog comes from `useTenantEventTypes()`.
     comingSoonModuleIds: data?.modules?.coming_soon_module_ids || [],
     betaModuleIds: data?.modules?.beta_module_ids || [],
+    notEntitledModuleIds: data?.modules?.not_entitled_module_ids || [],
+    readOnlyModules: data?.modules?.read_only_modules ?? NO_READ_ONLY_MODULES,
     hasModule,
     isLoading,
   }

@@ -69,7 +69,7 @@ from it.** You edit one file, run one command, commit three.
                                   │
                 ┌─────────────────┴────────────────────┐
                 ▼                                      ▼
- api/pkg/domain/asset/                  ui/src/features/assets/types/
+ api/pkg/domain/asset/                  web/src/features/assets/types/
  relationship_types_generated.go        relationship.types.generated.ts
  (Go enum + Registry + categories)      (TS union + LABELS + CONSTRAINTS)
 ```
@@ -109,24 +109,24 @@ cd api
 make generate-relationships
 # → ✓ Generated 19 relationship types into:
 #       pkg/domain/asset/relationship_types_generated.go
-#       ../ui/src/features/assets/types/relationship.types.generated.ts
+#       ../web/src/features/assets/types/relationship.types.generated.ts
 
 # 3. Verify build is clean on both sides
 GOWORK=off go build ./...
-cd ../ui && npx tsc --noEmit
+cd ../web && npx tsc --noEmit
 
 # 4. Commit all three files together
 cd ..
 git add api/configs/relationship-types.yaml \
         api/pkg/domain/asset/relationship_types_generated.go \
-        ui/src/features/assets/types/relationship.types.generated.ts
+        web/src/features/assets/types/relationship.types.generated.ts
 
 git commit -m "feat(assets): add audited_by relationship type"
 ```
 
 That's it. The new type is now:
 - A Go constant `asset.RelTypeAuditedBy` you can use in services and
-  ingest pipelines
+  ingest paths
 - A TS literal `'audited_by'` in the `RelationshipType` union
 - An entry in the Add Relationship dialog dropdown under
   `Control & Observability`
@@ -149,7 +149,7 @@ api/
 │   └── relationship_types_generated.go      ← Go: constants + Registry (GENERATED)
 └── Makefile                                 ← contains `generate-relationships` target
 
-ui/
+web/
 └── src/features/assets/types/
     ├── relationship.types.ts                ← TS: helpers + ExtendedAssetType (manual)
     └── relationship.types.generated.ts      ← TS: union + LABELS + CONSTRAINTS (GENERATED)
@@ -243,7 +243,7 @@ See the [Quickstart](#quickstart) above. The full procedure:
 5. **Build to verify:**
    ```bash
    GOWORK=off go build ./...
-   cd ../ui && npx tsc --noEmit
+   cd ../web && npx tsc --noEmit
    ```
 6. **Run the relationship tests:**
    ```bash
@@ -258,7 +258,7 @@ See the [Quickstart](#quickstart) above. The full procedure:
    ```bash
    git add api/configs/relationship-types.yaml \
            api/pkg/domain/asset/relationship_types_generated.go \
-           ui/src/features/assets/types/relationship.types.generated.ts
+           web/src/features/assets/types/relationship.types.generated.ts
    ```
 8. **Conventional commit message** (`feat(assets): ...`).
 
@@ -271,7 +271,7 @@ The safe operations on an existing type:
 | Edit `description` | ✅ totally safe | Just regen + commit. |
 | Edit `direct` / `inverse` labels | ✅ safe | Existing rows are unaffected; UI just shows the new label. |
 | Add a constraint tuple | ✅ safe | Widens what's pickable. |
-| Remove a constraint tuple | ⚠ careful | New edges of the removed combination can no longer be created. **Existing rows in the DB stay valid** (no migration). Make sure no ingest pipelines rely on the removed combination. |
+| Remove a constraint tuple | ⚠ careful | New edges of the removed combination can no longer be created. **Existing rows in the DB stay valid** (no migration). Make sure no ingest paths rely on the removed combination. |
 | Change `category` | ✅ safe (UI-only) | Type moves to a different dropdown section. |
 | **Rename `id`** | 💣 BREAKS DATA | The ID is stored verbatim in `asset_relationships.relationship_type`. Renaming requires a backfill migration. **Don't do this without a plan.** |
 
@@ -302,7 +302,7 @@ Removing a type from the YAML is a **breaking change** because:
    the UI can't render them and the backend can't accept new ones.
 2. **Code references** to the deleted constant (e.g.
    `asset.RelTypeFoo`) will fail to compile.
-3. **Ingest pipelines** that create the type will break.
+3. **Ingest paths** that create the type will break.
 
 The safe procedure:
 
@@ -313,7 +313,7 @@ The safe procedure:
    ```
 2. **Find every reference** to the type ID in the TS codebase:
    ```bash
-   cd ../ui
+   cd ../web
    grep -rn "'foo'" src --include="*.ts" --include="*.tsx" \
      | grep -v "lib/clipboard.ts"   # exclude noise
    ```
@@ -511,52 +511,23 @@ grouped by category — see
 ## Telemetry — measure before you prune
 
 A frequent question is "should we delete this type, nobody uses it."
-The honest answer is "you don't know — go count first." There's a
-backend endpoint for that:
+The honest answer is "you don't know — go count first." Count the
+relationships per type on a read replica or a restored backup (never
+on the live primary from a laptop):
 
-```
-GET /api/v1/relationships/usage-stats
-Authorization: Bearer <jwt>
-```
-
-Returns one entry per relationship type registered, with that tenant's
-count of relationships of that type. **Zero-count entries are
-included** — they're the candidates for removal:
-
-```json
-{
-  "data": [
-    {
-      "id": "runs_on",
-      "direct": "Runs On",
-      "inverse": "Runs",
-      "description": "Runtime location of a workload — ...",
-      "category": "attack_surface_mapping",
-      "count": 1247
-    },
-    {
-      "id": "audited_by",
-      "direct": "Audited By",
-      "inverse": "Audits",
-      "description": "...",
-      "category": "control_and_observability",
-      "count": 0
-    }
-  ],
-  "total": 19
-}
+```sql
+SELECT relationship_type, COUNT(*) AS n
+FROM asset_relationships
+GROUP BY relationship_type
+ORDER BY n;
 ```
 
-**Recommended workflow**: run this monthly. Types with count=0 after
-3 consecutive months are strong candidates for removal. Types you
-*want* but don't see in the list are candidates for adding.
+A type registered in `configs/relationship-types.yaml` that does not
+appear in the result has zero relationships.
 
-This is the only honest way to converge on a registry tuned to YOUR
-data instead of theoretical CMDB best practice.
-
-The implementation lives in
-`internal/app/asset_relationship_service.go:GetRelationshipTypeUsage`
-and `internal/infra/postgres/asset_relationship_repository.go:CountByType`.
+**Recommended workflow**: run this monthly. Types with no relationships
+after 3 consecutive months are strong candidates for removal. Types you
+*want* but don't see are candidates for adding.
 
 ## Limitations and known footguns
 
@@ -577,7 +548,7 @@ targets when the user picks the type.
 
 **Mitigation**: when adding a type, manually verify each source/target
 ID against the `ExtendedAssetType` union in
-`ui/src/features/assets/types/relationship.types.ts`. A future codegen
+`web/src/features/assets/types/relationship.types.ts`. A future codegen
 improvement could load the asset type list from the Go side and
 cross-validate; for now this is a manual responsibility.
 
@@ -591,7 +562,7 @@ They're "virtual" types — not real `AssetType` enum values in Go.
 Consequence: **the backend cannot enforce the constraint table** for
 those types. The frontend filter is advisory only. The only
 server-side rule we enforce is the `runs_on`/`deployed_to` placement
-mutex (in `internal/app/asset_relationship_service.go`).
+mutex (in `internal/app/asset/relationship.go`).
 
 **Long-term fix**: either add those types as real `AssetType` enum
 values in the backend, or add an alias map in the YAML/codegen that
@@ -732,7 +703,7 @@ created two data paths for the same concept.
 
 ### How do I know if my new type is actually being used?
 
-Use the [usage-stats endpoint](#telemetry--measure-before-you-prune).
+Count them first ([telemetry](#telemetry--measure-before-you-prune)).
 If a type sits at count=0 for several months, it probably isn't
 solving a real problem. Remove it and free up dropdown space.
 
@@ -758,20 +729,16 @@ the commit.
 $EDITOR api/configs/relationship-types.yaml
 cd api && make generate-relationships
 GOWORK=off go build ./...
-cd ../ui && npx tsc --noEmit
+cd ../web && npx tsc --noEmit
 git add api/configs/relationship-types.yaml \
         api/pkg/domain/asset/relationship_types_generated.go \
-        ui/src/features/assets/types/relationship.types.generated.ts
+        web/src/features/assets/types/relationship.types.generated.ts
 git commit -m "feat(assets): <conventional message>"
-
-# See what types are actually used
-curl -H "Authorization: Bearer $JWT" \
-     https://your-tenant/api/v1/relationships/usage-stats | jq '.data[] | select(.count == 0)'
 
 # Run relationship tests
 cd api && GOWORK=off go test ./tests/unit/ -run TestAssetRelationship -count=1
 
 # Find references to a constant before removing it
 grep -rn "RelTypeFoo" --include="*.go" .
-grep -rn "'foo'" ui/src --include="*.ts" --include="*.tsx"
+grep -rn "'foo'" web/src --include="*.ts" --include="*.tsx"
 ```

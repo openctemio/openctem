@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/config"
@@ -21,6 +23,44 @@ type Server struct {
 	config       *config.Config
 	logger       *logger.Logger
 	cleanupFuncs []func() // cleanup functions to call on shutdown
+	// prefixes are handlers served ahead of the router (MountPrefix).
+	prefixes []prefixHandler
+	// rateLimit is the global per-IP rate limit, also applied to the
+	// prefix handlers (MountPrefix).
+	rateLimit func(http.Handler) http.Handler
+	// splitTLS shares the TLS port with the sensor gRPC binding.
+	splitTLS TLSSplitter
+}
+
+type prefixHandler struct {
+	prefix  string
+	handler http.Handler
+}
+
+// MountPrefix serves every request whose path starts with prefix+"/" with h,
+// ahead of the router and its global middleware. It is for a surface that
+// carries its own guards and cannot run behind the global request timeout
+// and buffered writers: the sensor protocol v3 HTTPS binding, whose control
+// stream lives for minutes (docs/rfcs/RFC-059-sensor-transport-v3.md). The
+// global per-IP rate limit still applies: the surface is reachable without
+// credentials, and its authentication costs a database lookup. Call it
+// before Start.
+func (s *Server) MountPrefix(prefix string, h http.Handler) {
+	if s.rateLimit != nil {
+		h = s.rateLimit(h)
+	}
+	s.prefixes = append(s.prefixes, prefixHandler{prefix: strings.TrimSuffix(prefix, "/") + "/", handler: h})
+	router := s.router.Handler()
+	prefixes := append([]prefixHandler(nil), s.prefixes...)
+	s.httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range prefixes {
+			if strings.HasPrefix(r.URL.Path, p.prefix) {
+				p.handler.ServeHTTP(w, r)
+				return
+			}
+		}
+		router.ServeHTTP(w, r)
+	})
 }
 
 // ServerOption is a function that configures the server.
@@ -64,6 +104,7 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 	// Create rate limiter with cleanup
 	rateLimitMw, rateLimitStop := middleware.RateLimitWithStop(&cfg.RateLimit, log)
 	s.cleanupFuncs = append(s.cleanupFuncs, rateLimitStop)
+	s.rateLimit = rateLimitMw
 
 	// Configure security headers (enable HSTS in production)
 	securityCfg := middleware.SecurityHeadersConfig{
@@ -74,7 +115,11 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 
 	// Apply global middleware (order matters!)
 	s.router.Use(
-		middleware.RecoveryWithConfig(log, cfg.IsProduction()),        // Recover from panics (no stack trace in prod)
+		middleware.RecoveryWithConfig(log, cfg.IsProduction()), // Recover from panics (no stack trace in prod)
+		// Metrics sits right inside Recovery so every answer is counted:
+		// the global rate limit (429), the concurrency limit (503), the body
+		// limit and a panic (500) included. Operator alerts read these.
+		middleware.Metrics(),
 		middleware.ConcurrencyLimit(cfg.Server.MaxConcurrentRequests), // Limit concurrent requests
 		middleware.RequestID(),                                 // Add request ID early
 		middleware.ContextLogger(log),                          // Inject request-scoped logger into context
@@ -83,7 +128,6 @@ func NewServer(cfg *config.Config, log *logger.Logger, opts ...ServerOption) *Se
 		middleware.BodyLimit(cfg.Server.MaxBodySize),           // Limit request body size (10MB default)
 		rateLimitMw, // Rate limiting
 		middleware.TimeoutWithLogger(cfg.Server.RequestTimeout, log), // Per-request timeout (+ panic recovery inside its goroutine)
-		middleware.Metrics(), // Prometheus metrics
 		middleware.LoggerWithConfig(log, middleware.LoggerConfig{
 			SkipPaths:            middleware.DefaultLoggerConfig().SkipPaths,
 			SkipSuccessful:       false, // Log all requests by default
@@ -119,12 +163,26 @@ func (s *Server) Logger() *logger.Logger {
 
 // Start starts the HTTP server.
 func (s *Server) Start() error {
-	s.logger.Info("starting HTTP server", "addr", s.config.Server.Addr())
-
-	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("failed to start server: %w", err)
+	if !s.config.Server.TLSEnabled() {
+		s.logger.Info("starting HTTP server", "addr", s.config.Server.Addr())
+		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("failed to start server: %w", err)
+		}
+		return nil
 	}
 
+	ln, err := net.Listen("tcp", s.config.Server.Addr())
+	if err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+	if ln, err = s.tlsListener(ln); err != nil {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
+	s.logger.Info("starting HTTPS server (TLS terminated by the API)", "addr", s.config.Server.Addr(),
+		"sensor_grpc_on_this_port", s.splitTLS != nil)
+	if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("failed to start server: %w", err)
+	}
 	return nil
 }
 

@@ -9,7 +9,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -96,42 +95,23 @@ func (v *V2Receiver) openCommand(ctx context.Context, tenantID shared.ID, t V2Ta
 	if t.CommandID == "" {
 		return nil, nil
 	}
-	id, err := shared.IDFromString(t.CommandID)
+	if t.Sensor == nil || t.Sensor.TenantID == nil || *t.Sensor.TenantID != tenantID {
+		return nil, problem(protov2.ProblemCommandNotFound)
+	}
+	cmd, err := OpenCommand(ctx, v.commands, t.Sensor, t.CommandID, v.now())
 	if err != nil {
 		return nil, problem(protov2.ProblemCommandNotFound)
 	}
-	cmd, err := v.commands.GetByTenantAndID(ctx, tenantID, id)
-	if err != nil || cmd == nil || cmd.TenantID != tenantID || cmd.SensorID == nil || *cmd.SensorID != t.Sensor.ID {
-		return nil, problem(protov2.ProblemCommandNotFound)
-	}
-	switch cmd.Status {
-	case command.CommandStatusAcknowledged, command.CommandStatusRunning:
-		return cmd, nil
-	case command.CommandStatusCompleted, command.CommandStatusFailed:
-		if cmd.CompletedAt != nil && v.now().Sub(*cmd.CompletedAt) <= protov2.CommandGraceAfterFinish {
-			return cmd, nil
-		}
-	}
-	return nil, problem(protov2.ProblemCommandNotFound)
+	return cmd, nil
 }
 
 // commandTool is the tool a command asks for (payload "scanner", else
 // "preferred_tool"; the same keys the zone claim predicate reads), or "".
 func commandTool(cmd *command.Command) string {
-	if cmd == nil || len(cmd.Payload) == 0 {
+	if cmd == nil {
 		return ""
 	}
-	var p struct {
-		Scanner       string `json:"scanner"`
-		PreferredTool string `json:"preferred_tool"`
-	}
-	if json.Unmarshal(cmd.Payload, &p) != nil {
-		return ""
-	}
-	if p.Scanner != "" {
-		return p.Scanner
-	}
-	return p.PreferredTool
+	return command.PayloadTool(cmd.Payload)
 }
 
 func sameCommand(rep *ingestreport.Report, cmd *command.Command) bool {
@@ -210,8 +190,8 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 	// Canonical before the checks and the header digest, so every segment
 	// of a report, and ingest_reports.tool_name, carry one name.
 	report.Tool.Name = tooldom.CanonicalName(report.Tool.Name)
-	// The sensor's effective tools: what it reports installed, narrowed by
-	// its tool limit; its declared tools when it never reported.
+	// The sensor's effective tools: what it reports installed (none before
+	// its first report).
 	if !SensorDeclaresTool(t.Sensor.EffectiveTools(), report.Tool.Name) {
 		return nil, problem(protov2.ProblemToolNotPermitted)
 	}

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -15,7 +15,7 @@ import (
 // {"status":"active"} brought a revoked sensor back and its old key worked
 // again — reproduced live against develop on 2026-10-01.
 
-func revokedSensorFixture(t *testing.T) (*mockSensorRepo, *app.SensorService, shared.ID, *sensor.Sensor) {
+func revokedSensorFixture(t *testing.T) (*mockSensorRepo, *sensorapp.SensorService, shared.ID, *sensor.Sensor) {
 	t.Helper()
 	repo := newMockSensorRepo()
 	svc := newTestSensorService(repo)
@@ -31,7 +31,7 @@ func TestUpdateSensor_CannotReactivateRevokedSensor(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			repo, svc, tenantID, a := revokedSensorFixture(t)
 
-			_, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+			_, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
 				TenantID: tenantID.String(),
 				SensorID: a.ID.String(),
 				Status:   status,
@@ -50,7 +50,7 @@ func TestUpdateSensor_CannotReactivateRevokedSensor(t *testing.T) {
 func TestUpdateSensor_RevokedSensorKeepsEditableMetadata(t *testing.T) {
 	repo, svc, tenantID, a := revokedSensorFixture(t)
 
-	got, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+	got, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
 		TenantID:    tenantID.String(),
 		SensorID:    a.ID.String(),
 		Description: "decommissioned after incident 42",
@@ -67,11 +67,35 @@ func TestUpdateSensor_RevokedSensorKeepsEditableMetadata(t *testing.T) {
 func TestUpdateSensor_RevokedToRevokedIsAllowed(t *testing.T) {
 	_, svc, tenantID, a := revokedSensorFixture(t)
 
-	if _, err := svc.UpdateSensor(context.Background(), app.UpdateSensorInput{
+	if _, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
 		TenantID: tenantID.String(),
 		SensorID: a.ID.String(),
 		Status:   "revoked",
 	}); err != nil {
 		t.Fatalf("UpdateSensor(status=revoked) on a revoked sensor: %v", err)
+	}
+}
+
+// Revoking through the generic update skipped the revoke route: it was logged
+// as a Low sensor.updated instead of the Critical sensor.revoked, with no
+// reason (settings audit SC-H6). Revocation now goes through
+// POST /sensors/{id}/revoke only.
+func TestUpdateSensor_CannotRevokeThroughUpdate(t *testing.T) {
+	repo := newMockSensorRepo()
+	svc := newTestSensorService(repo)
+	tenantID := shared.NewID()
+	a := createTestSensor(t, tenantID, "Active Sensor")
+	repo.sensors[a.ID] = a
+
+	_, err := svc.UpdateSensor(context.Background(), sensorapp.UpdateSensorInput{
+		TenantID: tenantID.String(),
+		SensorID: a.ID.String(),
+		Status:   "revoked",
+	})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("UpdateSensor(status=revoked) on an active sensor: err = %v, want ErrValidation", err)
+	}
+	if got := repo.sensors[a.ID].Status; got == sensor.SensorStatusRevoked {
+		t.Fatal("the sensor was revoked through the generic update")
 	}
 }

@@ -9,3 +9,4 @@ export * from './scope-api.types'
 
 // Hooks
 export * from './use-scope-api'
+export * from './use-scope-check'

@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
@@ -19,12 +18,12 @@ import (
 
 // NotificationHandler handles user notification endpoints.
 type NotificationHandler struct {
-	service *app.NotificationService
+	service *integration.NotificationService
 	logger  *logger.Logger
 }
 
 // NewNotificationHandler creates a new NotificationHandler.
-func NewNotificationHandler(svc *app.NotificationService, log *logger.Logger) *NotificationHandler {
+func NewNotificationHandler(svc *integration.NotificationService, log *logger.Logger) *NotificationHandler {
 	return &NotificationHandler{
 		service: svc,
 		logger:  log.With("handler", "notification"),
@@ -104,18 +103,11 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination
-	page := 1
-	perPage := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("per_page"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
-			perPage = parsed
-		}
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	// Build filter with validation
 	var filter notification.ListFilter
@@ -312,7 +304,7 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	input := app.UpdatePreferencesInput{
+	input := integration.UpdatePreferencesInput{
 		InAppEnabled: req.InAppEnabled,
 		EmailDigest:  req.EmailDigest,
 		MutedTypes:   req.MutedTypes,

@@ -13,6 +13,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -21,6 +22,8 @@ import (
 // SensorRepository implements sensor.Repository using PostgreSQL.
 type SensorRepository struct {
 	db *DB
+	tokenPepper
+	planLimits // sensors (the organization's own; platform sensors never count)
 }
 
 // NewSensorRepository creates a new SensorRepository.
@@ -30,6 +33,11 @@ func NewSensorRepository(db *DB) *SensorRepository {
 
 // Create persists a new sensor.
 func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
+	if !a.IsPlatformSensor && a.TenantID != nil {
+		if err := r.checkLimit(ctx, *a.TenantID, plan.Sensors, 1); err != nil {
+			return err
+		}
+	}
 	metadata, err := json.Marshal(a.Metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -47,16 +55,16 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 
 	query := `
 		INSERT INTO sensors (
-			id, tenant_id, name, type, description, capabilities, tools,
+			id, tenant_id, name, type, description, capabilities,
 			execution_mode, status, health, status_message,
 			is_platform_sensor,
 			api_key_hash, api_key_prefix, metadata, labels, config,
 			version, hostname, ip_address,
 			max_concurrent_jobs, current_jobs,
 			last_seen_at, last_error_at, total_findings, total_scans, error_count,
-			created_at, updated_at, key_expires_at
+			created_at, updated_at, key_expires_at, key_pepper_id, auth_kind
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
 	`
 
 	var ipAddr sql.NullString
@@ -71,14 +79,13 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		string(a.Type),
 		a.Description,
 		pq.Array(a.Capabilities),
-		pq.Array(a.Tools),
 		string(a.ExecutionMode),
 		string(a.Status),
 		string(a.Health),
 		a.StatusMessage,
 		a.IsPlatformSensor,
 		a.APIKeyHash,
-		a.APIKeyPrefix,
+		a.InlineKeyPrefix,
 		metadata,
 		labels,
 		config,
@@ -94,7 +101,9 @@ func (r *SensorRepository) Create(ctx context.Context, a *sensor.Sensor) error {
 		a.ErrorCount,
 		a.CreatedAt,
 		a.UpdatedAt,
-		nullTime(a.KeyExpiresAt),
+		nullTime(a.InlineKeyExpiresAt),
+		r.value(),
+		string(a.AuthKind.OrBearer()),
 	)
 
 	if err != nil {
@@ -133,9 +142,11 @@ func (r *SensorRepository) GetByID(ctx context.Context, id shared.ID) (*sensor.S
 	return r.scanSensor(row)
 }
 
-// GetByTenantAndID retrieves a sensor by tenant and ID.
+// GetByTenantAndID retrieves one of the tenant's own sensors by ID. A shared
+// platform sensor is never one of them, whatever its row's tenant_id: it is
+// not found here, so every tenant read and write of it answers not found.
 func (r *SensorRepository) GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensor.Sensor, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND id = $2 AND NOT is_platform_sensor"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), id.String())
 	return r.scanSensor(row)
 }
@@ -195,7 +206,12 @@ func (r *SensorRepository) List(ctx context.Context, filter sensor.Filter, page 
 	return pagination.NewResult(sensors, total, page), nil
 }
 
-// Update updates a sensor.
+// Update writes a sensor's mutable fields from a. It deliberately does NOT
+// write the key columns (api_key_hash, api_key_prefix, key_expires_at): those
+// change only through Create, UpdateAPIKey and UpdateKeyExpiry. Writing them
+// here from a copy read at the start of an admin request (rename, activate,
+// disable, revoke) let that request put back a key an admin had just
+// regenerated, or clear the expiry that retires a superseded key.
 func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 	metadata, err := json.Marshal(a.Metadata)
 	if err != nil {
@@ -214,15 +230,15 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 
 	query := `
 		UPDATE sensors
-		SET name = $2, type = $3, description = $4, capabilities = $5, tools = $6,
-		    execution_mode = $7, status = $8, health = $9, status_message = $10,
-		    api_key_hash = $11, api_key_prefix = $12, metadata = $13, labels = $14, config = $15,
-		    version = $16, hostname = $17, ip_address = $18,
-		    cpu_percent = $19, memory_percent = $20, max_concurrent_jobs = $21, current_jobs = $22, region = $23,
-		    disk_read_mbps = $24, disk_write_mbps = $25, network_rx_mbps = $26, network_tx_mbps = $27,
-		    load_score = $28, metrics_updated_at = $29,
-		    last_seen_at = $30, last_error_at = $31, total_findings = $32, total_scans = $33, error_count = $34,
-		    updated_at = $35, key_expires_at = $36
+		SET name = $2, type = $3, description = $4, capabilities = $5,
+		    execution_mode = $6, status = $7, health = $8, status_message = $9,
+		    metadata = $10, labels = $11, config = $12,
+		    version = $13, hostname = $14, ip_address = $15,
+		    cpu_percent = $16, memory_percent = $17, max_concurrent_jobs = $18, current_jobs = $19, region = $20,
+		    disk_read_mbps = $21, disk_write_mbps = $22, network_rx_mbps = $23, network_tx_mbps = $24,
+		    load_score = $25, metrics_updated_at = $26,
+		    last_seen_at = $27, last_error_at = $28, total_findings = $29, total_scans = $30, error_count = $31,
+		    updated_at = $32
 		WHERE id = $1
 	`
 
@@ -237,13 +253,10 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 		string(a.Type),
 		a.Description,
 		pq.Array(a.Capabilities),
-		pq.Array(a.Tools),
 		string(a.ExecutionMode),
 		string(a.Status),
 		string(a.Health),
 		a.StatusMessage,
-		a.APIKeyHash,
-		a.APIKeyPrefix,
 		metadata,
 		labels,
 		config,
@@ -267,7 +280,6 @@ func (r *SensorRepository) Update(ctx context.Context, a *sensor.Sensor) error {
 		a.TotalScans,
 		a.ErrorCount,
 		a.UpdatedAt,
-		nullTime(a.KeyExpiresAt),
 	)
 
 	if err != nil {
@@ -313,33 +325,48 @@ func (r *SensorRepository) UpdateLastSeen(ctx context.Context, id shared.ID) err
 }
 
 // RecordKeyUse marks the sensor seen and records the client address of the
-// key use (sensor.KeyUseRecorder). The previous address is read in the same
-// statement, so two concurrent requests each see the address before their
-// own write.
-func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (net.IP, error) {
+// key use (sensor.KeyUseRecorder). The address and its time only move
+// forward: key uses are recorded asynchronously and can arrive out of order,
+// and an older observation must not overwrite a newer address.
+//
+// The previous address is read in the same statement under the row lock
+// (FOR NO KEY UPDATE, what the UPDATE takes anyway). Without the lock, a use
+// that waited for a concurrent one to commit compared against the row as it
+// was when its own statement started: an older use then put its address back
+// over the newer one and reported an address change that did not happen.
+func (r *SensorRepository) RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (net.IP, error) {
 	query := `
 		WITH prev AS (
-			SELECT id, host(api_key_last_used_ip) AS ip FROM sensors WHERE id = $1
+			SELECT id, host(api_key_last_used_ip) AS ip, api_key_last_used_at AS at
+			FROM sensors WHERE id = $1
+			FOR NO KEY UPDATE
 		)
 		UPDATE sensors s
 		SET last_seen_at = NOW(),
 		    health = 'online',
 		    updated_at = NOW(),
-		    api_key_last_used_at = NOW(),
-		    api_key_last_used_ip = COALESCE($2::inet, s.api_key_last_used_ip)
+		    api_key_last_used_at = GREATEST(s.api_key_last_used_at, $3),
+		    api_key_last_used_ip = CASE
+		        WHEN prev.at IS NULL OR prev.at <= $3
+		        THEN COALESCE($2::inet, s.api_key_last_used_ip)
+		        ELSE s.api_key_last_used_ip
+		    END
 		FROM prev
 		WHERE s.id = prev.id
-		RETURNING prev.ip
+		RETURNING prev.ip, (prev.at IS NULL OR prev.at <= $3)
 	`
-	var prev sql.NullString
-	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip)).Scan(&prev)
+	var (
+		prev  sql.NullString
+		fresh bool
+	)
+	err := r.db.QueryRowContext(ctx, query, id.String(), heartbeatIP(ip), at.UTC()).Scan(&prev, &fresh)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("record sensor key use: %w", err)
 	}
-	if !prev.Valid {
+	if !fresh || !prev.Valid {
 		return nil, nil
 	}
 	return parseIP(prev.String), nil
@@ -413,18 +440,31 @@ var (
 	_ sensor.InstanceObserver = (*SensorRepository)(nil)
 )
 
-// UpdateKeyExpiry sets only the inline API-key expiry. The status = 'active'
-// guard means it is a no-op for a concurrently disabled/revoked sensor, so it can
-// never revive one — unlike a full-row Update that would rewrite status.
-func (r *SensorRepository) UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error {
+// RetireInlineKey brings the inline key's expiry forward to at, only while
+// the inline key's stored hash is one of keyHashes (an admin regeneration in
+// the meantime installs another key's hash and is left alone) and only when that moves
+// the expiry earlier. It writes key_expires_at alone, so it cannot revive a
+// revoked sensor or put back a replaced key.
+func (r *SensorRepository) RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
+	return retireInlineKey(ctx, r.db, id, keyHashes, at)
+}
+
+// retireInlineKey is RetireInlineKey on exec (the pool or a transaction).
+func retireInlineKey(ctx context.Context, exec executor, id shared.ID, keyHashes []string, at time.Time) (bool, error) {
 	query := `
 		UPDATE sensors
-		SET key_expires_at = $2,
+		SET key_expires_at = $3,
 		    updated_at = NOW()
-		WHERE id = $1 AND status = 'active'
+		WHERE id = $1
+		  AND api_key_hash = ANY($2)
+		  AND (key_expires_at IS NULL OR key_expires_at > $3)
 	`
-	_, err := r.db.ExecContext(ctx, query, id.String(), nullTime(expiresAt))
-	return err
+	res, err := exec.ExecContext(ctx, query, id.String(), pq.Array(keyHashes), at)
+	if err != nil {
+		return false, fmt.Errorf("retire inline sensor key: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // UpdateHeartbeat writes only the heartbeat-owned columns. Unlike Update it
@@ -455,6 +495,14 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 	if err != nil {
 		return false, err
 	}
+	control, err := controlArg(hb.Control)
+	if err != nil {
+		return false, err
+	}
+	localPolicy, err := localPolicyArg(hb.LocalPolicy)
+	if err != nil {
+		return false, err
+	}
 
 	query := `
 		UPDATE sensors
@@ -474,6 +522,9 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    protocol_version = CASE WHEN $15::smallint > 0 THEN $15::smallint ELSE protocol_version END,
 		    protocol_client = CASE WHEN $15::smallint > 0 THEN NULLIF($16, '') ELSE protocol_client END,
 		    protocol_seen_at = CASE WHEN $15::smallint > 0 THEN NOW() ELSE protocol_seen_at END,
+		    -- Transport (RFC-059): with the protocol telemetry.
+		    protocol_binding = CASE WHEN $15::smallint > 0 THEN NULLIF($39, '') ELSE protocol_binding END,
+		    protocol_fallback_reason = CASE WHEN $15::smallint > 0 THEN NULLIF($40, '') ELSE protocol_fallback_reason END,
 		    -- Process start time from the reported uptime; 0 (not reported)
 		    -- keeps the stored value.
 		    process_started_at = CASE WHEN $17::bigint > 0
@@ -500,6 +551,19 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		    sensor_product = COALESCE(NULLIF($31, ''), sensor_product),
 		    sensor_commit = COALESCE(NULLIF($32, ''), sensor_commit),
 		    sensor_build_time = COALESCE($33::timestamptz, sensor_build_time),
+		    -- Deadline of the next heartbeat (RFC-035 §5.6): the interval the
+		    -- sensor follows from now on.
+		    heartbeat_interval_seconds = $35::integer,
+		    heartbeat_due_at = NOW() + make_interval(secs => $35::integer),
+		    -- Control report: NULL ($36) leaves the stored one as it is.
+		    reported_control = COALESCE($36::jsonb, reported_control),
+		    control_reported_at = CASE WHEN $36::jsonb IS NULL THEN control_reported_at ELSE NOW() END,
+		    -- Local policy report (RFC-040 §5.7): NULL ($37) leaves it as it is.
+		    reported_local_policy = COALESCE($37::jsonb, reported_local_policy),
+		    local_policy_reported_at = CASE WHEN $37::jsonb IS NULL THEN local_policy_reported_at ELSE NOW() END,
+		    -- The config report digest this heartbeat echoed (research/26);
+		    -- NULL when it echoed none, so a stale stored report shows.
+		    config_heartbeat_digest = NULLIF($38, ''),
 		    metrics_updated_at = NOW(),
 		    last_seen_at = NOW(),
 		    health = 'online',
@@ -523,6 +587,9 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 		load.resources, load.capacity, load.queue, load.present,
 		hb.Build.SDKName, hb.Build.SDKVersion, hb.Build.Product, hb.Build.Commit, nullTime(hb.Build.BuildTime),
 		rep.clearMaxJobs,
+		heartbeatIntervalSeconds(hb.Interval), control, localPolicy,
+		hb.ConfigReportDigest,
+		hb.Binding, hb.FallbackReason,
 	)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor heartbeat: %w", err)
@@ -535,18 +602,25 @@ func (r *SensorRepository) UpdateHeartbeat(ctx context.Context, id shared.ID, hb
 // write is guarded by status = 'active' so a self-renewal racing an admin
 // revoke cannot install a fresh key on a revoked sensor.
 func (r *SensorRepository) UpdateAPIKey(ctx context.Context, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
+	return updateInlineKey(ctx, r.db, r.value(), id, hash, prefix, expiresAt, requireActive)
+}
+
+// updateInlineKey is UpdateAPIKey on exec (the pool or a transaction),
+// stamping pepperID as the key's pepper.
+func updateInlineKey(ctx context.Context, exec executor, pepperID sql.NullString, id shared.ID, hash, prefix string, expiresAt *time.Time, requireActive bool) (bool, error) {
 	query := `
 		UPDATE sensors
 		SET api_key_hash = $2,
 		    api_key_prefix = $3,
 		    key_expires_at = $4,
+		    key_pepper_id = $5,
 		    updated_at = NOW()
 		WHERE id = $1
 	`
 	if requireActive {
 		query += " AND status = 'active'"
 	}
-	result, err := r.db.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt))
+	result, err := exec.ExecContext(ctx, query, id.String(), hash, prefix, nullTime(expiresAt), pepperID)
 	if err != nil {
 		return false, fmt.Errorf("failed to update sensor api key: %w", err)
 	}
@@ -570,7 +644,7 @@ func (r *SensorRepository) IncrementStats(ctx context.Context, id shared.ID, fin
 
 // FindByCapabilities finds sensors with the given capabilities.
 func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensor.Sensor, error) {
-	query := r.selectQuery() + " WHERE tenant_id = $1 AND status = 'active'"
+	query := r.selectQuery() + " WHERE tenant_id = $1 AND NOT is_platform_sensor AND status = 'active'"
 	args := []any{tenantID.String()}
 	argIndex := 2
 
@@ -581,7 +655,7 @@ func (r *SensorRepository) FindByCapabilities(ctx context.Context, tenantID shar
 	}
 
 	if tool != "" {
-		query += fmt.Sprintf(" AND $%d = ANY(effective_tools)", argIndex)
+		query += fmt.Sprintf(" AND $%d = ANY("+sensorDispatchTools("sensors")+")", argIndex)
 		args = append(args, tool)
 	}
 
@@ -622,8 +696,9 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 		// Exclude health='unknown' as those sensors have never sent a heartbeat
 		query := r.selectQuery() + `
 			WHERE tenant_id = $1
+			  AND NOT is_platform_sensor
 			  AND status = 'active'
-			  AND health = 'online'
+			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
 			  AND ` + sensorFreeSlotsSQL("sensors") + ` > 0
 			ORDER BY ` + sensorActiveCommandsSQL("sensors") + ` ASC, total_scans ASC
@@ -645,10 +720,11 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 	// Only select sensors with health='online' (have sent heartbeat recently)
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
-		  AND $2 = ANY(effective_tools)
+		  AND $2 = ANY(` + sensorDispatchTools("sensors") + `)
 		  AND ` + sensorFreeSlotsSQL("sensors") + ` > 0
 		ORDER BY ` + sensorFreeSlotsSQL("sensors") + ` DESC,
 		         ` + sensorToolThroughputSQL("sensors", "$2") + ` DESC NULLS LAST,
@@ -675,8 +751,9 @@ func (r *SensorRepository) FindAvailableWithTool(ctx context.Context, tenantID s
 func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenantID shared.ID, capabilities []string, tool string) ([]*sensor.Sensor, error) {
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		  AND (execution_mode = 'daemon' OR type IN ('worker', 'collector'))
 	`
@@ -690,7 +767,7 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 	}
 
 	if tool != "" {
-		query += fmt.Sprintf(" AND $%d = ANY(effective_tools)", argIndex)
+		query += fmt.Sprintf(" AND $%d = ANY("+sensorDispatchTools("sensors")+")", argIndex)
 		args = append(args, tool)
 	}
 
@@ -720,36 +797,37 @@ func (r *SensorRepository) FindAvailableWithCapacity(ctx context.Context, tenant
 	return sensors, nil
 }
 
-// MarkStaleAsOffline marks sensors as offline (health) if they haven't sent heartbeat within the timeout.
+// MarkStaleAsOffline is the worker's backstop (jobs.SensorHealthChecker,
+// WORKER_HEARTBEAT_TIMEOUT): it marks offline the sensors still stored
+// online that the heartbeat ladder (pkg/domain/sensor/liveness.go) puts past
+// its offline step and that were last seen more than timeout ago. In normal
+// operation the health controller has moved such a sensor to late and stale
+// long before, so this only acts when the controller does not run. It never
+// convicts a sensor the controller holds at stale while the platform is slow.
 // Note: This updates Health (automatic), not Status (admin-controlled).
-// Sensors can still authenticate if their Status is 'active', regardless of Health.
-// Returns the number of sensors marked as offline.
 //
 // A NULL last_seen_at counts as stale. It means "online but never once
-// heartbeated", which the app cannot produce — UpdateLastSeen is the only writer
-// of health='online' and it always sets last_seen_at in the same statement — but
-// a fixture, a restore or a manual UPDATE can, and such a row was previously
-// unreachable by this sweep forever.
+// heartbeated", which the app cannot produce, but a fixture, a restore or a
+// manual UPDATE can, and such a row was previously unreachable by this sweep
+// forever.
 func (r *SensorRepository) MarkStaleAsOffline(ctx context.Context, timeout time.Duration) (int64, error) {
-	query := `
-		UPDATE sensors
-		SET health = 'offline',
-		    updated_at = NOW()
-		WHERE health = 'online'
-		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
-	`
-
-	result, err := r.db.ExecContext(ctx, query, timeout.String())
+	ids, err := r.convictOffline(ctx, []sensor.SensorHealth{sensor.SensorHealthOnline}, timeout)
 	if err != nil {
 		return 0, fmt.Errorf("failed to mark stale sensors as offline: %w", err)
 	}
+	return int64(len(ids)), nil
+}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+// CountLegacyKeySensors counts the non-revoked sensors whose effective key
+// (the current rotating key when there is one, else the inline key; the same
+// choice as sensor.Sensor.KeyState) is a legacy rda_ key.
+func (r *SensorRepository) CountLegacyKeySensors(ctx context.Context) (int64, error) {
+	query := `SELECT COUNT(*) FROM sensors s WHERE s.status <> 'revoked' AND ` + sensorLegacyKeySQL("s")
+	var n int64
+	if err := r.db.QueryRowContext(ctx, query).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count legacy-key sensors: %w", err)
 	}
-
-	return rowsAffected, nil
+	return n, nil
 }
 
 // heartbeatProtocol bounds the protocol telemetry value to a smallint; an
@@ -772,7 +850,7 @@ func heartbeatIP(ip net.IP) sql.NullString {
 
 func (r *SensorRepository) selectQuery() string {
 	return `
-		SELECT id, tenant_id, name, type, description, capabilities, tools,
+		SELECT id, tenant_id, name, type, description, capabilities,
 		       execution_mode, status, health, status_message,
 		       is_platform_sensor, tier,
 		       api_key_hash, api_key_prefix, metadata, labels, config,
@@ -785,6 +863,7 @@ func (r *SensorRepository) selectQuery() string {
 		       created_at, updated_at, key_expires_at,
 		       outbox_stats, outbox_reported_at,
 		       protocol_version, protocol_client, protocol_seen_at,
+		       protocol_binding, protocol_fallback_reason,
 		       process_started_at,
 		       reported_tools, reported_capabilities, reported_max_jobs,
 		       reported_os, reported_arch, reported_at,
@@ -792,7 +871,12 @@ func (r *SensorRepository) selectQuery() string {
 		       sdk_name, sdk_version, sensor_product, sensor_commit, sensor_build_time,
 		       api_key_last_used_at, host(api_key_last_used_ip),
 		       instance_id, instance_state, identity_cloned_at,
-		       manifest_digest, manifest_at, manifest_source
+		       manifest_digest, manifest_at, manifest_source,
+		       heartbeat_interval_seconds, heartbeat_due_at, reported_control, control_reported_at,
+		       reported_local_policy, local_policy_reported_at,
+		       config_report_digest, config_health, config_heartbeat_digest,
+		       ` + sensorActiveKeySQL("sensors") + ` AS active_key, auth_kind,
+		       ` + sensorManifestPostureSQL("sensors") + ` AS manifest_posture
 		FROM sensors
 	`
 }
@@ -803,13 +887,11 @@ func (r *SensorRepository) buildWhereClause(filter sensor.Filter) (string, []any
 	argIndex := 1
 
 	if filter.TenantID != nil {
-		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIndex))
+		// A tenant's sensors are its own: shared platform sensors are never
+		// listed to a tenant, whatever their row's tenant_id.
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d AND is_platform_sensor = FALSE", argIndex))
 		args = append(args, filter.TenantID.String())
 		argIndex++
-	}
-
-	if filter.ExcludePlatform {
-		conditions = append(conditions, "is_platform_sensor = FALSE")
 	}
 
 	if filter.Type != nil {
@@ -900,7 +982,6 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		status           string
 		health           string
 		capabilities     pq.StringArray
-		tools            pq.StringArray
 		metadata         []byte
 		labels           []byte
 		config           []byte
@@ -927,6 +1008,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		protocolVersion  sql.NullInt16
 		protocolUA       sql.NullString
 		protocolSeenAt   sql.NullTime
+		protocolBinding  sql.NullString
+		protocolReason   sql.NullString
 		processStarted   sql.NullTime
 		reportedTools    []byte
 		reportedCaps     pq.StringArray
@@ -951,6 +1034,18 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		manifestDigest   sql.NullString
 		manifestAt       sql.NullTime
 		manifestSource   sql.NullString
+		hbInterval       sql.NullInt32
+		hbDueAt          sql.NullTime
+		control          []byte
+		controlAt        sql.NullTime
+		localPolicy      []byte
+		localPolicyAt    sql.NullTime
+		authKind         sql.NullString
+		configDigest     sql.NullString
+		configHealth     sql.NullString
+		configHBDigest   sql.NullString
+		activeKey        []byte
+		manifestPosture  []byte
 	)
 
 	err := row.Scan(
@@ -960,7 +1055,6 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&sensorType,
 		&description,
 		&capabilities,
-		&tools,
 		&executionMode,
 		&status,
 		&health,
@@ -968,7 +1062,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&isPlatformSensor,
 		&tier,
 		&a.APIKeyHash,
-		&a.APIKeyPrefix,
+		&a.InlineKeyPrefix,
 		&metadata,
 		&labels,
 		&config,
@@ -1000,6 +1094,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&protocolVersion,
 		&protocolUA,
 		&protocolSeenAt,
+		&protocolBinding,
+		&protocolReason,
 		&processStarted,
 		&reportedTools,
 		&reportedCaps,
@@ -1024,6 +1120,18 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		&manifestDigest,
 		&manifestAt,
 		&manifestSource,
+		&hbInterval,
+		&hbDueAt,
+		&control,
+		&controlAt,
+		&localPolicy,
+		&localPolicyAt,
+		&configDigest,
+		&configHealth,
+		&configHBDigest,
+		&activeKey,
+		&authKind,
+		&manifestPosture,
 	)
 
 	if err != nil {
@@ -1043,7 +1151,6 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	a.Status = sensor.SensorStatus(status)
 	a.Health = sensor.SensorHealth(health)
 	a.Capabilities = capabilities
-	a.Tools = tools
 
 	if description.Valid {
 		a.Description = description.String
@@ -1094,7 +1201,7 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.LastErrorAt = &lastErrorAt.Time
 	}
 	if keyExpiresAt.Valid {
-		a.KeyExpiresAt = &keyExpiresAt.Time
+		a.InlineKeyExpiresAt = &keyExpiresAt.Time
 	}
 	if processStarted.Valid {
 		a.StartedAt = &processStarted.Time
@@ -1113,7 +1220,8 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 	}
 
 	if protocolVersion.Valid && protocolVersion.Int16 > 0 {
-		a.Protocol = &sensor.ProtocolInfo{Version: int(protocolVersion.Int16), UserAgent: protocolUA.String}
+		a.Protocol = &sensor.ProtocolInfo{Version: int(protocolVersion.Int16), UserAgent: protocolUA.String,
+			Binding: protocolBinding.String, FallbackReason: protocolReason.String}
 		if protocolSeenAt.Valid {
 			a.Protocol.SeenAt = protocolSeenAt.Time
 		}
@@ -1141,12 +1249,27 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 		a.IdentityClonedAt = &identityCloned.Time
 	}
 	a.ManifestDigest, a.ManifestSource = manifestDigest.String, manifestSource.String
+	a.ActiveKey = parseActiveKey(activeKey)
 	if manifestAt.Valid {
 		a.ManifestAt = &manifestAt.Time
 	}
 
 	a.Reported = scanReported(a.ID, reportedTools, reportedCaps, reportedMaxJobs, reportedOS, reportedArch, reportedAt)
 	a.Load = scanLoadReport(a.ID, loadResources, loadCapacity, loadQueue, loadReportedAt)
+	if hbInterval.Valid {
+		a.HeartbeatInterval = time.Duration(hbInterval.Int32) * time.Second
+	}
+	if hbDueAt.Valid {
+		a.HeartbeatDueAt = &hbDueAt.Time
+	}
+	a.Control = scanControl(a.ID, control, controlAt)
+	a.LocalPolicy, a.LocalPolicyReportedAt = scanLocalPolicy(a.ID, localPolicy, localPolicyAt)
+	a.Posture = scanManifestPosture(a.ID, manifestPosture)
+	a.AuthKind = sensor.AuthKindBearer
+	if authKind.String == string(sensor.AuthKindKeyBound) {
+		a.AuthKind = sensor.AuthKindKeyBound
+	}
+	a.ConfigReportDigest, a.ConfigHealth, a.ConfigHeartbeatDigest = configDigest.String, configHealth.String, configHBDigest.String
 
 	if len(metadata) > 0 {
 		if err := json.Unmarshal(metadata, &a.Metadata); err != nil {
@@ -1175,11 +1298,12 @@ func (r *SensorRepository) scanSensorRow(row sensorRowScanner) (*sensor.Sensor, 
 // Only sensors with health='online' are considered - meaning daemon is running and recently sent heartbeat.
 func (r *SensorRepository) GetAvailableToolsForTenant(ctx context.Context, tenantID shared.ID) ([]string, error) {
 	query := `
-		SELECT DISTINCT unnest(effective_tools) AS tool_name
+		SELECT DISTINCT unnest(` + sensorDispatchTools("sensors") + `) AS tool_name
 		FROM sensors
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		ORDER BY tool_name
 	`
@@ -1212,10 +1336,11 @@ func (r *SensorRepository) HasSensorForTool(ctx context.Context, tenantID shared
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
+			  AND NOT is_platform_sensor
 			  AND status = 'active'
-			  AND health = 'online'
+			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
-			  AND $2 = ANY(effective_tools)
+			  AND $2 = ANY(` + sensorDispatchTools("sensors") + `)
 		)
 	`
 
@@ -1235,8 +1360,9 @@ func (r *SensorRepository) GetAvailableCapabilitiesForTenant(ctx context.Context
 		SELECT DISTINCT unnest(effective_capabilities) AS capability_name
 		FROM sensors
 		WHERE tenant_id = $1
+		  AND NOT is_platform_sensor
 		  AND status = 'active'
-		  AND health = 'online'
+		  AND health IN ` + sensorDispatchableHealthSQL + `
 		  AND last_seen_at IS NOT NULL
 		ORDER BY capability_name
 	`
@@ -1284,44 +1410,20 @@ func (r *SensorRepository) UpdateOfflineTimestamp(ctx context.Context, id shared
 	return nil
 }
 
-// MarkStaleSensorsOffline finds sensors that haven't sent heartbeat within timeout and marks them offline.
-// Returns the list of sensor IDs that were marked offline (for audit logging).
-// This is used by the health monitor worker.
+// MarkStaleSensorsOffline marks offline the sensors (online, late or stale)
+// that the heartbeat ladder puts past its offline step, judged against each
+// sensor's stored deadline and interval (pkg/domain/sensor/liveness.go), and
+// that were last seen more than minAge ago (0: no floor). Returns the ids it
+// moved. The health controller walks the whole ladder itself
+// (ListLivenessCandidates / ApplyLiveness); this is the same offline step in
+// one call.
 //
 // NULL last_seen_at counts as stale — see MarkStaleAsOffline for why.
-func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, timeout time.Duration) ([]shared.ID, error) {
-	query := `
-		UPDATE sensors
-		SET last_offline_at = NOW(),
-		    health = 'offline',
-		    updated_at = NOW()
-		WHERE health = 'online'
-		  AND (last_seen_at IS NULL OR last_seen_at < NOW() - $1::interval)
-		RETURNING id
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, timeout.String())
+func (r *SensorRepository) MarkStaleSensorsOffline(ctx context.Context, minAge time.Duration) ([]shared.ID, error) {
+	ids, err := r.convictOffline(ctx, liveHealths, minAge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mark stale sensors offline: %w", err)
 	}
-	defer rows.Close()
-
-	var ids []shared.ID
-	for rows.Next() {
-		var idStr string
-		if err := rows.Scan(&idStr); err != nil {
-			return nil, fmt.Errorf("failed to scan sensor id: %w", err)
-		}
-		id, err := shared.IDFromString(idStr)
-		if err != nil {
-			continue // Skip invalid IDs
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate stale sensors: %w", err)
-	}
-
 	return ids, nil
 }
 
@@ -1355,67 +1457,66 @@ func (r *SensorRepository) GetSensorsOfflineSince(ctx context.Context, since tim
 	return sensors, nil
 }
 
-// GetPlatformSensorStats returns aggregate statistics for platform sensors.
-// NOTE: Cross-tenant access is intentional — platform sensors are shared infrastructure
-// managed by OpenCTEM, not scoped to individual tenants. The queued jobs count is
-// tenant-scoped via the tenantID parameter.
-func (r *SensorRepository) GetPlatformSensorStats(ctx context.Context, tenantID shared.ID) (*sensor.PlatformSensorStatsResult, error) {
-	// Single CTE query combining sensor stats and queued job count to avoid N+1
-	query := `
-		WITH sensor_stats AS (
-			SELECT
-				COALESCE(labels->>'tier', 'shared') AS tier,
-				COUNT(*) AS total_sensors,
-				COUNT(*) FILTER (WHERE health = 'online') AS online_sensors,
-				COALESCE(SUM(effective_max_jobs), 0) AS total_capacity,
-				COALESCE(SUM(` + sensorActiveCommandsSQL("sensors") + `), 0) AS current_load
-			FROM sensors
-			WHERE is_platform_sensor = TRUE AND status = 'active'
-			GROUP BY COALESCE(labels->>'tier', 'shared')
-		), queued AS (
-			SELECT COUNT(*) AS cnt FROM commands
-			WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1
-		)
-		SELECT q.cnt, a.tier, a.total_sensors, a.online_sensors, a.total_capacity, a.current_load
-		FROM sensor_stats a, queued q
-	`
+// PlatformScanningSummary is platform scanning as one tenant may see it. It
+// reads platform sensors across tenants on purpose (they are shared), but
+// returns only per-region states and the union of the tools online ones
+// offer: no sensor id, name, host, address, version, count, capacity or load,
+// and no other tenant's jobs. The job counts are the tenant's own.
+func (r *SensorRepository) PlatformScanningSummary(ctx context.Context, tenantID shared.ID) (*sensor.PlatformScanningSummary, error) {
+	const online = `status = 'active' AND health IN ` + sensorDispatchableHealthSQL + ` AND last_seen_at IS NOT NULL`
+	out := &sensor.PlatformScanningSummary{Regions: []sensor.PlatformRegionState{}, Tools: []string{}}
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT COALESCE(NULLIF(region, ''), ''),
+		       COALESCE(bool_or(`+online+`), FALSE),
+		       COALESCE(bool_or(`+online+` AND `+sensorFreeSlotsSQL("sensors")+` > 0), FALSE)
+		FROM sensors
+		WHERE is_platform_sensor AND status = 'active'
+		GROUP BY 1
+		ORDER BY 1`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query platform sensor stats: %w", err)
+		return nil, fmt.Errorf("failed to read platform scanning regions: %w", err)
 	}
-	defer rows.Close()
-
-	result := &sensor.PlatformSensorStatsResult{
-		TierBreakdown: make(map[string]sensor.TierBreakdown),
-	}
-
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var tier string
-		var tb sensor.TierBreakdown
-		if err := rows.Scan(&result.CurrentQueuedJobs, &tier, &tb.TotalSensors, &tb.OnlineSensors, &tb.TotalCapacity, &tb.CurrentLoad); err != nil {
-			return nil, fmt.Errorf("failed to scan platform sensor stats: %w", err)
+		var st sensor.PlatformRegionState
+		if err := rows.Scan(&st.Region, &st.Online, &st.FreeSlot); err != nil {
+			return nil, fmt.Errorf("failed to scan platform scanning region: %w", err)
 		}
-		result.TierBreakdown[tier] = tb
-		result.TotalSensors += tb.TotalSensors
-		result.OnlineSensors += tb.OnlineSensors
-		result.TotalCapacity += tb.TotalCapacity
-		result.CurrentActiveJobs += tb.CurrentLoad
+		out.Regions = append(out.Regions, st)
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate platform sensor stats: %w", err)
+		return nil, fmt.Errorf("failed to read platform scanning regions: %w", err)
 	}
 
-	// Handle case where no sensors exist but we still need queued count
-	if len(result.TierBreakdown) == 0 {
-		queueQuery := `SELECT COUNT(*) FROM commands WHERE is_platform_job = TRUE AND status IN ('pending', 'queued') AND tenant_id = $1`
-		if err := r.db.QueryRowContext(ctx, queueQuery, tenantID.String()).Scan(&result.CurrentQueuedJobs); err != nil {
-			return nil, fmt.Errorf("failed to query queued platform jobs: %w", err)
+	tools, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT unnest(`+sensorDispatchTools("sensors")+`) AS tool
+		FROM sensors
+		WHERE is_platform_sensor AND `+online+`
+		ORDER BY tool`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read platform scanning tools: %w", err)
+	}
+	defer func() { _ = tools.Close() }()
+	for tools.Next() {
+		var t string
+		if err := tools.Scan(&t); err != nil {
+			return nil, fmt.Errorf("failed to scan platform scanning tool: %w", err)
 		}
+		out.Tools = append(out.Tools, t)
+	}
+	if err := tools.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read platform scanning tools: %w", err)
 	}
 
-	return result, nil
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FILTER (WHERE status = 'pending'),
+		       COUNT(*) FILTER (WHERE status IN ('acknowledged', 'running'))
+		FROM commands
+		WHERE tenant_id = $1 AND is_platform_job`, tenantID.String()).Scan(&out.Queued, &out.Running); err != nil {
+		return nil, fmt.Errorf("failed to count platform jobs: %w", err)
+	}
+	return out, nil
 }
 
 // GetTenantSensorStats returns aggregate statistics for a tenant's sensors.
@@ -1441,10 +1542,10 @@ WITH tenant_sensors AS (
 SELECT category, key, value FROM (
   SELECT 'total'::text         AS category, ''::text       AS key, COUNT(*)::float8 AS value FROM tenant_sensors
   UNION ALL
-  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_sensors WHERE status = 'active' AND health = 'online'
+  SELECT 'online_active',        '',                                COUNT(*)::float8 FROM tenant_sensors WHERE status = 'active' AND health IN ` + sensorDispatchableHealthSQL + `
   AND last_seen_at IS NOT NULL
   UNION ALL
-  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_sensors WHERE status = 'active' AND health = 'online'
+  SELECT 'active_jobs',          '',                                COALESCE(SUM(current_jobs), 0)::float8 FROM tenant_sensors WHERE status = 'active' AND health IN ` + sensorDispatchableHealthSQL + `
   AND last_seen_at IS NOT NULL AND execution_mode = 'daemon'
   UNION ALL
   SELECT 'status',               status,                            COUNT(*)::float8 FROM tenant_sensors GROUP BY status
@@ -1499,8 +1600,9 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 		SELECT EXISTS (
 			SELECT 1 FROM sensors
 			WHERE tenant_id = $1
+			  AND NOT is_platform_sensor
 			  AND status = 'active'
-			  AND health = 'online'
+			  AND health IN ` + sensorDispatchableHealthSQL + `
 			  AND last_seen_at IS NOT NULL
 			  AND $2 = ANY(effective_capabilities)
 		)
@@ -1513,4 +1615,17 @@ func (r *SensorRepository) HasSensorForCapability(ctx context.Context, tenantID 
 	}
 
 	return exists, nil
+}
+
+// RehashKey replaces the stored hash of a sensor's inline key made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *SensorRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, sensorInlineTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *SensorRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, sensorInlineTokens)
 }

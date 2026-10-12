@@ -1,3 +1,4 @@
+import type { FindingStatus } from '@/features/findings/types/finding.types'
 /**
  * Repository Types
  *
@@ -10,6 +11,8 @@
 // ============================================
 // Re-export from Asset Types (unified architecture)
 // ============================================
+import { SEVERITY_LABELS, type SeverityLevel } from '@/lib/severity'
+
 export {
   // Base types
   type Asset,
@@ -33,7 +36,6 @@ export {
   ASSET_SCOPE_LABELS,
   EXPOSURE_LEVEL_LABELS,
   CRITICALITY_LABELS,
-  CRITICALITY_COLORS,
 } from '@/features/assets/types/asset.types'
 
 // ============================================
@@ -164,15 +166,8 @@ export const SCANNER_TYPE_LABELS: Record<ScannerType, string> = {
 // Severity Types
 // ============================================
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
-
-export const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
+export type Severity = SeverityLevel
+export { SEVERITY_LABELS }
 
 export const SEVERITY_COLORS: Record<Severity, { bg: string; text: string; border: string }> = {
   critical: { bg: 'bg-red-500/15', text: 'text-red-600', border: 'border-red-500/30' },
@@ -186,22 +181,13 @@ export const SEVERITY_COLORS: Record<Severity, { bg: string; text: string; borde
 // Findings Summary Types
 // ============================================
 
-export type FindingStatus =
-  'open' | 'confirmed' | 'in_progress' | 'resolved' | 'false_positive' | 'accepted_risk'
-
-export const FINDING_STATUS_LABELS: Record<FindingStatus, string> = {
-  open: 'Open',
-  confirmed: 'Confirmed',
-  in_progress: 'In Progress',
-  resolved: 'Resolved',
-  false_positive: 'False Positive',
-  accepted_risk: 'Accepted Risk',
-}
+// Finding statuses are the one registry's (features/findings/types/finding.types.ts).
+export type { FindingStatus } from '@/features/findings/types/finding.types'
 
 export interface FindingsSummary {
   total: number
   bySeverity: Record<Severity, number>
-  byStatus: Record<FindingStatus, number>
+  byStatus: Partial<Record<FindingStatus, number>>
   byType: Record<ScannerType, number>
   newLast7Days?: number
   resolvedLast7Days?: number

@@ -65,9 +65,12 @@ type Claims struct {
 	// Frontend should refresh permissions via GET /api/v1/me/permissions
 	PermVersion int `json:"pv,omitempty"`
 
-	// AuthMethod records how the underlying session was authenticated —
-	// "password" (local login) vs "sso"/"saml" (federated). It is copied from
-	// sessions.auth_method at token-mint time so the per-request SSO-enforcement
+	// AuthMethod records how the underlying session was authenticated AS SEEN
+	// BY THIS TOKEN'S TENANT — "password" vs "sso"/"saml". It is the session's
+	// method for that tenant at mint time (Session.AuthMethodFor): federated
+	// only when the tenant's own identity provider issued the session, so a
+	// sign-in through another organization's IdP or social OAuth is minted as
+	// "password". That lets the per-request SSO-enforcement
 	// gate can re-apply the same decision the mint-time gate made, closing the
 	// window where an already-minted password token keeps access to a tenant
 	// that has since begun enforcing SSO. Empty is treated as "password"
@@ -995,34 +998,4 @@ func GenerateTokenWithExpiry(userID, role, secret string, expiresAt time.Time) (
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secret))
-}
-
-// GenerateShortLivedToken creates a short-lived token for WebSocket authentication.
-// This is used when WebSocket connections cannot use httpOnly cookies due to
-// cross-origin restrictions (e.g., frontend on port 3000, backend on port 8080).
-// The token is passed as a query parameter during WebSocket handshake.
-func (g *Generator) GenerateShortLivedToken(userID, tenantID string, ttl time.Duration) (string, error) {
-	if userID == "" {
-		return "", ErrEmptyUserID
-	}
-
-	now := time.Now()
-	expiresAt := now.Add(ttl)
-
-	claims := Claims{
-		UserID:    userID,
-		TenantID:  tenantID,
-		TokenType: TokenTypeAccess,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Audience:  g.claimAudience(),
-			Issuer:    g.config.Issuer,
-			Subject:   userID,
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(g.config.Secret))
 }

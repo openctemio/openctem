@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -20,22 +21,32 @@ import (
 type Settings struct {
 	General        GeneralSettings        `json:"general"`
 	Security       SecuritySettings       `json:"security"`
-	API            APISettings            `json:"api"`
 	Branding       BrandingSettings       `json:"branding"`
 	Branch         BranchSettings         `json:"branch"`
 	AI             AISettings             `json:"ai"`
 	RiskScoring    RiskScoringSettings    `json:"risk_scoring"`
 	Pentest        PentestSettings        `json:"pentest"`
 	AssetIdentity  AssetIdentitySettings  `json:"asset_identity"`
-	AssetSource    AssetSourceSettings    `json:"asset_source"`
 	AssetLifecycle AssetLifecycleSettings `json:"asset_lifecycle"`
-
-	// SubscribedBundles is the set of product-bundle IDs the tenant runs
-	// (e.g. ["asm","aspm"]). Empty = no subscription = every module on (the
-	// backward-compatible default). When non-empty, the module service
-	// resolves the enabled set live as the union of these bundles (+core+
-	// mandatory+deps), with per-module tenant_modules overrides layered on top.
-	SubscribedBundles []string `json:"subscribed_bundles,omitempty"`
+	Retest         RetestSettings         `json:"retest"`
+	// Evidence is finding evidence retention (docs/architecture/finding-evidence.md).
+	Evidence EvidenceSettings `json:"evidence,omitempty"`
+	// EASM is attack-surface monitoring (research/22 P0-11).
+	EASM EASMSettings `json:"easm,omitempty"`
+	// Scope is the organization's scope knobs (RFC-054 §6.3).
+	Scope ScopeSettings `json:"scope,omitempty"`
+	// MCP is the policy for AI applications on the MCP server (RFC-062 §8).
+	MCP MCPSettings `json:"mcp,omitempty"`
+	// VulnMatching is the policy of inventory vulnerability matching (RFC-066 §9).
+	VulnMatching VulnMatchingSettings `json:"vuln_matching,omitempty"`
+	// LicensePolicy is the organization's license policy (RFC-070 §9).
+	LicensePolicy licensepolicy.Policy `json:"license_policy,omitempty"`
+	// AssetReconciliation is which source decides an asset attribute (RFC-069).
+	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
+	// ScanGovernance is scan approval governance (RFC-073).
+	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
+	// Cycles is the CTEM cycle policy.
+	Cycles CycleSettings `json:"cycles,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
@@ -70,152 +81,6 @@ func (s AssetIdentitySettings) EffectiveMaxIPsPerAsset(systemDefault int) int {
 	return systemDefault
 }
 
-// Upper bounds on AssetSourceSettings collections. Chosen to be
-// comfortably above any realistic tenant size (a tenant with 500+
-// data sources is operating at a scale none of our customers hit
-// today) while keeping JSON payloads bounded for DoS protection.
-// Exceeded values return shared.ErrValidation.
-const (
-	MaxAssetSourcePriorityLen = 500
-	MaxAssetSourceTrustLevels = 500
-)
-
-// AssetSourceSettings controls how conflicting data from multiple
-// sources is reconciled when merging into the same asset. See
-// RFC-003 (docs/architecture/asset-source-priority.md).
-//
-// Backward compatibility: a zero-value AssetSourceSettings preserves
-// today's behavior exactly (last-write-wins at the field level).
-// The feature only kicks in after an admin populates Priority or
-// TrustLevels.
-type AssetSourceSettings struct {
-	// SchemaVersion guards forward-incompatible changes to the
-	// settings payload. Bumped only when the shape changes in a
-	// way that legacy code can't deserialize safely.
-	SchemaVersion int `json:"schema_version,omitempty"`
-
-	// Priority is an ordered list of data_sources.id values —
-	// highest priority first. Sources not listed are ranked below
-	// every listed source; among unlisted sources, the existing
-	// last-write-wins behavior applies.
-	//
-	// Nil/empty = feature effectively off (today's behavior).
-	Priority []shared.ID `json:"priority,omitempty"`
-
-	// TrustLevels maps data_sources.id → TrustLevel. Expresses the
-	// same precedence as Priority but bucketed, matching the
-	// source-creation dropdown in the UI (primary/high/medium/low).
-	//
-	// When both Priority and TrustLevels are set, Priority wins for
-	// ordering and TrustLevels is advisory (used for the UI badge
-	// and for populating Priority on first save). Sources present
-	// in TrustLevels but missing from Priority are inserted into
-	// Priority at the position their bucket implies.
-	TrustLevels map[string]TrustLevel `json:"trust_levels,omitempty"`
-
-	// TrackFieldAttribution enables per-field source lineage —
-	// populates asset_sources.contributed_data with which source
-	// wrote which field and when. Off by default to keep storage
-	// cost predictable; on for tenants that want the audit trail.
-	TrackFieldAttribution bool `json:"track_field_attribution,omitempty"`
-}
-
-// IsEnabled reports whether the tenant has configured any priority
-// information. Callers use this to decide whether to invoke the
-// priority gate at all — a tenant with no config skips the gate
-// entirely and keeps today's merge behavior.
-func (s AssetSourceSettings) IsEnabled() bool {
-	return len(s.Priority) > 0 || len(s.TrustLevels) > 0
-}
-
-// TrustLevelFor returns the configured bucket for a given source ID,
-// or an empty level if not set. Empty is treated as "unlisted" —
-// ranks below any configured level.
-func (s AssetSourceSettings) TrustLevelFor(sourceID shared.ID) TrustLevel {
-	if len(s.TrustLevels) == 0 {
-		return ""
-	}
-	return s.TrustLevels[sourceID.String()]
-}
-
-// Validate checks the settings payload for structural errors. Domain
-// validation (UUIDs must exist + belong to the tenant) happens at
-// the service layer where we can look up data_sources.
-//
-// Error messages intentionally do NOT echo offending UUIDs back to
-// the caller. A request that submits attacker-controlled UUIDs
-// (e.g. probing other tenants) would otherwise receive a response
-// that distinguishes "bad UUID format" from "unrelated UUID", and
-// the caller already knows what they submitted. Service layer logs
-// specifics at debug level for operator forensics.
-func (s *AssetSourceSettings) Validate() error {
-	// Reject oversize inputs — cheap DoS guard. Priority de-dup
-	// check below is O(n) in a map, so the main cost here is JSONB
-	// storage bloat on tenants.settings.
-	if len(s.Priority) > MaxAssetSourcePriorityLen {
-		return fmt.Errorf(
-			"%w: asset_source.priority exceeds maximum of %d entries",
-			shared.ErrValidation, MaxAssetSourcePriorityLen,
-		)
-	}
-	if len(s.TrustLevels) > MaxAssetSourceTrustLevels {
-		return fmt.Errorf(
-			"%w: asset_source.trust_levels exceeds maximum of %d entries",
-			shared.ErrValidation, MaxAssetSourceTrustLevels,
-		)
-	}
-
-	// Reject duplicate IDs in Priority — they would make the
-	// ordering ambiguous and waste storage.
-	seen := make(map[string]struct{}, len(s.Priority))
-	for _, id := range s.Priority {
-		if id.IsZero() {
-			return fmt.Errorf(
-				"%w: asset_source.priority contains an empty UUID",
-				shared.ErrValidation,
-			)
-		}
-		key := id.String()
-		if _, dup := seen[key]; dup {
-			return fmt.Errorf(
-				"%w: asset_source.priority contains a duplicate entry",
-				shared.ErrValidation,
-			)
-		}
-		seen[key] = struct{}{}
-	}
-
-	// Every value in TrustLevels must be a known bucket. Empty keys
-	// are meaningless — reject them. Values that fail Validate()
-	// (typos, legacy data) are rejected too.
-	for key, level := range s.TrustLevels {
-		if key == "" {
-			return fmt.Errorf(
-				"%w: asset_source.trust_levels has an empty source ID key",
-				shared.ErrValidation,
-			)
-		}
-		if _, err := shared.IDFromString(key); err != nil {
-			return fmt.Errorf(
-				"%w: asset_source.trust_levels contains a malformed UUID key",
-				shared.ErrValidation,
-			)
-		}
-		if level == "" {
-			return fmt.Errorf(
-				"%w: asset_source.trust_levels entries must carry a non-empty level (remove instead of setting empty)",
-				shared.ErrValidation,
-			)
-		}
-		if err := level.Validate(); err != nil {
-			// TrustLevel.Validate already returns a non-echoing
-			// message; wrap without adding the UUID key.
-			return fmt.Errorf("asset_source.trust_levels: %w", err)
-		}
-	}
-	return nil
-}
-
 // BranchSettings contains branch naming convention configuration.
 // When TypeRules is nil or empty, system defaults are used.
 type BranchSettings struct {
@@ -226,9 +91,19 @@ type BranchSettings struct {
 }
 
 // PentestSettings holds pentest-related configuration per tenant.
+//
+// A nil list means "never configured" (clients show their built-in
+// defaults); an empty, non-nil list means the organization cleared it on
+// purpose. The fields therefore have no omitempty: with it, a cleared list was
+// dropped on save and came back as the defaults on the next read.
 type PentestSettings struct {
-	CampaignTypes []ConfigOption `json:"campaign_types,omitempty"`
-	Methodologies []ConfigOption `json:"methodologies,omitempty"`
+	// CampaignTypes is the list of target types a campaign picks from (a
+	// campaign may test several).
+	CampaignTypes []ConfigOption `json:"campaign_types"`
+	Methodologies []ConfigOption `json:"methodologies"`
+	// RequireAuthorizationBeforeStart: a campaign cannot start testing until
+	// its signed authorization letter is linked. Off by default.
+	RequireAuthorizationBeforeStart bool `json:"require_authorization_before_start"`
 }
 
 // ConfigOption represents a configurable option with value and label.
@@ -292,22 +167,101 @@ type SecuritySettings struct {
 	// env fallback); see TenantService.UpdateSecuritySettings. Enforcement itself
 	// lives in AuthService.ExchangeToken / RefreshToken (the tenant-selection /
 	// token-mint gate).
-	SSOEnforced       bool     `json:"sso_enforced"`
-	MFARequired       bool     `json:"mfa_required"`        // Require MFA for all users
-	SessionTimeoutMin int      `json:"session_timeout_min"` // Session timeout in minutes (15-480)
-	IPWhitelist       []string `json:"ip_whitelist"`        // Allowed IP addresses/CIDR ranges
-	AllowedDomains    []string `json:"allowed_domains"`     // Allowed email domains for signup
+	SSOEnforced bool `json:"sso_enforced"`
+	MFARequired bool `json:"mfa_required"` // Require MFA for all users
+	// MFARequiredForAdmins requires two-factor authentication for owners and
+	// administrators (the people who can change the organization). On for
+	// every organization created after it shipped (NewTenant); organizations
+	// created before keep their stored value (off) until an owner turns it
+	// on. MFARequired, when on, covers everyone anyway.
+	MFARequiredForAdmins bool `json:"mfa_required_for_admins,omitempty"`
+	// A session_timeout_min key left in stored JSON is ignored: it was never
+	// enforced (sessions follow the platform's refresh and session lifetimes).
+	IPWhitelist    []string `json:"ip_whitelist"`    // Allowed IP addresses/CIDR ranges
+	AllowedDomains []string `json:"allowed_domains"` // Allowed email domains for signup
 
-	// The data-scope policy ("members without an access group see: everything |
-	// nothing") is the tenants.members_without_group_see column (migration
-	// 000247), not a settings key. A restricted_data_scope key left in stored
-	// JSON was folded into that column by the migration and is ignored.
+	// PersonalAccounts says whether members with a personal address may use
+	// the organization (RFC-058): allowed (empty), allowed_with_mfa (the
+	// default for new organizations) or blocked.
+	PersonalAccounts PersonalAccountsPolicy `json:"personal_accounts,omitempty"`
+	// SSOExceptions lets named members sign in without SSO (with a second
+	// factor) while SSO is enforced, each with a reason and an end at most
+	// MaxSSOExceptionDays away. Changed by an owner with step-up.
+	SSOExceptions []SSOException `json:"sso_exceptions,omitempty"`
+	// JITRequiresApproval holds everyone the organization's SSO admits for
+	// the first time until an administrator approves them (RFC-058).
+	// Changed by an owner with step-up.
+	JITRequiresApproval bool `json:"jit_requires_approval,omitempty"`
+
+	// A restricted_data_scope key left in stored JSON is ignored: members
+	// without a scope row see nothing in every organization (owner decision
+	// D2), there is no data-scope setting.
 
 	// EmailVerificationMode controls whether new users must verify their email.
 	//   "auto"   = (default) require verification IFF SMTP is configured (smart)
 	//   "always" = always require verification (operator must configure SMTP)
 	//   "never"  = never require verification (open registration; security risk)
 	EmailVerificationMode EmailVerificationMode `json:"email_verification_mode,omitempty"`
+
+	// RequireSensorLocalPolicyForPrivateTargets keeps jobs with private
+	// targets (RFC 1918, ULA, link-local, CGNAT, private DNS suffixes) away
+	// from sensors that report no enforced local policy (RFC-040 §5.7, owner
+	// decision Q3 (a)): such sensors neither see nor can claim them, and the
+	// jobs wait for a sensor whose network owner installed a policy. Off by
+	// default: sensors without a policy work as before.
+	RequireSensorLocalPolicyForPrivateTargets bool `json:"require_sensor_local_policy_for_private_targets,omitempty"`
+
+	// AllowSensorInteractsh and AllowSensorCustomTemplates are the
+	// organization's switches for out-of-band callbacks (interactsh) and
+	// custom templates in sensor jobs (research/25 D3). Off by default, for
+	// existing and new organizations: the platform then refuses scans that
+	// ask for them, strips allow_interactsh at trigger and never dispatches
+	// such a job, whatever the sensor's own policy allows. Turning one on is
+	// an owner action, audited at critical severity and alerted (D9).
+	AllowSensorInteractsh      bool `json:"allow_sensor_interactsh,omitempty"`
+	AllowSensorCustomTemplates bool `json:"allow_sensor_custom_templates,omitempty"`
+
+	// ToolHTTPUserAgent and ForbidToolInsecureTLS are the organization's
+	// layer of the tools' HTTP settings (api RFC-060 §4.1): a User-Agent its
+	// sensors' tools send unless a sensor's local policy forces one, and a
+	// refusal of tools that skip TLS verification toward targets. Sent with
+	// every scan job; they only narrow (a sensor's local policy decides
+	// first).
+	ToolHTTPUserAgent     string `json:"tool_http_user_agent,omitempty"`
+	ForbidToolInsecureTLS bool   `json:"forbid_tool_insecure_tls,omitempty"`
+}
+
+// ToolHTTPPolicy is the organization's tool HTTP layer for sensor jobs.
+func (s *SecuritySettings) ToolHTTPPolicy() sensorHTTPPolicy {
+	p := sensorHTTPPolicy{UserAgent: s.ToolHTTPUserAgent}
+	if s.ForbidToolInsecureTLS {
+		f := false
+		p.AllowInsecureTLS = &f
+	}
+	return p
+}
+
+// sensorHTTPPolicy mirrors sensor.ToolHTTPPolicy (the tenant domain does not
+// import the sensor domain); the tenant service converts it.
+type sensorHTTPPolicy struct {
+	UserAgent        string
+	AllowInsecureTLS *bool
+}
+
+// MFARequiredFor reports whether a member with this role must use two-factor
+// authentication in the organization.
+func (s SecuritySettings) MFARequiredFor(role string) bool {
+	if s.MFARequired {
+		return true
+	}
+	if !s.MFARequiredForAdmins {
+		return false
+	}
+	switch Role(role) {
+	case RoleOwner, RoleAdmin:
+		return true
+	}
+	return false
 }
 
 // EmailVerificationMode controls per-tenant email verification behavior.
@@ -333,54 +287,6 @@ func (m EmailVerificationMode) IsValid() bool {
 	switch m {
 	case EmailVerificationAuto, EmailVerificationAlways, EmailVerificationNever, "":
 		return true
-	}
-	return false
-}
-
-// APISettings contains API and webhook configuration.
-type APISettings struct {
-	APIKeyEnabled bool           `json:"api_key_enabled"` // Enable API key access
-	WebhookURL    string         `json:"webhook_url"`     // Webhook endpoint URL
-	WebhookSecret string         `json:"webhook_secret"`  // Webhook signing secret
-	WebhookEvents []WebhookEvent `json:"webhook_events"`  // Events to send to webhook
-}
-
-// WebhookEvent represents a webhook event type.
-type WebhookEvent string
-
-const (
-	WebhookEventFindingCreated  WebhookEvent = "finding.created"
-	WebhookEventFindingResolved WebhookEvent = "finding.resolved"
-	WebhookEventFindingUpdated  WebhookEvent = "finding.updated"
-	WebhookEventScanCompleted   WebhookEvent = "scan.completed"
-	WebhookEventScanFailed      WebhookEvent = "scan.failed"
-	WebhookEventAssetDiscovered WebhookEvent = "asset.discovered"
-	WebhookEventAssetUpdated    WebhookEvent = "asset.updated"
-	WebhookEventMemberJoined    WebhookEvent = "member.joined"
-	WebhookEventMemberRemoved   WebhookEvent = "member.removed"
-)
-
-// ValidWebhookEvents returns all valid webhook events.
-func ValidWebhookEvents() []WebhookEvent {
-	return []WebhookEvent{
-		WebhookEventFindingCreated,
-		WebhookEventFindingResolved,
-		WebhookEventFindingUpdated,
-		WebhookEventScanCompleted,
-		WebhookEventScanFailed,
-		WebhookEventAssetDiscovered,
-		WebhookEventAssetUpdated,
-		WebhookEventMemberJoined,
-		WebhookEventMemberRemoved,
-	}
-}
-
-// IsValid checks if the webhook event is valid.
-func (e WebhookEvent) IsValid() bool {
-	for _, v := range ValidWebhookEvents() {
-		if e == v {
-			return true
-		}
 	}
 	return false
 }
@@ -802,16 +708,9 @@ func DefaultSettings() Settings {
 		},
 		Security: SecuritySettings{
 			MFARequired:           false,
-			SessionTimeoutMin:     60, // 1 hour default
 			IPWhitelist:           []string{},
 			AllowedDomains:        []string{},
 			EmailVerificationMode: EmailVerificationAuto, // Smart: require iff SMTP configured
-		},
-		API: APISettings{
-			APIKeyEnabled: false,
-			WebhookURL:    "",
-			WebhookSecret: "",
-			WebhookEvents: []WebhookEvent{},
 		},
 		Branding: BrandingSettings{
 			PrimaryColor: "#3B82F6", // Blue
@@ -826,8 +725,8 @@ func DefaultSettings() Settings {
 		RiskScoring: LegacyRiskScoringSettings(),
 		Pentest: PentestSettings{
 			CampaignTypes: []ConfigOption{
-				{Value: "external", Label: "External Pentest"},
-				{Value: "internal", Label: "Internal Pentest"},
+				{Value: "external", Label: "External network"},
+				{Value: "internal", Label: "Internal network"},
 				{Value: "web_app", Label: "Web Application"},
 				{Value: "mobile", Label: "Mobile Application"},
 				{Value: "api", Label: "API Testing"},
@@ -845,6 +744,9 @@ func DefaultSettings() Settings {
 				{Value: "CREST", Label: "CREST"},
 			},
 		},
+		// New organizations get vulnerability matching on (RFC-066 O4);
+		// organizations created before keep it off until an admin enables it.
+		VulnMatching: VulnMatchingSettings{Enabled: true},
 	}
 }
 
@@ -859,9 +761,6 @@ func (s *Settings) Validate() error {
 	}
 	if err := s.Security.Validate(); err != nil {
 		return fmt.Errorf("security settings: %w", err)
-	}
-	if err := s.API.Validate(); err != nil {
-		return fmt.Errorf("api settings: %w", err)
 	}
 	if err := s.Branding.Validate(); err != nil {
 		return fmt.Errorf("branding settings: %w", err)
@@ -878,11 +777,20 @@ func (s *Settings) Validate() error {
 	if err := s.Pentest.Validate(); err != nil {
 		return fmt.Errorf("pentest settings: %w", err)
 	}
-	if err := s.AssetSource.Validate(); err != nil {
-		return fmt.Errorf("asset_source settings: %w", err)
-	}
 	if err := s.AssetLifecycle.Validate(); err != nil {
 		return fmt.Errorf("asset_lifecycle settings: %w", err)
+	}
+	if err := s.Retest.Validate(); err != nil {
+		return fmt.Errorf("retest settings: %w", err)
+	}
+	if err := s.LicensePolicy.Normalize(); err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+	if err := s.VulnMatching.Validate(); err != nil {
+		return fmt.Errorf("vuln_matching settings: %w", err)
+	}
+	if err := s.AssetReconciliation.Validate(); err != nil {
+		return fmt.Errorf("asset_reconciliation settings: %w", err)
 	}
 	return nil
 }
@@ -916,15 +824,12 @@ func (s *GeneralSettings) Validate() error {
 
 // Validate validates security settings.
 func (s *SecuritySettings) Validate() error {
+	if ua := s.ToolHTTPUserAgent; ua != "" && (len(ua) > 256 || strings.IndexFunc(ua, func(r rune) bool { return r < 0x20 || r > 0x7e }) >= 0) {
+		return fmt.Errorf("%w: tool_http_user_agent must be at most 256 printable ASCII characters", shared.ErrValidation)
+	}
 	// Validate email verification mode
 	if !s.EmailVerificationMode.IsValid() {
 		return fmt.Errorf("%w: email_verification_mode must be one of: auto, always, never", shared.ErrValidation)
-	}
-	// Validate session timeout
-	if s.SessionTimeoutMin < 15 || s.SessionTimeoutMin > 480 {
-		if s.SessionTimeoutMin != 0 { // Allow 0 for default
-			return fmt.Errorf("%w: session timeout must be between 15 and 480 minutes", shared.ErrValidation)
-		}
 	}
 	// Validate IP whitelist
 	for _, ip := range s.IPWhitelist {
@@ -938,22 +843,11 @@ func (s *SecuritySettings) Validate() error {
 			return fmt.Errorf("%w: invalid domain: %s", shared.ErrValidation, domain)
 		}
 	}
-	return nil
-}
-
-// Validate validates API settings.
-func (s *APISettings) Validate() error {
-	// Validate webhook URL
-	if s.WebhookURL != "" {
-		if _, err := url.ParseRequestURI(s.WebhookURL); err != nil {
-			return fmt.Errorf("%w: invalid webhook URL", shared.ErrValidation)
-		}
+	if !s.PersonalAccounts.IsValid() {
+		return fmt.Errorf("%w: personal_accounts must be one of: allowed, allowed_with_mfa, blocked", shared.ErrValidation)
 	}
-	// Validate webhook events
-	for _, event := range s.WebhookEvents {
-		if !event.IsValid() {
-			return fmt.Errorf("%w: invalid webhook event: %s", shared.ErrValidation, event)
-		}
+	if len(s.SSOExceptions) > 100 {
+		return fmt.Errorf("%w: at most 100 sso exceptions", shared.ErrValidation)
 	}
 	return nil
 }
@@ -1041,21 +935,13 @@ func (s *Settings) ToMap() map[string]any {
 }
 
 // SettingsFromMap converts map[string]any to Settings.
+//
+// Each section is decoded on its own (SettingsFromMapChecked): a section that
+// cannot be decoded falls back to its default without affecting the others.
+// Enforcement points that must fail closed on a corrupt security section use
+// Tenant.SecuritySettingsStrict instead.
 func SettingsFromMap(m map[string]any) Settings {
-	if len(m) == 0 {
-		return DefaultSettings()
-	}
-	data, _ := json.Marshal(m)
-	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return DefaultSettings()
-	}
-
-	// Ensure risk_scoring has valid defaults if not present in the map
-	if _, ok := m["risk_scoring"]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
-	}
-
+	settings, _ := SettingsFromMapChecked(m)
 	return settings
 }
 
@@ -1218,16 +1104,6 @@ func (t *Tenant) UpdateSecuritySettings(security SecuritySettings) error {
 	return t.UpdateSettings(settings)
 }
 
-// UpdateAPISettings updates only the API settings.
-func (t *Tenant) UpdateAPISettings(api APISettings) error {
-	if err := api.Validate(); err != nil {
-		return err
-	}
-	settings := t.TypedSettings()
-	settings.API = api
-	return t.UpdateSettings(settings)
-}
-
 // UpdateBrandingSettings updates only the branding settings.
 func (t *Tenant) UpdateBrandingSettings(branding BrandingSettings) error {
 	if err := branding.Validate(); err != nil {
@@ -1278,16 +1154,33 @@ func (t *Tenant) UpdateRiskScoringSettings(rs RiskScoringSettings) error {
 	return t.UpdateSettings(settings)
 }
 
-// UpdateAssetSourceSettings updates only the asset-source priority
-// configuration. RFC-003 Phase 1a. Structural validation (dup UUIDs,
-// unknown trust levels) happens here; existence-of-source validation
-// lives in the service layer because it needs a repository.
-func (t *Tenant) UpdateAssetSourceSettings(as AssetSourceSettings) error {
-	if err := as.Validate(); err != nil {
+// UpdateLicensePolicySettings updates only the license policy.
+func (t *Tenant) UpdateLicensePolicySettings(p licensepolicy.Policy) error {
+	if err := p.Normalize(); err != nil {
+		return fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+	settings := t.TypedSettings()
+	settings.LicensePolicy = p
+	return t.UpdateSettings(settings)
+}
+
+// UpdateVulnMatchingSettings updates only the vulnerability matching policy.
+func (t *Tenant) UpdateVulnMatchingSettings(vm VulnMatchingSettings) error {
+	if err := vm.Validate(); err != nil {
 		return err
 	}
 	settings := t.TypedSettings()
-	settings.AssetSource = as
+	settings.VulnMatching = vm
+	return t.UpdateSettings(settings)
+}
+
+// UpdateRetestSettings updates only the auto-retest settings (RFC-039).
+func (t *Tenant) UpdateRetestSettings(rs RetestSettings) error {
+	if err := rs.Validate(); err != nil {
+		return err
+	}
+	settings := t.TypedSettings()
+	settings.Retest = rs
 	return t.UpdateSettings(settings)
 }
 

@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/openctemio/openctem/api/internal/config"
+	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/password"
 )
 
 // AuthProvidersHandler exposes a public, tenant-agnostic snapshot of which
@@ -29,10 +31,43 @@ type AuthProvidersHandler struct {
 	// tenantCreationMode tells onboarding whether a new user may create an
 	// organization or must wait for the platform administrator.
 	tenantCreationMode string
-	// registrationEnabled mirrors AUTH_ALLOW_REGISTRATION so the UI can hide
-	// sign-up when self-registration is off.
+	// signupPolicy, when wired, replaces tenantCreationMode (the console
+	// sign-up setting).
+	signupPolicy signupdom.PolicySource
+	// captchaSiteKey is the public Turnstile site key.
+	captchaSiteKey string
+	// registrationEnabled is reported when no sign-up policy is wired (the
+	// self_service seed), so the UI can hide sign-up.
 	registrationEnabled bool
-	logger              *logger.Logger
+	// passwordPolicy is what the server enforces on a chosen password and
+	// how long a reset link lasts; forms state it instead of their own copy.
+	passwordPolicy PasswordPolicyInfo
+	logger         *logger.Logger
+}
+
+// WithPasswordPolicy reports the password rules and reset-link lifetime of
+// the local auth config.
+func (h *AuthProvidersHandler) WithPasswordPolicy(cfg config.AuthConfig) *AuthProvidersHandler {
+	h.passwordPolicy = PasswordPolicyFromConfig(cfg)
+	return h
+}
+
+// PasswordPolicyFromConfig is the policy the server enforces: the same
+// minimum length fallback as the password handlers, and the reset-link
+// lifetime in whole minutes.
+func PasswordPolicyFromConfig(cfg config.AuthConfig) PasswordPolicyInfo {
+	minLen := cfg.PasswordMinLength
+	if minLen <= 0 {
+		minLen = password.MinLengthDefault
+	}
+	return PasswordPolicyInfo{
+		MinLength:             minLen,
+		RequireUppercase:      cfg.PasswordRequireUpper,
+		RequireLowercase:      cfg.PasswordRequireLower,
+		RequireNumber:         cfg.PasswordRequireNumber,
+		RequireSpecial:        cfg.PasswordRequireSpecial,
+		ResetLinkValidMinutes: int(cfg.PasswordResetDuration.Minutes()),
+	}
 }
 
 // WithRegistrationEnabled sets the value reported as registration_enabled.
@@ -44,6 +79,18 @@ func (h *AuthProvidersHandler) WithRegistrationEnabled(enabled bool) *AuthProvid
 // WithTenantCreationMode sets the value reported as tenant_creation_mode.
 func (h *AuthProvidersHandler) WithTenantCreationMode(mode string) *AuthProvidersHandler {
 	h.tenantCreationMode = mode
+	return h
+}
+
+// WithSignupPolicy reports tenant_creation_mode from the console sign-up policy.
+func (h *AuthProvidersHandler) WithSignupPolicy(p signupdom.PolicySource) *AuthProvidersHandler {
+	h.signupPolicy = p
+	return h
+}
+
+// WithCaptchaSiteKey sets the Turnstile site key reported to the UI.
+func (h *AuthProvidersHandler) WithCaptchaSiteKey(key string) *AuthProvidersHandler {
+	h.captchaSiteKey = key
 	return h
 }
 
@@ -76,28 +123,51 @@ type SocialProviders struct {
 	GitHub    bool `json:"github"`
 }
 
+// PasswordPolicyInfo is the password policy the server enforces when a
+// password is chosen (register, reset, set-password, change), and how long a
+// forgot-password link stays valid. Public: the same for every caller.
+type PasswordPolicyInfo struct {
+	MinLength        int  `json:"min_length"`
+	RequireUppercase bool `json:"require_uppercase"`
+	RequireLowercase bool `json:"require_lowercase"`
+	RequireNumber    bool `json:"require_number"`
+	RequireSpecial   bool `json:"require_special"`
+	// ResetLinkValidMinutes is the lifetime of a forgot-password link.
+	ResetLinkValidMinutes int `json:"reset_link_valid_minutes"`
+}
+
 // AuthProvidersResponse is the public login-capability snapshot.
 type AuthProvidersResponse struct {
 	Social SocialProviders `json:"social"`
 	// SSOEnvEntraEnabled reports whether the platform-wide (env-based)
 	// Microsoft Entra ID SSO fallback is usable (SSO_ENTRA_* configured).
 	SSOEnvEntraEnabled bool `json:"sso_env_entra_enabled"`
-	// TenantCreationMode is "self_service" or "admin_only" (TENANT_CREATION_MODE).
+	// TenantCreationMode is "self_service" or "admin_only": the console
+	// sign-up policy (seeded from TENANT_CREATION_MODE).
 	TenantCreationMode string `json:"tenant_creation_mode"`
-	// RegistrationEnabled reports whether anyone may self-register
-	// (AUTH_ALLOW_REGISTRATION, default false). When false the UI hides
-	// sign-up; an invited person can still register with their invitation.
+	// RegistrationEnabled reports whether anyone may self-register: true in
+	// the self_service sign-up mode. When false the UI hides sign-up; an
+	// invited person can still register with their invitation.
 	RegistrationEnabled bool `json:"registration_enabled"`
+	// RequestAccess reports whether people who cannot sign up may request an
+	// organization (POST /auth/access-requests).
+	RequestAccess bool `json:"request_access"`
+	// CaptchaSiteKey is the Turnstile site key the request-access form
+	// renders; empty when no CAPTCHA is configured.
+	CaptchaSiteKey string `json:"captcha_site_key,omitempty"`
+	// PasswordPolicy is the policy every password form states and the server
+	// enforces (it also rejects known-breached passwords).
+	PasswordPolicy PasswordPolicyInfo `json:"password_policy"`
 }
 
 // GetProviders returns which login providers are configured on this server.
 // @Summary      Public login-provider capability snapshot
-// @Description  Reports which social OAuth providers (and the Entra SSO env fallback) are configured, so the UI can hide dead login buttons. Booleans only — no secrets.
+// @Description  Reports which social OAuth providers (and the Entra SSO env fallback) are configured, so the UI can hide dead login buttons, and the password policy the server enforces. No secrets.
 // @Tags         OAuth
 // @Produce      json
 // @Success      200  {object}  AuthProvidersResponse
 // @Router       /auth/providers [get]
-func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Request) {
+func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, r *http.Request) {
 	resp := AuthProvidersResponse{
 		Social: SocialProviders{
 			Microsoft: h.oauthRoutesLive && h.oauthConfig.Microsoft.IsConfigured(),
@@ -107,7 +177,17 @@ func (h *AuthProvidersHandler) GetProviders(w http.ResponseWriter, _ *http.Reque
 		SSOEnvEntraEnabled:  h.entraSSO.IsConfigured(),
 		TenantCreationMode:  h.tenantCreationMode,
 		RegistrationEnabled: h.registrationEnabled,
+		PasswordPolicy:      h.passwordPolicy,
 	}
+	if h.signupPolicy != nil {
+		p := h.signupPolicy.Current(r.Context())
+		resp.TenantCreationMode = string(p.Mode)
+		// Anyone may create an account exactly when anyone may create an
+		// organization (one policy); an invited person registers either way.
+		resp.RegistrationEnabled = p.AllowsSelfService()
+		resp.RequestAccess = p.RequestAccess && !p.AllowsSelfService()
+	}
+	resp.CaptchaSiteKey = h.captchaSiteKey
 	// Report what the server enforces: anything but an explicit self_service
 	// is admin-only.
 	if resp.TenantCreationMode != config.TenantCreationSelfService {

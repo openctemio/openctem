@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -125,6 +126,12 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithMetadata("api_key_id", k.id)
 		log.WithMetadata("api_key_prefix", k.prefix)
 	}
+	// Same for the organization's identity provider acting with a SCIM token.
+	if k, ok := scimTokenActorFrom(ctx); ok {
+		log.WithMetadata("auth_method", "scim_token")
+		log.WithMetadata("scim_token_id", k.id)
+		log.WithMetadata("scim_token_prefix", k.prefix)
+	}
 
 	// Persist
 	if err := s.auditRepo.Create(ctx, log); err != nil {
@@ -176,35 +183,72 @@ type ChainVerifyResult struct {
 	OK       bool
 }
 
+// chainPageSize is how many chain rows are loaded per keyset page while
+// walking a chain. It bounds memory per page; it does NOT bound how much of the
+// chain is walked.
+const chainPageSize = 1000
+
+// walkChain calls fn for every chain entry of tenantID in chain_position order,
+// loading the chain one keyset page at a time. maxEntries <= 0 walks the whole
+// chain; a positive value stops after that many entries.
+//
+// The chain used to be read with a single LIMIT 10000 query ordered oldest
+// first. Once a tenant (or the system chain, which takes every login) passed
+// 10,000 entries, everything written after that was never verified again — the
+// oldest rows were re-checked every hour while the newest, the ones an intruder
+// would edit, were never looked at. Rebaseline had the same cap, so re-signing
+// a long chain rewrote the first 10,000 rows and left the 10,001st pointing at
+// a hash that no longer existed.
+func (s *AuditService) walkChain(ctx context.Context, tenantID shared.ID, maxEntries int, fn func(auditdom.ChainEntry) error) error {
+	var after int64
+	seen := 0
+	for {
+		page := chainPageSize
+		if maxEntries > 0 && maxEntries-seen < page {
+			page = maxEntries - seen
+		}
+		if page <= 0 {
+			return nil
+		}
+		entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, after, page)
+		if err != nil {
+			return fmt.Errorf("list chain entries: %w", err)
+		}
+		for _, e := range entries {
+			if err := fn(e); err != nil {
+				return err
+			}
+			after = e.ChainPosition
+			seen++
+		}
+		if len(entries) < page {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+}
+
 // VerifyChain walks the audit_log_chain entries for a tenant in
 // chain_position order and confirms each stored hash matches the hash
 // recomputed from the original audit_logs row. A single tampered audit
 // row surfaces as (at least) one break; downstream entries typically
 // break too because prev_hash no longer links.
 //
-// Limit bounds memory for large tenants; pagination support is a
-// follow-up. Zero/negative limit means "use default 10_000". Values
-// above maxVerifyChainLimit are clamped — same cap is also enforced at
-// the handler and repository layers (defense in depth, closes CodeQL
-// go/uncontrolled-allocation-size sink at the make() site).
+// limit <= 0 walks the whole chain (what the periodic verifier does); a
+// positive limit verifies only the first limit entries. The chain is read in
+// keyset pages, so memory is bounded by the page size, not the chain length.
 func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limit int) (*ChainVerifyResult, error) {
-	const maxVerifyChainLimit = 10_000
-	if limit <= 0 {
-		limit = maxVerifyChainLimit
-	} else if limit > maxVerifyChainLimit {
-		limit = maxVerifyChainLimit
-	}
-	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list chain entries: %w", err)
-	}
-
 	res := &ChainVerifyResult{
 		TenantID: tenantID.String(),
-		Total:    len(entries),
 	}
-	var prevStored string
-	for _, e := range entries {
+	prevStored, err := s.chainStart(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	err = s.walkChain(ctx, tenantID, limit, func(e auditdom.ChainEntry) error {
+		res.Total++
 		// 1. Fetch the original audit_log. If it's gone, flag it — a
 		//    deleted row is a tamper signal (FK ON DELETE RESTRICT
 		//    blocks it in production but not in every path).
@@ -228,7 +272,7 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 				Reason:        "audit_log_missing",
 			})
 			prevStored = e.Hash
-			continue
+			return nil //nolint:nilerr // a missing source row is reported as a break, and the walk continues
 		}
 
 		// 2. Recompute hash from the audit_log fields + stored prev_hash.
@@ -264,9 +308,27 @@ func (s *AuditService) VerifyChain(ctx context.Context, tenantID shared.ID, limi
 			res.Verified++
 		}
 		prevStored = e.Hash
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	res.OK = len(res.Breaks) == 0
 	return res, nil
+}
+
+// chainStart is the prev_hash a tenant's oldest remaining chain entry links
+// to: the newest retention anchor, or "" when the chain was never pruned.
+func (s *AuditService) chainStart(ctx context.Context, tenantID shared.ID) (string, error) {
+	ar, ok := s.auditRepo.(auditdom.ChainAnchorReader)
+	if !ok {
+		return "", nil
+	}
+	h, err := ar.ChainAnchorHash(ctx, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("read chain anchor: %w", err)
+	}
+	return h, nil
 }
 
 // RebaselineResult is the outcome of a RebaselineChain call.
@@ -294,12 +356,81 @@ type RebaselineResult struct {
 //   - it refuses, changing nothing, if an underlying audit_log is missing,
 //     since that is a genuine tamper signal it must not paper over.
 func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, actx AuditContext) (*RebaselineResult, error) {
+	res, _, err := s.rebaseline(ctx, tenantID, actx, actx.ActorID, nil)
+	return res, err
+}
+
+// ErrChainUnexplained means a rebaseline was refused because the chain has a
+// break no known defect explains (or a missing source row, or a broken link).
+var ErrChainUnexplained = fmt.Errorf("%w: audit chain has unexplained breaks", shared.ErrConflict)
+
+// ErrChainFingerprintMismatch means a rebaseline was refused because the chain
+// is no longer the one the caller classified and reviewed.
+var ErrChainFingerprintMismatch = fmt.Errorf("%w: audit chain changed since it was classified", shared.ErrConflict)
+
+// ClassifyChain classifies every row of a tenant's chain (see chainclassify):
+// how many verify, how many are explained by a known hashing defect, and how
+// many are not. The report's fingerprint names the exact chain classified.
+func (s *AuditService) ClassifyChain(ctx context.Context, tenantID shared.ID) (*chainclassify.Report, error) {
+	start, err := s.chainStart(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	b := chainclassify.NewBuilderFrom(start)
+	err = s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
+		log, err := s.chainSource(ctx, tenantID, e)
+		if err != nil || log == nil {
+			b.AddMissing(e.ChainPosition, e.AuditLogID.String(), e.PrevHash, e.Hash)
+			return nil //nolint:nilerr // a missing source row is classified, and the walk continues
+		}
+		b.Add(chainRow(e, log))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return b.Report(), nil
+}
+
+// RebaselineChainIfExplained is RebaselineChain for the platform admin console:
+// it re-runs the classification in the same locked walk that computes the new
+// hashes and refuses, rewriting nothing, unless every break is explained by a
+// known defect AND the chain is exactly the one the caller reviewed
+// (expectedFingerprint, from ClassifyChain). The classification of that walk is
+// returned with a refusal so the caller can show why.
+//
+// archiveActorID is recorded on the archive row (audit_chain_rebaselines, a
+// plain UUID); actx attributes the tenant audit event.
+func (s *AuditService) RebaselineChainIfExplained(ctx context.Context, tenantID shared.ID, expectedFingerprint string,
+	actx AuditContext, archiveActorID string,
+) (*RebaselineResult, *chainclassify.Report, error) {
+	if expectedFingerprint == "" {
+		return nil, nil, fmt.Errorf("%w: classification fingerprint is required", shared.ErrValidation)
+	}
+	return s.rebaseline(ctx, tenantID, actx, archiveActorID, func(rep *chainclassify.Report) error {
+		if !rep.RebaselineAllowed() {
+			return fmt.Errorf("cannot re-baseline: %w (%d unexplained, %d missing source, %d broken links)",
+				ErrChainUnexplained, rep.Counts.Unexplained, rep.Counts.SourceMissing, rep.Counts.LinkBroken)
+		}
+		if rep.Fingerprint != expectedFingerprint {
+			return fmt.Errorf("cannot re-baseline: %w", ErrChainFingerprintMismatch)
+		}
+		return nil
+	})
+}
+
+// rebaseline runs a rebaseline and records it on the tenant's chain. guard,
+// when set, sees the classification of the chain about to be re-signed and
+// may refuse it.
+func (s *AuditService) rebaseline(ctx context.Context, tenantID shared.ID, actx AuditContext, archiveActorID string,
+	guard func(*chainclassify.Report) error,
+) (*RebaselineResult, *chainclassify.Report, error) {
 	// The event must land on the chain that was rebaselined.
 	actx.TenantID = tenantID.String()
 
 	// rebaselineLocked holds chainMu; it is released before the audit event
 	// is written because LogEvent -> appendChainEntry takes chainMu itself.
-	res, err := s.rebaselineLocked(ctx, tenantID, actx.ActorID)
+	res, rep, err := s.rebaselineLocked(ctx, tenantID, archiveActorID, guard)
 	if err != nil {
 		event := NewFailureEvent(auditdom.ActionAuditChainRebaselined, auditdom.ResourceTypeAuditChain, tenantID.String(), err).
 			WithSeverity(auditdom.SeverityCritical).
@@ -308,12 +439,12 @@ func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, 
 			s.logger.Error("failed to audit a failed chain rebaseline",
 				"tenant_id", tenantID.String(), "error", logErr)
 		}
-		return nil, err
+		return nil, rep, err
 	}
 
 	s.logger.Warn("audit chain re-baselined",
 		"tenant_id", tenantID.String(),
-		"actor_id", actx.ActorID,
+		"actor_id", archiveActorID,
 		"rebaseline_id", res.RebaselineID,
 		"entries_total", res.EntriesTotal,
 		"entries_rewritten", res.EntriesRewritten,
@@ -327,45 +458,60 @@ func (s *AuditService) RebaselineChain(ctx context.Context, tenantID shared.ID, 
 		WithMetadata("rebaseline_id", res.RebaselineID).
 		WithMetadata("entries_total", res.EntriesTotal).
 		WithMetadata("entries_rewritten", res.EntriesRewritten).
-		WithMetadata("actor_id", actx.ActorID)
+		WithMetadata("actor_id", archiveActorID)
+	if rep != nil {
+		event = event.
+			WithMetadata("classification_fingerprint", rep.Fingerprint).
+			WithMetadata("legacy_truncate", rep.Counts.LegacyTruncate).
+			WithMetadata("pre_79_nanosecond", rep.Counts.PreHashReduction)
+	}
 	if err := s.LogEvent(ctx, actx, event); err != nil {
 		// The rewrite is committed and its archive row names the actor, so
 		// the evidence survives; this only loses the audit_logs copy.
 		s.logger.Error("chain rebaselined but its audit event was not written",
 			"tenant_id", tenantID.String(), "rebaseline_id", res.RebaselineID, "error", err)
 	}
-	return res, nil
+	return res, rep, nil
 }
 
-func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID, actorID string) (*RebaselineResult, error) {
+func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID, actorID string,
+	guard func(*chainclassify.Report) error,
+) (*RebaselineResult, *chainclassify.Report, error) {
 	s.chainMu.Lock()
 	defer s.chainMu.Unlock()
 
-	const maxRebaselineLimit = 10_000
-	entries, err := s.auditRepo.ListChainEntries(ctx, tenantID, maxRebaselineLimit)
-	if err != nil {
-		return nil, fmt.Errorf("list chain entries: %w", err)
-	}
-
 	rb := auditdom.ChainRebaseline{
-		ID:           shared.NewID(),
-		TenantID:     tenantID,
-		EntriesTotal: len(entries),
+		ID:       shared.NewID(),
+		TenantID: tenantID,
 	}
 	if id, err := shared.IDFromString(actorID); err == nil && !id.IsZero() {
 		rb.ActorID = &id
 	}
 
-	prev := ""
-	for _, e := range entries {
+	start, err := s.chainStart(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var classify *chainclassify.Builder
+	if guard != nil {
+		classify = chainclassify.NewBuilderFrom(start)
+	}
+	// A pruned chain is re-signed from its retention anchor, so it still
+	// links to the archived prefix.
+	prev := start
+	err = s.walkChain(ctx, tenantID, 0, func(e auditdom.ChainEntry) error {
+		rb.EntriesTotal++
 		log, err := s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
 		if err != nil || log == nil {
 			// A missing source row is a real tamper signal — refuse to
 			// re-baseline over it. Nothing has been written yet.
-			return nil, fmt.Errorf("cannot re-baseline: %w: audit log %s (position %d)",
+			return fmt.Errorf("cannot re-baseline: %w: audit log %s (position %d)",
 				auditdom.ErrChainSourceMissing, e.AuditLogID.String(), e.ChainPosition)
 		}
-		payload := fmt.Sprintf("%s|%s|%s|%s",
+		if classify != nil {
+			classify.Add(chainRow(e, log))
+		}
+		payload := chainclassify.Payload(
 			log.Action().String(),
 			log.ResourceType().String(),
 			log.ResourceID(),
@@ -384,28 +530,71 @@ func (s *AuditService) rebaselineLocked(ctx context.Context, tenantID shared.ID,
 		}
 		prev = newHash
 		rb.LastChainPosition = e.ChainPosition
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var rep *chainclassify.Report
+	if classify != nil {
+		rep = classify.Report()
+		if err := guard(rep); err != nil {
+			return nil, rep, err
+		}
 	}
 
 	if err := s.auditRepo.ApplyChainRebaseline(ctx, rb); err != nil {
-		return nil, fmt.Errorf("apply rebaseline: %w", err)
+		return nil, rep, fmt.Errorf("apply rebaseline: %w", err)
 	}
 	return &RebaselineResult{
 		RebaselineID:     rb.ID.String(),
-		EntriesTotal:     len(entries),
+		EntriesTotal:     rb.EntriesTotal,
 		EntriesRewritten: len(rb.Rewrites),
-	}, nil
+	}, rep, nil
+}
+
+// chainSource loads the audit log behind a chain entry. System-chain entries
+// point at rows with tenant_id IS NULL, which the tenant-scoped getter cannot
+// see.
+func (s *AuditService) chainSource(ctx context.Context, tenantID shared.ID, e auditdom.ChainEntry) (*auditdom.AuditLog, error) {
+	if tenantID == auditdom.SystemChainTenantID {
+		return s.auditRepo.GetSystemByID(ctx, e.AuditLogID)
+	}
+	return s.auditRepo.GetByTenantAndID(ctx, tenantID, e.AuditLogID)
+}
+
+// chainRow is the classifier's view of a chain entry and its audit log.
+func chainRow(e auditdom.ChainEntry, log *auditdom.AuditLog) chainclassify.Row {
+	return chainclassify.Row{
+		AuditLogID:   e.AuditLogID.String(),
+		Position:     e.ChainPosition,
+		PrevHash:     e.PrevHash,
+		Hash:         e.Hash,
+		Action:       log.Action().String(),
+		ResourceType: log.ResourceType().String(),
+		ResourceID:   log.ResourceID(),
+		Result:       log.Result().String(),
+		LoggedAt:     log.Timestamp(),
+	}
+}
+
+// chainAppender is implemented by a repository that extends a chain
+// atomically across processes (read tail + insert under one per-tenant lock).
+type chainAppender interface {
+	AppendNextChainEntry(ctx context.Context, tenantID shared.ID, build func(prevHash string) auditdom.ChainEntry) error
 }
 
 // appendChainEntry computes the next hash in the per-tenant chain and
 // persists it. Safe to call with any audit_log; rows without a tenant
-// ID are skipped (the chain is per-tenant).
+// ID extend the system chain.
 //
-// Concurrency note: under multi-writer races two callers for the same
-// tenant can read the same prev_hash and both try to extend it. The
-// chainMu mutex serialises this within a single process; cross-replica
-// coordination would need a per-tenant advisory lock
-// (pg_advisory_xact_lock) and is not wired here because the current
-// deployment is single-replica.
+// Concurrency: two writers for the same tenant must never read the same
+// prev_hash and both extend it (that forks the chain and every later
+// verification fails). The Postgres repository reads the tail and inserts
+// under a per-tenant advisory transaction lock, which holds across API
+// replicas. chainMu only covers repositories without that capability
+// (tests), within one process.
 func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.AuditLog) {
 	// Tenant-less events (every auth.login / auth.register / auth.failed —
 	// 86% of the trail on the live database) used to return here, which left
@@ -415,16 +604,6 @@ func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.Audit
 	tid := auditdom.SystemChainTenantID
 	if tenantPtr := log.TenantID(); tenantPtr != nil {
 		tid = *tenantPtr
-	}
-
-	s.chainMu.Lock()
-	defer s.chainMu.Unlock()
-
-	prev, err := s.auditRepo.LatestChainHash(ctx, tid)
-	if err != nil {
-		s.logger.Warn("chain: failed to read prev hash; skipping entry",
-			"tenant_id", tid.String(), "error", err)
-		return
 	}
 
 	// Deterministic payload: scalar columns that uniquely identify
@@ -437,15 +616,33 @@ func (s *AuditService) appendChainEntry(ctx context.Context, log *auditdom.Audit
 		log.ResourceID(),
 		log.Result().String(),
 	)
-	hash := cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp())
-
-	entry := auditdom.ChainEntry{
-		AuditLogID: log.ID(),
-		TenantID:   tid,
-		PrevHash:   prev,
-		Hash:       hash,
+	build := func(prev string) auditdom.ChainEntry {
+		return auditdom.ChainEntry{
+			AuditLogID: log.ID(),
+			TenantID:   tid,
+			PrevHash:   prev,
+			Hash:       cryptopkg.ComputeAuditChainHash(prev, log.ID().String(), payload, log.Timestamp()),
+		}
 	}
-	if err := s.auditRepo.AppendChainEntry(ctx, entry); err != nil {
+
+	if a, ok := s.auditRepo.(chainAppender); ok {
+		if err := a.AppendNextChainEntry(ctx, tid, build); err != nil {
+			s.logger.Warn("chain: append failed (audit log persisted, chain has a gap)",
+				"tenant_id", tid.String(), "audit_log_id", log.ID().String(), "error", err)
+		}
+		return
+	}
+
+	s.chainMu.Lock()
+	defer s.chainMu.Unlock()
+
+	prev, err := s.auditRepo.LatestChainHash(ctx, tid)
+	if err != nil {
+		s.logger.Warn("chain: failed to read prev hash; skipping entry",
+			"tenant_id", tid.String(), "error", err)
+		return
+	}
+	if err := s.auditRepo.AppendChainEntry(ctx, build(prev)); err != nil {
 		s.logger.Warn("chain: append failed (audit log persisted, chain has a gap)",
 			"tenant_id", tid.String(),
 			"audit_log_id", log.ID().String(),
@@ -650,14 +847,15 @@ func (s *AuditService) ListAuditLogs(ctx context.Context, input ListAuditLogsInp
 	return s.auditRepo.List(ctx, filter, page)
 }
 
-// GetAuditLog retrieves an audit log by ID.
-func (s *AuditService) GetAuditLog(ctx context.Context, auditLogID string) (*auditdom.AuditLog, error) {
+// GetAuditLog retrieves an audit log of the tenant. A system row (tenant_id
+// IS NULL) or another tenant's row is not found.
+func (s *AuditService) GetAuditLog(ctx context.Context, tenantID shared.ID, auditLogID string) (*auditdom.AuditLog, error) {
 	parsedID, err := shared.IDFromString(auditLogID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
 
-	return s.auditRepo.GetByID(ctx, parsedID)
+	return s.auditRepo.GetByTenantAndID(ctx, tenantID, parsedID)
 }
 
 // GetResourceHistory retrieves audit history for a specific resource within a tenant.
@@ -683,28 +881,6 @@ func (s *AuditService) GetUserActivity(ctx context.Context, tenantID shared.ID, 
 // ============================================
 // RETENTION OPERATIONS
 // ============================================
-
-// CleanupOldLogs removes audit logs older than the retention period.
-// Preserves high and critical severity logs.
-func (s *AuditService) CleanupOldLogs(ctx context.Context, retentionDays int) (int64, error) {
-	if retentionDays < 30 {
-		return 0, fmt.Errorf("%w: retention period must be at least 30 days", shared.ErrValidation)
-	}
-
-	before := time.Now().AddDate(0, 0, -retentionDays)
-	count, err := s.auditRepo.DeleteOlderThan(ctx, before)
-	if err != nil {
-		return 0, err
-	}
-
-	s.logger.Info("audit log cleanup completed",
-		"deleted_count", count,
-		"retention_days", retentionDays,
-		"before", before,
-	)
-
-	return count, nil
-}
 
 // ============================================
 // STATISTICS
@@ -983,6 +1159,20 @@ func (s *AuditService) LogSensorRevoked(ctx context.Context, actx AuditContext, 
 	return s.LogEvent(ctx, actx, event)
 }
 
+// LogSensorCommandsReleased logs the platform taking back the commands a
+// sensor held when it was revoked or disabled (RFC-040 §5.2): requeued went
+// back to the queue, failed were addressed to that sensor only.
+func (s *AuditService) LogSensorCommandsReleased(ctx context.Context, actx AuditContext, sensorID, sensorName, why string, requeued, failed []string) error {
+	event := NewSuccessEvent(auditdom.ActionSensorCommandsReleased, auditdom.ResourceTypeSensor, sensorID).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' %s: %d held commands re-queued, %d failed", sensorName, why, len(requeued), len(failed))).
+		WithMetadata("trigger", why).
+		WithMetadata("requeued_command_ids", requeued).
+		WithMetadata("failed_command_ids", failed)
+	return s.LogEvent(ctx, actx, event)
+}
+
 // LogSensorKeyRegenerated logs a sensor API key regeneration event.
 func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditContext, sensorID, sensorName string) error {
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRegenerated, auditdom.ResourceTypeSensor, sensorID).
@@ -995,15 +1185,41 @@ func (s *AuditService) LogSensorKeyRegenerated(ctx context.Context, actx AuditCo
 // LogSensorKeyRenewed logs a sensor rotating its own API key (POST /agent/renew).
 // overlap is true when the renewed key was issued as an additional key row so
 // the superseded key keeps working until its own expiry (rotation overlap).
-func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContext, sensorID, sensorName string, expiresAt *time.Time, overlap bool) error {
+//
+// The new key is always an octs_ key. fromLegacy marks the renewal that moved
+// the sensor off a legacy rda_ key: the metadata then carries
+// previous_key_format "rda" and upgraded_from_legacy_key true. Only format
+// names are recorded, never key material (not even a prefix).
+func (s *AuditService) LogSensorKeyRenewed(ctx context.Context, actx AuditContext, sensorID, sensorName string, expiresAt *time.Time, overlap, fromLegacy bool) error {
+	msg := fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)
+	previous := "octs"
+	if fromLegacy {
+		msg = fmt.Sprintf("Sensor '%s' renewed its API key and moved from a legacy rda_ key to the octs_ format", sensorName)
+		previous = "rda"
+	}
 	event := NewSuccessEvent(auditdom.ActionSensorKeyRenewed, auditdom.ResourceTypeSensor, sensorID).
 		WithResourceName(sensorName).
 		WithSeverity(auditdom.SeverityMedium).
-		WithMessage(fmt.Sprintf("Sensor '%s' renewed its API key", sensorName)).
-		WithMetadata("overlap", overlap)
+		WithMessage(msg).
+		WithMetadata("overlap", overlap).
+		WithMetadata("key_format", "octs").
+		WithMetadata("previous_key_format", previous).
+		WithMetadata("upgraded_from_legacy_key", fromLegacy)
 	if expiresAt != nil {
 		event = event.WithMetadata("expires_at", expiresAt.UTC().Format(time.RFC3339))
 	}
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogSensorKeyRenewalRefused records a sensor renewal refused because, by the
+// time it could rotate, the key it authenticated with had been revoked,
+// expired or regenerated, or the sensor disabled. Severity high: someone
+// still holds a key an administrator meant to kill.
+func (s *AuditService) LogSensorKeyRenewalRefused(ctx context.Context, actx AuditContext, sensorID, sensorName, reason string) error {
+	event := NewDeniedEvent(auditdom.ActionSensorKeyRenewalRefused, auditdom.ResourceTypeSensor, sensorID, reason).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' key renewal refused: %s", sensorName, reason))
 	return s.LogEvent(ctx, actx, event)
 }
 
@@ -1016,6 +1232,19 @@ func (s *AuditService) LogSensorIdentityCloned(ctx context.Context, actx AuditCo
 		WithSeverity(auditdom.SeverityHigh).
 		WithMessage(fmt.Sprintf("Sensor '%s': two processes are using the same API key", sensorName)).
 		WithMetadata("live_instances", instances)
+	return s.LogEvent(ctx, actx, event)
+}
+
+// LogSensorJobRefusedByLocalPolicy records a sensor refusing a job under the
+// local policy its network owner installed (RFC-040 detection A11). Severity
+// high: the platform asked the sensor for something the owner forbids.
+func (s *AuditService) LogSensorJobRefusedByLocalPolicy(ctx context.Context, actx AuditContext, sensorID, sensorName, commandID, rule string) error {
+	event := NewSuccessEvent(auditdom.ActionSensorJobRefusedByLocalPolicy, auditdom.ResourceTypeSensor, sensorID).
+		WithResourceName(sensorName).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage(fmt.Sprintf("Sensor '%s' refused a job under its local policy (%s)", sensorName, rule)).
+		WithMetadata("command_id", commandID).
+		WithMetadata("rule", rule)
 	return s.LogEvent(ctx, actx, event)
 }
 

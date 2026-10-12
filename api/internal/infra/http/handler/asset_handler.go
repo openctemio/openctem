@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -25,17 +28,18 @@ import (
 
 // AssetHandler handles asset-related HTTP requests.
 type AssetHandler struct {
-	service            *app.AssetService
-	integrationService *app.IntegrationService
+	service            *assetapp.AssetService
+	integrationService *integrationapp.IntegrationService
 	accessControlRepo  accesscontrol.Repository
 	auditService       *auditapp.AuditService
 	snoozeRateLimiter  *snoozeRateLimiter
 	validator          *validator.Validator
 	logger             *logger.Logger
+	programFlags       ProgramAssetFlagReader
 }
 
 // NewAssetHandler creates a new asset handler.
-func NewAssetHandler(svc *app.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
+func NewAssetHandler(svc *assetapp.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
 	return &AssetHandler{
 		service:           svc,
 		validator:         v,
@@ -50,7 +54,7 @@ func (h *AssetHandler) SetAccessControlRepo(repo accesscontrol.Repository) {
 }
 
 // SetIntegrationService sets the integration service for sync operations.
-func (h *AssetHandler) SetIntegrationService(svc *app.IntegrationService) {
+func (h *AssetHandler) SetIntegrationService(svc *integrationapp.IntegrationService) {
 	h.integrationService = svc
 }
 
@@ -148,6 +152,42 @@ func (h *AssetHandler) buildAuditContext(r *http.Request) auditapp.AuditContext 
 		UserAgent:  r.UserAgent(),
 		RequestID:  r.Header.Get("X-Request-ID"),
 	}
+}
+
+// auditCreateMerged records that a create request updated an existing asset
+// instead of creating one. Only field names are recorded, never values.
+func (h *AssetHandler) auditCreateMerged(r *http.Request, a *asset.Asset, changed []string) {
+	if h.auditService == nil {
+		return
+	}
+	if changed == nil {
+		changed = []string{}
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetCreateMerged, auditdom.ResourceTypeAsset, a.ID().String()).
+		WithResourceName(a.Name()).
+		WithMessage("Create request matched an existing asset and updated it").
+		WithMetadata("changed_fields", changed).
+		WithSeverity(auditdom.SeverityMedium)
+	_ = h.auditService.LogEvent(r.Context(), h.buildAuditContext(r), event)
+}
+
+// DuplicateAssetDetails is the details object of the 409 a create returns
+// when the asset already exists. ExistingAssetID is present only when the
+// caller may see that asset.
+type DuplicateAssetDetails struct {
+	ExistingAssetID string `json:"existing_asset_id,omitempty"`
+}
+
+// writeDuplicateAsset writes the 409 for a create that matched an existing
+// asset. The body names the existing asset only when the service set its id
+// (the asset is in the caller's data scope); otherwise it is the same generic
+// conflict for every match, so it reveals nothing about the asset.
+func writeDuplicateAsset(w http.ResponseWriter, dup *assetapp.DuplicateAssetError) {
+	e := apierror.Conflict("Asset already exists")
+	if !dup.ExistingID.IsZero() {
+		e = e.WithDetails(DuplicateAssetDetails{ExistingAssetID: dup.ExistingID.String()})
+	}
+	e.WriteJSON(w)
 }
 
 // SnoozeLifecycleRequest is the body for POST /assets/{id}/lifecycle/snooze.
@@ -258,6 +298,13 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
+	// SystemTags are derived by the platform from program links (RFC-065
+	// §16.5: bug-bounty, source:…, platform:…, program:…:…,
+	// program-unattested); no request can change them.
+	SystemTags []string `json:"system_tags,omitempty"`
+	// ProgramOnly: the asset came with a bug-bounty program and no own
+	// scope covers it; organization metrics leave it out by default.
+	ProgramOnly           bool                     `json:"program_only,omitempty"`
 	ID                    string                   `json:"id"`
 	TenantID              string                   `json:"tenant_id,omitempty"`
 	ParentID              string                   `json:"parent_id,omitempty"`
@@ -279,6 +326,8 @@ type AssetResponse struct {
 	Tags                  []string                 `json:"tags,omitempty"`
 	Properties            map[string]any           `json:"properties,omitempty"`
 	PrimaryOwner          *OwnerBriefResponse      `json:"primary_owner,omitempty"`
+	// IsCrownJewel is the crown-jewel flag, set by PATCH /assets/{id}/crown-jewel.
+	IsCrownJewel bool `json:"is_crown_jewel"`
 
 	// Discovery
 	DiscoverySource string     `json:"discovery_source,omitempty"`
@@ -336,13 +385,17 @@ type OwnerBriefResponse struct {
 
 // CreateAssetRequest represents the request to create an asset.
 type CreateAssetRequest struct {
-	Name        string         `json:"name" validate:"required,min=1,max=255"`
-	Type        string         `json:"type" validate:"required,asset_type"`
+	Name string `json:"name" validate:"required,min=1,max=255"`
+	Type string `json:"type" validate:"required,asset_type"`
+	// SubType is the kind within the type, from the registry's closed list
+	// (GET /asset-types). A legacy value of the type is mapped; anything
+	// else is a 400.
+	SubType     string         `json:"sub_type,omitempty" validate:"omitempty,max=50"`
 	Criticality string         `json:"criticality" validate:"required,criticality"`
 	Scope       string         `json:"scope" validate:"omitempty,scope"`
 	Exposure    string         `json:"exposure" validate:"omitempty,exposure"`
 	Description string         `json:"description" validate:"max=1000"`
-	Tags        []string       `json:"tags" validate:"max=20,dive,max=50"`
+	Tags        []string       `json:"tags" validate:"max=50,dive,max=50"`
 	OwnerRef    string         `json:"owner_ref" validate:"max=500"`
 	Properties  map[string]any `json:"properties,omitempty"`
 }
@@ -355,8 +408,11 @@ type UpdateAssetRequest struct {
 	Exposure    *string        `json:"exposure" validate:"omitempty,exposure"`
 	Description *string        `json:"description" validate:"omitempty,max=1000"`
 	OwnerRef    *string        `json:"owner_ref" validate:"omitempty,max=500"`
-	Tags        []string       `json:"tags" validate:"omitempty,max=20,dive,max=50"`
+	Tags        []string       `json:"tags" validate:"omitempty,max=50,dive,max=50"`
 	Properties  map[string]any `json:"properties,omitempty"`
+	// SubType changes the kind within the asset's type (closed list from
+	// GET /asset-types); "" clears it. The type itself cannot change.
+	SubType *string `json:"sub_type,omitempty" validate:"omitempty,max=50"`
 
 	// CTEM Scoping: CIA impact rating (low | moderate | high). Empty string clears.
 	ImpactConfidentiality *string `json:"impact_confidentiality" validate:"omitempty,impact_rating"`
@@ -396,6 +452,7 @@ func toAssetResponse(a *asset.Asset) AssetResponse {
 		Description:  a.Description(),
 		Tags:         a.Tags(),
 		Properties:   a.Properties(),
+		IsCrownJewel: a.IsCrownJewel(),
 
 		// Discovery
 		DiscoverySource: a.DiscoverySource(),
@@ -495,6 +552,9 @@ func (h *AssetHandler) handleValidationError(w http.ResponseWriter, err error) {
 
 // handleServiceError converts service errors to API errors and writes response.
 func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if WritePlanLimitError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Asset").WriteJSON(w)
@@ -519,18 +579,29 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Security     BearerAuth
 // @Param        name          query     string  false  "Filter by name (partial match)"
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        expires_after   query   string  false  "Expiry (certificate not_after, domain expires_at) after this time (RFC 3339 or YYYY-MM-DD)"
+// @Param        expires_before  query   string  false  "Expiry before this time (RFC 3339 or YYYY-MM-DD)"
+// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
 // @Param        exposures     query     string  false  "Filter by exposures (comma-separated)"
-// @Param        tags          query     string  false  "Filter by tags (comma-separated)"
+// @Param        tags          query     string  false  "Filter by tags, system tags included (comma-separated, at most 20)"
+// @Param        tags_mode     query     string  false  "any (default): an asset carrying any of tags; all: every one of them"  Enums(any, all)
+// @Param        exclude_tags  query     string  false  "Leave out assets carrying any of these tags (comma-separated, at most 20)"
 // @Param        search        query     string  false  "Full-text search across name and description"
 // @Param        min_risk_score  query   int     false  "Minimum risk score (0-100)"
 // @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
 // @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
+// @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
 // @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
 // @Param        sub_type      query     string  false  "Filter by sub_type"
 // @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
+// @Param        asset_group_ids       query string false "Members of any of these asset groups (comma-separated UUIDs, at most 20)"
+// @Param        owner_ids             query string false "Owned by any of these users or groups (comma-separated UUIDs, at most 20)"
+// @Param        under                 query string false "Names equal to or below these DNS names (comma-separated, at most 10)"
+// @Param        in_cidr               query string false "Address assets inside these ranges (comma-separated CIDRs, at most 10)"
+// @Param        ids                   query string false "Only these assets (comma-separated UUIDs, at most 100): one batch read instead of one request per asset"
 // @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
 // @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
 // @Param        is_control_plane      query bool   false "Filter assets that are a control-plane dependency"
@@ -539,6 +610,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        providers             query string false "Filter by provider/source (comma-separated)"
 // @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
 // @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
+// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only)"
+// @Param        covered_by            query string false "Scope entry id: the assets the scope join confirmed through it"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -553,15 +626,22 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 
-	input := app.ListAssetsInput{
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := assetapp.ListAssetsInput{
 		TenantID:         tenantID,
 		Name:             query.Get("name"),
 		Types:            parseQueryArray(query.Get("types")),
+		Lenses:           parseQueryArray(query.Get("lenses")),
 		Criticalities:    parseQueryArray(query.Get("criticalities")),
 		Statuses:         parseQueryArray(query.Get("statuses")),
 		Scopes:           parseQueryArray(query.Get("scopes")),
 		Exposures:        parseQueryArray(query.Get("exposures")),
 		Tags:             parseQueryArray(query.Get("tags")),
+		TagsMode:         query.Get("tags_mode"),
+		ExcludeTags:      parseQueryArray(query.Get("exclude_tags")),
 		Search:           query.Get("search"),
 		MinRiskScore:     parseQueryIntPtr(query.Get("min_risk_score")),
 		MaxRiskScore:     parseQueryIntPtr(query.Get("max_risk_score")),
@@ -571,6 +651,11 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
 		// CTEM inventory dimensions
 		BusinessUnitIDs:      parseQueryArray(query.Get("business_unit_ids")),
+		AssetGroupIDs:        parseQueryArray(query.Get("asset_group_ids")),
+		OwnerIDs:             parseQueryArray(query.Get("owner_ids")),
+		IDs:                  parseQueryArray(query.Get("ids")),
+		UnderDomains:         parseQueryArray(query.Get("under")),
+		InCIDRs:              parseQueryArray(query.Get("in_cidr")),
 		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
 		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
 		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),
@@ -579,9 +664,15 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		Providers:            parseQueryArray(query.Get("providers")),
 		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
 		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
+		ExpiresAfter:         parseQueryTimePtr(query.Get("expires_after")),
+		ExpiresBefore:        parseQueryTimePtr(query.Get("expires_before")),
+		Attribution:          parseQueryArray(query.Get("attribution")),
+		CoveredBy:            query.Get("covered_by"),
+		ProgramAssets:        query.Get("program_assets"),
+		Freshness:            query.Get("freshness"),
 		Sort:                 query.Get("sort"),
-		Page:                 parseQueryInt(query.Get("page"), 1),
-		PerPage:              parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
+		Page:                 paging.Page,
+		PerPage:              paging.PerPage,
 		ActingUserID:         middleware.GetUserID(r.Context()),
 		IsAdmin:              middleware.IsAdmin(r.Context()),
 	}
@@ -651,6 +742,11 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		resp.PrimaryOwner = toOwnerBriefResponse(owners[a.ID().String()])
 		data[i] = resp
 	}
+	ptrs := make([]*AssetResponse, len(data))
+	for i := range data {
+		ptrs[i] = &data[i]
+	}
+	h.addProgramFlags(r, input.TenantID, ptrs)
 
 	response := ListResponse[AssetResponse]{
 		Data:       data,
@@ -668,7 +764,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/v1/assets
 // @Summary      Create asset
-// @Description  Creates a new asset for the current tenant
+// @Description  Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
 // @Tags         Assets
 // @Accept       json
 // @Produce      json
@@ -694,10 +790,11 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.CreateAssetInput{
+	input := assetapp.CreateAssetInput{
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Type:        req.Type,
+		SubType:     req.SubType,
 		Criticality: req.Criticality,
 		Scope:       req.Scope,
 		Exposure:    req.Exposure,
@@ -705,13 +802,21 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Tags:        req.Tags,
 		OwnerRef:    req.OwnerRef,
 		Properties:  req.Properties,
+		ActorID:     middleware.GetUserID(r.Context()),
 	}
 
 	a, err := h.service.CreateAsset(r.Context(), input)
 	if err != nil {
+		var dup *assetapp.DuplicateAssetError
+		if errors.As(err, &dup) {
+			writeDuplicateAsset(w, dup)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
+		map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -748,6 +853,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := toAssetResponse(a)
+	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
 
 	// Fetch primary owner
 	if h.accessControlRepo != nil {
@@ -799,7 +905,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := app.UpdateAssetInput{
+	input := assetapp.UpdateAssetInput{
 		Name:                  req.Name,
 		Criticality:           req.Criticality,
 		Scope:                 req.Scope,
@@ -807,10 +913,19 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Description:           req.Description,
 		OwnerRef:              req.OwnerRef,
 		Tags:                  req.Tags,
+		SubType:               req.SubType,
 		Properties:            req.Properties,
 		ImpactConfidentiality: req.ImpactConfidentiality,
 		ImpactIntegrity:       req.ImpactIntegrity,
 		ImpactAvailability:    req.ImpactAvailability,
+		ActorID:               middleware.GetUserID(r.Context()),
+	}
+
+	// The version before the change, for the audit trail's changed-field list.
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
 	}
 
 	a, err := h.service.UpdateAsset(r.Context(), id, tenantID, input)
@@ -818,15 +933,26 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetUpdated, a.ID().String(), a.Name(), "Asset updated",
+		map[string]any{"changed_fields": assetChangedFields(before, a)})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toAssetResponse(a))
 }
 
+// AssetDeleteRefusedDetails is the details object of the 409 returned when an
+// asset that has findings is deleted.
+type AssetDeleteRefusedDetails struct {
+	Reason       string `json:"reason" example:"asset_has_findings"`
+	FindingCount int64  `json:"finding_count"`
+	// ArchivePath is the request that archives the asset instead.
+	ArchivePath string `json:"archive_path" example:"/api/v1/assets/{id}/archive"`
+}
+
 // Delete handles DELETE /api/v1/assets/{id}
 // @Summary      Delete asset
-// @Description  Deletes an asset by ID
+// @Description  Deletes an asset that has no findings (soft delete: it disappears from every list and its name can be used again; it is purged after the retention period). An asset that has findings, whatever their status, is refused with 409 (details.reason "asset_has_findings"): archive it instead (POST /assets/{id}/archive), so its finding history is kept.
 // @Tags         Assets
 // @Security     BearerAuth
 // @Param        id   path      string  true  "Asset ID"
@@ -834,6 +960,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  map[string]string
 // @Failure      401  {object}  map[string]string
 // @Failure      404  {object}  map[string]string
+// @Failure      409  {object}  apierror.Error{details=AssetDeleteRefusedDetails}
 // @Failure      500  {object}  map[string]string
 // @Router       /assets/{id} [delete]
 func (h *AssetHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -845,10 +972,30 @@ func (h *AssetHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteAsset(r.Context(), id, tenantID); err != nil {
+	// Read it first (data scope applies): the audit entry keeps the name the
+	// soft delete replaces with a tombstone.
+	existing, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+
+	if err := h.service.DeleteAsset(r.Context(), id, tenantID, middleware.GetUserID(r.Context())); err != nil {
+		var hasFindings *asset.HasFindingsError
+		if errors.As(err, &hasFindings) {
+			apierror.Conflict("This asset has findings, so it cannot be deleted: archive it instead to keep its finding history").
+				WithDetails(AssetDeleteRefusedDetails{
+					Reason:       "asset_has_findings",
+					FindingCount: hasFindings.FindingCount,
+					ArchivePath:  "/api/v1/assets/" + id + "/archive",
+				}).WriteJSON(w)
+			return
+		}
+		h.handleServiceError(w, err)
+		return
+	}
+	h.auditAsset(r, auditdom.ActionAssetDeleted, existing.ID().String(), existing.Name(), "Asset deleted (soft delete; it had no findings)",
+		map[string]any{"type": existing.Type().String()})
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -900,7 +1047,7 @@ type CreateRepositoryAssetRequest struct {
 	Criticality string   `json:"criticality" validate:"required,criticality"`
 	Scope       string   `json:"scope" validate:"omitempty,scope"`
 	Exposure    string   `json:"exposure" validate:"omitempty,exposure"`
-	Tags        []string `json:"tags" validate:"max=20,dive,max=50"`
+	Tags        []string `json:"tags" validate:"max=50,dive,max=50"`
 	// SCM connection info
 	Provider        string `json:"provider" validate:"omitempty"`
 	ExternalID      string `json:"external_id" validate:"omitempty,max=255"`
@@ -1022,7 +1169,7 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.CreateRepositoryAssetInput{
+	input := assetapp.CreateRepositoryAssetInput{
 		TenantID:        tenantID,
 		Name:            req.Name,
 		Description:     req.Description,
@@ -1055,10 +1202,13 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		RepoPushedAt:    req.RepoPushedAt,
 	}
 
-	a, ext, err := h.service.CreateRepositoryAsset(r.Context(), input)
+	a, ext, outcome, err := h.service.CreateRepositoryAssetWithOutcome(r.Context(), input)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
+	}
+	if outcome.Merged {
+		h.auditCreateMerged(r, a, outcome.ChangedFields)
 	}
 
 	response := AssetWithRepositoryResponse{
@@ -1204,7 +1354,7 @@ func (h *AssetHandler) UpdateRepository(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.UpdateRepositoryExtensionInput{
+	input := assetapp.UpdateRepositoryExtensionInput{
 		RepoID:               req.RepoID,
 		FullName:             req.FullName,
 		SCMOrganization:      req.SCMOrganization,
@@ -1261,11 +1411,18 @@ func (h *AssetHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ActivateAsset now enforces tenant isolation internally
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 	a, err := h.service.ActivateAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetStatusChanged, a.ID().String(), a.Name(), "Asset status changed",
+		map[string]any{"from": before.Status().String(), "to": a.Status().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1295,11 +1452,18 @@ func (h *AssetHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// DeactivateAsset now enforces tenant isolation internally
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 	a, err := h.service.DeactivateAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetStatusChanged, a.ID().String(), a.Name(), "Asset status changed",
+		map[string]any{"from": before.Status().String(), "to": a.Status().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1329,11 +1493,18 @@ func (h *AssetHandler) Archive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ArchiveAsset now enforces tenant isolation internally
+	before, err := h.service.GetAsset(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 	a, err := h.service.ArchiveAsset(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetStatusChanged, a.ID().String(), a.Name(), "Asset status changed",
+		map[string]any{"from": before.Status().String(), "to": a.Status().String()})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1385,7 +1556,7 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	input := app.BulkUpdateAssetStatusInput{
+	input := assetapp.BulkUpdateAssetStatusInput{
 		AssetIDs: req.AssetIDs,
 		Status:   req.Status,
 	}
@@ -1395,6 +1566,8 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 		h.handleServiceError(w, err)
 		return
 	}
+	h.auditAsset(r, auditdom.ActionAssetBulkStatusChanged, "", "", "Bulk asset status change",
+		map[string]any{"status": req.Status, "asset_ids": req.AssetIDs, "updated": result.Updated, "failed": result.Failed})
 
 	resp := AssetBulkStatusResponse{
 		Updated: result.Updated,
@@ -1438,6 +1611,7 @@ type AssetStatsResponse struct {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
+// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        tags          query     string  false  "Filter by tags (comma-separated, overlap)"
 // @Success      200  {object}  AssetStatsResponse
 // @Failure      401  {object}  map[string]string
@@ -1448,14 +1622,16 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
 	typesFilter := parseQueryArray(query.Get("types"))
+	lensesFilter := parseQueryArray(query.Get("lenses"))
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
 
-	// Parse count_by fields for metadata counting (e.g., ?count_by=is_virtual,os,ssl)
-	countByFields := parseQueryArray(query.Get("count_by"))
+	// Property keys to count values of (e.g. ?count_by=is_virtual,os_name).
+	countByFields := statsCountByFields(parseQueryArray(query.Get("count_by")))
 
 	// Use service method with SQL aggregation for efficient stats
-	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID, typesFilter, tagsFilter, subTypeFilter, countByFields...)
+	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, lensesFilter, tagsFilter, subTypeFilter, countByFields...)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1488,22 +1664,70 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(stats)
 }
 
-// ListTags returns distinct tags across all assets for the tenant.
-// Supports prefix filtering for autocomplete via ?prefix= query parameter.
+// maxStatsCountBy caps ?count_by: each field adds one GROUP BY over the
+// caller's assets to the stats query.
+const maxStatsCountBy = 10
+
+// statsCountByFields keeps the count_by fields that are property keys of the
+// schema (a synonym counts as its canonical key), without duplicates, up to
+// maxStatsCountBy. Anything else is dropped: it would only ever count keys
+// the schema does not have.
+func statsCountByFields(fields []string) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		key := asset.CanonicalPropertyKey(strings.TrimSpace(f))
+		if _, ok := asset.LookupProperty(key); !ok || slices.Contains(out, key) {
+			continue
+		}
+		out = append(out, key)
+		if len(out) == maxStatsCountBy {
+			break
+		}
+	}
+	return out
+}
+
+// AssetTagsResponse is GET /assets/tags.
+type AssetTagsResponse struct {
+	// Tags are the tags of the caller's assets, most used first.
+	Tags []string `json:"tags"`
+	// SystemTags are the platform-derived tags (program links) the caller
+	// may see, most used first; only with include_system=true. Read-only.
+	SystemTags []string `json:"system_tags,omitempty"`
+}
+
+// ListTags handles GET /api/v1/assets/tags
+// @Summary      List asset tags
+// @Description  The tags of the assets the caller may list (tenant and data scope), most used first. With include_system=true also the system tags derived from bug-bounty program links, limited to the programs the caller may see.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// @Param        prefix          query  string  false  "Tags starting with this (case-insensitive)"
+// @Param        q               query  string  false  "Tags containing this (case-insensitive)"
+// @Param        type            query  string  false  "Only tags of assets of this type (repeatable)"
+// @Param        include_system  query  bool    false  "Also list the system tags"
+// @Param        limit           query  int     false  "At most this many tags per list"  default(50)  maximum(100)
+// @Success      200  {object}  AssetTagsResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Router       /assets/tags [get]
 func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 
-	prefix := r.URL.Query().Get("prefix")
-	types := r.URL.Query()["type"]
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	query := r.URL.Query()
+	limit, ok := listLimit(w, r, 50, 100)
+	if !ok {
+		return
 	}
 
-	tags, err := h.service.ListTags(r.Context(), tenantID, prefix, types, limit)
+	tags, err := h.service.ListTags(r.Context(), tenantID, middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()),
+		asset.TagListQuery{
+			Prefix:        query.Get("prefix"),
+			Search:        query.Get("q"),
+			Types:         query["type"],
+			Limit:         limit,
+			IncludeSystem: query.Get("include_system") == "true",
+		})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1511,18 +1735,52 @@ func (h *AssetHandler) ListTags(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string][]string{"tags": tags})
+	_ = json.NewEncoder(w).Encode(AssetTagsResponse{Tags: tags.Tags, SystemTags: tags.SystemTags})
+}
+
+// InventoryOverviewResponse is GET /assets/overview: the inventory counted
+// per (lens, type, sub-type).
+type InventoryOverviewResponse struct {
+	Data []asset.InventoryOverviewRow `json:"data"`
+}
+
+// GetInventoryOverview handles GET /api/v1/assets/overview
+// @Summary      Inventory overview
+// @Description  Counts the caller's assets per lens, type and sub-type in one aggregate: the assets the default inventory lists (total), the unowned, high-risk (risk score 70 or more) and first-seen-in-the-last-7-days ones among them, and the names waiting in the attribution review queue. Counted over the assets the caller may list (data scope), within the caller's tenant.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  InventoryOverviewResponse
+// @Failure      401  {object}  map[string]string
+// @Failure      500  {object}  map[string]string
+// @Router       /assets/overview [get]
+func (h *AssetHandler) GetInventoryOverview(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	rows, err := h.service.GetInventoryOverview(r.Context(), tenantID,
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []asset.InventoryOverviewRow{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(InventoryOverviewResponse{Data: rows})
 }
 
 // GetFacets returns distinct property keys and their values for faceted filtering.
-// Scoped to tenant + optional type filter. Returns top 20 values per key.
+// Scoped to tenant, the caller's data scope (as the list) and an optional
+// type filter. Returns top 20 values per key.
 func (h *AssetHandler) GetFacets(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	query := r.URL.Query()
 	types := parseQueryArray(query.Get("types"))
 	subType := query.Get("sub_type")
 
-	facets, err := h.service.GetPropertyFacets(r.Context(), tenantID, types, subType)
+	facets, err := h.service.GetPropertyFacets(r.Context(), tenantID,
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), types, subType)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
@@ -1575,7 +1833,7 @@ func (h *AssetHandler) findMatchingSCMConnection(
 	ctx context.Context,
 	tenantID, provider, scmOrg string,
 ) (*scmConnectionMatch, error) {
-	integration, err := h.integrationService.FindSCMIntegration(ctx, app.FindSCMIntegrationInput{
+	integration, err := h.integrationService.FindSCMIntegration(ctx, integrationapp.FindSCMIntegrationInput{
 		TenantID: tenantID,
 		Provider: provider,
 		SCMOrg:   scmOrg,
@@ -1596,9 +1854,9 @@ func (h *AssetHandler) findMatchingSCMConnection(
 }
 
 // buildSyncUpdateInput compares SCM data with current extension and builds update input
-func buildSyncUpdateInput(scmRepo *scm.Repository, repoExt *asset.RepositoryExtension) (app.UpdateRepositoryExtensionInput, []string) {
+func buildSyncUpdateInput(scmRepo *scm.Repository, repoExt *asset.RepositoryExtension) (assetapp.UpdateRepositoryExtensionInput, []string) {
 	var updatedFields []string
-	updateInput := app.UpdateRepositoryExtensionInput{}
+	updateInput := assetapp.UpdateRepositoryExtensionInput{}
 
 	if scmRepo.DefaultBranch != "" && scmRepo.DefaultBranch != repoExt.DefaultBranch() {
 		branch := scmRepo.DefaultBranch
@@ -1680,7 +1938,7 @@ func (h *AssetHandler) performSync(
 	repoExt *asset.RepositoryExtension,
 	a *asset.Asset,
 ) ([]string, error) {
-	scmRepo, err := h.integrationService.GetSCMRepository(ctx, app.GetSCMRepositoryInput{
+	scmRepo, err := h.integrationService.GetSCMRepository(ctx, integrationapp.GetSCMRepositoryInput{
 		IntegrationID: integrationID,
 		TenantID:      tenantID,
 		FullName:      repoExt.FullName(),
@@ -1702,7 +1960,7 @@ func (h *AssetHandler) performSync(
 
 	if a.Description() == "" && scmRepo.Description != "" {
 		desc := scmRepo.Description
-		_, err = h.service.UpdateAsset(ctx, assetID, tenantID, app.UpdateAssetInput{Description: &desc})
+		_, err = h.service.UpdateAsset(ctx, assetID, tenantID, assetapp.UpdateAssetInput{Description: &desc})
 		if err != nil {
 			h.logger.Warn("failed to update asset description", "error", err)
 		} else {
@@ -1975,7 +2233,7 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Scan jobs are queued via the pipeline system (POST /scans/{id}/trigger).
+	// Scan jobs are queued via the scan workflow system (POST /scans/{id}/trigger).
 	// This endpoint records the ad-hoc scan request and returns success.
 
 	response := ScanResponse{
@@ -2026,26 +2284,35 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	a, err := h.service.GetAsset(r.Context(), tenantID, assetID)
+	// The previous state, for the audit event. The route's data-scope guard
+	// has already refused an asset outside the caller's scope.
+	before, err := h.service.GetAsset(r.Context(), tenantID, assetID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Store crown jewel data in properties (DB columns added by migration 000126)
-	props := a.Properties()
-	if props == nil {
-		props = make(map[string]any)
-	}
-	props["is_crown_jewel"] = req.IsCrownJewel
-	props["business_impact_score"] = req.BusinessImpactScore
-	props["business_impact_notes"] = req.BusinessImpactNotes
-	a.SetProperties(props)
-
-	if err := h.service.SaveAsset(r.Context(), a); err != nil {
+	// The flag is the assets.is_crown_jewel column; business impact stays in
+	// properties. One statement writes both.
+	a, err := h.service.UpdateCrownJewel(r.Context(), tenantID, assetID,
+		req.IsCrownJewel, req.BusinessImpactScore, req.BusinessImpactNotes)
+	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
+
+	changed := []string{}
+	if before.IsCrownJewel() != a.IsCrownJewel() {
+		changed = append(changed, "is_crown_jewel")
+	}
+	for _, k := range changedPropertyKeys(
+		pickProperties(before.Properties(), asset.PropKeyBusinessImpactScore, asset.PropKeyBusinessImpactNotes),
+		pickProperties(a.Properties(), asset.PropKeyBusinessImpactScore, asset.PropKeyBusinessImpactNotes),
+	) {
+		changed = append(changed, k[len("properties."):])
+	}
+	h.auditAsset(r, auditdom.ActionAssetCrownJewelChanged, a.ID().String(), a.Name(), "Crown-jewel designation changed",
+		map[string]any{"is_crown_jewel": a.IsCrownJewel(), "changed_fields": changed})
 
 	writeJSON(w, http.StatusOK, toAssetResponse(a))
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app"
@@ -45,7 +46,7 @@ func (m *secValMockToolRepo) AddTenantTool(tenantID shared.ID, t *tool.Tool) {
 	m.tenantTools[m.tenantKey(tenantID, t.Name)] = t
 }
 
-func (m *secValMockToolRepo) GetByName(_ context.Context, name string) (*tool.Tool, error) {
+func (m *secValMockToolRepo) GetByName(_ context.Context, _ shared.ID, name string) (*tool.Tool, error) {
 	t, ok := m.platformTools[name]
 	if !ok {
 		return nil, shared.ErrNotFound
@@ -187,6 +188,54 @@ func TestSecValValidateStepConfig_ValidToolAndCapabilities(t *testing.T) {
 
 	if !result.Valid {
 		t.Fatalf("expected valid result, got errors: %v", result.Errors)
+	}
+}
+
+// A step's settings are checked against what the tool's sensor declares
+// when the step is saved: a value the sensor would refuse (a flag in a port
+// list, an intrusive nuclei tag, out-of-band callbacks) is refused here.
+func TestSecValValidateStepConfig_ToolSettings(t *testing.T) {
+	repo := newSecValMockToolRepo()
+	makeActivePlatformTool(repo, "naabu", []string{"portscan"})
+	makeActivePlatformTool(repo, "nuclei", []string{"web"})
+	sv := newSecValValidator(repo)
+
+	valid := []struct {
+		tool   string
+		config map[string]any
+	}{
+		{"naabu", map[string]any{"ports": "80"}},
+		{"naabu", map[string]any{"ports": "80,443,8000-8100", "rate": float64(500), "retries": float64(2)}},
+		{"naabu", map[string]any{"top_ports": "1000", "scan_type": "syn"}}, // shipped preset
+		{"nuclei", map[string]any{"tags": "auth,jwt,oauth", "templates": []any{"http/exposures"}}},
+		{"nuclei", map[string]any{"severity": []any{"critical", "high"}, "rate_limit": float64(100)}},
+	}
+	for _, tc := range valid {
+		if r := sv.ValidateStepConfig(context.Background(), shared.NewID(), tc.tool, nil, tc.config); !r.Valid {
+			t.Errorf("%s %v refused: %v", tc.tool, tc.config, r.Errors)
+		}
+	}
+
+	invalid := []struct {
+		tool   string
+		config map[string]any
+	}{
+		{"naabu", map[string]any{"ports": "-"}},
+		{"naabu", map[string]any{"ports": "80 -nmap-cli id"}},
+		{"naabu", map[string]any{"ports": "70000"}},
+		{"naabu", map[string]any{"ports": "80", "top_ports": float64(100)}},
+		{"naabu", map[string]any{"rate": float64(0)}},
+		{"nuclei", map[string]any{"tags": []any{"cve", "-code"}}},
+		{"nuclei", map[string]any{"tags": "dos"}},
+		{"nuclei", map[string]any{"severity": []any{"urgent"}}},
+		{"nuclei", map[string]any{"allow_interactsh": true}},
+		{"nuclei", map[string]any{"exclude": []any{"-config=/tmp/x"}}},
+	}
+	for _, tc := range invalid {
+		r := sv.ValidateStepConfig(context.Background(), shared.NewID(), tc.tool, nil, tc.config)
+		if r.Valid || !hasCode(r, "INVALID_STEP_SETTING") {
+			t.Errorf("%s %v accepted (errors %v)", tc.tool, tc.config, r.Errors)
+		}
 	}
 }
 
@@ -729,10 +778,10 @@ func TestSecValValidateCommandPayload_ValidPayload(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "run-001",
-		"step_run_id":     "step-run-001",
-		"step_id":         "step-001",
-		"preferred_tool":  "nuclei",
+		"scan_run_id":      "run-001",
+		"scan_run_step_id": "step-run-001",
+		"step_id":          "step-001",
+		"preferred_tool":   "nuclei",
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -752,16 +801,16 @@ func TestSecValValidateCommandPayload_MissingRequiredFields(t *testing.T) {
 		missingCode string
 	}{
 		{
-			name:    "missing pipeline_run_id",
-			payload: map[string]any{"step_run_id": "sr1", "step_id": "s1"},
+			name:    "missing scan_run_id",
+			payload: map[string]any{"scan_run_step_id": "sr1", "step_id": "s1"},
 		},
 		{
-			name:    "missing step_run_id",
-			payload: map[string]any{"pipeline_run_id": "pr1", "step_id": "s1"},
+			name:    "missing scan_run_step_id",
+			payload: map[string]any{"scan_run_id": "pr1", "step_id": "s1"},
 		},
 		{
 			name:    "missing step_id",
-			payload: map[string]any{"pipeline_run_id": "pr1", "step_run_id": "sr1"},
+			payload: map[string]any{"scan_run_id": "pr1", "scan_run_step_id": "sr1"},
 		},
 		{
 			name:    "all missing",
@@ -787,10 +836,10 @@ func TestSecValValidateCommandPayload_DangerousStepConfig(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"step_config": map[string]any{
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"config": map[string]any{
 			"bash": "id",
 		},
 	}
@@ -798,7 +847,7 @@ func TestSecValValidateCommandPayload_DangerousStepConfig(t *testing.T) {
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
 
 	if result.Valid {
-		t.Fatal("expected invalid result for dangerous key in step_config")
+		t.Fatal("expected invalid result for dangerous key in config")
 	}
 	if !hasCode(result, "DANGEROUS_CONFIG_KEY") {
 		t.Errorf("expected DANGEROUS_CONFIG_KEY, got %v", result.Errors)
@@ -810,10 +859,10 @@ func TestSecValValidateCommandPayload_InjectionInStepConfig(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"step_config": map[string]any{
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"config": map[string]any{
 			"target": "host; cat /etc/passwd",
 		},
 	}
@@ -821,7 +870,7 @@ func TestSecValValidateCommandPayload_InjectionInStepConfig(t *testing.T) {
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
 
 	if result.Valid {
-		t.Fatal("expected invalid result for injection in step_config value")
+		t.Fatal("expected invalid result for injection in config value")
 	}
 	if !hasCode(result, "DANGEROUS_CONFIG_VALUE") {
 		t.Errorf("expected DANGEROUS_CONFIG_VALUE, got %v", result.Errors)
@@ -833,10 +882,10 @@ func TestSecValValidateCommandPayload_InvalidPreferredTool(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"preferred_tool":  "nonexistent-tool-xyz",
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"preferred_tool":   "nonexistent-tool-xyz",
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -854,10 +903,10 @@ func TestSecValValidateCommandPayload_InvalidPreferredToolFormat(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"preferred_tool":  "tool with spaces; rm -rf /",
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"preferred_tool":   "tool with spaces; rm -rf /",
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -875,10 +924,10 @@ func TestSecValValidateCommandPayload_EmptyPreferredTool_Skipped(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id": "pr1",
-		"step_run_id":     "sr1",
-		"step_id":         "s1",
-		"preferred_tool":  "", // empty → should skip validation
+		"scan_run_id":      "pr1",
+		"scan_run_step_id": "sr1",
+		"step_id":          "s1",
+		"preferred_tool":   "", // empty → should skip validation
 	}
 
 	result := sv.ValidateCommandPayload(context.Background(), shared.NewID(), payload)
@@ -893,8 +942,8 @@ func TestSecValValidateCommandPayload_ValidRequiredCapabilities(t *testing.T) {
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id":       "pr1",
-		"step_run_id":           "sr1",
+		"scan_run_id":           "pr1",
+		"scan_run_step_id":      "sr1",
 		"step_id":               "s1",
 		"required_capabilities": []string{"scan", "web"},
 	}
@@ -911,8 +960,8 @@ func TestSecValValidateCommandPayload_InvalidRequiredCapabilities(t *testing.T) 
 	sv := newSecValValidator(repo)
 
 	payload := map[string]any{
-		"pipeline_run_id":       "pr1",
-		"step_run_id":           "sr1",
+		"scan_run_id":           "pr1",
+		"scan_run_step_id":      "sr1",
 		"step_id":               "s1",
 		"required_capabilities": []string{"scan", "totally-unknown-xyz"},
 	}
@@ -1509,7 +1558,7 @@ func TestSecValValidationResult_MultipleErrors_AllReported(t *testing.T) {
 	// Missing fields + dangerous config in the same payload → multiple errors
 	payload := map[string]any{
 		// all required fields missing
-		"step_config": map[string]any{
+		"config": map[string]any{
 			"bash": "evil $(id)",
 		},
 	}
@@ -1597,5 +1646,77 @@ func TestSecValGetAllowedCapabilities_DBErrorFallsBackToDefaults(t *testing.T) {
 	}
 	if !capSet["scan"] {
 		t.Error("expected default capability 'scan' even when DB fails")
+	}
+}
+
+// A capability node names a catalog capability key ("scan.ports"): valid on
+// its own, and with a pinned tool only when the tool implements it. Planned
+// capabilities (no routed implementation) stay refused.
+func TestSecValValidateStepConfig_CatalogCapabilityKeys(t *testing.T) {
+	repo := newSecValMockToolRepo()
+	makeActivePlatformTool(repo, "naabu", []string{"portscan"})
+	makeActivePlatformTool(repo, "nuclei", []string{"web"})
+	sv := newSecValValidator(repo)
+	ctx := context.Background()
+
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "", []string{"scan.ports"}, nil); !r.Valid {
+		t.Fatalf("auto capability node refused: %v", r.Errors)
+	}
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "naabu", []string{"scan.ports"}, nil); !r.Valid {
+		t.Fatalf("naabu pinned on scan.ports refused: %v", r.Errors)
+	}
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "nuclei", []string{"scan.ports"}, nil); r.Valid || !hasCode(r, "CAPABILITY_TOOL_MISMATCH") {
+		t.Fatalf("nuclei on scan.ports accepted: %v", r.Errors)
+	}
+	if r := sv.ValidateStepConfig(ctx, shared.NewID(), "", []string{"check.tls"}, nil); r.Valid || !hasCode(r, "INVALID_CAPABILITY") {
+		t.Fatalf("planned capability accepted: %v", r.Errors)
+	}
+}
+
+// The workflow form saves a step as a capability (the catalog key) with a
+// pinned tool; the builder saves the tool with its own declared words. Both
+// vocabularies are accepted and mapped onto each other through the catalog.
+// A word the tool cannot run is refused with a message that says what the
+// tool can run instead.
+func TestSecValValidateStepConfig_TaxonomyAndLegacyWordsMap(t *testing.T) {
+	repo := newSecValMockToolRepo()
+	makeActivePlatformTool(repo, "dnsx", []string{"recon", "dns"})
+	// Tenant-style tools: the catalog has them implement nothing.
+	makeActivePlatformTool(repo, "mydns", []string{"dns"})
+	makeActivePlatformTool(repo, "myports", []string{"scan.ports"})
+	sv := newSecValValidator(repo)
+	ctx := context.Background()
+	tenant := shared.NewID()
+
+	for _, tc := range []struct {
+		tool string
+		cap  string
+	}{
+		{"dnsx", "resolve.dns"},  // taxonomy key; the catalog has dnsx implement it
+		{"dnsx", "dns"},          // a word the tool declares
+		{"dnsx", "RECON"},        // a word the tool declares, any case
+		{"mydns", "resolve.dns"}, // taxonomy key mapped to the declared legacy word
+		{"myports", "portscan"},  // legacy word mapped to the declared taxonomy key
+	} {
+		if r := sv.ValidateStepConfig(ctx, tenant, tc.tool, []string{tc.cap}, nil); !r.Valid {
+			t.Errorf("%s on %q refused: %v", tc.tool, tc.cap, r.Errors)
+		}
+	}
+
+	r := sv.ValidateStepConfig(ctx, tenant, "dnsx", []string{"scan"}, nil)
+	if r.Valid || !hasCode(r, "CAPABILITY_TOOL_MISMATCH") {
+		t.Fatalf("dnsx on scan accepted: %v", r.Errors)
+	}
+	msg := r.Errors[0].Message
+	for _, want := range []string{`dnsx cannot run "scan"`, "DNS resolution (resolve.dns)", "recon", "pick a tool"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q lacks %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "[") {
+		t.Errorf("message prints a Go slice: %q", msg)
+	}
+	if r := sv.ValidateStepConfig(ctx, tenant, "mydns", []string{"scan.ports"}, nil); r.Valid {
+		t.Fatal("a dns tool accepted for scan.ports")
 	}
 }

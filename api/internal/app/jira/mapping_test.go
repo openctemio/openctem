@@ -15,6 +15,8 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 		"high":     "High",
 		"medium":   "Medium",
 		"low":      "Low",
+		"info":     "Lowest", // informational: bottom of the backlog
+		"none":     "Lowest",
 		"weird":    "Medium",  // fallback
 		"CRITICAL": "Highest", // case-insensitive
 	}
@@ -35,7 +37,6 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 		"verified":    vulnerability.FindingStatusFixApplied,
 		"Backlog":     vulnerability.FindingStatusConfirmed,
 		"reopened":    vulnerability.FindingStatusConfirmed,
-		"Duplicate":   vulnerability.FindingStatusDuplicate,
 	}
 	for js, want := range statusCases {
 		got, ok := m.FindingStatusForJira(js)
@@ -44,6 +45,10 @@ func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {
 		}
 	}
 
+	// A ticket never marks a duplicate (it closes the finding).
+	if _, ok := m.FindingStatusForJira("Duplicate"); ok {
+		t.Error("Jira Duplicate must not map to a finding status")
+	}
 	if _, ok := m.FindingStatusForJira("Some Custom State"); ok {
 		t.Error("unmapped Jira status should return ok=false")
 	}
@@ -87,7 +92,7 @@ func TestParseMappingConfig_OverlaysOverrides(t *testing.T) {
 		t.Errorf("untouched severity should keep default, got %q", got)
 	}
 	// Unmapped severity now falls back to overridden default priority.
-	if got := m.PriorityForSeverity("none"); got != "P3" {
+	if got := m.PriorityForSeverity("unknown"); got != "P3" {
 		t.Errorf("default_priority override not applied: %q", got)
 	}
 

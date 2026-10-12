@@ -1,6 +1,6 @@
 package middleware
 
-// Edge pipeline of sensor protocol v2 results (RFC-026 §3.3,
+// Edge scan workflow of sensor protocol v2 results (RFC-026 §3.3,
 // docs/rfcs/RFC-026-sensor-results-ingest.md).
 //
 // The chain runs after the sensor authenticator, in this order, each step
@@ -28,7 +28,11 @@ import (
 	"hash"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
+
+	"golang.org/x/sync/semaphore"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -124,6 +128,16 @@ func V2ReadVerified(limits protov2.Limits) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Reserve what decoding may hold from the process-wide budget
+			// before reading a byte: the per-tenant concurrency bound alone
+			// does not bound many tenants at once.
+			weight := decodedWeight(r.ContentLength, encoding, limits)
+			if !v2DecodeBudget.TryAcquire(weight) {
+				writeV2RateLimited(w, 0)
+				return
+			}
+			defer v2DecodeBudget.Release(weight)
+
 			encoded, canonical, ok := readAndVerify(r, digests)
 			if !ok {
 				protov2.NewProblem(protov2.ProblemDigestMismatch).Write(w)
@@ -144,6 +158,36 @@ func V2ReadVerified(limits protov2.Limits) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(WithV2Body(r.Context(), body)))
 		})
 	}
+}
+
+// V2DecodeBudgetBytes is the process-wide budget of request bytes that
+// protocol v2/v3 result requests may hold decoded at once (RFC-026 limits
+// bound one request; this bounds them all). A request reserves its worst
+// case before it is read and gets 429 with Retry-After when the budget is
+// spent. A variable so a test can lower it.
+var V2DecodeBudgetBytes int64 = 1 << 30
+
+var v2DecodeBudget = semaphore.NewWeighted(V2DecodeBudgetBytes)
+
+// SetV2DecodeBudget replaces the budget (tests).
+func SetV2DecodeBudget(n int64) {
+	V2DecodeBudgetBytes = n
+	v2DecodeBudget = semaphore.NewWeighted(n)
+}
+
+// decodedWeight is what one request may hold decoded: its body, plus, when
+// compressed, the decompressed size it may reach (the ratio and absolute
+// caps of DecodeV2Content).
+func decodedWeight(contentLength int64, encoding string, limits protov2.Limits) int64 {
+	w := contentLength
+	if encoding != "" && encoding != "identity" {
+		d := int64(float64(contentLength) * limits.MaxCompressionRatio)
+		if limits.MaxDecompressedBytes > 0 && (d > limits.MaxDecompressedBytes || d < 0) {
+			d = limits.MaxDecompressedBytes
+		}
+		w += d
+	}
+	return max(min(w, V2DecodeBudgetBytes), 1)
 }
 
 // readAndVerify reads exactly r.ContentLength bytes, feeding every declared
@@ -304,19 +348,18 @@ func V2Throttle(perTenant, perSensor *TelemetryRateLimiter, concurrency *TenantC
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tid := GetTenantID(r.Context())
 			if tid != "" && !perTenant.Allow(tid) {
-				w.Header().Set(protov2.HeaderRetryAfter, "1")
-				protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
+				writeV2RateLimited(w, perTenant.RefillTime(tid))
 				return
 			}
 			if key := sensorKey(r); key != "" && !perSensor.Allow(key) {
-				w.Header().Set(protov2.HeaderRetryAfter, "1")
-				protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
+				writeV2RateLimited(w, perSensor.RefillTime(key))
 				return
 			}
 			if tid != "" {
 				if !concurrency.TryAcquire(tid) {
-					w.Header().Set(protov2.HeaderRetryAfter, "1")
-					protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
+					// No refill time for an in-flight cap: a slot frees
+					// when a request finishes.
+					writeV2RateLimited(w, 0)
 					return
 				}
 				defer concurrency.Release(tid)
@@ -324,6 +367,14 @@ func V2Throttle(perTenant, perSensor *TelemetryRateLimiter, concurrency *TenantC
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// writeV2RateLimited answers 429 rate-limited with a Retry-After computed
+// from the refused bucket's refill time, jittered and bounded
+// (JitteredRetryAfter).
+func writeV2RateLimited(w http.ResponseWriter, refill time.Duration) {
+	w.Header().Set(protov2.HeaderRetryAfter, strconv.Itoa(JitteredRetryAfter(refill)))
+	protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
 }
 
 // V2Observe records every answered v2 request in ingest_v2_requests_total:

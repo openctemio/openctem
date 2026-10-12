@@ -8,6 +8,22 @@ may scan them. Zones answer "who can reach this address"; scope answers "may we
 scan it" (D17). Zones are opt-in: a tenant without zones dispatches exactly as
 before.
 
+## A zone is also the sensor pool
+
+There is no separate pool entity. The sensors assigned to a zone share that
+zone's work: a command routed to a zone can be claimed by any of its sensors
+(layer 2), so adding a sensor to a zone adds capacity, and a sensor that stops
+claiming leaves the work to the others (leases expire and the command is
+claimed again). Keep the two grouping ideas apart:
+
+- **Zones** are infrastructure: which sensors can reach which ranges, and who
+  shares the work.
+- **Asset groups and scan targets** are scope: which assets a scan covers.
+
+A dedicated pool (several replicas of one sensor, each with its own instance
+identity) is only needed for autoscaled deployments; until then a zone with
+several sensors is the pool.
+
 ## Data model (migration 000231)
 
 | Table / column | Purpose |
@@ -47,7 +63,9 @@ failing closed, as in api#555).
 3. `scanzone.Router` assigns each target:
    - address or CIDR → the zone with the **narrowest** range holding all of it
      (ties: zone name, then id);
-   - hostname → resolved from the platform (`net.DefaultResolver`, 3 s per
+   - hostname → resolved with `SCAN_ZONE_RESOLVER` (the platform's own resolver,
+     or a public recursive resolver on self-service installs so that tenants
+     never resolve names through the platform's internal DNS; 3 s per
      lookup, 8 concurrent); the narrowest zone holding any resolved address;
    - public and in no range → the **default zone**; with no default zone it is
      *unzoned* and dispatched as before zones (any tenant sensor);
@@ -69,7 +87,7 @@ failing closed, as in api#555).
    pre-zone platform/tenant rules.
 8. Every uncovered target is listed in the run's `dispatch_warnings` (with its
    reason) and `uncovered_targets`; `zone_routing` summarises the routing. If no
-   target is left, the trigger fails with `NO_ZONE_COVERAGE`.
+   target is left, the trigger fails with `NO_ZONE_COVERAGE`. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
 
 Each batch payload carries only its own targets: `targets`/`target`, a
 `scanner_config` whose `targets`/`target` keys are rewritten to the batch
@@ -77,19 +95,19 @@ Each batch payload carries only its own targets: `targets`/`target`, a
 `targets`, `scanner_config`, warnings or routing report. The protocol-v1 wire
 shape is unchanged.
 
-**Workflow scans** run as one pipeline, so their routed targets must fall in a
+**Workflow scans** run as one scan run, so their routed targets must fall in a
 single zone (or all be unzoned): otherwise the trigger fails with
 `ZONE_SPLIT_REQUIRED`. The run is stamped with the zone (`scan_zone_id` in the
-run context) and every step command, including those the pipeline service
+run context) and every step command, including those the scan run service
 schedules later, is stamped with it and left to the zone's sensors.
 
 ### Run completion with batches
 
 All batch commands of a single scan share the run's one step run
-(`commands.step_run_id`). `pipeline.Service.OnStepCompleted/OnStepFailed` ask
+(`commands.scan_run_step_id`). `scanrun.Service.OnStepCompleted/OnStepFailed` ask
 the command repository (`command.StepBatchGate`) for the batches of the step:
 while one is still active nothing is recorded; when the last one finishes, the
-caller that wins `UPDATE step_runs SET completed_at = NOW() WHERE completed_at
+caller that wins `UPDATE scan_run_steps SET completed_at = NOW() WHERE completed_at
 IS NULL` records the outcome once: completed with the summed `findings_count`,
 or failed ("k of n scan batches failed: <first error>", no generic retry, since
 that would re-dispatch without zone routing). A step with one command keeps the
@@ -132,6 +150,16 @@ unpins a stuck command, so a re-queued zone job can only move to another sensor
 of the same zone. Unassigning a sensor unpins its pending commands of that zone.
 Commands without a zone keep the pre-zone rule (pinned to me, or unpinned).
 
+## Scan windows of a zone
+
+Freeze windows were replaced by scan window policies (RFC-067,
+[scan-windows.md](scan-windows.md)); every freeze window became a blackout
+policy (migration `001760`). A policy whose selector names a zone
+(`scan_zone_ids`) governs only the work routed to that zone
+(`commands.scan_zone_id`); a policy without a selector governs the whole
+organization. The claim, the trigger and the scheduler apply them; a manual
+run during a blackout waits instead of being refused.
+
 ## Scan creation (D6)
 
 Private targets are refused at creation unless a zone of the tenant covers
@@ -141,9 +169,8 @@ zones keep refusing all private targets.
 
 ## Results
 
-Ingest (protocol v1) does not carry the command that produced a report, so
-findings and assets are not stamped with a zone yet; the zone is recorded on the
-command (`commands.scan_zone_id`). Per-record provenance (sensor, zone) is
+Findings and assets are not stamped with a zone yet; the zone is recorded on
+the command (`commands.scan_zone_id`). Per-record provenance (sensor, zone) is
 Phase 2 (D21).
 
 ## Coverage view (V3)
@@ -248,7 +275,7 @@ and why), `404` zone or sensor not in this tenant, `409` duplicate name
 zone with queued/running jobs or that scans pin (`ZONE_IN_USE`; the message
 says which).
 
-Scan runs: `GET /api/v1/pipeline-runs/{id}` now returns a `dispatch` object
+Scan runs: `GET /api/v1/scan-runs/{id}` now returns a `dispatch` object
 when the trigger recorded one:
 
 ```
@@ -270,6 +297,15 @@ when the trigger recorded one:
 asset group of the scan (`asset_group_ids`), deduplicated, after scope
 exclusions; the 10,000-target cap applies to all groups together. An empty
 group is named in `warnings`.
+
+A group member is one asset of the scan's tenant, read by asset id in keyset
+pages. It is dispatched by its name, but scope exclusions are tested against
+every value that names it: the name, its known addresses
+(`properties.ip_addresses`, legacy `properties.ip`) and, for a repository,
+its URLs. A host whose address is in an excluded network is therefore
+excluded. Archived members are not scanned; their count is in `warnings` and
+in the run context as `archived_target_count`. Stale and inactive members
+are still scanned, because a scan is how they are seen again.
 
 `sensor_routing` is decided once, before the run is created. Nothing falls
 back silently (D14): `sensor_preference: platform` with an asset group, an

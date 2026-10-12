@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/domain/workflow"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -107,7 +108,7 @@ func (m *wfActionMockFindingRepo) ListAffectedAssetsByVulnerabilityID(_ context.
 func (m *wfActionMockFindingRepo) ListActiveCVEsByTenant(_ context.Context, _ shared.ID, _ vulnerability.ActiveCVEFilter, _ pagination.Pagination) (pagination.Result[vulnerability.ActiveCVE], error) {
 	return pagination.Result[vulnerability.ActiveCVE]{}, nil
 }
-func (m *wfActionMockFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool) (*vulnerability.ActiveCVEStats, error) {
+func (m *wfActionMockFindingRepo) GetActiveCVEStats(_ context.Context, _ shared.ID, _ bool, _ *shared.DataScope) (*vulnerability.ActiveCVEStats, error) {
 	return &vulnerability.ActiveCVEStats{BySeverity: map[string]int{}}, nil
 }
 
@@ -135,7 +136,7 @@ func (m *wfActionMockFindingRepo) CheckFingerprintsExist(_ context.Context, _ sh
 	return nil, nil
 }
 
-func (m *wfActionMockFindingRepo) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _ string) (int64, error) {
+func (m *wfActionMockFindingRepo) UpdateScanIDBatchByFingerprints(_ context.Context, _ shared.ID, _ []string, _, _ string) (int64, error) {
 	return 0, nil
 }
 
@@ -147,7 +148,7 @@ func (m *wfActionMockFindingRepo) BatchCountByAssetIDs(_ context.Context, _ shar
 	return nil, nil
 }
 
-func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID) error {
+func (m *wfActionMockFindingRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
 
@@ -179,7 +180,7 @@ func (m *wfActionMockFindingRepo) AutoReopenByFingerprint(_ context.Context, _ s
 	return nil, nil
 }
 
-func (m *wfActionMockFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]shared.ID, error) {
+func (m *wfActionMockFindingRepo) AutoReopenByFingerprintsBatch(_ context.Context, _ shared.ID, _ []string) (map[string]vulnerability.ReopenedFinding, error) {
 	return nil, nil
 }
 
@@ -265,28 +266,29 @@ func newWfActionTestFinding(tenantID shared.ID, tags []string) *vulnerability.Fi
 }
 
 // newWfActionVulnService creates a VulnerabilityService backed by in-memory mocks.
-func newWfActionVulnService() (*app.VulnerabilityService, *wfActionMockFindingRepo) {
+func newWfActionVulnService() (*finding.VulnerabilityService, *wfActionMockFindingRepo) {
 	vulnRepo := &wfActionMockVulnRepo{}
 	findingRepo := newWfActionMockFindingRepo()
 	log := logger.NewNop()
-	svc := app.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	svc := finding.NewVulnerabilityService(vulnRepo, findingRepo, log)
+	svc.SetAssigneeChecker(anyMember{})
 	return svc, findingRepo
 }
 
 // newWfActionInput is a convenience constructor for ActionInput.
 func newWfActionInput(
 	tenantID shared.ID,
-	actionType workflow.ActionType,
+	actionType automation.ActionType,
 	config map[string]any,
 	triggerData map[string]any,
-) *app.ActionInput {
+) *automationsvc.ActionInput {
 	if config == nil {
 		config = make(map[string]any)
 	}
 	if triggerData == nil {
 		triggerData = make(map[string]any)
 	}
-	return &app.ActionInput{
+	return &automationsvc.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
@@ -305,14 +307,14 @@ func newWfActionInput(
 func TestWfActionFinding_AssignUser_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignUser, map[string]any{
 		"finding_id": f.ID().String(),
 		"user_id":    userID.String(),
 	}, nil)
@@ -335,12 +337,12 @@ func TestWfActionFinding_AssignUser_Success(t *testing.T) {
 func TestWfActionFinding_AssignUser_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignUser, map[string]any{
 		"user_id": userID.String(),
 	}, nil)
 
@@ -353,13 +355,13 @@ func TestWfActionFinding_AssignUser_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_AssignUser_MissingUserID(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignUser, map[string]any{
 		"finding_id": f.ID().String(),
 	}, nil)
 
@@ -372,7 +374,7 @@ func TestWfActionFinding_AssignUser_MissingUserID(t *testing.T) {
 func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -380,7 +382,7 @@ func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 	findingRepo.addFinding(f)
 	findingRepo.getErr = errors.New("db error")
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignUser, map[string]any{
 		"finding_id": f.ID().String(),
 		"user_id":    userID.String(),
 	}, nil)
@@ -400,14 +402,14 @@ func TestWfActionFinding_AssignUser_ServiceError(t *testing.T) {
 func TestWfActionFinding_AssignTeam_NotImplemented(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	teamID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignTeam, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignTeam, map[string]any{
 		"finding_id": f.ID().String(),
 		"team_id":    teamID.String(),
 	}, nil)
@@ -424,11 +426,11 @@ func TestWfActionFinding_AssignTeam_NotImplemented(t *testing.T) {
 func TestWfActionFinding_AssignTeam_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignTeam, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignTeam, map[string]any{
 		"team_id": shared.NewID().String(),
 	}, nil)
 
@@ -441,13 +443,13 @@ func TestWfActionFinding_AssignTeam_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_AssignTeam_MissingTeamID(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignTeam, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignTeam, map[string]any{
 		"finding_id": f.ID().String(),
 	}, nil)
 
@@ -465,13 +467,13 @@ func TestWfActionFinding_AssignTeam_MissingTeamID(t *testing.T) {
 func TestWfActionFinding_UpdatePriority_NotImplemented(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdatePriority, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdatePriority, map[string]any{
 		"finding_id": f.ID().String(),
 		"priority":   "high",
 	}, nil)
@@ -488,10 +490,10 @@ func TestWfActionFinding_UpdatePriority_NotImplemented(t *testing.T) {
 func TestWfActionFinding_UpdatePriority_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdatePriority, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdatePriority, map[string]any{
 		"priority": "high",
 	}, nil)
 
@@ -504,13 +506,13 @@ func TestWfActionFinding_UpdatePriority_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_UpdatePriority_MissingPriority(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdatePriority, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdatePriority, map[string]any{
 		"finding_id": f.ID().String(),
 	}, nil)
 
@@ -527,13 +529,13 @@ func TestWfActionFinding_UpdatePriority_MissingPriority(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateStatus, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdateStatus, map[string]any{
 		"finding_id": f.ID().String(),
 		"status":     "confirmed",
 	}, nil)
@@ -553,10 +555,10 @@ func TestWfActionFinding_UpdateStatus_Success(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateStatus, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdateStatus, map[string]any{
 		"status": "confirmed",
 	}, nil)
 
@@ -569,13 +571,13 @@ func TestWfActionFinding_UpdateStatus_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_MissingStatus(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateStatus, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdateStatus, map[string]any{
 		"finding_id": f.ID().String(),
 	}, nil)
 
@@ -588,14 +590,14 @@ func TestWfActionFinding_UpdateStatus_MissingStatus(t *testing.T) {
 func TestWfActionFinding_UpdateStatus_ServiceError(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 	findingRepo.getErr = errors.New("db failure")
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateStatus, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdateStatus, map[string]any{
 		"finding_id": f.ID().String(),
 		"status":     "confirmed",
 	}, nil)
@@ -613,13 +615,13 @@ func TestWfActionFinding_UpdateStatus_ServiceError(t *testing.T) {
 func TestWfActionFinding_AddTags_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, []string{"existing-tag"})
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAddTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAddTags, map[string]any{
 		"finding_id": f.ID().String(),
 		"tags":       []any{"urgent", "reviewed"},
 	}, nil)
@@ -636,10 +638,10 @@ func TestWfActionFinding_AddTags_Success(t *testing.T) {
 func TestWfActionFinding_AddTags_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeAddTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAddTags, map[string]any{
 		"tags": []any{"urgent"},
 	}, nil)
 
@@ -652,13 +654,13 @@ func TestWfActionFinding_AddTags_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_AddTags_MissingTags(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAddTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAddTags, map[string]any{
 		"finding_id": f.ID().String(),
 	}, nil)
 
@@ -671,13 +673,13 @@ func TestWfActionFinding_AddTags_MissingTags(t *testing.T) {
 func TestWfActionFinding_AddTags_EmptyTags(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, nil)
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeAddTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeAddTags, map[string]any{
 		"finding_id": f.ID().String(),
 		"tags":       []any{},
 	}, nil)
@@ -695,13 +697,13 @@ func TestWfActionFinding_AddTags_EmptyTags(t *testing.T) {
 func TestWfActionFinding_RemoveTags_Success(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, []string{"urgent", "reviewed"})
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeRemoveTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeRemoveTags, map[string]any{
 		"finding_id": f.ID().String(),
 		"tags":       []any{"urgent"},
 	}, nil)
@@ -718,10 +720,10 @@ func TestWfActionFinding_RemoveTags_Success(t *testing.T) {
 func TestWfActionFinding_RemoveTags_MissingFindingID(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeRemoveTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeRemoveTags, map[string]any{
 		"tags": []any{"urgent"},
 	}, nil)
 
@@ -734,13 +736,13 @@ func TestWfActionFinding_RemoveTags_MissingFindingID(t *testing.T) {
 func TestWfActionFinding_RemoveTags_MissingTags(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	f := newWfActionTestFinding(tenantID, []string{"urgent"})
 	findingRepo.addFinding(f)
 
-	input := newWfActionInput(tenantID, workflow.ActionTypeRemoveTags, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeRemoveTags, map[string]any{
 		"finding_id": f.ID().String(),
 	}, nil)
 
@@ -757,7 +759,7 @@ func TestWfActionFinding_RemoveTags_MissingTags(t *testing.T) {
 func TestWfActionFinding_GetFindingID_FromActionConfig(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -765,12 +767,12 @@ func TestWfActionFinding_GetFindingID_FromActionConfig(t *testing.T) {
 	findingRepo.addFinding(f)
 
 	// finding_id in ActionConfig
-	input := &app.ActionInput{
+	input := &automationsvc.ActionInput{
 		TenantID:   tenantID,
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
 		NodeKey:    "action_1",
-		ActionType: workflow.ActionTypeAssignUser,
+		ActionType: automation.ActionTypeAssignUser,
 		ActionConfig: map[string]any{
 			"finding_id": f.ID().String(),
 			"user_id":    userID.String(),
@@ -791,7 +793,7 @@ func TestWfActionFinding_GetFindingID_FromActionConfig(t *testing.T) {
 func TestWfActionFinding_GetFindingID_FromTriggerData(t *testing.T) {
 	vulnSvc, findingRepo := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
@@ -799,12 +801,12 @@ func TestWfActionFinding_GetFindingID_FromTriggerData(t *testing.T) {
 	findingRepo.addFinding(f)
 
 	// finding_id in TriggerData["finding"]["id"]
-	input := &app.ActionInput{
+	input := &automationsvc.ActionInput{
 		TenantID:   tenantID,
 		WorkflowID: shared.NewID(),
 		RunID:      shared.NewID(),
 		NodeKey:    "action_1",
-		ActionType: workflow.ActionTypeAssignUser,
+		ActionType: automation.ActionTypeAssignUser,
 		ActionConfig: map[string]any{
 			"user_id": userID.String(),
 		},
@@ -828,18 +830,18 @@ func TestWfActionFinding_GetFindingID_FromTriggerData(t *testing.T) {
 func TestWfActionFinding_GetFindingID_Missing(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
 	userID := shared.NewID()
 
 	// No finding_id anywhere
-	input := &app.ActionInput{
+	input := &automationsvc.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
 		NodeKey:      "action_1",
-		ActionType:   workflow.ActionTypeAssignUser,
+		ActionType:   automation.ActionTypeAssignUser,
 		ActionConfig: map[string]any{"user_id": userID.String()},
 		TriggerData:  map[string]any{},
 		Context:      map[string]any{},
@@ -858,10 +860,10 @@ func TestWfActionFinding_GetFindingID_Missing(t *testing.T) {
 func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 	vulnSvc, _ := newWfActionVulnService()
 	log := logger.NewNop()
-	h := app.NewFindingActionHandler(vulnSvc, log)
+	h := automationsvc.NewFindingActionHandler(vulnSvc, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, nil, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeRunScript, nil, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -874,33 +876,30 @@ func TestWfActionFinding_UnsupportedAction(t *testing.T) {
 // =============================================================================
 
 func TestWfActionPipeline_TriggerPipeline_NilService(t *testing.T) {
-	// pipelineService == nil → returns error-less map with triggered=false
+	// No backing service: the step fails. A {"triggered": false} success
+	// would show a green run that started nothing.
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
-	tenantID := shared.NewID()
-	pipelineID := shared.NewID()
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{
-		"pipeline_id": pipelineID.String(),
+	input := newWfActionInput(shared.NewID(), automation.ActionTypeTriggerPipeline, map[string]any{
+		"pipeline_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when pipelineService is nil, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "pipeline service not available") {
+		t.Fatalf("err = %v, want a %q failure", err, "pipeline service not available")
 	}
-	triggered, _ := out["triggered"].(bool)
-	if triggered {
-		t.Errorf("expected triggered=false when service is nil, got true")
+	if out != nil {
+		t.Errorf("a failed step reported output %v", out)
 	}
 }
 
 func TestWfActionPipeline_TriggerPipeline_MissingPipelineID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{}, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeTriggerPipeline, map[string]any{}, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -910,10 +909,10 @@ func TestWfActionPipeline_TriggerPipeline_MissingPipelineID(t *testing.T) {
 
 func TestWfActionPipeline_TriggerPipeline_InvalidPipelineIDFormat(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerPipeline, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeTriggerPipeline, map[string]any{
 		"pipeline_id": "not-a-uuid",
 	}, nil)
 
@@ -928,32 +927,30 @@ func TestWfActionPipeline_TriggerPipeline_InvalidPipelineIDFormat(t *testing.T) 
 // =============================================================================
 
 func TestWfActionPipeline_TriggerScan_NilService(t *testing.T) {
+	// No backing service: the step fails. A {"triggered": false} success
+	// would show a green run that started nothing.
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
-	tenantID := shared.NewID()
-	scanID := shared.NewID()
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerScan, map[string]any{
-		"scan_id": scanID.String(),
+	input := newWfActionInput(shared.NewID(), automation.ActionTypeTriggerScan, map[string]any{
+		"scan_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when scanService is nil, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "scan service not available") {
+		t.Fatalf("err = %v, want a %q failure", err, "scan service not available")
 	}
-	triggered, _ := out["triggered"].(bool)
-	if triggered {
-		t.Errorf("expected triggered=false when service is nil, got true")
+	if out != nil {
+		t.Errorf("a failed step reported output %v", out)
 	}
 }
 
 func TestWfActionPipeline_TriggerScan_MissingScanID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerScan, map[string]any{}, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeTriggerScan, map[string]any{}, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -963,10 +960,10 @@ func TestWfActionPipeline_TriggerScan_MissingScanID(t *testing.T) {
 
 func TestWfActionPipeline_TriggerScan_InvalidScanIDFormat(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerScan, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeTriggerScan, map[string]any{
 		"scan_id": "bad-id",
 	}, nil)
 
@@ -978,10 +975,10 @@ func TestWfActionPipeline_TriggerScan_InvalidScanIDFormat(t *testing.T) {
 
 func TestWfActionPipeline_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewPipelineTriggerHandler(nil, nil, log)
+	h := automationsvc.NewPipelineTriggerHandler(nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, nil, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignUser, nil, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -997,10 +994,10 @@ func TestWfActionPipeline_UnsupportedAction(t *testing.T) {
 // configured") rather than report {"created": true} without filing anything.
 func TestWfActionTicket_CreateTicket_NoProvider(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := automationsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeCreateTicket, map[string]any{
 		"finding_id":  shared.NewID().String(),
 		"project_key": "SEC",
 		"issue_type":  "Bug",
@@ -1018,10 +1015,10 @@ func TestWfActionTicket_CreateTicket_NoProvider(t *testing.T) {
 // The target finding must be resolvable from config or trigger data first.
 func TestWfActionTicket_CreateTicket_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := automationsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeCreateTicket, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeCreateTicket, map[string]any{
 		"project_key": "SEC",
 	}, nil)
 
@@ -1038,10 +1035,10 @@ func TestWfActionTicket_CreateTicket_MissingFindingID(t *testing.T) {
 // With no Jira provider wired, update_ticket must fail loudly ("not configured").
 func TestWfActionTicket_UpdateTicket_NoProvider(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := automationsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdateTicket, map[string]any{
 		"finding_id": shared.NewID().String(),
 	}, nil)
 
@@ -1056,10 +1053,10 @@ func TestWfActionTicket_UpdateTicket_NoProvider(t *testing.T) {
 
 func TestWfActionTicket_UpdateTicket_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := automationsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeUpdateTicket, map[string]any{}, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeUpdateTicket, map[string]any{}, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil || !strings.Contains(err.Error(), "finding_id not found") {
@@ -1069,10 +1066,10 @@ func TestWfActionTicket_UpdateTicket_MissingFindingID(t *testing.T) {
 
 func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewTicketActionHandler(nil, nil, nil, log)
+	h := automationsvc.NewTicketActionHandler(nil, nil, nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, nil, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeRunScript, nil, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -1085,33 +1082,30 @@ func TestWfActionTicket_UnsupportedAction(t *testing.T) {
 // =============================================================================
 
 func TestWfActionAITriage_TriggerAITriage_NilService(t *testing.T) {
-	// aiTriageService == nil → returns map with triggered=false (no error)
+	// No backing service: the step fails. A {"triggered": false} success
+	// would show a green run that started nothing.
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := automationsvc.NewAITriageActionHandler(nil, log)
 
-	tenantID := shared.NewID()
-	findingID := shared.NewID()
-
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerAITriage, map[string]any{
-		"finding_id": findingID.String(),
+	input := newWfActionInput(shared.NewID(), automation.ActionTypeTriggerAITriage, map[string]any{
+		"finding_id": shared.NewID().String(),
 	}, nil)
 
 	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when aiTriageService is nil, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "AI triage service not available") {
+		t.Fatalf("err = %v, want a %q failure", err, "AI triage service not available")
 	}
-	triggered, _ := out["triggered"].(bool)
-	if triggered {
-		t.Errorf("expected triggered=false when service is nil, got true")
+	if out != nil {
+		t.Errorf("a failed step reported output %v", out)
 	}
 }
 
 func TestWfActionAITriage_TriggerAITriage_MissingFindingID(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := automationsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeTriggerAITriage, map[string]any{}, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeTriggerAITriage, map[string]any{}, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -1121,18 +1115,18 @@ func TestWfActionAITriage_TriggerAITriage_MissingFindingID(t *testing.T) {
 
 func TestWfActionAITriage_TriggerAITriage_FindingIDFromTriggerData(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := automationsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
 	findingID := shared.NewID()
 
 	// finding_id resolved from TriggerData["finding"]["id"]
-	input := &app.ActionInput{
+	input := &automationsvc.ActionInput{
 		TenantID:     tenantID,
 		WorkflowID:   shared.NewID(),
 		RunID:        shared.NewID(),
 		NodeKey:      "triage_1",
-		ActionType:   workflow.ActionTypeTriggerAITriage,
+		ActionType:   automation.ActionTypeTriggerAITriage,
 		ActionConfig: map[string]any{},
 		TriggerData: map[string]any{
 			"finding": map[string]any{
@@ -1142,21 +1136,20 @@ func TestWfActionAITriage_TriggerAITriage_FindingIDFromTriggerData(t *testing.T)
 		Context: map[string]any{},
 	}
 
-	out, err := h.Execute(context.Background(), input)
-	if err != nil {
-		t.Fatalf("expected no error when service is nil (triggered=false), got %v", err)
-	}
-	if out["finding_id"] != findingID.String() {
-		t.Errorf("expected finding_id=%s, got %v", findingID.String(), out["finding_id"])
+	// The finding id resolves from the trigger data: the step gets past it
+	// and fails only for the missing service.
+	_, err := h.Execute(context.Background(), input)
+	if err == nil || !strings.Contains(err.Error(), "AI triage service not available") {
+		t.Fatalf("err = %v, want the missing-service failure (finding %s resolved)", err, findingID)
 	}
 }
 
 func TestWfActionAITriage_UnsupportedAction(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewAITriageActionHandler(nil, log)
+	h := automationsvc.NewAITriageActionHandler(nil, log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeAssignUser, nil, nil)
+	input := newWfActionInput(tenantID, automation.ActionTypeAssignUser, nil, nil)
 
 	_, err := h.Execute(context.Background(), input)
 	if err == nil {
@@ -1170,10 +1163,10 @@ func TestWfActionAITriage_UnsupportedAction(t *testing.T) {
 
 func TestWfActionScriptRunner_Execute_AlwaysDisabled(t *testing.T) {
 	log := logger.NewNop()
-	h := app.NewScriptRunnerHandler(log)
+	h := automationsvc.NewScriptRunnerHandler(log)
 
 	tenantID := shared.NewID()
-	input := newWfActionInput(tenantID, workflow.ActionTypeRunScript, map[string]any{
+	input := newWfActionInput(tenantID, automation.ActionTypeRunScript, map[string]any{
 		"script": "echo hello",
 	}, nil)
 
@@ -1200,13 +1193,14 @@ func TestWfAction_RegisterAllActionHandlers_RegistersAllTypes(t *testing.T) {
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
 
 	// Build a VulnerabilityService backed by minimal in-memory mocks.
 	vulnSvc, _ := newWfActionVulnService()
+	automationsvc.
 
-	// Register all handlers (nil for pipeline, scan, integration — they may be nil).
-	app.RegisterAllActionHandlers(executor, vulnSvc, nil, nil, nil, log)
+		// Register all handlers (nil for pipeline, scan, integration — they may be nil).
+		RegisterAllActionHandlers(executor, vulnSvc, nil, nil, nil, log)
 
 	// Verify handlers were registered by exercising each action type.
 	// We do this by calling Execute directly on the individual handlers (already tested above).
@@ -1221,10 +1215,11 @@ func TestWfAction_RegisterAllActionHandlers_NilVulnSvc(t *testing.T) {
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	automationsvc.
 
-	// nil vulnSvc → finding handlers must NOT be registered (no panic)
-	app.RegisterAllActionHandlers(executor, nil, nil, nil, nil, log)
+		// nil vulnSvc → finding handlers must NOT be registered (no panic)
+		RegisterAllActionHandlers(executor, nil, nil, nil, nil, log)
 }
 
 // =============================================================================
@@ -1237,12 +1232,13 @@ func TestWfAction_RegisterAllActionHandlersWithAI_IncludesAITriage(t *testing.T)
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
 
 	vulnSvc, _ := newWfActionVulnService()
+	automationsvc.
 
-	// nil aiTriageSvc → AI triage handler must NOT be registered (no panic)
-	app.RegisterAllActionHandlersWithAI(executor, vulnSvc, nil, nil, nil, nil, nil, nil, log)
+		// nil aiTriageSvc → AI triage handler must NOT be registered (no panic)
+		RegisterAllActionHandlersWithAI(executor, vulnSvc, nil, nil, nil, nil, nil, nil, log)
 }
 
 func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
@@ -1251,10 +1247,11 @@ func TestWfAction_RegisterAllActionHandlersWithAI_AllNil(t *testing.T) {
 	nodeRunRepo := NewMockNodeRunRepository()
 	log := logger.NewNop()
 
-	executor := app.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	executor := automationsvc.NewWorkflowExecutor(wfRepo, runRepo, nodeRunRepo, log)
+	automationsvc.
 
-	// All nil services — only ScriptRunnerHandler should be registered (no panic)
-	app.RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
+		// All nil services — only ScriptRunnerHandler should be registered (no panic)
+		RegisterAllActionHandlersWithAI(executor, nil, nil, nil, nil, nil, nil, nil, log)
 }
 
 // =============================================================================
@@ -1265,7 +1262,7 @@ func (m *wfActionMockFindingRepo) ListFindingGroups(_ context.Context, _ shared.
 	return pagination.Result[*vulnerability.FindingGroup]{}, nil
 }
 
-func (m *wfActionMockFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID) (int64, error) {
+func (m *wfActionMockFindingRepo) BulkUpdateStatusByFilter(_ context.Context, _ shared.ID, _ vulnerability.FindingFilter, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) (int64, error) {
 	return 0, nil
 }
 

@@ -3,10 +3,16 @@ name: Repository Security
 # Whole-repository checks that do not belong to one component, so they run on
 # every PR and push with no path filter.
 #
-# Betterleaks scans the full git history (api's original history, ui's
-# imported history and everything after). It reads .betterleaks.toml and
-# .gitleaksignore from the repository root, which is where they were in
-# openctemio/api; the cutover copies them to the root for exactly that reason.
+# Betterleaks reads .betterleaks.toml and .gitleaksignore from the repository
+# root, which is where they were in openctemio/api; the cutover copies them to
+# the root for exactly that reason.
+#
+# Scope: a pull request (or merge-queue group) scans only the commits it adds
+# (base..HEAD), which is all it can introduce. A push to develop/main and the
+# weekly schedule scan the FULL history (api's, ui's imported one and
+# everything after): code scanning closes any alert missing from the latest
+# analysis of a category on a branch, so a diff-scoped upload on a branch push
+# would silently close every existing betterleaks alert.
 
 on:
   push:
@@ -14,45 +20,90 @@ on:
   pull_request:
     branches: [main, develop]
   merge_group:
+    types: [checks_requested]
   schedule:
     - cron: '0 0 * * 1'
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secret-scan:
     name: Secret Scanning
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     runs-on: ubuntu-latest
     env:
       BETTERLEAKS_VERSION: 1.9.0
       BETTERLEAKS_SHA256: f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
+      - name: Customer identifiers (self-test)
+        run: bash .github/scripts/check-customer-identifiers.test.sh >/dev/null
+
+      # Fails when a tracked file names a customer (case-insensitive fixed
+      # strings from the CUSTOMER_DENYLIST secret, so the list is never
+      # committed) or carries the live LAN range outside tests. Prints only
+      # file:line. Passes with a notice when the secret is empty (forks).
+      - name: Customer identifiers
+        env:
+          CUSTOMER_DENYLIST: ${{ secrets.CUSTOMER_DENYLIST }}
+        run: bash .github/scripts/check-customer-identifiers.sh
+
       - name: Install Betterleaks (pinned, checksum-verified)
         run: |
-          curl -sSfL -o betterleaks.tgz \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o betterleaks.tgz \
             "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${BETTERLEAKS_SHA256}  betterleaks.tgz" | sha256sum -c -
           tar -xzf betterleaks.tgz betterleaks
 
+      - name: Scan scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: |
+          case "$EVENT" in
+            pull_request)
+              git fetch --no-tags --quiet origin "$BASE_REF"
+              range="origin/${BASE_REF}..HEAD" ;;
+            merge_group) range="${MG_BASE}..${MG_HEAD}" ;;
+            *) range="" ;;
+          esac
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          if [ -n "$range" ]; then
+            echo "Scanning the $(git rev-list --count "$range") commit(s) in $range"
+          else
+            echo "Scanning the full history ($(git rev-list --count HEAD) commits)"
+          fi
+
       - name: Run Betterleaks
-        run: >-
-          ./betterleaks git --redact --no-banner --exit-code 0
-          --report-format sarif --report-path betterleaks.sarif .
+        env:
+          RANGE: ${{ steps.scope.outputs.range }}
+        run: |
+          args=()
+          if [ -n "$RANGE" ]; then args=(--log-opts "$RANGE"); fi
+          ./betterleaks git --redact --no-banner --exit-code 0 \
+            --report-format sarif --report-path betterleaks.sarif "${args[@]}" .
 
       - name: Upload Betterleaks results
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         if: always()
         with:
           sarif_file: betterleaks.sarif
@@ -62,8 +113,39 @@ jobs:
     name: Workflow Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: actionlint
+        # Release tarball pinned by SHA-256 (no curl | bash of a mutable script).
+        env:
+          ACTIONLINT_VERSION: 1.7.7
+          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
         run: |
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o actionlint.tgz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
+          tar -xzf actionlint.tgz actionlint
           ./actionlint -color
+      - name: Actions are pinned to commit SHAs
+        run: bash .github/scripts/check-action-pins.sh
+      # Which jobs a change runs (api/web/docs routing shared by every workflow).
+      - name: Change routing self-test
+        run: bash .github/scripts/changed.test.sh
+
+  # New or upgraded dependencies a pull request brings in (Go modules, npm,
+  # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
+  # known high or critical vulnerability in what the pull request adds; existing
+  # dependencies are covered by govulncheck, npm audit and Trivy.
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never

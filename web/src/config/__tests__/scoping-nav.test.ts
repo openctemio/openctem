@@ -3,19 +3,23 @@
  * row per ctem.org scoping artifact. Business context and Threat model are rows
  * whose route tabs belong to different modules, so a tab is gated on its own
  * module and the row is shown while any tab is. Every URL that used to be a
- * Scoping row still opens and lights up a row.
+ * Scoping row still opens and lights up a row; Asset groups and Relationships
+ * moved to /assets/groups and /assets/suggestions (assets-nav.test.ts).
  */
 import { describe, expect, it } from 'vitest'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { sidebarData } from '../sidebar-data'
-import { BUSINESS_CONTEXT_SECTION_TABS, THREAT_MODEL_SECTION_TABS } from '../section-tabs'
+import {
+  BUSINESS_CONTEXT_SECTION_TABS,
+  SCOPE_SECTION_TABS,
+  THREAT_MODEL_SECTION_TABS,
+} from '../section-tabs'
 import { matchRoutePermission } from '../route-permissions'
 import { checkIsActive } from '@/components/layout/nav-active'
 import type { NavCollapsible, NavItem, NavLink } from '@/components/types'
 import { rowUrlForSections, visibleSections } from '@/lib/permissions/use-filtered-sidebar'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 
 const APP = join(process.cwd(), 'src', 'app')
 
@@ -51,8 +55,17 @@ describe('Scoping rows', () => {
       ['Overview', '/scoping'],
       ['Cycles', '/cycles'],
       ['Business context', '/crown-jewels'],
-      ['Boundaries', '/scope-config'],
+      ['Scope', '/scope'],
       ['Threat model', '/threat-model'],
+    ])
+  })
+
+  it('Scope carries Scope | Programs, gated like their routes (RFC-065)', () => {
+    expect(row('Scoping', 'Scope').sections).toBe(SCOPE_SECTION_TABS)
+    expect(SCOPE_SECTION_TABS.map((t) => [t.label, t.href, t.permission])).toEqual([
+      ['Scope', '/scope', 'attack_surface:scope:read'],
+      ['Programs', '/programs', 'attack_surface:programs:read'],
+      ['Letters', '/scope/letters', 'attack_surface:scope:read'],
     ])
   })
 
@@ -73,7 +86,7 @@ describe('Scoping rows', () => {
     ])
   })
 
-  it.each([...BUSINESS_CONTEXT_SECTION_TABS, ...THREAT_MODEL_SECTION_TABS])(
+  it.each([...BUSINESS_CONTEXT_SECTION_TABS, ...THREAT_MODEL_SECTION_TABS, ...SCOPE_SECTION_TABS])(
     '$label tab has a page and the gates its route guard enforces',
     (tab) => {
       expect(pageExists(tab.href), tab.href).toBe(true)
@@ -93,7 +106,7 @@ describe('Scoping rows', () => {
     }
   })
 
-  it('the header opens the Overview, which needs only assets:read', () => {
+  it('the Overview row (and rail flyout heading) opens /scoping, which needs only assets:read', () => {
     expect(group('Scoping').url).toBe('/scoping')
     const overview = row('Scoping', 'Overview')
     expect(overview.module).toBeUndefined()
@@ -115,8 +128,8 @@ describe('moves out of Scoping', () => {
     const discovery = links('Discovery')
     expect(discovery.map((i) => i.url)).toContain('/attack-surface')
     const assetTabs = row('Discovery', 'Assets').sections!.map((s) => s.href)
-    expect(assetTabs).toContain('/asset-groups')
-    expect(assetTabs).toContain('/relationships/suggestions')
+    expect(assetTabs).toContain('/assets/groups')
+    expect(assetTabs).toContain('/assets/suggestions')
   })
 
   it('Compliance is an Insights row', () => {
@@ -124,20 +137,21 @@ describe('moves out of Scoping', () => {
   })
 
   // Every URL that was a Scoping row before the regroup still lights up a row
-  // in the expected group (no redirects: none of these URLs changed).
+  // in the expected group. Asset groups and suggestions are listed at their
+  // current URL.
   it.each([
     ['/cycles', 'Scoping', 'Cycles'],
     ['/crown-jewels', 'Scoping', 'Business context'],
     ['/business-services', 'Scoping', 'Business context'],
     ['/business-units', 'Scoping', 'Business context'],
-    ['/scope-config', 'Scoping', 'Boundaries'],
+    ['/scope', 'Scoping', 'Scope'],
     ['/threat-model', 'Scoping', 'Threat model'],
     ['/attacker-profiles', 'Scoping', 'Threat model'],
     ['/attack-surface', 'Discovery', 'Attack surface'],
     ['/attack-surface/external', 'Discovery', 'Attack surface'],
-    ['/asset-groups', 'Discovery', 'Assets'],
-    ['/asset-groups/abc', 'Discovery', 'Assets'],
-    ['/relationships/suggestions', 'Discovery', 'Assets'],
+    ['/assets/groups', 'Discovery', 'Assets'],
+    ['/assets/groups/abc', 'Discovery', 'Assets'],
+    ['/assets/suggestions', 'Discovery', 'Assets'],
     ['/compliance', 'Insights', 'Compliance'],
   ])('%s is active on %s > %s', (path, groupTitle, title) => {
     const active = sidebarData.navGroups.flatMap((g) =>

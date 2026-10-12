@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -48,7 +48,7 @@ func advertisedProviders(t *testing.T, h Handlers) (handler.SocialProviders, htt
 	t.Helper()
 
 	router := infrahttp.NewChiRouter()
-	registerAuthRoutes(router, h, oauthTestConfig(), AuthConfig{}, nil, logger.NewNop())
+	registerAuthRoutes(router, h, oauthTestConfig(), AuthConfig{}, nil, nil, logger.NewNop())
 
 	srv, ok := router.(interface{ Handler() http.Handler })
 	if !ok {
@@ -125,7 +125,7 @@ func TestAuthProviders_AdvertisesWiredProviders(t *testing.T) {
 	cfg := oauthTestConfig()
 	// Repos are nil: the authorize leg builds the provider URL from config and
 	// a signed state token, and never touches persistence.
-	oauthSvc := app.NewOAuthService(nil, nil, nil, cfg.OAuth, cfg.Auth, logger.NewNop())
+	oauthSvc := auth.NewOAuthService(nil, nil, nil, cfg.OAuth, cfg.Auth, logger.NewNop())
 	oauthHandler := handler.NewOAuthHandler(oauthSvc, cfg.OAuth, cfg.Auth, logger.NewNop())
 
 	social, mux := advertisedProviders(t, Handlers{OAuth: oauthHandler})
@@ -183,7 +183,7 @@ func TestAuthProviders_NotOnTheLoginLimiter(t *testing.T) {
 	cfg := oauthTestConfig()
 	cfg.RateLimit = config.RateLimitConfig{Enabled: true, RequestsPerSec: 100, Burst: 200, CleanupInterval: time.Minute}
 	router := infrahttp.NewChiRouter()
-	registerAuthRoutes(router, Handlers{}, cfg, AuthConfig{}, nil, logger.NewNop())
+	registerAuthRoutes(router, Handlers{}, cfg, AuthConfig{}, nil, nil, logger.NewNop())
 	mux := router.(interface{ Handler() http.Handler }).Handler()
 
 	for i := 1; i <= 10; i++ {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
@@ -168,7 +169,7 @@ func (r *NotificationRepository) UnreadCount(
 // audience whose preferences allow it: the users a real-time push goes to.
 // The audience and preference rules are the ones List and UnreadCount apply,
 // so a push never reaches anyone whose inbox would not show the notification.
-func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notification.Notification, strictScope bool) ([]shared.ID, error) {
+func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notification.Notification) ([]shared.ID, error) {
 	var audienceID *string
 	if n.AudienceID() != nil {
 		s := n.AudienceID().String()
@@ -182,7 +183,12 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 	}
 
 	// $1 tenant, $2 audience, $3 audience_id, $4 type, $5 severity,
-	// $6 resource_type, $7 resource_id, $8 strict data scope.
+	// $6 resource_type, $7 resource_id. A finding or asset notice reaches only
+	// owners/admins, full-data roles and members whose scope covers the asset
+	// (fail closed: no scope row, no push), the same rule the inbox applies;
+	// a private program asset (RFC-065 §15.3) reaches only owners and the
+	// program's members, so its title and body are never pushed to anyone
+	// else.
 	query := `
 		SELECT tm.user_id
 		FROM tenant_members tm
@@ -204,19 +210,30 @@ func (r *NotificationRepository) ListRecipients(ctx context.Context, n *notifica
 			OR EXISTS (
 				SELECT 1 FROM v_user_effective_role ver
 				WHERE ver.user_id = tm.user_id AND ver.tenant_id = $1
-				  AND ver.role IN ('owner', 'admin'))
-			OR (NOT $8::boolean AND NOT EXISTS (
-				SELECT 1 FROM user_accessible_assets uaa
-				WHERE uaa.user_id = tm.user_id AND uaa.tenant_id = $1))
-			OR EXISTS (
-				SELECT 1 FROM user_accessible_assets uaa
-				WHERE uaa.user_id = tm.user_id AND uaa.tenant_id = $1
-				  AND uaa.asset_id = ` + notificationAssetExpr("$6::text", "$7::uuid", "$1") + `)
+				  AND ver.role = 'owner')
+			OR (NOT EXISTS (
+				SELECT 1 FROM assets ph
+				WHERE ph.id = ` + notificationAssetExpr("$6::text", "$7::uuid", "$1") + `
+				  AND ` + filterspec.HiddenAssetWhereExpr("tm.user_id", "$1") + `)
+			  AND (
+				EXISTS (
+					SELECT 1 FROM v_user_effective_role ver
+					WHERE ver.user_id = tm.user_id AND ver.tenant_id = $1
+					  AND ver.role = 'admin')
+				OR EXISTS (
+					SELECT 1 FROM v_user_role_grants ur
+					JOIN roles ro ON ro.id = ur.role_id
+					WHERE ur.tenant_id = $1 AND ur.user_id = tm.user_id AND ro.has_full_data_access = TRUE
+					  AND (ro.tenant_id IS NULL OR ro.tenant_id = ur.tenant_id))
+				OR EXISTS (
+					SELECT 1 FROM user_accessible_assets uaa
+					WHERE uaa.user_id = tm.user_id AND uaa.tenant_id = $1
+					  AND uaa.asset_id = ` + notificationAssetExpr("$6::text", "$7::uuid", "$1") + `)))
 		  )`
 
 	rows, err := r.db.QueryContext(ctx, query,
 		n.TenantID(), n.Audience(), audienceID, n.NotificationType(), n.Severity(),
-		n.ResourceType(), resourceID, strictScope)
+		n.ResourceType(), resourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list notification recipients: %w", err)
 	}

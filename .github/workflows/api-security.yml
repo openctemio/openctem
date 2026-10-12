@@ -4,26 +4,49 @@ name: API Security
 # (one workflow, both languages) and secret scanning to repo-security.yml (it
 # scans the whole repository history, not one component).
 
+# No required check lives here, so this workflow uses `paths:` and does not
+# start at all for a web-only change. Same routing as .github/scripts/changed.sh
+# (api/ + shared files); keep the two in step. The weekly schedule scans
+# everything. No merge_group trigger: it cannot be path-filtered, the PR run
+# already scanned the change, and the push to the branch scans it again.
+
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'api/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
+      - '!**/*.md'
+      - '!api/docs/**'
   pull_request:
     branches: [main, develop]
-  merge_group:
+    paths:
+      - 'api/**'
+      - 'Makefile'
+      - 'go.work'
+      - 'go.work.sum'
+      - '.github/**'
+      - 'deploy/**'
+      - '!**/*.md'
+      - '!api/docs/**'
   schedule:
     - cron: '0 0 * * 1' # Monday 00:00 UTC; schedules run from the default branch (main)
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
+# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
-  GO_VERSION: "1.26.6"
   GOWORK: "off"
 
 defaults:
@@ -31,47 +54,30 @@ defaults:
     working-directory: api
 
 jobs:
-  changes:
-    name: Detect API changes
-    runs-on: ubuntu-latest
-    outputs:
-      api: ${{ steps.f.outputs.api }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: f
-        working-directory: .
-        env:
-          EVENT_BEFORE: ${{ github.event.before }}
-        run: bash .github/scripts/changed.sh api api/ .github/workflows/api- .github/scripts/
-
-  govulncheck:
-    name: Go Vulnerability Check
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
+  # govulncheck, Trivy (fs) and the license check in ONE job (one runner, one
+  # checkout, one setup-go). Each scan runs even if an earlier one failed
+  # (`!cancelled()`), so one failure does not hide the others' results.
+  scan:
+    name: Go vulnerabilities, Trivy, licenses (api)
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
-      - name: Run govulncheck
-        run: govulncheck ./...
-
-  trivy:
-    name: Trivy Vulnerability Scanner (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      - name: Go Vulnerability Check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          govulncheck ./...
+      - name: Trivy Vulnerability Scanner (api)
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: 'api'
@@ -81,21 +87,38 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
           scanners: 'vuln,secret,misconfig'
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
+        if: ${{ !cancelled() && hashFiles('trivy-api.sarif') != '' }}
         with:
           sarif_file: 'trivy-api.sarif'
           category: trivy-api
+      - name: License Compliance (api)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          go install github.com/google/go-licenses@v1.6.0
+          go-licenses check ./... --disallowed_types=forbidden,restricted || true
 
   semgrep:
     name: Semgrep (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      packages: read
     runs-on: ubuntu-latest
     container:
-      image: semgrep/semgrep:1.178.0
+      # CI image mirror (.github/ci-images.txt): no anonymous Docker Hub quota.
+      image: ghcr.io/openctemio/mirror/semgrep:1.178.0
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Scanned from the repository root with `api` as the target, so the SARIF
       # paths are repository-relative (api/internal/...). Scanned from inside
       # api/, they would be internal/... and code scanning would place the
@@ -108,7 +131,11 @@ jobs:
           --exclude 'vendor' --exclude '*_test.go'
           api
       - name: Upload Semgrep results
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         if: always()
         with:
           sarif_file: semgrep-api.sarif
@@ -116,72 +143,65 @@ jobs:
 
   snyk:
     name: Snyk Security Scan (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true' && vars.ENABLE_SNYK == 'true'
+    if: vars.ENABLE_SNYK == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: api/go.mod
           cache: true
           cache-dependency-path: api/go.sum
       - name: Run Snyk to check for vulnerabilities
-        uses: snyk/actions/golang@master
+        uses: snyk/actions/golang@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high --file=api/go.mod
 
-  license-check:
-    name: License Compliance (api)
-    needs: changes
-    if: needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          cache-dependency-path: api/go.sum
-      - name: Install go-licenses
-        run: go install github.com/google/go-licenses@v1.6.0
-      - name: Check licenses
-        run: go-licenses check ./... --disallowed_types=forbidden,restricted || true
-        continue-on-error: true
-
   # Weekly sweep + main pushes + PRs into main (release candidates). Not on every
   # PR: building the image costs minutes and the fs scan covers dependencies.
   docker-scan:
     name: Docker Image Scan (api)
-    needs: changes
     if: >-
-      needs.changes.outputs.api == 'true' && (
       github.event_name == 'schedule'
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Registry login (GHCR mirror; Docker Hub when configured)
+        uses: ./.github/actions/registry-login
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build Docker image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: api
           push: false
           load: true
           tags: openctem-api:scan
       - name: Run Trivy on the image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: 'openctem-api:scan'
           format: 'sarif'
           output: 'trivy-docker-api.sarif'
           severity: 'CRITICAL,HIGH'
       - name: Upload Trivy Docker scan results
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        # The merge queue deletes its temporary gh-readonly-queue branch when a group
+        # is rebuilt; an upload still in flight then fails with ref not found. The scan
+        # result above already ran; only the upload is tolerated in merge_group.
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         if: always()
         with:
           sarif_file: 'trivy-docker-api.sarif'

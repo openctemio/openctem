@@ -35,7 +35,6 @@ func (r *autoAssignFindingRepo) Update(_ context.Context, _ *vulnerability.Findi
 // countingAssetRepo counts GetByID calls to prove dedup across pages.
 type countingAssetRepo struct {
 	asset.Repository // embedded; unused methods must never be called
-	assetOwner       *shared.ID
 	name             string
 	calls            int
 }
@@ -46,7 +45,6 @@ func (r *countingAssetRepo) GetByID(_ context.Context, tenantID, id shared.ID) (
 	if err != nil {
 		return nil, err
 	}
-	a.SetOwnerID(r.assetOwner)
 	return a, nil
 }
 
@@ -78,9 +76,10 @@ func TestAutoAssignToOwners_DedupsAssetLookups(t *testing.T) {
 	findingRepo := &autoAssignFindingRepo{
 		pages: [][]*vulnerability.Finding{mkPage(100), mkPage(50)},
 	}
-	assetRepo := &countingAssetRepo{assetOwner: &owner, name: "host-1"}
+	assetRepo := &countingAssetRepo{name: "host-1"}
+	accessCtrl := &stubAccessCtrl{primary: map[shared.ID]shared.ID{assetID: owner}}
 
-	svc := NewFindingActionsService(findingRepo, nil, nil, assetRepo, nil, nil, logger.NewNop())
+	svc := NewFindingActionsService(findingRepo, accessCtrl, nil, assetRepo, nil, nil, logger.NewNop())
 
 	res, err := svc.AutoAssignToOwners(context.Background(), tenantID.String(), shared.NewID().String(), vulnerability.NewFindingFilter())
 	if err != nil {
@@ -93,5 +92,8 @@ func TestAutoAssignToOwners_DedupsAssetLookups(t *testing.T) {
 	// 150 findings, one shared asset → exactly ONE asset lookup.
 	if assetRepo.calls != 1 {
 		t.Errorf("asset GetByID calls = %d, want 1 (dedup across pages)", assetRepo.calls)
+	}
+	if accessCtrl.primaryCalls != 1 {
+		t.Errorf("primary owner lookups = %d, want 1 (dedup across pages)", accessCtrl.primaryCalls)
 	}
 }

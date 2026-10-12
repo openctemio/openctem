@@ -24,7 +24,8 @@ export interface CreateAPIKeyRequest {
   description?: string
   scopes: string[]
   rate_limit?: number
-  expires_in_days?: number
+  /** Required by the API: 1 to 365 days (see lib/expiry). */
+  expires_in_days: number
 }
 
 /** Create returns the plaintext key exactly once. */

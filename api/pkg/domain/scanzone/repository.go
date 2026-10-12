@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -36,6 +37,10 @@ type SensorCandidate struct {
 	ActiveCommands    int // pending/acknowledged/running commands pinned to it
 	CurrentJobs       int
 	MaxConcurrentJobs int
+	// LocalPolicy is the sensor-local policy the sensor last reported (nil:
+	// never reported); the trigger pins no batch to a sensor whose policy
+	// refuses it (sensor.Accepts).
+	LocalPolicy *sensor.LocalPolicyReport
 }
 
 // ZoneCoverage is the coverage of one zone.

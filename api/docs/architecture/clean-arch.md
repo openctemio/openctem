@@ -13,7 +13,7 @@
 │  │                                                                      │   │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │   │
 │  │  │   http/  │ │  grpc/   │ │   ws/    │ │ postgres/│ │connector/│  │   │
-│  │  │ REST API │ │ gRPC API │ │WebSocket │ │    DB    │ │ Wiz/etc  │  │   │
+│  │  │ REST API │ │ gRPC API │ │WebSocket │ │    DB    │ │ Provider │  │   │
 │  │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘  │   │
 │  └───────┼────────────┼────────────┼────────────┼────────────┼─────────┘   │
 │          │            │            │            │            │             │
@@ -32,7 +32,7 @@
 │                                   │                                         │
 │                                   ▼                                         │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  internal/domain/      DOMAIN LAYER (Pure Business Logic)            │   │
+│  │  pkg/domain/      DOMAIN LAYER (Pure Business Logic)                 │   │
 │  │                                                                      │   │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐               │   │
 │  │  │  asset/  │ │ exposure/│ │attackpath│ │  shared/ │               │   │
@@ -51,14 +51,14 @@
 
 | Layer | Can Import | Cannot Import |
 |-------|------------|---------------|
-| `domain/` | Nothing (only stdlib) | app, infra, pkg |
+| `pkg/domain/` | stdlib and other domain packages | internal/app, internal/infra |
 | `app/` | domain | infra |
 | `infra/` | domain, app, pkg | - |
 | `cmd/` | All layers | - |
 
 ---
 
-## Domain Layer (`internal/domain/`)
+## Domain Layer (`pkg/domain/`)
 
 **Zero external dependencies** - Only standard library.
 
@@ -264,26 +264,13 @@ Hexagonal / Ports & Adapters
 ```
 ├── interface.go       # Connector interface
 │
-├── wiz/
-│   ├── client.go      # Wiz API client
+├── <provider>/
+│   ├── client.go      # provider API client
 │   ├── client_test.go
-│   ├── mapper.go      # Map Wiz → Domain
+│   ├── mapper.go      # Map provider → Domain
 │   └── config.go
 │
-├── tenable/
-│   ├── client.go
-│   ├── mapper.go
-│   └── config.go
-│
-├── snyk/
-│   ├── client.go
-│   ├── mapper.go
-│   └── config.go
-│
-└── crowdstrike/
-    ├── client.go
-    ├── mapper.go
-    └── config.go
+└── ...                # one folder per provider (see ADR-003)
 ```
 
 ### queue/ (optional)

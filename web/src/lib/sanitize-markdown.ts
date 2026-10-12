@@ -49,9 +49,11 @@ export const URL_ATTRS: ReadonlySet<string> = new Set([
 /**
  * Permissive scheme whitelist. Anything else (javascript:, data:,
  * vbscript:, blob:, file:, etc.) is rewritten to `#` below. Relative
- * paths and document fragments are intentionally allowed.
+ * paths and document fragments are intentionally allowed, but not the
+ * protocol-relative `//host` (or `/\host`, which browsers read the same
+ * way): that leaves the app for whatever host the author chose.
  */
-const SAFE_URL_RE = /^(?:https?:|mailto:|tel:|#|\/|\.\/|\.\.\/|$)/i
+const SAFE_URL_RE = /^(?:https?:|mailto:|tel:|#|\/(?![/\\])|\.\/|\.\.\/|$)/i
 
 /** Strip control chars + whitespace the browser would otherwise tolerate
  *  in the scheme portion (e.g. "\tjavascript:…" still fires in Chrome). */

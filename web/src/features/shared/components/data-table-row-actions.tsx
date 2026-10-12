@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { Can } from '@/lib/permissions'
+import { Can, type ApiRouteKey } from '@/lib/permissions'
 
 /**
  * One item in a row-actions menu.
@@ -34,6 +34,12 @@ export interface RowAction {
   separatorBefore?: boolean
   /** Gate this item behind a permission (wrapped in <Can>). Omit = always shown. */
   permission?: string | string[]
+  /**
+   * Gate this item behind the API route it calls (permissions and role as the
+   * API checks them; see src/config/api-route-permissions.json). Prefer this
+   * for actions that write.
+   */
+  route?: ApiRouteKey | ApiRouteKey[]
 }
 
 interface DataTableRowActionsProps {
@@ -88,8 +94,8 @@ export function DataTableRowActions({
               )}
             </>
           )
-          return action.permission ? (
-            <Can key={`${action.label}-${i}`} permission={action.permission}>
+          return action.permission || action.route ? (
+            <Can key={`${action.label}-${i}`} permission={action.permission} route={action.route}>
               {item}
             </Can>
           ) : (

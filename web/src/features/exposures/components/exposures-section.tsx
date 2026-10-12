@@ -5,7 +5,7 @@
  * type page (a stats dashboard) to the Findings list it summarises.
  */
 
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SectionTabs } from '@/features/shared'
@@ -29,7 +29,7 @@ export function ExposuresTabs() {
  * comma-separated `sources` param (useUrlFilterList('sources')).
  */
 export function findingsHrefForSources(sources: readonly string[]): string {
-  return `/findings?sources=${sources.map(encodeURIComponent).join(',')}`
+  return `/findings?source=${sources.map(encodeURIComponent).join(',')}`
 }
 
 /**

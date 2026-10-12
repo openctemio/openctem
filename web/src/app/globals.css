@@ -25,9 +25,34 @@
     overscroll-behavior: none;
   }
 
+  /* iOS Safari draws date/time inputs with a native control that ignores the
+     input's width (it overflows its grid cell) and changes height when empty.
+     Keep them the size of every other input. */
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='time'],
+  input[type='month'] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input::-webkit-date-and-time-value {
+    min-height: 1.25rem;
+    text-align: start;
+  }
+
   /* Override Radix scroll locking for sticky headers */
   body[data-scroll-locked] {
     overflow: unset !important;
+  }
+
+  /* A fieldset is min-content wide by default: one long unbreakable or
+     truncated line inside it (a list of names, an address) made the New Scan
+     dialog body scroll sideways and clip its content. Let it shrink like a
+     div; long values wrap or truncate inside it. */
+  fieldset {
+    min-width: 0;
   }
 
   /* Cursor pointer for buttons */
@@ -59,6 +84,22 @@
   /* Hide scrollbar for IE, Edge and Firefox */
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+
+/* Overlay-like scrollbar for a scroll container: the gutter is always
+   reserved (content never shifts when the scrollbar appears) and the thumb is
+   visible only while scrolling (data-scrolling, set by useScrollActivity).
+   Wheel, trackpad, keyboard and touch scrolling are unchanged. Forced-colors
+   mode keeps the system scrollbar. */
+@utility scrollbar-auto-hide {
+  scrollbar-gutter: stable;
+  scrollbar-color: transparent transparent;
+  &[data-scrolling] {
+    scrollbar-color: var(--border) transparent;
+  }
+  @media (forced-colors: active) {
+    scrollbar-color: auto;
+  }
 }
 
 @utility faded-bottom {
@@ -177,6 +218,19 @@
   .nav-progress[data-active] {
     animation: nav-fade-in 150ms ease-out 120ms both;
     transform: scaleX(0.5);
+  }
+}
+
+/* Sheets and drawers appear and go without sliding under reduced motion
+   (a drawer let go short of closing snaps back at once). With no
+   animation, Radix unmounts a closing sheet at once. */
+@media (prefers-reduced-motion: reduce) {
+  [data-vaul-drawer],
+  [data-vaul-overlay],
+  [data-slot='sheet-content'],
+  [data-slot='sheet-overlay'] {
+    animation: none !important;
+    transition: none !important;
   }
 }
 

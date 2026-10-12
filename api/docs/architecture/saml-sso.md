@@ -8,11 +8,16 @@
 
 - **9d (shipped)** — per-tenant config + SP metadata + admin CRUD + the shared
   federated-login seam.
-- **9e (next)** — SP-initiated login (`/login`) + Assertion Consumer Service
-  (`/acs`): build the IdP-side `ServiceProvider` from the stored certificate,
-  validate the assertion signature + conditions + `InResponseTo` (replay), then
-  issue a session via `SSOService.CompleteFederatedLogin`. This is the
-  replay-sensitive, security-critical step and needs a live IdP to validate.
+- **9e (shipped)** — SP-initiated login (`GET /api/v1/auth/saml/{org}/login`),
+  Assertion Consumer Service (`POST /api/v1/auth/saml/{org}/acs`) and SP
+  metadata (`GET /api/v1/auth/saml/{org}/metadata`): the IdP-side
+  `ServiceProvider` is built from the stored certificate, the assertion
+  signature, conditions and `InResponseTo` (replay) are validated, and a
+  session is issued via `SSOService.CompleteFederatedLogin`.
+
+Only a platform administrator configures an organization's SAML provider, in
+the admin console; each change needs an organization owner's approval under
+**Settings → SSO approvals**.
 
 ## Config (9d)
 
@@ -27,8 +32,14 @@ default** — an operator enables SAML only after validating it against their Id
 | `default_role` | role for auto-provisioned users (`admin`/`member`/`viewer`; never `owner`) |
 | `auto_provision`, `enabled` | provision-on-login + master switch |
 
-Admin API (JWT, owner/admin): `GET`/`PUT`/`DELETE /api/v1/settings/saml`. The
-PUT validates the certificate (parseable PEM X.509) and the role.
+Admin API (platform admin console, RFC-022):
+`GET`/`PUT`/`DELETE /api/v1/admin/tenants/{tenantId}/sso/saml`. The PUT
+validates the certificate (parseable PEM X.509) and the role. On an
+organization that has an owner, the PUT does **not** change the live config: it
+stores a pending change (202) that an owner approves or rejects (RFC-022
+revision 8; see `sso-authentication.md`). The organization owner sees the new signing
+certificate's SHA-256 to compare with their IdP. An organization without an
+owner yet gets it applied directly.
 
 ## SP metadata
 
@@ -46,6 +57,19 @@ is the shared tail for any externally-authenticated identity:
   invite / SCIM-provisioned user, so it can later set a password or be claimed);
 - **account-takeover guard** — a password-backed local account is **rejected**
   (a federated assertion must not log into someone's password account);
+- the session is stamped `auth_method = saml` and `idp_tenant_id = <this
+  organization>`: it counts as an SSO sign-in (exempt from SSO enforcement and
+  the 2FA requirement) for this organization only. Exchanged for any other
+  organization the account belongs to, it is handled like a password session —
+  see [sso-authentication.md](sso-authentication.md#how-a-sessions-login-method-is-recorded);
+- an **existing** account is admitted only when it is already a member of the
+  organization **and** its email domain is DNS-verified for that organization.
+  Membership alone is not enough: users are global, an organization can make
+  someone a member (accepted invitation, SCIM, admin add) without owning their
+  identity, and the session is exchangeable for every organization the account
+  belongs to. Without the domain check, an organization holding its own IdP
+  signing key could sign in as any passwordless member and pivot into their
+  other organizations;
 - a brand-new email is admitted only through just-in-time provisioning:
   `auto_provision` on, the email domain DNS-verified for the organization, and
   inside the organization's `Security.AllowedDomains` (RFC-025). Otherwise the
@@ -69,3 +93,11 @@ hand-rolled.
 | Federated-login seam | `internal/app/auth/sso.go` (`SSOService.CompleteFederatedLogin`) |
 | HTTP | `internal/infra/http/handler/saml_handler.go`, routes in `routes/auth.go` |
 | Migration | `000182_saml_providers` |
+
+## Default role of just-in-time members
+
+An SSO provider (OIDC or SAML) and the `SSO_ENTRA_DEFAULT_ROLE` fallback may
+only provision **member** or **viewer** (decision B18). `admin` is
+refused when the provider is saved, and a provider stored before this rule
+with `admin` provisions viewers: an IdP misconfiguration must not mint
+administrators. Admins are promoted explicitly.

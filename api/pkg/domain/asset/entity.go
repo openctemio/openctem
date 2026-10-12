@@ -22,8 +22,7 @@ type Asset struct {
 	id                    shared.ID
 	tenantID              shared.ID
 	parentID              *shared.ID // For hierarchical assets (e.g., subdomain -> domain)
-	ownerID               *shared.ID // User who owns this asset (resolved)
-	ownerRef              string     // Raw owner text from external source (email, username, team)
+	ownerRef              string     // Raw owner hint (email, username, team); a member's email becomes a primary owner in asset_owners
 	name                  string
 	assetType             AssetType
 	subType               string
@@ -67,6 +66,10 @@ type Asset struct {
 	impactIntegrity       ImpactRating
 	impactAvailability    ImpactRating
 
+	// Crown-jewel flag (assets.is_crown_jewel). Loaded with the asset and
+	// written only by the crown-jewel endpoint, never by a generic save.
+	isCrownJewel bool
+
 	// CTEM: Enhanced Exposure Tracking
 	isInternetAccessible bool       // Directly reachable from internet
 	exposureChangedAt    *time.Time // When exposure level last changed
@@ -97,6 +100,17 @@ type Asset struct {
 // applies to the normalized name, which is what is stored.
 const MaxNameLength = 255
 
+// MaxTagsPerAsset is the most tags (labels) one asset can carry. Ingest, the
+// create and update API and the web all use this one limit. They used to
+// differ (ingest 50, the update API 20), so an asset a scanner had tagged
+// 21 times could not be saved from the UI, even to remove a tag.
+// The request structs in the HTTP handler repeat it in their `validate`
+// tags (a struct tag cannot name a constant); a test keeps them equal.
+const MaxTagsPerAsset = 50
+
+// MaxTagLength is the longest single tag, in characters.
+const MaxTagLength = 50
+
 // validateName checks a normalized name against what assets.name can hold.
 // A longer name is refused rather than truncated: the name is the asset's
 // identity (unique per tenant), so a truncated name could merge two different
@@ -111,22 +125,39 @@ func validateName(name string) error {
 	return nil
 }
 
-// NewAsset creates a new Asset entity.
+// NewAsset creates a new Asset entity with no sub-type.
+//
+// When the asset has a sub-type, use NewAssetWithSubType: the name is the
+// asset's identity and is normalized by (type, sub-type), so creating with
+// one key and looking up with another stores names no lookup ever finds
+// (an http_service URL used to be stored as "https:::host").
 func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset, error) {
+	return NewAssetWithSubType(name, assetType, "", criticality)
+}
+
+// NewAssetWithSubType creates a new Asset entity whose name is normalized with
+// the same (type, sub-type) pair that lookups use, and records the sub-type.
+// See docs/rfcs/RFC-043-deduplication-and-identity.md section 10.
+func NewAssetWithSubType(name string, assetType AssetType, subType string, criticality Criticality) (*Asset, error) {
 	// Normalize name to canonical form (RFC-001: Asset Identity Resolution)
-	name = NormalizeName(name, assetType, "")
+	name = NormalizeName(name, assetType, subType)
 	if err := validateName(name); err != nil {
 		return nil, err
 	}
-	if !assetType.IsValid() {
-		return nil, fmt.Errorf("%w: invalid asset type", shared.ErrValidation)
+	// Only core types are stored; an alias or a legacy sub-type must be
+	// resolved first (ResolveInputType, RFC-042 §6.3.8).
+	if !assetType.IsStored() {
+		return nil, fmt.Errorf("%w: invalid asset type %q (not a stored type; resolve input names with ResolveInputType)", shared.ErrValidation, assetType)
+	}
+	if !IsValidSubType(assetType, subType) {
+		return nil, fmt.Errorf("%w: invalid sub_type %q for asset type %q", shared.ErrValidation, subType, assetType)
 	}
 	if !criticality.IsValid() {
 		return nil, fmt.Errorf("%w: invalid criticality", shared.ErrValidation)
 	}
 
 	now := time.Now().UTC()
-	return &Asset{
+	a := &Asset{
 		id:           shared.NewID(),
 		name:         name,
 		assetType:    assetType,
@@ -143,7 +174,9 @@ func NewAsset(name string, assetType AssetType, criticality Criticality) (*Asset
 		lastSeen:     now,
 		createdAt:    now,
 		updatedAt:    now,
-	}, nil
+	}
+	a.subType = subType
+	return a, nil
 }
 
 // NewAssetWithTenant creates a new Asset entity with tenant.
@@ -161,7 +194,6 @@ func Reconstitute(
 	assetID shared.ID,
 	tenantID shared.ID,
 	parentID *shared.ID,
-	ownerID *shared.ID,
 	name string,
 	assetType AssetType,
 	criticality Criticality,
@@ -212,7 +244,6 @@ func Reconstitute(
 		id:              assetID,
 		tenantID:        tenantID,
 		parentID:        parentID,
-		ownerID:         ownerID,
 		name:            name,
 		assetType:       assetType,
 		criticality:     criticality,
@@ -279,9 +310,41 @@ func (a *Asset) SubType() string {
 	return a.subType
 }
 
-// SetSubType sets the asset sub-type.
+// SetSubType sets the asset sub-type without validation. It is for the
+// repository (rows read back) and tests; writes use ChangeSubType or
+// ApplyResolvedType so only the registry's closed list is stored.
 func (a *Asset) SetSubType(subType string) {
 	a.subType = subType
+}
+
+// ChangeSubType sets a sub-type from the asset type's closed list
+// (RFC-042 §6.3.8 R2). "" clears it.
+func (a *Asset) ChangeSubType(subType string) error {
+	if !IsValidSubType(a.assetType, subType) {
+		return fmt.Errorf("%w: invalid sub_type %q for asset type %q (allowed: %s)",
+			shared.ErrValidation, subType, a.assetType, allowedSubTypes(a.assetType))
+	}
+	a.subType = subType
+	return nil
+}
+
+// ApplyResolvedType records what a resolved input implied on an asset of the
+// resolved type: the sub-type when the asset has none, the provider when it
+// has none, and the implied attributes and native sub-type where the
+// properties have no value. It never overwrites a value.
+func (a *Asset) ApplyResolvedType(r ResolvedType) {
+	if r.Type != a.assetType {
+		return
+	}
+	if a.subType == "" && IsValidSubType(a.assetType, r.SubType) {
+		a.subType = r.SubType
+	}
+	if (a.provider == "" || a.provider == ProviderOther) && r.Provider != "" {
+		a.provider = r.Provider
+	}
+	if len(r.Attributes) > 0 || r.NativeSubType != "" {
+		a.properties = r.MergeImplied(a.properties)
+	}
 }
 
 // Category returns the asset category (derived from type, not stored).
@@ -520,8 +583,19 @@ func (a *Asset) DecrementFindingCount() {
 // sending a future timestamp. This defends against clock-skewed
 // sensors that would otherwise make an asset "never stale".
 func (a *Asset) MarkSeen() {
+	a.MarkSeenAt(time.Now())
+}
+
+// MarkSeenAt is MarkSeen for an observation made at observedAt (a report's
+// timestamp): last_seen is the time the source saw the asset, not the time
+// the report arrived, so the store can keep the newer of two observations
+// whatever order they arrive in. A time in the future counts as now.
+func (a *Asset) MarkSeenAt(observedAt time.Time) {
 	now := time.Now().UTC()
-	a.lastSeen = now
+	if observedAt.IsZero() || observedAt.After(now) {
+		observedAt = now
+	}
+	a.lastSeen = observedAt.UTC()
 	a.updatedAt = now
 
 	if a.manualStatusOverride || a.status == StatusArchived {
@@ -629,6 +703,10 @@ func (a *Asset) CalculateRiskScore() {
 }
 
 // AddTag adds a tag to the asset.
+//
+// An asset holds at most MaxTagsPerAsset tags. A tag past the cap is not
+// added (ingest merges scanner tags into existing assets on every run, and
+// without the cap an asset grew past what the update API accepts).
 func (a *Asset) AddTag(tag string) {
 	if tag == "" {
 		return
@@ -637,6 +715,9 @@ func (a *Asset) AddTag(tag string) {
 		if t == tag {
 			return
 		}
+	}
+	if len(a.tags) >= MaxTagsPerAsset {
+		return
 	}
 	a.tags = append(a.tags, tag)
 	a.updatedAt = time.Now().UTC()
@@ -691,11 +772,6 @@ func (a *Asset) IsRepository() bool {
 // ParentID returns the parent asset ID.
 func (a *Asset) ParentID() *shared.ID {
 	return a.parentID
-}
-
-// OwnerID returns the owner user ID.
-func (a *Asset) OwnerID() *shared.ID {
-	return a.ownerID
 }
 
 // OwnerRef returns the raw owner text from external sources.
@@ -757,12 +833,6 @@ func (a *Asset) SetParentID(parentID *shared.ID) error {
 	a.parentID = parentID
 	a.updatedAt = time.Now().UTC()
 	return nil
-}
-
-// SetOwnerID sets the owner user ID.
-func (a *Asset) SetOwnerID(ownerID *shared.ID) {
-	a.ownerID = ownerID
-	a.updatedAt = time.Now().UTC()
 }
 
 // SetProvider sets the external provider.
@@ -988,6 +1058,17 @@ func (a *Asset) SetRegulatoryOwnerID(ownerID *shared.ID) {
 // =============================================================================
 // CTEM: CIA Impact Rating Methods (Scoping critical-asset register)
 // =============================================================================
+
+// IsCrownJewel reports whether the asset is a crown jewel.
+func (a *Asset) IsCrownJewel() bool {
+	return a.isCrownJewel
+}
+
+// SetCrownJewel records the crown-jewel flag as loaded from storage. The
+// repository writes the flag only through its crown-jewel method.
+func (a *Asset) SetCrownJewel(v bool) {
+	a.isCrownJewel = v
+}
 
 // ImpactConfidentiality returns the confidentiality impact rating.
 func (a *Asset) ImpactConfidentiality() ImpactRating {

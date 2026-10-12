@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -29,7 +32,8 @@ const providerUnsetSentinel = "unset"
 
 // AssetRepository implements asset.Repository using PostgreSQL.
 type AssetRepository struct {
-	db *DB
+	db         *DB
+	planLimits // assets: Create and the new rows of UpsertBatch (ingest)
 }
 
 // NewAssetRepository creates a new AssetRepository.
@@ -39,6 +43,9 @@ func NewAssetRepository(db *DB) *AssetRepository {
 
 // Create persists a new asset.
 func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
+	if err := r.checkLimit(ctx, a.TenantID(), plan.Assets, 1); err != nil {
+		return err
+	}
 	properties, err := json.Marshal(a.Properties())
 	if err != nil {
 		return fmt.Errorf("failed to marshal properties: %w", err)
@@ -46,7 +53,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 
 	query := `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
+			id, tenant_id, parent_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
@@ -57,7 +64,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 			lifecycle_paused_until, manual_status_override,
 			impact_confidentiality, impact_integrity, impact_availability
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41)
 	`
 
 	ownerRefVal := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
@@ -65,7 +72,6 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 		a.ID().String(),
 		nullIDValue(a.TenantID()),
 		nullIDPtr(a.ParentID()),
-		nullIDPtr(a.OwnerID()),
 		ownerRefVal,
 		a.Name(),
 		a.Type().String(),
@@ -119,7 +125,7 @@ func (r *AssetRepository) Create(ctx context.Context, a *asset.Asset) error {
 // GetByID retrieves an asset by its ID within a tenant.
 // Security: Requires tenantID to prevent cross-tenant data access.
 func (r *AssetRepository) GetByID(ctx context.Context, tenantID, assetID shared.ID) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.id = $2"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = $2"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), assetID.String())
 	return r.scanAsset(row, assetID)
@@ -136,7 +142,7 @@ func (r *AssetRepository) GetByIDs(ctx context.Context, tenantID shared.ID, ids 
 	for i, id := range ids {
 		idStrs[i] = id.String()
 	}
-	rows, err := r.db.QueryContext(ctx, r.selectQuery()+" WHERE a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
+	rows, err := r.db.QueryContext(ctx, r.selectQuery()+" WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2::uuid[])",
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get assets by ids: %w", err)
@@ -171,7 +177,7 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 	}
 
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, asset_type FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+		`SELECT id, name, asset_type FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND id = ANY($2::uuid[])`,
 		tenantID.String(), pq.Array(idStrs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch get asset display info: %w", err)
@@ -199,7 +205,7 @@ func (r *AssetRepository) GetDisplayInfoByIDs(ctx context.Context, tenantID shar
 
 // GetByExternalID retrieves an asset by external ID and provider.
 func (r *AssetRepository) GetByExternalID(ctx context.Context, tenantID shared.ID, provider asset.Provider, externalID string) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.provider = $2 AND a.external_id = $3"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), provider.String(), externalID)
 	return r.scanAsset(row, shared.ID{})
@@ -212,7 +218,7 @@ func (r *AssetRepository) FindByExternalID(ctx context.Context, tenantID shared.
 	if externalID == "" {
 		return nil, nil
 	}
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.external_id = $2 LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), externalID)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
@@ -250,7 +256,7 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 	// pattern entirely — defense-in-depth so a future "let users add
 	// custom correlation keys" feature can't accidentally introduce a
 	// vulnerability.
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.properties ->> $3 = $2 LIMIT 1"
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), value, key)
 	a, err := r.scanAsset(row, shared.ID{})
 	if err != nil {
@@ -264,22 +270,19 @@ func (r *AssetRepository) FindByPropertyValue(ctx context.Context, tenantID shar
 
 // GetByName retrieves an asset by name within a tenant.
 func (r *AssetRepository) GetByName(ctx context.Context, tenantID shared.ID, name string) (*asset.Asset, error) {
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.name = $2"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = $2"
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), name)
 	return r.scanAsset(row, shared.ID{})
 }
 
-// FindByIP finds an existing asset that matches the given IP address.
-// Searches: name, properties->>'ip', properties->'ip_address'->>'address',
-// and properties->'ip_addresses' array (host with multiple IPs).
+// FindByIP finds an existing asset that matches the given IP address: its
+// name, or an address its properties record (addressPredicate).
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip string) (*asset.Asset, error) {
-	query := r.selectQuery() + ` WHERE a.tenant_id = $1 AND (
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
-		OR a.properties->>'ip' = $2
-		OR a.properties->'ip_address'->>'address' = $2
-		OR a.properties->'ip_addresses' ? $2
+		OR ` + addressPredicate("$2", false) + `
 	) LIMIT 1`
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), ip)
@@ -294,13 +297,12 @@ func (r *AssetRepository) FindByIP(ctx context.Context, tenantID shared.ID, ip s
 }
 
 // FindByHostname finds an existing asset that matches the given hostname.
-// Searches: name (exact), properties->>'hostname', properties->'ip_address'->>'hostname'.
+// Searches: name (exact), properties->>'hostname'.
 // Returns nil (no error) if no match found.
 func (r *AssetRepository) FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*asset.Asset, error) {
-	query := r.selectQuery() + ` WHERE a.tenant_id = $1 AND (
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND (
 		a.name = $2
 		OR a.properties->>'hostname' = $2
-		OR a.properties->'ip_address'->>'hostname' = $2
 	) LIMIT 1`
 
 	row := r.db.QueryRowContext(ctx, query, tenantID.String(), hostname)
@@ -323,13 +325,11 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 		return make(map[string][]*asset.Asset), nil
 	}
 
-	query := r.selectQuery() + ` WHERE a.tenant_id = $1
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('host', 'ip_address')
 		AND (
 			a.name = ANY($2)
-			OR a.properties->>'ip' = ANY($2)
-			OR a.properties->'ip_address'->>'address' = ANY($2)
-			OR a.properties->'ip_addresses' ?| $2
+			OR ` + addressPredicate("$2", true) + `
 		)`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ips))
@@ -357,38 +357,29 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 	return result, nil
 }
 
-// assetMatchesIP checks if an asset contains the given IP.
+// assetMatchesIP checks if an asset is named by, or records, the given IP.
 func assetMatchesIP(a *asset.Asset, ip string) bool {
-	if a.Name() == ip {
-		return true
+	return a.Name() == ip || slices.Contains(asset.IPAddresses(a.Properties()), ip)
+}
+
+// addressPredicate is the SQL condition "the row records an address of
+// param" over ip_addresses and every synonym of it (asset.AddressPropertyKeys:
+// rows written before the property normalisation still hold them). jsonb ?
+// and ?| match a string value and an array element alike; an object holds
+// its address under "address" (the CTIS technical ip_address block). The
+// keys come from the generated registry, never from input.
+func addressPredicate(param string, anyOf bool) string {
+	op, eq := "?", "= "+param
+	if anyOf {
+		op, eq = "?|", "= ANY("+param+")"
 	}
-	props := a.Properties()
-	if props == nil {
-		return false
+	parts := make([]string, 0, 2*len(asset.AddressPropertyKeys()))
+	for _, k := range asset.AddressPropertyKeys() {
+		parts = append(parts,
+			fmt.Sprintf("a.properties->'%s' %s %s", k, op, param),
+			fmt.Sprintf("a.properties->'%s'->>'address' %s", k, eq))
 	}
-	if v, ok := props["ip"].(string); ok && v == ip {
-		return true
-	}
-	if ipAddr, ok := props["ip_address"].(map[string]any); ok {
-		if addr, ok := ipAddr["address"].(string); ok && addr == ip {
-			return true
-		}
-	}
-	if ips, ok := props["ip_addresses"].([]any); ok {
-		for _, v := range ips {
-			if s, ok := v.(string); ok && s == ip {
-				return true
-			}
-		}
-	}
-	if ips, ok := props["ip_addresses"].([]string); ok {
-		for _, s := range ips {
-			if s == ip {
-				return true
-			}
-		}
-	}
-	return false
+	return "(" + strings.Join(parts, " OR ") + ")"
 }
 
 // FindRepositoryByRepoName finds a repository asset whose name ends with the given repo name.
@@ -400,7 +391,7 @@ func (r *AssetRepository) FindRepositoryByRepoName(ctx context.Context, tenantID
 	// 2. Or name ends with "-repoName" for some formats
 	// 3. Or exact match
 	query := r.selectQuery() + `
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
 		AND (
 			a.name = $2
@@ -426,7 +417,7 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 	// Search for repository assets where name or external_id contains the full name pattern
 	// e.g., "github.com/openctemio/sdk-go" should match fullName "openctemio/sdk"
 	query := r.selectQuery() + `
-		WHERE a.tenant_id = $1
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		AND a.asset_type IN ('repository', 'code_repo')
 		AND (
 			a.name LIKE $2
@@ -448,7 +439,7 @@ func (r *AssetRepository) FindRepositoryByFullName(ctx context.Context, tenantID
 
 func (r *AssetRepository) selectQuery() string {
 	return `
-		SELECT a.id, a.tenant_id, a.parent_id, a.owner_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
+		SELECT a.id, a.tenant_id, a.parent_id, a.owner_ref, a.name, a.asset_type, a.sub_type, a.criticality, a.status,
 			   a.scope, a.exposure, a.risk_score,
 			   COALESCE(fc.finding_count, 0) as finding_count,
 			   COALESCE(fc.finding_critical, 0) as finding_critical,
@@ -463,7 +454,8 @@ func (r *AssetRepository) selectQuery() string {
 			   a.is_internet_accessible, a.exposure_changed_at, a.last_exposure_level,
 			   a.first_seen, a.last_seen, a.created_at, a.updated_at,
 			   a.lifecycle_paused_until, a.manual_status_override,
-			   a.impact_confidentiality, a.impact_integrity, a.impact_availability
+			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
+			   a.is_crown_jewel
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -477,9 +469,9 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'high') as finding_high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') as finding_medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') as finding_low,
-				COUNT(*) FILTER (WHERE f.severity = 'info') as finding_info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) as finding_info
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved'
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only
 		) fc ON true
 	`
 }
@@ -493,24 +485,23 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 
 	query := `
 		UPDATE assets
-		SET parent_id = $2, owner_id = $3, owner_ref = $4, name = $5, asset_type = $6, sub_type = $7, criticality = $8, status = $9,
-		    scope = $10, exposure = $11, risk_score = $12,
-		    description = $13, tags = $14, properties = $15,
-		    provider = $16, external_id = $17, classification = $18, sync_status = $19, last_synced_at = $20, sync_error = $21,
-		    discovery_source = $22, discovery_tool = $23, discovered_at = $24,
-		    compliance_scope = $25, data_classification = $26, pii_data_exposed = $27, phi_data_exposed = $28, regulatory_owner_id = $29,
-		    is_internet_accessible = $30, exposure_changed_at = $31, last_exposure_level = $32,
-		    last_seen = $33, updated_at = $34,
-		    lifecycle_paused_until = $36, manual_status_override = $37,
-		    impact_confidentiality = $38, impact_integrity = $39, impact_availability = $40
-		WHERE id = $1 AND tenant_id = $35
+		SET parent_id = $2, owner_ref = $3, name = $4, asset_type = $5, sub_type = $6, criticality = $7, status = $8,
+		    scope = $9, exposure = $10, risk_score = $11,
+		    description = $12, tags = $13, properties = $14,
+		    provider = $15, external_id = $16, classification = $17, sync_status = $18, last_synced_at = $19, sync_error = $20,
+		    discovery_source = $21, discovery_tool = $22, discovered_at = $23,
+		    compliance_scope = $24, data_classification = $25, pii_data_exposed = $26, phi_data_exposed = $27, regulatory_owner_id = $28,
+		    is_internet_accessible = $29, exposure_changed_at = $30, last_exposure_level = $31,
+		    last_seen = $32, updated_at = $33,
+		    lifecycle_paused_until = $35, manual_status_override = $36,
+		    impact_confidentiality = $37, impact_integrity = $38, impact_availability = $39
+		WHERE id = $1 AND tenant_id = $34 AND deleted_at IS NULL
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
 	result, err := r.db.ExecContext(ctx, query,
 		a.ID().String(),
 		nullIDPtr(a.ParentID()),
-		nullIDPtr(a.OwnerID()),
 		updateOwnerRef,
 		a.Name(),
 		a.Type().String(),
@@ -570,7 +561,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 // RFC-004 Phase 0.
 //
 // Direct UPDATE rather than load-modify-save so we do not have to
-// extend the scan pipeline just for two fields. The query is a
+// extend the scan workflow just for two fields. The query is a
 // single statement that atomically sets the pause column and —
 // when reactivate is true — reactivates stale/inactive assets in
 // one go. Archived assets are explicitly excluded: archived is a
@@ -603,7 +594,7 @@ func (r *AssetRepository) SnoozeLifecycle(
 				ELSE status
 			END,
 			updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2
+		WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 	`
 	result, err := r.db.ExecContext(ctx, query,
 		tenantID.String(),
@@ -621,28 +612,6 @@ func (r *AssetRepository) SnoozeLifecycle(
 	if rowsAffected == 0 {
 		return asset.NotFoundError(assetID)
 	}
-	return nil
-}
-
-// Delete removes an asset by its ID within a tenant.
-// Security: Requires tenantID to prevent cross-tenant deletion.
-func (r *AssetRepository) Delete(ctx context.Context, tenantID, assetID shared.ID) error {
-	query := `DELETE FROM assets WHERE tenant_id = $1 AND id = $2`
-
-	result, err := r.db.ExecContext(ctx, query, tenantID.String(), assetID.String())
-	if err != nil {
-		return fmt.Errorf("failed to delete asset: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return asset.NotFoundError(assetID)
-	}
-
 	return nil
 }
 
@@ -699,6 +668,54 @@ func (r *AssetRepository) List(
 	return pagination.NewResult(assets, total, page), nil
 }
 
+// ListAfterID returns up to limit assets matching filter with an id above
+// afterID (all when afterID is empty), in id order, without a total count.
+// Background jobs that read every asset of a kind page with it: keyset
+// paging costs the same for the last page as for the first, where
+// LIMIT/OFFSET plus a COUNT per page grows with the tenant (quadratic over a
+// full read) and can skip or repeat rows inserted meanwhile.
+func (r *AssetRepository) ListAfterID(ctx context.Context, filter asset.Filter, afterID string, limit int) ([]*asset.Asset, error) {
+	if filter.TenantID == nil || *filter.TenantID == "" {
+		return nil, fmt.Errorf("%w: tenant is required", shared.ErrValidation)
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	whereClause, args := r.buildWhereClause(filter)
+	if afterID != "" {
+		args = append(args, afterID)
+		cond := fmt.Sprintf("a.id > $%d", len(args))
+		if whereClause != "" {
+			whereClause += " AND " + cond
+		} else {
+			whereClause = cond
+		}
+	}
+	query := r.selectQuery()
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
+	query += fmt.Sprintf(" ORDER BY a.id LIMIT %d", limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query assets: %w", err)
+	}
+	defer rows.Close()
+	var out []*asset.Asset
+	for rows.Next() {
+		a, err := r.scanAssetFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate assets: %w", err)
+	}
+	return out, nil
+}
+
 // Count returns the total number of assets matching the filter.
 func (r *AssetRepository) Count(ctx context.Context, filter asset.Filter) (int64, error) {
 	query := `SELECT COUNT(*) FROM assets a`
@@ -720,7 +737,7 @@ func (r *AssetRepository) Count(ctx context.Context, filter asset.Filter) (int64
 // ExistsByName checks if an asset with the given name exists within a tenant.
 // Security: Requires tenantID to prevent cross-tenant enumeration.
 func (r *AssetRepository) ExistsByName(ctx context.Context, tenantID shared.ID, name string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND name = $2)`
+	query := `SELECT EXISTS(SELECT 1 FROM assets WHERE deleted_at IS NULL AND tenant_id = $1 AND name = $2)`
 
 	var exists bool
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), name).Scan(&exists)
@@ -753,7 +770,6 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		idStr           string
 		tenantIDStr     sql.NullString
 		parentIDStr     sql.NullString
-		ownerIDStr      sql.NullString
 		ownerRef        sql.NullString
 		name            string
 		assetType       string
@@ -804,10 +820,11 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		impactConfidentiality sql.NullString
 		impactIntegrity       sql.NullString
 		impactAvailability    sql.NullString
+		isCrownJewel          bool
 	)
 
 	err := scan(
-		&idStr, &tenantIDStr, &parentIDStr, &ownerIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
+		&idStr, &tenantIDStr, &parentIDStr, &ownerRef, &name, &assetType, &subType, &criticality, &status,
 		&scope, &exposure, &riskScore, &findingCount,
 		&findingCritical, &findingHigh, &findingMedium, &findingLow, &findingInfo,
 		&description, &tags, &properties,
@@ -818,13 +835,14 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		&firstSeen, &lastSeen, &createdAt, &updatedAt,
 		&lifecyclePausedUntil, &manualStatusOverride,
 		&impactConfidentiality, &impactIntegrity, &impactAvailability,
+		&isCrownJewel,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	a, err := r.reconstructAsset(
-		idStr, tenantIDStr, parentIDStr, ownerIDStr, ownerRef, name, assetType, subType.String, criticality, status,
+		idStr, tenantIDStr, parentIDStr, ownerRef, name, assetType, subType.String, criticality, status,
 		scope, exposure, riskScore, findingCount,
 		description, tags, properties,
 		provider, externalID, classification, syncStatus, lastSyncedAt, syncError,
@@ -839,6 +857,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 		return nil, err
 	}
 
+	a.SetCrownJewel(isCrownJewel)
 	a.SetFindingSeverityCounts(&asset.FindingSeverityCounts{
 		Critical: findingCritical,
 		High:     findingHigh,
@@ -852,7 +871,7 @@ func (r *AssetRepository) doScan(scan func(dest ...any) error) (*asset.Asset, er
 
 func (r *AssetRepository) reconstructAsset(
 	idStr string,
-	tenantIDStr, parentIDStr, ownerIDStr, ownerRefStr sql.NullString,
+	tenantIDStr, parentIDStr, ownerRefStr sql.NullString,
 	name, assetTypeStr, subTypeStr, criticalityStr, statusStr string,
 	scopeStr, exposureStr string,
 	riskScore, findingCount int,
@@ -896,12 +915,6 @@ func (r *AssetRepository) reconstructAsset(
 	if parentIDStr.Valid {
 		id, _ := shared.IDFromString(parentIDStr.String)
 		parentID = &id
-	}
-
-	var ownerID *shared.ID
-	if ownerIDStr.Valid {
-		id, _ := shared.IDFromString(ownerIDStr.String)
-		ownerID = &id
 	}
 
 	assetType, _ := asset.ParseAssetType(assetTypeStr)
@@ -958,7 +971,6 @@ func (r *AssetRepository) reconstructAsset(
 		parsedID,
 		tenantID,
 		parentID,
-		ownerID,
 		name,
 		assetType,
 		criticality,
@@ -1019,7 +1031,8 @@ func (r *AssetRepository) reconstructAsset(
 }
 
 func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) {
-	var conditions []string
+	// A soft-deleted asset is invisible to every list, count and facet.
+	conditions := []string{liveAssetSQL("a")}
 	var args []any
 	argIndex := 1
 
@@ -1046,6 +1059,17 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 			argIndex++
 		}
 		conditions = append(conditions, fmt.Sprintf("a.asset_type IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Lens filter (the asset_lens column the registry trigger keeps)
+	if len(filter.Lenses) > 0 {
+		lenses := make([]string, len(filter.Lenses))
+		for i, l := range filter.Lenses {
+			lenses[i] = string(l)
+		}
+		conditions = append(conditions, fmt.Sprintf("a.asset_lens = ANY($%d::text[])", argIndex))
+		args = append(args, pq.Array(lenses))
+		argIndex++
 	}
 
 	// Criticalities filter
@@ -1092,11 +1116,34 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf("a.exposure IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
-	// Tags filter
+	// Tags filter. System tags (derived from program links) filter like
+	// tags; a non-owner matches only the tags of programs not hidden from
+	// them (RFC-065 §15.3), so neither including nor excluding a hidden
+	// program's tag says anything about which assets it covers.
+	var tagViewerArg string
+	if filter.ProgramTagViewer != nil && (len(filter.Tags) > 0 || len(filter.ExcludeTags) > 0) {
+		tagViewerArg = fmt.Sprintf("$%d::uuid", argIndex)
+		args = append(args, filter.ProgramTagViewer.String())
+		argIndex++
+	}
 	if len(filter.Tags) > 0 {
-		conditions = append(conditions, fmt.Sprintf("a.tags && $%d", argIndex))
+		arr := fmt.Sprintf("$%d::text[]", argIndex)
 		args = append(args, pq.Array(filter.Tags))
 		argIndex++
+		// The overlap test uses the GIN indexes on tags and system_tags; for
+		// "all" it is the index prefilter and the NOT EXISTS checks each tag.
+		cond := assetHasAnyTagSQL(arr, tagViewerArg)
+		if filter.TagsMatchAll {
+			cond = fmt.Sprintf("(%s AND NOT EXISTS (SELECT 1 FROM unnest(%s) AS want(tag) WHERE NOT %s))",
+				cond, arr, assetHasTagSQL("want.tag", tagViewerArg))
+		}
+		conditions = append(conditions, cond)
+	}
+	if len(filter.ExcludeTags) > 0 {
+		arr := fmt.Sprintf("$%d::text[]", argIndex)
+		args = append(args, pq.Array(filter.ExcludeTags))
+		argIndex++
+		conditions = append(conditions, fmt.Sprintf("NOT COALESCE(%s, FALSE)", assetHasAnyTagSQL(arr, tagViewerArg)))
 	}
 
 	// Full-text search across name, description, and aliases (RFC-001)
@@ -1129,18 +1176,19 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	// row (a data-integrity bug) can never flip this filter for someone else.
 	if filter.HasFindings != nil {
 		if *filter.HasFindings {
-			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved')")
+			conditions = append(conditions, "EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
 		} else {
-			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved')")
+			conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND f.status != 'resolved' AND NOT f.branch_only)")
 		}
 	}
 
-	// Crown jewel filter.
-	// Source of truth is properties->>'is_crown_jewel' (written by the
-	// crown-jewel PATCH endpoint); read from there so filtering reflects what
-	// was set. The dedicated is_crown_jewel column is not written by Update.
+	if cond := assetFreshnessCondition(filter.Freshness); cond != "" {
+		conditions = append(conditions, cond)
+	}
+
+	// Crown jewel filter: the is_crown_jewel column is the only source.
 	if filter.IsCrownJewel != nil {
-		conditions = append(conditions, fmt.Sprintf("COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = $%d", argIndex))
+		conditions = append(conditions, fmt.Sprintf("a.is_crown_jewel = $%d", argIndex))
 		args = append(args, *filter.IsCrownJewel)
 		argIndex++
 	}
@@ -1230,6 +1278,48 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		}
 	}
 
+	// Batch lookup by id (the caller's tenant and data scope still apply).
+	if len(filter.IDs) > 0 {
+		placeholders := make([]string, len(filter.IDs))
+		for i, id := range filter.IDs {
+			placeholders[i] = fmt.Sprintf("$%d", argIndex)
+			args = append(args, id)
+			argIndex++
+		}
+		conditions = append(conditions, fmt.Sprintf("a.id IN (%s)", strings.Join(placeholders, ", ")))
+	}
+
+	// Names equal to or below DNS names: exact, or ending in ".<name>".
+	if len(filter.UnderDomains) > 0 {
+		parts := make([]string, 0, len(filter.UnderDomains))
+		for _, d := range filter.UnderDomains {
+			parts = append(parts, fmt.Sprintf("(a.name = $%d OR a.name ILIKE $%d ESCAPE '\\')", argIndex, argIndex+1))
+			args = append(args, d, "%."+escapeLikePattern(d))
+			argIndex += 2
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+	}
+
+	// Address assets inside these ranges. The address is the asset's name
+	// (text); a name that is not an address is never cast.
+	if len(filter.InCIDRs) > 0 {
+		cidrs := make([]string, 0, len(filter.InCIDRs))
+		for _, c := range filter.InCIDRs {
+			if p, err := netip.ParsePrefix(strings.TrimSpace(c)); err == nil {
+				cidrs = append(cidrs, p.Masked().String())
+			}
+		}
+		if len(cidrs) == 0 {
+			conditions = append(conditions, "FALSE")
+		} else {
+			conditions = append(conditions, fmt.Sprintf(
+				`(a.asset_type IN ('ip_address', 'host') AND position('/' IN a.name) = 0
+				  AND pg_input_is_valid(a.name, 'inet') AND a.name::inet <<= ANY($%d::inet[]))`, argIndex))
+			args = append(args, pq.Array(cidrs))
+			argIndex++
+		}
+	}
+
 	// Business unit membership filter (business_unit_assets join).
 	if len(filter.BusinessUnitIDs) > 0 {
 		placeholders := make([]string, len(filter.BusinessUnitIDs))
@@ -1241,6 +1331,30 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM business_unit_assets ba WHERE ba.asset_id = a.id AND ba.business_unit_id IN (%s))",
 			strings.Join(placeholders, ", ")))
+	}
+
+	// Asset group membership. The group must be the asset's tenant's, so an
+	// id of another tenant's group matches nothing.
+	if len(filter.AssetGroupIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf(
+			`EXISTS (SELECT 1 FROM asset_group_members agm
+				JOIN asset_groups fg ON fg.id = agm.asset_group_id AND fg.tenant_id = a.tenant_id
+				WHERE agm.asset_id = a.id AND agm.asset_group_id::text = ANY($%d))`, argIndex))
+		args = append(args, pq.Array(filter.AssetGroupIDs))
+		argIndex++
+	}
+
+	// Owned by these users or groups (asset_owners has no tenant_id: the
+	// owner is pinned to the asset's tenant, as the owner-presence filter
+	// below does).
+	if len(filter.OwnerIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf(
+			`EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id AND (
+				(ao.user_id::text = ANY($%d) AND ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = a.tenant_id))
+				OR (ao.group_id::text = ANY($%d) AND ao.group_id IN (SELECT id FROM groups WHERE tenant_id = a.tenant_id))))`,
+			argIndex, argIndex))
+		args = append(args, pq.Array(filter.OwnerIDs))
+		argIndex++
 	}
 
 	// Owner-presence filter (asset_owners). Tenant-scoped through the principal,
@@ -1259,6 +1373,57 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		} else {
 			conditions = append(conditions, "NOT "+existsExpr)
 		}
+	}
+
+	// Attribution filter (RFC-036 §6.4). asset_attributions is a side table;
+	// an asset with no row is a legacy asset, matched only when the filter
+	// admits unrecorded assets. The join is pinned to the asset's tenant.
+	if af := filter.Attribution; af != nil {
+		var parts []string
+		if len(af.States) > 0 {
+			states := make([]string, len(af.States))
+			for i, st := range af.States {
+				states[i] = string(st)
+			}
+			parts = append(parts, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id AND aat.state = ANY($%d))",
+				argIndex))
+			args = append(args, pq.Array(states))
+			argIndex++
+		}
+		if af.Unrecorded {
+			parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+		}
+		if len(parts) == 0 {
+			parts = append(parts, "FALSE")
+		}
+		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
+	}
+
+	// Assets the scope join confirmed through one scope entry (RFC-054
+	// §4.3): matches_scope_target evidence from it, pinned to the tenant.
+	if filter.CoveredByScopeTarget != nil {
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM easm_evidence sje WHERE sje.asset_id = a.id AND sje.tenant_id = a.tenant_id AND sje.rule = 'matches_scope_target' AND sje.source = $%d)",
+			argIndex))
+		args = append(args, "scope_target:"+filter.CoveredByScopeTarget.String())
+		argIndex++
+	}
+
+	// Bug-bounty program assets (RFC-065 §16.5).
+	switch filter.ProgramAssets {
+	case "only":
+		if filter.ProgramTagViewer == nil {
+			conditions = append(conditions, "'bug-bounty' = ANY(a.system_tags)")
+		} else {
+			// Every program link gives 'bug-bounty'; a non-owner counts only
+			// the links of programs not hidden from them.
+			conditions = append(conditions, visibleProgramLinkSQL("a.id", "a.tenant_id", fmt.Sprintf("$%d::uuid", argIndex), ""))
+			args = append(args, filter.ProgramTagViewer.String())
+			argIndex++
+		}
+	case "exclude":
+		conditions = append(conditions, "NOT a.program_only")
 	}
 
 	// Data classification filter.
@@ -1311,29 +1476,65 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, *filter.LastSeenBefore)
 		argIndex++
 	}
+	// Expiry range: the asset's expiry property (format expiry), read only
+	// when it parses as a timestamp so a malformed value never fails the list.
+	if filter.ExpiresAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("%s > $%d", expirySQL, argIndex))
+		args = append(args, *filter.ExpiresAfter)
+		argIndex++
+	}
+	if filter.ExpiresBefore != nil {
+		conditions = append(conditions, fmt.Sprintf("%s < $%d", expirySQL, argIndex))
+		args = append(args, *filter.ExpiresBefore)
+		argIndex++
+	}
+	if filter.CreatedAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("a.created_at >= $%d", argIndex))
+		args = append(args, *filter.CreatedAfter)
+		argIndex++
+	}
+	if filter.ExposureChangedOrCreatedAfter != nil {
+		conditions = append(conditions, fmt.Sprintf("(a.created_at >= $%d OR a.exposure_changed_at >= $%d)", argIndex, argIndex))
+		args = append(args, *filter.ExposureChangedOrCreatedAfter)
+		argIndex++
+	}
 
-	// Layer 2: Data Scope - filter by user's group membership
-	// Default (fail-OPEN): no rows in user_accessible_assets ⇒ NOT EXISTS bypasses
-	// and the user sees all (backward compatible). When the tenant enables
-	// RestrictedDataScope (filter.DataScopeStrict), the bypass is dropped: no
-	// assignment ⇒ no assets (fail-CLOSED, Tenable "No Access" default).
-	if filter.DataScopeUserID != nil && filter.TenantID != nil {
-		userIDIdx := argIndex
-		tenantIDIdx := argIndex + 1
-		args = append(args, filter.DataScopeUserID.String(), *filter.TenantID)
-		if filter.DataScopeStrict {
-			conditions = append(conditions, fmt.Sprintf(
-				`a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)`,
-				userIDIdx, tenantIDIdx))
-		} else {
-			conditions = append(conditions, fmt.Sprintf(`(
-				NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-				OR a.id IN (SELECT asset_id FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d)
-			)`, userIDIdx, tenantIDIdx, userIDIdx, tenantIDIdx))
-		}
+	// Layer 2: Data Scope - only the user's in-scope assets (a user scope
+	// without a tenant matches nothing).
+	tenantForScope := ""
+	if filter.TenantID != nil {
+		tenantForScope = *filter.TenantID
+	}
+	if cond, scopeArgs := dataScopeCondition(filter.AccessScope(), tenantForScope, argIndex); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, scopeArgs...)
 	}
 
 	return strings.Join(conditions, " AND "), args
+}
+
+// dataScopeCondition is the Layer-2 data-scope predicate on assets aliased
+// `a`, shared by the list, the aggregate stats and the property facets so the
+// counts a user sees never include an asset the list would hide from them.
+// argIndex is the first free $N placeholder; the returned args fill it and the
+// next one. It returns "" when the scope restricts nothing.
+//
+// Always fail closed: a user with no rows in user_accessible_assets sees no
+// asset (there is no "no rows means everything" mode).
+func dataScopeCondition(access asset.AccessScope, tenantID string, argIndex int) (string, []any) {
+	if access.DataScopeUserID == nil {
+		return "", nil
+	}
+	if tenantID == "" {
+		// A user scope without a tenant cannot be matched: admit nothing.
+		return "FALSE", nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return "FALSE", nil
+	}
+	return dataScopeCondAt("a.id", &shared.DataScope{TenantID: tid, UserID: *access.DataScopeUserID,
+		Unrestricted: access.DataScopeUnrestricted}, argIndex)
 }
 
 // =============================================================================
@@ -1348,7 +1549,7 @@ func (r *AssetRepository) GetByNames(ctx context.Context, tenantID shared.ID, na
 	}
 
 	// Build query with ANY for efficient lookup
-	query := r.selectQuery() + " WHERE a.tenant_id = $1 AND a.name = ANY($2)"
+	query := r.selectQuery() + " WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.name = ANY($2)"
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(names))
 	if err != nil {
@@ -1383,6 +1584,12 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	if len(assets) == 0 {
 		return 0, 0, map[string]shared.ID{}, nil
 	}
+	// Ingest over the asset limit is refused as a whole batch with the
+	// limit error (counted in openctem_plan_limit_refusals_total), never
+	// dropped silently. Updates of assets that already exist count nothing.
+	if err := r.checkNewAssets(ctx, assets); err != nil {
+		return 0, 0, nil, err
+	}
 
 	// Fast path: one multi-row INSERT for the whole batch (one round-trip
 	// instead of one per asset — discovery reports can carry tens of thousands
@@ -1397,9 +1604,44 @@ func (r *AssetRepository) UpsertBatch(ctx context.Context, assets []*asset.Asset
 	return created, updated, persistedIDs, nil
 }
 
+// checkNewAssets checks the assets of a batch that do not exist yet (by id or
+// by (tenant_id, name), the upsert's keys) against each organization's limit.
+func (r *AssetRepository) checkNewAssets(ctx context.Context, assets []*asset.Asset) error {
+	if r.limits == nil {
+		return nil
+	}
+	byTenant := map[shared.ID][]*asset.Asset{}
+	for _, a := range assets {
+		byTenant[a.TenantID()] = append(byTenant[a.TenantID()], a)
+	}
+	for tenantID, batch := range byTenant {
+		names := make([]string, 0, len(batch))
+		ids := make([]string, 0, len(batch))
+		for _, a := range batch {
+			names = append(names, a.Name())
+			ids = append(ids, a.ID().String())
+		}
+		var fresh int
+		err := r.db.QueryRowContext(ctx, `
+			SELECT count(DISTINCT b.name)
+			  FROM unnest($2::text[], $3::uuid[]) AS b(name, id)
+			 WHERE NOT EXISTS (
+			       SELECT 1 FROM assets a
+			        WHERE a.tenant_id = $1 AND (a.name = b.name OR a.id = b.id))`,
+			tenantID.String(), pq.Array(names), pq.Array(ids)).Scan(&fresh)
+		if err != nil {
+			return fmt.Errorf("count new assets: %w", err)
+		}
+		if err := r.checkLimit(ctx, tenantID, plan.Assets, fresh); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // assetUpsertColumnCount is the number of columns in the assets upsert. It MUST
 // stay in sync with assetUpsertColumnsSQL and assetUpsertArgs.
-const assetUpsertColumnCount = 38
+const assetUpsertColumnCount = 37
 
 // assetUpsertColumnsSQL is the INSERT INTO assets (...) column header.
 //
@@ -1412,7 +1654,7 @@ const assetUpsertColumnCount = 38
 func assetUpsertColumnsSQL() string {
 	return `
 		INSERT INTO assets (
-			id, tenant_id, parent_id, owner_id, owner_ref, name, asset_type, sub_type, criticality, status,
+			id, tenant_id, parent_id, owner_ref, name, asset_type, sub_type, criticality, status,
 			scope, exposure, risk_score,
 			description, tags, properties,
 			provider, external_id, classification, sync_status, last_synced_at, sync_error,
@@ -1440,6 +1682,14 @@ func assetUpsertConflictSQL() string {
 				ELSE merge_jsonb_deep(EXCLUDED.properties, assets.properties)
 			END,
 			last_seen = GREATEST(assets.last_seen, EXCLUDED.last_seen),
+			-- A re-observed stale asset is active again (Asset.MarkSeen set
+			-- it; this clause used to drop it while history said
+			-- "recovered"). Inactive (a closed port, a person's decision)
+			-- and a manual status are left to their own paths.
+			status = CASE
+				WHEN assets.status = 'stale' AND EXCLUDED.status = 'active' AND NOT assets.manual_status_override
+				THEN 'active' ELSE assets.status
+			END,
 			updated_at = NOW(),
 			discovery_source = COALESCE(assets.discovery_source, EXCLUDED.discovery_source),
 			discovery_tool = COALESCE(assets.discovery_tool, EXCLUDED.discovery_tool),
@@ -1507,7 +1757,6 @@ func assetUpsertArgs(a *asset.Asset) ([]any, error) {
 		a.ID().String(),
 		nullIDValue(a.TenantID()),
 		nullIDPtr(a.ParentID()),
-		nullIDPtr(a.OwnerID()),
 		nullString(a.OwnerRef()),
 		a.Name(),
 		a.Type().String(),
@@ -1579,6 +1828,7 @@ const assetRenameByIDSQL = `
 	FROM unnest($1::uuid[], $2::uuid[], $3::text[]) AS v(id, tenant_id, name)
 	WHERE a.id = v.id
 	  AND a.tenant_id = v.tenant_id
+	  AND a.deleted_at IS NULL
 	  AND a.name <> v.name
 	  AND NOT EXISTS (
 		SELECT 1 FROM assets o
@@ -1777,29 +2027,93 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 	return created, updated, persistedIDs, nil
 }
 
-// ListDistinctTags returns distinct tags across all assets for a tenant.
-// Supports prefix filtering for autocomplete and a limit for result size.
-func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, prefix string, types []string, limit int) ([]string, error) {
-	query := `SELECT DISTINCT tag FROM assets, unnest(tags) AS tag WHERE tenant_id = $1`
+// assetHasAnyTagSQL is the condition "asset a carries a tag of array arr"
+// (a SQL text[] expression), counting the system tags; with viewerArg (a
+// uuid placeholder) only the system tags of programs not hidden from that
+// user count.
+func assetHasAnyTagSQL(arr, viewerArg string) string {
+	if viewerArg == "" {
+		return fmt.Sprintf("(a.tags && %s OR a.system_tags && %s)", arr, arr)
+	}
+	return fmt.Sprintf("(a.tags && %s OR (a.system_tags && %s AND %s))", arr, arr,
+		visibleProgramLinkSQL("a.id", "a.tenant_id", viewerArg, "AND t = ANY("+arr+")"))
+}
+
+// assetHasTagSQL is the condition "asset a carries tag tag" (a SQL text
+// expression), with the same system tag rule as assetHasAnyTagSQL.
+func assetHasTagSQL(tag, viewerArg string) string {
+	if viewerArg == "" {
+		return fmt.Sprintf("(%s = ANY(a.tags) OR %s = ANY(a.system_tags))", tag, tag)
+	}
+	return fmt.Sprintf("(%s = ANY(a.tags) OR (%s = ANY(a.system_tags) AND %s))", tag, tag,
+		visibleProgramLinkSQL("a.id", "a.tenant_id", viewerArg, "AND t = "+tag))
+}
+
+// ListDistinctTags returns the tags of the assets of a tenant that access
+// admits, most used first (ties by name), and, with q.IncludeSystem, the
+// system tags the caller may see. Prefix and search narrow both lists.
+func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.ID, access asset.AccessScope, q asset.TagListQuery) (asset.TagList, error) {
+	out := asset.TagList{Tags: []string{}}
+	tags, err := r.countedTags(ctx, tenantID, access, q, "a.tags")
+	if err != nil {
+		return out, fmt.Errorf("failed to list distinct tags: %w", err)
+	}
+	out.Tags = tags
+	if !q.IncludeSystem {
+		return out, nil
+	}
+	sys, err := r.countedTags(ctx, tenantID, access, q, "a.system_tags")
+	if err != nil {
+		return out, fmt.Errorf("failed to list system tags: %w", err)
+	}
+	out.SystemTags = sys
+	return out, nil
+}
+
+// countedTags lists the values of the array column col over the tenant's
+// assets that access admits, most used first. For the system tags with a
+// q.ProgramTagViewer, only those of programs not hidden from that user.
+func (r *AssetRepository) countedTags(ctx context.Context, tenantID shared.ID, access asset.AccessScope, q asset.TagListQuery, col string) ([]string, error) {
+	query := `SELECT tag FROM assets a CROSS JOIN LATERAL unnest(` + col + `) AS tag WHERE a.deleted_at IS NULL AND a.tenant_id = $1`
 	args := []any{tenantID.String()}
 	argIdx := 2
 
-	if len(types) > 0 {
-		query += fmt.Sprintf(` AND asset_type = ANY($%d)`, argIdx)
-		args = append(args, pq.Array(types))
+	// Layer 2 data scope: the tags of assets the caller may not list
+	// (out of scope, or a private program asset hidden from them) are not
+	// suggested either.
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), argIdx); cond != "" {
+		query += " AND " + cond
+		args = append(args, scopeArgs...)
+		argIdx += len(scopeArgs)
+	}
+	if len(q.Types) > 0 {
+		query += fmt.Sprintf(` AND a.asset_type = ANY($%d)`, argIdx)
+		args = append(args, pq.Array(q.Types))
 		argIdx++
 	}
-
-	if prefix != "" {
+	if q.Prefix != "" {
 		query += fmt.Sprintf(` AND tag ILIKE $%d`, argIdx)
-		args = append(args, escapeLikePattern(prefix)+"%")
+		args = append(args, escapeLikePattern(q.Prefix)+"%")
+		argIdx++
 	}
-
-	query += fmt.Sprintf(` ORDER BY tag LIMIT %d`, limit)
+	if q.Search != "" {
+		query += fmt.Sprintf(` AND tag ILIKE $%d`, argIdx)
+		args = append(args, wrapLikePattern(q.Search))
+		argIdx++
+	}
+	if col == "a.system_tags" && q.ProgramTagViewer != nil {
+		query += " AND " + visibleProgramLinkSQL("a.id", "a.tenant_id", fmt.Sprintf("$%d::uuid", argIdx), "AND t = tag")
+		args = append(args, q.ProgramTagViewer.String())
+	}
+	limit := q.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query += fmt.Sprintf(` GROUP BY tag ORDER BY count(*) DESC, tag LIMIT %d`, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list distinct tags: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -1807,16 +2121,11 @@ func (r *AssetRepository) ListDistinctTags(ctx context.Context, tenantID shared.
 	for rows.Next() {
 		var tag string
 		if err := rows.Scan(&tag); err != nil {
-			return nil, fmt.Errorf("failed to scan tag: %w", err)
+			return nil, err
 		}
 		tags = append(tags, tag)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate tags: %w", err)
-	}
-
-	return tags, nil
+	return tags, rows.Err()
 }
 
 // UpdateFindingCounts updates finding counts for multiple assets in batch.
@@ -1840,7 +2149,7 @@ func (r *AssetRepository) UpdateFindingCounts(ctx context.Context, tenantID shar
 	query := `
 		UPDATE assets a
 		SET updated_at = NOW()
-		WHERE a.tenant_id = $1 AND a.id = ANY($2)
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.id = ANY($2)
 	`
 
 	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(idStrings))
@@ -1892,7 +2201,7 @@ func (r *AssetRepository) BulkUpdateStatus(ctx context.Context, tenantID shared.
 	query := `
 		UPDATE assets
 		SET status = $1, updated_at = NOW()
-		WHERE tenant_id = $2 AND id = ANY($3::uuid[])
+		WHERE tenant_id = $2 AND id = ANY($3::uuid[]) AND deleted_at IS NULL
 	`
 
 	result, err := r.db.ExecContext(ctx, query, status.String(), tenantID.String(), pq.Array(ids))
@@ -1911,7 +2220,7 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 			COUNT(*) AS total,
 			COUNT(*) FILTER (WHERE exposure = 'public') AS exposed
 		FROM assets
-		WHERE tenant_id = $1
+		WHERE deleted_at IS NULL AND tenant_id = $1
 		GROUP BY asset_type
 	`
 
@@ -1941,13 +2250,48 @@ func (r *AssetRepository) GetAssetTypeBreakdown(ctx context.Context, tenantID sh
 func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shared.ID) (float64, error) {
 	var avg float64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id = $1`,
+		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE deleted_at IS NULL AND tenant_id = $1`,
 		tenantID.String(),
 	).Scan(&avg)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get average risk score: %w", err)
 	}
 	return avg, nil
+}
+
+// aggregateStatsWhere builds the WHERE clause of GetAggregateStats: tenant,
+// types, lenses, tags, sub-type and the caller's data scope (the same predicate as
+// List, so a scoped user's totals and breakdowns count only the assets they
+// can list).
+func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string) (string, []any) {
+	filterClause := " WHERE a.deleted_at IS NULL AND a.tenant_id = $1"
+	args := []any{tenantID.String()}
+	idx := 2
+	if len(types) > 0 {
+		filterClause += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
+		args = append(args, pq.Array(types))
+		idx++
+	}
+	if len(lenses) > 0 {
+		filterClause += fmt.Sprintf(" AND a.asset_lens = ANY($%d::text[])", idx)
+		args = append(args, pq.Array(lenses))
+		idx++
+	}
+	if len(tags) > 0 {
+		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
+		args = append(args, pq.Array(tags))
+		idx++
+	}
+	if subType != "" {
+		filterClause += fmt.Sprintf(" AND a.sub_type = $%d", idx)
+		args = append(args, subType)
+		idx++
+	}
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), idx); cond != "" {
+		filterClause += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	return filterClause, args
 }
 
 // GetAggregateStats computes all asset statistics in a SINGLE round-trip.
@@ -1957,7 +2301,7 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, types []string, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
 		ByType:               make(map[string]int),
 		BySubType:            make(map[string]int),
@@ -1976,24 +2320,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	}
 
 	// Build the WHERE clause once.
-	filterClause := " WHERE a.tenant_id = $1"
-	args := []any{tenantID.String()}
-	idx := 2
-	if len(types) > 0 {
-		filterClause += fmt.Sprintf(" AND a.asset_type = ANY($%d::text[])", idx)
-		args = append(args, pq.Array(types))
-		idx++
-	}
-	if len(tags) > 0 {
-		filterClause += fmt.Sprintf(" AND a.tags && $%d", idx)
-		args = append(args, pq.Array(tags))
-		idx++
-	}
-	if subType != "" {
-		filterClause += fmt.Sprintf(" AND a.sub_type = $%d", idx)
-		args = append(args, subType)
-		// idx++ if more conditions are added
-	}
+	filterClause, args := aggregateStatsWhere(tenantID, access, types, lenses, tags, subType)
 
 	// One query, three columns:
 	//   category — which aggregate this row belongs to
@@ -2013,7 +2340,7 @@ WITH filtered AS (
 finding_counts AS (
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
-  WHERE f.asset_id IN (SELECT id FROM filtered)
+  WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (
@@ -2171,11 +2498,84 @@ SELECT category, key, value FROM (
 	return stats, nil
 }
 
+// Bounds on the property-facet query. Facets expand every JSONB key (and
+// every array element) of every asset they read, so the work grows with the
+// inventory times the property width. These caps keep one request bounded:
+//
+//   - facetSampleAssets: only the most recently updated assets in the caller's
+//     scope are expanded. On a larger inventory the counts are counts within
+//     that sample (a lower bound), which is what a facet hint needs.
+//   - facetMaxArrayElems: at most this many elements of one array property
+//     are expanded per asset.
+//   - facetMaxValuesPerKey: values per key returned from the database (the
+//     response already kept only the top 20; the cut now happens in SQL, so
+//     the long tail never crosses the wire). The per-key count still sums
+//     every value in the sample.
+const (
+	facetSampleAssets    = 5000
+	facetMaxArrayElems   = 50
+	facetMaxValuesPerKey = 20
+)
+
 // GetPropertyFacets returns distinct JSONB property keys and their top values.
 // Uses a single query that expands JSONB keys and values together, then groups
-// in Go — replacing the previous 1+N query pattern.
-func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, types []string, subType string) ([]asset.PropertyFacet, error) {
-	// Build optional extra filter clauses (applied inside the sub-select).
+// in Go — replacing the previous 1+N query pattern. It reads only the assets
+// the caller may list (access = the list's data scope) and is bounded by the
+// facet* constants above.
+// GetInventoryOverview counts the tenant's assets the caller may list per
+// (lens, type, sub_type) in one GROUP BY: the in-inventory total, the
+// unowned, high-risk (>= 70) and first-seen-this-week ones among them, and
+// the names in the attribution review queue. The output has one row per
+// stored (type, sub_type) pair, never one per asset.
+func (r *AssetRepository) GetInventoryOverview(ctx context.Context, tenantID shared.ID, access asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
+	where := "a.deleted_at IS NULL AND a.tenant_id = $1"
+	args := []any{tenantID.String()}
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), 2); cond != "" {
+		where += " AND " + cond
+		args = append(args, scopeArgs...)
+	}
+	query := `
+WITH scoped AS (
+  SELECT a.id, a.asset_type, COALESCE(a.sub_type, '') AS sub_type, COALESCE(a.asset_lens, '') AS lens,
+         a.risk_score, a.first_seen,
+         NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = a.id AND iv.tenant_id = a.tenant_id
+                     AND iv.state IN ('needs_review', 'candidate', 'rejected')) AS in_inventory,
+         EXISTS (SELECT 1 FROM asset_attributions rq WHERE rq.asset_id = a.id AND rq.tenant_id = a.tenant_id
+                 AND rq.state IN ('needs_review', 'candidate')) AS in_review,
+         EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id
+                 AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = $1))
+                 AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = $1))) AS owned
+  FROM assets a
+  WHERE ` + where + `
+)
+SELECT lens, asset_type, sub_type,
+       COUNT(*) FILTER (WHERE in_inventory),
+       COUNT(*) FILTER (WHERE in_inventory AND NOT owned),
+       COUNT(*) FILTER (WHERE in_inventory AND risk_score >= 70),
+       COUNT(*) FILTER (WHERE in_inventory AND first_seen >= now() - interval '7 days'),
+       COUNT(*) FILTER (WHERE in_review)
+FROM scoped
+GROUP BY lens, asset_type, sub_type
+ORDER BY lens, asset_type, sub_type`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inventory overview: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []asset.InventoryOverviewRow
+	for rows.Next() {
+		var row asset.InventoryOverviewRow
+		if err := rows.Scan(&row.Lens, &row.Type, &row.SubType, &row.Total, &row.Unowned,
+			&row.HighRisk, &row.New7d, &row.NeedsReview); err != nil {
+			return nil, fmt.Errorf("failed to scan inventory overview row: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types []string, subType string) ([]asset.PropertyFacet, error) {
+	// Build optional extra filter clauses (applied inside the sample CTE).
 	extraWhere := ""
 	args := []any{tenantID.String()}
 	idx := 2
@@ -2188,42 +2588,67 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	if subType != "" {
 		extraWhere += fmt.Sprintf(" AND a.sub_type = $%d", idx)
 		args = append(args, subType)
-		// idx++ — not needed after the last param
+		idx++
+	}
+	// Data scope: the same predicate as List, so a scoped user never sees a
+	// value (or a count) that only an asset outside their scope carries.
+	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), idx); cond != "" {
+		extraWhere += " AND " + cond
+		args = append(args, scopeArgs...)
 	}
 
-	// Single query: expand every JSONB key/value pair per asset, then aggregate.
-	// For scalar values: extract via ->> (returns text).
+	// Single query: expand every JSONB key/value pair per sampled asset, then
+	// aggregate. For scalar values: extract via ->> (returns text).
 	// For array values: unwrap via jsonb_array_elements_text (returns individual elements).
 	// This prevents arrays like ["ns1.cloudflare.com","ns2.cloudflare.com"] appearing
 	// as a single facet value.
 	query := fmt.Sprintf(`
-		SELECT key, val, COUNT(*) AS cnt
-		FROM (
+		WITH sample AS (
+			SELECT a.properties
+			FROM assets a
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+			  AND a.properties IS NOT NULL
+			  AND a.properties != '{}'::jsonb
+			  %[1]s
+			ORDER BY a.updated_at DESC
+			LIMIT %[2]d
+		),
+		pairs AS (
 			-- Scalar values (strings, numbers, booleans)
-			SELECT k AS key, a.properties ->> k AS val
-			FROM assets a, jsonb_object_keys(a.properties) AS k
-			WHERE a.tenant_id = $1
-			  AND a.properties IS NOT NULL
-			  AND a.properties != '{}'::jsonb
-			  AND jsonb_typeof(a.properties -> k) != 'array'
-			  AND jsonb_typeof(a.properties -> k) != 'object'
-			  %[1]s
+			SELECT k AS key, s.properties ->> k AS val
+			FROM sample s, jsonb_object_keys(s.properties) AS k
+			WHERE jsonb_typeof(s.properties -> k) NOT IN ('array', 'object')
 			UNION ALL
-			-- Array values: unwrap each element
-			SELECT k AS key, jsonb_array_elements_text(a.properties -> k) AS val
-			FROM assets a, jsonb_object_keys(a.properties) AS k
-			WHERE a.tenant_id = $1
-			  AND a.properties IS NOT NULL
-			  AND a.properties != '{}'::jsonb
-			  AND jsonb_typeof(a.properties -> k) = 'array'
-			  %[1]s
-		) sub
-		WHERE key NOT IN ('dns_records', 'ports', 'interfaces', 'tags')
-		  AND val IS NOT NULL
-		  AND val != ''
-		GROUP BY key, val
-		ORDER BY key, cnt DESC
-	`, extraWhere)
+			-- Array values: unwrap each element (bounded per asset)
+			SELECT k AS key, e.val
+			FROM sample s, jsonb_object_keys(s.properties) AS k,
+			     LATERAL (
+			         SELECT x AS val
+			         FROM jsonb_array_elements_text(
+			             CASE WHEN jsonb_typeof(s.properties -> k) = 'array'
+			                  THEN s.properties -> k ELSE '[]'::jsonb END) AS x
+			         LIMIT %[3]d
+			     ) e
+		),
+		counted AS (
+			SELECT key, val, COUNT(*) AS cnt
+			FROM pairs
+			WHERE key NOT IN ('dns_records', 'ports', 'interfaces', 'tags')
+			  AND val IS NOT NULL
+			  AND val != ''
+			GROUP BY key, val
+		),
+		ranked AS (
+			SELECT key, val, cnt,
+			       SUM(cnt) OVER (PARTITION BY key) AS key_total,
+			       ROW_NUMBER() OVER (PARTITION BY key ORDER BY cnt DESC, val) AS rn
+			FROM counted
+		)
+		SELECT key, val, cnt, key_total
+		FROM ranked
+		WHERE rn <= %[4]d
+		ORDER BY key, cnt DESC, val
+	`, extraWhere, facetSampleAssets, facetMaxArrayElems, facetMaxValuesPerKey)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -2241,19 +2666,20 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 
 	for rows.Next() {
 		var key, val string
-		var cnt int
-		if err := rows.Scan(&key, &val, &cnt); err != nil {
+		var cnt, keyTotal int
+		if err := rows.Scan(&key, &val, &cnt, &keyTotal); err != nil {
 			return nil, fmt.Errorf("failed to scan facet row: %w", err)
 		}
 
 		if _, seen := accum[key]; !seen {
-			accum[key] = &facetAccum{}
+			// key_total sums every value of the key, including those past
+			// the per-key cut, so the count matches the uncut behavior.
+			accum[key] = &facetAccum{totalCount: keyTotal}
 			order = append(order, key)
 		}
 		fa := accum[key]
-		fa.totalCount += cnt
-		// Keep only the top 20 values per key (rows are ordered by cnt DESC within each key).
-		if len(fa.values) < 20 {
+		// The SQL already keeps only the top values per key (ordered by cnt DESC).
+		if len(fa.values) < facetMaxValuesPerKey {
 			fa.values = append(fa.values, val)
 		}
 	}
@@ -2285,9 +2711,14 @@ func (r *AssetRepository) GetPropertyFacets(ctx context.Context, tenantID shared
 	return facets, nil
 }
 
-// formatPropertyLabel converts snake_case or camelCase key to Title Case label.
+// formatPropertyLabel is the facet label of a property key: the property
+// schema's label (RFC-042 §6.3.9), the same one the asset detail shows; for
+// a key outside the schema, the key in Title Case.
 // Handles: snake_case, camelCase, PascalCase, ALLCAPS, and mixtures.
 func formatPropertyLabel(key string) string {
+	if p, ok := asset.LookupProperty(key); ok {
+		return p.Label
+	}
 	// Step 1: insert space before uppercase letters in camelCase/PascalCase
 	// but NOT between consecutive uppercase (e.g., "BIOS" stays "BIOS")
 	var b strings.Builder
@@ -2329,6 +2760,32 @@ func formatPropertyLabel(key string) string {
 	return strings.Join(words, " ")
 }
 
+// SetCrownJewel sets an asset's crown-jewel flag and its business impact
+// in one statement, scoped to the tenant. It is the only writer of
+// assets.is_crown_jewel: Create, Update and the ingest upsert never touch it,
+// so a save of a stale entity cannot undo the decision.
+func (r *AssetRepository) SetCrownJewel(ctx context.Context, tenantID, assetID shared.ID, isCrownJewel bool, impactScore float64, impactNotes string) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE assets
+		   SET is_crown_jewel = $3,
+		       properties = COALESCE(properties, '{}'::jsonb)
+		           || jsonb_build_object('business_impact_score', $4::numeric, 'business_impact_notes', $5::text),
+		       updated_at = NOW()
+		 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+		tenantID.String(), assetID.String(), isCrownJewel, impactScore, impactNotes)
+	if err != nil {
+		return fmt.Errorf("set crown jewel: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set crown jewel: %w", err)
+	}
+	if n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
 // ListAllNodes fetches every asset for the tenant as lightweight graph nodes.
 // Used by attack path scoring to build the full in-memory directed graph.
 // Only the columns needed for scoring are fetched.
@@ -2338,20 +2795,25 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			a.id,
 			a.name,
 			a.asset_type,
+			COALESCE(a.sub_type, ''),
 			a.exposure,
 			a.criticality,
 			a.risk_score,
-			COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE),
+			a.is_crown_jewel,
 			COALESCE(fc.finding_count, 0)
 		FROM assets a
-		-- Per-asset indexed count (see selectQuery) instead of a full-findings
-		-- GROUP BY. Counts all findings for the asset, matching prior behavior.
-		LEFT JOIN LATERAL (
-			SELECT COUNT(*) AS finding_count
+		-- Every asset of the tenant is read, so the counts come from ONE pass
+		-- over the tenant's findings (hash aggregate) joined by asset id. The
+		-- per-asset LATERAL count it replaces ran one index probe per asset:
+		-- 2-10 s for a 110k-asset / 525k-finding tenant against 0.75-1.2 s.
+		-- Counts all findings of the asset, matching prior behavior.
+		LEFT JOIN (
+			SELECT f.asset_id, COUNT(*) AS finding_count
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id
-		) fc ON true
-		WHERE a.tenant_id = $1
+			WHERE f.tenant_id = $1 AND f.asset_id IS NOT NULL AND NOT f.branch_only
+			GROUP BY f.asset_id
+		) fc ON fc.asset_id = a.id
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		ORDER BY a.created_at
 	`
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
@@ -2364,7 +2826,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 	for rows.Next() {
 		var n asset.AssetNode
 		if scanErr := rows.Scan(
-			&n.ID, &n.Name, &n.AssetType, &n.Exposure,
+			&n.ID, &n.Name, &n.AssetType, &n.SubType, &n.Exposure,
 			&n.Criticality, &n.RiskScore, &n.IsCrownJewel, &n.FindingCount,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan node: %w", scanErr)

@@ -73,10 +73,11 @@ func TestScopingSummary_CountsSeededRows(t *testing.T) {
 	mustExec(ctx, t, db, `INSERT INTO tenant_members (user_id, tenant_id) VALUES ($1,$2)`, userID, tenantID)
 	groupID := mustID(ctx, t, db, `INSERT INTO groups (tenant_id, name, slug) VALUES ($1,'owners',$2) RETURNING id`, tenantID, "owners-"+tenantID)
 
-	// Crown jewels: one owned via assets.owner_id, one via a group RACI row,
-	// one unowned, one archived (not counted).
+	// Crown jewels: one owned by a user (a primary row matched from
+	// owner_ref), one via a group RACI row, one unowned, one archived (not
+	// counted).
 	cjOwnerID := seedAssetRow(ctx, t, db, tenantID, "cj-owner-id", "active", true)
-	mustExec(ctx, t, db, `UPDATE assets SET owner_id = $1 WHERE id = $2`, userID, cjOwnerID)
+	mustExec(ctx, t, db, `INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1,$2,'primary','owner_ref')`, cjOwnerID, userID)
 	cjGroup := seedAssetRow(ctx, t, db, tenantID, "cj-group", "active", true)
 	mustExec(ctx, t, db, `INSERT INTO asset_owners (asset_id, group_id) VALUES ($1,$2)`, cjGroup, groupID)
 	_ = seedAssetRow(ctx, t, db, tenantID, "cj-none", "stale", true)

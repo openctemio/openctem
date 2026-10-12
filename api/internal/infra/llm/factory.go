@@ -45,20 +45,6 @@ func NewFactoryWithEncryption(cfg config.AITriageConfig, encryptor crypto.Encryp
 	}
 }
 
-// NewFactoryWithEncryptionLegacy creates a factory that allows plaintext keys (for migration).
-// Deprecated: Use NewFactoryWithEncryption after migrating all API keys to encrypted format.
-func NewFactoryWithEncryptionLegacy(cfg config.AITriageConfig, encryptor crypto.Encryptor) *Factory {
-	if encryptor == nil {
-		encryptor = crypto.NewNoOpEncryptor()
-	}
-	return &Factory{
-		platformConfig:          cfg,
-		encryptor:               encryptor,
-		requireEncryptedAPIKeys: false, // Allow plaintext during migration
-		limiters:                newLimiterRegistry(),
-	}
-}
-
 // rateLimited wraps p with the shared limiter for the given budget scope.
 // AI_RATE_LIMIT_RPM <= 0 disables the cap and returns p unchanged.
 //

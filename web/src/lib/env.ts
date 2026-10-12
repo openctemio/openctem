@@ -50,32 +50,26 @@ export const env = {
   api: {
     /** Backend API URL for server-side fetch (e.g., http://api:8080) - Single source of truth */
     url: resolveBackendApiUrl(),
-    /** Request timeout in milliseconds */
-    timeout: parseInt(getEnvVar('API_TIMEOUT', '30000'), 10),
     /**
      * WebSocket base URL for direct backend connection.
      * WebSocket cannot go through Next.js proxy due to HTTP upgrade requirements.
      * In development: Set to backend URL (e.g., http://localhost:8080)
      * In production: Usually same as app URL if nginx routes /api/v1/ws to backend
-     *
-     * Falls back to NEXT_PUBLIC_SSE_BASE_URL for backward compatibility.
      */
-    wsBaseUrl:
-      getEnvVar('NEXT_PUBLIC_WS_BASE_URL', '') || getEnvVar('NEXT_PUBLIC_SSE_BASE_URL', ''),
+    wsBaseUrl: getEnvVar('NEXT_PUBLIC_WS_BASE_URL', ''),
   },
 
-  // Token Storage Configuration
+  // Cookie names. Fixed: the API, this console and the gateway must agree on
+  // them, and a NEXT_PUBLIC_* value read through process.env[key] is not
+  // inlined into the browser bundle, so an override applied on the server only.
   auth: {
-    cookieName: getEnvVar('NEXT_PUBLIC_AUTH_COOKIE_NAME', 'auth_token'),
-    // Must match backend RefreshTokenCookieName in cookie.go
-    refreshCookieName: getEnvVar('NEXT_PUBLIC_REFRESH_COOKIE_NAME', 'refresh_token'),
+    cookieName: 'auth_token',
+    refreshCookieName: 'refresh_token',
   },
-
-  // Cookie Names (configurable to avoid hardcoded prefixes)
   cookies: {
-    tenant: getEnvVar('NEXT_PUBLIC_TENANT_COOKIE_NAME', 'app_tenant'),
-    userInfo: getEnvVar('NEXT_PUBLIC_USER_INFO_COOKIE_NAME', 'app_user_info'),
-    pendingTenants: getEnvVar('NEXT_PUBLIC_PENDING_TENANTS_COOKIE_NAME', 'app_pending_tenants'),
+    tenant: 'app_tenant',
+    userInfo: 'app_user_info',
+    pendingTenants: 'app_pending_tenants',
   },
 
   // Application
@@ -113,14 +107,11 @@ export const serverEnv = {
     // Secure cookies are ON by default; production MUST be served over HTTPS.
     // Disable explicitly (SECURE_COOKIES=false) only for local http development.
     secureCookies: getEnvVar('SECURE_COOKIES', 'true') !== 'false',
-    csrfSecret: getEnvVar('CSRF_SECRET', ''),
   },
 
   // Token management
   token: {
     cookieMaxAge: parseInt(getEnvVar('COOKIE_MAX_AGE', '604800'), 10),
-    enableRefresh: getEnvVar('ENABLE_TOKEN_REFRESH', 'true') === 'true',
-    refreshBeforeExpiry: parseInt(getEnvVar('TOKEN_REFRESH_BEFORE_EXPIRY', '300'), 10),
   },
 } as const
 
@@ -146,16 +137,9 @@ export function validateEnv() {
     warnings.push('BACKEND_API_URL is not set (using default: http://localhost:8080)')
   }
 
-  // CSRF secret warning (recommended for production)
-  const csrfSecret = process.env.CSRF_SECRET
-  if (!csrfSecret) {
-    warnings.push('CSRF_SECRET is not set (recommended for security)')
-  } else if (csrfSecret.length < 32) {
-    warnings.push(
-      `CSRF_SECRET should be at least 32 characters (current: ${csrfSecret.length})\n` +
-        `   Generate with: openssl rand -base64 32`
-    )
-  }
+  // CSRF needs no secret: the API and the web use the double-submit cookie
+  // (a random csrf_token cookie echoed in X-CSRF-Token), so there is none to
+  // configure.
 
   // Log warnings
   if (warnings.length > 0) {

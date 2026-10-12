@@ -289,6 +289,7 @@ func (r *TenantToolConfigRepository) GetEffectiveConfig(ctx context.Context, ten
 		FROM tools t
 		LEFT JOIN tenant_tool_configs tc ON tc.tool_id = t.id AND tc.tenant_id = $1
 		WHERE t.id = $2
+		  AND (t.tenant_id IS NULL OR t.tenant_id = $1)
 	`
 
 	var defaultConfigBytes, tenantConfigBytes []byte
@@ -347,48 +348,40 @@ func (r *TenantToolConfigRepository) ListEnabledTools(ctx context.Context, tenan
 	return configs, nil
 }
 
-// BulkEnable enables multiple tools for a tenant.
+// BulkEnable enables tools for a tenant.
 func (r *TenantToolConfigRepository) BulkEnable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error {
-	if len(toolIDs) == 0 {
-		return nil
-	}
-
-	// Convert to string array
-	ids := make([]string, len(toolIDs))
-	for i, id := range toolIDs {
-		ids[i] = id.String()
-	}
-
-	query := `
-		UPDATE tenant_tool_configs
-		SET is_enabled = true, updated_at = NOW()
-		WHERE tenant_id = $1 AND tool_id = ANY($2)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(ids))
-	return err
+	return r.bulkSetEnabled(ctx, tenantID, toolIDs, true)
 }
 
-// BulkDisable disables multiple tools for a tenant.
+// BulkDisable disables tools for a tenant.
 func (r *TenantToolConfigRepository) BulkDisable(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID) error {
+	return r.bulkSetEnabled(ctx, tenantID, toolIDs, false)
+}
+
+// bulkSetEnabled sets the tenant's switch on each tool, creating the config
+// row when the tenant never configured the tool: a tool without a row is
+// enabled, so an UPDATE alone could never disable it. Only tools the tenant
+// may see (platform tools and its own custom tools) get a row; any other id
+// is ignored.
+func (r *TenantToolConfigRepository) bulkSetEnabled(ctx context.Context, tenantID shared.ID, toolIDs []shared.ID, enabled bool) error {
 	if len(toolIDs) == 0 {
 		return nil
 	}
-
-	// Convert to string array
 	ids := make([]string, len(toolIDs))
 	for i, id := range toolIDs {
 		ids[i] = id.String()
 	}
-
-	query := `
-		UPDATE tenant_tool_configs
-		SET is_enabled = false, updated_at = NOW()
-		WHERE tenant_id = $1 AND tool_id = ANY($2)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(ids))
-	return err
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO tenant_tool_configs (tenant_id, tool_id, is_enabled)
+		SELECT $1, t.id, $3 FROM tools t
+		WHERE t.id = ANY($2::uuid[]) AND (t.tenant_id IS NULL OR t.tenant_id = $1)
+		ON CONFLICT (tenant_id, tool_id) DO UPDATE
+		SET is_enabled = EXCLUDED.is_enabled, updated_at = NOW()
+	`, tenantID.String(), pq.Array(ids), enabled)
+	if err != nil {
+		return fmt.Errorf("failed to set tools enabled=%t: %w", enabled, err)
+	}
+	return nil
 }
 
 // ListToolsWithConfig returns all tools with their tenant-specific enabled status.
@@ -405,49 +398,41 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 	// Build WHERE clause for tools filter
 	var conditions []string
 	var args []any
-	argIndex := 1
 
 	// Tenant ID for the LEFT JOIN
 	args = append(args, tenantID.String())
-	argIndex++
 
 	// SECURITY: Only show platform tools (tenant_id IS NULL) and tenant's own custom tools
 	// This prevents tenants from seeing other tenants' custom tools
-	conditions = append(conditions, fmt.Sprintf("(t.tenant_id IS NULL OR t.tenant_id = $%d)", argIndex))
 	args = append(args, tenantID.String())
-	argIndex++
+	conditions = append(conditions, fmt.Sprintf("(t.tenant_id IS NULL OR t.tenant_id = $%d)", len(args)))
 
 	if filter.CategoryID != nil {
-		conditions = append(conditions, fmt.Sprintf("t.category_id = $%d", argIndex))
 		args = append(args, filter.CategoryID.String())
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.category_id = $%d", len(args)))
 	}
 
 	if filter.CategoryName != nil {
-		conditions = append(conditions, fmt.Sprintf("t.category_id IN (SELECT id FROM tool_categories WHERE name = $%d)", argIndex))
 		args = append(args, *filter.CategoryName)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.category_id IN (SELECT id FROM tool_categories WHERE name = $%d)", len(args)))
 	}
 
 	if filter.IsActive != nil {
-		conditions = append(conditions, fmt.Sprintf("t.is_active = $%d", argIndex))
 		args = append(args, *filter.IsActive)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.is_active = $%d", len(args)))
 	}
 
 	if filter.IsBuiltin != nil {
-		conditions = append(conditions, fmt.Sprintf("t.is_builtin = $%d", argIndex))
 		args = append(args, *filter.IsBuiltin)
-		argIndex++
+		conditions = append(conditions, fmt.Sprintf("t.is_builtin = $%d", len(args)))
 	}
 
 	if filter.Search != "" {
+		args = append(args, wrapLikePattern(filter.Search))
 		conditions = append(conditions, fmt.Sprintf(
 			"(t.name ILIKE $%d OR t.display_name ILIKE $%d OR t.description ILIKE $%d)",
-			argIndex, argIndex, argIndex,
+			len(args), len(args), len(args),
 		))
-		args = append(args, wrapLikePattern(filter.Search))
-		argIndex++
 	}
 
 	whereClause := ""
@@ -476,9 +461,9 @@ func (r *TenantToolConfigRepository) ListToolsWithConfig(
 			t.category_id, t.install_method, t.install_cmd, t.update_cmd,
 			t.version_cmd, t.version_regex, t.current_version, t.latest_version,
 			t.config_file_path, t.config_schema, t.default_config,
-			t.capabilities, t.supported_targets, t.output_formats,
+			t.capabilities, t.supported_targets, t.output_formats, t.output_types,
 			t.docs_url, t.github_url, t.is_active, t.is_builtin, t.tags, t.metadata,
-			t.created_by, t.created_at, t.updated_at,
+			t.created_by, t.created_at, t.updated_at, t.min_version,
 			tc.id as config_id, tc.config as tenant_config, tc.is_enabled,
 			tc.custom_templates, tc.custom_patterns, tc.custom_wordlists,
 			tc.updated_by, tc.created_at as config_created_at, tc.updated_at as config_updated_at,
@@ -526,6 +511,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		capabilities     pq.StringArray // PostgreSQL text[] array
 		supportedTargets pq.StringArray // PostgreSQL text[] array
 		outputFormats    pq.StringArray // PostgreSQL text[] array
+		outputTypes      pq.StringArray
 		tags             pq.StringArray // PostgreSQL text[] array
 		metadata         []byte
 		logoURL          sql.NullString
@@ -556,6 +542,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		catDisplayName sql.NullString
 		catIcon        sql.NullString
 		catColor       sql.NullString
+		minVersion     sql.NullString
 	)
 
 	err := rows.Scan(
@@ -563,9 +550,9 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		&categoryID, &installMethod, &installCmd, &updateCmd,
 		&versionCmd, &versionRegex, &currentVersion, &latestVersion,
 		&configFilePath, &configSchema, &defaultConfig,
-		&capabilities, &supportedTargets, &outputFormats,
+		&capabilities, &supportedTargets, &outputFormats, &outputTypes,
 		&docsURL, &githubURL, &t.IsActive, &t.IsBuiltin, &tags, &metadata,
-		&createdBy, &t.CreatedAt, &t.UpdatedAt,
+		&createdBy, &t.CreatedAt, &t.UpdatedAt, &minVersion,
 		&configID, &tenantConfig, &isEnabled,
 		&customTemplates, &customPatterns, &customWordlists,
 		&configUpdatedBy, &configCreatedAt, &configUpdatedAt,
@@ -597,6 +584,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 	t.VersionRegex = versionRegex.String
 	t.CurrentVersion = currentVersion.String
 	t.LatestVersion = latestVersion.String
+	t.MinVersion = minVersion.String
 	t.ConfigFilePath = configFilePath.String
 	t.DocsURL = docsURL.String
 	t.GithubURL = githubURL.String
@@ -611,6 +599,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 	t.Capabilities = capabilities
 	t.SupportedTargets = supportedTargets
 	t.OutputFormats = outputFormats
+	t.OutputTypes = outputTypes
 	t.Tags = tags
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &t.Metadata)

@@ -1,6 +1,6 @@
 /**
  * UI routes renamed by the sensor rename (RFC-023 §9.5,
- * openctemio/api docs/rfcs/RFC-023-sensor-rename-contract.md §11).
+ * api/docs/rfcs/RFC-023-sensor-rename-contract.md §11).
  *
  * The product ran under the old name for a long time, so people have /agents
  * bookmarked, linked from runbooks and in browser history. Each old route
@@ -10,8 +10,9 @@
  * before proxy.ts, so a signed-out visitor lands on /login with /sensors as
  * the return path.
  *
- * Kept until the API retires its own /api/v1/agents redirect (sunset
- * 2027-04-01); dropping it earlier breaks bookmarks for no gain.
+ * Browser bookmarks only: the API retired its own /api/v1/agents redirect
+ * on 2026-10-05, but dropping these UI redirects would break bookmarks for
+ * no gain.
  */
 /** A query condition, as in Next.js `has` / `missing` (type 'query' only). */
 export interface LegacyRouteQueryCondition {

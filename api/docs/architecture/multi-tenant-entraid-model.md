@@ -22,7 +22,7 @@ A per-tenant Entra connection **binds one OpenCTEM tenant to one Azure directory
 
 ## 1. Setup — each tenant = its own Azure app + directory
 
-A tenant admin registers the org's Azure app in the Azure Portal, then enters its credentials into OpenCTEM (Settings → Identity Providers, or the `SSO_ENTRA_*` env fallback). Different tenant → different `client_id` / `client_secret` / directory `tid`.
+The organization registers its Azure app in the Azure Portal; a **platform administrator** enters its credentials in the admin console (or the `SSO_ENTRA_*` env fallback applies). Each change to an organization's SSO needs approval by an organization owner under **Settings → SSO approvals**. Different tenant → different `client_id` / `client_secret` / directory `tid`.
 
 ```
 Acme Corp    (org=acme)   →  Azure dir tid=A1b2…  ·  client_id acme-…    ·  secret 🔒  ·  @acme.com  (verified)
@@ -111,7 +111,7 @@ The signed `state` is likewise a routing hint, not a trust boundary: knowing ano
 | Per-tenant config storage | `tenant_identity_providers` table · `pkg/domain/identityprovider` |
 | Resolve config for a login | `internal/app/auth/sso.go` — `resolveProvider`, `GetProvidersForTenant`; tenant via `GetBySlug(orgSlug)` |
 | Build authorize URL + signed state | `sso.go` — `GenerateAuthorizeURL`, `generateState` (HMAC + `?org` + nonce) |
-| id_token verification + **`tid` pin** | `internal/app/auth/oidc_verifier.go` — `entraIssuerValidator` (pins the directory when a GUID is configured) |
+| id_token verification + **`tid` pin** | `pkg/oidc/issuers.go` — `EntraIssuer` (pins the directory when a GUID is configured) |
 | Immutable-id keying + `xms_edov` | `sso.go` — `entraUserInfoFromClaims` (email trusted only with `xms_edov`; keys on `oid`/`sub`+`iss`) |
 | Verified-domain JIT gate | `internal/app/auth/domainverify/` · `sso.go` — `jitProvisioningAllowed` |
 | Env-fallback opt-in | `sso.go` — `envProvider`, `envFallbackAllowedForTenant` (`SSO_ENTRA_ALLOWED_TENANTS`) |

@@ -15,6 +15,7 @@ import (
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 )
 
 // --- fakes ---------------------------------------------------------------
@@ -100,14 +101,10 @@ func newBCHarness(t *testing.T) *bcHarness {
 	sessRepo := &bcSessionRepo{updated: map[string]bool{}}
 	rtRepo := &bcRefreshRepo{revoked: map[string]bool{}}
 
-	verifier := newOIDCVerifier(&http.Client{Timeout: 2 * time.Second}, logger.NewNop())
-	// Seed the JWKS cache under the DERIVED Entra JWKS URL so keyForKID resolves
-	// the test key without any network fetch.
+	// Serve the test key at the DERIVED Entra JWKS URL without any network
+	// fetch: the transport answers only that URL.
 	jwksURL := identityproviderdom.ProviderEntraID.JWKSURL(testTenantID)
-	verifier.cache[jwksURL] = &jwksEntry{
-		keys:      map[string]*rsa.PublicKey{testKID: &key.PublicKey},
-		fetchedAt: time.Now(),
-	}
+	verifier := oidc.NewClient(&http.Client{Timeout: 2 * time.Second, Transport: jwksTransport(t, jwksURL, &key.PublicKey)}, nil)
 
 	svc := &SSOService{
 		ipRepo:           &bcIPRepo{},
@@ -352,5 +349,32 @@ func TestBackChannelLogout_EmptyToken_Rejected(t *testing.T) {
 	h := newBCHarness(t)
 	if _, err := h.svc.BackChannelLogout(context.Background(), "   "); err == nil {
 		t.Fatalf("empty logout_token accepted")
+	}
+}
+
+// bcRevocationStore records the session ids marked revoked.
+type bcRevocationStore struct{ marked []string }
+
+func (s *bcRevocationStore) MarkSessionRevoked(_ context.Context, sessionID string, _ time.Duration) error {
+	s.marked = append(s.marked, sessionID)
+	return nil
+}
+
+// A back-channel logout stops the session the way a local logout does: its id
+// is recorded as revoked, which rejects its unexpired access tokens and closes
+// its live WebSocket connections (RFC-045). Before, only the session row and
+// refresh tokens were revoked.
+func TestBackChannelLogout_MarksSessionRevoked(t *testing.T) {
+	h := newBCHarness(t)
+	store := &bcRevocationStore{}
+	h.svc.SetSessionRevocationStore(store, time.Minute)
+	sess := h.seedSession(t, "sid-1", "subject-1")
+	_ = h.seedSession(t, "sid-2", "subject-2")
+
+	if _, err := h.svc.BackChannelLogout(context.Background(), h.sign(t, h.validLogoutClaims("sid-1", "subject-1"))); err != nil {
+		t.Fatalf("valid logout_token errored: %v", err)
+	}
+	if len(store.marked) != 1 || store.marked[0] != sess.ID().String() {
+		t.Fatalf("marked revoked = %v, want only %s", store.marked, sess.ID())
 	}
 }

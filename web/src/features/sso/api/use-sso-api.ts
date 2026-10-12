@@ -21,6 +21,7 @@ import type {
   UpdateIdentityProviderRequest,
   SSOProviderInfo,
 } from '../types/sso.types'
+import type { SSOChange } from '@/features/sso-approvals/api/use-sso-changes'
 
 const defaultConfig: SWRConfiguration = {
   revalidateOnFocus: false,
@@ -53,8 +54,15 @@ export function useOrgIdentityProviders(tenantId: string | null, config?: SWRCon
   )
 }
 
+/**
+ * Create/update answer 201/200 with the provider when the organization has no
+ * owner yet, otherwise 202 with an SSO change waiting for an owner's approval.
+ */
 export function createOrgIdentityProvider(tenantId: string, input: CreateIdentityProviderRequest) {
-  return adminFetch<IdentityProvider>(orgBase(tenantId), { method: 'POST', body: input })
+  return adminFetch<IdentityProvider | SSOChange>(orgBase(tenantId), {
+    method: 'POST',
+    body: input,
+  })
 }
 
 export function updateOrgIdentityProvider(
@@ -62,7 +70,10 @@ export function updateOrgIdentityProvider(
   id: string,
   input: UpdateIdentityProviderRequest
 ) {
-  return adminFetch<IdentityProvider>(`${orgBase(tenantId)}/${id}`, { method: 'PUT', body: input })
+  return adminFetch<IdentityProvider | SSOChange>(`${orgBase(tenantId)}/${id}`, {
+    method: 'PUT',
+    body: input,
+  })
 }
 
 export function deleteOrgIdentityProvider(tenantId: string, id: string) {

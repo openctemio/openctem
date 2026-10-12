@@ -29,9 +29,12 @@ func registerAssetRoutes(
 	// Asset routes - tenant from JWT token
 	router.Group("/api/v1/assets", func(r Router) {
 		// Stats and tags endpoints (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		r.GET("/facets", h.GetFacets, middleware.Require(permission.AssetsRead))
+		r.GET("/overview", h.GetInventoryOverview, middleware.Require(permission.AssetsRead))
 		r.GET("/tags", h.ListTags, middleware.Require(permission.AssetsRead))
+		// The organization's recent asset changes (RFC-069 timeline).
+		r.GET("/changes", h.ListTenantChanges, middleware.Require(permission.AssetsRead))
 
 		// Bulk operations (must be before /{id} patterns to avoid route conflicts)
 		r.POST("/bulk/sync", h.BulkSync, middleware.Require(permission.AssetsWrite))
@@ -52,6 +55,14 @@ func registerAssetRoutes(
 		r.PUT("/{id}/repository", h.UpdateRepository, middleware.Require(permission.AssetsWrite))
 		r.PATCH("/{id}/crown-jewel", h.UpdateCrownJewel, middleware.Require(permission.AssetsWrite))
 
+		// Where the values come from, and a person's locks (RFC-069).
+		r.GET("/{id}/attribute-sources", h.GetAttributeSources, middleware.Require(permission.AssetsRead))
+		r.PUT("/{id}/attribute-sources/{attribute}/lock", h.LockAttribute, middleware.Require(permission.AssetsWrite))
+		r.DELETE("/{id}/attribute-sources/{attribute}/lock", h.ReleaseAttributeLock, middleware.Require(permission.AssetsWrite))
+		r.GET("/{id}/changes", h.ListAssetChanges, middleware.Require(permission.AssetsRead))
+		// When each attribute class was last observed (RFC-075).
+		r.GET("/{id}/freshness", h.GetFreshness, middleware.Require(permission.AssetsRead))
+
 		// Status operations
 		r.POST("/{id}/activate", h.Activate, middleware.Require(permission.AssetsWrite))
 		r.POST("/{id}/deactivate", h.Deactivate, middleware.Require(permission.AssetsWrite))
@@ -63,7 +74,7 @@ func registerAssetRoutes(
 
 		// Sync and scan operations (repository assets)
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.AssetsWrite))
-		r.POST("/{id}/scan", h.TriggerScan, middleware.Require(permission.AssetsWrite))
+		r.POST("/{id}/scan", h.TriggerScan, middleware.RequireAll(permission.AssetsWrite, permission.ScansExecute))
 
 		// Delete operations
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsDelete))
@@ -73,9 +84,11 @@ func registerAssetRoutes(
 // registerAssetOwnerRoutes registers asset ownership endpoints.
 // Asset owners are nested under assets and tenant-scoped.
 // Permission model:
-// - Read (GET): assets:read permission
-// - Write (POST, PUT): assets:write permission
-// - Delete (DELETE): assets:delete permission
+//   - Read (GET): assets:read permission
+//   - Write (POST, PUT): assets:write permission
+//   - Delete (DELETE): assets:delete permission
+//   - A group owner (add/remove) also needs team:groups:write (checked in the
+//     handler): it is the group's data-scope assignment.
 func registerAssetOwnerRoutes(
 	router Router,
 	h *handler.AssetOwnerHandler,
@@ -90,6 +103,15 @@ func registerAssetOwnerRoutes(
 		r.POST("/", h.AddOwner, middleware.Require(permission.AssetsWrite))
 		r.PUT("/{ownerId}", h.UpdateOwner, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{ownerId}", h.RemoveOwner, middleware.Require(permission.AssetsDelete))
+	}, middlewares...)
+
+	// Explicit per-user data-scope grants. Being an owner gives no access
+	// (owner decision O1); these grants and group assignments do, so they are
+	// gated like group data scope (team:groups:*), not like asset edits.
+	router.Group("/api/v1/assets/{id}/access-grants", func(r Router) {
+		r.GET("/", h.ListAccessGrants, middleware.Require(permission.GroupsRead))
+		r.POST("/", h.CreateAccessGrant, middleware.Require(permission.GroupsWrite))
+		r.DELETE("/{grant_id}", h.DeleteAccessGrant, middleware.Require(permission.GroupsWrite))
 	}, middlewares...)
 }
 
@@ -115,35 +137,36 @@ func registerComponentRoutes(
 		CleanupInterval: 5 * time.Minute,
 	}, nil)
 
-	// Component routes - tenant from JWT token
+	// Software components inventory (RFC-070) - tenant from the token. The
+	// inventory is written by producers (sensors, CI, SBOM import); there is
+	// no manual create, update or delete.
 	router.Group("/api/v1/components", func(r Router) {
-		// Stats endpoints (must be before /{id} to avoid matching)
-		r.GET("/stats", h.GetStats, middleware.Require(permission.ComponentsRead))
-		r.GET("/ecosystems", h.GetEcosystemStats, middleware.Require(permission.ComponentsRead))
-		r.GET("/vulnerable", h.GetVulnerableComponents, middleware.Require(permission.ComponentsRead))
-		r.GET("/licenses", h.GetLicenseStats, middleware.Require(permission.ComponentsRead))
-		r.GET("/export", h.ExportComponents, middleware.Require(permission.ComponentsRead))
-		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware())
-
-		// Read operations
+		r.GET("/summary", h.Summary, middleware.Require(permission.ComponentsRead))
+		r.GET("/sbom", h.ExportSBOM, middleware.Require(permission.ComponentsRead))
+		// The route's body limit replaces the global one (10 MiB), which
+		// otherwise refused every SBOM above it.
+		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware(),
+			middleware.BodyLimit(handler.MaxSBOMImportBody))
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
-		// Reverse lookup: assets that use a given global component (blast-radius)
+		r.GET("/versions/{version_id}", h.GetVersion, middleware.Require(permission.ComponentsRead))
+		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}/assets", h.ListAssets, middleware.Require(permission.ComponentsRead))
-		// CVEs affecting this component (forward lookup, paginated)
 		r.GET("/{id}/vulnerabilities", h.ListVulnerabilities, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ComponentsRead))
-
-		// Write operations
-		r.POST("/", h.Create, middleware.Require(permission.ComponentsWrite))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ComponentsWrite))
-
-		// Delete operations
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ComponentsDelete))
 	}, middlewares...)
 
 	// Asset-scoped component routes
+	// One group per sub-path: a group mounted at /api/v1/assets/{id} itself
+	// would capture /api/v1/assets/stats, /tags, /{id} and every other
+	// one-segment asset route and answer 404.
 	router.Group("/api/v1/assets/{id}/components", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.ComponentsRead))
+	}, middlewares...)
+	router.Group("/api/v1/assets/{id}/dependency-paths", func(r Router) {
+		r.GET("/", h.DependencyPaths, middleware.Require(permission.ComponentsRead))
+	}, middlewares...)
+	router.Group("/api/v1/assets/{id}/dependency-graph", func(r Router) {
+		r.GET("/", h.DependencyGraph, middleware.Require(permission.ComponentsRead))
 	}, middlewares...)
 }
 
@@ -205,6 +228,14 @@ func registerScopeRoutes(
 
 		// Check scope endpoint
 		r.POST("/check", h.CheckScope, middleware.Require(permission.ScopeRead))
+
+		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
+		// friction on widening: approvers only, with step-up.
+		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
+		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
+		// The owner-only part: how long an intrusive (t2) entry may last
+		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
+		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// Scope Target routes
@@ -215,11 +246,29 @@ func registerScopeRoutes(
 
 		// Write operations
 		r.POST("/", h.CreateTarget, middleware.Require(permission.ScopeWrite))
+		// What a new entry would do (names it would confirm); writes nothing.
+		r.POST("/preview", h.PreviewTarget, middleware.Require(permission.ScopeWrite))
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
+		// Approving puts a pending entry (a request or a widening) into
+		// effect: approvers only, with step-up (RFC-054 §6.1). Create,
+		// update and activate ask for step-up in the service when they widen.
+		r.POST("/{id}/approve", h.ApproveTarget, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.POST("/{id}/reject", h.RejectTarget, middleware.Require(permission.ScopeApprove))
+		// An owner approves their own pending entry only when no other
+		// approver exists: a fresh authenticator code in the body and a
+		// reason (checked in the service), audited at high severity.
+		r.POST("/{id}/self-approve", h.SelfApproveTarget, middleware.Require(permission.ScopeApprove))
+		// Remind the approvers of a pending entry (once per hour per entry).
+		r.POST("/{id}/remind", h.RemindApprovers, middleware.Require(permission.ScopeWrite))
+		// Keep a t2 entry intrusive for another attestation period
+		// (RFC-054 §12.5): approvers, one click.
+		r.POST("/{id}/attest", h.AttestTarget, middleware.Require(permission.ScopeApprove))
 
-		// Bulk operations
+		// Bulk operations. Adding many entries asks for step-up in the
+		// service (once per batch, as a single add does).
+		r.POST("/bulk", h.BulkCreateTargets, middleware.Require(permission.ScopeWrite))
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))
 
 		// Delete operations
@@ -235,35 +284,25 @@ func registerScopeRoutes(
 		// Write operations
 		r.POST("/", h.CreateExclusion, middleware.Require(permission.ScopeWrite))
 		r.PUT("/{id}", h.UpdateExclusion, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeWrite))
+		// Approval is a separate permission (owner/admin by default). In the
+		// Strict scan approval mode a new exclusion is pending and suppresses
+		// nothing until approved; in Off and On it is in effect at once
+		// (RFC-073 §6) and these routes only clear rows left pending.
+		r.POST("/{id}/approve", h.ApproveExclusion, middleware.Require(permission.ScopeExclusionsApprove))
+		r.POST("/{id}/reject", h.RejectExclusion, middleware.Require(permission.ScopeExclusionsApprove))
+		// How a path exclusion may be tested (RFC-056): the approval
+		// permission and a recent sign-in.
+		r.PUT("/{id}/testing", h.SetExclusionTesting, middleware.Require(permission.ScopeExclusionsApprove), requireStepUp())
 		r.POST("/{id}/activate", h.ActivateExclusion, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite))
+		// Taking an exclusion out of effect widens scope: step-up
+		// (RFC-054 §6.2); shortening one asks in the service.
+		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite), requireStepUp())
 
 		// Bulk operations
-		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete))
+		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete), requireStepUp())
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete))
-	}, tenantMiddlewares...)
-
-	// Scan Schedule routes
-	router.Group("/api/v1/scope/schedules", func(r Router) {
-		// Read operations
-		r.GET("/", h.ListSchedules, middleware.Require(permission.ScopeRead))
-		r.GET("/{id}", h.GetSchedule, middleware.Require(permission.ScopeRead))
-
-		// Write operations
-		r.POST("/", h.CreateSchedule, middleware.Require(permission.ScopeWrite))
-		r.PUT("/{id}", h.UpdateSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/enable", h.EnableSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/disable", h.DisableSchedule, middleware.Require(permission.ScopeWrite))
-		r.POST("/{id}/run", h.RunScheduleNow, middleware.Require(permission.ScopeWrite))
-
-		// Bulk operations
-		r.POST("/bulk/delete", h.BulkDeleteSchedules, middleware.Require(permission.ScopeDelete))
-
-		// Delete operations
-		r.DELETE("/{id}", h.DeleteSchedule, middleware.Require(permission.ScopeDelete))
+		r.DELETE("/{id}", h.DeleteExclusion, middleware.Require(permission.ScopeDelete), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -278,13 +317,7 @@ func registerAssetTypeRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Asset Type Category routes (read-only)
-	router.Group("/api/v1/asset-types/categories", func(r Router) {
-		r.GET("/", h.ListCategories, middleware.Require(permission.AssetsRead))
-		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.AssetsRead))
-	}, tenantMiddlewares...)
-
-	// Asset Type routes (read-only)
+	// Asset type registry (RFC-042) and the legacy asset_types rows; read-only.
 	router.Group("/api/v1/asset-types", func(r Router) {
 		r.GET("/", h.ListAssetTypes, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.GetAssetType, middleware.Require(permission.AssetsRead))
@@ -303,17 +336,10 @@ func registerFindingSourceRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Finding Source Category routes (read-only)
-	router.Group("/api/v1/finding-sources/categories", func(r Router) {
-		r.GET("/", h.ListCategories, middleware.Require(permission.FindingsRead))
-		r.GET("/{categoryId}", h.GetCategory, middleware.Require(permission.FindingsRead))
-	}, tenantMiddlewares...)
-
-	// Finding Source routes (read-only)
+	// Finding source catalog (read-only): the list, with each source's
+	// category, is the one read.
 	router.Group("/api/v1/finding-sources", func(r Router) {
 		r.GET("/", h.ListFindingSources, middleware.Require(permission.FindingsRead))
-		r.GET("/code/{code}", h.GetFindingSourceByCode, middleware.Require(permission.FindingsRead))
-		r.GET("/{id}", h.GetFindingSource, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 }
 
@@ -333,13 +359,84 @@ func registerAttackSurfaceRoutes(
 
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
-		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Attack path scoring — BFS reachability analysis from public entry points.
 		// Returns top assets ranked by composite path score (reachability × risk × criticality).
-		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead))
+		r.GET("/attack-paths", h.GetAttackPaths, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
 		// Exposure chains — concrete shortest paths from public entry points to
 		// assets carrying KEV/critical findings, ranked by urgency.
-		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead))
+		r.GET("/exposure-chains", h.GetExposureChains, middleware.Require(permission.AssetsRead), heavyReads.Middleware())
+	}, tenantMiddlewares...)
+}
+
+// registerEASMRoutes registers the EASM endpoints (RFC-036), behind the
+// attack_surface module like the rest of the external surface (O10).
+func registerEASMRoutes(
+	router Router,
+	h *handler.EASMHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm", func(r Router) {
+		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
+		if h.HasChanges() {
+			r.GET("/changes", h.Changes, middleware.Require(permission.AssetsRead))
+		}
+		if h.HasReview() {
+			r.GET("/candidates", h.Candidates, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/decisions", h.Decide, middleware.Require(permission.AssetsWrite))
+		}
+		// Review by rule (RFC-054 §6.7): a rule is a scope entry or an
+		// exclusion, created through the scope service (its own step-up and
+		// approvals); scope:write is checked in the handler for those.
+		if h.HasRules() {
+			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/rules/preview", h.PreviewRule, middleware.Require(permission.AssetsRead))
+			r.POST("/candidates/rules", h.ApplyRule, middleware.Require(permission.AssetsWrite))
+		}
+	}, tenantMiddlewares...)
+}
+
+// registerEASMVerifiedDomainRoutes registers tenant self-service domain
+// verification for EASM (research/22 P0-10, decision E6): scope
+// permissions like the seeds, behind the attack_surface module. These rows
+// never admit SSO users; SSO domains stay in the admin console.
+func registerEASMVerifiedDomainRoutes(
+	router Router,
+	h *handler.EASMVerifiedDomainHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/verified-domains", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/verify", h.Verify, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+	}, tenantMiddlewares...)
+}
+
+// registerEASMSettingsRoutes registers the tenant's attack-surface monitoring
+// settings and run-now (research/22 P0-11), behind the attack_surface module.
+func registerEASMSettingsRoutes(
+	router Router,
+	h *handler.EASMSettingsHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// Own sub-paths: registerEASMRoutes already mounts /api/v1/easm, and chi
+	// panics when the same path is mounted twice.
+	router.Group("/api/v1/easm/settings", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.SettingsRead))
+		r.PUT("/", h.Update, middleware.Require(permission.SettingsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/easm/sweeps", func(r Router) {
+		r.POST("/", h.RunNow, middleware.Require(permission.ScopeWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -378,6 +475,50 @@ func registerBranchRoutes(
 	}, tenantMiddlewares...)
 }
 
+// registerWebEndpointRoutes registers the web surface sub-inventory
+// (RFC-056): endpoints under their origin asset, scoped by the origin's data
+// scope.
+func registerWebEndpointRoutes(router Router, h *handler.WebEndpointHandler, authMiddleware Middleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/web-endpoints", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}/parameters", h.Parameters, middleware.Require(permission.AssetsRead))
+		r.PATCH("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/assets/{id}/web-endpoints", func(r Router) {
+		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-path-patterns", func(r Router) {
+		r.GET("/", h.Patterns, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-origins", func(r Router) {
+		r.GET("/", h.Origins, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-endpoint-events", func(r Router) {
+		r.GET("/", h.Events, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/web-path-catalog", func(r Router) {
+		r.GET("/", h.Catalog, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerAPISpecRoutes registers the API descriptions of web origins and
+// their drift (RFC-056).
+func registerAPISpecRoutes(router Router, h *handler.APISpecHandler, authMiddleware Middleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/api-specs", func(r Router) {
+		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+		r.POST("/", h.Upload, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+	router.Group("/api/v1/api-specs", func(r Router) {
+		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+		r.GET("/{id}/drift", h.Drift, middleware.Require(permission.AssetsRead))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+}
+
 // registerAssetServiceRoutes registers asset service endpoints.
 // Services are network services discovered on assets (ports, protocols).
 // Part of the CTEM Discovery phase.
@@ -390,22 +531,8 @@ func registerAssetServiceRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Asset Service routes - standalone
-	router.Group("/api/v1/services", func(r Router) {
-		// Stats endpoint (must be before /{id})
-		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
-		r.GET("/public", h.ListPublic, middleware.Require(permission.AssetsRead))
-
-		// List all services
-		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
-
-		// Single service operations
-		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.AssetsWrite))
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.AssetsDelete))
-	}, tenantMiddlewares...)
-
-	// Asset-scoped service routes
+	// Services are read and added through their asset only (the asset's
+	// data scope applies); there is no tenant-wide /services collection.
 	router.Group("/api/v1/assets/{id}/services", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
@@ -435,12 +562,8 @@ func registerAssetRelationshipRoutes(
 		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 
-	// Standalone relationship routes (direct CRUD by relationship ID
-	// + tenant-wide usage stats endpoint).
+	// Standalone relationship routes (direct CRUD by relationship ID).
 	router.Group("/api/v1/relationships", func(r Router) {
-		// usage-stats must be registered before /{relationshipId} so chi
-		// matches the literal path before the param pattern.
-		r.GET("/usage-stats", h.UsageStats, middleware.Require(permission.AssetsRead))
 		r.GET("/{relationshipId}", h.Get, middleware.Require(permission.AssetsRead))
 		r.PUT("/{relationshipId}", h.Update, middleware.Require(permission.AssetsWrite))
 		r.DELETE("/{relationshipId}", h.Delete, middleware.Require(permission.AssetsDelete))
@@ -454,9 +577,11 @@ func registerRelationshipSuggestionRoutes(
 	h *handler.RelationshipSuggestionHandler,
 	authMiddleware Middleware,
 	userSyncMiddleware Middleware,
+	moduleGate Middleware,
 ) {
-	// Build tenant middleware chain from JWT token
-	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	// Suggestions are relationships the platform proposes: they follow the
+	// relationships module, as the console page and the relationship API do.
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	// Suggestion routes under /api/v1/relationships/suggestions
 	router.Group("/api/v1/relationships/suggestions", func(r Router) {
@@ -483,11 +608,12 @@ func registerAssetStateHistoryRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// State History routes - standalone
+	// The "What changed" views. The generic list, get, stats, timeline and
+	// compliance reads were removed: these views and the asset-scoped
+	// history cover them.
 	router.Group("/api/v1/state-history", func(r Router) {
-		// Stats and analytics endpoints (must be before /{id})
-		r.GET("/stats", h.Stats, middleware.Require(permission.AssetsRead))
-		r.GET("/timeline", h.Timeline, middleware.Require(permission.AssetsRead))
+		// The totals of every change view in one response (the What changed strip).
+		r.GET("/counts", h.Counts, middleware.Require(permission.AssetsRead))
 
 		// Shadow IT detection
 		r.GET("/shadow-it", h.ShadowITCandidates, middleware.Require(permission.AssetsRead))
@@ -497,13 +623,6 @@ func registerAssetStateHistoryRoutes(
 		// Exposure tracking
 		r.GET("/exposure-changes", h.ExposureChanges, middleware.Require(permission.AssetsRead))
 		r.GET("/newly-exposed", h.NewlyExposed, middleware.Require(permission.AssetsRead))
-
-		// Compliance
-		r.GET("/compliance", h.ComplianceChanges, middleware.Require(permission.AssetsRead))
-
-		// List and get
-		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
-		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 
 	// Asset-scoped state history routes
@@ -523,6 +642,21 @@ func registerAssetIdentifierRoutes(
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/assets/{id}/identifiers", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}
+
+// registerAssetAttributionRoutes registers the asset attribution endpoint
+// (RFC-036 §6.4).
+func registerAssetAttributionRoutes(
+	router Router,
+	h *handler.AssetAttributionHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/assets/{id}/attribution", func(r Router) {
+		r.GET("/", h.Get, middleware.Require(permission.AssetsRead))
+		r.PUT("/", h.Decide, middleware.Require(permission.AssetsWrite))
 	}, tenantMiddlewares...)
 }
 
@@ -546,11 +680,74 @@ func registerAssetImportRoutes(
 	}, nil)
 
 	router.Group("/api/v1/assets/import", func(r Router) {
-		r.POST("/csv", h.ImportCSV, middleware.Require(permission.AssetsWrite), importRL.Middleware())
-		r.POST("/nessus", h.ImportNessus, middleware.Require(permission.AssetsWrite), importRL.Middleware())
-		// Ingests assets AND vulnerability findings from a .nessus export
-		// (RFC-007 manual/cron coverage path); needs both write scopes.
-		r.POST("/nessus-findings", h.IngestNessusFindings, middleware.RequireAll(permission.AssetsWrite, permission.FindingsWrite), importRL.Middleware())
-		r.POST("/kubernetes", h.ImportKubernetes, middleware.Require(permission.AssetsWrite), importRL.Middleware())
+		// The route's body limit replaces the global one (10 MiB).
+		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware(),
+			middleware.BodyLimit(handler.MaxAssetCSVImportBody))
+	}, tenantMiddlewares...)
+}
+
+// registerAssetSoftwareRoutes registers the asset's software list (RFC-066).
+func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/assets/{id}/software", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerEASMLookalikeRoutes registers passive lookalike-domain monitoring
+// (RFC-083): scope permissions, behind the attack_surface module.
+func registerEASMLookalikeRoutes(
+	router Router,
+	h *handler.EASMLookalikeHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/lookalikes", func(r Router) {
+		r.GET("/watches", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/watches", h.Create, middleware.Require(permission.ScopeWrite))
+		r.PUT("/watches/{id}", h.Update, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/watches/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+		r.GET("/watches/{id}/registered", h.Registered, middleware.Require(permission.ScopeRead))
+	}, tenantMiddlewares...)
+}
+
+// registerEASMNetworkSeedRoutes registers network seeds (RFC-082): scope
+// permissions like the verified domains, behind the attack_surface module.
+// A seed never authorizes a probe; suggested prefixes are added through
+// POST /api/v1/scope/targets with its own approvals and step-up.
+func registerEASMNetworkSeedRoutes(
+	router Router,
+	h *handler.EASMNetworkSeedHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/easm/network-seeds", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.ScopeRead))
+		r.POST("/", h.Create, middleware.Require(permission.ScopeWrite))
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScopeDelete))
+		r.POST("/{id}/expand", h.Expand, middleware.Require(permission.ScopeWrite))
+	}, tenantMiddlewares...)
+}
+
+// registerAssetWebEvidenceRoutes registers an asset's web evidence (RFC-081):
+// assets:read plus the asset's data scope (checked in the handler, 404),
+// behind the attack_surface module.
+func registerAssetWebEvidenceRoutes(
+	router Router,
+	h *handler.AssetWebEvidenceHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/assets/{id}/web-evidence", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/{evidence_id}/screenshot", h.Screenshot, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }

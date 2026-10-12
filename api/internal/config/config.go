@@ -2,16 +2,23 @@
 package config
 
 import (
+	"crypto/hkdf"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/legacyv1"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
 
 // Environment constants
@@ -21,13 +28,12 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
-	// Deprecations are startup warnings about configuration given under a
-	// pre-sensor name (see legacyv1.RenamedEnv). The server logs each one.
-	Deprecations []string
+	// EnvWarnings are set variables under an API prefix that nothing reads
+	// (see checkEnvironment); logged at startup.
+	EnvWarnings []string
 
 	App          AppConfig
 	Server       ServerConfig
-	GRPC         GRPCConfig
 	Database     DatabaseConfig
 	Redis        RedisConfig
 	Log          LogConfig
@@ -35,20 +41,105 @@ type Config struct {
 	OAuth        OAuthConfig
 	Keycloak     KeycloakConfig
 	CORS         CORSConfig
+	MCP          MCPConfig
 	RateLimit    RateLimitConfig
 	SMTP         SMTPConfig
-	Worker       WorkerConfig
+	Worker       SensorConfig
 	Encryption   EncryptionConfig
 	AITriage     AITriageConfig
 	SensorConfig SensorConfigConfig
 	Storage      StorageConfig
-	Webhooks     WebhooksConfig
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
 	// AdminAuditRetention controls pruning of the platform-level
 	// admin_audit_logs table.
 	AdminAuditRetention AdminAuditRetentionConfig
+
+	// AssetChangeRetentionDays is how long the asset change timeline keeps
+	// events (RFC-069). ASSET_CHANGE_RETENTION_DAYS, default 400, minimum 30.
+	AssetChangeRetentionDays int
+
+	// AuditRetention controls the tenant audit log retention (hash-chain
+	// prefix archive and prune).
+	AuditRetention AuditRetentionConfig
+
+	// Scope is the platform's scope guardrails (RFC-054 §8): operator-level,
+	// never tenant-overridable.
+	Scope ScopeConfig
+
+	// GitHubApp is the deployment's GitHub App that posts CI checks and pull
+	// request comments (RFC-077). Off unless every value is set.
+	GitHubApp GitHubAppConfig
+}
+
+// GitHubAppConfig is the deployment's GitHub App (RFC-077):
+// GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
+// GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE (PEM; or
+// GITHUB_APP_PRIVATE_KEY with the PEM itself), GITHUB_APP_WEBHOOK_SECRET,
+// and for GitHub Enterprise Server GITHUB_APP_API_URL / GITHUB_APP_WEB_URL.
+type GitHubAppConfig struct {
+	AppID          int64
+	Slug           string
+	ClientID       string
+	ClientSecret   string
+	PrivateKey     string
+	PrivateKeyFile string
+	WebhookSecret  string
+	APIURL         string
+	WebURL         string
+}
+
+// ScopeConfig is the operator's scope guardrails.
+type ScopeConfig struct {
+	// MaxPublicCIDRv4 / v6 cap a public scope range (SCOPE_MAX_PUBLIC_CIDR_V4,
+	// default 16; SCOPE_MAX_PUBLIC_CIDR_V6, default 32).
+	MaxPublicCIDRv4 int
+	MaxPublicCIDRv6 int
+	// DenyExtra are the operator's own names and ranges no tenant may
+	// target (SCOPE_DENY_EXTRA, comma-separated domains and CIDRs).
+	DenyExtra []string
+	// ZoneResolver is the DNS resolver scan-zone routing resolves hostnames
+	// with (SCAN_ZONE_RESOLVER): "system" (the platform's own resolver, which
+	// may know internal names) or host[:port] of a recursive resolver.
+	// Unset: a public resolver when organizations are self-service (SaaS),
+	// otherwise system.
+	ZoneResolver string
+	// ProgramFeedDir is a directory holding the newest signed public
+	// program feed bundle (PROGRAMFEED_DIR: a mirror or an upload,
+	// RFC-065 §16); ProgramFeedRootKeyID pins the feed's offline root
+	// (PROGRAMFEED_ROOT_KEY_ID). Both are needed; unset, no feed is
+	// imported.
+	ProgramFeedDir       string
+	ProgramFeedRootKeyID string
+	// ProgramFeedLocalBundleDir is the directory of the operator's own
+	// unsigned local-only bundle (PROGRAMFEED_LOCAL_BUNDLE_DIR, output of
+	// `programfeed build --local-only`); read only while a platform
+	// administrator has the source enabled. Never set from the UI.
+	ProgramFeedLocalBundleDir string
+	// ProgramFeedURLs are the release URL and mirrors of the chunked (v2)
+	// program feed (PROGRAMFEED_URL, then PROGRAMFEED_MIRRORS, comma
+	// separated), tried in order before ProgramFeedDir. https only.
+	ProgramFeedURLs []string
+	// FeedCacheDir holds verified feed chunks between imports
+	// (FEED_CACHE_DIR; default a directory under the system temp dir).
+	FeedCacheDir string
+}
+
+// ScanZoneResolverSystem routes hostnames with the platform's own resolver.
+const ScanZoneResolverSystem = "system"
+
+// DefaultPublicZoneResolver is the resolver of SaaS installs: tenants must
+// not resolve names through the platform's internal DNS.
+const DefaultPublicZoneResolver = "1.1.1.1:53"
+
+// AuditRetentionConfig controls tenant audit-log retention. Entries older than
+// Days are written to a gzip JSONL archive under ArchiveDir, the chain head
+// they leave is recorded as an anchor, then they are deleted. Without an
+// ArchiveDir nothing is deleted. Days below 365 are raised to 365.
+type AuditRetentionConfig struct {
+	Days       int    // AUDIT_RETENTION_DAYS, default 365, minimum 365
+	ArchiveDir string // AUDIT_ARCHIVE_DIR, default "" (retention off)
 }
 
 // AdminAuditRetentionConfig controls the admin-audit-log retention controller.
@@ -126,20 +217,28 @@ type IngestConfig struct {
 	// SENSOR_V2_BLINDING_MIN_FINDINGS (100).
 	V2BlindingRatio       float64
 	V2BlindingMinFindings int
+
+	// CoverageAutoResolve is the mode of coverage-scoped auto-resolve for
+	// non-repository findings: "off", "dry_run" (default: log, metric and a
+	// "would resolve" audit entry, no state change) or "enforce".
+	// INGEST_COVERAGE_AUTO_RESOLVE.
+	CoverageAutoResolve string
+
+	// SourceResolve is the mode of source-asserted resolve: a connector
+	// source (Tenable.sc) reporting a finding as mitigated resolves the
+	// matching open finding (RFC-047 §7.6): "off", "dry_run" (default: count
+	// and log, no state change) or "enforce". INGEST_SOURCE_RESOLVE.
+	SourceResolve string
+
+	// VEX is how a VEX not_affected statement in a report acts on the
+	// matching open finding (CTIS 1.4): "off", "dry_run" (default: count,
+	// log and audit, no state change) or "enforce" (the finding becomes
+	// false_positive with the justification). INGEST_VEX.
+	VEX string
 }
 
 // AsyncEnabled reports whether async ingest mode is on.
 func (c IngestConfig) AsyncEnabled() bool { return c.Mode == "async" }
-
-// WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
-// These are platform-wide fallbacks; per-integration secrets can be layered on
-// top via the integration repository when that abstraction is added.
-type WebhooksConfig struct {
-	// JiraSecret is the HMAC-SHA256 secret used to verify inbound Jira webhooks
-	// at POST /api/v1/webhooks/incoming/jira. REQUIRED — if empty, the endpoint
-	// rejects all requests (fail closed).
-	JiraSecret string
-}
 
 // StorageConfig holds file attachment storage settings.
 // Default: local filesystem at ./data/attachments.
@@ -151,24 +250,30 @@ type StorageConfig struct {
 	// Default: ./data/attachments
 	// In Docker: mount a volume to persist across container rebuilds.
 	LocalPath string
-	// S3/MinIO settings (future)
+	// S3/MinIO settings (STORAGE_PROVIDER=s3 or minio): the server-wide bucket.
+	// Endpoint empty = AWS S3; set it for MinIO or another S3-compatible store.
 	Bucket    string
 	Region    string
 	Endpoint  string
 	AccessKey string
 	SecretKey string
+	// TenantQuotaMB bounds the attachment bytes of one organization, in MiB
+	// (STORAGE_TENANT_QUOTA_MB). 0 = no quota.
+	TenantQuotaMB int64
 }
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name  string
-	Env   string
-	Debug bool
-	URL   string // Public app URL (used as fallback for sensor config base URL)
+	Name string
+	Env  string
+	URL  string // Public app URL (used as fallback for sensor config base URL)
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
 type SensorConfigConfig struct {
+	// TransportV3 is sensor protocol v3 (RFC-059,
+	// docs/rfcs/RFC-059-sensor-transport-v3.md).
+	TransportV3 SensorTransportV3Config
 	// TemplatesDir is the filesystem path containing sensor config templates
 	// (yaml.tmpl, env.tmpl, docker.tmpl, cli.tmpl). Operators can edit these
 	// without rebuilding the API or UI.
@@ -184,6 +289,13 @@ type SensorConfigConfig struct {
 	// administrator creates or regenerates never expires, and a sensor that
 	// does not renew keeps its key.
 	KeyTTL time.Duration
+	// KeyRenewGrace is how long the key a sensor renewed with keeps
+	// authenticating after the renewal, for requests already in flight;
+	// every other key the sensor held is cut to the same moment, so a
+	// renewal leaves one long-lived key and a copied key cannot renew a
+	// parallel line of its own. SENSOR_KEY_RENEW_GRACE, default
+	// DefaultSensorKeyRenewGrace (15 minutes); "0" retires it at once.
+	KeyRenewGrace time.Duration
 	// KeyPepper is the secret the sensor API-key hash (HMAC-SHA256) is keyed
 	// with: SENSOR_KEY_PEPPER. Empty (the default) derives it from
 	// APP_ENCRYPTION_KEY with HKDF, so the MAC key is never the encryption
@@ -205,20 +317,46 @@ type SensorConfigConfig struct {
 	// manifest again, so the sensor goes back to full heartbeats.
 	SlimHeartbeat bool
 
+	// SignerSocket is the Unix socket of the job signer (cmd/signer,
+	// RFC-040 §5.6, docs/architecture/job-signing.md): SIGNER_SOCKET.
+	// Empty (the default): jobs are not signed and claims are as before.
+	// Set: every command a claim hands a sensor carries a signed job, and a
+	// command the signer does not sign is not handed out.
+	SignerSocket string
+	// SignerTimeout bounds one call to the signer: SIGNER_TIMEOUT, default
+	// 2s.
+	SignerTimeout time.Duration
+
 	// Heartbeat doorbell (RFC-023 §9.2a): the intervals the heartbeat
 	// response advises in next_heartbeat_seconds. Every value is clamped to
-	// [HeartbeatMinInterval, HeartbeatMaxInterval], and the maximum to half
-	// of WORKER_HEARTBEAT_TIMEOUT so a sensor that follows the advice is
-	// never marked offline.
-	HeartbeatInterval       time.Duration // SENSOR_HEARTBEAT_INTERVAL, idle (default 30s)
-	HeartbeatBusyInterval   time.Duration // SENSOR_HEARTBEAT_BUSY_INTERVAL, work waiting (default 5s)
-	HeartbeatLoadedInterval time.Duration // SENSOR_HEARTBEAT_LOADED_INTERVAL, platform under load (default 2m)
-	HeartbeatMinInterval    time.Duration // SENSOR_HEARTBEAT_MIN_INTERVAL (default 5s)
-	HeartbeatMaxInterval    time.Duration // SENSOR_HEARTBEAT_MAX_INTERVAL (default 5m)
+	// [HeartbeatMinInterval, HeartbeatMaxInterval], and the maximum to the
+	// derived bound min(offline mark/2, CommandLease/3) so a sensor that
+	// follows the advice is never marked offline and never loses a lease.
+	HeartbeatInterval     time.Duration // SENSOR_HEARTBEAT_INTERVAL, idle (default 30s)
+	HeartbeatBusyInterval time.Duration // SENSOR_HEARTBEAT_BUSY_INTERVAL, work waiting (default 5s)
+	HeartbeatMinInterval  time.Duration // SENSOR_HEARTBEAT_MIN_INTERVAL (default 5s)
+	HeartbeatMaxInterval  time.Duration // SENSOR_HEARTBEAT_MAX_INTERVAL (default 5m, can only lower the derived bound)
 	// HeartbeatSlowQuery is the doorbell query latency that counts as "under
-	// load" and advises HeartbeatLoadedInterval. SENSOR_HEARTBEAT_SLOW_QUERY
-	// (default 250ms).
+	// load"; the doorbell then advises the maximum interval.
+	// SENSOR_HEARTBEAT_SLOW_QUERY (default 250ms).
 	HeartbeatSlowQuery time.Duration
+
+	// CommandLease is how long a sensor holds a claimed command without
+	// renewing its lease (every heartbeat that lists the command renews
+	// it). A command whose lease runs out goes back to the queue, and the
+	// sensor that held it can no longer complete it (RFC-035 D6).
+	// SENSOR_COMMAND_LEASE, default 3m, clamped to 1m-30m.
+	CommandLease time.Duration
+
+	// Platform-health guard of the sensor health controller (RFC-035 D3):
+	// no sensor is convicted offline while the platform itself is slow.
+	// HealthSlowHeartbeat is the heartbeat handling p95 that counts as slow
+	// (SENSOR_HEALTH_SLOW_HEARTBEAT, default 2s); HealthStartupGrace is how
+	// long after the API starts no sensor is convicted
+	// (SENSOR_HEALTH_STARTUP_GRACE, default 0 = the offline distance of a
+	// sensor on the SDK's 60s default interval, 4m).
+	HealthSlowHeartbeat time.Duration
+	HealthStartupGrace  time.Duration
 
 	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
 	// default DefaultSensorLatestVersion). The Sensors page compares each
@@ -226,16 +364,18 @@ type SensorConfigConfig struct {
 	// snippets pin the image to it. Empty turns the comparison off.
 	LatestVersion string
 	// MinVersion is the oldest sensor release still supported
-	// (SENSOR_MIN_VERSION, default empty = no minimum). A heartbeating sensor
-	// below it shows as degraded with "version unsupported".
+	// (SENSOR_MIN_VERSION, default DefaultSensorMinVersion; empty = no
+	// minimum). A heartbeating sensor below it shows as degraded with
+	// "version unsupported".
 	MinVersion string
 	// SDKMinVersion is the oldest SDK release still supported
-	// (SENSOR_SDK_MIN_VERSION, default empty = no minimum). A heartbeating
-	// sensor built with an older SDK shows as degraded with "sdk_unsupported".
+	// (SENSOR_SDK_MIN_VERSION, default DefaultSensorSDKMinVersion; empty = no
+	// minimum). A heartbeating sensor built with an older SDK shows as
+	// degraded with "sdk_unsupported".
 	SDKMinVersion string
 	// SDKLatestVersion is the newest SDK release (SENSOR_SDK_LATEST_VERSION,
-	// default empty). A sensor built with an older SDK has sdk_status
-	// "outdated"; empty turns that comparison off.
+	// default DefaultSensorSDKLatestVersion). A sensor built with an older SDK
+	// has sdk_status "outdated"; empty turns that comparison off.
 	SDKLatestVersion string
 
 	// Image is the sensor image repository the install snippets run
@@ -258,10 +398,30 @@ type SensorConfigConfig struct {
 // own only when that volume persists (RFC-032 Phase 0).
 const DefaultSensorKeyTTL = 90 * 24 * time.Hour
 
+// DefaultSensorKeyRenewGrace is how long a renewed-away sensor key keeps
+// working when SENSOR_KEY_RENEW_GRACE is not set.
+const DefaultSensorKeyRenewGrace = 15 * time.Minute
+
+// Sensor and SDK release defaults. They are copied from versions.yaml at the
+// repository root by .github/scripts/release/sync-versions.sh, and CI fails
+// when they drift (RFC-037): change versions.yaml, never these lines.
+//
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.4.2"
+const DefaultSensorLatestVersion = "v0.17.0"
+
+// DefaultSensorMinVersion is the oldest supported sensor release
+// (SENSOR_MIN_VERSION); empty means no minimum.
+const DefaultSensorMinVersion = "v0.9.0"
+
+// DefaultSensorSDKLatestVersion is the newest SDK release
+// (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
+const DefaultSensorSDKLatestVersion = "v0.23.0"
+
+// DefaultSensorSDKMinVersion is the oldest supported SDK release
+// (SENSOR_SDK_MIN_VERSION); empty means no minimum.
+const DefaultSensorSDKMinVersion = ""
 
 // DefaultSensorImageRepository is the published sensor image.
 const DefaultSensorImageRepository = "ghcr.io/openctemio/sensor"
@@ -281,15 +441,23 @@ type ServerConfig struct {
 	// X-Real-IP / X-Forwarded-For headers will be honored. Requests from
 	// peers outside this list have their forwarding headers ignored —
 	// preventing IP spoofing of rate-limit and audit-log keys (S-4).
-	// Empty list = treat the API as directly Internet-facing.
+	// Empty list = treat the API as directly Internet-facing. X-Forwarded-For
+	// is read right to left (list every proxy hop); X-Real-IP is used only when
+	// X-Forwarded-For is absent (see httpsec.ClientIP).
 	// Configure via SERVER_TRUSTED_PROXIES (comma-separated CIDRs).
 	TrustedProxies []string
+	// TLSCertFile and TLSKeyFile (SERVER_TLS_CERT_FILE, SERVER_TLS_KEY_FILE:
+	// PEM paths, full chain first) make the API listener terminate TLS
+	// itself, for an API exposed without a TLS proxy in front. A connection
+	// that offers the sensor ALPN id is then served by the sensor gRPC
+	// binding on the same port (RFC-059 §5.1). Both empty (the default):
+	// plain HTTP behind a proxy that terminates TLS.
+	TLSCertFile string
+	TLSKeyFile  string
 }
 
-// GRPCConfig holds gRPC server configuration.
-type GRPCConfig struct {
-	Port int
-}
+// TLSEnabled reports whether the API listener terminates TLS itself.
+func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
@@ -345,8 +513,7 @@ type LogConfig struct {
 	ErrorSamplingRate float64 // Sample rate for errors, 0.0-1.0 (default: 1.0 = 100%)
 
 	// HTTP logging configuration
-	SkipHealthLogs     bool // Skip logging health check endpoints (default: true in prod)
-	SlowRequestSeconds int  // Log requests slower than this as warnings (default: 5)
+	SlowRequestSeconds int // Log requests slower than this as warnings (default: 5)
 }
 
 // AuthProvider represents the authentication provider type.
@@ -388,8 +555,7 @@ const (
 	TenantCreationSelfService = "self_service"
 	// TenantCreationAdminOnly reserves organization creation for the platform
 	// administrator: the admin console, or bootstrap-admin -org-name at first
-	// install (on-prem / enterprise, Tenable Security Center style). The
-	// default.
+	// install (on-prem / enterprise installs). The default.
 	TenantCreationAdminOnly = "admin_only"
 )
 
@@ -413,14 +579,17 @@ type AuthConfig struct {
 	Provider AuthProvider
 
 	// JWT settings for local auth
-	JWTSecret            string        // Secret key for signing JWTs (required for local/hybrid)
+	JWTSecret string // Secret key for signing JWTs (required for local/hybrid)
+	// JWTSecretDerived reports that AUTH_JWT_SECRET was unset and JWTSecret
+	// was derived from APP_ENCRYPTION_KEY (see deriveSecrets).
+	JWTSecretDerived     bool
 	JWTIssuer            string        // Token issuer claim
 	AccessTokenDuration  time.Duration // Access token lifetime (default: 15m)
 	RefreshTokenDuration time.Duration // Refresh token lifetime (default: 7d)
 	SessionDuration      time.Duration // Session lifetime (default: 30d)
 
 	// Password policy
-	PasswordMinLength      int  // Minimum password length (default: 8)
+	PasswordMinLength      int  // Minimum password length (default: 12)
 	PasswordRequireUpper   bool // Require uppercase letter
 	PasswordRequireLower   bool // Require lowercase letter
 	PasswordRequireNumber  bool // Require number
@@ -431,13 +600,14 @@ type AuthConfig struct {
 	LockoutDuration   time.Duration // Account lockout duration (default: 15m)
 	MaxActiveSessions int           // Max concurrent sessions per user (default: 10)
 
-	// Registration settings
-	// AllowRegistration lets anyone create an account on /auth/register
-	// (AUTH_ALLOW_REGISTRATION, default false). Off by default: accounts come
-	// from an administrator, an invitation, or the organization SSO.
-	// An invited person can still register with their invitation token.
-	AllowRegistration        bool
+	// Registration settings. Who may create an account is the sign-up policy
+	// (internal/app/signup), not a config flag.
 	RequireEmailVerification bool // Require email verification (default: true)
+
+	// CAPTCHA (Cloudflare Turnstile) on the public request-access form. Unset:
+	// no CAPTCHA (the rate limits still apply).
+	CaptchaTurnstileSecret  string
+	CaptchaTurnstileSiteKey string
 
 	// Email verification/reset token settings
 	EmailVerificationDuration time.Duration // Email verification token lifetime (default: 24h)
@@ -540,43 +710,18 @@ func (c *OAuthConfig) HasAnyProvider() bool {
 	return c.Google.IsConfigured() || c.GitHub.IsConfigured() || c.Microsoft.IsConfigured()
 }
 
-// SMTPConfig holds SMTP configuration for sending emails.
+// SMTPConfig is what the e-mail templates need from the deployment: the base
+// URL of links. The SMTP server itself is the platform e-mail setting in the
+// admin console (System > E-mail, RFC-079), not an environment variable.
 type SMTPConfig struct {
-	Host       string
-	Port       int
-	User       string
-	Password   string
-	From       string
-	FromName   string
-	TLS        bool
-	SkipVerify bool
-	Enabled    bool
-	BaseURL    string // Frontend base URL for email links (e.g., https://app.openctem.io)
-	Timeout    time.Duration
+	BaseURL string // Frontend base URL for email links (e.g., https://app.openctem.io)
 }
 
-// SMTPFromEnv reads the system SMTP settings (SMTP_*) on their own, for tools
-// such as bootstrap-admin that send email without loading (and validating) the
-// whole server configuration.
+// SMTPFromEnv reads SMTP_BASE_URL on its own, for tools such as bootstrap-admin
+// that send e-mail without loading (and validating) the whole server
+// configuration.
 func SMTPFromEnv() SMTPConfig {
-	return SMTPConfig{
-		Enabled:    getEnvBool("SMTP_ENABLED", false),
-		Host:       getEnv("SMTP_HOST", ""),
-		Port:       getEnvInt("SMTP_PORT", 587),
-		User:       getEnv("SMTP_USER", ""),
-		Password:   getEnv("SMTP_PASSWORD", ""),
-		From:       getEnv("SMTP_FROM", ""),
-		FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
-		TLS:        getEnvBool("SMTP_TLS", true),
-		SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
-		BaseURL:    getEnv("SMTP_BASE_URL", "http://localhost:3000"), // Frontend URL for email links
-		Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
-	}
-}
-
-// IsConfigured returns true if SMTP is properly configured.
-func (c *SMTPConfig) IsConfigured() bool {
-	return c.Enabled && c.Host != "" && c.Port > 0 && c.From != ""
+	return SMTPConfig{BaseURL: getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000"))}
 }
 
 // KeycloakConfig holds Keycloak authentication configuration.
@@ -603,6 +748,19 @@ func (c *KeycloakConfig) IssuerURL() string {
 	return fmt.Sprintf("%s/realms/%s", c.BaseURL, c.Realm)
 }
 
+// MCPConfig is the authorization server of the MCP endpoint (RFC-062).
+type MCPConfig struct {
+	// TrustedClientHosts are hosts whose Client ID Metadata Documents every
+	// organization treats as verified (MCP_OAUTH_TRUSTED_CLIENT_HOSTS,
+	// comma-separated). Organizations add their own on top.
+	TrustedClientHosts []string
+	// DynamicRegistration turns POST /oauth/register (RFC 7591) on
+	// (MCP_OAUTH_DCR_ENABLED, default off). MCP 2026-07-28 deprecates it in
+	// favor of Client ID Metadata Documents; such clients are always shown
+	// as unverified.
+	DynamicRegistration bool
+}
+
 // CORSConfig holds CORS configuration.
 type CORSConfig struct {
 	AllowedOrigins []string
@@ -625,9 +783,79 @@ type RateLimitConfig struct {
 	ReadRequestsPerMin int
 }
 
-// WorkerConfig holds worker/sensor management configuration.
-// Deprecated: Use SensorConfig instead. This alias is kept for backward compatibility.
-type WorkerConfig = SensorConfig
+// SensorPublicHost is the host:port sensors dial for the protocol v3 gRPC
+// binding: SENSOR_PUBLIC_HOST when set (a dedicated sensor host name, or an
+// address with a port of its own), else the host and port (default 443) of
+// the platform's public URL (SENSOR_PUBLIC_API_URL, else APP_URL), a name or
+// an IP address. The derived endpoint shares the platform's port: a gateway
+// with ALPN routing passes a connection that offers the sensor ALPN id
+// through to the mTLS listener, whatever the server name. It is a guess the
+// self-probe confirms: behind a gateway without that routing the probe meets
+// the gateway's own certificate and the endpoint is never advertised.
+func (c *Config) SensorPublicHost() string {
+	if h := strings.TrimSpace(c.SensorConfig.TransportV3.PublicHost); h != "" {
+		return h
+	}
+	raw := c.SensorConfig.PublicAPIURL
+	if raw == "" {
+		raw = c.App.URL
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "HTTPS") || u.Hostname() == "" {
+		return ""
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// Sensor protocol v3 modes (SENSOR_TRANSPORT_V3).
+const (
+	TransportV3Auto = "auto"
+	TransportV3Off  = "off"
+)
+
+// SensorTransportV3Config configures sensor protocol v3 (RFC-059).
+type SensorTransportV3Config struct {
+	// Mode is SENSOR_TRANSPORT_V3: "auto" (default) serves v3 and picks
+	// the bindings by themselves: the HTTPS binding always, the gRPC binding
+	// once the sensor CA loads and its self-probe reaches the endpoint
+	// through the gateway; "off" serves no v3 at all (every sensor back to
+	// v2 at its next call), the emergency switch.
+	Mode string
+	// PublicHost is host[:port] sensors dial for the gRPC binding
+	// (SENSOR_PUBLIC_HOST, e.g. sensors.example.com:443 for a dedicated
+	// sensor host name, or 192.0.2.10:8444 for a port of its own). Empty:
+	// the platform's public URL host and port (SensorPublicHost), reached
+	// through the gateway's ALPN routing; advertised only while the
+	// self-probe passes either way.
+	PublicHost string
+	// MTLSListenAddr is the gRPC binding's TLS 1.3 listener
+	// (SENSOR_MTLS_LISTEN_ADDR, default :8443). The gateway passes
+	// connections that offer the sensor ALPN id (or name the dedicated
+	// sensor host) through to it at layer 4.
+	MTLSListenAddr string
+	// CACertFile and CAKeyFile are the sensor CA (SENSOR_MTLS_CA_CERT_FILE,
+	// SENSOR_MTLS_CA_KEY_FILE, PEM). Its key is not the job signer's.
+	CACertFile string
+	CAKeyFile  string
+	// CADir is where the sensor CA is created once when the two files are
+	// not set (SENSOR_MTLS_CA_DIR, default data/sensor-ca).
+	CADir string
+	// CertTTL is the client certificate lifetime (SENSOR_MTLS_CERT_TTL,
+	// default 168h, clamped to 1h..720h).
+	CertTTL time.Duration
+	// MTLSTrustedProxies are the CIDRs (comma-separated
+	// SENSOR_MTLS_TRUSTED_PROXIES) whose PROXY protocol v2 header the mTLS
+	// listener believes: the gateway that passes the sensor host through.
+	MTLSTrustedProxies []string
+}
 
 // SensorConfig holds sensor management configuration.
 type SensorConfig struct {
@@ -639,8 +867,14 @@ type SensorConfig struct {
 	// Default: 1 minute.
 	HealthCheckInterval time.Duration
 
-	// Enabled controls whether sensor health checking is enabled.
-	// Default: true.
+	// Enabled turns on the legacy sensor health checker (jobs.SensorHealthChecker,
+	// WORKER_HEALTH_CHECK_ENABLED). Default: false. The sensor health controller
+	// (internal/infra/controller/sensor_health.go, RFC-035 §5.6) owns liveness:
+	// it applies the late/stale/offline ladder and holds convictions during its
+	// startup grace and while the platform itself is slow. The legacy checker
+	// knows none of that and sweeps the moment the API starts, so with it on an
+	// API restart convicted every sensor that could not heartbeat while the API
+	// was down. Keep it off unless the health controller is not running.
 	Enabled bool
 
 	// SCMSyncInterval is how often the scheduled SCM repository/branch sync runs.
@@ -654,6 +888,17 @@ type SensorConfig struct {
 	// feed-refresh machinery as the EPSS/KEV threat-intel refresh. Set
 	// CTEM_ID_FEED_URL to override; defaults to https://ctem.org/source.json.
 	CTEMIDFeedURL string
+
+	// Vulnerability bundles (RFC-066 §5.5): the pinned root key id
+	// (VULNFEED_ROOT_KEY_ID; empty = no import), the release base URL
+	// (VULNFEED_BASE_URL) and, for air-gapped platforms, a local directory
+	// holding a release's files (VULNFEED_BUNDLE_DIR). VulnFeedMirrors
+	// (VULNFEED_MIRRORS, comma separated, https) are tried after the
+	// release for chunked (v2) bundles.
+	VulnFeedRootKeyID string
+	VulnFeedBaseURL   string
+	VulnFeedBundleDir string
+	VulnFeedMirrors   []string
 
 	// CertMonitorEnabled toggles the Certificate-Transparency discovery sweep
 	// (the cert-monitor controller). Default true — it is a passive, public-data,
@@ -669,6 +914,66 @@ type SensorConfig struct {
 	// CertMonitorInterval is how often the CT sweep runs across all tenants.
 	// Defaults to 24h (daily), matching the threat-intel / CTEM-ID refreshes.
 	CertMonitorInterval time.Duration
+
+	// EASMDNSChecksEnabled toggles the daily DNS-only EASM checks (dangling
+	// CNAME/NS, email posture; RFC-036 P1). Passive: the platform's resolver
+	// is asked about the tenant's own names. EASM_DNS_CHECKS_ENABLED, default
+	// true (research/22 owner decision E3): cheap T0 checks for every tenant
+	// with the attack-surface module; each tenant's run holds a controller
+	// lease, and the per-run name cap and QPS bound the work. Set false to
+	// turn them off platform-wide.
+	EASMDNSChecksEnabled bool
+	// EASMDNSResolver is the recursive resolver (host[:port]) the checks ask.
+	// Empty: the first nameserver of /etc/resolv.conf. EASM_DNS_RESOLVER.
+	EASMDNSResolver string
+	// EASMDNSQPS bounds the checks' DNS queries per second across all
+	// tenants. EASM_DNS_QPS, default 20.
+	EASMDNSQPS float64
+	// EASMDNSInterval is how often the checks run. EASM_DNS_CHECK_INTERVAL,
+	// default 24h (RFC-036 O9: daily light checks).
+	EASMDNSInterval time.Duration
+	// EASMDNSMaxNamesPerRun caps names checked per tenant per run; the rest
+	// rotate in, longest-unchecked first. EASM_DNS_MAX_NAMES_PER_RUN, 500.
+	EASMDNSMaxNamesPerRun int
+
+	// CertMonitorMaxDomainsPerRun caps how many domains of one tenant a sweep
+	// queries; the rest rotate in on later runs, oldest-queried first.
+	// CERT_MONITOR_MAX_DOMAINS_PER_RUN, default 50.
+	CertMonitorMaxDomainsPerRun int
+
+	// AssetEnrichmentEnabled runs automatic passive enrichment of new assets
+	// for the platform (each tenant may still turn it off).
+	// ASSET_ENRICHMENT_ENABLED, default true.
+	AssetEnrichmentEnabled bool
+	// AssetEnrichmentDailyBudget caps the assets one tenant sends to
+	// enrichment runs per 24 h. ASSET_ENRICHMENT_DAILY_BUDGET, default 2000.
+	AssetEnrichmentDailyBudget int
+
+	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
+	// (free tier), when crt.sh still fails after its retries. Set
+	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
+	CertMonitorCertSpotterURL string
+
+	// InvitationPurgeInterval is how often expired, unaccepted invitations
+	// (an email address and a token hash) are deleted. They can no longer be
+	// accepted or resent. INVITATION_PURGE_INTERVAL, default 1h.
+	InvitationPurgeInterval time.Duration
+
+	// AdminSessionPurgeInterval is how often platform-admin console sessions
+	// past their absolute expiry are deleted. ADMIN_SESSION_PURGE_INTERVAL,
+	// default 1h.
+	AdminSessionPurgeInterval time.Duration
+
+	// QuarantinePurgeInterval is how often reviewed (accepted or rejected)
+	// quarantined sensor results older than QuarantineRetention are deleted;
+	// pending items are never purged. SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL,
+	// default 24h.
+	QuarantinePurgeInterval time.Duration
+
+	// QuarantineRetention is how long a reviewed quarantined sensor result is
+	// kept after review. SENSOR_RESULT_QUARANTINE_RETENTION, default 720h
+	// (30 days); zero or negative means the default.
+	QuarantineRetention time.Duration
 
 	// LoadBalancing holds configuration for sensor load balancing weights.
 	LoadBalancing LoadBalancingConfig
@@ -713,7 +1018,7 @@ type LoadBalancingConfig struct {
 	MaxNetworkThroughputMBPS float64
 }
 
-// Weights converts the operator-facing AGENT_LB_* settings into the domain
+// Weights converts the operator-facing SENSOR_LB_* settings into the domain
 // weight set consumed by Sensor.ComputeLoadScoreWithWeights and the sensor
 // selector. This is the seam that makes those environment variables
 // observable in scheduling behavior.
@@ -744,13 +1049,28 @@ type EncryptionConfig struct {
 	// Default: auto-detected based on key length
 	KeyFormat string
 
-	// AllowPlaintext, when true, lets non-production deployments fall
-	// back to plaintext credential storage if Key is empty. Required
-	// to make the security trade-off intentional and visible — without
-	// this opt-in, a missing APP_ENCRYPTION_KEY refuses to boot even
-	// in dev. Production NEVER allows plaintext (initEncryptor enforces).
-	// Env var: APP_ALLOW_PLAINTEXT_CREDENTIALS
-	AllowPlaintext bool
+	// PreviousKeys are earlier encryption keys, kept only while a key
+	// rotation is in progress: values encrypted under them stay readable,
+	// and token hashes peppered with them keep verifying, while new values
+	// use Key. Each is auto-detected like Key (raw 32, hex 64, base64 44).
+	// Remove them once cmd/rekey has re-encrypted the stored values and the
+	// tokens issued under the old key have been rotated.
+	// Env var: APP_ENCRYPTION_KEY_PREVIOUS (comma-separated)
+	PreviousKeys []string
+
+	// TemplateSigningKey is the 32-byte master secret each tenant's custom
+	// template signing key is derived from (Ed25519; sensors pin the
+	// tenant's public key). Same formats as Key. Empty: derived from Key,
+	// so rotating Key also rotates every tenant's template key and sensors
+	// must pin the new one; set it to rotate them independently.
+	// Env var: APP_TEMPLATE_SIGNING_KEY
+	TemplateSigningKey string
+
+	// ContentSigningKey is the 32-byte master secret each tenant's content
+	// pack signing key is derived from (Ed25519, RFC-061). Same formats as
+	// Key. Empty: derived from Key under its own label.
+	// Env var: APP_CONTENT_SIGNING_KEY
+	ContentSigningKey string
 }
 
 // IsConfigured returns true if encryption is configured.
@@ -774,10 +1094,9 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	MaxConcurrentJobs int // Max concurrent AI triage jobs
-	RateLimitRPM      int // Rate limit per minute
-	TimeoutSeconds    int // Timeout for AI API calls
-	MaxTokens         int // Max tokens per request
+	RateLimitRPM   int // Rate limit per minute
+	TimeoutSeconds int // Timeout for AI API calls
+	MaxTokens      int // Max tokens per request
 
 	// LLM Parameters
 	Temperature float64 // Temperature for LLM (0.0-1.0, lower = more deterministic)
@@ -821,42 +1140,88 @@ func (c *AITriageConfig) IsConfigured() bool {
 	return c.AnthropicAPIKey != "" || c.OpenAIAPIKey != "" || c.GeminiAPIKey != ""
 }
 
-// Load loads configuration from environment variables.
+// envDevelopment is the APP_ENV value of a developer machine.
+const envDevelopment = "development"
+
+// defaultAppEnv is APP_ENV when it is not set. An unset APP_ENV is treated as
+// production, so an image or binary started without configuration gets every
+// production check (secrets, TLS to Postgres and Redis, Secure cookies,
+// rate limits) instead of silently running in development mode. Developer
+// setups (.env.example, docker-compose.dev.yml) set APP_ENV=development.
+const defaultAppEnv = EnvProduction
+
+// appEnv is the APP_ENV value Load uses, with the default applied.
+func appEnv() string { return getEnv("APP_ENV", defaultAppEnv) }
+
+// defaultLogLevel is LOG_LEVEL when it is not set.
+func defaultLogLevel(appEnv string) string {
+	if appEnv == envDevelopment {
+		return "debug"
+	}
+	return "info"
+}
+
+// defaultLogFormat is LOG_FORMAT when it is not set.
+func defaultLogFormat(appEnv string) string {
+	if appEnv == envDevelopment {
+		return "text"
+	}
+	return "json"
+}
+
+// Load loads configuration from environment variables and validates it.
 func Load() (*Config, error) {
-	deprecations, err := resolveRenamedEnv(os.LookupEnv, os.Setenv)
+	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
+		return nil, err
+	}
+	envWarnings, err := checkEnvironment(Registry(), os.Environ())
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := &Config{
-		Deprecations: deprecations,
 		App: AppConfig{
-			Name:  getEnv("APP_NAME", "openctem"),
-			Env:   getEnv("APP_ENV", "development"),
-			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
-			URL:   getEnv("APP_URL", ""),
+			Name: getEnv("APP_NAME", "openctem"),
+			Env:  appEnv(),
+			URL:  getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
-			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.ConfigTemplatesDir),
+			TransportV3: SensorTransportV3Config{
+				Mode:           strings.ToLower(strings.TrimSpace(getEnv("SENSOR_TRANSPORT_V3", TransportV3Auto))),
+				PublicHost:     getEnv("SENSOR_PUBLIC_HOST", ""),
+				MTLSListenAddr: getEnv("SENSOR_MTLS_LISTEN_ADDR", ":8443"),
+				CACertFile:     getEnv("SENSOR_MTLS_CA_CERT_FILE", ""),
+				CAKeyFile:      getEnv("SENSOR_MTLS_CA_KEY_FILE", ""),
+				CADir:          getEnv("SENSOR_MTLS_CA_DIR", "data/sensor-ca"),
+				CertTTL:        getEnvDuration("SENSOR_MTLS_CERT_TTL", 7*24*time.Hour),
+
+				MTLSTrustedProxies: getEnvSlice("SENSOR_MTLS_TRUSTED_PROXIES", nil),
+			},
+			TemplatesDir:      getEnv("SENSOR_CONFIG_TEMPLATES_DIR", DefaultSensorConfigTemplatesDir),
 			PublicAPIURL:      getEnv("SENSOR_PUBLIC_API_URL", ""),
 			KeyTTL:            getEnvDuration("SENSOR_KEY_TTL", DefaultSensorKeyTTL),
+			KeyRenewGrace:     getEnvDuration("SENSOR_KEY_RENEW_GRACE", DefaultSensorKeyRenewGrace),
 			KeyPepper:         getEnv("SENSOR_KEY_PEPPER", ""),
 			KeyPepperPrevious: getEnvSlice("SENSOR_KEY_PEPPER_PREVIOUS", nil),
 
-			KeyRenewBefore:          getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
-			SlimHeartbeat:           getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
-			HeartbeatInterval:       getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
-			HeartbeatBusyInterval:   getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
-			HeartbeatLoadedInterval: getEnvDuration("SENSOR_HEARTBEAT_LOADED_INTERVAL", 2*time.Minute),
-			HeartbeatMinInterval:    getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
-			HeartbeatMaxInterval:    getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
-			HeartbeatSlowQuery:      getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
-			LatestVersion:           sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
-			MinVersion:              sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", "")),
-			SDKMinVersion:           sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", "")),
-			SDKLatestVersion:        sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", "")),
-			Image:                   getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
-			CACertFile:              getEnv("SENSOR_CA_CERT_FILE", ""),
+			KeyRenewBefore:        getEnvDuration("SENSOR_KEY_RENEW_BEFORE", 0),
+			SlimHeartbeat:         getEnvBool("SENSOR_SLIM_HEARTBEAT", true),
+			SignerSocket:          getEnv("SIGNER_SOCKET", ""),
+			SignerTimeout:         getEnvDuration("SIGNER_TIMEOUT", 2*time.Second),
+			HeartbeatInterval:     getEnvDuration("SENSOR_HEARTBEAT_INTERVAL", 30*time.Second),
+			HeartbeatBusyInterval: getEnvDuration("SENSOR_HEARTBEAT_BUSY_INTERVAL", 5*time.Second),
+			HeartbeatMinInterval:  getEnvDuration("SENSOR_HEARTBEAT_MIN_INTERVAL", 5*time.Second),
+			HeartbeatMaxInterval:  getEnvDuration("SENSOR_HEARTBEAT_MAX_INTERVAL", 5*time.Minute),
+			HeartbeatSlowQuery:    getEnvDuration("SENSOR_HEARTBEAT_SLOW_QUERY", 250*time.Millisecond),
+			CommandLease:          getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
+			HealthSlowHeartbeat:   getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
+			HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
+			LatestVersion:         sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
+			MinVersion:            sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", DefaultSensorMinVersion)),
+			SDKMinVersion:         sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", DefaultSensorSDKMinVersion)),
+			SDKLatestVersion:      sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", DefaultSensorSDKLatestVersion)),
+			Image:                 getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
+			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
@@ -866,6 +1231,9 @@ func Load() (*Config, error) {
 			Endpoint:  getEnv("STORAGE_ENDPOINT", ""),
 			AccessKey: getEnv("STORAGE_ACCESS_KEY", ""),
 			SecretKey: getEnv("STORAGE_SECRET_KEY", ""),
+			// 20 GiB per organization by default: it bounds what one
+			// organization can put on a shared volume or bucket.
+			TenantQuotaMB: getEnvInt64("STORAGE_TENANT_QUOTA_MB", 20480),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
@@ -878,15 +1246,14 @@ func Load() (*Config, error) {
 			SessionTimeoutMinutes: getEnvInt("SESSION_TIMEOUT_MINUTES", 30),    // 30 minutes default
 			MaxConcurrentRequests: getEnvInt("MAX_CONCURRENT_REQUESTS", 1000),  // 1000 concurrent requests default
 			TrustedProxies:        getEnvSlice("SERVER_TRUSTED_PROXIES", nil),
-		},
-		GRPC: GRPCConfig{
-			Port: getEnvInt("GRPC_PORT", 9090),
+			TLSCertFile:           getEnv("SERVER_TLS_CERT_FILE", ""),
+			TLSKeyFile:            getEnv("SERVER_TLS_KEY_FILE", ""),
 		},
 		Database: DatabaseConfig{
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
 			User:            getEnv("DB_USER", "openctem"),
-			Password:        getEnv("DB_PASSWORD", "secret"),
+			Password:        getEnv("DB_PASSWORD", ""),
 			Name:            getEnv("DB_NAME", "openctem"),
 			SSLMode:         getEnv("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
@@ -914,23 +1281,25 @@ func Load() (*Config, error) {
 			MaxRetryDelay: getEnvDuration("REDIS_MAX_RETRY_DELAY", 3*time.Second),
 		},
 		Log: LogConfig{
-			Level:              getEnv("LOG_LEVEL", "info"), // Default info for safety
-			Format:             getEnv("LOG_FORMAT", "json"),
+			// Unset: debug/text for APP_ENV=development (readable while
+			// developing), info/json everywhere else. Set, they apply in every
+			// environment.
+			Level:              getEnv("LOG_LEVEL", defaultLogLevel(appEnv())),
+			Format:             getEnv("LOG_FORMAT", defaultLogFormat(appEnv())),
 			SamplingEnabled:    getEnvBool("LOG_SAMPLING_ENABLED", false),   // Enable via env for production
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
 			ErrorSamplingRate:  getEnvFloat("LOG_ERROR_SAMPLING_RATE", 1.0), // Always log errors
-			SkipHealthLogs:     getEnvBool("LOG_SKIP_HEALTH", true),         // Skip health endpoints
 			SlowRequestSeconds: getEnvInt("LOG_SLOW_REQUEST_SECONDS", 5),    // Warn on slow requests
 		},
 		Auth: AuthConfig{
-			Provider:                  AuthProvider(getEnv("AUTH_PROVIDER", "oidc")), // Default to OIDC for backward compatibility
+			Provider:                  AuthProvider(getEnv("AUTH_PROVIDER", string(AuthProviderLocal))),
 			JWTSecret:                 getEnv("AUTH_JWT_SECRET", ""),
 			JWTIssuer:                 getEnv("AUTH_JWT_ISSUER", "api"),
 			AccessTokenDuration:       getEnvDuration("AUTH_ACCESS_TOKEN_DURATION", 15*time.Minute),
 			RefreshTokenDuration:      getEnvDuration("AUTH_REFRESH_TOKEN_DURATION", 7*24*time.Hour),
 			SessionDuration:           getEnvDuration("AUTH_SESSION_DURATION", 30*24*time.Hour),
-			PasswordMinLength:         getEnvInt("AUTH_PASSWORD_MIN_LENGTH", 8),
+			PasswordMinLength:         getEnvInt("AUTH_PASSWORD_MIN_LENGTH", 12),
 			PasswordRequireUpper:      getEnvBool("AUTH_PASSWORD_REQUIRE_UPPERCASE", true),
 			PasswordRequireLower:      getEnvBool("AUTH_PASSWORD_REQUIRE_LOWERCASE", true),
 			PasswordRequireNumber:     getEnvBool("AUTH_PASSWORD_REQUIRE_NUMBER", true),
@@ -938,16 +1307,18 @@ func Load() (*Config, error) {
 			MaxLoginAttempts:          getEnvInt("AUTH_MAX_LOGIN_ATTEMPTS", 5),
 			LockoutDuration:           getEnvDuration("AUTH_LOCKOUT_DURATION", 15*time.Minute),
 			MaxActiveSessions:         getEnvInt("AUTH_MAX_ACTIVE_SESSIONS", 10),
-			AllowRegistration:         getEnvBool("AUTH_ALLOW_REGISTRATION", false),
 			RequireEmailVerification:  getEnvBool("AUTH_REQUIRE_EMAIL_VERIFICATION", true),
+			CaptchaTurnstileSecret:    getEnv("CAPTCHA_TURNSTILE_SECRET", ""),
+			CaptchaTurnstileSiteKey:   getEnv("CAPTCHA_TURNSTILE_SITE_KEY", ""),
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
-			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(getEnv("APP_ENV", "development"))),
-			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
-			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
-			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
-			RefreshTokenCookieName:    getEnv("AUTH_REFRESH_TOKEN_COOKIE_NAME", "refresh_token"), // Cookie name for refresh token
-			TenantCookieName:          getEnv("AUTH_TENANT_COOKIE_NAME", "app_tenant"),           // Cookie name for tenant
+			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
+			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),      // Empty = current host
+			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"), // "strict", "lax", or "none"
+			// Fixed names: the web console and the gateway use the same ones.
+			AccessTokenCookieName:  "auth_token",
+			RefreshTokenCookieName: "refresh_token",
+			TenantCookieName:       "app_tenant",
 			EntraSSO: EntraSSOConfig{
 				Enabled:        getEnvBool("SSO_ENTRA_ENABLED", false),
 				ClientID:       getEnv("SSO_ENTRA_CLIENT_ID", ""),
@@ -969,10 +1340,14 @@ func Load() (*Config, error) {
 			JWKSRefreshInterval: getEnvDuration("KEYCLOAK_JWKS_REFRESH_INTERVAL", 1*time.Hour),
 			HTTPTimeout:         getEnvDuration("KEYCLOAK_HTTP_TIMEOUT", 10*time.Second),
 		},
+		MCP: MCPConfig{
+			TrustedClientHosts:  getEnvSlice("MCP_OAUTH_TRUSTED_CLIENT_HOSTS", nil),
+			DynamicRegistration: getEnvBool("MCP_OAUTH_DCR_ENABLED", false),
+		},
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production
 			// validation in middleware/middleware.go rejects "*" regardless.
-			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{publicOriginOr("http://localhost:3000")}),
 			AllowedMethods: getEnvSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}),
 			AllowedHeaders: getEnvSlice("CORS_ALLOWED_HEADERS", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"}),
 			MaxAge:         getEnvInt("CORS_MAX_AGE", 86400),
@@ -989,7 +1364,7 @@ func Load() (*Config, error) {
 		SMTP: SMTPFromEnv(),
 		OAuth: OAuthConfig{
 			Enabled:             getEnvBool("OAUTH_ENABLED", true),
-			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", "http://localhost:3000/auth/callback"),
+			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", publicURLOr("http://localhost:3000")+"/auth/callback"),
 			StateSecret:         getEnv("OAUTH_STATE_SECRET", ""),
 			StateDuration:       getEnvDuration("OAUTH_STATE_DURATION", 10*time.Minute),
 			Google: OAuthProviderConfig{
@@ -1011,15 +1386,32 @@ func Load() (*Config, error) {
 				Scopes:       getEnvSlice("OAUTH_MICROSOFT_SCOPES", []string{"openid", "email", "profile", "User.Read"}),
 			},
 		},
-		Worker: WorkerConfig{
-			Enabled:                getEnvBool("WORKER_HEALTH_CHECK_ENABLED", true),
-			HeartbeatTimeout:       getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
-			HealthCheckInterval:    getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
-			SCMSyncInterval:        getEnvDuration("SCM_SYNC_INTERVAL", 0),
-			CTEMIDFeedURL:          getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
-			CertMonitorEnabled:     getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL: getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
-			CertMonitorInterval:    getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+		Worker: SensorConfig{
+			Enabled:                     getEnvBool("WORKER_HEALTH_CHECK_ENABLED", false),
+			HeartbeatTimeout:            getEnvDuration("WORKER_HEARTBEAT_TIMEOUT", 5*time.Minute),
+			HealthCheckInterval:         getEnvDuration("WORKER_HEALTH_CHECK_INTERVAL", 1*time.Minute),
+			SCMSyncInterval:             getEnvDuration("SCM_SYNC_INTERVAL", 0),
+			CTEMIDFeedURL:               getEnv("CTEM_ID_FEED_URL", "https://ctem.org/source.json"),
+			VulnFeedRootKeyID:           getEnv("VULNFEED_ROOT_KEY_ID", ""),
+			VulnFeedBaseURL:             getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed/releases"),
+			VulnFeedBundleDir:           getEnv("VULNFEED_BUNDLE_DIR", ""),
+			VulnFeedMirrors:             feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+			CertMonitorEnabled:          getEnvBool("CERT_MONITOR_ENABLED", true),
+			CertMonitorFeedBaseURL:      getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
+			CertMonitorInterval:         getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
+			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
+			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
+			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
+			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
+			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
+			EASMDNSInterval:             getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
+			EASMDNSMaxNamesPerRun:       getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
+			CertMonitorCertSpotterURL:   getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			InvitationPurgeInterval:     getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
+			AdminSessionPurgeInterval:   getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
+			QuarantinePurgeInterval:     getEnvDuration("SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL", 24*time.Hour),
+			QuarantineRetention:         getEnvDuration("SENSOR_RESULT_QUARANTINE_RETENTION", 30*24*time.Hour),
 			LoadBalancing: LoadBalancingConfig{
 				JobWeight:                getEnvFloat("SENSOR_LB_JOB_WEIGHT", sensordom.DefaultJobLoadWeight),
 				CPUWeight:                getEnvFloat("SENSOR_LB_CPU_WEIGHT", sensordom.DefaultCPUWeight),
@@ -1031,14 +1423,12 @@ func Load() (*Config, error) {
 			},
 		},
 		Encryption: EncryptionConfig{
-			Key:            getEnv("APP_ENCRYPTION_KEY", ""),
-			KeyFormat:      getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
-			AllowPlaintext: getEnvBool("APP_ALLOW_PLAINTEXT_CREDENTIALS", false),
-		},
-		Webhooks: WebhooksConfig{
-			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
-			// middleware fails closed if empty.
-			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
+			Key:          getEnv("APP_ENCRYPTION_KEY", ""),
+			KeyFormat:    getEnv("APP_ENCRYPTION_KEY_FORMAT", ""),
+			PreviousKeys: getEnvSlice("APP_ENCRYPTION_KEY_PREVIOUS", nil),
+			// Read as is: a leading or trailing space is a malformed key.
+			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
+			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
 		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
@@ -1046,11 +1436,42 @@ func Load() (*Config, error) {
 			V2Results:             getEnvBool("SENSOR_PROTOCOL_V2_RESULTS", true),
 			V2BlindingRatio:       getEnvFloat("SENSOR_V2_BLINDING_RATIO", 0.5),
 			V2BlindingMinFindings: getEnvInt("SENSOR_V2_BLINDING_MIN_FINDINGS", 100),
+			CoverageAutoResolve:   getEnv("INGEST_COVERAGE_AUTO_RESOLVE", "dry_run"),
+			SourceResolve:         getEnv("INGEST_SOURCE_RESOLVE", "dry_run"),
+			VEX:                   getEnv("INGEST_VEX", "dry_run"),
 		},
 		Metrics: MetricsConfig{
 			// SECURITY: default NON-public. See MetricsConfig docs.
 			Public: getEnvBool("METRICS_PUBLIC", false),
 			Token:  getEnv("METRICS_TOKEN", ""),
+		},
+		AssetChangeRetentionDays: getEnvInt("ASSET_CHANGE_RETENTION_DAYS", 400),
+		AuditRetention: AuditRetentionConfig{
+			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
+			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
+		},
+		GitHubApp: GitHubAppConfig{
+			AppID:          getEnvInt64("GITHUB_APP_ID", 0),
+			Slug:           getEnv("GITHUB_APP_SLUG", ""),
+			ClientID:       getEnv("GITHUB_APP_CLIENT_ID", ""),
+			ClientSecret:   getEnv("GITHUB_APP_CLIENT_SECRET", ""),
+			PrivateKey:     getEnv("GITHUB_APP_PRIVATE_KEY", ""),
+			PrivateKeyFile: getEnv("GITHUB_APP_PRIVATE_KEY_FILE", ""),
+			WebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
+			APIURL:         getEnv("GITHUB_APP_API_URL", ""),
+			WebURL:         getEnv("GITHUB_APP_WEB_URL", ""),
+		},
+		Scope: ScopeConfig{
+			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
+			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
+			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
+			DenyExtra:       getEnvSlice("SCOPE_DENY_EXTRA", nil),
+			// The public program feed (RFC-065 §16).
+			ProgramFeedDir:            getEnv("PROGRAMFEED_DIR", ""),
+			ProgramFeedRootKeyID:      getEnv("PROGRAMFEED_ROOT_KEY_ID", ""),
+			ProgramFeedLocalBundleDir: getEnv("PROGRAMFEED_LOCAL_BUNDLE_DIR", ""),
+			ProgramFeedURLs:           feedURLs(getEnv("PROGRAMFEED_URL", ""), getEnv("PROGRAMFEED_MIRRORS", "")),
+			FeedCacheDir:              getEnv("FEED_CACHE_DIR", filepath.Join(os.TempDir(), "openctem-feeds")),
 		},
 		AdminAuditRetention: AdminAuditRetentionConfig{
 			Enabled: getEnvBool("ADMIN_AUDIT_RETENTION_ENABLED", true),
@@ -1067,7 +1488,6 @@ func Load() (*Config, error) {
 			AnthropicAPIKey:             getEnv("ANTHROPIC_API_KEY", ""),
 			OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 			GeminiAPIKey:                getEnv("GEMINI_API_KEY", ""),
-			MaxConcurrentJobs:           getEnvInt("AI_MAX_CONCURRENT_JOBS", 10),
 			RateLimitRPM:                getEnvInt("AI_RATE_LIMIT_RPM", 60),
 			TimeoutSeconds:              getEnvInt("AI_TIMEOUT_SECONDS", 30),
 			MaxTokens:                   getEnvInt("AI_MAX_TOKENS", 4096),
@@ -1085,6 +1505,10 @@ func Load() (*Config, error) {
 			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 0)),
 		},
 	}
+
+	cfg.EnvWarnings = envWarnings
+
+	deriveSecrets(cfg)
 
 	// SSO redirect-URI allow-list (OAuth 2.1 / RFC 9700): pin the caller-supplied
 	// redirect_uri to trusted frontend origins. An explicit SSO_ALLOWED_REDIRECT_URIS
@@ -1139,18 +1563,88 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if c.App.Env == EnvProduction {
-		return c.validateProduction()
+		if err := c.validateProduction(); err != nil {
+			return err
+		}
+	}
+	// There is no default database password: outside development an unset
+	// DB_PASSWORD is a missing setting, not a wish for an empty password.
+	if c.Database.Password == "" && !c.IsDevelopment() {
+		return errors.New("DB_PASSWORD is required")
 	}
 	return nil
 }
 
+// validateStorage checks the server-wide attachment storage settings, so a
+// typo fails at start-up instead of the API quietly keeping files on the
+// container disk.
+func (c *Config) validateStorage() error {
+	if c.Storage.TenantQuotaMB < 0 {
+		return fmt.Errorf("STORAGE_TENANT_QUOTA_MB must be 0 (no quota) or more, got %d", c.Storage.TenantQuotaMB)
+	}
+	switch c.Storage.Provider {
+	case "", "local":
+		return nil
+	case "s3", "minio":
+		if c.Storage.Bucket == "" {
+			return fmt.Errorf("STORAGE_BUCKET is required when STORAGE_PROVIDER=%s", c.Storage.Provider)
+		}
+		if c.Storage.AccessKey == "" || c.Storage.SecretKey == "" {
+			return fmt.Errorf("STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY are required when STORAGE_PROVIDER=%s", c.Storage.Provider)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid STORAGE_PROVIDER: %q (must be local, s3 or minio)", c.Storage.Provider)
+	}
+}
+
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	if raw := strings.TrimSpace(c.App.URL); raw != "" && parsePublicURL(raw) == nil {
+		return errors.New("APP_URL must be an http or https URL without credentials, query or fragment, e.g. https://ctem.example.com")
+	}
+	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
+		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
+	}
+	for _, u := range c.Scope.ProgramFeedURLs {
+		pu, err := url.Parse(u)
+		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+			return errors.New("PROGRAMFEED_URL and PROGRAMFEED_MIRRORS must be https URLs without credentials, query or fragment")
+		}
+	}
+	for _, u := range c.Worker.VulnFeedMirrors {
+		pu, err := url.Parse(u)
+		if err != nil || pu.Scheme != "https" || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" {
+			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
+		}
+	}
+	if c.Scope.ZoneResolver == "" {
+		c.Scope.ZoneResolver = ScanZoneResolverSystem
+		if c.Auth.SelfServiceTenantCreation() {
+			c.Scope.ZoneResolver = DefaultPublicZoneResolver
+		}
+	}
+	switch c.SensorConfig.TransportV3.Mode {
+	case "":
+		c.SensorConfig.TransportV3.Mode = TransportV3Auto
+	case TransportV3Auto, TransportV3Off:
+	default:
+		return fmt.Errorf("SENSOR_TRANSPORT_V3=%q is not one of: auto, off", c.SensorConfig.TransportV3.Mode)
+	}
+	// The SSRF guard ignores a refused private-egress setting; refusing to
+	// start makes the operator notice instead of debugging blocked calls.
+	if err := httpsec.ValidatePrivateEgress(c.App.Env,
+		os.Getenv(httpsec.EnvAllowPrivate), os.Getenv(httpsec.EnvAllowPrivateCIDRs)); err != nil {
+		return err
+	}
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
 	}
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host is required")
+	}
+	if err := c.validatePlaceholders(); err != nil {
+		return err
 	}
 	if err := c.validateAuth(); err != nil {
 		return err
@@ -1162,6 +1656,9 @@ func (c *Config) validateBasic() error {
 		return err
 	}
 	if err := c.validateAdminAuditRetention(); err != nil {
+		return err
+	}
+	if err := c.validateStorage(); err != nil {
 		return err
 	}
 	return nil
@@ -1244,6 +1741,25 @@ func (c *Config) validateLog() error {
 
 // validateEncryption validates encryption configuration.
 func (c *Config) validateEncryption() error {
+	if k := c.Encryption.TemplateSigningKey; k != "" {
+		if _, err := crypto.ParseKey(k, ""); err != nil {
+			// Never echo the key itself.
+			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY is not a valid key (expected 32 raw, 64 hex or 44 base64 characters); generate one with `openssl rand -hex 32`")
+		}
+		if k == c.Encryption.Key {
+			return fmt.Errorf("APP_TEMPLATE_SIGNING_KEY must differ from APP_ENCRYPTION_KEY (leave it unset to derive it)")
+		}
+	}
+
+	if k := c.Encryption.ContentSigningKey; k != "" {
+		if _, err := crypto.ParseKey(k, ""); err != nil {
+			return fmt.Errorf("APP_CONTENT_SIGNING_KEY is not a valid key (expected 32 raw, 64 hex or 44 base64 characters); generate one with `openssl rand -hex 32`")
+		}
+		if k == c.Encryption.Key || k == c.Encryption.TemplateSigningKey {
+			return fmt.Errorf("APP_CONTENT_SIGNING_KEY must differ from APP_ENCRYPTION_KEY and APP_TEMPLATE_SIGNING_KEY (leave it unset to derive it)")
+		}
+	}
+
 	// Encryption key is optional only in development. Any other APP_ENV
 	// (production, staging, preview, etc.) stores real tenant credentials
 	// and MUST have a key — otherwise integration tokens sit in plaintext.
@@ -1291,6 +1807,16 @@ func (c *Config) validateEncryption() error {
 		return fmt.Errorf("APP_ENCRYPTION_KEY_FORMAT must be 'raw', 'hex', or 'base64', got '%s'", format)
 	}
 
+	for i, prev := range c.Encryption.PreviousKeys {
+		if _, err := crypto.ParseKey(prev, ""); err != nil {
+			// Never echo the key itself.
+			return fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d is not a valid key (expected 32 raw, 64 hex or 44 base64 characters)", i+1)
+		}
+		if prev == c.Encryption.Key {
+			return fmt.Errorf("APP_ENCRYPTION_KEY_PREVIOUS entry %d equals APP_ENCRYPTION_KEY", i+1)
+		}
+	}
+
 	return nil
 }
 
@@ -1312,7 +1838,7 @@ func (c *Config) validateAuth() error {
 	// Local auth requires JWT secret
 	if c.Auth.Provider.SupportsLocal() {
 		if c.Auth.JWTSecret == "" {
-			return fmt.Errorf("AUTH_JWT_SECRET is required when using local or hybrid authentication")
+			return fmt.Errorf("AUTH_JWT_SECRET is empty: set APP_ENCRYPTION_KEY (the session secret is derived from it) or AUTH_JWT_SECRET")
 		}
 		if len(c.Auth.JWTSecret) < 32 {
 			return fmt.Errorf("AUTH_JWT_SECRET must be at least 32 characters")
@@ -1337,6 +1863,13 @@ func (c *Config) validateAuth() error {
 		}
 	}
 
+	// The CAPTCHA needs both halves: the secret makes the API require a
+	// token, the site key makes the web render the check that produces it.
+	// One without the other either blocks every sign-up or checks nothing.
+	if (strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "") != (strings.TrimSpace(c.Auth.CaptchaTurnstileSiteKey) == "") {
+		return fmt.Errorf("CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY must be set together")
+	}
+
 	// Same sentinel for the credential-at-rest key: only refuse outside
 	// development. Dev keeps the predictable `0123…cdef` value so
 	// `docker compose up` works without further config; non-dev MUST
@@ -1357,6 +1890,56 @@ func (c *Config) validateAuth() error {
 	}
 
 	return nil
+}
+
+// validatePlaceholders refuses secrets that still hold the placeholder text of
+// an example file ("openssl rand -hex 32", "<CHANGE_ME...>",
+// "your-super-secret-..."), in every environment. Without it such a value
+// either fails later with a length error that does not say what is wrong, or,
+// worse, is long enough to be accepted as a real secret.
+func (c *Config) validatePlaceholders() error {
+	secrets := []struct{ name, value string }{
+		{"APP_ENCRYPTION_KEY", c.Encryption.Key},
+		{"APP_TEMPLATE_SIGNING_KEY", c.Encryption.TemplateSigningKey},
+		{"APP_CONTENT_SIGNING_KEY", c.Encryption.ContentSigningKey},
+		{"AUTH_JWT_SECRET", c.Auth.JWTSecret},
+		{"DB_PASSWORD", c.Database.Password},
+		{"REDIS_PASSWORD", c.Redis.Password},
+		{"OAUTH_STATE_SECRET", c.OAuth.StateSecret},
+		{"SENSOR_KEY_PEPPER", c.SensorConfig.KeyPepper},
+		{"METRICS_TOKEN", c.Metrics.Token},
+	}
+	for i, prev := range c.Encryption.PreviousKeys {
+		secrets = append(secrets, struct{ name, value string }{fmt.Sprintf("APP_ENCRYPTION_KEY_PREVIOUS entry %d", i+1), prev})
+	}
+	for _, s := range secrets {
+		if isPlaceholderSecret(s.value) {
+			// The value is example text, not a secret, but it is still not echoed.
+			return fmt.Errorf("%s holds placeholder text from an example file, not a secret: "+
+				"replace it with the output of `openssl rand -hex 32`", s.name)
+		}
+	}
+	return nil
+}
+
+// placeholderMarkers are substrings only example files put in a secret.
+var placeholderMarkers = []string{"openssl rand", "change_me", "changeme", "your-super-secret", "replace-me", "replace_me"}
+
+func isPlaceholderSecret(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	if strings.HasPrefix(v, "<") && strings.HasSuffix(v, ">") {
+		return true
+	}
+	lv := strings.ToLower(v)
+	for _, m := range placeholderMarkers {
+		if strings.Contains(lv, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // devDefaultJWTSecrets is the closed set of "dev-quickstart" JWT secret
@@ -1391,10 +1974,7 @@ func (c *Config) validateOAuth() error {
 	// If any provider is enabled, we need state secret for CSRF protection
 	if c.OAuth.HasAnyProvider() {
 		if c.OAuth.StateSecret == "" {
-			// Generate a warning but don't fail in development
-			if c.App.Env == EnvProduction {
-				return fmt.Errorf("OAUTH_STATE_SECRET is required when OAuth providers are enabled")
-			}
+			return fmt.Errorf("OAUTH_STATE_SECRET is empty and could not be derived: set AUTH_JWT_SECRET or APP_ENCRYPTION_KEY")
 		}
 		if c.OAuth.FrontendCallbackURL == "" {
 			return fmt.Errorf("OAUTH_FRONTEND_CALLBACK_URL is required when OAuth providers are enabled")
@@ -1487,9 +2067,6 @@ func (c *Config) validateProductionSecurity() error {
 	if !c.RateLimit.Enabled {
 		return fmt.Errorf("rate limiting must be enabled in production")
 	}
-	if c.App.Debug {
-		return fmt.Errorf("debug mode must be disabled in production")
-	}
 	if c.Log.Level == "debug" {
 		return fmt.Errorf("log level should not be 'debug' in production")
 	}
@@ -1530,15 +2107,24 @@ func (c *Config) validateProductionRedis() error {
 
 // DSN returns the database connection string.
 func (c *DatabaseConfig) DSN() string {
+	// Values are quoted: unquoted, an empty password swallowed the next
+	// key ("password= dbname=x" sets the password to "dbname=x"), and a
+	// space or backslash in a value broke or changed it.
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode,
+		dsnQuote(c.Host), c.Port, dsnQuote(c.User), dsnQuote(c.Password), dsnQuote(c.Name), dsnQuote(c.SSLMode),
 	)
 	if !c.JITEnabled {
 		// lib/pq forwards unknown keys as session startup parameters.
 		dsn += " jit=off"
 	}
 	return dsn
+}
+
+// dsnQuote quotes a libpq key/value connection-string value: single quotes
+// around it, with backslash and single quote escaped by a backslash.
+func dsnQuote(v string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
 }
 
 // Addr returns the Redis address.
@@ -1573,48 +2159,156 @@ func defaultCookieSecure(appEnv string) bool {
 	return appEnv != "development"
 }
 
-// resolveRenamedEnv lets the pre-sensor environment variable names keep
-// working: when only the old name is set its value is copied to the new name
-// (and a deprecation warning returned); when both are set to different values
-// startup fails with a message naming both, rather than silently picking one.
-func resolveRenamedEnv(lookup func(string) (string, bool), set func(string, string) error) ([]string, error) {
-	var warnings []string
-	for _, r := range legacyv1.RenamedEnv {
-		oldVal, hasOld := lookup(r.Old)
-		if !hasOld {
-			continue
-		}
-		newVal, hasNew := lookup(r.New)
-		switch {
-		case !hasNew:
-			if err := set(r.New, oldVal); err != nil {
-				return nil, fmt.Errorf("apply %s from deprecated %s: %w", r.New, r.Old, err)
-			}
-			warnings = append(warnings, fmt.Sprintf("%s is deprecated; rename it to %s (value applied)", r.Old, r.New))
-		case newVal != oldVal:
-			return nil, fmt.Errorf("both %s and its deprecated name %s are set, to different values; remove %s", r.New, r.Old, r.Old)
-		default:
-			warnings = append(warnings, fmt.Sprintf("%s is deprecated and duplicates %s; remove it", r.Old, r.New))
-		}
-	}
+// DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
+const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 
-	// The default template directory moved; keep an installation's custom
-	// templates mounted at the old default path working.
-	if _, explicit := lookup("SENSOR_CONFIG_TEMPLATES_DIR"); !explicit {
-		if !dirExists(legacyv1.ConfigTemplatesDir) && dirExists(legacyv1.LegacyConfigTemplatesDir) {
-			if err := set("SENSOR_CONFIG_TEMPLATES_DIR", legacyv1.LegacyConfigTemplatesDir); err != nil {
-				return nil, err
-			}
-			warnings = append(warnings, fmt.Sprintf("sensor config templates loaded from the deprecated directory %s; move them to %s",
-				legacyv1.LegacyConfigTemplatesDir, legacyv1.ConfigTemplatesDir))
-		}
-	}
-	return warnings, nil
+// retiredEnv lists environment variable names that are no longer read: the
+// pre-sensor names, and knobs that became console settings. Startup refuses to run while one is set: silently ignoring,
+// say, AGENT_KEY_TTL would turn short-lived sensor keys back into
+// non-expiring ones without the operator noticing.
+var retiredEnv = []struct{ Old, New, Hint string }{
+	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR", ""},
+	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL", ""},
+	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL", ""},
+	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT", ""},
+	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT", ""},
+	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT", ""},
+	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT", ""},
+	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT", ""},
+	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS", ""},
+	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS", ""},
+	// Sensor protocol v3 picks its bindings itself; off is the only switch.
+	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off", ""},
+	// The proof requirement is a platform setting edited in the console.
+	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
 }
 
-func dirExists(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.IsDir()
+// smtpMoved is the hint for the SMTP_* variables.
+const smtpMoved = "unset it; the platform SMTP server is set in the admin console (System > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
+
+// removedEnv lists settings that were removed without a replacement
+// variable. Startup refuses to run while one is set, saying what to do
+// instead, so an operator never believes a removed setting still applies.
+var removedEnv = []struct{ Name, Instead string }{
+	// Knobs that were read but switched nothing.
+	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
+	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
+	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
+	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	// The platform SMTP server is set in the admin console (RFC-079).
+	{"SMTP_ENABLED", smtpMoved},
+	{"SMTP_HOST", smtpMoved},
+	{"SMTP_PORT", smtpMoved},
+	{"SMTP_USER", smtpMoved},
+	{"SMTP_PASSWORD", smtpMoved},
+	{"SMTP_FROM", smtpMoved},
+	{"SMTP_FROM_NAME", smtpMoved},
+	{"SMTP_TLS", smtpMoved},
+	{"SMTP_SKIP_VERIFY", smtpMoved},
+	{"SMTP_TIMEOUT", smtpMoved},
+	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
+	{"CTEM_ENFORCE_COVERAGE_SLO", "unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles)"},
+	// Cookie names are fixed: the API, the web console and the gateway must
+	// agree on them.
+	{"AUTH_ACCESS_TOKEN_COOKIE_NAME", "unset it; the session cookie is always auth_token"},
+	{"AUTH_REFRESH_TOKEN_COOKIE_NAME", "unset it; the refresh cookie is always refresh_token"},
+	{"AUTH_TENANT_COOKIE_NAME", "unset it; the organization cookie is always app_tenant"},
+	// A platform-wide Jira webhook secret verified a delivery for any
+	// ?tenant=: whoever held it could forge Jira events for every
+	// organization. Each organization's Jira integration has its own secret.
+	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
+}
+
+// rejectRetiredEnv fails when any retired or removed name is set, naming
+// its replacement or what to do instead.
+func rejectRetiredEnv(lookup func(string) (string, bool)) error {
+	var bad []string
+	for _, r := range retiredEnv {
+		if _, ok := lookup(r.Old); !ok {
+			continue
+		}
+		if r.Hint != "" {
+			bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.Hint))
+			continue
+		}
+		bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+	}
+	for _, r := range removedEnv {
+		if _, ok := lookup(r.Name); ok {
+			bad = append(bad, fmt.Sprintf("%s (removed: %s)", r.Name, r.Instead))
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("retired environment variables are set and no longer read: %s", strings.Join(bad, ", "))
+	}
+	return nil
+}
+
+// HKDF labels of the secrets derived when their variable is unset. Changing a
+// label changes the derived secret: every session (or OAuth state) issued
+// under the old one stops verifying.
+const (
+	sessionJWTInfo = "openctem/session-jwt/v1"
+	oauthStateInfo = "openctem/oauth-state/v1"
+)
+
+// deriveSecrets fills the secrets an operator need not set:
+//
+//   - AUTH_JWT_SECRET unset: derived from APP_ENCRYPTION_KEY (HKDF-SHA256,
+//     64 bytes, hex). Rotating the encryption key then also signs every user
+//     out; set AUTH_JWT_SECRET to rotate the two independently.
+//   - OAUTH_STATE_SECRET unset: derived from the session secret under its own
+//     label, so the OAuth state MAC key is never the session signing key.
+//
+// The derivation is one-way: knowing a derived secret reveals nothing about
+// the key it came from.
+func deriveSecrets(cfg *Config) {
+	if cfg.Auth.JWTSecret == "" && cfg.Encryption.Key != "" {
+		if d, err := hkdf.Key(sha256.New, []byte(cfg.Encryption.Key), nil, sessionJWTInfo, 64); err == nil {
+			cfg.Auth.JWTSecret = hex.EncodeToString(d)
+			cfg.Auth.JWTSecretDerived = true
+		}
+	}
+	if cfg.OAuth.StateSecret == "" && cfg.Auth.JWTSecret != "" {
+		if d, err := hkdf.Key(sha256.New, []byte(cfg.Auth.JWTSecret), nil, oauthStateInfo, 32); err == nil {
+			cfg.OAuth.StateSecret = hex.EncodeToString(d)
+		}
+	}
+}
+
+// parsePublicURL parses APP_URL: an absolute http(s) URL with a host and no
+// credentials, query or fragment, else nil.
+func parsePublicURL(raw string) *url.URL {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return nil
+	}
+	return u
+}
+
+// publicURLOr is APP_URL without a trailing slash, or fallback when APP_URL is
+// unset or invalid. The web console and the API share that origin behind the
+// gateway, so the email link base and the OAuth callback follow it unless
+// SMTP_BASE_URL / OAUTH_FRONTEND_CALLBACK_URL say otherwise. The value comes
+// from configuration, never from a request, so a forged Host header cannot
+// steer links in emails.
+func publicURLOr(fallback string) string {
+	if u := parsePublicURL(os.Getenv("APP_URL")); u != nil {
+		return strings.TrimRight(u.String(), "/")
+	}
+	return fallback
+}
+
+// publicOriginOr is the origin (scheme://host[:port]) of APP_URL, or fallback.
+// It is the default CORS (and WebSocket Origin) allow-list: exactly the
+// platform's own origin.
+func publicOriginOr(fallback string) string {
+	if u := parsePublicURL(os.Getenv("APP_URL")); u != nil {
+		return u.Scheme + "://" + u.Host
+	}
+	return fallback
 }
 
 // sensorVersionSetting reads a SENSOR_*_VERSION value: "none" or "off" means
@@ -1703,4 +2397,15 @@ func splitAndTrim(s, sep string) []string {
 		}
 	}
 	return parts
+}
+
+// feedURLs joins a feed's release URL and its comma-separated mirrors.
+func feedURLs(primary, mirrors string) []string {
+	var out []string
+	for _, u := range append([]string{primary}, strings.Split(mirrors, ",")...) {
+		if u = strings.TrimSpace(u); u != "" {
+			out = append(out, strings.TrimRight(u, "/"))
+		}
+	}
+	return out
 }

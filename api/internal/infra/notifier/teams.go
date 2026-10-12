@@ -99,7 +99,7 @@ func (c *TeamsClient) Send(ctx context.Context, msg Message) (*SendResult, error
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.webhookURL, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %s", transportError(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	// F-6: idempotency key for duplicate-delivery suppression.
@@ -111,7 +111,7 @@ func (c *TeamsClient) Send(ctx context.Context, msg Message) (*SendResult, error
 	if err != nil {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("send request failed: %v", err),
+			Error:   "send request failed: " + transportError(err),
 		}, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -123,7 +123,7 @@ func (c *TeamsClient) Send(ctx context.Context, msg Message) (*SendResult, error
 	if resp.StatusCode != http.StatusOK {
 		return &SendResult{
 			Success: false,
-			Error:   fmt.Sprintf("teams returned status %d: %s", resp.StatusCode, string(body)),
+			Error:   fmt.Sprintf("teams returned status %d: %s", resp.StatusCode, echoBody(body)),
 		}, nil
 	}
 

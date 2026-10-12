@@ -13,7 +13,7 @@ import (
 )
 
 // ListFindingGroups returns findings grouped by a dimension.
-// Supported dimensions: cve_id, asset_id, owner_id, component_id, severity, source, finding_type.
+// Supported dimensions: cve_id, rule_id, asset_id, owner_id, component_id, severity, source, finding_type, family.
 func (r *FindingRepository) ListFindingGroups(
 	ctx context.Context,
 	tenantID shared.ID,
@@ -24,6 +24,8 @@ func (r *FindingRepository) ListFindingGroups(
 	switch groupBy {
 	case "cve_id":
 		return r.groupByCVE(ctx, tenantID, filter, page)
+	case "rule_id":
+		return r.groupByRule(ctx, tenantID, filter, page)
 	case "asset_id":
 		return r.groupByAsset(ctx, tenantID, filter, page)
 	case "owner_id":
@@ -36,6 +38,8 @@ func (r *FindingRepository) ListFindingGroups(
 		return r.groupByField(ctx, tenantID, "source", filter, page)
 	case "finding_type":
 		return r.groupByField(ctx, tenantID, "finding_type", filter, page)
+	case "family":
+		return r.groupByField(ctx, tenantID, "family", filter, page)
 	default:
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("unsupported group_by: %s", groupBy)
 	}
@@ -50,20 +54,36 @@ const cveSeverityRank = `CASE COALESCE(f.severity, v.severity)
 				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
 			END`
 
+// findingSeverityRank orders a finding's own severity worst-first, for
+// groupings with no catalog join.
+const findingSeverityRank = `CASE f.severity
+				WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+				WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5
+			END`
+
 func statusCountCols() string {
 	return `
 		COUNT(*) as total,
 		COUNT(*) FILTER (WHERE f.status IN ('new','confirmed')) as open,
 		COUNT(*) FILTER (WHERE f.status = 'in_progress') as in_progress,
 		COUNT(*) FILTER (WHERE f.status = 'fix_applied') as fix_applied,
-		COUNT(*) FILTER (WHERE f.status IN ('resolved','verified')) as resolved,
+		COUNT(*) FILTER (WHERE f.status = 'resolved') as resolved,
 		COUNT(DISTINCT f.asset_id) as affected_assets,
-		COUNT(DISTINCT f.asset_id) FILTER (WHERE f.status IN ('resolved','verified')) as resolved_assets`
+		COUNT(DISTINCT f.asset_id) FILTER (WHERE f.status = 'resolved') as resolved_assets`
 }
 
 // buildFilterWhere builds WHERE clauses from FindingFilter.
 // Returns clause string and args starting from argOffset.
 func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string, []any) {
+	if filter.Compiled != nil {
+		// A compiled RFC-048 filter is the whole filter (tenant, scope and
+		// pentest rule included). One compiled for other placeholder numbers
+		// cannot be bound safely, so it matches nothing.
+		if filter.Compiled.First != argOffset || !strings.HasPrefix(filter.Compiled.SQL, vulnerability.FindingFieldsF.TenantSQL+" = $") {
+			return "FALSE", nil
+		}
+		return filter.Compiled.SQL, filter.Compiled.Args
+	}
 	var clauses []string
 	var args []any
 
@@ -123,16 +143,14 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 	// "Assigned to me" / related-to-user filter. Mirrors the canMarkFixApplied
 	// 3-way definition of relatedness so "mine" is consistent across the app:
 	// (1) direct assignee, (2) member of a group the finding is assigned to,
-	// (3) owner of the finding's asset. Written as a single WHERE predicate so
+	// (3) primary or secondary owner of the finding's asset (asset_owners). Written as a single WHERE predicate so
 	// it applies before GROUP BY across every group_by dimension. Tenant scope
 	// is inherited from the caller's f.tenant_id predicate; the correlated
 	// subqueries key off the outer finding row.
 	if filter.RelatedToUserID != nil {
 		clauses = append(clauses, fmt.Sprintf(`(
 			f.assigned_to = $%[1]d
-			OR f.asset_id IN (
-				SELECT id FROM assets WHERE tenant_id = f.tenant_id AND owner_id = $%[1]d
-			)
+			OR f.asset_id IN `+assetsOwnedByUserSQL("$%[1]d", "f.tenant_id")+`
 			OR f.id IN (
 				SELECT fga.finding_id
 				FROM finding_group_assignments fga
@@ -162,6 +180,17 @@ func buildFilterWhere(filter vulnerability.FindingFilter, argOffset int) (string
 // A filter that asks for either rule without a tenant cannot be resolved and
 // matches nothing (the list builder skipped the rule instead).
 func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) ([]string, []any) {
+	if v := filter.CompiledVisibility; v != nil {
+		if v.First != argOffset || !strings.HasPrefix(v.SQL, vulnerability.FindingFieldsF.TenantSQL+" = $") {
+			return []string{"FALSE"}, nil
+		}
+		return []string{v.SQL}, v.Args
+	}
+	if filter.Compiled != nil {
+		// A compiled filter without its compiled visibility cannot be
+		// narrowed by the legacy fields: match nothing (fail closed).
+		return []string{"FALSE"}, nil
+	}
 	var clauses []string
 	var args []any
 	if (filter.PentestMemberOrNonPentestUserID != nil || filter.DataScopeUserID != nil) && filter.TenantID == nil {
@@ -172,20 +201,17 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 	if filter.PentestMemberOrNonPentestUserID != nil {
 		clauses = append(clauses, fmt.Sprintf(`(f.source != 'pentest' OR f.pentest_campaign_id IN (
 			SELECT campaign_id FROM pentest_campaign_members WHERE user_id = $%d AND tenant_id = $%d
+			  AND (role <> 'client' OR f.status NOT IN ('draft', 'in_review'))
 		))`, argOffset, argOffset+1))
 		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
 		argOffset += 2
 	}
 
-	// Layer 2 data scope. A resolved scope (WithDataScope) is strict; the
-	// legacy non-strict form keeps the list's fail-open "no scope row ⇒ all".
+	// Layer 2 data scope, always strict: a user with no scope row sees no
+	// group.
 	if filter.DataScopeUserID != nil {
-		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID}
+		scope := &shared.DataScope{TenantID: *filter.TenantID, UserID: *filter.DataScopeUserID, Unrestricted: filter.DataScopeUnrestricted}
 		cond, scopeArgs := dataScopeCondAt("f.asset_id", scope, argOffset)
-		if !filter.DataScopeStrict {
-			cond = fmt.Sprintf(`(NOT EXISTS (SELECT 1 FROM user_accessible_assets WHERE user_id = $%d AND tenant_id = $%d) OR %s)`,
-				argOffset, argOffset+1, cond)
-		}
 		clauses = append(clauses, cond)
 		args = append(args, scopeArgs...)
 	}
@@ -230,7 +256,7 @@ func (r *FindingRepository) groupByCVE(
 			(ARRAY['critical','high','medium','low','info'])[MIN(`+cveSeverityRank+`)] as severity,
 			COALESCE(MAX(f.cvss_score), MAX(v.cvss_score)),
 			COALESCE(MAX(f.epss_score), MAX(v.epss_score)),
-			(COALESCE(BOOL_OR(v.exploit_available), false) OR COALESCE(BOOL_OR(f.metadata->>'scanner_exploit_available' = 'true'), false)),
+			COALESCE(BOOL_OR(`+vulnerability.FindingExploitAvailableSQL("f")+`), false),
 			(COALESCE(BOOL_OR(f.is_in_kev), false) OR BOOL_OR(v.cisa_kev_date_added IS NOT NULL)) as cisa_kev,
 			%s
 		FROM findings f
@@ -315,6 +341,111 @@ func (r *FindingRepository) groupByCVE(
 	return pagination.NewResult(groups, total, page), nil
 }
 
+// groupByRule groups findings by the scanner's rule: the nuclei template, the
+// semgrep or CodeQL rule, the Trivy or Checkov check, the secret rule, the
+// Tenable plugin. Unlike the CVE grouping it covers issues that have no CVE,
+// so "the same template on 40 hosts" or "the same check on 30 buckets" is one
+// row (RFC-044 P0; the definition catalog of RFC-044 replaces it later).
+// Findings without a rule_id are not grouped. The label is the rule name when
+// one was stored, else the first title.
+func (r *FindingRepository) groupByRule(
+	ctx context.Context, tenantID shared.ID,
+	filter vulnerability.FindingFilter, page pagination.Pagination,
+) (pagination.Result[*vulnerability.FindingGroup], error) {
+	filterWhere, filterArgs := buildFilterWhere(filter, 2)
+	extraWhere := ""
+	if filterWhere != "" {
+		extraWhere = "AND " + filterWhere
+	}
+	const scope = `f.tenant_id = $1 AND f.rule_id IS NOT NULL AND f.rule_id <> '' AND f.source != 'pentest'`
+
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(DISTINCT f.rule_id)
+		FROM findings f
+		WHERE %s %s
+	`, scope, extraWhere)
+	countArgs := append([]any{tenantID.String()}, filterArgs...)
+	var total int64
+	if err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("count group by rule: %w", err)
+	}
+
+	nextArg := len(filterArgs) + 2
+	query := fmt.Sprintf(`
+		SELECT
+			f.rule_id as group_key,
+			COALESCE(MAX(NULLIF(f.rule_name, '')), MIN(f.title), f.rule_id) as label,
+			(ARRAY['critical','high','medium','low','info'])[MIN(%s)] as severity,
+			ARRAY_AGG(DISTINCT LOWER(f.tool_name)) FILTER (WHERE f.tool_name IS NOT NULL AND f.tool_name <> '') as tools,
+			ARRAY_AGG(DISTINCT f.finding_type) FILTER (WHERE f.finding_type IS NOT NULL) as finding_types,
+			COUNT(DISTINCT f.cve_id) as cves,
+			%s
+		FROM findings f
+		WHERE %s %s
+		GROUP BY f.rule_id
+		ORDER BY
+			MIN(%s),
+			COUNT(DISTINCT f.asset_id) DESC,
+			f.rule_id
+		LIMIT $%d OFFSET $%d
+	`, findingSeverityRank, statusCountCols(), scope, extraWhere, findingSeverityRank, nextArg, nextArg+1)
+
+	args := make([]any, 0, len(countArgs)+2)
+	args = append(args, countArgs...)
+	args = append(args, page.Limit(), page.Offset())
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("group by rule: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	groups := make([]*vulnerability.FindingGroup, 0)
+	for rows.Next() {
+		var (
+			groupKey, label, severity      string
+			tools, findingTypes            []string
+			cves                           int
+			total, open, ip, fa, resolved  int
+			affectedAssets, resolvedAssets int
+		)
+		if err := rows.Scan(
+			&groupKey, &label, &severity, pq.Array(&tools), pq.Array(&findingTypes), &cves,
+			&total, &open, &ip, &fa, &resolved,
+			&affectedAssets, &resolvedAssets,
+		); err != nil {
+			return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("scan group by rule: %w", err)
+		}
+
+		meta := map[string]any{"cve_count": cves}
+		if len(tools) > 0 {
+			meta["tools"] = tools
+		}
+		if len(findingTypes) > 0 {
+			meta["finding_types"] = findingTypes
+		}
+		pct := float64(0)
+		if total > 0 {
+			pct = float64(resolved) / float64(total) * 100
+		}
+		groups = append(groups, &vulnerability.FindingGroup{
+			GroupKey:  groupKey,
+			GroupType: "rule",
+			Label:     label,
+			Severity:  severity,
+			Metadata:  meta,
+			Stats: vulnerability.FindingGroupStats{
+				Total: total, Open: open, InProgress: ip, FixApplied: fa,
+				Resolved: resolved, AffectedAssets: affectedAssets,
+				ResolvedAssets: resolvedAssets, ProgressPct: pct,
+			},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("rows group by rule: %w", err)
+	}
+	return pagination.NewResult(groups, total, page), nil
+}
+
 func (r *FindingRepository) groupByAsset(
 	ctx context.Context, tenantID shared.ID,
 	filter vulnerability.FindingFilter, page pagination.Pagination,
@@ -346,7 +477,7 @@ func (r *FindingRepository) groupByAsset(
 			%s
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
-		LEFT JOIN users u ON u.id = a.owner_id
+		LEFT JOIN users u ON u.id = `+primaryUserOwnerSQL("a.id")+`
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 		GROUP BY a.id, a.name, a.asset_type, a.criticality, u.name
 		ORDER BY COUNT(*) DESC
@@ -415,9 +546,10 @@ func (r *FindingRepository) groupByOwner(
 	}
 
 	countQuery := fmt.Sprintf(`
-		SELECT COUNT(DISTINCT COALESCE(a.owner_id::text, 'unassigned'))
+		SELECT COUNT(DISTINCT COALESCE(po.user_id::text, 'unassigned'))
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
+		LEFT JOIN LATERAL (SELECT `+primaryUserOwnerSQL("a.id")+` AS user_id) po ON TRUE
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
 	`, extraWhere)
 	countArgs := append([]any{tenantID.String()}, filterArgs...)
@@ -429,15 +561,16 @@ func (r *FindingRepository) groupByOwner(
 	nextArg := len(filterArgs) + 2
 	query := fmt.Sprintf(`
 		SELECT
-			COALESCE(a.owner_id::text, 'unassigned') as group_key,
+			COALESCE(po.user_id::text, 'unassigned') as group_key,
 			COALESCE(u.name, 'Unassigned') as label,
 			COALESCE(u.email, '') as email,
 			%s
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id
-		LEFT JOIN users u ON u.id = a.owner_id
+		LEFT JOIN LATERAL (SELECT `+primaryUserOwnerSQL("a.id")+` AS user_id) po ON TRUE
+		LEFT JOIN users u ON u.id = po.user_id
 		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
-		GROUP BY a.owner_id, u.name, u.email
+		GROUP BY po.user_id, u.name, u.email
 		ORDER BY COUNT(*) DESC
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
@@ -511,13 +644,14 @@ func (r *FindingRepository) groupByComponent(
 	query := fmt.Sprintf(`
 		SELECT
 			c.id::text as group_key,
-			c.name || '@' || c.version as label,
-			c.ecosystem as ecosystem,
+			p.name || '@' || c.raw as label,
+			p.purl_type as ecosystem,
 			%s
 		FROM findings f
-		JOIN components c ON c.id = f.component_id
+		JOIN software_versions c ON c.id = f.component_id
+		JOIN software_products p ON p.id = c.product_id
 		WHERE f.tenant_id = $1 AND f.component_id IS NOT NULL AND f.source != 'pentest' %s
-		GROUP BY c.id, c.name, c.version, c.ecosystem
+		GROUP BY c.id, p.name, c.raw, p.purl_type
 		ORDER BY COUNT(*) DESC
 		LIMIT $%d OFFSET $%d
 	`, statusCountCols(), extraWhere, nextArg, nextArg+1)
@@ -573,7 +707,7 @@ func (r *FindingRepository) groupByField(
 	field string, filter vulnerability.FindingFilter, page pagination.Pagination,
 ) (pagination.Result[*vulnerability.FindingGroup], error) {
 	// Whitelist field names to prevent SQL injection
-	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true}
+	allowedFields := map[string]bool{"severity": true, "source": true, "finding_type": true, "family": true}
 	if !allowedFields[field] {
 		return pagination.Result[*vulnerability.FindingGroup]{}, fmt.Errorf("invalid group field: %s", field)
 	}
@@ -582,6 +716,10 @@ func (r *FindingRepository) groupByField(
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
+	}
+	if field == "family" {
+		// Findings without a family form no group (like rule_id and cve_id).
+		extraWhere += " AND f.family IS NOT NULL AND f.family <> ''"
 	}
 
 	countQuery := fmt.Sprintf(`
@@ -654,9 +792,13 @@ func (r *FindingRepository) groupByField(
 func (r *FindingRepository) BulkUpdateStatusByFilter(
 	ctx context.Context, tenantID shared.ID,
 	filter vulnerability.FindingFilter, status vulnerability.FindingStatus,
-	resolution string, resolvedBy *shared.ID,
+	resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod,
 ) (int64, error) {
-	filterWhere, filterArgs := buildFilterWhere(filter, 5)
+	methodArg, err := resolutionMethodArg(status, method)
+	if err != nil {
+		return 0, err
+	}
+	filterWhere, filterArgs := buildFilterWhere(filter, 7)
 	extraWhere := ""
 	if filterWhere != "" {
 		extraWhere = "AND " + filterWhere
@@ -672,11 +814,14 @@ func (r *FindingRepository) BulkUpdateStatusByFilter(
 
 	query := fmt.Sprintf(`
 		UPDATE findings f
-		SET status = $2, resolution = $3, resolved_by = $4, resolved_at = %s, updated_at = NOW()
-		WHERE f.tenant_id = $1 AND f.source != 'pentest' %s
+		SET status = $2, resolution = $3, resolved_by = $4, resolution_method = $5, resolved_at = %s, updated_at = NOW()
+		WHERE f.tenant_id = $1 AND f.source != 'pentest' AND f.status = ANY($6) %s
 	`, resolvedAt, extraWhere)
 
-	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy)}, filterArgs...)
+	// $6: the statuses a person may move a finding from to status (the
+	// lifecycle); a matching finding in any other status is left alone.
+	args := append([]any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
+		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}, filterArgs...)
 
 	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {

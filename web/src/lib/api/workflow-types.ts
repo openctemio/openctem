@@ -4,6 +4,7 @@
  * TypeScript types for Automation Workflows
  * Workflows are event-driven automation pipelines with visual graph builder.
  */
+import type { SeverityLevel } from '@/lib/severity'
 
 // ============================================
 // NODE TYPES
@@ -23,17 +24,34 @@ export const WORKFLOW_NODE_TYPE_LABELS: Record<WorkflowNodeType, string> = {
 // TRIGGER TYPES
 // ============================================
 
+/**
+ * Trigger types a picker may offer: the ones the platform actually fires.
+ *
+ * `schedule`, `finding_age`, `finding_updated` and `webhook` are NOT here:
+ * nothing fires them (no scheduler, age sweep, finding update hook or inbound
+ * webhook route), so the API
+ * refuses to create, edit or activate a workflow that uses them (400). They
+ * stay in {@link WORKFLOW_UNSUPPORTED_TRIGGER_TYPES} so stored workflows still
+ * render, flagged.
+ */
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
-  'schedule',
   'finding_created',
-  'finding_updated',
-  'finding_age',
   'asset_discovered',
   'scan_completed',
+  'finding_status_changed',
+] as const
+
+/** Stored-only trigger types: readable, never offered, refused by the API. */
+export const WORKFLOW_UNSUPPORTED_TRIGGER_TYPES = [
+  'schedule',
+  'finding_age',
+  'finding_updated',
   'webhook',
 ] as const
-export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number]
+
+export type WorkflowTriggerType =
+  (typeof WORKFLOW_TRIGGER_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)[number]
 
 export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
   manual: 'Manual',
@@ -44,27 +62,44 @@ export const WORKFLOW_TRIGGER_LABELS: Record<WorkflowTriggerType, string> = {
   asset_discovered: 'Asset Discovered',
   scan_completed: 'Scan Completed',
   webhook: 'Webhook',
+  finding_status_changed: 'Finding Status Changed',
 }
 
 // ============================================
 // ACTION TYPES
 // ============================================
 
+/**
+ * Action types a picker may offer: the ones the platform actually executes.
+ *
+ * `assign_team` and `update_priority` are NOT here: they have no backing
+ * service and fail every run, `run_script` is disabled (no sandbox), and
+ * `trigger_pipeline` is refused by design (it ran a scan workflow outside any
+ * scan; an automation runs a saved scan through `trigger_scan`), so the API
+ * refuses them (400). They stay in
+ * {@link WORKFLOW_UNSUPPORTED_ACTION_TYPES} so stored workflows still render.
+ */
 export const WORKFLOW_ACTION_TYPES = [
   'assign_user',
-  'assign_team',
-  'update_priority',
   'update_status',
   'add_tags',
   'remove_tags',
   'create_ticket',
   'update_ticket',
-  'trigger_pipeline',
   'trigger_scan',
   'http_request',
-  'run_script',
 ] as const
-export type WorkflowActionType = (typeof WORKFLOW_ACTION_TYPES)[number]
+
+/** Stored-only action types: readable, never offered, refused by the API. */
+export const WORKFLOW_UNSUPPORTED_ACTION_TYPES = [
+  'assign_team',
+  'update_priority',
+  'run_script',
+  'trigger_pipeline',
+] as const
+
+export type WorkflowActionType =
+  (typeof WORKFLOW_ACTION_TYPES)[number] | (typeof WORKFLOW_UNSUPPORTED_ACTION_TYPES)[number]
 
 export const WORKFLOW_ACTION_LABELS: Record<WorkflowActionType, string> = {
   assign_user: 'Assign User',
@@ -148,8 +183,8 @@ export interface WorkflowUIPosition {
  * Filters which findings should trigger this workflow.
  */
 export interface FindingCreatedTriggerConfig {
-  /** Filter by severity levels (critical, high, medium, low) */
-  severity_filter?: Array<'critical' | 'high' | 'medium' | 'low'>
+  /** Filter by severity levels (critical, high, medium, low, info) */
+  severity_filter?: SeverityLevel[]
   /** Filter by tool names (nuclei, semgrep, etc.) */
   tool_filter?: string[]
   /** Filter by finding source codes (sast, dast, pentest, bug_bounty, etc.) */
@@ -170,29 +205,6 @@ export interface FindingUpdatedTriggerConfig {
 }
 
 /**
- * Configuration for finding_age trigger.
- * Triggers when findings exceed a certain age.
- */
-export interface FindingAgeTriggerConfig {
-  /** Age in days */
-  age_days: number
-  /** Filter by severity levels */
-  severity_filter?: Array<'critical' | 'high' | 'medium' | 'low'>
-  /** Filter by finding source codes */
-  source_filter?: string[]
-}
-
-/**
- * Configuration for schedule trigger.
- */
-export interface ScheduleTriggerConfig {
-  /** Cron expression */
-  cron_expression: string
-  /** Timezone (e.g., 'America/New_York') */
-  timezone?: string
-}
-
-/**
  * Configuration for asset_discovered trigger.
  */
 export interface AssetDiscoveredTriggerConfig {
@@ -204,10 +216,11 @@ export interface AssetDiscoveredTriggerConfig {
  * Configuration for scan_completed trigger.
  */
 export interface ScanCompletedTriggerConfig {
-  /** Filter by scan types */
-  scan_type_filter?: string[]
-  /** Filter by scan status */
-  status_filter?: string[]
+  /**
+   * Scan run outcomes the automation runs on. Without it, only completed
+   * runs fire it (an unknown outcome is refused on save).
+   */
+  status_filter?: Array<'completed' | 'partial' | 'failed' | 'timeout' | 'canceled'>
 }
 
 /**
@@ -230,8 +243,6 @@ export interface WorkflowNodeConfig {
   trigger_config?:
     | FindingCreatedTriggerConfig
     | FindingUpdatedTriggerConfig
-    | FindingAgeTriggerConfig
-    | ScheduleTriggerConfig
     | AssetDiscoveredTriggerConfig
     | ScanCompletedTriggerConfig
     | WebhookTriggerConfig
@@ -301,6 +312,12 @@ export interface Workflow {
   created_by?: string
   created_at: string
   updated_at: string
+  /**
+   * Trigger/action types this workflow uses that the platform does not
+   * execute, as "trigger:<type>" / "action:<type>". Set by the API when the
+   * graph is loaded; such a workflow cannot be activated or saved as is.
+   */
+  unsupported_features?: string[]
 }
 
 // ============================================
@@ -455,4 +472,46 @@ export interface WorkflowStats {
   failed_runs: number
   pending_runs: number
   running_runs: number
+}
+
+// ============================================
+// UNSUPPORTED FEATURES
+// ============================================
+
+const UNSUPPORTED_TRIGGERS: ReadonlySet<string> = new Set(WORKFLOW_UNSUPPORTED_TRIGGER_TYPES)
+const UNSUPPORTED_ACTIONS: ReadonlySet<string> = new Set(WORKFLOW_UNSUPPORTED_ACTION_TYPES)
+
+/**
+ * The unsupported trigger/action types a workflow uses ("trigger:schedule",
+ * "action:assign_team"). Prefers the API's `unsupported_features`; falls back
+ * to reading the loaded nodes, so a row without the field still flags.
+ */
+export function getUnsupportedWorkflowFeatures(
+  workflow: Pick<Workflow, 'unsupported_features' | 'nodes'>
+): string[] {
+  if (workflow.unsupported_features && workflow.unsupported_features.length > 0) {
+    return workflow.unsupported_features
+  }
+  const found: string[] = []
+  for (const node of workflow.nodes ?? []) {
+    const trigger = node.config?.trigger_type
+    const action = node.config?.action_type
+    let feature = ''
+    if (trigger && UNSUPPORTED_TRIGGERS.has(trigger)) feature = `trigger:${trigger}`
+    else if (action && UNSUPPORTED_ACTIONS.has(action)) feature = `action:${action}`
+    if (feature && !found.includes(feature)) found.push(feature)
+  }
+  return found
+}
+
+/** "action:assign_team" -> "Assign Team action". Unknown values pass through. */
+export function formatUnsupportedWorkflowFeature(feature: string): string {
+  const [kind, type = ''] = feature.split(':', 2)
+  if (kind === 'trigger' && type in WORKFLOW_TRIGGER_LABELS) {
+    return `${WORKFLOW_TRIGGER_LABELS[type as WorkflowTriggerType]} trigger`
+  }
+  if (kind === 'action' && type in WORKFLOW_ACTION_LABELS) {
+    return `${WORKFLOW_ACTION_LABELS[type as WorkflowActionType]} action`
+  }
+  return feature
 }

@@ -1,6 +1,6 @@
 # Asset Source Priority & Field Attribution
 
-> **Status**: Draft — pending customer review | **Origin**: RFC-003 (2026-04-23)
+> **Status**: **Withdrawn** (2026-10-05): never wired. No ingest path called the priority gate and nothing wrote `data_sources`, so the settings it added configured a no-op; the API, code and tables were removed (migrations `drop_asset_sources`, `drop_data_sources`). Kept as a record of the design. | **Origin**: RFC-003 (2026-04-23)
 >
 > **Target release**: v0.3.0 (Phase 1)
 >
@@ -10,7 +10,7 @@
 
 ## Problem
 
-A single real-world asset is observed by multiple data sources — Nessus scan, internal agent, cloud API, manual entry. Each source reports overlapping but conflicting information (OS, severity, owner, tags). Today every re-ingest deep-merges the new payload into `assets.properties`: on duplicate keys **the last writer wins**. Customers with a trusted source (e.g. CMDB or Nessus) want that source to be the authoritative answer for fields they care about — a lower-trust source that happens to run afterwards must not clobber it.
+A single real-world asset is observed by multiple data sources — Nessus scan, internal sensor, cloud API, manual entry. Each source reports overlapping but conflicting information (OS, severity, owner, tags). Today every re-ingest deep-merges the new payload into `assets.properties`: on duplicate keys **the last writer wins**. Customers with a trusted source (e.g. CMDB or Nessus) want that source to be the authoritative answer for fields they care about — a lower-trust source that happens to run afterwards must not clobber it.
 
 Concrete customer ask:
 

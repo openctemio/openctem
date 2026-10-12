@@ -52,6 +52,7 @@ import {
   formatSyncTime,
   getSourceDisplayUrl,
 } from '@/lib/api/template-source-types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const SOURCE_TYPE_ICONS: Record<string, React.ElementType> = {
   git: GitBranch,
@@ -81,6 +82,7 @@ function SyncStatusBadge({ status }: { status?: SyncStatus }) {
 }
 
 export function TemplateSourcesSection() {
+  const { t } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -241,7 +243,7 @@ export function TemplateSourcesSection() {
         cell: ({ row }) => {
           const source = row.original
           return (
-            <Can permission={Permission.CredentialsWrite}>
+            <Can permission={Permission.TemplateSourcesWrite}>
               <DataTableRowActions
                 actions={[
                   {
@@ -249,20 +251,20 @@ export function TemplateSourcesSection() {
                     icon: RefreshCw,
                     onClick: () => handleSync(source),
                     disabled: isSyncing || !source.is_enabled,
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesWrite,
                   },
                   {
                     label: source.is_enabled ? 'Disable' : 'Enable',
                     icon: source.is_enabled ? Pause : Play,
                     onClick: () => handleToggleEnabled(source),
                     disabled: isEnabling || isDisabling,
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesWrite,
                   },
                   {
                     label: 'Edit',
                     icon: Pencil,
                     onClick: () => handleEditSource(source),
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesWrite,
                   },
                   {
                     label: 'Delete',
@@ -270,7 +272,7 @@ export function TemplateSourcesSection() {
                     onClick: () => handleDeleteClick(source),
                     destructive: true,
                     separatorBefore: true,
-                    permission: Permission.CredentialsWrite,
+                    permission: Permission.TemplateSourcesDelete,
                   },
                 ]}
               />
@@ -302,7 +304,7 @@ export function TemplateSourcesSection() {
         title="No template sources"
         description="Add a source to sync custom templates from Git, S3, or HTTP."
         action={
-          <Can permission={Permission.CredentialsWrite}>
+          <Can permission={Permission.TemplateSourcesWrite}>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="h-4 w-4" />
               Add source
@@ -330,7 +332,7 @@ export function TemplateSourcesSection() {
         title="Template sources"
         description="External Git, S3 and HTTP sources that custom scanner templates are synced from."
       >
-        <Can permission={Permission.CredentialsWrite}>
+        <Can permission={Permission.TemplateSourcesWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             Add source
@@ -360,14 +362,14 @@ export function TemplateSourcesSection() {
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete template source"
-        desc={
-          <>
-            Are you sure you want to delete <strong>{selectedSource?.name}</strong>? This will also
-            remove all synced templates from this source. This action cannot be undone.
-          </>
-        }
-        confirmText="Delete"
+        title={t('confirm.templateSource.deleteTitle', 'Delete the template source {name}?', {
+          name: selectedSource?.name ?? '',
+        })}
+        desc={t(
+          'confirm.templateSource.deleteDesc',
+          'Every template synced from it is removed too. This cannot be undone.'
+        )}
+        confirmText={t('confirm.delete', 'Delete')}
         destructive
         isLoading={isDeleting}
         handleConfirm={handleDeleteConfirm}

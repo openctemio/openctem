@@ -217,8 +217,10 @@ func TestNewAuditChainVerifyController_DefaultsApplied(t *testing.T) {
 	if c.config.Interval <= 0 {
 		t.Errorf("interval default missing; got %v", c.config.Interval)
 	}
-	if c.config.PerTenantLimit <= 0 {
-		t.Errorf("per-tenant limit default missing; got %d", c.config.PerTenantLimit)
+	// 0 = walk the whole chain. A default cap left every entry past it
+	// unverified forever.
+	if c.config.PerTenantLimit != 0 {
+		t.Errorf("per-tenant limit must default to 0 (whole chain); got %d", c.config.PerTenantLimit)
 	}
 	if c.logger == nil {
 		t.Error("logger default missing")

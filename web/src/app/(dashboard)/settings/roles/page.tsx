@@ -18,14 +18,6 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -33,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import {
   Plus,
   Shield,
@@ -53,10 +45,10 @@ import {
   CreateRoleSheet,
   RoleDetailSheet,
   EditRoleSheet,
-  filterPermissionsByTenantModules,
 } from '@/features/access-control'
-import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 
 type TypeFilter = 'all' | 'system' | 'custom'
 
@@ -75,20 +67,13 @@ const formatDate = (dateString: string) => {
 }
 
 export default function RolesPage() {
+  const { t } = useTranslation()
   const { mutate } = useSWRConfig()
 
   // API Hooks
   const { roles, isLoading, isError, mutate: mutateRoles } = useRoles()
-  const { moduleIds: enabledModuleIds } = useTenantModules()
-
-  // Helper to get filtered permission count based on tenant's modules
-  const getFilteredPermissionCount = useCallback(
-    (role: Role) => {
-      if (!enabledModuleIds.length) return role.permission_count
-      return filterPermissionsByTenantModules(role.permissions, enabledModuleIds).length
-    },
-    [enabledModuleIds]
-  )
+  // A role grants every permission it holds, whatever the modules: count all.
+  const getFilteredPermissionCount = useCallback((role: Role) => role.permission_count, [])
 
   // UI State
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
@@ -234,7 +219,7 @@ export default function RolesPage() {
                 {
                   label: 'Edit role',
                   icon: Pencil,
-                  permission: Permission.RolesWrite,
+                  route: 'PUT /api/v1/roles/{roleId}' as const,
                   onClick: () => setEditRole(role),
                 },
                 {
@@ -242,7 +227,7 @@ export default function RolesPage() {
                   icon: Trash2,
                   destructive: true,
                   separatorBefore: true,
-                  permission: Permission.RolesDelete,
+                  route: 'DELETE /api/v1/roles/{roleId}' as const,
                   onClick: () => {
                     setRoleToDelete(role)
                     setDeleteDialogOpen(true)
@@ -288,7 +273,7 @@ export default function RolesPage() {
           title="Roles"
           description="Roles bundle permissions; a user can hold several roles."
         >
-          <Can permission={Permission.RolesWrite}>
+          <Can route="POST /api/v1/roles">
             <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
               Create role
@@ -352,7 +337,7 @@ export default function RolesPage() {
                   title="No roles yet"
                   description="Create a role to grant a set of permissions to users."
                   action={
-                    <Can permission={Permission.RolesWrite}>
+                    <Can route="POST /api/v1/roles">
                       <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
                         <Plus className="me-2 h-4 w-4" />
                         Create role
@@ -441,37 +426,33 @@ export default function RolesPage() {
       />
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete role</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete the role &quot;{roleToDelete?.name}&quot;? This action
-              cannot be undone. Users with this role will lose its permissions.
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false)
-                setRoleToDelete(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteRole} disabled={isDeleting}>
-              {isDeleting ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="me-2 h-4 w-4" />
-              )}
-              Delete role
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) setRoleToDelete(null)
+        }}
+        destructive
+        title={t('confirm.role.deleteTitle', 'Delete the role "{name}"?', {
+          name: roleToDelete?.name ?? '',
+        })}
+        desc={t(
+          'confirm.role.deleteDesc',
+          'Members who have it lose its permissions at once, unless another role grants them. This cannot be undone.'
+        )}
+        confirmText={
+          <>
+            {isDeleting ? (
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="me-2 h-4 w-4" />
+            )}
+            {t('confirm.role.delete', 'Delete role')}
+          </>
+        }
+        isLoading={isDeleting}
+        handleConfirm={handleDeleteRole}
+      />
     </>
   )
 }

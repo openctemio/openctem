@@ -41,7 +41,6 @@ type SecurityNoticeData struct {
 	OccurredAt string
 	IPAddress  string
 	AppName    string
-	SupportURL string
 }
 
 // VerifyEmailData holds data for the email verification template.
@@ -66,21 +65,19 @@ type PasswordResetData struct {
 
 // PasswordChangedData holds data for the password changed notification.
 type PasswordChangedData struct {
-	UserName   string
-	Email      string
-	ChangedAt  string
-	IPAddress  string
-	AppName    string
-	SupportURL string
+	UserName  string
+	Email     string
+	ChangedAt string
+	IPAddress string
+	AppName   string
 }
 
 // WelcomeData holds data for the welcome email template.
 type WelcomeData struct {
-	UserName   string
-	Email      string
-	LoginURL   string
-	AppName    string
-	SupportURL string
+	UserName string
+	Email    string
+	LoginURL string
+	AppName  string
 }
 
 // TeamInvitationData holds data for the team invitation template.
@@ -243,7 +240,7 @@ const securityNoticeTemplate = `<!DOCTYPE html>
 
         <div class="warning">
             <strong>Wasn't you?</strong><br>
-            Change your password and sign out all other sessions from your account settings, then contact your administrator{{if .SupportURL}} or <a href="{{.SupportURL}}">support</a>{{end}}.
+            Change your password and sign out all other sessions from your account settings, then contact your administrator.
         </div>
 
         <div class="footer">
@@ -406,7 +403,7 @@ const passwordChangedTemplate = `<!DOCTYPE html>
 
         <div class="warning">
             <strong>Didn't make this change?</strong><br>
-            If you didn't change your password, your account may have been compromised. Please contact support immediately{{if .SupportURL}} at <a href="{{.SupportURL}}">{{.SupportURL}}</a>{{end}}.
+            If you didn't change your password, your account may have been compromised. Please contact your administrator immediately.
         </div>
 
         <div class="footer">
@@ -461,7 +458,7 @@ const welcomeTemplate = `<!DOCTYPE html>
             <a href="{{.LoginURL}}" class="button">Go to Dashboard</a>
         </div>
 
-        <p>Need help getting started? Check out our documentation or contact support{{if .SupportURL}} at <a href="{{.SupportURL}}">{{.SupportURL}}</a>{{end}}.</p>
+        <p>Need help getting started? Read the documentation at <a href="https://docs.openctem.io/">docs.openctem.io</a> or contact your administrator.</p>
 
         <div class="footer">
             <p>This email was sent to {{.Email}}</p>

@@ -87,10 +87,10 @@ export const SUPPRESSION_STATUS_LABELS: Record<SuppressionStatus, string> = {
  * outside the severity-color governance guard's scope.
  */
 export const SUPPRESSION_STATUS_BADGE: Record<SuppressionStatus, string> = {
-  pending: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30', // palette-ok: approval-status accent lookup, no semantic token for these states
-  approved: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30', // palette-ok: approval-status accent lookup
-  rejected: 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30', // palette-ok: approval-status accent lookup
-  expired: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30', // palette-ok: approval-status accent lookup
+  pending: 'border-warning/40 bg-warning/10 text-warning',
+  approved: 'border-success/30 bg-success/10 text-success',
+  rejected: 'border-destructive/30 bg-destructive/10 text-destructive',
+  expired: 'border-border bg-muted text-muted-foreground',
 }
 
 export const SUPPRESSION_TYPE_BADGE: Record<SuppressionType, string> = {

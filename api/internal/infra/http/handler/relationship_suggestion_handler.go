@@ -9,25 +9,24 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/asset"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/relationship"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 // RelationshipSuggestionHandler handles relationship suggestion HTTP requests.
 type RelationshipSuggestionHandler struct {
-	service        *app.RelationshipSuggestionService
+	service        *asset.RelationshipSuggestionService
 	logger         *logger.Logger
 	generateMu     sync.Mutex
 	lastGenerateAt map[string]time.Time // tenant_id -> last generate time
 }
 
 // NewRelationshipSuggestionHandler creates a new RelationshipSuggestionHandler.
-func NewRelationshipSuggestionHandler(svc *app.RelationshipSuggestionService, log *logger.Logger) *RelationshipSuggestionHandler {
+func NewRelationshipSuggestionHandler(svc *asset.RelationshipSuggestionService, log *logger.Logger) *RelationshipSuggestionHandler {
 	return &RelationshipSuggestionHandler{
 		service:        svc,
 		logger:         log,
@@ -66,10 +65,10 @@ func (h *RelationshipSuggestionHandler) List(w http.ResponseWriter, r *http.Requ
 	tenantID := middleware.MustGetTenantID(r.Context())
 
 	query := r.URL.Query()
-	page := pagination.New(
-		parseQueryInt(query.Get("page"), 1),
-		parseQueryIntBounded(query.Get("per_page"), 20, 1, MaxPerPage),
-	)
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
 
 	search := query.Get("search")
 	result, err := h.service.ListPending(r.Context(), tenantID, search, page)
@@ -290,6 +289,8 @@ func (h *RelationshipSuggestionHandler) handleServiceError(w http.ResponseWriter
 		apierror.Conflict("Suggestion already exists").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.Forbidden(err.Error()).WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/pkg/domain/findingsource"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -100,8 +100,8 @@ func srcCacheMakeSource(code, name string, cat *findingsource.Category) *finding
 
 // srcCacheMakeService constructs a FindingSourceCacheService with nil Redis
 // (cache-disabled / graceful degradation mode) so tests don't need a real Redis.
-func srcCacheMakeService(repo findingsource.Repository) *app.FindingSourceCacheService {
-	svc, err := app.NewFindingSourceCacheService(nil, repo, logger.NewNop())
+func srcCacheMakeService(repo findingsource.Repository) *finding.FindingSourceCacheService {
+	svc, err := finding.NewFindingSourceCacheService(nil, repo, logger.NewNop())
 	if err != nil {
 		panic("unexpected error creating FindingSourceCacheService: " + err.Error())
 	}
@@ -116,7 +116,7 @@ func TestSrcCache_New_NilRedis_ReturnsService(t *testing.T) {
 	t.Parallel()
 
 	repo := newSrcCacheMockRepo()
-	svc, err := app.NewFindingSourceCacheService(nil, repo, logger.NewNop())
+	svc, err := finding.NewFindingSourceCacheService(nil, repo, logger.NewNop())
 	if err != nil {
 		t.Fatalf("expected no error with nil redis, got %v", err)
 	}

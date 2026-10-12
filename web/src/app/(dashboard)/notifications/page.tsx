@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
-import Link from 'next/link'
+import { useCallback, useMemo, useRef } from 'react'
+import { useListParams } from '@/hooks/use-list-params'
+import Link from '@/components/link'
 import { formatRelative } from '@/lib/format-date'
 import {
   AlertTriangle,
@@ -16,6 +17,10 @@ import {
   Settings,
 } from 'lucide-react'
 import { Main } from '@/components/layout'
+import { useWebSocket } from '@/context/websocket-provider'
+import { useTenant } from '@/context/tenant-provider'
+import { useDisplayUser } from '@/hooks/use-display-user'
+import { useUserNotificationChannel } from '@/hooks/use-websocket'
 import { PageHeader } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -42,6 +47,9 @@ import {
   NOTIFICATION_TYPE_ICONS,
   NOTIFICATION_TYPE_LABELS,
 } from '@/features/notifications/lib/notification-types'
+import { safeHref } from '@/lib/safe-href'
+import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
+import { useTranslation } from '@/context/i18n-provider'
 
 const severityColors: Record<string, string> = { ...SEVERITY_TEXT_COLORS }
 
@@ -125,10 +133,13 @@ function NotificationRow({
     !notification.is_read && 'border-primary/20 bg-primary/5'
   )
 
-  if (notification.url) {
+  // The target comes from the server; a stored javascript:/data: value must
+  // not become a link.
+  const href = safeHref(notification.url)
+  if (href) {
     return (
       <Link
-        href={notification.url}
+        href={href}
         className={cn(rowClassName, 'block')}
         onClick={handleMarkAsRead}
         aria-label={ariaLabel}
@@ -155,9 +166,15 @@ function NotificationRow({
 }
 
 export default function NotificationsPage() {
-  const [page, setPage] = useState(1)
-  const [severityFilter, setSeverityFilter] = useState<string>('all')
-  const [readFilter, setReadFilter] = useState<string>('all')
+  const { t } = useTranslation()
+  // The list lives in the URL (one list convention): page, severity, read.
+  const list = useListParams({
+    defaultPageSize: PER_PAGE,
+    filters: { severity: 'all', read: 'all' },
+  })
+  const { page, setPage } = list
+  const severityFilter = list.filters.severity
+  const readFilter = list.filters.read
 
   // Build server-side filters
   const filters = useMemo<NotificationListFilters>(() => {
@@ -168,9 +185,22 @@ export default function NotificationsPage() {
     return f
   }, [severityFilter, readFilter])
 
-  // The full list is on screen here, so keep it fresh while the page is open.
-  const { data, isLoading, error } = useNotificationsApi(page, PER_PAGE, filters, {
-    refreshInterval: 60000,
+  // The full list is on screen here, so keep it fresh while the page is open:
+  // refetch on each notification pushed over the WebSocket, and poll only while
+  // the socket is down.
+  const { isConnected } = useWebSocket()
+  const { currentTenant } = useTenant()
+  const user = useDisplayUser()
+  const { data, isLoading, error, mutate } = useNotificationsApi(page, PER_PAGE, filters, {
+    refreshInterval: isConnected ? 0 : 60000,
+  })
+  useUserNotificationChannel(currentTenant?.id, user?.id, {
+    onData: useCallback(
+      (event: Record<string, unknown>) => {
+        if (event?.type === 'notification') void mutate()
+      },
+      [mutate]
+    ),
   })
   const { data: unreadData } = useUnreadCountApi()
 
@@ -204,20 +234,14 @@ export default function NotificationsPage() {
   }, [])
 
   // Reset page when filters change
-  const handleSeverityChange = (value: string) => {
-    setSeverityFilter(value)
-    setPage(1)
-  }
+  const handleSeverityChange = (value: string) => list.setFilter('severity', value)
 
-  const handleReadFilterChange = (value: string) => {
-    setReadFilter(value)
-    setPage(1)
-  }
+  const handleReadFilterChange = (value: string) => list.setFilter('read', value)
 
   return (
     <Main>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <PageHeader title="Notifications" description="Manage your in-app notifications" />
+        <PageHeader title={t('settings.notifications.title', 'Notifications')} />
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={handleMarkAllAsRead}>
@@ -279,11 +303,11 @@ export default function NotificationsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All severities</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="low">Low</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
+            {SEVERITY_LEVELS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {SEVERITY_LABELS[s]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={readFilter} onValueChange={handleReadFilterChange}>
@@ -350,7 +374,7 @@ export default function NotificationsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage(Math.max(1, page - 1))}
               disabled={page <= 1}
             >
               <ChevronLeft className="h-4 w-4 me-1" />
@@ -359,7 +383,7 @@ export default function NotificationsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages}
             >
               Next

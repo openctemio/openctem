@@ -1,15 +1,17 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	outboxapp "github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -18,8 +20,35 @@ import (
 
 // OutboxHandler handles notification outbox operations for tenants.
 type OutboxHandler struct {
+	configAuditor
 	repo   outbox.OutboxRepository
 	logger *logger.Logger
+
+	// Private program names (RFC-065 §15.4): see programScrubber.
+	programScrubber
+}
+
+// scrubPrograms removes, from the title, body and metadata of each entry,
+// the names, handles and tags of private programs linked to its subject
+// that the caller is neither an owner nor a member of. An unknown decision
+// is an error: the caller answers 500 rather than show the entry.
+func (h *OutboxHandler) scrubPrograms(ctx context.Context, tenantID shared.ID, entries []*outbox.Outbox, items []OutboxEntryResponse) error {
+	for i, e := range entries {
+		d, allowed, ok, err := h.unreadable(ctx, tenantID, outboxapp.DeliverySubject(e.AggregateType(), e.AggregateID(), e.Metadata()))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		items[i].Title = d.ScrubFor(allowed, items[i].Title)
+		items[i].Body = d.ScrubFor(allowed, items[i].Body)
+		items[i].LastError = d.ScrubFor(allowed, items[i].LastError)
+		if items[i].Metadata != nil {
+			items[i].Metadata, _ = scrubValue(d, allowed, items[i].Metadata).(map[string]any)
+		}
+	}
+	return nil
 }
 
 // NewOutboxHandler creates a new OutboxHandler.
@@ -107,7 +136,7 @@ type OutboxStatsResponse struct {
 // @Produce json
 // @Param status query string false "Filter by status (pending, processing, completed, failed, dead)"
 // @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Page size" default(20)
+// @Param per_page query int false "Page size (max 100)" default(20)
 // @Success 200 {object} pagination.Result[OutboxEntryResponse]
 // @Failure 500 {object} apierror.Response
 // @Router /notification-outbox [get]
@@ -128,19 +157,11 @@ func (h *OutboxHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse pagination
-	page := 1
-	pageSize := 20
-	if p := r.URL.Query().Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
-	}
+	page, pageSize := paging.Page, paging.PerPage
 
 	// Build filter - always scoped to current tenant
 	filter := outbox.OutboxFilter{
@@ -164,6 +185,11 @@ func (h *OutboxHandler) List(w http.ResponseWriter, r *http.Request) {
 	items := make([]OutboxEntryResponse, 0, len(result.Data))
 	for _, o := range result.Data {
 		items = append(items, outboxToResponse(o))
+	}
+	if err := h.scrubPrograms(ctx, tenantID, result.Data, items); err != nil {
+		h.logger.Error("failed to scrub outbox entries", "error", err, "tenant_id", tenantIDStr)
+		apierror.InternalError(err).WriteJSON(w)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -272,8 +298,7 @@ func (h *OutboxHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(outboxToResponse(entry))
+	h.writeEntry(w, r, tenantID, entry)
 }
 
 // Retry godoc
@@ -345,8 +370,9 @@ func (h *OutboxHandler) Retry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("outbox entry reset for retry", "id", id, "tenant_id", tenantIDStr)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(outboxToResponse(entry))
+	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxRetried, auditdom.ResourceTypeNotificationOutbox, id, "",
+		nil, nil, auditdom.SeverityLow, "Notification delivery retried")
+	h.writeEntry(w, r, tenantID, entry)
 }
 
 // Delete godoc
@@ -413,5 +439,21 @@ func (h *OutboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("outbox entry deleted", "id", id, "tenant_id", tenantIDStr)
+	// A deleted entry is an alert that will never be delivered.
+	h.recordChange(r, h.logger, auditdom.ActionNotificationOutboxDeleted, auditdom.ResourceTypeNotificationOutbox, id, "",
+		nil, nil, auditdom.SeverityMedium, "Pending notification deleted")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeEntry writes one entry, with private programs the caller may not
+// read scrubbed.
+func (h *OutboxHandler) writeEntry(w http.ResponseWriter, r *http.Request, tenantID shared.ID, entry *outbox.Outbox) {
+	items := []OutboxEntryResponse{outboxToResponse(entry)}
+	if err := h.scrubPrograms(r.Context(), tenantID, []*outbox.Outbox{entry}, items); err != nil {
+		h.logger.Error("failed to scrub outbox entry", "error", err, "id", entry.ID().String())
+		apierror.InternalError(err).WriteJSON(w)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(items[0])
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -91,7 +92,6 @@ func TestRequireModule_NewlyGatedGroups(t *testing.T) {
 		moduledom.ModuleExposures,
 		moduledom.ModuleSuppressions,
 		moduledom.ModuleReports,
-		moduledom.ModuleIntegrations,
 		moduledom.ModuleIOCs,
 		moduledom.ModuleCompensatingControls,
 		moduledom.ModuleAttackerProfiles,
@@ -140,5 +140,137 @@ func TestRequireModule_BlocksDisabled(t *testing.T) {
 	g.RequireModule("compliance")(next).ServeHTTP(rec2, req)
 	if rec2.Code != http.StatusOK {
 		t.Errorf("enabled module should pass, got %d", rec2.Code)
+	}
+}
+
+// The refusal names the module and why, so a client can say "turned off by
+// your organization" instead of guessing from a bare 403.
+func TestRequireModule_ErrorNamesModuleAndReason(t *testing.T) {
+	g := NewModuleGate(&fakeDisabledProvider{disabled: map[string]bool{"pentest": true}}, time.Minute)
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).
+		WithContext(context.WithValue(context.Background(), TenantIDKey, "t1"))
+	g.RequireModule("pentest")(next).ServeHTTP(rec, req)
+
+	var body struct {
+		Code    string `json:"code"`
+		Details struct {
+			Module string `json:"module"`
+			Reason string `json:"reason"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	if rec.Code != http.StatusForbidden || body.Code != "MODULE_NOT_ENABLED" ||
+		body.Details.Module != "pentest" || body.Details.Reason != ModuleReasonDisabled {
+		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+type fakeStateProvider struct {
+	states map[string]string
+	calls  int
+}
+
+func (f *fakeStateProvider) TenantDisabledModules(context.Context, string) map[string]bool {
+	out := map[string]bool{}
+	for id := range f.states {
+		out[id] = true
+	}
+	return out
+}
+
+func (f *fakeStateProvider) TenantModuleStates(context.Context, string) map[string]string {
+	f.calls++
+	return f.states
+}
+
+// Each reason answers as the client should explain it: not in the plan,
+// turned off by the organization (403), or not checkable right now (503).
+func TestRequireModule_AnswersByReason(t *testing.T) {
+	p := &fakeStateProvider{states: map[string]string{
+		"pentest":    ModuleReasonNotEntitled,
+		"compliance": ModuleReasonDisabled,
+		"workflows":  ModuleReasonUnavailable,
+	}}
+	g := NewModuleGate(p, time.Minute)
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	req := httptest.NewRequest(http.MethodGet, "/x", nil).
+		WithContext(context.WithValue(context.Background(), TenantIDKey, "t1"))
+	for module, want := range map[string]struct {
+		code   int
+		reason string
+	}{
+		"pentest":    {http.StatusForbidden, ModuleReasonNotEntitled},
+		"compliance": {http.StatusForbidden, ModuleReasonDisabled},
+		"workflows":  {http.StatusServiceUnavailable, ModuleReasonUnavailable},
+		"reports":    {http.StatusOK, ""},
+	} {
+		rec := httptest.NewRecorder()
+		g.RequireModule(module)(next).ServeHTTP(rec, req)
+		if rec.Code != want.code {
+			t.Errorf("%s: %d, want %d", module, rec.Code, want.code)
+			continue
+		}
+		if want.reason == "" {
+			continue
+		}
+		var body struct {
+			Details ModuleNotEnabledDetails `json:"details"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if body.Details.Reason != want.reason || body.Details.Module != module {
+			t.Errorf("%s: details %+v", module, body.Details)
+		}
+	}
+}
+
+func TestModuleGate_InvalidateAll(t *testing.T) {
+	p := &fakeStateProvider{states: map[string]string{}}
+	g := NewModuleGate(p, time.Minute)
+	ctx := context.Background()
+	g.IsEnabled(ctx, "t1", "pentest")
+	g.IsEnabled(ctx, "t2", "pentest")
+	g.IsEnabled(ctx, "t1", "pentest")
+	if p.calls != 2 {
+		t.Fatalf("calls %d, want 2 (cached per tenant)", p.calls)
+	}
+	g.InvalidateAll()
+	g.IsEnabled(ctx, "t1", "pentest")
+	g.IsEnabled(ctx, "t2", "pentest")
+	if p.calls != 4 {
+		t.Fatalf("calls %d after InvalidateAll, want 4", p.calls)
+	}
+}
+
+// Read-only grace: reads pass, writes are refused with the reason.
+func TestRequireModule_ReadOnlyGrace(t *testing.T) {
+	g := NewModuleGate(&fakeStateProvider{states: map[string]string{"pentest": ModuleReasonReadOnlyGrace}}, time.Minute)
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	ctx := context.WithValue(context.Background(), TenantIDKey, "t1")
+	for method, want := range map[string]int{
+		http.MethodGet: http.StatusOK, http.MethodHead: http.StatusOK,
+		http.MethodPost: http.StatusForbidden, http.MethodPut: http.StatusForbidden,
+		http.MethodPatch: http.StatusForbidden, http.MethodDelete: http.StatusForbidden,
+	} {
+		rec := httptest.NewRecorder()
+		g.RequireModule("pentest")(next).ServeHTTP(rec, httptest.NewRequest(method, "/x", nil).WithContext(ctx))
+		if rec.Code != want {
+			t.Errorf("%s: %d, want %d", method, rec.Code, want)
+		}
+		if want == http.StatusForbidden {
+			var body struct {
+				Details ModuleNotEnabledDetails `json:"details"`
+			}
+			_ = json.Unmarshal(rec.Body.Bytes(), &body)
+			if body.Details.Reason != ModuleReasonReadOnlyGrace {
+				t.Errorf("%s: reason %q", method, body.Details.Reason)
+			}
+		}
+	}
+	if g.IsEnabled(context.Background(), "t1", "pentest") {
+		t.Error("IsEnabled (jobs, MCP) must treat a module in grace as off")
 	}
 }

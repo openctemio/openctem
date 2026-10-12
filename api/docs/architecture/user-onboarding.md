@@ -10,21 +10,136 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 |-----|-------------|------|
 | Organization admin creates the user | `POST /api/v1/tenants/{tenant}/users` | owner/admin of the organization |
 | New set-password link for a pending account | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | owner/admin; account unused and in this organization only |
-| Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner — see [First owner](#first-owner-platform-administrator) |
+| Platform admin creates the **first owner** of an organization with no owner | `POST /api/v1/admin/tenants/{tenantId}/users` | console session, ops_admin+ (audited); 409 once the organization has an owner, active or suspended — see [First owner](#first-owner-platform-administrator) |
+| Platform admin recovers an organization whose owners are all suspended | `POST /api/v1/admin/tenants/{tenantId}/users` with `"recovery": true` | console session, **super_admin** (403 otherwise); link emailed only; audited as `organization.owner_recovery` and at critical severity in the organization |
 | Platform admin creates an organization with a new owner | `POST /api/v1/admin/tenants` (`owner_email` without an account) | console session, ops_admin+ (audited) |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
-| Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/{token}/accept` | owner/admin to invite; the token + matching email to accept |
-| Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain + allowed domains |
-| Self-registration | `POST /api/v1/auth/register` | `AUTH_ALLOW_REGISTRATION=true` only (default false) |
+| Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
+| Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
+| Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
+
+## Sign-up policy (Console > System > Sign-up)
+
+Who may create an organization on this deployment is **one platform setting**,
+`signup_policy` in `platform_settings` (migration 001313), edited in the admin
+console:
+
+| Mode | Meaning |
+|------|---------|
+| `admin_only` (default) | Only a platform administrator creates organizations (console, `bootstrap-admin -org-*`). People sign in only to organizations that exist. |
+| `self_service` | Anyone signed in may create their own organization (create-first-team, `POST /tenants`). |
+
+Plus `request_access`: whether people who cannot sign up may ask for an
+organization (the request queue follows in its own change).
+
+- **Who reads it.** create-first-team, `POST /tenants` and
+  `GET /auth/providers` (`tenant_creation_mode`, which the web uses to offer
+  "create organization") read it per request (`signup.Service.Current`,
+  cached 15 s per replica).
+- **Fail-closed.** Nothing stored or a read error means `admin_only`.
+- **Seeding.** `TENANT_CREATION_MODE` seeds the first value at start-up when
+  no row exists (`source: environment`). After that the stored value wins and
+  the environment is ignored; the console shows where the value came from.
+- **Changing it.** `PUT /api/v1/admin/settings/signup` with the version that
+  was read (409 when another administrator saved since) needs a **super admin**
+  and a **fresh authenticator code** (`STEP_UP_REQUIRED` / 401 without or with
+  a wrong one). Every change writes a **critical** admin audit row
+  (`platform.signup_policy_changed`, before and after), a WARN line with
+  `alert=signup_policy_changed`, and emails every other active administrator.
+  Any administrator may read it (`GET`).
+- **No lock-out.** A mode change never touches existing organizations,
+  members, invitations or sessions; it decides only who may create a new
+  organization from then on.
+
+### Admission: one rule for every path
+
+Every path that would write an account or an organization asks one function,
+`signup.Admit` (`pkg/domain/signup/admit.go`), so the paths cannot drift:
+
+| Creating | Admitted when | Path |
+|----------|---------------|------|
+| an organization | the policy is `self_service` | create-first-team, `POST /tenants` |
+| an account | an organization's SSO admits the identity (JIT: auto-provision, DNS-verified SSO domain, allowed domains), in either mode | OIDC/SAML callbacks |
+| an account | a pending invitation is addressed to the email, in either mode | register with the invitation token; a social sign-in whose verified email has a pending invitation |
+| an account | the policy is `self_service` and the email is not on a disposable-address service (`pkg/emaildomain`) | register, first social sign-in |
+
+Anything else is refused **before anything is written**: no `users`,
+`sessions`, `refresh_tokens` or membership row. Register and the social
+callback answer one refusal, 403 `SIGNUP_NOT_AVAILABLE` ("Your organization
+isn't set up yet"), whatever the reason, and the web sends the person to
+`/not-set-up` (en/vi), which names no organization. An account that already
+exists signs in as before: a mode change never locks anyone out.
+
+`AUTH_ALLOW_REGISTRATION` is retired: it could contradict
+`TENANT_CREATION_MODE` (with `admin_only` and registration on, a social
+sign-in created an account that could never get an organization). Startup
+logs a warning when it is still set.
+
+### Request access
+
+When the policy is `admin_only` with `request_access` on, the "not set up"
+page offers **Request access** (`/request-access`, en/vi):
+
+- `POST /api/v1/auth/access-requests` `{company, email, note, captcha_token?}`
+  (public, registration rate limit) answers 202 with one message for every
+  accepted submission. Over the per-address limit (3 an hour, the IP kept only
+  as a hash) or the per-domain limit (5 a day), or from a disposable-address
+  service, the request is dropped silently, so the answer reveals nothing.
+  Closed (`self_service`, or requests off): 403 `SIGNUP_NOT_AVAILABLE`.
+- With SMTP, the request waits as `unconfirmed` until the requester opens the
+  emailed link (`/request-access/confirm#token=…`; the token travels in the
+  fragment and then in the body of `POST /auth/access-requests/confirm`,
+  single use, 24 hours). Without SMTP it is `pending` at once.
+- Console > Organizations > Access requests (any admin reads;
+  **ops_admin+** decides, admin-audited `access_request.approve` /
+  `access_request.reject`): **Approve** creates the organization with the
+  requester as owner through the same creator as "Register organization" (a
+  new account gets the one-time set-password link) and only for a confirmed
+  request; two administrators approving at once create one organization.
+  **Reject** sends a neutral email to a confirmed requester.
+- Retention (`access-request-retention` controller, hourly): unconfirmed
+  requests are deleted after 24 hours, decided ones after 90 days.
+- CAPTCHA: `CAPTCHA_TURNSTILE_SECRET` makes the API require a Cloudflare
+  Turnstile token on request-access submissions **and on self-service
+  registration** (`POST /auth/register`, `captcha_token`, checked before the
+  account lookup, 400 `CAPTCHA_FAILED`). `CAPTCHA_TURNSTILE_SITE_KEY` is
+  published as `captcha_site_key` on `/auth/providers`, and the register and
+  request-access forms render the check when it is set. The two variables
+  must be set together; the server refuses to start with only one. The web
+  CSP allows `frame-src https://challenges.cloudflare.com` for the widget.
+  Set both whenever self-service sign-up is on in production.
+
+### Invitation tokens stay out of URLs
+
+The invitation token is a bearer credential (whoever holds it can see and
+decline the invitation; accepting also needs the invited email). It never
+appears in a URL a server or proxy records (RFC-041 §3.2 P4):
+
+- The emailed link is `{APP_URL}/invitations#token=...`. A fragment is never
+  sent to a server or put in a `Referer`. The web page reads it, keeps it in the
+  tab's `sessionStorage` (so it survives the trip through `/login` or
+  `/register?returnTo=/invitations`), and removes it from the address bar and
+  history with `history.replaceState`.
+- The API takes the token in the JSON body: `POST /api/v1/invitations/lookup`,
+  `/accept`, `/accept-with-refresh` and `/decline`.
+- Links sent before this change (`/invitations/{token}`) still work: the web
+  page redirects them to the fragment form. The API aliases
+  `/api/v1/invitations/{token}/...` answer with `Deprecation`/`Sunset`
+  headers until 2027-01-15 and are counted in
+  `deprecated_route_requests_total{plane="auth"}`.
+- For those legacy paths, the API access log, HTTP metric labels and trace
+  attributes record `/api/v1/invitations/{redacted}/...`
+  (`middleware.RedactPath`), and the gateway's access log records
+  `REDACTED`. No log line records a token or a token prefix.
 
 ### First owner (platform administrator)
 
 The platform administrator only bootstraps organizations (owner decision
 2026-10-02, RFC-022 revision 5). `POST /api/v1/admin/tenants/{tenantId}/users`
 with `{"email": "...", "name": "..."}` (`role` may be omitted; anything but
-`owner` is a 400) creates the owner of an organization that has no active
-owner, and answers 409 otherwise: from then on the owner and its administrators
-invite or create users. The account has no password until the owner sets one
+`owner` is a 400) creates the owner of an organization that has no owner, and
+answers 409 otherwise, also when the only owner is **suspended**: from then on
+the owner and its administrators invite or create users. The account has no password until the owner sets one
 through the one-time link. The link is emailed when the organization can send
 email (tenant or system SMTP) and is then never in the response
 (`email_failed: true` if the send failed — the owner uses forgot-password);
@@ -32,6 +147,16 @@ only when email cannot be sent is `setup_token` returned, once. The creation is
 written to the organization's audit log as `user.created` by
 `platform-admin:<email>`. The owner created with `POST /api/v1/admin/tenants`
 follows the same delivery rule.
+
+**Owner recovery.** When every owner of an organization is suspended, a
+super admin can send `{"email": "...", "name": "...", "recovery": true}` to the
+same endpoint to create a new owner (RFC-022 revision 7). It is refused with
+403 for any other console role, with 409 while any owner is active, and with
+400 when the organization cannot send email: the recovery link is **only
+emailed, never returned**. The suspended owners are left as they are. The
+request is audited as `organization.owner_recovery` in `admin_audit_logs` (high
+severity, refusals included) and as `user.created` with `owner_recovery: true`
+at critical severity in the organization's audit log.
 
 ### Administrator-created accounts
 
@@ -49,7 +174,7 @@ Response (201):
 }
 ```
 
-The user opens `<UI>/set-password?token=<setup_token>` and chooses a password
+The user opens `<UI>/set-password#token=<setup_token>` and chooses a password
 (`POST /api/v1/auth/reset-password`). The link is single-use and expires after
 24 hours; an administrator can issue a new one while the account is unused.
 Errors: 409 when the email already has an account (invite instead), 400 when
@@ -63,6 +188,40 @@ roles: `member` when they include the system member or admin role, otherwise
 `viewer`. After the membership is created the granted roles replace the user's
 role set exactly. The same applies to invitations (including ones created
 before this rule).
+
+### Password policy
+
+A password that is set, reset or changed must be at least
+`AUTH_PASSWORD_MIN_LENGTH` characters (default **12**), meet the composition
+rules (`AUTH_PASSWORD_REQUIRE_*`), and must not be on the embedded list of the
+most used breached passwords (`pkg/password/common.txt`, about 47,000 entries
+from the SecLists Pwdb top 100k, matched case-insensitively, no network call).
+Existing passwords are not re-checked; the sign-in form takes them as typed.
+
+### Anti-enumeration on the public endpoints
+
+No public sign-in endpoint tells an unauthenticated caller whether an email
+has an account or an organization exists:
+
+| Endpoint | Unknown and known answer the same way |
+|---|---|
+| `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal |
+| `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
+| `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
+| `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
+| `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
+| `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
+| `POST /auth/discover` | `{"next","org"}` for every email; `sso` + the slug only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
+| `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
+
+Tests: `tests/unit/auth_anti_enumeration_test.go`.
+
+### Plan of a self-service organization
+
+An organization a person creates themselves starts on the **Free** plan, and
+one person owns at most the Free plan's `free_teams_per_user` (1 by default):
+another `POST /api/v1/tenants` is refused with 403 `PLAN_LIMIT`. See
+`docs/architecture/plans-and-limits.md`.
 
 ## Organization access policy (Settings → Organization → Security, owner only)
 
@@ -78,13 +237,21 @@ removed when the list changes.
 ### IP allowlist (`security.ip_whitelist`)
 
 Empty = no restriction. Otherwise every request made with a user's access token
-for this organization must come from a listed IP or CIDR, or it gets
-`403 {"code":"IP_NOT_ALLOWED"}`. Applies to the organization in the URL
-(`/api/v1/tenants/{tenant}/...`) or, elsewhere, the organization the token is
-for. Not applied to: sensor/agent and tenant API keys, the platform admin
-console, public routes (login, token exchange), and the platform administrator.
-Changes take effect within 30 seconds on every API instance (immediately on the
-one that saved them).
+or one of the organization's `oct_` API keys must come from a listed IP or CIDR,
+or it gets `403 {"code":"IP_NOT_ALLOWED"}`. Applies to the organization in the
+URL (`/api/v1/tenants/{tenant}/...`) or, elsewhere, the organization the token
+or key belongs to. Changes take effect within 30 seconds on every API instance
+(immediately on the one that saved them).
+
+| Surface | Allowlist | Why |
+|---|---|---|
+| User sessions (REST, WebSocket upgrade) | enforced | the people the policy is for |
+| `oct_` API keys on the tenant REST API | enforced | automation acting as a member |
+| `oct_` API keys on `POST /api/v1/mcp` | enforced | same key, same policy as REST (23b S-H2) |
+| Sensor keys (`/api/v2/sensor`) | not applied | sensors run in scan zones and customer networks; own enrollment, key and egress controls |
+| SCIM (`/scim/v2`) | not applied | the caller is the organization's IdP (a SaaS whose egress is not the users' network); gating it would also block deprovisioning. The owner-minted SCIM token is the boundary |
+| Inbound integration webhooks (Jira) | not applied | sent from the vendor's cloud, authenticated by the per-tenant webhook secret |
+| Platform admin console, public routes, platform administrator | not applied | not an organization's members |
 
 **Lockout guard.** Saving a non-empty list that does not contain your current IP
 is refused with 400 `IP allowlist must include your current IP address (<ip>)`.
@@ -92,13 +259,32 @@ is refused with 400 `IP allowlist must include your current IP address (<ip>)`.
 `security.current_ip`.
 
 **Client IP.** The API uses the TCP peer, and honors `X-Real-IP` /
-`X-Forwarded-For` only when the peer is in `SERVER_TRUSTED_PROXIES`. When users
-reach the API through the UI's Next.js proxy, the peer is the UI container, so:
+`X-Forwarded-For` only when the peer is in `SERVER_TRUSTED_PROXIES`
+(`pkg/httpsec.ClientIP`, the one place that reads those headers). From a trusted
+peer it walks `X-Forwarded-For` from the right, skipping entries that are
+themselves trusted proxies, and takes the first untrusted one (entries left of
+it were written by the client and are never believed). A well-formed
+`X-Real-IP` is used only when `X-Forwarded-For` is absent, because a proxy that
+ignores `X-Real-IP` (Caddy's `reverse_proxy` by default) passes the client's
+value through. A trusted proxy must therefore set or append `X-Forwarded-For`,
+and every proxy hop between the client and the API belongs in
+`SERVER_TRUSTED_PROXIES`. When users reach the API through the UI's
+Next.js proxy, the peer is the UI container, so:
 
 1. put a reverse proxy in front of the UI that **overwrites** `X-Real-IP` and
    `X-Forwarded-For` with the real client address;
 2. set `TRUST_PROXY_HEADERS=true` on the UI so its proxy forwards them;
-3. set `SERVER_TRUSTED_PROXIES` on the API to the UI's address/network.
+3. set `SERVER_TRUSTED_PROXIES` on the API to the UI's (and the gateway's)
+   own addresses.
+
+List addresses, not a whole container network: every host in a trusted range
+can set the client address the API believes (login rate limits, audit
+addresses, IP allowlists), including a sensor container running third-party
+tools on the same network. The API logs a `SECURITY:` warning at startup, and
+`server -check-config` prints one, for any `SERVER_TRUSTED_PROXIES` or
+`SENSOR_MTLS_TRUSTED_PROXIES` range wider than 16 addresses (an IPv4 `/28`).
+The shipped Compose file pins the gateway and web addresses on its fixed
+subnet; give your containers fixed addresses the same way.
 
 Without that, `current_ip` shows the UI container's address and the allowlist
 cannot tell users apart. Never set `TRUST_PROXY_HEADERS=true` when browsers
@@ -117,11 +303,10 @@ UPDATE tenants
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `AUTH_ALLOW_REGISTRATION` | `false` | Open self-registration. Invited people can register either way. |
-| `TENANT_CREATION_MODE` | `admin_only` | Only the platform administrator creates organizations (console, `bootstrap-admin -org-*`). `self_service` (opt-in, SaaS/trial): any signed-in user may, through create-first-team and `POST /tenants`. Anything else fails startup. |
+| `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
-| `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |
-| `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). |
+| `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password#token=`). |
+| `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). Pin the proxies' addresses; a range wider than 16 addresses is warned about at startup. |
 
 ## Code map
 
@@ -133,5 +318,7 @@ UPDATE tenants
 | Domain / IP policy | `pkg/domain/tenant/security_policy.go` |
 | IP allowlist middleware | `internal/infra/http/middleware/ip_allowlist.go` (wired in `routes/routes.go`, `routes/tenant.go`) |
 | Registration gate | `AuthService.Register` / `pendingInvitationFor` (`internal/app/auth/service.go`) |
+| Request access | `internal/app/accessrequest`, `pkg/domain/accessrequest`, `handler/access_request_handler.go`, `controller/access_request_retention.go` (migration 001380) |
+| Sign-up policy | `internal/app/signup`, `pkg/domain/signup`, `internal/infra/postgres/signup_policy_repository.go`, `handler/admin_signup_handler.go` |
 | SSO admission | `SSOService.jitProvisioningAllowed` (`internal/app/auth/sso.go`) |
 | Set-password email | `EmailService.SendAccountSetupEmail`, template `account_setup` |

@@ -18,6 +18,7 @@ package httpsec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -53,15 +54,32 @@ var hardBlockedIPRanges = []string{
 	"::/128",             // IPv6 unspecified
 	"fe80::/10",          // IPv6 link-local
 	"ff00::/8",           // IPv6 multicast
+	"fd00:ec2::254/128",  // AWS IMDS over IPv6 (inside fc00::/7)
+	"fd20:ce::254/128",   // GCP metadata server over IPv6 (inside fc00::/7)
+	// Ranges that embed an IPv4 address the network may translate to: on a
+	// NAT64/DNS64 or 6to4 network 64:ff9b::a9fe:a9fe reaches 169.254.169.254.
+	"64:ff9b::/96",   // NAT64 well-known prefix
+	"64:ff9b:1::/48", // NAT64 local-use prefix
+	"2002::/16",      // 6to4
+	"2001::/32",      // Teredo
+	// IPv4 special-purpose ranges that are never a tenant service.
+	"192.0.0.0/24",  // IETF protocol assignments (DS-Lite, NAT64 discovery)
+	"198.18.0.0/15", // Benchmarking
 }
 
-// privateIPRanges lists CIDRs that are blocked BY DEFAULT but can
-// be opened up for on-prem deployments via the
-// OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1 env var. These are legitimate
-// targets for a CTEM platform running inside a corporate network
-// (self-hosted Jira at 10.0.0.5, internal GitLab at 192.168.x.y,
-// etc.) but ship disabled so cloud deployments inherit the safer
-// default.
+// privateIPRanges lists the RFC 1918 / ULA CIDRs. They are blocked by
+// default: a tenant-supplied URL must not reach the platform's own network
+// (database, Redis, the sensor gateway, other services on the same network).
+// An operator opens them in one of two ways (see loadPrivateEgress):
+//
+//   - OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS: the named private ranges only, in
+//     any environment. This is the production setting for an on-prem install
+//     whose self-managed GitLab, Jira or SMTP relay sits on a private address;
+//     the operator lists that subnet and nothing else.
+//   - OPENCTEM_HTTPSEC_ALLOW_PRIVATE=1: every private range, honored only with
+//     APP_ENV=development. Anywhere else it would open the platform's own
+//     network to every tenant at once, so it is ignored and the API refuses to
+//     start (PrivateEgressError).
 var privateIPRanges = []string{
 	"10.0.0.0/8",     // RFC1918 class A
 	"172.16.0.0/12",  // RFC1918 class B
@@ -69,16 +87,96 @@ var privateIPRanges = []string{
 	"fc00::/7",       // IPv6 ULA
 }
 
-// allowPrivate is toggled by the env var at init-time. Tests can
-// flip this variable directly to exercise both modes without
-// re-running init().
-var allowPrivate = os.Getenv("OPENCTEM_HTTPSEC_ALLOW_PRIVATE") == "1"
+// Environment variables read once at start-up.
+const (
+	EnvAllowPrivate      = "OPENCTEM_HTTPSEC_ALLOW_PRIVATE"
+	EnvAllowPrivateCIDRs = "OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS"
+)
 
-// AllowPrivate reports whether the RFC1918 / ULA ranges are
-// currently treated as reachable. Exposed for log-at-startup
-// observability; do not consult this to decide individual calls —
-// that branches inside IsIPBlocked.
+// allowPrivate opens every private range (development only). Tests flip it
+// directly to exercise both modes.
+var allowPrivate bool
+
+// allowedPrivateCIDRs are the private ranges the operator opened by name.
+var allowedPrivateCIDRs []*net.IPNet
+
+// privateEgressErr is the reason the private-egress settings were refused;
+// nothing was opened when it is set.
+var privateEgressErr error
+
+// AllowPrivate reports whether every RFC1918 / ULA range is reachable (the
+// development-only switch). For start-up logging only; IsIPBlocked decides
+// individual calls.
 func AllowPrivate() bool { return allowPrivate }
+
+// AllowedPrivateCIDRs returns the private ranges opened by
+// OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS, for start-up logging.
+func AllowedPrivateCIDRs() []string {
+	out := make([]string, 0, len(allowedPrivateCIDRs))
+	for _, n := range allowedPrivateCIDRs {
+		out = append(out, n.String())
+	}
+	return out
+}
+
+// PrivateEgressError returns why the private-egress settings were refused, or
+// nil. The server refuses to start on it; the guard already ignores a refused
+// setting, so a binary that does not check it still keeps every private range
+// blocked.
+func PrivateEgressError() error { return privateEgressErr }
+
+// ValidatePrivateEgress checks the private-egress settings for appEnv
+// (APP_ENV) without applying them. Config validation calls it so the server
+// refuses to start on a setting the guard would ignore.
+func ValidatePrivateEgress(appEnv, allowAll, cidrs string) error {
+	_, _, err := loadPrivateEgress(appEnv, allowAll, cidrs)
+	return err
+}
+
+// loadPrivateEgress parses the private-egress settings. On any error nothing
+// is opened (fail closed).
+func loadPrivateEgress(appEnv, allowAll, cidrs string) (bool, []*net.IPNet, error) {
+	var all bool
+	switch strings.TrimSpace(allowAll) {
+	case "", "0":
+	case "1":
+		if appEnv != "development" {
+			return false, nil, fmt.Errorf("%s=1 opens every private network range to every tenant and is honored only with APP_ENV=development (APP_ENV=%q); list the ranges the API must reach in %s instead", EnvAllowPrivate, appEnv, EnvAllowPrivateCIDRs)
+		}
+		all = true
+	default:
+		return false, nil, fmt.Errorf("%s must be empty or \"1\", got %q", EnvAllowPrivate, allowAll)
+	}
+
+	nets := make([]*net.IPNet, 0, strings.Count(cidrs, ",")+1)
+	for _, raw := range strings.Split(cidrs, ",") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		_, n, err := net.ParseCIDR(raw)
+		if err != nil {
+			return false, nil, fmt.Errorf("%s: %q is not a CIDR", EnvAllowPrivateCIDRs, raw)
+		}
+		if !insidePrivateRange(n) {
+			return false, nil, fmt.Errorf("%s: %s is not inside a private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7)", EnvAllowPrivateCIDRs, n)
+		}
+		nets = append(nets, n)
+	}
+	return all, nets, nil
+}
+
+// insidePrivateRange reports whether n lies wholly inside one private range.
+func insidePrivateRange(n *net.IPNet) bool {
+	ones, bits := n.Mask.Size()
+	for _, p := range privateCIDRs {
+		pOnes, pBits := p.Mask.Size()
+		if bits == pBits && ones >= pOnes && p.Contains(n.IP) {
+			return true
+		}
+	}
+	return false
+}
 
 // dangerousHosts is a string-level allowlist rejection for common
 // aliases that hit metadata/local services before DNS resolves.
@@ -121,22 +219,35 @@ func init() {
 			privateCIDRs = append(privateCIDRs, ipNet)
 		}
 	}
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = "production" // the internal/config default
+	}
+	allowPrivate, allowedPrivateCIDRs, privateEgressErr = loadPrivateEgress(
+		appEnv, os.Getenv(EnvAllowPrivate), os.Getenv(EnvAllowPrivateCIDRs))
 }
 
 // IsIPBlocked reports whether the given IP is not reachable under
-// the current policy. Hard-blocked CIDRs always return true; the
-// RFC1918 / ULA block is conditional on allowPrivate.
+// the current policy. Hard-blocked CIDRs always return true; a private
+// (RFC1918 / ULA) address is reachable only when allowPrivate is set or it is
+// inside a range the operator opened.
 func IsIPBlocked(ip net.IP) bool {
 	for _, cidr := range hardBlockedCIDRs {
 		if cidr.Contains(ip) {
 			return true
 		}
 	}
-	if !allowPrivate {
-		for _, cidr := range privateCIDRs {
-			if cidr.Contains(ip) {
-				return true
-			}
+	if allowPrivate {
+		return false
+	}
+	for _, cidr := range allowedPrivateCIDRs {
+		if cidr.Contains(ip) {
+			return false
+		}
+	}
+	for _, cidr := range privateCIDRs {
+		if cidr.Contains(ip) {
+			return true
 		}
 	}
 	return false
@@ -224,6 +335,14 @@ type ValidationResult struct {
 func ValidateURL(rawURL string) (*ValidationResult, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
+		// url.Parse wraps its error in *url.Error, whose text repeats the whole
+		// input. The input is often a credential (a Slack or Teams webhook URL,
+		// a URL with a token in its query), and this error reaches status
+		// fields and logs, so keep only the reason.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
@@ -281,6 +400,20 @@ func ValidateURL(rawURL string) (*ValidationResult, error) {
 // rejects before the lookup leaves the host process.
 func SafeHTTPClient(timeout time.Duration) *http.Client {
 	return newSafeHTTPClient(timeout, defaultDialer)
+}
+
+// SafeHTTPClientWithHeaderTimeout is SafeHTTPClient for upstreams that take
+// longer than the default 15 s to start answering (crt.sh builds a large JSON
+// answer before sending headers). Same SSRF guard; only the wait for response
+// headers differs. A non-positive responseHeaderTimeout keeps the default.
+func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duration) *http.Client {
+	c := newSafeHTTPClient(timeout, defaultDialer)
+	if responseHeaderTimeout > 0 {
+		if tr, ok := c.Transport.(*http.Transport); ok {
+			tr.ResponseHeaderTimeout = responseHeaderTimeout
+		}
+	}
+	return c
 }
 
 func newSafeHTTPClient(timeout time.Duration, d guardedDialer) *http.Client {

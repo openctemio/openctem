@@ -56,8 +56,8 @@ type CountSummary struct {
 	Total int `json:"total"`
 }
 
-// CrownJewelSummary counts crown jewels and those with an owner under either
-// owner model (assets.owner_id or an asset_owners row).
+// CrownJewelSummary counts crown jewels and those with an owner (an
+// asset_owners row naming a user or group of the tenant).
 type CrownJewelSummary struct {
 	Total     int `json:"total"`
 	WithOwner int `json:"with_owner"`

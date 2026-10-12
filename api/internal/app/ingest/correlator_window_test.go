@@ -30,7 +30,7 @@ func (r ipOnlyRepo) FindByIPs(_ context.Context, _ shared.ID, ips []string) (map
 func hostSeenAgo(t *testing.T, name string, ago time.Duration) *asset.Asset {
 	t.Helper()
 	seen := time.Now().Add(-ago)
-	return asset.Reconstitute(shared.NewID(), shared.NewID(), nil, nil, name,
+	return asset.Reconstitute(shared.NewID(), shared.NewID(), nil, name,
 		asset.AssetTypeHost, asset.CriticalityMedium, asset.StatusActive, asset.ScopeInternal,
 		asset.ExposureUnknown, 0, 0, "", nil, map[string]any{"ip_addresses": []any{"10.9.0.5"}},
 		"", "", "", "", nil, "", "", "", nil,

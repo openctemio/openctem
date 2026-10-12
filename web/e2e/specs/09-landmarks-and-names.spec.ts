@@ -12,6 +12,8 @@ import { getE2EConfig } from '../helpers/env'
  *   2. The Access Denied view had no `main` landmark and no #content, so
  *      "Skip to Main" led nowhere.
  *   3. The "Require two-factor authentication" switch had no accessible name.
+ *      (The "Restricted data scope" switch it was checked with is gone: it
+ *      never saved, and Teams > Members without a team replaced it.)
  *
  * The Access Denied check needs a user without team:update (a member or
  * viewer): set E2E_LIMITED_EMAIL / E2E_LIMITED_PASSWORD, or it is skipped.
@@ -49,11 +51,17 @@ base.describe('Access denied view', () => {
 })
 
 test.describe('Organization authentication settings', () => {
-  test('the two-factor switch has an accessible name', async ({ page }) => {
+  test('each two-factor switch has its own accessible name', async ({ page }) => {
     await page.goto('/settings/authentication')
+    // Everyone, and owners and admins only (#1413): two switches, two names.
     await expect(
-      page.getByRole('switch', { name: 'Require two-factor authentication' })
+      page.getByRole('switch', { name: 'Require two-factor authentication', exact: true })
     ).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole('switch', { name: 'Restricted data scope' })).toBeVisible()
+    await expect(
+      page.getByRole('switch', {
+        name: 'Require two-factor authentication for owners and admins',
+        exact: true,
+      })
+    ).toBeVisible()
   })
 })

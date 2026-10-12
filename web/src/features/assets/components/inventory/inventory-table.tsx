@@ -9,16 +9,45 @@
  * inventory-url) maps the sortable ones to the API's sort fields. Columns the
  * API cannot sort (internet, owner, tags) have sorting turned off rather than
  * reordering only the rows on screen.
+ *
+ * Typed mode (research/77): when the list is one type, its registry columns
+ * follow the name (AttributeCell), the redundant Type column goes, and a
+ * scannable type gets the scope gate's answer per row. Every row has a menu:
+ * the type's actions (lib/type-actions), Edit and Delete.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ChevronRight, Globe, MinusCircle, User, Users } from 'lucide-react'
+import {
+  ChevronRight,
+  Globe,
+  MinusCircle,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  User,
+  Users,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
+import { useTranslation } from '@/context/i18n-provider'
+import type { TypeView } from '@/features/asset-types/lib/type-view'
+import { propertyLabel } from '@/features/asset-types/lib/property-schema'
+import { rowActionsFor } from '../../lib/type-actions'
+import { AttributeCell } from './attribute-cell'
 import { DataTable, DataTableColumnHeader, RiskScoreBadge } from '@/features/shared'
 import { AssetStatusBadge } from '@/features/asset-lifecycle'
+import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
 import { getAsset, updateAsset } from '../../hooks'
@@ -27,8 +56,28 @@ import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { ASSET_TYPE_LABELS, type Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
+import {
+  IssuesChip,
+  LabelChips,
+  SurfaceFacts,
+  cellsForType,
+  hasSurfaceFacts,
+  surfaceCellsCovered,
+} from '../service-cells'
 
 const PAGE_SIZES = [10, 20, 30, 50, 100]
+
+/** A one-type list shows "Service facts" only when its own columns do not already. */
+function showsServiceFacts(view: TypeView): boolean {
+  const cells = cellsForType(view.type, view.subType)
+  return (
+    cells !== null &&
+    !surfaceCellsCovered(
+      cells,
+      view.columns.map((c) => c.key)
+    )
+  )
+}
 
 function daysSinceISO(iso?: string | null): number | undefined {
   if (!iso) return undefined
@@ -55,6 +104,19 @@ interface InventoryTableProps {
   hasFilters: boolean
   /** Called after an asset is edited from the detail sheet (e.g. tags), to refetch the list. */
   onAssetUpdated?: () => void
+  /** The list is one type: its registry columns, scope and actions. */
+  typeView?: TypeView | null
+  /** Open the edit form (shown with assets:write). */
+  onEditAsset?: (asset: Asset) => void
+  /** Ask to delete (shown with assets:delete). */
+  onDeleteAsset?: (asset: Asset) => void
+  /** Overrides the empty-table text (typed mode says how to find the type). */
+  emptyMessage?: string
+  emptyDescription?: string
+  /** The tags the list is filtered by (their chips show as active). */
+  filterTags?: string[]
+  /** Clicking a tag chip (row or detail sheet) adds it to, or removes it from, the filter. */
+  onToggleTagFilter?: (tag: string) => void
 }
 
 export function InventoryTable({
@@ -71,17 +133,54 @@ export function InventoryTable({
   toolbarEnd,
   hasFilters,
   onAssetUpdated,
+  typeView = null,
+  onEditAsset,
+  onDeleteAsset,
+  emptyMessage,
+  emptyDescription,
+  filterTags,
+  onToggleTagFilter,
 }: InventoryTableProps) {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canWriteAssets = can(Permission.AssetsWrite)
+  const canDeleteAssets = can(Permission.AssetsDelete)
+  // The scope gate's own answer per row, one request per page, for a type
+  // scanners can scan (the same check a scan runs).
+  const scopeNames = useMemo(
+    () => (typeView?.scannable ? assets.map((a) => a.name).filter(Boolean) : []),
+    [typeView, assets]
+  )
+  const {
+    resultFor: scopeResultFor,
+    isLoading: scopeChecking,
+    available: scopeAvailable,
+  } = useScopeCheck(scopeNames)
   // Tag suggestions only load once someone can actually edit tags.
   const { tags: tagSuggestions } = useAssetTags(undefined, canWriteAssets)
   const sorting = useMemo(() => sortToSorting(sort), [sort])
+  // RFC-042 class and lens of each row ("Code repository · Code").
+  const { classAndLens } = useAssetTypeRegistry()
+
+  // "+ Add label" on a row: one PUT of that asset's tags, then a refetch.
+  const saveRowLabels = useCallback(
+    async (id: string, tags: string[]) => {
+      try {
+        await updateAsset(id, { tags })
+        toast.success('Label added')
+        onAssetUpdated?.()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to add the label')
+        throw err
+      }
+    },
+    [onAssetUpdated]
+  )
 
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
     const sortable = (id: string) => id in SORT_FIELDS
-    return [
+    const all: ColumnDef<Asset>[] = [
       {
         id: 'select',
         enableSorting: false,
@@ -128,16 +227,43 @@ export function InventoryTable({
           </div>
         ),
       },
+      ...(typeView?.columns ?? []).map((attribute): ColumnDef<Asset> => ({
+        id: `attr:${attribute.key}`,
+        enableSorting: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={propertyLabel(attribute.key)} />
+        ),
+        cell: ({ row }) => <AttributeCell asset={row.original} attribute={attribute} />,
+      })),
       {
         id: 'type',
         accessorKey: 'type',
         enableSorting: sortable('type'),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
         cell: ({ row }) => (
-          <Badge variant="outline" className="font-normal">
-            {ASSET_TYPE_LABELS[row.original.type] ?? row.original.type}
-          </Badge>
+          <div className="flex min-w-0 flex-col items-start gap-0.5">
+            <Badge variant="outline" className="font-normal">
+              {ASSET_TYPE_LABELS[row.original.type] ?? row.original.type}
+            </Badge>
+            <span className="truncate text-xs text-muted-foreground">
+              {classAndLens(row.original.type, row.original.subType)}
+            </span>
+          </div>
         ),
+      },
+      {
+        // External-surface facts (status, IP, technologies, TLS …) for the
+        // types cellsForType lists; other types have none to show here.
+        // Only known facts are shown; a row with none shows the muted dash.
+        id: 'service',
+        enableSorting: false,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Service facts" />,
+        cell: ({ row }) =>
+          cellsForType(row.original.type, row.original.subType) ? (
+            <SurfaceFacts asset={row.original} className="max-w-[380px]" />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
       },
       {
         id: 'criticality',
@@ -210,15 +336,12 @@ export function InventoryTable({
         accessorKey: 'findingCount',
         enableSorting: sortable('findings'),
         header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
-        cell: ({ row }) => {
-          const count = row.original.findingCount
-          if (!count) return <span className="text-muted-foreground tabular-nums">0</span>
-          return (
-            <Badge variant={count > 5 ? 'destructive' : 'secondary'} className="tabular-nums">
-              {count}
-            </Badge>
-          )
-        },
+        cell: ({ row }) =>
+          row.original.findingCount > 0 ? (
+            <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
+          ) : (
+            <span className="text-muted-foreground tabular-nums">0</span>
+          ),
       },
       {
         id: 'last_seen',
@@ -236,30 +359,109 @@ export function InventoryTable({
       {
         id: 'tags',
         enableSorting: false,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Tags" />,
+        header: ({ column }) => <DataTableColumnHeader column={column} title="Labels" />,
+        cell: ({ row }) => (
+          <LabelChips
+            className="max-w-[240px]"
+            labels={row.original.tags ?? []}
+            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, tags) : undefined}
+            activeLabels={filterTags}
+            onLabelClick={onToggleTagFilter}
+          />
+        ),
+      },
+      ...(typeView?.scannable && scopeAvailable
+        ? [
+            {
+              id: 'scope',
+              enableSorting: false,
+              header: ({ column }) => (
+                <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
+              ),
+              cell: ({ row }) => (
+                <ScopeCheckBadge
+                  result={scopeResultFor(row.original.name)}
+                  loading={scopeChecking}
+                />
+              ),
+            } as ColumnDef<Asset>,
+          ]
+        : []),
+      {
+        id: 'actions',
+        enableSorting: false,
+        enableHiding: false,
+        header: () => <span className="sr-only">Actions</span>,
         cell: ({ row }) => {
-          const tags = row.original.tags ?? []
-          if (tags.length === 0) return <span className="text-muted-foreground">—</span>
-          const visible = tags.slice(0, 2)
-          const rest = tags.length - visible.length
+          const asset = row.original
+          const actions = rowActionsFor(asset, typeView).filter((a) =>
+            a.permissions.every((p) => can(p))
+          )
+          const canEdit = canWriteAssets && !!onEditAsset
+          const canDelete = canDeleteAssets && !!onDeleteAsset
           return (
-            <div className="flex flex-wrap gap-1">
-              {visible.map((t) => (
-                <Badge key={t} variant="secondary" className="text-xs">
-                  {t}
-                </Badge>
-              ))}
-              {rest > 0 && (
-                <Badge variant="outline" className="text-xs">
-                  +{rest}
-                </Badge>
-              )}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label={`Actions for ${asset.name}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                {actions.map((a) => (
+                  <DropdownMenuItem key={a.id} onClick={() => void a.run(asset)}>
+                    <a.icon className="me-2 h-4 w-4" />
+                    {a.label}
+                  </DropdownMenuItem>
+                ))}
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => onEditAsset?.(asset)}>
+                    <Pencil className="me-2 h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => onDeleteAsset?.(asset)}
+                    >
+                      <Trash2 className="me-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )
         },
       },
     ]
-  }, [])
+    return all.filter(
+      (c) => !typeView || (c.id !== 'type' && (c.id !== 'service' || showsServiceFacts(typeView)))
+    )
+  }, [
+    classAndLens,
+    canWriteAssets,
+    canDeleteAssets,
+    can,
+    saveRowLabels,
+    typeView,
+    scopeAvailable,
+    scopeResultFor,
+    scopeChecking,
+    onEditAsset,
+    onDeleteAsset,
+    t,
+    filterTags,
+    onToggleTagFilter,
+  ])
 
   return (
     <>
@@ -285,47 +487,56 @@ export function InventoryTable({
         mobileRow={(a) => {
           const typeLabel = ASSET_TYPE_LABELS[a.type] ?? a.type
           const context = a.groupName || a.description
+          // A card shows the facts row only when it has something known in it.
+          const hasFacts = a.findingCount > 0 || hasSurfaceFacts(a)
+          // The card opens the drawer (a stretched button); the chip row sits
+          // above it so its links and "+N" tooltips are not nested inside a
+          // button.
           return (
-            <button
-              type="button"
-              onClick={() => setSelectedAsset(a)}
-              className="flex w-full items-start gap-3 px-3 py-3 text-start transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <AssetTypeIcon
-                type={a.type}
-                className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {typeLabel}
-                  {context && ` · ${context}`}
-                </p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
-                  {/* Most assets are active; say so only when one is not. */}
-                  {a.status !== 'active' && (
-                    <AssetStatusBadge
-                      status={a.status}
-                      daysSinceLastSeen={daysSinceISO(a.lastSeen)}
-                      snoozedUntil={a.lifecyclePausedUntil}
-                    />
-                  )}
-                  {a.riskScore > 0 && <RiskScoreBadge score={a.riskScore} size="sm" />}
-                  {a.findingCount > 0 && (
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] tabular-nums">
-                      {a.findingCount} {a.findingCount === 1 ? 'finding' : 'findings'}
-                    </Badge>
-                  )}
+            <div className="relative px-3 py-3 transition-colors hover:bg-muted/50">
+              <button
+                type="button"
+                onClick={() => setSelectedAsset(a)}
+                className="flex w-full items-start gap-3 text-start after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+              >
+                <AssetTypeIcon
+                  type={a.type}
+                  className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 break-all text-sm font-medium">{a.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {typeLabel}
+                    {context && ` · ${context}`}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
+                    {/* Most assets are active; say so only when one is not. */}
+                    {a.status !== 'active' && (
+                      <AssetStatusBadge
+                        status={a.status}
+                        daysSinceLastSeen={daysSinceISO(a.lastSeen)}
+                        snoozedUntil={a.lifecyclePausedUntil}
+                      />
+                    )}
+                    {a.riskScore > 0 && <RiskScoreBadge score={a.riskScore} size="sm" />}
+                  </div>
                 </div>
-              </div>
-              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
+                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+              {hasFacts && (
+                <div className="relative z-10 mt-1.5 flex flex-wrap items-center gap-1 ps-7">
+                  <IssuesChip assetId={a.id} count={a.findingCount} />
+                  <SurfaceFacts asset={a} empty={null} />
+                </div>
+              )}
+            </div>
           )
         }}
-        emptyMessage="No assets match these filters"
+        emptyMessage={emptyMessage ?? 'No assets match these filters'}
         emptyDescription={
-          hasFilters ? 'Try removing a filter or clearing them all.' : 'No assets yet.'
+          emptyDescription ??
+          (hasFilters ? 'Try removing a filter or clearing them all.' : 'No assets yet.')
         }
       />
 
@@ -334,13 +545,17 @@ export function InventoryTable({
         open={!!selectedAsset}
         onOpenChange={(open) => !open && setSelectedAsset(null)}
         // Icon and title come from the asset's own type ("Repository details").
-        // Edit/delete stay on the per-type pages, so those actions are gated
-        // off here; tags are editable inline like on every other asset page.
-        onEdit={() => {}}
-        onDelete={() => {}}
-        canEdit={false}
-        canDelete={false}
+        onEdit={() => {
+          if (selectedAsset) onEditAsset?.(selectedAsset)
+        }}
+        onDelete={() => {
+          if (selectedAsset) onDeleteAsset?.(selectedAsset)
+        }}
+        canEdit={canWriteAssets && !!onEditAsset}
+        canDelete={canDeleteAssets && !!onDeleteAsset}
         tagSuggestions={tagSuggestions}
+        activeTags={filterTags}
+        onTagClick={onToggleTagFilter}
         onUpdateTags={
           canWriteAssets
             ? async (tags: string[]) => {

@@ -27,6 +27,7 @@ import {
   type MetricStripItem,
 } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { useListParams } from '@/hooks/use-list-params'
 import { AssetTypeIcon, getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AdminApiError } from '@/features/admin-console/api/admin-client'
 import {
@@ -44,6 +45,7 @@ import {
   targetTypeLabel,
 } from '@/features/admin-console/lib/target-mappings'
 import { adminCan, type TargetMapping } from '@/features/admin-console/types'
+import { useTranslation } from '@/context/i18n-provider'
 
 const ALL = 'all'
 const PAGE_SIZES = [20, 50, 100]
@@ -71,6 +73,7 @@ const pairLabel = (m: TargetMapping) =>
   `${targetTypeLabel(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
 
 export default function TargetMappingsPage() {
+  const { t } = useTranslation()
   const me = useAdmin()
   // The API is the authority (ops_admin+ writes, super_admin deletes); these
   // only decide which controls to show.
@@ -80,10 +83,8 @@ export default function TargetMappingsPage() {
   const [targetType, setTargetType] = useUrlFilter('target_type', '')
   const [assetType, setAssetType] = useUrlFilter('asset_type', '')
   const [status, setStatus] = useUrlFilter('status', '')
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '50')
-  const page = Math.max(1, parseInt(pageParam, 10) || 1)
-  const perPage = PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 50
+  const listParams = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 50 })
+  const { page, perPage } = listParams
   const filtered = !!(targetType || assetType || status)
 
   const list = useTargetMappings({ targetType, assetType, status, page, perPage })
@@ -98,7 +99,7 @@ export default function TargetMappingsPage() {
     void stats.mutate()
   }, [list, stats])
 
-  const resetPage = () => setPageParam('1')
+  const resetPage = () => listParams.setPage(1)
   const toggleStatus = (next: string) => {
     setStatus(status === next ? '' : next)
     resetPage()
@@ -306,8 +307,11 @@ export default function TargetMappingsPage() {
         ) : noMappingsAtAll ? (
           <EmptyState
             icon={Waypoints}
-            title="No target mappings"
-            description="Without mappings, smart filtering cannot match any asset to a scanner, so scans skip every asset. Map each target type that your scanners declare to the asset types it can scan."
+            title={t('admin.targetMappings.emptyTitle', 'No target mappings')}
+            description={t(
+              'admin.targetMappings.empty',
+              'Without mappings, scans skip every asset. Map each scanner target type to the asset types it can scan.'
+            )}
             action={newButton}
           />
         ) : (
@@ -326,15 +330,7 @@ export default function TargetMappingsPage() {
             rowCount={list.data?.total ?? 0}
             pageSizeOptions={PAGE_SIZES}
             pagination={{ pageIndex: page - 1, pageSize: perPage }}
-            onPaginationChange={(p) => {
-              // A new page size starts from the first page.
-              if (p.pageSize !== perPage) {
-                setPerPageParam(String(p.pageSize))
-                resetPage()
-              } else {
-                setPageParam(String(p.pageIndex + 1))
-              }
-            }}
+            onPaginationChange={listParams.setPagination}
             toolbarStart={
               <div className="flex w-full flex-col gap-2 sm:flex-row">
                 <Select
@@ -412,24 +408,41 @@ export default function TargetMappingsPage() {
         onOpenChange={(open) => !open && setPending(null)}
         title={
           pending?.kind === 'delete'
-            ? 'Delete target mapping?'
+            ? t('confirm.targetMapping.deleteTitle', 'Delete the target mapping {pair}?', {
+                pair: pairLabel(pending.mapping),
+              })
             : pending?.mapping.is_active
-              ? 'Deactivate target mapping?'
-              : 'Activate target mapping?'
+              ? t(
+                  'confirm.targetMapping.deactivateTitle',
+                  'Deactivate the target mapping {pair}?',
+                  {
+                    pair: pairLabel(pending.mapping),
+                  }
+                )
+              : t('confirm.targetMapping.activateTitle', 'Activate the target mapping {pair}?', {
+                  pair: pending ? pairLabel(pending.mapping) : '',
+                })
         }
         desc={
           pending?.kind === 'delete'
-            ? `${pairLabel(pending.mapping)} is removed. Scanners that only reach ${getAssetTypeLabel(pending.mapping.asset_type)} assets through it will skip them. To pause it instead, deactivate it.`
+            ? t(
+                'confirm.targetMapping.deleteDesc',
+                'Scanners that only reach {type} assets through it will skip them. To pause it instead, deactivate it.',
+                { type: getAssetTypeLabel(pending.mapping.asset_type) }
+              )
             : pending?.mapping.is_active
-              ? `${pending ? pairLabel(pending.mapping) : ''} is kept but ignored: scanners that only reach these assets through it will skip them.`
-              : `${pending ? pairLabel(pending.mapping) : ''} is used again when scans are filtered.`
+              ? t(
+                  'confirm.targetMapping.deactivateDesc',
+                  'It is kept but ignored: scanners that only reach these assets through it will skip them.'
+                )
+              : t('confirm.targetMapping.activateDesc', 'It is used again when scans are filtered.')
         }
         confirmText={
           pending?.kind === 'delete'
-            ? 'Delete'
+            ? t('confirm.delete', 'Delete')
             : pending?.mapping.is_active
-              ? 'Deactivate'
-              : 'Activate'
+              ? t('confirm.targetMapping.deactivate', 'Deactivate')
+              : t('confirm.targetMapping.activate', 'Activate')
         }
         destructive={pending?.kind === 'delete' || !!pending?.mapping.is_active}
         isLoading={busy}

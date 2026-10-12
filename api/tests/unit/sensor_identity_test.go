@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -15,12 +15,12 @@ import (
 // revoked) sensor comes back as Paused so the heartbeat can tell it to pause
 // (RFC-023 §9.2a).
 
-func newIdentitySensor(t *testing.T) (*sensorSvcMockRepo, *app.SensorService, *app.CreateSensorOutput) {
+func newIdentitySensor(t *testing.T) (*sensorSvcMockRepo, *sensor.SensorService, *sensor.CreateSensorOutput) {
 	t.Helper()
 	repo := newSensorSvcMockRepo()
 	svc := newSensorSvcTestService(repo)
-	out, err := svc.CreateSensor(context.Background(), app.CreateSensorInput{
-		TenantID: shared.NewID().String(), Name: "identity-sensor", Type: "runner",
+	out, err := svc.CreateSensor(context.Background(), sensor.CreateSensorInput{
+		TenantID: shared.NewID().String(), Name: "identity-sensor", Type: "worker",
 	})
 	if err != nil {
 		t.Fatalf("create sensor: %v", err)
@@ -62,13 +62,13 @@ func TestAuthenticateIdentity_RefusesRevokedExpiredAndUnknown(t *testing.T) {
 
 	past := time.Now().Add(-time.Minute)
 	out.Sensor.Disable("maintenance")
-	out.Sensor.KeyExpiresAt = &past
+	out.Sensor.InlineKeyExpiresAt = &past
 	repo.sensors[out.Sensor.ID.String()] = out.Sensor
 	if _, err := svc.AuthenticateIdentity(context.Background(), out.APIKey); !errors.Is(err, shared.ErrUnauthorized) {
 		t.Errorf("disabled sensor with an expired key: %v, want ErrUnauthorized (an expired key learns nothing)", err)
 	}
 
-	out.Sensor.KeyExpiresAt = nil
+	out.Sensor.InlineKeyExpiresAt = nil
 	out.Sensor.Revoke("compromised")
 	repo.sensors[out.Sensor.ID.String()] = out.Sensor
 	if _, err := svc.AuthenticateIdentity(context.Background(), out.APIKey); !errors.Is(err, shared.ErrForbidden) {
@@ -81,9 +81,9 @@ func TestAuthenticateIdentity_RefusesRevokedExpiredAndUnknown(t *testing.T) {
 func TestAuthenticateIdentity_RowKeyCarriesItsOwnExpiry(t *testing.T) {
 	repo, svc, out := newIdentitySensor(t)
 	svc.SetKeyTTL(2 * time.Hour)
-	svc.SetAPIKeyRepository(newMockSensorAPIKeyRepo())
+	svc.SetAPIKeyRepository(newMockSensorAPIKeyRepo(repo))
 
-	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), out.Sensor)
+	renewed, expiresAt, err := svc.RenewAPIKey(context.Background(), sensor.SensorIdentity{Sensor: out.Sensor})
 	if err != nil || expiresAt == nil {
 		t.Fatalf("renew: key expiry %v, err %v", expiresAt, err)
 	}

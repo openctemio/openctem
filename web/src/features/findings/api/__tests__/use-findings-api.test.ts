@@ -203,3 +203,42 @@ describe('use-findings-api exports', () => {
     })
   })
 })
+
+describe('useFindingsApi enabled option', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('passes a null key (no request) while disabled, and the endpoint once enabled', async () => {
+    const useSWR = (await import('swr')).default
+    const { useFindingsApi } = await import('../use-findings-api')
+    const { rerender } = renderHook(
+      ({ enabled }) => useFindingsApi({ per_page: 100 }, { enabled }),
+      {
+        initialProps: { enabled: false },
+      }
+    )
+    expect(vi.mocked(useSWR).mock.calls.at(-1)?.[0]).toBeNull()
+    rerender({ enabled: true })
+    expect(vi.mocked(useSWR).mock.calls.at(-1)?.[0]).toContain('per_page=100')
+    // `enabled` is ours, not an SWR option
+    expect(vi.mocked(useSWR).mock.calls.at(-1)?.[2]).not.toHaveProperty('enabled')
+  })
+})
+
+describe('useMarkDuplicateApi', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('posts this finding to the original finding duplicates collection', async () => {
+    const useSWRMutation = (await import('swr/mutation')).default
+    const { post } = await import('@/lib/api/client')
+    const { useMarkDuplicateApi } = await import('../use-findings-api')
+    renderHook(() => useMarkDuplicateApi('dup-1'))
+    const fetcher = vi.mocked(useSWRMutation).mock.calls.at(-1)?.[1] as (
+      key: string,
+      opts: { arg: { duplicate_of_id: string } }
+    ) => Promise<unknown>
+    await fetcher('mark-duplicate:dup-1', { arg: { duplicate_of_id: 'orig-2' } })
+    expect(post).toHaveBeenCalledWith('/api/v1/findings/orig-2/duplicates', {
+      finding_id: 'dup-1',
+    })
+  })
+})

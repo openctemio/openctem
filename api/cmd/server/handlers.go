@@ -1,27 +1,62 @@
 package main
 
 import (
+	"os"
+
+	"context"
 	"database/sql"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
+
+	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
 	"github.com/openctemio/openctem/api/internal/app"
+	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
+	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/platformlegal"
+	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
+
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	"github.com/openctemio/openctem/api/internal/app/adminconsole"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/compliance"
+	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
+
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/commandlog"
+	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/http/routes"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
 	"github.com/openctemio/openctem/api/internal/infra/websocket"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/oidc"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -92,6 +127,36 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 	}
 }
 
+// newScanWorkflowHandler builds the scan workflow handler with the run page's task
+// logs (RFC-029 §4.4.1).
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, events command.EventReader, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+	h := handler.NewScanWorkflowHandler(svc, v, log)
+	h.SetTaskLogs(logs)
+	h.SetUserNames(users)
+	h.SetRunEvents(events)
+	if scope != nil {
+		// Runs about a finding (retests) follow the finding's data scope.
+		h.SetFindingScope(scope)
+	}
+	return h
+}
+
+// withScopeSnapshots gives the workflow handler the run scope snapshot route.
+func withScopeSnapshots(h *handler.ScanWorkflowHandler, snaps *postgres.ScopeSnapshotRepository) *handler.ScanWorkflowHandler {
+	if snaps != nil {
+		h.SetScopeSnapshots(snaps)
+	}
+	return h
+}
+
+// withReadiness gives the workflow handler ?include=readiness.
+func withReadiness(h *handler.ScanWorkflowHandler, scans *scanapp.Service) *handler.ScanWorkflowHandler {
+	if scans != nil {
+		h.SetReadiness(scans.WorkflowReadiness)
+	}
+	return h
+}
+
 // NewHandlers creates all HTTP handlers.
 func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	cfg := deps.Config
@@ -109,6 +174,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// discovery, JWKS and token request goes through the SSRF-safe client.
 	adminConsoleSvc.SetPlatformIdP(repos.PlatformIdP, newPlatformIdPClient())
 	adminConsoleSvc.SetBreakGlassNotifier(breakGlassMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	if svc.Signup != nil {
+		svc.Signup.SetNotifier(signupPolicyMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	}
+
+	// CI runs (RFC-051): OIDC exchange, uploads, the gate, administration.
+	ciAdmin, ciRunner := newCIHandlers(cfg, repos, svc, log)
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
@@ -116,26 +187,56 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetAuditService(svc.Audit)
 
-	// Command handler with pipeline service wired
+	// Command handler with scan run service wired
 	commandHandler := handler.NewCommandHandler(svc.Command, v, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
-	commandHandler.SetPipelineService(svc.Pipeline)
+	sensorHandler.SetZoneLister(repos.ScanZone)
+	sensorHandler.SetGrantService(svc.SensorGrant)
+	commandHandler.SetScanRunService(svc.ScanRun)
+	commandHandler.SetAuditService(svc.Audit)
+	commandHandler.SetScanCommandGate(svc.Scan)
+	// A job the claim-time scope re-check fails settles what waits on it
+	// (scan step, validation run, retest) as a sensor's failure would.
+	svc.Command.SetFailureObserver(commandHandler)
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
+	// Continuous retest (RFC-039): a retest check's evidence is recorded
+	// advisory-only and its retest settled when the sensor completes or fails it.
+	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)
+	if svc.ScanRun != nil {
+		commandHandler.SetValidationRuns(svc.ScanRun)
+	}
+	// Per-task logs from sensors (RFC-029 §4.4.1), shown on the run page.
+	commandLogs := commandlog.NewService(repos.CommandLog)
+	commandHandler.SetCommandLogs(commandLogs)
+	commandHandler.SetFindingScope(svc.DataScope)
+	commandHandler.SetCoverageEvaluator(svc.Ingest)
 
-	// Ingest handler — opt into async mode (RFC-005) when configured. Default
-	// (sync) leaves the handler processing reports in-request as before.
+	// Sensor authentication and the services the protocol v2 control handler
+	// shares.
 	ingestHandler := handler.NewIngestHandler(svc.Ingest, svc.Sensor, log)
 	// Heartbeat doorbell (RFC-023 §9.2a): the heartbeat tells a sensor that
 	// work is waiting and when to ring again. One cheap query per heartbeat.
-	ingestHandler.SetDoorbell(app.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log))
-	// Protocol v2 results discovery on the v1 heartbeat (RFC-026 WP-A7).
-	ingestHandler.SetV2Advertised(cfg.Ingest.V2Results)
-	if cfg.Ingest.AsyncEnabled() && repos.IngestJob != nil {
-		ingestHandler.SetAsyncIngest(repos.IngestJob, cfg.Ingest.MaxPendingPerTenant)
-		log.Info("async ingest enabled", "max_pending_per_tenant", cfg.Ingest.MaxPendingPerTenant)
+	doorbell := sensor.NewDoorbell(repos.Command, heartbeatDoorbellConfig(cfg), log)
+	// Gated actions (rotate_key) ring only when the sensor's grant lists
+	// them (RFC-052 §5.3).
+	doorbell.SetGrants(repos.SensorGrant)
+	// A new job-signing key set changes config_version, so sensors re-read
+	// hello and pick it up (RFC-040 §5.6).
+	if svc.JobSigner != nil {
+		doorbell.SetKeySetVersion(svc.JobSigner.KeySetVersion)
+	}
+	ingestHandler.SetDoorbell(doorbell)
+	// Heartbeat latency feeds the health controller's platform-health guard
+	// (RFC-035 D3): no offline conviction while heartbeats are slow.
+	ingestHandler.SetHeartbeatObserver(svc.SensorPlatformHealth)
+	// A CI sensor's key is refused when its organization requires OIDC for
+	// CI (RFC-051).
+	ciKeyPolicy := newCIRunnerKeyPolicy(repos, svc, log)
+	if ciKeyPolicy != nil {
+		ingestHandler.SetCIRunnerKeyPolicy(ciKeyPolicy)
 	}
 
 	// Tenant handler with role service and asset service wired.
@@ -145,15 +246,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// endpoint until back-wiring happens.
 	tenantHandler := handler.NewTenantHandler(svc.Tenant, v, log)
 	tenantHandler.SetSelfServiceTenantCreation(cfg.Auth.SelfServiceTenantCreation())
+	tenantHandler.SetLicensePolicyEvaluator(svc.LicensePolicy)
+	if svc.Signup != nil {
+		tenantHandler.SetSignupPolicy(svc.Signup)
+	}
+	if svc.Entitlement != nil {
+		tenantHandler.SetFreePlan(svc.Entitlement)
+	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
 	tenantHandler.SetModuleService(svc.Module)
-	if svc.DataScopePolicy != nil {
-		tenantHandler.SetDataScopePolicyInvalidator(svc.DataScopePolicy.Invalidate)
-	}
 	lastTenantHandler = tenantHandler
 
 	// Vulnerability handler with user and asset services for enrichment
@@ -161,6 +266,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	vulnHandler.SetUserService(svc.User)
 	vulnHandler.SetAssetService(svc.Asset)
 	vulnHandler.SetAuditService(svc.Audit)
+	vulnHandler.SetComponentService(svc.Component)
+	vulnHandler.SetSavedViews(svc.SavedView)
 	if svc.BulkGuard != nil {
 		vulnHandler.SetBulkGuard(svc.BulkGuard)
 	}
@@ -176,11 +283,15 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
+	// Replays of a verified delivery are ignored for 24 hours (all replicas).
+	if deps.RedisClient != nil {
+		githubWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 
 	// Finding actions handler with the CTEM Stage-4 validation runner wired.
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
 	findingActionsHandler.SetValidationRunner(svc.ValidationRun)
-	findingActionsHandler.SetSourceAnalytics(svc.SourceAnalytics)
+	findingActionsHandler.SetSavedViews(svc.SavedView)
 
 	// Validation handler + coverage KPI reader.
 	validationHandler := handler.NewValidationHandler(svc.ValidationEvidence, log)
@@ -188,12 +299,22 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Direct evidence submissions change a finding only when they cite the
 	// validate command assigned to the submitting sensor; otherwise advisory.
 	validationHandler.SetCommandLookup(repos.Command)
+	// Evidence without a command is refused unless the tenant's sensor result
+	// policy allows advisory evidence (RFC-040 §5.3).
+	validationHandler.SetEvidencePolicy(svc.Ingest)
 
 	// Per-tenant module route gating (module-coupling plan Phase 1). Fail-open:
 	// only an explicitly-disabled non-core module is blocked. Wired back into the
 	// module service so a toggle invalidates the gate cache immediately.
 	moduleGate := middleware.NewModuleGate(svc.Module, time.Minute)
-	svc.Module.SetModuleCacheInvalidator(moduleGate)
+	if deps.RedisClient != nil {
+		// Every replica caches module state: a toggle drops the cache here and,
+		// through Redis, on the other replicas at once.
+		svc.ModuleChangeBus = redis.NewModuleChangeBus(deps.RedisClient, moduleGate, log)
+		svc.Module.SetModuleCacheInvalidator(svc.ModuleChangeBus)
+	} else {
+		svc.Module.SetModuleCacheInvalidator(moduleGate)
+	}
 
 	// Read-only MCP server: exposes this tenant's CTEM data to an AI client over
 	// JSON-RPC, authenticated by a tenant-scoped `oct_` API key (not the browser
@@ -215,20 +336,56 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		)
 		// Audit every MCP tools/call (which key, tenant, tool, sanitized args, outcome).
 		mcpHandler.SetAuditService(svc.Audit)
+		mcpHandler.SetModuleGate(moduleGate)
 		mcpAuth = apiKeyAuth.Handler
+	}
+	// The organization MCP policy applies to oct_ keys on the MCP endpoint
+	// (access tokens are checked by the authorization server).
+	var mcpPolicies middleware.MCPPolicyReader
+	var mcpSettings *handler.MCPSettingsHandler
+	if svc.Tenant != nil {
+		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
+		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
+	}
+	mcpDiscovery := newMCPDiscovery(cfg, log)
+	// OAuth for MCP clients (RFC-062): with an authorization server the MCP
+	// endpoint also accepts its access tokens, and a refused call that
+	// another scope would allow gets a step-up challenge.
+	var mcpOAuthHandler *handler.MCPOAuthHandler
+	var mcpConnections *handler.MCPConnectionsHandler
+	var mcpClients *handler.MCPClientsHandler
+	if mcpOAuth := newMCPOAuthService(mcpDiscovery, deps, log); mcpOAuth != nil && mcpHandler != nil {
+		mcpOAuthHandler = handler.NewMCPOAuthHandler(mcpOAuth, log)
+		mcpConnections = handler.NewMCPConnectionsHandler(mcpOAuth, log)
+		mcpClients = handler.NewMCPClientsHandler(mcpOAuth, log)
+		mcpAuth = middleware.MCPCredentialAuth(apiKeyAuth.Handler, mcpOAuth, log)
+		mcpHandler.SetResourceMetadataURL(mcpDiscovery.Endpoints.ResourceMetadata)
+		// Write tools run only after the person confirms the action in the
+		// web UI (RFC-062 §10).
+		mcpHandler.SetWriteTools(mcpOAuth, svc.Vulnerability)
+	}
+	if mcpAuth != nil && mcpPolicies != nil {
+		auth, gate := mcpAuth, middleware.MCPKeyPolicyGate(mcpPolicies, log)
+		mcpAuth = func(next http.Handler) http.Handler { return auth(gate(next)) }
 	}
 
 	handlers := routes.Handlers{
-		ModuleGate: moduleGate,
-		DataScope:  svc.DataScope,
-		MCP:        mcpHandler,
-		MCPAuth:    mcpAuth,
-		APIKeyAuth: apiKeyAuth,
+		ModuleGate:     moduleGate,
+		DataScope:      svc.DataScope,
+		MCP:            mcpHandler,
+		MCPAuth:        mcpAuth,
+		MCPDiscovery:   mcpDiscovery,
+		MCPOAuth:       mcpOAuthHandler,
+		MCPSettings:    mcpSettings,
+		MCPConnections: mcpConnections,
+		MCPClients:     mcpClients,
+		APIKeyAuth:     apiKeyAuth,
 		// Health
 		Health: handler.NewHealthHandler(
 			handler.WithDatabase(deps.DB),
 			handler.WithRedis(deps.RedisClient),
 		),
+		ClientErrors: handler.NewClientErrorHandler(log),
 
 		// Auth
 		Auth: handler.NewAuthHandler(&cfg.Keycloak, log),
@@ -240,30 +397,52 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
-		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
-		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
-		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
-		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
-		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
+		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
+		ScopeLetter:      handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
+		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:             newEASMHandler(repos, svc, log),
+		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMLookalike:    newEASMLookalikeHandler(svc, log),
+		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
+		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
 
 		// CTEM Discovery - Network Services, State History & Relationships
-		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log),
-		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log),
+		AssetService:           handler.NewAssetServiceHandler(repos.AssetService, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		WebEndpoint:            handler.NewWebEndpointHandler(webendpointapp.NewService(repos.WebEndpoint, svc.DataScope), svc.Audit, log),
+		APISpec:                handler.NewAPISpecHandler(apispecapp.NewService(repos.APISpec, repos.Asset, svc.DataScope), svc.Audit, log),
+		AssetStateHistory:      handler.NewAssetStateHistoryHandler(repos.AssetStateHistory, repos.Asset, v, log).SetDataScope(svc.DataScope),
+		AssetSoftware:          handler.NewAssetSoftwareHandler(svc.VulnMatch, repos.Asset, log).SetDataScope(svc.DataScope),
 		AssetIdentifier:        handler.NewAssetIdentifierHandler(repos.AssetIdentifier, repos.Asset, log),
+		AssetAttribution:       newAssetAttributionHandler(repos, svc, log),
 		AssetRelationship:      handler.NewAssetRelationshipHandler(svc.AssetRelationship, v, log),
 		RelationshipSuggestion: handler.NewRelationshipSuggestionHandler(svc.RelationshipSuggestion, log),
-		AssetImport:            handler.NewAssetImportHandler(svc.AssetImport, svc.Ingest, log),
-		ReportSchedule:         handler.NewReportScheduleHandler(svc.ReportSchedule, log),
+		AssetImport:            newAssetImportHandler(svc, log),
+		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
+		ReportSchedule:         newReportScheduleHandler(svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log),
+		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:             vulnHandler,
-		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
-		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:            findingActionsHandler,
+		Vulnerability:    vulnHandler,
+		RemediationGroup: handler.NewRemediationGroupHandler(svc.RemediationGroup),
+		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingActions:   findingActionsHandler,
+		FindingRetest: func() *handler.FindingRetestHandler {
+			h := handler.NewFindingRetestHandler(svc.Retest, log)
+			if svc.Pentest != nil {
+				h.SetManualRetestSource(svc.Pentest) // pentest testers' retests join the history
+			}
+			return h
+		}(),
+		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
 		GitHubWebhook:             githubWebhookHandler,
@@ -282,19 +461,26 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		}(),
 
 		// Integration
-		Integration: handler.NewIntegrationHandler(svc.Integration, v, log),
-		DefectDojo:  handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
+		Integration: func() *handler.IntegrationHandler {
+			h := handler.NewIntegrationHandler(svc.Integration, v, log)
+			// A sync of a Tenable.sc connector queues connector_sync (RFC-047).
+			h.SetTenableSCConnector(svc.TenableSC)
+			return h
+		}(),
+		DefectDojo: handler.NewDefectDojoHandler(svc.DefectDojoSync, log),
 
 		// Sensors & Commands
-		Command:          commandHandler,
-		Sensor:           sensorHandler,
-		SensorContent:    handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
-		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
-		Ingest:           ingestHandler,
-		SensorResultsV2:  newSensorResultsV2Handler(cfg, repos, svc, log),
-		RuntimeTelemetry: newRuntimeTelemetryHandlerWithCorrelator(deps, svc, log),
-		IOC:              newIOCHandlerWithFindingCheck(deps, log),
-		Validation:       validationHandler,
+		Command:         commandHandler,
+		Sensor:          sensorHandler,
+		SensorContent:   handler.NewSensorContentHandler(svc.SensorContent, sensorHandler, log),
+		SensorResults:   handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
+		ScanZone:        handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
+		ScanWindow:      newScanWindowHandler(svc, log),
+		Ingest:          ingestHandler,
+		SensorResultsV2: newSensorResultsV2Handler(cfg, repos, svc, ciKeyPolicy, log),
+		SensorPairing:   newSensorPairingHandler(svc, log),
+		IOC:             newIOCHandlerWithFindingCheck(deps, log),
+		Validation:      validationHandler,
 		SCIM: func() *handler.SCIMHandler {
 			h := handler.NewSCIMHandler(svc.SCIMProvisioning, log)
 			h.SetGroupService(svc.SCIMGroups)
@@ -303,22 +489,28 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SCIMToken: func() *handler.SCIMTokenHandler {
 			h := handler.NewSCIMTokenHandler(svc.SCIMToken, log)
 			h.SetGroupService(svc.SCIMGroups)
+			h.SetAuditService(svc.Audit)
 			return h
 		}(),
 		SCIMAuth: middleware.SCIMAuth(svc.SCIMToken),
 
-		// Scanning & Pipelines
-		ScanProfile:     handler.NewScanProfileHandler(svc.ScanProfile, v, log),
-		ScanSession:     handler.NewScanSessionHandler(svc.ScanSession, v, log),
-		ScannerTemplate: handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
-		TemplateSource:  handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
-		SecretStore:     handler.NewSecretStoreHandler(svc.SecretStore, v, log),
-		Tool:            handler.NewToolHandler(svc.Tool, v, log),
-		ToolCategory:    handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
-		Capability:      handler.NewCapabilityHandler(svc.Capability, v, log),
-		Scan:            handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
-		CI:              handler.NewCIHandler(svc.Scan, log),
-		Pipeline:        handler.NewPipelineHandler(svc.Pipeline, v, log),
+		// Scanning & ScanRuns
+		ScanProfile:         handler.NewScanProfileHandler(svc.ScanProfile, v, log),
+		ScannerTemplate:     handler.NewScannerTemplateHandler(svc.ScannerTemplate, v, log),
+		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
+		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
+		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
+			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
+		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
+		Tool:         handler.NewToolHandler(svc.Tool, v, log),
+		ToolCategory: handler.NewToolCategoryHandler(svc.ToolCategory, v, log),
+		Capability:   handler.NewCapabilityHandler(svc.Capability, v, log),
+		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
+		CIAdmin:      ciAdmin,
+		CIRunner:     ciRunner,
+		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
+		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -329,13 +521,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Pentest Campaign Management
 		Pentest: func() *handler.PentestHandler {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
-			h.SetImportService(app.NewFindingImportService(repos.Finding, log))
+			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
+			h.SetAuditService(svc.Audit)
+			h.SetChecklistService(svc.PentestChecklists)
 			return h
 		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
+		PentestReportTemplate:  handler.NewPentestReportTemplateHandler(svc.Pentest, svc.Audit, log),
+		PentestChecklist:       handler.NewPentestChecklistHandler(svc.PentestChecklists, svc.Audit, log),
 
 		// File Attachments (shared across pentest/retest/campaign)
-		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, log),
+		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
 
 		// Compliance Framework Management
 		Compliance: handler.NewComplianceHandler(svc.Compliance, log),
@@ -353,22 +549,21 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		BusinessUnit: handler.NewBusinessUnitHandler(svc.BusinessUnit, log),
 
 		// Business Services (Phase 3)
-		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log),
+		BusinessService: handler.NewBusinessServiceHandler(deps.DB.DB, log).WithDataScope(svc.DataScope),
 
 		// API Keys & Webhooks
-		APIKey:  handler.NewAPIKeyHandler(svc.APIKey, v, log),
-		Webhook: handler.NewWebhookHandler(svc.Webhook, v, log),
+		APIKey: handler.NewAPIKeyHandler(svc.APIKey, v, log),
 
 		// AI Triage (always initialized - handler returns 503 if service is nil)
 		AITriage: handler.NewAITriageHandler(svc.AITriage, log),
 
 		// Suppressions
-		Suppression: handler.NewSuppressionHandler(svc.Suppression, log),
+		Suppression: newSuppressionHandler(svc, log),
 
 		// Access Control
 		Group:          handler.NewGroupHandler(svc.Group, v, log),
-		PermissionSet:  handler.NewPermissionSetHandler(svc.Permission, v, log),
 		Role:           handler.NewRoleHandler(svc.Role, v, log),
+		ServiceAccount: handler.NewServiceAccountHandler(svc.ServiceAccount, svc.APIKey, v, log),
 		Permission:     handler.NewPermissionHandler(svc.PermCache, svc.PermVersion, log),
 		AssignmentRule: handler.NewAssignmentRuleHandler(svc.AssignmentRule, v, log),
 		ScopeRule:      handler.NewScopeRuleHandler(svc.ScopeRule, v, log),
@@ -391,10 +586,27 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
 
 		// Admin Auth (API Key authentication for Admin UI)
-		AdminAuth:           handler.NewAdminAuthHandler(log),
-		AdminOrganization:   handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning),
-		AdminConsole:        handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
-		AdminAuthMiddleware: middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
+		AdminAuth:         handler.NewAdminAuthHandler(log),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc),
+		AdminOverview: handler.NewAdminOverviewHandler(
+			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
+				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)
+			},
+			func(ctx context.Context) (postgres.OpsSnapshot, error) {
+				return postgres.ReadOpsSnapshot(ctx, deps.DB.DB)
+			},
+			repos.Admin, shippedSchemaVersion(log), log),
+		AdminPlatformUser: handler.NewAdminPlatformUserHandler(
+			postgres.NewPlatformUserDirectory(deps.DB),
+			newPlatformUserService(repos, svc, cfg, deps.DB),
+			log),
+		AdminOperations:         newAdminOperationsHandler(deps, cfg, log),
+		Announcement:            handler.NewAnnouncementHandler(postgres.NewPlatformAnnouncementRepository(deps.DB), log),
+		AdminSession:            handler.NewAdminSessionHandler(postgres.NewAdminSessionDirectory(deps.DB), adminConsoleSvc, log),
+		AdminSupportRateLimiter: middleware.NewAdminMappingRateLimiter(middleware.AdminMappingRateLimitConfig{WriteRequestsPerMin: 20}, log),
+		AdminConsole:            handler.NewAdminConsoleHandler(adminConsoleSvc, cfg.Auth.CookieSecure, cfg.Auth.RefreshTokenCookieName, log),
+		AdminAuditChain:         handler.NewAdminAuditChainHandler(svc.Audit, adminConsoleSvc, repos.AdminAuditLog, repos.AdminOrg, log),
+		AdminAuthMiddleware:     middleware.NewAdminAuthMiddleware(adminConsoleSvc, log),
 
 		// Admin Audit middleware (audit logging for admin operations)
 		AdminAuditMiddleware: middleware.NewAuditMiddleware(repos.AdminAuditLog, log),
@@ -408,33 +620,91 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminTargetMapping: handler.NewAdminTargetMappingHandler(repos.TargetMapping, log),
 
 		// Asset Dedup Review (RFC-001)
-		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, repos.Finding, log),
+		AdminDedup: handler.NewAdminDedupHandler(repos.AssetDedup, log).SetDataScope(svc.DataScope),
 
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
 		Scoping:               handler.NewScopingHandler(postgres.NewScopingSummaryRepository(deps.DB), log),
 
-		// Platform Stats (tenant-scoped platform sensor statistics)
-		PlatformStats: handler.NewPlatformStatsHandler(svc.Sensor, log),
+		// Platform scanning: the shared platform sensors as a service the
+		// tenant may use, never the sensors themselves.
+		PlatformScanning: handler.NewPlatformScanningHandler(
+			sensor.NewPlatformScanningService(repos.Sensor, app.PlatformSensorsAllowed), log),
 
 		// WebSocket for real-time communication
 		WebSocket: websocket.NewHandler(deps.WebSocketHub, log, cfg.CORS.AllowedOrigins, cfg.App.Env),
 
-		// F-8: wire the single-use ticket redeemer when configured so the
-		// /ws route uses ticket auth instead of the JWT chain.
-		WSTicketRedeemer: svc.WSTicket,
+		// Login, MFA, password, SSO and invitation limits count in Redis so
+		// every replica spends one budget (in-memory fallback on a Redis error).
+		AuthRateLimitBackend: middleware.NewRedisAuthRateLimitBackend(deps.RedisClient, log),
 	}
 
 	// SSO handler (always initialized - uses DB-stored provider configs)
+	// Scan profile changes go to the tenant's audit log.
+	handlers.ScanProfile.SetAuditService(svc.Audit)
+	// Changes to what sensors scan and run (scope targets and exclusions,
+	// tools and their tenant config, scanner templates) too (RFC-040 §5.11).
+	handlers.Scope.SetAuditService(svc.Audit)
+	handlers.Scope.SetSettingsStore(svc.Tenant)
+	// People on scope responses are named from this tenant's members only.
+	scopeActors := postgres.NewScopeActorRepository(deps.DB)
+	handlers.Scope.SetActorNamer(scopeActors)
+	// Pending entries name their approvers; an owner without another
+	// approver approves with a fresh authenticator code (RFC-054 §7).
+	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	// A scan window override needs a fresh authenticator code (RFC-067 §8).
+	wireScanWindowTOTP(svc)
+	if svc.EASMSweep != nil {
+		handlers.Scope.SetSweeper(svc.EASMSweep)
+	}
+	if svc.Scan != nil {
+		handlers.Scope.SetScopeWaitStarter(svc.Scan)
+	}
+	if svc.ScanPolicy != nil {
+		handlers.Scope.SetProofPolicy(svc.ScanPolicy)
+	}
+	// Private programs (RFC-065 §15.3): owners see every private program;
+	// the scope views leave out the entries of private programs the caller
+	// may not see.
+	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
+	// Program asset flags on asset responses (RFC-065 §16.5).
+	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
+	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
+	if svc.Scan != nil && svc.ActiveGate != nil {
+		handlers.Scope.SetDryRun(svc.Scan, svc.ActiveGate)
+	}
+	handlers.Tool.SetAuditService(svc.Audit)
+	// Configuration changes audited with a before/after diff.
+	handlers.Integration.SetAuditService(svc.Audit)
+	handlers.TemplateSource.SetAuditService(svc.Audit)
+	handlers.SLA.SetAuditService(svc.Audit)
+	handlers.AssignmentRule.SetAuditService(svc.Audit)
+	handlers.ScopeRule.SetAuditService(svc.Audit)
+	handlers.Outbox.SetAuditService(svc.Audit)
+	// Integration admins read private program events scrubbed unless they
+	// own the tenant or are a member of the program (RFC-065 §15.4).
+	handlers.Outbox.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
+	handlers.Integration.SetProgramScrub(svc.ProgramDelivery, svc.BountyProgram)
+	handlers.PriorityRule.SetAuditService(svc.Audit)
+	// Asset access grants change who sees an asset: audited.
+	handlers.AssetOwner.SetAuditService(svc.Audit)
+	handlers.AssetOwner.SetAttributeLocker(svc.Asset)
+	handlers.ScannerTemplate.SetAuditService(svc.Audit)
+
 	if svc.SSO != nil {
 		handlers.SSO = handler.NewSSOHandler(svc.SSO, log)
 		// Identity-provider changes go to the organization's audit log.
 		handlers.SSO.SetAuditService(svc.Audit)
+		// Admin-console identity-provider creates/updates wait for an owner.
+		handlers.SSO.SetChangeApproval(svc.SSOChange)
+	}
+	if svc.SSOChange != nil {
+		handlers.SSOChange = handler.NewSSOChangeHandler(svc.SSOChange, svc.Audit, log)
 	}
 
 	// Social OAuth handler (Google / GitHub / Microsoft). svc.OAuth is non-nil
@@ -447,7 +717,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Verified-domain handler (SSO P1 domain-ownership verification)
 	if svc.DomainVerify != nil {
 		handlers.VerifiedDomain = handler.NewVerifiedDomainHandler(svc.DomainVerify, log)
+		if svc.OrgTrust != nil {
+			handlers.OrgTrust = handler.NewOrgTrustHandler(svc.OrgTrust, log)
+		}
 		handlers.VerifiedDomain.SetAuditService(svc.Audit)
+		handlers.VerifiedDomain.SetChangeApproval(svc.SSOChange)
+		// Tenant self-service verification for EASM (research/22 P0-10, E6).
+		var audit handler.AttributionAuditor
+		if svc.Audit != nil {
+			audit = svc.Audit
+		}
+		handlers.EASMVerifiedDomain = handler.NewEASMVerifiedDomainHandler(svc.DomainVerify, audit, log)
 	}
 
 	// SAML SP handler (RFC-009 9d+9e): metadata, config CRUD, and the
@@ -462,6 +742,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// SP entity ID / ACS URL come from APP_URL, never from client headers.
 		handlers.SAML.SetPublicURL(cfg.App.URL)
 		handlers.SAML.SetAuditService(svc.Audit)
+		// Admin-console SAML changes wait for an owner of the organization.
+		handlers.SAML.SetChangeApproval(svc.SSOChange)
 		if cfg.App.URL == "" && cfg.IsProduction() {
 			log.Warn("saml: APP_URL is not set; SP URLs fall back to the request Host (forwarded headers only from SERVER_TRUSTED_PROXIES). Set APP_URL to the public API origin.")
 		}
@@ -473,7 +755,155 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.CredentialImport.SetAuditService(svc.Audit)
 	}
 
+	if svc.AccessRequest != nil {
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+	}
+	if svc.Entitlement != nil {
+		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
+		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+	}
+	if svc.IdleWorkspaces != nil {
+		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
+		handlers.IdleReadOnly = svc.IdleWorkspaces
+		svc.IdleWorkspaces.SetNotifier(idleWorkspaceMailer{email: svc.Email, appName: cfg.App.Name, baseURL: cfg.SMTP.BaseURL, log: log})
+	}
+	// The platform policy for scan approval (RFC-073).
+	if svc.ScanPolicy != nil {
+		handlers.AdminScanPolicy = handler.NewAdminScanPolicyHandler(svc.ScanPolicy, adminConsoleSvc, log)
+	}
+	// Scan approval governance (RFC-073): settings, requests, the inbox and
+	// the scan list badge.
+	if svc.ScanGovernance != nil {
+		handlers.ScanGovernance = handler.NewScanGovernanceHandler(svc.ScanGovernance, log)
+		if handlers.Scan != nil {
+			handlers.Scan.SetApprovals(handler.NewScanApprovalHandler(svc.ScanGovernance, log))
+		}
+	}
+	// The sign-up policy exists with local auth (InitAuthServices).
+	if svc.Signup != nil {
+		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		if repos.PlatformSetting != nil {
+			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
+		}
+		if svc.PlatformEmail != nil {
+			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.App.Name, log)
+		}
+		handlers.SignupPolicy = svc.Signup
+	}
+	handlers.SensorV3 = newSensorV3Server(cfg, repos, svc, deps.RedisClient, handlers.SensorResultsV2, log)
+	if handlers.AdminOperations != nil {
+		handlers.AdminOperations.SetSensorTransport(sensorTransportStatus(handlers.SensorV3))
+	}
+	handlers.Bootstrap.WithSession(bootstrapSession(cfg, svc, handlers))
 	return handlers
+}
+
+// newSensorV3Server builds the sensor protocol v3 server (RFC-059) unless
+// SENSOR_TRANSPORT_V3=off, when protocol v2 is served (v3 runs every call
+// through the v2 routes). The HTTPS binding is always served; the gRPC
+// binding listens once the sensor CA loads and a public host is known, and
+// hello advertises it only while its self-probe passes. Command writes wake
+// its control streams.
+func newSensorV3Server(cfg *config.Config, repos *Repositories, svc *Services, redisClient *redis.Client,
+	v2 *handler.SensorResultsV2Handler, log *logger.Logger,
+) *sensortransport.Server {
+	tc := cfg.SensorConfig.TransportV3
+	if tc.Mode == config.TransportV3Off {
+		log.Warn("sensor protocol v3 is off (SENSOR_TRANSPORT_V3=off): every sensor uses protocol v2")
+		return nil
+	}
+	if v2 == nil {
+		log.Warn("protocol v2 results are off; sensor protocol v3 is not served")
+		return nil
+	}
+	srv := sensortransport.NewServer(sensortransport.Config{MaxContentBytes: v2.Limits().MaxContentBytes}, nil, log)
+	// Command and sensor changes wake the control streams: this replica's
+	// directly, the other replicas' through Redis (T12).
+	if redisClient != nil {
+		bus := redis.NewSensorWakeBus(redisClient, srv.Hub(), log)
+		srv.SetWakeBus(bus)
+		repos.Command.SetChangeNotifier(bus)
+		svc.Sensor.SetStatusNotifier(bus.Wake)
+	} else {
+		repos.Command.SetChangeNotifier(srv.Hub())
+		svc.Sensor.SetStatusNotifier(srv.Hub().Wake)
+	}
+
+	adv := setupSensorGRPC(cfg, srv, svc, log)
+	srv.SetAdvertiser(adv)
+	v2.SetTransportV3Func(func() *protov2.TransportV3 {
+		return &protov2.TransportV3{HTTPSPath: sensortransport.PathPrefix,
+			GRPCEndpoint: adv.Endpoint(), GRPCALPNEndpoint: adv.ALPNEndpoint()}
+	})
+	st := adv.Status()
+	log.Info("sensor protocol v3 enabled", "https_path", sensortransport.PathPrefix,
+		"grpc_state", st.State, "grpc_endpoint", st.Endpoint, "grpc_reason", st.Reason)
+	return srv
+}
+
+// sensorTransportStatus reports srv's bindings (nil: v3 off).
+func sensorTransportStatus(srv *sensortransport.Server) func() handler.SensorTransportStatus {
+	return func() handler.SensorTransportStatus {
+		if srv == nil {
+			return handler.SensorTransportStatus{Mode: config.TransportV3Off,
+				GRPC: handler.SensorTransportGRPC{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonTransportOff}}
+		}
+		st := srv.GRPCStatus()
+		out := handler.SensorTransportStatus{Mode: config.TransportV3Auto, HTTPSPath: sensortransport.PathPrefix,
+			GRPC: handler.SensorTransportGRPC{State: st.State, Endpoint: st.Endpoint, RequiresALPN: st.RequiresALPN, Reason: st.Reason}}
+		if !st.CheckedAt.IsZero() {
+			at := st.CheckedAt
+			out.GRPC.CheckedAt = &at
+		}
+		return out
+	}
+}
+
+// setupSensorGRPC prepares the gRPC binding (sensor CA, certificate issuer,
+// mTLS listener, self-probe) and returns what hello says about it. Without
+// the CA or a public host only the HTTPS binding is served, and the reason
+// is the advertiser's.
+func setupSensorGRPC(cfg *config.Config, srv *sensortransport.Server, svc *Services, log *logger.Logger) *sensortransport.Advertiser {
+	tc := cfg.SensorConfig.TransportV3
+	host := cfg.SensorPublicHost()
+	// The sensor CA: certificates for the gRPC binding. Without it the
+	// HTTPS binding still serves (IssueCertificate answers Unimplemented).
+	ca, err := sensortransport.LoadCA(tc.CACertFile, tc.CAKeyFile, tc.CADir)
+	if err != nil {
+		log.Error("sensor CA not loaded: protocol v3 serves the HTTPS binding only", "error", err)
+		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonNoCA})
+	}
+	log.Info("sensor CA loaded", "fingerprint", ca.Fingerprint())
+	srv.SetCertificateIssuer(sensortransport.NewIssuer(ca, svc.Sensor, svc.Sensor, tc.CertTTL, host, log))
+	if host == "" {
+		log.Info("sensor protocol v3 gRPC binding not served: no SENSOR_PUBLIC_HOST and no https platform URL (APP_URL or SENSOR_PUBLIC_API_URL) to derive it from")
+		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonNoPublicHost})
+	}
+	mcfg := sensortransport.MTLSConfig{Addr: tc.MTLSListenAddr, Host: host, TrustedProxies: tc.MTLSTrustedProxies}
+	if err := srv.EnableMTLS(mcfg, ca, svc.Sensor); err != nil {
+		log.Error("sensor protocol v3 gRPC binding not served", "error", err)
+		return sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCUnavailable, Reason: sensortransport.ReasonListenerFailed})
+	}
+	adv := sensortransport.NewAdvertiser(sensortransport.GRPCStatus{State: sensortransport.GRPCPending, Endpoint: host, Reason: sensortransport.ReasonProbeNotFinished})
+	srv.SetProber(sensortransport.NewProber(adv, host, sensortransport.TLSProbe(ca.Pool()), sensortransport.ProberConfig{
+		OnChange: func(st sensortransport.GRPCStatus) {
+			if st.State == sensortransport.GRPCAdvertised {
+				log.Info("sensor protocol v3 gRPC binding reachable: advertised to sensors", "endpoint", st.Endpoint,
+					"requires_alpn", st.RequiresALPN)
+				return
+			}
+			if tc.PublicHost == "" {
+				// Derived from the platform URL: a gateway without ALPN
+				// routing (the stock image) is an expected setup, not a fault.
+				log.Info("sensor protocol v3 gRPC binding not reachable on the platform's port (the gateway does not route the sensor ALPN id): sensors use the HTTPS binding",
+					"endpoint", host, "reason", st.Reason)
+				return
+			}
+			log.Warn("sensor protocol v3 gRPC binding not reachable through SENSOR_PUBLIC_HOST: sensors use the HTTPS binding",
+				"endpoint", host, "reason", st.Reason)
+		},
+	}))
+	return adv
 }
 
 // frontendOrigin extracts scheme://host from the configured frontend callback
@@ -508,20 +938,55 @@ func InitLocalAuthHandler(
 			cfg.Auth,
 			log,
 		)
-		// F-8: wire the single-use ticket service (may be nil if Redis not configured).
-		if svc.WSTicket != nil {
-			handlers.LocalAuth.SetWSTicketService(svc.WSTicket)
-		}
 		log.Info("local auth handler initialized")
+		if svc.Signup != nil {
+			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
+		}
+		// The same CAPTCHA as the request-access form, on registration.
+		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
+			handlers.LocalAuth.SetCaptcha(t)
+		}
+		// Widening a sensor's grant needs a recent sign-in or step-up.
+		if svc.SensorGrant != nil {
+			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+			})
+		}
+	}
+}
+
+// wireStepUpGate gives the services that need step-up re-authentication for
+// some of their actions (making someone an administrator or an owner,
+// renaming the organization's slug) the same check the sensitive routes use
+// (docs/architecture/step-up-reauth.md). Without local auth there is no
+// session store: platform sessions then cannot step up (fail closed) and
+// external provider tokens are judged by their auth_time.
+func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
+	var checker middleware.RecentAuthChecker
+	if handlers.LocalAuth != nil {
+		checker = handlers.LocalAuth.RecentAuthChecker()
+	}
+	gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+	if svc.Role != nil {
+		svc.Role.SetStepUpGate(gate)
+	}
+	if svc.Tenant != nil {
+		svc.Tenant.SetStepUpGate(gate)
+	}
+	if svc.Scope != nil {
+		svc.Scope.SetStepUpGate(gate)
+	}
+	if svc.Sensor != nil {
+		svc.Sensor.SetStepUpGate(gate)
 	}
 }
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
 // optional config-template service. Templates live in
-// $AGENT_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
+// $SENSOR_CONFIG_TEMPLATES_DIR (default: configs/sensor-templates) and can be
 // edited without rebuilding the frontend.
 func newSensorHandlerWithTemplates(
-	sensorSvc *app.SensorService,
+	sensorSvc *sensor.SensorService,
 	cfg *config.Config,
 	v *validator.Validator,
 	log *logger.Logger,
@@ -532,7 +997,7 @@ func newSensorHandlerWithTemplates(
 	if templatesDir == "" {
 		templatesDir = "configs/sensor-templates"
 	}
-	tmplSvc := app.NewSensorConfigTemplateService(templatesDir, log)
+	tmplSvc := sensor.NewSensorConfigTemplateService(templatesDir, log)
 	h.SetTemplateService(tmplSvc)
 
 	publicAPIURL := cfg.SensorConfig.PublicAPIURL
@@ -573,9 +1038,10 @@ func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
 }
 
 // sensorHealthPolicy maps the heartbeat settings and the sensor release
-// channel onto the fleet-health thresholds: offline after
-// WORKER_HEARTBEAT_TIMEOUT (what the health checker uses), online within
-// three idle heartbeat intervals (at least 90s).
+// channel onto the fleet-health thresholds. Each sensor is judged against
+// its own heartbeat deadline (pkg/domain/sensor/liveness.go); the policy adds
+// the online window of the idle interval (informational) and the
+// WORKER_HEARTBEAT_TIMEOUT backstop.
 func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.HealthPolicy {
 	sc := cfg.SensorConfig
 	for name, v := range map[string]string{
@@ -600,22 +1066,11 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
-func newAttachmentHandlerWithAccessCheck(attachSvc *app.AttachmentService, pentestSvc *app.PentestService, db *sql.DB, enc crypto.Encryptor, log *logger.Logger) *handler.AttachmentHandler {
+func newAttachmentHandlerWithAccessCheck(attachSvc *integration.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
 	h := handler.NewAttachmentHandler(attachSvc, log)
 	h.SetAccessChecker(pentestSvc)
-	h.SetStorageResolver(app.NewSettingsStorageResolver(db, enc, log))
-	return h
-}
-
-// newRuntimeTelemetryHandlerWithCorrelator wires the IOC correlator
-// into the runtime-telemetry ingest path. The handler is nil-safe
-// without a correlator, but leaving it nil kills invariant B6 —
-// telemetry is stored but never matched.
-func newRuntimeTelemetryHandlerWithCorrelator(deps *HandlerDeps, svc *Services, log *logger.Logger) *handler.RuntimeTelemetryHandler {
-	h := handler.NewRuntimeTelemetryHandler(deps.DB.DB, log)
-	if svc.IOCCorrelator != nil {
-		h.SetCorrelator(svc.IOCCorrelator)
-	}
+	h.SetStorageResolver(authapp.NewSettingsStorageResolver(db, enc, log))
+	h.SetAuditService(auditSvc)
 	return h
 }
 
@@ -632,14 +1087,19 @@ func newIOCHandlerWithFindingCheck(deps *HandlerDeps, log *logger.Logger) *handl
 }
 
 // heartbeatDoorbellConfig maps the SENSOR_HEARTBEAT_* settings onto the
-// doorbell, bounded so no advised interval reaches half of the offline
-// timeout (WORKER_HEARTBEAT_TIMEOUT).
-func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
+// doorbell. The maximum advised interval is derived, not configured:
+// min(offlineMark/2, lease/3) (sensor.MaxIntervalBound), where the offline
+// mark is the health controller's sensorStaleTimeout (90 s), or
+// WORKER_HEARTBEAT_TIMEOUT when shorter, and the lease is
+// SENSOR_COMMAND_LEASE after the same clamp the command repository applies.
+// SENSOR_HEARTBEAT_MAX_INTERVAL can only lower it. Raising the lease or the
+// offline mark therefore never lets an interval outlast a command lease
+// (RFC-074).
+func heartbeatDoorbellConfig(cfg *config.Config) sensor.DoorbellConfig {
 	sc := cfg.SensorConfig
-	c := app.DefaultDoorbellConfig()
+	c := sensor.DefaultDoorbellConfig()
 	c.IdleInterval = sc.HeartbeatInterval
 	c.BusyInterval = sc.HeartbeatBusyInterval
-	c.LoadedInterval = sc.HeartbeatLoadedInterval
 	c.MinInterval = sc.HeartbeatMinInterval
 	c.MaxInterval = sc.HeartbeatMaxInterval
 	c.SlowQuery = sc.HeartbeatSlowQuery
@@ -647,21 +1107,363 @@ func heartbeatDoorbellConfig(cfg *config.Config) app.DoorbellConfig {
 	case sc.KeyRenewBefore > 0:
 		c.KeyRenewBefore = sc.KeyRenewBefore
 	case sc.KeyTTL > 0:
-		// Kubelet-style: renew at half-life.
+		// Renew at half-life.
 		c.KeyRenewBefore = sc.KeyTTL / 2
 	}
-	return c.Normalized(cfg.Worker.HeartbeatTimeout)
+	return c.Normalized(offlineMark(cfg.Worker.HeartbeatTimeout), command.ClampLeaseDuration(sc.CommandLease))
+}
+
+// offlineMark is how long after its last heartbeat a sensor is marked
+// offline: the health controller's sensorStaleTimeout, or the configured
+// heartbeat timeout when that is shorter.
+func offlineMark(heartbeatTimeout time.Duration) time.Duration {
+	if heartbeatTimeout > 0 && heartbeatTimeout < sensorStaleTimeout {
+		return heartbeatTimeout
+	}
+	return sensorStaleTimeout
 }
 
 // newSensorResultsV2Handler builds the protocol v2 results handler (RFC-026),
 // or returns nil — /api/v2/sensor is then not mounted — while
 // SENSOR_PROTOCOL_V2_RESULTS is off.
-func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SensorResultsV2Handler {
+func newSensorResultsV2Handler(cfg *config.Config, repos *Repositories, svc *Services, ciKeys *cirunapp.RunnerKeyPolicy,
+	log *logger.Logger) *handler.SensorResultsV2Handler {
 	if !cfg.Ingest.V2Results || repos.IngestJob == nil || repos.IngestReport == nil || svc.Sensor == nil {
 		return nil
 	}
 	receiver := ingest.NewV2Receiver(repos.IngestReport, repos.IngestJob, repos.IngestJob, repos.Command,
 		protov2.DefaultLimits(), cfg.Ingest.MaxPendingPerTenant, log)
 	log.Info("sensor protocol v2 results enabled", "path", protov2.PathPrefix)
-	return handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	h := handler.NewSensorResultsV2Handler(receiver, svc.Sensor, log)
+	if svc.JobSigner != nil {
+		h.SetSignedJobs(svc.JobSigner.Hello)
+	}
+	if ciKeys != nil {
+		h.SetCIRunnerKeyPolicy(ciKeys)
+	}
+	return h
+}
+
+// newCIRunnerKeyPolicy builds the "OIDC required for CI" policy over the
+// tenants' setting (nil without the CI repository).
+func newCIRunnerKeyPolicy(repos *Repositories, svc *Services, log *logger.Logger) *cirunapp.RunnerKeyPolicy {
+	if repos.CIRun == nil {
+		return nil
+	}
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return cirunapp.NewRunnerKeyPolicy(repos.CIRun, audit, log)
+}
+
+// newEASMHandler builds the EASM overview and review queue handler; every
+// review decision is audited (RFC-036).
+func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
+	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	h.SetChanges(easmapp.NewChangeService(repos.EASMChange, svc.DataScope))
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
+	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	if repos.EASMNetworkSeed != nil {
+		review.SetSeededNetworks(repos.EASMNetworkSeed.Networks) // range fixes in seeded networks (RFC-082)
+	}
+	if svc.ActiveGate != nil {
+		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
+	}
+	// Address rows explain why they stay in review and offer the fix.
+	review.SetAddressExplainer(repos.Attribution, func(ctx context.Context, tenantID shared.ID) (string, error) {
+		t, err := repos.Tenant.GetByID(ctx, tenantID)
+		if err != nil {
+			return "", err
+		}
+		return t.Name(), nil
+	})
+	h.SetReview(review, audit)
+	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
+	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
+		h.SetRules(easmapp.NewRuleService(review, svc.ScopeJoin, svc.Scope, repos.Asset, svc.ActiveGate, svc.ScopeGuardrails))
+	}
+	return h
+}
+
+// easmDecisionEffects reclassifies the decided assets' findings now and, on a
+// rejection, resolves the name's EASM exposures (research/22 P0-9).
+func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger) *easmapp.DecisionEffects {
+	var reclassify easmapp.AssetReclassifier
+	if pub := svc.ControlChangePub; pub != nil {
+		reclassify = func(ctx context.Context, tenantID shared.ID, ids []shared.ID) {
+			pub.PublishAssetReclassify(ctx, tenantID, ids, controller.ReasonAssetChange, "attribution decided")
+		}
+	}
+	return easmapp.NewDecisionEffects(repos.Exposure, reclassify, log)
+}
+
+// newEASMSettingsHandler builds the EASM settings and run-now handler
+// (research/22 P0-11).
+func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMSettingsHandler {
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	var sweeper handler.EASMSweeper
+	if svc.EASMSweep != nil {
+		sweeper = svc.EASMSweep
+	}
+	platform := handler.EASMPlatform{
+		CTAvailable:         cfg.Worker.CertMonitorEnabled,
+		DNSAvailable:        svc.EASMDNS != nil,
+		EnrichmentAvailable: cfg.Worker.AssetEnrichmentEnabled,
+		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
+		DNSDefaultHrs:       int(cfg.Worker.EASMDNSInterval.Hours()),
+	}
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
+		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
+}
+
+// newAssetAttributionHandler builds the attribution handler with its audit
+// trail (RFC-036: every human attribution decision is audited).
+func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.AssetAttributionHandler {
+	h := handler.NewAssetAttributionHandler(repos.Attribution, svc.Asset, log)
+	if svc.ActiveGate != nil {
+		h.SetActiveGate(svc.ActiveGate)
+		h.SetScopeReader(svc.ActiveGate) // scope_status, covered_by (RFC-054 §6.6)
+	}
+	if svc.Audit != nil {
+		h.SetAuditService(svc.Audit)
+	}
+	h.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	return h
+}
+
+// newAssetImportHandler builds the asset import handler with its audit trail.
+func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
+	h := handler.NewAssetImportHandler(svc.AssetImport, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newFindingImportHandler builds the handler of POST /findings/import: the
+// ctis importers, ingest with the uploader's rights, VEX documents applied
+// under INGEST_VEX.
+func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.FindingImportHandler {
+	imp := findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log)
+	return handler.NewFindingImportHandler(imp, svc.DataScope, svc.Audit, log)
+}
+
+// newReportScheduleHandler builds the report schedule handler with its audit
+// trail.
+func newReportScheduleHandler(svc *Services, log *logger.Logger) *handler.ReportScheduleHandler {
+	h := handler.NewReportScheduleHandler(svc.ReportSchedule, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newSuppressionHandler wires the suppression handler with the tenant audit log
+// (approvals, and self-approvals at Critical severity, are recorded there).
+func newSuppressionHandler(svc *Services, log *logger.Logger) *handler.SuppressionHandler {
+	h := handler.NewSuppressionHandler(svc.Suppression, log)
+	h.SetAuditService(svc.Audit)
+	return h
+}
+
+// newCIHandlers builds the CI run service and its two handlers (RFC-051).
+// The CI providers' discovery and JWKS documents are fetched through the
+// SSRF-safe client: a self-managed GitLab issuer is configured by a tenant.
+func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) (*handler.CIAdminHandler, *handler.CIRunnerHandler) {
+	if repos.CIRun == nil || svc.Ingest == nil {
+		return nil, nil
+	}
+	verifier := oidc.NewClient(httpsec.SafeHTTPClient(10*time.Second), func(raw string) error {
+		_, err := httpsec.ValidateURL(raw)
+		return err
+	})
+	var audit cirunapp.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	// Break-glass reaches every administrator (in-app) and the tenant's
+	// channels subscribed to ci.break_glass.
+	var admins cirunapp.AdminLister
+	if repos.MemberLifecycle != nil {
+		admins = repos.MemberLifecycle
+	}
+	var inApp cirunapp.InAppNotifier
+	if svc.Notification != nil {
+		inApp = svc.Notification
+	}
+	var ob cirunapp.Notifier
+	if svc.Outbox != nil {
+		ob = svc.Outbox
+	}
+	ciSvc := cirunapp.NewService(cirunapp.Deps{
+		Repo:     repos.CIRun,
+		Verifier: verifier,
+		Assets:   repos.Asset,
+		Branches: repos.Branch,
+		Baseline: repos.Finding,
+		Ingester: svc.Ingest,
+		Units:    repos.CIRun,
+		Audit:    audit,
+		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
+		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
+		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
+	}}, log)
+	var ds handler.DataScopeEnforcer
+	if svc.DataScope != nil {
+		ds = svc.DataScope
+	}
+	if repos.RelationshipSuggestion != nil {
+		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
+	}
+	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
+	admin.SetPipelineService(ciSvc)
+	admin.SetCoverageService(ciSvc)
+	admin.SetSettingsService(ciSvc)
+	runner := handler.NewCIRunnerHandler(ciSvc, log)
+	// VEX documents a run uploads: stored on the run repository's findings,
+	// never closing any (the run token is not a person with findings:approve).
+	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
+	return admin, runner
+}
+
+// newSensorPairingHandler builds the pairing handler (RFC-052); nil when
+// pairing is disabled.
+func newSensorPairingHandler(svc *Services, log *logger.Logger) *handler.SensorPairingHandler {
+	if svc.SensorPairing == nil || svc.Sensor == nil {
+		return nil
+	}
+	return handler.NewSensorPairingHandler(svc.SensorPairing, svc.Sensor, log)
+}
+
+// bootstrapSession wires the session parts of GET /me/bootstrap to the same
+// code that serves /users/me, /users/me/tenants, /notifications/unread-count,
+// /easm/candidates and the organization policy of /auth/providers.
+func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) handler.BootstrapSession {
+	s := handler.BootstrapSession{}
+	if h.User != nil {
+		s.Me = h.User.MeResponse
+		s.MyTenants = h.User.MyTenantsResponse
+	}
+	if svc.Notification != nil {
+		s.UnreadCount = svc.Notification.GetUnreadCount
+	}
+	if h.EASM != nil && h.EASM.HasReview() {
+		s.EASMReviewCount = h.EASM.ReviewCount
+	}
+	if h.Announcement != nil {
+		s.Announcements = h.Announcement.ActiveResponses
+	}
+	mode := cfg.Auth.TenantCreationMode
+	signup := svc.Signup
+	s.TenantCreationMode = func(ctx context.Context) string {
+		if signup != nil {
+			return string(signup.Current(ctx).Mode)
+		}
+		return mode
+	}
+	return s
+}
+
+// newEASMLookalikeHandler serves lookalike monitoring; changes are audited.
+func newEASMLookalikeHandler(svc *Services, log *logger.Logger) *handler.EASMLookalikeHandler {
+	if svc.EASMLookalikes == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMLookalikeHandler(svc.EASMLookalikes, audit, log)
+}
+
+// newEASMNetworkSeedHandler serves network seeds when the service is wired;
+// every change is audited.
+func newEASMNetworkSeedHandler(svc *Services, log *logger.Logger) *handler.EASMNetworkSeedHandler {
+	if svc.EASMNetworkSeeds == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMNetworkSeedHandler(svc.EASMNetworkSeeds, audit, log)
+}
+
+// newAssetWebEvidenceHandler serves web evidence when the service is wired.
+func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.AssetWebEvidenceHandler {
+	if svc.WebEvidence == nil || svc.Asset == nil {
+		return nil
+	}
+	return handler.NewAssetWebEvidenceHandler(svc.Asset, svc.WebEvidence, log)
+}
+
+// newSCMAppHandler builds the code-host app installation routes (RFC-077).
+// Without a GitHub App configured the routes still list installations and
+// answer that the deployment has no app.
+func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SCMAppHandler {
+	if repos.SCMApp == nil {
+		return nil
+	}
+	var gh scmappsvc.GitHubApp
+	if app := newGitHubApp(cfg, log); app != nil {
+		gh = app
+	}
+	var audit scmappsvc.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	s := scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log)
+	if svc.Encryptor != nil {
+		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+	}
+	return handler.NewSCMAppHandler(s, log)
+}
+
+// newGitHubApp builds the deployment's GitHub App client, or nil when it is
+// not configured (a partial configuration is logged and left off).
+func newGitHubApp(cfg *config.Config, log *logger.Logger) *githubapp.App {
+	c := cfg.GitHubApp
+	key := []byte(c.PrivateKey)
+	if c.PrivateKeyFile != "" {
+		b, err := os.ReadFile(c.PrivateKeyFile)
+		if err != nil {
+			log.Error("github app private key not readable; the GitHub App is off", "error", err)
+			return nil
+		}
+		key = b
+	}
+	gc := githubapp.Config{AppID: c.AppID, Slug: c.Slug, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		PrivateKeyPEM: key, WebhookSecret: c.WebhookSecret, APIURL: c.APIURL, WebURL: c.WebURL}
+	if !gc.Configured() {
+		if c.AppID != 0 || c.Slug != "" || len(key) > 0 {
+			log.Warn("the GitHub App is partly configured and stays off: set GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE and GITHUB_APP_WEBHOOK_SECRET")
+		}
+		return nil
+	}
+	app, err := githubapp.New(gc, nil)
+	if err != nil {
+		log.Error("github app not started", "error", logger.SanitizeError(err))
+		return nil
+	}
+	return app
+}
+
+// ciImageLinker finds digest-carrying assets (CI runs) and stores relationship
+// suggestions (RFC-077, code to cloud).
+type ciImageLinker struct {
+	runs        *postgres.CIRunRepository
+	suggestions *postgres.RelationshipSuggestionRepository
+}
+
+func (l ciImageLinker) AssetsWithImageDigest(ctx context.Context, tenantID shared.ID, digest string, exclude shared.ID, limit int) ([]cirunapp.DigestAsset, error) {
+	return l.runs.AssetsWithImageDigest(ctx, tenantID, digest, exclude, limit)
+}
+
+func (l ciImageLinker) CreateBatch(ctx context.Context, s []*relationshipdom.Suggestion) (int, error) {
+	return l.suggestions.CreateBatch(ctx, s)
 }

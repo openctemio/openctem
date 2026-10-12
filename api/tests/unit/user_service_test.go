@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
@@ -184,9 +185,9 @@ func (m *mockUserRepo) GetByPasswordResetToken(_ context.Context, _ string) (*us
 // Test Helpers
 // =============================================================================
 
-func newTestUserService(repo *mockUserRepo) *app.UserService {
+func newTestUserService(repo *mockUserRepo) *tenant.UserService {
 	log := logger.NewNop()
-	return app.NewUserService(repo, log)
+	return tenant.NewUserService(repo, log)
 }
 
 // createUserForTest creates a test user and stores it in the mock repo.
@@ -647,9 +648,9 @@ func TestUpdateProfile_Success_AllFields(t *testing.T) {
 
 	newName := "Updated Name"
 	newPhone := "+1234567890"
-	newAvatar := "https://example.com/avatar.png"
+	newAvatar := "https://avatars.githubusercontent.com/u/1?v=4"
 
-	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name:      &newName,
 		Phone:     &newPhone,
 		AvatarURL: &newAvatar,
@@ -663,8 +664,39 @@ func TestUpdateProfile_Success_AllFields(t *testing.T) {
 	if result.Phone() != "+1234567890" {
 		t.Errorf("Expected phone '+1234567890', got '%s'", result.Phone())
 	}
-	if result.AvatarURL() != "https://example.com/avatar.png" {
+	if result.AvatarURL() != newAvatar {
 		t.Errorf("Expected avatar URL, got '%s'", result.AvatarURL())
+	}
+}
+
+// A profile picture is shown to teammates: an arbitrary host (a tracking
+// pixel) is refused and the stored picture is left as it was.
+func TestUpdateProfile_RefusesAvatarOnUnknownHost(t *testing.T) {
+	repo := newMockUserRepo()
+	svc := newTestUserService(repo)
+	u := createUserForTest(t, repo, "avatar@test.com", "Avatar")
+
+	for _, bad := range []string{
+		"https://tracker.example/pixel.gif",
+		"http://avatars.githubusercontent.com/u/1",
+		"https://user:pw@avatars.githubusercontent.com/u/1",
+		"https://avatars.githubusercontent.com:8443/u/1",
+		"https://googleusercontent.com.evil.example/a.png",
+		"javascript:alert(1)",
+	} {
+		_, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{AvatarURL: &bad})
+		if err == nil || !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("avatar %q: err = %v, want a validation error", bad, err)
+		}
+	}
+	got, _ := repo.GetByID(context.Background(), u.ID())
+	if got != nil && got.AvatarURL() != u.AvatarURL() {
+		t.Errorf("a refused avatar changed the stored one to %q", got.AvatarURL())
+	}
+	// Clearing the picture is always allowed.
+	empty := ""
+	if _, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{AvatarURL: &empty}); err != nil {
+		t.Errorf("clearing the avatar: %v", err)
 	}
 }
 
@@ -676,7 +708,7 @@ func TestUpdateProfile_Success_PartialUpdate(t *testing.T) {
 
 	// Only update name, leave phone and avatar unchanged
 	newName := "Partial Update"
-	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err != nil {
@@ -698,7 +730,7 @@ func TestUpdateProfile_Success_NoChanges(t *testing.T) {
 	u := createUserForTest(t, repo, "nochange@test.com", "Same Name")
 
 	// Empty input should keep all fields the same
-	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{})
+	result, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{})
 	if err != nil {
 		t.Fatalf("UpdateProfile failed: %v", err)
 	}
@@ -712,7 +744,7 @@ func TestUpdateProfile_NotFound(t *testing.T) {
 	svc := newTestUserService(repo)
 
 	newName := "Updated"
-	_, err := svc.UpdateProfile(context.Background(), shared.NewID().String(), app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), shared.NewID().String(), tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err == nil {
@@ -728,7 +760,7 @@ func TestUpdateProfile_InvalidID(t *testing.T) {
 	svc := newTestUserService(repo)
 
 	newName := "Updated"
-	_, err := svc.UpdateProfile(context.Background(), "bad-uuid", app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), "bad-uuid", tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err == nil {
@@ -747,7 +779,7 @@ func TestUpdateProfile_RepoUpdateError(t *testing.T) {
 	repo.updateErr = fmt.Errorf("db write failed")
 
 	newName := "Should Fail"
-	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name: &newName,
 	})
 	if err == nil {
@@ -1064,7 +1096,7 @@ func TestUserService_InvalidIDFormats(t *testing.T) {
 			svc := newTestUserService(repo)
 
 			name := "Test"
-			_, err := svc.UpdateProfile(context.Background(), tc.id, app.UpdateProfileInput{Name: &name})
+			_, err := svc.UpdateProfile(context.Background(), tc.id, tenant.UpdateProfileInput{Name: &name})
 			if err == nil {
 				t.Errorf("Expected error for ID '%s'", tc.id)
 			}
@@ -1145,7 +1177,7 @@ func TestUpdateProfile_GetByIDError(t *testing.T) {
 	repo.getByIDErr = fmt.Errorf("db connection lost")
 
 	name := "Should Fail"
-	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), app.UpdateProfileInput{
+	_, err := svc.UpdateProfile(context.Background(), u.ID().String(), tenant.UpdateProfileInput{
 		Name: &name,
 	})
 	if err == nil {
@@ -1169,3 +1201,14 @@ func TestUpdatePreferences_GetByIDError(t *testing.T) {
 		t.Fatal("Expected error from GetByID")
 	}
 }
+
+// The services mutate the user they hold before calling these targeted
+// updates, and this mock stores that same pointer, so there is nothing more to
+// write here.
+func (m *mockUserRepo) RecordFailedLogin(_ context.Context, _ shared.ID, _ int, _ time.Duration) (*time.Time, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepo) RecordSuccessfulLogin(_ context.Context, _ shared.ID) error { return nil }
+
+func (m *mockUserRepo) UpdatePasswordHash(_ context.Context, _ shared.ID, _ string) error { return nil }

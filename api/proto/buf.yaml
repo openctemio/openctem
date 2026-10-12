@@ -1,0 +1,11 @@
+# buf module of the sensor protocol v3 (docs/rfcs/RFC-059-sensor-transport-v3.md).
+# CI runs buf lint, buf breaking against develop and a buf generate drift check.
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

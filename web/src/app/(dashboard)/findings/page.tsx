@@ -1,15 +1,40 @@
 'use client'
 
+import { useListParams } from '@/hooks/use-list-params'
+import { summarizeBulkResult, type BulkSummary } from '@/features/findings/lib/bulk-result'
+import { buildCsv, downloadCsv } from '@/hooks/use-csv-export'
 import { formatEpssScore } from '@/lib/epss'
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import Link from 'next/link'
+import { useState, useMemo, useCallback, useEffect, type ReactNode } from 'react'
+import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
-import { useUrlParams, useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
+import {
+  DEFAULT_FINDING_LENS,
+  FINDING_LENSES,
+  parseFindingLens,
+  type FindingLens,
+} from '@/features/findings/lib/state-lens'
+import { findingsOverview } from '@/features/findings/lib/findings-overview'
+import {
+  useUrlParams,
+  useUrlParam,
+  useUrlFilter,
+  useUrlFilterList,
+  pushUrlSearch,
+  replaceUrlSearch,
+} from '@/hooks/use-url-param'
+import {
+  buildDrillDownSearch,
+  buildGroupedSearch,
+  drillOrigin,
+  drillValue,
+  removeFilterParam,
+} from '@/features/findings/lib/drilldown'
 import {
   useFindingSourcesApi,
   groupFindingSourcesByCategory,
 } from '@/features/config/api/finding-source-api'
 import { useDebounce } from '@/hooks/use-debounce'
+import { toDisplayText } from '@/lib/untrusted-text'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
@@ -27,10 +52,21 @@ import {
   BulkActionBar,
   FilterPanelToggle,
   FilterSheet,
+  TruncatedText,
+  SegmentedLens,
+  DrillDownBreadcrumb,
 } from '@/features/shared'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
+import {
+  ACTIONABLE_SEVERITIES,
+  SEVERITY_LEVELS,
+  highestSeverity,
+  type SeverityLevel,
+} from '@/lib/severity'
+import { useSeverityLabel } from '@/hooks/use-scale-labels'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
@@ -61,8 +97,7 @@ import {
   Copy,
   Link2,
   Plus,
-  X,
-  Filter,
+  FileUp,
   AlertCircle,
   Loader2,
   Route,
@@ -81,8 +116,10 @@ import {
   FindingDetailDrawer,
   CreateFindingDialog,
   FINDING_STATUS_CONFIG,
+  findingStatusesInCategory,
 } from '@/features/findings'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
+import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
 import { SlaStatusBadge } from '@/features/sla/components/sla-status-badge'
 import { SLA_STATUS_LABELS, type SLAStatus } from '@/features/repositories/types/repository.types'
 import { formatDueRelative } from '@/features/sla/lib/sla'
@@ -93,6 +130,10 @@ import {
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
+import {
+  FindingContextChips,
+  hasFindingContextFilters,
+} from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
@@ -101,6 +142,7 @@ import { type FindingGroup } from '@/features/findings/api/use-finding-groups'
 import {
   useFindingsApi,
   useFindingStatsApi,
+  buildFindingsExportUrl,
   invalidateFindingsCache,
 } from '@/features/findings/api/use-findings-api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -110,11 +152,15 @@ import type { Severity } from '@/features/shared/types'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { post, csrfFetch } from '@/lib/api/client'
+import { csrfFetch } from '@/lib/api/client'
 import { usePermissions } from '@/context/permission-provider'
+import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
+import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
+import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
+import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
 
 // ============================================
@@ -240,6 +286,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     // Use has_data_flow flag for list view (no full data loaded)
     // When api.data_flow is present (detail view), use full data
     hasDataFlow: api.has_data_flow || false,
+    branchOnly: api.branch_only || false,
     dataFlow: api.data_flow
       ? {
           sources: api.data_flow.sources?.map((loc) => ({
@@ -272,35 +319,35 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
 // Loading Skeleton
 // ============================================
 
-const SEVERITY_VALUES = ['critical', 'high', 'medium', 'low', 'info'] as const
-type FacetSeverity = (typeof SEVERITY_VALUES)[number]
+type FacetSeverity = SeverityLevel
 const PAGE_SIZES = [10, 20, 30, 50, 100]
 /** Short option labels — the trigger's layers icon already says "group by". */
 const GROUP_BY_LABELS: Record<GroupByDimension, string> = {
   cve_id: 'CVE',
+  rule_id: 'Rule',
   asset_id: 'Asset',
   owner_id: 'Owner',
   severity: 'Severity',
   source: 'Source',
   component_id: 'Component',
   finding_type: 'Type',
+  family: 'Family',
 }
 const FILTERS_OPEN_KEY = 'openctem:findings-filters-open'
-const SEVERITY_LABELS: Record<FacetSeverity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  info: 'Info',
-}
-const OPEN_STATUSES = ['new', 'confirmed', 'in_progress', 'fix_applied', 'remediation', 'retest']
+/** Saved per browser: hide informational findings when no severity is picked. */
+const HIDE_INFO_KEY = 'openctem:findings-hide-info'
+// The status filter groups the one registry by category; every status appears
+// once. Pentest pre-publication states get their own group (hidden by default).
+const PRE_PUBLICATION: readonly string[] = FINDINGS_LIST_HIDDEN_STATUSES
 const STATUS_GROUPS = [
-  { label: 'Open', values: OPEN_STATUSES },
   {
-    label: 'Closed',
-    values: ['resolved', 'verified', 'false_positive', 'accepted', 'accepted_risk'],
+    key: 'open',
+    label: 'Open',
+    values: findingStatusesInCategory('open').filter((s) => !PRE_PUBLICATION.includes(s)),
   },
-  { label: 'Pentest workflow', values: ['draft', 'in_review'] },
+  { key: 'in_progress', label: 'In progress', values: findingStatusesInCategory('in_progress') },
+  { key: 'closed', label: 'Closed', values: findingStatusesInCategory('closed') },
+  { key: 'pre_publication', label: 'Pentest workflow', values: [...PRE_PUBLICATION] },
 ]
 const OVERDUE_SLA = ['overdue', 'exceeded']
 const SLA_OPTIONS: SLAStatus[] = ['overdue', 'exceeded', 'warning', 'on_track', 'not_applicable']
@@ -311,13 +358,20 @@ const PRIORITY_OPTIONS = [
   { value: 'P3', hint: 'Low' },
 ]
 
-/** First-load placeholder shaped like the toolbar + table it stands in for. */
-function FindingsTableSkeleton() {
+/**
+ * First-load placeholder shaped like the toolbar + table it stands in for. The
+ * context chips render in it already (they come from the URL, not the fetch),
+ * so they sit in the same toolbar row before and after the rows load.
+ */
+function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-9 w-24" />
-        <Skeleton className="h-9 w-72" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-72" />
+          {contextChips}
+        </div>
         <Skeleton className="ms-auto h-9 w-24" />
       </div>
       <div className="space-y-2 rounded-md border p-3">
@@ -344,10 +398,17 @@ const SORTABLE_COLUMNS: Record<string, { api: string; invert?: boolean }> = {
   createdAt: { api: 'created_at' },
 }
 
-/** `?sort=severity.desc` → table sorting state. */
+/** The URL's API sort (`-created_at`, `severity,-created_at`) → table sorting state. */
 function parseSortParam(value: string): SortingState {
-  const [id, dir] = value.split('.')
-  return id && SORTABLE_COLUMNS[id] ? [{ id, desc: dir !== 'asc' }] : []
+  const first = value.split(',')[0]?.trim()
+  if (!first) return []
+  const descending = first.startsWith('-')
+  const key = first.replace(/^[-+]/, '')
+  const entry = Object.entries(SORTABLE_COLUMNS).find(([, col]) => col.api === key)
+  if (!entry) return []
+  const [id, col] = entry
+  // invert: the API ranks critical / P0 first ascending; the table calls that descending.
+  return [{ id, desc: col.invert ? !descending : descending }]
 }
 
 /** Table sorting → API `sort` (newest first as the tie-breaker). */
@@ -367,8 +428,9 @@ export default function FindingsPage() {
 function FindingsContent() {
   const searchParams = useUrlParams()
   const router = useRouter()
-  const assetIdFilter = searchParams.get('assetId')
-  const sourceIdFilter = searchParams.get('source')
+  // The page URL uses the API's own filter params (RFC-048), so a page link and
+  // the API query are the same words. Old page links are rewritten once below.
+  const assetIdFilter = searchParams.get('asset_id')
   const scanIdFilter = searchParams.get('scan_id')
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
@@ -392,13 +454,15 @@ function FindingsContent() {
   // parses as a one-item list, so old links keep working; 'all' is ignored.
   const [severityParam, setSeverityParam] = useUrlFilterList('severity')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
   const [findingToDelete, setFindingToDelete] = useState<Finding | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [statusParam, setStatusParam] = useUrlFilterList('status')
   // Multiple sources at once: "everything from code scanning" is one question,
   // and it spans sast and secret. Comma-separated, matching what the API takes.
-  const [sourceFilter, setSourceFilter] = useUrlFilterList('sources')
+  const [sourceFilter, setSourceFilter] = useUrlFilterList('source')
   // CTEM signals are independent, stackable filters — each lives in its own URL
   // param so "P0 AND reachable AND KEV" is one link, not three mutually-exclusive
   // choices. The backend FindingFilter ANDs priority_classes + is_in_kev +
@@ -407,27 +471,49 @@ function FindingsContent() {
   //  - `kev`      : boolean flag → is_in_kev
   //  - `reachable`: boolean flag → is_reachable
   //  - `sla_status`: multi-select list → sla_status
-  const [priorityParam, setPriorityParam] = useUrlFilterList('priority')
-  const [kevFilter, setKevFilter] = useUrlFilter('kev', 'false')
-  const [reachableFilter, setReachableFilter] = useUrlFilter('reachable', 'false')
+  const [priorityParam, setPriorityParam] = useUrlFilterList('priority_class')
+  const [kevFilter, setKevFilter] = useUrlFilter('is_in_kev', 'false')
+  const [reachableFilter, setReachableFilter] = useUrlFilter('is_reachable', 'false')
+  // Findings seen only on a feature branch are not exposure: the list leaves
+  // them out unless this is on (then it shows only them).
+  const [branchOnlyFilter, setBranchOnlyFilter] = useUrlFilter('branch_only', 'false')
   const [slaFilter, setSlaFilter] = useUrlFilterList('sla_status')
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
+  // The state lens (Open, the default · Fixed · Dispositioned · All). A saved
+  // view carries its own status scope, so the default lens is not laid on top
+  // of one; a lens picked explicitly still is.
+  const rawLens = useUrlParam('state')
+  const [, setLensParam] = useUrlFilter('state', DEFAULT_FINDING_LENS)
+  const lens = parseFindingLens(rawLens)
   // "Assigned to me" / My Work: findings the current user is the assignee of,
   // owns the asset of, or is a member of an assigned group. Independent, stackable
   // with the CTEM signals; the backend resolves the user from the token.
-  const [mineFilter, setMineFilter] = useUrlFilter('mine', 'false')
-  const mineActive = mineFilter === 'true'
+  const [relatedToFilter, setRelatedToFilter] = useUrlFilter('related_to', '')
+  const mineActive = relatedToFilter === 'me'
+  const setMineFilter = useCallback(
+    (on: string) => setRelatedToFilter(on === 'true' ? 'me' : ''),
+    [setRelatedToFilter]
+  )
 
-  // Backward-compat: legacy deep links modelled KEV / reachable as *values* of the
-  // single `priority` param (e.g. /findings?priority=kev). Treat those as the new
-  // boolean flags on read so old links keep working, and migrate the URL to the
-  // new param shape once so every subsequent interaction is clean.
-  const kevActive = kevFilter === 'true' || priorityParam.includes('kev')
-  const reachableActive = reachableFilter === 'true' || priorityParam.includes('reachable')
+  // Old page links (assetId, sources, priority, kev, reachable, mine, cve,
+  // rule, a table-format sort) are rewritten to the API names once, in place.
+  useEffect(() => {
+    const migrated = migrateLegacyParams(
+      new URLSearchParams(window.location.search),
+      FINDINGS_LEGACY_URL_ALIASES,
+      SORTABLE_COLUMNS
+    )
+    if (!migrated) return
+    const qs = migrated.toString()
+    router.replace(`${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`)
+  }, [router])
+  const kevActive = kevFilter === 'true'
+  const reachableActive = reachableFilter === 'true'
+  const branchOnlyActive = branchOnlyFilter === 'true'
   const severities = useMemo(
     () =>
       severityParam.filter((v): v is FacetSeverity =>
-        (SEVERITY_VALUES as readonly string[]).includes(v)
+        (SEVERITY_LEVELS as readonly string[]).includes(v)
       ),
     [severityParam]
   )
@@ -437,13 +523,6 @@ function FindingsContent() {
     [priorityParam]
   )
 
-  useEffect(() => {
-    if (priorityParam.includes('kev')) setKevFilter('true')
-    if (priorityParam.includes('reachable')) setReachableFilter('true')
-    if (priorityParam.includes('kev') || priorityParam.includes('reachable')) {
-      setPriorityParam((prev) => prev.filter((v) => v !== 'kev' && v !== 'reachable'))
-    }
-  }, [priorityParam, setKevFilter, setReachableFilter, setPriorityParam])
   // Debounce so typing doesn't fire a backend list request per keystroke.
   const debouncedSearch = useDebounce(searchQuery, 300)
   // Server-side pagination state. The list is fetched one page at a time from
@@ -451,22 +530,8 @@ function FindingsContent() {
   // 100 rows even when the tenant had thousands of findings).
   // The whole view is in the URL — tab, page, page size and sort as well as
   // filters — so any screen of this list can be shared or bookmarked.
-  const [pageParam, setPageParam] = useUrlFilter('page', '1')
-  const [perPageParam, setPerPageParam] = useUrlFilter('per_page', '20')
-  const pagination = useMemo(
-    () => ({
-      pageIndex: Math.max(0, (parseInt(pageParam, 10) || 1) - 1),
-      pageSize: PAGE_SIZES.includes(parseInt(perPageParam, 10)) ? parseInt(perPageParam, 10) : 20,
-    }),
-    [pageParam, perPageParam]
-  )
-  const setPagination = useCallback(
-    (next: { pageIndex: number; pageSize: number }) => {
-      setPageParam(next.pageIndex === 0 ? '1' : String(next.pageIndex + 1))
-      setPerPageParam(String(next.pageSize))
-    },
-    [setPageParam, setPerPageParam]
-  )
+  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = list
   // No tabs: grouping is a view of the same findings ("Group by"), and the
   // verification queue is reached from its metric. Legacy ?tab= links map over.
   const [tabParam, setTabParam] = useUrlFilter('tab', '')
@@ -481,23 +546,54 @@ function FindingsContent() {
     ? (groupParam as GroupByDimension)
     : null
   const verifyView = viewParam === 'verify'
-  const [, setAssetParam] = useUrlFilter('assetId', '')
+  // A saved view (D15) lives in the same param as its id; the API applies its
+  // filter, with any filter in the URL on top, as the viewer.
+  const savedId = savedViewId(viewParam)
+  // Opening a saved view replaces the URL's filters with the view (and its
+  // grouping); clearing it goes back to the plain list.
+  const openSavedView = useCallback(
+    (view: SavedView | null) => {
+      if (!view) {
+        router.replace('/findings')
+        return
+      }
+      const q = new URLSearchParams({ view: view.id })
+      if (view.group_by) q.set('group', view.group_by)
+      router.replace(`/findings?${q.toString()}`)
+    },
+    [router]
+  )
+  // The view is "modified" when filters in the URL sit on top of it.
+  const savedViewModified =
+    !!savedId &&
+    Array.from(searchParams.keys()).some(
+      (k) => !['view', 'group', 'page', 'per_page', 'tab', 'density'].includes(k)
+    )
+
+  // asset_id and scan_id (a scan run's "View all findings") are read above.
   // A CVE group's "View": the list narrowed to that CVE (search does not match
   // the CVE id, so it cannot stand in for this).
-  const [cveParam, setCveParam] = useUrlFilter('cve', '')
+  const [cveParam] = useUrlFilter('cve_id', '')
+  // A rule group's "View": the list narrowed to that scanner rule (nuclei
+  // template, semgrep rule, misconfiguration check, secret rule).
+  const [ruleParam] = useUrlFilter('rule_id', '')
+  // The other group dimensions' drill-down filters (research 24 P0-1): every
+  // group row's View opens the list narrowed to it.
+  const [familyParam] = useUrlFilter('family', '')
+  const [findingTypeParam] = useUrlFilter('finding_type', '')
+  const [componentParam] = useUrlFilter('component_id', '')
+  const [ownerParam] = useUrlFilter('asset_owner_id', '')
+  const [ownerNullParam] = useUrlFilter('asset_owner_id_null', '')
+  const ownerUnassigned = ownerNullParam === 'true'
   // Bumped after a change, so the grouped view reloads its groups and rows.
   const [groupsReloadKey, setGroupsReloadKey] = useState(0)
   const [autoAssignOpen, setAutoAssignOpen] = useState(false)
   const [hasUnassignedGroup, setHasUnassignedGroup] = useState(false)
   const [sortParam, setSortParam] = useUrlFilter('sort', '')
   const sorting = useMemo<SortingState>(() => parseSortParam(sortParam), [sortParam])
+  // The URL holds the API sort (e.g. `-created_at` or `severity,-created_at`).
   const handleSortingChange = useCallback(
-    (next: SortingState) => {
-      const first = next[0]
-      setSortParam(
-        first && SORTABLE_COLUMNS[first.id] ? `${first.id}.${first.desc ? 'desc' : 'asc'}` : ''
-      )
-    },
+    (next: SortingState) => setSortParam(toApiSort(next) ?? ''),
     [setSortParam]
   )
   // Filter panel: closed by default so the table gets the width; the viewer's
@@ -521,6 +617,30 @@ function FindingsContent() {
       return value
     })
   }, [])
+  const { t } = useTranslation()
+  const severityLabel = useSeverityLabel()
+  // "Hide informational": a saved per-browser view preference. It applies only
+  // while no severity is picked; an explicit severity choice always wins.
+  const [hideInfo, setHideInfoState] = useState(false)
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(HIDE_INFO_KEY) === '1') setHideInfoState(true)
+    } catch {
+      // storage unavailable — show everything
+    }
+  }, [])
+  const setHideInfo = useCallback((value: boolean) => {
+    setHideInfoState(value)
+    try {
+      window.localStorage.setItem(HIDE_INFO_KEY, value ? '1' : '0')
+    } catch {
+      // best-effort
+    }
+  }, [])
+  const effectiveSeverities = useMemo<FacetSeverity[]>(
+    () => (severities.length > 0 ? severities : hideInfo ? [...ACTIONABLE_SEVERITIES] : []),
+    [severities, hideInfo]
+  )
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [markFixedGroup, setMarkFixedGroup] = useState<FindingGroup | null>(null)
   const [ticketFinding, setTicketFinding] = useState<Finding | null>(null)
@@ -531,6 +651,11 @@ function FindingsContent() {
     priority?: string
   } | null>(null)
   const { hasPermission } = usePermissions()
+  // The gate of POST /findings/import (the API stays authoritative).
+  const canImport =
+    hasPermission('findings:write') &&
+    hasPermission('assets:write') &&
+    hasPermission('assets:import')
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on
@@ -577,19 +702,67 @@ function FindingsContent() {
     [setSlaFilter]
   )
 
+  // Any filter change resets to the first page — otherwise a user on page 8 of
+  // "All" who picks a filter with only 2 pages would sit on an empty page.
+  // Keyed on the filter *values*, so the first render (reading a shared link
+  // with ?page=3) is not reset — only a later filter change is.
+  const filterKey = [
+    assetIdFilter,
+    scanIdFilter,
+    cveParam,
+    ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerNullParam,
+    groupParam,
+    viewParam,
+    lens,
+    effectiveSeverities.join(),
+    statuses.join(),
+    sourceFilter.join(),
+    priorityClasses.join(),
+    kevActive,
+    reachableActive,
+    branchOnlyActive,
+    mineActive,
+    slaFilter.join(),
+    debouncedSearch,
+    sortParam,
+  ].join('|')
+  // The filter the current page number belongs to. While a new filter waits
+  // for its page reset (the effect below), the list already asks page 1:
+  // asking the old page first sent the list request twice (research/81).
+  const [pagedFilterKey, setPagedFilterKey] = useState(filterKey)
+  const filterChanged = pagedFilterKey !== filterKey
+  useEffect(() => {
+    if (!filterChanged) return
+    setPagedFilterKey(filterKey)
+    setPage(1)
+  }, [filterChanged, filterKey, setPage])
+
   const apiFilters = useMemo((): FindingApiFilters => {
     const filters: FindingApiFilters = {
-      page: pagination.pageIndex + 1,
+      page: filterChanged ? 1 : pagination.pageIndex + 1,
       per_page: pagination.pageSize,
     }
     if (assetIdFilter) filters.asset_id = assetIdFilter
-    if (sourceIdFilter) filters.source_id = sourceIdFilter
     if (scanIdFilter) filters.scan_id = scanIdFilter
     if (cveParam) filters.cve_ids = [cveParam]
-    if (severities.length > 0) filters.severities = severities
+    if (ruleParam) filters.rule_id = ruleParam
+    if (familyParam) filters.families = [familyParam]
+    if (findingTypeParam) filters.finding_types = [findingTypeParam]
+    if (componentParam) filters.component_id = componentParam
+    if (ownerParam) filters.asset_owner_id = ownerParam
+    if (ownerUnassigned) filters.asset_owner_unassigned = true
+    if (effectiveSeverities.length > 0) filters.severities = effectiveSeverities
+    if (savedId) filters.view = savedId
+    if (!savedId || rawLens) filters.state = lens
     if (statuses.length > 0) {
       filters.statuses = statuses as NonNullable<FindingApiFilters['statuses']>
-    } else {
+    } else if (!savedId) {
+      // (A saved view carries its own status scope.)
       // Default: exclude draft/in_review (pentest WIP not ready for dashboard)
       filters.exclude_statuses = HIDDEN_STATUSES
     }
@@ -603,94 +776,89 @@ function FindingsContent() {
     // applies together (AND), mirroring how the backend FindingFilter combines
     // PriorityClasses + IsInKEV + IsReachable + SLAStatuses.
     if (priorityClasses.length > 0) filters.priority_classes = priorityClasses
-    const apiSort = toApiSort(sorting)
-    if (apiSort) filters.sort = apiSort
+    if (sortParam) filters.sort = sortParam
     if (kevActive) filters.is_in_kev = true
     if (reachableActive) filters.is_reachable = true
+    if (branchOnlyActive) filters.branch_only = true
     if (mineActive) filters.assigned_to_me = true
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
     return filters
   }, [
     assetIdFilter,
-    sourceIdFilter,
     scanIdFilter,
     cveParam,
-    severities,
+    ruleParam,
+    familyParam,
+    findingTypeParam,
+    componentParam,
+    ownerParam,
+    ownerUnassigned,
+    effectiveSeverities,
     statuses,
     sourceFilter,
     priorityClasses,
     kevActive,
     reachableActive,
+    branchOnlyActive,
     mineActive,
     slaFilter,
     debouncedSearch,
     HIDDEN_STATUSES,
     pagination,
-    sorting,
+    filterChanged,
+    sortParam,
+    savedId,
+    lens,
+    rawLens,
   ])
 
-  // Any filter change resets to the first page — otherwise a user on page 8 of
-  // "All" who picks a filter with only 2 pages would sit on an empty page.
-  // Keyed on the filter *values*, so the first render (reading a shared link
-  // with ?page=3) is not reset — only a later filter change is.
-  const filterKey = [
-    assetIdFilter,
-    sourceIdFilter,
-    scanIdFilter,
-    cveParam,
-    groupParam,
-    viewParam,
-    severities.join(),
-    statuses.join(),
-    sourceFilter.join(),
-    priorityClasses.join(),
-    kevActive,
-    reachableActive,
-    mineActive,
-    slaFilter.join(),
-    debouncedSearch,
-    sortParam,
-  ].join('|')
-  const lastFilterKey = useRef(filterKey)
-  useEffect(() => {
-    if (lastFilterKey.current === filterKey) return
-    lastFilterKey.current = filterKey
-    setPageParam('1')
-  }, [filterKey, setPageParam])
+  // The state tab counts follow the filter (RFC-048: stats take the list's
+  // filter): the same filter under every lens at once (by_state), so a tab's
+  // count is the total its list shows.
+  const lensStatsFilters = useMemo(() => {
+    const { page: _page, per_page: _perPage, sort: _sort, state: _state, ...rest } = apiFilters
+    return { ...rest, state: 'all' as const }
+  }, [apiFilters])
 
-  // Fetch finding stats. Pass `assetId` so the severity cards reflect
-  // the filtered table when the user navigates here from an asset
-  // detail sheet ("View All Findings"). Without this, the cards
-  // showed global tenant counts (e.g. "9 Critical") while the table
-  // showed only the asset-scoped row count (e.g. "1 result"), which
-  // looks like a bug.
+  // The overview strip is page-level: every finding the caller may see (their
+  // data scope applies server-side), whatever the state tab, search or
+  // filters. Filter-aware numbers live in the tab counts and the result bar.
+  // With no filter set, the overview and tab-count requests are the same URL,
+  // so the page loads ONE stats response; neither key holds the state tab, so
+  // switching tabs sends no stats request (research/81).
+  const overviewStatsFilters = useMemo(
+    () => ({ state: 'all' as const, exclude_statuses: HIDDEN_STATUSES }),
+    [HIDDEN_STATUSES]
+  )
   const {
     data: findingStats,
     isLoading: statsLoading,
-    mutate: mutateStats,
-  } = useFindingStatsApi({
-    assetId: assetIdFilter ?? undefined,
-  })
+    mutate: mutateOverviewStats,
+  } = useFindingStatsApi(overviewStatsFilters)
+  const { data: lensStats, mutate: mutateLensStats } = useFindingStatsApi(lensStatsFilters)
+  const mutateStats = useCallback(
+    () => Promise.all([mutateOverviewStats(), mutateLensStats()]),
+    [mutateOverviewStats, mutateLensStats]
+  )
 
-  // Fetch findings from API (filtered by severity tab)
+  // The flat list. The grouped and verification views render their own rows,
+  // so the flat page is not fetched while one of them is shown.
   const {
     data: findingsResponse,
     error,
     isLoading: findingsLoading,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, { keepPreviousData: true })
+  } = useFindingsApi(apiFilters, { keepPreviousData: true, enabled: !groupBy && !verifyView })
   // Every refresh after a change also reloads the grouped view's groups and rows.
   const mutateFindings = useCallback(() => {
     setGroupsReloadKey((k) => k + 1)
     return mutateFindingsList()
   }, [mutateFindingsList])
 
-  // Headline numbers all come from /findings/stats — no per-number list
-  // requests (those pushed a single page load past the per-user read limit).
-  // '—' until the api exposes the field (older api).
-  const overdueCount: number | string = findingStats ? (findingStats.sla_breached ?? '—') : 0
-  const kevCount: number | string = findingStats ? (findingStats.kev_open ?? '—') : 0
-  const pendingCount = findingStats?.by_status?.fix_applied ?? 0
+  // Headline numbers all come from the one overview stats response — no
+  // per-number list requests (those pushed a single page load past the
+  // per-user read limit). '—' until the api exposes the field (older api).
+  const overview = useMemo(() => findingsOverview(findingStats), [findingStats])
 
   // Initial loading state (only true when we don't have stats yet)
   const isInitialLoading = statsLoading && !findingStats
@@ -701,48 +869,7 @@ function FindingsContent() {
     return findingsResponse.data.map(transformApiToUiFinding)
   }, [findingsResponse])
 
-  // Use finding stats for stable counts (not affected by tab filter)
-  const stats = useMemo(() => {
-    const defaultBySeverity: Record<Severity, number> = {
-      critical: 0,
-      high: 0,
-      medium: 0,
-      low: 0,
-      info: 0,
-      none: 0,
-    }
-
-    if (!findingStats) {
-      return {
-        total: 0,
-        bySeverity: defaultBySeverity,
-        averageCvss: 'N/A',
-        overdueCount: 0,
-      }
-    }
-
-    const bySeverity: Record<Severity, number> = {
-      critical: findingStats.by_severity?.critical || 0,
-      high: findingStats.by_severity?.high || 0,
-      medium: findingStats.by_severity?.medium || 0,
-      low: findingStats.by_severity?.low || 0,
-      info: findingStats.by_severity?.info || 0,
-      none: findingStats.by_severity?.none || 0,
-    }
-
-    return {
-      total: findingStats.total,
-      bySeverity,
-      averageCvss: 'N/A',
-      overdueCount: findingStats.open_count,
-    }
-  }, [findingStats])
-
   const selectedCount = selectedFindingIds.length
-
-  const clearFilters = () => {
-    router.push('/findings')
-  }
 
   const handleRefresh = async () => {
     await Promise.all([mutateFindings(), mutateStats()])
@@ -750,7 +877,18 @@ function FindingsContent() {
     toast.success('Findings refreshed')
   }
 
+  const canServerExport = hasPermission(Permission.FindingsExport)
   const handleExport = (format: string) => {
+    // With findings:export the server streams every matching finding (up to
+    // 100,000, scoped and audit-logged); without it, the current page only.
+    if (canServerExport) {
+      const a = document.createElement('a')
+      a.href = buildFindingsExportUrl(apiFilters, format === 'JSON' ? 'ndjson' : 'csv')
+      a.rel = 'noopener'
+      a.click()
+      toast.success('Export started')
+      return
+    }
     if (!findings.length) {
       toast.error('No findings to export')
       return
@@ -760,21 +898,14 @@ function FindingsContent() {
       const headers = ['ID', 'Title', 'Severity', 'Status', 'Source', 'Scanner', 'Created At']
       const rows = findings.map((f) => [
         f.id,
-        `"${(f.title || '').replace(/"/g, '""')}"`,
+        f.title || '',
         f.severity,
         f.status,
         f.source || '',
         f.scanner || '',
         f.createdAt,
       ])
-      const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-      const blob = new Blob([csv], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `findings-${new Date().toISOString().split('T')[0]}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadCsv(buildCsv(headers, rows), `findings-${new Date().toISOString().split('T')[0]}.csv`)
       toast.success('CSV exported successfully')
     } else if (format === 'JSON') {
       const data = findings.map((f) => ({
@@ -795,10 +926,17 @@ function FindingsContent() {
       a.click()
       URL.revokeObjectURL(url)
       toast.success('JSON exported successfully')
-    } else {
-      // PDF export not yet implemented
-      return
     }
+  }
+
+  // Bulk endpoints answer 200 even when the server refused some findings (for
+  // example a change to false positive that needs approval), so the toast is
+  // driven by the reported counts.
+  const showBulkResult = (summary: BulkSummary) => {
+    const opts = summary.description ? { description: summary.description } : undefined
+    if (summary.kind === 'success') toast.success(summary.message, opts)
+    else if (summary.kind === 'warning') toast.warning(summary.message, opts)
+    else toast.error(summary.message, opts)
   }
 
   const handleBulkAssign = async (userId: string) => {
@@ -813,7 +951,13 @@ function FindingsContent() {
         body: JSON.stringify({ finding_ids: findingIds, user_id: userId.trim() }),
       })
       if (!response.ok) throw new Error('Failed to assign findings')
-      toast.success(`Assigned ${findingIds.length} findings`)
+      showBulkResult(
+        summarizeBulkResult(
+          await response.json().catch(() => undefined),
+          findingIds.length,
+          'Assigned'
+        )
+      )
       clearSelection()
       mutateFindings()
     } catch (error) {
@@ -833,7 +977,13 @@ function FindingsContent() {
         body: JSON.stringify({ finding_ids: findingIds, status }),
       })
       if (!response.ok) throw new Error('Failed to update findings')
-      toast.success(`Updated ${findingIds.length} findings to ${status}`)
+      showBulkResult(
+        summarizeBulkResult(
+          await response.json().catch(() => undefined),
+          findingIds.length,
+          'Updated'
+        )
+      )
       clearSelection()
       mutateFindings()
       mutateStats()
@@ -854,15 +1004,6 @@ function FindingsContent() {
     mutateFindings()
     mutateStats()
   }, [mutateFindings, mutateStats])
-
-  const handleAddComment = async (findingId: string, comment: string) => {
-    try {
-      await post(`/api/v1/findings/${findingId}/comments`, { content: comment })
-      toast.success('Comment added')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to add comment'))
-    }
-  }
 
   const handleDeleteClick = (finding: Finding) => {
     setFindingToDelete(finding)
@@ -902,11 +1043,11 @@ function FindingsContent() {
   // the mobilise step is one click from where a finding lives.
   const openRemediationFor = useCallback((selected: Finding[]) => {
     if (selected.length === 0) return
-    const order = ['critical', 'high', 'medium', 'low']
-    const top = [...selected]
-      .map((f) => String(f.severity))
-      .sort((a, b) => order.indexOf(a) - order.indexOf(b))[0]
-    const priority = top === 'critical' ? 'urgent' : order.includes(top) ? top : 'medium'
+    // Most severe selected finding sets the priority; informational-only
+    // selections get the lowest priority rather than a medium default.
+    const top = highestSeverity(selected.map((f) => f.severity))
+    const priority =
+      top === 'critical' ? 'urgent' : top === undefined ? 'medium' : top === 'info' ? 'low' : top
     const name =
       selected.length === 1 ? `Fix: ${selected[0].title}` : `Remediate ${selected.length} findings`
     setRemedContext({ ids: selected.map((f) => f.id), name, priority })
@@ -1003,7 +1144,7 @@ function FindingsContent() {
               // The title leads the name, so a screen reader announces which
               // finding the button opens (it used to read "View finding
               // details" on every row).
-              aria-label={`${row.getValue('title')}, view details`}
+              aria-label={`${toDisplayText(row.getValue('title'), 300)}, view details`}
               onClick={() => handleRowClick(row.original)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1013,7 +1154,11 @@ function FindingsContent() {
               }}
             >
               <div className="flex items-center gap-1.5">
-                <p className="font-medium truncate">{row.getValue('title')}</p>
+                {/* Scanner-supplied text: escaped, isolated, never markup. */}
+                <p dir="auto" className="font-medium truncate [unicode-bidi:isolate]">
+                  {toDisplayText(row.getValue('title'), 500)}
+                </p>
+                {row.original.branchOnly && <BranchOnlyBadge />}
                 {/* KEV — actively exploited; the single most urgent triage signal */}
                 {row.original.isInKev && (
                   <Tooltip>
@@ -1126,12 +1271,11 @@ function FindingsContent() {
             )
           }
           return (
-            <span
-              className="text-muted-foreground block max-w-[200px] truncate font-mono text-sm"
-              title={name}
-            >
-              {name}
-            </span>
+            <TruncatedText
+              value={name}
+              label="Location"
+              className="max-w-[200px] font-mono text-sm text-muted-foreground"
+            />
           )
         },
       },
@@ -1290,15 +1434,18 @@ function FindingsContent() {
     setPriorityParam([])
     setKevFilter('false')
     setReachableFilter('false')
+    setBranchOnlyFilter('false')
     setSlaFilter([])
     setSourceFilter([])
     setMineFilter('false')
     setSearchQuery('')
   }
 
-  const statusLabel = (v: string) =>
-    FINDING_STATUS_CONFIG[v as FindingStatus]?.label ??
-    v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+  const statusLabel = (v: string) => {
+    const cfg = FINDING_STATUS_CONFIG[v as FindingStatus]
+    if (!cfg) return v.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+    return t(cfg.labelKey, cfg.label)
+  }
 
   const activeCount =
     Number(mineActive) +
@@ -1307,75 +1454,94 @@ function FindingsContent() {
     priorityClasses.length +
     Number(kevActive) +
     Number(reachableActive) +
+    Number(branchOnlyActive) +
     slaFilter.length +
     sourceFilter.length
+
+  // Each card is a shortcut: it applies exactly the filter it counts (the
+  // Open tab plus one facet), shows as active while that filter is the whole
+  // view, and clears it on a second click. Its number never moves with the
+  // tab or the filters (research/81).
+  const onlyFacet = (facet: 'none' | 'critical' | 'high' | 'sla' | 'kev') =>
+    !groupBy &&
+    !verifyView &&
+    activeCount === (facet === 'none' ? 0 : facet === 'sla' ? OVERDUE_SLA.length : 1) &&
+    (facet !== 'critical' || sameSet(severities, ['critical'])) &&
+    (facet !== 'high' || sameSet(severities, ['high'])) &&
+    (facet !== 'sla' || sameSet(slaFilter, OVERDUE_SLA)) &&
+    (facet !== 'kev' || kevActive)
+  const showOnly = (nextLens: FindingLens, apply?: () => void) => {
+    clearAllFilters()
+    setGroupParam('')
+    setViewParam('')
+    setLensParam(nextLens)
+    apply?.()
+  }
+  const openCard = (facet: 'critical' | 'high' | 'sla' | 'kev', apply: () => void) => {
+    const on = lens === 'open' && onlyFacet(facet)
+    showOnly('open', on ? undefined : apply)
+  }
 
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: 'All findings',
-      value: stats.total,
-      onClick: () => {
-        clearAllFilters()
-        setGroupParam('')
-        setViewParam('')
-      },
-      active: activeCount === 0 && !groupBy && !verifyView,
+      label: 'Total',
+      description: 'Every finding you can see, in every state (the All tab).',
+      value: overview.total,
+      onClick: () => showOnly(lens === 'all' && onlyFacet('none') ? 'open' : 'all'),
+      active: lens === 'all' && onlyFacet('none'),
     },
     {
       key: 'open',
       label: 'Open',
-      value: findingStats?.open_count ?? 0,
-      onClick: () => setStatusParam(sameSet(statuses, OPEN_STATUSES) ? [] : OPEN_STATUSES),
-      active: sameSet(statuses, OPEN_STATUSES),
+      description: 'Findings that still need work (the Open tab).',
+      value: overview.open,
+      onClick: () => showOnly('open'),
+      active: lens === 'open' && onlyFacet('none'),
     },
     {
       key: 'critical',
-      label: 'Critical',
-      value: stats.bySeverity.critical,
+      label: 'Critical open',
+      description: 'Open findings of critical severity.',
+      value: overview.criticalOpen,
       tone: 'danger',
-      onClick: () => setSeverities(sameSet(severities, ['critical']) ? [] : ['critical']),
-      active: sameSet(severities, ['critical']),
+      onClick: () => openCard('critical', () => setSeverities(['critical'])),
+      active: lens === 'open' && onlyFacet('critical'),
     },
     {
       key: 'high',
-      label: 'High',
-      value: stats.bySeverity.high,
-      onClick: () => setSeverities(sameSet(severities, ['high']) ? [] : ['high']),
-      active: sameSet(severities, ['high']),
+      label: 'High open',
+      description: 'Open findings of high severity.',
+      value: overview.highOpen,
+      onClick: () => openCard('high', () => setSeverities(['high'])),
+      active: lens === 'open' && onlyFacet('high'),
     },
     {
       key: 'overdue',
       label: 'Overdue SLA',
-      value: overdueCount,
+      description: "Open findings past the remediation deadline of your organization's SLA policy.",
+      value: overview.overdue,
       tone: 'danger',
-      onClick: () => {
-        // Open AND past due — the same scope as the count.
-        const on = sameSet(slaFilter, OVERDUE_SLA) && sameSet(statuses, OPEN_STATUSES)
-        setSlaFilter(on ? [] : OVERDUE_SLA)
-        setStatusParam(on ? [] : OPEN_STATUSES)
-      },
-      active: sameSet(slaFilter, OVERDUE_SLA) && sameSet(statuses, OPEN_STATUSES),
+      onClick: () => openCard('sla', () => setSlaFilter(OVERDUE_SLA)),
+      active: lens === 'open' && onlyFacet('sla'),
     },
     {
       key: 'kev',
       label: 'In CISA KEV',
-      value: kevCount,
+      description:
+        'Open findings whose CVE is in the CISA Known Exploited Vulnerabilities catalog.',
+      value: overview.kev,
       tone: 'danger',
-      onClick: () => {
-        // Open AND in KEV — the same scope as the count.
-        const on = kevActive && sameSet(statuses, OPEN_STATUSES)
-        setKevFilter(on ? 'false' : 'true')
-        setStatusParam(on ? [] : OPEN_STATUSES)
-      },
-      active: kevActive && sameSet(statuses, OPEN_STATUSES),
+      onClick: () => openCard('kev', () => setKevFilter('true')),
+      active: lens === 'open' && onlyFacet('kev'),
     },
     {
       // The verification queue: fixes claimed by owners, waiting for a
       // verifier to confirm or reject (grouped by CVE).
       key: 'verify',
       label: 'Awaiting verification',
-      value: pendingCount,
+      description: 'Fixes claimed by an owner, waiting for a verifier.',
+      value: overview.awaitingVerification,
       onClick: () => setViewParam(verifyView ? '' : 'verify'),
       active: verifyView,
     },
@@ -1390,10 +1556,10 @@ function FindingsContent() {
         onCheckedChange={(v) => setMineFilter(v ? 'true' : 'false')}
       />
       <FacetSection title="Severity" selectedCount={severities.length}>
-        {SEVERITY_VALUES.map((v) => (
+        {SEVERITY_LEVELS.map((v) => (
           <FacetOption
             key={v}
-            label={SEVERITY_LABELS[v]}
+            label={severityLabel(v)}
             checked={severities.includes(v)}
             onCheckedChange={() => setSeverities(toggleIn(severities, v))}
             adornment={
@@ -1402,6 +1568,15 @@ function FindingsContent() {
           />
         ))}
       </FacetSection>
+      <FacetToggle
+        label={t('findings.hideInformational', 'Hide informational')}
+        description={t(
+          'findings.hideInformational.hint',
+          'Hide info findings from the list. Saved on this browser.'
+        )}
+        checked={hideInfo}
+        onCheckedChange={setHideInfo}
+      />
       <FacetSection
         title="Priority"
         selectedCount={priorityClasses.length + (kevActive ? 1 : 0) + (reachableActive ? 1 : 0)}
@@ -1432,11 +1607,13 @@ function FindingsContent() {
       </FacetSection>
       <FacetSection title="Status" selectedCount={statuses.length}>
         {STATUS_GROUPS.map((g) => (
-          <div key={g.label}>
+          <div key={g.key}>
             <FacetGroupLabel
               onSelectAll={() => setStatusParam(Array.from(new Set([...statuses, ...g.values])))}
             >
-              {g.label}
+              {g.key === 'pre_publication'
+                ? g.label
+                : t(`findings.statusCategory.${g.key}`, g.label)}
             </FacetGroupLabel>
             {g.values.map((v) => (
               <FacetOption
@@ -1458,6 +1635,17 @@ function FindingsContent() {
             onCheckedChange={() => toggleSla(v)}
           />
         ))}
+      </FacetSection>
+      <FacetSection
+        title="Branch"
+        selectedCount={branchOnlyActive ? 1 : 0}
+        defaultOpen={branchOnlyActive}
+      >
+        <FacetOption
+          label="Only on a feature branch"
+          checked={branchOnlyActive}
+          onCheckedChange={(v) => setBranchOnlyFilter(v ? 'true' : 'false')}
+        />
       </FacetSection>
       <FacetSection title="Source" selectedCount={sourceFilter.length} defaultOpen={false}>
         {sourceGroups.length === 0 ? (
@@ -1489,7 +1677,8 @@ function FindingsContent() {
 
   const facetPanelScrollable = <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
 
-  const total = findingsResponse?.total ?? 0
+  // The grouped views do not load the flat page; the tab count is the same number.
+  const total = findingsResponse?.total ?? lensStats?.by_state?.[lens] ?? 0
 
   const filterButtons = (
     <FilterPanelToggle
@@ -1570,20 +1759,59 @@ function FindingsContent() {
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => handleExport('CSV')}>Export as CSV</DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleExport('JSON')}>Export as JSON</DropdownMenuItem>
-        <DropdownMenuItem disabled>Export as PDF report</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+
+  // Filters that arrive from elsewhere (an asset, a scan run, a CVE or rule
+  // group) are context, not facets: always shown, inline in the toolbar so they
+  // never add a row above the table. Each chip removes only its own parameter.
+  const removeContextParam = (param: string) =>
+    replaceUrlSearch(removeFilterParam(new URLSearchParams(window.location.search), param))
+  const contextFilterValues = {
+    assetId: assetIdFilter,
+    scanId: scanIdFilter,
+    cveId: cveParam,
+    ruleId: ruleParam,
+    family: familyParam,
+    findingType: findingTypeParam,
+    componentId: componentParam,
+    ownerId: ownerParam,
+    ownerUnassigned,
+  }
+  const contextFilterOn = hasFindingContextFilters(contextFilterValues)
+  const contextChips = (
+    <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   )
 
   const toolbarStart = (
     <>
       {filterButtons}
       {searchBox}
+      {contextChips}
     </>
+  )
+
+  const lensControl = (
+    <SegmentedLens<FindingLens>
+      label="Finding state"
+      countNoun="findings"
+      value={lens}
+      onChange={(next) => setLensParam(next)}
+      options={FINDING_LENSES.map((l) => ({ ...l, count: lensStats?.by_state?.[l.value] }))}
+    />
   )
 
   const toolbarEnd = (
     <>
+      {lensControl}
+      <SavedViewsMenu
+        page="findings"
+        activeId={savedId}
+        modified={savedViewModified}
+        groupBy={groupParam}
+        onSelect={openSavedView}
+      />
       {groupBySelect}
       {refreshButton}
       {exportMenu}
@@ -1593,6 +1821,7 @@ function FindingsContent() {
   // Grouped view: the groups API takes severity / status / source / "mine";
   // say so when a filter it cannot apply is on, rather than silently ignore it.
   const listOnlyFilterOn =
+    contextFilterOn ||
     !!searchQuery.trim() ||
     priorityClasses.length > 0 ||
     kevActive ||
@@ -1607,7 +1836,9 @@ function FindingsContent() {
     >
       <SeverityBadge severity={f.severity} className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="line-clamp-2 text-sm font-medium">{f.title}</p>
+        <p dir="auto" className="line-clamp-2 text-sm font-medium [unicode-bidi:isolate]">
+          {toDisplayText(f.title, 500)}
+        </p>
         {(f.cve || f.scanner) && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {f.cve && <span className="font-mono">{f.cve}</span>}
@@ -1618,6 +1849,7 @@ function FindingsContent() {
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
           <FindingStatusBadge status={f.status} />
+          {f.branchOnly && <BranchOnlyBadge />}
           {f.isInKev && (
             <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
               KEV
@@ -1631,21 +1863,20 @@ function FindingsContent() {
 
   const listOnlyNote = listOnlyFilterOn && (
     <span className="text-xs text-muted-foreground">
-      Search, priority, KEV and SLA filters apply to the ungrouped list.
+      Search, priority, KEV, SLA and the asset, scan, CVE, rule, family, type, component and owner
+      filters apply to the ungrouped list.
     </span>
   )
 
-  // "View" on a group opens the list filtered to it, where the dimension maps
-  // to a list filter. Other dimensions get no View button (not a dead one).
-  const viewableGroup =
-    groupBy === 'cve_id' || groupBy === 'severity' || groupBy === 'source' || groupBy === 'asset_id'
+  // "View" on a group opens the list filtered to it, for every dimension
+  // (research 24 P0-1). It is a push, not a replace: Back returns to the
+  // grouped view with its filters, and the other filters are kept.
+  const viewableGroup = groupBy !== null
   const viewGroup = (group: FindingGroup) => {
-    const key = group.group_key
-    setGroupParam('')
-    if (groupBy === 'cve_id') setCveParam(key)
-    else if (groupBy === 'severity') setSeverityParam([key])
-    else if (groupBy === 'source') setSourceFilter([key])
-    else if (groupBy === 'asset_id') setAssetParam(key)
+    if (!groupBy) return
+    pushUrlSearch(
+      buildDrillDownSearch(new URLSearchParams(window.location.search), groupBy, group.group_key)
+    )
   }
 
   // Mark fixed works on a CVE's or an asset's in-progress findings (the
@@ -1703,27 +1934,49 @@ function FindingsContent() {
     reloadKey: groupsReloadKey,
   }
 
-  // Filters that arrive from elsewhere (an asset, a source, a scan) are context,
-  // not facets — always shown. Facet chips only when the panel is not visible.
-  const contextChips = [
-    assetIdFilter && { key: 'asset', label: `Asset ${assetIdFilter.slice(0, 8)}…` },
-    sourceIdFilter && { key: 'source', label: `Source ${sourceIdFilter.slice(0, 8)}…` },
-    scanIdFilter && { key: 'scan', label: `Scan ${scanIdFilter.slice(0, 8)}…` },
-    cveParam && { key: 'cve', label: cveParam },
-  ].filter(Boolean) as { key: string; label: string }[]
+  // Breadcrumb of a drill-down, rebuilt from the URL: Findings › By rule › X.
+  const drillDim = drillOrigin(searchParams, GROUP_BY_DIMENSIONS)
+  const drillBreadcrumb = drillDim ? (
+    <DrillDownBreadcrumb
+      className="mt-1"
+      steps={[
+        {
+          label: 'Findings',
+          onSelect: () => router.push('/findings'),
+        },
+        {
+          label: `By ${GROUP_BY_LABELS[drillDim].toLowerCase()}`,
+          onSelect: () => pushUrlSearch(buildGroupedSearch(searchParams, drillDim)),
+        },
+      ]}
+      value={drillValue(searchParams, drillDim)}
+      mono={drillDim === 'cve_id' || drillDim === 'rule_id'}
+    />
+  ) : undefined
 
   return (
     <>
       <Main>
-        <PageHeader title="Findings">
+        <PageHeader title="Findings" description={drillBreadcrumb}>
           <Button variant="outline" size="sm" asChild>
             <Link href="/findings/approvals">
               <ClipboardList className="h-4 w-4 sm:me-2" />
               <span className="hidden sm:inline">Approvals</span>
             </Link>
           </Button>
+          {canImport && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Import results"
+              onClick={() => setImportDialogOpen(true)}
+            >
+              <FileUp className="h-4 w-4 sm:me-2" />
+              <span className="hidden sm:inline">Import results</span>
+            </Button>
+          )}
           {hasPermission('findings:write') && (
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+            <Button size="sm" aria-label="Add finding" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 sm:me-2" />
               <span className="hidden sm:inline">Add finding</span>
             </Button>
@@ -1759,25 +2012,6 @@ function FindingsContent() {
             </div>
 
             <div className="min-w-0 flex-1 space-y-3">
-              {contextChips.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {contextChips.map((c) => (
-                    <Badge key={c.key} variant="secondary" className="gap-1.5">
-                      <Filter className="h-3 w-3" />
-                      {c.label}
-                      <button
-                        type="button"
-                        onClick={clearFilters}
-                        className="rounded-sm hover:bg-background/60"
-                        aria-label={`Clear ${c.key} filter`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
               {verifyView ? (
                 <FindingGroupsTable
                   {...groupedProps}
@@ -1804,10 +2038,13 @@ function FindingsContent() {
                   {...groupedProps}
                   dimension={groupBy}
                   filters={{
-                    severities: severities.join(',') || undefined,
+                    severities: effectiveSeverities.join(',') || undefined,
                     statuses: statuses.join(',') || undefined,
                     sources: sourceFilter.join(',') || undefined,
                     assignedToMe: mineActive,
+                    branchOnly: branchOnlyActive,
+                    view: savedId,
+                    state: !savedId || rawLens ? lens : undefined,
                   }}
                   renderGroupActions={groupActions}
                   onViewGroup={viewableGroup ? viewGroup : undefined}
@@ -1817,11 +2054,13 @@ function FindingsContent() {
                   toolbarStart={
                     <>
                       {filterButtons}
+                      {contextChips}
                       {listOnlyNote}
                     </>
                   }
                   toolbarEnd={
                     <>
+                      {lensControl}
                       {groupBy === 'owner_id' && hasUnassignedGroup && (
                         <Button
                           variant="outline"
@@ -1842,7 +2081,7 @@ function FindingsContent() {
                   }
                 />
               ) : !findingsResponse && findingsLoading ? (
-                <FindingsTableSkeleton />
+                <FindingsTableSkeleton contextChips={contextChips} />
               ) : (
                 <DataTable
                   columns={columns}
@@ -1908,9 +2147,12 @@ function FindingsContent() {
                   In Progress
                 </DropdownMenuItem>
 
-                <DropdownMenuItem onClick={() => handleBulkStatusChange('resolved')}>
-                  Resolved
-                </DropdownMenuItem>
+                {/* Resolving needs findings:verify; the API refuses it otherwise. */}
+                {hasPermission(Permission.FindingsVerify) && (
+                  <DropdownMenuItem onSelect={() => setBulkResolveOpen(true)}>
+                    Resolved
+                  </DropdownMenuItem>
+                )}
 
                 {/* false_positive requires the per-finding approval flow, so it is
 
@@ -1991,7 +2233,6 @@ function FindingsContent() {
         onStatusChange={refreshAfterDrawerChange}
         onSeverityChange={refreshAfterDrawerChange}
         onAssigneeChange={refreshAfterDrawerChange}
-        onAddComment={handleAddComment}
       />
 
       {/* Create Finding Dialog */}
@@ -2004,20 +2245,55 @@ function FindingsContent() {
         }}
       />
 
+      {/* Import results from other tools */}
+      <ImportResultsDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onImported={() => {
+          mutateFindings()
+          mutateStats()
+        }}
+      />
+
+      {/* Bulk resolve: closes every selected finding at once. */}
+      <ConfirmDialog
+        open={bulkResolveOpen}
+        onOpenChange={setBulkResolveOpen}
+        title={
+          selectedFindingIds.length === 1
+            ? t('confirm.finding.bulkResolveTitleOne', 'Resolve 1 finding?')
+            : t('confirm.finding.bulkResolveTitle', 'Resolve {count} findings?', {
+                count: selectedFindingIds.length,
+              })
+        }
+        desc={t(
+          'confirm.finding.bulkResolveDesc',
+          'The selected findings are closed as resolved and leave the open work queues and SLA tracking.'
+        )}
+        confirmText={t('confirm.finding.resolve', 'Resolve')}
+        handleConfirm={async () => {
+          await handleBulkStatusChange('resolved')
+          setBulkResolveOpen(false)
+        }}
+      />
+
       {/* Delete Confirmation Dialog */}
       <ConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Finding?"
-        desc="This will permanently delete this finding. This action cannot be undone."
+        title={t('confirm.finding.deleteTitle', 'Delete this finding?')}
+        desc={t(
+          'confirm.finding.deleteDesc',
+          'The finding is permanently deleted with its comments, activity and evidence. This cannot be undone.'
+        )}
         confirmText={
           isDeleting ? (
             <>
               <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              Deleting...
+              {t('confirm.deleting', 'Deleting…')}
             </>
           ) : (
-            'Delete'
+            t('confirm.delete', 'Delete')
           )
         }
         destructive

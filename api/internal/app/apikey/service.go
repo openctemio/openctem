@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -38,10 +39,14 @@ func errString(err error) string {
 type Service struct {
 	repo       apikeydom.Repository
 	pepper     string
+	legacy     []string          // earlier peppers that still verify (key rotation)
 	membership MembershipChecker // nil → no member-lifecycle gate (tests only)
 	holder     HolderPermissions // nil → scopes are not narrowed to the holder (tests only)
-	audit      *auditapp.AuditService
-	logger     *logger.Logger
+	// external decides whether an external member may create a key and how
+	// long it may live (RFC-058). nil → no external-member rule (tests only).
+	external ExternalKeyPolicy
+	audit    *auditapp.AuditService
+	logger   *logger.Logger
 }
 
 // ErrScopeNotHeld is returned (wrapped with shared.ErrForbidden) when a key is
@@ -69,6 +74,40 @@ func NewService(repo apikeydom.Repository, pepper string, log *logger.Logger) *S
 	}
 }
 
+// SetLegacyPeppers sets earlier peppers whose key hashes keep verifying
+// while APP_ENCRYPTION_KEY rotates (APP_ENCRYPTION_KEY_PREVIOUS). New keys
+// are always hashed with the current pepper.
+func (s *Service) SetLegacyPeppers(peppers ...string) {
+	s.legacy = s.legacy[:0]
+	for _, p := range peppers {
+		if p != "" && p != s.pepper {
+			s.legacy = append(s.legacy, p)
+		}
+	}
+}
+
+// KeyRehasher is implemented by a repository that can replace a key hash
+// made with an earlier pepper (compare-and-swap on the old hash) and count
+// the active keys still hashed with one.
+type KeyRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+	CountKeysNotUnderPepper(ctx context.Context) (int, error)
+}
+
+// rehash stores newHash in place of oldHash. Best effort: a failure leaves
+// the key verifying under the earlier pepper and is logged, never fatal.
+func (s *Service) rehash(ctx context.Context, id shared.ID, oldHash, newHash string) {
+	r, ok := s.repo.(KeyRehasher)
+	if !ok {
+		return
+	}
+	if changed, err := r.RehashKey(ctx, id, oldHash, newHash); err != nil {
+		s.logger.Warn("api key re-hash under the current pepper failed", "key_id", id.String(), "error", err)
+	} else if changed {
+		s.logger.Info("api key re-hashed under the current pepper", "key_id", id.String())
+	}
+}
+
 // SetMembershipChecker wires the membership gate used by Authenticate for
 // user-scoped keys. When unset, key validity is decoupled from member lifecycle
 // (acceptable only in tests) — always wire it in production.
@@ -87,6 +126,53 @@ type HolderPermissions interface {
 // production; without it a key keeps the scopes it was minted with even after
 // its user is demoted.
 func (s *Service) SetHolderPermissions(h HolderPermissions) { s.holder = h }
+
+// ExternalKeyPolicy decides API keys for external members (RFC-058): an
+// external member may create a key only when the trust with their home
+// organization allows it, and a key never outlives the member's access.
+type ExternalKeyPolicy interface {
+	// APIKeyAllowance reports whether userID may create a key in tenantID
+	// and, when their access ends, until when a key may live.
+	APIKeyAllowance(ctx context.Context, tenantID, userID shared.ID) (allowed bool, until *time.Time, err error)
+}
+
+// SetExternalKeyPolicy wires the external-member rule.
+func (s *Service) SetExternalKeyPolicy(p ExternalKeyPolicy) { s.external = p }
+
+// ErrExternalNoAPIKeys refuses a key for an external member whose trust does
+// not allow keys.
+var ErrExternalNoAPIKeys = fmt.Errorf("%w: members from outside the organization cannot create API keys here", shared.ErrForbidden)
+
+// checkExternalAllowance applies the external-member rule to a new key.
+func (s *Service) checkExternalAllowance(ctx context.Context, tenantID shared.ID, userIDStr string, expiresInDays int) error {
+	if s.external == nil || userIDStr == "" {
+		return nil
+	}
+	userID, err := shared.IDFromString(userIDStr)
+	if err != nil {
+		return fmt.Errorf("%w: invalid user ID", shared.ErrValidation)
+	}
+	allowed, until, err := s.external.APIKeyAllowance(ctx, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrExternalNoAPIKeys
+	}
+	if until != nil && time.Now().Add(time.Duration(expiresInDays)*24*time.Hour).After(*until) {
+		return fmt.Errorf("%w: the key may not outlive your access, which ends %s", shared.ErrValidation, until.UTC().Format("2006-01-02"))
+	}
+	return nil
+}
+
+// MaxExpiresInDays is the longest lifetime an API key may have (settings
+// decision B14, 2026-10-04): every key expires, at most a year after it is
+// minted. An organization may later tighten this; it may not loosen it.
+const MaxExpiresInDays = 365
+
+// ErrExpiryRequired is returned when a key is requested without an expiry or
+// with one longer than MaxExpiresInDays.
+var ErrExpiryRequired = fmt.Errorf("%w: expires_in_days must be between 1 and %d: every API key expires", shared.ErrValidation, MaxExpiresInDays)
 
 // CreateInput represents input for creating an API key.
 type CreateInput struct {
@@ -121,6 +207,12 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 	tenantID, err := shared.IDFromString(input.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	if input.ExpiresInDays < 1 || input.ExpiresInDays > MaxExpiresInDays {
+		return nil, ErrExpiryRequired
+	}
+	if err := s.checkExternalAllowance(ctx, tenantID, input.UserID, input.ExpiresInDays); err != nil {
+		return nil, err
 	}
 
 	// Generate random key bytes
@@ -173,10 +265,8 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*CreateResult,
 		key.SetRateLimit(input.RateLimit)
 	}
 
-	if input.ExpiresInDays > 0 {
-		exp := key.CreatedAt().AddDate(0, 0, input.ExpiresInDays)
-		key.SetExpiresAt(&exp)
-	}
+	exp := key.CreatedAt().AddDate(0, 0, input.ExpiresInDays)
+	key.SetExpiresAt(&exp)
 
 	if input.UserID != "" {
 		uid, err := shared.IDFromString(input.UserID)
@@ -224,16 +314,32 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
-	key, err := s.repo.GetByHash(ctx, crypto.HashTokenPeppered(rawKey, s.pepper))
+	// Candidate stored hashes, current pepper first: earlier peppers (a
+	// rotated encryption key, APP_ENCRYPTION_KEY_PREVIOUS) and, when a pepper
+	// is set, the plain SHA-256 of keys from before any pepper.
+	candidates := []string{crypto.HashTokenPeppered(rawKey, s.pepper)}
+	for _, p := range s.legacy {
+		candidates = append(candidates, crypto.HashTokenPeppered(rawKey, p))
+	}
+	if s.pepper != "" {
+		candidates = append(candidates, crypto.HashToken(rawKey))
+	}
+	var (
+		key     *apikeydom.APIKey
+		err     = shared.ErrNotFound
+		matched string
+	)
+	for _, h := range candidates {
+		if key, err = s.repo.GetByHash(ctx, h); err == nil {
+			matched = h
+			break
+		}
+		if !errors.Is(err, shared.ErrNotFound) {
+			break
+		}
+	}
 	if err != nil {
-		// Legacy rows (pre-pepper) stored a plain SHA-256 hash; retry with it
-		// so old keys keep working after the pepper was introduced.
-		if s.pepper != "" && errors.Is(err, shared.ErrNotFound) {
-			key, err = s.repo.GetByHash(ctx, crypto.HashToken(rawKey))
-		}
-		if err != nil {
-			return nil, apikeydom.ErrAPIKeyNotFound
-		}
+		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
 	// IsActive covers both status (revoked/expired) and expiry timestamp.
@@ -254,8 +360,14 @@ func (s *Service) Authenticate(ctx context.Context, rawKey, ip string) (*apikeyd
 		}
 	}
 
+	// A key that matched an earlier hash is re-hashed with the current
+	// pepper, so it stops depending on APP_ENCRYPTION_KEY_PREVIOUS.
+	if matched != candidates[0] {
+		s.rehash(ctx, key.ID(), matched, candidates[0])
+	}
+
 	// Best-effort usage telemetry — a failure here must never fail auth.
-	if terr := s.repo.TouchLastUsed(ctx, key.ID(), ip); terr != nil {
+	if terr := s.repo.TouchLastUsed(ctx, key.TenantID(), key.ID(), ip); terr != nil {
 		s.logger.Debug("api key touch-last-used failed", "id", key.ID().String(), "error", terr.Error())
 	}
 
@@ -371,8 +483,23 @@ type RevokeInput struct {
 	TenantID  string `json:"tenant_id" validate:"required,uuid"`
 	RevokedBy string `json:"revoked_by" validate:"required,uuid"`
 
+	// OwnerID, when set, limits the call to that user's own keys: someone
+	// else's key reads as not found. Empty means any key of the tenant (an
+	// organization owner or administrator).
+	OwnerID string `json:"-"`
+
 	// AuditContext, when set, records an api_key.revoked audit event.
 	AuditContext *auditapp.AuditContext `json:"-"`
+}
+
+// ownedBy reports whether ownerID may act on key: an empty ownerID (an
+// owner or administrator) may act on any key of the tenant, anyone else only
+// on a key bound to themselves.
+func ownedBy(key *apikeydom.APIKey, ownerID string) bool {
+	if ownerID == "" {
+		return true
+	}
+	return key.UserID() != nil && key.UserID().String() == ownerID
 }
 
 // Revoke revokes an API key.
@@ -387,10 +514,15 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	// Fetch with tenant isolation - no separate ownership check needed
+	// Fetch with tenant isolation, then the ownership check: a member may
+	// revoke only their own keys (settings audit A-M3). Someone else's key
+	// reads as not found, as it does for Get.
 	key, err := s.repo.GetByID(ctx, keyID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	if !ownedBy(key, input.OwnerID) {
+		return nil, apikeydom.ErrAPIKeyNotFound
 	}
 
 	revokedByID, err := shared.IDFromString(input.RevokedBy)
@@ -420,6 +552,14 @@ func (s *Service) Revoke(ctx context.Context, input RevokeInput) (*apikeydom.API
 // Delete deletes an API key. Tenant isolation enforced at DB level. A non-nil
 // auditCtx records an api_key.deleted audit event.
 func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx ...*auditapp.AuditContext) error {
+	return s.DeleteOwned(ctx, id, tenantIDStr, "", auditCtx...)
+}
+
+// DeleteOwned deletes an API key that ownerID may act on: with an empty
+// ownerID (an organization owner or administrator) any key of the tenant,
+// otherwise only a key bound to ownerID. Someone else's key reads as not
+// found (settings audit A-M3).
+func (s *Service) DeleteOwned(ctx context.Context, id, tenantIDStr, ownerID string, auditCtx ...*auditapp.AuditContext) error {
 	keyID, err := shared.IDFromString(id)
 	if err != nil {
 		return fmt.Errorf("%w: invalid ID", shared.ErrValidation)
@@ -430,7 +570,17 @@ func (s *Service) Delete(ctx context.Context, id, tenantIDStr string, auditCtx .
 		return fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
 
-	// Single query: DELETE WHERE id AND tenant_id - no separate GET needed
+	if ownerID != "" {
+		key, err := s.repo.GetByID(ctx, keyID, tenantID)
+		if err != nil {
+			return err
+		}
+		if !ownedBy(key, ownerID) {
+			return apikeydom.ErrAPIKeyNotFound
+		}
+	}
+
+	// DELETE WHERE id AND tenant_id.
 	if err := s.repo.Delete(ctx, keyID, tenantID); err != nil {
 		return err
 	}

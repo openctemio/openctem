@@ -5,12 +5,23 @@
  * Scan configurations bind asset groups with scanners/workflows and schedules.
  */
 
+import type { ScanRun } from './scan-workflow-types'
+
 // Scan types
+
 export const SCAN_TYPES = ['workflow', 'single'] as const
 export type ScanType = (typeof SCAN_TYPES)[number]
 
 // Schedule types
-export const SCHEDULE_TYPES = ['manual', 'daily', 'weekly', 'monthly', 'crontab'] as const
+export const SCHEDULE_TYPES = [
+  'manual',
+  'once',
+  'daily',
+  'weekly',
+  'monthly',
+  'crontab',
+  'rrule',
+] as const
 export type ScheduleType = (typeof SCHEDULE_TYPES)[number]
 
 // Status types
@@ -24,15 +35,17 @@ export type SensorPreference = (typeof SENSOR_PREFERENCES)[number]
 // Labels for display
 export const SCAN_TYPE_LABELS: Record<ScanType, string> = {
   workflow: 'Workflow',
-  single: 'Single Scan',
+  single: 'Single check',
 }
 
 export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
   manual: 'Manual',
+  once: 'Once',
   daily: 'Daily',
   weekly: 'Weekly',
   monthly: 'Monthly',
   crontab: 'Custom (Cron)',
+  rrule: 'Recurrence rule',
 }
 
 export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
@@ -42,15 +55,15 @@ export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
 }
 
 export const SENSOR_PREFERENCE_LABELS: Record<SensorPreference, string> = {
-  auto: 'Auto (Tenant first, Platform fallback)',
-  tenant: 'Tenant Sensors Only',
-  platform: 'Platform Sensors Only',
+  auto: 'Auto (your sensors first, then platform scanning)',
+  tenant: 'Your sensors only',
+  platform: 'Platform scanning only',
 }
 
 export const SENSOR_PREFERENCE_DESCRIPTIONS: Record<SensorPreference, string> = {
-  auto: 'Uses tenant sensors when available, falls back to platform sensors',
+  auto: 'Uses your sensors when they can run the scan, otherwise platform scanning',
   tenant: 'Only uses sensors deployed in your infrastructure',
-  platform: "Only uses OpenCTEM's managed platform sensors",
+  platform: "Only uses the platform's shared scanning (public targets)",
 }
 
 /**
@@ -64,18 +77,62 @@ export interface ScannerConfigWarning {
 }
 
 /**
+ * How each run resolves the dynamic selectors among a scan's targets
+ * (`*.example.com`, CIDRs) from the inventory (RFC-068). All optional:
+ * absent = CIDRs swept, active assets only, no freshness window.
+ */
+export interface ScanTargetOptions {
+  /** `sweep` hands a CIDR to the scanner whole; `inventory` scans the known hosts in it. */
+  cidr_mode?: 'sweep' | 'inventory'
+  /** Only assets seen in the last N days (0-365; 0 or absent = any). */
+  seen_within_days?: number
+  /** Also take assets marked stale or inactive (archived ones never). */
+  include_stale?: boolean
+  /**
+   * Only the assets that came into scope since the scan's previous
+   * successful run (continuous discovery, RFC-071).
+   */
+  new_since_last_run?: boolean
+}
+
+/**
+ * The probe ceiling of a scan (RFC-071): passive sends nothing to the
+ * targets, active probes without intrusive checks, intrusive allows them.
+ */
+export const SCAN_INTENSITIES = ['passive', 'active', 'intrusive'] as const
+export type ScanIntensity = (typeof SCAN_INTENSITIES)[number]
+
+/** What one selector added to a run when it started. */
+export interface RunTargetExpansion {
+  selector: string
+  kind: 'wildcard' | 'cidr'
+  /** Inventory assets it covered (at most the cap). */
+  matched: number
+  /** More assets than one selector may add; the most recently seen were taken. */
+  capped?: boolean
+  /** Up to 10 names, most recently seen first. */
+  sample?: string[]
+}
+
+/**
  * Scan Configuration entity
  */
 export interface ScanConfig {
   id: string
   tenant_id: string
   name: string
+  /** An unsaved quick scan: not listed as a configuration until saved. */
+  ad_hoc?: boolean
   description?: string
   asset_group_id?: string // Legacy single asset group
   asset_group_ids?: string[] // Multiple asset groups
   targets?: string[] // Direct targets (individual assets or custom)
+  /** How the run resolves `*.x` and CIDR targets (RFC-068). */
+  target_options?: ScanTargetOptions
+  /** The probe ceiling of every run (RFC-071). */
+  intensity?: ScanIntensity
   scan_type: ScanType
-  pipeline_id?: string
+  scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
   /** scanner_config values that look like secrets (never blocks a save). */
@@ -83,9 +140,13 @@ export interface ScanConfig {
   targets_per_job: number
   schedule_type: ScheduleType
   schedule_cron?: string
+  /** RFC 5545 rule (RRULE parts) of an rrule schedule, in the scan timezone. */
+  schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
   schedule_timezone: string
+  /** The one run of a once schedule (RFC 3339, UTC). */
+  schedule_run_at?: string
   next_run_at?: string
   tags?: string[]
   run_on_tenant_runner: boolean
@@ -101,14 +162,37 @@ export interface ScanConfig {
   status: ScanConfigStatus
   last_run_id?: string
   last_run_at?: string
-  last_run_status?: ScanSessionStatus
+  last_run_status?: ScanLastRunStatus
   total_runs: number
   successful_runs: number
   failed_runs: number
+  /** Runs that kept results but lost some work; neither a success nor a failure. */
+  partial_runs?: number
+  /** Triggers refused before anything was dispatched (runs with status blocked). */
+  blocked_runs?: number
+  /** The scan's latest run, with its real state (the list's "Last run" column). */
+  last_run?: ScanLastRun
+  /** Name of the workflow a workflow scan runs. */
+  scan_workflow_name?: string
   created_by?: string
   created_by_name?: string
   created_at: string
   updated_at: string
+}
+
+/** A scan's latest run as the scan list carries it (GET /scans). */
+export interface ScanLastRun {
+  id: string
+  status: string
+  trigger_type?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+  /** 0-100 for a live run (finished tasks of all tasks). */
+  progress?: number
+  /** Why a blocked run was refused, and the message of a blocked or failed run. */
+  refusal_code?: string
+  error_message?: string
 }
 
 /**
@@ -119,7 +203,7 @@ export interface ScanConfigWithRelations extends ScanConfig {
     id: string
     name: string
   }
-  pipeline?: {
+  workflow?: {
     id: string
     name: string
   }
@@ -135,15 +219,25 @@ export interface CreateScanConfigRequest {
   asset_group_id?: string // Primary asset group (legacy, optional)
   asset_group_ids?: string[] // Multiple asset groups (NEW)
   targets?: string[] // Direct targets (domains, IPs, URLs)
+  /** Inventory assets to scan, named by the API (at most 1000 with targets). */
+  asset_ids?: string[]
+  /** How each run resolves `*.x` and CIDR targets (RFC-068). */
+  target_options?: ScanTargetOptions
+  /** The probe ceiling; omitted = the tier the scanner or workflow probes at. */
+  intensity?: ScanIntensity
   scan_type: ScanType
-  pipeline_id?: string
+  scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
   targets_per_job?: number
   schedule_type?: ScheduleType
   schedule_cron?: string
+  /** RFC 5545 rule (RRULE parts) of an rrule schedule, in the scan timezone. */
+  schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
+  /** The one run of a once schedule (RFC 3339), a minute to a year ahead. */
+  run_at?: string
   timezone?: string
   tags?: string[]
   run_on_tenant_runner?: boolean
@@ -157,6 +251,18 @@ export interface CreateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds (10-86400, default 60). Exponential per attempt. */
   retry_backoff_seconds?: number
+  /**
+   * Save the scan although direct targets are refused, when every refused one
+   * is covered by a scope entry waiting for approval: it starts once they are
+   * approved (RFC-054 §12.8). The response says `starts_when_scope_approved`.
+   */
+  start_when_scope_approved?: boolean
+  /**
+   * Save the scan with only the direct targets the scope check allows; the
+   * server records the others with their reasons on the scan and its runs
+   * (RFC-054 §6.4).
+   */
+  skip_refused_targets?: boolean
 }
 
 /**
@@ -165,14 +271,22 @@ export interface CreateScanConfigRequest {
 export interface UpdateScanConfigRequest {
   name?: string
   description?: string
-  pipeline_id?: string
+  /** Omitted = unchanged; `{}` resets every option to its default. */
+  target_options?: ScanTargetOptions
+  /** Omitted = unchanged. */
+  intensity?: ScanIntensity
+  scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
   targets_per_job?: number
   schedule_type?: ScheduleType
   schedule_cron?: string
+  /** RFC 5545 rule (RRULE parts) of an rrule schedule, in the scan timezone. */
+  schedule_rrule?: string
   schedule_day?: number
   schedule_time?: string
+  /** The one run of a once schedule (RFC 3339), a minute to a year ahead. */
+  run_at?: string
   timezone?: string
   tags?: string[]
   run_on_tenant_runner?: boolean
@@ -232,12 +346,16 @@ export type BulkAction = 'activate' | 'pause' | 'disable' | 'delete'
  */
 export interface ScanConfigListFilters {
   asset_group_id?: string
-  pipeline_id?: string
+  scan_workflow_id?: string
   scan_type?: ScanType
   schedule_type?: ScheduleType
   status?: ScanConfigStatus
   tags?: string
   search?: string
+  /** Also list one-off (ad-hoc quick) scans; hidden by default. */
+  include_ad_hoc?: boolean
+  /** One sort key, `-` for descending (name, created_at, last_run_at, next_run_at, total_runs). */
+  sort?: string
   page?: number
   per_page?: number
 }
@@ -246,7 +364,7 @@ export interface ScanConfigListFilters {
  * Scan configuration list response
  */
 export interface ScanConfigListResponse {
-  items: ScanConfig[]
+  data: ScanConfig[]
   total: number
   page: number
   per_page: number
@@ -266,31 +384,10 @@ export interface ScanConfigStatsData {
 }
 
 /**
- * Pipeline run response (returned when triggering scan)
+ * A scan run. Scan runs are workflow runs; the one run type lives in
+ * workflow-types (statuses typed as the API spells them).
  */
-export interface PipelineRun {
-  id: string
-  tenant_id: string
-  pipeline_id: string
-  asset_id?: string
-  scan_id?: string
-  trigger_type: string
-  triggered_by?: string
-  /** Display name of the user in triggered_by, when it is a user id (API fills it). */
-  triggered_by_name?: string
-  status: string
-  started_at?: string
-  completed_at?: string
-  total_steps: number
-  completed_steps: number
-  failed_steps: number
-  skipped_steps: number
-  total_findings: number
-  error_message?: string
-  created_at: string
-  /** What the trigger dispatched (scope exclusions, zone routing). RFC-023. */
-  dispatch?: RunDispatch
-}
+export type { ScanRun } from './scan-workflow-types'
 
 /** A target a run did not scan, with the reason. */
 export interface RunUncoveredTarget {
@@ -322,7 +419,7 @@ export interface RunZoneRouting {
   zones?: RunZoneRoute[]
 }
 
-/** GET /pipeline-runs/{id} `dispatch`: present when the trigger recorded one. */
+/** GET /scan-runs/{id} `dispatch`: present when the trigger recorded one. */
 export interface RunDispatch {
   resolved_targets: number
   excluded_targets: number
@@ -331,6 +428,8 @@ export interface RunDispatch {
   uncovered_targets?: RunUncoveredTarget[]
   zone_routing?: RunZoneRouting
   sensor_routing?: 'tenant' | 'platform'
+  /** What each `*.x` or inventory-mode CIDR target added when the run started (RFC-068). */
+  target_expansion?: RunTargetExpansion[]
 }
 
 /**
@@ -351,62 +450,23 @@ export interface StatusCounts {
  * Overview stats for scan management dashboard
  */
 export interface ScanManagementOverview {
-  pipelines: StatusCounts
+  scan_runs: StatusCounts
   scans: StatusCounts
   jobs: StatusCounts
 }
 
-// Scan Session/Run status types
-export const SCAN_SESSION_STATUSES = [
-  'queued',
-  'pending',
-  'running',
-  'completed',
-  'failed',
-  'canceled',
-  'timeout',
-] as const
-export type ScanSessionStatus = (typeof SCAN_SESSION_STATUSES)[number]
+/** Status of a scan's last run. */
+export type ScanLastRunStatus =
+  | 'queued'
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'canceled'
+  | 'timeout'
+  | 'blocked'
 
-// Alias for backward compatibility
-export const SCAN_RUN_STATUSES = SCAN_SESSION_STATUSES
-export type ScanRunStatus = ScanSessionStatus
-
-export const SCAN_SESSION_STATUS_LABELS: Record<ScanSessionStatus, string> = {
-  queued: 'Queued',
-  pending: 'Pending',
-  running: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
-  canceled: 'Canceled',
-  timeout: 'Timed Out',
-}
-
-// Alias for backward compatibility
-export const SCAN_RUN_STATUS_LABELS = SCAN_SESSION_STATUS_LABELS
-
-/**
- * Helper functions for status checking
- */
-export function isTerminalStatus(status: ScanSessionStatus): boolean {
-  return ['completed', 'failed', 'canceled', 'timeout'].includes(status)
-}
-
-export function isActiveStatus(status: ScanSessionStatus): boolean {
-  return ['queued', 'pending', 'running'].includes(status)
-}
-
-export function isSuccessStatus(status: ScanSessionStatus): boolean {
-  return status === 'completed'
-}
-
-export function isErrorStatus(status: ScanSessionStatus): boolean {
-  return ['failed', 'timeout'].includes(status)
-}
-
-/**
- * Scan Session entity (matches backend ScanSessionResponse)
- */
 /**
  * Quality gate evaluation result returned by the backend after a scan run
  * completes if the parent scan was linked to a profile with a quality gate.
@@ -428,63 +488,6 @@ export interface QualityGateResult {
     total: number
   }
 }
-
-export interface ScanSession {
-  id: string
-  tenant_id?: string
-  sensor_id?: string
-  scanner_name: string
-  scanner_version?: string
-  scanner_type?: string
-  asset_type: string
-  asset_value: string
-  asset_id?: string
-  commit_sha?: string
-  branch?: string
-  base_commit_sha?: string
-  status: ScanRunStatus
-  error_message?: string
-  findings_total: number
-  findings_new: number
-  findings_fixed: number
-  findings_by_severity?: Record<string, number>
-  started_at?: string
-  completed_at?: string
-  duration_ms?: number
-  created_at: string
-
-  /** Current retry attempt (0 = first attempt, 1 = first retry, ...) */
-  retry_attempt?: number
-  /** Quality gate evaluation result (only when parent scan has profile_id linked) */
-  quality_gate_result?: QualityGateResult
-}
-
-// Alias for backward compatibility
-export type ScanRun = ScanSession
-
-/**
- * Scan Run list filters
- */
-export interface ScanRunListFilters {
-  scan_id?: string
-  status?: ScanRunStatus
-  page?: number
-  per_page?: number
-}
-
-/**
- * Scan Session list response (matches backend pagination)
- */
-export interface ScanSessionListResponse {
-  data: ScanSession[]
-  total: number
-  page: number
-  per_page: number
-  total_pages: number
-}
-
-// Alias for backward compatibility
-export type ScanRunListResponse = ScanSessionListResponse
 
 // ============================================
 // SMART FILTERING (Asset-Scanner Compatibility)
@@ -518,8 +521,8 @@ export interface FilteringResult {
 }
 
 /**
- * Extended PipelineRun with filtering result
+ * Extended ScanRun with filtering result
  */
-export interface PipelineRunWithFiltering extends PipelineRun {
+export interface ScanRunWithFiltering extends ScanRun {
   filtering_result?: FilteringResult
 }

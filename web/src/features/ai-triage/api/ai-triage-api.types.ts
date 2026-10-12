@@ -53,8 +53,8 @@ export interface ApiRequestTriageResponse {
 export interface ApiTriageHistoryResponse {
   data: ApiTriageResult[]
   total: number
-  limit: number
-  offset: number
+  page: number
+  per_page: number
 }
 
 /**

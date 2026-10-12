@@ -5,7 +5,6 @@
  */
 
 export { useAuth } from './use-auth'
-export { useProtectedRoute, useRequireRoles, useRequireAuth } from './use-protected-route'
 export {
   usePermissions,
   useUserPermissions,

@@ -7,6 +7,7 @@ package sensor_test
 import (
 	"context"
 	"database/sql"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -127,7 +128,7 @@ func TestSensorKeyPepper_RenewedOverlapKey_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renewed, exp, err := svc.RenewAPIKey(ctx, ident.Sensor)
+	renewed, exp, err := svc.RenewAPIKey(ctx, ident)
 	if err != nil || exp == nil {
 		t.Fatalf("renew: %v %v", err, exp)
 	}
@@ -216,7 +217,7 @@ func TestSensorKeyUse_MultiKeyRowGetsAddress_DB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	renewed, _, err := svc.RenewAPIKey(ctx, ident.Sensor)
+	renewed, _, err := svc.RenewAPIKey(ctx, ident)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,5 +312,131 @@ func TestSensorCloneDetection_Heartbeats_DB(t *testing.T) {
 	_ = h.db.QueryRowContext(ctx, `SELECT instance_id FROM sensors WHERE id = $1`, restarted.String()).Scan(&inst)
 	if inst.String == "inst-z" {
 		t.Fatal("a disabled sensor's heartbeat must not change its instance")
+	}
+}
+
+// Key uses are recorded off the request path, so they can reach the database
+// out of order. An older observation must not overwrite a newer address, and
+// must not report an address change.
+func TestSensorKeyUse_OutOfOrderKeepsNewerAddress_DB(t *testing.T) {
+	h := newActivityHarness(t)
+	tid := h.tenant()
+	ctx := context.Background()
+	id := h.sensorWithKey(tid, crypto.HashTokenPeppered("rda_"+strings.Repeat("78", 32), testEncryptionKey))
+	repo := postgres.NewSensorRepository(&postgres.DB{DB: h.db})
+
+	newer := time.Now().UTC().Truncate(time.Microsecond)
+	older := newer.Add(-time.Second)
+
+	if _, err := repo.RecordKeyUse(ctx, id, net.ParseIP("198.51.100.9"), newer); err != nil {
+		t.Fatal(err)
+	}
+	prev, err := repo.RecordKeyUse(ctx, id, net.ParseIP("203.0.113.7"), older)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev != nil {
+		t.Fatalf("a stale key use reported a previous address %v; it would raise a false key_ip_changed", prev)
+	}
+
+	var ip string
+	var at time.Time
+	if err := h.db.QueryRowContext(ctx, `SELECT host(api_key_last_used_ip), api_key_last_used_at FROM sensors WHERE id = $1`,
+		id.String()).Scan(&ip, &at); err != nil {
+		t.Fatal(err)
+	}
+	if ip != "198.51.100.9" {
+		t.Fatalf("the older key use overwrote the newer address: got %s", ip)
+	}
+	if !at.Equal(newer) {
+		t.Fatalf("the key-use time moved backwards: got %v want %v", at, newer)
+	}
+
+	// A newer use still moves both forward and reports the change.
+	prev, err = repo.RecordKeyUse(ctx, id, net.ParseIP("192.0.2.4"), newer.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev == nil || prev.String() != "198.51.100.9" {
+		t.Fatalf("previous address: got %v want 198.51.100.9", prev)
+	}
+}
+
+// Two key uses recorded at the same moment: the newer one commits first and
+// the older one was already waiting on the row. The older one must still see
+// the newer address and time, not the row as it was when its statement
+// started, or it puts its address back over the newer one.
+// TestSensorKeyUse_RecordsClientAddress_DB failed in CI this way ("timed out
+// waiting for the new address"): its two uses' goroutines raced.
+func TestSensorKeyUse_ConcurrentOlderUseKeepsNewerAddress_DB(t *testing.T) {
+	h := newActivityHarness(t)
+	tid := h.tenant()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	id := h.sensorWithKey(tid, crypto.HashTokenPeppered("rda_"+strings.Repeat("9a", 32), testEncryptionKey))
+	repo := postgres.NewSensorRepository(&postgres.DB{DB: h.db})
+
+	first := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	older := first.Add(time.Second)
+	newer := first.Add(2 * time.Second)
+	if _, err := repo.RecordKeyUse(ctx, id, net.ParseIP("192.0.2.1"), first); err != nil {
+		t.Fatal(err)
+	}
+
+	// The newer use's write, held open.
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `UPDATE sensors SET api_key_last_used_ip = '198.51.100.9', api_key_last_used_at = $2 WHERE id = $1`,
+		id.String(), newer); err != nil {
+		t.Fatal(err)
+	}
+
+	// The older use starts now and waits for the row.
+	type result struct {
+		prev net.IP
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		prev, err := repo.RecordKeyUse(ctx, id, net.ParseIP("203.0.113.7"), older)
+		done <- result{prev, err}
+	}()
+	for {
+		var waiting bool
+		if err := h.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+			WHERE wait_event_type = 'Lock' AND query LIKE '%api_key_last_used_ip%' AND pid <> pg_backend_pid())`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("the older key use never waited for the row")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	r := <-done
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if r.prev != nil {
+		t.Fatalf("the older key use reported a previous address %v; it would raise a false key_ip_changed", r.prev)
+	}
+	var ip string
+	var at time.Time
+	if err := h.db.QueryRowContext(ctx, `SELECT host(api_key_last_used_ip), api_key_last_used_at FROM sensors WHERE id = $1`,
+		id.String()).Scan(&ip, &at); err != nil {
+		t.Fatal(err)
+	}
+	if ip != "198.51.100.9" || !at.Equal(newer) {
+		t.Fatalf("got %s at %v, want the newer use 198.51.100.9 at %v", ip, at, newer)
 	}
 }

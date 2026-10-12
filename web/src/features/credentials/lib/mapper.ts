@@ -7,6 +7,7 @@
 import type { ApiCredential, ApiCredentialStats } from '../api/credential-api.types'
 import type { Asset } from '@/features/assets'
 import type { Status } from '@/features/shared/types'
+import { severityCounts } from '@/lib/severity'
 
 // Map API state to frontend status
 const stateToStatus: Record<string, Status> = {
@@ -26,9 +27,27 @@ const severityToRiskScore: Record<string, number> = {
 }
 
 /**
- * Map API credential to Asset type for UI compatibility
+ * What the credential list shows about one leak. These are fields of the
+ * credential-leak API, not asset properties, so they have a type of their
+ * own instead of riding on an asset's property schema.
  */
-export function mapCredentialToAsset(credential: ApiCredential): Asset {
+export interface CredentialLeakDetails {
+  source: string
+  username: string
+  leakDate: string
+  hasSecret: boolean
+  secretMasked?: string
+  secretFingerprint?: string
+  credentialType: string
+}
+
+/** A credential leak shaped like an asset row, so the shared table components render it. */
+export type CredentialLeakRow = Omit<Asset, 'metadata'> & { metadata: CredentialLeakDetails }
+
+/**
+ * Map API credential to an asset-shaped row for the shared table components.
+ */
+export function mapCredentialToAsset(credential: ApiCredential): CredentialLeakRow {
   const details = credential.details || {}
 
   // Extract context from details
@@ -94,7 +113,7 @@ export function mapCredentialToAsset(credential: ApiCredential): Asset {
 /**
  * Map multiple API credentials to Assets
  */
-export function mapCredentialsToAssets(credentials: ApiCredential[]): Asset[] {
+export function mapCredentialsToAssets(credentials: ApiCredential[]): CredentialLeakRow[] {
   return credentials.map(mapCredentialToAsset)
 }
 
@@ -113,6 +132,7 @@ export function extractCredentialStats(stats: ApiCredentialStats | undefined) {
       high: 0,
       medium: 0,
       low: 0,
+      info: 0,
     }
   }
 
@@ -122,9 +142,6 @@ export function extractCredentialStats(stats: ApiCredentialStats | undefined) {
     resolved: stats.by_state?.resolved || 0,
     accepted: stats.by_state?.accepted || 0,
     falsePositive: stats.by_state?.false_positive || 0,
-    critical: stats.by_severity?.critical || 0,
-    high: stats.by_severity?.high || 0,
-    medium: stats.by_severity?.medium || 0,
-    low: stats.by_severity?.low || 0,
+    ...severityCounts(stats.by_severity),
   }
 }

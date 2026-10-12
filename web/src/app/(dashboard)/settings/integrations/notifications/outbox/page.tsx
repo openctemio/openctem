@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { formatDistanceToNow } from 'date-fns'
 import {
   ArrowLeft,
@@ -43,7 +44,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can, Permission } from '@/lib/permissions'
+import { Can } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 import {
@@ -60,6 +61,9 @@ import {
   OUTBOX_STATUS_CONFIG,
   OUTBOX_SEVERITY_CONFIG,
 } from '@/features/notifications/types/notification-outbox.types'
+import { safeHref } from '@/lib/safe-href'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Status icon mapping
 const STATUS_ICONS: Record<OutboxStatus, React.ElementType> = {
@@ -167,10 +171,13 @@ function QueueHealthStatus({
 }
 
 export default function NotificationOutboxPage() {
+  const { t } = useTranslation()
   // State
-  const [statusFilter, setStatusFilter] = useState<OutboxStatus | 'all'>('all')
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
-  const setPage = (page: number) => setPagination((p) => ({ ...p, pageIndex: page - 1 }))
+  // The list lives in the URL (one list convention): page, per_page, status.
+  const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
+  const statusFilter = list.filters.status as OutboxStatus | 'all'
+  const setStatusFilter = (value: OutboxStatus | 'all') => list.setFilter('status', value)
+  const { pagination, setPagination, setPage } = list
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<OutboxEntry | null>(null)
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
@@ -190,7 +197,7 @@ export default function NotificationOutboxPage() {
   } = useNotificationOutboxApi({
     status: statusFilter === 'all' ? undefined : statusFilter,
     page: pagination.pageIndex + 1,
-    page_size: pagination.pageSize,
+    per_page: pagination.pageSize,
   })
 
   // Mutations
@@ -395,15 +402,15 @@ export default function NotificationOutboxPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {entry.url && (
+              {safeHref(entry.url) && (
                 <DropdownMenuItem asChild>
-                  <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                  <SafeExternalLink href={entry.url}>
                     <ExternalLink className="me-2 h-4 w-4" />
                     View source
-                  </a>
+                  </SafeExternalLink>
                 </DropdownMenuItem>
               )}
-              <Can permission={Permission.NotificationsWrite}>
+              <Can route="POST /api/v1/notification-outbox/{id}/retry">
                 {canRetry && (
                   <DropdownMenuItem onClick={() => handleRetry(entry)} disabled={isRetrying}>
                     <RotateCcw className="me-2 h-4 w-4" />
@@ -411,7 +418,7 @@ export default function NotificationOutboxPage() {
                   </DropdownMenuItem>
                 )}
               </Can>
-              <Can permission={Permission.NotificationsDelete}>
+              <Can route="DELETE /api/v1/notification-outbox/{id}">
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive"
@@ -521,10 +528,13 @@ export default function NotificationOutboxPage() {
         <ConfirmDialog
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
-          title="Delete Entry"
+          title={t('confirm.outbox.deleteTitle', 'Delete this notification entry?')}
           desc={
             <>
-              Are you sure you want to delete this notification entry? This action cannot be undone.
+              {t(
+                'confirm.outbox.deleteDesc',
+                'The entry leaves the outbox and is not sent or retried. This cannot be undone.'
+              )}
               {selectedEntry && (
                 <span className="mt-2 block font-medium">{selectedEntry.title}</span>
               )}
@@ -534,10 +544,10 @@ export default function NotificationOutboxPage() {
             isDeleting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Deleting...
+                {t('confirm.deleting', 'Deleting…')}
               </>
             ) : (
-              'Delete'
+              t('confirm.delete', 'Delete')
             )
           }
           destructive

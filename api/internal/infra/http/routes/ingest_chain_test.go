@@ -36,7 +36,7 @@ func TestIngestMiddlewareChain_RateLimitBeforeDecompress(t *testing.T) {
 	}), chain)
 
 	send := func() int {
-		r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/ingest", bytes.NewReader([]byte("not-gzip")))
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/r1/results", bytes.NewReader([]byte("not-gzip")))
 		r.Header.Set("Content-Encoding", "gzip")
 		r = r.WithContext(context.WithValue(r.Context(), middleware.TenantIDKey, "tenant-1"))
 		rec := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestIngestMiddlewareChain_IngestBodyLimitOverridesGlobal(t *testing.T) {
 	h := middleware.BodyLimit(middleware.DefaultMaxBodySize)(inner) // the global limit
 
 	body := make([]byte, middleware.DefaultMaxBodySize+1024) // > 10MB, < 50MB
-	r := httptest.NewRequest(http.MethodPost, "/api/v1/agent/ingest", bytes.NewReader(body))
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/r1/results", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, r)
 	if rec.Code != http.StatusOK || read != len(body) {

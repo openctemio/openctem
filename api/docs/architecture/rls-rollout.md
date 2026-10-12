@@ -12,6 +12,14 @@
   "shadow" state: policies are reviewable + tested but don't change
   behaviour.
 
+## Prerequisite: a role RLS applies to
+
+Row-level security never applies to a superuser or a `BYPASSRLS` role, and by
+default not to a table's owner either. Enabling it is only meaningful once the
+API connects as `openctem_app` (no superuser, no `BYPASSRLS`, owns nothing) and
+migrations run as `openctem_migrator`. See
+[`../deployment/database-roles.md`](../deployment/database-roles.md) (D-6).
+
 ## Why shadow-first
 
 Turning on RLS without auditing every read path is the fastest way
@@ -80,8 +88,8 @@ Two properties worth understanding:
 | 14 | priority_class_audit_log | CTEM |
 | 15 | compensating_controls | CTEM |
 | 16 | scans | scanning |
-| 17 | pipelines | scanning |
-| 18 | tool_executions | scanning |
+| 17 | scan_workflows | scanning |
+| 18 | ~~tool_executions~~ (dropped by migration 001491) | scanning |
 | 19 | audit_logs | audit |
 | 20 | notification_outbox | notifications |
 

@@ -75,8 +75,9 @@ var (
 	// ErrMFANotSupported: the account signs in through an identity provider,
 	// which owns the second factor.
 	ErrMFANotSupported = errors.New("two-factor authentication is managed by your identity provider")
-	// ErrMFAEnrollmentRequired: an organization requires 2FA and this password
-	// session's user has not enrolled.
+	// ErrMFAEnrollmentRequired: an organization requires 2FA and this session
+	// has not been through it: a password session whose user has not enrolled,
+	// or a federated session not issued by that organization's own IdP.
 	ErrMFAEnrollmentRequired = errors.New("this organization requires two-factor authentication")
 	// ErrMFAUnavailable: the server was started without 2FA storage.
 	ErrMFAUnavailable = errors.New("two-factor authentication is not available")
@@ -240,7 +241,7 @@ func (s *AuthService) openChallenge(ctx context.Context, token string, purpose m
 	if u.IsLocked() {
 		return nil, nil, ErrAccountLocked
 	}
-	if u.Status() == userdom.StatusSuspended {
+	if !u.IsActive() {
 		return nil, nil, ErrAccountSuspended
 	}
 	attempts, err := s.mfaRepo.RecordChallengeAttempt(ctx, c.ID)
@@ -259,10 +260,7 @@ func (s *AuthService) openChallenge(ctx context.Context, token string, purpose m
 
 // recordSecondFactorFailure applies the account lockout and audits the miss.
 func (s *AuthService) recordSecondFactorFailure(ctx context.Context, c *mfa.Challenge, u *userdom.User, ip, ua string) {
-	u.RecordFailedLogin(s.config.MaxLoginAttempts, s.config.LockoutDuration)
-	if err := s.userRepo.Update(ctx, u); err != nil {
-		s.logger.Error("failed to record failed second factor", "error", err)
-	}
+	s.recordPasswordFailure(ctx, u)
 	if u.IsLocked() {
 		// Locked accounts get no further tries on this challenge.
 		_, _ = s.mfaRepo.ConsumeChallenge(ctx, c.ID)
@@ -324,10 +322,7 @@ func (s *AuthService) VerifyMFALogin(ctx context.Context, input VerifyMFAInput) 
 		}
 	}
 
-	u.RecordSuccessfulLogin()
-	if err := s.userRepo.Update(ctx, u); err != nil {
-		s.logger.Error("failed to reset failed login attempts", "error", err)
-	}
+	s.recordLoginSuccess(ctx, u)
 	return s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
 }
 
@@ -361,10 +356,7 @@ func (s *AuthService) CompleteMFAEnrollmentFromChallenge(ctx context.Context, in
 	}
 	s.auditMFAEnabled(ctx, auditapp.AuditContext{ActorID: u.ID().String(), ActorEmail: u.Email(), ActorIP: input.IPAddress, UserAgent: input.UserAgent}, u, "organization_policy")
 
-	u.RecordSuccessfulLogin()
-	if err := s.userRepo.Update(ctx, u); err != nil {
-		s.logger.Error("failed to reset failed login attempts", "error", err)
-	}
+	s.recordLoginSuccess(ctx, u)
 	res, err := s.completeLogin(ctx, u, input.IPAddress, input.UserAgent)
 	if err != nil {
 		return nil, nil, err
@@ -430,11 +422,14 @@ func (s *AuthService) BeginMFASetup(ctx context.Context, userID string) (*MFASet
 	return s.newPendingSecret(ctx, u)
 }
 
-// EnableMFA confirms the pending secret with a code and turns 2FA on. Every
+// EnableMFA confirms the pending secret with a code and turns 2FA on. It needs
+// the current password: enabling signs out every other session, so with a
+// stolen session alone an attacker could otherwise bind their own
+// authenticator and lock the real user out (settings audit A-M1). Every
 // other session of the user is signed out, so a session opened with a stolen
 // password before 2FA was turned on does not survive it. The recovery codes
 // are returned once and only their hashes are kept.
-func (s *AuthService) EnableMFA(ctx context.Context, actx auditapp.AuditContext, userID, code string) ([]string, error) {
+func (s *AuthService) EnableMFA(ctx context.Context, actx auditapp.AuditContext, userID, currentPassword, code string) ([]string, error) {
 	u, err := s.mfaUser(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -444,6 +439,13 @@ func (s *AuthService) EnableMFA(ctx context.Context, actx auditapp.AuditContext,
 	}
 	if !s.mfaEnabled() {
 		return nil, ErrMFAUnavailable
+	}
+	if u.IsLocked() {
+		return nil, ErrAccountLocked
+	}
+	if err := s.passwordHasher.Verify(currentPassword, *u.PasswordHash()); err != nil {
+		s.recordPasswordFailure(ctx, u)
+		return nil, ErrPasswordMismatch
 	}
 	codes, err := s.activatePending(ctx, u, code)
 	if err != nil {
@@ -469,7 +471,11 @@ func (s *AuthService) DisableMFA(ctx context.Context, actx auditapp.AuditContext
 	if !s.mfaEnabled() {
 		return ErrMFAUnavailable
 	}
+	if u.IsLocked() {
+		return ErrAccountLocked
+	}
 	if err := s.passwordHasher.Verify(currentPassword, *u.PasswordHash()); err != nil {
+		s.recordPasswordFailure(ctx, u)
 		return ErrPasswordMismatch
 	}
 	f, err := s.mfaRepo.GetFactor(ctx, u.ID())
@@ -570,7 +576,9 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 		if err != nil || t == nil {
 			continue
 		}
-		if t.TypedSettings().Security.MFARequired {
+		sec, serr := t.SecuritySettingsStrict()
+		if serr != nil || sec.MFARequiredFor(m.Role) {
+			// An unreadable security section counts as "2FA required".
 			return true
 		}
 	}
@@ -578,11 +586,19 @@ func (s *AuthService) mfaRequiredByAnyOrganization(ctx context.Context, userID s
 }
 
 // enforceMFAPolicy is the per-tenant 2FA gate at token mint (ExchangeToken and
-// RefreshToken), next to enforceSSOPolicy. A password session cannot obtain a
-// tenant-scoped access token for a tenant that requires 2FA unless the user
-// has 2FA on. Federated sessions pass: their IdP owns the second factor.
+// RefreshToken), next to enforceSSOPolicy.
+//
+//   - A session issued by THIS tenant's own SAML/OIDC provider passes: the
+//     tenant chose that IdP, and it owns the second factor.
+//   - A password session passes only when the user has 2FA on. The password
+//     login verified the code (loginMFAChallenge), so an enabled factor means
+//     this session went through the second step.
+//   - Any other federated session (social OAuth, another organization's IdP)
+//     never went through our second step, and its IdP is not one this tenant
+//     chose, so it is refused whether or not the user has enrolled. The user
+//     signs in again — with password and 2FA, or through this tenant's IdP.
 func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Session, userID shared.ID, tenantID string) error {
-	if !s.mfaEnabled() || sess.AuthMethod().IsFederated() {
+	if !s.mfaEnabled() || sess.FederatedFor(tenantID) {
 		return nil
 	}
 	tid, err := shared.IDFromString(tenantID)
@@ -593,8 +609,38 @@ func (s *AuthService) enforceMFAPolicy(ctx context.Context, sess *sessiondom.Ses
 	if err != nil {
 		return fmt.Errorf("failed to load tenant for 2FA policy: %w", err)
 	}
-	if !t.TypedSettings().Security.MFARequired {
-		return nil
+	sec, err := t.SecuritySettingsStrict()
+	if err != nil {
+		// Fail closed: never mint a token on an unreadable 2FA policy.
+		return fmt.Errorf("failed to read 2FA policy: %w", err)
+	}
+	if !sec.MFARequired {
+		if !sec.MFARequiredForAdmins {
+			return nil
+		}
+		// Owners and administrators only: look the role up (fail closed).
+		m, merr := s.tenantRepo.GetMembership(ctx, userID, tid)
+		if merr != nil || m == nil {
+			return fmt.Errorf("failed to load membership for 2FA policy: %w", merr)
+		}
+		if !sec.MFARequiredFor(m.Role().String()) {
+			return nil
+		}
+	}
+	// An external member signed in at their trusted home organization
+	// passes only with a proven or attested second factor (RFC-058).
+	if fed, mfaOK := s.assuranceAt(ctx, sess, userID, tenantID); fed {
+		if mfaOK {
+			return nil
+		}
+		s.logger.Warn("blocked home-organization session without MFA evidence from 2FA-required tenant",
+			"tenant_id", tid.String(), "user_id", userID.String())
+		return ErrMFAEnrollmentRequired
+	}
+	if sess.AuthMethod().IsFederated() {
+		s.logger.Warn("blocked federated session not issued by this tenant's IdP from 2FA-required tenant",
+			"tenant_id", tid.String(), "user_id", userID.String())
+		return ErrMFAEnrollmentRequired
 	}
 	f, err := s.mfaRepo.GetFactor(ctx, userID)
 	if err != nil && !errors.Is(err, mfa.ErrFactorNotFound) {

@@ -10,6 +10,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { devLog } from '@/lib/logger'
+import { useAppHost } from '@/hooks/use-app-origin'
 import { useRouter } from 'next/navigation'
 import { useForm, type UseFormReturn } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -34,7 +35,7 @@ import { createTenantSchema, generateSlug, type CreateTenantInput } from '../sch
 import { createFirstTeamAction } from '@/features/auth/actions/local-auth-actions'
 import {
   useModulePresetsPublic,
-  subscribeBundlesRequest,
+  applyPresetRequest,
   type ModulePreset,
 } from '@/features/organization/api/use-tenant-modules'
 import { OnboardingBundlePicker } from './onboarding-bundle-picker'
@@ -73,12 +74,8 @@ function useBundleSelection() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const toggle = useCallback((id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    // One starting set: picking another replaces it, picking it again clears it.
+    setSelected((prev) => (prev.has(id) ? new Set() : new Set([id])))
   }, [])
 
   return {
@@ -137,15 +134,25 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
         teamSlug: data.slug,
       })
 
+      if (!result.success && result.mfaEnrollmentRequired) {
+        // The team exists; its owner must use two-factor authentication.
+        // Signing in again walks through the authenticator set-up.
+        toast.success('Team created. Secure your account to continue.', {
+          description: 'Sign in again to set up two-factor authentication.',
+        })
+        window.location.href = '/login?mfa=setup'
+        return
+      }
+
       if (result.success && result.tenant) {
         toast.success('Team created successfully', {
           description: `Welcome to ${result.tenant.name}!`,
         })
 
         // createFirstTeamAction already set the access-token cookie for the new
-        // tenant, so this client-side subscribe is authorised. Non-blocking:
+        // tenant, so this client-side preset apply is authorised. Non-blocking:
         // the team exists regardless of whether this succeeds.
-        await subscribeSelectedBundles(result.tenant.id, [...selected])
+        await applySelectedPreset(result.tenant.id, [...selected][0])
 
         // Force full page reload to pick up new cookies
         window.location.href = '/'
@@ -258,7 +265,7 @@ function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) 
         // Subscribe to the chosen products now that switch-team has scoped the
         // access token to the new tenant. Non-blocking: the team exists
         // regardless of whether this succeeds.
-        await subscribeSelectedBundles(result.id, [...selected])
+        await applySelectedPreset(result.id, [...selected][0])
 
         // Force full page reload to pick up new cookies and refresh all state
         window.location.href = '/'
@@ -328,6 +335,7 @@ function CreateTeamFormUI({
   selectedBundles,
   onToggleBundle,
 }: CreateTeamFormUIProps) {
+  const appHost = useAppHost()
   // No Card wrapper, no duplicate title, no icon clutter on labels.
   // The page-level <h1> already says "Set up your first team" — the form
   // just needs to be the form, not re-introduce a card title.
@@ -354,7 +362,7 @@ function CreateTeamFormUI({
           )}
         />
 
-        {/* URL Slug — single composite input. The "app.openctem.io/" prefix
+        {/* URL Slug — single composite input. The "<console host>/" prefix
             sits inline at the start of the box; the input shares the same
             border so the whole thing reads as one field, not two glued
             rectangles. */}
@@ -366,8 +374,11 @@ function CreateTeamFormUI({
               <FormLabel>Team URL</FormLabel>
               <FormControl>
                 <div className="border-input bg-background focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow] focus-within:ring-[3px]">
-                  <span className="text-muted-foreground select-none ps-3 text-sm">
-                    app.openctem.io/
+                  <span
+                    data-testid="slug-host-prefix"
+                    className="text-muted-foreground select-none ps-3 text-sm"
+                  >
+                    {appHost}/
                   </span>
                   <Input
                     placeholder="acme-corp"
@@ -468,14 +479,14 @@ function CreateTeamFormUI({
  * be redirected in, so a failure here must never block. We surface a
  * non-blocking toast and let them set products later in Settings → Products.
  */
-async function subscribeSelectedBundles(tenantIdOrSlug: string, bundleIds: string[]) {
-  if (bundleIds.length === 0) return
+async function applySelectedPreset(tenantIdOrSlug: string, presetId: string | undefined) {
+  if (!presetId) return
   try {
-    await subscribeBundlesRequest(tenantIdOrSlug, bundleIds)
+    await applyPresetRequest(tenantIdOrSlug, presetId)
   } catch (error) {
-    devLog.error('[CreateTeamForm] Bundle subscription failed (non-blocking):', error)
-    toast.warning('Team created, but your product selection could not be applied', {
-      description: 'You can choose products anytime in Settings → Products.',
+    devLog.error('[CreateTeamForm] Preset apply failed (non-blocking):', error)
+    toast.warning('Team created, but your starting set could not be applied', {
+      description: 'You can switch modules on or off anytime in Settings > Modules.',
     })
   }
 }

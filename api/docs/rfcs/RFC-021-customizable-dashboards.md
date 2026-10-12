@@ -1,20 +1,20 @@
-# RFC-021 — Customizable dashboards (Tenable-style widgets)
+# RFC-021 — Customizable dashboards (widgets)
 
-- Status: **Proposed** — design for review; to be built in phased PRs that reference this RFC.
+- Status: **Phase 1 implemented** — `/api/v1/me/dashboards` CRUD + set-default, the widget registry and starter templates (`web/src/features/dashboards`); per-widget config (rest of Phase 2), tenant-published templates (Phase 3) and the custom-query widget (Phase 4) not built.
 - Area: UI dashboards + a small per-user persistence surface in `api`.
-- Related: the existing CTEM/Classic dashboards (`ui/src/features/dashboard`), the per-user notification/preferences pattern, RFC-017 (CTEM prioritization surfacing — the signals widgets show), and the "custom field query" idea (a future widget data-source — see §7).
+- Related: the existing CTEM/Classic dashboards (`web/src/features/dashboard`), the per-user notification/preferences pattern, RFC-017 (CTEM prioritization surfacing — the signals widgets show), and the "custom field query" idea (a future widget data-source — see §7).
 
 ## 1. Goal
 
-Let each user **compose their own dashboard** — like Tenable.sc/Tenable.io: pick
+Let each user **compose their own dashboard**: pick
 widgets from a catalog, arrange/resize/remove them on a grid, and have that
 layout **persist per user**. Today OpenCTEM has two *fixed* dashboards (a CTEM
 view and a Classic view, toggled) plus a fixed `/my-work` personal view — none
 are user-composable.
 
 Non-goal (this RFC): an arbitrary "any field → any chart" query-and-viz builder.
-That is powerful but huge; we get ~80% of Tenable's value from a **curated widget
-catalog** first, and leave per-widget custom queries to a later phase (§7).
+That is powerful but huge; a **curated widget catalog** delivers most of the
+value first, and leave per-widget custom queries to a later phase (§7).
 
 ## 2. The load-bearing decision: reuse existing cards as the widget catalog
 
@@ -38,9 +38,8 @@ that already exist and already fetch their own data.
 
 ### 2.1 Terminology — "widget" ≡ "component"
 
-The tile a user places on a dashboard is a **widget** (this RFC's term). Tenable.sc
-calls the same building block a **"component"** (its "Add Component"); Tenable.io
-calls it a "widget" — same concept, and we treat the words as synonyms in the UI.
+The tile a user places on a dashboard is a **widget** (this RFC's term). Users
+also call it a **"component"**; we treat the words as synonyms in the UI.
 (In code it's a React component that renders the widget — distinct meaning; we say
 "widget" for the dashboard tile to avoid the collision.)
 
@@ -54,7 +53,7 @@ Widget (= component) = Data source (query/filter)  +  Visualization  +  Config
   assigned_to_me, last 30d`). "Customizing a tile by applying a query" = editing
   this.
 - **Visualization** — how it shows: single stat, bar/pie, table, trend line, or a
-  Tenable-style matrix.
+  matrix (rows × columns of counts).
 - **Config** — title, time range, scope (tenant / assigned-to-me / BU / asset group).
 
 That yields **two kinds of widget**, both first-class:
@@ -62,7 +61,7 @@ That yields **two kinds of widget**, both first-class:
 1. **Catalog widget** (prebuilt) — a curated card (severity, SLA, MTTR, …) with a
    fixed query + viz. Drop-in, zero config. **Phase 1.**
 2. **Query-driven / custom component** — the user *picks a data source, applies a
-   query/filter, and chooses the visualization* — the Tenable "component" model.
+   query/filter, and chooses the visualization*.
    This is where the **custom-field query** idea lands (a saved advanced query over
    finding/asset fields becomes a widget's data source). **Phase 2 config →
    Phase 4 full query builder** (§7).
@@ -170,14 +169,14 @@ New personas are just new entries in the template registry — no schema change.
   starter gallery (SOC, Exec, AppSec, VM).
 - **Phase 4 (ties to the custom-query idea)** — a "Custom query" widget whose data
   source is a saved advanced query over finding/asset fields (field/op/value,
-  AND/OR). This is where the Tenable-style **custom field query** lands, reusing
+  AND/OR). This is where the **custom field query** lands, reusing
   `FindingFilter`/`asset.Filter` + the existing CTEM facet filters.
 
 ## 8. Why a grid lib, and which
 
 Use a small, dependency-light React grid (e.g. a self-contained CSS-grid + a
 lightweight drag/resize) rather than a heavy external one, to respect the
-Artifact-style no-bloat house rule and keep bundle size down. Evaluate in Phase 1;
+no-bloat house rule and keep bundle size down. Evaluate in Phase 1;
 fall back to a simple reorder-only (no free resize) if drag-resize proves heavy —
 reorder + fixed sizes still delivers the core value.
 

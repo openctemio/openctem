@@ -8,8 +8,7 @@ import { join } from 'node:path'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { KEYBOARD_SHORTCUTS, shortcutsForShell } from '../keyboard-shortcuts'
 import { getAppVersion } from '@/lib/app-version'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi_ from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi as vi_ } from '@/lib/i18n/dictionaries'
 
 const src = (p: string) => readFileSync(join(process.cwd(), 'src', p), 'utf8')
 
@@ -34,6 +33,10 @@ const HANDLERS: Record<string, [string, RegExp]> = {
   'toggle-comment': [
     'features/findings/components/finding-detail-drawer.tsx',
     /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'c' && !e\.shiftKey/,
+  ],
+  'open-activity': [
+    'features/activity/components/activity-trigger.tsx',
+    /e\.key !== 'c' && e\.key !== 'C'[\s\S]*e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',

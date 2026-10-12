@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -19,27 +20,24 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/adminbootstrap"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/testdb"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func openBreakGlassDB(t *testing.T) *postgres.DB {
 	t.Helper()
-	db := openConsoleDB(t)
+	// These tests reason about the whole administrator roster and the
+	// platform IdP, so they need both empty. Emptying them in the shared test
+	// database deleted the administrators that other packages' tests (SSO
+	// change approval, the admin audit chain) were using at the same time:
+	// their next write failed on sso_pending_changes_requested_by_admin_fkey.
+	// A private database starts empty and nobody else writes to it.
+	db := &postgres.DB{DB: testdb.PrivateDatabase(t, "breakglass", filepath.Join("..", "..", "migrations"))}
 	var ok bool
 	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
 		WHERE table_name = 'admin_users' AND column_name = 'is_break_glass')`).Scan(&ok); err != nil || !ok {
 		t.Skip("admin_users.is_break_glass missing: run migration 000229")
-	}
-	// These tests reason about the whole roster: start from an empty one.
-	if _, err := db.Exec(`DELETE FROM platform_identity_provider`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`DELETE FROM users WHERE id IN (SELECT user_id FROM admin_users)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`DELETE FROM admin_users`); err != nil {
-		t.Fatal(err)
 	}
 	return db
 }

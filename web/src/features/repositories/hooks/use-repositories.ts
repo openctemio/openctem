@@ -29,9 +29,6 @@ import type {
   BranchConfig,
   SCMConnection,
   CreateSCMConnectionInput,
-  ImportJob,
-  ImportPreview,
-  RepositoryImportConfig,
 } from '../types/repository.types'
 
 // ============================================
@@ -148,18 +145,6 @@ function buildSCMConnectionEndpoint(connectionId: string): string {
   return `/api/v1/integrations/${connectionId}`
 }
 
-function buildImportEndpoint(): string {
-  return '/api/v1/assets/repository/import'
-}
-
-function buildImportPreviewEndpoint(): string {
-  return '/api/v1/assets/repository/import/preview'
-}
-
-function buildImportJobEndpoint(jobId: string): string {
-  return `/api/v1/assets/repository/import/${jobId}`
-}
-
 // ============================================
 // FETCHER FUNCTIONS
 // ============================================
@@ -256,10 +241,6 @@ async function fetchSCMConnection(url: string): Promise<SCMConnection> {
   return transformSCMConnection(response)
 }
 
-async function fetchRepositoryScans(url: string): Promise<RepositoryScan[]> {
-  return get<RepositoryScan[]>(url)
-}
-
 async function fetchRepositoryBranches(url: string): Promise<Branch[]> {
   const response = await get<{ data: Record<string, unknown>[]; total: number }>(url)
   // API returns paginated result — extract data array and transform
@@ -307,10 +288,6 @@ function transformBranchResponse(b: Record<string, unknown>): Branch {
     createdAt: (b.created_at as string) || '',
     updatedAt: (b.updated_at as string) || '',
   }
-}
-
-async function fetchImportJob(url: string): Promise<ImportJob> {
-  return get<ImportJob>(url)
 }
 
 // ============================================
@@ -400,26 +377,6 @@ export function useRepositoryStats(config?: SWRConfiguration) {
   const key = shouldFetch ? '/api/v1/assets/stats?type=repository' : null
 
   return useSWR<RepositoryStats>(key, fetchRepositoryStats, {
-    ...defaultConfig,
-    ...config,
-  })
-}
-
-/**
- * Fetch scans for a repository
- * Only fetches if user has scans:read permission
- */
-export function useRepositoryScans(assetId: string | null, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-  const { can } = usePermissions()
-  const canReadScans = can(Permission.ScansRead)
-
-  // Only fetch if user has permission
-  const shouldFetch = currentTenant && assetId && canReadScans
-
-  const key = shouldFetch ? `/api/v1/assets/${assetId}/scans` : null
-
-  return useSWR<RepositoryScan[]>(key, fetchRepositoryScans, {
     ...defaultConfig,
     ...config,
   })
@@ -893,70 +850,6 @@ export function useSCMRepositories(
 // ============================================
 // IMPORT HOOKS
 // ============================================
-
-/**
- * Preview import results before actually importing
- */
-export function useImportPreview() {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant ? buildImportPreviewEndpoint() : null,
-    async (url: string, { arg }: { arg: RepositoryImportConfig }) => {
-      return post<ImportPreview>(url, arg)
-    }
-  )
-}
-
-/**
- * Start repository import
- */
-export function useStartImport() {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant ? buildImportEndpoint() : null,
-    async (url: string, { arg }: { arg: RepositoryImportConfig }) => {
-      return post<ImportJob>(url, arg)
-    }
-  )
-}
-
-/**
- * Fetch import job status
- * Only fetches if user has assets:read permission
- */
-export function useImportJob(jobId: string | null, config?: SWRConfiguration) {
-  const { currentTenant } = useTenant()
-  const { can } = usePermissions()
-  const canReadAssets = can(Permission.AssetsRead)
-
-  // Only fetch if user has permission
-  const shouldFetch = currentTenant && jobId && canReadAssets
-
-  const key = shouldFetch ? buildImportJobEndpoint(jobId) : null
-
-  return useSWR<ImportJob>(key, fetchImportJob, {
-    ...defaultConfig,
-    // Poll more frequently for running jobs
-    refreshInterval: 5000,
-    ...config,
-  })
-}
-
-/**
- * Cancel an import job
- */
-export function useCancelImport(jobId: string) {
-  const { currentTenant } = useTenant()
-
-  return useSWRMutation(
-    currentTenant && jobId ? `${buildImportJobEndpoint(jobId)}/cancel` : null,
-    async (url: string) => {
-      return post<ImportJob>(url, {})
-    }
-  )
-}
 
 // ============================================
 // CACHE UTILITIES

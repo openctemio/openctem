@@ -40,7 +40,7 @@ func TestReleasePendingFromUnavailableSensors(t *testing.T) {
 		t.Helper()
 		raw, _ := json.Marshal(map[string]any{
 			"scanner": "nuclei", "targets": []string{"10.1.0.1"},
-			"pipeline_run_id": shared.NewID().String(), "step_key": "scan",
+			"scan_run_id": shared.NewID().String(), "step_key": "scan",
 		})
 		cmd, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, raw)
 		if err != nil {
@@ -63,7 +63,7 @@ func TestReleasePendingFromUnavailableSensors(t *testing.T) {
 	onDisabled := routed(disabled, false, nil)
 	onAlive := routed(alive, true, nil)
 	running := routed(dead, true, func(c *command.Command) { c.Status = command.CommandStatusRunning })
-	// An operator's command for that one sensor (no pipeline run) keeps it.
+	// An operator's command for that one sensor (no scan run) keeps it.
 	addressedRaw, _ := json.Marshal(map[string]any{"scanner": "tenable", "session_id": "s"})
 	addressed, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, addressedRaw)
 	if err != nil {

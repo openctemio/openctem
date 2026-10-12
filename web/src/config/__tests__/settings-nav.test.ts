@@ -16,8 +16,7 @@ import {
 import { matchRoutePermission } from '../route-permissions'
 import { resolveLegacyRoute } from '../legacy-routes'
 import { sidebarData } from '../sidebar-data'
-import en from '@/lib/i18n/dictionaries/en.json'
-import vi from '@/lib/i18n/dictionaries/vi.json'
+import { en, vi } from '@/lib/i18n/dictionaries'
 import type { NavCollapsible, NavItem } from '@/components/types'
 
 const APP_DIR = join(process.cwd(), 'src', 'app')
@@ -169,6 +168,17 @@ describe('/account pages are ungated', () => {
   }
 })
 
+// CI trust, gate policy and break-glass live on the CI/CD integration page
+// (/ci-cd, Trust and gate tab). The old settings copy is gone, with no
+// redirect, and must not come back beside it.
+describe('CI/CD settings have one home', () => {
+  it('has no /settings/scanning/ci page, nav item or route guard', () => {
+    expect(findPageFile('/settings/scanning/ci')).toBeNull()
+    expect(settingsNavItems.some((i) => i.url === '/settings/scanning/ci')).toBe(false)
+    expect(matchRoutePermission('/settings/scanning/ci')).toBeUndefined()
+  })
+})
+
 describe('settings shell', () => {
   it('owns /settings, /account and every item url (with sub-pages)', () => {
     for (const p of [
@@ -215,13 +225,7 @@ describe('settings shell', () => {
 
   it('every static page in the shell is an item, a sub-page of one, or a known exception', () => {
     // Deliberately not in the rail:
-    const EXCEPTIONS = new Set([
-      // "SSO is managed by your platform administrator" landing pages for old links.
-      '/settings/integrations/saml',
-      '/settings/integrations/verified-domains',
-      // Unlinked until the IAM model decision (owner decision D5).
-      '/settings/access-control/permission-sets',
-    ])
+    const EXCEPTIONS = new Set<string>([])
     const pages = [...staticPagesUnder('/settings'), ...staticPagesUnder('/account')].filter(
       (u) => u !== '/settings' && isSettingsShellPath(u)
     )

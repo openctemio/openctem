@@ -95,7 +95,7 @@ export function readinessRows(s: ScopingSummary): ReadinessRow[] {
       label: 'Boundary set (targets and exclusions)',
       ready: s.boundary.targets > 0,
       value: `${plural(s.boundary.targets, 'target')} · ${plural(s.boundary.exclusions, 'exclusion')}`,
-      href: '/scope-config',
+      href: '/scope',
       action: 'Open',
       module: 'scope_config',
     },

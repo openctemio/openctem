@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -20,20 +20,20 @@ import (
 )
 
 // fleetHarness drives the management API (GET /sensors, /sensors/{id},
-// /sensors/stats) next to a v1 sensor that heartbeats for real.
+// /sensors/stats) next to a sensor that heartbeats for real.
 type fleetHarness struct {
-	*v1Harness
+	*sensorHarness
 	sh *SensorHandler
 }
 
 func newFleetHarness(t *testing.T, policy sensordom.HealthPolicy) *fleetHarness {
 	t.Helper()
-	h := newV1Harness(t)
+	h := newSensorHarness(t)
 	sh := NewSensorHandler(
-		app.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
+		sensor.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop()),
 		validator.New(), logger.NewNop())
 	sh.SetHealthPolicy(policy)
-	return &fleetHarness{v1Harness: h, sh: sh}
+	return &fleetHarness{sensorHarness: h, sh: sh}
 }
 
 func (f *fleetHarness) call(fn http.HandlerFunc, path, id string) map[string]json.RawMessage {
@@ -129,10 +129,11 @@ func TestSensorFleetHealth_ResponseFields(t *testing.T) {
 	}
 
 	// A heartbeat with version, uptime and a healthy outbox.
-	f.do(http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{
+	f.heartbeat(map[string]any{
 		"status": "running", "version": "0.7.0", "uptime_seconds": 7200,
 		"outbox": map[string]any{"pending_count": 0},
-	}, true)
+		"tools":  []map[string]any{{"name": "semgrep", "installed": true}},
+	})
 	s, _ = f.get()
 	if s.State != "online" || len(s.HealthReasons) != 0 {
 		t.Errorf("after heartbeat: state=%q reasons=%v", s.State, s.HealthReasons)
@@ -145,9 +146,9 @@ func TestSensorFleetHealth_ResponseFields(t *testing.T) {
 	}
 
 	// Results the platform refused: degraded, with the reason.
-	f.do(http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{
+	f.heartbeat(map[string]any{
 		"status": "running", "outbox": map[string]any{"pending_count": 4, "dead_letter_count": 2},
-	}, true)
+	})
 	s, _ = f.get()
 	if s.State != "degraded" || !reasonCodes(s.HealthReasons)["outbox_dead_letters"] {
 		t.Errorf("dead letters: state=%q reasons=%v", s.State, s.HealthReasons)
@@ -196,7 +197,7 @@ func TestSensorFleetHealth_ResponseFields(t *testing.T) {
 	if st.LatestVersion != "v0.8.0" || st.MinVersion != "v0.4.0" {
 		t.Errorf("channel latest=%q min=%q", st.LatestVersion, st.MinVersion)
 	}
-	if st.OnlineWindowSeconds != 90 || st.OfflineAfterSeconds != 300 {
+	if st.OnlineWindowSeconds != 40 || st.OfflineAfterSeconds != 300 { // 30s idle interval + 10s grace
 		t.Errorf("windows online=%d offline=%d", st.OnlineWindowSeconds, st.OfflineAfterSeconds)
 	}
 	if st.CanTakeJobs != 1 || st.JobSlots != 5 {
@@ -219,13 +220,13 @@ func TestSensorFleetHealth_ClientIPBehindGateway(t *testing.T) {
 	f.header = http.Header{"X-Real-Ip": {"203.0.113.10"}, "X-Forwarded-For": {"203.0.113.10"}}
 
 	SetAuthTrustedProxies(nil)
-	f.do(http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"}, true)
+	f.heartbeat(map[string]any{"status": "running"})
 	if s, _ := f.get(); s.IPAddress != "127.0.0.1" {
 		t.Errorf("untrusted peer: ip = %q, want the peer 127.0.0.1", s.IPAddress)
 	}
 
 	SetAuthTrustedProxies(httpsec.NewTrustedProxySet([]string{"127.0.0.0/8"}))
-	f.do(http.MethodPost, "/api/v1/agent/heartbeat", map[string]any{"status": "running"}, true)
+	f.heartbeat(map[string]any{"status": "running"})
 	if s, _ := f.get(); s.IPAddress != "203.0.113.10" {
 		t.Errorf("trusted gateway: ip = %q, want 203.0.113.10", s.IPAddress)
 	}

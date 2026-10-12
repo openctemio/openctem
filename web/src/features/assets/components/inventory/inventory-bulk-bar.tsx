@@ -13,20 +13,28 @@
  * On success the parent refetches the list + stats and clears the selection.
  */
 
+import { PICKER_MEMBER_STATUS } from '@/features/organization/api/use-members'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   UserPlus,
   ShieldAlert,
   Tag as TagIcon,
+  TagsIcon,
   User,
   Building2,
   ChevronsUpDown,
   Check,
+  Trash2,
 } from 'lucide-react'
+import { bulkTypeToConfirm, ConfirmDialog } from '@/components/confirm-dialog'
+import { usePermissions, Permission } from '@/lib/permissions'
+import { bulkDeleteAssetsSafely, reportBulkDelete } from '../../lib/safe-delete'
+import { bulkActionsFor } from '../../lib/type-actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -34,6 +42,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogBody,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -70,6 +79,9 @@ import {
   type OwnershipType,
   type UpdateAssetInput,
 } from '../../types/asset.types'
+import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
+import { useTranslation } from '@/context/i18n-provider'
+import { AddToScopeAction } from '@/features/scope/components/add-to-scope-action'
 
 interface BulkBarProps {
   selected: Asset[]
@@ -110,8 +122,6 @@ function fullUpdate(a: Asset, overrides: Partial<UpdateAssetInput>): UpdateAsset
   }
 }
 
-const CRITICALITY_ORDER: Criticality[] = ['critical', 'high', 'medium', 'low']
-
 type PickerOption =
   | { kind: 'user'; id: string; label: string; sublabel?: string }
   | { kind: 'group'; id: string; label: string; sublabel?: string }
@@ -127,8 +137,10 @@ interface MembersResponse {
 }
 
 export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBarProps) {
+  const { t } = useTranslation()
   const count = selected.length
-  const [dialog, setDialog] = useState<null | 'owner' | 'criticality' | 'tag'>(null)
+  const selectedNames = useMemo(() => selected.map((a) => a.name), [selected])
+  const [dialog, setDialog] = useState<null | 'owner' | 'criticality' | 'tag' | 'removeTags'>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // Set-criticality state
@@ -136,6 +148,15 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
 
   // Add-tag state
   const [tag, setTag] = useState('')
+  // Remove-tags state: the tags the selection carries (most common first)
+  // and the ones ticked for removal.
+  const [tagsToRemove, setTagsToRemove] = useState<string[]>([])
+  const selectionTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const a of selected)
+      for (const tg of a.tags ?? []) counts.set(tg, (counts.get(tg) ?? 0) + 1)
+    return [...counts.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+  }, [selected])
 
   // Assign-owner state
   const [selectedOption, setSelectedOption] = useState<PickerOption | null>(null)
@@ -147,10 +168,45 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const { currentTenant } = useTenant()
   const tenantSlug = currentTenant?.slug ?? null
   const ownerDialogOpen = dialog === 'owner'
+  const { can } = usePermissions()
+  const canDelete = can(Permission.AssetsDelete)
+  // Type actions (repository Scan / Sync) for the selected assets they fit.
+  const typeActions = bulkActionsFor(selected).filter((a) => a.permissions.every((p) => can(p)))
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const runTypeAction = async (action: (typeof typeActions)[number]) => {
+    setBusy(true)
+    try {
+      await action.run(selected.filter(action.applies))
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteSelected = async () => {
+    setBusy(true)
+    try {
+      const outcome = await bulkDeleteAssetsSafely(selected.map((a) => a.id))
+      reportBulkDelete(outcome, onDone)
+      setConfirmDelete(false)
+      onDone()
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to delete'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const membersUrl = (() => {
     if (!ownerDialogOpen || !tenantSlug) return null
-    const params = new URLSearchParams({ include: 'user', limit: '50' })
+    // Owner picker: active members only (never a disabled or offboarded person).
+    const params = new URLSearchParams({
+      include: 'user',
+      per_page: '50',
+      status: PICKER_MEMBER_STATUS,
+    })
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim())
     return `/api/v1/tenants/${tenantSlug}/members?${params.toString()}`
   })()
@@ -195,6 +251,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     setSelectedOption(null)
     setPickerSearch('')
     setTag('')
+    setTagsToRemove([])
   }
 
   const reportResult = (label: string, failed: number) => {
@@ -249,6 +306,43 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     }
   }
 
+  const handleRemoveTags = async () => {
+    if (tagsToRemove.length === 0) return
+    // Only the assets that carry one of the tags are written.
+    const affected = selected.filter((a) => (a.tags ?? []).some((tg) => tagsToRemove.includes(tg)))
+    setSubmitting(true)
+    try {
+      const failed = await runBulk(affected, (a) =>
+        updateAsset(
+          a.id,
+          fullUpdate(a, { tags: (a.tags ?? []).filter((tg) => !tagsToRemove.includes(tg)) })
+        )
+      )
+      const vars = { count: affected.length, done: affected.length - failed, failed }
+      if (failed === 0) {
+        toast.success(t('assets.bulkTags.removed', 'Removed tags from {count} assets', vars))
+      } else if (failed < affected.length) {
+        toast.warning(
+          t(
+            'assets.bulkTags.removedPartly',
+            'Removed tags from {done} of {count} assets; {failed} failed',
+            vars
+          )
+        )
+      } else {
+        toast.error(t('assets.bulkTags.removeFailed', 'Failed to remove tags'))
+      }
+      if (failed < affected.length) {
+        closeDialog()
+        onDone()
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('assets.bulkTags.removeFailed', 'Failed to remove tags')))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const handleAssignOwner = async () => {
     if (!selectedOption) {
       toast.error('Select a user or group')
@@ -283,6 +377,8 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   return (
     <>
       <BulkActionBar count={count} onClear={onClear} noun="selected">
+        {/* Scope is its own permission (scope:write), not assets:write. */}
+        <AddToScopeAction names={selectedNames} onDone={onDone} />
         {canWrite ? (
           <>
             <Button variant="ghost" size="sm" onClick={() => setDialog('owner')}>
@@ -297,7 +393,37 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               <TagIcon className="me-2 h-4 w-4" />
               Add tag
             </Button>
+            {selectionTags.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setDialog('removeTags')}>
+                <TagsIcon className="me-2 h-4 w-4" />
+                {t('assets.bulkTags.removeButton', 'Remove tags')}
+              </Button>
+            )}
             <InventoryBusinessContextActions selected={selected} onDone={onDone} />
+            {typeActions.map((a) => (
+              <Button
+                key={a.id}
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => void runTypeAction(a)}
+              >
+                <a.icon className="me-2 h-4 w-4" />
+                {a.label}
+              </Button>
+            ))}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive"
+                disabled={busy}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="me-2 h-4 w-4" />
+                Delete
+              </Button>
+            )}
           </>
         ) : (
           <span className="whitespace-nowrap px-2 text-xs text-muted-foreground">
@@ -305,6 +431,25 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           </span>
         )}
       </BulkActionBar>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={
+          count === 1
+            ? t('confirm.asset.bulkDeleteTitleOne', 'Delete 1 asset?')
+            : t('confirm.asset.bulkDeleteTitle', 'Delete {count} assets?', { count })
+        }
+        desc={t(
+          'confirm.asset.bulkDeleteDesc',
+          'They leave every list. An asset that has findings is not deleted: archive it instead to keep the finding history.'
+        )}
+        confirmText={busy ? t('confirm.deleting', 'Deleting…') : t('confirm.delete', 'Delete')}
+        destructive
+        isLoading={busy}
+        typeToConfirm={bulkTypeToConfirm(count)}
+        handleConfirm={() => void deleteSelected()}
+      />
 
       {/* Set criticality */}
       <Dialog open={dialog === 'criticality'} onOpenChange={(o) => !o && closeDialog()}>
@@ -315,21 +460,23 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               Apply a criticality to {count} selected asset{count === 1 ? '' : 's'}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>Criticality</Label>
-            <Select value={criticality} onValueChange={(v) => setCriticality(v as Criticality)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CRITICALITY_ORDER.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {CRITICALITY_LABELS[c]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label>Criticality</Label>
+              <Select value={criticality} onValueChange={(v) => setCriticality(v as Criticality)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASSET_CRITICALITY_LEVELS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {CRITICALITY_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
               Cancel
@@ -350,18 +497,20 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               Add a tag to {count} selected asset{count === 1 ? '' : 's'}. Existing tags are kept.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="bulk-tag">Tag</Label>
-            <Input
-              id="bulk-tag"
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              placeholder="e.g. pci, external, team-payments"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !submitting) handleAddTag()
-              }}
-            />
-          </div>
+          <DialogBody>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-tag">Tag</Label>
+              <Input
+                id="bulk-tag"
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                placeholder="e.g. pci, external, team-payments"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !submitting) handleAddTag()
+                }}
+              />
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
               Cancel
@@ -373,173 +522,237 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
         </DialogContent>
       </Dialog>
 
+      {/* Remove tags */}
+      <Dialog open={dialog === 'removeTags'} onOpenChange={(o) => !o && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('assets.bulkTags.removeTitle', 'Remove tags')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'assets.bulkTags.removeDescription',
+                'Remove the ticked tags from the {count} selected assets. Other tags are kept; system tags cannot be removed.',
+                { count }
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div
+              className="space-y-1"
+              role="group"
+              aria-label={t('assets.bulkTags.removeTitle', 'Remove tags')}
+            >
+              {selectionTags.map(([tg, n]) => {
+                const id = `bulk-remove-tag-${tg}`
+                return (
+                  <label
+                    key={tg}
+                    htmlFor={id}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-sm hover:bg-accent"
+                  >
+                    <Checkbox
+                      id={id}
+                      checked={tagsToRemove.includes(tg)}
+                      onCheckedChange={(v) =>
+                        setTagsToRemove((cur) =>
+                          v === true ? [...cur, tg] : cur.filter((x) => x !== tg)
+                        )
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate">{tg}</span>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {t('assets.bulkTags.onAssets', '{n} of {count}', { n, count })}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRemoveTags}
+              disabled={submitting || tagsToRemove.length === 0}
+            >
+              {submitting
+                ? t('assets.bulkTags.removing', 'Removing…')
+                : t('assets.bulkTags.removeConfirm', 'Remove {n} tags', { n: tagsToRemove.length })}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Assign owner */}
       <Dialog open={dialog === 'owner'} onOpenChange={(o) => !o && closeDialog()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign owner</DialogTitle>
             <DialogDescription>
               Assign a user or group to {count} selected asset{count === 1 ? '' : 's'}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Owner</Label>
-              <Popover
-                open={pickerOpen}
-                onOpenChange={(open) => {
-                  setPickerOpen(open)
-                  if (!open) setPickerSearch('')
-                }}
-                modal
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={pickerOpen}
-                    className="w-full min-w-0 justify-between overflow-hidden font-normal"
-                    title={selectedOption?.label}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center gap-2 text-start text-sm">
-                      {selectedOption ? (
-                        <>
-                          {selectedOption.kind === 'user' ? (
-                            <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          )}
-                          <span className="truncate">{selectedOption.label}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">Select a user or group…</span>
-                      )}
-                    </span>
-                    <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-[var(--radix-popover-trigger-width)] p-0"
-                  align="start"
+          <DialogBody>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Owner</Label>
+                <Popover
+                  open={pickerOpen}
+                  onOpenChange={(open) => {
+                    setPickerOpen(open)
+                    if (!open) setPickerSearch('')
+                  }}
+                  modal
                 >
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      value={pickerSearch}
-                      onValueChange={setPickerSearch}
-                      placeholder="Search by name, email, or group…"
-                    />
-                    <CommandList>
-                      {pickerLoading ? (
-                        <div className="py-6 text-center text-sm text-muted-foreground">
-                          Loading…
-                        </div>
-                      ) : totalOptions === 0 ? (
-                        <CommandEmpty>
-                          {debouncedSearch
-                            ? `No users or groups match "${debouncedSearch}".`
-                            : 'No users or groups available.'}
-                        </CommandEmpty>
-                      ) : (
-                        <>
-                          {userOptions.length > 0 && (
-                            <CommandGroup heading="Users">
-                              {userOptions.map((option) => (
-                                <CommandItem
-                                  key={`user:${option.id}`}
-                                  value={`user:${option.id}`}
-                                  onSelect={() => {
-                                    setSelectedOption(option)
-                                    setPickerOpen(false)
-                                    setPickerSearch('')
-                                  }}
-                                  className="flex items-start gap-2"
-                                >
-                                  <Check
-                                    className={cn(
-                                      'mt-1 h-4 w-4 shrink-0',
-                                      selectedOption?.kind === 'user' &&
-                                        selectedOption.id === option.id
-                                        ? 'opacity-100'
-                                        : 'opacity-0'
-                                    )}
-                                  />
-                                  <User className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm">{option.label}</p>
-                                    {option.sublabel && (
-                                      <p className="truncate text-xs text-muted-foreground">
-                                        {option.sublabel}
-                                      </p>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          )}
-                          {groupOptions.length > 0 && (
-                            <CommandGroup heading="Groups">
-                              {groupOptions.map((option) => (
-                                <CommandItem
-                                  key={`group:${option.id}`}
-                                  value={`group:${option.id}`}
-                                  onSelect={() => {
-                                    setSelectedOption(option)
-                                    setPickerOpen(false)
-                                    setPickerSearch('')
-                                  }}
-                                  className="flex items-start gap-2"
-                                >
-                                  <Check
-                                    className={cn(
-                                      'mt-1 h-4 w-4 shrink-0',
-                                      selectedOption?.kind === 'group' &&
-                                        selectedOption.id === option.id
-                                        ? 'opacity-100'
-                                        : 'opacity-0'
-                                    )}
-                                  />
-                                  <Building2 className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm">{option.label}</p>
-                                    {option.sublabel && (
-                                      <p className="truncate text-xs text-muted-foreground">
-                                        {option.sublabel}
-                                      </p>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          )}
-                        </>
-                      )}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={pickerOpen}
+                      className="w-full min-w-0 justify-between overflow-hidden font-normal"
+                      title={selectedOption?.label}
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2 text-start text-sm">
+                        {selectedOption ? (
+                          <>
+                            {selectedOption.kind === 'user' ? (
+                              <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            )}
+                            <span className="truncate">{selectedOption.label}</span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">Select a user or group…</span>
+                        )}
+                      </span>
+                      <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                    align="start"
+                  >
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        value={pickerSearch}
+                        onValueChange={setPickerSearch}
+                        placeholder="Search by name, email, or group…"
+                      />
+                      <CommandList>
+                        {pickerLoading ? (
+                          <div className="py-6 text-center text-sm text-muted-foreground">
+                            Loading…
+                          </div>
+                        ) : totalOptions === 0 ? (
+                          <CommandEmpty>
+                            {debouncedSearch
+                              ? `No users or groups match "${debouncedSearch}".`
+                              : 'No users or groups available.'}
+                          </CommandEmpty>
+                        ) : (
+                          <>
+                            {userOptions.length > 0 && (
+                              <CommandGroup heading="Users">
+                                {userOptions.map((option) => (
+                                  <CommandItem
+                                    key={`user:${option.id}`}
+                                    value={`user:${option.id}`}
+                                    onSelect={() => {
+                                      setSelectedOption(option)
+                                      setPickerOpen(false)
+                                      setPickerSearch('')
+                                    }}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mt-1 h-4 w-4 shrink-0',
+                                        selectedOption?.kind === 'user' &&
+                                          selectedOption.id === option.id
+                                          ? 'opacity-100'
+                                          : 'opacity-0'
+                                      )}
+                                    />
+                                    <User className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{option.label}</p>
+                                      {option.sublabel && (
+                                        <p className="truncate text-xs text-muted-foreground">
+                                          {option.sublabel}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
+                            {groupOptions.length > 0 && (
+                              <CommandGroup heading="Groups">
+                                {groupOptions.map((option) => (
+                                  <CommandItem
+                                    key={`group:${option.id}`}
+                                    value={`group:${option.id}`}
+                                    onSelect={() => {
+                                      setSelectedOption(option)
+                                      setPickerOpen(false)
+                                      setPickerSearch('')
+                                    }}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        'mt-1 h-4 w-4 shrink-0',
+                                        selectedOption?.kind === 'group' &&
+                                          selectedOption.id === option.id
+                                          ? 'opacity-100'
+                                          : 'opacity-0'
+                                      )}
+                                    />
+                                    <Building2 className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{option.label}</p>
+                                      {option.sublabel && (
+                                        <p className="truncate text-xs text-muted-foreground">
+                                          {option.sublabel}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            <div className="space-y-2">
-              <Label>Ownership role</Label>
-              <Select
-                value={ownershipType}
-                onValueChange={(v) => setOwnershipType(v as OwnershipType)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                    ([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Label>Ownership role</Label>
+                <Select
+                  value={ownershipType}
+                  onValueChange={(v) => setOwnershipType(v as OwnershipType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
+                      ([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
               Cancel

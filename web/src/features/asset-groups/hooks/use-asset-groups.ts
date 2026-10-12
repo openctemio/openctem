@@ -44,6 +44,7 @@ import {
 } from '../lib/transformers'
 import type { AssetGroup, CreateAssetGroupInput, UpdateAssetGroupInput } from '../types'
 import type { AssetGroupApiFilters, GroupAssetsApiFilters } from '../api'
+import type { RatedCriticality } from '@/lib/criticality'
 
 // ============================================
 // CONFIGURATION
@@ -520,7 +521,7 @@ export function useBulkAssetGroupOperations() {
           update: {
             environment: update.environment as
               'production' | 'staging' | 'development' | 'testing' | undefined,
-            criticality: update.criticality as 'critical' | 'high' | 'medium' | 'low' | undefined,
+            criticality: update.criticality as RatedCriticality | undefined,
           },
         })
         await invalidateAssetGroupsCache()

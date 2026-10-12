@@ -26,7 +26,7 @@ func (f *fakeCommandCreator) Create(_ context.Context, cmd *commanddom.Command) 
 
 func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 	cc := &fakeCommandCreator{}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 
 	tenant := shared.NewID()
 	finding := shared.NewID()
@@ -91,7 +91,7 @@ func TestCommandDispatcher_Dispatch_BuildsValidateCommand(t *testing.T) {
 // routed to a sensor that can run a single template.
 func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing.T) {
 	cc := &fakeCommandCreator{}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 
 	job := ValidationJob{
 		JobID:          shared.NewID(),
@@ -139,7 +139,7 @@ func TestCommandDispatcher_Dispatch_NucleiJobRequiresNucleiCapability(t *testing
 }
 
 func TestCommandDispatcher_Dispatch_RejectsZeroIDs(t *testing.T) {
-	d := NewCommandDispatcher(&fakeCommandCreator{}, logger.NewNop())
+	d := NewCommandDispatcher(&fakeCommandCreator{}, allowAllGate{}, logger.NewNop())
 	if _, err := d.Dispatch(context.Background(), ValidationJob{}); err == nil {
 		t.Fatal("expected validation error for zero tenant/finding ids")
 	}
@@ -149,7 +149,7 @@ func TestCommandDispatcher_Dispatch_RejectsZeroIDs(t *testing.T) {
 // then sets simulation_run_id and leaves finding_id empty.
 func TestCommandDispatcher_Dispatch_SimulationJob(t *testing.T) {
 	cc := &fakeCommandCreator{}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 
 	simRun := shared.NewID()
 	job := ValidationJob{
@@ -178,7 +178,7 @@ func TestCommandDispatcher_Dispatch_SimulationJob(t *testing.T) {
 
 func TestCommandDispatcher_Dispatch_PropagatesRepoError(t *testing.T) {
 	cc := &fakeCommandCreator{err: errors.New("db down")}
-	d := NewCommandDispatcher(cc, logger.NewNop())
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
 	_, err := d.Dispatch(context.Background(), ValidationJob{
 		JobID:     shared.NewID(),
 		TenantID:  shared.NewID(),
@@ -186,5 +186,27 @@ func TestCommandDispatcher_Dispatch_PropagatesRepoError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error when command repo fails")
+	}
+}
+
+// Validate and retest commands record what CheckTarget checked, so the claim
+// re-checks their target with the same inputs.
+func TestCommandDispatcher_RecordsTheDispatchGate(t *testing.T) {
+	cc := &fakeCommandCreator{}
+	d := NewCommandDispatcher(cc, allowAllGate{}, logger.NewNop())
+	target := Target{AssetID: shared.NewID(), Type: "domain", Address: "example.com"}
+	if _, err := d.Dispatch(context.Background(), ValidationJob{JobID: shared.NewID(), TenantID: shared.NewID(),
+		FindingID: shared.NewID(), ExecutorKind: KindSafeCheck, Target: target, TimeoutSeconds: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if g := cc.created.DispatchGate; g == nil || *g != commanddom.ProbeDispatchGate {
+		t.Fatalf("validate command gate %+v", g)
+	}
+	if _, err := d.DispatchToolRetest(context.Background(), ToolRetestJob{TenantID: shared.NewID(), FindingID: shared.NewID(),
+		RetestID: shared.NewID(), Tool: "nuclei", Target: target, RuleID: "r1", TimeoutSeconds: 60}); err != nil {
+		t.Fatal(err)
+	}
+	if cc.created.Type != commanddom.CommandTypeRetest || cc.created.DispatchGate == nil || *cc.created.DispatchGate != commanddom.ProbeDispatchGate {
+		t.Fatalf("retest command %s gate %+v", cc.created.Type, cc.created.DispatchGate)
 	}
 }

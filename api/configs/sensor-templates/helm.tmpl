@@ -13,7 +13,7 @@
 {{- else}}
 {{- if not .APIKey}}
 # The key is shown once, when the sensor is created or its key is rotated:
-#   export OPENCTEM_API_KEY='rda_...'
+#   export OPENCTEM_API_KEY='octs_...'
 {{- end}}
 
 # 1. Store the sensor's API key in a Secret (never in Helm values).
@@ -24,16 +24,26 @@ kubectl create secret generic {{$slug}}-key \
   --from-literal=api-key="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}"
 {{- end}}
 
-# 2. Turn the bundled sensor on (release "openctem"; use yours).
+# 2. Save the "Local policy" tab as sensor-policy.yaml, reviewed by the owner
+#    of the scanned network: the sensor refuses every job outside it.
+#    This needs a sensor release later than v0.8.0; v0.8.0 and older ignore
+#    the policy and scan without one.
+
+# 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
+#    0.19.0 or later: the sensor runs hardened (non-root, read-only root
+#    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
+#    read-only, keeps the nuclei-templates baked into its image, and keeps
+#    its state, outbox and content cache on one data volume (a release that
+#    already has the sensor's per-directory volumes keeps them).
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
   --set sensor.image.tag={{imageTag .Image}} \
   --set sensor.existingSecret={{$slug}}-key \
-{{- with toolList .Sensor.Tools}}
+{{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
-  --set sensor.outbox.persistence.enabled=true \
-  --set sensor.state.persistence.enabled=true \
-  --set sensor.content.persistence.enabled=true
+  --set sensor.data.persistence.enabled=true \
+  --set sensor.localPolicy.enabled=true \
+  --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}

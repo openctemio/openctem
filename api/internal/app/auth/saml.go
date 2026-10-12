@@ -17,6 +17,7 @@ import (
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -72,6 +73,21 @@ func (s *SAMLService) GetConfig(ctx context.Context, tenantID shared.ID) (*samld
 
 // UpsertConfig validates and stores the tenant's SAML config.
 func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in SAMLConfigInput) (*samldom.SAMLProvider, error) {
+	p, err := s.BuildConfig(ctx, tenantID, in)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Upsert(ctx, p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// BuildConfig validates in and returns the SAML config it describes, keeping
+// the id of the tenant's existing config, without storing it. An SSO change
+// that waits for an owner's approval is validated with it when submitted and
+// rebuilt with it when approved.
+func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SAMLConfigInput) (*samldom.SAMLProvider, error) {
 	if strings.TrimSpace(in.IDPEntityID) == "" || strings.TrimSpace(in.IDPSSOURL) == "" {
 		return nil, samlValidationErr("idp_entity_id and idp_sso_url are required")
 	}
@@ -83,13 +99,15 @@ func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in S
 	}
 	role := strings.ToLower(strings.TrimSpace(in.DefaultRole))
 	switch role {
-	case string(tenantdom.RoleAdmin), string(tenantdom.RoleMember), string(tenantdom.RoleViewer):
+	case string(tenantdom.RoleMember), string(tenantdom.RoleViewer):
 	case "":
 		// Least privilege for just-in-time members; the platform administrator
 		// raises it per organization when wanted.
 		role = string(tenantdom.RoleViewer)
 	default:
-		return nil, samlValidationErr("default_role must be admin, member, or viewer")
+		// Never admin: an IdP misconfiguration (or a hostile IdP) must not mint
+		// administrators by just-in-time provisioning (owner decision B18).
+		return nil, samlValidationErr("default_role must be member or viewer")
 	}
 
 	// Preserve the existing id when updating so it's a true upsert.
@@ -97,12 +115,8 @@ func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in S
 	if existing, err := s.repo.GetByTenant(ctx, tenantID); err == nil && existing != nil {
 		id = existing.ID()
 	}
-	p := samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
-		in.AllowedDomains, role, in.AutoProvision, in.Enabled, time.Now().UTC(), time.Now().UTC())
-	if err := s.repo.Upsert(ctx, p); err != nil {
-		return nil, err
-	}
-	return p, nil
+	return samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
+		in.AllowedDomains, role, in.AutoProvision, in.Enabled, time.Now().UTC(), time.Now().UTC()), nil
 }
 
 // DeleteConfig removes the tenant's SAML config.
@@ -112,13 +126,15 @@ func (s *SAMLService) DeleteConfig(ctx context.Context, tenantID shared.ID) erro
 
 // Metadata returns the SP metadata XML for a tenant (org slug), which the admin
 // registers with their IdP. baseURL is the deployment origin (scheme://host).
-func (s *SAMLService) Metadata(ctx context.Context, orgSlug, baseURL string) (string, error) {
-	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
-	if err != nil {
+//
+// The metadata is built from the slug and the deployment URL only, so it is
+// served for any well-formed slug, known or not: answering 404 for an unknown
+// organization would tell an unauthenticated caller which organizations exist.
+func (s *SAMLService) Metadata(_ context.Context, orgSlug, baseURL string) (string, error) {
+	if !tenantdom.IsValidSlug(orgSlug) {
 		return "", ErrSAMLTenantNotFound
 	}
 	sp := s.baseServiceProvider(orgSlug, baseURL)
-	_ = t
 	md := sp.Metadata()
 	out, err := xml.MarshalIndent(md, "", "  ")
 	if err != nil {
@@ -161,7 +177,11 @@ func validateCertificatePEM(certPEM string) error {
 // redirect URL (carrying the deflate+base64 AuthnRequest) and the request ID,
 // which the caller stores in a short-lived cookie so the ACS can bind the
 // response's InResponseTo (replay/CSRF protection).
-func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redirectURL, requestID string, err error) {
+//
+// forceAuthn asks the IdP to authenticate the user again (step-up
+// re-authentication); the ACS then refuses an assertion whose AuthnInstant
+// is not fresh.
+func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string, forceAuthn bool) (redirectURL, requestID string, err error) {
 	sp, _, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
 	if err != nil {
 		return "", "", err
@@ -169,6 +189,10 @@ func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redir
 	authnReq, err := sp.MakeAuthenticationRequest(sp.IDPMetadata.IDPSSODescriptors[0].SingleSignOnServices[0].Location, saml.HTTPRedirectBinding, saml.HTTPPostBinding)
 	if err != nil {
 		return "", "", fmt.Errorf("build authn request: %w", err)
+	}
+	if forceAuthn {
+		force := true
+		authnReq.ForceAuthn = &force
 	}
 	u, err := authnReq.Redirect(orgSlug, sp)
 	if err != nil {
@@ -180,7 +204,11 @@ func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string) (redir
 // ACS validates an IdP SAML response and completes the federated login. The
 // caller supplies possibleRequestIDs (from the request-tracking cookie) so the
 // assertion's InResponseTo is bound to a request this SP actually initiated.
-func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.Request, possibleRequestIDs []string) (*SSOCallbackResult, error) {
+//
+// forcedAuthn says the request asked for ForceAuthn: an assertion whose
+// AuthnInstant is older than a few minutes is then refused.
+func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.Request, possibleRequestIDs []string,
+	forcedAuthn bool) (*SSOCallbackResult, error) {
 	sp, tenantAndCfg, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
 	if err != nil {
 		return nil, err
@@ -210,7 +238,46 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 		return nil, ErrSSODomainNotAllowed
 	}
 
-	return s.sso.CompleteFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision())
+	authAt := assertionAuthnInstant(assertion)
+	if forcedAuthn {
+		if age := time.Since(authAt); authAt.IsZero() || age > freshAuthMaxAge || age < -time.Minute {
+			s.logger.Warn("saml login refused: the IdP did not authenticate the user again", "org", logger.SanitizeValue(orgSlug))
+			return nil, ErrSAMLResponseInvalid
+		}
+	}
+	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(),
+		federatedBinding{authTime: authAt, mfa: samlMFAEvidence(assertion)},
+		samlIdentityKey(assertion, tenantAndCfg.tenant.ID()))
+}
+
+// samlIdentityKey is the assertion's identity: the IdP entity id plus a
+// persistent NameID, scoped to the organization whose IdP certificate signed
+// the assertion (another organization can configure the same entity id, so
+// the pair means nothing outside it). Other NameID formats are not stable
+// (transient changes every login; emailAddress is the mutable email itself),
+// so they key nothing and the email finds the account as before.
+func samlIdentityKey(a *saml.Assertion, tenantID shared.ID) useridentity.Key {
+	if a == nil || a.Issuer.Value == "" || a.Subject == nil || a.Subject.NameID == nil {
+		return useridentity.Key{}
+	}
+	nid := a.Subject.NameID
+	if nid.Format != string(saml.PersistentNameIDFormat) || strings.TrimSpace(nid.Value) == "" {
+		return useridentity.Key{}
+	}
+	scope := tenantID
+	return useridentity.Key{Issuer: a.Issuer.Value, Subject: nid.Value, ScopeTenantID: &scope}
+}
+
+// assertionAuthnInstant is the latest AuthnInstant of the (signature- and
+// condition-checked) assertion's authentication statements.
+func assertionAuthnInstant(a *saml.Assertion) time.Time {
+	var at time.Time
+	for _, st := range a.AuthnStatements {
+		if st.AuthnInstant.After(at) {
+			at = st.AuthnInstant
+		}
+	}
+	return at
 }
 
 // resolvedSAML bundles the tenant + its enabled SAML config.

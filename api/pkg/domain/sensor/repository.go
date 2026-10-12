@@ -11,19 +11,18 @@ import (
 
 // Filter represents filter options for listing sensors.
 type Filter struct {
-	TenantID *shared.ID
-	// ExcludePlatform leaves out shared platform sensors (is_platform_sensor):
-	// a tenant's sensor list shows the tenant's own sensors only.
-	ExcludePlatform bool
-	Type            *SensorType
-	Status          *SensorStatus // Admin-controlled: active, disabled, revoked
-	Health          *SensorHealth // Automatic: unknown, online, offline, error
-	ExecutionMode   *ExecutionMode
-	Capabilities    []string
-	Tools           []string
-	Labels          map[string]string
-	Search          string
-	HasCapacity     *bool // Filter by sensors that have job capacity
+	// TenantID lists the tenant's own sensors; shared platform sensors are
+	// never among them.
+	TenantID      *shared.ID
+	Type          *SensorType
+	Status        *SensorStatus // Admin-controlled: active, disabled, revoked
+	Health        *SensorHealth // Automatic: unknown, online, late, stale, offline, error
+	ExecutionMode *ExecutionMode
+	Capabilities  []string
+	Tools         []string
+	Labels        map[string]string
+	Search        string
+	HasCapacity   *bool // Filter by sensors that have job capacity
 	// SDKVersion filters on the reported SDK version (normalized); "" matches
 	// sensors whose SDK version is unknown. nil: no filter.
 	SDKVersion *string
@@ -58,6 +57,10 @@ type HeartbeatUpdate struct {
 	// stored protocol telemetry untouched. UserAgent is already sanitized.
 	Protocol  int
 	UserAgent string
+	// Binding (grpc | https | v2) and FallbackReason (sanitized) are stored
+	// with the protocol telemetry; "" binding stores NULL.
+	Binding        string
+	FallbackReason string
 
 	// UptimeSeconds is how long the sensor process has been running, as the
 	// heartbeat reported it (already clamped). 0 leaves the stored start time
@@ -78,6 +81,41 @@ type HeartbeatUpdate struct {
 	// Build is the resolved build information (build.go); each empty part
 	// leaves the stored value untouched.
 	Build BuildInfo
+	// Interval is the heartbeat interval the sensor follows from now on
+	// (FollowedHeartbeatInterval); the next heartbeat is due Interval after
+	// this one. Clamped by the repository; 0 stores DefaultHeartbeatInterval.
+	Interval time.Duration
+	// Control is the clamped control-channel report (control.go); nil leaves
+	// the stored one untouched.
+	Control *ControlReport
+	// LocalPolicy is the sanitized local policy report (local_policy.go),
+	// merged with the stored one; nil leaves the stored one untouched.
+	LocalPolicy *LocalPolicyReport
+	// ConfigReportDigest is the config report digest the heartbeat echoed
+	// (HeartbeatConfigDigest); "" stores none: the heartbeat carried no
+	// config_report, so a stored report is stale.
+	ConfigReportDigest string
+}
+
+// LivenessCandidate is a sensor the health controller watches: its stored
+// health (online, late or stale) and its deadline.
+type LivenessCandidate struct {
+	ID       shared.ID
+	Health   SensorHealth
+	Deadline HeartbeatDeadline
+}
+
+// LivenessRepository is what the health controller needs to walk sensors
+// along the ladder (liveness.go). Implemented by postgres.SensorRepository.
+type LivenessRepository interface {
+	// ListLivenessCandidates returns every sensor whose health is online,
+	// late or stale, with the database's current time to judge them at.
+	ListLivenessCandidates(ctx context.Context) (now time.Time, candidates []LivenessCandidate, err error)
+	// ApplyLiveness moves the given sensors to health, each only if its
+	// health is still online, late or stale and its last_seen_at is still
+	// the one read (a request since then wins). Moving to offline also sets
+	// last_offline_at. Returns the ids that moved.
+	ApplyLiveness(ctx context.Context, health SensorHealth, candidates []LivenessCandidate) ([]shared.ID, error)
 }
 
 // MaxReportedUptime caps the uptime a heartbeat may report (ten years); a
@@ -128,10 +166,13 @@ type Repository interface {
 	// Update updates a sensor.
 	Update(ctx context.Context, sensor *Sensor) error
 
-	// UpdateKeyExpiry sets only the inline API-key expiry, guarded by
-	// status = 'active' so it cannot revive a concurrently-revoked sensor.
-	// A nil expiresAt clears the expiry (never expires).
-	UpdateKeyExpiry(ctx context.Context, id shared.ID, expiresAt *time.Time) error
+	// RetireInlineKey brings the inline API key's expiry forward to at, and
+	// only while the inline key's stored hash is one of keyHashes: a key an
+	// administrator regenerated in the meantime is left alone. It never
+	// extends an expiry (an inline key that already expires before at is
+	// unchanged) and writes nothing but key_expires_at, so it cannot revive a
+	// revoked sensor. Returns whether a row changed.
+	RetireInlineKey(ctx context.Context, id shared.ID, keyHashes []string, at time.Time) (bool, error)
 
 	// UpdateHeartbeat persists ONLY the liveness/metric columns a sensor
 	// heartbeat owns (version, hostname, metrics, load score, last_seen_at,
@@ -220,13 +261,6 @@ type Repository interface {
 	// capability registry. Used to sanitize a sensor's capability report.
 	KnownCapabilityNames(ctx context.Context, tenantID *shared.ID, tools, capabilities []string) (knownTools, knownCaps map[string]bool, err error)
 
-	// ==========================================================================
-	// Platform Sensor Statistics
-	// ==========================================================================
-
-	// GetPlatformSensorStats returns aggregate statistics for platform sensors.
-	GetPlatformSensorStats(ctx context.Context, tenantID shared.ID) (*PlatformSensorStatsResult, error)
-
 	// GetTenantSensorStats returns aggregate statistics for the tenant's sensors,
 	// grouped by status, health, type, and execution mode. Computed via SQL
 	// aggregation in a single round-trip. Excludes platform-shared sensors.
@@ -270,6 +304,55 @@ type APIKeyRepository interface {
 
 	// CountActiveBySensorID counts active keys for a sensor.
 	CountActiveBySensorID(ctx context.Context, sensorID shared.ID) (int, error)
+
+	// RotateKey is a renewal under rotation overlap, as one unit serialized
+	// per sensor: it issues key, brings the expiry of every other active key
+	// row of key.SensorID forward to retireAt, and does the same to the
+	// sensor's inline key while its stored hash is one of inlineKeyHashes
+	// (none when empty; an admin regeneration in between installs another
+	// hash and is left alone). Rotations for one sensor never interleave, so
+	// concurrent renewals end with exactly one long-lived key: the one
+	// committed last. Retirement never extends an expiry and writes nothing
+	// but the expiry columns. Any failure leaves nothing written.
+	//
+	// Before writing, and under the lock, it re-checks the renewal's
+	// authentication: the sensor must still be active (ErrSensorRevoked or
+	// ErrSensorDisabled otherwise) and presented must still be valid
+	// (ErrPresentedKeyInvalid otherwise), so a key revoked or regenerated
+	// after the renewal authenticated is never renewed.
+	RotateKey(ctx context.Context, key *APIKey, presented PresentedKey, inlineKeyHashes []string, retireAt time.Time) error
+
+	// ReplaceInlineKey is a renewal without rotation overlap, serialized per
+	// sensor with RotateKey: it replaces the sensor's inline key (only while
+	// the sensor is active) and brings the expiry of every active key row
+	// forward to retireAt. Returns false, with nothing written, when no
+	// active sensor matched, and ErrPresentedKeyInvalid, with nothing
+	// written, when presented is no longer valid under the lock.
+	ReplaceInlineKey(ctx context.Context, sensorID shared.ID, presented PresentedKey, hash, prefix string, expiresAt *time.Time, retireAt time.Time) (bool, error)
+
+	// RegenerateKey is the administrator's hard rotation, serialized per
+	// sensor with RotateKey and ReplaceInlineKey: it installs hash as the
+	// inline key (no expiry, whatever the sensor's status) and revokes every
+	// active key row with reason, in one transaction. A renewal that
+	// authenticated with a key it replaced therefore either committed first
+	// (and its key is revoked here) or runs after and is refused. Returns
+	// false, with nothing written, when the sensor does not exist.
+	RegenerateKey(ctx context.Context, sensorID shared.ID, hash, prefix, reason string) (bool, error)
+}
+
+// PresentedKey is the credential a key renewal authenticated with. The
+// renewal re-checks it under the per-sensor key lock, because an
+// administrator may have revoked or regenerated it since.
+type PresentedKey struct {
+	// KeyID is the sensor_api_keys row that was presented. It must still be
+	// a key of the sensor, active, unrevoked and unexpired at At.
+	KeyID *shared.ID
+	// InlineKeyHashes, used when KeyID is nil, are the hashes the presented
+	// inline key can be stored under. The sensor's inline hash must still
+	// be one of them and unexpired at At. Empty matches nothing.
+	InlineKeyHashes []string
+	// At is the time expiry is judged at.
+	At time.Time
 }
 
 // KeyUseRecorder is implemented by a sensor repository that records where
@@ -279,8 +362,20 @@ type KeyUseRecorder interface {
 	// RecordKeyUse marks the sensor seen (last_seen_at, health online) and
 	// stores the client address of the key use with its time. It returns the
 	// address stored before (nil when none was). A nil ip records only the
-	// time.
-	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP) (previous net.IP, err error)
+	// time. at is when the key was used: key uses are recorded off the
+	// request path and can reach the database out of order, so an
+	// observation older than the stored one keeps the stored address and
+	// returns a nil previous address.
+	RecordKeyUse(ctx context.Context, id shared.ID, ip net.IP, at time.Time) (previous net.IP, err error)
+}
+
+// LegacyKeyCounter is implemented by a sensor repository that can count the
+// sensors still on a legacy rda_ key (Sensor.IsLegacyKey), for the
+// openctem_sensor_legacy_keys gauge that tracks the move to octs_ keys.
+type LegacyKeyCounter interface {
+	// CountLegacyKeySensors counts the non-revoked sensors, across all
+	// tenants and platform sensors, whose effective key is an rda_ key.
+	CountLegacyKeySensors(ctx context.Context) (int64, error)
 }
 
 // InstanceObserver is implemented by a sensor repository that keeps the
@@ -295,6 +390,21 @@ type InstanceObserver interface {
 	// ClearIdentityCloned removes the flag and forgets the instances (after the
 	// key was regenerated, copies of the old key can no longer connect).
 	ClearIdentityCloned(ctx context.Context, id shared.ID) error
+}
+
+// ConfigReportStore is implemented by a sensor repository that keeps
+// sensors' config reports (config_report.go). Every read and write is
+// scoped to the sensor's tenant.
+type ConfigReportStore interface {
+	// SaveConfigReport stores r as the latest report of an active sensor of
+	// tenantID, points the sensor at digest with its health rollup and
+	// records digest as the one the sensor now holds. When digest is the
+	// stored one only received_at moves (changed false). saved is false
+	// when no active sensor of the tenant matched.
+	SaveConfigReport(ctx context.Context, tenantID, sensorID shared.ID, r *ConfigReport, digest, health string, at time.Time) (saved, changed bool, err error)
+	// GetConfigReport returns the stored report; ErrNotFound when the
+	// tenant's sensor has none.
+	GetConfigReport(ctx context.Context, tenantID, sensorID shared.ID) (*StoredConfigReport, error)
 }
 
 // ManifestStore is implemented by a sensor repository that keeps manifest

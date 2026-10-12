@@ -159,7 +159,7 @@ func (h *ThreatIntelHandler) TriggerSync(w http.ResponseWriter, r *http.Request)
 // @Tags         Admin Threat Intelligence
 // @Accept       json
 // @Produce      json
-// @Param        source   path      string                 true  "Feed (epss, kev)"
+// @Param        source   path      string                 true  "Feed (epss, kev, vulnfeed)"
 // @Param        request  body      SetSyncEnabledRequest  true  "Enabled"
 // @Success      200  {object}  SyncStatusResponse
 // @Failure      404  {object}  apierror.Error
@@ -196,38 +196,6 @@ func (h *ThreatIntelHandler) SetSyncEnabled(w http.ResponseWriter, r *http.Reque
 	writeJSONResponse(w, http.StatusOK, toSyncStatusResponse(status))
 }
 
-// RefusePlatformFeedWrite answers the tenant-facing feed sync controls. The
-// EPSS and CISA KEV syncs serve every organization, so one organization may
-// neither switch them off nor run them; the operator controls are under
-// /api/v1/admin/threat-intel. See docs/architecture/global-catalog-trust.md.
-//
-// @Summary      Run the threat-intelligence feed sync (not allowed)
-// @Description  Always 403. The EPSS and CISA KEV feed syncs are shared by every organization; a platform administrator runs or toggles them from the admin console.
-// @Tags         Threat Intelligence
-// @Produce      json
-// @Failure      403  {object}  apierror.Error
-// @Router       /threat-intel/sync [post]
-func (h *ThreatIntelHandler) RefusePlatformFeedWrite(w http.ResponseWriter, _ *http.Request) {
-	apierror.Forbidden("The EPSS and CISA KEV feed syncs are shared by every organization and cannot be " +
-		"changed by one; a platform administrator manages them").WriteJSON(w)
-}
-
-// RefusePlatformFeedToggle is RefusePlatformFeedWrite for the per-feed route.
-// It has its own annotation because a path parameter must be required, and
-// the POST route has no {source} segment; one shared annotation made the
-// spec invalid (OpenAPI conversion rejects an optional path parameter).
-//
-// @Summary      Change the threat-intelligence feed sync (not allowed)
-// @Description  Always 403. The EPSS and CISA KEV feed syncs are shared by every organization; a platform administrator runs or toggles them from the admin console.
-// @Tags         Threat Intelligence
-// @Produce      json
-// @Param        source  path  string  true  "Feed (epss, kev)"
-// @Failure      403  {object}  apierror.Error
-// @Router       /threat-intel/sync/{source} [patch]
-func (h *ThreatIntelHandler) RefusePlatformFeedToggle(w http.ResponseWriter, r *http.Request) {
-	h.RefusePlatformFeedWrite(w, r)
-}
-
 // EnrichCVE enriches a single CVE with threat intel data.
 // GET /api/v1/threat-intel/enrich/{cve_id}
 func (h *ThreatIntelHandler) EnrichCVE(w http.ResponseWriter, r *http.Request) {
@@ -245,6 +213,16 @@ func (h *ThreatIntelHandler) EnrichCVE(w http.ResponseWriter, r *http.Request) {
 
 // EnrichCVEs enriches multiple CVEs with threat intel data.
 // POST /api/v1/threat-intel/enrich
+// @Summary      Enrich CVEs with threat intelligence
+// @Description  EPSS and KEV data for up to 1000 CVE ids, keyed by CVE id.
+// @Tags         Threat Intel
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  EnrichCVEsRequest  true  "CVE ids"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  apierror.Error
+// @Router       /threat-intel/enrich [post]
 func (h *ThreatIntelHandler) EnrichCVEs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

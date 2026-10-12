@@ -13,10 +13,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogForm,
+  DialogBody,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { PasswordInput } from '@/components/password-input'
 import { getErrorMessage } from '@/lib/api/error-handler'
+
+import { usePasswordPolicy } from '@/features/auth/api/use-auth-providers'
+import { PasswordPolicyHint } from '@/features/auth/components/password-policy-hint'
+import { passwordPolicyIssue } from '@/features/auth/lib/password-policy'
 
 import { useChangePassword } from '../api/use-security'
 
@@ -34,12 +40,14 @@ export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState('')
+  const passwordPolicy = usePasswordPolicy()
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (form.new_password.length < 8) {
-      setError('Password must be at least 8 characters')
+    const issue = passwordPolicy && passwordPolicyIssue(form.new_password, passwordPolicy)
+    if (issue) {
+      setError(issue)
       return
     }
     if (form.new_password !== form.confirm_password) {
@@ -89,7 +97,7 @@ export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
         }}
       >
         <DialogContent>
-          <form onSubmit={submit} className="space-y-4">
+          <DialogForm onSubmit={submit}>
             <DialogHeader>
               <DialogTitle>Change password</DialogTitle>
               <DialogDescription>
@@ -97,39 +105,41 @@ export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
                 out.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="current-password">Current password</Label>
-              <PasswordInput
-                id="current-password"
-                autoComplete="current-password"
-                value={form.current_password}
-                onChange={(e) => setForm({ ...form, current_password: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New password</Label>
-              <PasswordInput
-                id="new-password"
-                autoComplete="new-password"
-                value={form.new_password}
-                onChange={(e) => setForm({ ...form, new_password: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">At least 8 characters</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm new password</Label>
-              <PasswordInput
-                id="confirm-password"
-                autoComplete="new-password"
-                value={form.confirm_password}
-                onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
-              />
-            </div>
-            {error && (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
+            <DialogBody className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Current password</Label>
+                <PasswordInput
+                  id="current-password"
+                  autoComplete="current-password"
+                  value={form.current_password}
+                  onChange={(e) => setForm({ ...form, current_password: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New password</Label>
+                <PasswordInput
+                  id="new-password"
+                  autoComplete="new-password"
+                  value={form.new_password}
+                  onChange={(e) => setForm({ ...form, new_password: e.target.value })}
+                />
+                <PasswordPolicyHint />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm new password</Label>
+                <PasswordInput
+                  id="confirm-password"
+                  autoComplete="new-password"
+                  value={form.confirm_password}
+                  onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
+                />
+              </div>
+              {error && (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+            </DialogBody>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
@@ -139,7 +149,7 @@ export function PasswordCard({ isLocalAccount, onChanged }: PasswordCardProps) {
                 Change password
               </Button>
             </DialogFooter>
-          </form>
+          </DialogForm>
         </DialogContent>
       </Dialog>
     </Card>

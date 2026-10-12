@@ -10,13 +10,15 @@
 
 'use server'
 
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { env } from '@/lib/env'
+import { validateRedirectUrl } from '@/lib/redirect'
 import { setServerCookie, removeServerCookie } from '@/lib/cookies-server'
 import { devLog } from '@/lib/logger'
-import { authEndpoints, userEndpoints } from '@/lib/api/endpoints'
+import { authEndpoints } from '@/lib/api/endpoints'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 
 import type { AuthSuccessResponse, AuthErrorResponse } from '../schemas/auth.schema'
 
@@ -56,6 +58,8 @@ export interface RegisterInput {
   // backend can resolve the target tenant and apply that tenant's
   // email-verification rule (instead of the platform default).
   invitationToken?: string
+  /** Turnstile token when the server requires a CAPTCHA. */
+  captchaToken?: string
 }
 
 export interface TokenResponse {
@@ -120,13 +124,6 @@ export interface TokenExchangeResponse {
   tenant_id: string
   tenant_slug: string
   role: string
-}
-
-export interface RefreshTokenResult {
-  success: boolean
-  accessToken?: string
-  user?: LocalUser
-  error?: string
 }
 
 // Login result with tenant selection support
@@ -203,27 +200,6 @@ function extractRefreshFromSetCookie(response: Response): string | undefined {
   return undefined
 }
 
-/**
- * The browser's User-Agent and address, forwarded so the session the API
- * creates shows the real device in My account → Sessions (and in the audit
- * log) instead of this server. The API only believes X-Forwarded-For when
- * this server is in its SERVER_TRUSTED_PROXIES.
- */
-async function browserContextHeaders(): Promise<Record<string, string>> {
-  try {
-    const h = await headers()
-    const out: Record<string, string> = {}
-    const ua = h.get('user-agent')
-    if (ua) out['User-Agent'] = ua
-    const fwd = h.get('x-forwarded-for') || h.get('x-real-ip')
-    if (fwd) out['X-Forwarded-For'] = fwd
-    return out
-  } catch {
-    // Outside a request (should not happen in a server action).
-    return {}
-  }
-}
-
 async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const { data } = await backendFetchWithMeta<T>(endpoint, options)
   return data
@@ -250,7 +226,9 @@ async function backendFetchWithMeta<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ message: response.statusText }))
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    const err = new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
+    if (typeof errorData.code === 'string') (err as Error & { code?: string }).code = errorData.code
+    throw err
   }
 
   const refreshToken = extractRefreshFromSetCookie(response)
@@ -284,6 +262,7 @@ export async function registerAction(
           // the URL — backend uses it to apply the inviting tenant's
           // email-verification rule instead of the platform default.
           ...(input.invitationToken ? { invitation_token: input.invitationToken } : {}),
+          ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
         }),
       }
     )
@@ -309,6 +288,7 @@ export async function registerAction(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Registration failed',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
     }
   }
 }
@@ -831,73 +811,6 @@ export async function selectTenantAction(tenantId: string): Promise<LoginResult>
 // TOKEN REFRESH
 // ============================================
 
-/**
- * Refresh access token using refresh token
- */
-export async function refreshLocalTokenAction(): Promise<RefreshTokenResult> {
-  try {
-    const cookieStore = await cookies()
-    const refreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
-
-    if (!refreshToken) {
-      return {
-        success: false,
-        error: 'No refresh token available',
-      }
-    }
-
-    const { data, refreshToken: rotatedRefresh } = await backendFetchWithMeta<TokenResponse>(
-      authEndpoints.refresh(),
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${refreshToken}`,
-        },
-      }
-    )
-
-    // Update cookies with new tokens
-    await setServerCookie(env.auth.cookieName, data.access_token, {
-      httpOnly: true,
-      secure: process.env.SECURE_COOKIES !== 'false',
-      sameSite: 'lax',
-      maxAge: data.expires_in || 900,
-      path: '/',
-    })
-
-    // Persist the rotated refresh token (S-3: via Set-Cookie; body is fallback).
-    const newRefresh = rotatedRefresh || data.refresh_token
-    if (newRefresh) {
-      await setServerCookie(env.auth.refreshCookieName, newRefresh, {
-        httpOnly: true,
-        secure: process.env.SECURE_COOKIES !== 'false',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60,
-        path: '/',
-      })
-    }
-
-    return {
-      success: true,
-      accessToken: data.access_token,
-      user: data.user,
-    }
-  } catch (error) {
-    console.error('Token refresh error:', error)
-
-    // Clean up ALL cookies on refresh failure to prevent login loops
-    await removeServerCookie(env.auth.cookieName)
-    await removeServerCookie(env.auth.refreshCookieName)
-    await removeServerCookie(env.cookies.tenant)
-    await removeServerCookie(env.cookies.pendingTenants)
-
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Token refresh failed',
-    }
-  }
-}
-
 // ============================================
 // LOGOUT
 // ============================================
@@ -916,16 +829,18 @@ export async function localLogoutAction(redirectTo?: string): Promise<never> {
   try {
     const cookieStore = await cookies()
     const accessToken = cookieStore.get(env.auth.cookieName)?.value
+    const refreshToken = cookieStore.get(env.auth.refreshCookieName)?.value
 
-    // Call backend logout to invalidate session and clear backend-set cookies
-    // Backend will clear: refresh_token (path: /api/v1/auth), csrf_token
-    if (accessToken) {
+    // End the session on the API. The refresh token goes in the body: it
+    // outlives the 15-minute access token, so a user who idled past that
+    // still has their server session ended (with only the access token the
+    // call was skipped and the session stayed valid for days).
+    if (accessToken || refreshToken) {
       try {
         await backendFetch(authEndpoints.logout(), {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
         })
         devLog.log('[Logout] Backend logout successful')
       } catch (error) {
@@ -942,9 +857,12 @@ export async function localLogoutAction(redirectTo?: string): Promise<never> {
     await removeServerCookie(env.cookies.pendingTenants) // Pending tenant selection
     await removeServerCookie('app_permissions') // Legacy permissions cookie (cleanup)
 
-    devLog.log('[Logout] All cookies cleared, redirecting to:', redirectTo || '/login')
+    // A Server Action's argument comes from the client: only a same-origin
+    // path is followed after sign-out, anything else goes to /login.
+    const target = validateRedirectUrl(redirectTo, '/login')
+    devLog.log('[Logout] All cookies cleared, redirecting to:', target)
 
-    redirect(redirectTo || '/login')
+    redirect(target)
   } catch (error) {
     // Handle redirect error (expected)
     if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
@@ -959,51 +877,6 @@ export async function localLogoutAction(redirectTo?: string): Promise<never> {
 // GET CURRENT USER
 // ============================================
 
-/**
- * Get current authenticated user
- */
-export async function getLocalCurrentUser(): Promise<
-  AuthSuccessResponse<LocalUser> | AuthErrorResponse
-> {
-  try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return {
-        success: false,
-        error: 'Not authenticated',
-      }
-    }
-
-    const data = await backendFetch<LocalUser>(userEndpoints.me(), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-
-    return {
-      success: true,
-      data,
-    }
-  } catch (error) {
-    // Try to refresh token
-    const refreshResult = await refreshLocalTokenAction()
-    if (refreshResult.success && refreshResult.user) {
-      return {
-        success: true,
-        data: refreshResult.user,
-      }
-    }
-
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to get user',
-    }
-  }
-}
-
 // ============================================
 // EMAIL VERIFICATION
 // ============================================
@@ -1015,8 +888,9 @@ export async function verifyEmailAction(
   token: string
 ): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
   try {
-    await backendFetch<{ message: string }>(authEndpoints.verifyEmail(token), {
+    await backendFetch<{ message: string }>(authEndpoints.verifyEmail(), {
       method: 'POST',
+      body: JSON.stringify({ token }),
     })
 
     return {
@@ -1029,32 +903,6 @@ export async function verifyEmailAction(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Email verification failed',
-    }
-  }
-}
-
-/**
- * Resend verification email
- */
-export async function resendVerificationAction(
-  email: string
-): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
-  try {
-    await backendFetch<{ message: string }>(authEndpoints.resendVerification(), {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    })
-
-    return {
-      success: true,
-      data: null,
-      message: 'Verification email sent',
-    }
-  } catch (error) {
-    console.error('Resend verification error:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to send verification email',
     }
   }
 }
@@ -1083,6 +931,8 @@ export interface CreateFirstTeamInput {
 export interface CreateFirstTeamResult {
   success: boolean
   error?: string
+  /** The team exists but its owner must set up two-factor authentication first. */
+  mfaEnrollmentRequired?: boolean
   tenant?: {
     id: string
     slug: string
@@ -1136,6 +986,11 @@ export async function createFirstTeamAction(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: response.statusText }))
+      // The new organization requires two-factor authentication for its
+      // owner: it exists, and the owner signs in again to set up 2FA.
+      if (errorData.code === 'MFA_ENROLLMENT_REQUIRED') {
+        return { success: false, error: errorData.message, mfaEnrollmentRequired: true }
+      }
       throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`)
     }
 
@@ -1235,6 +1090,50 @@ export async function forgotPasswordAction(
 }
 
 /**
+ * Request access to the platform (sign-up closed, requests allowed). The API
+ * answers every accepted submission the same way, whatever happens to it.
+ */
+export async function submitAccessRequestAction(input: {
+  company: string
+  email: string
+  note: string
+  captchaToken?: string
+}): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
+  try {
+    const { captchaToken, ...rest } = input
+    const data = await backendFetch<{ message: string }>(authEndpoints.accessRequests(), {
+      method: 'POST',
+      body: JSON.stringify({ ...rest, ...(captchaToken ? { captcha_token: captchaToken } : {}) }),
+    })
+    return { success: true, data: null, message: data.message }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Could not send the request',
+      code: (error as { code?: unknown } | null)?.code as string | undefined,
+    }
+  }
+}
+
+/** Confirm an access request with the token from the emailed link. */
+export async function confirmAccessRequestAction(
+  token: string
+): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
+  try {
+    const data = await backendFetch<{ message: string }>(authEndpoints.accessRequestConfirm(), {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    })
+    return { success: true, data: null, message: data.message }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'This link is invalid or has expired.',
+    }
+  }
+}
+
+/**
  * Reset password with token
  */
 export async function resetPasswordAction(
@@ -1269,212 +1168,22 @@ export async function resetPasswordAction(
 // ============================================
 
 /**
- * Change password for authenticated user
+ * Email-first sign-in: asks whether the email's domain signs in through an
+ * organization's SSO. Any failure answers "password".
  */
-export async function changePasswordAction(
-  currentPassword: string,
-  newPassword: string
-): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
+export async function discoverSignInAction(
+  email: string
+): Promise<{ next: 'sso' | 'password'; org: string }> {
   try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return {
-        success: false,
-        error: 'Not authenticated',
-      }
-    }
-
-    await backendFetch<{ message: string }>(userEndpoints.changePassword(), {
+    const data = await backendFetch<{ next?: string; org?: string }>(authEndpoints.discover(), {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        current_password: currentPassword,
-        new_password: newPassword,
-      }),
+      body: JSON.stringify({ email }),
     })
-
-    return {
-      success: true,
-      data: null,
-      message: 'Password changed successfully',
+    if (data.next === 'sso' && typeof data.org === 'string' && data.org) {
+      return { next: 'sso', org: data.org }
     }
-  } catch (error) {
-    console.error('Change password error:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to change password',
-    }
-  }
-}
-
-// ============================================
-// SESSION MANAGEMENT
-// ============================================
-
-export interface UserSession {
-  id: string
-  ipAddress: string
-  userAgent: string
-  lastActivityAt: string
-  createdAt: string
-  isCurrent: boolean
-}
-
-/**
- * List active sessions
- */
-export async function listSessionsAction(): Promise<
-  AuthSuccessResponse<UserSession[]> | AuthErrorResponse
-> {
-  try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return {
-        success: false,
-        error: 'Not authenticated',
-      }
-    }
-
-    const data = await backendFetch<{ sessions: UserSession[] }>(userEndpoints.sessions(), {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-
-    return {
-      success: true,
-      data: data.sessions,
-    }
-  } catch (error) {
-    console.error('List sessions error:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to list sessions',
-    }
-  }
-}
-
-/**
- * Revoke a specific session
- */
-export async function revokeSessionAction(
-  sessionId: string
-): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
-  try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return {
-        success: false,
-        error: 'Not authenticated',
-      }
-    }
-
-    await backendFetch<{ message: string }>(userEndpoints.revokeSession(sessionId), {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-
-    return {
-      success: true,
-      data: null,
-      message: 'Session revoked successfully',
-    }
-  } catch (error) {
-    console.error('Revoke session error:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to revoke session',
-    }
-  }
-}
-
-/**
- * Revoke all sessions except current
- */
-export async function revokeAllSessionsAction(): Promise<
-  AuthSuccessResponse<null> | AuthErrorResponse
-> {
-  try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return {
-        success: false,
-        error: 'Not authenticated',
-      }
-    }
-
-    await backendFetch<{ message: string }>(userEndpoints.revokeAllSessions(), {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-
-    return {
-      success: true,
-      data: null,
-      message: 'All other sessions revoked successfully',
-    }
-  } catch (error) {
-    console.error('Revoke all sessions error:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to revoke sessions',
-    }
-  }
-}
-
-// ============================================
-// CHECK AUTHENTICATION
-// ============================================
-
-/**
- * Check if user is authenticated
- */
-export async function isLocalAuthenticated(): Promise<boolean> {
-  try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return false
-    }
-
-    // Verify token is valid by calling the backend
-    const result = await getLocalCurrentUser()
-    return result.success
   } catch {
-    return false
+    // Discovery is a convenience: sign-in still works without it.
   }
-}
-
-/**
- * Get access token for API calls
- */
-export async function getLocalAccessToken(): Promise<string | null> {
-  try {
-    const cookieStore = await cookies()
-    const accessToken = cookieStore.get(env.auth.cookieName)?.value
-
-    if (!accessToken) {
-      return null
-    }
-
-    return accessToken
-  } catch {
-    return null
-  }
+  return { next: 'password', org: '' }
 }

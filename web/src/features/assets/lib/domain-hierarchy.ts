@@ -87,7 +87,7 @@ const PUBLIC_SUFFIXES = new Set([
  * Extract the root domain from a full domain name
  *
  * Examples:
- * - api.vnsecurity.io -> vnsecurity.io
+ * - api.example.io -> example.io
  * - staging.api.example.com.vn -> example.com.vn
  * - example.com -> example.com
  *
@@ -116,7 +116,7 @@ export function extractRootDomain(domain: string): string {
  * Get the parent domain of a subdomain
  *
  * Examples:
- * - api.vnsecurity.io -> vnsecurity.io
+ * - api.example.io -> example.io
  * - staging.api.example.com -> api.example.com
  *
  * @param domain - Domain name

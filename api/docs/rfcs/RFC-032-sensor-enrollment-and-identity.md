@@ -1,8 +1,17 @@
 # RFC-032 — Sensor enrollment, identity and declared capabilities
 
-> Status: **Accepted** (2026-10-02; owner decisions in §10.1). Proposed
-> 2026-10-02 in #706. Phase 0 is in implementation.
-> Scope: api + sdk-go + sensor (`openctemio/sensor`, local checkout `agent`) +
+> Status: **Accepted** (2026-10-02; decisions in §10.1). Proposed
+> 2026-10-02 in #706. Phase 0 is implemented (`octs_` keys in `pkg/sensorkey`,
+> the dedicated key pepper, the cloned-identity signal). Phase 1 (key-bound
+> identity) shipped through RFC-052 (#1189). The enrollment-token endpoint
+> (Phase 2, `POST /api/v2/sensor/enroll`) is not built; interactive pairing
+> (RFC-052) covers enrollment.
+> **Revised 2026-10-03** (§10.4): credential prefixes are `octs_` (sensor API
+> key, now issued) and `octe_` (enrollment token, replacing the proposed
+> `ocse_`), both with a base62 CRC32 checksum; `rda_` is legacy and is retired
+> **90 days after enrollment and key-bound identity (Phases 1 and 2) ship**,
+> replacing the 2027-04-01 date in D3.
+> Scope: api + sdk-go + sensor (`openctemio/sensor`) +
 > ui + helm-charts.
 > Builds on and makes concrete: [RFC-014](RFC-014-agent-identity.md) (per-sensor
 > keys, expiry, renewal, overlap; its open Phases 4 and 5),
@@ -15,13 +24,18 @@
 > [RFC-031](RFC-031-managed-sensor-updates.md) (signed images; platform
 > compromise). Where this RFC and RFC-023 §4b differ, this RFC is the more
 > specific decision and RFC-023 is amended by reference.
+> Mutual distrust: [RFC-040](RFC-040-platform-sensor-mutual-distrust.md)
+> treats Phases 1–2 of this RFC as its P0 dependency (signed jobs and the
+> object checks bind to the per-sensor key) and records the decisions
+> of 2026-10-03 (§5.2 there): `octs_` interim sensor key and `octe_`
+> enrollment token, and the bearer-key sunset 90 days after Phases 1–2 ship
+> instead of 2027-04-01.
 >
-> Owner's question (2026-10-02): today an administrator pre-creates a sensor
+> Question (2026-10-02): today an administrator pre-creates a sensor
 > in the UI (name, role, tool chips), receives a long-lived `rda_…` key shown
 > once and pastes it into a docker / compose / Kubernetes / Helm command.
-> "The platform cannot know which tools a third-party sensor has, only the
-> sensor can say. Research thoroughly and give the best, most modern, most
-> secure option."
+> The platform cannot know which tools a third-party sensor has; only the
+> sensor can say. What is the most modern and most secure option?
 
 ## 1. Answer in short
 
@@ -56,8 +70,8 @@ clear inside a job.
 | # | Decision |
 |---|---|
 | E1 | **Enrollment, not pre-creation, is the primary flow.** The UI's "Add sensor" creates an enrollment token; nothing is created until a sensor enrolls. Pre-creating a sensor with a key remains only behind "Legacy key (for sensors on an SDK without enrollment)" until the v1/`rda_` sunset. |
-| E2 | **Enrollment token** `ocse_<id>_<secret>`: 128-bit id for lookup, 256-bit secret, CRC32 checksum suffix (leak scanners can validate it offline), stored as HMAC-SHA256 with the sensor-credential pepper (as `rda_` keys are; Phase 0 stops reusing `APP_ENCRYPTION_KEY` as that pepper, §3.1 G9). The `id_secret` shape is the Kubernetes bootstrap-token shape (public id + secret). Policy on the token: tenant, role, zone(s), tags, tool/capability ceiling, `max_uses` (default 1), `expires_at` (default 60 min, max 30 days for reusable), approval mode, `ephemeral`, name template. Revocable; every use is audited. |
-| E3 | **Approval:** single-use tokens default to **auto-approve** (creating the token *was* the human decision and it expires within the hour, as a GitHub runner registration token). Reusable tokens default to **manual approval**: the sensor appears as *Pending approval* with hostname, IP, OS/arch, versions, reported tools and its **key fingerprint**, which the sensor also prints in its log, so the admin can compare (SSH / Teleport style). A pending sensor can heartbeat but receives no jobs, content, credentials or configuration. |
+| E2 | **Enrollment token** `ocse_<id>_<secret>`: 128-bit id for lookup, 256-bit secret, CRC32 checksum suffix (leak scanners can validate it offline), stored as HMAC-SHA256 with the sensor-credential pepper (as `rda_` keys are; Phase 0 stops reusing `APP_ENCRYPTION_KEY` as that pepper, §3.1 G9). The token is a public id plus a secret. Policy on the token: tenant, role, zone(s), tags, tool/capability ceiling, `max_uses` (default 1), `expires_at` (default 60 min, max 30 days for reusable), approval mode, `ephemeral`, name template. Revocable; every use is audited. |
+| E3 | **Approval:** single-use tokens default to **auto-approve** (creating the token *was* the human decision and it expires within the hour). Reusable tokens default to **manual approval**: the sensor appears as *Pending approval* with hostname, IP, OS/arch, versions, reported tools and its **key fingerprint**, which the sensor also prints in its log, so the admin can compare (as with an SSH host key). A pending sensor can heartbeat but receives no jobs, content, credentials or configuration. |
 | E4 | **Sensor identity = an Ed25519 key pair generated by the sensor**, stored 0600 in the sensor's persisted state volume (`/var/lib/openctem/state/identity/`), or supplied by a mounted file / Kubernetes Secret / OS keystore; TPM-backed keys later. Only the public key (JWK, RFC 7517/8037) and its thumbprint (RFC 7638) are sent. |
 | E5 | **Every v2 request is signed** per the RFC-026 §4 iteration-2 profile (RFC 9421, `alg="ed25519"`, `keyid` = key thumbprint, `created`, `expires` ≤ 300 s, `nonce`, covered `@method @target-uri content-type content-digest`). No bearer secret is presented once a key is registered; the server refuses the `rda_` key for that sensor afterwards. Chosen over mTLS as the default because it survives TLS-terminating gateways, load balancers and **corporate egress TLS inspection**, which breaks client certificates (§5.2). mTLS stays an optional high-assurance mode (Phase 5). |
 | E6 | **Proof of possession at enrollment.** `POST /api/v2/sensor/enroll` is itself signed with the new key (keyid = the thumbprint inside the body), so the identity is bound to the key that consumed the token, in one atomic step. A captured enrollment request is useless: replaying it (same key) returns the same sensor, whose private key the attacker does not have; altering it breaks the signature. (A thief holding an *unused* token can of course enroll a key of their own: that is T1, bounded by single use, short expiry and approval.) Re-sending the same enrollment with the same key is idempotent (restart while pending does not burn another use). |
@@ -65,9 +79,9 @@ clear inside a job.
 | E8 | **Capabilities are claims, policy narrows.** The enrollment request carries the same report as the heartbeat (RFC-029 §4.3.1: tools + versions + installed, capabilities, max concurrency, os, arch) plus SDK, sensor and protocol versions, features and an optional image digest. Effective = reported ∩ the token's ceiling ∩ any later admin limit. The admin never has to type tools. |
 | E9 | **Identity strength is shown and used, not assumed.** Each sensor gets an `assurance` level: `legacy_key` (bearer `rda_`), `key_bound` (E4/E5), `platform_attested` (enrolled through a verified Kubernetes / cloud / CI identity), later `hardware_attested`. Separately, **build provenance** is shown as a *claim*: the reported image digest matched against our cosign-signed releases (RFC-031 D11) is labelled "first-party build (reported)", never "verified". |
 | E10 | **Secrets in jobs.** Scan credentials are released only to sensors that are approved, `key_bound` or higher, in the job's zone, and at or above the tenant's minimum assurance; they are **sealed per job to the sensor's X25519 encryption key with HPKE (RFC 9180)** and bound to the command id and expiry, so the commands table, logs, backups and any other sensor see only ciphertext. Legacy-key sensors never receive credentials (they keep sensor-local credentials, RFC-023 D12 T1). |
-| E11 | **Keyless joins** (Teleport-style join methods) for workloads that already have an identity: `kubernetes` (projected service-account token, audience `openctem`, verified against the cluster's OIDC JWKS or a pinned static JWKS for private clusters), `github` / `gitlab` (CI OIDC id tokens, for the CI-runner role: one ephemeral sensor per pipeline run), `aws` / `gcp` / `azure` (signed instance identity documents). Configured as **join rules** (issuer + claim matches → tenant, role, zone, tags, approval); no secret is stored anywhere. |
+| E11 | **Keyless joins** for workloads that already have an identity: `kubernetes` (projected service-account token, audience `openctem`, verified against the cluster's OIDC JWKS or a pinned static JWKS for private clusters), `github` / `gitlab` (CI OIDC id tokens, for the CI-runner role: one ephemeral sensor per pipeline run), `aws` / `gcp` / `azure` (signed instance identity documents). Configured as **join rules** (issuer + claim matches → tenant, role, zone, tags, approval); no secret is stored anywhere. |
 | E12 | **One identity per running instance.** Kubernetes replicas, autoscaled pods and CI jobs each enroll their own key; shared credentials across replicas are not supported in the new model. Instances can be `ephemeral` (from the token or join rule): removed automatically after 1 h offline, their history kept. |
-| E13 | **Cloned-identity detection.** Every process start picks a random `instance_id` sent on hello/heartbeat. Two live `instance_id`s for one sensor within the heartbeat window means the key was copied: the sensor is flagged `identity_cloned`, alerted and (tenant policy, default on) quarantined. Applies to `rda_` sensors too, from Phase 0. Teleport's `bound_keypair` join does the same with a join-state generation counter. |
+| E13 | **Cloned-identity detection.** Every process start picks a random `instance_id` sent on hello/heartbeat. Two live `instance_id`s for one sensor within the heartbeat window means the key was copied: the sensor is flagged `identity_cloned`, alerted and (tenant policy, default on) quarantined. Applies to `rda_` sensors too, from Phase 0. |
 | E14 | **Enrollment token handling on the host.** Accepted from a file (`--enroll-token-file`, Docker/Kubernetes secret) or the environment; after enrollment the SDK ignores it and logs a reminder to remove it. Because it is single-use and short-lived, exposure after use is harmless, unlike today's key. |
 | E15 | **Outbox encryption stays decoupled from credentials.** It already is: a random local `outbox.key` (§3.5). The identity key lives beside it on the sensor's persisted storage, and neither is ever derived from the other or from a credential the platform issues, so rotation, re-enrollment and identity upgrade never strand queued results. |
 | E16 | **Everything is audited** in the hash-chained audit log: token created / revoked / used / refused (exhausted, expired, wrong tenant), sensor enrolled, approved, rejected, key registered, rotated, revoked, identity upgraded from `rda_`, clone detected, credential sealed for a command. Signature failures are aggregated per sensor (one event per minute) to avoid log floods. |
@@ -145,6 +159,13 @@ clear inside a job.
   `internal/app/sensor/doorbell.go:157-159`). Expiry is lazy (no expiry
   job); fleet health shows `key_expired` / `key_expiring`
   (`pkg/domain/sensor/fleet_health.go:54-55`); no notification is sent.
+- *Since this was written:* renewal retires the key that was presented
+  (inline or a key row) and every other key the sensor still held after
+  `SENSOR_KEY_RENEW_GRACE` (default 15 min), so a renewal has one successor
+  and a copied `rda_` key can no longer renew a parallel line of 90-day keys
+  ([agent-identity.md](../architecture/agent-identity.md#renewal-retires-the-presented-key)).
+  Before, the presented key stayed valid until its own expiry and only
+  already-expired rows were pruned.
 - **Auto-renewal is off on every install path.** The sensor renews only with
   `-key-autorenew` / `PLATFORM_KEY_AUTORENEW` (sensor `main.go:214,427`);
   the Helm chart defaults `keyAutoRenew: false` and documents why: the
@@ -251,44 +272,21 @@ clear inside a job.
 | G8 | Scopes on keys are not enforced (RFC-014 Phase 4) | §3.1 |
 | G9 | The HMAC pepper is the data-encryption key (key reuse across purposes) | §3.1 |
 
-## 4. What the industry does
+## 4. Design principles for machine identity
 
-Only what informed a decision. All links are the vendors' own documentation.
+Each principle below maps to the decisions that implement it.
 
-| System | Enrollment credential | Machine credential | Rotation / revocation | What we take |
-|---|---|---|---|---|
-| **GitHub Actions self-hosted runners** | registration token, expires after 1 h, passed to `config.sh --token`; or a JIT config (`generate-jitconfig`) for one ephemeral runner | the runner generates a 2048-bit RSA key locally (file mode 600) and authenticates with it to get short-lived OAuth tokens | `--ephemeral` de-registers after one job | short-lived enrollment, host-generated key, ephemeral runners |
-| **GitHub Actions OIDC** | — | per-job OIDC token from `token.actions.githubusercontent.com` with `sub`, `repository`, `ref`, `job_workflow_ref` claims, audience chosen by the job | valid for a single job | keyless CI joins (E11) |
-| **Tailscale** | auth keys: one-off or reusable, ephemeral, pre-approved, tagged; 1–90 days (default 90); workload identity federation exchanges a cloud/GitHub OIDC token instead of a stored key | per-node key | node key expiry 1–180 days (default 180); revoking an auth key does **not** remove nodes joined with it; device approval queue; Tailnet Lock lets trusted nodes, not the server, sign new node keys | token properties (E2), approval (E3), ephemeral (E12) |
-| **Teleport** | secret-based (`token`, default TTL 30 min; static tokens "strongly discouraged") or delegated join methods: ec2, iam, azure, gcp, github, gitlab, circleci, kubernetes, tpm; `bound_keypair` (client-generated key registered up front) recommended over secret-based | short-lived certificates (tbot default 1 h, max 24 h, renewed every 20 min) | `bound_keypair` keeps a join-state generation counter and **locks the bot when counters disagree, i.e. a cloned keypair** | join methods (E11), clone detection (E13) |
-| **Kubernetes kubelet** | bootstrap token `[a-z0-9]{6}.[a-z0-9]{16}` (public id + secret), with expiry, cleaned by `tokencleaner`; `kubeadm token create` default TTL 24 h | kubelet submits a CSR; `csrapproving` auto-approves client CSRs by RBAC, never serving certs | `rotateCertificates` | `id.secret` token shape (E2), approval by policy (E3) |
-| **Kubernetes service accounts** | — | projected token: audience-bound, default 1 h (min 600 s), bound to the pod's UID, refreshed at 80 % of lifetime; issuer discovery serves `/.well-known/openid-configuration` + JWKS | invalid once the pod is gone | the `kubernetes` join method (E11) |
-| **SPIFFE / SPIRE** | node attestors: `join_token` (single-use), `aws_iid`, `azure_msi`, `gcp_iit`, `k8s_psat`, `tpm_devid`, `x509pop`, `sshpop` | X.509-SVID, default TTL 1 h | automatic | attestation-based identity; federation hook later |
-| **Vault AppRole / Nomad** | `role_id` + `secret_id` (num-uses, TTL, `secret_id_bound_cidrs`); response wrapping delivers a secret in a single-use wrapping token, so interception is detectable | Vault token (CIDR-bindable); Nomad signs a per-task workload-identity JWT | `secret-id/destroy` | single-use delivery, CIDR binding as an optional extra |
-| **Elastic Fleet** | enrollment token **per agent policy** | after enrollment, Fleet Server issues the agent its own least-privilege API key | revoking an enrollment token leaves enrolled agents working; unenroll invalidates the agent's key | policy-scoped tokens (E2) |
-| **Tenable** | one linking key per instance for all sensor types; `nessuscli agent link --key --groups --ca-path` | after linking, the sensor uses unique credentials | regenerating the linking key does not affect linked sensors | link-then-own-credential; groups at link time; CA pin in the command |
-| **CrowdStrike Falcon** | customer ID (CID) plus an optional provisioning token | per-sensor | — | the CID alone is not a secret; the provisioning token is the gate |
-| **Datadog** | org API key | agent pulls Remote Configuration, which is signed and validated by the agent (Uptane/TUF in the agent source) | — | signed control-plane messages (RFC-023 P5/P6) |
-| **Wiz sensor** | Helm chart takes a service-account client id + token | — | — | the shared-credential model this RFC moves away from |
-
-Unverified (vendor docs behind a login or silent): the exact GitHub runner
-token exchange, the GitHub OIDC token TTL, whether CrowdStrike can make
-the provisioning token mandatory tenant-wide, Wiz Outpost/Broker auth.
-None of them changes a decision.
-
-### 4.1 Patterns extracted
-
-| Pattern | Who | Taken here |
-|---|---|---|
-| **Enroll, don't pre-create.** A short-lived or use-limited *enrollment* secret, exchanged once for a per-machine identity; the machine registers itself with its own facts | GitHub runners, Elastic Fleet, Tailscale, Teleport, kubelet bootstrap, Tenable linking key | E1, E2 |
-| **Approval queue** for joins that are not pre-authorised; pre-approval as a token property | Tailscale device approval / pre-approved keys, kubelet CSR approval, RFC-023 D10 | E3 |
-| **Machine-generated key, private key never leaves the host** | GitHub runner (RSA key generated at config time, mode 600), kubelet (CSR), SPIRE, Tailscale node key | E4 |
-| **Proof of possession on every request**, not a bearer secret | RFC 9421, DPoP (RFC 9449), mTLS-bound tokens (RFC 8705), Elastic Fleet / Datadog signed messages | E5 |
-| **Short-lived, auto-rotated credentials; revocation by short TTL or per-request check** | kubelet rotation, SPIFFE SVIDs (~1 h), Teleport certs, Tailscale node-key expiry | E7 |
-| **Keyless / delegated joining** with an identity the workload already has | Teleport join methods, SPIRE node attestors, Vault/Nomad workload identity, GitHub OIDC federation | E11 |
-| **Ephemeral identities** auto-removed when gone | GitHub `--ephemeral` / JIT runners, Tailscale ephemeral nodes | E12 |
-| **Tags / policy assigned by the enrollment credential**, not chosen by the joiner | Tailscale tagged keys, Elastic Fleet policy-scoped tokens, Tenable agent groups, Teleport token roles | E2 |
-| **Claims from the machine are input, not authority** | every one of the above: a node's labels do not grant it rights (kubelet `NodeRestriction`) | E8, E9 |
+| Principle | Taken here |
+|---|---|
+| **Enroll, don't pre-create.** A short-lived or use-limited *enrollment* secret, exchanged once for a per-machine identity; the machine registers itself with its own facts | E1, E2 |
+| **Approval queue** for joins that are not pre-authorised; pre-approval as a token property (RFC-023 D10) | E3 |
+| **Machine-generated key, private key never leaves the host** | E4 |
+| **Proof of possession on every request**, not a bearer secret: RFC 9421, DPoP (RFC 9449), mTLS-bound tokens (RFC 8705) | E5 |
+| **Short-lived, auto-rotated credentials; revocation by short TTL or per-request check** | E7 |
+| **Keyless / delegated joining** with an identity the workload already has (cluster, CI and cloud OIDC or instance identity) | E11 |
+| **Ephemeral identities** auto-removed when gone | E12 |
+| **Tags / policy assigned by the enrollment credential**, not chosen by the joiner | E2 |
+| **Claims from the machine are input, not authority**: a node's self-reported labels do not grant it rights | E8, E9 |
 
 ## 5. Threat model
 
@@ -376,19 +374,22 @@ over signing every request with the same key.
 
 ### 6.2 Enrollment token
 
-- Format `ocse_` + base62(16-byte id) + `_` + base62(32-byte secret) +
-  base62(CRC32). The `ocse_` prefix is distinct from `oct_` (which the
-  gateway routes as user API keys) and from `rda_`. Proposed for GitHub
-  secret scanning partner registration together with `rda_`, so leaked
-  tokens and keys in public repositories are reported to us.
+- Format (revised 2026-10-03, §10.4): `octe_` + base62(32 random bytes,
+  43 characters) + base62(CRC32 of the random part, 6 characters), the same
+  shape as an `octs_` sensor key. The token is looked up by its peppered
+  hash, like a sensor key, so it needs no separate public id. (Originally
+  proposed as `ocse_` + id + `_` + secret + CRC32.) The `octe_` prefix is
+  distinct from `oct_` (which the gateway routes as user API keys), from
+  `octs_` and from `rda_`. Proposed for GitHub secret scanning partner
+  registration together with `octs_`, so leaked tokens and keys in public
+  repositories are reported to us.
 - Stored: `sensor_enrollment_tokens (id, tenant_id, secret_hash, name,
   role, zone_ids, tags, tool_ceiling, capability_ceiling, approval_mode,
   ephemeral, name_template, max_uses, use_count, expires_at, revoked_at,
   created_by, created_at, last_used_at)`. `secret_hash` = HMAC-SHA256 with
   the server pepper, compared in constant time.
 - Defaults: `max_uses 1`, `expires_at now+60min`, `approval auto` when
-  `max_uses = 1`, else `manual`. Reusable maximum 30 days (Tailscale's
-  maximum is 90; ours is shorter because keyless joins exist for fleets).
+  `max_uses = 1`, else `manual`. Reusable maximum 30 days (kept short because keyless joins exist for fleets).
 - The token never appears in a URL. The UI shows it once, inside the
   rendered command, and lists the token afterwards by name and id only.
 
@@ -521,10 +522,10 @@ instead of `token` (§6.8).
   on schedule and on `rotate_key`; report `instance_id`. Sensor authors write
   no identity code.
 - **Storage:** `/var/lib/openctem/state/identity/{signing.key,
-  encryption.key,sensor.json}` (0600, directories 0700) on a persisted
-  state volume that the snippets and chart add next to the outbox volume
-  (`/var/lib/openctem/outbox`, already in every snippet); Phase 0 puts the
-  renewed-key credentials file there too. A `KeyStore`
+  encryption.key,sensor.json}` (0600, directories 0700) on the persisted
+  data volume the snippets and chart mount at `/var/lib/openctem` (state/,
+  outbox/ and content/ on one volume; installs with a volume per directory
+  keep working); Phase 0 puts the renewed-key credentials file there too. A `KeyStore`
   interface lets a sensor supply a keystore (Kubernetes Secret, OS keyring,
   PKCS#11/TPM later).
 - **Configuration:** `SENSOR_ENROLL_TOKEN` / `SENSOR_ENROLL_TOKEN_FILE`,
@@ -544,7 +545,7 @@ tags, ceilings, approval_mode, ephemeral, max_active)`.
 
 | Method | Credential the sensor presents | Platform verifies | Typical use |
 |---|---|---|---|
-| `kubernetes` | projected service-account token, `audience: openctem`, ≤1 h | signature via the cluster issuer's OIDC discovery JWKS, or a pinned static JWKS for private clusters (Teleport's approach); `iss`, `aud`, `exp`, `sub = system:serviceaccount:<ns>:<sa>`; pod binding claims | the Helm chart: no secret in values at all |
+| `kubernetes` | projected service-account token, `audience: openctem`, ≤1 h | signature via the cluster issuer's OIDC discovery JWKS, or a pinned static JWKS for private clusters; `iss`, `aud`, `exp`, `sub = system:serviceaccount:<ns>:<sa>`; pod binding claims | the Helm chart: no secret in values at all |
 | `github` / `gitlab` | CI OIDC id token, `aud: openctem` | issuer JWKS; `repository`/`project_path`, `ref`, `job_workflow_ref`, environment | CI-runner role: one ephemeral sensor per pipeline run, removed when the run's token expires |
 | `aws` / `gcp` / `azure` | signed instance identity document / identity token | provider signature, account / project / subscription, instance id, nonce | VM scanners in cloud accounts |
 
@@ -615,7 +616,7 @@ credential's `jti` is remembered until its `exp` to refuse reuse.
 | New SDK against an old platform | `hello` does not advertise `signed_requests` → the SDK stays on the bearer key it was given; with only an enrollment token it reports "platform does not support enrollment" and exits non-zero (clear failure, no silent mode) |
 | Install snippets | `GET /sensors/{id}/config-templates` keeps serving legacy snippets; a new `GET /sensor-enrollment-tokens/{id}/install` renders the enrollment snippets from the same templates directory |
 | Management API | `POST /api/v1/sensors` keeps working (legacy key), marked deprecated in OpenAPI once enrollment ships |
-| Sunset | tenant switch "require key-bound identity" first; platform-wide on 2027-04-01 with the protocol-v1 sunset (D3) |
+| Sunset | tenant switch "require key-bound identity" first; platform-wide **90 days after Phases 1 and 2 ship** (§10.4, replacing 2027-04-01 in D3). `rda_` sensors that renew before then are already on `octs_` keys |
 
 ## 8. Implementation plan
 
@@ -651,7 +652,7 @@ start now.
 |---|---|
 | Keep pre-creation, add tool auto-detection only | Fixes the tool list (already done by RFC-029 §4.3.1) but not the long-lived key passing through humans, or the shared key across replicas |
 | Enrollment that issues an `rda_` bearer key (short TTL, auto-renew) | The UX win of E1 at low cost, but leaves a bearer secret on the wire and in logs. Acceptable only as a fallback if Phase 1 slips (Q4) |
-| mTLS client certificates (kubelet style) | §5.2: egress TLS inspection, TLS-terminating gateways and LBs. Kept as optional mode |
+| mTLS client certificates | §5.2: egress TLS inspection, TLS-terminating gateways and LBs. Kept as optional mode |
 | Short-lived JWT access tokens + refresh (OAuth client credentials, `private_key_jwt`) | Bearer within its TTL; adds an issuer and a refresh path; signing each request with the same key is simpler and stronger |
 | DPoP-bound access tokens (RFC 9449) | Equivalent security to E5 for our own protocol, with an extra token exchange |
 | SPIFFE/SPIRE as a hard dependency | Excellent where it exists; too heavy to require for a sensor on one VM. Federation hook in Phase 5 (RFC-023 P3) |
@@ -668,15 +669,15 @@ start now.
 | Q5 | Scan credentials to sensors | (a) only to approved `key_bound`+ sensors, HPKE-sealed per job; legacy sensors use sensor-local credentials; (b) also to legacy sensors with a warning | **(a)** |
 | Q6 | `rda_` retirement | (a) tenant opt-in "require key-bound identity" from Phase 1; new installs enrollment-only from Phase 2; platform-wide with the v1 sunset 2027-04-01; (b) keep `rda_` indefinitely | **(a)** |
 
-### 10.1 Owner decisions (2026-10-02)
+### 10.1 Decisions (2026-10-02)
 
-The owner accepted every recommendation in the table above.
+Every recommendation in the table above was accepted.
 
 | # | Decision | Consequence |
 |---|---|---|
 | D1 (Q1) | The default credential on the wire is a **sensor-held Ed25519 key with RFC 9421 request signatures**. mTLS client certificates are an optional later mode (Phase 5), never the default. | E4, E5 and §5.2 stand as written. Phase 1 builds the verifier and the signer; no bearer-token exchange (DPoP, JWT) is built. |
 | D2 (Q2) | **Single-use enrollment tokens auto-approve; reusable tokens require approval.** | The E3 defaults stand: `approval auto` when `max_uses = 1`, else `manual`. |
-| D3 (Q3, Q4, Q6) | The "create sensor + `rda_` key" flow stays only behind **"Legacy key"** in the UI. **Phases 1 and 2 ship in one SDK release**, so a sensor never sees an enrollment that issues bearer keys. **New installs are enrollment-only from Phase 2.** **`rda_` keys are retired platform-wide on 2027-04-01** together with protocol v1; a tenant can opt in earlier with "require key-bound identity". | The §7 sunset row is fixed to 2027-04-01. Until Phase 2 ships the legacy flow is the only flow, and Phase 0 hardens it. |
+| D3 (Q3, Q4, Q6) | The "create sensor + `rda_` key" flow stays only behind **"Legacy key"** in the UI. **Phases 1 and 2 ship in one SDK release**, so a sensor never sees an enrollment that issues bearer keys. **New installs are enrollment-only from Phase 2.** ~~`rda_` keys are retired platform-wide on 2027-04-01 together with protocol v1~~ **(superseded 2026-10-03, §10.4: `rda_` keys are retired 90 days after Phases 1 and 2 ship)**; a tenant can opt in earlier with "require key-bound identity". | The §7 sunset row follows §10.4. Until Phase 2 ships the legacy flow is the only flow, and Phase 0 hardens it. |
 | D4 | **Start Phase 0 now**, independently of Phases 1 and 2. | Phase 0 is tracked in §10.2. |
 | D5 (Q5) | **Scan credentials go only to approved, key-bound (or stronger) sensors**, HPKE-sealed per job. Legacy-key sensors keep sensor-local credentials. | E10 stands. Until Phase 3, Phase 0 warns when a scan's `scanner_config` looks like it carries a secret (G7). |
 
@@ -689,10 +690,14 @@ The owner accepted every recommendation in the table above.
 | Renewal that survives a restart, then expiry by default | sdk-go, sensor, api snippets, helm | The SDK persists the renewed key in the state directory (`/var/lib/openctem/state`, 0600, atomic write) and prefers it over the configured key on start; every snippet and the chart mount that directory. Auto-renew is on in the sensor exactly when the state directory survives the container being recreated (a mounted, non-tmpfs volume; the chart decides explicitly because an `emptyDir` looks like a volume). The snippets and the chart also mount a separate content volume (`/var/lib/openctem/content`, the scanner content cache). **Only after that ships** does the API default change (#711): `SENSOR_KEY_TTL=2160h` (90 days), `rotate_key` rung at half-life (45 days before expiry). Only renewal applies the TTL: keys issued by an administrator keep no expiry until their sensor renews (a renewing sensor does on its first start), and a sensor that does not renew is never locked out. `rotate_key` is not rung for keys without an expiry: sensors that cannot renew would log it on every heartbeat. |
 | Dedicated key-hash pepper (G9) | api | `SENSOR_KEY_PEPPER`; when unset it is derived with HKDF-SHA256 from `APP_ENCRYPTION_KEY`, so the MAC key is never the encryption key. Hashes made with the old pepper keep verifying (dual lookup; also the derived pepper once `SENSOR_KEY_PEPPER` is set, and `SENSOR_KEY_PEPPER_PREVIOUS` for replacing an explicit one); new, regenerated and renewed keys are stored with the new pepper. Rolling the API back below this release makes keys issued after it unknown to the older server. The `oct_` user API keys and SCIM tokens still use `APP_ENCRYPTION_KEY` as their pepper (follow-up). |
 | Dead bootstrap and registration-token code (G4) | api, helm, sdk-go | Removed from the api and the chart (`mode: platform`) after a cross-repository search. In sdk-go the client is public API, so it is marked `Deprecated` rather than deleted (the SDK compatibility check allows additions only); it goes with the v1 sunset. |
-| Secret-looking `scanner_config` values (G7) | api + ui | A warning in the save response and a hint in the form; never blocks. |
-| `rda_` in GitHub secret scanning | owner | Needs the GitHub partner program; steps in §10.3. |
+| Secret-looking `scanner_config` values (G7) | api + ui | A warning in the save response and a hint in the form; never blocks. The warned values are masked (`********`) for callers without `scans:write` on scan reads, scan export and command payloads; editors, owners and admins see them, sensors receive them, and saving the mask back keeps the stored value ([sensors.md](../architecture/sensors.md)). |
+| `rda_` in GitHub secret scanning | project maintainers | Needs the GitHub partner program; steps in §10.3. |
 
-### 10.3 Follow-up for the owner: GitHub secret scanning for `rda_` (and `ocse_`)
+### 10.3 Follow-up for the maintainers: GitHub secret scanning for `rda_` (and `ocse_`)
+
+> Superseded in part by §10.4: the patterns to register are now `octs_` and
+> `octe_` (checksummed), with `rda_` as the legacy pattern. The current
+> patterns are in [agent-identity.md, *Credential formats*](../architecture/agent-identity.md#credential-formats).
 
 Having GitHub report leaked keys in public repositories to us is done
 through the **GitHub secret scanning partner program**, not a repository
@@ -706,7 +711,7 @@ What the program asks for (partner program page, linked in §11):
    offline. Phase 0 does not change the `rda_` format, so `ocse_` (which
    carries a CRC32, E2) is the better first candidate; `rda_` can be
    registered alongside with the plain pattern.
-2. **A public alert endpoint** run by the vendor (for example
+2. **A public alert endpoint** run by the project (for example
    `https://openctem.io/.well-known/secret-scanning`, outside any tenant
    installation) that accepts `POST` with a JSON array of
    `{token, type, url, source}`, verifies the request signature (headers
@@ -749,24 +754,53 @@ regex = '''\brda_[0-9a-f]{64}\b'''
 keywords = ["rda_"]
 ```
 
+### 10.4 Revision 2026-10-03: credential prefixes and the `rda_` sunset
+
+Decisions (2026-10-03):
+
+| # | Decision | Consequence |
+|---|---|---|
+| D6 | **New sensor API keys use `octs_`; enrollment tokens use `octe_`.** Both are `<prefix>` + base62 of 32 random bytes (43 characters, zero-padded) + base62 of the CRC32 of the random part (6 characters); the checksum lets secret scanners validate a token offline. | Implemented in `pkg/sensorkey`. Create, regenerate, renew and `RotateKey` issue `octs_` keys. The API rejects an `octs_` key whose checksum fails, and any `octe_` token presented as a key, before the hash lookup. The display prefix is 10 characters (`octs_` + 5). The checksum is a typo and scanner aid, **not** a security control. |
+| D7 | **No sensor prefix starts with `oct_`**, which the HTTP layer routes to user / MCP API-key authentication. | A test pins that `octs_`, `octe_` and `rda_` bearer tokens never reach user-key authentication. |
+| D8 | **`rda_` keys keep working until 90 days after enrollment (Phase 2) and Ed25519 key-bound identity (Phase 1) ship**; this replaces 2027-04-01 in D3. Deployed sensors move to `octs_` automatically on their next key renewal. | `Sensor.IsLegacyKey()`, `legacy_key` in the sensor response with a "legacy key" tag on the Sensors page, the `openctem_sensor_legacy_keys` gauge, and `previous_key_format` / `upgraded_from_legacy_key` in the `sensor.key_renewed` audit event. |
+| D9 | Secret-scanning rules for `octs_`, `octe_` and legacy `rda_` ship in the repository's `.betterleaks.toml` and are documented for customers. | [agent-identity.md, *Credential formats*](../architecture/agent-identity.md#credential-formats). |
+
+The SDK and the sensor never checked the `rda_` prefix (only test fixtures and
+a log-redaction comment mention it), so no SDK or sensor release is needed for
+`octs_` keys.
+
+### 10.5 TODO (not before 2027-01-03): remove bearer credential storage
+
+Key-bound identity (RFC-052) merged on 2026-10-05 (#1189), so the D8 sunset
+falls **no earlier than 2027-01-03**, and only if enrollment / pairing
+(Phase 2, RFC-052) has shipped by then; otherwise 90 days after it ships.
+RFC-052 D-4 lets existing organizations keep `octs_` bearer keys, so the
+storage can go only once **no** bearer key (`rda_` or `octs_`) is in use, not
+merely when `rda_` is retired.
+
+At that point, in one PR (code and migration together):
+
+- drop `sensor_api_keys` (the bearer-key rotation store) and, on `sensors`,
+  `api_key_hash`, `api_key_prefix`, `key_expires_at`, `key_pepper_id`,
+  `api_key_last_used_at`, `api_key_last_used_ip` with their indexes; keep
+  `auth_kind` (every row is `key_bound` afterwards);
+- remove bearer authentication from the v2 sensor plane, the key
+  create / regenerate / renew / rotate paths, the bearer entries of the token
+  pepper and rekey registries, and the legacy-key UI;
+- the up migration starts with a guard that **aborts** while any non-revoked
+  sensor has `auth_kind = 'bearer'` or an active `sensor_api_keys` row, so a
+  premature deploy cannot lock out a live sensor; the down migration recreates
+  the empty table and columns (no bearer key works after a down).
+
+Every existing bearer sensor has to be re-paired or revoked first.
+
 ## 11. Sources
 
-Vendors and projects (checked 2026-10-02):
+Platforms and projects we integrate with (checked 2026-10-02):
 
-- GitHub self-hosted runners REST API (registration token, JIT config): https://docs.github.com/en/rest/actions/self-hosted-runners
-- GitHub ephemeral runners: https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/autoscaling-with-self-hosted-runners
-- GitHub runner key generation (source): https://github.com/actions/runner/blob/main/src/Runner.Listener/Configuration/RSAFileKeyManager.cs
 - GitHub Actions OIDC: https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect
-- Tailscale auth keys: https://tailscale.com/kb/1085/auth-keys ; key expiry: https://tailscale.com/kb/1028/key-expiry ; Tailnet Lock: https://tailscale.com/kb/1226/tailnet-lock ; workload identity federation: https://tailscale.com/docs/features/workload-identity-federation
-- Teleport join methods: https://goteleport.com/docs/reference/deployment/join-methods/ ; bound keypair: https://goteleport.com/docs/reference/machine-workload-identity/bound-keypair/admin-guide/ ; tbot configuration: https://goteleport.com/docs/reference/machine-workload-identity/configuration/
 - Kubernetes bootstrap tokens: https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/ ; kubelet TLS bootstrapping: https://kubernetes.io/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/ ; projected tokens: https://kubernetes.io/docs/concepts/storage/projected-volumes/ ; bound tokens: https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/ ; issuer discovery: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
 - SPIRE server (attestors, TTLs): https://spiffe.io/docs/latest/deploying/spire_server/ ; concepts: https://spiffe.io/docs/latest/spire-about/spire-concepts/
-- Vault AppRole: https://developer.hashicorp.com/vault/api-docs/auth/approle ; response wrapping: https://developer.hashicorp.com/vault/docs/concepts/response-wrapping ; Nomad workload identity: https://developer.hashicorp.com/nomad/docs/concepts/workload-identity
-- Elastic Fleet enrollment tokens: https://www.elastic.co/guide/en/fleet/current/fleet-enrollment-tokens.html ; unenroll: https://www.elastic.co/guide/en/fleet/current/unenroll-elastic-agent.html
-- CrowdStrike installer: https://developer.crowdstrike.com/falcon-sensor/scripts/powershell/install/
-- Datadog Remote Configuration: https://docs.datadoghq.com/remote_configuration/ ; Uptane client: https://pkg.go.dev/github.com/DataDog/datadog-agent/pkg/config/remote/uptane
-- Wiz sensor chart: https://github.com/wiz-sec/charts/blob/master/wiz-sensor/values.yaml
-- Tenable linking key: https://docs.tenable.com/vulnerability-management/Content/Settings/Sensors/RegenerateLinkingKey.htm ; `nessuscli agent link`: https://docs.tenable.com/nessus/command-line-reference/Content/LocalAgentsCommands.htm
 - Sigstore cosign verification: https://docs.sigstore.dev/cosign/verifying/verify/ ; SLSA provenance: https://slsa.dev/spec/v1.0/provenance
 
 Standards:

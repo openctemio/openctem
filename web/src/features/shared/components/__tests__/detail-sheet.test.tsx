@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Server } from 'lucide-react'
 import {
@@ -11,6 +11,7 @@ import {
   DetailStat,
   DetailCallout,
 } from '../detail-sheet'
+import { DetailHeader, DetailSheet } from '../detail-sheet-layout'
 
 describe('DetailSheetHeader', () => {
   it('renders title, subtitle, status, badges and actions', () => {
@@ -198,5 +199,36 @@ describe('DetailField / DetailFieldGrid', () => {
       </DetailField>
     )
     expect(screen.getByText('Description').parentElement).toHaveClass('sm:col-span-2')
+  })
+})
+
+describe('in a phone DetailSheet', () => {
+  const desktopWidth = window.innerWidth
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+  })
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: desktopWidth })
+  })
+
+  it('a short body sits at the top of the fixed-height sheet, not centred', () => {
+    render(
+      <DetailSheet
+        open
+        onOpenChange={() => {}}
+        header={<DetailHeader title="x" onClose={() => {}} />}
+        panel="jobs"
+      >
+        <DetailCallout tone="info" title="No jobs yet" />
+      </DetailSheet>
+    )
+    const sheet = document.querySelector('[data-slot="detail-sheet"]') as HTMLElement
+    expect(sheet).toHaveClass('h-[92svh]')
+    const body = screen.getByRole('tabpanel', { name: 'jobs' })
+    // A plain scrolling block: the empty state is its first child, at the top.
+    for (const c of ['flex', 'grid', 'justify-center', 'items-center', 'content-center']) {
+      expect(body.classList.contains(c)).toBe(false)
+    }
+    expect(body.firstElementChild).toHaveAttribute('data-slot', 'detail-callout')
   })
 })

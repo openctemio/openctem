@@ -51,6 +51,13 @@ describe('isSafeURL', () => {
     expect(isSafeURL(url)).toBe(false)
   })
 
+  it.each(['//evil.test/x', '/\\evil.test/x', ' //evil.test', '/\t/evil.test'])(
+    'rejects protocol-relative URL %o (leaves the app)',
+    (url) => {
+      expect(isSafeURL(url)).toBe(false)
+    }
+  )
+
   it('rejects scheme with leading control chars and whitespace', () => {
     // Chrome tolerates "\tjavascript:…" — the sanitiser MUST strip the
     // tab before scheme matching, otherwise a naive regex passes it.

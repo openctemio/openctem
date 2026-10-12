@@ -9,7 +9,6 @@ import {
   filterSensors,
   groupSensors,
   summarizeFleet,
-  tenantSensors,
   type FleetFilters,
 } from '../fleet'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
@@ -20,13 +19,12 @@ const ago = (s: number) => new Date(NOW - s * 1000).toISOString()
 let seq = 0
 function sensor(over: Partial<Sensor> = {}): Sensor {
   seq++
-  return {
+  const s: Sensor = {
     id: `s${seq}`,
     tenant_id: 't',
     name: `sensor-${seq}`,
     type: 'worker',
     capabilities: [],
-    tools: ['nuclei'],
     execution_mode: 'daemon',
     status: 'active',
     health: 'online',
@@ -47,6 +45,17 @@ function sensor(over: Partial<Sensor> = {}): Sensor {
     version: 'v0.4.2',
     ...over,
   }
+  // The sensor reported nuclei unless the case says otherwise.
+  return over.effective
+    ? s
+    : {
+        ...s,
+        effective: {
+          tools: ['nuclei'],
+          capabilities: [],
+          max_concurrent_jobs: s.max_concurrent_jobs,
+        },
+      }
 }
 
 const fleet = () => {
@@ -66,7 +75,7 @@ const fleet = () => {
     sensor({ name: 'branch-hn-01', last_seen_at: ago(12 * 3600), version: 'v0.3.0' }),
     sensor({
       name: 'ci-runner',
-      type: 'runner',
+      type: 'worker',
       execution_mode: 'standalone',
       last_seen_at: ago(3 * 3600),
     }),
@@ -75,7 +84,7 @@ const fleet = () => {
       type: 'collector',
       status: 'disabled',
       version: 'v0.4.1',
-      tools: [],
+      effective: { tools: [], capabilities: [], max_concurrent_jobs: 5 },
     }),
   ]
 }
@@ -215,16 +224,6 @@ describe('filterSensors', () => {
         states: ['offline'],
       })
     ).toEqual(['branch-hn-01'])
-  })
-})
-
-describe('tenantSensors', () => {
-  it('leaves shared platform sensors out of the tenant page and its counts', () => {
-    const f = fleet()
-    f[1].is_platform_sensor = true
-    const own = tenantSensors(f)
-    expect(own.map((s) => s.name)).not.toContain('k8s-scanner-a')
-    expect(summarizeFleet(own, NOW, undefined, channel).total).toBe(5)
   })
 })
 

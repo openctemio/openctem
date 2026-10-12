@@ -178,3 +178,32 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+// Owner rule (2026-10-02): a breach notification's severity is
+// max(high, finding severity). A critical finding's breach must reach a
+// critical-only channel; a default critical+high channel still gets every breach.
+func TestOutboxAdapter_Publish_SeverityIsMaxOfHighAndFinding(t *testing.T) {
+	cases := map[string]string{
+		"critical": "critical",
+		"high":     "high",
+		"medium":   "high",
+		"low":      "high",
+		"info":     "high",
+		"":         "high", // unknown finding severity: still notable
+		"bogus":    "high",
+	}
+	for findingSev, want := range cases {
+		enq := &fakeEnqueuer{}
+		ev := controller.SLABreachEvent{
+			TenantID: shared.NewID(), FindingID: shared.NewID(),
+			SLADeadline: time.Now().Add(-time.Hour), OverdueDuration: time.Hour, At: time.Now(),
+			FindingSeverity: findingSev,
+		}
+		if err := NewBreachOutboxAdapter(enq).Publish(context.Background(), ev); err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+		if enq.last.Severity != want {
+			t.Errorf("finding severity %q: notification severity = %q, want %q", findingSev, enq.last.Severity, want)
+		}
+	}
+}

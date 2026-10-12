@@ -2,8 +2,14 @@ package report
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	pngenc "image/png"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
 
 func sampleReportInput() ReportInput {
@@ -13,8 +19,8 @@ func sampleReportInput() ReportInput {
 			Description:   "Black-box assessment of the public perimeter.",
 			ClientName:    "Acme Corp",
 			ClientContact: "ciso@acme.example",
-			Type:          "penetration_test",
-			Priority:      "high",
+			Type:          "Web application",
+			TLP:           "amber",
 			Status:        "completed",
 			StartDate:     "2026-04-01",
 			EndDate:       "2026-04-14",
@@ -94,5 +100,64 @@ func TestGeneratePDF_ExcludePOC(t *testing.T) {
 	in.IncludePOC = false
 	if _, err := GeneratePDF(in); err != nil {
 		t.Fatalf("GeneratePDF exclude-poc: %v", err)
+	}
+}
+
+// Finding Markdown is formatted in the PDF and evidence images resolved by
+// the service are embedded.
+func TestGeneratePDF_MarkdownAndEvidenceImage(t *testing.T) {
+	var png bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	for x := 0; x < 40; x++ {
+		img.Set(x, 10, color.RGBA{R: 200, A: 255})
+	}
+	if err := pngenc.Encode(&png, img); err != nil {
+		t.Fatal(err)
+	}
+	url := "/api/v1/attachments/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	in := ReportInput{
+		Campaign: CampaignData{Name: "md"},
+		Findings: []FindingData{{Title: "XSS", Severity: "high",
+			Description: "**Stored** XSS in `comment`:\n\n- step one\n\n![proof](" + url + ")\n\n```\n<script>x</script>\n```"}},
+		ReportType: TypeTechnical,
+		Images:     map[string]markdown.Image{url: {ContentType: "image/png", Data: png.Bytes(), Width: 40, Height: 20}},
+	}
+	data, err := GeneratePDF(in)
+	if err != nil {
+		t.Fatalf("GeneratePDF: %v", err)
+	}
+	if !bytes.Contains(data, []byte("/Subtype /Image")) {
+		t.Fatal("the evidence image is not embedded")
+	}
+	html, err := GenerateHTML(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html, "data:image/png;base64,") || strings.Contains(html, "<script>x</script>") || !strings.Contains(html, "<strong>Stored</strong>") {
+		t.Fatal("HTML report does not render Markdown safely with the evidence image")
+	}
+}
+
+// Vietnamese (and any non-Latin-1 text) must reach the PDF: the embedded
+// Unicode font replaces the cp1252 core fonts that dropped it.
+func TestGeneratePDF_EmbedsUnicodeFont(t *testing.T) {
+	in := ReportInput{
+		Campaign: CampaignData{Name: "Đánh giá bảo mật ứng dụng", ClientName: "Công ty Cổ phần Ví dụ"},
+		Findings: []FindingData{{Title: "Lỗ hổng SQL injection ở trang đăng nhập", Severity: "high",
+			Description: "Tham số tên đăng nhập được ghép trực tiếp vào câu truy vấn."}},
+		ReportType: TypeTechnical,
+	}
+	data, err := GeneratePDF(in)
+	if err != nil {
+		t.Fatalf("GeneratePDF: %v", err)
+	}
+	if !bytes.Contains(data, []byte("FontFile2")) {
+		t.Fatal("the PDF does not embed a TrueType font")
+	}
+	if bytes.Contains(data, []byte("/BaseFont /Helvetica")) {
+		t.Fatal("the PDF still uses a core font")
+	}
+	if len(data) > 2<<20 {
+		t.Fatalf("PDF is %d bytes: the font should be subset", len(data))
 	}
 }

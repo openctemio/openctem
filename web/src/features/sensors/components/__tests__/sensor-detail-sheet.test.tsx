@@ -24,17 +24,41 @@ vi.mock('@/lib/api/sensor-hooks', () => ({
   useUpdateSensor: () => ({ trigger: update.trigger, isMutating: false }),
   invalidateSensorsCache: vi.fn(async () => undefined),
   useSensorCommands: () => ({ data: { data: [] }, isLoading: false }),
+  useSensorHeartbeatHistory: () => ({ data: undefined }),
+  useSensorConfigReport: () => ({
+    data: {
+      state: 'reported',
+      stale: false,
+      health: 'blocked',
+      truncated: false,
+      counts: { fail: 1 },
+      checks: [
+        {
+          id: 'platform.tls',
+          group: 'platform',
+          status: 'fail',
+          severity: 'critical',
+          code: 'ca_file_unreadable',
+          known: true,
+          title: 'The CA file cannot be read',
+        },
+      ],
+      settings: [],
+    },
+    error: undefined,
+    isLoading: false,
+    mutate: vi.fn(),
+  }),
 }))
 const content = vi.hoisted(() => ({ refreshSensorContent: vi.fn(), refreshFleetContent: vi.fn() }))
 vi.mock('@/lib/api/sensor-content-hooks', () => content)
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 vi.mock('@/features/scan-zones', () => ({ SensorZonesSection: () => null }))
+vi.mock('@/lib/api/tool-hooks', () => ({ useToolAvailability: () => ({ data: undefined }) }))
+// The grant panel has its own tests (sensor-grant-section.test.tsx).
+vi.mock('../sensor-grant-section', () => ({ SensorGrantSection: () => null }))
 vi.mock('../sensor-activity', () => ({
-  SensorActivity: ({ sensorId }: { sensorId: string }) => <p>activity of {sensorId}</p>,
   SensorRecentActivity: () => <p>recent activity</p>,
-}))
-vi.mock('../../hooks', () => ({
-  useSensorFormOptions: () => ({ getCapabilitiesForTools: () => [] }),
 }))
 vi.mock('../sensor-install-snippets', () => ({
   SensorInstallSnippets: ({ sensorId }: { sensorId: string }) => <p>snippets for {sensorId}</p>,
@@ -43,6 +67,13 @@ vi.mock('../sensor-install-snippets', () => ({
 import { SensorDetailSheet } from '../sensor-detail-sheet'
 import { TEST_SENSOR_KEY_PREFIX } from '@/test/sensor-keys'
 
+// Radix Tooltip measures itself; jsdom has no ResizeObserver.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver
+
 const now = Date.now()
 const sensor: Sensor = {
   id: 's1',
@@ -50,7 +81,7 @@ const sensor: Sensor = {
   name: 'k8s-scanner-a',
   type: 'worker',
   capabilities: [],
-  tools: ['nuclei'],
+  effective: { tools: ['nuclei'], capabilities: [], max_concurrent_jobs: 8 },
   execution_mode: 'daemon',
   status: 'active',
   health: 'online',
@@ -134,20 +165,31 @@ describe('SensorDetailSheet', () => {
     vi.clearAllMocks()
   })
 
-  it('has five tabs and the health checklist one click away', async () => {
+  it('has four tabs (activity is a panel, not a tab) and the health checklist one click away', async () => {
     open()
     const dialog = screen.getByRole('dialog')
     expect(
       within(dialog)
         .getAllByRole('tab')
         .map((t) => t.textContent)
-    ).toEqual(['Overview', 'Jobs', 'Activity', 'Manifest', 'Config'])
+    ).toEqual(['Overview', 'Jobs', 'Manifest', 'Config'])
     expect(screen.queryByRole('list', { name: 'Health' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /Health checks/ }))
     const health = screen.getByRole('list', { name: 'Health' })
     expect(within(health).getByText('Heartbeat')).toBeInTheDocument()
     expect(within(health).getByText(/Expires in 6 days/)).toBeInTheDocument()
     expect(within(health).getByText(/v0.4.2, the latest release/)).toBeInTheDocument()
+  })
+
+  it('explains a legacy rda_ key next to the key', () => {
+    open({ sensor: { ...sensor, legacy_key: true } })
+    expect(screen.getByText('legacy key')).toBeInTheDocument()
+    expect(screen.getByText(/renews automatically to the new octs_ format/)).toBeInTheDocument()
+  })
+
+  it('no legacy note for an octs_ key', () => {
+    open({ sensor: { ...sensor, legacy_key: false } })
+    expect(screen.queryByText('legacy key')).toBeNull()
   })
 
   describe('health callout', () => {
@@ -301,7 +343,7 @@ describe('SensorDetailSheet', () => {
 
     it('a CI sensor has no job slots', () => {
       open({
-        sensor: { ...healthy, type: 'runner', execution_mode: 'standalone', tools: ['semgrep'] },
+        sensor: { ...healthy, type: 'worker', execution_mode: 'standalone' },
       })
       const stats = screen.getByLabelText('Key numbers')
       expect(within(stats).queryByText('Jobs running')).toBeNull()
@@ -313,7 +355,6 @@ describe('SensorDetailSheet', () => {
     open({
       sensor: {
         ...sensor,
-        tools: ['nuclei', 'semgrep'],
         reported: {
           tools: [
             { name: 'semgrep', version: '1.90.0', installed: true },
@@ -330,7 +371,6 @@ describe('SensorDetailSheet', () => {
           capabilities: ['semgrep', 'sast'],
           max_concurrent_jobs: 3,
         },
-        capability_mismatch: { tools_not_installed: ['nuclei'] },
       },
     })
     const tools = screen.getByRole('list', { name: 'Tools' })
@@ -339,50 +379,49 @@ describe('SensorDetailSheet', () => {
     expect(screen.getByText('linux/amd64')).toBeInTheDocument()
     expect(screen.getByText('3 at once')).toBeInTheDocument()
     expect(screen.getByText('operator cap 3 · your limit 8')).toBeInTheDocument()
+  })
+
+  it('a sensor that has not reported its tools: the health callout says so', () => {
+    open({
+      sensor: {
+        ...sensor,
+        reported: null,
+        effective: { tools: [], capabilities: [], max_concurrent_jobs: 8 },
+      },
+    })
     const callout = screen.getByRole('region', { name: 'Health' })
-    expect(within(callout).getByText('Tools not installed')).toBeInTheDocument()
+    expect(within(callout).getByText('Tools not reported')).toBeInTheDocument()
   })
 
-  const narrowed: Sensor = {
-    ...sensor,
-    tools: ['nuclei'],
-    reported: {
-      tools: [
-        { name: 'nuclei', version: '3.4.2', installed: true },
-        { name: 'trivy', version: '0.58.1', installed: true },
-      ],
-      capabilities: ['dast', 'sca'],
-      max_concurrent_jobs: 4,
-      reported_at: new Date(now).toISOString(),
-    },
-    effective: { tools: ['nuclei'], capabilities: ['dast', 'sca'], max_concurrent_jobs: 4 },
-  }
-
-  it('a tool installed after the list was narrowed: "installed but not allowed" + Allow', async () => {
+  it('no tool limit on the sensor: every installed reported tool is ready, no Allow button', () => {
     perms.granted.add('sensors:write')
-    open({ sensor: narrowed })
-    expect(screen.getByText('trivy is installed but not allowed')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Allow trivy' }))
-    expect(update.trigger).toHaveBeenCalledWith({ tools: ['nuclei', 'trivy'], capabilities: [] })
-  })
-
-  it('no Allow button without sensors:write, and no notice without a narrowed list', () => {
-    open({ sensor: narrowed })
-    expect(screen.getByText('trivy is installed but not allowed')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Allow trivy' })).toBeNull()
-  })
-
-  it('no notice when every reported tool is allowed', () => {
-    perms.granted.add('sensors:write')
-    open({ sensor: { ...narrowed, tools: [] } })
+    open({
+      sensor: {
+        ...sensor,
+        reported: {
+          tools: [
+            { name: 'nuclei', version: '3.4.2', installed: true },
+            { name: 'trivy', version: '0.58.1', installed: true },
+          ],
+          capabilities: ['dast', 'sca'],
+          max_concurrent_jobs: 4,
+          reported_at: new Date(now).toISOString(),
+        },
+        effective: {
+          tools: ['nuclei', 'trivy'],
+          capabilities: ['dast', 'sca'],
+          max_concurrent_jobs: 4,
+        },
+      },
+    })
     expect(screen.queryByText(/is installed but not allowed/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Allow / })).toBeNull()
   })
 
   it('shows what each tool serves and the slots it can run now (RFC-033)', () => {
     open({
       sensor: {
         ...sensor,
-        tools: [],
         max_concurrent_jobs: 5,
         reported: {
           tools: [
@@ -422,9 +461,11 @@ describe('SensorDetailSheet', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows the set tools when the sensor reports none', () => {
+  it('says it gets no scans when the sensor has not reported its tools', () => {
     open()
-    expect(screen.getByText(/it has not reported its tools yet/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/It has not reported its tools yet, so it gets no scans/)
+    ).toBeInTheDocument()
     expect(screen.getByText('your limit 8; the sensor reports none')).toBeInTheDocument()
   })
 
@@ -433,6 +474,75 @@ describe('SensorDetailSheet', () => {
     expect(screen.getByText('Upgrade to v0.5.0 before 2027-04-01')).toBeInTheDocument()
     expect(screen.getByLabelText('Protocol v1, openctem-sdk-go/0.6.0')).toBeInTheDocument()
     expect(screen.getAllByText('v1 · deprecated').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('shows the transport of the last heartbeat and why it is not gRPC', () => {
+    open({
+      sensor: {
+        ...sensor,
+        protocol: {
+          version: 3,
+          user_agent: 'openctem-sdk-go/0.30.0',
+          seen_at: '',
+          deprecated: false,
+          binding: 'https',
+          fallback_reason: 'http2_refused',
+        },
+      },
+    })
+    const line = screen.getByTestId('sensor-transport')
+    expect(line).toHaveTextContent(
+      'Transport: HTTPS · Something on the network path speaks only HTTP/1.1.'
+    )
+    expect(line).not.toHaveTextContent('fallback')
+    expect(line).not.toHaveTextContent('http2_refused')
+  })
+
+  it('explains a platform that did not answer, with the code in the tooltip', async () => {
+    open({
+      sensor: {
+        ...sensor,
+        protocol: {
+          version: 3,
+          user_agent: 'openctem-sdk-go/0.31.0',
+          seen_at: '',
+          deprecated: false,
+          binding: 'grpc',
+          fallback_reason: 'platform_unreachable',
+        },
+      },
+    })
+    const reason = screen.getByTestId('sensor-transport-reason')
+    expect(screen.getByTestId('sensor-transport')).toHaveTextContent('Transport: gRPC, mutual TLS')
+    expect(reason).toHaveTextContent('The platform did not answer the last check')
+    await userEvent.hover(reason)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Reason code: platform_unreachable'
+    )
+  })
+
+  it('shows an unknown reason in plain words, not the bare code', () => {
+    open({
+      sensor: {
+        ...sensor,
+        protocol: {
+          version: 3,
+          user_agent: '',
+          seen_at: '',
+          deprecated: false,
+          binding: 'https',
+          fallback_reason: 'something_new',
+        },
+      },
+    })
+    expect(screen.getByTestId('sensor-transport-reason')).toHaveTextContent(
+      'The sensor reported another reason.'
+    )
+  })
+
+  it('shows no transport line before the platform recorded one', () => {
+    open()
+    expect(screen.queryByTestId('sensor-transport')).not.toBeInTheDocument()
   })
 
   it('opens as a bottom sheet on a phone', () => {
@@ -460,10 +570,10 @@ describe('SensorDetailSheet', () => {
     expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toBeInTheDocument()
   })
 
-  it('a member opens the Activity tab (the sensor activity endpoint, not the audit log)', async () => {
+  it('there is no Activity tab: the overview summary opens the activity panel', async () => {
     open()
-    await userEvent.click(screen.getByRole('tab', { name: 'Activity' }))
-    expect(screen.getByText('activity of s1')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Activity' })).toBeNull()
+    expect(screen.getByText('recent activity')).toBeInTheDocument()
   })
 
   it('Install command opens the Config tab with the snippets', async () => {
@@ -471,5 +581,36 @@ describe('SensorDetailSheet', () => {
     // The header button (the protocol problem in the callout offers the same fix).
     await userEvent.click(screen.getAllByRole('button', { name: 'Install command' })[0])
     expect(screen.getByText('snippets for s1')).toBeInTheDocument()
+  })
+
+  it('no Setup & health tab on an API without config health', () => {
+    open()
+    expect(screen.queryByRole('tab', { name: 'Setup & health' })).toBeNull()
+  })
+
+  it('Setup & health is the last tab when the setup is fine', () => {
+    open({ sensor: { ...sensor, config_health: 'ok' } })
+    const tabs = within(screen.getByRole('dialog')).getAllByRole('tab')
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      'Overview',
+      'Jobs',
+      'Manifest',
+      'Config',
+      'Setup & health',
+    ])
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('Setup OK')).toBeNull()
+  })
+
+  it('opens on Setup & health, first, when the setup needs someone', () => {
+    open({ sensor: { ...sensor, config_health: 'blocked' } })
+    const tabs = within(screen.getByRole('dialog')).getAllByRole('tab')
+    expect(tabs[0]).toHaveTextContent('Setup & health')
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    expect(document.querySelector('[data-check="platform.tls"]')).toHaveTextContent(
+      'The CA file cannot be read'
+    )
+    // The header tag says so too.
+    expect(screen.getAllByText('Setup blocked').length).toBeGreaterThan(0)
   })
 })

@@ -4,27 +4,27 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // AuditHandler handles audit log-related HTTP requests.
 type AuditHandler struct {
-	service   *app.AuditService
+	service   *auditsvc.AuditService
 	validator *validator.Validator
 	logger    *logger.Logger
 }
 
 // NewAuditHandler creates a new audit handler.
-func NewAuditHandler(svc *app.AuditService, v *validator.Validator, log *logger.Logger) *AuditHandler {
+func NewAuditHandler(svc *auditsvc.AuditService, v *validator.Validator, log *logger.Logger) *AuditHandler {
 	return &AuditHandler{
 		service:   svc,
 		validator: v,
@@ -69,66 +69,6 @@ func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}
 	_ = json.NewEncoder(w).Encode(result)
-}
-
-// RebaselineChain handles POST /api/v1/audit-logs/rebaseline. Admin-only. It
-// re-signs the tenant's audit hash-chain from current data — used to clear breaks
-// from a known-benign hashing change (e.g. the timestamp-precision fix). This
-// overwrites the tamper-evident chain, so the old hashes are archived and the
-// action is recorded as a critical audit.chain_rebaselined event.
-//
-// 200 {ok, rebaseline_id, entries_total, entries_rewritten}; 409 when the chain
-// cannot be rebaselined as it stands (a source audit log is missing, or the
-// chain changed while the rebaseline ran) — nothing is rewritten in that case.
-func (h *AuditHandler) RebaselineChain(w http.ResponseWriter, r *http.Request) {
-	tenantIDStr := middleware.GetTenantID(r.Context())
-	if tenantIDStr == "" {
-		apierror.Unauthorized("tenant required").WriteJSON(w)
-		return
-	}
-	tenantID, err := shared.IDFromString(tenantIDStr)
-	if err != nil {
-		apierror.BadRequest("invalid tenant id").WriteJSON(w)
-		return
-	}
-
-	actx := app.AuditContext{
-		TenantID:   tenantIDStr,
-		ActorID:    middleware.GetUserID(r.Context()),
-		ActorEmail: auditActorEmail(r.Context()),
-		ActorIP:    getClientIP(r),
-		UserAgent:  r.UserAgent(),
-		RequestID:  middleware.GetRequestID(r.Context()),
-	}
-	result, err := h.service.RebaselineChain(r.Context(), tenantID, actx)
-	if err != nil {
-		h.logger.Error("audit chain rebaseline failed", "tenant_id", tenantIDStr, "error", err)
-		if errors.Is(err, shared.ErrConflict) {
-			apierror.Conflict("audit chain cannot be rebaselined as it stands; nothing was changed — run verify and chainaudit").WriteJSON(w)
-			return
-		}
-		apierror.InternalServerError("rebaseline failed").WriteJSON(w)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(RebaselineChainResponse{
-		OK:               true,
-		RebaselineID:     result.RebaselineID,
-		EntriesTotal:     result.EntriesTotal,
-		EntriesRewritten: result.EntriesRewritten,
-	})
-}
-
-// RebaselineChainResponse is the body of a successful POST /audit-logs/rebaseline.
-type RebaselineChainResponse struct {
-	OK bool `json:"ok"`
-	// RebaselineID keys the archive of overwritten hashes
-	// (audit_chain_rebaselines / audit_chain_rebaseline_entries).
-	RebaselineID     string `json:"rebaseline_id"`
-	EntriesTotal     int    `json:"entries_total"`
-	EntriesRewritten int    `json:"entries_rewritten"`
 }
 
 // =============================================================================
@@ -227,7 +167,7 @@ func (h *AuditHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Tags         Audit Logs
 // @Produce      json
 // @Security     BearerAuth
-// @Param        page          query     int     false  "Page number"
+// @Param        page          query     int     false  "Page number (1-based; 0 or missing means 1)"
 // @Param        per_page      query     int     false  "Items per page"  default(20)
 // @Param        actor_id      query     string  false  "Filter by actor ID"
 // @Param        action        query     string  false  "Filter by action"
@@ -253,24 +193,16 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID: tenantID,
 	}
 
 	// Parse pagination
-	if page := query.Get("page"); page != "" {
-		if p, err := strconv.Atoi(page); err == nil {
-			input.Page = p
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if perPage := query.Get("per_page"); perPage != "" {
-		if pp, err := strconv.Atoi(perPage); err == nil {
-			input.PerPage = pp
-		}
-	}
-	if input.PerPage == 0 {
-		input.PerPage = 20 // Default
-	}
+	input.Page, input.PerPage = paging.Page, paging.PerPage
 
 	// Parse filters
 	if actorID := query.Get("actor_id"); actorID != "" {
@@ -342,18 +274,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		data[i] = toAuditLogResponse(log)
 	}
 
-	totalPages := int(result.Total) / input.PerPage
-	if int(result.Total)%input.PerPage > 0 {
-		totalPages++
-	}
-
-	response := AuditLogListResponse{
-		Data:       data,
-		Total:      result.Total,
-		Page:       input.Page,
-		PerPage:    input.PerPage,
-		TotalPages: totalPages,
-	}
+	response := newAuditLogListResponse(data, result.Total, input.Page, input.PerPage)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -379,16 +300,10 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log, err := h.service.GetAuditLog(r.Context(), auditLogID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	// Verify tenant access. This is the tenant-facing getter, so it must
-	// never expose a system row (tenant_id IS NULL) or another tenant's row —
-	// GetAuditLog resolves by id alone (WHERE id = $1), so the tenant check
-	// here is the only guard. Fail closed on a nil or mismatched tenant.
+	// This is the tenant-facing getter: it never exposes a system row
+	// (tenant_id IS NULL) or another tenant's row. The lookup is scoped to
+	// the caller's tenant, so either one is a 404. Fail closed on a missing
+	// tenant.
 	tenantID := middleware.GetTenantID(r.Context())
 	if tenantID == "" {
 		apierror.Unauthorized("tenant context required").WriteJSON(w)
@@ -399,8 +314,10 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Invalid tenant token").WriteJSON(w)
 		return
 	}
-	if log.TenantID() == nil || *log.TenantID() != tid {
-		apierror.Forbidden("Access denied to this audit log").WriteJSON(w)
+
+	log, err := h.service.GetAuditLog(r.Context(), tid, auditLogID)
+	if err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -417,7 +334,7 @@ func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Param        type      path      string  true   "Resource type"
 // @Param        id        path      string  true   "Resource ID"
-// @Param        page      query     int     false  "Page number"
+// @Param        page      query     int     false  "Page number (1-based; 0 or missing means 1)"
 // @Param        per_page  query     int     false  "Items per page"  default(20)
 // @Success      200  {object}  AuditLogListResponse
 // @Failure      400  {object}  map[string]string
@@ -439,23 +356,11 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 	}
 
 	// Parse pagination
-	query := r.URL.Query()
-	page := 0
-	perPage := 20
-
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil {
-			perPage = parsed
-		}
-	}
-	if perPage <= 0 {
-		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetResourceHistory(r.Context(), tenantID, resourceType, resourceID, page, perPage)
 	if err != nil {
@@ -469,18 +374,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 		data[i] = toAuditLogResponse(log)
 	}
 
-	totalPages := int(result.Total) / perPage
-	if int(result.Total)%perPage > 0 {
-		totalPages++
-	}
-
-	response := AuditLogListResponse{
-		Data:       data,
-		Total:      result.Total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: totalPages,
-	}
+	response := newAuditLogListResponse(data, result.Total, page, perPage)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -494,7 +388,7 @@ func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id        path      string  true   "User ID"
-// @Param        page      query     int     false  "Page number"
+// @Param        page      query     int     false  "Page number (1-based; 0 or missing means 1)"
 // @Param        per_page  query     int     false  "Items per page"  default(20)
 // @Success      200  {object}  AuditLogListResponse
 // @Failure      400  {object}  map[string]string
@@ -515,23 +409,11 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse pagination
-	query := r.URL.Query()
-	page := 0
-	perPage := 20
-
-	if p := query.Get("page"); p != "" {
-		if parsed, err := strconv.Atoi(p); err == nil {
-			page = parsed
-		}
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
 	}
-	if pp := query.Get("per_page"); pp != "" {
-		if parsed, err := strconv.Atoi(pp); err == nil {
-			perPage = parsed
-		}
-	}
-	if perPage <= 0 {
-		perPage = 20 // guard: ?per_page=0 → int(Total)/perPage divide-by-zero panic below
-	}
+	page, perPage := paging.Page, paging.PerPage
 
 	result, err := h.service.GetUserActivity(r.Context(), tenantID, userID, page, perPage)
 	if err != nil {
@@ -545,22 +427,31 @@ func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
 		data[i] = toAuditLogResponse(log)
 	}
 
-	totalPages := int(result.Total) / perPage
-	if int(result.Total)%perPage > 0 {
-		totalPages++
-	}
-
-	response := AuditLogListResponse{
-		Data:       data,
-		Total:      result.Total,
-		Page:       page,
-		PerPage:    perPage,
-		TotalPages: totalPages,
-	}
+	response := newAuditLogListResponse(data, result.Total, page, perPage)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// newAuditLogListResponse builds a list response that reports the page the
+// query actually used. Pages are 1-based on the wire: pagination.New clamps a
+// missing or zero page to 1 and per_page to [1,100], and the response echoes
+// those values, not the raw query, so a client that trusts "page" cannot
+// drift off by one.
+func newAuditLogListResponse(data []AuditLogResponse, total int64, page, perPage int) AuditLogListResponse {
+	p := pagination.New(page, perPage)
+	totalPages := int(total) / p.PerPage
+	if int(total)%p.PerPage > 0 {
+		totalPages++
+	}
+	return AuditLogListResponse{
+		Data:       data,
+		Total:      total,
+		Page:       p.Page,
+		PerPage:    p.PerPage,
+		TotalPages: totalPages,
+	}
 }
 
 // GetStats handles GET /api/v1/audit-logs/stats
@@ -589,7 +480,7 @@ func (h *AuditHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get recent logs for stats
-	input := app.ListAuditLogsInput{
+	input := auditsvc.ListAuditLogsInput{
 		TenantID: tenantID,
 		Page:     0,
 		PerPage:  100,

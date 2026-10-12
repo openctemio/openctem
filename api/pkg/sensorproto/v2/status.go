@@ -1,6 +1,9 @@
 package v2
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ReportState is the lifecycle state of a report on the status resource.
 type ReportState string
@@ -53,6 +56,17 @@ const (
 	CodeOutOfZone         = "out_of_zone"
 	CodeToolNotPermitted  = "tool_not_permitted"
 	CodeSegmentIncomplete = "segment_incomplete"
+	// CodeQuarantinedNoCommand: the segment named no command and the
+	// sensor's role may not send results on its own (RFC-040 §5.3); its
+	// items are counted as quarantined and held for review.
+	CodeQuarantinedNoCommand = "quarantined_no_command"
+	// CodeQuarantineFull: as above, but the tenant's quarantine was full; the
+	// segment's items were rejected and not kept.
+	CodeQuarantineFull = "quarantine_full"
+	// CodePushIngestNotGranted: the segment named no command and the
+	// sensor's grant does not allow results without a job (RFC-052 §5.3);
+	// its items were rejected and not kept.
+	CodePushIngestNotGranted = "push_ingest_not_granted"
 )
 
 // Fixed item error details. Details never quote sensor bytes.
@@ -68,6 +82,10 @@ const (
 	DetailUnknownField     = "the field is not part of CTIS v1"
 	DetailTooMany          = "the array exceeds the per-segment limit"
 	DetailProcessingFailed = "the segment could not be processed"
+	DetailQuarantined      = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
+	DetailQuarantineFull   = "the report names no command and the results quarantine is full: not kept"
+	// DetailPushIngestNotGranted goes with CodePushIngestNotGranted.
+	DetailPushIngestNotGranted = "the report names no command and this sensor's grant does not allow results without a job: not kept"
 )
 
 // Counts are asset and finding counts on the status resource.
@@ -212,11 +230,50 @@ const (
 	// FeatureManifest: PUT /manifest registers the sensor manifest and the
 	// heartbeat accepts manifest_digest (RFC-033).
 	FeatureManifest = "manifest"
+	// FeatureLocalPolicy: heartbeats and manifests may carry the sensor's
+	// local policy report ("local_policy": state, digest, summary, kill
+	// switch), which the platform stores and shows (RFC-040 §5.7). The
+	// policy itself is enforced on the sensor.
+	FeatureLocalPolicy = "local_policy"
+	// FeatureCapacity: GET /commands claims what it returns (claim-N,
+	// RFC-030 §5.9, RFC-046 §11). A sensor that names it in
+	// HeaderSensorFeatures gets commands already acknowledged to it with
+	// a lease, at most its free slots of scans, in the fair dispatch order;
+	// its claim of each is a replay. Without it GET /commands only lists.
+	FeatureCapacity = "capacity"
+	// FeatureRefusal: POST /commands/{id}/fail accepts "refusal" {layer,
+	// rule, detail}; a refused routed job is re-queued to another eligible
+	// sensor and the refuser cannot claim it again (research/25 §3.6, D8).
+	FeatureRefusal = "refusal"
+	// FeatureConfigReport: PUT /config-report stores the sensor's preflight
+	// check results and the heartbeat accepts the config_report summary
+	// (research/26). A sensor sends neither to a server that does not list
+	// it. Display and health data only: it never widens dispatch.
+	FeatureConfigReport = "config_report"
+	// FeatureLogs: POST /commands/{id}/logs stores the log lines of a task
+	// the sensor holds, in numbered batches (RFC-029 §4.4.1). A sensor sends
+	// no logs to a server that does not list it.
+	FeatureLogs = "logs"
+	// FeaturePosture: the manifest may carry the sensor's posture ("posture":
+	// the platform TLS pin and the tool sandbox), which the platform stores
+	// and shows, and flags when weak (RFC-040 §11.4). A sensor sends none to
+	// a server that does not list it. Display and alert data only: it never
+	// relaxes a platform check.
+	FeaturePosture = "posture"
+	// FeatureSignedJobs: every command a claim hands out carries
+	// "signed_job", a DSSE envelope from the platform's separate job signer
+	// (RFC-040 §5.6, docs/architecture/job-signing.md), and hello lists the
+	// signer's keys in "signed_jobs". A command the signer did not sign is
+	// not handed out.
+	FeatureSignedJobs = "signed_jobs"
+	// FeatureKeyBind: a bearer-key sensor may bind its own Ed25519 signing
+	// key at POST /identity/bind (RFC-052 §4.8) and become key-bound.
+	FeatureKeyBind = "key_bind"
 )
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.
@@ -224,9 +281,6 @@ type Deprecation struct {
 	DeprecatedAt time.Time `json:"deprecated_at"`
 	SunsetAt     time.Time `json:"sunset_at"`
 }
-
-// DeprecationProtocolV1 is the hello key of protocol v1's deprecation.
-const DeprecationProtocolV1 = "protocol_v1"
 
 // Hello is GET /api/v2/sensor/hello: what this server speaks and its limits
 // (RFC-023 C3, RFC-029 §4.2).
@@ -238,6 +292,51 @@ type Hello struct {
 	Digests      []string               `json:"digests"`
 	Limits       Limits                 `json:"limits"`
 	Deprecations map[string]Deprecation `json:"deprecations,omitempty"`
+	// TransportV3 says where this platform serves sensor protocol v3
+	// (docs/rfcs/RFC-059-sensor-transport-v3.md); absent when it does not.
+	TransportV3 *TransportV3 `json:"transport_v3,omitempty"`
+	// SignedJobs lists the job signer's keys when the platform signs jobs
+	// (FeatureSignedJobs); absent when it does not. Keys is empty while the
+	// signer has not answered yet: claims are then not handed out.
+	SignedJobs *SignedJobs `json:"signed_jobs,omitempty"`
+}
+
+// SignedJobs is the hello's description of job signing.
+type SignedJobs struct {
+	PayloadType string         `json:"payload_type"`
+	Keys        []SignedJobKey `json:"keys"`
+	// KeySet is the current key set, a DSSE envelope signed by the
+	// installation's offline root key (payload type
+	// application/vnd.openctem.keyset.v1+json): the online keys a sensor
+	// that pins the root accepts, with a version and an expiry
+	// (docs/architecture/job-signing.md). Absent when the signer serves
+	// none.
+	KeySet json.RawMessage `json:"keyset,omitempty"`
+}
+
+// SignedJobKey is one signer key: KeyID is "SHA256:" + lower-case hex of
+// the SHA-256 of the raw key, PublicKey the raw 32-byte Ed25519 key in
+// standard base64.
+type SignedJobKey struct {
+	KeyID     string `json:"keyid"`
+	Algorithm string `json:"algorithm"`
+	PublicKey string `json:"public_key"`
+}
+
+// TransportV3 locates protocol v3 on a v2 hello.
+type TransportV3 struct {
+	// HTTPSPath is the HTTPS binding's path on this host (/api/v3/sensor).
+	HTTPSPath string `json:"https_path"`
+	// GRPCEndpoint is host:port of the gRPC (mTLS) binding; absent when
+	// only the HTTPS binding is served.
+	GRPCEndpoint string `json:"grpc_endpoint,omitempty"`
+	// GRPCALPNEndpoint is host:port of the gRPC binding for a client that
+	// offers the sensor ALPN id ("openctem-sensor/3") next to h2: the
+	// gateway routes such a connection to the mTLS listener on the
+	// platform's own port. Set whenever the binding is advertised; equal
+	// to GRPCEndpoint when that is set too. Clients that do not offer the
+	// id read GRPCEndpoint only.
+	GRPCALPNEndpoint string `json:"grpc_alpn_endpoint,omitempty"`
 }
 
 // NewHello builds the hello document for the given limits. Results are always

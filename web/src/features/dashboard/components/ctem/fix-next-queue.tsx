@@ -1,7 +1,7 @@
 'use client'
 
 import { epssScoreToPercent } from '@/lib/epss'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared'
@@ -50,8 +50,8 @@ function toItems(chains: ExposureChain[], topRisks: ExecTopRisk[]): FixNextItem[
     const priorityClass = (r.priority_class?.toUpperCase() as PriorityClass) || undefined
     // Build a stacked deep-link: priority class AND (when exploited) KEV.
     const listParams = new URLSearchParams()
-    if (priorityClass) listParams.set('priority', priorityClass)
-    if (r.is_in_kev) listParams.set('kev', 'true')
+    if (priorityClass) listParams.set('priority_class', priorityClass)
+    if (r.is_in_kev) listParams.set('is_in_kev', 'true')
     const listQuery = listParams.toString()
     return {
       key: `risk-${i}-${r.title}`,

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
-
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 )
 
 // DashboardRepository implements app.DashboardStatsRepository using PostgreSQL.
@@ -24,12 +24,12 @@ func NewDashboardRepository(db *sql.DB) *DashboardRepository {
 }
 
 // Ensure DashboardRepository implements app.DashboardStatsRepository
-var _ app.DashboardStatsRepository = (*DashboardRepository)(nil)
+var _ module.DashboardStatsRepository = (*DashboardRepository)(nil)
 
 // GetFindingStats returns finding statistics for a tenant.
-func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shared.ID) (app.FindingStatsData, error) {
-	stats := app.FindingStatsData{
-		BySeverity: make(map[string]int),
+func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shared.ID) (module.FindingStatsData, error) {
+	stats := module.FindingStatsData{
+		BySeverity: newSeverityCounts(),
 		ByStatus:   make(map[string]int),
 	}
 
@@ -39,7 +39,7 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 	query := `
 		WITH base AS (
 			SELECT id, severity, status, vulnerability_id, cvss_score FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
 		),
 		total AS (SELECT COUNT(*) AS cnt FROM base),
 		by_sev AS (SELECT severity, COUNT(*) AS cnt FROM base GROUP BY severity),
@@ -73,7 +73,7 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 		case "total":
 			stats.Total = int(value)
 		case "severity":
-			stats.BySeverity[key] = int(value)
+			stats.BySeverity[vulnerability.SeverityBucket(key)] += int(value)
 		case "status":
 			stats.ByStatus[key] = int(value)
 		case "avg_cvss":
@@ -90,12 +90,12 @@ func (r *DashboardRepository) GetFindingStats(ctx context.Context, tenantID shar
 }
 
 // GetRepositoryStats returns repository statistics for a tenant.
-func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID shared.ID) (app.RepositoryStatsData, error) {
-	stats := app.RepositoryStatsData{}
+func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID shared.ID) (module.RepositoryStatsData, error) {
+	stats := module.RepositoryStatsData{}
 
 	// Get total count of repositories (assets with type 'repository')
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id = $1 AND asset_type = 'repository'`,
+		`SELECT COUNT(*) FROM assets WHERE deleted_at IS NULL AND tenant_id = $1`+programAssetExcl(ctx, "")+` AND asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.Total)
 	if err != nil {
@@ -105,8 +105,8 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 	// Get count of repositories with findings
 	err = r.db.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
-		 WHERE a.tenant_id = $1 AND a.asset_type = 'repository'`,
+		 INNER JOIN findings f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+		 WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository'`,
 		tenantID.String(),
 	).Scan(&stats.WithFindings)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -118,7 +118,7 @@ func (r *DashboardRepository) GetRepositoryStats(ctx context.Context, tenantID s
 
 // GetRecentActivity returns recent activity for a tenant. A non-nil scope
 // keeps only findings whose asset is in that Layer 2 data scope.
-func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]app.ActivityItem, error) {
+func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, limit int) ([]module.ActivityItem, error) {
 	// For now, get recent findings as activity
 	// In future, this could be from an audit log table
 	scopeCond, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
@@ -131,7 +131,7 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1 AND `+scopeCond+`
+		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+` AND `+scopeCond+`
 		 ORDER BY f.created_at DESC
 		 LIMIT $`+itoa(len(args)),
 		args...,
@@ -141,9 +141,9 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 	}
 	defer rows.Close()
 
-	var activity []app.ActivityItem
+	var activity []module.ActivityItem
 	for rows.Next() {
-		var item app.ActivityItem
+		var item module.ActivityItem
 		if err := rows.Scan(&item.Type, &item.RefID, &item.Title, &item.Description, &item.Timestamp); err != nil {
 			return nil, err
 		}
@@ -158,15 +158,22 @@ func (r *DashboardRepository) GetRecentActivity(ctx context.Context, tenantID sh
 
 // GetAllStats returns all dashboard statistics for a tenant in 2 optimized queries
 // instead of 10+ separate queries. This is used by the main dashboard endpoint.
-func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID) (*app.DashboardAllStats, error) {
+func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (*module.DashboardAllStats, error) {
 	tid := tenantID.String()
-	result := &app.DashboardAllStats{
-		Assets: app.AssetStatsData{
+	// A non-nil scope counts only the viewer's in-scope assets and their
+	// findings ($2, $3).
+	args := []any{tid}
+	findingIn, args := dataScopeCond("asset_id", scope, args)
+	assetIn, _ := dataScopeCond("id", scope, []any{tid})
+	fIn, _ := dataScopeCond("f.asset_id", scope, []any{tid})
+	aIn, _ := dataScopeCond("a.id", scope, []any{tid})
+	result := &module.DashboardAllStats{
+		Assets: module.AssetStatsData{
 			ByType:   make(map[string]int),
 			ByStatus: make(map[string]int),
 		},
-		Findings: app.FindingStatsData{
-			BySeverity: make(map[string]int),
+		Findings: module.FindingStatsData{
+			BySeverity: newSeverityCounts(),
 			ByStatus:   make(map[string]int),
 		},
 	}
@@ -186,7 +193,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 			SELECT GROUPING(severity) AS g_sev, GROUPING(status) AS g_status,
 				severity, status, COUNT(*) AS cnt
 			FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review')
+			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only`+programFindingExcl(ctx, "asset_id")+` AND `+findingIn+`
 			GROUP BY GROUPING SETS ((severity), (status), ())
 		),
 		asset_agg AS (
@@ -197,19 +204,19 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 				COALESCE(AVG(risk_score), 0) AS avg_risk,
 				COUNT(*) FILTER (WHERE asset_type = 'repository') AS repo_cnt
 			FROM assets
-			WHERE tenant_id = $1
+			WHERE deleted_at IS NULL AND tenant_id = $1 AND `+assetIn+InInventorySQL("assets.id")+programAssetExcl(ctx, "")+`
 			GROUP BY GROUPING SETS ((asset_type), (status), (NULLIF(sub_type, '')), ())
 		),
 		avg_cvss AS (
 			SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) AS val
 			FROM findings f JOIN vulnerabilities v ON f.vulnerability_id = v.id
-			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review')
+			WHERE f.tenant_id = $1 AND f.status NOT IN ('draft', 'in_review') AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+` AND `+fIn+`
 		),
 		repo_with_findings AS (
 			SELECT COUNT(*) AS cnt
 			FROM assets a
-			WHERE a.tenant_id = $1 AND a.asset_type = 'repository'
-				AND EXISTS (SELECT 1 FROM findings f WHERE f.asset_id = a.id)
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'repository' AND `+aIn+`
+				AND EXISTS (SELECT 1 FROM findings f WHERE f.tenant_id = a.tenant_id AND f.asset_id = a.id AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`)
 		)
 		SELECT 'asset_total' AS grp, '' AS key, cnt, 0::float8 AS val FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'atype', asset_type, cnt, 0 FROM asset_agg WHERE g_type = 0
@@ -222,7 +229,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		UNION ALL SELECT 'avg_risk', '', 0, avg_risk FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'repo_total', '', repo_cnt, 0 FROM asset_agg WHERE g_type = 1 AND g_status = 1 AND g_sub = 1
 		UNION ALL SELECT 'repo_findings', '', cnt, 0 FROM repo_with_findings`,
-		tid,
+		args...,
 	)
 	if err != nil {
 		return nil, err
@@ -251,7 +258,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		case "finding_total":
 			result.Findings.Total = cnt
 		case "fsev":
-			result.Findings.BySeverity[key] = cnt
+			result.Findings.BySeverity[vulnerability.SeverityBucket(key)] += cnt
 		case "fstatus":
 			result.Findings.ByStatus[key] = cnt
 		case "avg_cvss":
@@ -268,7 +275,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		return nil, err
 	}
 
-	result.Activity = make([]app.ActivityItem, 0)
+	result.Activity = make([]module.ActivityItem, 0)
 
 	// Query 2: Recent activity (separate query - different result shape)
 	activityRows, err := r.db.QueryContext(ctx,
@@ -278,7 +285,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		        f.message as description,
 		        f.created_at
 		 FROM findings f
-		 WHERE f.tenant_id = $1
+		 WHERE f.tenant_id = $1 AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
 		 ORDER BY f.created_at DESC
 		 LIMIT 10`,
 		tid,
@@ -289,7 +296,7 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 	defer activityRows.Close()
 
 	for activityRows.Next() {
-		var item app.ActivityItem
+		var item module.ActivityItem
 		if err := activityRows.Scan(&item.Type, &item.RefID, &item.Title, &item.Description, &item.Timestamp); err != nil {
 			return result, nil
 		}
@@ -305,10 +312,13 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 
 // GetFindingTrend returns monthly finding counts by severity for a tenant.
 // Uses a single query with date_trunc and FILTER to pivot severity counts.
-func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, months int) ([]app.FindingTrendPoint, error) {
+func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, months int) ([]module.FindingTrendPoint, error) {
 	if months <= 0 || months > 24 {
 		months = 6
 	}
+	// A non-nil scope counts only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), months}
+	inScope, args := dataScopeCond("f.asset_id", scope, args)
 
 	rows, err := r.db.QueryContext(ctx, `
 		WITH months AS (
@@ -328,12 +338,14 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 				COUNT(*) FILTER (WHERE f.severity = 'high') AS high,
 				COUNT(*) FILTER (WHERE f.severity = 'medium') AS medium,
 				COUNT(*) FILTER (WHERE f.severity = 'low') AS low,
-				COUNT(*) FILTER (WHERE f.severity = 'info') AS info
+				COUNT(*) FILTER (WHERE f.severity IN ('info', 'none')) AS info
 			FROM findings f
 			WHERE f.tenant_id = $1
 				AND f.created_at >= date_trunc('month', NOW()) - ($2::int - 1) * interval '1 month'
 				AND f.created_at < date_trunc('month', NOW()) + interval '1 month'
 				AND f.status NOT IN ('draft', 'in_review')
+				AND NOT f.branch_only`+programFindingExcl(ctx, "f.asset_id")+`
+				AND `+inScope+`
 			GROUP BY 1
 		)
 		SELECT
@@ -346,16 +358,16 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 		FROM months m
 		LEFT JOIN agg a ON a.month_start = m.month_start
 		ORDER BY m.month_start ASC`,
-		tenantID.String(), months,
+		args...,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	trend := make([]app.FindingTrendPoint, 0, months)
+	trend := make([]module.FindingTrendPoint, 0, months)
 	for rows.Next() {
-		var p app.FindingTrendPoint
+		var p module.FindingTrendPoint
 		if err := rows.Scan(&p.Date, &p.Critical, &p.High, &p.Medium, &p.Low, &p.Info); err != nil {
 			return nil, err
 		}
@@ -371,23 +383,29 @@ func (r *DashboardRepository) GetFindingTrend(ctx context.Context, tenantID shar
 // GetMTTRMetrics returns Mean Time To Remediate metrics by severity.
 // MTTR = average time between first detection and resolution, over the last
 // `days` days. Only genuinely-remediated findings (resolved/verified) count;
-// false_positive/accepted_risk are excluded as they are not remediations.
-func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, days int) (map[string]float64, error) {
+// false_positive/accepted are excluded as they are not remediations.
+func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (map[string]float64, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope averages only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
+	// none (CVSS 0.0) is averaged inside info, matching every by-severity count.
 	query := `SELECT
-		severity,
+		CASE WHEN severity = 'none' THEN 'info' ELSE severity END AS sev,
 		COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) as avg_hours
 		FROM findings
 		WHERE tenant_id = $1
-		AND status IN ('resolved', 'verified')
+		AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+		AND status = 'resolved'
 		AND resolved_at IS NOT NULL AND first_detected_at IS NOT NULL
 		AND resolved_at >= first_detected_at
 		AND resolved_at >= NOW() - ($2::int || ' days')::interval
-		GROUP BY severity`
+		AND ` + inScope + `
+		GROUP BY 1`
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), days)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get MTTR metrics: %w", err)
 	}
@@ -410,7 +428,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 
 // GetRiskVelocity returns new vs resolved findings per week for trending analysis.
 // Positive velocity = losing ground, negative = improving.
-func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]app.RiskVelocityPoint, error) {
+func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]module.RiskVelocityPoint, error) {
 	if weeks < 1 {
 		weeks = 12
 	}
@@ -425,9 +443,9 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 		w.week_start,
 		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
 		COALESCE(SUM(CASE WHEN f.updated_at >= w.week_start AND f.updated_at < w.week_start + '1 week'::interval
-			AND f.status IN ('resolved', 'verified') THEN 1 ELSE 0 END), 0) as resolved_count
+			AND f.status = 'resolved' THEN 1 ELSE 0 END), 0) as resolved_count
 	FROM weeks w
-	LEFT JOIN findings f ON f.tenant_id = $1
+	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
 	GROUP BY w.week_start
 	ORDER BY w.week_start`
 
@@ -437,9 +455,9 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 	}
 	defer rows.Close()
 
-	var points []app.RiskVelocityPoint
+	var points []module.RiskVelocityPoint
 	for rows.Next() {
-		var p app.RiskVelocityPoint
+		var p module.RiskVelocityPoint
 		if err := rows.Scan(&p.Week, &p.NewCount, &p.ResolvedCount); err != nil {
 			return nil, fmt.Errorf("failed to scan velocity: %w", err)
 		}
@@ -454,454 +472,9 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 
 // Global stats methods (not tenant-scoped)
 
-// GetGlobalAssetStats returns global asset statistics.
-func (r *DashboardRepository) GetGlobalAssetStats(ctx context.Context) (app.AssetStatsData, error) {
-	stats := app.AssetStatsData{
-		ByType:   make(map[string]int),
-		ByStatus: make(map[string]int),
-	}
-
-	// Get total count
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets`).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
-
-	// Get by type
-	rows, err := r.db.QueryContext(ctx, `SELECT asset_type, COUNT(*) FROM assets GROUP BY asset_type`)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var assetType string
-		var count int
-		if err := rows.Scan(&assetType, &count); err != nil {
-			return stats, err
-		}
-		stats.ByType[assetType] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get by status
-	rows, err = r.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM assets GROUP BY status`)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return stats, err
-		}
-		stats.ByStatus[status] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	return stats, nil
-}
-
-// GetGlobalFindingStats returns global finding statistics.
-func (r *DashboardRepository) GetGlobalFindingStats(ctx context.Context) (app.FindingStatsData, error) {
-	stats := app.FindingStatsData{
-		BySeverity: make(map[string]int),
-		ByStatus:   make(map[string]int),
-	}
-
-	// Get total count
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM findings`).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
-
-	// Get by severity
-	rows, err := r.db.QueryContext(ctx, `SELECT severity, COUNT(*) FROM findings GROUP BY severity`)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var severity string
-		var count int
-		if err := rows.Scan(&severity, &count); err != nil {
-			return stats, err
-		}
-		stats.BySeverity[severity] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get by status
-	rows, err = r.db.QueryContext(ctx, `SELECT status, COUNT(*) FROM findings GROUP BY status`)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return stats, err
-		}
-		stats.ByStatus[status] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get average CVSS (join with vulnerabilities to get cvss_score)
-	err = r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) FROM findings f
-		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id`).Scan(&stats.AverageCVSS)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		stats.AverageCVSS = 0
-	}
-
-	return stats, nil
-}
-
-// GetGlobalRepositoryStats returns global repository statistics.
-func (r *DashboardRepository) GetGlobalRepositoryStats(ctx context.Context) (app.RepositoryStatsData, error) {
-	stats := app.RepositoryStatsData{}
-
-	// Get total count of repositories
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets WHERE asset_type = 'repository'`).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
-
-	// Get count of repositories with findings
-	err = r.db.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
-		 WHERE a.asset_type = 'repository'`,
-	).Scan(&stats.WithFindings)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		stats.WithFindings = 0
-	}
-
-	return stats, nil
-}
-
-// GetGlobalRecentActivity returns global recent activity.
-func (r *DashboardRepository) GetGlobalRecentActivity(ctx context.Context, limit int) ([]app.ActivityItem, error) {
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT 'finding' as type,
-		        COALESCE(f.rule_id, f.tool_name) as title,
-		        f.message as description,
-		        f.created_at
-		 FROM findings f
-		 ORDER BY f.created_at DESC
-		 LIMIT $1`,
-		limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var activity []app.ActivityItem
-	for rows.Next() {
-		var item app.ActivityItem
-		var timestamp time.Time
-		if err := rows.Scan(&item.Type, &item.Title, &item.Description, &timestamp); err != nil {
-			return nil, err
-		}
-		item.Timestamp = timestamp
-		activity = append(activity, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return activity, nil
-}
-
 // ============================================================
 // Filtered stats methods (multi-tenant authorization)
 // ============================================================
-
-// GetFilteredAssetStats returns asset statistics filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredAssetStats(ctx context.Context, tenantIDs []string) (app.AssetStatsData, error) {
-	stats := app.AssetStatsData{
-		ByType:   make(map[string]int),
-		ByStatus: make(map[string]int),
-	}
-
-	if len(tenantIDs) == 0 {
-		return stats, nil
-	}
-
-	// Build placeholder string for IN clause
-	placeholders, args := buildInClause(tenantIDs, 0)
-
-	// Get total count filtered by tenants
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`)`,
-		args...,
-	).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
-
-	// Get by type filtered by tenants
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT asset_type, COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`) GROUP BY asset_type`,
-		args...,
-	)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var assetType string
-		var count int
-		if err := rows.Scan(&assetType, &count); err != nil {
-			return stats, err
-		}
-		stats.ByType[assetType] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get by status filtered by tenants
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`) GROUP BY status`,
-		args...,
-	)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return stats, err
-		}
-		stats.ByStatus[status] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Average risk score across the tenants' assets. Previously never populated,
-	// so the primary dashboard showed 0.0 for every tenant even though the
-	// /assets and attack-surface views (AssetRepository.GetAverageRiskScore)
-	// showed the correct number. Mirror that query for consistency.
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(risk_score), 0) FROM assets WHERE tenant_id IN (`+placeholders+`)`,
-		args...,
-	).Scan(&stats.AverageRiskScore); err != nil {
-		return stats, err
-	}
-
-	return stats, nil
-}
-
-// GetFilteredFindingStats returns finding statistics filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredFindingStats(ctx context.Context, tenantIDs []string) (app.FindingStatsData, error) {
-	stats := app.FindingStatsData{
-		BySeverity: make(map[string]int),
-		ByStatus:   make(map[string]int),
-	}
-
-	if len(tenantIDs) == 0 {
-		return stats, nil
-	}
-
-	// Build placeholder string for IN clause
-	placeholders, args := buildInClause(tenantIDs, 0)
-
-	// Exclude pentest "draft" and "in_review" from the CTEM dashboard counts.
-	excludeInternal := " AND status NOT IN ('draft', 'in_review')"
-
-	// Get total count
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal,
-		args...,
-	).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
-
-	// Get by severity
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT severity, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal+` GROUP BY severity`,
-		args...,
-	)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var severity string
-		var count int
-		if err := rows.Scan(&severity, &count); err != nil {
-			return stats, err
-		}
-		stats.BySeverity[severity] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get by status
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	rows, err = r.db.QueryContext(ctx,
-		`SELECT status, COUNT(*) FROM findings WHERE tenant_id IN (`+placeholders+`)`+excludeInternal+` GROUP BY status`,
-		args...,
-	)
-	if err != nil {
-		return stats, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var status string
-		var count int
-		if err := rows.Scan(&status, &count); err != nil {
-			return stats, err
-		}
-		stats.ByStatus[status] = count
-	}
-	if err := rows.Err(); err != nil {
-		return stats, err
-	}
-
-	// Get average CVSS (join with vulnerabilities to get cvss_score)
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	err = r.db.QueryRowContext(ctx,
-		`SELECT COALESCE(AVG(COALESCE(f.cvss_score, v.cvss_score)), 0) FROM findings f
-		 LEFT JOIN vulnerabilities v ON f.vulnerability_id = v.id
-		 WHERE f.tenant_id IN (`+placeholders+`) AND f.status NOT IN ('draft', 'in_review')`,
-		args...,
-	).Scan(&stats.AverageCVSS)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		stats.AverageCVSS = 0
-	}
-
-	return stats, nil
-}
-
-// GetFilteredRepositoryStats returns repository statistics filtered by tenant IDs.
-func (r *DashboardRepository) GetFilteredRepositoryStats(ctx context.Context, tenantIDs []string) (app.RepositoryStatsData, error) {
-	stats := app.RepositoryStatsData{}
-
-	if len(tenantIDs) == 0 {
-		return stats, nil
-	}
-
-	// Build placeholder string for IN clause
-	placeholders, args := buildInClause(tenantIDs, 0)
-
-	// Get total count of repositories
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM assets WHERE tenant_id IN (`+placeholders+`) AND asset_type = 'repository'`,
-		args...,
-	).Scan(&stats.Total)
-	if err != nil {
-		return stats, err
-	}
-
-	// Get count of repositories with findings
-	//nolint:gosec // G202: placeholders is built from len(tenantIDs), not user input
-	err = r.db.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT a.id) FROM assets a
-		 INNER JOIN findings f ON a.id = f.asset_id
-		 WHERE a.tenant_id IN (`+placeholders+`) AND a.asset_type = 'repository'`,
-		args...,
-	).Scan(&stats.WithFindings)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		stats.WithFindings = 0
-	}
-
-	return stats, nil
-}
-
-// GetFilteredRecentActivity returns recent activity across tenants. Findings
-// of tenantIDs are all visible; findings of restrictedTenantIDs only when the
-// asset is in userID's Layer 2 data scope for that tenant.
-func (r *DashboardRepository) GetFilteredRecentActivity(ctx context.Context, tenantIDs, restrictedTenantIDs []string, userID string, limit int) ([]app.ActivityItem, error) {
-	if len(tenantIDs) == 0 && len(restrictedTenantIDs) == 0 {
-		return []app.ActivityItem{}, nil
-	}
-	if userID == "" {
-		userID = shared.ID{}.String() // matches no scope row
-	}
-
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT 'finding' as type,
-		        COALESCE(f.rule_id, f.tool_name) as title,
-		        f.message as description,
-		        f.created_at
-		 FROM findings f
-		 WHERE f.tenant_id = ANY($1::uuid[])
-		    OR (f.tenant_id = ANY($2::uuid[])
-		        AND f.asset_id IN (SELECT uaa.asset_id FROM user_accessible_assets uaa
-		                           WHERE uaa.user_id = $3 AND uaa.tenant_id = f.tenant_id))
-		 ORDER BY f.created_at DESC
-		 LIMIT $4`,
-		pq.Array(tenantIDs), pq.Array(restrictedTenantIDs), userID, limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var activity []app.ActivityItem
-	for rows.Next() {
-		var item app.ActivityItem
-		var timestamp time.Time
-		if err := rows.Scan(&item.Type, &item.Title, &item.Description, &timestamp); err != nil {
-			return nil, err
-		}
-		item.Timestamp = timestamp
-		activity = append(activity, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return activity, nil
-}
-
-// buildInClause builds a placeholder string and args for IN clause.
-// Returns ($1, $2, $3, ...) and []any{id1, id2, id3, ...}
-func buildInClause(ids []string, offset int) (string, []any) {
-	if len(ids) == 0 {
-		return "", nil
-	}
-
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "$" + itoa(i+1+offset)
-		args[i] = id
-	}
-
-	return joinStrings(placeholders, ", "), args
-}
 
 // itoa converts int to string (simple helper to avoid strconv import)
 func itoa(i int) string {
@@ -941,7 +514,7 @@ func joinStrings(strs []string, sep string) string {
 }
 
 // GetRiskTrend returns risk snapshot time-series for a tenant.
-func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]app.RiskTrendPoint, error) {
+func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.ID, days int) ([]module.RiskTrendPoint, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
@@ -958,9 +531,9 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 	}
 	defer func() { _ = rows.Close() }()
 
-	var points []app.RiskTrendPoint
+	var points []module.RiskTrendPoint
 	for rows.Next() {
-		var p app.RiskTrendPoint
+		var p module.RiskTrendPoint
 		var d time.Time
 		if err := rows.Scan(&d, &p.RiskScoreAvg, &p.FindingsOpen, &p.SLACompliancePct,
 			&p.P0Open, &p.P1Open, &p.P2Open, &p.P3Open); err != nil {
@@ -974,26 +547,31 @@ func (r *DashboardRepository) GetRiskTrend(ctx context.Context, tenantID shared.
 
 // GetDataQualityScorecard computes data quality metrics for a tenant.
 // Uses a single CTE query for efficiency.
-func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*app.DataQualityScorecard, error) {
+func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenantID shared.ID) (*module.DataQualityScorecard, error) {
 	query := `
 		WITH asset_stats AS (
 			SELECT
 				COUNT(*) AS total,
-				COUNT(*) FILTER(WHERE owner_id IS NOT NULL) AS with_owner,
+				-- Owned = at least one asset_owners row (user or group), the one
+				-- owner model. assets.owner_id only held email-matched owners.
+				COUNT(*) FILTER(WHERE EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = assets.id)) AS with_owner,
+				-- Internet-exposed = exposure 'public' or flagged internet-accessible,
+				-- the same definition the program metrics use. assets.exposure has no
+				-- 'internet' value; filtering on it made this median a constant 0.
 				COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP(
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 86400.0
-				) FILTER(WHERE exposure = 'internet' AND last_seen IS NOT NULL), 0) AS median_last_seen_days,
+				) FILTER(WHERE (exposure = 'public' OR is_internet_accessible) AND last_seen IS NOT NULL), 0) AS median_last_seen_days,
 				COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP(
 					ORDER BY EXTRACT(epoch FROM NOW() - last_seen) / 3600.0
 				) FILTER(WHERE last_seen IS NOT NULL), 0) AS median_last_seen_age_hours,
 				COUNT(*) FILTER(WHERE last_seen IS NOT NULL AND last_seen < NOW() - INTERVAL '30 days') AS stale_count
-			FROM assets WHERE tenant_id = $1
+			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + `
 		),
 		finding_stats AS (
 			SELECT
 				COUNT(*) AS total,
 				COUNT(*) FILTER(WHERE metadata IS NOT NULL AND metadata != '{}'::jsonb) AS with_evidence
-			FROM findings WHERE tenant_id = $1
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
 		),
 		dedup_stats AS (
 			SELECT COUNT(*) AS merge_count
@@ -1011,7 +589,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 		FROM asset_stats a, finding_stats f, dedup_stats d
 	`
 
-	var sc app.DataQualityScorecard
+	var sc module.DataQualityScorecard
 	var assetTotal, findingTotal int
 	err := r.db.QueryRowContext(ctx, query, tenantID.String()).Scan(
 		&sc.AssetOwnershipPct,
@@ -1033,7 +611,7 @@ func (r *DashboardRepository) GetDataQualityScorecard(ctx context.Context, tenan
 }
 
 // GetExecutiveSummary returns executive-level metrics for a time period using CTEs.
-func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*app.ExecutiveSummary, error) {
+func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID shared.ID, days int) (*module.ExecutiveSummary, error) {
 	if days <= 0 || days > 365 {
 		days = 30
 	}
@@ -1050,34 +628,34 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
 			FROM findings
-			WHERE tenant_id = $1 AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND status NOT IN ('resolved','false_positive','accepted','duplicate')
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
 			FROM findings
-			WHERE tenant_id = $1
-				AND status IN ('resolved', 'verified')
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+				AND status = 'resolved'
 				AND resolved_at >= NOW() - ($2::int || ' days')::interval
 		),
 		total_resolved AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND status IN ('resolved', 'verified')
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND status = 'resolved'
 		),
 		regressions AS (
 			SELECT COUNT(*) AS cnt FROM findings
-			WHERE tenant_id = $1 AND is_regression = true
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND is_regression = true
 			  AND last_reopened_at >= NOW() - ($2::int || ' days')::interval
 		),
 		new_in_period AS (
 			SELECT id FROM findings
-			WHERE tenant_id = $1 AND created_at >= NOW() - ($2::int || ' days')::interval
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND created_at >= NOW() - ($2::int || ' days')::interval
 		),
 		risk_score AS (
 			-- Average over SCORED assets only (risk_score > 0), matching the
 			-- risk-trend risk_score_avg (risk_snapshots) so the executive hero
 			-- number equals the trend's latest point. prev_risk below reads that
 			-- same filtered snapshot average, keeping risk_score_change consistent.
-			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE tenant_id = $1
+			SELECT COALESCE(AVG(risk_score) FILTER (WHERE risk_score > 0), 0) AS current_score FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + `
 		),
 		prev_risk AS (
 			-- Oldest risk_snapshots row within the window; used to compute
@@ -1092,9 +670,9 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		crown_jewels AS (
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
-			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1
-				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
-			WHERE a.tenant_id = $1 AND COALESCE((a.properties->>'is_crown_jewel')::boolean, FALSE) = TRUE
+			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
+				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate')
+			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_critical AS (
 			SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600), 0) AS hrs
@@ -1128,7 +706,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 		LEFT JOIN prev_risk pr ON TRUE
 	`
 
-	summary := &app.ExecutiveSummary{
+	summary := &module.ExecutiveSummary{
 		Period: fmt.Sprintf("%d days", days),
 	}
 
@@ -1169,7 +747,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND f.status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')
+		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND f.status NOT IN ('resolved','false_positive','accepted','duplicate')
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
@@ -1180,9 +758,9 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 	}
 	defer func() { _ = rows.Close() }()
 
-	topRisks := make([]app.TopRisk, 0, 5)
+	topRisks := make([]module.TopRisk, 0, 5)
 	for rows.Next() {
-		var tr app.TopRisk
+		var tr module.TopRisk
 		if err := rows.Scan(&tr.FindingID, &tr.FindingTitle, &tr.Severity, &tr.PriorityClass,
 			&tr.AssetID, &tr.AssetName, &tr.EPSSScore, &tr.IsInKEV); err != nil {
 			return nil, fmt.Errorf("scan top risk: %w", err)
@@ -1198,10 +776,13 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 }
 
 // GetMTTRAnalytics returns MTTR breakdown by severity, priority class, and overall.
-func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, days int) (*app.MTTRAnalytics, error) {
+func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, days int) (*module.MTTRAnalytics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
+	// A non-nil scope averages only findings on the viewer's in-scope assets.
+	args := []any{tenantID.String(), days}
+	inScope, args := dataScopeCond("asset_id", scope, args)
 
 	query := `
 		SELECT
@@ -1213,6 +794,8 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 				FILTER(WHERE severity = 'medium' AND first_detected_at IS NOT NULL), 0) AS mttr_medium,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
 				FILTER(WHERE severity = 'low' AND first_detected_at IS NOT NULL), 0) AS mttr_low,
+			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
+				FILTER(WHERE severity IN ('info', 'none') AND first_detected_at IS NOT NULL), 0) AS mttr_info,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
 				FILTER(WHERE priority_class = 'P0' AND first_detected_at IS NOT NULL), 0) AS mttr_p0,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (resolved_at - first_detected_at)) / 3600)
@@ -1226,22 +809,24 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 			COUNT(*) AS sample_size
 		FROM findings
 		WHERE tenant_id = $1
-			AND status IN ('resolved', 'verified')
+			AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
+			AND status = 'resolved'
 			AND resolved_at >= NOW() - ($2::int || ' days')::interval
 			AND resolved_at IS NOT NULL
 			AND first_detected_at IS NOT NULL
 			AND resolved_at >= first_detected_at
+			AND ` + inScope + `
 	`
 
 	var (
-		mttrCritical, mttrHigh, mttrMedium, mttrLow float64
-		mttrP0, mttrP1, mttrP2, mttrP3              float64
-		mttrOverall                                 float64
-		sampleSize                                  int
+		mttrCritical, mttrHigh, mttrMedium, mttrLow, mttrInfo float64
+		mttrP0, mttrP1, mttrP2, mttrP3                        float64
+		mttrOverall                                           float64
+		sampleSize                                            int
 	)
 
-	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
-		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow,
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
+		&mttrCritical, &mttrHigh, &mttrMedium, &mttrLow, &mttrInfo,
 		&mttrP0, &mttrP1, &mttrP2, &mttrP3,
 		&mttrOverall, &sampleSize,
 	)
@@ -1249,12 +834,13 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 		return nil, fmt.Errorf("mttr analytics: %w", err)
 	}
 
-	result := &app.MTTRAnalytics{
+	result := &module.MTTRAnalytics{
 		BySeverity: map[string]float64{
 			"critical": mttrCritical,
 			"high":     mttrHigh,
 			"medium":   mttrMedium,
 			"low":      mttrLow,
+			"info":     mttrInfo,
 		},
 		ByPriorityClass: map[string]float64{
 			"P0": mttrP0,
@@ -1270,7 +856,7 @@ func (r *DashboardRepository) GetMTTRAnalytics(ctx context.Context, tenantID sha
 }
 
 // GetProcessMetrics computes process efficiency metrics for a tenant.
-func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*app.ProcessMetrics, error) {
+func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID shared.ID, days int) (*module.ProcessMetrics, error) {
 	if days <= 0 || days > 365 {
 		days = 90
 	}
@@ -1287,13 +873,13 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			SELECT
 				COUNT(*) FILTER(WHERE last_seen < NOW() - INTERVAL '7 days') AS stale,
 				COUNT(*) AS total
-			FROM assets WHERE tenant_id = $1 AND status != 'archived'
+			FROM assets WHERE deleted_at IS NULL AND tenant_id = $1` + programAssetExcl(ctx, "") + ` AND status != 'archived'
 		),
 		assign_stats AS (
 			SELECT
-				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate','verified','accepted_risk')) AS unassigned,
+				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
-			FROM findings WHERE tenant_id = $1
+			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
 			AND created_at >= NOW() - ($2 || ' days')::interval
 		)
 		SELECT
@@ -1305,7 +891,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 			as2.avg_assign_hours
 		FROM approval_stats a, stale_stats s, assign_stats as2
 	`
-	var m app.ProcessMetrics
+	var m module.ProcessMetrics
 	err := r.db.QueryRowContext(ctx, query, tenantID.String(), days).Scan(
 		&m.ApprovalAvgHours, &m.ApprovalCount,
 		&m.RetestAvgHours, &m.RetestCount,
@@ -1316,4 +902,50 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 		return nil, fmt.Errorf("process metrics: %w", err)
 	}
 	return &m, nil
+}
+
+// newSeverityCounts returns a by-severity count map with every reporting
+// bucket present at zero, so a client always gets an info key (and never has
+// to guess whether a missing key means zero or "not reported").
+func newSeverityCounts() map[string]int {
+	m := make(map[string]int, len(vulnerability.ReportingSeverities()))
+	for _, s := range vulnerability.ReportingSeverities() {
+		m[s] = 0
+	}
+	return m
+}
+
+// programFindingExcl leaves out the findings of program-only assets
+// (RFC-065 §16.5) unless the request includes them. col is the finding
+// asset column; $1 is the tenant in every dashboard query. Null-safe: a
+// finding without an asset stays.
+func programFindingExcl(ctx context.Context, col string) string {
+	if shared.ProgramAssetsIncluded(ctx) {
+		return hiddenProgramExcl(ctx, col)
+	}
+	return " AND NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = " + col + " AND pa.program_only)"
+}
+
+// hiddenProgramExcl keeps the private program assets hidden from the
+// viewer out of metrics that include program assets (RFC-065 §15.3): an
+// owner, or an internal call with no viewer, sees them all.
+func hiddenProgramExcl(ctx context.Context, col string) string {
+	v, ok := shared.ProgramViewerOf(ctx)
+	if !ok || v.Owner {
+		return ""
+	}
+	return " AND " + filterspec.NotHiddenForViewer(col, "$1", v.UserID)
+}
+
+// programAssetExcl leaves out program-only assets unless the request
+// includes them; alias is the assets alias with its dot, or "".
+func programAssetExcl(ctx context.Context, alias string) string {
+	if shared.ProgramAssetsIncluded(ctx) {
+		col := alias + "id"
+		if alias == "" {
+			col = "assets.id" // the outer table, never the subquery alias
+		}
+		return hiddenProgramExcl(ctx, col)
+	}
+	return " AND NOT " + alias + "program_only"
 }

@@ -1,13 +1,17 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, Circle, MinusCircle } from 'lucide-react'
+import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
+import { AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { DetailChipList } from '@/features/shared/components/detail-sheet'
 import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
 
+import { configHealthMeta, configHealthNeedsAttention } from '../lib/config-report'
 import { capacityLabel, sensorCapacity, type SensorToolRow } from '../lib/capabilities'
 import { formatDurationShort, keyExpiry } from '../lib/format'
+import { postureIssues } from '../lib/posture'
 import { isOneShotSensor } from '../lib/sensor-state'
 import {
   normalizeSensorVersion,
@@ -54,6 +58,48 @@ export function SensorTag({
 }
 
 /**
+ * The setup health as a tag. By default only the states that need someone
+ * (attention, impaired, blocked); `always` shows ok and unknown too.
+ */
+export function ConfigHealthTag({
+  health,
+  always = false,
+}: {
+  health: string | null | undefined
+  always?: boolean
+}) {
+  const { t } = useTranslation()
+  if (!always && !configHealthNeedsAttention(health)) return null
+  if (always && !health) return null
+  const meta = configHealthMeta(health)
+  return (
+    <SensorTag tone={meta.tone} title={t('sensors.setup.healthTitle', 'Setup checks')}>
+      <span data-config-health={health ?? ''}>{t(meta.key, meta.label)}</span>
+    </SensorTag>
+  )
+}
+
+/**
+ * A warning tag on the sensor list and cards for a sensor the platform flags
+ * as unhardened; the title lists the fixes. Nothing for a hardened sensor or
+ * an API without the posture.
+ */
+export function SensorPostureTag({ sensor }: { sensor: Pick<Sensor, 'posture'> }) {
+  const { t } = useTranslation()
+  const issues = postureIssues(sensor)
+  if (issues.length === 0) return null
+  const title = issues.map((i) => t(i.fixKey, i.fix)).join('\n')
+  return (
+    <SensorTag tone="warning" title={title}>
+      <span data-slot="sensor-posture-tag" className="inline-flex items-center gap-1">
+        <ShieldAlert className="h-3 w-3" aria-hidden />
+        {t('sensors.posture.tag', 'Unhardened')}
+      </span>
+    </SensorTag>
+  )
+}
+
+/**
  * The host name a sensor reports, or null when it adds nothing: not reported,
  * or the same as the sensor's name (installs often name the sensor after its
  * host).
@@ -68,16 +114,20 @@ export function distinctHostname(sensor: Pick<Sensor, 'name' | 'hostname'>): str
  * Name, then host and address on lines of their own (short lines instead of
  * one long one); badges for a platform sensor and the deprecated protocol.
  */
-export function SensorNameCell({ sensor }: { sensor: Sensor }) {
+export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: SensorGrantSummary }) {
   const host = distinctHostname(sensor)
   const ip = sensor.ip_address || null
   const fallback = isOneShotSensor(sensor) ? 'CI/CD runner · one-shot' : 'No host reported yet'
   return (
     <div className="flex min-w-0 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate font-medium">{sensor.name}</span>
-        {sensor.is_platform_sensor && <SensorTag>Platform</SensorTag>}
+        <span className="truncate font-medium" data-slot="sensor-name">
+          {sensor.name}
+        </span>
         <ProtocolTag sensor={sensor} />
+        <ConfigHealthTag health={sensor.config_health} />
+        <SensorPostureTag sensor={sensor} />
+        <SensorGrantTags grant={grant} />
       </span>
       {host && (
         <span
@@ -99,6 +149,35 @@ export function SensorNameCell({ sensor }: { sensor: Sensor }) {
       )}
       {!sensor.hostname && !ip && <span className={cn('truncate text-xs', muted)}>{fallback}</span>}
     </div>
+  )
+}
+
+/**
+ * Grant flags on the list (RFC-052): the broad grant every sensor that
+ * predates per-sensor grants has, and the New trust level (passive work
+ * only, no credentials, no results without a job).
+ */
+export function SensorGrantTags({ grant }: { grant?: SensorGrantSummary }) {
+  if (!grant) return null
+  return (
+    <>
+      {grant.legacy_broad && (
+        <SensorTag
+          tone="warning"
+          title="Legacy broad grant: this sensor may do anything a sensor can. Narrow it to the profile that matches what it does."
+        >
+          Legacy broad grant
+        </SensorTag>
+      )}
+      {grant.trust_level === 'new' && (
+        <SensorTag
+          tone="info"
+          title="New: passive work only, no credentials and no results without a job until an administrator promotes it."
+        >
+          New
+        </SensorTag>
+      )}
+    </>
   )
 }
 
@@ -342,15 +421,45 @@ export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
   )
 }
 
-/** When the API key stops working. */
+/** What the "legacy key" tag means, shown on hover and in the drawer. */
+export const LEGACY_KEY_EXPLANATION =
+  'This sensor still uses a legacy rda_ key. It renews automatically to the new octs_ format; rda_ keys are retired after enrollment ships.'
+
+/** Tag for a sensor whose current API key is a legacy `rda_` key. */
+export function LegacyKeyTag() {
+  return (
+    <SensorTag tone="muted" title={LEGACY_KEY_EXPLANATION}>
+      legacy key
+    </SensorTag>
+  )
+}
+
+/** When the API key stops working, tagged when it is a legacy key. */
 export function SensorKeyCell({
   sensor,
   now,
 }: {
-  sensor: Pick<Sensor, 'key_expires_at'>
+  sensor: Pick<Sensor, 'key_expires_at' | 'legacy_key'>
   now: number
 }) {
-  const k = keyExpiry(sensor.key_expires_at, now)
+  const expiry = <SensorKeyExpiry expiresAt={sensor.key_expires_at} now={now} />
+  if (!sensor.legacy_key) return expiry
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {expiry}
+      <LegacyKeyTag />
+    </span>
+  )
+}
+
+function SensorKeyExpiry({
+  expiresAt,
+  now,
+}: {
+  expiresAt: string | null | undefined
+  now: number
+}) {
+  const k = keyExpiry(expiresAt, now)
   switch (k.kind) {
     case 'unknown':
       return <span className={muted}>—</span>
@@ -369,62 +478,24 @@ export function SensorKeyCell({
   }
 }
 
-/**
- * The first tools, then "+N" (all of them on hover), a "not installed" tag
- * for tools set on the sensor that it reports missing, and a quiet "not
- * allowed" tag for installed tools its narrowed tool list leaves out.
- */
+/** The first tools, then "+N" (all of them on hover). */
 export function SensorToolsCell({
   tools,
-  missing,
-  notAllowed,
   max = 2,
 }: {
   tools: string[] | null | undefined
-  /** Set on the sensor but reported as not installed. */
-  missing?: string[]
-  /** Installed, but the sensor's tool list leaves them out (installed later). */
-  notAllowed?: string[]
   max?: number
 }) {
-  const { t } = useTranslation()
   const list = tools ?? []
-  const gone = missing ?? []
-  const left = notAllowed ?? []
-  const tag = gone.length > 0 && (
-    <SensorTag tone="warning" title={`Set on the sensor but not installed: ${gone.join(', ')}`}>
-      {gone.length} not installed
-    </SensorTag>
-  )
-  const leftTag = left.length > 0 && (
-    <SensorTag
-      tone="info"
-      title={t('sensors.tools.notAllowedTitle', 'Installed but not allowed: {list}', {
-        list: left.join(', '),
-      })}
-    >
-      {t('sensors.tools.notAllowedTag', '{count} not allowed', { count: left.length })}
-    </SensorTag>
-  )
   if (list.length === 0) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        <span className={cn('text-sm', muted)}>none</span>
-        {tag}
-        {leftTag}
-      </span>
-    )
+    return <span className={cn('text-sm', muted)}>none</span>
   }
   const shown = list.slice(0, max).join(', ')
   const more = list.length - max
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={cn('text-sm', muted)} title={list.join(', ')}>
-        {shown}
-        {more > 0 ? ` +${more}` : ''}
-      </span>
-      {tag}
-      {leftTag}
+    <span className={cn('text-sm', muted)} title={list.join(', ')}>
+      {shown}
+      {more > 0 ? ` +${more}` : ''}
     </span>
   )
 }
@@ -434,9 +505,7 @@ const TOOL_STATUS: Record<
   { icon: typeof CheckCircle2; className: string; label: string }
 > = {
   ready: { icon: CheckCircle2, className: 'text-success', label: 'installed' },
-  declared: { icon: Circle, className: muted, label: 'not reported by the sensor' },
   not_installed: { icon: AlertTriangle, className: 'text-warning', label: 'not installed' },
-  excluded: { icon: MinusCircle, className: muted, label: 'left out by the tool limit' },
 }
 
 /**
@@ -444,42 +513,45 @@ const TOOL_STATUS: Record<
  * whether it is installed (an icon, and a tag when it is not usable).
  */
 export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
-  if (rows.length === 0) return <span className={cn('text-sm', muted)}>none</span>
   return (
-    <ul className="flex flex-wrap gap-1.5" aria-label="Tools">
-      {rows.map((r) => {
-        const s = TOOL_STATUS[r.status]
-        const Icon = s.icon
-        return (
-          <li
-            key={r.name}
-            data-tool={r.name}
-            data-status={r.status}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-sm"
-          >
-            <Icon className={cn('h-3.5 w-3.5 shrink-0', s.className)} aria-label={s.label} />
-            <span className={cn(r.status === 'ready' || r.status === 'declared' ? '' : muted)}>
-              {r.name}
-            </span>
-            {r.version && <span className={cn('text-xs tabular-nums', muted)}>{r.version}</span>}
-            {r.capabilities && r.capabilities.length > 0 && (
-              <span
-                className={cn('max-w-48 truncate text-xs', muted)}
-                title={`Serves ${r.capabilities.join(', ')}`}
-                aria-label={`Serves ${r.capabilities.join(', ')}`}
-              >
-                {r.capabilities.join(' · ')}
+    <DetailChipList
+      label="Tools"
+      chips={rows.map((r) => {
+        const st = TOOL_STATUS[r.status]
+        return {
+          key: r.name,
+          data: { tool: r.name, status: r.status },
+          icon: st.icon,
+          iconClassName: st.className,
+          iconLabel: st.label,
+          label: r.name,
+          muted: r.status !== 'ready' || !!r.excluded,
+          meta: (
+            <>
+              {r.version && <span className={cn('text-xs tabular-nums', muted)}>{r.version}</span>}
+              {r.capabilities && r.capabilities.length > 0 && (
+                <span
+                  className={cn('max-w-48 truncate text-xs', muted)}
+                  title={`Serves ${r.capabilities.join(', ')}`}
+                  aria-label={`Serves ${r.capabilities.join(', ')}`}
+                >
+                  {r.capabilities.join(' · ')}
+                </span>
+              )}
+            </>
+          ),
+          tag:
+            r.status === 'not_installed' ? (
+              <SensorTag tone="warning">not installed</SensorTag>
+            ) : r.excluded ? (
+              <span title={r.excluded.detail}>
+                <SensorTag tone="warning">
+                  {r.excluded.reason === 'grant' ? 'not in grant' : 'local policy refuses'}
+                </SensorTag>
               </span>
-            )}
-            {r.status === 'not_installed' && <SensorTag tone="warning">not installed</SensorTag>}
-            {r.status === 'excluded' && (
-              <SensorTag title="Installed, but the sensor's tool limit leaves it out">
-                not allowed
-              </SensorTag>
-            )}
-          </li>
-        )
+            ) : undefined,
+        }
       })}
-    </ul>
+    />
   )
 }

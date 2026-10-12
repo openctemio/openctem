@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChevronDown, Loader2, Check } from 'lucide-react'
+import { usePermissions } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions'
 import { FINDING_STATUS_CONFIG, STATUS_TRANSITIONS, getStatusesForSource } from '../types'
 import type { FindingStatus } from '../types'
 
@@ -18,17 +20,13 @@ const STATUS_DESCRIPTIONS: Partial<Record<FindingStatus, string>> = {
   new: 'Newly discovered finding awaiting triage',
   confirmed: 'Verified as a real security issue',
   in_progress: 'Remediation work has begun',
-  fix_applied: 'Dev marked as fixed — awaiting verification scan',
+  fix_applied: 'Dev marked as fixed — awaiting a retest or security review',
   resolved: 'Issue has been fixed and verified',
   accepted: 'Risk acknowledged and accepted by stakeholders',
   false_positive: 'Determined to be a non-issue',
   duplicate: 'Already reported in another finding',
   draft: 'Pentest finding being drafted',
   in_review: 'Under peer review',
-  remediation: 'Developer working on fix',
-  retest: 'Awaiting re-verification',
-  verified: 'Fix confirmed via manual retest',
-  accepted_risk: 'Risk acknowledged and accepted',
 }
 
 interface StatusSelectProps {
@@ -61,9 +59,14 @@ export function StatusSelect({
   const allTransitions = STATUS_TRANSITIONS[value]
   // Filter transitions by source type (pentest vs automated have different valid statuses)
   const validStatuses = source ? getStatusesForSource(source) : undefined
-  const availableTransitions = validStatuses
-    ? allTransitions.filter((s) => validStatuses.includes(s))
-    : allTransitions
+  // Moving a finding to resolved needs findings:verify (the API refuses it
+  // otherwise); without it the person marks fix_applied and a retest, a
+  // covered scan or a security reviewer closes the finding.
+  const { hasPermission } = usePermissions()
+  const canResolve = hasPermission(Permission.FindingsVerify)
+  const availableTransitions = (
+    validStatuses ? allTransitions.filter((s) => validStatuses.includes(s)) : allTransitions
+  ).filter((s) => canResolve || s !== 'resolved')
   const isProcessingRef = useRef(false)
 
   // Debounced onChange to prevent race conditions

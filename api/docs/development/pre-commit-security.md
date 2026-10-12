@@ -5,9 +5,19 @@ Guide for configuring and using security pre-commit hooks for OpenCTEM API.
 ## Installation
 
 ```bash
-# Install all tools and hooks
+# From the repository root: enable the commit-time hooks (.githooks/)
+make hooks
+
+# In api/: install the security tools these hooks use
 make pre-commit-install
 ```
+
+In the monorepo, commit-time hooks are the repository's `.githooks/` (gofmt on
+staged Go files; type-check + lint-staged for `web/`; a commit-msg guard). The
+hooks below, configured in `api/.pre-commit-config.yaml`, run **on demand** with
+`make pre-commit-run` / `make security-scan`; `pre-commit install` is not used,
+because it refuses to run while `core.hooksPath` is set. CI runs the equivalent
+gates on every PR (see [CI/CD](ci-cd.md)).
 
 ## Security Hooks
 

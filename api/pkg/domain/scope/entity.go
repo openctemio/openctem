@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/robfig/cron/v3"
-
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -27,9 +25,38 @@ type Target struct {
 	createdBy   string
 	createdAt   time.Time
 	updatedAt   time.Time
+
+	// Entry fields (entry.go, RFC-054 §5).
+	reason            string
+	expiresAt         *time.Time
+	maxTier           Tier
+	approvalsRequired int
+	approvals         []Approval
+	approvedAt        *time.Time
+	rejectedBy        string
+	rejectedAt        *time.Time
+	// remindedAt: when the approvers were last reminded (approvers.go).
+	remindedAt *time.Time
+	// Attestation of a t2 entry (attestation.go).
+	attestedAt             *time.Time
+	attestedBy             string
+	attestationRequestedAt *time.Time
+
+	origin Origin
+	// discoveryOff: discovery switched off (discovery.go); the zero value
+	// is on.
+	discoveryOff bool
+
+	// Authorization source (authorization.go, RFC-065).
+	authSource AuthorizationSource
+	programID  *shared.ID
+	letterID   *shared.ID
+
+	// constraint limits the entry to ports and a protocol (constraint.go).
+	constraint Constraint
 }
 
-// NewTarget creates a new scope target.
+// NewTarget creates a new scope target: active, permanent, t1.
 func NewTarget(
 	tenantID shared.ID,
 	targetType TargetType,
@@ -62,6 +89,8 @@ func NewTarget(
 		createdBy:   createdBy,
 		createdAt:   now,
 		updatedAt:   now,
+		maxTier:     TierActive,
+		approvedAt:  &now,
 	}, nil
 }
 
@@ -91,6 +120,7 @@ func ReconstituteTarget(
 		createdBy:   createdBy,
 		createdAt:   createdAt,
 		updatedAt:   updatedAt,
+		maxTier:     TierActive,
 	}
 }
 
@@ -107,14 +137,42 @@ func (t *Target) CreatedBy() string      { return t.createdBy }
 func (t *Target) CreatedAt() time.Time   { return t.createdAt }
 func (t *Target) UpdatedAt() time.Time   { return t.updatedAt }
 
-// IsActive returns true if the target is active.
+// IsActive reports whether the target is in effect now: active and not past
+// its expiry (InEffect). A pending, inactive, rejected or expired target
+// authorizes nothing.
 func (t *Target) IsActive() bool {
-	return t.status == StatusActive
+	return t.InEffect(time.Now())
 }
 
 // Matches checks if a value matches this target's pattern.
 func (t *Target) Matches(value string) bool {
-	return MatchesPattern(t.targetType, t.pattern, value)
+	return EntryMatches(t.targetType, t.pattern, t.constraint, value)
+}
+
+// Constraint is the entry's port and protocol limit (zero: none).
+func (t *Target) Constraint() Constraint { return t.constraint }
+
+// Constrained reports whether the entry covers less than its whole pattern:
+// it is limited to ports or a protocol, or it is a URL entry limited to a
+// path.
+func (t *Target) Constrained() bool {
+	return !t.constraint.IsZero() || URLPathLimited(t.targetType, t.pattern)
+}
+
+// SetConstraint sets the entry's port and protocol limit, normalized for
+// its type. It is set when the entry is created or read, never changed
+// later: the limit is part of what was approved.
+func (t *Target) SetConstraint(c Constraint) error {
+	var ports []string
+	if c.Ports != "" {
+		ports = []string{c.Ports}
+	}
+	n, err := NormalizeConstraint(t.targetType, ports, c.Protocol)
+	if err != nil {
+		return err
+	}
+	t.constraint = n
+	return nil
 }
 
 // Update methods
@@ -152,6 +210,17 @@ func (t *Target) Deactivate() {
 // =============================================================================
 
 // Exclusion represents an exclusion from scope for security scanning.
+//
+// Lifecycle (an exclusion suppresses scanning, so it is a two-person control):
+//
+//	pending --Approve--> active <--Activate/Deactivate--> inactive
+//	   |                   |
+//	   +--Reject--> rejected    +--(expires_at passes)--> expired
+//
+// NewExclusion creates a PENDING exclusion. It is not applied anywhere (scan
+// target filtering, scope matching, coverage) until a user other than the
+// requester, holding attack_surface:scope:exclusions:approve, approves it.
+// Only an approved, active, unexpired exclusion is in effect (IsActive).
 type Exclusion struct {
 	id            shared.ID
 	tenantID      shared.ID
@@ -162,12 +231,18 @@ type Exclusion struct {
 	expiresAt     *time.Time
 	approvedBy    string
 	approvedAt    *time.Time
+	rejectedBy    string
+	rejectedAt    *time.Time
 	createdBy     string
 	createdAt     time.Time
 	updatedAt     time.Time
+	// web is the path rule of a `path` exclusion (web_rule.go).
+	web    *WebRule
+	origin Origin
 }
 
-// NewExclusion creates a new scope exclusion.
+// NewExclusion creates a new scope exclusion awaiting approval (TakeEffect
+// puts it into effect when the organization needs no review).
 func NewExclusion(
 	tenantID shared.ID,
 	exclusionType ExclusionType,
@@ -195,7 +270,7 @@ func NewExclusion(
 		exclusionType: exclusionType,
 		pattern:       pattern,
 		reason:        reason,
-		status:        StatusActive,
+		status:        StatusPending,
 		expiresAt:     expiresAt,
 		createdBy:     createdBy,
 		createdAt:     now,
@@ -234,6 +309,12 @@ func ReconstituteExclusion(
 	}
 }
 
+// SetRejection restores the reviewer and time of a rejection from persistence.
+func (e *Exclusion) SetRejection(rejectedBy string, rejectedAt *time.Time) {
+	e.rejectedBy = rejectedBy
+	e.rejectedAt = rejectedAt
+}
+
 // Getters
 func (e *Exclusion) ID() shared.ID                { return e.id }
 func (e *Exclusion) TenantID() shared.ID          { return e.tenantID }
@@ -244,13 +325,16 @@ func (e *Exclusion) Status() Status               { return e.status }
 func (e *Exclusion) ExpiresAt() *time.Time        { return e.expiresAt }
 func (e *Exclusion) ApprovedBy() string           { return e.approvedBy }
 func (e *Exclusion) ApprovedAt() *time.Time       { return e.approvedAt }
+func (e *Exclusion) RejectedBy() string           { return e.rejectedBy }
+func (e *Exclusion) RejectedAt() *time.Time       { return e.rejectedAt }
 func (e *Exclusion) CreatedBy() string            { return e.createdBy }
 func (e *Exclusion) CreatedAt() time.Time         { return e.createdAt }
 func (e *Exclusion) UpdatedAt() time.Time         { return e.updatedAt }
 
-// IsActive returns true if the exclusion is active and not expired.
+// IsActive returns true if the exclusion is in effect: approved, active and
+// not expired. A pending or rejected exclusion is never in effect.
 func (e *Exclusion) IsActive() bool {
-	if e.status != StatusActive {
+	if e.status != StatusActive || !e.IsApproved() {
 		return false
 	}
 	if e.expiresAt != nil && time.Now().After(*e.expiresAt) {
@@ -264,8 +348,16 @@ func (e *Exclusion) IsApproved() bool {
 	return e.approvedBy != "" && e.approvedAt != nil
 }
 
+// IsPending returns true if the exclusion is waiting for review.
+func (e *Exclusion) IsPending() bool {
+	return e.status == StatusPending
+}
+
 // Matches checks if a value matches this exclusion's pattern.
 func (e *Exclusion) Matches(value string) bool {
+	if e.exclusionType == ExclusionTypePath {
+		return e.matchesWebURL(value)
+	}
 	return MatchesExclusionPattern(e.exclusionType, e.pattern, value)
 }
 
@@ -275,17 +367,91 @@ func (e *Exclusion) UpdateReason(reason string) {
 	e.updatedAt = time.Now()
 }
 
-func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time) {
+// UpdateExpiresAt changes the exclusion window. When exclusions need review
+// (the Strict scan approval mode, RFC-073 §6) an approval covers the window
+// that was approved: extending it (a later date, or removing the expiry) on
+// an approved exclusion sends it back to pending for a fresh review, so
+// scope:write cannot turn a short approved exclusion into a permanent one.
+// Without review, and when shortening, the approval stays.
+func (e *Exclusion) UpdateExpiresAt(expiresAt *time.Time, needsReview bool) {
+	if needsReview && e.IsApproved() && extendsWindow(e.expiresAt, expiresAt) {
+		e.approvedBy = ""
+		e.approvedAt = nil
+		e.status = StatusPending
+	}
 	e.expiresAt = expiresAt
 	e.updatedAt = time.Now()
 }
 
-// Approve records that approvedBy reviewed and authorized the exclusion. The
-// user who requested the exclusion cannot approve it (separation of duties,
-// as for finding status approvals).
+// Reviewer is the person changing an exclusion and whether they hold the
+// exclusion approval permission (attack_surface:scope:exclusions:approve).
+type Reviewer struct {
+	UserID     string
+	CanApprove bool
+}
+
+// InEffect reports whether the exclusion currently stops scans: approved and
+// active (an expired one is marked expired by the sweeper).
+func (e *Exclusion) InEffect() bool {
+	return e.status == StatusActive && e.IsApproved()
+}
+
+// AuthorizeReduction decides whether r may take this exclusion out of effect
+// (deactivate, delete) or shorten its window. When exclusions need review
+// (Strict), an approved exclusion was put into effect by two people, so
+// taking that protection away needs the same: the approval permission, and
+// someone other than the requester. Without it scope:write (a member
+// default) could switch off the exclusion protecting a production system and
+// scan it. Without review (Off and On, the organization's accepted default)
+// the route's permission and step-up are the gate. An exclusion not in
+// effect protects nothing now, so any change to it is allowed.
+func (e *Exclusion) AuthorizeReduction(r Reviewer, needsReview bool) error {
+	if !e.InEffect() || !needsReview {
+		return nil
+	}
+	if !r.CanApprove {
+		return ErrExclusionReduceNeedsApprover
+	}
+	if r.UserID == "" {
+		return fmt.Errorf("%w: reviewer is required", shared.ErrValidation)
+	}
+	if e.createdBy != "" && r.UserID == e.createdBy {
+		return ErrExclusionSelfReduce
+	}
+	return nil
+}
+
+// ShortensWindow reports whether setting expiresAt would end the exclusion
+// earlier than now configured (a date in the past included).
+func (e *Exclusion) ShortensWindow(expiresAt *time.Time) bool {
+	return extendsWindow(expiresAt, e.expiresAt)
+}
+
+// extendsWindow reports whether next ends later than prev (nil = never).
+func extendsWindow(prev, next *time.Time) bool {
+	switch {
+	case prev == nil:
+		return false // already unbounded; nothing to extend
+	case next == nil:
+		return true
+	default:
+		return next.After(*prev)
+	}
+}
+
+// Approve records that approvedBy reviewed and authorized the exclusion and
+// puts it into effect. The user who requested the exclusion cannot approve it
+// (separation of duties, as for finding status approvals). Only an exclusion
+// that is not yet approved and not rejected can be approved.
 func (e *Exclusion) Approve(approvedBy string) error {
 	if approvedBy == "" {
 		return fmt.Errorf("%w: approver is required", shared.ErrValidation)
+	}
+	if e.status == StatusRejected {
+		return ErrExclusionRejected
+	}
+	if e.IsApproved() {
+		return ErrExclusionNotPending
 	}
 	if e.createdBy != "" && approvedBy == e.createdBy {
 		return ErrExclusionSelfApproval
@@ -293,253 +459,82 @@ func (e *Exclusion) Approve(approvedBy string) error {
 	now := time.Now()
 	e.approvedBy = approvedBy
 	e.approvedAt = &now
+	e.status = StatusActive
 	e.updatedAt = now
 	return nil
 }
 
-func (e *Exclusion) Activate() {
+// TakeEffect puts a new exclusion into effect without a second person's
+// review: the organization does not require one (the Off and On scan
+// approval modes, RFC-073 §6). The approval is recorded honestly as the
+// creator's own (by; "system" for a system path), so the row says nobody
+// else reviewed it. Only a pending exclusion nobody reviewed can take
+// effect this way.
+func (e *Exclusion) TakeEffect(by string) error {
+	if e.status != StatusPending || e.IsApproved() || e.rejectedBy != "" {
+		return ErrExclusionNotPending
+	}
+	if by == "" {
+		by = SystemReviewer
+	}
+	now := time.Now()
+	e.approvedBy = by
+	e.approvedAt = &now
 	e.status = StatusActive
-	e.updatedAt = time.Now()
+	e.updatedAt = now
+	return nil
 }
 
-func (e *Exclusion) Deactivate() {
+// SystemReviewer is the approved_by of an exclusion a system path put into
+// effect without review.
+const SystemReviewer = "system"
+
+// Reject records that rejectedBy declined the exclusion. A rejected exclusion
+// never takes effect; only a pending one can be rejected.
+func (e *Exclusion) Reject(rejectedBy string) error {
+	if rejectedBy == "" {
+		return fmt.Errorf("%w: reviewer is required", shared.ErrValidation)
+	}
+	if e.status != StatusPending {
+		return ErrExclusionNotPending
+	}
+	now := time.Now()
+	e.rejectedBy = rejectedBy
+	e.rejectedAt = &now
+	e.status = StatusRejected
+	e.updatedAt = now
+	return nil
+}
+
+// Activate puts an approved exclusion back into effect. An exclusion nobody
+// approved (pending) or a rejected one cannot be activated.
+func (e *Exclusion) Activate() error {
+	if e.status == StatusRejected {
+		return ErrExclusionRejected
+	}
+	if !e.IsApproved() {
+		return ErrExclusionNotApproved
+	}
+	e.status = StatusActive
+	e.updatedAt = time.Now()
+	return nil
+}
+
+// Deactivate takes an approved exclusion out of effect. Pending and rejected
+// exclusions are not in effect; they are reviewed or deleted instead.
+func (e *Exclusion) Deactivate() error {
+	if e.status == StatusRejected {
+		return ErrExclusionRejected
+	}
+	if e.status == StatusPending {
+		return ErrExclusionNotApproved
+	}
 	e.status = StatusInactive
 	e.updatedAt = time.Now()
+	return nil
 }
 
 func (e *Exclusion) MarkExpired() {
 	e.status = StatusExpired
 	e.updatedAt = time.Now()
-}
-
-// =============================================================================
-// Scan Schedule Entity
-// =============================================================================
-
-// Schedule represents an automated scan schedule.
-type Schedule struct {
-	id                   shared.ID
-	tenantID             shared.ID
-	name                 string
-	description          string
-	scanType             ScanType
-	targetScope          TargetScope
-	targetIDs            []shared.ID
-	targetTags           []string
-	scannerConfigs       map[string]interface{}
-	scheduleType         ScheduleType
-	cronExpression       string
-	intervalHours        int
-	enabled              bool
-	lastRunAt            *time.Time
-	lastRunStatus        string
-	nextRunAt            *time.Time
-	notifyOnCompletion   bool
-	notifyOnFindings     bool
-	notificationChannels []string
-	createdBy            string
-	createdAt            time.Time
-	updatedAt            time.Time
-}
-
-// NewSchedule creates a new scan schedule.
-func NewSchedule(
-	tenantID shared.ID,
-	name string,
-	scanType ScanType,
-	scheduleType ScheduleType,
-	createdBy string,
-) (*Schedule, error) {
-	if tenantID.IsZero() {
-		return nil, ErrInvalidTenantID
-	}
-
-	if name == "" {
-		return nil, ErrNameRequired
-	}
-
-	if !scanType.IsValid() {
-		return nil, ErrInvalidScanType
-	}
-
-	if !scheduleType.IsValid() {
-		return nil, ErrInvalidScheduleType
-	}
-
-	now := time.Now()
-	return &Schedule{
-		id:                   shared.NewID(),
-		tenantID:             tenantID,
-		name:                 name,
-		scanType:             scanType,
-		targetScope:          TargetScopeAll,
-		targetIDs:            []shared.ID{},
-		targetTags:           []string{},
-		scannerConfigs:       make(map[string]interface{}),
-		scheduleType:         scheduleType,
-		enabled:              true,
-		notifyOnCompletion:   true,
-		notifyOnFindings:     true,
-		notificationChannels: []string{"email"},
-		createdBy:            createdBy,
-		createdAt:            now,
-		updatedAt:            now,
-	}, nil
-}
-
-// ReconstituteSchedule creates a Schedule from persistence data.
-func ReconstituteSchedule(
-	id shared.ID,
-	tenantID shared.ID,
-	name string,
-	description string,
-	scanType ScanType,
-	targetScope TargetScope,
-	targetIDs []shared.ID,
-	targetTags []string,
-	scannerConfigs map[string]interface{},
-	scheduleType ScheduleType,
-	cronExpression string,
-	intervalHours int,
-	enabled bool,
-	lastRunAt *time.Time,
-	lastRunStatus string,
-	nextRunAt *time.Time,
-	notifyOnCompletion bool,
-	notifyOnFindings bool,
-	notificationChannels []string,
-	createdBy string,
-	createdAt time.Time,
-	updatedAt time.Time,
-) *Schedule {
-	return &Schedule{
-		id:                   id,
-		tenantID:             tenantID,
-		name:                 name,
-		description:          description,
-		scanType:             scanType,
-		targetScope:          targetScope,
-		targetIDs:            targetIDs,
-		targetTags:           targetTags,
-		scannerConfigs:       scannerConfigs,
-		scheduleType:         scheduleType,
-		cronExpression:       cronExpression,
-		intervalHours:        intervalHours,
-		enabled:              enabled,
-		lastRunAt:            lastRunAt,
-		lastRunStatus:        lastRunStatus,
-		nextRunAt:            nextRunAt,
-		notifyOnCompletion:   notifyOnCompletion,
-		notifyOnFindings:     notifyOnFindings,
-		notificationChannels: notificationChannels,
-		createdBy:            createdBy,
-		createdAt:            createdAt,
-		updatedAt:            updatedAt,
-	}
-}
-
-// Getters
-func (s *Schedule) ID() shared.ID                          { return s.id }
-func (s *Schedule) TenantID() shared.ID                    { return s.tenantID }
-func (s *Schedule) Name() string                           { return s.name }
-func (s *Schedule) Description() string                    { return s.description }
-func (s *Schedule) ScanType() ScanType                     { return s.scanType }
-func (s *Schedule) TargetScope() TargetScope               { return s.targetScope }
-func (s *Schedule) TargetIDs() []shared.ID                 { return s.targetIDs }
-func (s *Schedule) TargetTags() []string                   { return s.targetTags }
-func (s *Schedule) ScannerConfigs() map[string]interface{} { return s.scannerConfigs }
-func (s *Schedule) ScheduleType() ScheduleType             { return s.scheduleType }
-func (s *Schedule) CronExpression() string                 { return s.cronExpression }
-func (s *Schedule) IntervalHours() int                     { return s.intervalHours }
-func (s *Schedule) Enabled() bool                          { return s.enabled }
-func (s *Schedule) LastRunAt() *time.Time                  { return s.lastRunAt }
-func (s *Schedule) LastRunStatus() string                  { return s.lastRunStatus }
-func (s *Schedule) NextRunAt() *time.Time                  { return s.nextRunAt }
-func (s *Schedule) NotifyOnCompletion() bool               { return s.notifyOnCompletion }
-func (s *Schedule) NotifyOnFindings() bool                 { return s.notifyOnFindings }
-func (s *Schedule) NotificationChannels() []string         { return s.notificationChannels }
-func (s *Schedule) CreatedBy() string                      { return s.createdBy }
-func (s *Schedule) CreatedAt() time.Time                   { return s.createdAt }
-func (s *Schedule) UpdatedAt() time.Time                   { return s.updatedAt }
-
-// Update methods
-func (s *Schedule) UpdateName(name string) {
-	s.name = name
-	s.updatedAt = time.Now()
-}
-
-func (s *Schedule) UpdateDescription(description string) {
-	s.description = description
-	s.updatedAt = time.Now()
-}
-
-// ValidateCronExpression checks if a cron expression is valid.
-func ValidateCronExpression(expr string) error {
-	if expr == "" {
-		return fmt.Errorf("%w: cron expression is required", shared.ErrValidation)
-	}
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	if _, err := parser.Parse(expr); err != nil {
-		return fmt.Errorf("%w: invalid cron expression: %s", shared.ErrValidation, err.Error())
-	}
-	return nil
-}
-
-func (s *Schedule) SetCronSchedule(cronExpression string) error {
-	if err := ValidateCronExpression(cronExpression); err != nil {
-		return err
-	}
-	s.scheduleType = ScheduleTypeCron
-	s.cronExpression = cronExpression
-	s.intervalHours = 0
-	s.updatedAt = time.Now()
-	return nil
-}
-
-func (s *Schedule) SetIntervalSchedule(hours int) error {
-	if hours < 1 || hours > 8760 {
-		return fmt.Errorf("%w: interval_hours must be between 1 and 8760", shared.ErrValidation)
-	}
-	s.scheduleType = ScheduleTypeInterval
-	s.intervalHours = hours
-	s.cronExpression = ""
-	s.updatedAt = time.Now()
-	return nil
-}
-
-func (s *Schedule) SetTargetScope(scope TargetScope, ids []shared.ID, tags []string) {
-	s.targetScope = scope
-	s.targetIDs = ids
-	s.targetTags = tags
-	s.updatedAt = time.Now()
-}
-
-func (s *Schedule) UpdateScannerConfigs(configs map[string]interface{}) {
-	s.scannerConfigs = configs
-	s.updatedAt = time.Now()
-}
-
-func (s *Schedule) Enable() {
-	s.enabled = true
-	s.updatedAt = time.Now()
-}
-
-func (s *Schedule) Disable() {
-	s.enabled = false
-	s.updatedAt = time.Now()
-}
-
-func (s *Schedule) RecordRun(status string, nextRunAt *time.Time) {
-	now := time.Now()
-	s.lastRunAt = &now
-	s.lastRunStatus = status
-	s.nextRunAt = nextRunAt
-	s.updatedAt = now
-}
-
-func (s *Schedule) UpdateNotifications(onCompletion, onFindings bool, channels []string) {
-	s.notifyOnCompletion = onCompletion
-	s.notifyOnFindings = onFindings
-	s.notificationChannels = channels
-	s.updatedAt = time.Now()
 }

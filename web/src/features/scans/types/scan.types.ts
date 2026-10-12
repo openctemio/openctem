@@ -4,6 +4,7 @@
  * Type definitions for scan management
  */
 
+import type { ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -50,127 +51,14 @@ export const SENSOR_PREFERENCE_CONFIG: Record<
     icon: 'sparkles',
   },
   tenant: {
-    label: 'Your Sensor',
-    description: "Use only your organization's deployed sensor",
+    label: 'Your sensors',
+    description: "Use only your organization's deployed sensors",
     icon: 'server',
   },
   platform: {
-    label: 'Platform Sensor',
-    description: "Use OpenCTEM's managed cloud sensors for faster execution",
+    label: 'Platform scanning',
+    description: "Use the platform's shared scanning (public targets only)",
     icon: 'cloud',
-  },
-}
-
-// ============================================
-// SCAN WORKFLOW (predefined scan workflows)
-// ============================================
-
-export interface ScanWorkflowStep {
-  id: string
-  name: string
-  tool: string
-  order: number
-  config?: Record<string, unknown>
-}
-
-export interface ScanWorkflow {
-  id: string
-  name: string
-  description: string
-  steps: ScanWorkflowStep[]
-  estimatedDuration: string // e.g., "2-3 hours"
-  category: 'recon' | 'vuln' | 'compliance' | 'full'
-}
-
-export const mockWorkflows: ScanWorkflow[] = [
-  {
-    id: 'wf-full-recon',
-    name: 'Full Reconnaissance',
-    description: 'Complete asset discovery and enumeration workflow',
-    estimatedDuration: '3-4 hours',
-    category: 'recon',
-    steps: [
-      { id: 'step-1', name: 'Subdomain Enumeration', tool: 'Subfinder', order: 1 },
-      { id: 'step-2', name: 'DNS Resolution', tool: 'DNSx', order: 2 },
-      { id: 'step-3', name: 'Port Scanning', tool: 'Nmap', order: 3 },
-      { id: 'step-4', name: 'Tech Detection', tool: 'Wappalyzer', order: 4 },
-      { id: 'step-5', name: 'Screenshot Capture', tool: 'Gowitness', order: 5 },
-    ],
-  },
-  {
-    id: 'wf-vuln-scan',
-    name: 'Vulnerability Assessment',
-    description: 'Comprehensive vulnerability scanning workflow',
-    estimatedDuration: '4-6 hours',
-    category: 'vuln',
-    steps: [
-      { id: 'step-1', name: 'Web Vulnerability Scan', tool: 'Nuclei', order: 1 },
-      { id: 'step-2', name: 'SSL/TLS Analysis', tool: 'SSLScan', order: 2 },
-      { id: 'step-3', name: 'API Security Test', tool: 'Arjun', order: 3 },
-      { id: 'step-4', name: 'XSS Detection', tool: 'Dalfox', order: 4 },
-      { id: 'step-5', name: 'SQL Injection Test', tool: 'SQLMap', order: 5 },
-    ],
-  },
-  {
-    id: 'wf-quick-check',
-    name: 'Quick Security Check',
-    description: 'Fast security assessment for critical issues',
-    estimatedDuration: '30-60 min',
-    category: 'vuln',
-    steps: [
-      { id: 'step-1', name: 'Port Scan (Top 100)', tool: 'Nmap', order: 1 },
-      { id: 'step-2', name: 'Critical CVE Check', tool: 'Nuclei', order: 2 },
-      { id: 'step-3', name: 'SSL Certificate Check', tool: 'SSLScan', order: 3 },
-    ],
-  },
-  {
-    id: 'wf-compliance',
-    name: 'Compliance Audit',
-    description: 'PCI DSS and ISO 27001 compliance checks',
-    estimatedDuration: '2-3 hours',
-    category: 'compliance',
-    steps: [
-      { id: 'step-1', name: 'TLS Compliance', tool: 'TestSSL', order: 1 },
-      { id: 'step-2', name: 'Header Security', tool: 'Nuclei', order: 2 },
-      { id: 'step-3', name: 'Cookie Security', tool: 'Cookie Scanner', order: 3 },
-      { id: 'step-4', name: 'CORS Check', tool: 'CORScanner', order: 4 },
-    ],
-  },
-  {
-    id: 'wf-full-pentest',
-    name: 'Full Penetration Test',
-    description: 'Complete security assessment workflow',
-    estimatedDuration: '8-12 hours',
-    category: 'full',
-    steps: [
-      { id: 'step-1', name: 'Subdomain Discovery', tool: 'Amass', order: 1 },
-      { id: 'step-2', name: 'DNS Enumeration', tool: 'DNSx', order: 2 },
-      { id: 'step-3', name: 'Full Port Scan', tool: 'Nmap', order: 3 },
-      { id: 'step-4', name: 'Service Detection', tool: 'Nmap', order: 4 },
-      { id: 'step-5', name: 'Vulnerability Scan', tool: 'Nuclei', order: 5 },
-      { id: 'step-6', name: 'Web Application Test', tool: 'Nikto', order: 6 },
-      { id: 'step-7', name: 'API Security Test', tool: 'Arjun', order: 7 },
-      { id: 'step-8', name: 'Authentication Test', tool: 'Hydra', order: 8 },
-    ],
-  },
-]
-
-export const SCAN_TYPE_CONFIG: Record<ScanType, { label: string; description: string }> = {
-  full: {
-    label: 'Full Scan',
-    description: 'Complete vulnerability assessment',
-  },
-  quick: {
-    label: 'Quick Scan',
-    description: 'Fast check for critical issues',
-  },
-  custom: {
-    label: 'Custom',
-    description: 'Select specific checks',
-  },
-  compliance: {
-    label: 'Compliance',
-    description: 'PCI DSS / ISO 27001 / SOC2',
   },
 }
 
@@ -194,56 +82,11 @@ export interface ScanOptions {
   apiSecurity: boolean
 }
 
-export const DEFAULT_SCAN_OPTIONS: ScanOptions = {
-  portScanning: true,
-  webAppScanning: true,
-  sslAnalysis: true,
-  bruteForce: false,
-  techDetection: true,
-  apiSecurity: false,
-}
-
-export const SCAN_OPTIONS_CONFIG: Record<
-  keyof ScanOptions,
-  { label: string; description: string }
-> = {
-  portScanning: {
-    label: 'Port Scanning',
-    description: 'Scan for open ports and services',
-  },
-  webAppScanning: {
-    label: 'Web Application Scanning',
-    description: 'Test for web vulnerabilities (XSS, SQLi, etc.)',
-  },
-  sslAnalysis: {
-    label: 'SSL/TLS Analysis',
-    description: 'Check certificate and encryption configuration',
-  },
-  bruteForce: {
-    label: 'Brute Force Testing',
-    description: 'Test authentication strength (use with caution)',
-  },
-  techDetection: {
-    label: 'Technology Detection',
-    description: 'Identify frameworks, libraries, and versions',
-  },
-  apiSecurity: {
-    label: 'API Security Testing',
-    description: 'Test API endpoints for vulnerabilities',
-  },
-}
-
 // ============================================
-// INTENSITY
+// INTENSITY (RFC-071: passive, active, intrusive)
 // ============================================
 
-export type ScanIntensity = 'low' | 'medium' | 'high'
-
-export const SCAN_INTENSITY_CONFIG: Record<ScanIntensity, { label: string; value: number }> = {
-  low: { label: 'Low', value: 0 },
-  medium: { label: 'Medium', value: 50 },
-  high: { label: 'High', value: 100 },
-}
+export type { ScanIntensity }
 
 // ============================================
 // SCHEDULE
@@ -253,9 +96,18 @@ export type ScheduleFrequency = 'once' | 'daily' | 'weekly' | 'monthly'
 
 export interface ScanSchedule {
   runImmediately: boolean
+  /** New scan: save it without running or scheduling it (started later, by hand). */
+  saveOnly?: boolean
   frequency?: ScheduleFrequency
   dayOfWeek?: number // 0 = Sunday, 1 = Monday, etc.
+  /** Monthly: day of the month, 1-31 (a shorter month runs on its last day). */
+  dayOfMonth?: number
   time?: string // "02:00" format
+  /** Once: the run's date (YYYY-MM-DD) and time (HH:MM) in `timezone`. */
+  runAtDate?: string
+  runAtTime?: string
+  /** IANA zone the schedule is in; empty = the viewer's zone. */
+  timezone?: string
 }
 
 export const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
@@ -304,9 +156,20 @@ export interface ScanTargets {
   type: TargetType
   assetGroupIds: string[]
   assetIds: string[]
-  /** Asset names mapped by ID - used to convert to targets when submitting */
+  /** Asset names by id: what the picker shows and the previews check (the request sends the ids). */
   assetNames: Record<string, string>
+  /** Asset group names by id, for the selection chips. */
+  assetGroupNames?: Record<string, string>
   customTargets: string[] // domains, IPs
+  /**
+   * How far typed domains reach (research/48 §6.7): the names themselves, plus
+   * their inventory subdomains, plus the addresses those resolved to.
+   */
+  coverage?: 'host' | 'subdomains' | 'subdomains_ips'
+  /** Addresses the "subdomains and their IPs" level added (sent with the others; each one is gated). */
+  expandedTargets?: string[]
+  /** How each run resolves `*.x` and CIDR targets from the inventory (RFC-068). */
+  targetOptions?: ScanTargetOptions
 }
 
 export const DEFAULT_TARGETS: ScanTargets = {
@@ -315,6 +178,8 @@ export const DEFAULT_TARGETS: ScanTargets = {
   assetIds: [],
   assetNames: {},
   customTargets: [],
+  coverage: 'host',
+  expandedTargets: [],
 }
 
 // ============================================
@@ -324,18 +189,36 @@ export const DEFAULT_TARGETS: ScanTargets = {
 export interface NewScanFormData {
   // Step 1: Basic Info
   name: string
+  /**
+   * The probe ceiling of every run (RFC-071), asked first: passive sends
+   * nothing to the targets, active probes without intrusive checks,
+   * intrusive allows them. The scanner and workflow choices are filtered by it.
+   */
+  intensity: ScanIntensity
+  /**
+   * Continuous discovery preset: the scan saved is the passive discovery of
+   * the roots, and a second scan of this workflow (Probe new assets) probes,
+   * actively, only the assets that came into scope since its previous run.
+   */
+  continuousProbeWorkflowId?: string
   mode: ScanMode
-  type: ScanType
-  workflowId?: string // Only used when mode is "workflow"
+  /** Tool registry name of the scanner (mode "single"); the API requires it. */
+  scannerName: string
+  workflowId?: string // Workflow template id, only when mode is "workflow"
+  /**
+   * scanner_config of a scanner that needs one: a connector scanner
+   * (tenable_sc: the connector integration, policy and repository). Other
+   * scanners take their settings from the scan profile.
+   */
+  scannerConfig?: Record<string, unknown>
   sensorPreference: SensorPreference // Platform sensor selection
   profileId?: string // Optional scan profile (drives quality gate evaluation)
 
   // Step 2: Targets
   targets: ScanTargets
 
-  // Step 3: Options (only for single mode)
-  options: ScanOptions
-  intensity: ScanIntensity
+  // Step 3: Options
+  /** Targets bundled into one job (API targets_per_job). */
   maxConcurrent: number
   /** Max execution time in seconds (30-86400, default 3600) */
   timeoutSeconds: number
@@ -354,14 +237,13 @@ export interface NewScanFormData {
 
 export const DEFAULT_NEW_SCAN: NewScanFormData = {
   name: '',
+  intensity: 'active',
   mode: 'single',
-  type: 'quick',
+  scannerName: '',
   workflowId: undefined,
   sensorPreference: 'auto',
   profileId: undefined,
   targets: DEFAULT_TARGETS,
-  options: DEFAULT_SCAN_OPTIONS,
-  intensity: 'medium',
   maxConcurrent: 10,
   timeoutSeconds: 3600,
   maxRetries: 0,
@@ -454,44 +336,6 @@ export interface ScanStats {
 // ============================================
 // SMART FILTERING (Asset-Scanner Compatibility)
 // ============================================
-
-/**
- * Skip reason explaining why assets of a certain type were skipped
- */
-export interface SkipReason {
-  assetType: string
-  count: number
-  reason: string
-}
-
-/**
- * Result of smart filtering during scan trigger
- * Shows which assets were scanned vs skipped based on tool compatibility
- */
-export interface FilteringResult {
-  /** Total assets in the scan scope */
-  totalAssets: number
-  /** Assets that were scanned (compatible with tool) */
-  scannedAssets: number
-  /** Assets that were skipped (incompatible with tool) */
-  skippedAssets: number
-  /** Assets with type "unclassified" - cannot match any scanner */
-  unclassifiedAssets: number
-  /** Percentage of compatible assets (0-100) */
-  compatibilityPercent: number
-  /** Breakdown of scanned assets by type */
-  scannedByType?: Record<string, number>
-  /** Breakdown of skipped assets by type */
-  skippedByType?: Record<string, number>
-  /** Detailed reasons for skipping each asset type */
-  skipReasons?: SkipReason[]
-  /** Whether filtering was actually applied */
-  wasFiltered: boolean
-  /** Name of the tool that performed filtering */
-  toolName?: string
-  /** Target types supported by the tool */
-  supportedTargets?: string[]
-}
 
 /**
  * Preview of asset compatibility before scan creation

@@ -63,7 +63,21 @@ Automatically assign assets to groups based on asset properties, giving group me
 | `tag_match` | Match assets by their tags | `any` (OR) or `all` (AND) |
 | `asset_group_match` | Match assets by asset group membership | OR logic (any group match) |
 
+### Ownership and access
+
+Scope rules write **group** rows in `asset_owners`; those are a group's asset
+assignment and give the group's members access. A **user** owner row (Owners
+tab, `owner_ref` match) is an assignment only and gives no access (owner
+decision O1, 2026-10-03). A single user's access to a single asset is an
+explicit grant in `asset_access_grants` (`/api/v1/assets/{id}/access-grants`,
+`team:groups:write`). `user_accessible_assets` = group assignments ∪ grants;
+see the data-scope section of [authorization-matrix.md](authorization-matrix.md)
+and [asset-ownership.md](asset-ownership.md).
+
 ### Ownership Types
+
+For a **group** owner (the access columns describe the group's members; a
+user owner gets no access from any type):
 
 | Type | Full Access | View Access | Description |
 |------|------------|-------------|-------------|
@@ -498,10 +512,10 @@ Every query includes `WHERE tenant_id = ?` to prevent cross-tenant data access:
 | `pkg/domain/accesscontrol/scope_rule.go` | `ScopeRule` entity with match criteria |
 | `pkg/domain/accesscontrol/value_objects.go` | `OwnershipType`, `AssignmentConditions`, `AssignmentOptions` |
 | `pkg/domain/accesscontrol/repository.go` | Repository interface (84 lines, ~40 methods) |
-| `internal/app/assignment_rule_service.go` | Assignment rule CRUD + TestRule |
-| `internal/app/assignment_engine.go` | Finding evaluation engine (`EvaluateRules`, `MatchesConditions`) |
-| `internal/app/scope_rule_service.go` | Scope rule CRUD + reconciliation + asset evaluation |
-| `internal/app/vulnerability_service.go` | `evaluateAssignmentRules()` integration point |
+| `internal/app/assignment/rule.go` | Assignment rule CRUD + TestRule |
+| `internal/app/assignment/engine.go` | Finding evaluation engine (`EvaluateRules`, `MatchesConditions`) |
+| `internal/app/scope/rule.go` | Scope rule CRUD + reconciliation + asset evaluation |
+| `internal/app/finding/vulnerability_service.go` | `evaluateAssignmentRules()` integration point |
 | `internal/infra/postgres/access_control_repository.go` | PostgreSQL implementation |
 | `internal/infra/http/handler/assignment_rule_handler.go` | Assignment rule HTTP handler |
 | `internal/infra/http/handler/scope_rule_handler.go` | Scope rule HTTP handler |
@@ -522,13 +536,13 @@ Every query includes `WHERE tenant_id = ?` to prevent cross-tenant data access:
 
 | File | Purpose |
 |------|---------|
-| `ui/src/features/access-control/api/use-scope-rules.ts` | Scope rule SWR hooks |
-| `ui/src/features/access-control/api/use-assignment-rules.ts` | Assignment rule SWR hooks |
-| `ui/src/features/access-control/types/scope-rule.types.ts` | Scope rule TypeScript types |
-| `ui/src/features/access-control/types/assignment-rule.types.ts` | Assignment rule TypeScript types |
-| `ui/src/features/access-control/components/group-detail-sheet/scope-rules-tab.tsx` | Scope rules UI (within group detail) |
-| `ui/src/features/access-control/components/assignment-rule-detail-sheet.tsx` | Assignment rule detail view |
-| `ui/src/app/(dashboard)/settings/access-control/assignment-rules/page.tsx` | Assignment rules listing page |
+| `web/src/features/access-control/api/use-scope-rules.ts` | Scope rule SWR hooks |
+| `web/src/features/access-control/api/use-assignment-rules.ts` | Assignment rule SWR hooks |
+| `web/src/features/access-control/types/scope-rule.types.ts` | Scope rule TypeScript types |
+| `web/src/features/access-control/types/assignment-rule.types.ts` | Assignment rule TypeScript types |
+| `web/src/features/access-control/components/group-detail-sheet/scope-rules-tab.tsx` | Scope rules UI (within group detail) |
+| `web/src/features/access-control/components/assignment-rule-detail-sheet.tsx` | Assignment rule detail view |
+| `web/src/app/(dashboard)/settings/access-control/assignment-rules/page.tsx` | Assignment rules listing page |
 
 ### Tests
 

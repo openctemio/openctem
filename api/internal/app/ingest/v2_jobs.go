@@ -21,12 +21,34 @@ import (
 // the finalization, which runs exactly once.
 type V2JobProcessor struct {
 	service *Service
+	sensors queuedSensorChecker // nil refuses every job (fail closed)
 	reports ingestreport.Repository
 	jobs    ingestjob.V2Repository
 	limits  protov2.Limits
 	guard   BlindingGuard
 	logger  *logger.Logger
 	now     func() time.Time
+	// lastPurge is when Housekeep last purged the staging tables.
+	lastPurge time.Time
+}
+
+// Staging retention: what a report that will never be applied may keep.
+// Variables so a test can change them.
+var (
+	// StagingRetention is how long failed and expired reports, and finished
+	// jobs without a report, are kept (for the sensor's status reads and
+	// for diagnosis) before they are deleted.
+	StagingRetention = 7 * 24 * time.Hour
+	// stagingPurgeEvery is how often Housekeep purges (it runs every drain
+	// cycle).
+	stagingPurgeEvery = 10 * time.Minute
+	// stagingPurgeBatch caps the rows one purge step touches.
+	stagingPurgeBatch = 5000
+)
+
+// stagingPurger is implemented by the postgres report repository.
+type stagingPurger interface {
+	PurgeStaging(ctx context.Context, before time.Time, batch int) (ingestreport.StagingPurge, error)
 }
 
 // NewV2JobProcessor wires the v2 job processor.
@@ -34,7 +56,7 @@ func NewV2JobProcessor(svc *Service, reports ingestreport.Repository, jobs inges
 	if log == nil {
 		log = logger.NewNop()
 	}
-	return &V2JobProcessor{service: svc, reports: reports, jobs: jobs, limits: limits, guard: guard,
+	return &V2JobProcessor{service: svc, sensors: svc, reports: reports, jobs: jobs, limits: limits, guard: guard,
 		logger: log.With("component", "ingest-v2"), now: time.Now}
 }
 
@@ -64,6 +86,24 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 		// of its jobs has nothing left to do.
 		return json.Marshal(result)
 	}
+	// The sensor may have been revoked, disabled or deleted while the
+	// report waited in the queue (RFC-040 §5.2): its work is dropped, the
+	// report fails so the sensor sees it, and nothing is retried.
+	if p.sensors == nil {
+		return nil, errors.New("v2 processor: sensor status check is not configured")
+	}
+	_, dropped, err := p.sensors.QueuedWorkSensor(ctx, rep.TenantID, &rep.SensorID, rep.ReportID)
+	if err != nil {
+		return nil, err
+	}
+	if dropped != nil {
+		if err := p.reports.MarkFailed(ctx, rep.ID); err != nil {
+			return nil, fmt.Errorf("v2 processor: fail report of a dropped sensor: %w", err)
+		}
+		// A chained step waiting for this report plans on what it has.
+		p.service.commandIngestedNow(ctx, rep.TenantID, rep.CommandID)
+		return json.Marshal(dropped)
+	}
 
 	if !seg.IsCommit() {
 		r, err := p.processSegment(ctx, rep, job, *seg.Seq)
@@ -89,6 +129,9 @@ func (p *V2JobProcessor) failOnLastAttempt(ctx context.Context, job *ingestjob.J
 		return
 	}
 	metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateFailed), "none").Inc()
+	// The report will never commit: a chained step waiting for it plans now
+	// on what its predecessors produced (research/62 SG-10).
+	p.service.commandIngestedNow(ctx, rep.TenantID, rep.CommandID)
 }
 
 func (p *V2JobProcessor) provenance(rep *ingestreport.Report, seq int, job *ingestjob.Job) Provenance {
@@ -113,6 +156,19 @@ func (p *V2JobProcessor) processSegment(ctx context.Context, rep *ingestreport.R
 		o := ingestreport.SegmentOutcome{Errors: []protov2.ItemError{{
 			Pointer: "", Code: protov2.CodeProcessingFailed, Detail: protov2.DetailProcessingFailed}}}
 		return o, p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil)
+	}
+	if rep.CommandID == nil {
+		// A report without a command (RFC-040 §5.3): quarantined or applied
+		// with the unsolicited limits, decided here once per segment.
+		if o, held, err := p.service.admitV2Segment(ctx, p.provenance(rep, seq, job), report); err != nil {
+			return ingestreport.SegmentOutcome{}, err
+		} else if held {
+			if err := p.reports.RecordSegmentOutcome(ctx, rep.ID, seq, o, nil); err != nil {
+				return ingestreport.SegmentOutcome{}, err
+			}
+			observeItems(o)
+			return o, nil
+		}
 	}
 	res, err := p.service.IngestV2Segment(ctx, p.provenance(rep, seq, job), report)
 	if err != nil {
@@ -146,6 +202,13 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 	}
 	metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateCompleted), res.AutoResolve).Inc()
 	p.service.recordV2ReportStats(ctx, claimed)
+	// The command may already be completed: then this report was the last
+	// half of its coverage evidence.
+	if claimed.CommandID != nil {
+		p.service.EvaluateCommandCoverage(ctx, claimed.TenantID, *claimed.CommandID)
+		// A chained step waiting for this report's ingest is planned now.
+		p.service.commandIngestedNow(ctx, claimed.TenantID, claimed.CommandID)
+	}
 	if err := p.jobs.ClearV2Payloads(ctx, claimed.ID); err != nil {
 		p.logger.Warn("v2: could not clear segment payloads", "report_ref", claimed.ID.String(), "error", err)
 	}
@@ -154,8 +217,9 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 	return nil
 }
 
-// Housekeep expires uncommitted reports past their window. The worker calls
-// it on every drain cycle.
+// Housekeep expires uncommitted reports past their window and, every
+// stagingPurgeEvery, purges the staging data of reports that will never be
+// applied (PurgeStaging). The worker calls it on every drain cycle.
 func (p *V2JobProcessor) Housekeep(ctx context.Context) {
 	n, err := p.reports.ExpireStale(ctx, p.now())
 	if err != nil {
@@ -165,6 +229,29 @@ func (p *V2JobProcessor) Housekeep(ctx context.Context) {
 	if n > 0 {
 		metrics.IngestV2ReportsTotal.WithLabelValues(string(protov2.StateExpired), "none").Add(float64(n))
 		p.logger.Info("v2: expired uncommitted reports", "count", n)
+	}
+	p.purgeStaging(ctx)
+}
+
+// purgeStaging bounds the staging tables: without it, every segment of a
+// report that is abandoned, expires or fails kept its decoded payload (up
+// to 64 MiB) forever, and a sensor could fill the database disk by opening,
+// filling and abandoning reports.
+func (p *V2JobProcessor) purgeStaging(ctx context.Context) {
+	purger, ok := p.reports.(stagingPurger)
+	now := p.now()
+	if !ok || (!p.lastPurge.IsZero() && now.Sub(p.lastPurge) < stagingPurgeEvery) {
+		return
+	}
+	p.lastPurge = now
+	out, err := purger.PurgeStaging(ctx, now.Add(-StagingRetention), stagingPurgeBatch)
+	if err != nil {
+		p.logger.Warn("v2: staging purge failed", "error", err)
+		return
+	}
+	if out != (ingestreport.StagingPurge{}) {
+		p.logger.Info("v2: purged staging data", "payloads_cleared", out.PayloadsCleared,
+			"reports_deleted", out.ReportsDeleted, "jobs_deleted", out.JobsDeleted)
 	}
 }
 

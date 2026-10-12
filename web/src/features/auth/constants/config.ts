@@ -73,37 +73,9 @@ export const SESSION_CONFIG = {
 // PASSWORD SETTINGS
 // ============================================
 
+// Password rules (length, character classes) are the server policy, read from
+// GET /auth/providers (lib/password-policy); they are not configured here.
 export const PASSWORD_CONFIG = {
-  /**
-   * Minimum password length
-   */
-  MIN_LENGTH: 8,
-
-  /**
-   * Maximum password length
-   */
-  MAX_LENGTH: 128,
-
-  /**
-   * Require uppercase letter
-   */
-  REQUIRE_UPPERCASE: false,
-
-  /**
-   * Require lowercase letter
-   */
-  REQUIRE_LOWERCASE: false,
-
-  /**
-   * Require number
-   */
-  REQUIRE_NUMBER: false,
-
-  /**
-   * Require special character
-   */
-  REQUIRE_SPECIAL: false,
-
   /**
    * Password strength levels
    */

@@ -1,5 +1,8 @@
 # RFC-023 §9.5 — Sensor rename: API contract changes
 
+> Status: **Implemented** (#563, migration 000230). Protocol v1 and
+> `pkg/sensorproto/legacyv1`, described in §1, were later removed
+> (2026-10-05, [RFC-029 §5](RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
 > Companion to [RFC-023 §9.5](RFC-023-scan-zones-and-scanners.md#95-decision-update-complete-rename-supersedes-the-keep-rows-of-94).
 > Scope: the API step of the complete agent → sensor rename (migration
 > **000230**). This is the exhaustive list the UI follow-up, operators and
@@ -20,7 +23,7 @@ test recorded before the rename
 | Job payload | key `agent_preference` in command payloads |
 | Error texts | `Agent not authenticated`, `Agent cannot renew`, `Platform agents require tenant context for this operation`, `Platform agents require job context for this operation`; error code `INVALID_AGENT` |
 | Async ingest | `Location: /api/v1/agent/ingest/jobs/{id}` |
-| Sensor `type` values | `worker`, `scanner`, `sensor`, `collector`, `runner` (and stored `agent`, `platform`) are unchanged in input, storage and output |
+| Sensor `type` values | `worker`, `scanner`, `sensor`, `collector` (and stored `agent`, `platform`) are unchanged in input, storage and output; `runner` was removed (RFC-051 R-2, migration `001146`) |
 | Inbound labels | a CTIS asset with `discovery_source: "agent"` is accepted and stored as `sensor` |
 | Released binary interface | config templates (`GET /api/v1/sensors/{id}/config-templates`) still render the current binary's settings: `AGENT_ID`, `./agent`, `agent.yaml`, image `openctemio/agent` |
 
@@ -180,10 +183,11 @@ no existing dashboard series is lost. Webhook, notification and report/CSV
 payloads carry no agent-named fields; the notification event types above are
 the only outbound ids, and nothing emits them today.
 
-API server environment variables (`AGENT_*` → `SENSOR_*`). The old names keep
-working: the new name is read first, the old one is applied with a startup
-`WARN deprecated configuration` line naming both, and startup fails only when
-both are set to different values.
+API server environment variables (`AGENT_*` → `SENSOR_*`). The old names were
+read with a startup warning during the transition. **Retired 2026-10-05:** they
+are no longer read, and startup refuses to run while one is set (the error names
+the replacement), so an ignored `AGENT_KEY_TTL` cannot silently make sensor keys
+non-expiring.
 
 | Before | After |
 |---|---|
@@ -199,8 +203,8 @@ both are set to different values.
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 
 The default template directory moved from `configs/agent-templates` to
-`configs/sensor-templates`; when only the old directory exists (for example a
-mounted configmap) it is used, with a warning.
+`configs/sensor-templates`. The fallback to the old directory was retired on
+2026-10-05 together with the old variable names.
 
 ## 8. Stored values migration 000230 converts
 
@@ -224,12 +228,12 @@ Deliberately kept, with the reason:
 | Data | Why |
 |---|---|
 | `audit_logs` rows `agent.*` / resource type `agent` | hash-chained history; reads treat both as one family |
-| `admin_audit_logs`, `notification_events`, `webhook_deliveries` | history |
+| `admin_audit_logs`, `notification_events` | history (`webhook_deliveries` was empty and was dropped by 001059) |
 | `asset_state_history.source = 'agent'` | the table is append-only (a trigger rejects UPDATE); returned as `sensor` |
 | `commands.payload.agent_preference` | protocol v1 job content |
 | `sensors.type` values | legacy v1 type values (RFC-023 §9.1 adds role + deployment later) |
 | `user_agent`, `actor_agent` columns | the HTTP User-Agent |
-| `deprecated.*` schema | frozen archive |
+| `deprecated.*` schema | frozen archive; dropped by 001059 (every table was empty) |
 | tenant AI mode `agent`, module `ai_triage.agent` | an LLM agent, not a sensor |
 
 ## 9. Compatibility views

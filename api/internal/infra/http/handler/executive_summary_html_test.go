@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
+	"github.com/openctemio/openctem/api/internal/app/module"
 )
 
 func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
 	epss := 0.87
-	summary := &app.ExecutiveSummary{
+	summary := &module.ExecutiveSummary{
 		Period:            "last 30 days",
 		RiskScoreCurrent:  72.4,
 		RiskScoreChange:   -3.1,
@@ -28,7 +28,7 @@ func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
 		CrownJewelsAtRisk: 2,
 		RegressionCount:   1,
 		RegressionRatePct: 0.7,
-		TopRisks: []app.TopRisk{
+		TopRisks: []module.TopRisk{
 			{
 				FindingTitle:  "Log4Shell reachable over the internet",
 				Severity:      "CRITICAL",
@@ -74,7 +74,7 @@ func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
 }
 
 func TestRenderExecutiveSummaryHTML_NoTopRisksOmitsTable(t *testing.T) {
-	summary := &app.ExecutiveSummary{
+	summary := &module.ExecutiveSummary{
 		Period:   "last 7 days",
 		TopRisks: nil,
 	}
@@ -91,9 +91,9 @@ func TestRenderExecutiveSummaryHTML_NoTopRisksOmitsTable(t *testing.T) {
 func TestRenderExecutiveSummaryHTML_EscapesHTMLInRiskTitle(t *testing.T) {
 	// html/template auto-escapes but assert explicitly — a misused
 	// template.HTML cast would silently re-introduce XSS.
-	summary := &app.ExecutiveSummary{
+	summary := &module.ExecutiveSummary{
 		Period: "last 30 days",
-		TopRisks: []app.TopRisk{
+		TopRisks: []module.TopRisk{
 			{
 				FindingTitle:  `<script>alert("pwn")</script>`,
 				Severity:      "HIGH",
