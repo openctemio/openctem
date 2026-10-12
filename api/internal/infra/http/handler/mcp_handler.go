@@ -107,6 +107,7 @@ type mcpPentestReader interface {
 	GetCampaignStats(ctx context.Context, tenantID, campaignID string) (*pentestdom.CampaignStats, error)
 	QueryCampaignFindings(ctx context.Context, q appcompliance.PentestFindingQuery) (pagination.Result[*vulnerability.Finding], error)
 	ReportFindings(ctx context.Context, tenantID, campaignID string) ([]*vulnerability.Finding, report.StatsData, error)
+	ListMemberCampaigns(ctx context.Context, q appcompliance.MemberCampaignQuery) (pagination.Result[appcompliance.MemberCampaign], error)
 	ListCampaignRetests(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.Retest, error)
 	ListTemplates(ctx context.Context, tenantID string, filter pentestdom.TemplateFilter, page pagination.Pagination) (pagination.Result[*pentestdom.Template], error)
 }
