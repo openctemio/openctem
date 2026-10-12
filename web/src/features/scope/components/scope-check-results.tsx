@@ -8,7 +8,9 @@
  * same wherever it comes from.
  *
  * The fixes come from the server, already narrowed to what the caller may
- * do (an approver gets "Allow for 7 days", a member "Request access"). Each
+ * do (an approver gets "Allow for 7 days", a member "Request access"; a
+ * member's request is labelled as what it is: a request only under Strict
+ * scan approval, otherwise the entry applies at once). Each
  * button goes through the normal route: an entry the approver adds is
  * audited, needs step-up and may wait for approvals; nothing here grants
  * anything by itself.
@@ -29,6 +31,7 @@ import {
   invalidateScopeCache,
   setScopeTargetActive,
   updateScopeTarget,
+  useScopeAddMode,
 } from '../api/use-scope-api'
 import type { ApiScopeCheckResult, ApiScopeFix } from '../api/scope-api.types'
 import {
@@ -97,8 +100,14 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
   const [draft, setDraft] = useState<ScopeEntryDraft | null>(null)
   const [verifyDomain, setVerifyDomain] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const hasRequest = fixes.some((f) => f.action === 'request_access')
+  const { isRequest } = useScopeAddMode(hasRequest)
 
   if (fixes.length === 0) return null
+
+  // Outside Strict a member's "request" is added at once: say so.
+  const shown = (fix: ApiScopeFix): ApiScopeFix =>
+    fix.action === 'request_access' && !isRequest ? { ...fix, action: 'allow_temporarily' } : fix
 
   const run = async (key: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(key)
@@ -161,8 +170,8 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
           // name what each adds.
           const label =
             fix.pattern && fixes.filter((f) => f.action === fix.action).length > 1
-              ? `${scopeFixLabel(t, fix)}: ${fix.pattern}`
-              : scopeFixLabel(t, fix)
+              ? `${scopeFixLabel(t, shown(fix))}: ${fix.pattern}`
+              : scopeFixLabel(t, shown(fix))
           if (HINT_ONLY.has(fix.action ?? '')) {
             return (
               <span key={key} className="text-xs text-muted-foreground">
