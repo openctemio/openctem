@@ -242,6 +242,8 @@ export interface PentestConfigOption {
 export interface PentestSettings {
   campaign_types?: PentestConfigOption[] | null
   methodologies?: PentestConfigOption[] | null
+  /** A campaign cannot start testing without a signed authorization letter. */
+  require_authorization_before_start?: boolean
 }
 
 /** Top-level settings sections, as keyed in TenantSettings.etags. */

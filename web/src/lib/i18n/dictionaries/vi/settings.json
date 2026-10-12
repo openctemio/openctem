@@ -1,4 +1,9 @@
 {
+  "settings.pentest.authorizationHint": "Yêu cầu thư ủy quyền đã ký, liên kết với chiến dịch, trước khi bắt đầu kiểm thử.",
+  "settings.pentest.authorizationTitle": "Thư ủy quyền",
+  "settings.pentest.requireAuthorization": "Chiến dịch không thể bắt đầu khi chưa có thư ủy quyền đã ký",
+  "settings.pentest.targetTypes": "Loại đối tượng kiểm thử",
+  "settings.pentest.targetTypesHint": "Những gì một chiến dịch có thể kiểm thử. Mỗi chiến dịch chọn một hoặc nhiều loại.",
   "settings.pentest.addMethodology": "Thêm phương pháp",
   "settings.pentest.addType": "Thêm loại",
   "settings.pentest.campaignTypes": "Loại chiến dịch",
