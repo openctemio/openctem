@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +14,7 @@ import (
 	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -21,8 +24,21 @@ import (
 // (RFC-039).
 type FindingRetestHandler struct {
 	service *retestapp.Service
+	manual  ManualRetestSource // optional: pentest testers' retests
 	logger  *logger.Logger
 }
+
+// ManualRetestSource answers the retests testers recorded by hand on a
+// pentest finding. isPentest is false for any other finding. A caller who is
+// not a member of the finding's campaign (and not an admin) gets an error
+// wrapping shared.ErrNotFound.
+type ManualRetestSource interface {
+	ManualRetestsForFinding(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) (retests []*pentest.Retest, isPentest bool, err error)
+}
+
+// SetManualRetestSource adds pentest manual retests to a finding's retest
+// history, so a finding has one history whatever retested it.
+func (h *FindingRetestHandler) SetManualRetestSource(src ManualRetestSource) { h.manual = src }
 
 // NewFindingRetestHandler creates the handler.
 func NewFindingRetestHandler(svc *retestapp.Service, log *logger.Logger) *FindingRetestHandler {
@@ -31,11 +47,17 @@ func NewFindingRetestHandler(svc *retestapp.Service, log *logger.Logger) *Findin
 
 // FindingRetestResponse is one retest of a finding.
 type FindingRetestResponse struct {
-	ID          string `json:"id"`
-	FindingID   string `json:"finding_id"`
-	Trigger     string `json:"trigger"`
-	RequestedBy string `json:"requested_by,omitempty"`
-	Status      string `json:"status"`
+	ID string `json:"id"`
+	// Kind: automated (the platform re-ran the check) or manual (a pentest
+	// tester recorded the result; manual_result, notes and tested_by are set).
+	Kind         string `json:"kind"`
+	ManualResult string `json:"manual_result,omitempty"`
+	Notes        string `json:"notes,omitempty"`
+	TestedBy     string `json:"tested_by,omitempty"`
+	FindingID    string `json:"finding_id"`
+	Trigger      string `json:"trigger"`
+	RequestedBy  string `json:"requested_by,omitempty"`
+	Status       string `json:"status"`
 	// Outcome: confirmed_fixed (the endpoint answered and the check did not
 	// match), not_reproduced (no match, endpoint not proven checked),
 	// still_vulnerable, inconclusive (reason_code says why).
@@ -75,6 +97,7 @@ func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 	if rt.RequestedBy != nil {
 		out.RequestedBy = rt.RequestedBy.String()
 	}
+	out.Kind = retestKindAutomated
 	out.RunKind = "retest"
 	if rt.RunID != nil {
 		out.RunID = rt.RunID.String()
@@ -87,6 +110,27 @@ func toFindingRetestResponse(rt *retestdom.Retest) FindingRetestResponse {
 	}
 	if rt.SensorID != nil {
 		out.SensorID = rt.SensorID.String()
+	}
+	return out
+}
+
+const (
+	retestKindAutomated = "automated"
+	retestKindManual    = "manual"
+)
+
+func manualRetestResponse(rt *pentest.Retest) FindingRetestResponse {
+	out := FindingRetestResponse{
+		ID: rt.ID().String(), Kind: retestKindManual, FindingID: rt.FindingID().String(),
+		Trigger: "manual", ManualResult: string(rt.Status()), Notes: rt.Notes(),
+		Status: "completed", CreatedAt: rt.CreatedAt(), CompletedAt: rt.TestedAt(), RunKind: "retest",
+	}
+	switch rt.Status() {
+	case pentest.RetestStatusPending, pentest.RetestStatusInProgress:
+		out.Status = "pending"
+	}
+	if rt.TestedBy() != nil {
+		out.TestedBy = rt.TestedBy().String()
 	}
 	return out
 }
@@ -166,14 +210,35 @@ func (h *FindingRetestHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Pentest findings: the campaign decides who sees them (non-members get
+	// 404, as on every pentest surface), and testers' manual retests join the
+	// history.
+	var manual []*pentest.Retest
+	if h.manual != nil {
+		m, _, merr := h.manual.ManualRetestsForFinding(r.Context(), tenantID.String(), findingID.String(),
+			middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()))
+		if merr != nil {
+			h.writeError(w, merr)
+			return
+		}
+		manual = m
+	}
 	list, err := h.service.List(r.Context(), tenantID, findingID, limit)
 	if err != nil {
 		h.writeError(w, err)
 		return
 	}
-	out := FindingRetestListResponse{Data: make([]FindingRetestResponse, 0, len(list))}
+	out := FindingRetestListResponse{Data: make([]FindingRetestResponse, 0, len(list)+len(manual))}
 	for _, rt := range list {
 		out.Data = append(out.Data, toFindingRetestResponse(rt))
+	}
+	for _, rt := range manual {
+		out.Data = append(out.Data, manualRetestResponse(rt))
+	}
+	// One history, newest first.
+	sort.SliceStable(out.Data, func(i, j int) bool { return out.Data[i].CreatedAt.After(out.Data[j].CreatedAt) })
+	if limit > 0 && len(out.Data) > limit {
+		out.Data = out.Data[:limit]
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

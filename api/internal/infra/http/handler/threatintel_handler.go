@@ -213,6 +213,16 @@ func (h *ThreatIntelHandler) EnrichCVE(w http.ResponseWriter, r *http.Request) {
 
 // EnrichCVEs enriches multiple CVEs with threat intel data.
 // POST /api/v1/threat-intel/enrich
+// @Summary      Enrich CVEs with threat intelligence
+// @Description  EPSS and KEV data for up to 1000 CVE ids, keyed by CVE id.
+// @Tags         Threat Intel
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  EnrichCVEsRequest  true  "CVE ids"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  apierror.Error
+// @Router       /threat-intel/enrich [post]
 func (h *ThreatIntelHandler) EnrichCVEs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
