@@ -122,6 +122,33 @@ import planes.caddy
 		?Referrer-Policy strict-origin-when-cross-origin
 	}
 
+	# Compress read responses: API JSON shrinks 6-13x (a 100-row findings
+	# page 179 KB -> 27 KB, the dashboard overview 69 KB -> 8 KB). Bodies
+	# already encoded upstream (the web image's own gzip) pass through.
+	# Only GET/HEAD and only the listed types are compressed: event streams
+	# are never held in a compressor buffer, and write responses, which may
+	# return a freshly issued secret (API keys, sensor keys, tokens) next to
+	# request-controlled text, stay uncompressed so no compression side
+	# channel (BREACH) applies. The sign-in, OAuth and sensor APIs are left
+	# out entirely for the same reason.
+	@compressible {
+		method GET HEAD
+		not path /api/v1/auth/* /api/v1/admin/auth/* /oauth/* /api/v1/oauth/* /api/v2/sensor/*
+	}
+	encode @compressible zstd gzip {
+		match {
+			header Content-Type application/json*
+			header Content-Type application/problem+json*
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type text/csv*
+			header Content-Type application/javascript*
+			header Content-Type text/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
+
 	# Never public: debug handlers (no plane). Metrics and readiness are the
 	# ops plane's internal paths, in planes.caddy.
 	@debug path /debug /debug/*
@@ -151,7 +178,7 @@ import planes.caddy
 	@token_no_session {
 		path /api/*
 		header Authorization "Bearer *"
-		not header Cookie *{$AUTH_COOKIE_NAME:auth_token}=*
+		not header Cookie *auth_token=*
 	}
 	handle @token_no_session {
 		import to_api
