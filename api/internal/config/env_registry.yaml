@@ -777,63 +777,6 @@ vars:
     default: "APP_URL, else http://localhost:3000"
     example: "http://localhost:3000"
     description: "Base URL of links in e-mails. Set it only when the console is not at `APP_URL`."
-  - name: SMTP_ENABLED
-    component: api
-    group: "Email (SMTP)"
-    type: bool
-    default: "false"
-    description: "Send system email (invitations, verification, password reset, set-password links)."
-  - name: SMTP_FROM
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    description: "Sender address. Email is sent only when `SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT` and `SMTP_FROM` are all set."
-  - name: SMTP_FROM_NAME
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    default: "OpenCTEM"
-    description: "Sender display name."
-  - name: SMTP_HOST
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    description: "SMTP server."
-  - name: SMTP_PASSWORD
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    secret: true
-    description: "SMTP password."
-  - name: SMTP_PORT
-    component: api
-    group: "Email (SMTP)"
-    type: int
-    default: "587"
-    description: "SMTP port."
-  - name: SMTP_SKIP_VERIFY
-    component: api
-    group: "Email (SMTP)"
-    type: bool
-    default: "false"
-    description: "Skip verification of the SMTP server's certificate."
-  - name: SMTP_TIMEOUT
-    component: api
-    group: "Email (SMTP)"
-    type: duration
-    default: "30s"
-    description: "Timeout of an SMTP delivery."
-  - name: SMTP_TLS
-    component: api
-    group: "Email (SMTP)"
-    type: bool
-    default: "true"
-    description: "Use TLS."
-  - name: SMTP_USER
-    component: api
-    group: "Email (SMTP)"
-    type: string
-    description: "SMTP user name."
   - name: STORAGE_ACCESS_KEY
     component: api
     group: "Attachment storage"
@@ -1568,6 +1511,42 @@ vars:
     type: string
     secret: true
     description: "Platform key for the `openai` provider."
+  - name: BOOTSTRAP_SMTP_HOST
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: SMTP server stored as the platform e-mail setting when none is stored (headless installs). Change it later in the admin console (System > E-mail)."
+  - name: BOOTSTRAP_SMTP_PORT
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: SMTP port (default 587)."
+  - name: BOOTSTRAP_SMTP_USER
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: SMTP user name."
+  - name: BOOTSTRAP_SMTP_PASSWORD
+    component: tool
+    group: "Administration tools"
+    type: string
+    secret: true
+    description: "`bootstrap-admin`: SMTP password, stored encrypted with `APP_ENCRYPTION_KEY`."
+  - name: BOOTSTRAP_SMTP_FROM
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: sender address."
+  - name: BOOTSTRAP_SMTP_FROM_NAME
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: sender name (default OpenCTEM)."
+  - name: BOOTSTRAP_SMTP_STARTTLS
+    component: tool
+    group: "Administration tools"
+    type: string
+    description: "`bootstrap-admin`: `false` turns STARTTLS off (default on)."
   - name: ADMIN_BACKUP_EMAIL
     component: tool
     group: "Administration tools"

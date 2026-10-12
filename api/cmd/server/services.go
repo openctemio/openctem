@@ -8,8 +8,9 @@ import (
 	"net"
 	"time"
 
-	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 	"github.com/prometheus/client_golang/prometheus"
+
+	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webevidenceapp "github.com/openctemio/openctem/api/internal/app/webevidence"
@@ -73,6 +74,7 @@ import (
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
+	"github.com/openctemio/openctem/api/internal/app/platformemail"
 	programfeedapp "github.com/openctemio/openctem/api/internal/app/programfeed"
 	"github.com/openctemio/openctem/api/internal/app/programtarget"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
@@ -122,7 +124,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/email"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -802,6 +803,9 @@ type Services struct {
 
 	// The platform sign-up policy (who may create an organization).
 	Signup *signupapp.Service
+	// PlatformEmail is the platform's SMTP settings, set in the admin console
+	// (RFC-079); its Sender backs Email.
+	PlatformEmail *platformemail.Service
 	// ScanPolicy is the platform policy for scan approval (RFC-073)
 	// (wired in wireScopeApprovers, after the email service exists).
 	ScanPolicy *scanpolicy.Service
@@ -896,6 +900,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Encryptor, err = initEncryptor(cfg, log)
 	if err != nil {
 		return nil, err
+	}
+	if repos.PlatformSetting != nil {
+		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
 
 	// Initialize audit service first (used by others)
@@ -2726,27 +2733,19 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	}
 }
 
-// InitEmailServices initializes email-related services.
+// InitEmailServices builds the e-mail service on the platform e-mail
+// settings (admin console, System > E-mail). It always exists once those
+// settings can be read; whether it can send is decided per message, so a
+// change in the console applies without a restart.
 func (s *Services) InitEmailServices(cfg *config.Config, log *logger.Logger) error {
-	if !cfg.SMTP.IsConfigured() {
-		log.Warn("email service not configured - email features will be disabled")
+	if s.PlatformEmail == nil {
+		log.Warn("platform e-mail settings unavailable - email features will be disabled")
 		return nil
 	}
-
-	emailSender := email.NewSMTPSender(email.Config{
-		Host:       cfg.SMTP.Host,
-		Port:       cfg.SMTP.Port,
-		User:       cfg.SMTP.User,
-		Password:   cfg.SMTP.Password,
-		From:       cfg.SMTP.From,
-		FromName:   cfg.SMTP.FromName,
-		TLS:        cfg.SMTP.TLS,
-		SkipVerify: cfg.SMTP.SkipVerify,
-		Timeout:    cfg.SMTP.Timeout,
-	})
-	s.Email = auth.NewEmailService(emailSender, cfg.SMTP, cfg.App.Name, log)
-	log.Info("email service initialized", "host", cfg.SMTP.Host, "from", cfg.SMTP.From)
-
+	s.Email = auth.NewEmailService(s.PlatformEmail.Sender(), cfg.SMTP, cfg.App.Name, log)
+	if !s.Email.IsConfigured() {
+		log.Info("platform e-mail not configured yet: set it in the admin console (System > E-mail)")
+	}
 	return nil
 }
 

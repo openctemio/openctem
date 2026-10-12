@@ -280,12 +280,7 @@ services:
       # Who creates organizations: admin_only (platform administrator: console or
       # bootstrap-admin -org-*) or self_service (any signed-in user; SaaS/trial).
       TENANT_CREATION_MODE: ${TENANT_CREATION_MODE:-admin_only}
-      SMTP_ENABLED: ${SMTP_ENABLED:-false}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-}
+      # Platform e-mail (SMTP) is set in the admin console: System > E-mail.
       # Sensors: the install snippets on the Sensors page pin this image
       # release and install the gateway's internal CA (TLS mode internal; the
       # file is absent in the other modes and the snippets then skip it).

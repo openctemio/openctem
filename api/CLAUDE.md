@@ -531,7 +531,7 @@ For detailed docs, see `docs/architecture/notification-system.md`.
 
 Transactional emails (invitations, verification, password reset) support per-tenant SMTP configuration via the email notification integration.
 
-**Resolution order:** Tenant email integration (if active) → System SMTP (`SMTP_HOST` env vars) → Skip (log warning).
+**Resolution order:** Tenant email integration (if active) → platform e-mail (admin console, System > E-mail; `internal/app/platformemail`, RFC-079) → Skip (log warning).
 
 ```go
 // TenantSMTPResolver interface (internal/app/email_service.go)
