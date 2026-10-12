@@ -117,9 +117,8 @@ const strongHexSecret = "ff00112233445566778899aabbccddeeff00112233445566778899a
 func minimalValidConfig() *Config {
 	return &Config{
 		App: AppConfig{
-			Name:  "openctem",
-			Env:   "development",
-			Debug: false,
+			Name: "openctem",
+			Env:  "development",
 		},
 		Server: ServerConfig{
 			Host: "0.0.0.0",

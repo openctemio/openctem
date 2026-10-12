@@ -26,7 +26,7 @@ RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 # Source and SDK mounted via volumes at runtime - no COPY needed
 
 # Expose ports
-EXPOSE 8080 9090 2345
+EXPOSE 8080 8443 2345
 
 # Run entrypoint (migrations + air)
 # Development only, never published: it runs as root so the bind-mounted
@@ -183,7 +183,7 @@ COPY --from=runtime-fs --chown=1001:1000 /out/signer-run /run/openctem-signer
 
 USER 1000:1000
 
-EXPOSE 8080 9090
+EXPOSE 8080 8443
 
 # `server -healthcheck` GETs /health on 127.0.0.1:$SERVER_PORT.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

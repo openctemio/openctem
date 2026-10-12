@@ -119,16 +119,16 @@ func registerDashboardRoutes(
 
 	// Dashboard routes
 	router.Group("/api/v1/dashboard", func(r Router) {
-		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead))
-		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead))
-		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead))
-		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead))
-		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead))
+		r.GET("/stats", h.GetStats, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/mttr", h.GetMTTR, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/velocity", h.GetRiskVelocity, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/data-quality", h.GetDataQuality, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/risk-trend", h.GetRiskTrend, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/executive-summary", h.GetExecutiveSummary, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/executive-summary/export", h.ExportExecutiveSummary, middleware.Require(permission.DashboardRead))
-		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead))
-		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead))
-		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead))
+		r.GET("/mttr-analytics", h.GetMTTRAnalytics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/process-metrics", h.GetProcessMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
+		r.GET("/program-metrics", h.GetProgramMetrics, middleware.Require(permission.DashboardRead), heavyReads.Middleware())
 		r.GET("/overview", overview.Overview, middleware.Require(permission.DashboardRead))
 	}, tenantMiddlewares...)
 }
@@ -502,6 +502,24 @@ func registerIncomingWebhookRoutes(
 		log,
 	)
 	router.POST("/api/v1/webhooks/incoming/jira", jiraHandler.IncomingJiraWebhook, hmacMW)
+}
+
+// GitHub webhook budget per client IP. Generous: deliveries for every
+// organization arrive from GitHub's shared address pool. It bounds the
+// per-request secret lookup an unauthenticated caller can trigger.
+const (
+	githubWebhookPerIPPerSecond = 50
+	githubWebhookPerIPBurst     = 500
+)
+
+// registerGitHubWebhookRoute registers the public GitHub webhook. The handler
+// verifies GitHub's X-Hub-Signature-256 against the organization's own
+// secrets and refuses replays of a delivery id; the route adds a per-IP
+// budget in front of the secret lookup.
+func registerGitHubWebhookRoute(router Router, h *handler.GitHubWebhookHandler, log *logger.Logger) {
+	perIP := middleware.NewTelemetryRateLimiter(githubWebhookPerIPPerSecond, githubWebhookPerIPBurst, time.Hour, log).
+		MiddlewareKeyed(middleware.ClientIPKey, "Too many webhook deliveries")
+	router.POST("/api/v1/webhooks/incoming/github", h.IncomingGitHubWebhook, perIP)
 }
 
 // includeProgramAssets puts include_program_assets=true into the request

@@ -4,6 +4,16 @@ import { join } from 'node:path'
 
 import en from '@/lib/i18n/dictionaries/en/scans.json'
 import vi from '@/lib/i18n/dictionaries/vi/scans.json'
+import { REASON_LABEL } from '../lib/ci'
+import { CAPABILITIES, COVERAGE_STATE_META, SOURCE_KIND_LABEL } from '../lib/coverage'
+import {
+  FRESHNESS_LABEL,
+  GATE_LABEL,
+  HEALTH_REASON_LABEL,
+  MODE_LABEL,
+  PIPELINE_STATUSES,
+  cadenceLabel,
+} from '../lib/pipeline'
 
 /**
  * Every literal `scans.ci.*` key the CI/CD components ask for exists in both
@@ -27,12 +37,35 @@ describe('CI/CD i18n keys', () => {
     expect((vi as Record<string, string>)[key], `vi ${key}`).toBeTruthy()
   })
 
-  it('has a Vietnamese value for each template key the cells build', () => {
-    for (const k of ['passing', 'failing', 'none']) {
-      expect((vi as Record<string, string>)[`scans.ci.gate.${k}`]).toBeTruthy()
+  it('has both catalogs for each key built from a value', () => {
+    const built = [
+      ...Object.keys(GATE_LABEL).map((k) => `scans.ci.gate.${k}`),
+      ...Object.keys(MODE_LABEL).map((k) => `scans.ci.mode.${k}`),
+      ...Object.keys(REASON_LABEL).map((k) => `scans.ci.reason.${k}`),
+      ...Object.keys(HEALTH_REASON_LABEL).map((k) => `scans.ci.health.${k}`),
+      ...PIPELINE_STATUSES.flatMap((s) => [
+        `scans.ci.status.${s}.label`,
+        `scans.ci.status.${s}.description`,
+      ]),
+      ...Object.keys(FRESHNESS_LABEL).map((k) => `scans.ci.status.${k}.label`),
+      ...Object.keys(COVERAGE_STATE_META).flatMap((s) => [
+        `scans.ci.coverage.state.${s}.label`,
+        `scans.ci.coverage.state.${s}.description`,
+      ]),
+      ...CAPABILITIES.map((c) => `scans.ci.coverage.capability.${c}`),
+      ...Object.keys(SOURCE_KIND_LABEL).map((k) => `scans.ci.coverage.source.${k}`),
+      ...['overview', 'runs', 'branches'].map((k) => `scans.ci.sheet.tab.${k}`),
+    ]
+    for (const key of built) {
+      expect((en as Record<string, string>)[key], `en ${key}`).toBeTruthy()
+      expect((vi as Record<string, string>)[key], `vi ${key}`).toBeTruthy()
     }
-    for (const k of ['daemon', 'runner']) {
-      expect((vi as Record<string, string>)[`scans.ci.mode.${k}`]).toBeTruthy()
-    }
+  })
+
+  it('translates the cadence when given the console translator', () => {
+    const t = (key: string, fallback: string, vars?: Record<string, string | number>) =>
+      `${key}|${fallback}|${vars?.n ?? ''}`
+    expect(cadenceLabel(6 * 3600, t)).toBe('scans.ci.cadence.hours|every {n} hours|6')
+    expect(cadenceLabel(2 * 86400)).toBe('every 2 days')
   })
 })

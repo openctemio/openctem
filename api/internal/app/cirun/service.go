@@ -131,6 +131,7 @@ type Service struct {
 	now       func() time.Time
 	purgeMu   sync.Mutex
 	lastPurge time.Time
+	images    ImageLinker
 }
 
 // Deps are the service's collaborators.
@@ -268,6 +269,14 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
 	}
+	// The organization or namespace stays the one first admitted under its
+	// name (checkOwnerPin).
+	if refusal, err := s.checkOwnerPin(ctx, tenantID, cfg, claims); err != nil {
+		return nil, err
+	} else if refusal != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+		return nil, ErrExchangeRefused
+	}
 	// The pipeline's identity comes from the verified claims only: a token
 	// without an immutable repository id or a usable workflow path is not
 	// admitted, whatever the trust configuration says.
@@ -361,6 +370,45 @@ func (s *Service) checkRepositoryBinding(ctx context.Context, tenantID shared.ID
 	if bound {
 		return &cirun.Refusal{Code: RefuseRepositoryBinding,
 			Detail: fmt.Sprintf("repository %q reports under another repository id", name)}, nil
+	}
+	return nil, nil
+}
+
+// RefuseOwnerPin refuses a job whose organization or namespace name is
+// pinned to another immutable id.
+const RefuseOwnerPin = "owner_id_mismatch"
+
+// checkOwnerPin keeps a trust configuration with the organization (GitHub
+// repository_owner_id) or namespace (GitLab namespace_id) that first used a
+// name. Rules match names, and an organization renamed or deleted gives its
+// name to whoever registers it next; the first admitted exchange pins the id
+// (audited) and a later token with the same name and another id is refused.
+// An administrator re-pins by changing the configuration's owners or
+// repositories, which drops its pins.
+func (s *Service) checkOwnerPin(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, c cirun.Claims) (*cirun.Refusal, error) {
+	if cfg.Provider != cirun.ProviderGitHub && cfg.Provider != cirun.ProviderGitLab {
+		return nil, nil
+	}
+	name, id := strings.TrimSpace(c.OwnerName), strings.TrimSpace(c.OwnerID)
+	if name == "" || id == "" || len(name) > 500 || len(id) > 64 {
+		return nil, nil
+	}
+	pinned, created, err := s.repo.PinOwner(ctx, tenantID, cfg.ID, name, id)
+	if err != nil {
+		return nil, fmt.Errorf("pin CI owner: %w", err)
+	}
+	if created {
+		s.logAudit(ctx, tenantID, Actor{Email: ciActor(c)},
+			auditapp.NewSuccessEvent(auditdom.ActionCITrustConfigUpdated, auditdom.ResourceTypeCITrustConfig, cfg.ID.String()).
+				WithResourceName(cfg.Name).
+				WithMessage(fmt.Sprintf("CI trust configuration %q pinned %s to id %s", cfg.Name, name, id)).
+				WithMetadata("owner_pinned", name).
+				WithMetadata("owner_id", id))
+		return nil, nil
+	}
+	if pinned != id {
+		return &cirun.Refusal{Code: RefuseOwnerPin,
+			Detail: fmt.Sprintf("%s is pinned to id %s; the token names id %s", name, pinned, id)}, nil
 	}
 	return nil, nil
 }
@@ -781,6 +829,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		}
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
+	s.suggestImageLinks(ctx, run, report)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }

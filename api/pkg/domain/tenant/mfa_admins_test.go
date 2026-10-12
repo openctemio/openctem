@@ -38,7 +38,7 @@ func TestNewTenantRequiresMFAForAdmins(t *testing.T) {
 	if !sec.MFARequiredForAdmins || sec.MFARequired {
 		t.Fatalf("new org: want admins-only 2FA, got %+v", sec)
 	}
-	if sec.SessionTimeoutMin != DefaultSettings().Security.SessionTimeoutMin || sec.EmailVerificationMode != EmailVerificationAuto {
+	if len(sec.IPWhitelist) != 0 || sec.EmailVerificationMode != EmailVerificationAuto {
 		t.Fatalf("new org must keep the other security defaults, got %+v", sec)
 	}
 
