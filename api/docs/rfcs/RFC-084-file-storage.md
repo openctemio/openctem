@@ -1,0 +1,169 @@
+# RFC-084: File upload and storage
+
+| | |
+|---|---|
+| Status | Proposed (2026-10-12); P0 slices 1 (#1900) and 2 implemented, slice 3 (short-lived download links) next |
+| Scope | api (`pkg/domain/attachment`, `internal/app/integration/attachment.go`, `internal/infra/storage`, upload routes and handlers, config), web (`/api/v1` proxy request bodies), deployment docs |
+| Architecture | [file-storage.md](../architecture/file-storage.md) |
+| Related | RFC-065 (authorization letters), RFC-076 (report templates), RFC-081 (web evidence screenshots), RFC-061 (content packs), finding-evidence.md, finding-import.md |
+
+## 1. Summary
+
+Files reach the platform for many reasons: pentest evidence, scan results to
+import, SBOMs, authorization letters, report templates, screenshots taken by
+sensors. One storage interface already holds most stored files
+(`attachment.FileStorage`, drivers `local` and `s3`, per-tenant own bucket,
+tenant erasure). This RFC makes every path use it consistently and safely:
+
+- uploads are streamed, never buffered whole, and every import honours the
+  limit it documents;
+- the type of a stored file comes from its bytes, never from the client;
+- an organization's files never silently leave the storage it chose;
+- one organization cannot fill the shared storage (per-tenant quota);
+- adding and removing evidence is audited with the file's SHA-256;
+- the local driver writes atomically and privately;
+- S3-compatible storage is documented for Docker and Kubernetes.
+
+Later phases (section 6) move report artefacts out of Postgres, add
+retention for orphaned evidence, asynchronous large imports, malware
+scanning, image metadata stripping and short-lived signed downloads.
+
+## 2. Inventory
+
+| Path | Bytes | Limit | Notes |
+|---|---|---|---|
+| Evidence attachments `/api/v1/attachments` | FileStorage | 10 MiB/file | sniffed type, allow-list, campaign/finding/uploader authz |
+| Manual finding evidence `/findings/{id}/evidence` | FileStorage | 10 MiB | finding data scope |
+| Authorization letters `/scope/letters` | FileStorage | 10 MiB | PDF/PNG/JPEG; type now sniffed (was client-declared) |
+| Web evidence screenshots | FileStorage (`StoreBlob`) | 10 MiB | re-encoded PNG; 30-day retention |
+| Content packs (tenant, platform) | server FileStorage | pack limit | canonical tar, signed |
+| Report templates (DOCX) | Postgres `bytea` | 10 MiB, 20/org | phase P1 moves to FileStorage |
+| Stored report artefacts | Postgres `bytea` | 50 MiB | phase P1 moves to FileStorage |
+| Scanner templates | Postgres `bytea` | 2 MiB | stays (small, versioned with the row) |
+| Finding import `/findings/import` | not stored, streamed | 110 MiB | archives spooled to a temp dir |
+| SBOM / asset CSV / campaign imports | not stored | 50 MiB | route limits now replace the global 10 MiB |
+| VEX, API spec, credential CSV | not stored | 5–10 MiB | |
+| Sensor results v2/v3 | Postgres `ingest_jobs.payload` (queue) | 16 MiB × 256 segments | blanked after processing |
+| Avatars, logos | URLs only | | avatar host allow-list; logo upload is P1 |
+
+## 3. Design
+
+### 3.1 One interface
+
+`attachment.FileStorage` (`Upload`, `Download`, `Delete`, `EraseTenant`) stays
+the only storage interface. Keys are `{namespace}/{uuid}_{sanitized name}`;
+the namespace is a tenant id (or a fixed platform namespace for platform
+content packs). Drivers:
+
+- **local**: files under `STORAGE_LOCAL_PATH`. Each upload is written to a
+  temporary file in the tenant directory, synced and renamed to its key, so a
+  crash or a dropped upload never leaves a partial file under a key.
+  Directories are `0700`, files `0600`. Suits one API replica, or several on a
+  ReadWriteMany volume.
+- **s3**: AWS S3, MinIO or any other service that speaks the S3 API, through
+  `STORAGE_PROVIDER=s3|minio`, `STORAGE_BUCKET`, `STORAGE_REGION`,
+  `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`. A streamed
+  body is spooled to a temporary file so the request can be signed over its
+  payload; nothing is held in memory.
+
+A namespace that is empty, a dot segment or contains a separator is refused
+by both drivers.
+
+### 3.2 Organization's own bucket
+
+The Storage tab of organization settings lets an administrator (step-up,
+audited High) keep files on the server storage or point them at the
+organization's own S3-compatible bucket with its own keys, reached through
+the SSRF-guarded client. This stays (data residency for organizations that
+need it). It now **fails closed**: when the organization chose its own bucket
+and that bucket cannot be built (bad keys, blocked endpoint, unreadable
+setting), uploads fail with `503` instead of landing on the shared server
+storage; a file recorded in the organization's bucket is read from there or
+not at all. Saving the setting drops the cached provider, so it applies to
+the next upload.
+
+### 3.3 Uploads
+
+- **Streaming.** The attachment service hashes (SHA-256) and counts the bytes
+  while they go to the storage; the size limit holds on the bytes read, and
+  the recorded size is the bytes read. A duplicate in the same context is
+  detected after the write and its copy deleted.
+- **Type from content.** `attachment.DetectContentType` decides the media
+  type from the first 512 bytes; the file extension only refines generic text
+  or binary (markdown, CSV, HAR, MP4/WebM) and never upgrades content to an
+  active type. The allow-list has no HTML or SVG.
+- **Effective limits.** Import routes declare their own body limit after the
+  permission gate (finding import 110 MiB; SBOM, asset CSV and campaign
+  import 50 MiB). The web console's `/api/v1` proxy streams those routes to
+  the API instead of reading them into memory; other requests keep the 12 MiB
+  in-memory cap. Multipart forms keep at most 1 MiB in memory.
+- **Quota.** `STORAGE_TENANT_QUOTA_MB` (default 20480 = 20 GiB, 0 = none)
+  bounds the bytes one organization's attachments hold. Checked on the
+  declared size before the transfer and on the bytes read after it; an
+  upload over it gets `413 STORAGE_QUOTA_EXCEEDED`.
+- **Audit.** `attachment.uploaded` and `attachment.deleted` record the file
+  name, type, size, SHA-256 and context.
+
+### 3.4 Downloads
+
+Downloads go through the API after the same authorization as today
+(tenant-scoped lookup, campaign/finding/uploader checks). Every API response
+carries `X-Content-Type-Options: nosniff` and
+`Content-Security-Policy: default-src 'none'`; attachments other than raster
+images are served `Content-Disposition: attachment`.
+
+## 4. Threat model
+
+Assets: evidence (may hold secrets, personal data, exploit material),
+letters, reports, organization storage keys. Actors: a member (malicious or
+compromised), another organization, an internet attacker, an operator
+mistake.
+
+| Threat | Control |
+|---|---|
+| Path traversal, symlink escape | server-generated keys, sanitized names, namespace check, tenant dir resolved and kept under the base path, atomic temp file in the same dir |
+| MIME confusion, stored XSS | type from content (letters included), allow-list without HTML/SVG, nosniff, `default-src 'none'`, attachment disposition |
+| Cross-tenant object access | tenant-scoped row lookup, tenant key prefix, erasure refuses non-tenant namespaces; tested |
+| Residency bypass | own bucket fails closed (no fallback to shared storage) |
+| DoS through uploads | streaming (proxy and API), effective per-route limits, per-tenant quota, rate limits on import routes |
+| SSRF through a tenant bucket endpoint | SSRF-guarded client, endpoint validation |
+| Zip/XML bombs in imports | importer archive limits (entries, size, ratio), strict parsers |
+| Evidence tampering, repudiation | SHA-256 recorded; upload/delete audited |
+| Bucket misconfiguration | documentation: block public access, TLS only, least-privilege key, server-side encryption |
+| Malware distribution | files only reachable by authorized members, attachment disposition; scanning hook in P1 |
+
+## 5. Decisions
+
+- Keep and extend the existing interface rather than add a second one.
+- The per-organization bucket option stays and fails closed.
+- Quota per organization from configuration now; per plan later.
+- S3 credentials are static keys (no ambient credential chain) for both the
+  server and organization buckets.
+
+## 6. Phases
+
+**P0** (this RFC's implementation): effective import limits and streamed
+proxy (#1900); content-sniffed types, streaming attachment upload, fail-closed
+own bucket, quota, audit, atomic private local writes, S3 streaming, S3
+documentation; short-lived signed downloads for S3 (opt-in presigned GET,
+60 s, attachment disposition forced).
+
+**P1**: retention for evidence whose finding or campaign is deleted and for
+uploads never linked; report artefacts and templates moved from Postgres to
+the storage; asynchronous large import read from the storage; image metadata
+stripping and a pixel limit; malware scanning hook with an optional ClamAV
+sidecar (mark, not block, for evidence); S3 server-side encryption options;
+`local`↔`s3` migration command; uploaded organization logo instead of a URL;
+storage metrics; asynchronous exports with signed links.
+
+**P2**: resumable multipart uploads with presigned parts, direct-to-bucket
+upload with a validating finalize step, envelope encryption for local
+storage, keeping original SBOM documents, compliance control evidence, ticket
+attachment sync.
+
+## 7. Not built
+
+A second storage abstraction or a generic blob table; a resumable upload
+protocol before a file size needs it; deduplication across organizations
+(an existence oracle); application-level encryption for local files; an
+Azure Blob driver; blocking malware scans on pentest evidence.
