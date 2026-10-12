@@ -115,7 +115,9 @@ YAML
       SENSOR_SDK_MIN_VERSION: ${SENSOR_SDK_MIN_VERSION:-}
       SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.14.0}
 YAML
-  echo '    image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}' >"$d/api/deploy/docker-compose.job-signer.yml"
+  cat >"$d/api/deploy/docker-compose.job-signer.yml" <<'YAML'
+    image: x:${API_VERSION:-${OPENCTEM_VERSION:-v0.8.0}}
+YAML
   cat >"$d/api/internal/config/config.go" <<'GO'
 const DefaultSensorLatestVersion = "v0.6.4"
 const DefaultSensorMinVersion = ""
