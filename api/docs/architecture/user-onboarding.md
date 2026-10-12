@@ -100,9 +100,14 @@ page offers **Request access** (`/request-access`, en/vi):
 - Retention (`access-request-retention` controller, hourly): unconfirmed
   requests are deleted after 24 hours, decided ones after 90 days.
 - CAPTCHA: `CAPTCHA_TURNSTILE_SECRET` makes the API require a Cloudflare
-  Turnstile token on submissions; `CAPTCHA_TURNSTILE_SITE_KEY` is published as
-  `captcha_site_key` on `/auth/providers`. The web widget is not wired yet:
-  leave the secret unset until it is, or every submission is refused.
+  Turnstile token on request-access submissions **and on self-service
+  registration** (`POST /auth/register`, `captcha_token`, checked before the
+  account lookup, 400 `CAPTCHA_FAILED`). `CAPTCHA_TURNSTILE_SITE_KEY` is
+  published as `captcha_site_key` on `/auth/providers`, and the register and
+  request-access forms render the check when it is set. The two variables
+  must be set together; the server refuses to start with only one. The web
+  CSP allows `frame-src https://challenges.cloudflare.com` for the widget.
+  Set both whenever self-service sign-up is on in production.
 
 ### Invitation tokens stay out of URLs
 
@@ -269,7 +274,17 @@ Next.js proxy, the peer is the UI container, so:
 1. put a reverse proxy in front of the UI that **overwrites** `X-Real-IP` and
    `X-Forwarded-For` with the real client address;
 2. set `TRUST_PROXY_HEADERS=true` on the UI so its proxy forwards them;
-3. set `SERVER_TRUSTED_PROXIES` on the API to the UI's address/network.
+3. set `SERVER_TRUSTED_PROXIES` on the API to the UI's (and the gateway's)
+   own addresses.
+
+List addresses, not a whole container network: every host in a trusted range
+can set the client address the API believes (login rate limits, audit
+addresses, IP allowlists), including a sensor container running third-party
+tools on the same network. The API logs a `SECURITY:` warning at startup, and
+`server -check-config` prints one, for any `SERVER_TRUSTED_PROXIES` or
+`SENSOR_MTLS_TRUSTED_PROXIES` range wider than 16 addresses (an IPv4 `/28`).
+The shipped Compose file pins the gateway and web addresses on its fixed
+subnet; give your containers fixed addresses the same way.
 
 Without that, `current_ip` shows the UI container's address and the allowlist
 cannot tell users apart. Never set `TRUST_PROXY_HEADERS=true` when browsers
@@ -291,7 +306,7 @@ UPDATE tenants
 | `TENANT_CREATION_MODE` | `admin_only` | **Seeds** the sign-up policy on the first start only (see [Sign-up policy](#sign-up-policy-console--system--sign-up)); afterwards the console value applies. Anything but `admin_only`/`self_service` fails startup. |
 | `SSO_ENTRA_DEFAULT_ROLE` | `viewer` | JIT role for the env Entra fallback. |
 | `SMTP_*`, `SMTP_BASE_URL` | — | When set, set-password links are emailed (`<SMTP_BASE_URL>/set-password?token=`). |
-| `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). |
+| `SERVER_TRUSTED_PROXIES` | empty | Peers whose forwarding headers are trusted (IP allowlist, rate limits, audit). Pin the proxies' addresses; a range wider than 16 addresses is warned about at startup. |
 
 ## Code map
 
