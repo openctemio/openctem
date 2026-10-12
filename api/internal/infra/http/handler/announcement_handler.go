@@ -120,18 +120,28 @@ func announcementState(a postgres.PlatformAnnouncement, now time.Time) string {
 // @Success      200  {object}  AnnouncementListResponse
 // @Router       /announcements [get]
 func (h *AnnouncementHandler) Active(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.store.Active(r.Context(), h.now(), announcementActiveLimit)
+	list, err := h.ActiveResponses(r.Context())
 	if err != nil {
 		h.logger.Error("active announcements", "error", err)
 		apierror.InternalServerError("could not read announcements").WriteJSON(w)
 		return
 	}
-	out := AnnouncementListResponse{Data: make([]AnnouncementResponse, 0, len(rows))}
-	for _, a := range rows {
-		out.Data = append(out.Data, toAnnouncementResponse(a))
-	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, AnnouncementListResponse{Data: list})
+}
+
+// ActiveResponses is the body of GET /announcements (never nil). The session
+// bootstrap carries it too, so the app shell does not ask for it separately.
+func (h *AnnouncementHandler) ActiveResponses(ctx context.Context) ([]AnnouncementResponse, error) {
+	rows, err := h.store.Active(ctx, h.now(), announcementActiveLimit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AnnouncementResponse, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, toAnnouncementResponse(a))
+	}
+	return out, nil
 }
 
 // AdminList handles GET /api/v1/admin/announcements.

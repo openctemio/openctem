@@ -87,6 +87,9 @@ type BootstrapResponse struct {
 	TenantCreationMode string `json:"tenant_creation_mode,omitempty"`
 	// Badges are the sidebar and header counts.
 	Badges *BootstrapBadges `json:"badges,omitempty"`
+	// Announcements are the platform notices shown now, as GET
+	// /announcements returns them in `data`. Platform-wide, not per tenant.
+	Announcements *[]AnnouncementResponse `json:"announcements,omitempty"`
 }
 
 // BootstrapBadges are the counts the app shell shows on every page. A count
@@ -115,6 +118,9 @@ type BootstrapSession struct {
 	// TenantCreationMode reports the current organization policy (the sign-up
 	// policy when it is configured, else the configured mode).
 	TenantCreationMode func(ctx context.Context) string
+	// Announcements is AnnouncementHandler.ActiveResponses (the
+	// /announcements body).
+	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
 }
 
 // BootstrapPermissions contains user permissions and version.
@@ -441,6 +447,18 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			mu.Lock()
 			badges.EASMReview = &n
 			hasBadg = true
+			mu.Unlock()
+		})
+	}
+	if h.session.Announcements != nil {
+		run(func() {
+			list, err := h.session.Announcements(ctx)
+			if err != nil {
+				h.logger.Warn("bootstrap: announcements unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			resp.Announcements = &list
 			mu.Unlock()
 		})
 	}

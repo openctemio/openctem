@@ -160,12 +160,13 @@ export function ScopeEntryDialog({
   const [tier, setTier] = useState<ScopeTier>('t1')
   const [tierTouched, setTierTouched] = useState(false)
   const [verifyDomain, setVerifyDomain] = useState<string | null>(null)
-  const { domains: verifiedDomains, mutate: refreshDomains } = useEASMVerifiedDomains()
+  // Read only while the dialog is open: the page keeps it mounted closed.
+  const { domains: verifiedDomains, mutate: refreshDomains } = useEASMVerifiedDomains(open)
   const [reason, setReason] = useState('')
   const [description, setDescription] = useState('')
   // '' : the organization owns it; otherwise the letter that authorizes it.
   const [letterId, setLetterId] = useState('')
-  const { data: letters } = useLetters()
+  const { data: letters } = useLetters(open)
   const usableLetters = useMemo(
     () => (letters ?? []).filter((l) => l.in_effect && !l.revoked_at),
     [letters]
