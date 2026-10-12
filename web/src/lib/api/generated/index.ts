@@ -217,6 +217,10 @@ export type UpdateSignupPolicyRequest =
 export type EmailSettingsResponse = Schemas['internal_infra_http_handler.EmailSettingsResponse']
 export type UpdateEmailSettingsRequest =
   Schemas['internal_infra_http_handler.UpdateEmailSettingsRequest']
+// Admin console: the operator's legal information (System > Legal, RFC-079)
+export type LegalSettingsResponse = Schemas['internal_infra_http_handler.LegalSettingsResponse']
+export type UpdateLegalSettingsRequest =
+  Schemas['internal_infra_http_handler.UpdateLegalSettingsRequest']
 export type AuditChainSample =
   Schemas['github_com_openctemio_openctem_api_internal_app_audit_chainclassify.Sample']
 export type AuditChainClass =

@@ -1,13 +1,15 @@
 import { securityTxt } from '@/lib/legal'
+import { legalSettings } from '@/lib/legal-settings'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * /.well-known/security.txt (RFC 9116): how to report a vulnerability, from
- * SECURITY_CONTACT (and SECURITY_POLICY_URL). 404 when no contact is set.
+ * the security contact set in the admin console (System > Legal). 404 when it
+ * is turned off there.
  */
-export function GET() {
-  const body = securityTxt()
+export async function GET() {
+  const body = securityTxt(await legalSettings())
   if (!body) {
     return new Response('Not found\n', {
       status: 404,

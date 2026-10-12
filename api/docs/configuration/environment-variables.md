@@ -420,25 +420,9 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 | `NEXT_PUBLIC_SENTRY_DSN` | string | empty |  |  | Sentry DSN for browser and server error reporting. Unset: off. |
 | `NEXT_PUBLIC_APP_NAME` | string | `OpenCTEM` |  |  | Product name in the page title. |
 | `NEXT_PUBLIC_APP_DESCRIPTION` | string | empty |  |  | Page description meta tag. |
-| `NEXT_PUBLIC_PRIVACY_URL` | string | empty |  |  | Privacy notice link on the sign-in and sign-up pages. |
-| `NEXT_PUBLIC_TERMS_URL` | string | empty |  |  | Terms of service link on the sign-in and sign-up pages. |
 | `NEXT_PUBLIC_COOKIE_DOMAIN` | string | empty |  |  | Cookie domain for the console's cookies. Unset: the host only. |
 | `NEXT_PUBLIC_ENABLE_SIDEBAR_BADGES` | string | `false` |  |  | Show live count badges in the sidebar. |
 | `NEXT_ALLOWED_DEV_ORIGINS` | string | empty |  |  | Development server only: extra origins allowed to load the dev bundle. |
-| `LEGAL_TERMS_URL` | url | empty |  |  | Terms of service link (https) on the sign-in and register pages. Read at request time. |
-| `LEGAL_PRIVACY_URL` | url | empty |  |  | Privacy policy link (https) on the sign-in and register pages. Read at request time. |
-| `LEGAL_PAGES_ENABLED` | bool | `false` |  |  | `true` serves the built-in legal templates (/terms, /acceptable-use, /privacy, /dpa, /subprocessors); review them with counsel. |
-| `LEGAL_ORGANIZATION_NAME` | string | empty |  |  | Legal name of the operator in the built-in templates. Unset: a marked placeholder. |
-| `LEGAL_SERVICE_NAME` | string | `OpenCTEM` |  |  | Service name in the built-in templates. |
-| `LEGAL_CONTACT_EMAIL` | string | `info@openctem.io` |  |  | General contact e-mail in the built-in templates. |
-| `LEGAL_WEBSITE_URL` | url | `https://openctem.io` |  |  | Website in the built-in templates (https). |
-| `LEGAL_DOCS_URL` | url | `https://docs.openctem.io` |  |  | Documentation link in the built-in templates (https). |
-| `LEGAL_ADDRESS` | string | empty |  |  | Postal address in the built-in templates. Unset: a marked placeholder. |
-| `LEGAL_JURISDICTION` | string | empty |  |  | Governing law in the built-in templates. Unset: a marked placeholder. |
-| `LEGAL_EFFECTIVE_DATE` | string | empty |  |  | Effective date of the built-in templates. Unset: a marked placeholder. |
-| `SECURITY_CONTACT` | string | `security@openctem.io` |  |  | Contact (e-mail address or https URL) in /.well-known/security.txt. |
-| `SECURITY_POLICY_URL` | url | empty |  |  | https URL of the security policy, added to security.txt. |
-| `SECURITY_TXT_ENABLED` | bool | `true` |  |  | `false` stops serving /.well-known/security.txt. |
 
 ## Gateway
 
