@@ -6,7 +6,13 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { MAX_URL_LENGTH, safeHref, safeImageSrc, safeInternalHref } from './safe-href'
+import {
+  MAX_URL_LENGTH,
+  safeAvatarSrc,
+  safeHref,
+  safeImageSrc,
+  safeInternalHref,
+} from './safe-href'
 
 const XSS_PAYLOADS: readonly string[] = [
   'javascript:alert(1)',
@@ -125,6 +131,34 @@ describe('safeImageSrc', () => {
       `blob:${window.location.origin}/abc`
     )
     expect(safeImageSrc('blob:https://evil.test/abc')).toBeUndefined()
+  })
+})
+
+describe('safeAvatarSrc', () => {
+  it.each([
+    'https://avatars.githubusercontent.com/u/1?v=4',
+    'https://lh3.googleusercontent.com/a/abc=s96-c',
+    'https://secure.gravatar.com/avatar/abc',
+    'https://gitlab.com/uploads/-/system/user/avatar/1/a.png',
+  ])('keeps a known avatar host: %s', (url) => {
+    expect(safeAvatarSrc(url)).toBe(url)
+  })
+
+  it.each([
+    'https://tracker.example/pixel.gif',
+    'http://avatars.githubusercontent.com/u/1',
+    '//avatars.githubusercontent.com/u/1',
+    '/api/v1/avatar.png',
+    'https://user:pw@avatars.githubusercontent.com/u/1',
+    'https://avatars.githubusercontent.com:8443/u/1',
+    'https://googleusercontent.com/a.png',
+    'https://lh3.googleusercontent.com.evil.example/a.png',
+    'data:image/png;base64,AAAA',
+    'javascript:alert(1)',
+    '',
+    undefined,
+  ])('drops anything else (tracking pixels, other schemes): %s', (url) => {
+    expect(safeAvatarSrc(url)).toBeUndefined()
   })
 })
 

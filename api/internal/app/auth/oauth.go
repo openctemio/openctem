@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/config"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -71,6 +72,8 @@ func (p OAuthProvider) ToAuthProvider() userdom.AuthProvider {
 
 // OAuthService handles OAuth authentication.
 type OAuthService struct {
+	// audit records each sign-in (auth.login), as the password sign-in does.
+	audit            *auditapp.AuditService
 	userRepo         userdom.Repository
 	sessionRepo      sessiondom.Repository
 	refreshTokenRepo sessiondom.RefreshTokenRepository
@@ -104,6 +107,9 @@ type InvitationLookup interface {
 }
 
 // SetSignupPolicy wires the platform sign-up policy (the console setting).
+// SetAuditService wires the auth.login event for social sign-ins.
+func (s *OAuthService) SetAuditService(a *auditapp.AuditService) { s.audit = a }
+
 func (s *OAuthService) SetSignupPolicy(p signupdom.PolicySource) { s.signupPolicy = p }
 
 // SetInvitationLookup wires the pending-invitation check.
@@ -914,12 +920,13 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	}
 
 	// Create session under the same id embedded in the token.
+	ci := clientInfoFrom(ctx)
 	newSession, err := sessiondom.NewWithID(
 		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
-		"", // IP address - can be set from request context
-		"", // User agent - can be set from request context
+		ci.IP,
+		ci.UserAgent,
 		s.authConfig.SessionDuration,
 	)
 	if err != nil {
@@ -949,6 +956,7 @@ func (s *OAuthService) createSession(ctx context.Context, u *userdom.User) (*Ses
 	if err := s.refreshTokenRepo.Create(ctx, refreshTokenEntity); err != nil {
 		return nil, fmt.Errorf("failed to save refresh token: %w", err)
 	}
+	auditFederatedLogin(ctx, s.audit, s.logger, u, "", sessionID.String(), "oauth", string(u.AuthProvider()))
 
 	return &SessionResult{
 		AccessToken:  tokenPair.AccessToken,
