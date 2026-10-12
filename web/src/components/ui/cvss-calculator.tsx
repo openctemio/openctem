@@ -1,280 +1,74 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+/**
+ * CVSS base-score calculator for versions 3.1 and 4.0.
+ *
+ * Paste a vector (any base vector; extra non-base metrics are ignored) or
+ * pick the metrics; the score is computed per the FIRST specification
+ * (@/lib/cvss). Emits the vector and, once every base metric is set, the
+ * score.
+ */
+
+import * as React from 'react'
+import { ChevronDown, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SEVERITY_BADGE_SOLID } from '@/lib/severity-colors'
+import { SEVERITY_LABEL_KEYS, SEVERITY_LABELS, type SeverityLevel } from '@/lib/severity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Calculator, RotateCcw } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { useTranslation } from '@/context/i18n-provider'
+import {
+  CVSS_METRICS,
+  buildCvssVector,
+  parseCvssVector,
+  scoreCvss,
+  type CvssMetrics,
+  type CvssVersion,
+} from '@/lib/cvss'
 
-// ============================================
-// CVSS 4.0 Base Metric Definitions
-// Ref: https://www.first.org/cvss/v4.0/specification-document
-// ============================================
-
-type MetricValues = Record<string, string>
-
-interface MetricOption {
-  value: string
-  label: string
-  description: string
+const METRIC_NAMES: Record<string, string> = {
+  AV: 'Attack vector',
+  AC: 'Attack complexity',
+  AT: 'Attack requirements',
+  PR: 'Privileges required',
+  UI: 'User interaction',
+  S: 'Scope',
+  C: 'Confidentiality',
+  I: 'Integrity',
+  A: 'Availability',
+  VC: 'Confidentiality',
+  VI: 'Integrity',
+  VA: 'Availability',
+  SC: 'Confidentiality',
+  SI: 'Integrity',
+  SA: 'Availability',
 }
 
-interface MetricDef {
-  key: string
-  name: string
-  abbr: string
-  options: MetricOption[]
+const VALUE_NAMES: Record<string, Record<string, string>> = {
+  AV: { N: 'Network', A: 'Adjacent', L: 'Local', P: 'Physical' },
+  AC: { L: 'Low', H: 'High' },
+  AT: { N: 'None', P: 'Present' },
+  PR: { N: 'None', L: 'Low', H: 'High' },
+  UI: { N: 'None', R: 'Required', P: 'Passive', A: 'Active' },
+  S: { U: 'Unchanged', C: 'Changed' },
+  CIA: { H: 'High', L: 'Low', N: 'None' },
 }
 
-// Exploitability metrics
-const EXPLOITABILITY: MetricDef[] = [
-  {
-    key: 'AV',
-    name: 'Attack Vector',
-    abbr: 'AV',
-    options: [
-      { value: 'N', label: 'Network', description: 'Remotely exploitable' },
-      { value: 'A', label: 'Adjacent', description: 'Adjacent network' },
-      { value: 'L', label: 'Local', description: 'Local access' },
-      { value: 'P', label: 'Physical', description: 'Physical access' },
-    ],
-  },
-  {
-    key: 'AC',
-    name: 'Attack Complexity',
-    abbr: 'AC',
-    options: [
-      { value: 'L', label: 'Low', description: 'No special conditions' },
-      { value: 'H', label: 'High', description: 'Specific conditions needed' },
-    ],
-  },
-  {
-    key: 'AT',
-    name: 'Attack Requirements',
-    abbr: 'AT',
-    options: [
-      { value: 'N', label: 'None', description: 'No prerequisites' },
-      { value: 'P', label: 'Present', description: 'Prerequisites exist' },
-    ],
-  },
-  {
-    key: 'PR',
-    name: 'Privileges Required',
-    abbr: 'PR',
-    options: [
-      { value: 'N', label: 'None', description: 'No auth needed' },
-      { value: 'L', label: 'Low', description: 'Basic privileges' },
-      { value: 'H', label: 'High', description: 'Admin privileges' },
-    ],
-  },
-  {
-    key: 'UI',
-    name: 'User Interaction',
-    abbr: 'UI',
-    options: [
-      { value: 'N', label: 'None', description: 'No user action' },
-      { value: 'P', label: 'Passive', description: 'Involuntary action' },
-      { value: 'A', label: 'Active', description: 'Deliberate action' },
-    ],
-  },
-]
-
-// Impact metrics — Vulnerable System
-const IMPACT_VULNERABLE: MetricDef[] = [
-  {
-    key: 'VC',
-    name: 'Confidentiality',
-    abbr: 'VC',
-    options: [
-      { value: 'N', label: 'None', description: 'No impact' },
-      { value: 'L', label: 'Low', description: 'Limited disclosure' },
-      { value: 'H', label: 'High', description: 'Total disclosure' },
-    ],
-  },
-  {
-    key: 'VI',
-    name: 'Integrity',
-    abbr: 'VI',
-    options: [
-      { value: 'N', label: 'None', description: 'No impact' },
-      { value: 'L', label: 'Low', description: 'Limited modification' },
-      { value: 'H', label: 'High', description: 'Total modification' },
-    ],
-  },
-  {
-    key: 'VA',
-    name: 'Availability',
-    abbr: 'VA',
-    options: [
-      { value: 'N', label: 'None', description: 'No impact' },
-      { value: 'L', label: 'Low', description: 'Reduced availability' },
-      { value: 'H', label: 'High', description: 'Total loss' },
-    ],
-  },
-]
-
-// Impact metrics — Subsequent System
-const IMPACT_SUBSEQUENT: MetricDef[] = [
-  {
-    key: 'SC',
-    name: 'Confidentiality',
-    abbr: 'SC',
-    options: [
-      { value: 'N', label: 'None', description: 'No impact' },
-      { value: 'L', label: 'Low', description: 'Limited disclosure' },
-      { value: 'H', label: 'High', description: 'Total disclosure' },
-    ],
-  },
-  {
-    key: 'SI',
-    name: 'Integrity',
-    abbr: 'SI',
-    options: [
-      { value: 'N', label: 'None', description: 'No impact' },
-      { value: 'L', label: 'Low', description: 'Limited modification' },
-      { value: 'H', label: 'High', description: 'Total modification' },
-    ],
-  },
-  {
-    key: 'SA',
-    name: 'Availability',
-    abbr: 'SA',
-    options: [
-      { value: 'N', label: 'None', description: 'No impact' },
-      { value: 'L', label: 'Low', description: 'Reduced availability' },
-      { value: 'H', label: 'High', description: 'Total loss' },
-    ],
-  },
-]
-
-const ALL_METRICS = [...EXPLOITABILITY, ...IMPACT_VULNERABLE, ...IMPACT_SUBSEQUENT]
-
-// ============================================
-// CVSS 4.0 Score Calculation (MacroVector approach)
-// Simplified but accurate approximation per FIRST spec
-// ============================================
-
-function calculateCvss4Score(m: MetricValues): number | null {
-  for (const def of ALL_METRICS) {
-    if (!m[def.key]) return null
-  }
-
-  // Exploitability
-  const avW: Record<string, number> = { N: 0.0, A: 0.1, L: 0.25, P: 0.4 }
-  const acW: Record<string, number> = { L: 0.0, H: 0.2 }
-  const atW: Record<string, number> = { N: 0.0, P: 0.1 }
-  const prW: Record<string, number> = { N: 0.0, L: 0.1, H: 0.3 }
-  const uiW: Record<string, number> = { N: 0.0, P: 0.1, A: 0.2 }
-
-  const exploitDifficulty = avW[m.AV] + acW[m.AC] + atW[m.AT] + prW[m.PR] + uiW[m.UI]
-
-  const exploitability = Math.max(0, 1 - exploitDifficulty)
-
-  // Impact on Vulnerable System
-  const ciW: Record<string, number> = { N: 0, L: 0.22, H: 0.56 }
-  const vulnImpact = 1 - (1 - ciW[m.VC]) * (1 - ciW[m.VI]) * (1 - ciW[m.VA])
-
-  // Impact on Subsequent System
-  const subImpact = 1 - (1 - ciW[m.SC]) * (1 - ciW[m.SI]) * (1 - ciW[m.SA])
-
-  // Combined impact (subsequent has lower weight)
-  const totalImpact = Math.min(vulnImpact + 0.5 * subImpact, 1)
-
-  if (totalImpact <= 0) return 0
-
-  // Base Score
-  const rawScore = 10 * exploitability * totalImpact
-  const score = Math.min(Math.ceil(rawScore * 10) / 10, 10)
-
-  return score
+const GROUP_NAMES: Record<string, string> = {
+  exploitability: 'Exploitability',
+  scope: 'Scope',
+  impact: 'Impact',
+  subsequent: 'Impact on subsequent systems',
 }
 
-function buildVector(metrics: MetricValues): string {
-  const parts = ALL_METRICS.filter((g) => metrics[g.key]).map((g) => `${g.key}:${metrics[g.key]}`)
-  if (parts.length === 0) return ''
-  return `CVSS:4.0/${parts.join('/')}`
+function band(score: number): SeverityLevel {
+  if (score >= 9) return 'critical'
+  if (score >= 7) return 'high'
+  if (score >= 4) return 'medium'
+  if (score > 0) return 'low'
+  return 'info'
 }
-
-function parseVector(vector: string): MetricValues {
-  const result: MetricValues = {}
-  if (!vector) return result
-  const prefix = vector.startsWith('CVSS:4.0/') ? 'CVSS:4.0/' : 'CVSS:3.1/'
-  if (!vector.startsWith(prefix)) return result
-
-  const parts = vector.replace(prefix, '').split('/')
-  for (const part of parts) {
-    const [key, value] = part.split(':')
-    if (key && value) result[key] = value
-  }
-  return result
-}
-
-function getSeverityLabel(score: number): string {
-  if (score === 0) return 'None'
-  if (score <= 3.9) return 'Low'
-  if (score <= 6.9) return 'Medium'
-  if (score <= 8.9) return 'High'
-  return 'Critical'
-}
-
-function getSeverityColor(score: number): string {
-  if (score === 0) return SEVERITY_BADGE_SOLID.info
-  if (score <= 3.9) return SEVERITY_BADGE_SOLID.low
-  if (score <= 6.9) return SEVERITY_BADGE_SOLID.medium
-  if (score <= 8.9) return SEVERITY_BADGE_SOLID.high
-  return SEVERITY_BADGE_SOLID.critical
-}
-
-function getSeverityRingColor(score: number): string {
-  if (score === 0) return 'ring-gray-400'
-  if (score <= 3.9) return 'ring-blue-500'
-  if (score <= 6.9) return 'ring-yellow-500'
-  if (score <= 8.9) return 'ring-orange-500'
-  return 'ring-red-500'
-}
-
-// ============================================
-// Sub-components
-// ============================================
-
-function MetricRow({
-  metric,
-  selected,
-  onSelect,
-}: {
-  metric: MetricDef
-  selected: string | undefined
-  onSelect: (value: string) => void
-}) {
-  return (
-    <div>
-      <span className="text-xs font-medium text-muted-foreground block mb-1.5">{metric.name}</span>
-      <div className="flex gap-1">
-        {metric.options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onSelect(opt.value)}
-            title={opt.description}
-            className={cn(
-              'flex-1 px-1.5 py-1.5 rounded text-xs font-medium border transition-all',
-              selected === opt.value
-                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                : 'bg-muted/50 hover:bg-muted border-transparent text-muted-foreground'
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ============================================
-// Main Component
-// ============================================
 
 interface CvssCalculatorProps {
   score: string
@@ -283,148 +77,202 @@ interface CvssCalculatorProps {
   onVectorChange: (vector: string) => void
 }
 
-export function CvssCalculator({
-  score: _score,
-  vector,
-  onScoreChange,
-  onVectorChange,
-}: CvssCalculatorProps) {
-  const [expanded, setExpanded] = useState(false)
-  const [metrics, setMetrics] = useState<MetricValues>(() => parseVector(vector))
+export function CvssCalculator({ vector, onScoreChange, onVectorChange }: CvssCalculatorProps) {
+  const { t } = useTranslation()
+  const parsed = React.useMemo(() => parseCvssVector(vector), [vector])
+  const [version, setVersion] = React.useState<CvssVersion>(parsed?.version ?? '3.1')
+  const metrics: CvssMetrics = parsed && parsed.version === version ? parsed.metrics : {}
+  const [text, setText] = React.useState(vector)
+  const [textInvalid, setTextInvalid] = React.useState(false)
+  const [open, setOpen] = React.useState(!parsed?.complete)
 
-  // Sync from external vector changes
-  useEffect(() => {
-    if (vector) setMetrics(parseVector(vector))
+  // Follow vector changes from outside (template, draft restore).
+  React.useEffect(() => {
+    setText(vector)
+    setTextInvalid(false)
+    const p = parseCvssVector(vector)
+    if (p) setVersion(p.version)
   }, [vector])
 
-  function handleMetricChange(key: string, value: string) {
-    const updated = { ...metrics, [key]: value }
-    setMetrics(updated)
+  const emit = (v: CvssVersion, m: CvssMetrics) => {
+    const next = buildCvssVector(v, m)
+    const score = scoreCvss(v, m)
+    onVectorChange(next)
+    onScoreChange(score === null ? '' : score.toFixed(1))
+  }
 
-    const newVector = buildVector(updated)
-    onVectorChange(newVector)
+  const pick = (key: string, value: string) => emit(version, { ...metrics, [key]: value })
 
-    const newScore = calculateCvss4Score(updated)
-    if (newScore !== null) {
-      onScoreChange(newScore.toString())
+  const switchVersion = (v: CvssVersion) => {
+    if (v === version) return
+    setVersion(v)
+    // Metrics differ between versions: start over rather than guess.
+    onVectorChange('')
+    onScoreChange('')
+  }
+
+  const applyText = (raw: string) => {
+    setText(raw)
+    if (!raw.trim()) {
+      setTextInvalid(false)
+      onVectorChange('')
+      onScoreChange('')
+      return
+    }
+    const p = parseCvssVector(raw)
+    setTextInvalid(!p)
+    if (p) {
+      setVersion(p.version)
+      emit(p.version, p.metrics)
     }
   }
 
-  function handleReset() {
-    setMetrics({})
-    onScoreChange('')
-    onVectorChange('')
+  const score = scoreCvss(version, metrics)
+  const defs = CVSS_METRICS[version]
+  const missing = defs.filter((d) => !metrics[d.key]).length
+  const groups = Array.from(new Set(defs.map((d) => d.group)))
+  const valueName = (key: string, v: string) => {
+    const table = VALUE_NAMES[key] ?? VALUE_NAMES.CIA
+    return t(`common.cvss.value.${key in VALUE_NAMES ? key : 'CIA'}.${v}`, table[v] ?? v)
   }
 
-  const calculatedScore = calculateCvss4Score(metrics)
-  const allSelected = ALL_METRICS.every((g) => metrics[g.key])
-  const selectedCount = ALL_METRICS.filter((g) => metrics[g.key]).length
-
   return (
-    <div className="space-y-3">
-      {/* Header: toggle + score */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
+    <div className="space-y-3 rounded-lg border p-3" data-testid="cvss-calculator">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">{t('common.cvss.title', 'CVSS')}</span>
+        <div
+          role="radiogroup"
+          aria-label={t('common.cvss.version', 'CVSS version')}
+          className="inline-flex rounded-md border p-0.5"
         >
-          <Calculator className="h-4 w-4" />
-          CVSS 4.0 Calculator
-          {!expanded && selectedCount > 0 && !allSelected && (
-            <span className="text-xs text-muted-foreground">
-              ({selectedCount}/{ALL_METRICS.length})
-            </span>
-          )}
-        </button>
-
-        {allSelected && calculatedScore !== null && (
-          <div className="flex items-center gap-2">
-            <div
+          {(['3.1', '4.0'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={version === v}
+              onClick={() => switchVersion(v)}
               className={cn(
-                'inline-flex items-center justify-center w-10 h-10 rounded-full text-sm font-bold ring-2',
-                getSeverityColor(calculatedScore),
-                getSeverityRingColor(calculatedScore)
+                'rounded px-2 py-0.5 text-xs font-medium',
+                version === v
+                  ? 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
-              {calculatedScore.toFixed(1)}
-            </div>
-            <span className="text-sm font-medium">{getSeverityLabel(calculatedScore)}</span>
-          </div>
+              {v}
+            </button>
+          ))}
+        </div>
+        <div className="ms-auto flex items-center gap-2" aria-live="polite">
+          {score !== null ? (
+            <Badge
+              className={cn('tabular-nums', SEVERITY_BADGE_SOLID[band(score)])}
+              data-testid="cvss-score"
+            >
+              {score.toFixed(1)} ·{' '}
+              {t(SEVERITY_LABEL_KEYS[band(score)], SEVERITY_LABELS[band(score)])}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {t('common.cvss.remaining', '{count} metrics to set', { count: missing })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <Input
+          value={text}
+          onChange={(e) => applyText(e.target.value)}
+          placeholder={t('common.cvss.pastePlaceholder', 'Paste a vector, e.g. {example}', {
+            example:
+              version === '3.1'
+                ? 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H'
+                : 'CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N',
+          })}
+          aria-label={t('common.cvss.vector', 'CVSS vector')}
+          aria-invalid={textInvalid || undefined}
+          className="font-mono text-xs"
+          spellCheck={false}
+        />
+        {textInvalid && (
+          <p className="text-xs text-destructive">
+            {t('common.cvss.invalid', 'Not a CVSS 3.1 or 4.0 base vector.')}
+          </p>
         )}
       </div>
 
-      {/* Vector string */}
-      {allSelected && (
-        <code className="block text-xs text-muted-foreground font-mono bg-muted px-3 py-1.5 rounded select-all break-all">
-          {buildVector(metrics)}
-        </code>
-      )}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !open && '-rotate-90')} />
+          {open
+            ? t('common.cvss.hideMetrics', 'Hide metrics')
+            : t('common.cvss.showMetrics', 'Pick metrics')}
+        </button>
+        {(vector || text) && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => applyText('')}
+          >
+            <RotateCcw className="me-1 h-3 w-3" />
+            {t('common.cvss.reset', 'Clear')}
+          </Button>
+        )}
+      </div>
 
-      {/* Calculator grid — 2 columns */}
-      {expanded && (
-        <div className="rounded-lg border bg-card p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Left column: Exploitability */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Exploitability
-              </h4>
-              {EXPLOITABILITY.map((metric) => (
-                <MetricRow
-                  key={metric.key}
-                  metric={metric}
-                  selected={metrics[metric.key]}
-                  onSelect={(v) => handleMetricChange(metric.key, v)}
-                />
-              ))}
+      {open && (
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+          {groups.map((g) => (
+            <div key={g} className="space-y-2.5">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t(`common.cvss.group.${g}`, GROUP_NAMES[g])}
+              </p>
+              {defs
+                .filter((d) => d.group === g)
+                .map((d) => (
+                  <div key={d.key} className="space-y-1">
+                    <p id={`cvss-${d.key}`} className="text-xs">
+                      {t(`common.cvss.metric.${d.key}`, METRIC_NAMES[d.key])}{' '}
+                      <span className="font-mono text-muted-foreground">({d.key})</span>
+                    </p>
+                    <div
+                      role="radiogroup"
+                      aria-labelledby={`cvss-${d.key}`}
+                      className="flex flex-wrap gap-1"
+                    >
+                      {d.values.map((v) => {
+                        const on = metrics[d.key] === v
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            onClick={() => pick(d.key, v)}
+                            className={cn(
+                              'rounded-md border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                              on
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'bg-background text-muted-foreground hover:bg-muted hover:text-foreground'
+                            )}
+                          >
+                            {valueName(d.key, v)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
             </div>
-
-            {/* Right column: Impact */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Vulnerable System Impact
-              </h4>
-              {IMPACT_VULNERABLE.map((metric) => (
-                <MetricRow
-                  key={metric.key}
-                  metric={metric}
-                  selected={metrics[metric.key]}
-                  onSelect={(v) => handleMetricChange(metric.key, v)}
-                />
-              ))}
-
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pt-2">
-                Subsequent System Impact
-              </h4>
-              {IMPACT_SUBSEQUENT.map((metric) => (
-                <MetricRow
-                  key={metric.key}
-                  metric={metric}
-                  selected={metrics[metric.key]}
-                  onSelect={(v) => handleMetricChange(metric.key, v)}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-2 border-t">
-            <Button type="button" variant="ghost" size="sm" onClick={handleReset}>
-              <RotateCcw className="h-3.5 w-3.5 me-1.5" />
-              Reset
-            </Button>
-            {!allSelected && (
-              <span className="text-xs text-muted-foreground">
-                {ALL_METRICS.length - selectedCount} metrics remaining
-              </span>
-            )}
-            {allSelected && calculatedScore !== null && (
-              <Badge className={cn('text-sm', getSeverityColor(calculatedScore))}>
-                {calculatedScore.toFixed(1)} {getSeverityLabel(calculatedScore)}
-              </Badge>
-            )}
-          </div>
+          ))}
         </div>
       )}
     </div>

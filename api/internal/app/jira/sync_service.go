@@ -167,6 +167,8 @@ type CreateIssueInput struct {
 	IssueType   string
 	Priority    string
 	Labels      []string
+	// ParentKey makes the issue a child of this issue (an epic).
+	ParentKey string
 }
 
 // CreateIssueResult contains the response from creating a Jira issue.
@@ -408,6 +410,8 @@ type CreateTicketInput struct {
 	FindingID  string `json:"finding_id"`
 	ProjectKey string `json:"project_key"` // e.g. "SEC"
 	IssueType  string `json:"issue_type"`  // e.g. "Bug"
+	// ParentKey creates the ticket as a child of this issue (an epic).
+	ParentKey string `json:"parent_key,omitempty"`
 }
 
 // jiraBrowseKeyRe extracts a Jira issue key from a browse URL,
@@ -586,6 +590,7 @@ func (s *SyncService) CreateTicketFromFinding(ctx context.Context, input CreateT
 		IssueType:   issueType,
 		Priority:    priority,
 		Labels:      []string{"openctem", "security", string(finding.Severity())},
+		ParentKey:   strings.TrimSpace(input.ParentKey),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create jira ticket: %w", err)
@@ -881,4 +886,49 @@ func jiraCommentBody(body string) string {
 		}
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// IssueRef is a Jira issue as shown to an issue picker.
+type IssueRef struct {
+	Key     string `json:"key"`
+	Summary string `json:"summary"`
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	URL     string `json:"url"`
+}
+
+// issueSearcher is implemented by clients that can search issues and name
+// their site (the production client; test stubs need not).
+type issueSearcher interface {
+	SiteURL() string
+	SearchIssues(ctx context.Context, text string, max int) ([]IssueRef, error)
+}
+
+// ErrIssueSearchUnsupported: the tenant's Jira client cannot search.
+var ErrIssueSearchUnsupported = fmt.Errorf("%w: the Jira integration cannot search issues", shared.ErrValidation)
+
+// SiteURL returns the tenant's connected Jira site (scheme and host), or
+// ErrNoTicketingIntegration.
+func (s *SyncService) SiteURL(ctx context.Context, tenantID shared.ID) (string, error) {
+	c, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	if is, ok := c.(issueSearcher); ok {
+		return is.SiteURL(), nil
+	}
+	return "", ErrIssueSearchUnsupported
+}
+
+// SearchIssues searches the tenant's Jira for an issue picker (at most 20).
+func (s *SyncService) SearchIssues(ctx context.Context, tenantID shared.ID, text string) ([]IssueRef, error) {
+	c, err := s.resolveClient(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	is, ok := c.(issueSearcher)
+	if !ok {
+		return nil, ErrIssueSearchUnsupported
+	}
+	return is.SearchIssues(ctx, text, 20)
 }
