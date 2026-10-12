@@ -422,6 +422,25 @@ the ports it found open (`technical.ip_address.ports`). Ingest
 - Certificates page: the client-side Validity filter was never applied by the
   inventory page and is removed; each row shows its expiry, and expiring or
   expired certificates are listed on Exposures.
+## 4j. Web evidence and screenshots (built)
+
+Design: [RFC-081](../rfcs/RFC-081-web-evidence-screenshots.md). A sensor
+sends captures of a web asset in the reserved asset property `web_evidence`
+(URL, final URL, status, title, server, content type, the first 4 KiB of the
+response, an optional screenshot). Ingest step 10 validates them
+(`pkg/domain/webevidence`: http(s) URLs without credentials, caps, the
+snippet masked like finding evidence, images re-encoded to PNG within 1 MiB
+and 1920x2400 px) and stores the newest 5 per asset in `asset_web_evidence`;
+screenshots go to the tenant's file storage only when the organization turned
+on `web_screenshots_enabled` (`/api/v1/easm/settings`, off by default) and
+expire after 30 days (`web-evidence-retention`; files of deleted rows are
+queued by a trigger). Routes: `GET /api/v1/assets/{id}/web-evidence` and
+`.../{evidence_id}/screenshot` (`assets:read`, the asset's data scope, 404
+otherwise; the PNG is served sandboxed and nosniff). Web: the **Web
+evidence** card on the asset page and the screenshot switch on the
+monitoring card. The `screenshot` tool is an optional sensor image (sensor
+repository).
+
 ## 4i. Typed changes and the weekly digest (built)
 
 Design: [RFC-080](../rfcs/RFC-080-attack-surface-changes-and-digest.md).

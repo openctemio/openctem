@@ -110,6 +110,9 @@ type EASMSettingsResponse struct {
 	LastCTSweepAt     *time.Time `json:"last_ct_sweep_at,omitempty"`
 	LastDNSCheckAt    *time.Time `json:"last_dns_check_at,omitempty"`
 	RunNowAvailableAt *time.Time `json:"run_now_available_at,omitempty"`
+	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
+	// (30 days); off by default.
+	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
 	// WeeklyDigestEnabled: the weekly "what changed" digest goes out.
 	WeeklyDigestEnabled bool `json:"weekly_digest_enabled"`
 	// DigestWeekday is the UTC weekday of the digest, 1..7 = Monday..Sunday.
@@ -129,6 +132,8 @@ type EASMSettingsUpdateRequest struct {
 	// 0 = platform default; otherwise 6..168.
 	CTIntervalHours  int `json:"ct_interval_hours"`
 	DNSIntervalHours int `json:"dns_interval_hours"`
+	// WebScreenshotsEnabled omitted keeps it as it is.
+	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
 	// WeeklyDigestEnabled omitted keeps it as it is.
 	WeeklyDigestEnabled *bool `json:"weekly_digest_enabled,omitempty"`
 	// DigestWeekday omitted keeps it; 1..7 = Monday..Sunday.
@@ -168,9 +173,10 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
-		WeeklyDigestEnabled: !es.WeeklyDigestDisabled,
-		DigestWeekday:       isoWeekday(easmchange.Weekday(es.DigestWeekday)),
-		DigestHourUTC:       easmchange.DigestHourUTC,
+		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
+		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
+		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
+		DigestHourUTC:         easmchange.DigestHourUTC,
 	}
 	if h.digests != nil {
 		if last, err := h.digests.LastDigestAt(ctx, tenantID); err == nil {
@@ -251,6 +257,9 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	es.CTIntervalHours, es.DNSIntervalHours = req.CTIntervalHours, req.DNSIntervalHours
 	if req.EnrichmentEnabled != nil {
 		es.EnrichmentDisabled = !*req.EnrichmentEnabled
+	}
+	if req.WebScreenshotsEnabled != nil {
+		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
 	}
 	if req.WeeklyDigestEnabled != nil {
 		es.WeeklyDigestDisabled = !*req.WeeklyDigestEnabled

@@ -64,3 +64,55 @@ func TestSCMAppInstallationRepository(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 }
+
+// GitLab connections: the deepest group holding a project wins, a group's
+// name is matched literally (LIKE wildcards in a name match nothing else),
+// and every read is tenant-scoped.
+func TestSCMGitLabConnections(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewSCMAppInstallationRepository(&DB{DB: db})
+	a, b := seedTestTenant(ctx, t, db), seedTestTenant(ctx, t, db)
+	mk := func(tid shared.ID, path string, gid int64) *scmapp.GitLabConnection {
+		c := &scmapp.GitLabConnection{ID: shared.NewID(), TenantID: tid, Host: "gitlab.example.com", GroupPath: path,
+			GroupID: gid, TokenEncrypted: "sealed", TokenUserID: 9}
+		if err := repo.CreateGitLab(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	top := mk(a, "acme", 1)
+	deep := mk(a, "acme/platform", 2)
+	mk(a, "a_c", 3)
+	mk(b, "beta", 4)
+	if c, err := repo.GitLabForProject(ctx, a, "GitLab.example.com", "acme/platform/api"); err != nil || c.ID != deep.ID {
+		t.Fatalf("deepest group: %v %v", c, err)
+	}
+	if c, err := repo.GitLabForProject(ctx, a, "gitlab.example.com", "acme/web"); err != nil || c.ID != top.ID {
+		t.Fatalf("top group: %v %v", c, err)
+	}
+	if _, err := repo.GitLabForProject(ctx, a, "gitlab.example.com", "abc/x"); !errors.Is(err, scmapp.ErrNotFound) {
+		t.Fatalf("LIKE wildcard in a group name matched: %v", err)
+	}
+	if _, err := repo.GitLabForProject(ctx, b, "gitlab.example.com", "acme/web"); !errors.Is(err, scmapp.ErrNotFound) {
+		t.Fatalf("cross-tenant: %v", err)
+	}
+	if _, err := repo.GitLabForProject(ctx, a, "other.example.com", "acme/web"); !errors.Is(err, scmapp.ErrNotFound) {
+		t.Fatalf("other host: %v", err)
+	}
+	// Reconnecting the same group replaces its token, keeping one row.
+	again := &scmapp.GitLabConnection{ID: shared.NewID(), TenantID: a, Host: "gitlab.example.com", GroupPath: "acme", GroupID: 1,
+		TokenEncrypted: "sealed2", TokenUserID: 10}
+	if err := repo.CreateGitLab(ctx, again); err != nil || again.ID != top.ID || again.TokenEncrypted != "sealed2" {
+		t.Fatalf("reconnect: %v %+v", err, again)
+	}
+	if list, _ := repo.ListGitLab(ctx, b); len(list) != 1 {
+		t.Fatalf("tenant b sees %d", len(list))
+	}
+	if _, err := repo.DeleteGitLab(ctx, b, top.ID); !errors.Is(err, scmapp.ErrNotFound) {
+		t.Fatalf("cross-tenant delete: %v", err)
+	}
+	if _, err := repo.DeleteGitLab(ctx, a, top.ID); err != nil {
+		t.Fatal(err)
+	}
+}
