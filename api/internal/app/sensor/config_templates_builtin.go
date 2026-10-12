@@ -30,8 +30,9 @@ server:
   api_key: {{if .APIKey}}{{yamlQuote .APIKey}}{{else}}${SENSOR_API_KEY}{{end}}
   sensor_id: {{.Sensor.ID}}
 
-# Results not yet accepted by the platform wait here; keep it on persistent
-# storage so a restart or an outage loses nothing.
+# Results not yet accepted by the platform wait here. The sensor's data
+# directory /var/lib/openctem holds outbox/, state/ and content/: keep it on
+# persistent storage so a restart or an outage loses nothing.
 outbox:
   dir: /var/lib/openctem/outbox
 
@@ -133,9 +134,7 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   -e SSL_CERT_DIR=/etc/openctem/certs \
 {{- end}}
   -v /etc/openctem:/etc/openctem:ro \
-  -v {{$slug}}-outbox:/var/lib/openctem/outbox \
-  -v {{$slug}}-state:/var/lib/openctem/state \
-  -v {{$slug}}-content:/var/lib/openctem/content \
+  -v {{$slug}}-data:/var/lib/openctem \
   {{.Image}}
 
 # Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
@@ -251,10 +250,9 @@ services:
       SSL_CERT_DIR: /etc/openctem/certs
 {{- end}}
     volumes:
-      - outbox:/var/lib/openctem/outbox
+      # One data volume: state/, outbox/ and content/ (see below).
+      - data:/var/lib/openctem
 {{- if isDaemon .Sensor}}
-      - state:/var/lib/openctem/state
-      - content:/var/lib/openctem/content
       # The sensor-local policy and the kill switch, read-only.
       - ./policy:/etc/openctem/policy:ro
 {{- end}}
@@ -269,17 +267,17 @@ services:
 {{- end}}
 
 volumes:
-  # Results that cannot be delivered yet; a restart or an outage loses nothing.
-  outbox:
+  # The sensor's data. Keep it and back it up like a credential:
+  #   outbox/   results that cannot be delivered yet (a restart or an outage
+  #             loses nothing)
 {{- if isDaemon .Sensor}}
-  # The sensor's state, including the API key it renews on its own. Keep it:
-  # without it the sensor starts with the key in .env, which a renewal has
-  # retired.
-  state:
-  # Scanner content cache (trivy DB, nuclei templates, semgrep rules); it can
-  # be deleted, the sensor downloads it again.
-  content:
+  #   state/    the sensor's identity and the API key it renews on its own
+  #             (without it the sensor starts with the key in .env, which a
+  #             renewal has retired)
+  #   content/  scanner content cache (trivy DB, nuclei templates, semgrep
+  #             rules); it can be deleted, the sensor downloads it again
 {{- end}}
+  data:
 {{- if .CACert}}
 
 configs:
@@ -327,11 +325,15 @@ stringData:
 {{- end}}
 {{- if isDaemon .Sensor}}
 ---
-# Results that cannot be delivered yet; a restart or an outage loses nothing.
+# The sensor's data: state/ (its identity and the API key it renews on its
+# own; the Secret above keeps the key it was installed with, which a renewal
+# retires), outbox/ (results that cannot be delivered yet) and content/ (the
+# scanner content cache, re-downloadable). Keep it; back it up like a
+# credential.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{$slug}}-outbox
+  name: {{$slug}}-data
   labels:
     app.kubernetes.io/name: openctem-sensor
     app.kubernetes.io/instance: {{$slug}}
@@ -339,37 +341,7 @@ spec:
   accessModes: ["ReadWriteOnce"]
   resources:
     requests:
-      storage: 2Gi
----
-# The sensor's state, including the API key it renews on its own (the Secret
-# above keeps the key it was installed with, which a renewal retires).
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{$slug}}-state
-  labels:
-    app.kubernetes.io/name: openctem-sensor
-    app.kubernetes.io/instance: {{$slug}}
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 64Mi
----
-# Scanner content cache (trivy DB, nuclei templates, semgrep rules), so a new
-# pod does not download it again. Disposable: it can be deleted.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{$slug}}-content
-  labels:
-    app.kubernetes.io/name: openctem-sensor
-    app.kubernetes.io/instance: {{$slug}}
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 5Gi
+      storage: 8Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -444,12 +416,8 @@ spec:
               value: /etc/openctem/certs
 {{- end}}
           volumeMounts:
-            - name: outbox
-              mountPath: /var/lib/openctem/outbox
-            - name: state
-              mountPath: /var/lib/openctem/state
-            - name: content
-              mountPath: /var/lib/openctem/content
+            - name: data
+              mountPath: /var/lib/openctem
             - name: policy
               mountPath: /etc/openctem/policy
               readOnly: true
@@ -463,15 +431,9 @@ spec:
               readOnly: true
 {{- end}}
       volumes:
-        - name: outbox
+        - name: data
           persistentVolumeClaim:
-            claimName: {{$slug}}-outbox
-        - name: state
-          persistentVolumeClaim:
-            claimName: {{$slug}}-state
-        - name: content
-          persistentVolumeClaim:
-            claimName: {{$slug}}-content
+            claimName: {{$slug}}-data
         - name: policy
           configMap:
             name: {{$slug}}-policy
@@ -575,9 +537,11 @@ kubectl create secret generic {{$slug}}-key \
 #    the policy and scan without one.
 
 # 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
-#    0.15.0 or later: the sensor runs hardened (non-root, read-only root
+#    0.19.0 or later: the sensor runs hardened (non-root, read-only root
 #    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
-#    read-only, and keeps the nuclei-templates baked into its image.
+#    read-only, keeps the nuclei-templates baked into its image, and keeps
+#    its state, outbox and content cache on one data volume (a release that
+#    already has the sensor's per-directory volumes keeps them).
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
@@ -586,9 +550,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
-  --set sensor.outbox.persistence.enabled=true \
-  --set sensor.state.persistence.enabled=true \
-  --set sensor.content.persistence.enabled=true \
+  --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
   --set-file sensor.localPolicy.policy=sensor-policy.yaml
 {{- end}}

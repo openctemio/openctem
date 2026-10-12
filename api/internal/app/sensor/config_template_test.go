@@ -133,9 +133,8 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			"--read-only --cap-drop ALL --security-opt no-new-privileges:true",
 			"--tmpfs /tmp",
 			"-e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache",
-			":/var/lib/openctem/outbox",
-			"-v dmz-scanner-01-state:/var/lib/openctem/state",
-			"-v dmz-scanner-01-content:/var/lib/openctem/content",
+			// One data volume: state/, outbox/, content/.
+			"-v dmz-scanner-01-data:/var/lib/openctem \\",
 			"--restart unless-stopped",
 			"--name dmz-scanner-01",
 			"-----BEGIN CERTIFICATE-----",
@@ -240,10 +239,9 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if !strings.Contains(c, "OPENCTEM_API_KEY=rda_4b1e0123456789abcdef") {
 			t.Errorf("[%s] compose does not say how to write .env with the key:\n%s", dir, c)
 		}
-		if len(s.Volumes) != 4 || !strings.HasSuffix(s.Volumes[0], ":/var/lib/openctem/outbox") ||
-			s.Volumes[1] != "state:/var/lib/openctem/state" || s.Volumes[2] != "content:/var/lib/openctem/content" ||
-			s.Volumes[3] != "./policy:/etc/openctem/policy:ro" {
-			t.Errorf("[%s] volumes = %v, want outbox, state, content and the read-only policy", dir, s.Volumes)
+		if len(s.Volumes) != 2 || s.Volumes[0] != "data:/var/lib/openctem" ||
+			s.Volumes[1] != "./policy:/etc/openctem/policy:ro" {
+			t.Errorf("[%s] volumes = %v, want the data volume and the read-only policy", dir, s.Volumes)
 		}
 		// Hardened, with the sensor-local policy required (RFC-040).
 		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 1 ||
@@ -254,10 +252,8 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 			t.Errorf("[%s] hardening/policy: read_only=%v cap_drop=%v security_opt=%v tmpfs=%v env=%v", dir,
 				s.ReadOnly, s.CapDrop, s.SecurityOpt, s.Tmpfs, s.Environment)
 		}
-		for _, v := range []string{"outbox", "state", "content"} {
-			if _, ok := doc.Volumes[v]; !ok {
-				t.Errorf("[%s] compose does not declare the %s volume:\n%s", dir, v, c)
-			}
+		if _, ok := doc.Volumes["data"]; !ok || len(doc.Volumes) != 1 {
+			t.Errorf("[%s] compose must declare exactly the data volume (%v):\n%s", dir, doc.Volumes, c)
 		}
 		if len(s.Configs) != 1 || s.Configs[0].Target != "/etc/openctem/certs/openctem-root-ca.crt" ||
 			!strings.Contains(doc.Configs[s.Configs[0].Source].Content, "BEGIN CERTIFICATE") {
@@ -292,9 +288,8 @@ func TestTemplates_KubernetesManifestsAreValid(t *testing.T) {
 		}
 		for _, want := range []string{
 			"image: ghcr.io/openctemio/sensor:v0.4.2", "api-key: rda_4b1e0123456789abcdef",
-			"SSL_CERT_DIR", "mountPath: /var/lib/openctem/outbox", "type: Recreate", "BEGIN CERTIFICATE",
-			"mountPath: /var/lib/openctem/state", "claimName: dmz-scanner-01-state",
-			"mountPath: /var/lib/openctem/content", "claimName: dmz-scanner-01-content", "storage: 5Gi",
+			"SSL_CERT_DIR", "mountPath: /var/lib/openctem\n", "type: Recreate", "BEGIN CERTIFICATE",
+			"claimName: dmz-scanner-01-data", "name: dmz-scanner-01-data", "storage: 8Gi",
 			// The identity key stays 0600 across pod replacements.
 			"fsGroupChangePolicy: OnRootMismatch",
 			"value: /tmp/.config", "mountPath: /tmp",
@@ -302,6 +297,11 @@ func TestTemplates_KubernetesManifestsAreValid(t *testing.T) {
 			if !strings.Contains(k, want) {
 				t.Errorf("[%s] manifest lacks %q", dir, want)
 			}
+		}
+		// One data volume, never a volume per subdirectory (it would shadow
+		// that subdirectory of the data volume).
+		if strings.Contains(k, "mountPath: /var/lib/openctem/") {
+			t.Errorf("[%s] manifest mounts a subdirectory of the data volume:\n%s", dir, k)
 		}
 		// The baked nuclei-templates release lives in the image's home.
 		if strings.Contains(k, "mountPath: /home/openctem") {
@@ -319,8 +319,7 @@ func TestTemplates_HelmUsesTheChartsSensorValues(t *testing.T) {
 			"--set sensor.enabled=true", "--set sensor.image.tag=v0.4.2", "--set sensor.existingSecret=",
 			// Helm splits --set values on commas; the escaped comma survives
 			// the shell inside single quotes.
-			`--set-string 'sensor.tools=nuclei\,trivy'`, "--set sensor.outbox.persistence.enabled=true",
-			"--set sensor.state.persistence.enabled=true", "--set sensor.content.persistence.enabled=true",
+			`--set-string 'sensor.tools=nuclei\,trivy'`, "--set sensor.data.persistence.enabled=true",
 			"--from-literal=api-key='rda_4b1e0123456789abcdef'",
 		} {
 			if !strings.Contains(h, want) {

@@ -17,6 +17,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
 	"github.com/openctemio/openctem/api/internal/app/adminconsole"
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
@@ -43,6 +44,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
@@ -416,11 +418,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
 
 		// Vulnerabilities & Exposures
-		Vulnerability:             vulnHandler,
-		RemediationGroup:          handler.NewRemediationGroupHandler(svc.RemediationGroup),
-		FindingActivity:           handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
-		FindingActions:            findingActionsHandler,
-		FindingRetest:             handler.NewFindingRetestHandler(svc.Retest, log),
+		Vulnerability:    vulnHandler,
+		RemediationGroup: handler.NewRemediationGroupHandler(svc.RemediationGroup),
+		FindingActivity:  handler.NewFindingActivityHandler(svc.FindingActivity, svc.Vulnerability, log),
+		FindingActions:   findingActionsHandler,
+		FindingRetest: func() *handler.FindingRetestHandler {
+			h := handler.NewFindingRetestHandler(svc.Retest, log)
+			if svc.Pentest != nil {
+				h.SetManualRetestSource(svc.Pentest) // pentest testers' retests join the history
+			}
+			return h
+		}(),
 		FindingEvidenceItems:      handler.NewFindingEvidenceItemsHandler(svc.Evidence, log),
 		JiraWebhook:               jiraWebhookHandler,
 		JiraWebhookSecretResolver: svc.Integration,
@@ -909,6 +917,10 @@ func InitLocalAuthHandler(
 		if svc.Signup != nil {
 			handlers.LocalAuth.SetSignupPolicy(svc.Signup)
 		}
+		// The same CAPTCHA as the request-access form, on registration.
+		if t := accessrequestapp.NewTurnstile(cfg.Auth.CaptchaTurnstileSecret); t != nil {
+			handlers.LocalAuth.SetCaptcha(t)
+		}
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
@@ -1275,6 +1287,9 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if svc.DataScope != nil {
 		ds = svc.DataScope
 	}
+	if repos.RelationshipSuggestion != nil {
+		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
+	}
 	admin := handler.NewCIAdminHandler(ciSvc, ds, log)
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
@@ -1319,4 +1334,19 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// ciImageLinker finds digest-carrying assets (CI runs) and stores relationship
+// suggestions (RFC-077, code to cloud).
+type ciImageLinker struct {
+	runs        *postgres.CIRunRepository
+	suggestions *postgres.RelationshipSuggestionRepository
+}
+
+func (l ciImageLinker) AssetsWithImageDigest(ctx context.Context, tenantID shared.ID, digest string, exclude shared.ID, limit int) ([]cirunapp.DigestAsset, error) {
+	return l.runs.AssetsWithImageDigest(ctx, tenantID, digest, exclude, limit)
+}
+
+func (l ciImageLinker) CreateBatch(ctx context.Context, s []*relationshipdom.Suggestion) (int, error) {
+	return l.suggestions.CreateBatch(ctx, s)
 }
