@@ -1,3 +1,4 @@
+-- expand-contract-ok: new tables only; nothing is truncated (the check matches the snippet_truncated column name)
 -- Web evidence of an asset: what a sensor saw when it fetched it (final URL,
 -- status, title, a short masked response snippet) and, when the organization
 -- turned screenshots on, a screenshot kept in the tenant's file storage

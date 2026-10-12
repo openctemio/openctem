@@ -109,7 +109,7 @@ counted, never fatal. Captures attach only to assets the report may change
   caller's data scope, else 404):
   - `GET /api/v1/assets/{id}/web-evidence` — newest 5 captures;
     `Cache-Control: no-store`;
-  - `GET /api/v1/assets/{id}/web-evidence/{evidenceId}/screenshot` — the PNG
+  - `GET /api/v1/assets/{id}/web-evidence/{evidence_id}/screenshot` — the PNG
     with `Content-Security-Policy: default-src 'none'; sandbox`,
     `X-Content-Type-Options: nosniff`, `Cross-Origin-Resource-Policy:
     same-origin`, `Cache-Control: private, no-store`; the stored bytes are
