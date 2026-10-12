@@ -61,3 +61,19 @@ type RetentionRepository interface {
 	// and reports whether it did.
 	DeletePurgeable(ctx context.Context, tenantID, id shared.ID, policy RetentionPolicy) (bool, error)
 }
+
+// BlobDeletion is a stored file whose row was deleted (queued by a database
+// trigger, also on cascades), waiting to be deleted from the file storage.
+type BlobDeletion struct {
+	ID           int64
+	TenantID     shared.ID
+	Provider     string
+	Key          string
+	TenantExists bool
+}
+
+// BlobDeletionQueue is the queue of stored files to delete.
+type BlobDeletionQueue interface {
+	ListBlobDeletions(ctx context.Context, limit int) ([]BlobDeletion, error)
+	DeleteBlobDeletion(ctx context.Context, id int64) error
+}

@@ -53,6 +53,10 @@ func (s *AttachmentService) SweepRetention(ctx context.Context) (int, error) {
 	if s.retentionRepo == nil {
 		return 0, nil
 	}
+	// Files whose rows were deleted (report templates, stored reports).
+	if n := s.drainBlobDeletions(ctx); n > 0 {
+		s.logger.Info("stored files of deleted rows removed", "count", n)
+	}
 	now := time.Now().UTC()
 	marked, cleared, err := s.retentionRepo.MarkOrphans(ctx, now)
 	if err != nil {
