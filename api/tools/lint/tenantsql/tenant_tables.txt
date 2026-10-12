@@ -120,6 +120,7 @@ notification_preferences
 notification_state
 notifications
 pentest_campaign_members
+pentest_campaign_secrets
 pentest_campaign_signoffs
 pentest_campaigns
 pentest_finding_templates
