@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -228,7 +230,7 @@ const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provi
 	commit_sha, pull_request, default_branch, is_default_branch, event, environment, actor, external_run_id,
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
 	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at,
-	external_job_id, aggregate, commit_verified`
+	external_job_id, aggregate, commit_verified, base_ref`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
@@ -245,7 +247,7 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		&run.Actor, &run.ExternalRunID, &run.RunAttempt, &run.Workflow, &run.PipelineURL, &run.Fork, &tokenExp,
 		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
 		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt,
-		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified); err != nil {
+		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef); err != nil {
 		return run, err
 	}
 	run.ID, _ = shared.IDFromString(id)
@@ -273,7 +275,8 @@ func (r *CIRunRepository) CreateRun(ctx context.Context, run *cirun.Run) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_runs (id, tenant_id, trust_config_id, repository_asset_id,
 		provider, issuer, repository, ref, branch, commit_sha, pull_request, default_branch, is_default_branch, event,
 		environment, actor, external_run_id, run_attempt, workflow, pipeline_url, fork, token_hash, token_expires_at,
-		status, created_at, updated_at, pipeline_id, sensor_version, template_ref, external_job_id, aggregate, commit_verified)
+		status, created_at, updated_at, pipeline_id, sensor_version, template_ref, external_job_id, aggregate, commit_verified,
+		base_ref)
 		VALUES (`+ciRunInsertValues+`)`, ciRunInsertArgs(run)...)
 	return err
 }
@@ -281,7 +284,7 @@ func (r *CIRunRepository) CreateRun(ctx context.Context, run *cirun.Run) error {
 // ciRunInsertValues are the placeholders of ciRunInsertArgs ($25 is both
 // created_at and updated_at).
 const ciRunInsertValues = `$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-	$20, $21, $22, $23, $24, $25, $25, $26, $27, $28, $29, $30, $31`
+	$20, $21, $22, $23, $24, $25, $25, $26, $27, $28, $29, $30, $31, $32`
 
 func ciRunInsertArgs(run *cirun.Run) []any {
 	return []any{run.ID.String(), run.TenantID.String(), nullID(run.TrustConfigID), run.RepositoryAssetID.String(),
@@ -289,7 +292,7 @@ func ciRunInsertArgs(run *cirun.Run) []any {
 		run.DefaultBranch, run.IsDefaultBranch, run.Event, run.Environment, run.Actor, run.ExternalRunID,
 		run.RunAttempt, run.Workflow, run.PipelineURL, run.Fork, run.TokenHash, run.TokenExpiresAt,
 		run.Status, run.CreatedAt, nullID(run.PipelineID), run.SensorVersion, run.TemplateRef, run.ExternalJobID,
-		run.Aggregate, run.CommitVerified}
+		run.Aggregate, run.CommitVerified, run.BaseRef}
 }
 
 // OpenAggregateRun returns the open aggregate run of the run's pipeline run
@@ -304,7 +307,8 @@ func (r *CIRunRepository) OpenAggregateRun(ctx context.Context, run *cirun.Run) 
 	res, err := r.db.ExecContext(ctx, `INSERT INTO ci_runs (id, tenant_id, trust_config_id, repository_asset_id,
 		provider, issuer, repository, ref, branch, commit_sha, pull_request, default_branch, is_default_branch, event,
 		environment, actor, external_run_id, run_attempt, workflow, pipeline_url, fork, token_hash, token_expires_at,
-		status, created_at, updated_at, pipeline_id, sensor_version, template_ref, external_job_id, aggregate, commit_verified)
+		status, created_at, updated_at, pipeline_id, sensor_version, template_ref, external_job_id, aggregate, commit_verified,
+		base_ref)
 		VALUES (`+ciRunInsertValues+`)
 		ON CONFLICT (tenant_id, pipeline_id, external_run_id, run_attempt, commit_sha)
 		WHERE aggregate AND status = 'running' DO NOTHING`, ciRunInsertArgs(run)...)
@@ -535,15 +539,27 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 	return out, rows.Err()
 }
 
-// SaveVerdict stores the run's verdict.
+// SaveVerdict stores the run's verdict. The first verdict is final: a run
+// that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
+		evaluated_at = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
 		tenantID.String(), runID.String(), verdict, detail, at)
 	if err != nil {
 		return err
 	}
-	return requireOneRow(res, cirun.ErrRunNotFound)
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		var exists bool
+		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ci_runs WHERE tenant_id = $1 AND id = $2)`,
+			tenantID.String(), runID.String()).Scan(&exists); err != nil {
+			return err
+		}
+		if exists {
+			return cirun.ErrRunEvaluated
+		}
+		return cirun.ErrRunNotFound
+	}
+	return nil
 }
 
 // ------------------------------------------------------------- policies ---
@@ -816,4 +832,33 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 	err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM business_units WHERE tenant_id = $1 AND id = $2)`,
 		tenantID.String(), id.String()).Scan(&ok)
 	return ok, err
+}
+
+// AssetsWithImageDigest returns up to limit of the tenant's assets whose
+// properties mention the image digest (an image asset's own digest, a
+// workload's or host's list of running images), excluding one asset (the
+// repository). The digest is a full "sha256:<64 hex>" value, so a text
+// match on the properties cannot hit another image.
+func (r *CIRunRepository) AssetsWithImageDigest(ctx context.Context, tenantID shared.ID, digest string, exclude shared.ID, limit int) ([]cirunapp.DigestAsset, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, asset_type, COALESCE(sub_type, '') FROM assets
+		WHERE tenant_id = $1 AND id <> $2 AND properties IS NOT NULL
+		  AND position($3 in properties::text) > 0
+		ORDER BY id LIMIT $4`, tenantID.String(), exclude.String(), digest, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirunapp.DigestAsset{}
+	for rows.Next() {
+		var (
+			id string
+			a  cirunapp.DigestAsset
+		)
+		if err := rows.Scan(&id, &a.Type, &a.SubType); err != nil {
+			return nil, err
+		}
+		a.ID, _ = shared.IDFromString(id)
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }

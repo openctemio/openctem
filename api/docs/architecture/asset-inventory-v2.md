@@ -276,6 +276,32 @@ type's name (a container registry is `storage`/`container_registry`)
 belongs to its own lens. An overview card links to its lens, and its
 high-risk count to `min_risk_score=70`, the threshold of the count.
 
+## Tag filter
+
+`GET /assets` filters by tags in three ways, combinable with each other and
+every other filter:
+
+- `tags=a,b`: assets carrying any of them (`tags_mode=any`, the default),
+  or every one of them (`tags_mode=all`);
+- `exclude_tags=c,d`: leaves out assets carrying any of them (an asset with
+  no tags is kept).
+
+Each list takes at most 20 tags of at most 50 characters. A tag matches the
+user `tags` and the platform-derived `system_tags` (program links, RFC-065).
+For a non-owner a system tag counts only through programs not hidden from
+them, for including and excluding alike, so neither says which assets a
+hidden program covers. The overlap test uses the GIN indexes on `tags` and
+`system_tags`; "all" uses it as the index prefilter and checks each tag.
+
+`GET /assets/tags` is the tag vocabulary of the filter panel and the tag
+editors: the tags of the assets the caller may list (tenant and data scope),
+most used first, narrowed by `prefix`, `q` (substring) or `type`. With
+`include_system=true` it also returns `system_tags`, with the same "not
+hidden from a non-owner" rule. The panel shows no per-tag counts: counts
+that ignore the other active filters would disagree with the list. System
+tags are listed in their own group and are read-only (never editable on an
+asset).
+
 ## Three layers: source record, link, canonical row
 
 | Layer | Asset | Service |
