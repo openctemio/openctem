@@ -180,3 +180,47 @@ func TestDeleteTenant_StorageDown_RefusedAndNothingLost(t *testing.T) {
 		t.Fatal("retry did not delete the tenant")
 	}
 }
+
+// The storage quota counts one organization's attachment bytes only.
+func TestAttachmentQuota_CountsOnlyThatTenant(t *testing.T) {
+	f := newErasureFixture(t, 2)
+	tenantA, tenantB := f.tenants[0], f.tenants[1]
+	log := logger.NewNop()
+	repo := postgres.NewAttachmentRepository(f.db)
+	attachments := integration.NewAttachmentService(repo, storage.NewLocalStorage(t.TempDir()), log)
+	a1 := f.upload(t, attachments, tenantA)
+	a2 := f.upload(t, attachments, tenantA)
+	b1 := f.upload(t, attachments, tenantB)
+
+	tidA, _ := shared.IDFromString(tenantA)
+	tidB, _ := shared.IDFromString(tenantB)
+	gotA, err := repo.TotalSize(context.Background(), tidA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := a1.Size() + a2.Size(); gotA != want {
+		t.Fatalf("tenant A total %d, want %d", gotA, want)
+	}
+	gotB, err := repo.TotalSize(context.Background(), tidB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotB != b1.Size() {
+		t.Fatalf("tenant B total %d, want %d", gotB, b1.Size())
+	}
+
+	// A quota just above A's usage refuses A's next file, never B's.
+	attachments.SetTenantQuota(gotA + 4)
+	if _, err := attachments.Upload(context.Background(), integration.UploadInput{
+		TenantID: tenantA, Filename: "more.txt", ContentType: "text/plain", Size: 8,
+		Reader: strings.NewReader("12345678"), UploadedBy: f.userID,
+	}); !errors.Is(err, attachment.ErrQuotaExceeded) {
+		t.Fatalf("tenant A over quota: %v", err)
+	}
+	if _, err := attachments.Upload(context.Background(), integration.UploadInput{
+		TenantID: tenantB, Filename: "more.txt", ContentType: "text/plain", Size: 4,
+		Reader: strings.NewReader("1234"), UploadedBy: f.userID,
+	}); err != nil {
+		t.Fatalf("tenant B refused by A's usage: %v", err)
+	}
+}

@@ -128,6 +128,13 @@ var (
 	ErrNotFound    = fmt.Errorf("attachment not found")
 	ErrTooLarge    = fmt.Errorf("file too large")
 	ErrUnsupported = fmt.Errorf("unsupported file type")
+	// ErrQuotaExceeded: the upload would take the organization over its
+	// storage quota (STORAGE_TENANT_QUOTA_MB).
+	ErrQuotaExceeded = fmt.Errorf("organization storage quota exceeded")
+	// ErrStorageUnavailable: the organization's own bucket is configured but
+	// cannot be used (or a file lives in a bucket no longer configured). The
+	// operation fails rather than falling back to the server-wide storage.
+	ErrStorageUnavailable = fmt.Errorf("organization file storage unavailable")
 )
 
 // Validation constants

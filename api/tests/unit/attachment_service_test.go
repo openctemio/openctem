@@ -83,6 +83,16 @@ func (m *mockAttRepo) LinkToContext(_ context.Context, tid shared.ID, ids []shar
 	return n, nil
 }
 
+func (m *mockAttRepo) TotalSize(_ context.Context, tid shared.ID) (int64, error) {
+	var n int64
+	for _, a := range m.store {
+		if a.TenantID() == tid {
+			n += a.Size()
+		}
+	}
+	return n, nil
+}
+
 type mockAttStorage struct {
 	files    map[string]string // key → content
 	tenantOf map[string]string // key → tenant

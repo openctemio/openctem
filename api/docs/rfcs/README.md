@@ -99,6 +99,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
 | [RFC-082](RFC-082-network-seeds.md) | Network seeds (AS numbers, organizations, CIDR) | Implemented (2026-10-11) |
 | [RFC-083](RFC-083-lookalike-domains.md) | Passive lookalike-domain monitoring | Implemented (2026-10-11) |
+| [RFC-084](RFC-084-file-storage.md) | File upload and storage | Proposed (2026-10-12); P0 implemented (#1900, #1901); short-lived direct downloads moved to P1 (§3.4) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

@@ -8,8 +8,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -222,34 +220,14 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Sniff content type from actual bytes first, then fallback to file extension
-	// for types that Go's sniffing table doesn't cover (markdown, har+json, mp4 variants).
-	buf := make([]byte, 512)
-	n, _ := file.Read(buf)
-	contentType := http.DetectContentType(buf[:n])
-	// http.DetectContentType returns parameters (e.g. "text/plain; charset=utf-8");
-	// strip them so the comparisons below and the service allowlist match on the
-	// bare media type. Without this, every textual upload (.md/.csv/.txt/.har)
-	// was rejected as unsupported.
-	if mt, _, perr := mime.ParseMediaType(contentType); perr == nil {
-		contentType = mt
-	}
-	// Reset reader — Seek back to start
-	if seeker, ok := file.(io.Seeker); ok {
-		_, _ = seeker.Seek(0, io.SeekStart)
-	}
-	// DetectContentType only returns ~14 MIME types. For generic results,
-	// use file extension as a more specific hint (e.g., .md → text/markdown).
-	if contentType == "application/octet-stream" || contentType == "text/plain" {
-		ext := strings.ToLower(filepath.Ext(header.Filename))
-		extMIME := map[string]string{
-			".md": "text/markdown", ".markdown": "text/markdown",
-			".csv": "text/csv", ".har": "application/har+json",
-			".mp4": "video/mp4", ".webm": "video/webm",
-		}
-		if better, ok := extMIME[ext]; ok {
-			contentType = better
-		}
+	// The type comes from the file's first bytes (the extension only refines
+	// generic text or binary); what the client declares is ignored.
+	head := make([]byte, attachment.SniffLen)
+	n, _ := io.ReadFull(file, head)
+	contentType := attachment.DetectContentType(head[:n], header.Filename)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		apierror.BadRequest("The file could not be read").WriteJSON(w)
+		return
 	}
 
 	att, err := h.service.Upload(r.Context(), integration.UploadInput{
@@ -268,12 +246,27 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 			apierror.BadRequest(err.Error()).WriteJSON(w)
 		case errors.Is(err, attachment.ErrUnsupported):
 			apierror.BadRequest(err.Error()).WriteJSON(w)
+		case errors.Is(err, attachment.ErrQuotaExceeded):
+			apierror.New(http.StatusRequestEntityTooLarge, "STORAGE_QUOTA_EXCEEDED",
+				"The organization's file storage is full: delete files or ask the operator to raise the quota").WriteJSON(w)
+		case errors.Is(err, attachment.ErrStorageUnavailable):
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached: check the storage settings").WriteJSON(w)
 		default:
 			h.logger.Error("attachment upload failed", "error", err)
 			apierror.InternalServerError("Upload failed").WriteJSON(w)
 		}
 		return
 	}
+
+	logRequestChange(h.audit, h.logger, r,
+		auditapp.NewSuccessEvent(auditdom.ActionAttachmentUploaded, auditdom.ResourceTypeAttachment, att.ID().String()).
+			WithResourceName(att.Filename()).
+			WithMessage("Evidence file uploaded").
+			WithMetadata("content_type", att.ContentType()).
+			WithMetadata("size", att.Size()).
+			WithMetadata("sha256", att.ContentHash()).
+			WithMetadata("context_type", att.ContextType()).
+			WithMetadata("context_id", att.ContextID()))
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":           att.ID().String(),
@@ -311,6 +304,10 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 			apierror.NotFound("Attachment not found").WriteJSON(w)
 			return
 		}
+		if errors.Is(err, attachment.ErrStorageUnavailable) {
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
+			return
+		}
 		h.logger.Error("attachment download failed", "error", err, "id", id)
 		apierror.InternalServerError("Download failed").WriteJSON(w)
 		return
@@ -340,20 +337,20 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	att, aerr := h.service.GetByID(r.Context(), tenantID, id)
+	if aerr != nil {
+		apierror.NotFound("Attachment not found").WriteJSON(w)
+		return
+	}
 	// An authorization letter's file is evidence (RFC-065 §13): the letter
 	// is revoked, its file never deleted.
-	if att, aerr := h.service.GetByID(r.Context(), tenantID, id); aerr == nil && att.ContextType() == "authorization_letter" {
+	if att.ContextType() == "authorization_letter" {
 		apierror.Conflict("An authorization letter's file is kept; revoke the letter instead").WriteJSON(w)
 		return
 	}
 
 	// Campaign membership check before deletion
 	if h.accessChecker != nil {
-		att, aerr := h.service.GetByID(r.Context(), tenantID, id)
-		if aerr != nil {
-			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
-		}
 		if err := h.authorizeAttachmentWrite(r, att); err != nil {
 			writeAttachmentAccessError(w, err)
 			return
@@ -361,14 +358,25 @@ func (h *AttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.Delete(r.Context(), tenantID, id); err != nil {
-		if errors.Is(err, attachment.ErrNotFound) {
+		switch {
+		case errors.Is(err, attachment.ErrNotFound):
 			apierror.NotFound("Attachment not found").WriteJSON(w)
-			return
+		case errors.Is(err, attachment.ErrStorageUnavailable):
+			apierror.ServiceUnavailable("The organization's file storage cannot be reached").WriteJSON(w)
+		default:
+			h.logger.Error("attachment delete failed", "error", err, "id", att.ID().String())
+			apierror.InternalServerError("Delete failed").WriteJSON(w)
 		}
-		h.logger.Error("attachment delete failed", "error", err, "id", id)
-		apierror.InternalServerError("Delete failed").WriteJSON(w)
 		return
 	}
+
+	logRequestChange(h.audit, h.logger, r,
+		auditapp.NewSuccessEvent(auditdom.ActionAttachmentDeleted, auditdom.ResourceTypeAttachment, att.ID().String()).
+			WithResourceName(att.Filename()).
+			WithMessage("Evidence file deleted").
+			WithMetadata("sha256", att.ContentHash()).
+			WithMetadata("context_type", att.ContextType()).
+			WithMetadata("context_id", att.ContextID()))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -540,6 +548,11 @@ func (h *AttachmentHandler) UpdateStorageConfig(w http.ResponseWriter, r *http.R
 		h.logger.Error("failed to save storage config", "error", err)
 		apierror.InternalServerError("Failed to save storage config").WriteJSON(w)
 		return
+	}
+
+	// The next upload uses the new setting, not a cached provider.
+	if h.service != nil {
+		h.service.InvalidateTenantStorage(tenantID)
 	}
 
 	// Where evidence files are written is security relevant (a changed
