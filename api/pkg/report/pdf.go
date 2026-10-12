@@ -84,8 +84,9 @@ func GeneratePDF(input ReportInput) ([]byte, error) {
 	for _, row := range [][2]string{
 		{"Client", input.Campaign.ClientName},
 		{"Contact", input.Campaign.ClientContact},
-		{"Type", input.Campaign.Type},
-		{"Priority", input.Campaign.Priority},
+		{"Targets", input.Campaign.Type},
+		{"Environment", input.Campaign.Environment},
+		{"TLP", input.Campaign.TLP},
 		{"Status", input.Campaign.Status},
 		{"Start date", input.Campaign.StartDate},
 		{"End date", input.Campaign.EndDate},

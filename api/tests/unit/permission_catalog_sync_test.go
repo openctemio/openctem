@@ -38,7 +38,7 @@ var permSeedMigrations = []string{
 	"001534_findings_comment_severity.up.sql", // findings:comment, findings:severity
 	"001760_scan_window_policies.up.sql",      // scans:windows:manage (RFC-067)
 	"001921_scan_approval_requests.up.sql",    // scans:approve (RFC-073)
-	"pentest_checklists",                      // pentest:checklists:manage (RFC-086)
+	"pentest_checklists",                      // pentest:checklists:manage (RFC-087)
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with
