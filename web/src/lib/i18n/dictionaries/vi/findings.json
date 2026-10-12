@@ -28,5 +28,6 @@
   "findings.retest.manual.failed": "Kiểm tra lại thủ công: vẫn còn lỗ hổng",
   "findings.retest.manual.partial": "Kiểm tra lại thủ công: khắc phục một phần",
   "findings.retest.manual.pending": "Kiểm tra lại thủ công đang chờ",
-  "findings.retest.manual.canceled": "Kiểm tra lại thủ công đã hủy"
+  "findings.retest.manual.canceled": "Kiểm tra lại thủ công đã hủy",
+  "findings.remediation.none": "Trình quét không đưa ra hướng khắc phục."
 }

@@ -25,9 +25,12 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
+	// EnvWarnings are set variables under an API prefix that nothing reads
+	// (see checkEnvironment); logged at startup.
+	EnvWarnings []string
+
 	App          AppConfig
 	Server       ServerConfig
-	GRPC         GRPCConfig
 	Database     DatabaseConfig
 	Redis        RedisConfig
 	Log          LogConfig
@@ -61,6 +64,27 @@ type Config struct {
 	// Scope is the platform's scope guardrails (RFC-054 §8): operator-level,
 	// never tenant-overridable.
 	Scope ScopeConfig
+
+	// GitHubApp is the deployment's GitHub App that posts CI checks and pull
+	// request comments (RFC-077). Off unless every value is set.
+	GitHubApp GitHubAppConfig
+}
+
+// GitHubAppConfig is the deployment's GitHub App (RFC-077):
+// GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
+// GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE (PEM; or
+// GITHUB_APP_PRIVATE_KEY with the PEM itself), GITHUB_APP_WEBHOOK_SECRET,
+// and for GitHub Enterprise Server GITHUB_APP_API_URL / GITHUB_APP_WEB_URL.
+type GitHubAppConfig struct {
+	AppID          int64
+	Slug           string
+	ClientID       string
+	ClientSecret   string
+	PrivateKey     string
+	PrivateKeyFile string
+	WebhookSecret  string
+	APIURL         string
+	WebURL         string
 }
 
 // ScopeConfig is the operator's scope guardrails.
@@ -234,10 +258,9 @@ type StorageConfig struct {
 
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name  string
-	Env   string
-	Debug bool
-	URL   string // Public app URL (used as fallback for sensor config base URL)
+	Name string
+	Env  string
+	URL  string // Public app URL (used as fallback for sensor config base URL)
 }
 
 // SensorConfigConfig holds the sensor config template service settings.
@@ -430,11 +453,6 @@ type ServerConfig struct {
 // TLSEnabled reports whether the API listener terminates TLS itself.
 func (c *ServerConfig) TLSEnabled() bool { return c.TLSCertFile != "" }
 
-// GRPCConfig holds gRPC server configuration.
-type GRPCConfig struct {
-	Port int
-}
-
 // DatabaseConfig holds database configuration.
 type DatabaseConfig struct {
 	Host            string
@@ -489,8 +507,7 @@ type LogConfig struct {
 	ErrorSamplingRate float64 // Sample rate for errors, 0.0-1.0 (default: 1.0 = 100%)
 
 	// HTTP logging configuration
-	SkipHealthLogs     bool // Skip logging health check endpoints (default: true in prod)
-	SlowRequestSeconds int  // Log requests slower than this as warnings (default: 5)
+	SlowRequestSeconds int // Log requests slower than this as warnings (default: 5)
 }
 
 // AuthProvider represents the authentication provider type.
@@ -1101,10 +1118,9 @@ type AITriageConfig struct {
 	GeminiAPIKey     string // Platform's Google Gemini API key
 
 	// Rate Limiting
-	MaxConcurrentJobs int // Max concurrent AI triage jobs
-	RateLimitRPM      int // Rate limit per minute
-	TimeoutSeconds    int // Timeout for AI API calls
-	MaxTokens         int // Max tokens per request
+	RateLimitRPM   int // Rate limit per minute
+	TimeoutSeconds int // Timeout for AI API calls
+	MaxTokens      int // Max tokens per request
 
 	// LLM Parameters
 	Temperature float64 // Temperature for LLM (0.0-1.0, lower = more deterministic)
@@ -1182,13 +1198,16 @@ func Load() (*Config, error) {
 	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
 		return nil, err
 	}
+	envWarnings, err := checkEnvironment(Registry(), os.Environ())
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:  getEnv("APP_NAME", "openctem"),
-			Env:   appEnv(),
-			Debug: getEnvBool("APP_DEBUG", false), // Default false for safety
-			URL:   getEnv("APP_URL", ""),
+			Name: getEnv("APP_NAME", "openctem"),
+			Env:  appEnv(),
+			URL:  getEnv("APP_URL", ""),
 		},
 		SensorConfig: SensorConfigConfig{
 			TransportV3: SensorTransportV3Config{
@@ -1251,9 +1270,6 @@ func Load() (*Config, error) {
 			TLSCertFile:           getEnv("SERVER_TLS_CERT_FILE", ""),
 			TLSKeyFile:            getEnv("SERVER_TLS_KEY_FILE", ""),
 		},
-		GRPC: GRPCConfig{
-			Port: getEnvInt("GRPC_PORT", 9090),
-		},
 		Database: DatabaseConfig{
 			Host:            getEnv("DB_HOST", "localhost"),
 			Port:            getEnvInt("DB_PORT", 5432),
@@ -1295,7 +1311,6 @@ func Load() (*Config, error) {
 			SamplingThreshold:  getEnvInt("LOG_SAMPLING_THRESHOLD", 100),    // First 100 identical logs/sec
 			SamplingRate:       getEnvFloat("LOG_SAMPLING_RATE", 0.1),       // Then 10%
 			ErrorSamplingRate:  getEnvFloat("LOG_ERROR_SAMPLING_RATE", 1.0), // Always log errors
-			SkipHealthLogs:     getEnvBool("LOG_SKIP_HEALTH", true),         // Skip health endpoints
 			SlowRequestSeconds: getEnvInt("LOG_SLOW_REQUEST_SECONDS", 5),    // Warn on slow requests
 		},
 		Auth: AuthConfig{
@@ -1319,11 +1334,12 @@ func Load() (*Config, error) {
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
 			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
-			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
-			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
-			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
-			RefreshTokenCookieName:    getEnv("AUTH_REFRESH_TOKEN_COOKIE_NAME", "refresh_token"), // Cookie name for refresh token
-			TenantCookieName:          getEnv("AUTH_TENANT_COOKIE_NAME", "app_tenant"),           // Cookie name for tenant
+			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),      // Empty = current host
+			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"), // "strict", "lax", or "none"
+			// Fixed names: the web console and the gateway use the same ones.
+			AccessTokenCookieName:  "auth_token",
+			RefreshTokenCookieName: "refresh_token",
+			TenantCookieName:       "app_tenant",
 			EntraSSO: EntraSSOConfig{
 				Enabled:        getEnvBool("SSO_ENTRA_ENABLED", false),
 				ClientID:       getEnv("SSO_ENTRA_CLIENT_ID", ""),
@@ -1456,6 +1472,17 @@ func Load() (*Config, error) {
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
 		},
+		GitHubApp: GitHubAppConfig{
+			AppID:          getEnvInt64("GITHUB_APP_ID", 0),
+			Slug:           getEnv("GITHUB_APP_SLUG", ""),
+			ClientID:       getEnv("GITHUB_APP_CLIENT_ID", ""),
+			ClientSecret:   getEnv("GITHUB_APP_CLIENT_SECRET", ""),
+			PrivateKey:     getEnv("GITHUB_APP_PRIVATE_KEY", ""),
+			PrivateKeyFile: getEnv("GITHUB_APP_PRIVATE_KEY_FILE", ""),
+			WebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
+			APIURL:         getEnv("GITHUB_APP_API_URL", ""),
+			WebURL:         getEnv("GITHUB_APP_WEB_URL", ""),
+		},
 		Scope: ScopeConfig{
 			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
@@ -1483,7 +1510,6 @@ func Load() (*Config, error) {
 			AnthropicAPIKey:             getEnv("ANTHROPIC_API_KEY", ""),
 			OpenAIAPIKey:                getEnv("OPENAI_API_KEY", ""),
 			GeminiAPIKey:                getEnv("GEMINI_API_KEY", ""),
-			MaxConcurrentJobs:           getEnvInt("AI_MAX_CONCURRENT_JOBS", 10),
 			RateLimitRPM:                getEnvInt("AI_RATE_LIMIT_RPM", 60),
 			TimeoutSeconds:              getEnvInt("AI_TIMEOUT_SECONDS", 30),
 			MaxTokens:                   getEnvInt("AI_MAX_TOKENS", 4096),
@@ -1501,6 +1527,8 @@ func Load() (*Config, error) {
 			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 0)),
 		},
 	}
+
+	cfg.EnvWarnings = envWarnings
 
 	// SSO redirect-URI allow-list (OAuth 2.1 / RFC 9700): pin the caller-supplied
 	// redirect_uri to trusted frontend origins. An explicit SSO_ALLOWED_REDIRECT_URIS
@@ -2052,9 +2080,6 @@ func (c *Config) validateProductionSecurity() error {
 	if !c.RateLimit.Enabled {
 		return fmt.Errorf("rate limiting must be enabled in production")
 	}
-	if c.App.Debug {
-		return fmt.Errorf("debug mode must be disabled in production")
-	}
 	if c.Log.Level == "debug" {
 		return fmt.Errorf("log level should not be 'debug' in production")
 	}
@@ -2175,6 +2200,17 @@ var retiredEnv = []struct{ Old, New, Hint string }{
 // variable. Startup refuses to run while one is set, saying what to do
 // instead, so an operator never believes a removed setting still applies.
 var removedEnv = []struct{ Name, Instead string }{
+	// Knobs that were read but switched nothing.
+	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
+	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},
+	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
+	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
+	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	// Cookie names are fixed: the API, the web console and the gateway must
+	// agree on them.
+	{"AUTH_ACCESS_TOKEN_COOKIE_NAME", "unset it; the session cookie is always auth_token"},
+	{"AUTH_REFRESH_TOKEN_COOKIE_NAME", "unset it; the refresh cookie is always refresh_token"},
+	{"AUTH_TENANT_COOKIE_NAME", "unset it; the organization cookie is always app_tenant"},
 	// A platform-wide Jira webhook secret verified a delivery for any
 	// ?tenant=: whoever held it could forge Jira events for every
 	// organization. Each organization's Jira integration has its own secret.

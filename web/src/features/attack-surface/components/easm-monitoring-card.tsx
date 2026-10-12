@@ -242,8 +242,81 @@ export function EASMMonitoringCard() {
             )}
           </p>
         </section>
+        <DigestSection settings={settings} disabled={!canSettings || busy} onSave={save} />
       </CardContent>
     </Card>
+  )
+}
+
+/** ISO weekdays, 1 = Monday .. 7 = Sunday (the API's digest_weekday). */
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const
+
+function DigestSection({
+  settings,
+  disabled,
+  onSave,
+}: {
+  settings: EASMSettings
+  disabled: boolean
+  onSave: (change: Partial<EASMSettingsInput>) => Promise<void>
+}) {
+  const { t, locale } = useTranslation()
+  const dayName = (d: number) =>
+    // 2024-01-01 was a Monday: day d of that week, named in the user's language.
+    new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale, { weekday: 'long', timeZone: 'UTC' })
+  const enabled = !!settings.weekly_digest_enabled
+  return (
+    <section
+      className="space-y-3 md:col-span-2"
+      aria-label={t('attackSurface.digest.title', 'Weekly digest')}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="easm-digest" className="font-medium">
+          {t('attackSurface.digest.title', 'Weekly digest')}
+        </Label>
+        <Switch
+          id="easm-digest"
+          checked={enabled}
+          disabled={disabled}
+          onCheckedChange={(on) => void onSave({ weekly_digest_enabled: on })}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          'attackSurface.digest.description',
+          'Once a week, administrators and the notification channels that receive attack surface events get a summary of what changed: new and removed hosts, ports, certificates, DNS records, technologies and exposures. A week without changes sends nothing.'
+        )}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <Label htmlFor="easm-digest-day" className="font-normal text-muted-foreground">
+          {t('attackSurface.digest.day', 'Sent on (at {hour}:00 UTC)', {
+            hour: String(settings.digest_hour_utc ?? 8).padStart(2, '0'),
+          })}
+        </Label>
+        <Select
+          value={String(settings.digest_weekday ?? 1)}
+          disabled={disabled || !enabled}
+          onValueChange={(v) => void onSave({ digest_weekday: Number(v) })}
+        >
+          <SelectTrigger id="easm-digest-day" className="h-8 w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {WEEKDAYS.map((d) => (
+              <SelectItem key={d} value={String(d)}>
+                {dayName(d)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground">{t('attackSurface.digest.last', 'Last sent')}</span>
+        <span>
+          {settings.last_digest_at ? <RelativeTime date={settings.last_digest_at} /> : '—'}
+        </span>
+      </div>
+    </section>
   )
 }
 

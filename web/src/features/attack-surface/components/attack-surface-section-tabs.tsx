@@ -11,9 +11,9 @@ const REVIEW_HREF = '/attack-surface/review'
 const LOOKALIKES_HREF = '/attack-surface/lookalikes'
 
 /**
- * Overview | Review | Lookalikes, the route tabs of Discovery > Attack
- * surface. Review shows how many names wait for an ownership decision (the
- * queue's own count), fetched only when that tab is visible.
+ * Overview | Review | Changes | Lookalikes, the route tabs of Discovery > Attack surface.
+ * Review shows how many names wait for an ownership decision (the queue's
+ * own count), fetched only when that tab is visible.
  */
 export function AttackSurfaceSectionTabs() {
   const { t } = useTranslation()
@@ -22,15 +22,26 @@ export function AttackSurfaceSectionTabs() {
   const waiting = useEASMReviewCount(showsReview)
   const tabs = useMemo(
     () =>
-      ATTACK_SURFACE_SECTION_TABS.map((tab) =>
-        tab.href === LOOKALIKES_HREF ? { ...tab, label: t('lookalikes.tab', tab.label) } : tab
-      ),
+      ATTACK_SURFACE_SECTION_TABS.map((tab) => {
+        switch (tab.href) {
+          case '/attack-surface':
+            return { ...tab, label: t('attackSurface.tab.overview', tab.label) }
+          case REVIEW_HREF:
+            return { ...tab, label: t('attackSurface.tab.review', tab.label) }
+          case '/attack-surface/changes':
+            return { ...tab, label: t('attackSurface.tab.changes', tab.label) }
+          case LOOKALIKES_HREF:
+            return { ...tab, label: t('lookalikes.tab', tab.label) }
+          default:
+            return tab
+        }
+      }),
     [t]
   )
   return (
     <GatedSectionTabs
       tabs={tabs}
-      label="Attack surface sections"
+      label={t('attackSurface.tab.label', 'Attack surface sections')}
       className="mt-4 mb-0"
       counts={{ [REVIEW_HREF]: waiting }}
     />

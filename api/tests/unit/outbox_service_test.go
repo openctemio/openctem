@@ -2471,7 +2471,7 @@ func TestGetEventTypesByModules(t *testing.T) {
 	}
 
 	// With all modules
-	types = integration.GetEventTypesByModules([]string{"assets", "scans", "findings", "sensors"})
+	types = integration.GetEventTypesByModules([]string{"assets", "scans", "findings", "sensors", "attack_surface"})
 	allTypes := integration.AllEventTypes()
 	if len(types) != len(allTypes) {
 		t.Errorf("expected %d types with all modules, got %d", len(allTypes), len(types))
