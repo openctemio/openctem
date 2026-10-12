@@ -1,7 +1,7 @@
 ### Added: report template check, tag reference and three starter templates
 
-- `POST /api/v1/pentest/report-templates/check` lists every problem in a Word
-  template without storing it, and `GET …/{id}/check` re-checks a stored one:
+- `POST /api/v1/pentest/report-templates/verify` lists every problem in a Word
+  template without storing it, and `GET …/{id}/issues` re-checks a stored one:
   each issue names the part (body, header, footer) and the paragraph text and
   suggests the fix (the missing `{/x}`, the closest known tag for a typo, the
   loop an item field belongs in, `{@x}` for a Markdown field). Upload runs the
