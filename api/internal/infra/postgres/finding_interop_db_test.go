@@ -206,3 +206,46 @@ func TestApplyVEXNotAffected_DB(t *testing.T) {
 		t.Errorf("second run closed %v", ids)
 	}
 }
+
+// A sighting that carries the same interop data as stored rewrites nothing
+// (a rescan re-reports it for nearly every finding); a changed member does.
+func TestFindingInterop_SkipsUnchanged_DB(t *testing.T) {
+	f := newCoverageFixture(t)
+	ctx := context.Background()
+	repo := NewFindingRepository(&DB{DB: f.db})
+	id := shared.NewID()
+	f.exec(t, `INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+		VALUES ($1, $2, $3, 'va', 'nessus', 'm', 'high', 'fp-noop', 'new')`, id, f.tenant, f.host)
+
+	v := 7.5
+	data := vulnerability.InteropData{
+		Native:      &vulnerability.InteropNative{Scheme: "nessus", VulnID: "1001"},
+		Scores:      []vulnerability.InteropScore{{System: "cvss", Version: "3.1", Value: &v}},
+		LocationKey: "net:443/tcp",
+	}
+	upd := func(d vulnerability.InteropData) int64 {
+		t.Helper()
+		n, err := repo.UpdateInteropBatch(ctx, f.tenant, []vulnerability.InteropUpdate{{Fingerprint: "fp-noop", Data: d}})
+		if err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		return n
+	}
+	if n := upd(data); n != 1 {
+		t.Fatalf("first sighting updated %d rows, want 1", n)
+	}
+	if n := upd(data); n != 0 {
+		t.Fatalf("identical sighting rewrote %d rows, want 0", n)
+	}
+	data.LocationKey = "net:8443/tcp"
+	if n := upd(data); n != 1 {
+		t.Fatalf("changed sighting updated %d rows, want 1", n)
+	}
+	got, err := repo.GetInterop(ctx, f.tenant, id)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if got.LocationKey != "net:8443/tcp" {
+		t.Fatalf("location key = %q, want the latest sighting's", got.LocationKey)
+	}
+}
