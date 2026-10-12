@@ -7,13 +7,19 @@
 #   sync-versions.sh --check    change nothing; list each drifted default and
 #                               exit 1 (the "Version consistency" CI job)
 #   sync-versions.sh --root DIR operate on another checkout (tests)
+#   sync-versions.sh --release vX.Y.Z
+#                               the checkout is the release branch of vX.Y.Z
+#                               (or main right after it merged): platform.release
+#                               must be exactly vX.Y.Z, which may be newer than
+#                               the newest tag because the tag comes after
 #
 # THE CONSUMER TABLE BELOW IS THE ONLY PLACE a versioned default is allowed to
 # live outside versions.yaml. Adding a default somewhere else? Add a row.
 #
 # It also checks the invariants that have no value to copy:
 #   - versions.yaml values are versions (vX.Y.Z) or "" where "" is allowed;
-#   - platform.release is not newer than the newest tag (when tags are present);
+#   - platform.release is not newer than the newest tag (when tags are present),
+#     except on the release branch that is about to create that tag (--release);
 #   - web/package.json carries the placeholder version 0.0.0, never a release.
 set -euo pipefail
 
@@ -23,16 +29,19 @@ source "$HERE/lib.sh"
 
 ROOT="$(cd "$HERE/../../.." && pwd)"
 CHECK=0
+RELEASE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK=1 ;;
     --root) ROOT="$(cd "$2" && pwd)"; shift ;;
+    --release) RELEASE="$2"; shift ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); if ($0 !~ /^shellcheck/) print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
+[[ -z "$RELEASE" ]] || rel_is_version "$RELEASE" || { echo "--release must be vX.Y.Z, got '$RELEASE'" >&2; exit 2; }
 MANIFEST="$ROOT/versions.yaml"
 [[ -f "$MANIFEST" ]] || { echo "no versions.yaml at $ROOT" >&2; exit 2; }
 
@@ -76,10 +85,15 @@ for key in platform.release sensor.latest sensor.min sdk.latest sdk.min chart.ve
   fi
 done
 
+# platform.release names the newest release. Only a release branch (--release)
+# may name the version it is about to tag, and it must name exactly that.
 latest_tag="$(rel_latest_tag "$ROOT" 2>/dev/null || true)"
-if [[ -n "$latest_tag" && -n "${VALUE[platform.release]:-}" ]] &&
+if [[ -n "$RELEASE" ]]; then
+  [[ "${VALUE[platform.release]:-}" == "$RELEASE" ]] ||
+    problem "versions.yaml: platform.release is '${VALUE[platform.release]:-}', but this is the release branch of $RELEASE: its checkout must default to $RELEASE (cut-release.sh writes it)"
+elif [[ -n "$latest_tag" && -n "${VALUE[platform.release]:-}" ]] &&
   rel_version_gt "${VALUE[platform.release]}" "$latest_tag"; then
-  problem "versions.yaml: platform.release ${VALUE[platform.release]} is newer than the newest tag $latest_tag (it names a released tag, bumped by the release workflow after tagging)"
+  problem "versions.yaml: platform.release ${VALUE[platform.release]} is newer than the newest tag $latest_tag (only release/${VALUE[platform.release]} may say that, checked with --release)"
 fi
 
 pkg="$ROOT/web/package.json"

@@ -447,7 +447,7 @@ var Registry = []Definition{
 			{ModuleID: ModuleFindings, Type: DependencyHard, Reason: "pentest campaigns produce findings"},
 		},
 		Routes: []string{"/api/v1/pentest"},
-		MCP:    []string{"get_campaign", "list_campaign_findings", "get_pentest_finding", "list_retests", "list_finding_templates", "campaign_report_stats", "exec_summary", "finding_writeup", "remediation_guidance", "attack_narrative"},
+		MCP:    []string{"list_campaigns", "my_work", "get_campaign", "list_campaign_findings", "get_pentest_finding", "list_retests", "list_finding_templates", "campaign_report_stats", "exec_summary", "finding_writeup", "remediation_guidance", "attack_narrative"},
 	},
 	{
 		ID: ModuleAttackSimulation, Slug: "attack-simulation", Name: "Attack Simulation",

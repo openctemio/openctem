@@ -20,12 +20,12 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | API Fuzz (`api-fuzz.yml`) | Nightly (03:17 UTC), manual | 10 minutes of `FuzzStrictCTIS` (the protocol-v2 results decoder); uploads a crasher artifact on failure | — |
 | Docker Publish (`docker-publish.yml`) | Tag `v*`, manual | Builds, smoke-tests, publishes, signs and SBOMs every image (see [Images](#images)) | — |
 | Release (`release.yml`) | Tag `v*`; dispatch on a tag | GitHub Release with `bootstrap-admin` binaries + checksums and the image pull lines | — |
-| Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z`, opens and queues the release PR (see [Releases](#releases)) | — |
-| Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z`, starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
+| Release Train (`release-train.yml`) | Manual (a maintainer presses Run) | Proposes the version from conventional commits, picks the newest develop commit with every required check green, builds `release/vX.Y.Z` (with one commit setting `versions.yaml` `platform.release` to `vX.Y.Z`), opens and queues the release PR (see [Releases](#releases)) | — |
+| Release Publish (`release-publish.yml`) | A `release/v*` PR merged into `main`; manual | Tags `vX.Y.Z` (only if `main`'s tree is the release branch's and its `versions.yaml` says `vX.Y.Z`), starts Docker Publish + Release, opens the develop and helm-charts follow-up PRs, closes the train issue | — |
 | API CI `Detect API changes` step "Changelog fragments" | PR, merge queue, push (also docs-only changes) | `api/scripts/changelog.py check`: fragment format, no entry under Unreleased in `api/CHANGELOG.md`, no committed merge-conflict marker | — |
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
 | Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
-| Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`) | — |
+| Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`; on `release/vX.Y.Z` and on `main` right after it merges, `--release vX.Y.Z`: `platform.release` must be that version) | — |
 | CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the script; weekly (Mon 04:23 UTC); manual | Copies the third-party images CI pulls to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
 
 Scheduled runs (weekly security, nightly fuzz) run from the default branch, `main`.
@@ -410,6 +410,11 @@ how to run a release is [Versioning and releases](../architecture/versioning-and
   security and critical fixes. Run **Release Train** (Actions); do not tag by
   hand.
 - `docker-publish.yml` and `release.yml` both trigger on `v*`.
+- A tag's checkout defaults to its own version: the release branch carries
+  `versions.yaml` `platform.release: vX.Y.Z`, synced into
+  `api/deploy/.env.example` and the compose files, so `setup.sh` on a `vX.Y.Z`
+  checkout installs `vX.Y.Z`. `develop` gets the bump when `main` is merged
+  back after the tag.
 - `ui/vX.Y.Z` tags are the old `openctemio/ui` tags, imported with its history.
   They release nothing: the `v*` glob does not match across `/`. Never create one.
 - `vX.Y.Z-staging` (or a manual dispatch with `environment: staging`) publishes
