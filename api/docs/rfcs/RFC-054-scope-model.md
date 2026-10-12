@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented, R3–R5 awaiting owner decision); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1096,3 +1096,85 @@ review of §6.2 also apply only in Strict. In Off and On a caller with
 and an exclusion is in effect at once; rows left pending stay pending and
 reviewable. Details in RFC-073 §6.
 
+
+## 14. Amendment 2026-10-11: flexible scope
+
+Owner request: scope must be as flexible as possible without becoming unsafe.
+After RFC-073 the policy friction is gone outside Strict (no approvals, no
+member requests, no tier ceilings); what is left is mechanical: entries are
+added one pattern at a time, assets that arrive by import, connector or CI
+are blocked until someone adds them by hand, addresses behind in-scope names
+need their own entries, and private targets need a scan zone first.
+
+One authority stays: scope entries and exclusions. Every relaxation either
+creates entries through `scope.Service` (so the job signer accepts each
+widening before it is saved, and audit and notification follow), or reads a
+fact the signer already shares. There is no implicit authority from inventory
+state at dispatch time, no automatic address inheritance and no switch that
+turns scope off.
+
+### 14.1 Rules
+
+| # | Rule | Before | After | State |
+|---|---|---|---|---|
+| R1 | Add many entries | one pattern per request; one notice to every administrator per entry | `POST /scope/targets/bulk` (≤ 200 items): step-up once before any write, each item an ordinary create, a result per item, one notice for the batch | implemented |
+| R2 | Add from anywhere | one asset's ownership section, the review queue, a scan refusal | inventory selection → "Add to scope" (exact entries), the scan wizard's "add the missing targets" and finding actions use R1 | inventory: implemented; others follow |
+| R3 | A person confirms an asset | confirmation records ownership only (§4.2) | proposed: a tenant setting `confirm_adds_to_scope` (Off and On only) creates the exact entry when a person confirms; automated sources never do | owner decision pending |
+| R4 | Addresses behind in-scope names | never inherit (S4) | proposed: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | owner decision pending |
+| R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | proposed: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | owner decision pending |
+| R6 | Approvals, tiers, requests | Strict only (RFC-073) | unchanged | — |
+| R7 | Exclusions, deny list, public suffixes, CIDR caps, audit, signer ledger, sensor local policy | always on | unchanged, always on; a bulk add runs every item through them | — |
+
+### 14.2 Bulk add
+
+`POST /scope/targets/bulk` (`attack_surface:scope:write`)
+
+```json
+{ "items": [{"target_type": "domain", "pattern": "api.example.com"},
+            {"target_type": "ip_address", "pattern": "203.0.113.9"}],
+  "reason": "", "origin": "refusal_fix" }
+```
+
+- 1 to 200 items (the dry run's limit, so a scan's refused targets fit in
+  one request); `reason` is recorded on every entry; `origin` may be
+  `refusal_fix`, otherwise the entries are recorded as `import`.
+- A caller who adds entries directly (Off and On, or an approver in Strict)
+  needs a recent re-authentication once: without it the request answers
+  `403 STEP_UP_REQUIRED` and nothing is written. A Strict member's items
+  follow the request rules of §6.1 per item (one-off, single, reason).
+- Each item is `scope.Service.CreateTarget`: guardrails (§8), duplicates
+  (the caller's tenant only), the Strict rules, the signer ledger before the
+  write (an item the signer refuses is not saved and answers its code), the
+  scope join, one audit event `scope_target.created` per entry. Waiting scans
+  (§12.8) and a discovery sweep start once for the batch.
+- One in-app notice to every owner and administrator for the entries that
+  took effect ("N scope entries added", up to ten named); a pending item
+  notifies as a single request does.
+
+Response `200`:
+
+```json
+{ "results": [
+    {"target_type": "domain", "pattern": "api.example.com", "result": "created", "id": "…", "status": "active"},
+    {"target_type": "domain", "pattern": "old.example.com", "result": "exists", "id": "…", "status": "active"},
+    {"target_type": "domain", "pattern": "*.com", "result": "refused", "code": "PUBLIC_SUFFIX", "message": "…"}],
+  "created": 1, "existing": 1, "refused": 1 }
+```
+
+### 14.3 Threat model of the relaxations
+
+| Relaxation | Abuse case | Control | Residual |
+|---|---|---|---|
+| R1 | a stolen session pastes 200 third-party names | step-up (a cookie alone fails), guardrails per item, one high-severity notice naming the batch, audit per entry, signer per entry, rate limits | a malicious organization adds many entries, as it could one by one; third parties are protected by the platform's proof setting for platform sensors and the deny list |
+| R1 | cross-tenant oracle through `exists` | duplicates are looked up in the caller's tenant only | none |
+| R3 | a lookalike confirmed by mistake | exact entry only, a person's action, audited, notified, Off and On only, exclusions and tombstones win | the confirmation now also authorizes scanning; the scan's intensity and approval rules still apply |
+| R4 | dangling DNS or shared hosting points an in-scope name at a third party | suggestion only, shared addresses left out, exact addresses, a person accepts seeing the name each came from; the sensor pins resolution | a released cloud address still in DNS until the record is fixed |
+| R5 | a compromised platform orders a tenant sensor to scan an internal range | the authority is the host operator's own local policy, which the sensor enforces on every signed job; platform sensors and sensors without a local policy are not eligible | an operator who allows a wide internal range chose it |
+
+### 14.4 Plan
+
+| Phase | Items |
+|---|---|
+| P0 | R1 bulk add (API); inventory "Add to scope"; pasting a list on the Scope page |
+| P1 | R3, R4, R5 after the owner's decision; "Add host to scope" on findings |
+| P2 | connector assets as scope (a per-connector switch, default off); the scan preflight explains a sensor's local-policy refusals from its reported policy |

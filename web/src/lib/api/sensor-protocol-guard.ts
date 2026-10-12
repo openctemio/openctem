@@ -2,7 +2,7 @@
  * Sensors talk to the API directly over sensor protocol v1 (RFC-023 §9.2),
  * authenticated by their API key. This origin's /api/v1 proxy authenticates
  * with the browser session instead and does not forward the sensor's
- * Authorization header, so a sensor whose SENSOR_API_URL pointed at the web UI got
+ * Authorization header, so a sensor whose API_URL pointed at the web UI got
  * "401 API key required" and reported its key as invalid.
  *
  * The proxy answers those routes itself with 421 Misdirected Request and a
@@ -20,7 +20,7 @@ export const SENSOR_PROTOCOL_REFUSAL = {
   error: 'WRONG_ENDPOINT',
   code: 'WRONG_ENDPOINT',
   message:
-    'This is the OpenCTEM web UI, not the API. Set the sensor SENSOR_API_URL to the API base URL ' +
+    'This is the OpenCTEM web UI, not the API. Set the sensor API_URL to the API base URL ' +
     '(the address that serves /health from the API), not the web UI address.',
 } as const
 

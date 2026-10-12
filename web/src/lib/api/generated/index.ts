@@ -218,6 +218,9 @@ export type AuditChainClass =
 
 /** GET /api/v1/easm/summary — the EASM overview (RFC-036). */
 export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Summary']
+export type EASMChangePage =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Page']
+export type EASMChange = Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Change']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
 /** Lookalike-domain monitoring (RFC-083). */
 export type LookalikeWatchList = Schemas['internal_infra_http_handler.LookalikeWatchList']
