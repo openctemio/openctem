@@ -267,7 +267,9 @@ For each finding the run reported:
 
 - **honored**: accepted risk (unexpired), `accepted_risk`, false positive,
   duplicate, or covered by a suppression rule: never blocks;
-- **secret**: a committed secret always blocks, whatever its age or severity;
+- **secret**: a new committed secret always blocks, whatever its severity; a
+  secret already open on the baseline branch blocks default-branch runs and is
+  a non-blocking `secret_pre_existing` note on other branches (RFC-077 G-9);
 - with new-findings-only, a finding already open on the default branch does
   not block; on the default branch itself, "new" means first detected or
   reopened by this run. Without a scan of the default branch every finding
