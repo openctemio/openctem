@@ -2272,8 +2272,7 @@ func TestTenantSvc_UpdateSecuritySettings_Success(t *testing.T) {
 	existing := seedTenant(repo, "Team", "team-slug")
 
 	input := tenantapp.UpdateSecuritySettingsInput{
-		MFARequired:       boolPtr(true),
-		SessionTimeoutMin: intPtr(60),
+		MFARequired: boolPtr(true),
 	}
 
 	result, err := svc.UpdateSecuritySettings(context.Background(), existing.ID().String(), input, audit.AuditContext{})
@@ -2366,7 +2365,7 @@ func TestTenantSvc_SSOEnforced_Guard(t *testing.T) {
 func TestTenantSvc_UpdateSecuritySettings_InvalidID(t *testing.T) {
 	svc, _ := newTestTenantService()
 
-	input := tenantapp.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}
+	input := tenantapp.UpdateSecuritySettingsInput{MFARequired: boolPtr(true)}
 	_, err := svc.UpdateSecuritySettings(context.Background(), "bad-uuid", input, audit.AuditContext{})
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
@@ -2374,8 +2373,8 @@ func TestTenantSvc_UpdateSecuritySettings_InvalidID(t *testing.T) {
 }
 
 // TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted proves that
-// toggling a single flag does not wipe the IP whitelist / allowed domains /
-// session timeout that the request omitted.
+// toggling a single flag does not wipe the IP whitelist and allowed domains
+// that the request omitted.
 func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testing.T) {
 	svc, repo := newTestTenantService()
 	existing := seedTenant(repo, "Team", "team-slug")
@@ -2383,9 +2382,8 @@ func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testin
 
 	// Seed a full-ish security config.
 	_, err := svc.UpdateSecuritySettings(context.Background(), id, tenantapp.UpdateSecuritySettingsInput{
-		SessionTimeoutMin: intPtr(120),
-		IPWhitelist:       []string{"10.0.0.0/8"},
-		AllowedDomains:    []string{"example.com"},
+		IPWhitelist:    []string{"10.0.0.0/8"},
+		AllowedDomains: []string{"example.com"},
 	}, audit.AuditContext{})
 	if err != nil {
 		t.Fatalf("seed update failed: %v", err)
@@ -2401,9 +2399,6 @@ func TestTenantSvc_UpdateSecuritySettings_PartialPatchPreservesOmitted(t *testin
 
 	if !result.Security.MFARequired {
 		t.Error("MFA flag not applied")
-	}
-	if result.Security.SessionTimeoutMin != 120 {
-		t.Errorf("session timeout wiped: got %d, want 120", result.Security.SessionTimeoutMin)
 	}
 	if len(result.Security.IPWhitelist) != 1 || result.Security.IPWhitelist[0] != "10.0.0.0/8" {
 		t.Errorf("ip whitelist wiped: got %v", result.Security.IPWhitelist)
@@ -2587,7 +2582,7 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 			return err
 		}},
 		{"UpdateSecuritySettings", func() error {
-			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, tenantapp.UpdateSecuritySettingsInput{SessionTimeoutMin: intPtr(60)}, audit.AuditContext{})
+			_, err := svc.UpdateSecuritySettings(context.Background(), invalidID, tenantapp.UpdateSecuritySettingsInput{MFARequired: boolPtr(true)}, audit.AuditContext{})
 			return err
 		}},
 		{"UpdateBrandingSettings", func() error {
@@ -2609,10 +2604,9 @@ func TestTenantSvc_InvalidIDFormat_AllMethods(t *testing.T) {
 	}
 }
 
-// boolPtr / intPtr are pointer-literal helpers for building partial-update
-// inputs in tests. strPtr lives in asset_service_test.go (same package).
+// boolPtr is a pointer-literal helper for building partial-update inputs in
+// tests. strPtr lives in asset_service_test.go (same package).
 func boolPtr(b bool) *bool { return &b }
-func intPtr(i int) *int    { return &i }
 
 // TestTenantSvc_AddMember_ZeroInviter_NullInvitedBy guards the SCIM/system
 // provisioning path: AddMember called with a zero inviter must produce a

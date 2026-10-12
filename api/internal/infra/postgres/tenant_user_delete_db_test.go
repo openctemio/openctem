@@ -49,13 +49,15 @@ var auditTables = map[string]bool{
 }
 
 // orphanAllowlist lists tables with a tenant_id column whose rows are meant
-// to outlive the tenant, because they are audit evidence.
+// to outlive the tenant: audit evidence, or a deletion queue that must
+// outlive it to remove stored files.
 var orphanAllowlist = map[string]string{
 	"audit_log_chain":                "hash chain of audit_logs; audit_logs keep their rows (tenant_id SET NULL) and the chain must stay verifiable",
 	"audit_chain_rebaselines":        "record of an admin re-signing the audit chain; evidence, no FK to tenants by design",
 	"audit_chain_rebaseline_entries": "hashes a chain rebaseline overwrote; evidence, no FK to tenants by design",
 	"audit_chain_anchors":            "chain head left by an audit retention prune; evidence, no FK to tenants by design",
 	"priority_class_audit_log":       "append-only priority audit trail; no FK to tenants by design",
+	"asset_web_evidence_orphans":     "queue of screenshot files to delete; filled when the tenant's evidence rows cascade away, drained by the retention job so no stored image outlives the tenant",
 }
 
 func openDeleteTestDB(t *testing.T) *sql.DB {
@@ -212,6 +214,9 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	"easm_weekly_digests": func(*schemaSeeder) map[string]any {
+		return map[string]any{"window_from": "2026-01-01T00:00:00Z", "slot": "2026-01-08T00:00:00Z"}
+	},
 	"ai_triage_budgets": func(*schemaSeeder) map[string]any {
 		return map[string]any{"period_start": "2026-01-01", "period_end": "2026-02-01"}
 	},

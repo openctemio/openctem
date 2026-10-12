@@ -147,6 +147,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.AssetsRead,
     module: Module.AttackSurface,
   },
+  // Typed attack-surface changes (RFC-080), narrowed to the data scope by the API.
+  '/attack-surface/changes': {
+    permission: Permission.AssetsRead,
+    module: Module.AttackSurface,
+  },
   '/business-units': {
     permission: Permission.AssetsRead,
     module: Module.BusinessUnits,
@@ -549,6 +554,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/ci-cd': {
     permission: Permission.CIRead,
+    module: Module.Scans,
+  },
+  // GitHub App setup redirect (RFC-077): binding needs scans:ci:write.
+  '/ci-cd/github-app/callback': {
+    permission: Permission.CIWrite,
     module: Module.Scans,
   },
   '/settings/scanning/profiles': {
