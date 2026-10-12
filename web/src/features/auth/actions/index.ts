@@ -10,7 +10,6 @@ export {
   getCurrentUser,
   logoutAction,
   isAuthenticated,
-  getAccessToken,
 } from './auth-actions'
 
 export type { HandleCallbackInput, RefreshTokenResult } from './auth-actions'

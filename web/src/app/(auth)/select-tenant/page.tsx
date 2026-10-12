@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useTransition } from 'react'
+import { useState, useEffect, useMemo, useRef, useTransition } from 'react'
 import { devLog } from '@/lib/logger'
 import { useRouter } from 'next/navigation'
 import { Building2, Check, Loader2, LogOut, Plus, Search } from 'lucide-react'
@@ -18,6 +18,7 @@ import {
 } from '@/features/auth/actions/local-auth-actions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Show the search input only when the user has more than this many teams.
 // Below this threshold scanning visually is faster than typing.
@@ -46,6 +47,11 @@ function parsePendingTenants(): PendingState {
 
 export default function SelectTenantPage() {
   const router = useRouter()
+  const { t } = useTranslation()
+  // Read through a ref so the redirect effect below does not depend on t.
+  const listExpiredRef = useRef(
+    t('auth.selectTenant.listExpired', 'Your team list expired. Please sign in again to continue.')
+  )
   const { canCreate: canCreateTeam } = useCanCreateOrganization()
   const [isPending, startTransition] = useTransition()
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -84,7 +90,7 @@ export default function SelectTenantPage() {
   // gracefully by rendering the login form (NOT redirecting to onboarding).
   useEffect(() => {
     if (parseError) {
-      toast.error('Your team list expired. Please sign in again to continue.')
+      toast.error(listExpiredRef.current)
       router.push('/login')
     }
   }, [parseError, router])
@@ -96,7 +102,7 @@ export default function SelectTenantPage() {
       const result = await selectTenantAction(tenantId)
 
       if (result.success) {
-        toast.success('Team selected successfully')
+        toast.success(t('auth.selectTenant.selected', 'Team selected'))
         // Brief delay to ensure Set-Cookie headers are fully processed by browser
         // before hard redirect. Without this, dashboard bootstrap may race with
         // cookie initialization and flash a 401 error before auto-recovering.
@@ -104,7 +110,12 @@ export default function SelectTenantPage() {
         window.location.href = '/'
       } else {
         setSelectedId(null)
-        toast.error(getErrorMessage(result.error, 'Failed to select team'))
+        toast.error(
+          getErrorMessage(
+            result.error,
+            t('auth.selectTenant.selectFailed', 'Failed to select team')
+          )
+        )
       }
     })
   }
@@ -157,11 +168,17 @@ export default function SelectTenantPage() {
     */
     <Card className="w-full max-w-md flex flex-col max-h-[min(90vh,720px)] overflow-hidden">
       <CardHeader className="text-center shrink-0 pb-4">
-        <CardTitle className="text-xl">Select a Team</CardTitle>
+        <CardTitle className="text-xl">{t('auth.selectTenant.title', 'Select a team')}</CardTitle>
         <CardDescription className="text-sm">
           {tenants.length === 1
-            ? 'You have access to one team. Select it to continue.'
-            : `You have access to ${tenants.length} teams. Pick one to continue.`}
+            ? t('auth.selectTenant.one', 'You have access to one team. Select it to continue.')
+            : t(
+                'auth.selectTenant.many',
+                'You have access to {count} teams. Pick one to continue.',
+                {
+                  count: tenants.length,
+                }
+              )}
         </CardDescription>
       </CardHeader>
 
@@ -176,12 +193,12 @@ export default function SelectTenantPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               type="search"
-              placeholder="Search teams…"
+              placeholder={t('auth.selectTenant.search', 'Search teams…')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               disabled={isPending || isLoggingOut}
               className="ps-9"
-              aria-label="Search teams"
+              aria-label={t('auth.selectTenant.searchLabel', 'Search teams')}
               autoFocus
             />
           </div>
@@ -248,10 +265,10 @@ export default function SelectTenantPage() {
           {filteredTenants.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <p className="text-sm text-muted-foreground">
-                No teams match &ldquo;{searchQuery}&rdquo;
+                {t('auth.selectTenant.noMatch', 'No teams match “{query}”', { query: searchQuery })}
               </p>
               <Button variant="link" size="sm" onClick={() => setSearchQuery('')} className="mt-1">
-                Clear search
+                {t('auth.selectTenant.clearSearch', 'Clear search')}
               </Button>
             </div>
           )}
@@ -285,9 +302,14 @@ export default function SelectTenantPage() {
               <Plus className="h-5 w-5" />
             </div>
             <div className="flex-1 text-start min-w-0">
-              <p className="font-medium text-sm sm:text-base">Create a new team</p>
+              <p className="font-medium text-sm sm:text-base">
+                {t('auth.selectTenant.createTitle', 'Create a new team')}
+              </p>
               <p className="text-xs sm:text-sm text-muted-foreground truncate">
-                Start a fresh workspace for a different organisation
+                {t(
+                  'auth.selectTenant.createBody',
+                  'Start a fresh workspace for a different organization'
+                )}
               </p>
             </div>
           </button>
@@ -307,7 +329,9 @@ export default function SelectTenantPage() {
               <LogOut className="h-4 w-4 me-2" />
             )}
             <span className="truncate">
-              {isLoggingOut ? 'Signing out...' : 'Sign out and use a different account'}
+              {isLoggingOut
+                ? t('auth.selectTenant.signingOut', 'Signing out...')
+                : t('auth.selectTenant.signOut', 'Sign out and use a different account')}
             </span>
           </Button>
         </div>

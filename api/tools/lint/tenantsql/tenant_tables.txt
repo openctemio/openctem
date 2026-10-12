@@ -55,6 +55,7 @@ ci_run_findings
 ci_run_tokens
 ci_runs
 ci_trust_configs
+ci_trust_owner_pins
 command_events
 command_logs
 commands
@@ -78,6 +79,7 @@ easm_dns_name_state
 easm_evidence
 easm_network_seeds
 easm_tombstones
+easm_weekly_digests
 exposure_events
 exposures
 finding_activities
@@ -117,6 +119,7 @@ pentest_campaign_members
 pentest_campaigns
 pentest_finding_templates
 pentest_report_files
+pentest_report_templates
 pentest_reports
 pentest_retests
 priority_class_audit_log
@@ -150,6 +153,7 @@ scans
 scim_group_role_mappings
 scim_groups
 scim_tokens
+scm_app_installations
 scope_exclusions
 scope_snapshots
 scope_target_approvals
