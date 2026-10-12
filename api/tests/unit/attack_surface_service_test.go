@@ -176,8 +176,8 @@ func (m *mockAttackSurfaceRepo) UpdateFindingCounts(_ context.Context, _ shared.
 	return nil
 }
 
-func (m *mockAttackSurfaceRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ string, _ []string, _ int) ([]string, error) {
-	return []string{}, nil
+func (m *mockAttackSurfaceRepo) ListDistinctTags(_ context.Context, _ shared.ID, _ asset.AccessScope, _ asset.TagListQuery) (asset.TagList, error) {
+	return asset.TagList{Tags: []string{}}, nil
 }
 
 func (m *mockAttackSurfaceRepo) BatchUpdateRiskScores(_ context.Context, _ shared.ID, _ []*asset.Asset) error {

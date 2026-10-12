@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-import { buildCsp, generateNonce } from '../csp'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { buildCsp, cspForRequest, generateNonce } from '../csp'
 
 function directive(policy: string, name: string): string[] {
   const found = policy
@@ -63,5 +66,26 @@ describe('generateNonce', () => {
     const b = generateNonce()
     expect(a).toMatch(/^[A-Za-z0-9+/]{22}==$/)
     expect(a).not.toBe(b)
+  })
+})
+
+describe('cspForRequest', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("uses the running server's NEXT_PUBLIC_APP_URL", () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://ctem.customer.example')
+    vi.stubEnv('BACKEND_API_URL', 'http://api:8080')
+    vi.stubEnv('NEXT_PUBLIC_WS_BASE_URL', '')
+    expect(directive(cspForRequest('n'), 'connect-src')).toContain('https://ctem.customer.example')
+  })
+
+  // A literal process.env.NEXT_PUBLIC_* is inlined at build time: a published
+  // image would put the build's origin into every deployment's policy.
+  it('reads the origins through a computed key, never a build-time literal', () => {
+    const src = readFileSync(join(__dirname, '..', 'csp.ts'), 'utf8')
+    expect(src).not.toMatch(/process\.env\.NEXT_PUBLIC_(APP_URL|WS_BASE_URL)/)
   })
 })

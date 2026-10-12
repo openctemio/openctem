@@ -277,7 +277,7 @@ limiting on, debug off.
 | `AUTH_PROVIDER` | `oidc` | `local`: an installation that relied on the old default must set `AUTH_PROVIDER=oidc` |
 
 **New, optional** (safe defaults; set them when you need them):
-`SERVER_TRUSTED_PROXIES` (the web container's address or network: needed for
+`SERVER_TRUSTED_PROXIES` (the web container's and the gateway's addresses, not a whole network: needed for
 correct client IPs, login rate limits and IP allowlists), `SCOPE_DENY_EXTRA`
 (your own names and ranges that must never be scanned),
 `SCOPE_MAX_PUBLIC_CIDR_V4`/`_V6` (16/32), `SENSOR_LATEST_VERSION` /

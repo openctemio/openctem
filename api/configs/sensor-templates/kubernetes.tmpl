@@ -37,11 +37,15 @@ stringData:
 {{- end}}
 {{- if isDaemon .Sensor}}
 ---
-# Results that cannot be delivered yet; a restart or an outage loses nothing.
+# The sensor's data: state/ (its identity and the API key it renews on its
+# own; the Secret above keeps the key it was installed with, which a renewal
+# retires), outbox/ (results that cannot be delivered yet) and content/ (the
+# scanner content cache, re-downloadable). Keep it; back it up like a
+# credential.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{$slug}}-outbox
+  name: {{$slug}}-data
   labels:
     app.kubernetes.io/name: openctem-sensor
     app.kubernetes.io/instance: {{$slug}}
@@ -49,37 +53,7 @@ spec:
   accessModes: ["ReadWriteOnce"]
   resources:
     requests:
-      storage: 2Gi
----
-# The sensor's state, including the API key it renews on its own (the Secret
-# above keeps the key it was installed with, which a renewal retires).
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{$slug}}-state
-  labels:
-    app.kubernetes.io/name: openctem-sensor
-    app.kubernetes.io/instance: {{$slug}}
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 64Mi
----
-# Scanner content cache (trivy DB, nuclei templates, semgrep rules), so a new
-# pod does not download it again. Disposable: it can be deleted.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{$slug}}-content
-  labels:
-    app.kubernetes.io/name: openctem-sensor
-    app.kubernetes.io/instance: {{$slug}}
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 5Gi
+      storage: 8Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -154,12 +128,8 @@ spec:
               value: /etc/openctem/certs
 {{- end}}
           volumeMounts:
-            - name: outbox
-              mountPath: /var/lib/openctem/outbox
-            - name: state
-              mountPath: /var/lib/openctem/state
-            - name: content
-              mountPath: /var/lib/openctem/content
+            - name: data
+              mountPath: /var/lib/openctem
             - name: policy
               mountPath: /etc/openctem/policy
               readOnly: true
@@ -173,15 +143,9 @@ spec:
               readOnly: true
 {{- end}}
       volumes:
-        - name: outbox
+        - name: data
           persistentVolumeClaim:
-            claimName: {{$slug}}-outbox
-        - name: state
-          persistentVolumeClaim:
-            claimName: {{$slug}}-state
-        - name: content
-          persistentVolumeClaim:
-            claimName: {{$slug}}-content
+            claimName: {{$slug}}-data
         - name: policy
           configMap:
             name: {{$slug}}-policy

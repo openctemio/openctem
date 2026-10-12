@@ -199,6 +199,30 @@ describe('LabelChips', () => {
   })
 })
 
+describe('LabelChips as filter chips', () => {
+  it('toggles the tag filter on click without opening the row', () => {
+    const onLabelClick = vi.fn()
+    const onRowClick = vi.fn()
+    render(
+      <div onClick={onRowClick}>
+        <LabelChips labels={['prod', 'pci']} activeLabels={['pci']} onLabelClick={onLabelClick} />
+      </div>
+    )
+    const prod = screen.getByRole('button', { name: /prod/ })
+    expect(prod).toHaveAttribute('aria-pressed', 'false')
+    expect(prod).toHaveAttribute('title', 'Filter the list by "prod"')
+    expect(screen.getByRole('button', { name: /pci/ })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(prod)
+    expect(onLabelClick).toHaveBeenCalledWith('prod')
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
+
+  it('stays plain text without a click handler', () => {
+    render(<LabelChips labels={['prod']} />)
+    expect(screen.queryByRole('button', { name: /prod/ })).toBeNull()
+  })
+})
+
 describe('scanner text is text', () => {
   it('renders HTML from a scanner as literal text', () => {
     const evil = '<img src=x onerror="alert(1)">'
