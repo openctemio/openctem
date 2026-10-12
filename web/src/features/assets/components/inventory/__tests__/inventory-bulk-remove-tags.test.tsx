@@ -18,7 +18,11 @@ vi.mock('@/features/access-control/api/use-groups', () => ({
 vi.mock('@/lib/permissions', () => ({
   usePermissions: () => ({ can: () => true }),
   useHasPermission: () => true,
-  Permission: { AssetsDelete: 'assets:delete', AssetsWrite: 'assets:write', ScopeWrite: 'scope:write' },
+  Permission: {
+    AssetsDelete: 'assets:delete',
+    AssetsWrite: 'assets:write',
+    ScopeWrite: 'scope:write',
+  },
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }))
 
