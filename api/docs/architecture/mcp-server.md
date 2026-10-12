@@ -68,6 +68,8 @@ read tools `readOnlyHint: true, idempotentHint: true`, the write tool
 | `list_remediation_groups` | `findings:read` | solution families |
 | `list_assets` | `assets:read` | assets (exposure/criticality/search) |
 | `compliance_posture` | `compliance:frameworks:read` | framework/control posture |
+| `list_campaigns` | `pentest:campaigns:read` | the person's campaigns, newest first: role, phase, TLP, dates, counts, next action; `phase`, `role`, `search`, `include_archived` filters, paged |
+| `my_work` | `pentest:campaigns:read` | the person's active campaigns with something to do (drafts, assigned findings, reviews, retests; for a client, open published findings), with the next action, paged |
 | `get_campaign` (`campaign_id`) | `pentest:campaigns:read` | campaign context: scope, rules of engagement, methodology, objectives, team (names and roles), TLP, phase |
 | `list_campaign_findings` | `pentest:findings:read` | a campaign's findings with report fields; `severity`, `status`, `search` filters and `page`/`limit` paging |
 | `get_pentest_finding` (`finding_id`) | `pentest:findings:read` | one pentest finding; evidence as counts only |
@@ -89,6 +91,18 @@ is still accepted.
   team: a client gets `not_found` from them. A client reads a published
   finding of their campaign with `get_pentest_finding` (drafts and findings
   under review do not exist for them, in SQL and again in the handler).
+- **Discovery.** `list_campaigns` and `my_work` list only the campaigns the
+  person is a member of (a SQL membership filter, tenant-scoped; being a
+  tenant administrator adds nothing), with `my_role`, the phase and its label
+  (Planning, Testing, Reporting, Remediation, On hold, Canceled, Closed), and
+  a `next_action` computed from the role, the phase and the counts. Counts
+  are `published` (by severity, as the report counts them: no drafts,
+  findings under review, false positives or duplicates), `open_published`
+  and `awaiting_retest`; team roles also get `drafts`, `in_review`,
+  `my_drafts` and `assigned_to_me`, a client never does
+  (`unpublished_hidden: true`). `my_work` scans the active phases (planning,
+  testing, reporting, remediation; at most 500 campaigns) and keeps those
+  with work for the role: an observer never has any.
 - **Rules of engagement.** `get_campaign` sends a whitelist: testing hours,
   allowed and restricted methods and data handling to every team member; the
   emergency contact, communication channel and escalation procedure to the
@@ -190,16 +204,15 @@ bearer token:
 |---|---|
 | Protocol, dispatch, audit | `internal/infra/http/handler/mcp_handler.go` |
 | Generic tools | `internal/infra/http/handler/mcp_tools.go` |
-| Pentest tools | `internal/infra/http/handler/mcp_pentest_tools.go` |
+| Pentest tools | `internal/infra/http/handler/mcp_pentest_tools.go`, `mcp_pentest_discovery.go` |
 | Results envelope, typed errors | `internal/infra/http/handler/mcp_results.go` |
 | Prompts | `internal/infra/http/handler/mcp_prompts.go` |
 | Write tools | `internal/infra/http/handler/mcp_write_tools.go` |
-| Pentest queries (member-scoped paging, report selection) | `internal/app/compliance/pentest_queries.go` |
+| Pentest queries (member-scoped paging, report selection, member campaigns) | `internal/app/compliance/pentest_queries.go`, `internal/infra/postgres/pentest_campaign_stats.go` (`GetWorkCountsByIDs`) |
 
 ## Planned (not yet shipped)
 
-- Campaign discovery (`list_campaigns`, `my_work`) and a TLP limit for AI
-  clients.
+- A TLP limit for AI clients.
 - Draft-first pentest write tools (create drafts, evidence, checklist, retests)
   with one confirmation per batch.
 - The current MCP protocol revisions: structured output with output schemas,
