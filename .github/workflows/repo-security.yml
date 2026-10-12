@@ -62,7 +62,7 @@ jobs:
 
       - name: Install Betterleaks (pinned, checksum-verified)
         run: |
-          curl -sSfL -o betterleaks.tgz \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o betterleaks.tgz \
             "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
           echo "${BETTERLEAKS_SHA256}  betterleaks.tgz" | sha256sum -c -
           tar -xzf betterleaks.tgz betterleaks
@@ -120,13 +120,16 @@ jobs:
           ACTIONLINT_VERSION: 1.7.7
           ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
         run: |
-          curl -sSfL -o actionlint.tgz \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o actionlint.tgz \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
           tar -xzf actionlint.tgz actionlint
           ./actionlint -color
       - name: Actions are pinned to commit SHAs
         run: bash .github/scripts/check-action-pins.sh
+      # Which jobs a change runs (api/web/docs routing shared by every workflow).
+      - name: Change routing self-test
+        run: bash .github/scripts/changed.test.sh
 
   # New or upgraded dependencies a pull request brings in (Go modules, npm,
   # GitHub Actions) are checked against the GitHub Advisory Database. Fails on a
