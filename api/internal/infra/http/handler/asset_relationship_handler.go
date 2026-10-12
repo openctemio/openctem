@@ -314,6 +314,19 @@ func (h *AssetRelationshipHandler) Delete(w http.ResponseWriter, r *http.Request
 //
 // Always returns 200 with a results array, even if every item failed.
 // The caller decides what to do based on per-item statuses.
+//
+// @Summary      Create relationships in bulk
+// @Description  Creates relationships from one source asset to many targets; per-item results, never aborts the batch.
+// @Tags         Asset Relationships
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path  string                          true  "Source asset ID"
+// @Param        body  body  BatchCreateRelationshipRequest  true  "Targets"
+// @Success      200  {object}  assetapp.BatchCreateRelationshipResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Router       /assets/{id}/relationships/batch [post]
 func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	pathAssetID := chi.URLParam(r, "id")
@@ -354,31 +367,6 @@ func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
-}
-
-// UsageStats handles GET /api/v1/relationships/usage-stats
-//
-// Returns the per-type usage count for every relationship type in the
-// registry, joined with each type's display metadata. Used by tenant
-// admins to see which types are actually being used and prune the
-// registry based on real data instead of guesses. Types with count=0
-// are returned (so the response is "every type in the registry, with
-// its count").
-func (h *AssetRelationshipHandler) UsageStats(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	usage, err := h.service.GetRelationshipTypeUsage(r.Context(), tenantID)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data":  usage,
-		"total": len(usage),
-	})
 }
 
 // =============================================================================

@@ -30,6 +30,8 @@ export type InventoryFilters = Pick<
   | 'scopes'
   | 'exposures'
   | 'tags'
+  | 'tagsMode'
+  | 'excludeTags'
   | 'dataClassifications'
   | 'environments'
   | 'providers'
@@ -58,6 +60,7 @@ export type InventoryFilters = Pick<
 export const HIGH_RISK_SCORE = 70
 
 const LENS_PARAM = 'lens'
+const TAGS_MODE_PARAM = 'tags_mode'
 const MIN_RISK_PARAM = 'min_risk_score'
 
 function isLens(v: string): v is AssetLens {
@@ -72,6 +75,7 @@ const ARRAY_PARAMS = {
   scopes: 'scopes',
   exposures: 'exposures',
   tags: 'tags',
+  excludeTags: 'exclude_tags',
   dataClassifications: 'data_classifications',
   environments: 'environments',
   providers: 'providers',
@@ -141,6 +145,8 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
   // An unknown lens would only ever match nothing: drop it.
   const lens = sp.get(LENS_PARAM)
   if (lens && isLens(lens)) out.lens = lens
+  // "any" is the default and never written; anything else is ignored.
+  if (sp.get(TAGS_MODE_PARAM) === 'all') out.tagsMode = 'all'
   const minRisk = Number(sp.get(MIN_RISK_PARAM))
   if (sp.get(MIN_RISK_PARAM) && Number.isInteger(minRisk) && minRisk >= 0 && minRisk <= 100) {
     out.minRiskScore = minRisk
@@ -173,6 +179,7 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   const props = serializePropertiesParam(f.propertiesFilter)
   if (props) sp.set(PROPERTIES_PARAM, props)
   if (f.lens) sp.set(LENS_PARAM, f.lens)
+  if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
   if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.page && f.page > 1) sp.set('page', String(f.page))
   if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE) sp.set('per_page', String(f.pageSize))
@@ -225,6 +232,38 @@ export function togglePropertyFilter(
   return {
     ...f,
     propertiesFilter: Object.keys(current).length > 0 ? current : undefined,
+    page: 1,
+  }
+}
+
+/**
+ * The filter with one tag toggled in the include list. A tag that was
+ * excluded becomes included (one tag is never both). Match mode is kept
+ * while two or more tags remain.
+ */
+export function toggleIncludedTag(f: InventoryFilters, tag: string): InventoryFilters {
+  const tags = f.tags ?? []
+  const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag]
+  const excluded = (f.excludeTags ?? []).filter((t) => t !== tag)
+  return {
+    ...f,
+    tags: next.length > 0 ? next : undefined,
+    tagsMode: next.length > 0 ? f.tagsMode : undefined,
+    excludeTags: excluded.length > 0 ? excluded : undefined,
+    page: 1,
+  }
+}
+
+/** The filter with one tag toggled in the exclude list (removed from the include list). */
+export function toggleExcludedTag(f: InventoryFilters, tag: string): InventoryFilters {
+  const excluded = f.excludeTags ?? []
+  const next = excluded.includes(tag) ? excluded.filter((t) => t !== tag) : [...excluded, tag]
+  const tags = (f.tags ?? []).filter((t) => t !== tag)
+  return {
+    ...f,
+    tags: tags.length > 0 ? tags : undefined,
+    tagsMode: tags.length > 0 ? f.tagsMode : undefined,
+    excludeTags: next.length > 0 ? next : undefined,
     page: 1,
   }
 }
