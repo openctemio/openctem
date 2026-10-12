@@ -304,3 +304,15 @@ func TestRender_EmbedsEvidenceImages(t *testing.T) {
 		t.Fatalf("rendered package fails the checks: %v", err)
 	}
 }
+
+func cell(text, rPr string) string {
+	return `<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/></w:tcPr>` + para(text, rPr) + "</w:tc>"
+}
+
+func row(cells ...string) string {
+	return "<w:tr>" + strings.Join(cells, "") + "</w:tr>"
+}
+
+func table(rows ...string) string {
+	return `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr>` + strings.Join(rows, "") + "</w:tbl>"
+}
