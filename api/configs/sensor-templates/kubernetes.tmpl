@@ -99,9 +99,9 @@ spec:
               # Add NET_RAW only for naabu SYN scans.
               drop: ["ALL"]
           env:
-            - name: SENSOR_API_URL
+            - name: API_URL
               value: {{yamlQuote .BaseURL}}
-            - name: SENSOR_API_KEY
+            - name: API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{$slug}}
@@ -185,9 +185,9 @@ spec:
           image: {{.Image}}
           args: ["-tool", "{{firstTool .Sensor.EffectiveTools}}", "-target", "/scan", "-push"]
           env:
-            - name: SENSOR_API_URL
+            - name: API_URL
               value: {{yamlQuote .BaseURL}}
-            - name: SENSOR_API_KEY
+            - name: API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{$slug}}

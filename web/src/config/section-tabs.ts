@@ -254,4 +254,11 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     module: 'attack_surface',
     permission: Permission.ScopeRead,
   },
+  {
+    label: 'Changes',
+    href: '/attack-surface/changes',
+    icon: History,
+    module: 'attack_surface',
+    permission: Permission.AssetsRead,
+  },
 ]

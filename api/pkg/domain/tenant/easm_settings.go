@@ -36,6 +36,13 @@ type EASMSettings struct {
 	// about lookalike candidates: their names are no longer sent there
 	// (docs/rfcs/RFC-083-lookalike-domains.md). DNS checks continue.
 	LookalikeCTDisabled bool `json:"lookalike_ct_disabled,omitempty"`
+	// WeeklyDigestDisabled stops the weekly "what changed" digest of the
+	// attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md);
+	// on by default.
+	WeeklyDigestDisabled bool `json:"weekly_digest_disabled,omitempty"`
+	// DigestWeekday is the UTC weekday the digest goes out: 0 for the
+	// default (Monday), else 1..7 = Monday..Sunday (ISO 8601).
+	DigestWeekday int `json:"digest_weekday,omitempty"`
 }
 
 // Validate checks the floors: an interval is 0 (default) or 6..168 hours.
@@ -45,6 +52,10 @@ func (s EASMSettings) Validate() error {
 			return fmt.Errorf("%w: %s must be between %d and %d (or 0 for the platform default)",
 				shared.ErrValidation, name, MinEASMIntervalHours, MaxEASMIntervalHours)
 		}
+	}
+	if s.DigestWeekday < 0 || s.DigestWeekday > 7 {
+		return fmt.Errorf("%w: digest_weekday must be between 1 (Monday) and 7 (Sunday), or 0 for the default",
+			shared.ErrValidation)
 	}
 	return nil
 }
