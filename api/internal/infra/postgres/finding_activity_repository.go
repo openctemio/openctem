@@ -490,6 +490,20 @@ func (r *FindingActivityRepository) buildWhereClause(filter vulnerability.Findin
 		conditions = append(conditions, fmt.Sprintf("fa.created_at <= $%d", len(args)))
 	}
 
+	// A pentest campaign client: the client-visible types, and comments only
+	// when marked visible to the client (older comment activity has no
+	// visibility and stays hidden).
+	if filter.ClientView {
+		placeholders := make([]string, len(vulnerability.ClientVisibleActivityTypes))
+		for i, t := range vulnerability.ClientVisibleActivityTypes {
+			args = append(args, string(t))
+			placeholders[i] = fmt.Sprintf("$%d", len(args))
+		}
+		conditions = append(conditions,
+			fmt.Sprintf("fa.activity_type IN (%s)", strings.Join(placeholders, ", ")),
+			"(fa.activity_type <> 'comment_added' OR fa.changes->>'visibility' = 'client')")
+	}
+
 	return strings.Join(conditions, " AND "), args
 }
 

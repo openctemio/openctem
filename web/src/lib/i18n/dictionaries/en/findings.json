@@ -29,5 +29,20 @@
   "findings.retest.manual.partial": "Tester retest: partially fixed",
   "findings.retest.manual.pending": "Tester retest pending",
   "findings.retest.manual.canceled": "Tester retest canceled",
-  "findings.remediation.none": "The scanner gave no remediation advice."
+  "findings.remediation.none": "The scanner gave no remediation advice.",
+  "findings.commentVisibility.chooseHint": "Off: only the campaign team reads it. On: the campaign client reads it too.",
+  "findings.commentVisibility.visibleToClient": "Visible to client",
+  "findings.commentVisibility.teamOnlyNote": "Team only",
+  "findings.commentVisibility.teamNote": "Only the campaign team reads your comments.",
+  "findings.commentVisibility.clientNote": "The campaign team and your organization read your comments.",
+  "findings.commentVisibility.client": "Client can see",
+  "findings.commentVisibility.clientHint": "The campaign client reads this comment.",
+  "findings.commentVisibility.team": "Team only",
+  "findings.commentVisibility.teamHint": "Only the campaign team reads this comment; the client does not.",
+  "findings.commentVisibility.via": "via {client}",
+  "findings.commentVisibility.viaHint": "Written by an AI client acting for this person, after they confirmed it.",
+  "findings.activity.loadFailed": "Activity could not be loaded. Open to retry.",
+  "findings.activity.loadFailedTitle": "Activity could not be loaded",
+  "findings.activity.loadFailedBody": "The history of this finding is not shown because the request failed. Try again later.",
+  "findings.activity.startDiscussion": "Start the discussion below."
 }
