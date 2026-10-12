@@ -37,8 +37,8 @@ scanning, image metadata stripping and short-lived signed downloads.
 | Authorization letters `/scope/letters` | FileStorage | 10 MiB | PDF/PNG/JPEG; type now sniffed (was client-declared) |
 | Web evidence screenshots | FileStorage (`StoreBlob`) | 10 MiB | re-encoded PNG; 30-day retention |
 | Content packs (tenant, platform) | server FileStorage | pack limit | canonical tar, signed |
-| Report templates (DOCX) | Postgres `bytea` | 10 MiB, 20/org | phase P1 moves to FileStorage |
-| Stored report artefacts | Postgres `bytea` | 50 MiB | phase P1 moves to FileStorage |
+| Report templates (DOCX) | FileStorage (`StoreBlob`) | 10 MiB, 20/org | moved from Postgres `bytea` (§3.8) |
+| Stored report artefacts | FileStorage (`StoreBlob`) | 50 MiB | moved from Postgres `bytea` (§3.8) |
 | Scanner templates | Postgres `bytea` | 2 MiB | stays (small, versioned with the row) |
 | Finding import `/findings/import` | not stored, streamed | 110 MiB | archives spooled to a temp dir |
 | SBOM / asset CSV / campaign imports | not stored | 50 MiB | route limits now replace the global 10 MiB |
@@ -170,6 +170,27 @@ embed a flagged image, and the console shows flagged files apart with a
 confirmation dialog. Files uploaded before a scanner was configured keep
 an empty status (not scanned).
 
+### 3.8 Report files out of Postgres
+
+Report templates and stored reports go to the organization's file storage
+(the same resolution as attachments: its own bucket if it chose one,
+failing closed); the row keeps `storage_key`, `storage_provider` and
+`size_bytes`. A read checks the file against the SHA-256 recorded for it
+(the template's `content_sha256`, the report's `content_sha256`): a file
+changed in the storage, for instance in an organization's own bucket, is
+refused (`STORED_FILE_MISMATCH`). Existing rows are moved by the
+`report-file-migration` job (every minute, one replica, 10 rows per kind
+per run): each file is written, read back and compared before the row
+switches to it and its bytes are cleared; a row that cannot be moved keeps
+its bytes and keeps working. Migration `002062` is the expand step (nullable
+`content`, new columns); a later release drops `content`.
+
+A deleted row, directly or through a cascade (report, campaign,
+organization), queues its file in `storage_blob_deletions` (a database
+trigger, so no delete path can miss it); the retention sweep deletes queued
+files from their organization's storage. Deleting the organization itself
+queues nothing: its whole namespace is erased.
+
 ## 4. Threat model
 
 Assets: evidence (may hold secrets, personal data, exploit material),
@@ -189,6 +210,8 @@ mistake.
 | Image decompression bombs | 50-megapixel limit on the declared dimensions (every GIF frame), checked before storing |
 | Location and identity leaks in evidence images (EXIF GPS, XMP author) | metadata removed on upload, pixels untouched; original hash audited |
 | Evidence tampering, repudiation | SHA-256 recorded; upload/delete audited |
+| Report file swapped in the storage (organization bucket) | read checked against the recorded SHA-256; refused on mismatch |
+| Files outliving their rows | delete trigger queues the file on every delete and cascade; retention sweep deletes it in its organization's storage |
 | Bucket misconfiguration | documentation: block public access, TLS only, least-privilege key, server-side encryption |
 | Evidence outliving its finding (secrets, personal data) | retention sweep purges it after the grace period, audited |
 | Retention deleting the wrong files | parent looked up in the file's own organization only; finding, retest and campaign contexts only (letters never); row deleted only while still purgeable; storage resolved before the row goes |
