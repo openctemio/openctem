@@ -392,7 +392,7 @@ service as the console's Organizations → Create: the owner's membership and
 role are written with the organization, and `tenant.created` / `user.created`
 are audited in it. A new owner account gets a one-time set-password link
 (valid 24 hours): emailed when SMTP is configured (`SMTP_*`), otherwise printed
-once (as `$SMTP_BASE_URL/set-password?token=...`). An organization whose slug
+once (as `$SMTP_BASE_URL/set-password#token=...`). An organization whose slug
 exists is reported and left alone. The owner's email must not be an
 administrator's.
 

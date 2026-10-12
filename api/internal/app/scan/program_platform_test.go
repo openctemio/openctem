@@ -38,9 +38,10 @@ func (g programGate) ProgramOnlyTargets(_ context.Context, _ shared.ID, targets 
 func TestPlatformSensors_ProgramTargets(t *testing.T) {
 	ctx := context.Background()
 	gate := programGate{only: []string{"www.acme.example"}}
-	for _, mode := range []string{ActiveProofOff, ActiveProofPlatformSensors} {
-		svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), attributionGate: gate, activeProof: mode}
-		if mode != ActiveProofOff {
+	for _, on := range []bool{false, true} {
+		mode := map[bool]string{false: "proof off", true: "proof on"}[on]
+		svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(), attributionGate: gate, proofPolicy: StaticProofPolicy(on)}
+		if on {
 			// Proof is not what refuses here: mark everything proven.
 			svc.attributionGate = provenProgramGate{gate}
 		}

@@ -67,25 +67,31 @@ type Config struct {
 	// Scope is the platform's scope guardrails (RFC-054 §8): operator-level,
 	// never tenant-overridable.
 	Scope ScopeConfig
+
+	// GitHubApp is the deployment's GitHub App that posts CI checks and pull
+	// request comments (RFC-077). Off unless every value is set.
+	GitHubApp GitHubAppConfig
 }
 
-// Active-probe proof modes, SCOPE_ACTIVE_PROOF (RFC-054 §8.1).
-const (
-	// ScopeProofOff: no proof needed (self-hosted default: the operator is
-	// the tenant). Intrusive probes still need a verified domain.
-	ScopeProofOff = "off"
-	// ScopeProofPlatformSensors: a job on shared platform sensors needs every
-	// target at or under a verified domain of the tenant (SaaS default).
-	ScopeProofPlatformSensors = "platform_sensors"
-	// ScopeProofAll: every active probe needs a verified domain.
-	ScopeProofAll = "all"
-)
+// GitHubAppConfig is the deployment's GitHub App (RFC-077):
+// GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID,
+// GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE (PEM; or
+// GITHUB_APP_PRIVATE_KEY with the PEM itself), GITHUB_APP_WEBHOOK_SECRET,
+// and for GitHub Enterprise Server GITHUB_APP_API_URL / GITHUB_APP_WEB_URL.
+type GitHubAppConfig struct {
+	AppID          int64
+	Slug           string
+	ClientID       string
+	ClientSecret   string
+	PrivateKey     string
+	PrivateKeyFile string
+	WebhookSecret  string
+	APIURL         string
+	WebURL         string
+}
 
 // ScopeConfig is the operator's scope guardrails.
 type ScopeConfig struct {
-	// ActiveProof is off, platform_sensors or all. Unset: platform_sensors
-	// when organizations are self-service (SaaS), otherwise off.
-	ActiveProof string
 	// MaxPublicCIDRv4 / v6 cap a public scope range (SCOPE_MAX_PUBLIC_CIDR_V4,
 	// default 16; SCOPE_MAX_PUBLIC_CIDR_V6, default 32).
 	MaxPublicCIDRv4 int
@@ -126,15 +132,6 @@ const ScanZoneResolverSystem = "system"
 // DefaultPublicZoneResolver is the resolver of SaaS installs: tenants must
 // not resolve names through the platform's internal DNS.
 const DefaultPublicZoneResolver = "1.1.1.1:53"
-
-// validate checks the proof mode.
-func (s ScopeConfig) validate() error {
-	switch s.ActiveProof {
-	case ScopeProofOff, ScopeProofPlatformSensors, ScopeProofAll:
-		return nil
-	}
-	return fmt.Errorf("SCOPE_ACTIVE_PROOF must be off, platform_sensors or all, got %q", s.ActiveProof)
-}
 
 // AuditRetentionConfig controls tenant audit-log retention. Entries older than
 // Days are written to a gzip JSONL archive under ArchiveDir, the chain head
@@ -1310,11 +1307,12 @@ func Load() (*Config, error) {
 			EmailVerificationDuration: getEnvDuration("AUTH_EMAIL_VERIFICATION_DURATION", 24*time.Hour),
 			PasswordResetDuration:     getEnvDuration("AUTH_PASSWORD_RESET_DURATION", 1*time.Hour),
 			CookieSecure:              getEnvBool("AUTH_COOKIE_SECURE", defaultCookieSecure(appEnv())),
-			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),                          // Empty = current host
-			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"),                     // "strict", "lax", or "none"
-			AccessTokenCookieName:     getEnv("AUTH_ACCESS_TOKEN_COOKIE_NAME", "auth_token"),     // Cookie name for access token
-			RefreshTokenCookieName:    getEnv("AUTH_REFRESH_TOKEN_COOKIE_NAME", "refresh_token"), // Cookie name for refresh token
-			TenantCookieName:          getEnv("AUTH_TENANT_COOKIE_NAME", "app_tenant"),           // Cookie name for tenant
+			CookieDomain:              getEnv("AUTH_COOKIE_DOMAIN", ""),      // Empty = current host
+			CookieSameSite:            getEnv("AUTH_COOKIE_SAMESITE", "lax"), // "strict", "lax", or "none"
+			// Fixed names: the web console and the gateway use the same ones.
+			AccessTokenCookieName:  "auth_token",
+			RefreshTokenCookieName: "refresh_token",
+			TenantCookieName:       "app_tenant",
 			EntraSSO: EntraSSOConfig{
 				Enabled:        getEnvBool("SSO_ENTRA_ENABLED", false),
 				ClientID:       getEnv("SSO_ENTRA_CLIENT_ID", ""),
@@ -1446,8 +1444,18 @@ func Load() (*Config, error) {
 			Days:       getEnvInt("AUDIT_RETENTION_DAYS", 365),
 			ArchiveDir: getEnv("AUDIT_ARCHIVE_DIR", ""),
 		},
+		GitHubApp: GitHubAppConfig{
+			AppID:          getEnvInt64("GITHUB_APP_ID", 0),
+			Slug:           getEnv("GITHUB_APP_SLUG", ""),
+			ClientID:       getEnv("GITHUB_APP_CLIENT_ID", ""),
+			ClientSecret:   getEnv("GITHUB_APP_CLIENT_SECRET", ""),
+			PrivateKey:     getEnv("GITHUB_APP_PRIVATE_KEY", ""),
+			PrivateKeyFile: getEnv("GITHUB_APP_PRIVATE_KEY_FILE", ""),
+			WebhookSecret:  getEnv("GITHUB_APP_WEBHOOK_SECRET", ""),
+			APIURL:         getEnv("GITHUB_APP_API_URL", ""),
+			WebURL:         getEnv("GITHUB_APP_WEB_URL", ""),
+		},
 		Scope: ScopeConfig{
-			ActiveProof:     getEnv("SCOPE_ACTIVE_PROOF", ""),
 			ZoneResolver:    getEnv("SCAN_ZONE_RESOLVER", ""),
 			MaxPublicCIDRv4: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V4", 16),
 			MaxPublicCIDRv6: getEnvInt("SCOPE_MAX_PUBLIC_CIDR_V6", 32),
@@ -1601,20 +1609,11 @@ func (c *Config) validateBasic() error {
 			return errors.New("VULNFEED_MIRRORS must be https URLs without credentials, query or fragment")
 		}
 	}
-	if c.Scope.ActiveProof == "" {
-		c.Scope.ActiveProof = ScopeProofOff
-		if c.Auth.SelfServiceTenantCreation() {
-			c.Scope.ActiveProof = ScopeProofPlatformSensors
-		}
-	}
 	if c.Scope.ZoneResolver == "" {
 		c.Scope.ZoneResolver = ScanZoneResolverSystem
 		if c.Auth.SelfServiceTenantCreation() {
 			c.Scope.ZoneResolver = DefaultPublicZoneResolver
 		}
-	}
-	if err := c.Scope.validate(); err != nil {
-		return err
 	}
 	switch c.SensorConfig.TransportV3.Mode {
 	case "":
@@ -2154,23 +2153,25 @@ func defaultCookieSecure(appEnv string) bool {
 // DefaultSensorConfigTemplatesDir is SENSOR_CONFIG_TEMPLATES_DIR when unset.
 const DefaultSensorConfigTemplatesDir = "configs/sensor-templates"
 
-// retiredEnv lists the pre-sensor environment variable names. They are no
-// longer read. Startup refuses to run while one is set: silently ignoring,
+// retiredEnv lists environment variable names that are no longer read: the
+// pre-sensor names, and knobs that became console settings. Startup refuses to run while one is set: silently ignoring,
 // say, AGENT_KEY_TTL would turn short-lived sensor keys back into
 // non-expiring ones without the operator noticing.
-var retiredEnv = []struct{ Old, New string }{
-	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR"},
-	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL"},
-	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL"},
-	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT"},
-	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT"},
-	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT"},
-	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT"},
-	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT"},
-	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS"},
-	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS"},
+var retiredEnv = []struct{ Old, New, Hint string }{
+	{"AGENT_CONFIG_TEMPLATES_DIR", "SENSOR_CONFIG_TEMPLATES_DIR", ""},
+	{"AGENT_PUBLIC_API_URL", "SENSOR_PUBLIC_API_URL", ""},
+	{"AGENT_KEY_TTL", "SENSOR_KEY_TTL", ""},
+	{"AGENT_LB_JOB_WEIGHT", "SENSOR_LB_JOB_WEIGHT", ""},
+	{"AGENT_LB_CPU_WEIGHT", "SENSOR_LB_CPU_WEIGHT", ""},
+	{"AGENT_LB_MEMORY_WEIGHT", "SENSOR_LB_MEMORY_WEIGHT", ""},
+	{"AGENT_LB_DISK_IO_WEIGHT", "SENSOR_LB_DISK_IO_WEIGHT", ""},
+	{"AGENT_LB_NETWORK_WEIGHT", "SENSOR_LB_NETWORK_WEIGHT", ""},
+	{"AGENT_LB_MAX_DISK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_DISK_THROUGHPUT_MBPS", ""},
+	{"AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS", "SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS", ""},
 	// Sensor protocol v3 picks its bindings itself; off is the only switch.
-	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off"},
+	{"SENSOR_TRANSPORT_V3_ENABLED", "SENSOR_TRANSPORT_V3=auto|off", ""},
+	// The proof requirement is a platform setting edited in the console.
+	{"SCOPE_ACTIVE_PROOF", "", "remove it; a platform administrator sets \"Require a verified domain before platform sensors scan a target\" in Console > System > Platform scanning"},
 }
 
 // smtpMoved is the hint for the SMTP_* variables.
@@ -2198,6 +2199,11 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"SMTP_SKIP_VERIFY", smtpMoved},
 	{"SMTP_TIMEOUT", smtpMoved},
 	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
+	// Cookie names are fixed: the API, the web console and the gateway must
+	// agree on them.
+	{"AUTH_ACCESS_TOKEN_COOKIE_NAME", "unset it; the session cookie is always auth_token"},
+	{"AUTH_REFRESH_TOKEN_COOKIE_NAME", "unset it; the refresh cookie is always refresh_token"},
+	{"AUTH_TENANT_COOKIE_NAME", "unset it; the organization cookie is always app_tenant"},
 	// A platform-wide Jira webhook secret verified a delivery for any
 	// ?tenant=: whoever held it could forge Jira events for every
 	// organization. Each organization's Jira integration has its own secret.
@@ -2209,9 +2215,14 @@ var removedEnv = []struct{ Name, Instead string }{
 func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 	var bad []string
 	for _, r := range retiredEnv {
-		if _, ok := lookup(r.Old); ok {
-			bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
+		if _, ok := lookup(r.Old); !ok {
+			continue
 		}
+		if r.Hint != "" {
+			bad = append(bad, fmt.Sprintf("%s (%s)", r.Old, r.Hint))
+			continue
+		}
+		bad = append(bad, fmt.Sprintf("%s (rename it to %s)", r.Old, r.New))
 	}
 	for _, r := range removedEnv {
 		if _, ok := lookup(r.Name); ok {

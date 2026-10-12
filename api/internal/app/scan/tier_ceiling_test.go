@@ -183,15 +183,15 @@ func TestResolveDispatchTargets_TierCeiling(t *testing.T) {
 	}
 }
 
-// Each workflow step is checked at its own tool's tier, and an intrusive
-// step needs proof per step (RFC-054 §8.1): the run's other steps are not
-// affected.
+// Each workflow step is checked at its own tool's tier, and with the
+// platform's proof setting on an intrusive step needs proof per step
+// (RFC-054 §8.1): the run's other steps are not affected.
 func TestFilterStepTargets_TierAndProof(t *testing.T) {
 	gate := &tierGate{stubGate{ceiling: map[string]scopedom.Tier{
 		"passive-only.verified.example": scopedom.TierPassive,
 		"safe.verified.example":         scopedom.TierActive,
 	}}}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
 	rc := map[string]any{"targets": []string{
 		"passive-only.verified.example", "safe.verified.example", "t2.verified.example", "unproven.example.com",
 	}}
@@ -227,9 +227,14 @@ func TestFilterStepTargets_TierAndProof(t *testing.T) {
 		t.Fatalf("err = %v, want %s", err, CodeStepTargetsRefused)
 	}
 	// Without a proof verifier an intrusive step proves nothing (fail closed).
-	plain := &Service{attributionGate: &stubGate{}, logger: logger.NewNop()}
+	plain := &Service{attributionGate: &stubGate{}, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
 	if _, err := plain.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"t2.verified.example"}}); !errors.As(err, &de) || de.Code != CodeStepTargetsRefused {
 		t.Fatalf("no verifier: err = %v", err)
+	}
+	// Setting off: an intrusive step needs no proof.
+	off := &Service{attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false)}
+	if st, err := off.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"unproven.example.com"}}); err != nil || len(st.Targets) != 1 {
+		t.Fatalf("proof off: %+v %v", st, err)
 	}
 	// A failed tier check fails the step.
 	failing := &Service{attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}

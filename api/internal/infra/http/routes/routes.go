@@ -131,6 +131,7 @@ type Handlers struct {
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
 	CIRunner            *handler.CIRunnerHandler
+	SCMApps             *handler.SCMAppHandler              // nil without a database
 	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
@@ -185,8 +186,9 @@ type Handlers struct {
 	JiraWebhookSecretResolver JiraWebhookSecretResolver
 
 	// Pentest Campaign Management handlers
-	Pentest                *handler.PentestHandler        // nil if not initialized (no database)
-	PentestCampaignRoleQry middleware.CampaignRoleQuerier // Campaign role resolver for RBAC middleware
+	Pentest                *handler.PentestHandler               // nil if not initialized (no database)
+	PentestCampaignRoleQry middleware.CampaignRoleQuerier        // Campaign role resolver for RBAC middleware
+	PentestReportTemplate  *handler.PentestReportTemplateHandler // nil if not initialized
 
 	// File Attachments (shared across pentest, retest, campaign)
 	Attachment *handler.AttachmentHandler // nil if not initialized
@@ -622,7 +624,7 @@ func Register(
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
 	if h.GitHubWebhook != nil {
-		router.POST("/api/v1/webhooks/incoming/github", h.GitHubWebhook.IncomingGitHubWebhook)
+		registerGitHubWebhookRoute(router, h.GitHubWebhook, log)
 	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
@@ -671,6 +673,9 @@ func Register(
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
 		registerPentestRoutes(router, h.Pentest, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		if h.PentestReportTemplate != nil {
+			registerPentestReportTemplateRoutes(router, h.PentestReportTemplate, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		}
 	}
 
 	// Attachment routes (file upload/download, shared across pentest/retest/campaign)
@@ -843,6 +848,8 @@ func Register(
 		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
 			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
+	// Code-host app installations and the GitHub App webhook (RFC-077).
+	registerSCMAppRoutes(router, h.SCMApps, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScans), log)
 
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.
