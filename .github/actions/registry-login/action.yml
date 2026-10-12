@@ -1,0 +1,45 @@
+name: Registry login
+description: >-
+  Logs the Docker client in to GHCR (always, with the job's GITHUB_TOKEN) and to
+  Docker Hub (only when credentials are passed), so base-image and mirror pulls
+  are authenticated instead of sharing the runner IP's anonymous quota. Neither
+  login is fatal: on a fork pull request, or without Docker Hub secrets, pulls
+  fall back to anonymous (the ghcr.io/openctemio/mirror packages are public).
+  .github/ci-images.txt explains the mirror.
+
+inputs:
+  github-token:
+    description: The job's GITHUB_TOKEN (packages:read is enough).
+    required: true
+  dockerhub-username:
+    description: Docker Hub user (secrets.DOCKERHUB_USERNAME); empty skips the Docker Hub login.
+    default: ''
+  dockerhub-token:
+    description: Docker Hub access token (secrets.DOCKERHUB_TOKEN).
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to GHCR and Docker Hub
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_ACTOR: ${{ github.actor }}
+        DH_USER: ${{ inputs.dockerhub-username }}
+        DH_TOKEN: ${{ inputs.dockerhub-token }}
+      run: |
+        if printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin >/dev/null 2>&1; then
+          echo "logged in to ghcr.io"
+        else
+          echo "::notice::GHCR login failed; pulling ghcr.io/openctemio/mirror anonymously"
+        fi
+        if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+          if printf '%s' "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin >/dev/null 2>&1; then
+            echo "logged in to Docker Hub"
+          else
+            echo "::warning::Docker Hub login failed; base images are pulled anonymously"
+          fi
+        else
+          echo "no Docker Hub credentials (fork pull request or unset secrets): anonymous Docker Hub pulls"
+        fi
