@@ -257,5 +257,22 @@
   "scope.cycles.noCycle": "A cycle holds the charter, the scope it freezes and the outcome it is judged by.",
   "scope.cycles.noServices": "No business services yet. Create them under Scoping › Business services.",
   "scope.cycles.profilesLoadFailed": "Attacker profiles could not be loaded.",
-  "scope.cycles.exclusionsLoadFailed": "Scope exclusions could not be loaded."
+  "scope.cycles.exclusionsLoadFailed": "Scope exclusions could not be loaded.",
+  "scope.check.inScope": "In scope",
+  "scope.check.column": "Scope",
+  "scope.bulk.action": "Add to scope",
+  "scope.bulk.title": "Add {count} to scope",
+  "scope.bulk.description": "Each name or address becomes an exact scope entry, so scans may reach it. Exclusions still win, and anything already in scope is left as it is.",
+  "scope.bulk.more": "and {count} more",
+  "scope.bulk.nothing": "None of the selected assets needs a scope entry.",
+  "scope.bulk.tooMany": "Select at most {max} at once.",
+  "scope.bulk.adding": "Adding…",
+  "scope.bulk.confirm": "Add to scope",
+  "scope.bulk.failed": "Could not add to scope",
+  "scope.bulk.created": "{count} added",
+  "scope.bulk.existing": "{count} already in scope",
+  "scope.bulk.refused": "{count} refused",
+  "scope.bulk.skip.internal": "{count} private or internal (scan zones decide)",
+  "scope.bulk.skip.no_entry_needed": "{count} need no scope entry (repositories, cloud accounts)",
+  "scope.bulk.skip.unrecognized": "{count} not a name or address"
 }
