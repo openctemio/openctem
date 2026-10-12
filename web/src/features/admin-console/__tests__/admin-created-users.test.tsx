@@ -70,7 +70,7 @@ describe('CreateOrganizationDialog', () => {
       )
     )
     expect(await screen.findByTestId('setup-link')).toHaveTextContent(
-      '/set-password?token=owner-tok'
+      '/set-password#token=owner-tok'
     )
     expect(onCreated).not.toHaveBeenCalled()
 

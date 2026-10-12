@@ -610,6 +610,14 @@ on committed ingest.
 - Replay: timestamp window ±5 min where the scheme has one, **plus** a
   delivery-id cache (GitHub `X-GitHub-Delivery`, Jira `X-Atlassian-Webhook-Identifier`)
   in Redis for the window, so a captured delivery cannot be replayed even
+  for schemes without a timestamp. Shipped for GitHub: a verified
+  `X-GitHub-Delivery` id is remembered per organization for 24 h (Redis,
+  shared by every replica); a replay is acknowledged and ignored, a missing
+  or malformed id is refused, and a store outage fails closed (503). The
+  public GitHub route also has a per-IP budget in front of the secret lookup.
+- Drop the platform-wide `JIRA_WEBHOOK_SECRET` fallback once per-instance
+  secrets cover every live Jira integration (a shared secret is a
+  cross-tenant spoofing key if it is ever handed to a tenant).
   for schemes without a timestamp.
 - No platform-wide secret: the former `JIRA_WEBHOOK_SECRET` fallback is
   removed and startup refuses the variable (a shared secret is a

@@ -1817,7 +1817,6 @@ type SecuritySettingsResponse struct {
 	SSOEnforced           bool     `json:"sso_enforced"`
 	MFARequired           bool     `json:"mfa_required"`
 	MFARequiredForAdmins  bool     `json:"mfa_required_for_admins"`
-	SessionTimeoutMin     int      `json:"session_timeout_min"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode string   `json:"email_verification_mode"`
@@ -1867,7 +1866,6 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			SSOEnforced:           s.Security.SSOEnforced,
 			MFARequired:           s.Security.MFARequired,
 			MFARequiredForAdmins:  s.Security.MFARequiredForAdmins,
-			SessionTimeoutMin:     s.Security.SessionTimeoutMin,
 			IPWhitelist:           s.Security.IPWhitelist,
 			AllowedDomains:        s.Security.AllowedDomains,
 			EmailVerificationMode: string(s.Security.EmailVerificationMode),
@@ -1989,7 +1987,6 @@ type UpdateSecuritySettingsRequest struct {
 	SSOEnforced           *bool    `json:"sso_enforced"`
 	MFARequired           *bool    `json:"mfa_required"`
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
-	SessionTimeoutMin     *int     `json:"session_timeout_min" validate:"omitempty,min=15,max=480"`
 	IPWhitelist           []string `json:"ip_whitelist"`
 	AllowedDomains        []string `json:"allowed_domains"`
 	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always never"`
@@ -2041,7 +2038,6 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 	input := tenantapp.UpdateSecuritySettingsInput{
 		MFARequired:           req.MFARequired,
 		MFARequiredForAdmins:  req.MFARequiredForAdmins,
-		SessionTimeoutMin:     req.SessionTimeoutMin,
 		IPWhitelist:           req.IPWhitelist,
 		AllowedDomains:        req.AllowedDomains,
 		EmailVerificationMode: req.EmailVerificationMode,
@@ -2394,6 +2390,67 @@ func (h *TenantHandler) UpdateVulnMatchingSettings(w http.ResponseWriter, r *htt
 	h.writeSectionETag(w, r, tenantID, tenant.SectionVulnMatching)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(vm)
+}
+
+// GetCycleSettings handles GET /api/v1/organization/settings/cycles.
+// @Summary      Get the CTEM cycle policy
+// @Description  Whether closing a cycle needs its validation coverage to meet the coverage thresholds (enforce_coverage_slo, default false: the shortfall is only logged).
+// @Tags         Tenants
+// @Produce      json
+// @Success      200     {object}  tenant.CycleSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/cycles [get]
+func (h *TenantHandler) GetCycleSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	cs, err := h.service.GetCycleSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionCycles)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cs)
+}
+
+// UpdateCycleSettings handles PUT /api/v1/organization/settings/cycles.
+// @Summary      Update the CTEM cycle policy
+// @Description  Sets whether closing a cycle needs its validation coverage to meet the coverage thresholds. Audited.
+// @Tags         Tenants
+// @Accept       json
+// @Produce      json
+// @Param        body    body      tenant.CycleSettings  true  "CTEM cycle policy"
+// @Success      200     {object}  tenant.CycleSettings
+// @Failure      400     {object}  apierror.Error
+// @Failure      403     {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /organization/settings/cycles [put]
+func (h *TenantHandler) UpdateCycleSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var req tenant.CycleSettings
+	if err := decoder.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	cs, err := h.service.UpdateCycleSettings(settingsWriteCtx(r), tenantID.String(), req, h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	h.writeSectionETag(w, r, tenantID, tenant.SectionCycles)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cs)
 }
 
 // GetEvidenceSettings handles GET /api/v1/organization/settings/evidence.

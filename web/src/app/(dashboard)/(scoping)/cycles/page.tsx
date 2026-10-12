@@ -23,8 +23,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, RefreshCw, CalendarClock, Lightbulb } from 'lucide-react'
 import { get, post } from '@/lib/api/client'
 import { toast } from 'sonner'
-import { summarizeEvaluation, type CtemCycle } from '@/features/cycles'
+import { CyclePolicyCard, summarizeEvaluation, type CtemCycle } from '@/features/cycles'
 import { CycleStatusBadge } from '@/features/cycles/components/cycle-status-badge'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface PaginatedResponse {
   data: CtemCycle[]
@@ -81,6 +82,7 @@ function firstOfNextMonth(): Date {
 }
 
 export default function CtemCyclesPage() {
+  const { t } = useTranslation()
   const router = useRouter()
   const {
     data: response,
@@ -200,14 +202,21 @@ export default function CtemCyclesPage() {
     <>
       <Main>
         <PageHeader
-          title="Cycles"
-          description="Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by."
+          title={t('scope.cycles.title', 'Cycles')}
+          description={t(
+            'scope.cycles.description',
+            'Plan and run CTEM cycles: the charter, the scope it freezes and the outcome it is judged by.'
+          )}
         >
           <Button size="sm" onClick={() => setIsCreateOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
             New cycle
           </Button>
         </PageHeader>
+
+        <div className="mt-4">
+          <CyclePolicyCard />
+        </div>
 
         {/* CTEM operating rhythm — a lightweight, always-visible reminder of
             the prescribed cadence. Checkpoints are anchored to real dates: the
@@ -253,8 +262,8 @@ export default function CtemCyclesPage() {
           ) : cycles.length === 0 ? (
             <EmptyState
               icon={RefreshCw}
-              title="No cycles yet"
-              description="A cycle binds the charter, the scope it freezes and the outcome it is judged by. Create one to start."
+              title={t('scope.cycles.emptyTitle', 'No cycles yet')}
+              description={t('scope.cycles.empty', 'Create a cycle to start.')}
             />
           ) : (
             <DataTable

@@ -88,6 +88,7 @@ because they change with it:
 
 - [Upgrading from v0.8 to v0.9](operations/upgrade-v0.8-to-v0.9.md)
 - [Monitoring and alerting](operations/monitoring.md)
+- [Environment variable reference](configuration/environment-variables.md) (generated from `internal/config/env_registry.yaml` by `make env-docs`)
 - [Safe deploy and migrations](deployment/safe-deploy-and-migrations.md)
 - [Least-privilege database roles](deployment/database-roles.md)
 - [Rotating `APP_ENCRYPTION_KEY`](deployment/encryption-key-rotation.md)

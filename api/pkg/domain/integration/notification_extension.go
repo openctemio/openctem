@@ -135,6 +135,10 @@ const (
 	// Exposure events
 	EventTypeNewExposure EventType = "new_exposure"
 
+	// EventTypeAttackSurfaceDigest is the weekly "what changed" digest of the
+	// external attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md).
+	EventTypeAttackSurfaceDigest EventType = "attack_surface_digest"
+
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
 	// form of the event_types catalog row it has always had, which is also
@@ -152,6 +156,9 @@ const (
 	// a burst of refused CI token exchanges (once while it lasts).
 	EventTypeCIBreakGlass    EventType = "ci.break_glass"
 	EventTypeCITokenRefusals EventType = "ci.token_refusals"
+	// EventTypeCIUngatedMerge: a pull request merged into the default branch
+	// without a passing gate verdict (RFC-077).
+	EventTypeCIUngatedMerge EventType = "ci.ungated_merge"
 
 	// Retired types. Nothing ever emitted them, so they are not in
 	// AllEventTypes and a channel cannot subscribe to them (settings plan
@@ -184,6 +191,8 @@ const (
 	ModuleScans    = "scans"
 	ModuleFindings = "findings"
 	ModuleSensors  = "sensors"
+	// ModuleAttackSurface is the EASM module.
+	ModuleAttackSurface = "attack_surface"
 )
 
 // AllEventTypes returns all event types with metadata for UI.
@@ -219,6 +228,7 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
+		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
 
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
@@ -230,6 +240,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeCIRunnerOutdated, Category: EventCategorySensor, Label: "CI Runner Outdated", Description: "A CI pipeline runs a sensor older than the minimum supported version", RequiredModule: ModuleScans},
 		{Type: EventTypeCIBreakGlass, Category: EventCategorySensor, Label: "CI Break-glass", Description: "A break-glass was created, or let a failing CI run pass", RequiredModule: ModuleScans},
 		{Type: EventTypeCITokenRefusals, Category: EventCategorySensor, Label: "CI Token Refusals", Description: "Many CI token exchanges were refused in a short time", RequiredModule: ModuleScans},
+		{Type: EventTypeCIUngatedMerge, Category: EventCategorySensor, Label: "CI Ungated Merge", Description: "A pull request was merged into the default branch without a passing CI gate verdict", RequiredModule: ModuleScans},
 	}
 }
 
@@ -243,6 +254,10 @@ func DefaultEnabledEventTypes() []EventType {
 	return []EventType{
 		EventTypeNewFinding,
 		EventTypeNewExposure,
+
+		// One message a week, sent only when the organization keeps the
+		// digest on (the default) and something changed.
+		EventTypeAttackSurfaceDigest,
 
 		// A missed remediation deadline that notifies nobody defeats the point
 		// of having an SLA. Enqueued at severity "high", so it also clears the
@@ -282,6 +297,7 @@ func DefaultEnabledEventTypes() []EventType {
 		// Security signals about the CI gate itself.
 		EventTypeCIBreakGlass,
 		EventTypeCITokenRefusals,
+		EventTypeCIUngatedMerge,
 	}
 }
 
@@ -327,13 +343,16 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// The CI signals carry a constant severity chosen by the CI alert job,
 	// not a finding's severity.
 	case EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
-		EventTypeCIBreakGlass, EventTypeCITokenRefusals:
+		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge:
 		return false
 	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
 	// of an approaching deadline, whatever the finding's severity. It is opt-in
 	// (not default-on), and under the default critical+high filter every one
 	// was dropped, so opting in delivered nothing.
 	case EventTypeSLAWarning:
+		return false
+	// The weekly digest is a summary with a fixed "info" severity.
+	case EventTypeAttackSurfaceDigest:
 		return false
 	default:
 		return true

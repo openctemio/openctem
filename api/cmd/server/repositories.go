@@ -236,7 +236,12 @@ type Repositories struct {
 	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
+	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
+	// AssetWebEvidence stores web assets' captures (RFC-081).
+	AssetWebEvidence *postgres.AssetWebEvidenceRepository
+	// EASMChange reads typed attack-surface changes and claims weekly digests (RFC-080).
+	EASMChange *postgres.EASMChangeRepository
 
 	// KEV Escalation
 	KEVEscalator *postgres.KEVEscalator
@@ -500,7 +505,10 @@ func newRepositories(db *postgres.DB) *Repositories {
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
+		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
+		AssetWebEvidence: postgres.NewAssetWebEvidenceRepository(db),
+		EASMChange:       postgres.NewEASMChangeRepository(db),
 
 		// KEV Escalation
 		KEVEscalator: postgres.NewKEVEscalator(db),

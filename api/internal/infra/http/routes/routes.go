@@ -93,9 +93,11 @@ type Handlers struct {
 	// EASMSettings is attack-surface monitoring settings and run-now
 	// (research/22 P0-11); nil if not initialized.
 	EASMSettings *handler.EASMSettingsHandler
-	Docs         *handler.DocsHandler    // API documentation handler
-	Command      *handler.CommandHandler // nil if not initialized (no database)
-	Ingest       *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
+	// AssetWebEvidence serves an asset's web evidence and screenshots (RFC-081)
+	AssetWebEvidence *handler.AssetWebEvidenceHandler
+	Docs             *handler.DocsHandler    // API documentation handler
+	Command          *handler.CommandHandler // nil if not initialized (no database)
+	Ingest           *handler.IngestHandler  // nil if not initialized (no database) - sensor authentication and heartbeat
 	// SensorResultsV2 serves sensor protocol v2 results (RFC-026); nil unless
 	// SENSOR_PROTOCOL_V2_RESULTS is on, and then /api/v2/sensor is not mounted.
 	SensorResultsV2 *handler.SensorResultsV2Handler
@@ -131,6 +133,7 @@ type Handlers struct {
 	// without a database.
 	CIAdmin             *handler.CIAdminHandler
 	CIRunner            *handler.CIRunnerHandler
+	SCMApps             *handler.SCMAppHandler              // nil without a database
 	ScannerTemplate     *handler.ScannerTemplateHandler     // nil if not initialized (no database)
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
@@ -602,6 +605,7 @@ func Register(
 	// Finding evidence: masked proof per detection / retest + audited reveal.
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
@@ -621,7 +625,7 @@ func Register(
 	// Public GitHub webhook endpoint — verified in the handler via GitHub's
 	// X-Hub-Signature-256 scheme (per-tenant secret), so no HMAC middleware.
 	if h.GitHubWebhook != nil {
-		router.POST("/api/v1/webhooks/incoming/github", h.GitHubWebhook.IncomingGitHubWebhook)
+		registerGitHubWebhookRoute(router, h.GitHubWebhook, log)
 	}
 
 	// Initialize finding activity rate limiter to prevent enumeration and DoS
@@ -825,6 +829,9 @@ func Register(
 	if h.EASMSettings != nil {
 		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
+	if h.AssetWebEvidence != nil {
+		registerAssetWebEvidenceRoutes(router, h.AssetWebEvidence, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
 
 	// Command routes (tenant from JWT token)
 	if h.Command != nil {
@@ -845,6 +852,8 @@ func Register(
 		registerCIRoutes(router, h.CIAdmin, h.CIRunner, authMiddleware, userSync,
 			h.ModuleGate.RequireModule(moduledom.ModuleScans), ingestRateLimiter, log)
 	}
+	// Code-host app installations and the GitHub App webhook (RFC-077).
+	registerSCMAppRoutes(router, h.SCMApps, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleScans), log)
 
 	// Sensor protocol v2 results (RFC-026): its own route group and
 	// authenticator, only when enabled.

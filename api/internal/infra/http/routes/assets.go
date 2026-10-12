@@ -263,7 +263,9 @@ func registerScopeRoutes(
 		// (RFC-054 §12.5): approvers, one click.
 		r.POST("/{id}/attest", h.AttestTarget, middleware.Require(permission.ScopeApprove))
 
-		// Bulk operations
+		// Bulk operations. Adding many entries asks for step-up in the
+		// service (once per batch, as a single add does).
+		r.POST("/bulk", h.BulkCreateTargets, middleware.Require(permission.ScopeWrite))
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))
 
 		// Delete operations
@@ -376,6 +378,9 @@ func registerEASMRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 	router.Group("/api/v1/easm", func(r Router) {
 		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
+		if h.HasChanges() {
+			r.GET("/changes", h.Changes, middleware.Require(permission.AssetsRead))
+		}
 		if h.HasReview() {
 			r.GET("/candidates", h.Candidates, middleware.Require(permission.AssetsRead))
 			r.POST("/candidates/decisions", h.Decide, middleware.Require(permission.AssetsWrite))
@@ -684,4 +689,21 @@ func registerAssetSoftwareRoutes(router Router, h *handler.AssetSoftwareHandler,
 	router.Group("/api/v1/assets/{id}/software", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerAssetWebEvidenceRoutes registers an asset's web evidence (RFC-081):
+// assets:read plus the asset's data scope (checked in the handler, 404),
+// behind the attack_surface module.
+func registerAssetWebEvidenceRoutes(
+	router Router,
+	h *handler.AssetWebEvidenceHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	moduleGate Middleware,
+) {
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	router.Group("/api/v1/assets/{id}/web-evidence", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.GET("/{evidence_id}/screenshot", h.Screenshot, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
 }

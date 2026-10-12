@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"context"
 	"database/sql"
 	"net/http"
@@ -8,6 +10,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 
@@ -277,6 +282,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
+	// Replays of a verified delivery are ignored for 24 hours (all replicas).
+	if deps.RedisClient != nil {
+		githubWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 
 	// Finding actions handler with the CTEM Stage-4 validation runner wired.
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
@@ -387,16 +396,17 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
-		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
-		VEXStatement:  handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
-		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
-		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
-		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
-		ScopeLetter:   handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
-		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          newEASMHandler(repos, svc, log),
-		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
+		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
+		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
+		ScopeLetter:      handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
+		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:             newEASMHandler(repos, svc, log),
+		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -496,6 +506,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
+		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
@@ -609,7 +620,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
@@ -1139,6 +1150,7 @@ func newCIRunnerKeyPolicy(repos *Repositories, svc *Services, log *logger.Logger
 // review decision is audited (RFC-036).
 func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
 	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	h.SetChanges(easmapp.NewChangeService(repos.EASMChange, svc.DataScope))
 	var audit handler.AttributionAuditor
 	if svc.Audit != nil {
 		audit = svc.Audit
@@ -1194,7 +1206,8 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
 		DNSDefaultHrs:       int(cfg.Worker.EASMDNSInterval.Hours()),
 	}
-	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
+		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
@@ -1337,6 +1350,65 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 		return mode
 	}
 	return s
+}
+
+// newAssetWebEvidenceHandler serves web evidence when the service is wired.
+func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.AssetWebEvidenceHandler {
+	if svc.WebEvidence == nil || svc.Asset == nil {
+		return nil
+	}
+	return handler.NewAssetWebEvidenceHandler(svc.Asset, svc.WebEvidence, log)
+}
+
+// newSCMAppHandler builds the code-host app installation routes (RFC-077).
+// Without a GitHub App configured the routes still list installations and
+// answer that the deployment has no app.
+func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SCMAppHandler {
+	if repos.SCMApp == nil {
+		return nil
+	}
+	var gh scmappsvc.GitHubApp
+	if app := newGitHubApp(cfg, log); app != nil {
+		gh = app
+	}
+	var audit scmappsvc.Auditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	s := scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log)
+	if svc.Encryptor != nil {
+		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+	}
+	return handler.NewSCMAppHandler(s, log)
+}
+
+// newGitHubApp builds the deployment's GitHub App client, or nil when it is
+// not configured (a partial configuration is logged and left off).
+func newGitHubApp(cfg *config.Config, log *logger.Logger) *githubapp.App {
+	c := cfg.GitHubApp
+	key := []byte(c.PrivateKey)
+	if c.PrivateKeyFile != "" {
+		b, err := os.ReadFile(c.PrivateKeyFile)
+		if err != nil {
+			log.Error("github app private key not readable; the GitHub App is off", "error", err)
+			return nil
+		}
+		key = b
+	}
+	gc := githubapp.Config{AppID: c.AppID, Slug: c.Slug, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		PrivateKeyPEM: key, WebhookSecret: c.WebhookSecret, APIURL: c.APIURL, WebURL: c.WebURL}
+	if !gc.Configured() {
+		if c.AppID != 0 || c.Slug != "" || len(key) > 0 {
+			log.Warn("the GitHub App is partly configured and stays off: set GITHUB_APP_ID, GITHUB_APP_SLUG, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET, GITHUB_APP_PRIVATE_KEY_FILE and GITHUB_APP_WEBHOOK_SECRET")
+		}
+		return nil
+	}
+	app, err := githubapp.New(gc, nil)
+	if err != nil {
+		log.Error("github app not started", "error", logger.SanitizeError(err))
+		return nil
+	}
+	return app
 }
 
 // ciImageLinker finds digest-carrying assets (CI runs) and stores relationship
