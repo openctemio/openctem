@@ -348,8 +348,8 @@ func TestActiveGate_FailsClosed(t *testing.T) {
 
 // The platform's guardrails win over anything the tenant declares (RFC-054
 // §8): a deny-listed name is refused even inside the tenant's own scope
-// target and even when a person confirmed it; with SCOPE_ACTIVE_PROOF=all
-// only names under a verified domain are probed.
+// target and even when a person confirmed it; UnverifiedTargets lists the
+// names no verified domain covers.
 func TestActiveGate_PlatformPolicy(t *testing.T) {
 	f := newGateFixture(t)
 	gov, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "*.agency.gov.vn", "", "")
@@ -359,7 +359,7 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 	f.targets = append(f.targets, gov)
 	gr, _ := scopedom.NewGuardrails(0, 0, []string{"198.51.100.200/32"})
 
-	g := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr, false)
+	g := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr)
 	confirmedGov := f.add(t, "portal.agency.gov.vn", asset.AssetTypeSubdomain)
 	f.record(confirmedGov, attribution.StateConfirmed, true)
 	platformIP := f.add(t, "198.51.100.200", asset.AssetTypeIPAddress)
@@ -394,17 +394,7 @@ func TestActiveGate_PlatformPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.targets = append(f.targets, vt)
-	all := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr, true)
-	typed, err = all.BlockedTargets(context.Background(), f.tenant, []string{"app.scoped.com", "www.verified.com", "198.51.100.7"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if typed["app.scoped.com"] != attribution.StateProofRequired || typed["198.51.100.7"] != attribution.StateProofRequired {
-		t.Fatalf("proof all: %v", typed)
-	}
-	if _, no := typed["www.verified.com"]; no {
-		t.Fatalf("a verified name was refused: %v", typed)
-	}
+	all := NewActiveGate(f, f, f, f).WithPlatformPolicy(gr)
 	un, err := all.UnverifiedTargets(context.Background(), f.tenant, []string{"app.scoped.com", "www.verified.com", "10.0.0.1", "198.51.100.7"})
 	if err != nil || len(un) != 2 {
 		t.Fatalf("unverified = %v (%v), want app.scoped.com and the address", un, err)

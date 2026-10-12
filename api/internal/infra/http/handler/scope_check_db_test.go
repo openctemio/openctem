@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,10 +20,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
-type fakeDryRun struct{ results []scansvc.DryRunResult }
+type fakeDryRun struct {
+	results []scansvc.DryRunResult
+	routing scansvc.DryRunRouting
+}
 
-func (f fakeDryRun) DryRunTargets(context.Context, scansvc.DryRunInput) ([]scansvc.DryRunResult, error) {
-	return f.results, nil
+func (f fakeDryRun) DryRun(context.Context, scansvc.DryRunInput) (*scansvc.DryRunOutcome, error) {
+	return &scansvc.DryRunOutcome{Results: f.results, Routing: f.routing}, nil
 }
 
 type fakeCoverage struct{}
@@ -173,9 +177,9 @@ type recordingDryRun struct {
 	results []scansvc.DryRunResult
 }
 
-func (f *recordingDryRun) DryRunTargets(_ context.Context, in scansvc.DryRunInput) ([]scansvc.DryRunResult, error) {
+func (f *recordingDryRun) DryRun(_ context.Context, in scansvc.DryRunInput) (*scansvc.DryRunOutcome, error) {
 	f.got = append(f.got, in)
-	return f.results, nil
+	return &scansvc.DryRunOutcome{Results: f.results}, nil
 }
 
 // asset_ids reach the dry run as ids; an asset the caller may not see comes
@@ -289,5 +293,64 @@ func TestScopeCheck_ScannerNameSetsTier_DB(t *testing.T) {
 	}
 	if got := tierFor(`{"targets":["app.example.com"]}`); got != 1 {
 		t.Fatalf("default: tier %d, want 1", got)
+	}
+}
+
+// The scope check says where the scan would run (the organization's own
+// sensor by name, never a platform sensor), shows the private address a
+// refused hostname resolved to, and offers "use your own sensor" for proof
+// only when that would help (not for intrusive probes).
+func TestScopeCheck_RoutingResolvedAndProofFixes_DB(t *testing.T) {
+	db, ctx := openScopingTestDB(t)
+	tenantID := seedHandlerTenant(ctx, t, db)
+	pg := &postgres.DB{DB: db}
+	svc := scopeapp.NewService(postgres.NewScopeTargetRepository(pg), postgres.NewScopeExclusionRepository(pg), postgres.NewAssetRepository(pg), logger.NewNop())
+	h := NewScopeHandler(svc, validator.New(), logger.NewNop())
+	h.SetDryRun(fakeDryRun{
+		results: []scansvc.DryRunResult{
+			{Target: "intra.acme.example", Code: scopedom.RefusalZoneNone, Resolved: []string{"10.20.0.7"}},
+			{Target: "www.acme.example", Code: scopedom.RefusalProofRequired},
+		},
+		routing: scansvc.DryRunRouting{Preference: "auto", RunsOn: scansvc.RoutingTenant, Reason: scansvc.RoutingReasonProof,
+			SensorID: "0192a7c4-0000-7000-8000-000000000001", SensorName: "sensor-docker-01"},
+	}, fakeCoverage{})
+	call := func(tier int) CheckScopeResponse {
+		t.Helper()
+		body := `{"targets":["intra.acme.example","www.acme.example"],"tier":` + strconv.Itoa(tier) + `}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scope/check", strings.NewReader(body))
+		c := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+		c = context.WithValue(c, middleware.IsAdminKey, true)
+		rec := httptest.NewRecorder()
+		h.CheckScope(rec, req.WithContext(c))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		var out CheckScopeResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	out := call(1)
+	if out.Routing.RunsOn != "tenant" || out.Routing.Reason != "platform_needs_proof" || out.Routing.Sensor == nil || out.Routing.Sensor.Name != "sensor-docker-01" {
+		t.Fatalf("routing: %+v", out.Routing)
+	}
+	if len(out.Results[0].Resolved) != 1 || out.Results[0].Resolved[0] != "10.20.0.7" {
+		t.Fatalf("resolved: %+v", out.Results[0])
+	}
+	hasFix := func(r ScopeCheckResult, action string) bool {
+		for _, f := range r.Fixes {
+			if f.Action == action {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasFix(out.Results[1], scopedom.FixUseTenantSensor) || !hasFix(out.Results[1], scopedom.FixVerifyDomain) {
+		t.Fatalf("safe-active proof fixes: %+v", out.Results[1].Fixes)
+	}
+	intrusive := call(2)
+	if hasFix(intrusive.Results[1], scopedom.FixUseTenantSensor) || !hasFix(intrusive.Results[1], scopedom.FixVerifyDomain) {
+		t.Fatalf("intrusive proof fixes: %+v", intrusive.Results[1].Fixes)
 	}
 }

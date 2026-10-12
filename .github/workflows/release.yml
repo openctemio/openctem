@@ -63,7 +63,7 @@ jobs:
           NAME="bootstrap-admin-${VERSION}-${GOOS}-${GOARCH}"
           cd bin
           if [ "$GOOS" = windows ]; then zip "../../${NAME}.zip" "$BIN"; else tar czf "../../${NAME}.tar.gz" "$BIN"; fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-admin-${{ matrix.os }}-${{ matrix.arch }}
           path: |
@@ -82,7 +82,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/artifacts
           pattern: bootstrap-admin-*
@@ -107,7 +107,8 @@ jobs:
           \`\`\`
 
           Every image is signed with cosign (keyless, GitHub OIDC) and carries a
-          signed SPDX SBOM attestation; the SBOMs are also attached to this release.
+          signed SPDX SBOM attestation and a signed SLSA build provenance; the
+          SBOMs are also attached to this release.
           Verify an image before deploying it:
 
           \`\`\`bash
@@ -117,6 +118,7 @@ jobs:
           cosign verify-attestation --type spdxjson ghcr.io/openctemio/openctem-api:${TAG} \\
             --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \\
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          gh attestation verify oci://ghcr.io/openctemio/openctem-api:${TAG} --owner openctemio
           \`\`\`
 
           ## Upgrading (Compose deployment, api/deploy)

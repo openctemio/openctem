@@ -329,7 +329,7 @@ SMTP_BASE_URL=http://localhost:3000 GOWORK=off go run ./cmd/bootstrap-admin -db 
   -org-name "Dev" -org-slug dev -org-owner-email you@example.com
 ```
 
-Open the printed one-time `/set-password?token=...` link to choose the owner's
+Open the printed one-time `/set-password#token=...` link to choose the owner's
 password, then sign in at `/login`. The administrator signs in with the printed
 temporary password and opens the console at `/admin`.
 

@@ -10,13 +10,18 @@
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared'
 import { AttackSurfaceSectionTabs, EASMReviewQueue } from '@/features/attack-surface'
+import { useTranslation } from '@/context/i18n-provider'
 
 export default function AttackSurfaceReviewPage() {
+  const { t } = useTranslation()
   return (
     <Main>
       <PageHeader
-        title="Attack surface"
-        description="Names discovery found that may be yours. Names under your scope join automatically; these need a decision. Confirming records ownership; a scope entry is still what lets scans reach a name."
+        title={t('scope.review.title', 'Attack surface')}
+        description={t(
+          'scope.review.description',
+          'Names discovery found that may be yours. Confirming records ownership; only a scope entry lets scans reach a name.'
+        )}
       />
       <AttackSurfaceSectionTabs />
       <div className="mt-5">

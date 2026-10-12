@@ -9,8 +9,9 @@
  *    options, so "Has owner" and "Unowned" are both one click away and ticking
  *    one replaces the other.
  * A "Signals" section holds the filters that are not facets (crown jewels,
- * has findings, stale) and any tags that arrived in the URL, so every filter
- * counted on the toolbar button can be seen and removed here.
+ * has findings, stale), so every filter counted on the toolbar button can be
+ * seen and removed here. Tags have their own section (InventoryTagsFacet):
+ * the tenant's tag list with search, include / exclude and Any / All.
  *
  * No per-option counts: the stats counts ignore the other active filters, so
  * they would disagree with the list. Selecting anything resets to page 1.
@@ -36,6 +37,7 @@ import {
 import type { AssetStatsData } from '../../hooks/use-assets'
 import { togglePropertyFilter, type InventoryFilters } from '../../lib/inventory-url'
 import type { TypeAttribute } from '@/features/asset-types/lib/type-view'
+import { InventoryTagsFacet } from './inventory-tags-facet'
 
 /** One attribute facet of the typed inventory. */
 export interface AttributeFacet {
@@ -65,6 +67,8 @@ interface InventoryFacetPanelProps {
   className?: string
   /** Typed mode: the type's attribute facets, shown first. */
   attributeFacets?: AttributeFacet[]
+  /** Typed mode: the tag list holds only the tags of these types' assets. */
+  tagTypes?: string[]
 }
 
 export function InventoryFacetPanel({
@@ -76,6 +80,7 @@ export function InventoryFacetPanel({
   onClearAll,
   className,
   attributeFacets = [],
+  tagTypes,
 }: InventoryFacetPanelProps) {
   const facets = groups.flatMap((g) => g.facets)
   // Signals sit right after the "kind" facets: they are what an analyst reaches
@@ -108,7 +113,7 @@ export function InventoryFacetPanel({
       {facets.slice(0, kindCount).map(renderFacet)}
       <SignalsSection filters={filters} onChange={onChange} />
       {facets.slice(kindCount).map(renderFacet)}
-      <TagsSection filters={filters} onChange={onChange} />
+      <InventoryTagsFacet filters={filters} onChange={onChange} types={tagTypes} />
     </FacetPanel>
   )
 }
@@ -355,33 +360,6 @@ function SignalsSection({
         checked={filters.freshness === 'never'}
         onCheckedChange={(on) => patch({ freshness: on ? 'never' : undefined })}
       />
-    </FacetSection>
-  )
-}
-
-/** Tags have no facet (no tenant tag list to offer); show the ones in the URL. */
-function TagsSection({
-  filters,
-  onChange,
-}: {
-  filters: InventoryFilters
-  onChange: (next: InventoryFilters) => void
-}) {
-  const tags = filters.tags ?? []
-  if (tags.length === 0) return null
-  return (
-    <FacetSection title="Tags" selectedCount={tags.length}>
-      {tags.map((t) => (
-        <FacetOption
-          key={t}
-          label={t}
-          checked
-          onCheckedChange={() => {
-            const next = tags.filter((x) => x !== t)
-            onChange({ ...filters, tags: next.length > 0 ? next : undefined, page: 1 })
-          }}
-        />
-      ))}
     </FacetSection>
   )
 }

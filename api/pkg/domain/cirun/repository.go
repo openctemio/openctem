@@ -130,6 +130,15 @@ type PipelineRepository interface {
 	// on the repository asset of that name: a name the token does not sign
 	// stays with the first repository id that used it.
 	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
+	// PinOwner records ownerID for the configuration's owner name unless one
+	// is pinned already, and returns the pinned id and whether this call
+	// pinned it.
+	PinOwner(ctx context.Context, tenantID, trustConfigID shared.ID, ownerName, ownerID string) (string, bool, error)
+	// ResetOwnerPins drops the configuration's pins (they are taken again at
+	// the next admitted exchange).
+	ResetOwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) (int64, error)
+	// OwnerPins lists the configuration's pins.
+	OwnerPins(ctx context.Context, tenantID, trustConfigID shared.ID) ([]OwnerPin, error)
 	// UpsertPipeline finds the pipeline with p's key (adopting a backfilled
 	// legacy row of the same repository asset and workflow path) or creates
 	// it within the caps (ErrPipelineCap). An existing pipeline takes p's

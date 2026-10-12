@@ -345,7 +345,11 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   {v.reasons.map((r, i) => (
                     <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{REASON_LABEL[r.code ?? ''] ?? r.code}</Badge>
+                        <Badge variant="outline">
+                          {REASON_LABEL[r.code ?? '']
+                            ? t(`scans.ci.reason.${r.code}`, REASON_LABEL[r.code ?? ''])
+                            : r.code}
+                        </Badge>
                         {r.severity && <span className="text-muted-foreground">{r.severity}</span>}
                       </div>
                       <p className="mt-1">{r.title || r.message}</p>
