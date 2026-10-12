@@ -124,6 +124,14 @@ func (h *ComplianceHandler) GetFrameworkStats(w http.ResponseWriter, r *http.Req
 // =============================================
 
 // GetControl returns a single compliance control.
+// @Summary      Get a compliance control
+// @Tags         Compliance
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  string  true  "Control ID"
+// @Success      200  {object}  ComplianceControlResponse
+// @Failure      404  {object}  apierror.Error
+// @Router       /compliance/controls/{id} [get]
 func (h *ComplianceHandler) GetControl(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
