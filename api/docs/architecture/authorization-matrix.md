@@ -1010,7 +1010,7 @@ MCP per-finding tools and prompts: the team sees every finding of its
 campaign, a client the published ones, anyone else gets 404; admins pass.
 
 Comments on a pentest finding carry a visibility (migration
-`002071_finding_comment_visibility`):
+`002072_finding_comment_visibility`):
 
 | Who | Writes | Reads |
 |---|---|---|
