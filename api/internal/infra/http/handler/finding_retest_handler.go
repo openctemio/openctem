@@ -124,6 +124,7 @@ func manualRetestResponse(rt *pentest.Retest) FindingRetestResponse {
 		ID: rt.ID().String(), Kind: retestKindManual, FindingID: rt.FindingID().String(),
 		Trigger: "manual", ManualResult: string(rt.Status()), Notes: rt.Notes(),
 		Status: "completed", CreatedAt: rt.CreatedAt(), CompletedAt: rt.TestedAt(), RunKind: "retest",
+		PriorStatus: rt.PriorStatus(), ResultStatus: rt.ResultStatus(),
 	}
 	switch rt.Status() {
 	case pentest.RetestStatusPending, pentest.RetestStatusInProgress:

@@ -1353,6 +1353,9 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.EASM != nil && h.EASM.HasReview() {
 		s.EASMReviewCount = h.EASM.ReviewCount
 	}
+	if h.Announcement != nil {
+		s.Announcements = h.Announcement.ActiveResponses
+	}
 	mode := cfg.Auth.TenantCreationMode
 	signup := svc.Signup
 	s.TenantCreationMode = func(ctx context.Context) string {
