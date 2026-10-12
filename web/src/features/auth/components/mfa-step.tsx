@@ -100,7 +100,12 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-3" aria-label="Two-factor verification">
+    <form
+      method="post"
+      onSubmit={submit}
+      className="grid gap-3"
+      aria-label="Two-factor verification"
+    >
       <div className="space-y-1">
         <h2 className="text-base font-semibold">Two-factor authentication</h2>
         <p className="text-sm text-muted-foreground">
@@ -264,7 +269,12 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
   }
 
   return (
-    <form onSubmit={confirm} className="grid gap-4" aria-label="Set up two-factor authentication">
+    <form
+      method="post"
+      onSubmit={confirm}
+      className="grid gap-4"
+      aria-label="Set up two-factor authentication"
+    >
       <div className="space-y-1">
         <h2 className="text-base font-semibold">Set up two-factor authentication</h2>
         <p className="text-sm text-muted-foreground">

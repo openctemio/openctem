@@ -191,6 +191,12 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminScanPolicy.GetDefault)
 			r.PUT("/", h.AdminScanPolicy.UpdateDefault, requireSuper)
 		}, adminMiddlewares...)
+		// Verified domain before platform sensors scan (RFC-054 §8.1):
+		// same gate, step-up and audit.
+		router.Group("/api/v1/admin/settings/platform-sensor-proof", func(r Router) {
+			r.GET("/", h.AdminScanPolicy.GetProof)
+			r.PUT("/", h.AdminScanPolicy.UpdateProof, requireSuper)
+		}, adminMiddlewares...)
 	}
 
 	// The request-access queue: any admin reads; approving (creates the
