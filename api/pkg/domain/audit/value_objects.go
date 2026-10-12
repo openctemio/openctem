@@ -516,6 +516,12 @@ const (
 	ActionCampaignSignedOff               Action = "campaign.signed_off"
 	ActionCampaignSignoffWithdrawn        Action = "campaign.signoff_withdrawn"
 	ActionCampaignCompletionPolicyChanged Action = "campaign.completion_policy_changed"
+	// Test credentials vault and ticket links.
+	ActionCampaignSecretCreated  Action = "campaign.secret_created"
+	ActionCampaignSecretRevealed Action = "campaign.secret_revealed"
+	ActionCampaignSecretDeleted  Action = "campaign.secret_deleted"
+	ActionCampaignLinksChanged   Action = "campaign.links_changed"
+	ActionCampaignTicketsCreated Action = "campaign.tickets_created"
 
 	// Remediation campaign actions (Mobilization). Distinct from the pentest
 	// campaign.* actions above: a different resource with its own lifecycle.
@@ -739,6 +745,8 @@ func (a Action) IsValid() bool {
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
+		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
+		ActionCampaignLinksChanged, ActionCampaignTicketsCreated,
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
@@ -845,7 +853,9 @@ func (a Action) Category() string {
 		return "ai_triage"
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
-		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged:
+		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
+		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
+		ActionCampaignLinksChanged, ActionCampaignTicketsCreated:
 		return "pentest_campaign"
 	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:

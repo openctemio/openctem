@@ -27,6 +27,7 @@ func (a clientAdapter) CreateIssue(ctx context.Context, in appjira.CreateIssueIn
 		IssueType:   in.IssueType,
 		Priority:    in.Priority,
 		Labels:      in.Labels,
+		ParentKey:   in.ParentKey,
 	})
 	if err != nil {
 		return nil, err
@@ -64,6 +65,20 @@ func (a clientAdapter) ListProjects(ctx context.Context) ([]appjira.ProjectRef, 
 	refs := make([]appjira.ProjectRef, 0, len(projects))
 	for _, p := range projects {
 		refs = append(refs, appjira.ProjectRef{ID: p.ID, Key: p.Key, Name: p.Name})
+	}
+	return refs, nil
+}
+
+func (a clientAdapter) SiteURL() string { return a.c.SiteURL() }
+
+func (a clientAdapter) SearchIssues(ctx context.Context, text string, max int) ([]appjira.IssueRef, error) {
+	issues, err := a.c.SearchIssues(ctx, text, max)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]appjira.IssueRef, 0, len(issues))
+	for _, i := range issues {
+		refs = append(refs, appjira.IssueRef{Key: i.Key, Summary: i.Summary, Type: i.Type, Status: i.Status, URL: i.BrowseURL})
 	}
 	return refs, nil
 }
