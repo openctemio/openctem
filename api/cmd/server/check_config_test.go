@@ -58,7 +58,7 @@ func TestReportConfigCheck_WarnsAboutWideTrustedProxies(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.App.Env = config.EnvProduction
 	cfg.Server.TrustedProxies = []string{"172.18.0.0/16"}
-	if rc := reportConfigCheck(&out, &errOut, cfg, nil); rc != 0 {
+	if rc := reportConfigCheck(&out, &errOut, cfg, nil, nil); rc != 0 {
 		t.Fatalf("exit = %d, want 0 (a warning, not a failure)", rc)
 	}
 	if !strings.Contains(out.String(), "warning: SERVER_TRUSTED_PROXIES=172.18.0.0/16") {
@@ -66,7 +66,7 @@ func TestReportConfigCheck_WarnsAboutWideTrustedProxies(t *testing.T) {
 	}
 	out.Reset()
 	cfg.Server.TrustedProxies = []string{"172.18.0.10", "172.18.0.11/32"}
-	reportConfigCheck(&out, &errOut, cfg, nil)
+	reportConfigCheck(&out, &errOut, cfg, nil, nil)
 	if strings.Contains(out.String(), "warning:") {
 		t.Fatalf("pinned addresses must not warn: %q", out.String())
 	}
