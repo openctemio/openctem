@@ -233,7 +233,11 @@ characters at each end (`vulnerability.MaskSecretPreview`), redacts the
 snippet and fingerprints the value with a keyed per-tenant HMAC.
 
 `POST /api/v1/ci/runs/{id}/baseline-diff` splits fingerprints into new and
-already open on the default branch, for inline comments on new findings only.
+already open on the run's baseline branch, for inline comments on new findings
+only. The baseline is the pull request's base branch (GitHub's signed
+`base_ref`, else the exchange's `base_ref` hint) when the repository has
+scanned it and it is a release line (default, protected, or of type `main` or
+`release`), else the default branch (RFC-077 G-5, `ci_runs.base_ref`).
 
 A finding a run sees only on a branch that does not count as exposure (not
 the default, a protected, a `main` or a `release` branch) is stored
@@ -274,7 +278,9 @@ For each finding the run reported:
 
 Any scanner failure the runner reports fails the run. `warn` mode passes and
 sets `would_fail`. The verdict is stored on the run and audited
-(`ci_run.evaluated`).
+(`ci_run.evaluated`). The first verdict is final: evaluating an evaluated run
+returns the stored verdict unchanged and audits nothing (RFC-077 G-4); a
+re-run of the pipeline gets its own run.
 
 **Break-glass** (`ci_gate_overrides`, `scans:ci:override`): one commit (a
 prefix of at least 7 hex characters) of one repository passes until the
@@ -363,7 +369,8 @@ custom roles).
 Open points: Azure Pipelines tokens issued through a service connection (the
 Entra issuer) carry no pipeline claims and are not admitted; GitHub Enterprise Server issuers (a GitHub configuration accepts
 only the github.com issuer today); a merge request's target branch on GitLab is
-not in the ID token, so the baseline is always the default branch.
+not in the ID token: the job reports it and it only chooses among release
+lines.
 
 ## 10. Pipelines in the fleet
 
