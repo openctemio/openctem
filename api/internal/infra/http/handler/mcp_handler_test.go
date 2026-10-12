@@ -507,8 +507,7 @@ func makePentestFinding(t *testing.T) *vulnerability.Finding {
 
 func newTestCampaign(t *testing.T) *pentestdom.Campaign {
 	t.Helper()
-	c, err := pentestdom.NewCampaign(shared.NewID(), "__test campaign",
-		pentestdom.CampaignType("black_box"), pentestdom.CampaignPriority("high"))
+	c, err := pentestdom.NewCampaign(shared.NewID(), "__test campaign")
 	if err != nil {
 		t.Fatalf("new campaign: %v", err)
 	}
