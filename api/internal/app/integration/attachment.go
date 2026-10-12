@@ -255,6 +255,33 @@ func (s *AttachmentService) Download(ctx context.Context, tenantID, attachmentID
 	return reader, att.ContentType(), att.Filename(), nil
 }
 
+// ReadAttachment returns an attachment's record and at most maxBytes of its
+// content, tenant-scoped. A larger file answers ErrTooLarge. Used to embed
+// evidence images in reports.
+func (s *AttachmentService) ReadAttachment(ctx context.Context, tenantID, attachmentID string, maxBytes int64) (*attachmentdom.Attachment, []byte, error) {
+	att, err := s.GetByID(ctx, tenantID, attachmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if att.Size() > maxBytes {
+		return nil, nil, attachmentdom.ErrTooLarge
+	}
+	store := s.resolveStorageByProvider(ctx, tenantID, att.StorageProvider())
+	reader, _, err := store.Download(ctx, tenantID, att.StorageKey())
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = reader.Close() }()
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, nil, attachmentdom.ErrTooLarge
+	}
+	return att, data, nil
+}
+
 // Delete removes both the file and its metadata record.
 func (s *AttachmentService) Delete(ctx context.Context, tenantID, attachmentID string) error {
 	tid, err := shared.IDFromString(tenantID)
