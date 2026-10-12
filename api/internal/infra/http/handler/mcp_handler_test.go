@@ -471,13 +471,18 @@ func (p *fakePentestReader) CheckCampaignAccess(_ context.Context, tenantID, _, 
 }
 func (p *fakePentestReader) GetCampaign(_ context.Context, tenantID, _ string) (*pentestdom.Campaign, error) {
 	p.gotTenant = tenantID
+	if p.campaign == nil {
+		// A campaign at the default TLP (amber), AI assistants on.
+		c, _ := pentestdom.NewCampaign(shared.NewID(), "__default campaign")
+		return c, nil
+	}
 	return p.campaign, nil
 }
 func (p *fakePentestReader) ListCampaignMembers(_ context.Context, tenantID, _ string) ([]*pentestdom.CampaignMember, error) {
 	p.gotTenant = tenantID
 	return p.members, nil
 }
-func (p *fakePentestReader) GetCampaignStats(_ context.Context, tenantID, _ string) (*pentestdom.CampaignStats, error) {
+func (p *fakePentestReader) GetCampaignStats(_ context.Context, tenantID, _ string, _ bool) (*pentestdom.CampaignStats, error) {
 	p.gotTenant = tenantID
 	if p.stats == nil {
 		return &pentestdom.CampaignStats{}, nil
@@ -555,6 +560,8 @@ func makePentestFinding(t *testing.T) *vulnerability.Finding {
 		t.Fatalf("new finding: %v", err)
 	}
 	f.SetTitle("SQL Injection in login form")
+	cid := shared.NewID()
+	f.SetPentestCampaignID(&cid)
 	f.SetSourceMetadata(map[string]any{
 		"steps_to_reproduce":   []any{"step one", "step two"},
 		"business_impact":      "full DB compromise",
