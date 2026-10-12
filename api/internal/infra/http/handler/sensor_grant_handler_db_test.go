@@ -157,3 +157,94 @@ func newGrantHarness(t *testing.T) grantHarness {
 	})
 	return h
 }
+
+// TestSensorCreate_CollectorGrantAndTrust: creating a collector gives it the
+// collector grant at trust level New; trust at creation is collector only,
+// needs sensors:grant:widen (checked before anything is created) and is
+// never set unless asked.
+func TestSensorCreate_CollectorGrantAndTrust(t *testing.T) {
+	h := newGrantHarness(t)
+	pg := &postgres.DB{DB: h.db}
+	sh := NewSensorHandler(sensorapp.NewSensorService(postgres.NewSensorRepository(pg), nil, logger.NewNop()), validator.New(), logger.NewNop())
+	gs := sensorgrant.NewService(postgres.NewSensorGrantRepository(pg), postgres.NewSensorRepository(pg), logger.NewNop())
+	sh.SetGrantService(gs)
+	userID := shared.NewID().String()
+	if _, err := h.db.Exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'grant admin')`, userID, userID+"@grant.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = h.db.Exec(`DELETE FROM users WHERE id = $1`, userID) })
+
+	create := func(perms []string, body map[string]any) (int, map[string]any) {
+		t.Helper()
+		var buf bytes.Buffer
+		_ = json.NewEncoder(&buf).Encode(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sensors", &buf)
+		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, h.tenantID)
+		ctx = context.WithValue(ctx, middleware.UserIDKey, userID)
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, false)
+		ctx = context.WithValue(ctx, middleware.FetchedPermissionsKey, perms)
+		rec := httptest.NewRecorder()
+		sh.Create(rec, req.WithContext(ctx))
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	count := func() int {
+		var n int
+		_ = h.db.QueryRow(`SELECT count(*) FROM sensors WHERE tenant_id = $1`, h.tenantID).Scan(&n)
+		return n
+	}
+	grantOf := func(out map[string]any) (string, string, bool) {
+		t.Helper()
+		sen, _ := out["sensor"].(map[string]any)
+		id, _ := sen["id"].(string)
+		var profile, trust string
+		var push bool
+		if err := h.db.QueryRow(`SELECT g.profile, s.trust_level, g.allow_push_ingest FROM sensor_grants g
+			JOIN sensors s ON s.id = g.sensor_id WHERE g.sensor_id = $1 AND g.tenant_id = $2`, id, h.tenantID).Scan(&profile, &trust, &push); err != nil {
+			t.Fatalf("grant of %q: %v", id, err)
+		}
+		return profile, trust, push
+	}
+	write := []string{string(permission.SensorsWrite)}
+	widen := []string{string(permission.SensorsWrite), string(permission.SensorsGrantNarrow), string(permission.SensorsGrantWiden)}
+	before := count()
+
+	// Default: the collector profile, still New, so not trusted.
+	code, out := create(write, map[string]any{"name": "collector-default", "type": "collector"})
+	if code != http.StatusCreated || out["trusted"] != false {
+		t.Fatalf("create collector: %d %v", code, out)
+	}
+	if p, tr, push := grantOf(out); p != "collector" || tr != "new" || !push {
+		t.Fatalf("collector grant: %s %s %v", p, tr, push)
+	}
+	// A worker keeps the scanner default.
+	code, out = create(write, map[string]any{"name": "worker-default", "type": "worker"})
+	if code != http.StatusCreated {
+		t.Fatalf("create worker: %d %v", code, out)
+	}
+	if p, _, _ := grantOf(out); p != "internal-network-scanner" {
+		t.Fatalf("worker grant: %s", p)
+	}
+	before += 2
+
+	// Trust needs sensors:grant:widen and is refused before anything exists.
+	if code, out := create(write, map[string]any{"name": "collector-no-widen", "type": "collector", "trusted": true}); code != http.StatusForbidden {
+		t.Fatalf("trusted without widen: %d %v", code, out)
+	}
+	// Trust at creation is for a collector only.
+	if code, out := create(widen, map[string]any{"name": "worker-trusted", "type": "worker", "trusted": true}); code != http.StatusBadRequest {
+		t.Fatalf("trusted worker: %d %v", code, out)
+	}
+	if n := count(); n != before {
+		t.Fatalf("a refused create left a sensor: %d, want %d", n, before)
+	}
+
+	code, out = create(widen, map[string]any{"name": "collector-trusted", "type": "collector", "trusted": true})
+	if code != http.StatusCreated || out["trusted"] != true {
+		t.Fatalf("trusted collector: %d %v", code, out)
+	}
+	if p, tr, push := grantOf(out); p != "collector" || tr != "trusted" || !push {
+		t.Fatalf("trusted collector grant: %s %s %v", p, tr, push)
+	}
+}
