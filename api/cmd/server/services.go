@@ -1323,6 +1323,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetCampaignSignoffRepository(repos.PentestSignoff)
+	s.Pentest.SetAttachmentLookup(repos.Attachment) // authorization letter must be a file of the campaign
+	s.Pentest.SetPentestPolicyReader(pentestPolicyReader{tenants: s.Tenant})
 	s.Pentest.SetReportTemplateRepository(repos.PentestReportTemplate)
 	if s.SLA != nil {
 		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
@@ -3017,4 +3019,16 @@ func zoneResolver(spec string) *net.Resolver {
 			return d.DialContext(ctx, network, server)
 		},
 	}
+}
+
+// pentestPolicyReader reads the organization's pentest settings for the
+// pentest service.
+type pentestPolicyReader struct{ tenants *tenantapp.TenantService }
+
+func (r pentestPolicyReader) RequireAuthorizationBeforeStart(ctx context.Context, tenantID shared.ID) (bool, error) {
+	ps, err := r.tenants.GetPentestSettings(ctx, tenantID.String())
+	if err != nil {
+		return false, err
+	}
+	return ps.RequireAuthorizationBeforeStart, nil
 }

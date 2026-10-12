@@ -52,13 +52,18 @@ type CampaignData struct {
 	Description   string
 	ClientName    string
 	ClientContact string
-	Type          string
-	Priority      string
-	Status        string
-	StartDate     string
-	EndDate       string
-	Methodology   string
-	Team          []TeamMemberData
+	// Type is the target types, comma-separated.
+	Type        string
+	Targets     []string
+	Approach    string
+	Environment string
+	// TLP is the sharing level printed on the report.
+	TLP         string
+	Status      string
+	StartDate   string
+	EndDate     string
+	Methodology string
+	Team        []TeamMemberData
 }
 
 // TeamMemberData represents a team member for report rendering.
@@ -263,8 +268,9 @@ const reportTemplate = `<!DOCTYPE html>
   {{if .Campaign.Description}}<div class="md">{{md .Campaign.Description}}</div>{{end}}
 
   <div class="meta-grid">
-    <div class="meta-item"><div class="meta-label">Campaign Type</div><div class="meta-value">{{.Campaign.Type}}</div></div>
-    <div class="meta-item"><div class="meta-label">Priority</div><div class="meta-value">{{.Campaign.Priority}}</div></div>
+    <div class="meta-item"><div class="meta-label">Targets</div><div class="meta-value">{{.Campaign.Type}}</div></div>
+    {{if .Campaign.Environment}}<div class="meta-item"><div class="meta-label">Environment</div><div class="meta-value">{{.Campaign.Environment}}</div></div>{{end}}
+    {{if .Campaign.TLP}}<div class="meta-item"><div class="meta-label">TLP</div><div class="meta-value">{{.Campaign.TLP}}</div></div>{{end}}
     <div class="meta-item"><div class="meta-label">Testing Period</div><div class="meta-value">{{.Campaign.StartDate}} &mdash; {{.Campaign.EndDate}}</div></div>
     <div class="meta-item"><div class="meta-label">Methodology</div><div class="meta-value">{{if .Campaign.Methodology}}{{.Campaign.Methodology}}{{else}}-{{end}}</div></div>
   </div>
