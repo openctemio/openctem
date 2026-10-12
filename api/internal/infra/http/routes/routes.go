@@ -684,6 +684,9 @@ func Register(
 	// Pentest Campaign Management routes (tenant from JWT token)
 	if h.Pentest != nil {
 		registerPentestRoutes(router, h.Pentest, h.PentestChecklist, authMiddleware, userSync, h.PentestCampaignRoleQry, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		if h.Vulnerability != nil {
+			registerPentestCommentRoutes(router, h.Vulnerability, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
+		}
 		if h.PentestChecklist != nil {
 			registerPentestChecklistTemplateRoutes(router, h.PentestChecklist, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModulePentest))
 		}
