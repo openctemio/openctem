@@ -32,7 +32,7 @@ const sdkVersionUnknown = "unknown"
 type SensorHandler struct {
 	service         *sensorapp.SensorService
 	templateService *sensorapp.SensorConfigTemplateService
-	publicAPIURL    string // Public URL sensors will connect to (defaults to API_URL env var)
+	publicAPIURL    string // Public URL sensors will connect to (defaults to SENSOR_API_URL env var)
 	// sensorImage is the image the install snippets run, with its pinned
 	// tag (SENSOR_IMAGE + SENSOR_LATEST_VERSION).
 	sensorImage string
