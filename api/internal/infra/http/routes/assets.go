@@ -263,7 +263,9 @@ func registerScopeRoutes(
 		// (RFC-054 §12.5): approvers, one click.
 		r.POST("/{id}/attest", h.AttestTarget, middleware.Require(permission.ScopeApprove))
 
-		// Bulk operations
+		// Bulk operations. Adding many entries asks for step-up in the
+		// service (once per batch, as a single add does).
+		r.POST("/bulk", h.BulkCreateTargets, middleware.Require(permission.ScopeWrite))
 		r.POST("/bulk/delete", h.BulkDeleteTargets, middleware.Require(permission.ScopeDelete))
 
 		// Delete operations
