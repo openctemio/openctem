@@ -78,3 +78,18 @@ not used.
 | Data builder (shared HTML/PDF) | `internal/app/compliance/pentest.go` (`buildReportInput`) |
 | Service method | `PentestService.GenerateReportPDF` |
 | Handler format switch | `internal/infra/http/handler/pentest_handler.go` (`DownloadReport`) |
+
+## Stored reports and delivery
+
+A report created with `POST /api/v1/pentest/campaigns/{id}/reports` is
+generated once and its bytes are stored (`pentest_report_files`, in the
+tenant's rows, at most 50 MiB, erased with the report and the tenant).
+`GET /api/v1/pentest/reports/{id}/download` returns those bytes, so a report
+never changes when the campaign does; the report carries their SHA-256.
+Reports created before reports were stored answer 409 (generate a new one).
+The live download (`/campaigns/{id}/reports/download`) still renders current
+data and stores nothing.
+
+The campaign lead marks a stored report delivered
+(`POST /api/v1/pentest/reports/{id}/deliver`, audited
+`pentest_report.delivered`); a delivered report cannot be deleted.
