@@ -68,6 +68,9 @@ var assetMergeRefs = []mergeRef{
 	{table: "api_specs", column: "origin_asset_id", tenantCol: "tenant_id"},
 	// The merged asset's change timeline (RFC-069) joins the kept asset's.
 	{table: "asset_change_events", column: "asset_id", tenantCol: "tenant_id"},
+	// Web evidence captures (RFC-081) follow the asset; the newest per asset
+	// are what the asset page shows, so the kept asset gains the history.
+	{table: "asset_web_evidence", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
