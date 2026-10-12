@@ -104,6 +104,33 @@ the API refuses to start. Recovery is in the
 [runbook](safe-deploy-and-migrations.md#dirty-migration-recovery). Never set
 `SKIP_SCHEMA_CHECK=true` in production.
 
+### Gateway user
+
+The gateway runs as uid/gid 1000 (as in the Helm chart), not as root, from the
+`ghcr.io/openctemio/openctem-gateway` image: Caddy with the standard and layer4
+modules, built with the release's Go toolchain. In `api/deploy` it binds 443
+(and 80 with the redirect overlay) through the namespaced sysctl
+`net.ipv4.ip_unprivileged_port_start=0`, so it keeps `no-new-privileges` and
+holds no capability.
+
+**Upgrading from a release whose gateway ran as root** (the `caddy` image): the
+`gateway-data` and `gateway-config` volumes and the `./ca` directory hold
+root-owned files that a non-root gateway cannot read. The one-shot
+`gateway-init` service changes their owner to 1000:1000 on every `up` (offline,
+`CHOWN` and `DAC_READ_SEARCH` only; nothing to do once they are right), so
+`docker compose up -d` is enough. Where that service is not used (your own
+Compose file, a copied volume), change the owner once by hand before starting
+the new gateway:
+
+```bash
+docker compose run --rm --no-deps --user 0 --entrypoint chown gateway -R 1000:1000 /data /config /ca
+```
+
+The gateway refuses to start while `/data` or `/config` holds a file it does
+not own, and its log prints that command. The certificates, the internal CA
+(and so the root sensors trust) and the ACME account are kept: only their
+owner changes.
+
 ## Make targets
 
 ```bash

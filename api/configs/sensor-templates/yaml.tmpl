@@ -18,8 +18,9 @@ server:
   api_key: {{if .APIKey}}{{yamlQuote .APIKey}}{{else}}${SENSOR_API_KEY}{{end}}
   sensor_id: {{.Sensor.ID}}
 
-# Results not yet accepted by the platform wait here; keep it on persistent
-# storage so a restart or an outage loses nothing.
+# Results not yet accepted by the platform wait here. The sensor's data
+# directory /var/lib/openctem holds outbox/, state/ and content/: keep it on
+# persistent storage so a restart or an outage loses nothing.
 outbox:
   dir: /var/lib/openctem/outbox
 
