@@ -99,6 +99,18 @@ func (f *fixture) sensor(tenantID shared.ID, tools []string, caps []string) shar
 	return id
 }
 
+// collector inserts a collector-type sensor, as the create API does (the
+// trigger gives it the collector grant).
+func (f *fixture) collector(tenantID shared.ID) shared.ID {
+	f.t.Helper()
+	id := shared.NewID()
+	f.exec(`INSERT INTO sensors (id, tenant_id, name, type, status, health, api_key_hash, api_key_prefix,
+		execution_mode, max_concurrent_jobs, current_jobs)
+		VALUES ($1, $2, $3, 'collector', 'active', 'online', $4, $5, 'daemon', 5, 0)`,
+		id.String(), tenantID.String(), "grant-collector-"+id.String(), "hash-"+id.String(), id.String()[:8])
+	return id
+}
+
 func pqArray(v []string) string {
 	b, _ := json.Marshal(v)
 	s := string(b)
@@ -230,9 +242,10 @@ func TestGrant_LegacyBackfillShape_DB(t *testing.T) {
 }
 
 type refusals struct {
-	mu   sync.Mutex
-	dims []string
-	push int
+	mu      sync.Mutex
+	dims    []string
+	push    int
+	reasons []string
 }
 
 func (r *refusals) ObserveGrantRefusal(_ context.Context, _, _ shared.ID, _ string, g *sensordom.GrantRefusal) {
@@ -241,10 +254,11 @@ func (r *refusals) ObserveGrantRefusal(_ context.Context, _, _ shared.ID, _ stri
 	r.dims = append(r.dims, g.Dimension)
 }
 
-func (r *refusals) ObservePushRefusal(context.Context, shared.ID, shared.ID, string) {
+func (r *refusals) ObservePushRefusal(_ context.Context, _, _ shared.ID, _, reason string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.push++
+	r.reasons = append(r.reasons, reason)
 }
 
 func (f *fixture) command(tenantID shared.ID, cmdType commanddom.CommandType, p map[string]any, zone *shared.ID) *commanddom.Command {
@@ -400,7 +414,8 @@ func TestGrant_PushIngest_DB(t *testing.T) {
 	if _, err := f.svc.Update(ctx, admin(tid, uid), sid, sensorgrant.UpdateInput{Profile: "collector:tenable-sc"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ing.AdmitQueued(ctx, agt, report); !errors.Is(err, ingest.ErrPushIngestNotGranted) {
+	// The refusal names the missing half: trust, not the grant.
+	if err := ing.AdmitQueued(ctx, agt, report); !errors.Is(err, ingest.ErrPushIngestUntrusted) {
 		t.Fatalf("New collector pushed without a job: %v", err)
 	}
 	g, _ := f.svc.Get(ctx, tid, sid)
@@ -412,8 +427,8 @@ func TestGrant_PushIngest_DB(t *testing.T) {
 	if err := ing.AdmitQueued(ctx, agt, report); err != nil {
 		t.Fatalf("trusted collector with push refused: %v", err)
 	}
-	if obs.push != 2 {
-		t.Fatalf("push refusals reported: %d", obs.push)
+	if obs.push != 2 || !slices.Equal(obs.reasons, []string{ingest.PushRefusedGrant, ingest.PushRefusedTrust}) {
+		t.Fatalf("push refusals reported: %d %v", obs.push, obs.reasons)
 	}
 	// Another tenant's sensor id reads as no grant: refused.
 	other, _ := f.org()
@@ -502,5 +517,83 @@ func TestGrant_DefaultSensorRetests_DB(t *testing.T) {
 	}
 	if _, err := cmds.Acknowledge(ctx, tid.String(), sid.String(), first.ID.String()); err != nil {
 		t.Fatalf("trusted default sensor could not claim the retest: %v", err)
+	}
+}
+
+// A new collector gets the collector profile (push ingest in the grant) at
+// trust level New: its reports are still refused, naming trust, until an
+// administrator with sensors:grant:widen of its own tenant promotes it.
+func TestGrant_CollectorDefault_DB(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	tid, uid := f.org()
+	otherTenant, otherUser := f.org()
+	sid := f.collector(tid)
+	worker := f.sensor(tid, nil, nil)
+
+	g, err := f.svc.Get(ctx, tid, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Profile != sensordom.ProfileCollector || g.TrustLevel != sensordom.TrustNew || !g.AllowPushIngest ||
+		g.TierCeiling != sensordom.TierPassive || g.TargetNetwork != sensordom.TargetNetworkNone ||
+		!slices.Equal(g.JobTypes, []string{"collect", "connector_sync"}) || g.AllowCredentials || g.Tools != nil {
+		t.Fatalf("collector default grant: %+v", g)
+	}
+	if g.Effective().AllowPushIngest {
+		t.Fatal("a New collector may push")
+	}
+	// The trigger result matches the profile the console would build.
+	want, _ := sensordom.NewGrantFromProfile(tid, sid, sensordom.ProfileCollector, nil)
+	_ = want.Normalize()
+	if c := sensordom.Changed(*want, *g); len(c) != 0 {
+		t.Fatalf("trigger grant differs from the collector profile: %v", c)
+	}
+	if w, _ := f.svc.Get(ctx, tid, worker); w.Profile != sensordom.ProfileInternalScanner {
+		t.Fatalf("worker default changed: %s", w.Profile)
+	}
+
+	obs := &refusals{}
+	ing := ingest.NewService(nil, nil, nil, nil, nil, nil, nil, nil, logger.NewNop())
+	ing.SetGrants(f.grants, obs)
+	agt := &sensordom.Sensor{ID: sid, TenantID: &tid, Type: sensordom.SensorTypeCollector, Status: sensordom.SensorStatusActive}
+	report := ingestReport()
+	if err := ing.AdmitQueued(ctx, agt, report); !errors.Is(err, ingest.ErrPushIngestUntrusted) {
+		t.Fatalf("untrusted collector pushed: %v", err)
+	}
+
+	// Trust is never automatic and needs sensors:grant:widen in the
+	// sensor's own tenant.
+	if err := f.svc.AuthorizeTrust(ctx, narrowOnly(tid, uid)); !errors.Is(err, sensorgrant.ErrWidenForbidden) {
+		t.Fatalf("authorize trust without widen: %v", err)
+	}
+	if _, err := f.svc.Trust(ctx, narrowOnly(tid, uid), sid); !errors.Is(err, sensorgrant.ErrWidenForbidden) {
+		t.Fatalf("trust without widen: %v", err)
+	}
+	if _, err := f.svc.Trust(ctx, admin(otherTenant, otherUser), sid); !errors.Is(err, sensorgrant.ErrNotFound) {
+		t.Fatalf("cross-tenant trust: %v", err)
+	}
+	if g, _ := f.svc.Get(ctx, tid, sid); g.TrustLevel != sensordom.TrustNew || g.Version != 1 {
+		t.Fatalf("refused promotions changed the grant: %+v", g)
+	}
+	if err := ing.AdmitQueued(ctx, agt, report); !errors.Is(err, ingest.ErrPushIngestUntrusted) {
+		t.Fatalf("collector pushed after refused promotions: %v", err)
+	}
+
+	if err := f.svc.AuthorizeTrust(ctx, admin(tid, uid)); err != nil {
+		t.Fatal(err)
+	}
+	g, err = f.svc.Trust(ctx, admin(tid, uid), sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.TrustLevel != sensordom.TrustTrusted || g.Profile != sensordom.ProfileCollector || !g.Effective().AllowPushIngest {
+		t.Fatalf("trusted collector: %+v", g)
+	}
+	if err := ing.AdmitQueued(ctx, agt, report); err != nil {
+		t.Fatalf("trusted collector refused: %v", err)
+	}
+	if !slices.Equal(obs.reasons, []string{ingest.PushRefusedTrust, ingest.PushRefusedTrust}) {
+		t.Fatalf("refusal reasons: %v", obs.reasons)
 	}
 }

@@ -73,7 +73,25 @@ export function TrustBadge({ level }: { level: string }) {
   )
 }
 
-export function SensorGrantSection({ sensorId }: { sensorId: string }) {
+/**
+ * Why a collector's reports are refused, when they are: its grant has no
+ * push ingest, or the grant allows it and the sensor is not trusted. Null
+ * when its reports are accepted. Mirrors the API's admission check.
+ */
+export function collectorRefusal(grant: SensorGrant): 'grant' | 'trust' | null {
+  if (grant.effective?.allow_push_ingest) return null
+  if (!grant.allow_push_ingest) return 'grant'
+  return grant.trust_level === 'trusted' ? null : 'trust'
+}
+
+export function SensorGrantSection({
+  sensorId,
+  sensorType,
+}: {
+  sensorId: string
+  /** The sensor's type: a collector gets an explanation when its reports are refused. */
+  sensorType?: string
+}) {
   const canRead = useHasPermission(Permission.SensorsRead)
   const canNarrow = useHasPermission(Permission.SensorsGrantNarrow)
   const canWiden = useHasPermission(Permission.SensorsGrantWiden)
@@ -102,6 +120,7 @@ export function SensorGrantSection({ sensorId }: { sensorId: string }) {
 
   const eff = grant.effective
   const isNew = grant.trust_level !== 'trusted'
+  const refusal = collectorRefusal(grant)
 
   const changeTrust = async (to: 'trusted' | 'new') => {
     setSaving(true)
@@ -142,6 +161,59 @@ export function SensorGrantSection({ sensorId }: { sensorId: string }) {
             This sensor existed before per-sensor grants and may still do anything a sensor can: any
             job, intrusive tiers, credentials and results without a job. Pick the profile that
             matches what it does.
+          </DetailCallout>
+        </div>
+      )}
+
+      {sensorType === 'collector' && refusal && (
+        <div data-testid="collector-refused" data-missing={refusal}>
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={
+              refusal === 'trust'
+                ? t(
+                    'sensors.grant.collectorRefused.untrustedTitle',
+                    "This collector's reports are refused: it is not trusted"
+                  )
+                : t(
+                    'sensors.grant.collectorRefused.grantTitle',
+                    "This collector's reports are refused: its grant does not allow them"
+                  )
+            }
+          >
+            <p>
+              {refusal === 'trust'
+                ? t(
+                    'sensors.grant.collectorRefused.untrustedBody',
+                    'Its grant allows asset reports, but a sensor that is not trusted cannot send results without a job, so the platform refuses every report it sends.'
+                  )
+                : t(
+                    'sensors.grant.collectorRefused.grantBody',
+                    'Its grant does not allow results without a job, so the platform refuses every report it sends.'
+                  )}
+            </p>
+            {canWiden ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() =>
+                  refusal === 'trust' ? setTrustTarget('trusted') : setEditOpen(true)
+                }
+              >
+                {refusal === 'trust'
+                  ? t('sensors.grant.collectorRefused.promote', 'Promote to Trusted')
+                  : t('sensors.grant.collectorRefused.editGrant', 'Edit the grant')}
+              </Button>
+            ) : (
+              <p className="mt-1 text-muted-foreground">
+                {t(
+                  'sensors.grant.collectorRefused.askAdmin',
+                  'An administrator who may widen sensor grants can change this.'
+                )}
+              </p>
+            )}
           </DetailCallout>
         </div>
       )}

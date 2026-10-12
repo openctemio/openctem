@@ -217,5 +217,16 @@
   "sensors.transport.reason.identity_refused": "The platform refused the sensor's identity: pair or enable it again.",
   "sensors.transport.reason.platform_certificate_refused": "The gRPC endpoint's certificate does not match the platform CA the sensor pinned.",
   "sensors.transport.reason.platform_unreachable": "The platform did not answer the last check; the sensor keeps its connection and checks again soon.",
-  "sensors.transport.reason.other": "The sensor reported another reason."
+  "sensors.transport.reason.other": "The sensor reported another reason.",
+  "sensors.install.trustCollector.label": "Trust this collector to push asset reports",
+  "sensors.install.trustCollector.help": "A new collector starts untrusted, and the platform refuses every report it sends until it is trusted. Trusted lets it send asset reports without a job: they can add new assets but never change existing ones, and scope exclusions still apply. Tick this only for a collector you install yourself. It is audited and every administrator is notified.",
+  "sensors.install.trustCollector.noPermission": "Only an administrator who may widen sensor grants can trust a collector. You can create it now and have it trusted later on the sensor's Grant.",
+  "sensors.install.trustCollector.notApplied": "The collector was created, but trusting it failed. It stays untrusted until it is promoted on the sensor's Grant.",
+  "sensors.grant.collectorRefused.untrustedTitle": "This collector's reports are refused: it is not trusted",
+  "sensors.grant.collectorRefused.untrustedBody": "Its grant allows asset reports, but a sensor that is not trusted cannot send results without a job, so the platform refuses every report it sends. Promote it to Trusted if you installed it and know where it runs.",
+  "sensors.grant.collectorRefused.grantTitle": "This collector's reports are refused: its grant does not allow them",
+  "sensors.grant.collectorRefused.grantBody": "Its grant does not allow results without a job, so the platform refuses every report it sends. Change its profile to Collector, then promote it to Trusted.",
+  "sensors.grant.collectorRefused.askAdmin": "An administrator who may widen sensor grants can change this.",
+  "sensors.grant.collectorRefused.promote": "Promote to Trusted",
+  "sensors.grant.collectorRefused.editGrant": "Edit the grant"
 }
