@@ -459,8 +459,8 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `OPENCTEM_CA_EXPORT_DIR` | string | `./ca` |  |  | Host directory the internal root CA is exported to. |
 | `OPENCTEM_VERSION` | string | `none` | yes |  | Release tag of the API, web and migrations images, for example `v0.9.0`. |
 | `OPENCTEM_PUBLIC_URL` | string | `https://<OPENCTEM_HOSTNAME>` | yes |  | Exact origin browsers use, when it is not `https://<OPENCTEM_HOSTNAME>` (a port other than 443). Passed to the API as `APP_URL`. |
-| `API_IMAGE` | string | `ghcr.io/openctemio/api` |  |  | Image repository of the API. |
-| `UI_IMAGE` | string | `ghcr.io/openctemio/ui` |  |  | Image repository of the web console. |
+| `API_IMAGE` | string | `ghcr.io/openctemio/openctem-api` |  |  | Image repository of the API. |
+| `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |
 | `API_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
 | `UI_VERSION` | string | `OPENCTEM_VERSION` |  |  | Per-image tag override. Leave unset. |
@@ -479,6 +479,10 @@ Read by `api/deploy/docker-compose.yml` from its `.env` file.
 | `API_MEMORY_LIMIT` | string | `2g` |  |  | Memory limit of the `api` container. |
 | `WEB_MEMORY_LIMIT` | string | `1g` |  |  | Memory limit of the `web` container. |
 | `GATEWAY_MEMORY_LIMIT` | string | `512m` |  |  | Memory limit of the `gateway` container. |
+| `API_GOMEMLIMIT` | string | `1600MiB` |  |  | `GOMEMLIMIT` of the `api` container: the Go runtime collects garbage to stay below it. Keep it about 80% of `API_MEMORY_LIMIT`. |
+| `POSTGRES_MEMORY_LIMIT` | string | `4g` |  |  | Memory limit of the bundled `postgres` container; keep it above `shared_buffers` plus connections times `work_mem`. |
+| `REDIS_MEMORY_LIMIT` | string | `1g` |  |  | Memory limit of the bundled `redis` container. |
+| `SIGNER_MEMORY_LIMIT` | string | `256m` |  |  | Memory limit of the `signer` container (`docker-compose.job-signer.yml`). |
 
 ## All-in-one image
 
