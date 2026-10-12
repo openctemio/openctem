@@ -297,7 +297,7 @@ export function CommentCard({
         className
       )}
     >
-      <header className="flex min-w-0 items-center gap-2 pe-16">
+      <header className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pe-16">
         <Avatar className="size-6">
           <AvatarFallback className="text-[10px] font-medium">
             {actorInitials(item.actor)}
