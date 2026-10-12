@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -21,8 +23,36 @@ import (
 // S3Storage stores files in S3-compatible object storage (AWS S3, MinIO, etc).
 // Object key layout: {tenantID}/{storageKey}
 type S3Storage struct {
-	client *s3.Client
-	bucket string
+	client   *s3.Client
+	bucket   string
+	endpoint string // empty: AWS S3
+	// Server-side encryption asked for on every write (operator storage).
+	sse      types.ServerSideEncryption
+	sseKMSID string
+}
+
+// SetServerSideEncryption asks the bucket to encrypt every object written:
+// mode "AES256" (keys managed by the store) or "aws:kms" (kmsKeyID optional:
+// the bucket's default KMS key when empty); "" leaves it to the bucket's
+// default encryption.
+func (s *S3Storage) SetServerSideEncryption(mode, kmsKeyID string) error {
+	switch mode {
+	case "":
+		if kmsKeyID != "" {
+			return fmt.Errorf("a KMS key id needs server-side encryption aws:kms")
+		}
+		s.sse, s.sseKMSID = "", ""
+	case string(types.ServerSideEncryptionAes256):
+		if kmsKeyID != "" {
+			return fmt.Errorf("a KMS key id needs server-side encryption aws:kms, not AES256")
+		}
+		s.sse, s.sseKMSID = types.ServerSideEncryptionAes256, ""
+	case string(types.ServerSideEncryptionAwsKms):
+		s.sse, s.sseKMSID = types.ServerSideEncryptionAwsKms, kmsKeyID
+	default:
+		return fmt.Errorf("server-side encryption must be AES256 or aws:kms, got %q", mode)
+	}
+	return nil
 }
 
 // NewS3Storage creates an S3 storage provider for a tenant-configured bucket.
@@ -87,7 +117,7 @@ func newS3Storage(bucket, region, endpoint, accessKey, secretKey string, httpCli
 		})
 	}
 
-	return &S3Storage{client: s3.NewFromConfig(cfg, clientOpts...), bucket: bucket}
+	return &S3Storage{client: s3.NewFromConfig(cfg, clientOpts...), bucket: bucket, endpoint: endpoint}
 }
 
 func (s *S3Storage) Upload(ctx context.Context, tenantID, filename, contentType string, reader io.Reader) (string, error) {
@@ -107,18 +137,31 @@ func (s *S3Storage) Upload(ctx context.Context, tenantID, filename, contentType 
 	}
 	defer cleanup()
 
-	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
+	if err := s.putObject(ctx, objectKey, contentType, body, size); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// putObject writes one object, with the configured server-side encryption.
+func (s *S3Storage) putObject(ctx context.Context, objectKey, contentType string, body io.ReadSeeker, size int64) error {
+	in := &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
 		Key:           aws.String(objectKey),
 		Body:          body,
 		ContentLength: aws.Int64(size),
 		ContentType:   aws.String(contentType),
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to upload to S3: %w", err)
 	}
-
-	return key, nil
+	if s.sse != "" {
+		in.ServerSideEncryption = s.sse
+		if s.sseKMSID != "" {
+			in.SSEKMSKeyId = aws.String(s.sseKMSID)
+		}
+	}
+	if _, err := s.client.PutObject(ctx, in); err != nil {
+		return fmt.Errorf("failed to upload to S3: %w", err)
+	}
+	return nil
 }
 
 func (s *S3Storage) Download(ctx context.Context, tenantID, storageKey string) (io.ReadCloser, string, error) {
@@ -156,6 +199,47 @@ func (s *S3Storage) Delete(ctx context.Context, tenantID, storageKey string) err
 		return fmt.Errorf("failed to delete from S3: %w", err)
 	}
 	return nil
+}
+
+var _ attachment.DirectDownloader = (*S3Storage)(nil)
+
+// PresignDownload signs a GET of one object of the tenant, valid for ttl,
+// that makes the bucket answer with Content-Disposition: attachment (the
+// given name) and the given type, whatever the object's metadata says. Only
+// an HTTPS endpoint (or AWS S3) is signed: the URL goes to a browser.
+func (s *S3Storage) PresignDownload(ctx context.Context, tenantID, storageKey, filename, contentType string, ttl time.Duration) (string, error) {
+	if err := checkNamespace(tenantID); err != nil {
+		return "", err
+	}
+	if storageKey == "" || strings.ContainsAny(storageKey, "/\\") || storageKey == "." || storageKey == ".." {
+		return "", fmt.Errorf("invalid storage key")
+	}
+	if s.endpoint != "" && !strings.HasPrefix(strings.ToLower(s.endpoint), "https://") {
+		return "", fmt.Errorf("%w: the bucket endpoint is not HTTPS", attachment.ErrDirectDownloadUnavailable)
+	}
+	if ttl <= 0 || ttl > 15*time.Minute {
+		return "", fmt.Errorf("signed URL lifetime must be between 1 s and 15 min")
+	}
+	return s.presignGet(ctx, path.Join(tenantID, storageKey), filename, contentType, ttl)
+}
+
+// presignGet signs a GET of objectKey with the response headers forced.
+func (s *S3Storage) presignGet(ctx context.Context, objectKey, filename, contentType string, ttl time.Duration) (string, error) {
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	if disposition == "" {
+		disposition = "attachment"
+	}
+	req, err := s3.NewPresignClient(s.client).PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket:                     aws.String(s.bucket),
+		Key:                        aws.String(objectKey),
+		ResponseContentDisposition: aws.String(disposition),
+		ResponseContentType:        aws.String(contentType),
+		ResponseCacheControl:       aws.String("private, no-store"),
+	}, s3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", fmt.Errorf("sign download: %w", err)
+	}
+	return req.URL, nil
 }
 
 // EraseTenant deletes every object under "{tenantID}/" in the bucket, page by
