@@ -21,6 +21,7 @@ import { redirect } from 'next/navigation'
 import { loginErrorHref } from '@/features/auth/lib/login-error'
 
 import { env } from '@/lib/env'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 import { setServerCookie } from '@/lib/cookies-server'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { isAllowedValue, sanitizeLogValue } from '@/lib/log-sanitize'
@@ -47,6 +48,7 @@ async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Pro
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(await browserContextHeaders()),
       ...options.headers,
     },
   })
