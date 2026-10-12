@@ -37,6 +37,10 @@ export interface EASMSettingsInput {
   enrichment_enabled?: boolean
   /** Ask crt.sh about lookalike candidates (RFC-083); omitted keeps the stored value. */
   lookalike_ct_enabled?: boolean
+  /** Look network seeds up in RIPEstat (RFC-082); omitted keeps the stored value. */
+  network_lookups_enabled?: boolean
+  /** Keep screenshots sent with web evidence (RFC-081); omitted keeps it. */
+  web_screenshots_enabled?: boolean
   /** Weekly "what changed" digest (RFC-080); omitted keeps the stored value. */
   weekly_digest_enabled?: boolean
   /** Weekday of the digest, 1..7 = Monday..Sunday; omitted keeps it. */

@@ -28,6 +28,7 @@ import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
 import en_lookalikes from './en/lookalikes.json'
 import en_nav from './en/nav.json'
+import en_networkSeeds from './en/networkSeeds.json'
 import en_org from './en/org.json'
 import en_pentest from './en/pentest.json'
 import en_plan from './en/plan.json'
@@ -42,6 +43,7 @@ import en_settings from './en/settings.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
+import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import vi_activity from './vi/activity.json'
 import vi_actor from './vi/actor.json'
@@ -64,6 +66,7 @@ import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_lookalikes from './vi/lookalikes.json'
 import vi_nav from './vi/nav.json'
+import vi_networkSeeds from './vi/networkSeeds.json'
 import vi_org from './vi/org.json'
 import vi_pentest from './vi/pentest.json'
 import vi_plan from './vi/plan.json'
@@ -78,6 +81,7 @@ import vi_settings from './vi/settings.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
+import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 
 export type Dictionary = Record<string, string>
@@ -105,6 +109,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   licensePolicy: en_licensePolicy,
   lookalikes: en_lookalikes,
   nav: en_nav,
+  networkSeeds: en_networkSeeds,
   org: en_org,
   pentest: en_pentest,
   plan: en_plan,
@@ -119,6 +124,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,
+  webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
 }
 
@@ -144,6 +150,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   licensePolicy: vi_licensePolicy,
   lookalikes: vi_lookalikes,
   nav: vi_nav,
+  networkSeeds: vi_networkSeeds,
   org: vi_org,
   pentest: vi_pentest,
   plan: vi_plan,
@@ -158,6 +165,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,
+  webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
 }
 

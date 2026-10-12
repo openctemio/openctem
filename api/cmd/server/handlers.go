@@ -396,17 +396,19 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Audit:  handler.NewAuditHandler(svc.Audit, v, log),
 
 		// Assets & Components
-		Component:     handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
-		VEXStatement:  handler.NewVEXStatementHandler(svc.VEX, log),
-		AssetGroup:    handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
-		AssetType:     handler.NewAssetTypeHandler(svc.AssetType, v, log),
-		Scope:         handler.NewScopeHandler(svc.Scope, v, log),
-		BountyProgram: handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
-		ScopeLetter:   handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
-		AttackSurface: handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
-		EASM:          newEASMHandler(repos, svc, log),
-		EASMSettings:  newEASMSettingsHandler(cfg, svc, deps, log),
-		EASMLookalike: newEASMLookalikeHandler(svc, log),
+		Component:        handler.NewComponentHandler(svc.Component, svc.SBOMImport, v, log),
+		VEXStatement:     handler.NewVEXStatementHandler(svc.VEX, log),
+		AssetGroup:       handler.NewAssetGroupHandler(svc.AssetGroup, v, log),
+		AssetType:        handler.NewAssetTypeHandler(svc.AssetType, v, log),
+		Scope:            handler.NewScopeHandler(svc.Scope, v, log),
+		BountyProgram:    handler.NewBountyProgramHandler(svc.BountyProgram, svc.Audit, log),
+		ScopeLetter:      handler.NewScopeLetterHandler(svc.ScopeLetters, svc.Audit, log),
+		AttackSurface:    handler.NewAttackSurfaceHandler(svc.AttackSurface, log),
+		EASM:             newEASMHandler(repos, svc, log),
+		EASMSettings:     newEASMSettingsHandler(cfg, svc, deps, log),
+		EASMLookalike:    newEASMLookalikeHandler(svc, log),
+		EASMNetworkSeed:  newEASMNetworkSeedHandler(svc, log),
+		AssetWebEvidence: newAssetWebEvidenceHandler(svc, log),
 
 		// Configuration (read-only system config)
 		FindingSource: handler.NewFindingSourceHandler(svc.FindingSource, svc.FindingSourceCache, v, log),
@@ -620,7 +622,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
 		VerificationChecklist: handler.NewVerificationChecklistHandler(deps.DB.DB, log),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
@@ -1157,6 +1159,9 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	}
 	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
 	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	if repos.EASMNetworkSeed != nil {
+		review.SetSeededNetworks(repos.EASMNetworkSeed.Networks) // range fixes in seeded networks (RFC-082)
+	}
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
 	}
@@ -1364,6 +1369,27 @@ func newEASMLookalikeHandler(svc *Services, log *logger.Logger) *handler.EASMLoo
 	return handler.NewEASMLookalikeHandler(svc.EASMLookalikes, audit, log)
 }
 
+// newEASMNetworkSeedHandler serves network seeds when the service is wired;
+// every change is audited.
+func newEASMNetworkSeedHandler(svc *Services, log *logger.Logger) *handler.EASMNetworkSeedHandler {
+	if svc.EASMNetworkSeeds == nil {
+		return nil
+	}
+	var audit handler.AttributionAuditor
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return handler.NewEASMNetworkSeedHandler(svc.EASMNetworkSeeds, audit, log)
+}
+
+// newAssetWebEvidenceHandler serves web evidence when the service is wired.
+func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.AssetWebEvidenceHandler {
+	if svc.WebEvidence == nil || svc.Asset == nil {
+		return nil
+	}
+	return handler.NewAssetWebEvidenceHandler(svc.Asset, svc.WebEvidence, log)
+}
+
 // newSCMAppHandler builds the code-host app installation routes (RFC-077).
 // Without a GitHub App configured the routes still list installations and
 // answer that the deployment has no app.
@@ -1379,7 +1405,11 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, lo
 	if svc.Audit != nil {
 		audit = svc.Audit
 	}
-	return handler.NewSCMAppHandler(scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log), log)
+	s := scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log)
+	if svc.Encryptor != nil {
+		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+	}
+	return handler.NewSCMAppHandler(s, log)
 }
 
 // newGitHubApp builds the deployment's GitHub App client, or nil when it is
