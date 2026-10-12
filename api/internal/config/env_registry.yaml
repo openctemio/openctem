@@ -798,7 +798,7 @@ vars:
     group: "Attachment storage"
     type: bool
     default: "false"
-    description: "Hand out 60-second signed URLs (`GET /api/v1/attachments/{id}/download-url`) for files in an HTTPS bucket, after the same checks as a download through the API; the console uses them for file downloads. Files on local storage, in a plain-HTTP bucket and flagged files always download through the API. The bucket needs CORS only for downloads started with `fetch`."
+    description: "Hand out 60-second signed URLs (`GET /api/v1/attachments/{id}/signed-url`) for files in an HTTPS bucket, after the same checks as a download through the API; the console uses them for file downloads. Files on local storage, in a plain-HTTP bucket and flagged files always download through the API. The bucket needs CORS only for downloads started with `fetch`."
   - name: STORAGE_ENDPOINT
     component: api
     group: "Attachment storage"

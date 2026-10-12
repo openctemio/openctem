@@ -157,7 +157,7 @@ bounded by their own limits and retention, not by this quota.
 ## Direct downloads
 
 With `STORAGE_DIRECT_DOWNLOAD=true`,
-`GET /api/v1/attachments/{id}/download-url` returns `{url, expires_at}`
+`GET /api/v1/attachments/{id}/signed-url` returns `{url, expires_at}`
 after the same checks as a download: a 60-second GET signed for that one
 object, forcing `Content-Disposition: attachment`, the file's sniffed type
 and `no-store`. It is JSON, never a redirect (the console's proxy never
