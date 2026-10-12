@@ -176,41 +176,37 @@ func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID strin
 	ctx := r.Context()
 	p := middleware.GetMCPPrincipal(ctx)
 	if p == nil || h.confirmer == nil {
-		return toolResult("this tool needs a connection a person approved; API keys cannot change data", true), true
+		return toolErrorResult(mcpError{Code: mcpErrPermissionDenied, Message: "this tool needs a connection a person approved; API keys cannot change data"}), true
 	}
 	var args map[string]any
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &args); err != nil {
-			return toolResult("invalid arguments: malformed JSON", true), true
+			return toolErrorResult(mcpError{Code: mcpErrInvalidArgument, Message: "invalid arguments: malformed JSON"}), true
 		}
 	}
 	digest := mcpoauthapp.ArgsDigest(tool.Name, args)
 	if id, _ := args["confirmation_id"].(string); id != "" {
 		if err := h.confirmer.UseConfirmation(ctx, p, id, tool.Name, digest); err != nil {
 			if errors.Is(err, mcpoauth.ErrConfirmationRequired) {
-				return toolResult("not confirmed: the confirmation is missing, refused, expired, already used, or for "+
-					"other arguments. Call again without confirmation_id to get a new confirmation link.", true), true
+				return toolErrorResult(mcpError{Code: "not_confirmed", Message: "the confirmation is missing, refused, expired, already used, or for " +
+					"other arguments. Call again without confirmation_id to get a new confirmation link."}), true
 			}
 			h.logger.Warn("mcp confirmation use failed", "error", err.Error())
-			return toolResult("tool execution failed", true), true
+			return toolErrorResult(classifyMCPError(err)), true
 		}
 		return nil, false
 	}
 	summary, err := tool.prepare(ctx, tenantID, raw)
 	if err != nil {
-		var ie toolInputError
-		if errors.As(err, &ie) {
-			return toolResult(ie.Error(), true), true
-		}
 		h.logger.Warn("mcp write tool prepare failed", "tool", tool.Name, "error", err.Error())
-		return toolResult("tool execution failed", true), true
+		return toolErrorResult(classifyMCPError(err)), true
 	}
 	pending, err := h.confirmer.RequestConfirmation(ctx, p, tool.Name, digest, summary, mcpoauthapp.Actor{
 		IP: auditClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
 	})
 	if err != nil {
 		h.logger.Warn("mcp confirmation request failed", "error", err.Error())
-		return toolResult("tool execution failed", true), true
+		return toolErrorResult(classifyMCPError(err)), true
 	}
 	text, _ := json.Marshal(map[string]any{
 		"status":             "confirmation_required",

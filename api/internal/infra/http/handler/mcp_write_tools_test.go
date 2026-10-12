@@ -137,7 +137,7 @@ func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 	}
 	// Second call before approval: refused.
 	withID := `{"finding_id":"` + wtFinding + `","content":"triage note","confirmation_id":"c1"}`
-	if text, isErr := call(true, withID); !isErr || !strings.Contains(text, "not confirmed") || len(comments.added) != 0 {
+	if text, isErr := call(true, withID); !isErr || !strings.Contains(text, `"code":"not_confirmed"`) || len(comments.added) != 0 {
 		t.Fatalf("unapproved call: %v %s", isErr, text)
 	}
 	// Approved for these exact arguments: runs once, as an internal comment by the user.
