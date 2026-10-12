@@ -116,7 +116,7 @@ OAUTH_FRONTEND_CALLBACK_URL=https://app.example.com/auth/callback
 
 The social button appears when `OAUTH_MICROSOFT_CLIENT_ID` **and**
 `OAUTH_MICROSOFT_CLIENT_SECRET` are both set (`IsConfigured()`), OAuth is enabled,
-and the OAuth handler is wired. `GET /api/v1/auth/oauth/providers` reports which
+and the OAuth handler is wired. `GET /api/v1/auth/providers` reports which
 social providers are enabled.
 
 ### Path B — per-tenant Entra SSO (admin UI, recommended)

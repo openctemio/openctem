@@ -70,32 +70,52 @@ func (h *DocsHandler) ServeOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(modifiedContent))
 }
 
-// ServeDocsUI serves the Scalar API documentation UI
+// Spec paths the documentation pages load. The public pair exists outside
+// production only; the console pair is for platform administrators.
+const (
+	PublicSpecPath  = "/openapi.yaml"
+	ConsoleSpecPath = "/api/v1/admin/openapi.yaml"
+)
+
+// scalarScript is the pinned API reference bundle and its subresource
+// integrity hash: the browser runs exactly these bytes or nothing, so a
+// changed package on the CDN cannot run code on the API origin.
+const (
+	scalarScriptURL       = "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.73.1/dist/browser/standalone.js"
+	scalarScriptIntegrity = "sha256-YsNKDdo4lFhkAR669uf6eBKjMkKRINGJIrNNAcT3zMg="
+)
+
+// ServeDocsUI serves the API reference page that loads the public spec.
 func (h *DocsHandler) ServeDocsUI(w http.ResponseWriter, r *http.Request) {
-	// Get the base URL for the OpenAPI spec
-	scheme := schemeHTTP
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == schemeHTTPS {
-		scheme = schemeHTTPS
-	}
-	host := r.Host
-	specURL := scheme + "://" + host + "/openapi.yaml"
+	serveDocsPage(w, PublicSpecPath, "public, max-age=3600")
+}
 
-	html := strings.ReplaceAll(scalarHTML, "{{SPEC_URL}}", specURL)
+// ServeConsoleDocsUI serves the API reference page for platform
+// administrators; it loads the spec through the console route.
+func (h *DocsHandler) ServeConsoleDocsUI(w http.ResponseWriter, r *http.Request) {
+	serveDocsPage(w, ConsoleSpecPath, "no-store")
+}
 
-	// Set CSP headers to allow Scalar UI to load properly
-	// This overrides the restrictive API CSP for the docs page only
+// serveDocsPage writes the reference page. The spec URL is a fixed
+// same-origin path (never built from the Host header), and the page carries
+// its own CSP: the pinned script only, requests to this origin only.
+func serveDocsPage(w http.ResponseWriter, specPath, cacheControl string) {
+	html := strings.ReplaceAll(scalarHTML, "{{SPEC_URL}}", specPath)
+	html = strings.ReplaceAll(html, "{{SCRIPT_URL}}", scalarScriptURL)
+	html = strings.ReplaceAll(html, "{{SCRIPT_INTEGRITY}}", scalarScriptIntegrity)
+
 	csp := "default-src 'self'; " +
 		"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
 		"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; " +
 		"font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:; " +
 		"img-src 'self' data: https:; " +
-		"connect-src 'self' " + scheme + "://" + host + "; " +
+		"connect-src 'self'; " +
 		"frame-ancestors 'none'"
 
 	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Write([]byte(html))
+	w.Header().Set("Cache-Control", cacheControl)
+	_, _ = w.Write([]byte(html))
 }
 
 const scalarHTML = `<!DOCTYPE html>
@@ -137,6 +157,6 @@ const scalarHTML = `<!DOCTYPE html>
       }
     }'
   ></script>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script src="{{SCRIPT_URL}}" integrity="{{SCRIPT_INTEGRITY}}" crossorigin="anonymous"></script>
 </body>
 </html>`

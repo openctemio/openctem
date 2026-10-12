@@ -1341,12 +1341,6 @@ vars:
     group: "Discovery feeds and background jobs"
     type: string
     description: "Pinned root key id of the vulnerability bundles. Unset: no bundle is imported."
-  - name: JIRA_WEBHOOK_SECRET
-    component: api
-    group: "Integrations"
-    type: string
-    secret: true
-    description: "Platform-wide fallback HMAC secret for inbound Jira webhooks. Organizations normally have their own secret. In production the API refuses to start when a connected Jira integration has neither."
   - name: OPENCTEM_HTTPSEC_ALLOW_PRIVATE
     component: api
     group: "Integrations"

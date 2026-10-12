@@ -18,7 +18,9 @@ describe('production serving', () => {
 
   it('creates .next/cache for the runtime user, so it can be a tmpfs on a read-only root', () => {
     const dockerfile = read('Dockerfile')
-    expect(dockerfile).toMatch(/mkdir -p \.next\/cache && chown -R nextjs:nodejs \.next/)
+    expect(dockerfile).toMatch(/mkdir -p \.next\/cache && chown nextjs:nodejs \.next\/cache/)
+    // The application itself stays root-owned (read-only to the server).
+    expect(dockerfile).not.toMatch(/--chown=nextjs/)
     expect(dockerfile).toMatch(/^USER nextjs$/m)
   })
 
