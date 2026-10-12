@@ -23,6 +23,9 @@ interface StatsCardProps {
   /** Optional definition shown in a tooltip from an info button beside the
    *  title — for metrics whose exact meaning matters (how it is computed). */
   info?: React.ReactNode
+  /** Accessible name of the info button. Pass a translated label; the
+   *  English default is kept for callers not yet translated. */
+  infoLabel?: string
 }
 
 export function StatsCard({
@@ -36,6 +39,7 @@ export function StatsCard({
   valueClassName,
   iconClassName,
   info,
+  infoLabel,
 }: StatsCardProps) {
   const changeColors = {
     positive: 'text-success',
@@ -56,7 +60,7 @@ export function StatsCard({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={`How ${title} is measured`}
+                  aria-label={infoLabel ?? `How ${title} is measured`}
                   className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Info className="h-3.5 w-3.5" />
