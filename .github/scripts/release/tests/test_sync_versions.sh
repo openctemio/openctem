@@ -91,9 +91,7 @@ assert_eq "release branch still naming the previous release: exit 1" 1 "$rc"
 assert_contains "previous release on a release branch: explained" "platform.release is 'v0.8.0'" "$out"
 assert_rc "bad --release" 2 bash "$SYNC" --check --root "$tmp/tags" --release 0.9.0
 
-# The real repository.
-REPO="$(cd "$RELEASE_DIR/../../.." && pwd)"
-out="$(bash "$SYNC" --check --root "$REPO" 2>&1)"; rc=$?
-assert_eq "this repository is in sync (run sync-versions.sh): $out" 0 "$rc"
+# The real repository is checked by the release-tooling "versions" job, which
+# knows the branch (a release branch is ahead of the newest tag).
 
 finish
