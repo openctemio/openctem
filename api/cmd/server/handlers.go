@@ -28,7 +28,6 @@ import (
 	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/compliance"
-	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
 
@@ -521,7 +520,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// Pentest Campaign Management
 		Pentest: func() *handler.PentestHandler {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
-			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
 			h.SetAuditService(svc.Audit)
 			h.SetChecklistService(svc.PentestChecklists)
 			return h

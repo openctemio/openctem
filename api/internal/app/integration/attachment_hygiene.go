@@ -78,6 +78,7 @@ func (s *AttachmentService) ScanPending(ctx context.Context) (int, error) {
 			continue // deleted meanwhile
 		}
 		done++
+		s.event("scan_" + string(status))
 		if status == attachmentdom.ScanInfected {
 			s.auditInfected(ctx, att, result)
 		}
