@@ -79,8 +79,35 @@ Bucket checklist:
 `s3:ListBucket` is used only to erase an organization's prefix when the
 organization is deleted.
 
-Switching `STORAGE_PROVIDER` does not move existing files: files keep the
-provider recorded when they were uploaded.
+Server-side encryption per object: `STORAGE_SSE=AES256` (keys managed by
+the store) or `STORAGE_SSE=aws:kms` with an optional
+`STORAGE_SSE_KMS_KEY_ID` (the key needs `kms:GenerateDataKey` and
+`kms:Decrypt` for the API's key). Unset, the bucket's default encryption
+applies.
+
+### Moving between local and S3
+
+Rows record `local` for the server storage whatever its driver, so switching
+`STORAGE_PROVIDER` alone makes existing files answer 404. Copy them first
+with the `admin-cli` image (its `bootstrap-admin` binary), with the same
+`STORAGE_BUCKET`/`_REGION`/`_ENDPOINT`/`_ACCESS_KEY`/`_SECRET_KEY` (and
+`STORAGE_SSE`) the API will use:
+
+```sh
+# 1. what would be copied
+bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run
+# 2. copy while the API runs (repeatable: copied objects are skipped)
+bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments
+# 3. stop the API, copy once more, set STORAGE_PROVIDER=s3, start the API
+```
+
+Docker Compose: run it in a one-off container of the `admin-cli` image with
+the `api-data` volume mounted at `/app/data` and the `STORAGE_*` variables.
+Each object keeps its namespace and key, is read back and compared by
+SHA-256, and the source is never changed; `-verify` also hashes objects
+already at the destination, `-tenant <id>` copies one organization. The
+reverse (`-from s3 -to local`) works the same way. Organizations' own
+buckets are not touched.
 
 ## An organization's own bucket
 
@@ -126,6 +153,30 @@ bounded by their own limits and retention, not by this quota.
   images download as attachments.
 - `attachment.uploaded` and `attachment.deleted` audit events record the
   file's name, type, size, SHA-256 and context.
+
+## Direct downloads
+
+With `STORAGE_DIRECT_DOWNLOAD=true`,
+`GET /api/v1/attachments/{id}/download-url` returns `{url, expires_at}`
+after the same checks as a download: a 60-second GET signed for that one
+object, forcing `Content-Disposition: attachment`, the file's sniffed type
+and `no-store`. It is JSON, never a redirect (the console's proxy never
+fetches a bucket). Files on local storage, in a bucket without HTTPS and
+flagged files answer `409 DIRECT_DOWNLOAD_UNAVAILABLE` / `MALWARE_DETECTED`;
+the console then downloads through the API. The console uses it for file
+downloads only; inline images stay same-origin. A bucket needs CORS only
+for clients that start downloads with `fetch`.
+
+## Metrics
+
+On `/metrics` (no organization or file in any label):
+
+| Metric | Labels |
+|---|---|
+| `openctem_storage_operations_total` | `op` (upload, download, delete, erase, presign), `backend` (server, organization), `result` |
+| `openctem_storage_operation_seconds` | `op`, `backend` |
+| `openctem_storage_bytes_written_total` | `backend` |
+| `openctem_storage_events_total` | `event`: quota_rejected, purged_parent_deleted, purged_never_linked, scan_clean, scan_infected, scan_error |
 
 ## Images
 
@@ -217,11 +268,13 @@ tenant erasure, content-sniffed types, streamed uploads, the quota, upload
 and delete audit, effective import limits with a streaming web proxy,
 retention of evidence whose parent was deleted and of never-linked uploads,
 image metadata removal and a pixel limit, optional malware scanning with
-ClamAV, report templates and stored reports in the file storage.
+ClamAV, report templates and stored reports in the file storage,
+short-lived direct downloads, S3 server-side encryption options, storage
+metrics and the `local`↔`s3` copy command.
 
-Planned (RFC-084 §6): short-lived direct downloads from a bucket;
-asynchronous large imports; S3 server-side encryption options; a
-`local`↔`s3` migration command.
+Planned (RFC-084 §6): an uploaded organization logo; asynchronous large
+imports read from the storage; asynchronous exports with signed links;
+dropping the old `content` columns of the report tables.
 
 ## Key files
 
@@ -242,7 +295,9 @@ asynchronous large imports; S3 server-side encryption options; a
   `internal/infra/controller/report_file_migration.go`: report files in the
   storage, the move, the deletion queue.
 - `internal/infra/storage/local.go`, `s3.go`, `tenant.go`: drivers and the
-  organization bucket factory.
+  organization bucket factory; `metrics.go`: metrics; `migrate.go` and
+  `cmd/bootstrap-admin/storage_migrate.go`: the copy command.
+- `internal/app/integration/attachment_direct.go`: signed direct downloads.
 - `internal/infra/http/handler/attachment_handler.go`,
   `scope_letter_handler.go`: upload, download, storage setting.
 - `web/src/lib/api/proxy-upload.ts`: request body limits of the console's

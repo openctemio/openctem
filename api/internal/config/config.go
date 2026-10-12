@@ -271,6 +271,14 @@ type StorageConfig struct {
 	// ClamdAddress turns on malware scanning of uploads with a ClamAV daemon:
 	// host:port or unix:/path (STORAGE_CLAMD_ADDRESS). Empty = off.
 	ClamdAddress string
+	// SSE asks the server bucket to encrypt every object written: AES256 or
+	// aws:kms (STORAGE_SSE); SSEKMSKeyID the KMS key for aws:kms
+	// (STORAGE_SSE_KMS_KEY_ID, empty = the bucket's default key).
+	SSE         string
+	SSEKMSKeyID string
+	// DirectDownload hands out 60-second signed URLs for files in a bucket
+	// (STORAGE_DIRECT_DOWNLOAD).
+	DirectDownload bool
 }
 
 // AppConfig holds application-level configuration.
@@ -1248,6 +1256,9 @@ func Load() (*Config, error) {
 			OrphanGraceDays:        getEnvInt("STORAGE_ORPHAN_GRACE_DAYS", 7),
 			UnlinkedRetentionHours: getEnvInt("STORAGE_UNLINKED_RETENTION_HOURS", 24),
 			ClamdAddress:           getEnv("STORAGE_CLAMD_ADDRESS", ""),
+			SSE:                    getEnv("STORAGE_SSE", ""),
+			SSEKMSKeyID:            getEnv("STORAGE_SSE_KMS_KEY_ID", ""),
+			DirectDownload:         getEnvBool("STORAGE_DIRECT_DOWNLOAD", false),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),
@@ -1599,8 +1610,19 @@ func (c *Config) validateStorage() error {
 	if c.Storage.OrphanGraceDays < 0 || c.Storage.UnlinkedRetentionHours < 0 {
 		return fmt.Errorf("STORAGE_ORPHAN_GRACE_DAYS and STORAGE_UNLINKED_RETENTION_HOURS must be 0 (keep) or more")
 	}
+	switch c.Storage.SSE {
+	case "", "AES256", "aws:kms":
+	default:
+		return fmt.Errorf("invalid STORAGE_SSE: %q (AES256 or aws:kms)", c.Storage.SSE)
+	}
+	if c.Storage.SSEKMSKeyID != "" && c.Storage.SSE != "aws:kms" {
+		return fmt.Errorf("STORAGE_SSE_KMS_KEY_ID needs STORAGE_SSE=aws:kms")
+	}
 	switch c.Storage.Provider {
 	case "", "local":
+		if c.Storage.SSE != "" {
+			return fmt.Errorf("STORAGE_SSE applies to STORAGE_PROVIDER=s3 or minio, not local")
+		}
 		return nil
 	case "s3", "minio":
 		if c.Storage.Bucket == "" {

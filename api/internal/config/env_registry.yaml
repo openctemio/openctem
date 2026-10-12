@@ -793,6 +793,12 @@ vars:
     group: "Attachment storage"
     type: string
     description: "ClamAV daemon (`host:port` or `unix:/path`, e.g. `clamav:3310` with `docker-compose.clamav.yml`) that scans new uploads. A flagged file is kept and marked, audited `attachment.malware_detected`, and downloads only after a confirmation. Unset: no scanning."
+  - name: STORAGE_DIRECT_DOWNLOAD
+    component: api
+    group: "Attachment storage"
+    type: bool
+    default: "false"
+    description: "Hand out 60-second signed URLs (`GET /api/v1/attachments/{id}/download-url`) for files in an HTTPS bucket, after the same checks as a download through the API; the console uses them for file downloads. Files on local storage, in a plain-HTTP bucket and flagged files always download through the API. The bucket needs CORS only for downloads started with `fetch`."
   - name: STORAGE_ENDPOINT
     component: api
     group: "Attachment storage"
@@ -804,6 +810,16 @@ vars:
     type: string
     default: "./data/attachments"
     description: "Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up."
+  - name: STORAGE_SSE
+    component: api
+    group: "Attachment storage"
+    type: string
+    description: "Server-side encryption asked for on every object written to the server bucket: `AES256` or `aws:kms`. Unset: the bucket's default encryption. Only with `s3` / `minio`."
+  - name: STORAGE_SSE_KMS_KEY_ID
+    component: api
+    group: "Attachment storage"
+    type: string
+    description: "KMS key (id or ARN) for `STORAGE_SSE=aws:kms`. Unset: the bucket's default KMS key."
   - name: STORAGE_TENANT_QUOTA_MB
     component: api
     group: "Attachment storage"
