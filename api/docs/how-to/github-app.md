@@ -105,6 +105,26 @@ OpenCTEM from using it at once (webhook).
 Then make **OpenCTEM gate** a required status check in the repository's
 branch protection or ruleset.
 
+## What it posts
+
+After each CI run's verdict on a GitHub repository whose organization bound
+an installation:
+
+- a check run **OpenCTEM gate** on the commit (success, failure, or neutral in
+  warn mode) with the counts, the reasons and up to 50 line annotations. For a
+  pull request it goes on the pull request's head as GitHub reports it, and
+  only when the run judged the pull request's current merge commit: a run can
+  never put its verdict on another commit;
+- one summary comment on the pull request, updated in place by later runs of
+  the same pipeline.
+
+When a default-branch commit comes from a merged pull request whose last
+gate verdict was not a pass, the notification `ci.ungated_merge` is sent
+(Settings > Notifications): the merge did not wait for the gate.
+
+Posting runs in the background (every 15 seconds, retried up to five times);
+it never changes a verdict.
+
 ## Rotate
 
 - Private key: generate a new key on the app's page, replace the file,
