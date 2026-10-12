@@ -9,7 +9,7 @@
  *
  *  - a string literal, or a template literal with a fixed same-origin path
  *    or a fixed `https://`/`http://`/`mailto:` prefix;
- *  - a call to an encoder (`safeHref`, `safeImageSrc`, `safeInternalHref`,
+ *  - a call to an encoder (`safeHref`, `safeImageSrc`, `safeAvatarSrc`, `safeInternalHref`,
  *    `sanitizeExternalUrl`) or to an in-app route builder that returns a
  *    fixed-prefix path;
  *  - the attribute sits on `<SafeExternalLink>`, which encodes it itself;
@@ -33,6 +33,7 @@ const SAFE_CALLS = new Set([
   // Encoders (src/lib/safe-href.ts, src/lib/utils.ts)
   'safeHref',
   'safeImageSrc',
+  'safeAvatarSrc',
   'safeInternalHref',
   'sanitizeExternalUrl',
   // Route builders: each returns a fixed same-origin prefix, or a fixed

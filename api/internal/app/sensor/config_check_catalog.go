@@ -59,20 +59,41 @@ type checkCatalogEntry struct {
 
 // Fix snippets shared by several entries.
 const (
-	stateEnvFix = `# Keep the sensor state on a volume that survives the container:
-docker volume create openctem-sensor-state
-# docker run ... -v openctem-sensor-state:{{.path}} ...
+	// The templates mount one data volume at /var/lib/openctem (state/,
+	// outbox/, content/); a volume on the reported directory itself works
+	// for any layout, so the env and compose fixes mount that.
+	stateEnvFix = `# Keep the sensor state on a volume that survives the container
+# (the install snippets mount one data volume at /var/lib/openctem):
+docker volume create openctem-sensor-data
+# docker run ... -v openctem-sensor-data:/var/lib/openctem ...
+# or a volume on the state directory itself:
 export SENSOR_STATE_DIR={{.path}}`
-	stateComposeFix = `services:
+	stateComposeFix = `# Recommended: one data volume at /var/lib/openctem (state/, outbox/,
+# content/). A volume on the state directory itself works too:
+services:
   sensor:
     volumes:
       - {{joinq "state:" "path" ""}}
 volumes:
   state:`
-	stateHelmFix = `sensor:
-  state:
+	dataHelmFix = `sensor:
+  data:
     persistence:
       enabled: true`
+	outboxEnvFix = `# Keep the outbox on a volume that survives the container
+# (the install snippets mount one data volume at /var/lib/openctem):
+docker volume create openctem-sensor-data
+# docker run ... -v openctem-sensor-data:/var/lib/openctem ...
+# or a volume on the outbox directory itself:
+export SENSOR_OUTBOX_DIR={{.path}}`
+	outboxComposeFix = `# Recommended: one data volume at /var/lib/openctem (state/, outbox/,
+# content/). A volume on the outbox directory itself works too:
+services:
+  sensor:
+    volumes:
+      - {{joinq "outbox:" "path" ""}}
+volumes:
+  outbox:`
 	toolsEnvFix = `# List the scanners the sensor offers (installed in its image):
 export SENSOR_TOOLS=nuclei`
 	toolsComposeFix = `services:
@@ -145,11 +166,11 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 	{ID: "identity.state_persistent", Code: "not_persistent", Group: "identity", Title: "Key renewal will break after the first rotation",
 		Why:  "The sensor keeps its renewed API key in {path}, which is not on a mounted volume. Recreating the container loses it, and the sensor starts again with a retired key.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent",
-		Fix:  map[string]string{FixFormatEnv: stateEnvFix, FixFormatCompose: stateComposeFix, FixFormatHelm: stateHelmFix}},
+		Fix:  map[string]string{FixFormatEnv: stateEnvFix, FixFormatCompose: stateComposeFix, FixFormatHelm: dataHelmFix}},
 	{ID: "identity.state_persistent", Code: "unknown", Group: "identity", Title: "Sensor state may not be kept",
 		Why:  "The sensor could not tell whether {path} is on a mounted volume. If it is not, a recreated container starts with a retired key.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-state-persistent",
-		Fix:  map[string]string{FixFormatEnv: stateEnvFix, FixFormatCompose: stateComposeFix, FixFormatHelm: stateHelmFix}},
+		Fix:  map[string]string{FixFormatEnv: stateEnvFix, FixFormatCompose: stateComposeFix, FixFormatHelm: dataHelmFix}},
 	{ID: "identity.key_renewal", Code: "enabled", Group: "identity", Title: "API key renewal is on",
 		Why: "The sensor renews its API key before it expires.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal"},
 	{ID: "identity.key_renewal", Code: "disabled", Group: "identity", Title: "API key renewal is off",
@@ -159,12 +180,24 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal",
 		Fix: map[string]string{
 			FixFormatEnv:     "# Mount a state volume (see the state check), then:\nexport SENSOR_KEY_AUTORENEW=true",
-			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_KEY_AUTORENEW: \"true\"\n    volumes:\n      - state:/var/lib/openctem/state\nvolumes:\n  state:",
-			FixFormatHelm:    "sensor:\n  keyAutoRenew: \"true\"\n  state:\n    persistence:\n      enabled: true",
+			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_KEY_AUTORENEW: \"true\"\n    volumes:\n      - data:/var/lib/openctem\nvolumes:\n  data:",
+			FixFormatHelm:    "sensor:\n  keyAutoRenew: \"true\"\n  data:\n    persistence:\n      enabled: true",
 		}},
 	{ID: "identity.key_renewal", Code: "start_failed", Group: "identity", Title: "API key renewal did not start",
 		Why:  "The sensor could not start key renewal. The summary below is the sensor's message; the key will expire unless it is rotated.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#identity-key-renewal"},
+
+	// --- storage -------------------------------------------------------------
+	{ID: "storage.outbox_persistent", Code: "persistent", Group: "storage", Title: "Undelivered results are kept",
+		Why: "The outbox {path} is on a mounted volume.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#storage-outbox-persistent"},
+	{ID: "storage.outbox_persistent", Code: "not_persistent", Group: "storage", Title: "Undelivered results are lost when the container is recreated",
+		Why:  "The sensor keeps results the platform has not accepted yet in {path}, which is not on a mounted volume. Recreating the container during an outage loses them.",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#storage-outbox-persistent",
+		Fix:  map[string]string{FixFormatEnv: outboxEnvFix, FixFormatCompose: outboxComposeFix, FixFormatHelm: dataHelmFix}},
+	{ID: "storage.outbox_persistent", Code: "unknown", Group: "storage", Title: "Undelivered results may not be kept",
+		Why:  "The sensor could not tell whether {path} is on a mounted volume. If it is not, a recreated container loses results the platform has not accepted yet.",
+		Docs: "https://docs.openctem.io/sensors/troubleshooting/#storage-outbox-persistent",
+		Fix:  map[string]string{FixFormatEnv: outboxEnvFix, FixFormatCompose: outboxComposeFix, FixFormatHelm: dataHelmFix}},
 
 	// --- network -------------------------------------------------------------
 	{ID: "network.scan_proxy_inherit", Code: "direct", Group: "network", Title: "Scanners connect directly",
