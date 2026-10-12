@@ -1326,6 +1326,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
 	s.Pentest.SetCampaignSignoffRepository(repos.PentestSignoff)
 	s.Pentest.SetAttachmentLookup(repos.Attachment) // authorization letter must be a file of the campaign
+	s.Pentest.SetCampaignSecrets(repos.PentestSecret, s.Encryptor)
 	s.Pentest.SetPentestPolicyReader(pentestPolicyReader{tenants: s.Tenant})
 	s.Pentest.SetReportTemplateRepository(repos.PentestReportTemplate)
 	s.PentestChecklists = compliance.NewPentestChecklistService(
@@ -1596,6 +1597,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.JiraSync.SetAssetRouteResolver(infrajira.NewAssetRouteResolver(repos.Asset))
 	// Inbound status changes are recorded with the integration as the actor.
 	s.JiraSync.SetActivityRecorder(s.FindingActivity)
+	s.Pentest.SetCampaignTicketing(pentestJiraTicketing{svc: s.JiraSync})
 	// Wire campaign→Jira-epic: the campaign service owns idempotency + link
 	// persistence; JiraSync provides the per-tenant epic create. Both deps set
 	// here (JiraSync is created after the campaign service above).
@@ -3038,4 +3040,34 @@ func (r pentestPolicyReader) RequireAuthorizationBeforeStart(ctx context.Context
 		return false, err
 	}
 	return ps.RequireAuthorizationBeforeStart, nil
+}
+
+// pentestJiraTicketing adapts the Jira sync service to the pentest
+// campaign's ticket links and finding tickets.
+type pentestJiraTicketing struct{ svc *jira.SyncService }
+
+func (a pentestJiraTicketing) JiraSiteURL(ctx context.Context, tenantID shared.ID) (string, error) {
+	return a.svc.SiteURL(ctx, tenantID)
+}
+
+func (a pentestJiraTicketing) SearchJiraIssues(ctx context.Context, tenantID shared.ID, query string) ([]compliance.TicketIssue, error) {
+	refs, err := a.svc.SearchIssues(ctx, tenantID, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]compliance.TicketIssue, len(refs))
+	for i, r := range refs {
+		out[i] = compliance.TicketIssue{Key: r.Key, Summary: r.Summary, Type: r.Type, Status: r.Status, URL: r.URL}
+	}
+	return out, nil
+}
+
+func (a pentestJiraTicketing) CreateFindingTicket(ctx context.Context, tenantID, findingID shared.ID, projectKey, parentKey string) (string, error) {
+	info, err := a.svc.CreateTicketFromFinding(ctx, jira.CreateTicketInput{
+		TenantID: tenantID.String(), FindingID: findingID.String(), ProjectKey: projectKey, ParentKey: parentKey,
+	})
+	if err != nil {
+		return "", err
+	}
+	return info.TicketURL, nil
 }
