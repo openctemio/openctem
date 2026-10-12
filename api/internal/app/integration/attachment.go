@@ -47,6 +47,9 @@ type AttachmentService struct {
 	scanner         attachmentdom.Scanner     // optional malware scanner; nil = off
 	scanRepo        attachmentdom.ScanRepository
 	retentionRepo   attachmentdom.RetentionRepository
+	blobQueue       attachmentdom.BlobDeletionQueue
+	metrics         StorageMetrics
+	directDownloads bool
 	retention       RetentionSettings
 	audit           AttachmentAuditLogger
 	logger          *logger.Logger
@@ -197,6 +200,7 @@ func (s *AttachmentService) checkQuota(ctx context.Context, tenantID shared.ID, 
 		return fmt.Errorf("read storage usage: %w", err)
 	}
 	if used+size > s.quotaBytes {
+		s.event("quota_rejected")
 		return fmt.Errorf("%w: %d MiB used of %d MiB", attachmentdom.ErrQuotaExceeded, used>>20, s.quotaBytes>>20)
 	}
 	return nil
@@ -496,10 +500,14 @@ func (s *AttachmentService) GetByID(ctx context.Context, tenantID, attachmentID 
 // screenshots (RFC-081): they are served by their own data-scoped route,
 // never by /api/v1/attachments.
 func (s *AttachmentService) StoreBlob(ctx context.Context, tenantID, filename, contentType string, data []byte) (string, string, error) {
+	return s.storeBlob(ctx, tenantID, filename, contentType, data, attachmentdom.MaxFileSize)
+}
+
+func (s *AttachmentService) storeBlob(ctx context.Context, tenantID, filename, contentType string, data []byte, maxBytes int64) (string, string, error) {
 	if _, err := shared.IDFromString(tenantID); err != nil {
 		return "", "", fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
 	}
-	if int64(len(data)) > attachmentdom.MaxFileSize {
+	if int64(len(data)) > maxBytes {
 		return "", "", attachmentdom.ErrTooLarge
 	}
 	store, provider, err := s.resolveStorage(ctx, tenantID)
