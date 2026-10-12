@@ -32,13 +32,9 @@ export function usePrograms() {
   const { currentTenant } = useTenant()
   const can = useHasPermission(Permission.ProgramsRead)
   const key = currentTenant && can ? ['programs', currentTenant.id] : null
-  return useSWR<Program[]>(
-    key,
-    async () => (await get<{ data: Program[] }>(BASE))?.data ?? [],
-    {
-      revalidateOnFocus: false,
-    }
-  )
+  return useSWR<Program[]>(key, async () => (await get<{ data: Program[] }>(BASE))?.data ?? [], {
+    revalidateOnFocus: false,
+  })
 }
 
 /** One program with its items, entries and program exclusions. */
