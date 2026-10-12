@@ -387,3 +387,38 @@ func TestEnvDocsUpToDate(t *testing.T) {
 		}
 	}
 }
+
+// A retired name without a replacement prints its note, never an empty
+// "rename it to"; every row of the retired table keeps two cells.
+func TestEnvDocsRetiredNames(t *testing.T) {
+	r, err := parseEnvRegistry(envRegistryYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := RenderEnvReference(r)
+	if strings.Contains(doc, "rename it to ``") {
+		t.Error("a retired name without a replacement renders an empty rename")
+	}
+	cells := regexp.MustCompile(`(^|[^\\])\|`)
+	for _, x := range retiredEnv {
+		var row string
+		for _, line := range strings.Split(doc, "\n") {
+			if strings.HasPrefix(line, "| `"+x.Old+"` |") {
+				row = line
+			}
+		}
+		if row == "" {
+			t.Errorf("%s is missing from the retired table", x.Old)
+			continue
+		}
+		if n := len(cells.FindAllString(row, -1)); n != 3 {
+			t.Errorf("%s row has %d unescaped pipes, want 3: %s", x.Old, n, row)
+		}
+		if x.Hint != "" && !strings.Contains(row, mdCell(x.Hint)) {
+			t.Errorf("%s row lacks its note: %s", x.Old, row)
+		}
+		if got := x.instead(); x.Hint == "" && got != "rename it to "+x.New {
+			t.Errorf("%s startup hint = %q", x.Old, got)
+		}
+	}
+}

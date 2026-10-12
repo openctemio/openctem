@@ -146,7 +146,11 @@ admin console and the organization settings.
 	}
 	b.WriteString("\n## Retired and removed names\n\nThe API refuses to start while one of these is set, and says what to do instead.\n\n| Variable | Instead |\n|---|---|\n")
 	for _, x := range retiredEnv {
-		fmt.Fprintf(&b, "| `%s` | rename it to `%s` |\n", x.Old, x.New)
+		instead := mdCell(x.Hint)
+		if x.Hint == "" {
+			instead = "rename it to `" + mdCell(x.New) + "`"
+		}
+		fmt.Fprintf(&b, "| `%s` | %s |\n", x.Old, instead)
 	}
 	for _, x := range removedEnv {
 		fmt.Fprintf(&b, "| `%s` | %s |\n", x.Name, mdCell(x.Instead))
