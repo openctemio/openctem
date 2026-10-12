@@ -202,7 +202,7 @@ func (h *AttachmentHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	const maxBody = attachment.MaxFileSize + 1024*1024 // file + form overhead
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 
-	if err := r.ParseMultipartForm(attachment.MaxFileSize); err != nil {
+	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		apierror.BadRequest("File too large or invalid multipart form").WriteJSON(w)
 		return
 	}
