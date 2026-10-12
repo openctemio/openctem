@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"strings"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/report/markdown"
 )
 
 // Report type identifiers (mirror pkg/domain/pentest.ReportType values). Kept as
@@ -100,6 +102,9 @@ type ReportInput struct {
 	ReportType      string
 	IncludePOC      bool
 	IncludeEvidence bool
+	// Images are the evidence images the findings' Markdown references,
+	// resolved by the service (same tenant, same finding), keyed by URL.
+	Images map[string]markdown.Image `json:"-"`
 }
 
 // TypeLabel returns a human-readable label for the report type, used in headers.
@@ -154,6 +159,11 @@ func GenerateHTML(input ReportInput) (string, error) {
 			return t.Format("2006-01-02")
 		},
 		"add": func(a, b int) int { return a + b },
+		// md renders finding Markdown as escaped HTML (markdown.HTML escapes
+		// every text and embeds only images the report resolved).
+		"md": func(s string) template.HTML {
+			return template.HTML(markdown.HTML(s, input.Images)) //nolint:gosec // output of an escaping renderer
+		},
 	}).Parse(reportTemplate)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse report template: %w", err)
@@ -221,6 +231,9 @@ const reportTemplate = `<!DOCTYPE html>
   .severity-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; color: #fff; }
   .finding-body { padding: 16px; }
   .finding-body .section { margin-bottom: 12px; }
+  .md p { margin: 4px 0; }
+  .md pre, li pre { background: #f3f4f6; padding: 8px; overflow-x: auto; }
+  img.evidence { max-width: 100%; height: auto; border: 1px solid #e5e7eb; margin: 6px 0; }
   .finding-body .section-title { font-size: 12px; text-transform: uppercase; color: #6b7280; font-weight: 600; margin-bottom: 4px; }
   .finding-body pre { background: #f9fafb; padding: 12px; border-radius: 6px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
   .finding-body ol, .finding-body ul { padding-left: 20px; margin: 4px 0; }
@@ -247,7 +260,7 @@ const reportTemplate = `<!DOCTYPE html>
 
   <!-- Executive Summary -->
   <h2>1. Executive Summary</h2>
-  {{if .Campaign.Description}}<p>{{.Campaign.Description}}</p>{{end}}
+  {{if .Campaign.Description}}<div class="md">{{md .Campaign.Description}}</div>{{end}}
 
   <div class="meta-grid">
     <div class="meta-item"><div class="meta-label">Campaign Type</div><div class="meta-value">{{.Campaign.Type}}</div></div>
@@ -325,7 +338,7 @@ const reportTemplate = `<!DOCTYPE html>
       {{if $f.OWASP}}<div class="section"><span class="section-title">OWASP</span> {{$f.OWASP}}</div>{{end}}
 
       {{if $f.Description}}
-      <div class="section"><div class="section-title">Description</div><p>{{$f.Description}}</p></div>
+      <div class="section"><div class="section-title">Description</div><div class="md">{{md $f.Description}}</div></div>
       {{end}}
 
       {{if $f.Targets}}
@@ -333,7 +346,7 @@ const reportTemplate = `<!DOCTYPE html>
       {{end}}
 
       {{if $f.Steps}}
-      <div class="section"><div class="section-title">Steps to Reproduce</div><ol>{{range $f.Steps}}<li>{{.}}</li>{{end}}</ol></div>
+      <div class="section"><div class="section-title">Steps to Reproduce</div><ol>{{range $f.Steps}}<li>{{md .}}</li>{{end}}</ol></div>
       {{end}}
 
       {{if and $.IncludePOC $f.POC}}
@@ -341,15 +354,15 @@ const reportTemplate = `<!DOCTYPE html>
       {{end}}
 
       {{if $f.Impact}}
-      <div class="section"><div class="section-title">Business Impact</div><p>{{$f.Impact}}</p></div>
+      <div class="section"><div class="section-title">Business Impact</div><div class="md">{{md $f.Impact}}</div></div>
       {{end}}
 
       {{if $f.TechImpact}}
-      <div class="section"><div class="section-title">Technical Impact</div><p>{{$f.TechImpact}}</p></div>
+      <div class="section"><div class="section-title">Technical Impact</div><div class="md">{{md $f.TechImpact}}</div></div>
       {{end}}
 
       {{if $f.Remediation}}
-      <div class="section"><div class="section-title">Remediation</div><p>{{$f.Remediation}}</p></div>
+      <div class="section"><div class="section-title">Remediation</div><div class="md">{{md $f.Remediation}}</div></div>
       {{end}}
 
       {{if $f.References}}

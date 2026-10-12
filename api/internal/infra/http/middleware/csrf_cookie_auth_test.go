@@ -137,9 +137,9 @@ func TestCSRFOptional_CookieAuthenticated_FailsClosed(t *testing.T) {
 	}
 }
 
-// The access-token cookie name follows AUTH_ACCESS_TOKEN_COOKIE_NAME (the web
-// sets the cookie under NEXT_PUBLIC_AUTH_COOKIE_NAME); the WebSocket upgrade
-// reaches the API with it (RFC-045). The default name is not accepted then.
+// The access-token cookie name follows the configured name; the WebSocket
+// upgrade reaches the API with it (RFC-045). The default name is not accepted
+// then.
 func TestUnifiedAuth_ConfiguredCookieName(t *testing.T) {
 	gen := jwt.NewGenerator(jwt.TokenConfig{
 		Secret: "csrf-cookie-auth-test-secret-0123456789abcdef", Issuer: "test",

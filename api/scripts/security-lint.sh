@@ -87,6 +87,11 @@ check_http_client() {
     local allow_sites=(
         # pkg/httpsec itself builds the SafeHTTPClient wrapper.
         'api/pkg/httpsec/ssrf.go'
+        # `server -healthcheck`: the container healthcheck probes this
+        # process's own loopback listener (fixed 127.0.0.1, SERVER_PORT
+        # validated, no proxy, no redirects), which SafeHTTPClient refuses by
+        # design. No URL comes from a tenant or the network.
+        'api/cmd/server/healthcheck.go'
         # Admin CLI talks to its own API over an operator-provided URL
         # (same trust domain as the server). Not tenant-facing.
         'api/cmd/openctem-admin/cmd/client.go'

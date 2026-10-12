@@ -28,8 +28,6 @@ func RefusalCodeForState(s attribution.State) string {
 		return scopedom.RefusalMonitorOnly
 	case attribution.StatePlatformDenied:
 		return scopedom.RefusalDenyList
-	case attribution.StateProofRequired:
-		return scopedom.RefusalProofRequired
 	}
 	// unattributed, out_of_scope: nothing covers it.
 	return scopedom.RefusalNoEntry
