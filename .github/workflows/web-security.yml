@@ -19,6 +19,7 @@ on:
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
+      - '!**/*.md'
   pull_request:
     branches: [main, develop]
     paths:
@@ -28,6 +29,7 @@ on:
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
+      - '!**/*.md'
   schedule:
     - cron: '0 0 * * 1'
 
