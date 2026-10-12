@@ -24,6 +24,7 @@
     - EvidenceRetentionController
     - AttachmentRetentionController
     - AttachmentScanController
+    - ReportFileMigrationController
     - ScannerOutputRetentionController
     - RiskSnapshotController
     - CTEMIDRefreshController
