@@ -165,13 +165,19 @@ export function useFindingActivityFeed(
     ): Promise<ActivityReaction[] | void> => {
       if (!item.commentId) throw new Error('This comment cannot take reactions yet')
       const comment = encodeURIComponent(item.commentId)
+      // A pentest finding's reactions go through its pentest route (emoji
+      // in the query to remove); others through the comment route.
       const base =
         pentest && findingId
           ? `${pentestCommentsKey(findingId)}/${comment}/reactions`
           : `/api/v1/comments/${comment}/reactions`
+      const removeUrl =
+        pentest && findingId
+          ? `${base}?emoji=${encodeURIComponent(emoji)}`
+          : `${base}/${encodeURIComponent(emoji)}`
       const res = add
         ? await post<{ data?: ApiCommentReaction[] }>(base, { emoji })
-        : await del<{ data?: ApiCommentReaction[] }>(`${base}/${encodeURIComponent(emoji)}`)
+        : await del<{ data?: ApiCommentReaction[] }>(removeUrl)
       void mutateComments()
       return res && Array.isArray(res.data) ? toActivityReactions(res.data) : undefined
     },
