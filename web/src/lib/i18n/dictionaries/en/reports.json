@@ -1,0 +1,4 @@
+{
+  "reports.schedulesHint": "Finding-summary digests emailed to recipients on a schedule.",
+  "reports.executiveHint": "Program-level risk, findings, SLA and MTTR for the selected window."
+}

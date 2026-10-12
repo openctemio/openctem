@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { OneTimeCodeInput, RecoveryCodesPanel, SecretKey, TotpQrCode } from '@/components/security'
+import { useTranslation } from '@/context/i18n-provider'
 
 import {
   cancelMfaAction,
@@ -54,6 +55,7 @@ export function MfaStep({ purpose, onDone, onCancel }: MfaStepProps) {
 }
 
 function BackButton({ onCancel }: { onCancel: () => void }) {
+  const { t } = useTranslation()
   return (
     <Button
       type="button"
@@ -66,12 +68,13 @@ function BackButton({ onCancel }: { onCancel: () => void }) {
       }}
     >
       <ArrowLeft className="h-4 w-4" />
-      Back to sign in
+      {t('auth.common.backToSignIn', 'Back to sign in')}
     </Button>
   )
 }
 
 function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
+  const { t } = useTranslation()
   const [useRecovery, setUseRecovery] = useState(false)
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -89,7 +92,7 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         onDone(result)
         return
       }
-      const msg = result.error || 'Verification failed'
+      const msg = result.error || t('auth.mfa.verifyFailed', 'Verification failed')
       if (RESTART_PATTERN.test(msg)) {
         onCancel(msg)
         return
@@ -104,19 +107,25 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       method="post"
       onSubmit={submit}
       className="grid gap-3"
-      aria-label="Two-factor verification"
+      aria-label={t('auth.mfa.verifyFormLabel', 'Two-factor verification')}
     >
       <div className="space-y-1">
-        <h2 className="text-base font-semibold">Two-factor authentication</h2>
+        <h2 className="text-base font-semibold">
+          {t('auth.mfa.title', 'Two-factor authentication')}
+        </h2>
         <p className="text-sm text-muted-foreground">
           {useRecovery
-            ? 'Enter one of your recovery codes. Each code works once.'
-            : 'Enter the 6-digit code from your authenticator app.'}
+            ? t('auth.mfa.recoveryHint', 'Enter one of your recovery codes. Each code works once.')
+            : t('auth.mfa.codeHint', 'Enter the 6-digit code from your authenticator app.')}
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="mfa-code">{useRecovery ? 'Recovery code' : 'Authentication code'}</Label>
+        <Label htmlFor="mfa-code">
+          {useRecovery
+            ? t('auth.mfa.recoveryLabel', 'Recovery code')
+            : t('auth.mfa.codeLabel', 'Authentication code')}
+        </Label>
         {useRecovery ? (
           <Input
             id="mfa-code"
@@ -152,7 +161,7 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         ) : (
           <ShieldCheck className="h-4 w-4" />
         )}
-        Verify
+        {t('auth.mfa.verify', 'Verify')}
       </Button>
 
       <Button
@@ -166,7 +175,9 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
           setError(null)
         }}
       >
-        {useRecovery ? 'Use your authenticator app instead' : 'Use a recovery code instead'}
+        {useRecovery
+          ? t('auth.mfa.useApp', 'Use your authenticator app instead')
+          : t('auth.mfa.useRecovery', 'Use a recovery code instead')}
       </Button>
 
       <BackButton onCancel={() => onCancel()} />
@@ -175,6 +186,11 @@ function VerifyStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
 }
 
 function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
+  const { t } = useTranslation()
+  // Read through a ref so the start-once effect below does not depend on t.
+  const startFailedRef = useRef(
+    t('auth.mfa.startFailed', 'Could not start two-factor setup. Please sign in again.')
+  )
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null)
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -198,7 +214,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       if (res.success && res.secret && res.otpauthUri) {
         setSetup({ secret: res.secret, uri: res.otpauthUri })
       } else {
-        onCancelRef.current(res.error || 'Could not start two-factor setup. Please sign in again.')
+        onCancelRef.current(res.error || startFailedRef.current)
       }
     })
   }, [])
@@ -213,7 +229,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         setFinished(result)
         return
       }
-      const msg = result.error || 'Verification failed'
+      const msg = result.error || t('auth.mfa.verifyFailed', 'Verification failed')
       if (RESTART_PATTERN.test(msg)) {
         onCancel(msg)
         return
@@ -227,10 +243,14 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
     return (
       <div className="grid gap-4">
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">Save your recovery codes</h2>
+          <h2 className="text-base font-semibold">
+            {t('auth.mfa.saveCodesTitle', 'Save your recovery codes')}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            Two-factor authentication is on. If you lose your authenticator, a recovery code is the
-            only way back into your account.
+            {t(
+              'auth.mfa.saveCodesBody',
+              'Two-factor authentication is on. If you lose your authenticator, a recovery code is the only way back into your account.'
+            )}
           </p>
         </div>
         <RecoveryCodesPanel
@@ -244,7 +264,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
             onCheckedChange={(v) => setSaved(v === true)}
           />
           <Label htmlFor="codes-saved" className="font-normal">
-            I have saved my recovery codes
+            {t('auth.mfa.codesSaved', 'I have saved my recovery codes')}
           </Label>
         </div>
         <Button
@@ -262,7 +282,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
           }
         >
           {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-          Continue
+          {t('auth.mfa.continue', 'Continue')}
         </Button>
       </div>
     )
@@ -273,14 +293,17 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       method="post"
       onSubmit={confirm}
       className="grid gap-4"
-      aria-label="Set up two-factor authentication"
+      aria-label={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
     >
       <div className="space-y-1">
-        <h2 className="text-base font-semibold">Set up two-factor authentication</h2>
+        <h2 className="text-base font-semibold">
+          {t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Your organization requires two-factor authentication. Scan the QR code with an
-          authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, ...), then
-          enter the 6-digit code it shows.
+          {t(
+            'auth.mfa.enrollBody',
+            'Your organization requires two-factor authentication. Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
+          )}
         </p>
       </div>
 
@@ -294,7 +317,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="enroll-code">Authentication code</Label>
+        <Label htmlFor="enroll-code">{t('auth.mfa.codeLabel', 'Authentication code')}</Label>
         <OneTimeCodeInput
           id="enroll-code"
           value={code}
@@ -315,7 +338,7 @@ function EnrollStep({ onDone, onCancel }: Omit<MfaStepProps, 'purpose'>) {
         ) : (
           <ShieldCheck className="h-4 w-4" />
         )}
-        Turn on and continue
+        {t('auth.mfa.turnOn', 'Turn on and continue')}
       </Button>
 
       <BackButton onCancel={() => onCancel()} />
