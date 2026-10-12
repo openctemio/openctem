@@ -234,11 +234,7 @@ func (h *MCPHandler) campaignPromptContext(ctx context.Context, tenantID string,
 	if _, err := shared.IDFromString(campaignID); err != nil {
 		return "", "", nil, nil, none, toolInputError{"campaign_id must be a UUID"}
 	}
-	user, err := h.campaignReader(ctx, tenantID, campaignID)
-	if err != nil {
-		return "", "", nil, nil, none, err
-	}
-	campaign, err := h.pentest.GetCampaign(ctx, tenantID, campaignID)
+	user, campaign, err := h.campaignReader(ctx, tenantID, campaignID)
 	if err != nil {
 		return "", "", nil, nil, none, err
 	}
@@ -321,6 +317,9 @@ func (h *MCPHandler) promptFindingWriteup(ctx context.Context, tenantID string, 
 	if f == nil || f.Source() != vulnerability.FindingSourcePentest {
 		return mcpPromptResult{}, errMCPNotFound
 	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
+		return mcpPromptResult{}, err
+	}
 
 	payload := map[string]any{"finding": toPentestFindingDTO(f, true)}
 	if tmpl := h.matchTemplate(ctx, tenantID, f); tmpl != nil {
@@ -369,6 +368,9 @@ func (h *MCPHandler) promptRemediationGuidance(ctx context.Context, tenantID str
 	}
 	if f == nil || f.Source() != vulnerability.FindingSourcePentest {
 		return mcpPromptResult{}, errMCPNotFound
+	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
+		return mcpPromptResult{}, err
 	}
 	meta := f.SourceMetadata()
 	cwe := ""

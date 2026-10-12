@@ -226,13 +226,21 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 		return nil, err
 	}
 
+	// Pentest findings of campaigns kept away from AI applications (TLP
+	// above the organization's limit, or turned off by the lead) are left
+	// out in SQL.
+	aiTLPs, err := h.aiAllowedTLPs(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	in := finding.ListFindingsInput{
-		TenantID:     tenantID,
-		ActingUserID: actingUser(ctx), // confine to the key owner's data-scope
-		IsAdmin:      false,           // API keys never get admin bypass
-		Search:       a.Search,
-		PerPage:      clampLimit(a.Limit),
-		Page:         1,
+		TenantID:          tenantID,
+		ActingUserID:      actingUser(ctx), // confine to the key owner's data-scope
+		IsAdmin:           false,           // API keys never get admin bypass
+		Search:            a.Search,
+		PerPage:           clampLimit(a.Limit),
+		Page:              1,
+		PentestAIAllowTLP: aiTLPs,
 	}
 	if a.Severity != "" {
 		in.Severities = []string{a.Severity}
@@ -263,6 +271,9 @@ func (h *MCPHandler) toolGetFinding(ctx context.Context, tenantID string, raw js
 	// Scoped read: the key owner's data-scope + pentest membership apply.
 	f, err := h.findings.GetFindingWithScope(ctx, tenantID, id, actingUser(ctx), false)
 	if err != nil {
+		return nil, err
+	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
 		return nil, err
 	}
 	return untrustedResult(toFindingDTO(f), map[string]any{"finding_id": id}), nil
@@ -340,7 +351,11 @@ func (h *MCPHandler) toolExplainPriority(ctx context.Context, tenantID string, r
 	// If the key's data-scope / pentest membership can't read it, this returns the
 	// not-found/denied error and we never reveal priority factors — parity with
 	// get_finding's 404 for out-of-scope findings.
-	if _, err := h.findings.GetFindingWithScope(ctx, tenantID, id, actingUser(ctx), false); err != nil {
+	f, err := h.findings.GetFindingWithScope(ctx, tenantID, id, actingUser(ctx), false)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
 		return nil, err
 	}
 	tid, err := shared.IDFromString(tenantID)

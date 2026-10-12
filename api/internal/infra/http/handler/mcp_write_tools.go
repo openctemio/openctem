@@ -118,6 +118,9 @@ func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID stri
 	if err != nil {
 		return "", err
 	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
+		return "", err
+	}
 	pentestFinding, vis, err := h.comments.CommentVisibilityFor(ctx, tenantID, a.FindingID, actingUser(ctx), false, a.Visibility)
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) || errors.Is(err, shared.ErrValidation) {
@@ -150,8 +153,13 @@ func (h *MCPHandler) toolAddFindingComment(ctx context.Context, tenantID string,
 	if err != nil {
 		return nil, err
 	}
-	// Scope again at execution: access may have changed since confirmation.
-	if _, err := h.findings.GetFindingWithScope(ctx, tenantID, a.FindingID, actingUser(ctx), false); err != nil {
+	// Scope and the AI policy again at execution: either may have changed
+	// since confirmation.
+	f, err := h.findings.GetFindingWithScope(ctx, tenantID, a.FindingID, actingUser(ctx), false)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
 		return nil, err
 	}
 	clientName := ""

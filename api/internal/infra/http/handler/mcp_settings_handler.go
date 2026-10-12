@@ -56,7 +56,10 @@ type MCPSettingsResponse struct {
 	// RefreshDays: 0 means 90.
 	RefreshDays int `json:"refresh_days"`
 	// RequireDPoP: only DPoP-bound tokens (RFC 9449).
-	RequireDPoP          bool           `json:"require_dpop"`
+	RequireDPoP bool `json:"require_dpop"`
+	// MaxTLP: the most restrictive TLP of a pentest campaign AI
+	// applications may read (clear, green, amber, amber_strict, red).
+	MaxTLP               string         `json:"max_tlp"`
 	EffectiveRefreshDays int            `json:"effective_refresh_days"`
 	PlatformClientHosts  []string       `json:"platform_client_hosts"`
 	AvailableScopes      []MCPScopeInfo `json:"available_scopes"`
@@ -71,6 +74,8 @@ type MCPSettingsUpdateRequest struct {
 	APIKeysAllowed bool     `json:"api_keys_allowed"`
 	RefreshDays    int      `json:"refresh_days"`
 	RequireDPoP    bool     `json:"require_dpop"`
+	// MaxTLP: "" keeps the default (amber).
+	MaxTLP string `json:"max_tlp" validate:"omitempty,oneof=clear green amber amber_strict red"`
 }
 
 func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse {
@@ -78,6 +83,7 @@ func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse 
 		Enabled: !s.Disabled, AnyClient: s.AnyClient, ClientHosts: s.ClientHosts, Scopes: s.Scopes,
 		APIKeysAllowed: !s.APIKeysDisabled, RefreshDays: s.RefreshDays, EffectiveRefreshDays: s.RefreshLimitDays(),
 		RequireDPoP:         s.RequireDPoP,
+		MaxTLP:              s.AIMaxTLP(),
 		PlatformClientHosts: h.trustedHosts,
 	}
 	if out.ClientHosts == nil {
@@ -97,7 +103,7 @@ func (h *MCPSettingsHandler) response(s tenant.MCPSettings) MCPSettingsResponse 
 
 // Get serves GET /api/v1/mcp-access/settings.
 // @Summary      Read the organization policy for AI applications
-// @Description  Whether the MCP server is on for the organization, which applications may connect (verified only, or any), the organization's trusted client hosts and the platform's, the scopes members may grant, whether oct_ keys work on MCP, and how long a connection lasts (RFC-062).
+// @Description  Whether the MCP server is on for the organization, which applications may connect (verified only, or any), the organization's trusted client hosts and the platform's, the scopes members may grant, whether oct_ keys work on MCP, how long a connection lasts, and the highest TLP of a pentest campaign AI applications may read (RFC-062, RFC-016).
 // @Tags         MCP
 // @Produce      json
 // @Security     BearerAuth
@@ -135,6 +141,7 @@ func (h *MCPSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	s := tenant.MCPSettings{
 		Disabled: !req.Enabled, AnyClient: req.AnyClient, ClientHosts: req.ClientHosts, Scopes: req.Scopes,
 		APIKeysDisabled: !req.APIKeysAllowed, RefreshDays: req.RefreshDays, RequireDPoP: req.RequireDPoP,
+		MaxTLP: req.MaxTLP,
 	}
 	if err := mcpoauthapp.ValidatePolicy(&s); err != nil {
 		apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
