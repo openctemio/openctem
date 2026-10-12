@@ -989,11 +989,13 @@ Inside the pentest module, campaign membership decides who sees a campaign
 | tester | everything in the campaign | creates findings; edits, changes status of and retests own or assigned findings; evidence on those; checklist results |
 | reviewer | everything in the campaign | status, edits and retests on any finding (no delete) |
 | observer | everything in the campaign | nothing |
-| client | the campaign, its team and its **published** findings (never draft or in review) | nothing |
+| client | the campaign, its team, its **published** findings (never draft or in review) and its **delivered** reports | nothing |
 
 A client gets no campaign-wide read: no stats or finding counts (they
-include unpublished work), no exports, no reports, no campaign attachments
-and no report-writing (MCP) tools. Every surface that lists or reads pentest
+include unpublished work), no exports, no campaign attachments and no
+report-writing (MCP) tools. Of the reports, a client lists, reads and
+downloads the delivered ones only (stored snapshots, without their
+generation options; downloads audited), never generates one on the fly. Every surface that lists or reads pentest
 findings (campaign list, the pentest findings list, the generic findings
 list and groups, single-finding reads, retests, evidence) applies the same
 rule in SQL or in `ResolveCampaignRoleForFinding`. A client does not read
