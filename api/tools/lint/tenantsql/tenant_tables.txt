@@ -116,6 +116,7 @@ pentest_campaign_members
 pentest_campaigns
 pentest_finding_templates
 pentest_report_files
+pentest_report_templates
 pentest_reports
 pentest_retests
 priority_class_audit_log

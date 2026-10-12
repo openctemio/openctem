@@ -1289,6 +1289,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	s.Pentest.SetReportTemplateRepository(repos.PentestReportTemplate)
 	if s.SLA != nil {
 		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
 	}
