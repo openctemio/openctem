@@ -71,7 +71,7 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="space-y-4">
+          <form method="post" onSubmit={submit} className="space-y-4">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>

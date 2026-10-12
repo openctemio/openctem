@@ -282,6 +282,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	githubWebhookHandler := handler.NewGitHubWebhookHandler(svc.Integration, log)
 	// Inbound GitHub issue closed/reopened → finding status (reverse of create-ticket).
 	githubWebhookHandler.SetIssueSink(svc.GitHubTicket)
+	// Replays of a verified delivery are ignored for 24 hours (all replicas).
+	if deps.RedisClient != nil {
+		githubWebhookHandler.SetDeliveryGuard(redis.NewWebhookDeliveryStore(deps.RedisClient))
+	}
 
 	// Finding actions handler with the CTEM Stage-4 validation runner wired.
 	findingActionsHandler := handler.NewFindingActionsHandler(svc.FindingActions, log)
@@ -518,6 +522,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			return h
 		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
+		PentestReportTemplate:  handler.NewPentestReportTemplateHandler(svc.Pentest, svc.Audit, log),
 
 		// File Attachments (shared across pentest/retest/campaign)
 		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
@@ -654,7 +659,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Scan != nil {
 		handlers.Scope.SetScopeWaitStarter(svc.Scan)
 	}
-	handlers.Scope.SetActiveProof(cfg.Scope.ActiveProof)
+	if svc.ScanPolicy != nil {
+		handlers.Scope.SetProofPolicy(svc.ScanPolicy)
+	}
 	// Private programs (RFC-065 §15.3): owners see every private program;
 	// the scope views leave out the entries of private programs the caller
 	// may not see.
@@ -1142,6 +1149,7 @@ func newCIRunnerKeyPolicy(repos *Repositories, svc *Services, log *logger.Logger
 // review decision is audited (RFC-036).
 func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *handler.EASMHandler {
 	h := handler.NewEASMHandler(easmapp.NewService(repos.EASMSummary, svc.DataScope), log)
+	h.SetChanges(easmapp.NewChangeService(repos.EASMChange, svc.DataScope))
 	var audit handler.AttributionAuditor
 	if svc.Audit != nil {
 		audit = svc.Audit
@@ -1197,7 +1205,8 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
 		DNSDefaultHrs:       int(cfg.Worker.EASMDNSInterval.Hours()),
 	}
-	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log)
+	return handler.NewEASMSettingsHandler(svc.Tenant, postgres.NewEASMSweepRepository(deps.DB), sweeper, platform, audit, log).
+		SetDigests(postgres.NewEASMChangeRepository(deps.DB))
 }
 
 // newAssetAttributionHandler builds the attribution handler with its audit
