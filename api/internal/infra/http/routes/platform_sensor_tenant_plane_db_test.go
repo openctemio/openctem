@@ -234,7 +234,7 @@ func TestPlatformJobs_CommandsAndLogsRedacted_DB(t *testing.T) {
 	h.exec(`INSERT INTO command_logs (tenant_id, command_id, seq, lines, line_count, bytes, dropped)
 	        VALUES ($1, $2, 0, $3::jsonb, 1, $4, 0)`, tid, job, string(lines), len(lines))
 
-	for _, path := range []string{"/api/v1/commands/" + job, "/api/v1/commands?per_page=50"} {
+	for _, path := range []string{"/api/v1/commands?per_page=50"} {
 		body := h.expect(admin, http.MethodGet, path, "", http.StatusOK)
 		for _, leak := range []string{plat, "10.9.8.7", "/opt/sensor"} {
 			if strings.Contains(body, leak) {

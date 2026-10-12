@@ -219,31 +219,6 @@ print_header "Section 5: List & Get Services"
 
 if ! check_critical "List Services"; then :; else
 
-print_test "List all services"
-do_request "GET" "/api/v1/services" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    SVC_TOTAL=$(extract_json "$BODY" '.total // (.data | length) // 0')
-    print_info "Total services: $SVC_TOTAL"
-    print_success "Services listed"
-else
-    print_failure "List services" "Got $HTTP_CODE"
-fi
-
-print_test "Get service by ID"
-if [ -n "$SERVICE_ID" ] && [ "$SERVICE_ID" != "null" ]; then
-    do_request "GET" "/api/v1/services/$SERVICE_ID" "" "Authorization: Bearer $ACCESS_TOKEN"
-    if [ "$HTTP_CODE" = "200" ]; then
-        SVC_PORT=$(extract_json "$BODY" '.port')
-        SVC_TYPE=$(extract_json "$BODY" '.service_type')
-        print_info "Service: $SVC_TYPE on port $SVC_PORT"
-        print_success "Get service by ID"
-    else
-        print_failure "Get service" "Got $HTTP_CODE"
-    fi
-else
-    print_skip "Get service (no ID)"
-fi
-
 print_test "List services for asset"
 if [ -n "$ASSET_ID" ] && [ "$ASSET_ID" != "null" ]; then
     do_request "GET" "/api/v1/assets/$ASSET_ID/services" "" "Authorization: Bearer $ACCESS_TOKEN"
@@ -258,79 +233,29 @@ else
     print_skip "List asset services (no asset)"
 fi
 
-print_test "Get service statistics"
-do_request "GET" "/api/v1/services/stats" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    TOTAL_SVC=$(extract_json "$BODY" '.total_services // 0')
-    PUBLIC_SVC=$(extract_json "$BODY" '.public_services // 0')
-    print_info "Total: $TOTAL_SVC, Public: $PUBLIC_SVC"
-    print_success "Service stats retrieved"
-else
-    print_failure "Service stats" "Got $HTTP_CODE"
-fi
-
-print_test "Get public services"
-do_request "GET" "/api/v1/services/public" "" "Authorization: Bearer $ACCESS_TOKEN"
-if [ "$HTTP_CODE" = "200" ]; then
-    print_success "Public services listed"
-else
-    print_failure "Public services" "Got $HTTP_CODE"
-fi
-
 fi
 
 # =============================================================================
-# Section 6: Update Service
+# Section 6: Removed tenant-wide service routes
 # =============================================================================
-print_header "Section 6: Update Service"
+print_header "Section 6: Removed tenant-wide service routes"
 
-if ! check_critical "Update Service"; then :; else
-
-print_test "Update service"
-if [ -n "$SERVICE_ID" ] && [ "$SERVICE_ID" != "null" ]; then
-    do_request "PUT" "/api/v1/services/$SERVICE_ID" "{
-        \"product\": \"nginx-updated\",
-        \"version\": \"1.26.0\",
-        \"tls_enabled\": true,
-        \"tls_version\": \"1.3\"
-    }" "Authorization: Bearer $ACCESS_TOKEN"
-    if [ "$HTTP_CODE" = "200" ]; then
-        print_success "Service updated"
+# Services are read and added through their asset only (issue #970).
+for route in "GET /api/v1/services" "GET /api/v1/services/stats" "GET /api/v1/services/public" \
+             "GET /api/v1/services/${SERVICE_ID:-00000000-0000-0000-0000-000000000000}"; do
+    print_test "$route is gone"
+    do_request "${route%% *}" "${route#* }" "" "Authorization: Bearer $ACCESS_TOKEN"
+    if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "405" ]; then
+        print_success "$route answers $HTTP_CODE"
     else
-        print_info "Response: $(echo "$BODY" | head -c 200)"
-        print_failure "Update service" "Got $HTTP_CODE"
+        print_failure "$route" "Got $HTTP_CODE, want 404 or 405"
     fi
-else
-    print_skip "Update service (no ID)"
-fi
-
-fi
+done
 
 # =============================================================================
-# Section 7: Delete Service
+# Section 7: Docker Log Check
 # =============================================================================
-print_header "Section 7: Delete Service"
-
-if ! check_critical "Delete Service"; then :; else
-
-print_test "Delete service"
-if [ -n "$SERVICE_ID2" ] && [ "$SERVICE_ID2" != "null" ]; then
-    do_request "DELETE" "/api/v1/services/$SERVICE_ID2" "" "Authorization: Bearer $ACCESS_TOKEN"
-    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-        print_success "Service deleted"
-    else
-        print_failure "Delete service" "Got $HTTP_CODE"
-    fi
-else
-    print_skip "Delete service (no ID)"
-fi
-
-fi
-
-# =============================================================================
-# Section 8: Docker Log Check
-# =============================================================================
-print_header "Section 8: Docker Log Check"
+print_header "Section 7: Docker Log Check"
 
 print_test "Check Docker logs"
 if command -v docker &> /dev/null; then

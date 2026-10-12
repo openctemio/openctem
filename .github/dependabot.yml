@@ -85,3 +85,28 @@ updates:
       actions-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+
+  # Base images of the release images (api/Dockerfile*, web/Dockerfile,
+  # deploy/allinone/Dockerfile, api/deploy/gateway/Dockerfile): Go, Alpine,
+  # node, distroless, Postgres. A base refresh is how OS-package advisories get
+  # fixed (the image guard fails a release on a fixable HIGH/CRITICAL one).
+  # Majors (node 26 -> 28, Alpine 3.x -> 4) stay manual: they change runtimes.
+  - package-ecosystem: "docker"
+    directories: ["/api", "/web", "/deploy/allinone", "/api/deploy/gateway"]
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "deps(images)"
+    groups:
+      base-images:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
