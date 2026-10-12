@@ -143,7 +143,10 @@ func registerComponentRoutes(
 	router.Group("/api/v1/components", func(r Router) {
 		r.GET("/summary", h.Summary, middleware.Require(permission.ComponentsRead))
 		r.GET("/sbom", h.ExportSBOM, middleware.Require(permission.ComponentsRead))
-		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware())
+		// The route's body limit replaces the global one (10 MiB), which
+		// otherwise refused every SBOM above it.
+		r.POST("/import", h.ImportSBOM, middleware.Require(permission.ComponentsWrite), sbomRL.Middleware(),
+			middleware.BodyLimit(handler.MaxSBOMImportBody))
 		r.GET("/", h.List, middleware.Require(permission.ComponentsRead))
 		r.GET("/versions/{version_id}", h.GetVersion, middleware.Require(permission.ComponentsRead))
 		r.GET("/{id}/versions", h.ListVersions, middleware.Require(permission.ComponentsRead))
@@ -677,7 +680,9 @@ func registerAssetImportRoutes(
 	}, nil)
 
 	router.Group("/api/v1/assets/import", func(r Router) {
-		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware())
+		// The route's body limit replaces the global one (10 MiB).
+		r.POST("/csv", h.ImportCSV, middleware.RequireAll(permission.AssetsWrite, permission.AssetsImport), importRL.Middleware(),
+			middleware.BodyLimit(handler.MaxAssetCSVImportBody))
 	}, tenantMiddlewares...)
 }
 
