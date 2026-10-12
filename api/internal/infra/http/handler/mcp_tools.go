@@ -129,12 +129,13 @@ type mcpCampaignMemberDTO struct {
 type mcpCampaignDTO struct {
 	ID                string                 `json:"id"`
 	Name              string                 `json:"name"`
-	Type              string                 `json:"type"`
+	Targets           []string               `json:"targets"`
+	Approach          string                 `json:"approach,omitempty"`
+	Environment       string                 `json:"environment,omitempty"`
+	TLP               string                 `json:"tlp"`
 	Status            string                 `json:"status"`
-	Priority          string                 `json:"priority"`
 	Description       string                 `json:"description,omitempty"`
 	ClientName        string                 `json:"client_name,omitempty"`
-	ClientContact     string                 `json:"client_contact,omitempty"`
 	StartDate         string                 `json:"start_date,omitempty"`
 	EndDate           string                 `json:"end_date,omitempty"`
 	Methodology       string                 `json:"methodology,omitempty"`
@@ -149,12 +150,13 @@ func toCampaignDTO(c *pentestdom.Campaign, members []*pentestdom.CampaignMember)
 	dto := mcpCampaignDTO{
 		ID:                c.ID().String(),
 		Name:              c.Name(),
-		Type:              string(c.CampaignType()),
+		Targets:           c.Targets(),
+		Approach:          string(c.Approach()),
+		Environment:       string(c.Environment()),
+		TLP:               string(c.TLP()),
 		Status:            string(c.Status()),
-		Priority:          string(c.Priority()),
 		Description:       c.Description(),
 		ClientName:        c.ClientName(),
-		ClientContact:     c.ClientContact(),
 		Methodology:       c.Methodology(),
 		Objectives:        c.Objectives(),
 		ScopeItems:        c.ScopeItems(),

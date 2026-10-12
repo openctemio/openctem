@@ -35,7 +35,7 @@ contributes — derive the exact strings from `AllPermissions()`.
 | Settings (billing, SLA) | 6 | `billing:read/write/manage`, `sla:read/write/delete` |
 | Attack Surface | 4 | `scope:read/write/delete`, `scope:exclusions:approve` |
 | Validation (legacy) | 4 | `validation:read/write`, `pentest:read/write` |
-| Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-086) |
+| Pentest (granular) | 12 | `pentest:campaigns:*`, `pentest:findings:*`, `pentest:retests:*`, `pentest:templates:*`, `pentest:reports:write`, `pentest:checklists:manage` (RFC-087) |
 | Compliance | 7 | `compliance_frameworks:*`, `compliance_assessments:*`, `compliance_mappings:*`, `compliance_reports:read` |
 | Reports | 2 | `reports:read/write` |
 | Threat Intel | 2 | `threat_intel:read/write` |
@@ -1000,7 +1000,7 @@ rule in SQL or in `ResolveCampaignRoleForFinding`. A client does not read
 the campaign's checklists either (tester notes are internal); reports carry
 only checklist coverage counts and failed item titles.
 
-The organization's checklist templates (RFC-086) are read by anyone with
+The organization's checklist templates (RFC-087) are read by anyone with
 `pentest:campaigns:read`; creating, importing, editing and archiving them
 needs `pentest:checklists:manage` (owners and admins by default).
 

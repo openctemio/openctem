@@ -2128,6 +2128,8 @@ func (h *TenantHandler) UpdateBrandingSettings(w http.ResponseWriter, r *http.Re
 type UpdatePentestSettingsRequest struct {
 	CampaignTypes []tenant.ConfigOption `json:"campaign_types" validate:"dive"`
 	Methodologies []tenant.ConfigOption `json:"methodologies" validate:"dive"`
+	// RequireAuthorizationBeforeStart: absent = unchanged.
+	RequireAuthorizationBeforeStart *bool `json:"require_authorization_before_start"`
 }
 
 // GetPentestSettings handles GET /api/v1/tenants/{tenant}/settings/pentest
@@ -2171,6 +2173,8 @@ func (h *TenantHandler) UpdatePentestSettings(w http.ResponseWriter, r *http.Req
 	input := tenantapp.UpdatePentestSettingsInput{
 		CampaignTypes: req.CampaignTypes,
 		Methodologies: req.Methodologies,
+
+		RequireAuthorizationBeforeStart: req.RequireAuthorizationBeforeStart,
 	}
 
 	actx := h.buildAuditContext(r)

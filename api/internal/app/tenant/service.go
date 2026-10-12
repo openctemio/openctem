@@ -1986,6 +1986,8 @@ type BranchTypeRuleInput struct {
 type UpdatePentestSettingsInput struct {
 	CampaignTypes []tenantdom.ConfigOption `json:"campaign_types"`
 	Methodologies []tenantdom.ConfigOption `json:"methodologies"`
+	// RequireAuthorizationBeforeStart: nil = unchanged.
+	RequireAuthorizationBeforeStart *bool `json:"require_authorization_before_start"`
 }
 
 // UpdatePentestSettings updates only the pentest settings.
@@ -1998,6 +2000,11 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		ps := tenantdom.PentestSettings{
 			CampaignTypes: current.CampaignTypes,
 			Methodologies: current.Methodologies,
+
+			RequireAuthorizationBeforeStart: current.RequireAuthorizationBeforeStart,
+		}
+		if input.RequireAuthorizationBeforeStart != nil {
+			ps.RequireAuthorizationBeforeStart = *input.RequireAuthorizationBeforeStart
 		}
 		if input.CampaignTypes != nil {
 			ps.CampaignTypes = input.CampaignTypes
