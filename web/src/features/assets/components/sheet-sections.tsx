@@ -12,6 +12,7 @@ import { TagInput } from '@/components/ui/tag-input'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   DetailSection,
   DetailField,
@@ -279,9 +280,21 @@ interface TagsSectionProps {
   suggestions?: string[]
   onSave?: (tags: string[]) => Promise<void>
   className?: string
+  /** Clicking a tag toggles it in the list's filter; without it tags are plain badges. */
+  onTagClick?: (tag: string) => void
+  /** The tags the list is filtered by (shown as active). */
+  activeTags?: string[]
 }
 
-export function TagsSection({ tags, suggestions, onSave, className }: TagsSectionProps) {
+export function TagsSection({
+  tags,
+  suggestions,
+  onSave,
+  className,
+  onTagClick,
+  activeTags,
+}: TagsSectionProps) {
+  const { t } = useTranslation()
   const [editing, setEditing] = React.useState(false)
   const [editTags, setEditTags] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
@@ -358,11 +371,34 @@ export function TagsSection({ tags, suggestions, onSave, className }: TagsSectio
         <TagInput value={editTags} onChange={setEditTags} suggestions={suggestions} maxTags={20} />
       ) : tags && tags.length > 0 ? (
         <div className="flex flex-wrap gap-1">
-          {tags.map((tag) => (
-            <Badge key={tag} variant="secondary">
-              {tag}
-            </Badge>
-          ))}
+          {tags.map((tag) => {
+            if (!onTagClick) {
+              return (
+                <Badge key={tag} variant="secondary">
+                  {tag}
+                </Badge>
+              )
+            }
+            const active = activeTags?.includes(tag) ?? false
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onTagClick(tag)}
+                aria-pressed={active}
+                title={
+                  active
+                    ? t('assets.tagFilter.chipRemove', 'Remove "{tag}" from the filter', { tag })
+                    : t('assets.tagFilter.chipAdd', 'Filter the list by "{tag}"', { tag })
+                }
+                className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Badge variant={active ? 'default' : 'secondary'} className="cursor-pointer">
+                  {tag}
+                </Badge>
+              </button>
+            )
+          })}
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">No tags</p>
