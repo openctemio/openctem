@@ -550,18 +550,25 @@ compose file):
   `/etc/openctem/certs` and set `SSL_CERT_DIR`, which adds it to the system
   roots (the sensor still verifies public scan targets). Unset or unreadable:
   the snippets assume a publicly trusted certificate.
-- **Outbox** a named volume / PVC at `/var/lib/openctem/outbox`, so results
-  survive a restart or an outage.
-- **State** (daemon sensors) a named volume / PVC at `/var/lib/openctem/state`:
-  the sensor (sdk-go v0.12+) keeps the API key it renews on its own there, so a
-  recreated container comes back with the renewed key instead of the
-  installed one, which the renewal retired. Back it up like a credential.
-- **Content** (daemon sensors) a named volume / PVC (5Gi) at
-  `/var/lib/openctem/content`: the scanner content cache (trivy DB, nuclei
-  templates, semgrep rules), so a new container does not download it again.
-  Disposable, kept apart from the state. The Helm snippet sets
-  `sensor.state.persistence.enabled=true` and
-  `sensor.content.persistence.enabled=true`.
+- **Data** one named volume / PVC (8Gi in the Kubernetes manifest) at
+  `/var/lib/openctem`, holding:
+  - `outbox/`: results not yet accepted, so they survive a restart or an
+    outage;
+  - `state/` (daemon sensors): the paired identity, or the API key the
+    sensor renews on its own, so a recreated container comes back with it
+    instead of the installed key, which the renewal retired;
+  - `content/` (daemon sensors): the scanner content cache (trivy DB, nuclei
+    templates, semgrep rules), so a new container does not download it
+    again; disposable.
+
+  One volume is one thing to keep and back up (like a credential: it holds
+  the sensor's private key; `tar --exclude=./content` leaves out the cache).
+  The sensor image declares no `VOLUME` (an anonymous volume would shadow a
+  subdirectory of the data volume and looks persistent to the sensor's
+  check), and the sensor creates the subdirectories (0700 for state and
+  outbox) on a fresh volume. Sensors installed with a volume per
+  subdirectory keep working; the sensor README has the migration. The Helm
+  snippet sets `sensor.data.persistence.enabled=true` (chart 0.19.0+).
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
 
@@ -620,9 +627,9 @@ replaces bearer keys.
   the warned values replaced by `********` (`scan.RedactConfigSecrets`,
   `pkg/domain/scan/config_redact.go`) in every user-facing response that
   carries the config: `GET /scans`, `GET /scans/{id}`,
-  `GET /scans/{id}/export`, and the `payload` of `GET /commands` and
-  `GET /commands/{id}` (which embeds the config as `scanner_config`,
-  `config` and `context.scanner_config`). The structure, the non-secret
+  `GET /scans/{id}/export`, and the `payload` of `GET /commands` (which
+  embeds the config as `scanner_config`, `config` and
+  `context.scanner_config`). The structure, the non-secret
   values and `scanner_config_warnings` stay. Owners, admins and members with
   `scans:write` see the real values, because they edit them. Sensors claim
   the stored command and are unaffected. As a guard, a `PUT /scans/{id}`

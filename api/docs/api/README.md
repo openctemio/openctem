@@ -8,8 +8,11 @@ sensors use `/api/v2/sensor/`.
 https://openctem.example.com/api/v1/
 ```
 
-- **Reference:** every running API serves its OpenAPI spec at `GET /openapi.yaml`
-  and interactive documentation at `GET /docs`.
+- **Reference:** the public reference is on docs.openctem.io. A running API
+  serves `GET /openapi.yaml` and the interactive `GET /docs` outside
+  production; in production the spec needs a signed-in user and the
+  interactive page is for platform administrators only (see
+  [endpoints.md](endpoints.md)).
 - **Authentication, errors, pagination, rate limits:** [endpoints.md](endpoints.md).
 - **Style rules for new routes:** [API conventions](../architecture/api-conventions.md).
 - Feature guides: [credential import](credential-import.md),

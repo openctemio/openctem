@@ -42,7 +42,6 @@ type Config struct {
 	AITriage     AITriageConfig
 	SensorConfig SensorConfigConfig
 	Storage      StorageConfig
-	Webhooks     WebhooksConfig
 	Ingest       IngestConfig
 	Metrics      MetricsConfig
 
@@ -236,16 +235,6 @@ type IngestConfig struct {
 
 // AsyncEnabled reports whether async ingest mode is on.
 func (c IngestConfig) AsyncEnabled() bool { return c.Mode == "async" }
-
-// WebhooksConfig holds shared secrets for incoming webhook HMAC verification (F-1).
-// These are platform-wide fallbacks; per-integration secrets can be layered on
-// top via the integration repository when that abstraction is added.
-type WebhooksConfig struct {
-	// JiraSecret is the HMAC-SHA256 secret used to verify inbound Jira webhooks
-	// at POST /api/v1/webhooks/incoming/jira. REQUIRED — if empty, the endpoint
-	// rejects all requests (fail closed).
-	JiraSecret string
-}
 
 // StorageConfig holds file attachment storage settings.
 // Default: local filesystem at ./data/attachments.
@@ -740,7 +729,7 @@ func SMTPFromEnv() SMTPConfig {
 		FromName:   getEnv("SMTP_FROM_NAME", "OpenCTEM"),
 		TLS:        getEnvBool("SMTP_TLS", true),
 		SkipVerify: getEnvBool("SMTP_SKIP_VERIFY", false),
-		BaseURL:    getEnv("SMTP_BASE_URL", "http://localhost:3000"), // Frontend URL for email links
+		BaseURL:    getEnv("SMTP_BASE_URL", publicURLOr("http://localhost:3000")), // Frontend URL for email links
 		Timeout:    getEnvDuration("SMTP_TIMEOUT", 30*time.Second),
 	}
 }
@@ -1373,7 +1362,7 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			// F-12: Default to localhost dev origin instead of wildcard. Production
 			// validation in middleware/middleware.go rejects "*" regardless.
-			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000"}),
+			AllowedOrigins: getEnvSlice("CORS_ALLOWED_ORIGINS", []string{publicOriginOr("http://localhost:3000")}),
 			AllowedMethods: getEnvSlice("CORS_ALLOWED_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"}),
 			AllowedHeaders: getEnvSlice("CORS_ALLOWED_HEADERS", []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"}),
 			MaxAge:         getEnvInt("CORS_MAX_AGE", 86400),
@@ -1390,7 +1379,7 @@ func Load() (*Config, error) {
 		SMTP: SMTPFromEnv(),
 		OAuth: OAuthConfig{
 			Enabled:             getEnvBool("OAUTH_ENABLED", true),
-			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", "http://localhost:3000/auth/callback"),
+			FrontendCallbackURL: getEnv("OAUTH_FRONTEND_CALLBACK_URL", publicURLOr("http://localhost:3000")+"/auth/callback"),
 			StateSecret:         getEnv("OAUTH_STATE_SECRET", ""),
 			StateDuration:       getEnvDuration("OAUTH_STATE_DURATION", 10*time.Minute),
 			Google: OAuthProviderConfig{
@@ -1456,11 +1445,6 @@ func Load() (*Config, error) {
 			// Read as is: a leading or trailing space is a malformed key.
 			TemplateSigningKey: getEnv("APP_TEMPLATE_SIGNING_KEY", ""),
 			ContentSigningKey:  getEnv("APP_CONTENT_SIGNING_KEY", ""),
-		},
-		Webhooks: WebhooksConfig{
-			// F-1: HMAC secret for incoming Jira webhooks. REQUIRED — the
-			// middleware fails closed if empty.
-			JiraSecret: getEnv("JIRA_WEBHOOK_SECRET", ""),
 		},
 		Ingest: IngestConfig{
 			Mode:                  getEnv("INGEST_MODE", "sync"),
@@ -1608,6 +1592,9 @@ func (c *Config) validateStorage() error {
 
 // validateBasic validates basic configuration regardless of environment.
 func (c *Config) validateBasic() error {
+	if raw := strings.TrimSpace(c.App.URL); raw != "" && parsePublicURL(raw) == nil {
+		return errors.New("APP_URL must be an http or https URL without credentials, query or fragment, e.g. https://ctem.example.com")
+	}
 	if (c.Server.TLSCertFile == "") != (c.Server.TLSKeyFile == "") {
 		return errors.New("SERVER_TLS_CERT_FILE and SERVER_TLS_KEY_FILE must be set together")
 	}
@@ -1875,6 +1862,13 @@ func (c *Config) validateAuth() error {
 		if c.Auth.MaxActiveSessions < 1 {
 			return fmt.Errorf("AUTH_MAX_ACTIVE_SESSIONS must be at least 1")
 		}
+	}
+
+	// The CAPTCHA needs both halves: the secret makes the API require a
+	// token, the site key makes the web render the check that produces it.
+	// One without the other either blocks every sign-up or checks nothing.
+	if (strings.TrimSpace(c.Auth.CaptchaTurnstileSecret) == "") != (strings.TrimSpace(c.Auth.CaptchaTurnstileSiteKey) == "") {
+		return fmt.Errorf("CAPTCHA_TURNSTILE_SECRET and CAPTCHA_TURNSTILE_SITE_KEY must be set together")
 	}
 
 	// Same sentinel for the credential-at-rest key: only refuse outside
@@ -2201,6 +2195,10 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"LOG_SKIP_HEALTH", "unset it; health, readiness and metrics requests are never written to the request log"},
 	{"AI_MAX_CONCURRENT_JOBS", "unset it; it limited nothing, AI triage jobs run on the background job queue"},
 	{"AUTH_ALLOW_REGISTRATION", "unset it; who may sign up is the sign-up policy (Console > System > Sign-up)"},
+	// A platform-wide Jira webhook secret verified a delivery for any
+	// ?tenant=: whoever held it could forge Jira events for every
+	// organization. Each organization's Jira integration has its own secret.
+	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
 }
 
 // rejectRetiredEnv fails when any retired or removed name is set, naming
@@ -2221,6 +2219,40 @@ func rejectRetiredEnv(lookup func(string) (string, bool)) error {
 		return fmt.Errorf("retired environment variables are set and no longer read: %s", strings.Join(bad, ", "))
 	}
 	return nil
+}
+
+// parsePublicURL parses APP_URL: an absolute http(s) URL with a host and no
+// credentials, query or fragment, else nil.
+func parsePublicURL(raw string) *url.URL {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return nil
+	}
+	return u
+}
+
+// publicURLOr is APP_URL without a trailing slash, or fallback when APP_URL is
+// unset or invalid. The web console and the API share that origin behind the
+// gateway, so the email link base and the OAuth callback follow it unless
+// SMTP_BASE_URL / OAUTH_FRONTEND_CALLBACK_URL say otherwise. The value comes
+// from configuration, never from a request, so a forged Host header cannot
+// steer links in emails.
+func publicURLOr(fallback string) string {
+	if u := parsePublicURL(os.Getenv("APP_URL")); u != nil {
+		return strings.TrimRight(u.String(), "/")
+	}
+	return fallback
+}
+
+// publicOriginOr is the origin (scheme://host[:port]) of APP_URL, or fallback.
+// It is the default CORS (and WebSocket Origin) allow-list: exactly the
+// platform's own origin.
+func publicOriginOr(fallback string) string {
+	if u := parsePublicURL(os.Getenv("APP_URL")); u != nil {
+		return u.Scheme + "://" + u.Host
+	}
+	return fallback
 }
 
 // sensorVersionSetting reads a SENSOR_*_VERSION value: "none" or "off" means

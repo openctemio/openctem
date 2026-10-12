@@ -129,7 +129,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// A SAML response is a few KB; cap the form body the service parses.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	result, err := h.svc.ACS(r.Context(), org, h.baseURL(r), r, possibleRequestIDs, forcedAuthn)
+	result, err := h.svc.ACS(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), org, h.baseURL(r), r, possibleRequestIDs, forcedAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
