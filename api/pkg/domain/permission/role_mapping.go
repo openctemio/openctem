@@ -44,7 +44,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScanWindowsManage, ScanWindowsOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
-		CommandsRead, CommandsWrite, CommandsDelete,
+		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
 		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team
@@ -123,7 +123,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScanWindowsManage, ScanWindowsOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
-		CommandsRead, CommandsWrite, CommandsDelete,
+		CommandsRead, CommandsWrite,
 		ScanZonesRead, ScanZonesWrite, ScanZonesDelete,
 		SensorsPair, SensorsApprove, SensorsGrantNarrow, SensorsGrantWiden, SensorsRevoke,
 		// Team (no team:delete)

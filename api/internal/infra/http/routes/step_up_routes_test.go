@@ -162,7 +162,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScanGovernanceRoutes(router, &handler.ScanGovernanceHandler{}, auth, nil)
 			scanH := &handler.ScanHandler{}
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
-			registerScanRoutes(router, scanH, nil, auth, nil, nil)
+			registerScanRoutes(router, scanH, auth, nil, nil)
 			mux := router.(interface{ Handler() http.Handler }).Handler()
 
 			for _, route := range stepUpRoutes {

@@ -3,13 +3,14 @@
 > Design: [RFC-051](../rfcs/RFC-051-ci-runner-identity-and-gate.md). How to
 > connect a pipeline: [how-to/connect-ci-pipelines.md](../how-to/connect-ci-pipelines.md).
 > The scanning path in CI itself: [shift-left-ci-scanning.md](shift-left-ci-scanning.md).
+> Platform-enforced checks and pull request feedback (proposed): [RFC-077](../rfcs/RFC-077-ci-enforced-gate-and-pr-feedback.md).
 
 ## Components
 
 ```mermaid
 graph TD
   subgraph CI["CI job (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket, CircleCI, Jenkins)"]
-    R["sensor, runner mode<br/>sdk-go sensorkit.CIRun"]
+    R["openctem-ci<br/>(openctemio/ci)"]
     P["CI provider OIDC token"]
     P --> R
   end
