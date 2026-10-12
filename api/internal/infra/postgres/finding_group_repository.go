@@ -201,6 +201,7 @@ func findingVisibilityWhere(filter vulnerability.FindingFilter, argOffset int) (
 	if filter.PentestMemberOrNonPentestUserID != nil {
 		clauses = append(clauses, fmt.Sprintf(`(f.source != 'pentest' OR f.pentest_campaign_id IN (
 			SELECT campaign_id FROM pentest_campaign_members WHERE user_id = $%d AND tenant_id = $%d
+			  AND (role <> 'client' OR f.status NOT IN ('draft', 'in_review'))
 		))`, argOffset, argOffset+1))
 		args = append(args, filter.PentestMemberOrNonPentestUserID.String(), filter.TenantID.String())
 		argOffset += 2

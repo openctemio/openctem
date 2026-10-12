@@ -79,8 +79,8 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/health", "public liveness"},
 	{"/ready", "public readiness"},
 	{"/metrics", "MetricsAuth bearer (fail-closed 404)"},
-	{"/openapi.yaml", "public API spec"},
-	{"/docs", "public API docs"},
+	{"/openapi.yaml", "API spec: public outside production, signed-in users in production"},
+	{"/docs", "API reference page: outside production only"},
 	{"/api/v1/ws", "session (cookie or Bearer, no API keys) through the tenant chain: SSO enforcement, IP allowlist, RequireTenant, active membership (realtimeMiddlewares, RFC-045); socket bound to the session and closed on revocation or expiry; channels authorized per subscription by Hub.defaultAuthorize"},
 }
 
