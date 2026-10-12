@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -419,19 +420,50 @@ func (h *LocalAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("logout failed", "error", err)
 		// Don't return error - logout should be idempotent
 	}
+	h.writeLoggedOut(w)
+}
 
-	// Clear all auth cookies
+// logoutRequest is the optional body of POST /auth/logout.
+type logoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// LogoutWithRefreshToken signs out by the refresh token when the request
+// carries one (in the body, or in the refresh_token cookie with the CSRF
+// pair) and hands every other request to withAccessToken, the access-token
+// sign-out. The refresh token outlives the access token, so this is the path
+// that still ends the server-side session after the access token expired.
+func (h *LocalAuthHandler) LogoutWithRefreshToken(withAccessToken http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req logoutRequest
+		if r.Body != nil {
+			// An empty or non-JSON body is a plain access-token sign-out.
+			_ = json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req)
+		}
+		token, ok := h.refreshTokenFrom(w, r, req.RefreshToken)
+		if !ok {
+			return
+		}
+		if token == "" {
+			withAccessToken.ServeHTTP(w, r)
+			return
+		}
+		if err := h.authService.LogoutByRefreshToken(r.Context(), token); err != nil {
+			h.logger.Error("logout by refresh token failed", "error", err)
+		}
+		h.writeLoggedOut(w)
+	}
+}
+
+// writeLoggedOut clears the session cookies and answers the sign-out.
+func (h *LocalAuthHandler) writeLoggedOut(w http.ResponseWriter) {
 	ClearRefreshTokenCookie(w, h.cookieConfig)
 	ClearTenantCookie(w, h.cookieConfig)
-
-	// Clear the CSRF token cookie
 	middleware.ClearCSRFTokenCookie(w, h.csrfConfig)
-
-	h.logger.Info("logout successful", "session_id", sessionID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"message": "Logged out successfully",
 	})
 }
