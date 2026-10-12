@@ -73,7 +73,7 @@ describe('useFindingActivityFeed comment routes', () => {
       emoji: '👍',
     })
     expect(mockDel).toHaveBeenCalledWith(
-      `/api/v1/pentest/findings/f1/comments/c1/reactions/${encodeURIComponent('👍')}`
+      `/api/v1/pentest/findings/f1/comments/c1/reactions?emoji=${encodeURIComponent('👍')}`
     )
   })
 
@@ -85,9 +85,13 @@ describe('useFindingActivityFeed comment routes', () => {
       await result.current.editComment(item, 'new text')
       await result.current.deleteComment(item)
       await result.current.toggleReaction(item, '👍', true)
+      await result.current.toggleReaction(item, '👍', false)
     })
     expect(mockPut).toHaveBeenCalledWith('/api/v1/findings/f1/comments/c1', { content: 'new text' })
     expect(mockDel).toHaveBeenCalledWith('/api/v1/findings/f1/comments/c1')
     expect(mockPost).toHaveBeenCalledWith('/api/v1/comments/c1/reactions', { emoji: '👍' })
+    expect(mockDel).toHaveBeenCalledWith(
+      `/api/v1/comments/c1/reactions/${encodeURIComponent('👍')}`
+    )
   })
 })
