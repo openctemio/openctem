@@ -241,6 +241,17 @@ type PriorityAuditRepository interface {
 	LogChange(ctx context.Context, entry PriorityAuditEntry) error
 }
 
+// PriorityAuditBatchRepository is optionally implemented by a
+// PriorityAuditRepository that can write many entries in one statement. The
+// batch classification path uses it so an import of N findings costs one
+// round trip per chunk instead of N.
+type PriorityAuditBatchRepository interface {
+	LogChanges(ctx context.Context, entries []PriorityAuditEntry) error
+}
+
+// priorityAuditChunk bounds one batched audit insert.
+const priorityAuditChunk = 1000
+
 // PriorityChangeEvent is emitted whenever a finding's priority class
 // transitions to a new value. Downstream consumers (notification
 // service, assignment-rule service, dashboard live feed) subscribe via
@@ -412,18 +423,22 @@ func (s *PriorityClassificationService) ClassifyFinding(
 	previousClass := finding.PriorityClass()
 	finding.SetPriorityClassification(classification.Class, classification.Reason)
 
-	// Log audit entry
-	entry := PriorityAuditEntry{
-		TenantID:      tenantID,
-		FindingID:     finding.ID(),
-		PreviousClass: previousClass,
-		NewClass:      classification.Class,
-		Reason:        classification.Reason,
-		Source:        classification.Source,
-		RuleID:        classification.RuleID,
-	}
-	if err := s.auditRepo.LogChange(ctx, entry); err != nil {
-		s.logger.Warn("failed to log priority audit", "finding_id", finding.ID(), "error", err)
+	// Log audit entry, only when the class moved: the reclassification sweep
+	// re-confirms the same class for nearly every finding, and an entry per
+	// re-confirmation buried the transitions (as the batch path already does).
+	if previousClass == nil || *previousClass != classification.Class {
+		entry := PriorityAuditEntry{
+			TenantID:      tenantID,
+			FindingID:     finding.ID(),
+			PreviousClass: previousClass,
+			NewClass:      classification.Class,
+			Reason:        classification.Reason,
+			Source:        classification.Source,
+			RuleID:        classification.RuleID,
+		}
+		if err := s.auditRepo.LogChange(ctx, entry); err != nil {
+			s.logger.Warn("failed to log priority audit", "finding_id", finding.ID(), "error", err)
+		}
 	}
 
 	// O1: mark exit from Prioritization. Transition vs no-transition
@@ -458,13 +473,31 @@ func (s *PriorityClassificationService) auditClassChange(
 	previousClass *vulnerability.PriorityClass,
 	c vulnerability.PriorityClassification,
 ) {
-	if s.auditRepo == nil {
+	entry, ok := s.classChangeEntry(tenantID, f, previousClass, c)
+	if !ok {
 		return
 	}
-	if previousClass != nil && *previousClass == c.Class {
-		return // no transition — don't flood on a re-confirming sweep
+	if err := s.auditRepo.LogChange(ctx, entry); err != nil {
+		s.logger.Warn("failed to log priority audit", "finding_id", f.ID(), "error", err)
 	}
-	entry := PriorityAuditEntry{
+}
+
+// classChangeEntry builds the audit entry for a class transition. ok is false
+// when nothing is to be recorded: no audit repo, or the class did not move (a
+// re-confirming sweep must not flood the log).
+func (s *PriorityClassificationService) classChangeEntry(
+	tenantID shared.ID,
+	f *vulnerability.Finding,
+	previousClass *vulnerability.PriorityClass,
+	c vulnerability.PriorityClassification,
+) (PriorityAuditEntry, bool) {
+	if s.auditRepo == nil {
+		return PriorityAuditEntry{}, false
+	}
+	if previousClass != nil && *previousClass == c.Class {
+		return PriorityAuditEntry{}, false
+	}
+	return PriorityAuditEntry{
 		TenantID:      tenantID,
 		FindingID:     f.ID(),
 		PreviousClass: previousClass,
@@ -472,9 +505,29 @@ func (s *PriorityClassificationService) auditClassChange(
 		Reason:        c.Reason,
 		Source:        c.Source,
 		RuleID:        c.RuleID,
+	}, true
+}
+
+// logClassChanges writes the batch path's audit entries: in chunks through
+// LogChanges when the repository supports it, one by one otherwise. A failed
+// write is logged and does not undo the classification.
+func (s *PriorityClassificationService) logClassChanges(ctx context.Context, entries []PriorityAuditEntry) {
+	if len(entries) == 0 || s.auditRepo == nil {
+		return
 	}
-	if err := s.auditRepo.LogChange(ctx, entry); err != nil {
-		s.logger.Warn("failed to log priority audit (batch)", "finding_id", f.ID(), "error", err)
+	if batch, ok := s.auditRepo.(PriorityAuditBatchRepository); ok {
+		for start := 0; start < len(entries); start += priorityAuditChunk {
+			end := min(start+priorityAuditChunk, len(entries))
+			if err := batch.LogChanges(ctx, entries[start:end]); err != nil {
+				s.logger.Warn("failed to log priority audit (batch)", "entries", end-start, "error", err)
+			}
+		}
+		return
+	}
+	for _, e := range entries {
+		if err := s.auditRepo.LogChange(ctx, e); err != nil {
+			s.logger.Warn("failed to log priority audit (batch)", "finding_id", e.FindingID, "error", err)
+		}
 	}
 }
 
@@ -563,6 +616,7 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		s.logger.Warn("failed to load override rules", "error", err)
 	}
 
+	auditEntries := make([]PriorityAuditEntry, 0, len(contexts))
 	for _, fc := range contexts {
 		f := fc.finding
 		classification := classifyContext(rules, fc.pctx)
@@ -578,12 +632,16 @@ func (s *PriorityClassificationService) EnrichAndClassifyBatch(
 		// actual class change so a re-confirming sweep does not flood the log,
 		// and kept independent of publishIfChanged because the flood guard may
 		// suppress the fan-out event while the classification still stands.
-		s.auditClassChange(ctx, tenantID, f, previousClass, classification)
+		if entry, ok := s.classChangeEntry(tenantID, f, previousClass, classification); ok {
+			auditEntries = append(auditEntries, entry)
+		}
 		// batch classification also emits change events so the
 		// reclassification sweep reuses the same path and downstream consumers
 		// see every transition.
 		s.publishIfChanged(ctx, tenantID, f.ID(), previousClass, classification)
 	}
+
+	s.logClassChanges(ctx, auditEntries)
 
 	s.logger.Info("batch enrichment and classification complete",
 		"findings", len(findings),
