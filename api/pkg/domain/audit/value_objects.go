@@ -511,6 +511,11 @@ const (
 	ActionCampaignUpdated           Action = "campaign.updated"
 	ActionCampaignStatusChanged     Action = "campaign.status_changed"
 	ActionCampaignDeleted           Action = "campaign.deleted"
+	// Completion sign-off: a member signed off or withdrew, or the lead or an
+	// admin changed how many sign-offs completion needs.
+	ActionCampaignSignedOff               Action = "campaign.signed_off"
+	ActionCampaignSignoffWithdrawn        Action = "campaign.signoff_withdrawn"
+	ActionCampaignCompletionPolicyChanged Action = "campaign.completion_policy_changed"
 
 	// Remediation campaign actions (Mobilization). Distinct from the pentest
 	// campaign.* actions above: a different resource with its own lifecycle.
@@ -733,6 +738,7 @@ func (a Action) IsValid() bool {
 		ActionAITriageBudgetExhausted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
@@ -838,7 +844,8 @@ func (a Action) Category() string {
 		ActionAITriageBudgetExhausted:
 		return "ai_triage"
 	case ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged, ActionCampaignDeleted,
-		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged:
+		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
+		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged:
 		return "pentest_campaign"
 	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:
