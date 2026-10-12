@@ -25,6 +25,10 @@ const (
 
 // Config holds all application configuration.
 type Config struct {
+	// EnvWarnings are set variables under an API prefix that nothing reads
+	// (see checkEnvironment); logged at startup.
+	EnvWarnings []string
+
 	App          AppConfig
 	Server       ServerConfig
 	Database     DatabaseConfig
@@ -1197,6 +1201,10 @@ func Load() (*Config, error) {
 	if err := rejectRetiredEnv(os.LookupEnv); err != nil {
 		return nil, err
 	}
+	envWarnings, err := checkEnvironment(Registry(), os.Environ())
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		App: AppConfig{
@@ -1511,6 +1519,8 @@ func Load() (*Config, error) {
 			BudgetDefaultTokensPerMonth: int64(getEnvInt("AI_TRIAGE_BUDGET_DEFAULT_TOKENS", 0)),
 		},
 	}
+
+	cfg.EnvWarnings = envWarnings
 
 	// SSO redirect-URI allow-list (OAuth 2.1 / RFC 9700): pin the caller-supplied
 	// redirect_uri to trusted frontend origins. An explicit SSO_ALLOWED_REDIRECT_URIS
