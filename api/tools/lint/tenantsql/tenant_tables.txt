@@ -119,10 +119,13 @@ notification_outbox
 notification_preferences
 notification_state
 notifications
+pentest_campaign_checklist_items
+pentest_campaign_checklists
 pentest_campaign_members
 pentest_campaign_secrets
 pentest_campaign_signoffs
 pentest_campaigns
+pentest_checklist_templates
 pentest_finding_templates
 pentest_report_files
 pentest_report_templates

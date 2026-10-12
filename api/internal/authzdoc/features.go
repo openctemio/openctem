@@ -130,9 +130,9 @@ var Features = []Feature{
 	},
 	{
 		ID: "pentest", Title: "Penetration testing",
-		Description: "Pentest campaigns, their findings, retests, templates, reports and the organization report templates. Campaign membership decides who sees a campaign.",
+		Description: "Pentest campaigns, their findings, retests, templates, methodology checklists, reports and the organization report and checklist templates. Campaign membership decides who sees a campaign.",
 		Stages:      []string{StageValidation},
-		Registers:   []string{"registerPentestRoutes", "registerPentestReportTemplateRoutes"},
+		Registers:   []string{"registerPentestRoutes", "registerPentestReportTemplateRoutes", "registerPentestChecklistTemplateRoutes"},
 	},
 	{
 		ID: "validation", Title: "Validation and simulation",

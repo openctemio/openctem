@@ -720,8 +720,10 @@ type Services struct {
 	BulkGuard *finding.BulkGuard
 
 	// Pentest
-	Pentest    *compliance.PentestService
-	Attachment *integration.AttachmentService
+	Pentest *compliance.PentestService
+	// PentestChecklists: methodology checklist templates and campaign checklists.
+	PentestChecklists *compliance.PentestChecklistService
+	Attachment        *integration.AttachmentService
 	// EASMLookalikes runs passive lookalike-domain monitoring (RFC-083).
 	EASMLookalikes *easmapp.LookalikeService
 	// EASMNetworkSeeds manages AS number and organization seeds (RFC-082).
@@ -1327,6 +1329,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Pentest.SetCampaignSecrets(repos.PentestSecret, s.Encryptor)
 	s.Pentest.SetPentestPolicyReader(pentestPolicyReader{tenants: s.Tenant})
 	s.Pentest.SetReportTemplateRepository(repos.PentestReportTemplate)
+	s.PentestChecklists = compliance.NewPentestChecklistService(
+		repos.PentestChecklistTpl, repos.PentestChecklist, repos.PentestCampaign,
+		repos.PentestCampaignMember, repos.Finding, log,
+	)
+	s.Pentest.SetChecklistCoverage(s.PentestChecklists) // checklist coverage in reports
 	if s.SLA != nil {
 		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
 	}

@@ -53,6 +53,9 @@ var templateLabels = map[string]map[string]string{
 		"st_draft": "Draft", "st_in_review": "In review", "st_validated_fixed": "Validated fixed", "st_not_observed": "Not observed",
 		"rt_passed": "Passed", "rt_failed": "Failed", "rt_partial": "Partially fixed", "rt_pending": "Pending",
 		"rt_in_progress": "In progress", "rt_canceled": "Canceled",
+		"methodology_coverage": "Methodology coverage", "checklist": "Checklist", "section": "Section", "coverage": "Coverage",
+		"passed": "Passed", "failed": "Failed", "not_applicable": "Not applicable", "untested": "Untested", "tested": "Tested",
+		"failed_checks": "Failed checks",
 	},
 	"vi": {
 		"summary": "Tóm tắt", "findings": "Phát hiện", "severity": "Mức độ", "count": "Số lượng", "total": "Tổng",
@@ -81,6 +84,9 @@ var templateLabels = map[string]map[string]string{
 		"st_draft": "Bản nháp", "st_in_review": "Đang rà soát", "st_validated_fixed": "Đã xác minh khắc phục", "st_not_observed": "Không còn thấy",
 		"rt_passed": "Đạt", "rt_failed": "Không đạt", "rt_partial": "Khắc phục một phần", "rt_pending": "Đang chờ",
 		"rt_in_progress": "Đang kiểm tra", "rt_canceled": "Đã hủy",
+		"methodology_coverage": "Mức độ bao phủ phương pháp kiểm thử", "checklist": "Danh mục kiểm thử", "section": "Mục", "coverage": "Độ bao phủ",
+		"passed": "Đạt", "failed": "Không đạt", "not_applicable": "Không áp dụng", "untested": "Chưa kiểm thử", "tested": "Đã kiểm thử",
+		"failed_checks": "Hạng mục không đạt",
 	},
 }
 
@@ -159,7 +165,7 @@ func TemplateData(in ReportInput, lang string) map[string]any {
 		team = append(team, map[string]any{"name": m.Name, "role": m.Role})
 	}
 
-	return map[string]any{
+	out := map[string]any{
 		"report": map[string]any{
 			"title":                label(lang, in.ReportType, in.TypeLabel()),
 			"type":                 in.ReportType,
@@ -192,6 +198,10 @@ func TemplateData(in ReportInput, lang string) map[string]any {
 		"has_retests":          len(retests) > 0,
 		"labels":               labels,
 	}
+	for k, v := range checklistTemplateData(in, lang) {
+		out[k] = v
+	}
+	return out
 }
 
 func nonNil(s []string) []string {
@@ -250,6 +260,7 @@ func SampleReportInput() ReportInput {
 				CreatedAt: created,
 			},
 		},
+		Checklists:     sampleChecklists(),
 		Retests:        []RetestData{{FindingTitle: "Server version disclosed", FindingSeverity: "info", Status: "passed", Notes: "Header removed.", TestedAt: "2026-02-02"}},
 		Stats:          StatsData{Total: 3, Critical: 1, Medium: 1, Info: 1, AvgCVSS: 7.6, MaxCVSS: 9.8},
 		GeneratedAt:    time.Date(2026, 2, 3, 10, 0, 0, 0, time.UTC),

@@ -100,6 +100,7 @@ type ReportInput struct {
 	Campaign        CampaignData
 	Findings        []FindingData
 	Retests         []RetestData
+	Checklists      []ChecklistData // methodology checklists the campaign ran
 	Stats           StatsData
 	GeneratedAt     time.Time
 	Classification  string
@@ -401,6 +402,29 @@ const reportTemplate = `<!DOCTYPE html>
     {{end}}
     </tbody>
   </table>
+  {{end}}
+
+  <!-- Methodology coverage -->
+  {{if .Checklists}}
+  <h2>Methodology Coverage</h2>
+  <table class="team-table">
+    <thead><tr><th>Checklist</th><th>Items</th><th>Passed</th><th>Failed</th><th>N/A</th><th>Untested</th><th>Coverage</th></tr></thead>
+    <tbody>
+    {{range .Checklists}}
+    <tr>
+      <td>{{.Name}}{{if .StandardVersion}} ({{.StandardVersion}}){{end}}</td>
+      <td>{{.Counts.Total}}</td><td>{{.Counts.Passed}}</td><td>{{.Counts.Failed}}</td>
+      <td>{{.Counts.NotApplicable}}</td><td>{{.Counts.Untested}}</td><td>{{printf "%.1f" .Counts.Coverage}}%</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{range .Checklists}}{{if .FailedItems}}
+  <h3>Failed checks: {{.Name}}</h3>
+  <ul>
+    {{range .FailedItems}}<li>{{.ID}} {{.Title}}{{if .Section}} ({{.Section}}){{end}}</li>{{end}}
+  </ul>
+  {{end}}{{end}}
   {{end}}
 
   <!-- Footer -->
