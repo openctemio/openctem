@@ -35,6 +35,7 @@ import { toDisplayText } from '@/lib/untrusted-text'
 import { runHref } from '@/features/scans/lib/run-display'
 import { safeHref } from '@/lib/safe-href'
 import { usePermissions } from '@/context/permission-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   isRetestable,
   useFindingRetests,
@@ -96,18 +97,63 @@ export function retestMeta(rt: FindingRetest): RetestMeta {
   }
 }
 
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/**
+ * A retest a pentest tester recorded by hand (kind manual): passed, failed or
+ * partially fixed, with the tester's notes.
+ */
+export function manualRetestMeta(rt: FindingRetest, t: Translate): RetestMeta {
+  switch (rt.manual_result) {
+    case 'passed':
+      return {
+        label: t('findings.retest.manual.passed', 'Tester retest: fixed'),
+        className: SUCCESS_SOFT,
+      }
+    case 'failed':
+      return {
+        label: t('findings.retest.manual.failed', 'Tester retest: still vulnerable'),
+        className: SEVERITY_BADGE_SOFT.medium,
+      }
+    case 'partial':
+      return {
+        label: t('findings.retest.manual.partial', 'Tester retest: partially fixed'),
+        className: SEVERITY_BADGE_SOFT.low,
+      }
+    case 'pending':
+    case 'in_progress':
+      return {
+        label: t('findings.retest.manual.pending', 'Tester retest pending'),
+        className: 'bg-muted text-muted-foreground',
+      }
+    default:
+      return {
+        label: t('findings.retest.manual.canceled', 'Tester retest canceled'),
+        className: 'bg-muted text-muted-foreground',
+      }
+  }
+}
+
+function metaFor(rt: FindingRetest, t: Translate): RetestMeta {
+  return rt.kind === 'manual' ? manualRetestMeta(rt, t) : retestMeta(rt)
+}
+
 interface FindingRetestSectionProps {
-  finding: { id: string; toolName?: string; ruleId?: string; status?: string }
+  finding: { id: string; toolName?: string; ruleId?: string; status?: string; source?: string }
   className?: string
 }
 
 export function FindingRetestSection({ finding, className }: FindingRetestSectionProps) {
   const { hasPermission } = usePermissions()
+  const { t } = useTranslation()
   const { mutate } = useSWRConfig()
   const retestable = isRetestable(finding)
-  // History is shown for any nuclei finding, also one no longer retestable (e.g. false positive).
+  // History is shown for any nuclei finding, also one no longer retestable (e.g.
+  // false positive), and for pentest findings, whose testers retest by hand.
   const { data } = useFindingRetests(
-    (finding.toolName ?? '').toLowerCase() === 'nuclei' ? finding.id : null
+    (finding.toolName ?? '').toLowerCase() === 'nuclei' || finding.source === 'pentest'
+      ? finding.id
+      : null
   )
   const { trigger, isMutating } = useRequestRetest(finding.id)
   const list = data?.data ?? []
@@ -187,7 +233,7 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
           {list.slice(1, 4).map((rt, i) => (
             <span key={rt.id}>
               {i > 0 && ', '}
-              {retestMeta(rt).label} <RelativeTime date={rt.created_at} className="text-xs" />
+              {metaFor(rt, t).label} <RelativeTime date={rt.created_at} className="text-xs" />
             </span>
           ))}
         </p>
@@ -197,7 +243,9 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
 }
 
 function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: string }) {
-  const meta = retestMeta(retest)
+  const { t } = useTranslation()
+  const meta = metaFor(retest, t)
+  const manual = retest.kind === 'manual'
   const [open, setOpen] = useState(false)
   const { hasPermission } = usePermissions()
   // The run holds the retest's tasks and their logs (Scans > Runs).
@@ -212,7 +260,7 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
         </Badge>
         <RelativeTime date={retest.completed_at ?? retest.created_at} className="text-xs" />
         {retest.trigger === 'auto' && <span className="text-xs text-muted-foreground">· auto</span>}
-        {retest.status === 'completed' && (
+        {retest.status === 'completed' && !manual && (
           <button
             type="button"
             className="text-xs text-muted-foreground underline-offset-2 hover:underline"
@@ -233,6 +281,11 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
       </div>
       {retest.reason && (
         <p className="text-xs text-muted-foreground">{toDisplayText(retest.reason, 600)}</p>
+      )}
+      {manual && retest.notes && (
+        <p className="text-xs text-muted-foreground whitespace-pre-line">
+          {toDisplayText(retest.notes, 600)}
+        </p>
       )}
       {open && <RetestEvidence findingId={findingId} retestId={retest.id ?? ''} />}
     </div>
