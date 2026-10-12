@@ -41,6 +41,31 @@ git -C "$w" reset -q --hard HEAD~1
 git -C "$w" push -q -f origin main
 git -C "$w" switch -q develop
 
+# A file develop deleted while resolving a merge (the deletion lives only in
+# the merge commit) is a deliberate removal, not a main-only fix.
+main0="$(git -C "$w" rev-parse main)"
+commit "$w" "chore: add gone2" gone2.txt
+git -C "$w" switch -q main
+git -C "$w" checkout -q develop -- gone2.txt
+git -C "$w" commit -q -m "chore: carry gone2"
+git -C "$w" push -q origin main
+git -C "$w" switch -q -c side develop
+commit "$w" "feat: side work" side.txt
+git -C "$w" switch -q develop
+git -C "$w" merge -q --no-ff --no-commit side
+git -C "$w" rm -q gone2.txt
+git -C "$w" commit -q -m "Merge side; drop gone2"
+dev2="$(git -C "$w" rev-parse develop)"
+out="$(bash "$CUT" --repo "$w" --version v0.5.0 --sha "$dev2" 2>&1)"; rc=$?
+assert_eq "deleted in a merge: accepted ($out)" 0 "$rc"
+assert_contains "deleted in a merge: noted" "gone2.txt is on main, deleted on develop" "$out"
+git -C "$w" branch -q -D release/v0.5.0
+git -C "$w" reset -q --hard "$dev"
+git -C "$w" switch -q main
+git -C "$w" reset -q --hard "$main0"
+git -C "$w" push -q -f origin main
+git -C "$w" switch -q develop
+
 # --- hotfix --------------------------------------------------------------------
 fix="$(git -C "$w" log --format=%H --grep '^fix(api): after release' -n 1 develop)"
 out="$(bash "$CUT" --repo "$w" --version v0.2.1 --mode hotfix --picks "$fix" --push 2>"$tmp/err")"; rc=$?
