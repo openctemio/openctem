@@ -134,6 +134,42 @@ still purgeable, then the file) and is audited `attachment.purged` in the
 file's organization with the reason and SHA-256. Authorization letters and
 other contexts are never purged.
 
+### 3.6 Image hygiene
+
+An uploaded PNG, JPEG, GIF or WebP is parsed before it is stored (images
+are the one kind held in memory, bounded by the 10 MiB file limit):
+
+- dimensions above 50 megapixels (any GIF frame included) are refused with
+  `400 IMAGE_TOO_LARGE`, a damaged image with `400 IMAGE_INVALID`: a small
+  file must not make a viewer or the report renderer allocate a huge bitmap;
+- metadata is removed without re-encoding the pixels: JPEG APP1 (EXIF with
+  GPS, XMP), APP13 (IPTC), other APPn and comments; PNG text chunks, eXIf
+  and tIME; GIF comments, plain text and application extensions other than
+  looping; WebP EXIF and XMP. What changes how the image looks stays
+  (color profile, transparency, animation, and the JPEG orientation in a
+  minimal EXIF segment of its own);
+- the attachment's SHA-256 is the stored bytes; the upload audit event adds
+  `original_sha256` (the bytes received) and `metadata_removed`.
+
+### 3.7 Malware scanning
+
+Optional, off by default: `STORAGE_CLAMD_ADDRESS` names a ClamAV daemon
+(`host:port` or `unix:/path`); a Compose overlay and a Kubernetes manifest
+ship as examples. With it set, a new upload starts `scan_status = pending`
+and a worker (controller `attachment-malware-scan`, every 30 s, one replica)
+streams it to clamd and records `clean`, `infected` (with the signature,
+audited `attachment.malware_detected`, High) or `error` (clamd refused the
+file). While clamd cannot be reached files stay pending.
+
+For evidence a scan **marks, it never blocks**: exploit code and samples
+are legitimate pentest evidence. A flagged file answers
+`409 MALWARE_DETECTED` until the request confirms with `?confirm=malware`;
+it then downloads as an attachment, never inline or cached, and the
+download is audited `attachment.infected_downloaded` (High). Reports never
+embed a flagged image, and the console shows flagged files apart with a
+confirmation dialog. Files uploaded before a scanner was configured keep
+an empty status (not scanned).
+
 ## 4. Threat model
 
 Assets: evidence (may hold secrets, personal data, exploit material),
@@ -150,11 +186,14 @@ mistake.
 | DoS through uploads | streaming (proxy and API), effective per-route limits, per-tenant quota, rate limits on import routes |
 | SSRF through a tenant bucket endpoint | SSRF-guarded client, endpoint validation |
 | Zip/XML bombs in imports | importer archive limits (entries, size, ratio), strict parsers |
+| Image decompression bombs | 50-megapixel limit on the declared dimensions (every GIF frame), checked before storing |
+| Location and identity leaks in evidence images (EXIF GPS, XMP author) | metadata removed on upload, pixels untouched; original hash audited |
 | Evidence tampering, repudiation | SHA-256 recorded; upload/delete audited |
 | Bucket misconfiguration | documentation: block public access, TLS only, least-privilege key, server-side encryption |
 | Evidence outliving its finding (secrets, personal data) | retention sweep purges it after the grace period, audited |
 | Retention deleting the wrong files | parent looked up in the file's own organization only; finding, retest and campaign contexts only (letters never); row deleted only while still purgeable; storage resolved before the row goes |
-| Malware distribution | files only reachable by authorized members, attachment disposition; scanning hook in P1 |
+| Malware distribution | files only reachable by authorized members, attachment disposition; optional clamd scan marks flagged files, which download only after a confirmation (audited) and are never embedded in reports |
+| Hostile scanner input | clamd is operator configuration on the internal network; a scan reads the file from the row's own tenant storage; a result is recorded only on a pending row of that tenant |
 
 ## 5. Decisions
 

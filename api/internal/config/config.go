@@ -268,6 +268,9 @@ type StorageConfig struct {
 	// campaign is purged this many hours after it was uploaded
 	// (STORAGE_UNLINKED_RETENTION_HOURS). 0 = never purged.
 	UnlinkedRetentionHours int
+	// ClamdAddress turns on malware scanning of uploads with a ClamAV daemon:
+	// host:port or unix:/path (STORAGE_CLAMD_ADDRESS). Empty = off.
+	ClamdAddress string
 }
 
 // AppConfig holds application-level configuration.
@@ -1244,6 +1247,7 @@ func Load() (*Config, error) {
 			TenantQuotaMB:          getEnvInt64("STORAGE_TENANT_QUOTA_MB", 20480),
 			OrphanGraceDays:        getEnvInt("STORAGE_ORPHAN_GRACE_DAYS", 7),
 			UnlinkedRetentionHours: getEnvInt("STORAGE_UNLINKED_RETENTION_HOURS", 24),
+			ClamdAddress:           getEnv("STORAGE_CLAMD_ADDRESS", ""),
 		},
 		Server: ServerConfig{
 			Host:                  getEnv("SERVER_HOST", "0.0.0.0"),

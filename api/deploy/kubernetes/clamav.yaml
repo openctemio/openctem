@@ -1,0 +1,93 @@
+# Malware scanning of uploaded files with ClamAV on Kubernetes
+# (docs/architecture/file-storage.md, "Malware scanning"). Optional; off by
+# default. Apply in the release's namespace, then point the API at it with
+# the chart's extra environment:
+#
+#   kubectl -n openctem apply -f clamav.yaml
+#   # values.yaml
+#   api:
+#     extraEnv:
+#       - name: STORAGE_CLAMD_ADDRESS
+#         value: openctem-clamav:3310
+#
+# A flagged file is kept and marked, audited attachment.malware_detected,
+# and downloads only after a confirmation. While clamd is unavailable new
+# files stay "pending". clamd needs about 1.5 GB of memory and outbound
+# HTTPS to the signature mirror (freshclam). The NetworkPolicy lets only the
+# API pods reach port 3310; adjust its labels if your release name differs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openctem-clamav
+  labels:
+    app.kubernetes.io/name: openctem-clamav
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openctem-clamav
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openctem-clamav
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: clamav
+          image: clamav/clamav:1.4
+          ports:
+            - name: clamd
+              containerPort: 3310
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1536Mi
+            limits:
+              memory: 3Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+          readinessProbe:
+            tcpSocket:
+              port: clamd
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          startupProbe:
+            tcpSocket:
+              port: clamd
+            failureThreshold: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: signatures
+              mountPath: /var/lib/clamav
+      volumes:
+        - name: signatures
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openctem-clamav
+spec:
+  selector:
+    app.kubernetes.io/name: openctem-clamav
+  ports:
+    - name: clamd
+      port: 3310
+      targetPort: clamd
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openctem-clamav
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openctem-clamav
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - port: 3310
