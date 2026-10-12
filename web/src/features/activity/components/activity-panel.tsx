@@ -47,7 +47,12 @@ import {
   EventRow,
   UnreadDivider,
 } from './activity-items'
-import { ActivityComposer, type ActivityComposerHandle } from './activity-composer'
+import {
+  ActivityComposer,
+  type ActivityComposerHandle,
+  type CommentSendOptions,
+  type ComposerVisibility,
+} from './activity-composer'
 
 /** Above this many rows, off-screen rows skip layout and paint. */
 export const VIRTUALIZE_AFTER = 200
@@ -58,8 +63,10 @@ export type ActivityLiveStatus = 'connected' | 'connecting' | 'offline'
 
 export interface ActivityPanelComposer {
   /** Post the comment. Throw (reject) to mark it "Not sent" with Retry. */
-  onSend: (body: string, opts: { internal: boolean }) => Promise<void>
+  onSend: (body: string, opts: CommentSendOptions) => Promise<void>
   allowInternal?: boolean
+  /** Pentest client visibility of new comments. */
+  visibility?: ComposerVisibility
   placeholder?: string
 }
 
@@ -124,6 +131,7 @@ const FILTER_LABEL: Record<ActivityFilter, string> = {
 
 interface PendingComment extends ActivityCommentItem {
   internal: boolean
+  clientVisible?: boolean
 }
 
 function FeedSkeleton() {
@@ -383,7 +391,10 @@ export function ActivityPanel({
         { ...p, pending: 'sending' as const },
       ])
       try {
-        await composer.onSend(p.body, { internal: p.internal })
+        await composer.onSend(p.body, {
+          internal: p.internal,
+          ...(p.clientVisible !== undefined ? { clientVisible: p.clientVisible } : {}),
+        })
         setPending((list) => list.filter((x) => x.id !== p.id))
       } catch (e) {
         setPending((list) =>
@@ -395,7 +406,7 @@ export function ActivityPanel({
     [composer]
   )
 
-  const onComposerSend = (body: string, opts: { internal: boolean }) => {
+  const onComposerSend = (body: string, opts: CommentSendOptions) => {
     pendingSeq.current += 1
     const p: PendingComment = {
       kind: 'comment',
@@ -404,6 +415,8 @@ export function ActivityPanel({
       actor: { id: viewer?.id, name: viewer?.name ?? 'You', kind: 'user' },
       body,
       internal: opts.internal,
+      clientVisible: opts.clientVisible,
+      visibility: composer?.visibility ? (opts.clientVisible ? 'client' : 'team') : undefined,
       pending: 'sending',
     }
     // Your own comment is shown even under the Changes filter.
@@ -674,6 +687,7 @@ export function ActivityPanel({
             viewerId={viewer?.id}
             onSend={onComposerSend}
             allowInternal={composer.allowInternal}
+            visibility={composer.visibility}
             placeholder={composer.placeholder}
           />
         ) : undefined

@@ -50,6 +50,13 @@ export interface ActivityCommentItem {
   body: string
   /** Tenant-only note: never synced to a ticketing integration. */
   internal?: boolean
+  /**
+   * Pentest findings: who reads the comment, the campaign team only or the
+   * campaign's client too. Absent elsewhere (no badge).
+   */
+  visibility?: 'team' | 'client'
+  /** Written by an AI client (MCP) acting for the author: its name. */
+  via?: string
   editedAt?: string
   attachments?: ActivityAttachment[]
   /** The comment's own id (edit, delete, reactions), when it differs from `id`. */

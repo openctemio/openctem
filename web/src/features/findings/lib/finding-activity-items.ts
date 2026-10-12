@@ -228,7 +228,7 @@ export function commentToItem(c: ApiFindingComment): ActivityCommentItem {
 }
 
 /** An activity row that is a comment (when the comment list is not loaded). */
-function activityToComment(a: Activity): ActivityCommentItem {
+function activityToComment(a: Activity, opts: FindingActivityItemOptions): ActivityCommentItem {
   const content = a.content ?? ''
   return {
     kind: 'comment',
@@ -238,22 +238,41 @@ function activityToComment(a: Activity): ActivityCommentItem {
     actor: findingActor(a),
     body: content,
     internal: a.metadata?.is_internal === true,
+    visibility: opts.visibility
+      ? a.metadata?.visibility === 'client'
+        ? 'client'
+        : 'team'
+      : undefined,
+    via: str(a.metadata?.client_name),
     // The API stores a 100-character preview when it has no full text.
     truncated: !a.metadata?.content && !!a.metadata?.preview,
   }
 }
 
+export interface FindingActivityItemOptions {
+  /** A pentest finding: comments carry their client visibility badge. */
+  visibility?: boolean
+}
+
 export function toFindingActivityItems(
   activities: Activity[],
-  comments: ApiFindingComment[] | undefined
+  comments: ApiFindingComment[] | undefined,
+  opts: FindingActivityItemOptions = {}
 ): ActivityItem[] {
   const out: ActivityItem[] = []
   const haveComments = Array.isArray(comments)
+  // The AI client that wrote a comment (MCP) is on its activity row only.
+  const via = new Map<string, string>()
+  for (const a of activities) {
+    const id = str(a.metadata?.comment_id)
+    const client = str(a.metadata?.client_name)
+    if (id && client) via.set(id, client)
+  }
   for (const a of activities) {
     const raw = str(a.metadata?.activityType)
     const isComment = a.type === 'comment' || a.type === 'internal_note'
     if (isComment && (raw === undefined || raw === 'comment_added')) {
-      if (!haveComments) out.push(activityToComment(a))
+      if (!haveComments) out.push(activityToComment(a, opts))
       continue
     }
     const text = describeFindingEvent(a)
@@ -274,7 +293,14 @@ export function toFindingActivityItems(
   }
   if (haveComments) {
     // A status change also writes a comment row; its note is the event's detail.
-    for (const c of comments!) if (!c.is_status_change) out.push(commentToItem(c))
+    for (const c of comments!) {
+      if (c.is_status_change) continue
+      const item = commentToItem(c)
+      if (opts.visibility) item.visibility = c.visibility === 'client' ? 'client' : 'team'
+      const client = via.get(c.id)
+      if (client) item.via = client
+      out.push(item)
+    }
   }
   return out
 }

@@ -27,9 +27,9 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 		INSERT INTO finding_comments (
 			id, tenant_id, finding_id, author_id, content,
 			is_status_change, old_status, new_status,
-			created_at, updated_at, is_internal
+			created_at, updated_at, is_internal, visibility
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -44,6 +44,7 @@ func (r *FindingCommentRepository) Create(ctx context.Context, comment *vulnerab
 		comment.CreatedAt(),
 		comment.UpdatedAt(),
 		comment.IsInternal(),
+		string(comment.Visibility()),
 	)
 
 	if err != nil {
@@ -165,7 +166,7 @@ func (r *FindingCommentRepository) selectQuery() string {
 			COALESCE(u.name, '') as author_name,
 			COALESCE(u.email, '') as author_email,
 			fc.content, fc.is_status_change, fc.old_status, fc.new_status,
-			fc.created_at, fc.updated_at, fc.is_internal
+			fc.created_at, fc.updated_at, fc.is_internal, fc.visibility
 		FROM finding_comments fc
 		LEFT JOIN users u ON fc.author_id = u.id
 	`
@@ -201,13 +202,14 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 		createdAt      time.Time
 		updatedAt      time.Time
 		isInternal     bool
+		visibility     string
 	)
 
 	err := scan(
 		&idStr, &tenantIDStr, &findingIDStr, &authorIDStr,
 		&authorName, &authorEmail,
 		&content, &isStatusChange, &oldStatus, &newStatus,
-		&createdAt, &updatedAt, &isInternal,
+		&createdAt, &updatedAt, &isInternal, &visibility,
 	)
 	if err != nil {
 		return nil, err
@@ -256,6 +258,7 @@ func (r *FindingCommentRepository) doScan(scan func(dest ...any) error) (*vulner
 		updatedAt,
 	)
 	comment.SetInternal(isInternal)
+	comment.SetVisibility(vulnerability.CommentVisibility(visibility))
 	return comment, nil
 }
 
