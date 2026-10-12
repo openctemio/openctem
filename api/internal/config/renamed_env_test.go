@@ -43,6 +43,20 @@ func TestLoad_RefusesRetiredEnvName(t *testing.T) {
 	}
 }
 
+// Knobs that switched nothing are refused too, each with what to do instead:
+// a deployment file that sets them misleads whoever reads it.
+func TestRejectRetiredEnv_DeadKnobsSayRemove(t *testing.T) {
+	for _, name := range []string{"APP_DEBUG", "GRPC_PORT", "LOG_SKIP_HEALTH", "AI_MAX_CONCURRENT_JOBS", "AUTH_ALLOW_REGISTRATION"} {
+		err := rejectRetiredEnv(fakeEnv{name: "false"}.lookup)
+		if err == nil {
+			t.Fatalf("%s set: want a refusal", name)
+		}
+		if !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), name+" (removed: unset it") {
+			t.Errorf("%s: error %q does not name it and say to unset it", name, err)
+		}
+	}
+}
+
 // The platform-wide Jira webhook secret was removed (each organization has
 // its own). Startup refuses it, even empty, and says what to do instead.
 func TestLoad_RefusesRemovedJiraWebhookSecret(t *testing.T) {
