@@ -13,6 +13,7 @@ import { useNavItemAccess } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useScopingSummary, type ScopingSummary } from '../api'
 import { readinessRows, readinessScore, visibleReadiness, type ReadinessRow } from '../readiness'
+import { useTranslation } from '@/context/i18n-provider'
 
 const DAY = 86_400_000
 
@@ -29,15 +30,20 @@ function cycleWhen(c: NonNullable<ScopingSummary['active_cycle']>): string {
 }
 
 function CycleCard({ summary }: { summary: ScopingSummary }) {
+  const { t } = useTranslation()
   const c = summary.active_cycle
   if (!c) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">No cycle yet</CardTitle>
+          <CardTitle className="text-base">
+            {t('scope.cycles.noCycleTitle', 'No cycle yet')}
+          </CardTitle>
           <CardDescription>
-            A cycle binds the charter, the scope it freezes and the outcome it is judged by.
-            Everything below fills it in.
+            {t(
+              'scope.cycles.noCycle',
+              'A cycle holds the charter, the scope it freezes and the outcome it is judged by.'
+            )}
           </CardDescription>
         </CardHeader>
       </Card>

@@ -84,7 +84,6 @@ Key variables (see `.env.example` for full list):
 # Application
 APP_NAME=openctem
 APP_ENV=development
-APP_DEBUG=true
 
 # Server
 SERVER_HOST=0.0.0.0

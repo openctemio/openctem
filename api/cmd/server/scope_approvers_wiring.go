@@ -73,6 +73,11 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 			svc.ScanPolicy.SetSettings(svc.Tenant)
 		}
 		svc.Scope.SetGovernance(svc.ScanPolicy)
+		// Verified domain before platform sensors scan (RFC-054 §8.1): a
+		// platform setting, read at each check (cached briefly).
+		if svc.Scan != nil {
+			svc.Scan.SetProofPolicy(svc.ScanPolicy)
+		}
 		// Scope entry tier ceilings are in force only in Strict: the
 		// dispatch gate reads the mode, and a mode change that crosses
 		// Strict is recorded with the job signer's ledger.
