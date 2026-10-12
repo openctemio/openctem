@@ -182,7 +182,7 @@ refused (`STORED_FILE_MISMATCH`). Existing rows are moved by the
 `report-file-migration` job (every minute, one replica, 10 rows per kind
 per run): each file is written, read back and compared before the row
 switches to it and its bytes are cleared; a row that cannot be moved keeps
-its bytes and keeps working. Migration `002062` is the expand step (nullable
+its bytes and keeps working. Migration `002063` is the expand step (nullable
 `content`, new columns); a later release drops `content`.
 
 A deleted row, directly or through a cascade (report, campaign,
