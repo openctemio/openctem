@@ -257,6 +257,12 @@ export interface CreateScanConfigRequest {
    * approved (RFC-054 §12.8). The response says `starts_when_scope_approved`.
    */
   start_when_scope_approved?: boolean
+  /**
+   * Save the scan with only the direct targets the scope check allows; the
+   * server records the others with their reasons on the scan and its runs
+   * (RFC-054 §6.4).
+   */
+  skip_refused_targets?: boolean
 }
 
 /**

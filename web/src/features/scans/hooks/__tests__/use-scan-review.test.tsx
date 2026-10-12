@@ -53,6 +53,18 @@ describe('useScanReview', () => {
     const r = review(form())
     expect(r.refused).toEqual(['b.example.com'])
     expect(r.blockers[0]).toMatch(/1 target may not be scanned/)
+    // Only the refusal blocks: the allowed one may start with the rest skipped.
+    expect(r.otherBlockers).toEqual([])
+    expect(r.allowedCount).toBe(1)
+  })
+
+  it('does not offer skipping when something else blocks too', () => {
+    scopeResults = [
+      { target: 'a.example.com', allowed: true },
+      { target: 'b.example.com', allowed: false },
+    ]
+    const r = review(form({ name: '' }))
+    expect(r.otherBlockers).toContain('Please enter a scan name')
   })
 
   it('blocks on the form problems and on a blocking workflow step', () => {
