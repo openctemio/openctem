@@ -127,7 +127,7 @@ function StorageConfigTab({ onStatusChange }: { onStatusChange: (s: StorageStatu
   if (!loaded) return <Skeleton className="h-48 w-full rounded-xl" />
 
   return (
-    <form id={STORAGE_FORM_ID} onSubmit={handleSave}>
+    <form method="post" id={STORAGE_FORM_ID} onSubmit={handleSave}>
       <Card>
         <CardHeader>
           <CardTitle>Storage provider</CardTitle>

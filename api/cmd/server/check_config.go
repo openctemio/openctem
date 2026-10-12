@@ -16,8 +16,8 @@ func reportConfigCheck(stdout, stderr io.Writer, cfg *config.Config, loadErr err
 		fmt.Fprintf(stderr, "configuration INVALID: %v\n", loadErr)
 		return 1
 	}
-	fmt.Fprintf(stdout, "configuration valid: APP_ENV=%s AUTH_PROVIDER=%s TENANT_CREATION_MODE=%s SCOPE_ACTIVE_PROOF=%s\n",
-		cfg.App.Env, cfg.Auth.Provider, cfg.Auth.TenantCreationMode, cfg.Scope.ActiveProof)
+	fmt.Fprintf(stdout, "configuration valid: APP_ENV=%s AUTH_PROVIDER=%s TENANT_CREATION_MODE=%s\n",
+		cfg.App.Env, cfg.Auth.Provider, cfg.Auth.TenantCreationMode)
 	for _, w := range cfg.WideTrustedProxies() {
 		fmt.Fprintf(stdout, "warning: %s trusts every address in a wide range to set the client IP (rate limits, audit, IP allowlists); "+
 			"list only the gateway's and the web server's addresses\n", w)

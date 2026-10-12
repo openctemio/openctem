@@ -235,7 +235,7 @@ Driven by RFC-069 timeline events and set-element changes, each producing a
 | Bug-bounty targets | Passive only unless the tenant opts the program's label in; program rules (headers, user agent, rate, testing windows) applied at delivery | RFC-065 §12, unchanged |
 | Scan windows | Enrichment commands wait for an open window like any command | RFC-067, unchanged |
 | Governance | Passive needs no approval; an active profile follows RFC-073 (an approval policy that matches makes the run wait) | RFC-073, unchanged |
-| Platform sensors | Active enrichment on platform sensors needs the targets proven (`SCOPE_ACTIVE_PROOF`) | RFC-054 §8.1, unchanged |
+| Platform sensors | Active enrichment on platform sensors needs the targets proven when the platform sensor proof setting is on | RFC-054 §8.1, unchanged |
 | Tenant switch | "Automatic enrichment": passive **on** by default; active **off**, opt-in per asset label (P1) | EASM settings section |
 | Loop prevention | One request row per asset (idempotent upsert); 6 h cooldown per asset between dispatches unless the reason is `manual`; hop depth inside a run (≤ 3, unchanged); a change request is dropped when a run of the same profile for the asset is already planned or running | controller |
 | Budget | Per-tenant daily asset budget, per-run cap 500, per-tick fair share; the run-level concurrency limits (3 per scan, 50 per tenant) unchanged | controller, scan service |

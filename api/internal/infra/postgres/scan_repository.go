@@ -36,6 +36,12 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal target_options: %w", err)
 	}
+	var skipped []byte
+	if len(s.SkippedTargets) > 0 {
+		if skipped, err = json.Marshal(s.SkippedTargets); err != nil {
+			return fmt.Errorf("failed to marshal skipped_targets: %w", err)
+		}
+	}
 
 	var scanWorkflowID *string
 	if s.ScanWorkflowID != nil {
@@ -93,9 +99,9 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 			max_retries, retry_backoff_seconds, status,
 			last_run_id, last_run_at, last_run_status,
 			total_runs, successful_runs, failed_runs,
-			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity
+			created_by, created_at, updated_at, scan_zone_id, ad_hoc, schedule_rrule, schedule_run_at, target_options, intensity, skipped_targets
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, NULLIF($38, ''), $39, $40, $41, $42)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -140,6 +146,7 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 		s.ScheduleRunAt,
 		targetOptions,
 		string(s.EffectiveIntensity()),
+		skipped,
 	)
 
 	if err != nil {
@@ -646,7 +653,7 @@ func (r *ScanRepository) selectQuery() string {
 		       last_run_id, last_run_at, last_run_status,
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
-		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity
+		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity, skipped_targets
 		FROM scans
 	`
 }
@@ -686,6 +693,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		scheduleTimezone    sql.NullString
 		scanZoneID          sql.NullString
 		targetOptions       []byte
+		skippedTargets      []byte
 	)
 
 	err := reader.Scan(
@@ -732,6 +740,7 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.ScheduleRunAt,
 		&targetOptions,
 		&s.Intensity,
+		&skippedTargets,
 	)
 	if err != nil {
 		return nil, err
@@ -809,6 +818,11 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 	if len(targetOptions) > 0 {
 		if err := json.Unmarshal(targetOptions, &s.TargetOptions); err != nil {
 			return nil, fmt.Errorf("scan %s target_options: %w", id, err)
+		}
+	}
+	if len(skippedTargets) > 0 {
+		if err := json.Unmarshal(skippedTargets, &s.SkippedTargets); err != nil {
+			return nil, fmt.Errorf("scan %s skipped_targets: %w", id, err)
 		}
 	}
 
