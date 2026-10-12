@@ -188,9 +188,10 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/dashboard":         {classPartial, "activity and top risks scoped; counts and trends tenant-wide until P1-4 (D6)"},
 
 	// --- separate ------------------------------------------------------------------
-	"/api/v1/pentest":                  {classSeparate, "campaign membership (D5 engagement scope is P2)"},
-	"/api/v1/pentest/report-templates": {classConfig, "organization report templates: tenant settings, no asset data (RFC-076)"},
-	"/api/v1/attachments":              {classSeparate, "pentest and finding evidence; campaign membership"},
+	"/api/v1/pentest":                     {classSeparate, "campaign membership (D5 engagement scope is P2)"},
+	"/api/v1/pentest/report-templates":    {classConfig, "organization report templates: tenant settings, no asset data (RFC-076)"},
+	"/api/v1/pentest/checklist-templates": {classConfig, "organization methodology checklist templates: tenant settings, no asset data (RFC-087)"},
+	"/api/v1/attachments":                 {classSeparate, "pentest and finding evidence; campaign membership"},
 
 	// --- gap -----------------------------------------------------------------------
 	"/api/v1/credentials":                                {classScoped, "leaks on in-scope assets; asset-less leaks: unrestricted callers only (L-10)"},

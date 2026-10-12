@@ -385,7 +385,8 @@ export const settingsNav: SettingsNavGroup[] = [
       {
         id: 'pentest-methodology',
         title: 'Pentest methodology',
-        description: 'Campaign types, methodologies, the finding library and report templates.',
+        description:
+          'Campaign types, methodologies, checklists, the finding library and report templates.',
         url: '/settings/pentest',
         icon: Crosshair,
         permission: Permission.PentestRead,
@@ -394,6 +395,8 @@ export const settingsNav: SettingsNavGroup[] = [
           'pentest',
           'campaign types',
           'methodology',
+          'checklist',
+          'checklists',
           'finding library',
           'templates',
           'report templates',
