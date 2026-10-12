@@ -346,6 +346,11 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Tenant != nil {
 		mcpPolicies = mcpPolicyReader{tenants: svc.Tenant}
 		mcpSettings = handler.NewMCPSettingsHandler(svc.Tenant, cfg.MCP.TrustedClientHosts, log)
+		if mcpHandler != nil {
+			// Pentest campaigns above the organization's TLP limit for AI
+			// applications never reach an AI client.
+			mcpHandler.SetAIPolicy(mcpPolicies)
+		}
 	}
 	mcpDiscovery := newMCPDiscovery(cfg, log)
 	// OAuth for MCP clients (RFC-062): with an authorization server the MCP

@@ -102,7 +102,7 @@ func resultText(resp map[string]any) (string, bool) {
 
 func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 	findings := &fakeFindingReader{finding: makePentestFinding(t)}
-	h := newTestMCP(findings)
+	h := newTestMCPWithPentest(findings, &fakePentestReader{})
 	conf := &fakeConfirmer{approved: map[string]string{}}
 	comments := &fakeCommenter{}
 	h.SetWriteTools(conf, comments)
@@ -187,7 +187,7 @@ func (f *summaryConfirmer) RequestConfirmation(ctx context.Context, p *mcpoautha
 // an AI client wrote it.
 func TestAddFindingComment_PentestVisibility(t *testing.T) {
 	findings := &fakeFindingReader{finding: makePentestFinding(t)}
-	h := newTestMCP(findings)
+	h := newTestMCPWithPentest(findings, &fakePentestReader{})
 	conf := &summaryConfirmer{fakeConfirmer: fakeConfirmer{approved: map[string]string{}}}
 	comments := &fakeCommenter{pentest: true}
 	h.SetWriteTools(conf, comments)

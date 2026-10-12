@@ -19,7 +19,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useTranslation } from '@/context/i18n-provider'
+import { useProfileLabels } from '@/features/pentest/lib/use-pentest-labels'
+import { CAMPAIGN_TLPS, type CampaignTLP } from '@/features/pentest/types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { type McpPolicyUpdate, updateMcpPolicy, useMcpPolicy } from '../api/connections'
@@ -39,10 +49,13 @@ export function parseHosts(text: string): string[] {
 /**
  * The organization's policy for AI applications (RFC-062 §8): whether MCP is
  * on, which applications may connect, which access members may grant,
- * whether API keys work on MCP, and how long a connection lasts. Saving
- * needs a recent sign-in (the shared client asks for it).
+ * whether API keys work on MCP, how long a connection lasts, and the
+ * highest TLP of a pentest campaign AI applications may read. Saving needs a
+ * recent sign-in (the shared client asks for it).
  */
 export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
+  const { t } = useTranslation()
+  const { tlpLabel } = useProfileLabels()
   const { data, isLoading, error } = useMcpPolicy(true)
   const [draft, setDraft] = useState<McpPolicyUpdate | null>(null)
   const [hostsText, setHostsText] = useState('')
@@ -58,6 +71,7 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
       api_keys_allowed: data.api_keys_allowed,
       refresh_days: data.refresh_days,
       require_dpop: data.require_dpop,
+      max_tlp: data.max_tlp,
     })
     setHostsText(data.client_hosts.join('\n'))
   }, [data])
@@ -94,9 +108,13 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
     setSaving(true)
     try {
       await updateMcpPolicy({ ...draft, client_hosts: parseHosts(hostsText) })
-      toast.success('Policy saved. It applies to existing connections at once.')
+      toast.success(
+        t('settings.mcpPolicy.saved', 'Policy saved. It applies to existing connections at once.')
+      )
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not save the policy'))
+      toast.error(
+        getErrorMessage(err, t('settings.mcpPolicy.saveFailed', 'Could not save the policy'))
+      )
     } finally {
       setSaving(false)
     }
@@ -107,18 +125,25 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Organization policy</CardTitle>
+        <CardTitle>{t('settings.mcpPolicy.title', 'Organization policy')}</CardTitle>
         <CardDescription>
-          Which AI applications members may connect and what they may let them read. Changes apply
-          to existing connections at once.
+          {t(
+            'settings.mcpPolicy.description',
+            'Which AI applications members may connect and what they may let them read. Changes apply to existing connections at once.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Label htmlFor="mcp-enabled">AI application access</Label>
+            <Label htmlFor="mcp-enabled">
+              {t('settings.mcpPolicy.enabled', 'AI application access')}
+            </Label>
             <p className="text-muted-foreground text-sm">
-              Off: no application or API key can use the MCP server.
+              {t(
+                'settings.mcpPolicy.enabledHint',
+                'Off: no application or API key can use the MCP server.'
+              )}
             </p>
           </div>
           <Switch
@@ -131,10 +156,14 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Label htmlFor="mcp-any-client">Allow unverified applications</Label>
+            <Label htmlFor="mcp-any-client">
+              {t('settings.mcpPolicy.anyClient', 'Allow unverified applications')}
+            </Label>
             <p className="text-muted-foreground text-sm">
-              Off: only applications your organization registered or published on a trusted host
-              below.
+              {t(
+                'settings.mcpPolicy.anyClientHint',
+                'Off: only applications your organization registered or published on a trusted host below.'
+              )}
             </p>
           </div>
           <Switch
@@ -146,7 +175,9 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="mcp-hosts">Trusted application hosts</Label>
+          <Label htmlFor="mcp-hosts">
+            {t('settings.mcpPolicy.hosts', 'Trusted application hosts')}
+          </Label>
           <Textarea
             id="mcp-hosts"
             value={hostsText}
@@ -156,12 +187,16 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
             disabled={disabled}
           />
           <p className="text-muted-foreground text-xs">
-            Host names only, one per line. Applications whose identity document is published on
-            these hosts count as verified.
+            {t(
+              'settings.mcpPolicy.hostsHint',
+              'Host names only, one per line. Applications whose identity document is published on these hosts count as verified.'
+            )}
           </p>
           {data.platform_client_hosts.length > 0 && (
             <div className="flex flex-wrap items-center gap-1 text-xs">
-              <span className="text-muted-foreground">Trusted by the platform:</span>
+              <span className="text-muted-foreground">
+                {t('settings.mcpPolicy.platformHosts', 'Trusted by the platform:')}
+              </span>
               {data.platform_client_hosts.map((h) => (
                 <Badge key={h} variant="outline" className="font-mono text-xs">
                   {h}
@@ -172,7 +207,9 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
         </div>
 
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Access members may grant</legend>
+          <legend className="text-sm font-medium">
+            {t('settings.mcpPolicy.scopes', 'Access members may grant')}
+          </legend>
           {readScopes.map((s) => (
             <label key={s.scope} className="flex items-center gap-2 text-sm">
               <Checkbox
@@ -187,9 +224,14 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Label htmlFor="mcp-keys">API keys on the MCP server</Label>
+            <Label htmlFor="mcp-keys">
+              {t('settings.mcpPolicy.apiKeys', 'API keys on the MCP server')}
+            </Label>
             <p className="text-muted-foreground text-sm">
-              For scripts without a person; they still work on the REST API.
+              {t(
+                'settings.mcpPolicy.apiKeysHint',
+                'For scripts without a person; they still work on the REST API.'
+              )}
             </p>
           </div>
           <Switch
@@ -202,10 +244,14 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Label htmlFor="mcp-dpop">Require proof of possession (DPoP)</Label>
+            <Label htmlFor="mcp-dpop">
+              {t('settings.mcpPolicy.dpop', 'Require proof of possession (DPoP)')}
+            </Label>
             <p className="text-muted-foreground text-sm">
-              Applications must sign every request with their own key, so a copied token is useless.
-              Applications without DPoP support can no longer connect.
+              {t(
+                'settings.mcpPolicy.dpopHint',
+                'Applications must sign every request with their own key, so a copied token is useless. Applications without DPoP support can no longer connect.'
+              )}
             </p>
           </div>
           <Switch
@@ -217,7 +263,9 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="mcp-days">Connections last (days)</Label>
+          <Label htmlFor="mcp-days">
+            {t('settings.mcpPolicy.days', 'Connections last (days)')}
+          </Label>
           <Input
             id="mcp-days"
             type="number"
@@ -229,7 +277,38 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
             disabled={disabled}
           />
           <p className="text-muted-foreground text-xs">
-            After this, the person approves the application again. 1 to 90.
+            {t(
+              'settings.mcpPolicy.daysHint',
+              'After this, the person approves the application again. 1 to 90.'
+            )}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="mcp-max-tlp">
+            {t('settings.mcpPolicy.maxTlp', 'Highest TLP sent to AI applications')}
+          </Label>
+          <Select
+            value={draft.max_tlp}
+            onValueChange={(v) => set({ max_tlp: v as CampaignTLP })}
+            disabled={disabled}
+          >
+            <SelectTrigger id="mcp-max-tlp" className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CAMPAIGN_TLPS.map((l) => (
+                <SelectItem key={l} value={l}>
+                  {tlpLabel(l)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-xs">
+            {t(
+              'settings.mcpPolicy.maxTlpHint',
+              'Pentest campaigns above this level are never sent to AI applications: their tools and prompts refuse them, and campaign lists leave them out. A campaign lead can also turn AI assistants off for one campaign.'
+            )}
           </p>
         </div>
       </CardContent>
@@ -237,7 +316,7 @@ export function McpPolicyCard({ canEdit }: McpPolicyCardProps) {
         <CardFooter className="justify-end">
           <Button onClick={() => void save()} disabled={saving || selected.size === 0}>
             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-            Save policy
+            {t('settings.mcpPolicy.save', 'Save policy')}
           </Button>
         </CardFooter>
       )}
