@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { ScanRunsTab } from '../scan-runs-tab'
@@ -274,6 +274,19 @@ describe('ScanRunsTab', () => {
     window.history.replaceState(null, '', '/scans/runs?run=rt7')
     render(<ScanRunsTab />)
     expect(screen.getByTestId('run-sheet')).toHaveTextContent('rt7')
+  })
+
+  it('opens the run a link names when the address catches up after the first render', () => {
+    // An in-app link (a retest's "View run") renders the page before the
+    // address bar changes; ?run must still open its run.
+    window.history.replaceState(null, '', '/scans/runs')
+    render(<ScanRunsTab />)
+    expect(screen.queryByTestId('run-sheet')).toBeNull()
+    act(() => {
+      window.history.replaceState(null, '', '/scans/runs?run=rt8')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByTestId('run-sheet')).toHaveTextContent('rt8')
   })
 
   it('explains the missing permission instead of showing an empty table', () => {

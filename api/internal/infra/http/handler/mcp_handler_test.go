@@ -438,6 +438,14 @@ type fakePentestReader struct {
 	retests    []*pentestdom.Retest
 	templates  []*pentestdom.Template
 	members    []*pentestdom.CampaignMember
+	role       pentestdom.CampaignRole // the acting user's campaign role; empty means lead
+}
+
+func (p *fakePentestReader) GetUserCampaignRole(_ context.Context, _, _, _ string) (pentestdom.CampaignRole, error) {
+	if p.role == "" {
+		return pentestdom.CampaignRoleLead, nil
+	}
+	return p.role, nil
 }
 
 func (p *fakePentestReader) CheckCampaignAccess(_ context.Context, tenantID, _, userID string, isAdmin bool) error {
@@ -808,5 +816,90 @@ func TestMCP_PromptsGet_RequiresScope(t *testing.T) {
 	}
 	if pr.gotTenant != "" {
 		t.Error("the prompt data read must not run when the key lacks its scope")
+	}
+}
+
+// A campaign client reaches MCP with their own identity: like the console,
+// they see published findings only. Drafts and in-review findings stay hidden
+// in the list, in a direct read, in retests and in the report counts.
+func mcpToolText(t *testing.T, resp rpcResp) (string, bool) {
+	t.Helper()
+	var r struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(resp.Result, &r); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(r.Content) == 0 {
+		return "", r.IsError
+	}
+	return r.Content[0].Text, r.IsError
+}
+
+func clientVisibilityFixture(t *testing.T) (*vulnerability.Finding, *vulnerability.Finding) {
+	t.Helper()
+	draft := makePentestFinding(t)
+	draft.SetTitle("DRAFT_NOT_FOR_CLIENT")
+	draft.StartAsDraft()
+	cid := shared.NewID()
+	draft.SetPentestCampaignID(&cid)
+	published := makePentestFinding(t)
+	published.SetTitle("PUBLISHED_FOR_CLIENT")
+	published.SetPentestCampaignID(&cid)
+	return draft, published
+}
+
+func TestMCP_ListCampaignFindings_ClientSeesPublishedOnly(t *testing.T) {
+	draft, published := clientVisibilityFixture(t)
+	for _, tc := range []struct {
+		role      pentestdom.CampaignRole
+		wantDraft bool
+	}{{pentestdom.CampaignRoleClient, false}, {pentestdom.CampaignRoleTester, true}, {pentestdom.CampaignRoleObserver, true}} {
+		pr := &fakePentestReader{findings: []*vulnerability.Finding{draft, published}, role: tc.role}
+		h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_campaign_findings","arguments":{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+		_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"pentest:findings:read"}, body)
+		text, _ := mcpToolText(t, resp)
+		if got := strings.Contains(text, "DRAFT_NOT_FOR_CLIENT"); got != tc.wantDraft {
+			t.Errorf("%s: draft visible = %v, want %v", tc.role, got, tc.wantDraft)
+		}
+		if !strings.Contains(text, "PUBLISHED_FOR_CLIENT") {
+			t.Errorf("%s: published finding missing", tc.role)
+		}
+	}
+}
+
+func TestMCP_GetPentestFinding_ClientCannotReadDraft(t *testing.T) {
+	draft, _ := clientVisibilityFixture(t)
+	pr := &fakePentestReader{role: pentestdom.CampaignRoleClient}
+	h := newTestMCPWithPentest(&fakeFindingReader{finding: draft}, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_pentest_finding","arguments":{"id":"018f5a1e-0000-7000-8000-0000000000aa"}}}`
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"pentest:findings:read"}, body)
+	text, isErr := mcpToolText(t, resp)
+	if strings.Contains(text, "DRAFT_NOT_FOR_CLIENT") || (resp.Error == nil && !isErr) {
+		t.Fatalf("a client read a draft through MCP: %s", text)
+	}
+}
+
+func TestMCP_CampaignReportStats_ClientCountsPublishedOnly(t *testing.T) {
+	draft, published := clientVisibilityFixture(t)
+	pr := &fakePentestReader{
+		findings: []*vulnerability.Finding{draft, published},
+		stats:    &pentestdom.CampaignStats{TotalFindings: 2, HighFindings: 2, DraftCount: 1},
+		role:     pentestdom.CampaignRoleClient,
+	}
+	h := newTestMCPWithPentest(&fakeFindingReader{}, pr)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"campaign_report_stats","arguments":{"campaign_id":"018f5a1e-0000-7000-8000-0000000000cc"}}}`
+	_, resp := doRPCScoped(t, h, testTenantUUID, "user-1", []string{"pentest:campaigns:read"}, body)
+	text, _ := mcpToolText(t, resp)
+	var st pentestdom.CampaignStats
+	if err := json.Unmarshal([]byte(text), &st); err != nil {
+		t.Fatalf("decode stats: %v (%s)", err, text)
+	}
+	if st.TotalFindings != 1 || st.HighFindings != 1 || st.DraftCount != 0 {
+		t.Fatalf("client stats must count published findings only, got %+v", st)
 	}
 }
