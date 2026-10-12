@@ -16,7 +16,7 @@
 # ==============================================================================
 # BASE STAGE - Common dependencies
 # ==============================================================================
-FROM node:26-alpine AS base
+FROM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS base
 
 # Add libc6-compat for Alpine compatibility with some npm packages
 RUN apk add --no-cache libc6-compat
@@ -113,7 +113,7 @@ RUN npm run build
 # the one the node image is built on (node:26-alpine), so node finds the C++
 # runtime it was linked against; `node --version` below fails the build
 # otherwise.
-FROM alpine:3.24 AS production
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS production
 
 # node's shared libraries (see `ldd /usr/local/bin/node` in the node image).
 RUN apk add --no-cache libstdc++ libgcc libatomic
@@ -147,6 +147,11 @@ COPY --from=builder /app/.next/static ./.next/static
 # of /api/v1/ws to BACKEND_API_URL (read at start, not frozen into the build).
 COPY --from=builder /app/server-with-ws.mjs ./server-with-ws.mjs
 RUN mkdir -p .next/cache && chown nextjs:nodejs .next/cache
+
+LABEL org.opencontainers.image.title="OpenCTEM web console" \
+      org.opencontainers.image.description="OpenCTEM web console (Next.js standalone, non-root)" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
 
 # Switch to non-root user
 USER nextjs
