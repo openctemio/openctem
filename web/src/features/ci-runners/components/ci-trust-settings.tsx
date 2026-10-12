@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
 import { CIRequireOIDC } from './ci-require-oidc'
+import { CIPRFeedback } from './ci-pr-feedback'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -108,6 +109,9 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
           <TabsTrigger value="break-glass">
             {t('scans.ci.breakGlass.tab', 'Break-glass')}
           </TabsTrigger>
+          <TabsTrigger value="feedback">
+            {t('scans.ci.feedback.tab', 'Pull request feedback')}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="trust" className="mt-4">
           <TrustConfigsSection canWrite={canWrite} />
@@ -117,6 +121,9 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
         </TabsContent>
         <TabsContent value="break-glass" className="mt-4">
           <OverridesSection canOverride={canOverride} />
+        </TabsContent>
+        <TabsContent value="feedback" className="mt-4">
+          <CIPRFeedback canWrite={canWrite} />
         </TabsContent>
       </Tabs>
     </div>
