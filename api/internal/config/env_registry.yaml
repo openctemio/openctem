@@ -865,6 +865,12 @@ vars:
     type: string
     default: "./data/attachments"
     description: "Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up."
+  - name: STORAGE_TENANT_QUOTA_MB
+    component: api
+    group: "Attachment storage"
+    type: int
+    default: "20480"
+    description: "Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota."
   - name: STORAGE_PROVIDER
     component: api
     group: "Attachment storage"

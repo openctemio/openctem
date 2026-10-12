@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -131,6 +132,15 @@ func (h *ScopeLetterHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = file.Close() }()
+	// The file's type comes from its first bytes: a declared type would let
+	// any file through as a PDF or an image.
+	head := make([]byte, attachment.SniffLen)
+	n, _ := io.ReadFull(file, head)
+	contentType := attachment.DetectContentType(head[:n], header.Filename)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		apierror.BadRequest("The letter file could not be read").WriteJSON(w)
+		return
+	}
 	from, err1 := parseLetterTime(r.FormValue("valid_from"))
 	until, err2 := parseLetterTime(r.FormValue("valid_until"))
 	if err1 != nil || err2 != nil {
@@ -140,7 +150,7 @@ func (h *ScopeLetterHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	l, err := h.svc.Upload(r.Context(), scope.UploadLetterInput{
 		TenantID: tenantID, UploadedBy: actor, Title: r.FormValue("title"), Issuer: r.FormValue("issuer"),
 		Reference: r.FormValue("reference"), ValidFrom: from, ValidUntil: until,
-		Filename: header.Filename, ContentType: header.Header.Get("Content-Type"), Size: header.Size, File: file,
+		Filename: header.Filename, ContentType: contentType, Size: header.Size, File: file,
 	})
 	if err != nil {
 		h.writeError(w, err)

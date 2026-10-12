@@ -205,3 +205,15 @@ func (r *AttachmentRepository) LinkToContext(ctx context.Context, tenantID share
 	}
 	return result.RowsAffected()
 }
+
+// TotalSize is the number of bytes the tenant's attachments hold (the
+// storage quota counts it). Served by idx_attachments_tenant.
+func (r *AttachmentRepository) TotalSize(ctx context.Context, tenantID shared.ID) (int64, error) {
+	var total int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(size), 0) FROM attachments WHERE tenant_id = $1`, tenantID.String()).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("sum attachment sizes: %w", err)
+	}
+	return total, nil
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"strings"
 
@@ -90,15 +91,28 @@ func newS3Storage(bucket, region, endpoint, accessKey, secretKey string, httpCli
 }
 
 func (s *S3Storage) Upload(ctx context.Context, tenantID, filename, contentType string, reader io.Reader) (string, error) {
+	if err := checkNamespace(tenantID); err != nil {
+		return "", err
+	}
 	safe := sanitizeFilename(filename)
 	key := fmt.Sprintf("%s_%s", shared.NewID().String(), safe)
 	objectKey := path.Join(tenantID, key)
 
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(objectKey),
-		Body:        reader,
-		ContentType: aws.String(contentType),
+	// The request is signed over its payload, which needs a body that can
+	// be read twice: a stream is spooled to a temporary file first (never
+	// held in memory) and removed afterwards.
+	body, size, cleanup, err := seekableBody(reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to buffer upload: %w", err)
+	}
+	defer cleanup()
+
+	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(objectKey),
+		Body:          body,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(contentType),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to S3: %w", err)
@@ -177,4 +191,37 @@ func (s *S3Storage) EraseTenant(ctx context.Context, tenantID string) (int, erro
 		}
 	}
 	return n, nil
+}
+
+// seekableBody returns r as a ReadSeeker with its length: r itself when it
+// already seeks, else a temporary file r was copied to. cleanup removes the
+// file.
+func seekableBody(r io.Reader) (io.ReadSeeker, int64, func(), error) {
+	if rs, ok := r.(io.ReadSeeker); ok {
+		size, err := rs.Seek(0, io.SeekEnd)
+		if err == nil {
+			_, err = rs.Seek(0, io.SeekStart)
+		}
+		if err != nil {
+			return nil, 0, func() {}, err
+		}
+		return rs, size, func() {}, nil
+	}
+	f, err := os.CreateTemp("", "openctem-upload-*")
+	if err != nil {
+		return nil, 0, func() {}, err
+	}
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}
+	size, err := io.Copy(f, r)
+	if err == nil {
+		_, err = f.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		cleanup()
+		return nil, 0, func() {}, err
+	}
+	return f, size, cleanup, nil
 }
