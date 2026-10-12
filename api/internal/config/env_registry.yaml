@@ -1511,12 +1511,6 @@ vars:
     type: string
     secret: true
     description: "Platform key for the `openai` provider."
-  - name: CTEM_ENFORCE_COVERAGE_SLO
-    component: api
-    group: "CTEM cycles"
-    type: string
-    default: "unset"
-    description: "`true` refuses to close a CTEM cycle whose validation coverage misses its targets. Unset: the miss is only logged."
   - name: BOOTSTRAP_SMTP_HOST
     component: tool
     group: "Administration tools"

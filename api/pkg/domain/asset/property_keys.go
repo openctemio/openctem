@@ -35,6 +35,8 @@ const (
 	PropKeyBusinessImpactScore = "business_impact_score"
 	PropKeyBusinessImpactNotes = "business_impact_notes"
 	PropKeyAliases             = "aliases"
+	// PropKeyWebEvidence carries a sensor's web captures (RFC-081).
+	PropKeyWebEvidence = "web_evidence"
 )
 
 // reservedPropertyKeys are the keys ingest drops from sensor-supplied
@@ -47,6 +49,9 @@ var reservedPropertyKeys = map[string]bool{
 	PropKeyAliases:             true,
 	PropKeyDiscoverySource:     true,
 	PropKeyDiscoveryTool:       true,
+	// Web evidence captures go to their own table (RFC-081), never to the
+	// asset's properties.
+	PropKeyWebEvidence: true,
 }
 
 // IsReservedPropertyKey reports whether a top-level property key is owned by

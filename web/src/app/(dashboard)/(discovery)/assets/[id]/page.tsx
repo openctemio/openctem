@@ -33,6 +33,7 @@ import {
   useAsset,
 } from '@/features/assets'
 import { AssetScanWindowCard } from '@/features/scan-windows'
+import { AssetWebEvidenceCard } from '@/features/attack-surface'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { RepositoryWorkspace } from '@/features/repositories/components/repository-workspace'
@@ -239,6 +240,8 @@ export default function AssetDetailPage() {
           />
         </CardContent>
       </Card>
+      {/* What a sensor saw when it fetched the asset (RFC-081); hidden when none. */}
+      <AssetWebEvidenceCard assetId={asset.id} className="mt-4" />
       {/* When active scans of this asset may run (RFC-067); hidden when no window applies. */}
       <AssetScanWindowCard assetId={asset.id} className="mt-4" />
 
