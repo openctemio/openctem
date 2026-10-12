@@ -20,6 +20,7 @@ import {
   UserPlus,
   ShieldAlert,
   Tag as TagIcon,
+  TagsIcon,
   User,
   Building2,
   ChevronsUpDown,
@@ -33,6 +34,7 @@ import { bulkActionsFor } from '../../lib/type-actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -138,7 +140,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const { t } = useTranslation()
   const count = selected.length
   const selectedNames = useMemo(() => selected.map((a) => a.name), [selected])
-  const [dialog, setDialog] = useState<null | 'owner' | 'criticality' | 'tag'>(null)
+  const [dialog, setDialog] = useState<null | 'owner' | 'criticality' | 'tag' | 'removeTags'>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // Set-criticality state
@@ -146,6 +148,15 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
 
   // Add-tag state
   const [tag, setTag] = useState('')
+  // Remove-tags state: the tags the selection carries (most common first)
+  // and the ones ticked for removal.
+  const [tagsToRemove, setTagsToRemove] = useState<string[]>([])
+  const selectionTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const a of selected)
+      for (const tg of a.tags ?? []) counts.set(tg, (counts.get(tg) ?? 0) + 1)
+    return [...counts.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
+  }, [selected])
 
   // Assign-owner state
   const [selectedOption, setSelectedOption] = useState<PickerOption | null>(null)
@@ -240,6 +251,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     setSelectedOption(null)
     setPickerSearch('')
     setTag('')
+    setTagsToRemove([])
   }
 
   const reportResult = (label: string, failed: number) => {
@@ -289,6 +301,43 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       }
     } catch (err) {
       toast.error(getErrorMessage(err, 'Failed to add tag'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleRemoveTags = async () => {
+    if (tagsToRemove.length === 0) return
+    // Only the assets that carry one of the tags are written.
+    const affected = selected.filter((a) => (a.tags ?? []).some((tg) => tagsToRemove.includes(tg)))
+    setSubmitting(true)
+    try {
+      const failed = await runBulk(affected, (a) =>
+        updateAsset(
+          a.id,
+          fullUpdate(a, { tags: (a.tags ?? []).filter((tg) => !tagsToRemove.includes(tg)) })
+        )
+      )
+      const vars = { count: affected.length, done: affected.length - failed, failed }
+      if (failed === 0) {
+        toast.success(t('assets.bulkTags.removed', 'Removed tags from {count} assets', vars))
+      } else if (failed < affected.length) {
+        toast.warning(
+          t(
+            'assets.bulkTags.removedPartly',
+            'Removed tags from {done} of {count} assets; {failed} failed',
+            vars
+          )
+        )
+      } else {
+        toast.error(t('assets.bulkTags.removeFailed', 'Failed to remove tags'))
+      }
+      if (failed < affected.length) {
+        closeDialog()
+        onDone()
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('assets.bulkTags.removeFailed', 'Failed to remove tags')))
     } finally {
       setSubmitting(false)
     }
@@ -344,6 +393,12 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               <TagIcon className="me-2 h-4 w-4" />
               Add tag
             </Button>
+            {selectionTags.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setDialog('removeTags')}>
+                <TagsIcon className="me-2 h-4 w-4" />
+                {t('assets.bulkTags.removeButton', 'Remove tags')}
+              </Button>
+            )}
             <InventoryBusinessContextActions selected={selected} onDone={onDone} />
             {typeActions.map((a) => (
               <Button
@@ -462,6 +517,68 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
             </Button>
             <Button onClick={handleAddTag} disabled={submitting || !tag.trim()}>
               {submitting ? 'Adding…' : 'Add tag'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove tags */}
+      <Dialog open={dialog === 'removeTags'} onOpenChange={(o) => !o && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('assets.bulkTags.removeTitle', 'Remove tags')}</DialogTitle>
+            <DialogDescription>
+              {t(
+                'assets.bulkTags.removeDescription',
+                'Remove the ticked tags from the {count} selected assets. Other tags are kept; system tags cannot be removed.',
+                { count }
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <div
+              className="space-y-1"
+              role="group"
+              aria-label={t('assets.bulkTags.removeTitle', 'Remove tags')}
+            >
+              {selectionTags.map(([tg, n]) => {
+                const id = `bulk-remove-tag-${tg}`
+                return (
+                  <label
+                    key={tg}
+                    htmlFor={id}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-sm hover:bg-accent"
+                  >
+                    <Checkbox
+                      id={id}
+                      checked={tagsToRemove.includes(tg)}
+                      onCheckedChange={(v) =>
+                        setTagsToRemove((cur) =>
+                          v === true ? [...cur, tg] : cur.filter((x) => x !== tg)
+                        )
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate">{tg}</span>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {t('assets.bulkTags.onAssets', '{n} of {count}', { n, count })}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRemoveTags}
+              disabled={submitting || tagsToRemove.length === 0}
+            >
+              {submitting
+                ? t('assets.bulkTags.removing', 'Removing…')
+                : t('assets.bulkTags.removeConfirm', 'Remove {n} tags', { n: tagsToRemove.length })}
             </Button>
           </DialogFooter>
         </DialogContent>

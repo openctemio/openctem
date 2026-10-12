@@ -522,10 +522,10 @@ instead of `token` (§6.8).
   on schedule and on `rotate_key`; report `instance_id`. Sensor authors write
   no identity code.
 - **Storage:** `/var/lib/openctem/state/identity/{signing.key,
-  encryption.key,sensor.json}` (0600, directories 0700) on a persisted
-  state volume that the snippets and chart add next to the outbox volume
-  (`/var/lib/openctem/outbox`, already in every snippet); Phase 0 puts the
-  renewed-key credentials file there too. A `KeyStore`
+  encryption.key,sensor.json}` (0600, directories 0700) on the persisted
+  data volume the snippets and chart mount at `/var/lib/openctem` (state/,
+  outbox/ and content/ on one volume; installs with a volume per directory
+  keep working); Phase 0 puts the renewed-key credentials file there too. A `KeyStore`
   interface lets a sensor supply a keystore (Kubernetes Secret, OS keyring,
   PKCS#11/TPM later).
 - **Configuration:** `SENSOR_ENROLL_TOKEN` / `SENSOR_ENROLL_TOKEN_FILE`,

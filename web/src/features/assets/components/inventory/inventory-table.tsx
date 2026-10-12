@@ -113,6 +113,10 @@ interface InventoryTableProps {
   /** Overrides the empty-table text (typed mode says how to find the type). */
   emptyMessage?: string
   emptyDescription?: string
+  /** The tags the list is filtered by (their chips show as active). */
+  filterTags?: string[]
+  /** Clicking a tag chip (row or detail sheet) adds it to, or removes it from, the filter. */
+  onToggleTagFilter?: (tag: string) => void
 }
 
 export function InventoryTable({
@@ -134,6 +138,8 @@ export function InventoryTable({
   onDeleteAsset,
   emptyMessage,
   emptyDescription,
+  filterTags,
+  onToggleTagFilter,
 }: InventoryTableProps) {
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const { t } = useTranslation()
@@ -359,6 +365,8 @@ export function InventoryTable({
             className="max-w-[240px]"
             labels={row.original.tags ?? []}
             onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, tags) : undefined}
+            activeLabels={filterTags}
+            onLabelClick={onToggleTagFilter}
           />
         ),
       },
@@ -451,6 +459,8 @@ export function InventoryTable({
     onEditAsset,
     onDeleteAsset,
     t,
+    filterTags,
+    onToggleTagFilter,
   ])
 
   return (
@@ -544,6 +554,8 @@ export function InventoryTable({
         canEdit={canWriteAssets && !!onEditAsset}
         canDelete={canDeleteAssets && !!onDeleteAsset}
         tagSuggestions={tagSuggestions}
+        activeTags={filterTags}
+        onTagClick={onToggleTagFilter}
         onUpdateTags={
           canWriteAssets
             ? async (tags: string[]) => {

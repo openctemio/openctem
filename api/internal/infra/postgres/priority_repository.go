@@ -244,6 +244,49 @@ func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry finding.P
 	return err
 }
 
+// LogChanges writes many priority audit entries in one statement (one round
+// trip instead of one per finding on the ingest path). Each row keeps its own
+// tenant_id, exactly as LogChange would write it.
+func (r *PriorityAuditRepository) LogChanges(ctx context.Context, entries []finding.PriorityAuditEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	tenants := make([]string, len(entries))
+	findings := make([]string, len(entries))
+	prev := make([]sql.NullString, len(entries))
+	next := make([]string, len(entries))
+	reasons := make([]string, len(entries))
+	sources := make([]string, len(entries))
+	rules := make([]sql.NullString, len(entries))
+	actors := make([]sql.NullString, len(entries))
+	for i, e := range entries {
+		tenants[i] = e.TenantID.String()
+		findings[i] = e.FindingID.String()
+		if e.PreviousClass != nil {
+			prev[i] = sql.NullString{String: string(*e.PreviousClass), Valid: true}
+		}
+		next[i] = string(e.NewClass)
+		reasons[i] = e.Reason
+		sources[i] = e.Source
+		rules[i] = nullIDPtr(e.RuleID)
+		actors[i] = nullIDPtr(e.ActorID)
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO priority_class_audit_log (tenant_id, finding_id, previous_class, new_class,
+			reason, source, rule_id, actor_id, created_at)
+		SELECT u.tenant_id, u.finding_id, u.previous_class, u.new_class,
+			u.reason, u.source, u.rule_id, u.actor_id, NOW()
+		FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::uuid[], $8::uuid[])
+			AS u(tenant_id, finding_id, previous_class, new_class, reason, source, rule_id, actor_id)`,
+		pq.Array(tenants), pq.Array(findings), pq.Array(prev), pq.Array(next),
+		pq.Array(reasons), pq.Array(sources), pq.Array(rules), pq.Array(actors),
+	)
+	if err != nil {
+		return fmt.Errorf("log priority changes: %w", err)
+	}
+	return nil
+}
+
 // CompensatingControlLookupRepo provides batch effective control lookups.
 type CompensatingControlLookupRepo struct {
 	db *sql.DB
