@@ -56,6 +56,9 @@ export const FindingActivity = forwardRef<EntityActivityHandle, FindingActivityP
       fromFinding,
       onTriageActivity,
       pentest: !!props.pentest,
+      // The live channel carries team-only comments: a campaign client
+      // reads the filtered feed only (the API refuses the subscription).
+      live: props.pentest?.clientVisibility !== 'client',
     })
     return <FindingActivityView ref={ref} feed={feed} {...props} />
   }
