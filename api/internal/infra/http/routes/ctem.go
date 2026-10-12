@@ -169,3 +169,15 @@ func registerScopingRoutes(
 		r.GET("/summary", h.GetSummary, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
+
+// registerCycleSettingsRoutes wires the organization's CTEM cycle policy under
+// the token singleton /api/v1/organization. Owner/admin only; audited.
+func registerCycleSettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/cycles", func(r Router) {
+		r.GET("/", h.GetCycleSettings, middleware.RequireAdmin())
+		r.PUT("/", h.UpdateCycleSettings, middleware.RequireAdmin())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}

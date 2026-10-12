@@ -182,7 +182,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationPlanRoutes",
 			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerLicensePolicySettingsRoutes",
-			"registerAssetReconciliationSettingsRoutes",
+			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes",
 		},
 	},
 	{
