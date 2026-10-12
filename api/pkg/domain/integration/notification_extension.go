@@ -156,6 +156,9 @@ const (
 	// a burst of refused CI token exchanges (once while it lasts).
 	EventTypeCIBreakGlass    EventType = "ci.break_glass"
 	EventTypeCITokenRefusals EventType = "ci.token_refusals"
+	// EventTypeCIUngatedMerge: a pull request merged into the default branch
+	// without a passing gate verdict (RFC-077).
+	EventTypeCIUngatedMerge EventType = "ci.ungated_merge"
 
 	// Retired types. Nothing ever emitted them, so they are not in
 	// AllEventTypes and a channel cannot subscribe to them (settings plan
@@ -237,6 +240,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeCIRunnerOutdated, Category: EventCategorySensor, Label: "CI Runner Outdated", Description: "A CI pipeline runs a sensor older than the minimum supported version", RequiredModule: ModuleScans},
 		{Type: EventTypeCIBreakGlass, Category: EventCategorySensor, Label: "CI Break-glass", Description: "A break-glass was created, or let a failing CI run pass", RequiredModule: ModuleScans},
 		{Type: EventTypeCITokenRefusals, Category: EventCategorySensor, Label: "CI Token Refusals", Description: "Many CI token exchanges were refused in a short time", RequiredModule: ModuleScans},
+		{Type: EventTypeCIUngatedMerge, Category: EventCategorySensor, Label: "CI Ungated Merge", Description: "A pull request was merged into the default branch without a passing CI gate verdict", RequiredModule: ModuleScans},
 	}
 }
 
@@ -293,6 +297,7 @@ func DefaultEnabledEventTypes() []EventType {
 		// Security signals about the CI gate itself.
 		EventTypeCIBreakGlass,
 		EventTypeCITokenRefusals,
+		EventTypeCIUngatedMerge,
 	}
 }
 
@@ -338,7 +343,7 @@ func SeverityFilterApplies(eventType EventType) bool {
 	// The CI signals carry a constant severity chosen by the CI alert job,
 	// not a finding's severity.
 	case EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
-		EventTypeCIBreakGlass, EventTypeCITokenRefusals:
+		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge:
 		return false
 	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
 	// of an approaching deadline, whatever the finding's severity. It is opt-in

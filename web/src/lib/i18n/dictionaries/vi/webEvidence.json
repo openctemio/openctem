@@ -1,0 +1,12 @@
+{
+  "webEvidence.contentType": "Loại nội dung",
+  "webEvidence.description": "Những gì sensor thấy khi truy cập tài sản này. Ảnh chụp màn hình được giữ 30 ngày khi tổ chức của bạn bật tính năng này.",
+  "webEvidence.finalUrl": "URL cuối cùng",
+  "webEvidence.screenshotAlt": "Ảnh chụp màn hình của {url}",
+  "webEvidence.server": "Máy chủ",
+  "webEvidence.settings.description": "Giữ ảnh chụp màn hình mà các sensor có công cụ chụp màn hình ghi lại từ tài sản web của bạn, trong 30 ngày. Ảnh chụp hiển thị mọi thứ trang hiển thị, vì vậy tính năng này tắt theo mặc định. Mã trạng thái, tiêu đề và đoạn phản hồi ngắn đã che bí mật luôn được giữ.",
+  "webEvidence.settings.title": "Ảnh chụp màn hình tài sản web",
+  "webEvidence.snippet": "Phản hồi (phần đầu, đã che bí mật)",
+  "webEvidence.title": "Bằng chứng web",
+  "webEvidence.url": "URL"
+}
