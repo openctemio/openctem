@@ -28,6 +28,14 @@ type SLARecomputer interface {
 	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
 }
 
+// openFindingAssetLister is optionally implemented by the finding repository:
+// the distinct assets of the tenant's open findings in one query. Without it
+// the whole-tenant sweep pages every open finding (COUNT + OFFSET per page,
+// quadratic in the tenant's size).
+type openFindingAssetLister interface {
+	ListOpenFindingAssetIDs(ctx context.Context, tenantID shared.ID) ([]shared.ID, error)
+}
+
 // Reclassifier implements controller.Reclassifier. It turns a scope
 // (AssetIDs, CVEIDs) into concrete Finding+Asset pairs and delegates
 // to the classifier. The classifier already handles priority_changed
@@ -134,6 +142,14 @@ func (r *Reclassifier) reclassifyTenant(
 	ctx context.Context,
 	tenantID shared.ID,
 ) (int, error) {
+	if lister, ok := r.findings.(openFindingAssetLister); ok {
+		ids, err := lister.ListOpenFindingAssetIDs(ctx, tenantID)
+		if err != nil {
+			return 0, fmt.Errorf("list open finding assets: %w", err)
+		}
+		return r.reclassifyAssets(ctx, tenantID, ids)
+	}
+
 	filter := vulnerability.FindingFilter{
 		TenantID: &tenantID,
 		// Non-terminal only: mirror FindingStatus.IsClosed so resolved /
@@ -186,8 +202,12 @@ func (r *Reclassifier) reclassifyTenant(
 		)
 	}
 
-	// Phase 2: reclassify each distinct asset. Respect cancellation between
-	// assets so a tick deadline stops the sweep cleanly.
+	return r.reclassifyAssets(ctx, tenantID, assetIDs)
+}
+
+// reclassifyAssets reclassifies each asset's findings. Cancellation is checked
+// between assets so a tick deadline stops the sweep cleanly.
+func (r *Reclassifier) reclassifyAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (int, error) {
 	reexamined := 0
 	var firstErr error
 	for _, assetID := range assetIDs {
@@ -235,6 +255,7 @@ func (r *Reclassifier) reclassifyAsset(
 			if ctx.Err() != nil {
 				return reexamined, ctx.Err()
 			}
+			before := snapshotOf(f)
 			if err := r.classifier.ClassifyFinding(ctx, tenantID, f, a); err != nil {
 				r.logger.Warn("classify finding failed in sweep",
 					"finding_id", f.ID().String(),
@@ -253,6 +274,14 @@ func (r *Reclassifier) reclassifyAsset(
 					)
 				}
 			}
+			// A sweep re-confirms the stored classification for nearly every
+			// finding. Rewriting an unchanged row costs a new tuple in every
+			// findings index (and WAL) for nothing, so only a change is
+			// persisted.
+			if snapshotOf(f) == before {
+				reexamined++
+				continue
+			}
 			if err := r.findings.Update(ctx, f); err != nil {
 				r.logger.Warn("persist reclassified finding failed",
 					"finding_id", f.ID().String(),
@@ -269,4 +298,31 @@ func (r *Reclassifier) reclassifyAsset(
 		page.Page++
 	}
 	return reexamined, nil
+}
+
+// classSnapshot is what a reclassification can change on a finding: the
+// priority class and its reason, the derived reachability, and the SLA
+// deadline and status recomputed from them.
+type classSnapshot struct {
+	class, reason string
+	reachable     bool
+	reachFrom     int
+	slaDeadline   int64 // UnixNano; 0 = none
+	slaStatus     vulnerability.SLAStatus
+}
+
+func snapshotOf(f *vulnerability.Finding) classSnapshot {
+	s := classSnapshot{
+		reason:    f.PriorityClassReason(),
+		reachable: f.IsReachable(),
+		reachFrom: f.ReachableFromCount(),
+		slaStatus: f.SLAStatus(),
+	}
+	if pc := f.PriorityClass(); pc != nil {
+		s.class = string(*pc)
+	}
+	if d := f.SLADeadline(); d != nil {
+		s.slaDeadline = d.UnixNano()
+	}
+	return s
 }
