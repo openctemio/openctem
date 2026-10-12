@@ -104,6 +104,11 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		VALUES ($1, $2, '«secret:token#1»', 'token', $3, NOW() + interval '1 day')`, tenantID, evidenceID,
 		put("finding_evidence_secrets.ciphertext", "evidence:v1|t|e|p|bearer-token"))
 
+	// A GitLab group access token for CI statuses (RFC-077).
+	exec(`INSERT INTO scm_gitlab_connections (id, tenant_id, host, group_path, group_id, token_encrypted)
+		VALUES ('88888888-8888-7888-8888-888888888888', $1, 'gitlab.example.com', 'acme', 1, $2)`, tenantID,
+		put("scm_gitlab_connections.token_encrypted", "glpat-rekey"))
+
 	// Leaked credential, sealed by the production protector.
 	details := map[string]any{credential.DetailSecretValue: "hunter2-leaked", "credential_type": "password"}
 	if err := credential.NewSecretProtector(c, []byte(key)).Seal(details); err != nil {
@@ -167,6 +172,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		"user_mfa.secret_encrypted":                           `SELECT secret_encrypted FROM user_mfa`,
 		"user_mfa.pending_secret_encrypted":                   `SELECT pending_secret_encrypted FROM user_mfa`,
 		"finding_evidence_secrets.ciphertext":                 `SELECT ciphertext FROM finding_evidence_secrets`,
+		"scm_gitlab_connections.token_encrypted":              `SELECT token_encrypted FROM scm_gitlab_connections`,
 		"settings.value_json.access_key":                      `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
 		"settings.value_json.secret_key":                      `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
 		"exposure_events.details.secret_value_enc":            `SELECT details->>'secret_value_enc' FROM exposure_events`,

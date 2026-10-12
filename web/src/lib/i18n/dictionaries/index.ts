@@ -41,6 +41,7 @@ import en_settings from './en/settings.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
+import en_webEvidence from './en/webEvidence.json'
 import en_workflowStages from './en/workflowStages.json'
 import vi_activity from './vi/activity.json'
 import vi_actor from './vi/actor.json'
@@ -76,6 +77,7 @@ import vi_settings from './vi/settings.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
+import vi_webEvidence from './vi/webEvidence.json'
 import vi_workflowStages from './vi/workflowStages.json'
 
 export type Dictionary = Record<string, string>
@@ -116,6 +118,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,
+  webEvidence: en_webEvidence,
   workflowStages: en_workflowStages,
 }
 
@@ -154,6 +157,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,
+  webEvidence: vi_webEvidence,
   workflowStages: vi_workflowStages,
 }
 

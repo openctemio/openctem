@@ -30,6 +30,8 @@ import type {
   CreateScopeExclusionInput,
   UpdateScopeExclusionInput,
   BulkDeleteTargetsInput,
+  BulkCreateScopeTargetsInput,
+  ApiBulkScopeTargetsResponse,
   BulkDeleteExclusionsInput,
   BulkUpdateTargetsInput,
   BulkOperationResponse,
@@ -450,6 +452,15 @@ export function useCheckScopeApi() {
 /** POST /scope/targets: an entry (approver) or a request (member). */
 export function createScopeTarget(input: CreateScopeTargetInput) {
   return post<ApiScopeTarget>(`${BASE_URL}/targets`, input)
+}
+
+/**
+ * POST /scope/targets/bulk (scope:write): up to 200 permanent entries in one
+ * request, one step-up for the batch; every item answers created, exists or
+ * refused (RFC-054 §14).
+ */
+export function createScopeTargetsBulk(input: BulkCreateScopeTargetsInput) {
+  return post<ApiBulkScopeTargetsResponse>(`${BASE_URL}/targets/bulk`, input)
 }
 
 /** POST /scope/targets/{id}/approve (scope:approve, step-up). */
