@@ -193,12 +193,17 @@ func NormalizeUUID(s string) string {
 type Hints struct {
 	CommitSHA  string
 	Repository string
+	// BaseRef is the pull request's target branch as the job sees it.
+	BaseRef string
 }
 
 // ApplyHints fills what the token lacks from the job's hints. A commit taken
 // from a hint leaves CommitVerified false; a malformed hint is ignored (the
 // claims then lack the value and the job is refused).
 func (c *Claims) ApplyHints(h Hints) {
+	if c.BaseRef == "" {
+		c.BaseRef = CleanBranchName(h.BaseRef)
+	}
 	if c.SHA == "" && (c.Provider == ProviderCircleCI || c.Provider == ProviderBitbucket || c.Provider == ProviderJenkins) {
 		if sha := strings.ToLower(strings.TrimSpace(h.CommitSHA)); fullSHARE.MatchString(sha) {
 			c.SHA, c.CommitVerified = sha, false
@@ -472,4 +477,14 @@ func RepositoryFromURL(raw string) (host, path string) {
 		}
 	}
 	return host, p
+}
+
+// CleanBranchName returns a branch name fit to look up (without refs/heads/),
+// or "" when it is empty, too long or carries control characters.
+func CleanBranchName(s string) string {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "refs/heads/")
+	if s == "" || len(s) > 255 || strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return ""
+	}
+	return s
 }

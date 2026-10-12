@@ -26,8 +26,7 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 
 	// Public login-capability snapshot: tells the UI which social buttons (and
 	// the Entra SSO env fallback) are actually usable, so it can hide dead
-	// affordances. Always available (unlike /oauth/providers, which only exists
-	// when the OAuth handler is wired), tenant-agnostic, and booleans only —
+	// affordances. Always available, tenant-agnostic, and booleans only —
 	// no secrets. Rate-limited like the other public auth reads.
 	//
 	// oauthRoutesLive is `h.OAuth != nil` — the exact condition that gates the
@@ -142,7 +141,6 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		// OAuth endpoints (social login) - login rate limit.
 		// Gated on the same condition reported by /auth/providers above.
 		if oauthRoutesLive {
-			r.GET("/oauth/providers", h.OAuth.ListProviders)
 			r.GET("/oauth/{provider}/authorize", h.OAuth.Authorize)
 			callbackHandler := ChainFunc(h.OAuth.Callback, crossSite, loginRL)
 			r.POST("/oauth/{provider}/callback", callbackHandler.ServeHTTP)

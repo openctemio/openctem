@@ -129,10 +129,10 @@ type Repository interface {
 	// This is used after bulk finding ingestion to refresh asset statistics.
 	UpdateFindingCounts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) error
 
-	// ListDistinctTags returns distinct tags across the assets of a tenant
-	// that access admits (data scope; never an asset hidden from the
-	// caller). Supports prefix filtering for autocomplete and a limit.
-	ListDistinctTags(ctx context.Context, tenantID shared.ID, access AccessScope, prefix string, types []string, limit int) ([]string, error)
+	// ListDistinctTags returns the tags of the assets of a tenant that
+	// access admits (data scope; never an asset hidden from the caller),
+	// most used first, and, when asked, the system tags the caller may see.
+	ListDistinctTags(ctx context.Context, tenantID shared.ID, access AccessScope, q TagListQuery) (TagList, error)
 
 	// GetAssetTypeBreakdown returns total and exposed counts grouped by asset_type in a single query.
 	// This replaces the N+1 pattern of calling Count() per type.
@@ -285,7 +285,9 @@ type Filter struct {
 	Exposures     []Exposure    // Filter by exposure levels
 	Providers     []Provider    // Filter by providers
 	SyncStatuses  []SyncStatus  // Filter by sync statuses
-	Tags          []string      // Filter by tags
+	Tags          []string      // Filter by tags (any of them, or all with TagsMatchAll)
+	TagsMatchAll  bool          // Tags: the asset must carry every tag
+	ExcludeTags   []string      // Leave out assets carrying any of these tags
 	Search        *string       // Full-text search across name and description
 	MinRiskScore  *int          // Filter by minimum risk score
 	MaxRiskScore  *int          // Filter by maximum risk score
@@ -420,6 +422,29 @@ func (f Filter) WithCriticalities(criticalities ...Criticality) Filter {
 func (f Filter) WithStatuses(statuses ...Status) Filter {
 	f.Statuses = statuses
 	return f
+}
+
+// TagListQuery narrows the tag list (GET /assets/tags).
+type TagListQuery struct {
+	// Prefix keeps the tags starting with it; Search the tags containing it
+	// (both case-insensitive).
+	Prefix string
+	Search string
+	// Types keeps the tags of assets of these types.
+	Types []string
+	// Limit caps each list (tags, system tags).
+	Limit int
+	// IncludeSystem also lists the system tags (derived from program links).
+	IncludeSystem bool
+	// ProgramTagViewer: when set, only the system tags of programs not hidden
+	// from this user are listed (same rule as Filter.ProgramTagViewer).
+	ProgramTagViewer *shared.ID
+}
+
+// TagList is the tags of a tenant's assets, most used first.
+type TagList struct {
+	Tags       []string
+	SystemTags []string
 }
 
 // WithTags adds a tags filter.
