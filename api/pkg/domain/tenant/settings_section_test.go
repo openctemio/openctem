@@ -27,15 +27,15 @@ func TestSettingsFromMapChecked_CorruptSectionIsIsolated(t *testing.T) {
 }
 
 func TestSettingsFromMap_MatchesWholeBlobDecode(t *testing.T) {
-	if got := SettingsFromMap(nil); got.Security.SessionTimeoutMin != DefaultSettings().Security.SessionTimeoutMin {
+	if got := SettingsFromMap(nil); got.Security.EmailVerificationMode != DefaultSettings().Security.EmailVerificationMode {
 		t.Fatalf("empty blob must give DefaultSettings")
 	}
 	s := SettingsFromMap(map[string]any{"general": map[string]any{"timezone": "UTC"}})
 	if s.RiskScoring.Preset != LegacyRiskScoringSettings().Preset {
 		t.Fatalf("absent risk_scoring must use the legacy formula, got %+v", s.RiskScoring.Preset)
 	}
-	if s.Security.SessionTimeoutMin != 0 {
-		t.Fatalf("absent section must keep its zero value (as the whole-blob decode did), got %d", s.Security.SessionTimeoutMin)
+	if s.Security.EmailVerificationMode != "" {
+		t.Fatalf("absent section must keep its zero value (as the whole-blob decode did), got %q", s.Security.EmailVerificationMode)
 	}
 }
 

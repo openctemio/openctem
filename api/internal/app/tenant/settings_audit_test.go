@@ -14,7 +14,6 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		IPWhitelist:           []string{"10.0.0.0/8"},
 		AllowedDomains:        []string{"corp.example"},
 		EmailVerificationMode: tenantdom.EmailVerificationAuto,
-		SessionTimeoutMin:     30,
 		RequireSensorLocalPolicyForPrivateTargets: true,
 		ForbidToolInsecureTLS:                     true,
 	}
@@ -39,9 +38,8 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		{"verification never", with(func(s *tenantdom.SecuritySettings) { s.EmailVerificationMode = tenantdom.EmailVerificationNever }), audit.SeverityHigh},
 		{"local policy off", with(func(s *tenantdom.SecuritySettings) { s.RequireSensorLocalPolicyForPrivateTargets = false }), audit.SeverityHigh},
 		{"tool insecure tls allowed again", with(func(s *tenantdom.SecuritySettings) { s.ForbidToolInsecureTLS = false }), audit.SeverityHigh},
-		{"session longer", with(func(s *tenantdom.SecuritySettings) { s.SessionTimeoutMin = 240 }), audit.SeverityHigh},
 		{"allowlist narrowed", with(func(s *tenantdom.SecuritySettings) { s.IPWhitelist = []string{"10.1.0.0/16", "10.2.3.4"} }), audit.SeverityMedium},
-		{"tightened", with(func(s *tenantdom.SecuritySettings) { s.SessionTimeoutMin = 15 }), audit.SeverityMedium},
+		{"tightened", with(func(s *tenantdom.SecuritySettings) { s.MFARequiredForAdmins = true }), audit.SeverityMedium},
 		{"no change", base, audit.SeverityMedium},
 	}
 	for _, tc := range cases {
