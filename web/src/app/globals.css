@@ -25,6 +25,23 @@
     overscroll-behavior: none;
   }
 
+  /* iOS Safari draws date/time inputs with a native control that ignores the
+     input's width (it overflows its grid cell) and changes height when empty.
+     Keep them the size of every other input. */
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='time'],
+  input[type='month'] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input::-webkit-date-and-time-value {
+    min-height: 1.25rem;
+    text-align: start;
+  }
+
   /* Override Radix scroll locking for sticky headers */
   body[data-scroll-locked] {
     overflow: unset !important;
