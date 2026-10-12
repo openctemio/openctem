@@ -33,51 +33,91 @@
 ARG API_IMAGE
 ARG WEB_IMAGE
 ARG GO_IMAGE=golang:1.26.9-alpine
-# Same Caddy as the split deployment (api/deploy/docker-compose.yml CADDY_VERSION).
-ARG CADDY_IMAGE=caddy:2.11.4-alpine
+# The runtime base. Keep it the Alpine release the web image's node binary is
+# built on (node:26-alpine): node needs the C++ runtime it was linked against,
+# and `node --version` below fails the build otherwise.
+ARG BASE_IMAGE=alpine:3.24
 
 FROM ${API_IMAGE} AS api
 FROM ${WEB_IMAGE} AS web
-FROM ${CADDY_IMAGE} AS caddy
 
 # golang-migrate, same version as CI (api-ci.yml). Built in the target
 # platform's own stage, so no arch-specific download URL to get wrong.
 FROM ${GO_IMAGE} AS migrate
-RUN CGO_ENABLED=0 go install -ldflags="-s -w" -tags postgres \
+RUN CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" -tags postgres \
       github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1 \
  && cp "$(go env GOPATH)/bin/migrate" /usr/local/bin/migrate
 
-# Final image: the web image's base (node, alpine) is the only runtime with a
-# language VM; the API, migrate and Caddy are static binaries.
-FROM web AS final
-USER root
-RUN apk add --no-cache tini bash ca-certificates tzdata libcap wget postgresql17-client \
- && mkdir -p /opt/openctem/api /opt/openctem/web /data/ca /config /certs /etc/caddy
+# Caddy, the same release as the split deployment (api/deploy/docker-compose.yml
+# CADDY_VERSION) with the standard modules, compiled here with the pinned Go
+# above rather than copied from the caddy image: the published binary carries
+# the Go standard library it was released with, and every standard-library
+# advisory since then with it. CADDY_DEPS raises dependencies that have
+# security fixes newer than the Caddy release; drop an entry once a Caddy
+# release requires that version itself.
+FROM ${GO_IMAGE} AS caddy
+ARG CADDY_VERSION=v2.11.4
+ARG CADDY_DEPS="golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
+WORKDIR /src
+RUN printf '%s\n' 'package main' \
+      'import (' \
+      '	caddycmd "github.com/caddyserver/caddy/v2/cmd"' \
+      '	_ "github.com/caddyserver/caddy/v2/modules/standard"' \
+      ')' \
+      'func main() { caddycmd.Main() }' > main.go \
+ && go mod init openctem.local/caddy \
+ && go get "github.com/caddyserver/caddy/v2@${CADDY_VERSION}" ${CADDY_DEPS} \
+ && go mod tidy \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /usr/bin/caddy . \
+ && /usr/bin/caddy version | grep -q "^${CADDY_VERSION} " \
+ && apk add --no-cache libcap-setcap \
+ && setcap cap_net_bind_service=+ep /usr/bin/caddy
 
+# Final image: plain Alpine with the tools the scripts below need (bash and
+# psql for the supervisor's migration lock, wget for the healthcheck, tini as
+# PID 1) and node from the web image. The API, migrate and Caddy are static
+# binaries. Every file is copied in with its final owner: no `cp -a` or
+# `chown -R` afterwards, which stored the whole web and API a second (and
+# third) time in new layers.
+FROM ${BASE_IMAGE} AS final
+RUN apk add --no-cache tini bash ca-certificates tzdata wget postgresql17-client \
+      libstdc++ libgcc libatomic \
+ && addgroup -S -g 1001 nodejs \
+ && adduser -S -D -H -u 1001 -G nodejs -h /opt/openctem nextjs
+COPY --from=web /usr/local/bin/node /usr/local/bin/node
+RUN node --version
+
+# Owned by root and read-only to the runtime user (uid 1001): the processes
+# cannot rewrite their own code.
 # web: the standalone Next.js server as built by web/Dockerfile (WORKDIR /app there)
-RUN cp -a /app/. /opt/openctem/web/ && rm -rf /app
+COPY --from=web --chown=0:0 /app /opt/openctem/web
 # api: server + admin tool + migrations + configs (WORKDIR /app in api/Dockerfile)
-COPY --from=api /app/server /app/bootstrap-admin /opt/openctem/api/
-COPY --from=api /app/migrations /opt/openctem/api/migrations
-COPY --from=api /app/configs /opt/openctem/api/configs
+COPY --from=api --chown=0:0 /app/server /app/bootstrap-admin /opt/openctem/api/
+COPY --from=api --chown=0:0 /app/migrations /opt/openctem/api/migrations
+COPY --from=api --chown=0:0 /app/configs /opt/openctem/api/configs
 # The OpenAPI spec the API serves at /openapi.yaml (relative to its working dir).
-COPY --from=api /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
+COPY --from=api --chown=0:0 /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml
 COPY --from=migrate /usr/local/bin/migrate /usr/local/bin/migrate
-COPY --from=api /app/migrate-entrypoint.sh /usr/local/bin/openctem-migrate
+COPY --from=api --chown=0:0 --chmod=0755 /app/migrate-entrypoint.sh /usr/local/bin/openctem-migrate
+# Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too:
+# the file capability is set in the caddy stage and COPY keeps it (setting it
+# here would store the binary a second time in a new layer).
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
-# Bind :443 (and the optional :80 redirect) as non-root, on Kubernetes too.
-RUN setcap cap_net_bind_service=+ep /usr/bin/caddy
+# The writable paths, owned by the runtime user: /data and /config (see VOLUME
+# below), and the Next.js cache (.next/cache, the only place the web server
+# writes besides /tmp).
+RUN mkdir -p /data/ca /config /certs /opt/openctem/web/.next/cache \
+ && chown nextjs:nodejs /data /data/ca /config /opt/openctem/web/.next/cache
 
 # The gateway: api/deploy/gateway (Caddyfile + planes.caddy + modes/ + sensors/ + entrypoint.sh).
 # sensors/ holds the layer-4 sensor routing the Caddyfile imports; this image's
 # Caddy has no layer4 module, so only OPENCTEM_SENSOR_GATEWAY=off applies here.
-COPY --from=gateway Caddyfile planes.caddy entrypoint.sh /etc/caddy/
+COPY --from=gateway Caddyfile planes.caddy /etc/caddy/
+COPY --from=gateway --chmod=0755 entrypoint.sh /etc/caddy/
 COPY --from=gateway modes /etc/caddy/modes
 COPY --from=gateway sensors /etc/caddy/sensors
-COPY supervise.sh /usr/local/bin/openctem-supervise
-COPY healthcheck.sh /usr/local/bin/openctem-healthcheck
-RUN chmod 0755 /usr/local/bin/openctem-supervise /usr/local/bin/openctem-healthcheck /usr/local/bin/openctem-migrate /etc/caddy/entrypoint.sh \
- && chown -R nextjs:nodejs /opt/openctem /data /config
+COPY --chmod=0755 supervise.sh /usr/local/bin/openctem-supervise
+COPY --chmod=0755 healthcheck.sh /usr/local/bin/openctem-healthcheck
 
 ENV GATEWAY=on \
     MIGRATE_ON_START=true \
@@ -85,6 +125,7 @@ ENV GATEWAY=on \
     NEXT_TELEMETRY_DISABLED=1 \
     BACKEND_API_URL=http://127.0.0.1:8080 \
     STORAGE_LOCAL_PATH=/data/attachments \
+    SENSOR_MTLS_CA_DIR=/data/sensor-ca \
     XDG_DATA_HOME=/data \
     XDG_CONFIG_HOME=/config \
     OPENCTEM_TLS_MODE=internal \

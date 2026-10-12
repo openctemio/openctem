@@ -47,12 +47,16 @@ function bodyLimit(method: string, path: string[]): number {
     : MAX_BODY_BYTES
 }
 
-/** Response headers passed through from the API (a download names its file). */
+/**
+ * Response headers passed through from the API (a download names its file;
+ * the console's API reference page keeps the CSP the API gives it).
+ */
 const PASS_RESPONSE_HEADERS = [
   'content-type',
   'content-disposition',
   'content-length',
   'etag',
+  'content-security-policy',
 ] as const
 
 async function proxy(request: NextRequest, path: string[]): Promise<NextResponse> {
