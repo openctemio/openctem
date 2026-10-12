@@ -42,3 +42,14 @@ func TestLoad_RefusesRetiredEnvName(t *testing.T) {
 		t.Fatalf("Load with AGENT_LB_CPU_WEIGHT set: err = %v, want a refusal naming SENSOR_LB_CPU_WEIGHT", err)
 	}
 }
+
+// The platform-wide Jira webhook secret was removed (each organization has
+// its own). Startup refuses it, even empty, and says what to do instead.
+func TestLoad_RefusesRemovedJiraWebhookSecret(t *testing.T) {
+	t.Setenv("JIRA_WEBHOOK_SECRET", "")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "JIRA_WEBHOOK_SECRET (removed:") ||
+		!strings.Contains(err.Error(), "/api/v1/integrations/jira/webhook-secret/rotate") {
+		t.Fatalf("want JIRA_WEBHOOK_SECRET refused with the per-organization remedy, got %v", err)
+	}
+}
