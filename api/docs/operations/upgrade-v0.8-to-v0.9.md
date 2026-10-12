@@ -376,6 +376,7 @@ With the API, web and sensors stopped and the backup taken:
 ```bash
 # 0. Variables: the same user, password, database and sslmode as your v0.8.0
 #    migrate service. NET is the Compose network the postgres service is on.
+#    A password with @ : / ? # or % in it must be percent-encoded in the URL.
 NET=<project>_app-network
 DB_URL="postgres://openctem:${DB_PASSWORD}@postgres:5432/openctem?sslmode=require"
 

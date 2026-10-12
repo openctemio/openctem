@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -97,7 +98,15 @@ func ensureOrganization(ctx context.Context, db *sql.DB, o Options, out io.Write
 	// No role granter: the owner's role is written with the organization
 	// (CreateWithOwner); provisioning here only creates the owner's account and
 	// issues its link.
-	provisioning := tenantapp.NewUserProvisioningService(tenantRepo, userRepo, nil, o.OrgSetupMailer, auditSvc, log)
+	// A failed send is caught here so the link can be printed (see
+	// unsentLinkMailer); the nil check keeps an untyped nil for "no SMTP".
+	var mailer tenantapp.AccountSetupMailer
+	var unsent *unsentLinkMailer
+	if o.OrgSetupMailer != nil {
+		unsent = &unsentLinkMailer{AccountSetupMailer: o.OrgSetupMailer}
+		mailer = unsent
+	}
+	provisioning := tenantapp.NewUserProvisioningService(tenantRepo, userRepo, nil, mailer, auditSvc, log)
 	created, err := tenantapp.NewOrganizationCreator(tenantSvc, provisioning, userRepo, log).
 		Create(ctx, tenantapp.CreateOrganizationInput{
 			Name: o.OrgName, Slug: o.OrgSlug,
@@ -119,7 +128,7 @@ func ensureOrganization(ctx context.Context, db *sql.DB, o Options, out io.Write
 	switch {
 	case !created.OwnerCreated:
 		fmt.Fprintf(out, "  Owner:    %s (existing account: signs in with its own credentials)\n", created.Owner.Email())
-	case created.OwnerSetup == nil:
+	case created.OwnerSetup == nil, !created.OwnerSetup.EmailSent && linkToken(created.OwnerSetup, unsent) == "":
 		fmt.Fprintf(out, "  Owner:    %s (new account)\n", created.Owner.Email())
 		fmt.Fprintln(out, "  The set-password link could not be issued. The owner can use \"Forgot password\" on")
 		fmt.Fprintln(out, "  the sign-in page, or an administrator issues a new link from the console.")
@@ -128,10 +137,47 @@ func ensureOrganization(ctx context.Context, db *sql.DB, o Options, out io.Write
 		fmt.Fprintf(out, "  A one-time set-password link was emailed to the owner (valid %d hours).\n", int(tenantapp.AccountSetupTTL.Hours()))
 	default:
 		fmt.Fprintf(out, "  Owner:    %s (new account)\n", created.Owner.Email())
+		if created.OwnerSetup.EmailFailed {
+			fmt.Fprintln(out, "  WARNING: the set-password email could not be sent (check the platform e-mail")
+			fmt.Fprintln(out, "  settings or BOOTSTRAP_SMTP_*). The link below is a secret: anyone who has it")
+			fmt.Fprintln(out, "  can set the owner's password. Do not paste it into tickets or chat logs.")
+		}
 		fmt.Fprintf(out, "  Set-password link (shown once, valid %d hours; give it to the owner over a trusted channel):\n", int(tenantapp.AccountSetupTTL.Hours()))
-		fmt.Fprintf(out, "    %s\n", setupLinkURL(o.UIBaseURL, created.OwnerSetup.SetupToken))
+		fmt.Fprintf(out, "    %s\n", setupLinkURL(o.UIBaseURL, linkToken(created.OwnerSetup, unsent)))
 	}
 	return nil
+}
+
+// unsentLinkMailer remembers the token of a set-password email that failed to
+// send. The first-owner rule never hands an emailed link to the platform
+// administrator in the console; this command is different, because whoever
+// runs it holds the database credentials and could set any password anyway.
+// Without it a failed send (an unreachable relay) left the new owner with no
+// link at all. The token is only ever written to this command's stdout, never
+// to a log.
+type unsentLinkMailer struct {
+	tenantapp.AccountSetupMailer
+	token string
+}
+
+func (m *unsentLinkMailer) SendAccountSetupEmail(ctx context.Context, tenantID, recipientEmail, recipientName, teamName, token string, expiresIn time.Duration) error {
+	err := m.AccountSetupMailer.SendAccountSetupEmail(ctx, tenantID, recipientEmail, recipientName, teamName, token, expiresIn)
+	if err != nil {
+		m.token = token
+	}
+	return err
+}
+
+// linkToken is the token to print: returned by the service when no email
+// could be attempted, or kept from a failed send.
+func linkToken(setup *tenantapp.ProvisionedUser, unsent *unsentLinkMailer) string {
+	if setup.SetupToken != "" {
+		return setup.SetupToken
+	}
+	if setup.EmailFailed && unsent != nil {
+		return unsent.token
+	}
+	return ""
 }
 
 // setupLinkURL is the UI page that consumes a one-time set-password token (the

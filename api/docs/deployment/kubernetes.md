@@ -16,7 +16,7 @@ developers who change those requirements (update the chart in the same release).
 | Images | `ghcr.io/openctemio/openctem-api`, `openctem-web` and `migrations`, all at the same `vX.Y.Z` |
 | Migrations first | The API never migrates in production and refuses to start while the schema is behind (`cmd/server/schema_check.go`). Run the `migrations` image to completion (a Job or an init container) before rolling the API. See [Safe Deploy & Migrations](safe-deploy-and-migrations.md). |
 | Database roles | The API connects as the DML-only `openctem_app` role, migrations run as `openctem_migrator`. See [Least-privilege database roles](database-roles.md). |
-| Secrets | `AUTH_JWT_SECRET` (at least 64 characters), `APP_ENCRYPTION_KEY` (`openssl rand -hex 32`, see [key rotation](encryption-key-rotation.md)), database and Redis passwords |
+| Secrets | `APP_ENCRYPTION_KEY` (`openssl rand -hex 32`, see [key rotation](encryption-key-rotation.md)), database and Redis passwords. `AUTH_JWT_SECRET` is optional: unset, it is derived from `APP_ENCRYPTION_KEY`; set it (at least 64 characters) to rotate the two independently |
 | Ports | API 8080 (HTTP), 9090 (gRPC); web 3000 |
 | Probes | Liveness `GET /health`, readiness `GET /ready` (checks the database and Redis). `/metrics` needs the `METRICS_TOKEN` bearer token. |
 | Routing | `/api/*` (including the `/api/v1/ws` WebSocket) to the API, everything else to the web console |
