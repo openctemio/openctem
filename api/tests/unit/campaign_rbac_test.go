@@ -508,14 +508,19 @@ func TestCampaignStatusTransition_AllExistingTransitionsPreserved(t *testing.T) 
 	assert.Contains(t, transitions[pentest.CampaignStatusPlanning], pentest.CampaignStatusInProgress)
 	assert.Contains(t, transitions[pentest.CampaignStatusPlanning], pentest.CampaignStatusCanceled)
 
-	// in_progress → on_hold, completed, canceled
+	// in_progress → reporting, on_hold, canceled (no direct completion)
+	assert.Contains(t, transitions[pentest.CampaignStatusInProgress], pentest.CampaignStatusReporting)
 	assert.Contains(t, transitions[pentest.CampaignStatusInProgress], pentest.CampaignStatusOnHold)
-	assert.Contains(t, transitions[pentest.CampaignStatusInProgress], pentest.CampaignStatusCompleted)
 	assert.Contains(t, transitions[pentest.CampaignStatusInProgress], pentest.CampaignStatusCanceled)
+	assert.NotContains(t, transitions[pentest.CampaignStatusInProgress], pentest.CampaignStatusCompleted)
 
-	// on_hold → in_progress, canceled
-	assert.Contains(t, transitions[pentest.CampaignStatusOnHold], pentest.CampaignStatusInProgress)
-	assert.Contains(t, transitions[pentest.CampaignStatusOnHold], pentest.CampaignStatusCanceled)
+	// reporting → completed, in_progress, on_hold
+	assert.ElementsMatch(t, transitions[pentest.CampaignStatusReporting],
+		[]pentest.CampaignStatus{pentest.CampaignStatusCompleted, pentest.CampaignStatusInProgress, pentest.CampaignStatusOnHold})
+
+	// on_hold → in_progress or reporting (where it was put on hold)
+	assert.ElementsMatch(t, transitions[pentest.CampaignStatusOnHold],
+		[]pentest.CampaignStatus{pentest.CampaignStatusInProgress, pentest.CampaignStatusReporting})
 }
 
 // =============================================================================
