@@ -386,15 +386,34 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatalf("summary = %v", sum)
 	}
 	links, _ := v["links"].(map[string]any)
-	if !strings.HasPrefix(links["run"].(string), "https://console.example/ci-runners/") {
+	if !strings.HasPrefix(links["run"].(string), "https://console.example/ci-cd?view=runs&run=") {
 		t.Fatalf("links = %v", links)
 	}
+	// The first verdict is final: evaluating again returns it unchanged and
+	// records no second verdict.
+	evaluatedBefore := r.auditCount(r.tenant, "ci_run.evaluated", prRun)
+	resp, again := r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, map[string]int{"scan_failures": 0})
+	if resp.StatusCode != http.StatusOK || again["verdict"] != "fail" {
+		t.Fatalf("re-evaluate: %d %v", resp.StatusCode, again)
+	}
+	if n := r.auditCount(r.tenant, "ci_run.evaluated", prRun); n != evaluatedBefore {
+		t.Fatalf("re-evaluate audited again: %d -> %d", evaluatedBefore, n)
+	}
 
+	// The scenarios below judge the same run under changed state: reopen it
+	// each time (a real re-run gets a new run).
+	rejudge := func() {
+		t.Helper()
+		if _, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'running' WHERE id = $1`, prRun); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Accepted risk is honored.
 	if _, err := r.db.ExecContext(ctx, `UPDATE findings SET status = 'accepted' WHERE tenant_id = $1 AND title = 'SQL injection'`,
 		r.tenant.String()); err != nil {
 		t.Fatal(err)
 	}
+	rejudge()
 	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" {
 		t.Fatalf("accepted risk: %v", v)
 	}
@@ -403,6 +422,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A scan failure fails.
+	rejudge()
 	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, map[string]int{"scan_failures": 1}); !hasReason(v, cirun.ReasonScanFailure) {
 		t.Fatalf("scan failure: %v", v)
 	}
@@ -416,6 +436,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rejudge()
 	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" || v["would_fail"] != true {
 		t.Fatalf("warn policy: %v", v)
 	}
@@ -433,6 +454,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		CommitSHA: sha2[:12], Reason: "hotfix for the login outage"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
 		t.Fatal(err)
 	}
+	rejudge()
 	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" || v["override"] == nil {
 		t.Fatalf("override: %v", v)
 	}
