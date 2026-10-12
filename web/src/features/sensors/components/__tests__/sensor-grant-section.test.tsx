@@ -213,6 +213,67 @@ describe('SensorGrantSection', () => {
     expect(api.update.mock.calls[0][1].tools).toEqual([])
   })
 
+  describe('a collector whose reports are refused', () => {
+    const collectorGrant = (over: Partial<SensorGrant> = {}) =>
+      grant({
+        profile: 'collector',
+        job_types: ['collect', 'connector_sync'],
+        tier_ceiling: 0,
+        target_network: 'none',
+        allow_push_ingest: true,
+        ...over,
+      })
+
+    it('says an untrusted collector is refused for trust, and links the promotion', async () => {
+      api.grant = collectorGrant()
+      const user = userEvent.setup()
+      render(<SensorGrantSection sensorId="s1" sensorType="collector" />)
+      const callout = screen.getByTestId('collector-refused')
+      expect(callout).toHaveAttribute('data-missing', 'trust')
+      expect(callout).toHaveTextContent(/reports are refused: it is not trusted/i)
+      expect(callout).toHaveTextContent(/refuses every report/i)
+      await user.click(within(callout).getByRole('button', { name: /promote to trusted/i }))
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent(/promote this sensor/i)
+    })
+
+    it('says a collector without push ingest in its grant is refused for the grant', async () => {
+      api.grant = collectorGrant({
+        profile: 'internal-network-scanner',
+        allow_push_ingest: false,
+        job_types: ['scan'],
+      })
+      const user = userEvent.setup()
+      render(<SensorGrantSection sensorId="s1" sensorType="collector" />)
+      const callout = screen.getByTestId('collector-refused')
+      expect(callout).toHaveAttribute('data-missing', 'grant')
+      expect(callout).toHaveTextContent(/its grant does not allow them/i)
+      await user.click(within(callout).getByRole('button', { name: /edit the grant/i }))
+      expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('without sensors:grant:widen: explains, offers no action', () => {
+      perms.granted = new Set(['sensors:read', 'sensors:grant:narrow'])
+      api.grant = collectorGrant()
+      render(<SensorGrantSection sensorId="s1" sensorType="collector" />)
+      const callout = screen.getByTestId('collector-refused')
+      expect(within(callout).queryByRole('button')).not.toBeInTheDocument()
+      expect(callout).toHaveTextContent(/administrator who may widen/i)
+    })
+
+    it('says nothing for a trusted collector or a scanner', () => {
+      api.grant = collectorGrant({
+        trust_level: 'trusted',
+        effective: { tier_ceiling: 0, allow_credentials: false, allow_push_ingest: true },
+      })
+      const { unmount } = render(<SensorGrantSection sensorId="s1" sensorType="collector" />)
+      expect(screen.queryByTestId('collector-refused')).not.toBeInTheDocument()
+      unmount()
+      api.grant = grant()
+      render(<SensorGrantSection sensorId="s1" sensorType="worker" />)
+      expect(screen.queryByTestId('collector-refused')).not.toBeInTheDocument()
+    })
+  })
+
   it('renders nothing without sensors:read', () => {
     perms.granted = new Set()
     const { container } = render(<SensorGrantSection sensorId="s1" />)

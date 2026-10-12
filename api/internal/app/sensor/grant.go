@@ -42,21 +42,28 @@ func (s *SensorService) ObserveGrantRefusal(ctx context.Context, tenantID, senso
 }
 
 // ObservePushRefusal records results without a job that the sensor's grant
-// refused (push ingest not allowed, or not while the sensor is New).
-func (s *SensorService) ObservePushRefusal(ctx context.Context, tenantID, sensorID shared.ID, route string) {
-	s.logger.Warn("sensor results without a job refused: push ingest not granted", "sensor_id", sensorID.String(),
-		"route", logLine(route))
+// refused. reason is "grant" (push ingest is off in the grant) or "trust"
+// (the grant allows it, but the sensor is not trusted).
+func (s *SensorService) ObservePushRefusal(ctx context.Context, tenantID, sensorID shared.ID, route, reason string) {
+	why := "the sensor's grant does not allow push ingest"
+	if reason == "trust" {
+		why = "the sensor's grant allows push ingest, but the sensor is not trusted"
+	} else {
+		reason = "grant"
+	}
+	s.logger.Warn("sensor results without a job refused", "sensor_id", sensorID.String(),
+		"route", logLine(route), "missing", reason)
 	ev := sensordom.NewEvent(tenantID, sensorID, sensordom.EventPushRefusedByGrant, s.now(),
-		"Results without a job refused: the sensor's grant does not allow push ingest",
-		map[string]any{"route": logLine(route)})
+		"Results without a job refused: "+why,
+		map[string]any{"route": logLine(route), "missing": reason})
 	if !s.recordOnce(ctx, ev) {
 		return
 	}
 	name := s.sensorName(ctx, tenantID, sensorID)
 	s.logGrantAudit(ctx, tenantID, auditapp.NewSuccessEvent(auditdom.ActionSensorPushRefusedGrant, auditdom.ResourceTypeSensor, sensorID.String()).
 		WithResourceName(name).WithSeverity(auditdom.SeverityMedium).
-		WithMessage(fmt.Sprintf("Sensor '%s' sent results without a job; its grant does not allow push ingest", name)).
-		WithMetadata("route", logLine(route)))
+		WithMessage(fmt.Sprintf("Sensor '%s' sent results without a job; %s", name, why)).
+		WithMetadata("route", logLine(route)).WithMetadata("missing", reason))
 }
 
 // recordOnce writes ev and reports whether it was new (not suppressed by

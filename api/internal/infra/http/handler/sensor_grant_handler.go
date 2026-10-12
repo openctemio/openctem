@@ -162,13 +162,7 @@ func (h *SensorHandler) UpdateGrant(w http.ResponseWriter, r *http.Request) {
 			zones = append(zones, id)
 		}
 	}
-	uid, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
-	actx := h.buildAuditContext(r)
-	actor := sensorgrant.Actor{
-		TenantID: tid, UserID: uid, Email: actx.ActorEmail, IP: actx.ActorIP, UserAgent: actx.UserAgent,
-		CanNarrow: middleware.HasPermission(r.Context(), string(permission.SensorsGrantNarrow)),
-		CanWiden:  middleware.HasPermission(r.Context(), string(permission.SensorsGrantWiden)),
-	}
+	actor := h.grantActor(r, tid)
 	g, err := h.grants.Update(r.Context(), actor, sid, sensorgrant.UpdateInput{
 		Version: req.Version, Profile: req.Profile, TrustLevel: sensordom.TrustLevel(req.TrustLevel),
 		JobTypes: req.JobTypes, ZoneIDs: zones, Tools: req.Tools, Capabilities: req.Capabilities,
@@ -181,6 +175,18 @@ func (h *SensorHandler) UpdateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sensorgrant.GrantView(*g))
+}
+
+// grantActor is the caller as the grant service sees it, with the grant
+// permissions it holds in tenant tid.
+func (h *SensorHandler) grantActor(r *http.Request, tid shared.ID) sensorgrant.Actor {
+	uid, _ := shared.IDFromString(middleware.GetUserID(r.Context()))
+	actx := h.buildAuditContext(r)
+	return sensorgrant.Actor{
+		TenantID: tid, UserID: uid, Email: actx.ActorEmail, IP: actx.ActorIP, UserAgent: actx.UserAgent,
+		CanNarrow: middleware.HasPermission(r.Context(), string(permission.SensorsGrantNarrow)),
+		CanWiden:  middleware.HasPermission(r.Context(), string(permission.SensorsGrantWiden)),
+	}
 }
 
 func (h *SensorHandler) writeGrantError(w http.ResponseWriter, err error) {
