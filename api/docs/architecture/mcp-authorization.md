@@ -259,7 +259,7 @@ Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
 | Piece | Where |
 |---|---|
 | Scope | `mcp:findings.comment` → `findings:comment` (not `findings:write` or `findings:severity`); not in `scopes_supported`; grantable only when the organization policy lists it |
-| First tool | `add_finding_comment` (`finding_id`, `content` ≤ 4000, optional `confirmation_id`): an internal comment by the user, never sent to integrations |
+| First tool | `add_finding_comment` (`finding_id`, `content` ≤ 4000, optional `visibility` `team`/`client`, optional `confirmation_id`): an internal comment by the user, never sent to integrations. On a pentest finding it is team-only unless `visibility: "client"`, which only the campaign lead or a reviewer may set; the confirmation summary says whether the client reads it, and the visibility is part of the confirmed arguments. The activity records `source = mcp` and the AI client's name |
 | Store | `mcp_action_confirmations` (migration `001487`): connection, user, tool, SHA-256 of the canonical arguments (without `confirmation_id`), server-written summary, status, 5-minute expiry |
 | Web | `/mcp/confirm/<id>` (signed-in session; same user and organization; summary shown as text) |
 | API | `GET /api/v1/mcp-access/confirmations/{id}`, `POST …/approve`, `POST …/deny` (API keys refused) |

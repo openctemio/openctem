@@ -454,17 +454,33 @@ func (s *FindingActivityService) RecordCommentAdded(
 	return s.recordCommentAdded(ctx, tenantID, findingID, actorID, commentID, content, source, nil)
 }
 
-// RecordCommentAddedWithVisibility is RecordCommentAdded that also records
-// whether the comment is internal (organization-only) as changes.is_internal.
-func (s *FindingActivityService) RecordCommentAddedWithVisibility(
-	ctx context.Context,
-	tenantID, findingID string,
-	actorID *string,
-	commentID, content string,
-	source string,
-	isInternal bool,
-) (*vulnerability.FindingActivity, error) {
-	return s.recordCommentAdded(ctx, tenantID, findingID, actorID, commentID, content, source, &isInternal)
+// RecordCommentInput is a new comment for the activity feed.
+type RecordCommentInput struct {
+	TenantID, FindingID string
+	ActorID             *string
+	CommentID, Content  string
+	Source              string
+	// IsInternal: organization-only (never sent to integrations).
+	IsInternal bool
+	// Visibility on a pentest finding ("team" or "client"); a campaign
+	// client's activity feed shows only comment activity marked "client".
+	Visibility string
+	// ClientName names the AI client of a comment written through MCP.
+	ClientName string
+}
+
+// RecordComment records a comment_added activity with the comment's
+// visibility and provenance in its changes (is_internal, visibility,
+// client_name).
+func (s *FindingActivityService) RecordComment(ctx context.Context, in RecordCommentInput) (*vulnerability.FindingActivity, error) {
+	extra := map[string]any{"is_internal": in.IsInternal}
+	if in.Visibility != "" {
+		extra["visibility"] = in.Visibility
+	}
+	if in.ClientName != "" {
+		extra["client_name"] = in.ClientName
+	}
+	return s.recordCommentAdded(ctx, in.TenantID, in.FindingID, in.ActorID, in.CommentID, in.Content, in.Source, extra)
 }
 
 func (s *FindingActivityService) recordCommentAdded(
@@ -473,13 +489,13 @@ func (s *FindingActivityService) recordCommentAdded(
 	actorID *string,
 	commentID, content string,
 	source string,
-	isInternal *bool,
+	extra map[string]any,
 ) (*vulnerability.FindingActivity, error) {
 	changes := map[string]any{
 		"comment_id": commentID,
 	}
-	if isInternal != nil {
-		changes["is_internal"] = *isInternal
+	for k, v := range extra {
+		changes[k] = v
 	}
 	if content != "" {
 		// Store full content for display in activity feed
@@ -619,6 +635,9 @@ type ListActivitiesInput struct {
 	ActivityTypes []string `validate:"omitempty"`
 	Page          int      `validate:"gte=0"`
 	PageSize      int      `validate:"gte=1,lte=100"`
+	// ClientView: the caller is a pentest campaign client (see
+	// vulnerability.FindingActivityFilter.ClientView).
+	ClientView bool
 }
 
 // ListActivities retrieves activities for a finding with pagination.
@@ -643,6 +662,7 @@ func (s *FindingActivityService) ListActivities(ctx context.Context, input ListA
 		filter = filter.WithActivityTypes(actTypes...)
 	}
 
+	filter.ClientView = input.ClientView
 	page := pagination.New(input.Page, input.PageSize)
 
 	// Security: Pass tenantID to ensure tenant isolation at repository level
