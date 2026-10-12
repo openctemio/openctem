@@ -47,11 +47,18 @@ import type { CIRun, CIVerdictFilter } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
 
 export function VerdictBadge({ verdict, wouldFail }: { verdict?: string; wouldFail?: boolean }) {
-  if (verdict === 'fail') return <Badge variant="destructive">Fail</Badge>
+  const { t } = useTranslation()
+  if (verdict === 'fail')
+    return <Badge variant="destructive">{t('scans.ci.verdict.fail', 'Fail')}</Badge>
   if (verdict === 'pass' && wouldFail)
-    return <Badge variant="outline">Pass (override or warn)</Badge>
-  if (verdict === 'pass') return <Badge variant="default">Pass</Badge>
-  return <Badge variant="secondary">No verdict</Badge>
+    return (
+      <Badge variant="outline">
+        {t('scans.ci.verdict.passOverride', 'Pass (override or warn)')}
+      </Badge>
+    )
+  if (verdict === 'pass')
+    return <Badge variant="default">{t('scans.ci.verdict.pass', 'Pass')}</Badge>
+  return <Badge variant="secondary">{t('scans.ci.verdict.none', 'No verdict')}</Badge>
 }
 
 function RefCell({ run }: { run: CIRun }) {
@@ -112,7 +119,9 @@ export function CIRunsView({
           )}
         >
           <Button asChild variant="outline" size="sm">
-            <Link href="/ci-cd?tab=setup">CI trust and gate</Link>
+            <Link href="/ci-cd?tab=setup">
+              {t('scans.ci.trustAndGateLink', 'CI trust and gate')}
+            </Link>
           </Button>
         </PageHeader>
       )}
@@ -125,20 +134,24 @@ export function CIRunsView({
             list.setFilter('verdict', v === 'all' ? '' : asVerdict(v))
           }}
         >
-          <SelectTrigger className="w-44" aria-label="Verdict">
+          <SelectTrigger className="w-44" aria-label={t('scans.ci.col.verdict', 'Verdict')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All verdicts</SelectItem>
-            <SelectItem value="fail">Failed</SelectItem>
-            <SelectItem value="pass">Passed</SelectItem>
-            <SelectItem value="none">No verdict</SelectItem>
+            <SelectItem value="all">{t('scans.ci.verdict.all', 'All verdicts')}</SelectItem>
+            <SelectItem value="fail">{t('scans.ci.verdict.failed', 'Failed')}</SelectItem>
+            <SelectItem value="pass">{t('scans.ci.verdict.passed', 'Passed')}</SelectItem>
+            <SelectItem value="none">{t('scans.ci.verdict.none', 'No verdict')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {error ? (
-        <ErrorState title="CI runs" error={error} onRetry={() => mutate()} />
+        <ErrorState
+          title={t('scans.ci.runsTitle', 'CI runs')}
+          error={error}
+          onRetry={() => mutate()}
+        />
       ) : isLoading ? (
         <Card>
           <CardContent className="space-y-2 p-4">
@@ -153,11 +166,11 @@ export function CIRunsView({
           title={t('scans.ci.noRunsTitle', 'No CI runs yet')}
           description={t(
             'scans.ci.noRuns',
-            'Add a CI trust configuration, then run the sensor in a CI job.'
+            'Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
           )}
           action={
             <Button asChild size="sm">
-              <Link href="/ci-cd?tab=setup">Set up CI trust</Link>
+              <Link href="/ci-cd?tab=setup">{t('scans.ci.setUpTrust', 'Set up CI trust')}</Link>
             </Button>
           }
         />
@@ -167,12 +180,12 @@ export function CIRunsView({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Repository</TableHead>
-                  <TableHead>Ref</TableHead>
-                  <TableHead>Verdict</TableHead>
-                  <TableHead>Findings</TableHead>
-                  <TableHead>Actor</TableHead>
-                  <TableHead>Started</TableHead>
+                  <TableHead>{t('scans.ci.col.repository', 'Repository')}</TableHead>
+                  <TableHead>{t('scans.ci.col.ref', 'Ref')}</TableHead>
+                  <TableHead>{t('scans.ci.col.verdict', 'Verdict')}</TableHead>
+                  <TableHead>{t('scans.ci.col.findings', 'Findings')}</TableHead>
+                  <TableHead>{t('scans.ci.col.actor', 'Actor')}</TableHead>
+                  <TableHead>{t('scans.ci.col.started', 'Started')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -188,7 +201,7 @@ export function CIRunsView({
                         <span className="truncate font-medium">{run.repository}</span>
                         <span className="text-xs text-muted-foreground">
                           {PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}
-                          {run.fork ? ' · fork' : ''}
+                          {run.fork ? ` · ${t('scans.ci.fork', 'fork')}` : ''}
                         </span>
                       </div>
                     </TableCell>
@@ -219,10 +232,10 @@ export function CIRunsView({
             disabled={page <= 1}
             onClick={() => setPage(page - 1)}
           >
-            Previous
+            {t('components.pager.previous', 'Previous')}
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            {t('scans.ci.pageOf', 'Page {page} of {pages}', { page, pages: totalPages })}
           </span>
           <Button
             variant="outline"
@@ -230,7 +243,7 @@ export function CIRunsView({
             disabled={page >= totalPages}
             onClick={() => setPage(page + 1)}
           >
-            Next
+            {t('components.pager.next', 'Next')}
           </Button>
         </div>
       )}
@@ -241,21 +254,27 @@ export function CIRunsView({
 }
 
 export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { t } = useTranslation()
   const { data: run, error } = useCIRun(id)
   const v = run?.verdict_detail
   return (
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>{run?.repository ?? 'CI run'}</SheetTitle>
+          <SheetTitle>{run?.repository ?? t('scans.ci.run', 'CI run')}</SheetTitle>
           <SheetDescription>
-            {run ? `${run.branch || run.ref} at ${shortSHA(run.commit_sha)}` : ''}
+            {run
+              ? t('scans.ci.refAtCommit', '{ref} at {commit}', {
+                  ref: run.branch || run.ref || '',
+                  commit: shortSHA(run.commit_sha),
+                })
+              : ''}
           </SheetDescription>
         </SheetHeader>
         <SheetBody className="p-0">
           {error ? (
             <div className="p-4">
-              <ErrorState title="the run" error={error} />
+              <ErrorState title={t('scans.ci.theRun', 'the run')} error={error} />
             </div>
           ) : !run ? (
             <div className="space-y-2 p-4">
@@ -267,7 +286,9 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
               <div className="flex flex-wrap items-center gap-2">
                 <VerdictBadge verdict={run.verdict} wouldFail={v?.would_fail} />
                 {v?.policy?.source && (
-                  <span className="text-muted-foreground">policy: {v.policy.source}</span>
+                  <span className="text-muted-foreground">
+                    {t('scans.ci.policySource', 'policy: {source}', { source: v.policy.source })}
+                  </span>
                 )}
                 {run.pipeline_url && (
                   <SafeExternalLink
@@ -275,42 +296,60 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                     urlOptions={{ allowRelative: false }}
                     className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
                   >
-                    Pipeline <ExternalLink className="size-3.5" aria-hidden />
+                    {t('scans.ci.pipeline', 'Pipeline')}{' '}
+                    <ExternalLink className="size-3.5" aria-hidden />
                   </SafeExternalLink>
                 )}
               </div>
               <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
-                <dt className="text-muted-foreground">Provider</dt>
+                <dt className="text-muted-foreground">{t('scans.ci.col.provider', 'Provider')}</dt>
                 <dd>{PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}</dd>
-                <dt className="text-muted-foreground">Event</dt>
+                <dt className="text-muted-foreground">{t('scans.ci.col.event', 'Event')}</dt>
                 <dd>{run.event}</dd>
-                <dt className="text-muted-foreground">Actor</dt>
+                <dt className="text-muted-foreground">{t('scans.ci.col.actor', 'Actor')}</dt>
                 <dd>{run.actor}</dd>
-                <dt className="text-muted-foreground">Default branch</dt>
+                <dt className="text-muted-foreground">
+                  {t('scans.ci.col.defaultBranch', 'Default branch')}
+                </dt>
                 <dd>{run.default_branch}</dd>
                 {run.environment && (
                   <>
-                    <dt className="text-muted-foreground">Environment</dt>
+                    <dt className="text-muted-foreground">
+                      {t('scans.ci.col.environment', 'Environment')}
+                    </dt>
                     <dd>{run.environment}</dd>
                   </>
                 )}
-                <dt className="text-muted-foreground">Reports</dt>
+                <dt className="text-muted-foreground">{t('scans.ci.col.reports', 'Reports')}</dt>
                 <dd>{run.reports_count ?? 0}</dd>
               </dl>
               {v?.summary && (
                 <p className="text-muted-foreground">
-                  {v.summary.evaluated ?? 0} findings judged: {v.summary.new ?? 0} new,{' '}
-                  {v.summary.pre_existing ?? 0} already on{' '}
-                  {v.baseline?.branch || 'the default branch'}, {v.summary.accepted ?? 0} accepted,{' '}
-                  {v.summary.blocking ?? 0} blocking.
+                  {t(
+                    'scans.ci.verdictSummary',
+                    '{evaluated} findings judged: {new} new, {pre} already on {branch}, {accepted} accepted, {blocking} blocking.',
+                    {
+                      evaluated: v.summary.evaluated ?? 0,
+                      new: v.summary.new ?? 0,
+                      pre: v.summary.pre_existing ?? 0,
+                      branch:
+                        v.baseline?.branch || t('scans.ci.theDefaultBranch', 'the default branch'),
+                      accepted: v.summary.accepted ?? 0,
+                      blocking: v.summary.blocking ?? 0,
+                    }
+                  )}
                 </p>
               )}
               {v?.reasons && v.reasons.length > 0 && (
-                <ul className="space-y-2" aria-label="Reasons">
+                <ul className="space-y-2" aria-label={t('scans.ci.reasons', 'Reasons')}>
                   {v.reasons.map((r, i) => (
                     <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{REASON_LABEL[r.code ?? ''] ?? r.code}</Badge>
+                        <Badge variant="outline">
+                          {REASON_LABEL[r.code ?? '']
+                            ? t(`scans.ci.reason.${r.code}`, REASON_LABEL[r.code ?? ''])
+                            : r.code}
+                        </Badge>
                         {r.severity && <span className="text-muted-foreground">{r.severity}</span>}
                       </div>
                       <p className="mt-1">{r.title || r.message}</p>
@@ -326,7 +365,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                           href={`/findings/${r.finding_id}`}
                           className="text-xs text-primary hover:underline"
                         >
-                          Open finding
+                          {t('scans.ci.openFinding', 'Open finding')}
                         </Link>
                       )}
                     </li>

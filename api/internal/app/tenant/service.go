@@ -685,6 +685,22 @@ func (s *TenantService) AddMember(ctx context.Context, tenantID string, input Ad
 		} else if class.Kind == tenantdom.MemberKindExternal {
 			return nil, ErrExternalNeedsInvitation
 		}
+		// A person adding an existing account needs more than "not
+		// external": an organization without a verified domain treats every
+		// work address as its own, so it could pull anyone whose account id
+		// it learns into the organization. Only an address on a domain this
+		// organization verified is added without the person's consent.
+		// Provisioning by the organization's IdP (no inviter) checks the
+		// domain itself.
+		if !inviterUserID.IsZero() && s.classifier != nil {
+			held, herr := s.classifier.HeldBy(ctx, parsedTenantID, users[0].Email())
+			if herr != nil {
+				return nil, herr
+			}
+			if !held {
+				return nil, ErrDirectAddNeedsVerifiedDomain
+			}
+		}
 	}
 
 	// A zero inviter (e.g. system/SCIM-driven provisioning, where there is no

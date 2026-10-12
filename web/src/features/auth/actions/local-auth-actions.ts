@@ -10,7 +10,7 @@
 
 'use server'
 
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { env } from '@/lib/env'
@@ -18,6 +18,7 @@ import { validateRedirectUrl } from '@/lib/redirect'
 import { setServerCookie, removeServerCookie } from '@/lib/cookies-server'
 import { devLog } from '@/lib/logger'
 import { authEndpoints } from '@/lib/api/endpoints'
+import { browserContextHeaders } from '@/lib/api/browser-context-headers'
 
 import type { AuthSuccessResponse, AuthErrorResponse } from '../schemas/auth.schema'
 
@@ -57,6 +58,8 @@ export interface RegisterInput {
   // backend can resolve the target tenant and apply that tenant's
   // email-verification rule (instead of the platform default).
   invitationToken?: string
+  /** Turnstile token when the server requires a CAPTCHA. */
+  captchaToken?: string
 }
 
 export interface TokenResponse {
@@ -197,27 +200,6 @@ function extractRefreshFromSetCookie(response: Response): string | undefined {
   return undefined
 }
 
-/**
- * The browser's User-Agent and address, forwarded so the session the API
- * creates shows the real device in My account → Sessions (and in the audit
- * log) instead of this server. The API only believes X-Forwarded-For when
- * this server is in its SERVER_TRUSTED_PROXIES.
- */
-async function browserContextHeaders(): Promise<Record<string, string>> {
-  try {
-    const h = await headers()
-    const out: Record<string, string> = {}
-    const ua = h.get('user-agent')
-    if (ua) out['User-Agent'] = ua
-    const fwd = h.get('x-forwarded-for') || h.get('x-real-ip')
-    if (fwd) out['X-Forwarded-For'] = fwd
-    return out
-  } catch {
-    // Outside a request (should not happen in a server action).
-    return {}
-  }
-}
-
 async function backendFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const { data } = await backendFetchWithMeta<T>(endpoint, options)
   return data
@@ -280,6 +262,7 @@ export async function registerAction(
           // the URL — backend uses it to apply the inviting tenant's
           // email-verification rule instead of the platform default.
           ...(input.invitationToken ? { invitation_token: input.invitationToken } : {}),
+          ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
         }),
       }
     )
@@ -1112,11 +1095,13 @@ export async function submitAccessRequestAction(input: {
   company: string
   email: string
   note: string
+  captchaToken?: string
 }): Promise<AuthSuccessResponse<null> | AuthErrorResponse> {
   try {
+    const { captchaToken, ...rest } = input
     const data = await backendFetch<{ message: string }>(authEndpoints.accessRequests(), {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...rest, ...(captchaToken ? { captcha_token: captchaToken } : {}) }),
     })
     return { success: true, data: null, message: data.message }
   } catch (error) {
