@@ -116,6 +116,32 @@ is still accepted.
 - **Evidence** is never returned: counts and a `has_poc` flag only; no PoC,
   request/response bodies or files.
 
+### TLP limit for AI applications
+
+Sending campaign content to an AI application hands it to the model provider
+behind that application, which a TLP:RED engagement typically does not allow.
+
+- **Organization policy** `max_tlp` (Settings, AI assistants, organization
+  policy; `GET/PUT /api/v1/mcp-access/settings`, `settings:write` and a
+  recent sign-in to change; audited with the before/after values, high): the most restrictive TLP of a campaign AI applications may read,
+  `clear`, `green`, `amber` (default), `amber_strict` or `red`.
+- **Campaign switch** `ai_assistants_disabled` (campaign Engagement card; the
+  campaign update, lead only; audited `campaign.ai_access_changed`, high): the
+  lead keeps one campaign away from AI applications whatever its TLP. It can
+  only narrow the organization policy, never widen it.
+- **Enforcement.** After the membership check (a non-member still gets
+  `not_found`), every pentest tool and prompt that would carry a restricted
+  campaign's content refuses with `campaign_restricted` and says why (the
+  campaign's TLP and the organization limit, or the lead's switch):
+  `get_campaign`, `list_campaign_findings`, `get_pentest_finding`,
+  `list_retests`, `campaign_report_stats`, the four prompts, the generic
+  `get_finding` and `explain_finding_priority` on a pentest finding, and
+  `add_finding_comment` (before the confirmation and again when it runs).
+  `list_campaigns` and `my_work` leave restricted campaigns out in SQL and
+  return `restricted_hidden` (a count, no names). The generic `list_findings`
+  leaves their findings out in SQL. A policy that cannot be read refuses
+  (`internal_error`). `finding_stats` counts stay tenant-wide (numbers only).
+
 ### Untrusted content
 
 Text in tool results was written by people or imported from tested systems
@@ -141,6 +167,7 @@ JSON-RPC error whose message starts with the code.
 | `permission_denied` | the credential lacks the tool's permission (OAuth connections also get an `insufficient_scope` step-up challenge) |
 | `module_disabled` | the organization has the tool's module off |
 | `not_confirmed` | a write call whose confirmation is missing, refused, expired, used or for other arguments |
+| `campaign_restricted` | the campaign is above the organization's TLP limit for AI applications, or its lead turned AI assistants off |
 | `unavailable`, `internal_error` | a timeout or a server fault; `retryable: true`; no internal detail is returned (it is logged) |
 
 ## Prompts (shipped)
@@ -206,13 +233,13 @@ bearer token:
 | Generic tools | `internal/infra/http/handler/mcp_tools.go` |
 | Pentest tools | `internal/infra/http/handler/mcp_pentest_tools.go`, `mcp_pentest_discovery.go` |
 | Results envelope, typed errors | `internal/infra/http/handler/mcp_results.go` |
+| TLP limit for AI applications | `internal/infra/http/handler/mcp_ai_policy.go`, `pkg/domain/tenant/mcp_settings.go` (`MaxTLP`), `pentest_campaigns.ai_assistants_disabled` (migration 002073) |
 | Prompts | `internal/infra/http/handler/mcp_prompts.go` |
 | Write tools | `internal/infra/http/handler/mcp_write_tools.go` |
 | Pentest queries (member-scoped paging, report selection, member campaigns) | `internal/app/compliance/pentest_queries.go`, `internal/infra/postgres/pentest_campaign_stats.go` (`GetWorkCountsByIDs`) |
 
 ## Planned (not yet shipped)
 
-- A TLP limit for AI clients.
 - Draft-first pentest write tools (create drafts, evidence, checklist, retests)
   with one confirmation per batch.
 - The current MCP protocol revisions: structured output with output schemas,

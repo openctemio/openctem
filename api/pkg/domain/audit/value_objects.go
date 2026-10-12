@@ -516,6 +516,8 @@ const (
 	ActionCampaignSignedOff               Action = "campaign.signed_off"
 	ActionCampaignSignoffWithdrawn        Action = "campaign.signoff_withdrawn"
 	ActionCampaignCompletionPolicyChanged Action = "campaign.completion_policy_changed"
+	// The lead turned AI assistants (MCP) off or back on for a campaign.
+	ActionCampaignAIAccessChanged Action = "campaign.ai_access_changed"
 	// Test credentials vault and ticket links.
 	ActionCampaignSecretCreated  Action = "campaign.secret_created"
 	ActionCampaignSecretRevealed Action = "campaign.secret_revealed"
@@ -746,7 +748,7 @@ func (a Action) IsValid() bool {
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
-		ActionCampaignLinksChanged, ActionCampaignTicketsCreated,
+		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged,
 		ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted,
 		ActionMCPToolCalled, ActionMCPPromptGotten,
@@ -855,7 +857,7 @@ func (a Action) Category() string {
 		ActionCampaignMemberAdded, ActionCampaignMemberRemoved, ActionCampaignMemberRoleChanged,
 		ActionCampaignSignedOff, ActionCampaignSignoffWithdrawn, ActionCampaignCompletionPolicyChanged,
 		ActionCampaignSecretCreated, ActionCampaignSecretRevealed, ActionCampaignSecretDeleted,
-		ActionCampaignLinksChanged, ActionCampaignTicketsCreated:
+		ActionCampaignLinksChanged, ActionCampaignTicketsCreated, ActionCampaignAIAccessChanged:
 		return "pentest_campaign"
 	case ActionRemediationCampaignCreated, ActionRemediationCampaignUpdated,
 		ActionRemediationCampaignStatusChanged, ActionRemediationCampaignDeleted:

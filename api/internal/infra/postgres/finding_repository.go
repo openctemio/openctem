@@ -3445,6 +3445,19 @@ func (r *FindingRepository) buildWhereClause(filter vulnerability.FindingFilter)
 		}
 	}
 
+	// Pentest findings of campaigns kept away from AI applications: a TLP
+	// outside the allowed levels, or AI assistants turned off.
+	if filter.PentestAIAllowTLP != nil {
+		args = append(args, pq.StringArray(filter.PentestAIAllowTLP))
+		conditions = append(conditions, fmt.Sprintf(
+			`(findings.source <> 'pentest' OR EXISTS (
+				SELECT 1 FROM pentest_campaigns pc
+				WHERE pc.id = findings.pentest_campaign_id AND pc.tenant_id = findings.tenant_id
+				  AND NOT pc.ai_assistants_disabled AND pc.tlp = ANY($%d)
+			))`, argIndex))
+		argIndex++
+	}
+
 	// Pentest campaign membership visibility filter (single SQL subquery).
 	// Preferred over PentestCampaignIDs when caller has a user ID — lets the
 	// PG planner pick the cheapest join strategy. Requires filter.TenantID set.
