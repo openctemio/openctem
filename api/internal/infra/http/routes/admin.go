@@ -45,6 +45,9 @@ import (
 //	                          any admin         ops_admin+ (grant/deny; audited)
 //	/admin/settings/signup    any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, admins emailed)
+//	/admin/settings/legal     any admin         super_admin + fresh TOTP code
+//	                                            (critical audit; read publicly
+//	                                            at GET /api/v1/legal)
 //	/admin/settings/email     any admin         super_admin + fresh TOTP code
 //	                                            (critical audit, password never
 //	                                            returned); test: super_admin,
@@ -195,6 +198,16 @@ func registerAdminRoutes(
 			r.GET("/", h.AdminEmail.Get)
 			r.PUT("/", h.AdminEmail.Update, requireSuper)
 			r.POST("/test", h.AdminEmail.SendTest, requireSuper)
+		}, adminMiddlewares...)
+	}
+
+	// Legal information (Console > System > Legal, RFC-079): any admin reads;
+	// a super admin changes it with a fresh authenticator code.
+	if h.AdminLegal != nil {
+		requireSuper := h.AdminAuthMiddleware.RequireRole(admin.AdminRoleSuperAdmin)
+		router.Group("/api/v1/admin/settings/legal", func(r Router) {
+			r.GET("/", h.AdminLegal.Get)
+			r.PUT("/", h.AdminLegal.Update, requireSuper)
 		}, adminMiddlewares...)
 	}
 

@@ -1735,16 +1735,6 @@ vars:
     group: "Web console"
     type: string
     description: "Page description meta tag."
-  - name: NEXT_PUBLIC_PRIVACY_URL
-    component: web
-    group: "Web console"
-    type: string
-    description: "Privacy notice link on the sign-in and sign-up pages."
-  - name: NEXT_PUBLIC_TERMS_URL
-    component: web
-    group: "Web console"
-    type: string
-    description: "Terms of service link on the sign-in and sign-up pages."
   - name: NEXT_PUBLIC_COOKIE_DOMAIN
     component: web
     group: "Web console"
@@ -1761,83 +1751,6 @@ vars:
     group: "Web console"
     type: string
     description: "Development server only: extra origins allowed to load the dev bundle."
-  - name: LEGAL_TERMS_URL
-    component: web
-    group: "Web console"
-    type: url
-    description: "Terms of service link (https) on the sign-in and register pages. Read at request time."
-  - name: LEGAL_PRIVACY_URL
-    component: web
-    group: "Web console"
-    type: url
-    description: "Privacy policy link (https) on the sign-in and register pages. Read at request time."
-  - name: LEGAL_PAGES_ENABLED
-    component: web
-    group: "Web console"
-    type: bool
-    default: "false"
-    description: "`true` serves the built-in legal templates (/terms, /acceptable-use, /privacy, /dpa, /subprocessors); review them with counsel."
-  - name: LEGAL_ORGANIZATION_NAME
-    component: web
-    group: "Web console"
-    type: string
-    description: "Legal name of the operator in the built-in templates. Unset: a marked placeholder."
-  - name: LEGAL_SERVICE_NAME
-    component: web
-    group: "Web console"
-    type: string
-    default: "OpenCTEM"
-    description: "Service name in the built-in templates."
-  - name: LEGAL_CONTACT_EMAIL
-    component: web
-    group: "Web console"
-    type: string
-    default: "info@openctem.io"
-    description: "General contact e-mail in the built-in templates."
-  - name: LEGAL_WEBSITE_URL
-    component: web
-    group: "Web console"
-    type: url
-    default: "https://openctem.io"
-    description: "Website in the built-in templates (https)."
-  - name: LEGAL_DOCS_URL
-    component: web
-    group: "Web console"
-    type: url
-    default: "https://docs.openctem.io"
-    description: "Documentation link in the built-in templates (https)."
-  - name: LEGAL_ADDRESS
-    component: web
-    group: "Web console"
-    type: string
-    description: "Postal address in the built-in templates. Unset: a marked placeholder."
-  - name: LEGAL_JURISDICTION
-    component: web
-    group: "Web console"
-    type: string
-    description: "Governing law in the built-in templates. Unset: a marked placeholder."
-  - name: LEGAL_EFFECTIVE_DATE
-    component: web
-    group: "Web console"
-    type: string
-    description: "Effective date of the built-in templates. Unset: a marked placeholder."
-  - name: SECURITY_CONTACT
-    component: web
-    group: "Web console"
-    type: string
-    default: "security@openctem.io"
-    description: "Contact (e-mail address or https URL) in /.well-known/security.txt."
-  - name: SECURITY_POLICY_URL
-    component: web
-    group: "Web console"
-    type: url
-    description: "https URL of the security policy, added to security.txt."
-  - name: SECURITY_TXT_ENABLED
-    component: web
-    group: "Web console"
-    type: bool
-    default: "true"
-    description: "`false` stops serving /.well-known/security.txt."
   - name: OPENCTEM_TLS_MODE
     component: gateway
     group: "Gateway"

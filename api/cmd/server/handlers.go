@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	webendpointapp "github.com/openctemio/openctem/api/internal/app/webendpoint"
 
@@ -777,6 +778,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// The sign-up policy exists with local auth (InitAuthServices).
 	if svc.Signup != nil {
 		handlers.AdminSignup = handler.NewAdminSignupHandler(svc.Signup, adminConsoleSvc, log)
+		if repos.PlatformSetting != nil {
+			handlers.AdminLegal = handler.NewAdminLegalHandler(platformlegal.NewService(repos.PlatformSetting, repos.AdminAuditLog, log), adminConsoleSvc, log)
+		}
 		if svc.PlatformEmail != nil {
 			handlers.AdminEmail = handler.NewAdminEmailHandler(svc.PlatformEmail, adminConsoleSvc, cfg.App.Name, log)
 		}
