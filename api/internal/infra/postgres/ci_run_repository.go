@@ -498,7 +498,7 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 // so the link alone must not let a finding pass the gate.
 func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]cirun.RunFinding, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
-			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
+			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
 			COALESCE(f.is_in_kev, FALSE), f.epss_score,
 			EXISTS (SELECT 1 FROM finding_suppressions s
 				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
@@ -522,7 +522,7 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 			epss                       sql.NullFloat64
 			accExp, firstDet, reopened sql.NullTime
 		)
-		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType,
+		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source,
 			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
 			return nil, err
 		}
@@ -567,7 +567,7 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // The scope id is the repository or the business unit, each its own column
 // with a foreign key (migration 001144).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
-	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at`
+	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -576,10 +576,14 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 		scopeID, cby, uby    sql.NullString
 		epss                 sql.NullFloat64
 		createdAt, updatedAt time.Time
+		modes                []byte
 	)
 	if err := row.Scan(&id, &tid, &p.ScopeType, &scopeID, &p.Enabled, &p.Mode, &p.FailOnSeverity,
-		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt); err != nil {
+		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes); err != nil {
 		return p, err
+	}
+	if len(modes) > 0 {
+		_ = json.Unmarshal(modes, &p.Modes)
 	}
 	p.ID, _ = shared.IDFromString(id)
 	p.TenantID, _ = shared.IDFromString(tid)
@@ -591,6 +595,15 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	p.CreatedBy, p.UpdatedBy = parseOptID(cby), parseOptID(uby)
 	p.CreatedAt, p.UpdatedAt = createdAt, updatedAt
 	return p, nil
+}
+
+// modesJSON stores a policy's modes ('{}' when none).
+func modesJSON(m cirun.PolicyModes) []byte {
+	b, err := json.Marshal(m)
+	if err != nil || len(b) == 0 {
+		return []byte("{}")
+	}
+	return b
 }
 
 func nullFloat(v *float64) sql.NullFloat64 {
@@ -660,10 +673,11 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
 		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
-		updated_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13)`,
+		updated_by, created_at, updated_at, modes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14)`,
 		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
-		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt)
+		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt,
+		modesJSON(p.Modes))
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -673,10 +687,10 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 // UpdateGatePolicy changes a policy of the tenant (not its scope).
 func (r *CIRunRepository) UpdateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_gate_policies SET enabled = $3, mode = $4, fail_on_severity = $5,
-		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, updated_at = NOW()
+		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.Enabled, p.Mode, p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV,
-		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy))
+		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes))
 	if err != nil {
 		return err
 	}
