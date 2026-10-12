@@ -242,7 +242,7 @@ type SCMGitLabConnectRequest struct {
 	Token string `json:"token"`
 }
 
-// ConnectGitLab handles POST /api/v1/ci/scm-apps/gitlab
+// ConnectGitLab handles POST /api/v1/ci/scm-apps/gitlab-connections
 // @Summary      Connect a GitLab group for CI statuses and merge request notes
 // @Description  Checks with GitLab that the token is active, has the api scope and belongs to a direct member of the group (a group access token's bot), then stores it encrypted. The token is never returned. Audited.
 // @Tags         CI
@@ -252,7 +252,7 @@ type SCMGitLabConnectRequest struct {
 // @Param        body body SCMGitLabConnectRequest true "Group and token"
 // @Success      201  {object}  SCMGitLabConnectionResponse
 // @Failure      400  {object}  apierror.Error
-// @Router       /ci/scm-apps/gitlab [post]
+// @Router       /ci/scm-apps/gitlab-connections [post]
 func (h *SCMAppHandler) ConnectGitLab(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
 	if !ok {
@@ -273,14 +273,14 @@ func (h *SCMAppHandler) ConnectGitLab(w http.ResponseWriter, r *http.Request) {
 	ciWriteJSON(w, http.StatusCreated, toGitLabResponse(c))
 }
 
-// RemoveGitLab handles DELETE /api/v1/ci/scm-apps/gitlab/{id}
+// RemoveGitLab handles DELETE /api/v1/ci/scm-apps/gitlab-connections/{id}
 // @Summary      Disconnect a GitLab group (its token is deleted)
 // @Tags         CI
 // @Security     BearerAuth
 // @Param        id path string true "Connection ID"
 // @Success      204
 // @Failure      404  {object}  apierror.Error
-// @Router       /ci/scm-apps/gitlab/{id} [delete]
+// @Router       /ci/scm-apps/gitlab-connections/{id} [delete]
 func (h *SCMAppHandler) RemoveGitLab(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
 	if !ok {
