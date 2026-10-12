@@ -295,7 +295,7 @@ services:
       SENSOR_SDK_LATEST_VERSION: ${SENSOR_SDK_LATEST_VERSION:-v0.21.0}
       SENSOR_CA_CERT_FILE: /ca/openctem-root-ca.crt
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "/app/server", "-healthcheck"]
       interval: 15s
       timeout: 5s
       retries: 5
