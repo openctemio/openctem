@@ -61,6 +61,10 @@ export interface AssetSearchFilters {
   scopes?: AssetScope[]
   exposures?: ExposureLevel[]
   tags?: string[]
+  /** `all`: an asset must carry every tag of `tags` (default: any of them). */
+  tagsMode?: 'any' | 'all'
+  /** Leave out assets carrying any of these tags. */
+  excludeTags?: string[]
 
   // Search
   search?: string
@@ -381,7 +385,7 @@ function transformAssetWithRepository(backend: BackendAssetWithRepository): Asse
  * Build query params from AssetSearchFilters
  * Converts frontend filter format to backend query string
  */
-function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, string> {
+export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, string> {
   if (!filters) return {}
 
   const params: Record<string, string> = {}
@@ -399,7 +403,11 @@ function buildAssetQueryParams(filters?: AssetSearchFilters): Record<string, str
   if (filters.statuses?.length) params.statuses = filters.statuses.join(',')
   if (filters.scopes?.length) params.scopes = filters.scopes.join(',')
   if (filters.exposures?.length) params.exposures = filters.exposures.join(',')
-  if (filters.tags?.length) params.tags = filters.tags.join(',')
+  if (filters.tags?.length) {
+    params.tags = filters.tags.join(',')
+    if (filters.tagsMode === 'all') params.tags_mode = 'all'
+  }
+  if (filters.excludeTags?.length) params.exclude_tags = filters.excludeTags.join(',')
 
   // Properties filter (JSONB key:value pairs, multi-value per key)
   if (filters.propertiesFilter && Object.keys(filters.propertiesFilter).length > 0) {
