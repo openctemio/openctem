@@ -1,0 +1,155 @@
+# Security-sensitive paths: the one list the `security-gate` check and the
+# security block of .github/CODEOWNERS are built from.
+#
+# A pull request that changes a file matching any pattern below is labelled
+# `security-sensitive`, gets an automated security review comment, and passes
+# the required `security-gate` check only once a maintainer listed under
+# `ackers` adds the `security-ack` label and the review has no open HIGH
+# finding. How it works and how to override it in an emergency:
+# api/docs/development/ci-cd.md#security-gate.
+#
+# Format (kept to this subset so the gate parses it without a YAML library):
+# a top-level `key:` line followed by `  - pattern` lines. Patterns are
+# repository-relative globs: `**` matches any number of directories, `*` and
+# `?` never match `/`.
+#
+# The gate always reads this file from the BASE branch, so a pull request
+# cannot narrow the list for itself. After editing it run
+#   python3 .github/scripts/security_gate.py codeowners --write
+# to refresh CODEOWNERS (the self-test job fails while they differ).
+
+# GitHub users whose `security-ack` label counts.
+ackers:
+  - 0xmanhnv
+
+# Files that count only when a change removes lines from them: adding a test
+# or a guarded table strengthens a guard, removing one weakens it.
+removal-only:
+  - '**/*_test.go'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
+  - '**/*.spec.ts'
+  - '**/testdata/**'
+  - api/tools/lint/tenantsql/tenant_tables.txt
+
+# Authentication, sessions, authorization gates and the permission model.
+authn-authz:
+  - api/internal/infra/http/middleware/**
+  - api/internal/infra/http/routes/auth.go
+  - api/internal/infra/http/routes/admin.go
+  - api/internal/infra/http/routes/misc.go
+  - api/internal/infra/http/routes/scim.go
+  - api/internal/infra/http/routes/mcp_oauth.go
+  - api/internal/infra/http/routes/ci.go
+  - api/internal/infra/http/handler/*auth*.go
+  - api/internal/infra/http/handler/oauth*.go
+  - api/internal/infra/http/handler/mcp_oauth*.go
+  - api/pkg/domain/permission/**
+  - api/internal/app/accesscontrol/**
+  - api/internal/app/auth/**
+  - api/internal/app/apikey/**
+  - api/internal/app/mcpoauth/**
+  - api/internal/app/scim/**
+  - api/pkg/jwt/**
+  - api/pkg/oidc/**
+  - api/pkg/totp/**
+  - api/pkg/password/**
+  - api/pkg/dpop/**
+
+# Tenant isolation and data scope, and the static guards that enforce them.
+tenant-isolation:
+  - api/internal/app/datascope/**
+  - api/internal/app/actscope/**
+  - api/internal/infra/postgres/data_scope_repository.go
+  - api/internal/infra/postgres/tenant_repository.go
+  - api/internal/infra/http/handler/data_scope_filter.go
+  - api/tools/lint/tenantsql/**
+  - api/tools/lint/getbyid/**
+  - api/tools/lint/routeperm/**
+  - api/scripts/security-lint.sh
+
+# Encryption, key handling and signatures.
+crypto-keys-signing:
+  - api/pkg/crypto/**
+  - api/pkg/jobsign/**
+  - api/pkg/feedsign/**
+  - api/pkg/sensorsig/**
+  - api/pkg/sensorkey/**
+  - api/internal/signer/**
+  - api/internal/infra/signer/**
+  - api/internal/app/rekey/**
+  - api/cmd/signer/**
+  - api/cmd/rekey/**
+  - api/cmd/encrypt-credentials/**
+
+# Sensor protocol: transports (HTTPS v2, gRPC v3 with mTLS), ALPN routing at
+# the gateway, pairing and job signatures.
+sensor-protocol:
+  - api/internal/infra/sensortransport/**
+  - api/pkg/sensorproto/**
+  - api/internal/infra/http/tls.go
+  - api/internal/infra/http/handler/sensor_signature*.go
+  - api/internal/infra/http/handler/sensor_identity_handler.go
+  - api/internal/infra/http/handler/sensor_pairing_handler.go
+  - api/internal/infra/http/handler/sensor_v3_bridge.go
+  - api/internal/app/sensorpairing/**
+  - api/deploy/gateway/**
+
+# The scope gate: what may be scanned, approvals and attestations.
+scope-gate:
+  - api/internal/app/scope/service.go
+  - api/internal/app/scope/rule.go
+  - api/internal/app/scope/exclusion_matcher.go
+  - api/internal/app/scopeauth/**
+  - api/internal/app/scangov/gate.go
+  - api/internal/app/scan/dispatch_gate.go
+  - api/internal/app/command/scope_recheck.go
+
+# Web session, CSRF, proxying and security headers.
+web-session-headers:
+  - web/src/proxy.ts
+  - web/src/app/api/**
+  - web/src/features/*/actions/**
+  - web/src/lib/server-auth-cookies.ts
+  - web/src/lib/cookies-server.ts
+  - web/src/lib/auth-refresh-lock.ts
+  - web/src/lib/csrf-client.ts
+  - web/src/lib/redirect.ts
+  - web/src/lib/safe-href.ts
+  - web/src/lib/sanitize-markdown.ts
+  - web/src/lib/api/client.ts
+  - web/src/lib/api/proxy-*.ts
+  - web/src/lib/api/client-ip-headers.ts
+  - web/next.config.ts
+  - web/server-with-ws.mjs
+
+# File upload, storage and download handlers.
+upload-download:
+  - api/internal/infra/storage/**
+  - api/internal/infra/http/handler/attachment_handler.go
+  - api/internal/infra/http/handler/*_import_handler.go
+  - api/internal/infra/http/handler/finding_evidence*.go
+  - api/internal/infra/http/handler/*export*.go
+  - api/internal/infra/http/handler/pentest_export.go
+
+# Outbound HTTP: the SSRF guard and client-IP handling.
+outbound-ssrf:
+  - api/pkg/httpsec/**
+
+# CI, release tooling and this gate.
+ci-release:
+  - .github/workflows/**
+  - .github/actions/**
+  - .github/scripts/**
+  - .github/security-paths.yml
+  - .github/CODEOWNERS
+  - .githooks/**
+  - api/scripts/release-branch.sh
+
+# Images and deployment defaults. Security-relevant defaults in
+# api/internal/config/config.go are caught by the CONFIG-SECURITY-DEFAULT
+# content rule instead of the whole file.
+deploy-defaults:
+  - '**/Dockerfile*'
+  - api/deploy/**
+  - deploy/**
