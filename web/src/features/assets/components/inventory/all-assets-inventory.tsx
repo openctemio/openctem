@@ -63,6 +63,7 @@ import {
   serializeInventoryFilters,
   countActiveFilters,
   isInventoryFilterEmpty,
+  toggleIncludedTag,
   DEFAULT_PAGE_SIZE,
   type InventoryFilters,
 } from '../../lib/inventory-url'
@@ -89,6 +90,8 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     scopes: f.scopes,
     exposures: f.exposures,
     tags: f.tags,
+    tagsMode: f.tagsMode,
+    excludeTags: f.excludeTags,
     dataClassifications: f.dataClassifications,
     environments: f.environments,
     providers: f.providers,
@@ -189,6 +192,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     },
     [router, pathname]
+  )
+  // A tag chip in a row or the detail sheet adds that tag to the filter, or
+  // removes it when it is already there.
+  const toggleTagFilter = useCallback(
+    (tag: string) => setFilters(toggleIncludedTag(filters, tag)),
+    [filters, setFilters]
   )
 
   // Local search input, debounced into the URL so we don't replace() per keystroke.
@@ -373,6 +382,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       stats={stats}
       onChange={setFilters}
       attributeFacets={attributeFacets}
+      tagTypes={typeView ? [typeView.type] : undefined}
       activeCount={activeCount}
       onClearAll={clearAll}
     />
@@ -534,6 +544,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               onSortChange={(sort) => setFilters({ ...filters, sort, page: 1 })}
               onSelectionChange={setSelectedAssets}
               resetSelectionKey={selectionEpoch}
+              filterTags={filters.tags}
+              onToggleTagFilter={toggleTagFilter}
               toolbarStart={
                 <>
                   {filterButtons}
