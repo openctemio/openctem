@@ -180,6 +180,8 @@ type GatePolicyInput struct {
 	NewFindingsOnly *bool
 	FailOnKEV       *bool
 	EPSSThreshold   *float64
+	// Modes, when set, replaces the policy's modes.
+	Modes *cirun.PolicyModes
 }
 
 // ListGatePolicies returns the tenant's gate policies.
@@ -279,6 +281,9 @@ func applyPolicyInput(p *cirun.GatePolicy, in GatePolicyInput) {
 		p.FailOnKEV = *in.FailOnKEV
 	}
 	p.EPSSThreshold = in.EPSSThreshold
+	if in.Modes != nil {
+		p.Modes = *in.Modes
+	}
 }
 
 // checkPolicyScope makes sure a policy's repository or business unit is the
@@ -318,7 +323,7 @@ func policyName(p *cirun.GatePolicy) string {
 func policySnapshot(p *cirun.GatePolicy) map[string]any {
 	return map[string]any{"scope_type": p.ScopeType, "enabled": p.Enabled, "mode": p.Mode,
 		"fail_on_severity": p.FailOnSeverity, "new_findings_only": p.NewFindingsOnly, "fail_on_kev": p.FailOnKEV,
-		"epss_threshold": p.EPSSThreshold}
+		"epss_threshold": p.EPSSThreshold, "modes": p.Modes}
 }
 
 // ---------------------------------------------------------------- overrides --
