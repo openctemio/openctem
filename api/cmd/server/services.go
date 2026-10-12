@@ -1386,6 +1386,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		OrphanGrace:       time.Duration(cfg.Storage.OrphanGraceDays) * 24 * time.Hour,
 		UnlinkedRetention: time.Duration(cfg.Storage.UnlinkedRetentionHours) * time.Hour,
 	}, s.Audit)
+	// Stored files of deleted rows (report templates, stored reports) are
+	// removed by the same sweep.
+	s.Attachment.SetBlobDeletionQueue(repos.Attachment)
+	// Report templates and stored reports live in the organization's file
+	// storage; the report-file-migration job moves rows that still hold bytes.
+	repos.PentestReport.SetFileStore(integration.NewReportFiles(s.Attachment))
+	repos.PentestReportTemplate.SetFileStore(integration.NewReportFiles(s.Attachment))
 	// Optional malware scanning of new uploads (marks, never blocks).
 	if cfg.Storage.ClamdAddress != "" {
 		clamd, err := malware.NewClamd(cfg.Storage.ClamdAddress, 0)
