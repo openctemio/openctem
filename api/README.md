@@ -271,8 +271,8 @@ make security-scan   # Run security scan (semgrep + betterleaks + trivy)
 | GET | `/health` | Liveness check |
 | GET | `/ready` | Readiness check (DB + Redis) |
 | GET | `/metrics` | Prometheus metrics |
-| GET | `/docs` | API documentation |
-| GET | `/openapi.yaml` | The OpenAPI spec (shipped in the release images) |
+| GET | `/docs` | API documentation (not served in production; platform administrators use `/api/v1/admin/docs`) |
+| GET | `/openapi.yaml` | The OpenAPI spec (shipped in the release images; signed-in users only in production) |
 
 ### Assets
 

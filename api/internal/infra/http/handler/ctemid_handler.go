@@ -56,7 +56,15 @@ type CTEMIDListResponse struct {
 
 // List handles GET /api/v1/ctem-ids — lists standardized CTEM-ID exposure
 // catalog entries (optionally filtered by ?category=), paged with page/per_page.
-// Baselined in api/openapi/undocumented-routes.txt.
+// @Summary      List the CTEM-ID catalog
+// @Tags         CTEM IDs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        category  query  string  false  "Category"
+// @Param        page      query  int     false  "Page number"  default(1)
+// @Param        per_page  query  int     false  "Items per page"  default(20)
+// @Success      200  {object}  CTEMIDListResponse
+// @Router       /ctem-ids [get]
 func (h *CTEMIDHandler) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
