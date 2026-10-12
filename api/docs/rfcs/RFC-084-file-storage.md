@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (2026-10-12); P0 slices 1 (#1900) and 2 implemented, slice 3 (short-lived download links) next |
+| Status | Proposed (2026-10-12); P0 implemented (#1900, #1901); short-lived direct downloads moved to P1 (§3.4) |
 | Scope | api (`pkg/domain/attachment`, `internal/app/integration/attachment.go`, `internal/infra/storage`, upload routes and handlers, config), web (`/api/v1` proxy request bodies), deployment docs |
 | Architecture | [file-storage.md](../architecture/file-storage.md) |
 | Related | RFC-065 (authorization letters), RFC-076 (report templates), RFC-081 (web evidence screenshots), RFC-061 (content packs), finding-evidence.md, finding-import.md |
@@ -112,6 +112,15 @@ carries `X-Content-Type-Options: nosniff` and
 `Content-Security-Policy: default-src 'none'`; attachments other than raster
 images are served `Content-Disposition: attachment`.
 
+Short-lived direct downloads from a bucket (a presigned GET, 60 s,
+`response-content-disposition` forced) are designed but not built yet. They
+need, first: the console's API proxy must hand a redirect to the browser and
+never follow it itself (following it would make the web server fetch from an
+organization-controlled endpoint); the console's CSP must allow the bucket
+origin for inline evidence images; and the bucket needs CORS for downloads
+the console starts with `fetch`. Until a deployment needs to offload download
+bandwidth, files keep streaming through the API, where every header is ours.
+
 ## 4. Threat model
 
 Assets: evidence (may hold secrets, personal data, exploit material),
@@ -142,13 +151,12 @@ mistake.
 
 ## 6. Phases
 
-**P0** (this RFC's implementation): effective import limits and streamed
-proxy (#1900); content-sniffed types, streaming attachment upload, fail-closed
-own bucket, quota, audit, atomic private local writes, S3 streaming, S3
-documentation; short-lived signed downloads for S3 (opt-in presigned GET,
-60 s, attachment disposition forced).
+**P0** (implemented): effective import limits and streamed proxy (#1900);
+content-sniffed types, streaming attachment upload, fail-closed own bucket,
+quota, audit, atomic private local writes, S3 streaming, S3 documentation
+(#1901).
 
-**P1**: retention for evidence whose finding or campaign is deleted and for
+**P1**: short-lived direct downloads from a bucket (§3.4); retention for evidence whose finding or campaign is deleted and for
 uploads never linked; report artefacts and templates moved from Postgres to
 the storage; asynchronous large import read from the storage; image metadata
 stripping and a pixel limit; malware scanning hook with an optional ClamAV
