@@ -259,11 +259,29 @@ func TestEvaluate(t *testing.T) {
 	if v := eval(all, []RunFinding{oldHigh}, newSet()); v.Verdict != VerdictFail {
 		t.Fatalf("pre-existing critical, all findings: %+v", v)
 	}
-	// A committed secret always fails: old, low severity, any threshold.
+	// A new secret always fails: low severity, any threshold.
 	none := def
 	none.FailOnSeverity, none.FailOnKEV = SeverityNone, false
-	if v := eval(none, []RunFinding{secret}, newSet()); v.Verdict != VerdictFail || v.Reasons[0].Code != ReasonSecret {
-		t.Fatalf("pre-existing secret: %+v", v)
+	if v := eval(none, []RunFinding{secret}, newSet("secret")); v.Verdict != VerdictFail || v.Reasons[0].Code != ReasonSecret {
+		t.Fatalf("new secret: %+v", v)
+	}
+	// A secret already on the default branch is a note on a pull request...
+	if v := eval(none, []RunFinding{secret}, newSet()); v.Verdict != VerdictPass || v.Summary.Blocking != 0 ||
+		len(v.Reasons) != 1 || v.Reasons[0].Code != ReasonSecretPreExisting {
+		t.Fatalf("pre-existing secret on a pull request: %+v", v)
+	}
+	// ... even when the policy judges every finding,
+	if v := eval(all, []RunFinding{secret}, newSet()); v.Verdict != VerdictPass {
+		t.Fatalf("pre-existing secret, all findings: %+v", v)
+	}
+	// ... and fails the default branch.
+	if v := Evaluate(GateInput{Policy: none, Findings: []RunFinding{secret}, NewFingerprints: newSet(),
+		BaselineKnown: true, DefaultBranch: true, Now: now}); v.Verdict != VerdictFail || v.Reasons[0].Code != ReasonSecret {
+		t.Fatalf("pre-existing secret on the default branch: %+v", v)
+	}
+	// Without a baseline every secret is new and fails.
+	if v := eval(none, []RunFinding{secret}, nil); v.Verdict != VerdictFail {
+		t.Fatalf("secret without a baseline: %+v", v)
 	}
 	// Accepted risk, suppressions and false positives are honored;
 	// expired acceptance is not.

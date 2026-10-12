@@ -12,6 +12,7 @@ import (
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // EvaluateInput is what the runner tells the gate about its own run.
@@ -99,7 +100,8 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,
 		BaselineBranch: baselineBranch, BaselineKnown: known, ScanFailures: in.ScanFailures,
-		Override: override, Now: now, FindingURL: s.findingURL,
+		DefaultBranch: run.IsDefaultBranch,
+		Override:      override, Now: now, FindingURL: s.findingURL,
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, Links: VerdictLinks{
 		Run:      s.webURL(RunPath(run.ID)),
@@ -120,6 +122,9 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 		return nil, fmt.Errorf("save run outcome: %w", err)
 	}
 	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
+	if err := s.repo.MarkDecorationPending(ctx, run.TenantID, run.ID); err != nil {
+		s.log.Warn("ci decoration not queued", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+	}
 	s.auditVerdict(ctx, run, in, v)
 	return v, nil
 }

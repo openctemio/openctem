@@ -148,13 +148,15 @@ type RunFilter struct {
 
 // RunFinding is one finding a run reported, as the gate reads it.
 type RunFinding struct {
-	ID                  shared.ID
-	Fingerprint         string
-	Title               string
-	RuleID              string
-	Severity            string
-	Status              string
-	FindingType         string
+	ID          shared.ID
+	Fingerprint string
+	Title       string
+	RuleID      string
+	Severity    string
+	Status      string
+	FindingType string
+	// Source is the finding's technique (sast, sca, secret, iac, container).
+	Source              string
 	FilePath            string
 	StartLine           int
 	IsInKEV             bool
@@ -164,3 +166,15 @@ type RunFinding struct {
 	FirstDetectedAt     *time.Time
 	LastReopenedAt      *time.Time
 }
+
+// Decoration states: posting a run's verdict to the code host (RFC-077).
+const (
+	DecorationPending = "pending"
+	DecorationPosted  = "posted"
+	DecorationSkipped = "skipped"
+	DecorationFailed  = "failed"
+	// DecorationRetry asks FinishDecoration to queue the run again.
+	DecorationRetry = "retry"
+	// MaxDecorationAttempts bounds the posting attempts of one run.
+	MaxDecorationAttempts = 5
+)

@@ -242,6 +242,7 @@ var registry = []location{
 	textCol{table: "user_mfa", pk: "user_id", col: "secret_encrypted"},
 	textCol{table: "user_mfa", pk: "user_id", col: "pending_secret_encrypted"},
 	textCol{table: "finding_evidence_secrets", pk: "id", col: "ciphertext"},
+	textCol{table: "scm_gitlab_connections", pk: "id", col: "token_encrypted"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"access_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"secret_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "tenants", pk: "id", col: "settings", path: []string{"ai", "api_key"}, prefix: "enc:v1:"},

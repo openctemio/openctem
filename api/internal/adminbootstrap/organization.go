@@ -141,5 +141,5 @@ func setupLinkURL(base, token string) string {
 	if base == "" {
 		base = "<ui-url>"
 	}
-	return base + "/set-password?token=" + token
+	return base + "/set-password#token=" + token
 }

@@ -108,6 +108,10 @@ type CreateTargetInput struct {
 	// LetterID names the letter of an authorization_letter entry: the
 	// tenant's, valid now (RFC-065 §13).
 	LetterID string
+
+	// batch: one of several entries added in one request (CreateTargets),
+	// which tells the administrators once for the whole batch.
+	batch bool
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -195,7 +199,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	switch {
 	case target.IsPending():
 		s.notifyRequested(ctx, target)
-	case !input.Actor.system():
+	case !input.Actor.system() && !input.batch:
 		s.notifyWidened(ctx, target, "Scope entry added")
 	}
 	if target.IsActive() {

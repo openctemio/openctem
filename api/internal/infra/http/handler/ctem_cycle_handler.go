@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -27,10 +27,23 @@ import (
 // CTEMCycleHandler handles CTEM cycle CRUD and state transition endpoints.
 // Uses direct SQL queries for pragmatic speed (no DDD repo layer yet).
 type CTEMCycleHandler struct {
-	db        *sql.DB
-	metrics   ctemcycle.MetricsRepository
-	dataScope *datascope.Enforcer
-	logger    *logger.Logger
+	db          *sql.DB
+	metrics     ctemcycle.MetricsRepository
+	dataScope   *datascope.Enforcer
+	cyclePolicy CyclePolicyReader
+	logger      *logger.Logger
+}
+
+// CyclePolicyReader reads an organization's CTEM cycle policy.
+type CyclePolicyReader interface {
+	GetCycleSettings(ctx context.Context, tenantID string) (*tenant.CycleSettings, error)
+}
+
+// WithCyclePolicy sets where the close gate reads the organization's policy
+// (nil: the coverage SLO is advisory for everyone).
+func (h *CTEMCycleHandler) WithCyclePolicy(p CyclePolicyReader) *CTEMCycleHandler {
+	h.cyclePolicy = p
+	return h
 }
 
 // WithDataScope limits a cycle's scope snapshot to the assets the caller
@@ -401,13 +414,12 @@ func (h *CTEMCycleHandler) StartReview(w http.ResponseWriter, r *http.Request) {
 // gate: before closing, compute validation-evidence coverage
 // for findings that reached a terminal state within the cycle window.
 // If any enforced priority class is under its SLO threshold, the
-// close is rejected with 422 so the operator can either attach
+// close is rejected with 400 so the operator can either attach
 // evidence or explicitly accept the breach (future: cycle charter).
 //
-// Enforcement mode is controlled by env CTEM_ENFORCE_COVERAGE_SLO
-// (default: false → advisory). This preserves compatibility while
-// the evidence-store rollout is in progress; flip to true once every
-// tenant has the simulation_evidence table populated.
+// Enforcement is the organization's CTEM cycle policy
+// (PUT /api/v1/organization/settings/cycles, enforce_coverage_slo; default
+// off, advisory: the shortfall is logged).
 //
 // @Summary      Close CTEM cycle
 // @Description  Closes a cycle in review, computes its metrics and evaluates each charter success criterion.
@@ -446,7 +458,17 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("validation coverage query failed; allowing close",
 			"cycle_id", id, "error", covErr)
 	} else if sloErr := validation.Enforce(coverage, validation.DefaultThresholds); sloErr != nil {
-		enforce := os.Getenv("CTEM_ENFORCE_COVERAGE_SLO") == "true"
+		enforce := false
+		if h.cyclePolicy != nil {
+			policy, err := h.cyclePolicy.GetCycleSettings(r.Context(), tenantID)
+			if err != nil {
+				// The organization may require the SLO: do not close on a guess.
+				h.logger.Error("ctem cycle close: read the cycle policy", "error", err)
+				apierror.InternalServerError("internal error").WriteJSON(w)
+				return
+			}
+			enforce = policy.EnforceCoverageSLO
+		}
 		if enforce {
 			h.logger.Warn("cycle close blocked by coverage SLO",
 				"cycle_id", id, "tenant_id", tenantID, "breach", sloErr.Error())
