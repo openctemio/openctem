@@ -8,23 +8,41 @@
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Lock, Send } from 'lucide-react'
+import { Eye, Lock, Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { readDraft, writeDraft } from '../lib/activity-storage'
 import { COMMENT_MARKDOWN } from './activity-items'
 
 export const MAX_COMMENT_LENGTH = 10_000
+
+/** What the composer hands to the feed with the text. */
+export interface CommentSendOptions {
+  internal: boolean
+  /** Pentest findings: the campaign's client reads it too. */
+  clientVisible?: boolean
+}
+
+/**
+ * Pentest findings: "choose" offers a "Visible to client" toggle (team-only by
+ * default; the campaign lead, reviewers and admins); "client" says every
+ * comment is visible to the client (the client's own comments); "team" says
+ * comments stay with the campaign team (testers, observers).
+ */
+export type ComposerVisibility = 'choose' | 'client' | 'team'
 
 export interface ActivityComposerProps {
   /** "<kind>:<id>": the draft is kept per entity and viewer. */
   entityKey: string
   viewerId?: string
   /** Resolves when handed to the feed (the send itself is optimistic). */
-  onSend: (body: string, opts: { internal: boolean }) => void
+  onSend: (body: string, opts: CommentSendOptions) => void
   /** Offer the Internal toggle (the API stores visibility). */
   allowInternal?: boolean
+  /** Pentest client visibility (see ComposerVisibility). */
+  visibility?: ComposerVisibility
   placeholder?: string
 }
 
@@ -34,10 +52,12 @@ export interface ActivityComposerHandle {
 
 export const ActivityComposer = forwardRef<ActivityComposerHandle, ActivityComposerProps>(
   function ActivityComposer(
-    { entityKey, viewerId, onSend, allowInternal, placeholder = 'Add a comment…' },
+    { entityKey, viewerId, onSend, allowInternal, visibility, placeholder = 'Add a comment…' },
     ref
   ) {
+    const { t } = useTranslation()
     const [body, setBody] = useState('')
+    const [clientVisible, setClientVisible] = useState(false)
     const [mode, setMode] = useState<'write' | 'preview'>('write')
     const [internal, setInternal] = useState(false)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -79,8 +99,14 @@ export const ActivityComposer = forwardRef<ActivityComposerHandle, ActivityCompo
 
     const send = () => {
       if (!canSend) return
-      onSend(body.trim(), { internal: allowInternal ? internal : false })
+      onSend(body.trim(), {
+        internal: allowInternal ? internal : false,
+        ...(visibility
+          ? { clientVisible: visibility === 'client' || (visibility === 'choose' && clientVisible) }
+          : {}),
+      })
       setBody('')
+      setClientVisible(false)
       writeDraft(viewerId, entityKey, '')
       setMode('write')
     }
@@ -163,6 +189,49 @@ export const ActivityComposer = forwardRef<ActivityComposerHandle, ActivityCompo
                 <Lock className="h-3 w-3" aria-hidden />
                 Internal
               </button>
+            )}
+            {visibility === 'choose' && (
+              <button
+                type="button"
+                aria-pressed={clientVisible}
+                onClick={() => setClientVisible((v) => !v)}
+                title={t(
+                  'findings.commentVisibility.chooseHint',
+                  'Off: only the campaign team reads it. On: the campaign client reads it too.'
+                )}
+                data-testid="composer-client-visible"
+                className={cn(
+                  'inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  clientVisible
+                    ? 'border-info/50 bg-info/15 text-info'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                )}
+              >
+                <Eye className="h-3 w-3" aria-hidden />
+                {t('findings.commentVisibility.visibleToClient', 'Visible to client')}
+              </button>
+            )}
+            {visibility === 'choose' && !clientVisible && (
+              <span className="text-[11px] text-muted-foreground">
+                {t('findings.commentVisibility.teamOnlyNote', 'Team only')}
+              </span>
+            )}
+            {visibility === 'team' && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                {t(
+                  'findings.commentVisibility.teamNote',
+                  'Only the campaign team reads your comments.'
+                )}
+              </span>
+            )}
+            {visibility === 'client' && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Eye className="h-3 w-3" aria-hidden />
+                {t(
+                  'findings.commentVisibility.clientNote',
+                  'The campaign team and your organization read your comments.'
+                )}
+              </span>
             )}
             {body.length > MAX_COMMENT_LENGTH * 0.8 && (
               <span

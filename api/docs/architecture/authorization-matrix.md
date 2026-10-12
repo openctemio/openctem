@@ -1000,6 +1000,28 @@ rule in SQL or in `ResolveCampaignRoleForFinding`. A client does not read
 the campaign's checklists either (tester notes are internal); reports carry
 only checklist coverage counts and failed item titles.
 
+### Pentest findings on the shared finding surface
+
+A pentest finding usually has no inventory asset (its targets are free text),
+so the asset data scope cannot decide who sees it. For `source = pentest`,
+campaign membership replaces the data scope on `GET /findings/{id}`, its
+comments, comment reactions, activity, the live `finding:{id}` channel and the
+MCP per-finding tools and prompts: the team sees every finding of its
+campaign, a client the published ones, anyone else gets 404; admins pass.
+
+Comments on a pentest finding carry a visibility (migration
+`002072_finding_comment_visibility`):
+
+| Who | Writes | Reads |
+|---|---|---|
+| lead, reviewer, org admin | team-only by default, or client-visible on request | every comment |
+| tester, observer | team-only (asking for client-visible is 403) | every comment |
+| client | client-visible only (asking for team-only is 400) | client-visible comments only |
+
+- **Writing as a client.** Clients (usually org viewers, without `findings:comment`) post through `POST /api/v1/pentest/findings/{id}/comments` (`pentest:findings:read`, pentest findings only). Editing, deleting and reacting stay on the `findings:comment` routes.
+- **What the client never receives.** Team-only comments, the activity derived from them, the team's activity (assignment, triage, evidence, approvals) and the team's change details (reasons, notes, source metadata). This holds for the comment list, the activity feed (filtered in SQL, trimmed in the handler), the live channel (team members only), notification previews and MCP.
+- **MCP.** `add_finding_comment` takes `visibility` (team by default). It is one of the confirmed arguments, and the confirmation page states whether the client will read the comment. Clients do not hold `findings:comment`, so they cannot write over MCP. The comment's activity records `source = mcp` and the AI client's name.
+
 The organization's checklist templates (RFC-087) are read by anyone with
 `pentest:campaigns:read`; creating, importing, editing and archiving them
 needs `pentest:checklists:manage` (owners and admins by default).
@@ -1328,7 +1350,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
 | `PUT/DELETE /findings/{id}/comments/{comment_id}` | bypass | 404 (guard) + comment's finding checked |
-| `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, pentest campaign membership): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
+| `POST /comments/{comment_id}/reactions`, `DELETE /comments/{comment_id}/reactions/{emoji}` | (new) | comment resolved by (tenant, id); its finding goes through the comment-list gate (data scope, or pentest campaign membership instead of it; a client reaches client-visible comments only): 404. Removing another member's reaction (`?user_id=`) needs owner/admin and is audited |
 | `PUT/DELETE /assets/{id}`, activate/deactivate/archive, crown-jewel, snooze, sync, scan | **bypass (write)** | 404 (guard) |
 | `POST /findings/bulk/status`, `/bulk/assign` | **bypass (write)** | out-of-scope ids skipped, reported as not found |
 | `POST /findings/actions/verify`, `/reject-fix` (by ids), `/fix-applied` (filter) | partly | scoped |
