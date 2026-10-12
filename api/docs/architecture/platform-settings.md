@@ -45,3 +45,18 @@ other stored secrets.
   verification switch.
 - Headless installs: `bootstrap-admin` stores `BOOTSTRAP_SMTP_*` when nothing
   is stored. The former `SMTP_*` server variables are refused at startup.
+
+## Legal information (`legal`)
+
+- `internal/app/platformlegal`; Console > System > Legal
+  (`GET/PUT /api/v1/admin/settings/legal`, super admin + fresh authenticator
+  code to save, critical audit with the values).
+- Public read `GET /api/v1/legal` (cached 60 s): the web console renders the
+  sign-in and sign-up notice links, the built-in legal pages and
+  `/.well-known/security.txt` from it on the server (`web/src/lib/legal-settings.ts`);
+  when the API cannot be reached the defaults apply. Nothing secret is stored.
+- Validation: links are https URLs without credentials (no `javascript:` or
+  plain http on the sign-in page), contacts are bare e-mail addresses (the
+  security contact may be an https URL), text is one line without `<` or `>`.
+- Replaces the web console's `LEGAL_*`, `SECURITY_*`, `NEXT_PUBLIC_TERMS_URL`
+  and `NEXT_PUBLIC_PRIVACY_URL` environment variables.

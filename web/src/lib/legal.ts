@@ -1,19 +1,18 @@
 /**
- * The operator's legal documents and security contact, read on the server at
- * request time (a published image is configured by its environment, not at
- * build time).
+ * The operator's legal documents and security contact, set in the admin
+ * console (System > Legal) and read on the server at request time
+ * (legal-settings.ts fetches them; these functions take them as a record).
  *
- * - LEGAL_PAGES_ENABLED=true serves the built-in templates: /terms,
- *   /acceptable-use, /privacy, /dpa and /subprocessors. They are filled from
- *   the LEGAL_* values below; the contacts default to the OpenCTEM ones
- *   (info@openctem.io, security@openctem.io, https://openctem.io,
- *   https://docs.openctem.io). The company legal name, address and governing
- *   law have no default: until they are set they show as clearly marked
- *   placeholders. The templates are a starting point reviewed with counsel,
- *   not legal advice. Off by default: the pages answer 404.
- * - LEGAL_TERMS_URL / LEGAL_PRIVACY_URL (or the older NEXT_PUBLIC_TERMS_URL /
- *   NEXT_PUBLIC_PRIVACY_URL) point at documents hosted elsewhere and win over
- *   the templates in the sign-in and sign-up notices.
+ * - LEGAL_PAGES_ENABLED serves the built-in templates: /terms,
+ *   /acceptable-use, /privacy, /dpa and /subprocessors, filled from the LEGAL_*
+ *   values; the contacts default to the OpenCTEM ones (info@openctem.io,
+ *   security@openctem.io, https://openctem.io, https://docs.openctem.io). The
+ *   company legal name, address and governing law have no default: until they
+ *   are set they show as clearly marked placeholders. The templates are a
+ *   starting point reviewed with counsel, not legal advice. Off by default:
+ *   the pages answer 404.
+ * - LEGAL_TERMS_URL / LEGAL_PRIVACY_URL point at documents hosted elsewhere
+ *   and win over the templates in the sign-in and sign-up notices.
  * - /.well-known/security.txt (RFC 9116) names SECURITY_CONTACT (an email
  *   address or an https URL), security@openctem.io by default;
  *   SECURITY_POLICY_URL sets the Policy line, which defaults to the OpenCTEM
@@ -105,11 +104,10 @@ function httpsUrl(v: string | undefined, fallback: string): string {
   }
 }
 
-export function legalConfig(env: Env = process.env): LegalConfig {
+export function legalConfig(env: Env = {}): LegalConfig {
   const templatesEnabled = clean(env.LEGAL_PAGES_ENABLED).toLowerCase() === 'true'
-  const external = (a: string | undefined, b: string | undefined) => safeUrl(clean(a) || clean(b))
-  const terms = external(env.LEGAL_TERMS_URL, env.NEXT_PUBLIC_TERMS_URL)
-  const privacy = external(env.LEGAL_PRIVACY_URL, env.NEXT_PUBLIC_PRIVACY_URL)
+  const terms = safeUrl(clean(env.LEGAL_TERMS_URL))
+  const privacy = safeUrl(clean(env.LEGAL_PRIVACY_URL))
   return {
     templatesEnabled,
     termsUrl: terms || (templatesEnabled ? '/terms' : ''),
@@ -148,7 +146,7 @@ export function securityContactUri(contact: string): string {
  * Expires is one year from `now` (the file is generated per request, so it
  * never goes stale).
  */
-export function securityTxt(env: Env = process.env, now: Date = new Date()): string | null {
+export function securityTxt(env: Env = {}, now: Date = new Date()): string | null {
   if (clean(env.SECURITY_TXT_ENABLED).toLowerCase() === 'false') return null
   const configured = clean(env.SECURITY_CONTACT)
   const contact = securityContactUri(configured || DEFAULT_CONTACTS.security)
