@@ -21,7 +21,8 @@
 // goes through the same services as the admin console's Organizations ->
 // Create: audited tenant.created and user.created, the owner's membership and
 // role, and a one-time set-password link for a new owner, emailed when SMTP is
-// configured (SMTP_*), otherwise printed once here.
+// configured (SMTP_*), otherwise printed once here. A failed send prints it
+// once too, with a warning (never to a log).
 //
 // The run is idempotent: an administrator that already exists is reported and
 // left alone, so re-running with -backup-email adds a backup to an existing
@@ -53,6 +54,8 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -181,18 +184,26 @@ func setupMailer(ctx context.Context, db *sql.DB, log *logger.Logger) tenantapp.
 }
 
 // databaseURLFromParts builds a URL from DB_* variables (containers that use
-// separate DB_* vars).
-func databaseURLFromParts() string {
-	dbHost := os.Getenv("DB_HOST")
-	dbUser := os.Getenv("DB_USER")
-	dbPassword := os.Getenv("DB_PASSWORD")
-	dbName := os.Getenv("DB_NAME")
+// separate DB_* vars). net/url escapes each part, so a password with @ : / ? #
+// or % in it reaches the server as written.
+func databaseURLFromParts() string { return databaseURLFrom(os.Getenv) }
+
+func databaseURLFrom(getenv func(string) string) string {
+	dbHost := getenv("DB_HOST")
+	dbUser := getenv("DB_USER")
+	dbPassword := getenv("DB_PASSWORD")
+	dbName := getenv("DB_NAME")
 	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
 		return ""
 	}
-	dbPort := firstNonEmpty(os.Getenv("DB_PORT"), "5432")
-	dbSSLMode := firstNonEmpty(os.Getenv("DB_SSLMODE"), "disable")
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", dbUser, dbPassword, dbHost, dbPort, dbName, dbSSLMode)
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(dbUser, dbPassword),
+		Host:     net.JoinHostPort(dbHost, firstNonEmpty(getenv("DB_PORT"), "5432")),
+		Path:     "/" + dbName,
+		RawQuery: url.Values{"sslmode": {firstNonEmpty(getenv("DB_SSLMODE"), "disable")}}.Encode(),
+	}
+	return u.String()
 }
 
 func firstNonEmpty(v ...string) string {
