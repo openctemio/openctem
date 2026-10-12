@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/internal/app/auth"
@@ -338,11 +340,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
 		w.ControllerManager.Register(controller.NewCIRetentionController(cirunapp.NewRetentionJob(repos.CIRun, log), 0))
-		// The OpenCTEM gate check and pull request comments (RFC-077), when
-		// the deployment has a GitHub App.
-		if app := newGitHubApp(deps.Config, log); app != nil && repos.SCMApp != nil {
-			w.ControllerManager.Register(controller.NewCIDecorationController(
-				cirunapp.NewDecorationJob(repos.CIRun, repos.SCMApp, app, deps.Config.SMTP.BaseURL, log), 0))
+		// The OpenCTEM gate as a GitHub check run or GitLab commit status, and
+		// the pull or merge request comment (RFC-077).
+		if repos.SCMApp != nil {
+			var poster cirunapp.GitHubPoster
+			if app := newGitHubApp(deps.Config, log); app != nil {
+				poster = app
+			}
+			job := cirunapp.NewDecorationJob(repos.CIRun, repos.SCMApp, poster, deps.Config.SMTP.BaseURL, log)
+			gl := scmappsvc.NewService(repos.SCMApp, nil, deps.Config.Auth.JWTSecret, nil, log)
+			gl.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
+			job.SetGitLab(gl)
+			w.ControllerManager.Register(controller.NewCIDecorationController(job, 0))
 		}
 	}
 
