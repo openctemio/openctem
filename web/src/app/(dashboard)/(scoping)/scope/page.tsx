@@ -26,7 +26,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   ScopeEntryDialog,
   useScopeExclusionsApi,
-  useScopeSettingsApi,
+  useScopeAddMode,
   useScopeTargetsApi,
 } from '@/features/scope'
 import {
@@ -48,11 +48,9 @@ type ScopeTab = (typeof TABS)[number]
 export default function ScopePage() {
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ScopeWrite)
-  const canApprove = useHasPermission(Permission.ScopeApprove)
-  const { data: settings } = useScopeSettingsApi()
-  const membersMayRequest = settings?.one_off_targets === 'admins_and_requests'
-  // Unknown (still loading) counts as Strict.
-  const entriesNeedApproval = settings?.approval_policy?.entries_need_approval ?? true
+  // Add applies at once except under Strict scan approval, where a member
+  // without scope:approve requests (and only when requests are accepted).
+  const { settings, entriesNeedApproval, isRequest, canAdd } = useScopeAddMode()
 
   const [tabParam, setTabParam] = useUrlFilter('tab', 'in')
   const { moduleIds } = useTenantModules()
@@ -153,7 +151,9 @@ export default function ScopePage() {
       : []),
   ]
 
-  const addLabel = canApprove ? 'Add to scope' : 'Request access'
+  const addLabel = isRequest
+    ? t('scope.entry.titleRequest', 'Request access')
+    : t('scope.entry.titleAdd', 'Add to scope')
   const primary =
     tab === 'out'
       ? canWrite && (
@@ -164,8 +164,7 @@ export default function ScopePage() {
         )
       : tab === 'proof' || tab === 'networks'
         ? null
-        : canWrite &&
-          (canApprove || membersMayRequest) && (
+        : canAdd && (
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4" />
               {addLabel}
@@ -230,7 +229,7 @@ export default function ScopePage() {
             emptyAction={
               <ScopeOnboarding
                 activeProof={settings?.active_proof}
-                canAdd={canWrite && (canApprove || membersMayRequest)}
+                canAdd={canAdd}
                 onAdd={() => setAddOpen(true)}
               />
             }
