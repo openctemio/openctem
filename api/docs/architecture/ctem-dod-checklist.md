@@ -59,7 +59,10 @@ breadth (more cloud connectors, more RLS tables) or UI consumers.
 
 - **Validation coverage SLO** — `internal/app/validation/coverage.go`
   `Enforce(coverage, thresholds)` blocks cycle close when P0 or P1
-  evidence coverage drops below threshold.
+  evidence coverage drops below threshold, in organizations whose cycle
+  policy requires it (`PUT /api/v1/organization/settings/cycles`,
+  `enforce_coverage_slo`, owners and admins, on the Cycles page). Elsewhere
+  the shortfall is logged and the cycle closes.
 - Default thresholds: P0=100%, P1=100%, P2=80%, P3=unenforced.
 
 ## Hash-chain audit trail
