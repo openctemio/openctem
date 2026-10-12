@@ -699,6 +699,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Network seeds (RFC-082): re-expanded weekly from public routing data.
+	if svc.EASMNetworkSeeds != nil {
+		w.ControllerManager.Register(controller.NewEASMNetworkSeedController(svc.EASMNetworkSeeds, svc.Module, 0))
+	}
+
 	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
 	// files of deleted rows, capture text after a year.
 	if svc.WebEvidence != nil {

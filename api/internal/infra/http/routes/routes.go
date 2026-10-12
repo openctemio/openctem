@@ -93,6 +93,8 @@ type Handlers struct {
 	// EASMSettings is attack-surface monitoring settings and run-now
 	// (research/22 P0-11); nil if not initialized.
 	EASMSettings *handler.EASMSettingsHandler
+	// EASMNetworkSeed manages AS number and organization seeds (RFC-082)
+	EASMNetworkSeed *handler.EASMNetworkSeedHandler
 	// AssetWebEvidence serves an asset's web evidence and screenshots (RFC-081)
 	AssetWebEvidence *handler.AssetWebEvidenceHandler
 	Docs             *handler.DocsHandler    // API documentation handler
@@ -833,6 +835,9 @@ func Register(
 	}
 	if h.EASMSettings != nil {
 		registerEASMSettingsRoutes(router, h.EASMSettings, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
+	}
+	if h.EASMNetworkSeed != nil {
+		registerEASMNetworkSeedRoutes(router, h.EASMNetworkSeed, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
 	}
 	if h.AssetWebEvidence != nil {
 		registerAssetWebEvidenceRoutes(router, h.AssetWebEvidence, authMiddleware, userSync, h.ModuleGate.RequireModule(moduledom.ModuleAttackSurface))
