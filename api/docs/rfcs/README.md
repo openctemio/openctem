@@ -101,7 +101,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-083](RFC-083-lookalike-domains.md) | Passive lookalike-domain monitoring | Implemented (2026-10-11) |
 | [RFC-084](RFC-084-file-storage.md) | File upload and storage | Proposed (2026-10-12); P0 implemented (#1900, #1901); short-lived direct downloads moved to P1 (§3.4) |
 | [RFC-085](RFC-085-pentest-remediation-and-completion.md) | Pentest remediation, retest and campaign completion | Implemented (2026-10-12): remediation after completion, retest requests, retest before/after, completion checks and sign-off policy, web console; retest rounds and the rest of §7 planned |
-| [RFC-086](RFC-086-pentest-campaign-profile-vault-tickets.md) | Pentest campaign profile, test credentials and ticket links | Proposed (2026-10-12); engagement profile, authorization letter, status lock, test credentials and ticket links implemented; the campaign console rework in progress |
+| [RFC-086](RFC-086-pentest-campaign-profile-vault-tickets.md) | Pentest campaign profile, test credentials and ticket links | Implemented (2026-10-12): engagement profile, authorization letter, status lock, test credentials, ticket links, campaign console (creation wizard, duplicate, status stepper) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
