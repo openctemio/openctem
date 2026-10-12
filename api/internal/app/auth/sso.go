@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
@@ -73,6 +74,8 @@ const ssoMaxRedirectURILength = 2000
 
 // SSOService handles per-tenant SSO authentication.
 type SSOService struct {
+	// audit records each sign-in (auth.login), as the password sign-in does.
+	audit            *auditapp.AuditService
 	ipRepo           identityproviderdom.Repository
 	tenantRepo       tenantdom.Repository
 	userRepo         userdom.Repository
@@ -115,6 +118,9 @@ type SSOService struct {
 }
 
 // SetIdentityRepo wires the federated identity store.
+// SetAuditService wires the auth.login event for SSO and SAML sign-ins.
+func (s *SSOService) SetAuditService(a *auditapp.AuditService) { s.audit = a }
+
 func (s *SSOService) SetIdentityRepo(repo useridentity.Repository) {
 	s.identities = repo
 }
@@ -1693,12 +1699,13 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 
+	ci := clientInfoFrom(ctx)
 	newSession, err := sessiondom.NewWithID(
 		sessionID,
 		u.ID(),
 		tokenPair.AccessToken,
-		"", // IP address from request context
-		"", // User agent from request context
+		ci.IP,
+		ci.UserAgent,
 		s.authConfig.SessionDuration,
 	)
 	if err != nil {
@@ -1738,6 +1745,11 @@ func (s *SSOService) createSession(ctx context.Context, u *userdom.User, authMet
 	if err := s.refreshTokenRepo.Create(ctx, refreshTokenEntity); err != nil {
 		return nil, fmt.Errorf("save refresh token: %w", err)
 	}
+	issuingTenant := ""
+	if !idpTenant.IsZero() {
+		issuingTenant = idpTenant.String()
+	}
+	auditFederatedLogin(ctx, s.audit, s.logger, u, issuingTenant, sessionID.String(), string(authMethod), fed.issuer)
 
 	return &SessionResult{
 		AccessToken:  tokenPair.AccessToken,
