@@ -88,7 +88,7 @@ func run() int {
 	// ==========================================================================
 	cfg, err := config.Load()
 	if *checkConfig {
-		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err)
+		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err, os.Environ())
 	}
 	if err != nil {
 		log := logger.NewDefault()
@@ -98,6 +98,9 @@ func run() int {
 
 	log := initLogger(cfg)
 	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	for _, w := range cfg.EnvWarnings {
+		log.Warn("environment: " + w)
+	}
 	// A wide trusted-proxy range lets any host in it set the client IP the
 	// API believes; it should name the gateway and the web server only.
 	for _, w := range cfg.WideTrustedProxies() {
