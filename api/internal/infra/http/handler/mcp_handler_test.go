@@ -443,6 +443,17 @@ type fakePentestReader struct {
 	members    []*pentestdom.CampaignMember
 	role       pentestdom.CampaignRole // the acting user's campaign role; empty means lead
 	gotQuery   compliance.PentestFindingQuery
+	// memberCampaigns are the acting user's campaigns (ListMemberCampaigns).
+	memberCampaigns []compliance.MemberCampaign
+	gotCampaigns    []compliance.MemberCampaignQuery
+}
+
+func (p *fakePentestReader) ListMemberCampaigns(_ context.Context, q compliance.MemberCampaignQuery) (pagination.Result[compliance.MemberCampaign], error) {
+	p.gotTenant, p.gotUser = q.TenantID, q.UserID
+	p.gotCampaigns = append(p.gotCampaigns, q)
+	start := min((q.Page.Page-1)*q.Page.PerPage, len(p.memberCampaigns))
+	end := min(start+q.Page.PerPage, len(p.memberCampaigns))
+	return pagination.NewResult(p.memberCampaigns[start:end], int64(len(p.memberCampaigns)), q.Page), nil
 }
 
 func (p *fakePentestReader) GetUserCampaignRole(_ context.Context, _, _, _ string) (pentestdom.CampaignRole, error) {
