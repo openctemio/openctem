@@ -320,12 +320,9 @@ func (s *IntegrationService) CreateIntegration(ctx context.Context, input Create
 	}
 	if input.Credentials != "" {
 		// Defense-in-depth: warn loudly when persisting credentials
-		// while the encryptor is the NoOp implementation. The boot-time
-		// check (initEncryptor) already requires APP_ALLOW_PLAINTEXT_
-		// CREDENTIALS=true to permit NoOp at all, but a single startup
-		// warning is easy to miss — emitting at each credential write
-		// gives visibility in audit logs that something sensitive is
-		// being persisted in plaintext.
+		// while the encryptor is the NoOp implementation. The server never
+		// wires NoOp (initEncryptor requires APP_ENCRYPTION_KEY); this
+		// catches a test or tool that does.
 		if crypto.IsNoOp(s.encryptor) {
 			s.logger.Warn("PERSISTING INTEGRATION CREDENTIAL IN PLAINTEXT — APP_ENCRYPTION_KEY is not configured",
 				"tenant_id", input.TenantID,
@@ -1036,8 +1033,8 @@ var ErrCredentialsUnreadable = fmt.Errorf("%w: stored credentials cannot be decr
 // decryptCredentials decrypts the stored credentials of an integration. It
 // fails closed: a value that does not decrypt is never used as is, so a key
 // mismatch cannot send ciphertext (or a legacy plaintext value) upstream
-// (RFC-049 F-8). With APP_ALLOW_PLAINTEXT_CREDENTIALS (development) the
-// encryptor is a no-op and every value "decrypts" to itself.
+// (RFC-049 F-8). With the no-op encryptor (tests only) every value
+// "decrypts" to itself.
 func (s *IntegrationService) decryptCredentials(intg *integrationdom.Integration) (string, error) {
 	encrypted := intg.CredentialsEncrypted()
 	if encrypted == "" {
