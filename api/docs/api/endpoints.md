@@ -1,10 +1,17 @@
 # API Reference
 
 The authoritative, always-current reference is the OpenAPI spec generated from
-the handler annotations. Every running API serves it:
+the handler annotations. The public reference lives on the documentation
+site (docs.openctem.io). A running API serves it as follows:
 
-- `GET /docs`: interactive API documentation
-- `GET /openapi.yaml`: the spec
+| Route | Outside production | Production (`APP_ENV=production`) |
+|---|---|---|
+| `GET /openapi.yaml` (the spec) | public | signed-in users only |
+| `GET /docs` (interactive reference) | public | not served |
+| `GET /api/v1/admin/docs`, `GET /api/v1/admin/openapi.yaml` | platform administrators (console session) | platform administrators (console session) |
+
+The reference page loads one version-pinned script with a subresource
+integrity hash and builds no URL from the request's `Host` header.
 
 Locally, `make generate` at the repository root writes it to
 `api/api/openapi/swagger.yaml`. Route style rules: [API conventions](../architecture/api-conventions.md).
