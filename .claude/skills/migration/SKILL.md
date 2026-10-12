@@ -6,10 +6,11 @@ description: Rules for writing a database migration in api/migrations - numberin
 Full reference: `api/docs/development/migrations.md`.
 
 1. **Number:** `NNNNNN_<snake_name>.{up,down}.sql`, above the highest on `develop` and in open PRs (use the
-   band you were given, if any). Numbers have gaps; never count files. The "Migration Versions" CI step fails a
-   duplicate or a version not above the base's highest (in the merge queue, the base includes queued groups).
-   If `develop` overtakes you, the merge tooling renames the files at merge time; do not hand-renumber in
-   every rebase.
+   band you were given, if any). Numbers have gaps; never count files. In the merge queue the "Migration
+   Versions" CI step fails a duplicate or a version not above the base's highest (the base includes queued
+   groups). On a PR that is only a warning: if `develop` overtakes you, PR CI renumbers the runner's copy of
+   your migrations above the base for that run (`.github/scripts/pr-migration-renumber.sh`), and the merge
+   tooling renames the files when the PR is queued. Do not hand-renumber on every rebase.
 2. **Tests find the migration by name:** `testdb.MigrationVersion(t, dir, "<snake_name>")`, never a hard-coded
    version, so a renumber only renames files.
 3. **Reversible:** every `up` has a working `down`. Test up, down, up on a scratch Postgres.
