@@ -26,11 +26,27 @@ fi
 log() { printf '[supervise] %s\n' "$*"; }
 prefix() { local tag="$1"; while IFS= read -r line || [ -n "$line" ]; do printf '[%s] %s\n' "$tag" "$line"; done; }
 
+# Percent-encodes one URL part (user or password): a value with @ : / ? # or %
+# in it otherwise breaks the URL or changes what it means.
+urlenc() (
+  LC_ALL=C
+  s=$1
+  while [ -n "$s" ]; do
+    rest=${s#?}
+    c=${s%"$rest"}
+    s=$rest
+    case $c in
+      [A-Za-z0-9._~-]) printf '%s' "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
+    esac
+  done
+)
+
 db_url() {
   if [ -n "${DATABASE_URL:-}" ]; then printf '%s' "$DATABASE_URL"; return; fi
   printf 'postgres://%s:%s@%s:%s/%s?sslmode=%s' \
-    "${DB_USER:-openctem}" "${DB_PASSWORD:-}" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
-    "${DB_NAME:-openctem}" "${DB_SSLMODE:-disable}"
+    "$(urlenc "${DB_USER:-openctem}")" "$(urlenc "${DB_PASSWORD:-}")" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
+    "$(urlenc "${DB_NAME:-openctem}")" "${DB_SSLMODE:-disable}"
 }
 
 # Migrations connect as the schema owner (D-6, api/docs/deployment/database-roles.md):
@@ -40,8 +56,8 @@ migrate_url() {
   if [ -n "${DATABASE_MIGRATE_URL:-}" ]; then printf '%s' "$DATABASE_MIGRATE_URL"; return; fi
   if [ -z "${DB_MIGRATE_USER:-}" ]; then db_url; return; fi
   printf 'postgres://%s:%s@%s:%s/%s?sslmode=%s' \
-    "${DB_MIGRATE_USER}" "${DB_MIGRATE_PASSWORD:-}" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
-    "${DB_NAME:-openctem}" "${DB_SSLMODE:-disable}"
+    "$(urlenc "${DB_MIGRATE_USER}")" "$(urlenc "${DB_MIGRATE_PASSWORD:-}")" "${DB_HOST:-postgres}" "${DB_PORT:-5432}" \
+    "$(urlenc "${DB_NAME:-openctem}")" "${DB_SSLMODE:-disable}"
 }
 
 # Migrations under a lock that NOBODY WAITS ON INSIDE POSTGRES.
