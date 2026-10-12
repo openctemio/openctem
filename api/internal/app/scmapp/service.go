@@ -25,6 +25,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
+	"github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -65,6 +66,10 @@ type Service struct {
 	audit    Auditor
 	log      *logger.Logger
 	now      func() time.Time
+
+	gitlabRepo    scmapp.GitLabRepository
+	enc           crypto.Encryptor
+	gitlabFactory GitLabFactory
 }
 
 // NewService creates the service. stateSecret signs install states (a

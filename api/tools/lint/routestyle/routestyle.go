@@ -281,7 +281,7 @@ func isAction(seg string) bool {
 var readActions = map[string]bool{"export": true, "download": true, "preview": true, "compare": true}
 
 // Singular segments that may precede a path parameter.
-var singularOK = map[string]bool{"data": true, "metadata": true, "evidence": true, "settings": true, "status": true}
+var singularOK = map[string]bool{"data": true, "metadata": true, "evidence": true, "web-evidence": true, "settings": true, "status": true}
 
 var tenantParams = map[string]bool{"tenant": true, "tenant_id": true, "tenantId": true, "org": true, "organization_id": true}
 

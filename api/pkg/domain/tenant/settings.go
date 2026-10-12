@@ -45,6 +45,8 @@ type Settings struct {
 	AssetReconciliation AssetReconciliationSettings `json:"asset_reconciliation,omitempty"`
 	// ScanGovernance is scan approval governance (RFC-073).
 	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
+	// Cycles is the CTEM cycle policy.
+	Cycles CycleSettings `json:"cycles,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
