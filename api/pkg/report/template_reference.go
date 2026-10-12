@@ -125,6 +125,7 @@ var fieldSpecs = []fieldSpec{
 	{"retest", "status_label", docx.KindText, "", "Retest result in the template language.", "Kết quả theo ngôn ngữ của mẫu."},
 	{"retest", "notes", docx.KindText, "", "Tester's notes.", "Ghi chú của người kiểm thử."},
 	{"retest", "tested_at", docx.KindText, "", "Date of the retest, YYYY-MM-DD.", "Ngày kiểm tra lại, dạng YYYY-MM-DD."},
+	{"retest", "environment", docx.KindText, "", "Where the fix was verified: production, staging, development or qa; empty when not recorded.", "Nơi xác minh bản sửa: production, staging, development hoặc qa; để trống khi không ghi nhận."},
 
 	{"checklists", "checklists", docx.KindList, "checklist", "The methodology checklists the campaign ran; loop with {#checklists}…{/checklists}.", "Các danh mục kiểm thử của chiến dịch; lặp bằng {#checklists}…{/checklists}."},
 	{"checklists", "has_checklists", docx.KindBool, "", "Yes when the campaign ran at least one checklist.", "Có khi chiến dịch có ít nhất một danh mục kiểm thử."},
