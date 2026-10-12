@@ -1332,6 +1332,54 @@ vars:
     group: "Discovery feeds and background jobs"
     type: string
     description: "Pinned root key id of the vulnerability bundles. Unset: no bundle is imported."
+  - name: GITHUB_APP_ID
+    component: api
+    group: "Integrations"
+    type: int
+    description: "The GitHub App's numeric id (RFC-077). With the slug, client id and secret, private key and webhook secret it turns on the gate check and pull request comments; a partial configuration leaves the app off and is logged."
+  - name: GITHUB_APP_SLUG
+    component: api
+    group: "Integrations"
+    type: string
+    description: "The GitHub App's URL name, used for its install link."
+  - name: GITHUB_APP_CLIENT_ID
+    component: api
+    group: "Integrations"
+    type: string
+    description: "The GitHub App's OAuth client id (binding an installation to an organization)."
+  - name: GITHUB_APP_CLIENT_SECRET
+    component: api
+    group: "Integrations"
+    type: string
+    secret: true
+    description: "The GitHub App's OAuth client secret."
+  - name: GITHUB_APP_PRIVATE_KEY_FILE
+    component: api
+    group: "Integrations"
+    type: path
+    description: "File holding the GitHub App's private key (PEM). Preferred over `GITHUB_APP_PRIVATE_KEY`."
+  - name: GITHUB_APP_PRIVATE_KEY
+    component: api
+    group: "Integrations"
+    type: string
+    secret: true
+    description: "The GitHub App's private key (PEM) itself, when a file cannot be mounted."
+  - name: GITHUB_APP_WEBHOOK_SECRET
+    component: api
+    group: "Integrations"
+    type: string
+    secret: true
+    description: "HMAC secret of the GitHub App's webhook deliveries."
+  - name: GITHUB_APP_API_URL
+    component: api
+    group: "Integrations"
+    type: url
+    description: "GitHub API base URL for GitHub Enterprise Server. Unset: api.github.com."
+  - name: GITHUB_APP_WEB_URL
+    component: api
+    group: "Integrations"
+    type: url
+    description: "GitHub web base URL for GitHub Enterprise Server. Unset: github.com."
   - name: OPENCTEM_HTTPSEC_ALLOW_PRIVATE
     component: api
     group: "Integrations"
