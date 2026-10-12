@@ -1907,13 +1907,13 @@ vars:
     component: compose
     group: "Docker Compose stack"
     type: string
-    default: "ghcr.io/openctemio/api"
+    default: "ghcr.io/openctemio/openctem-api"
     description: "Image repository of the API."
   - name: UI_IMAGE
     component: compose
     group: "Docker Compose stack"
     type: string
-    default: "ghcr.io/openctemio/ui"
+    default: "ghcr.io/openctemio/openctem-web"
     description: "Image repository of the web console."
   - name: MIGRATIONS_IMAGE
     component: compose
@@ -2025,6 +2025,30 @@ vars:
     type: string
     default: "512m"
     description: "Memory limit of the `gateway` container."
+  - name: API_GOMEMLIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "1600MiB"
+    description: "`GOMEMLIMIT` of the `api` container: the Go runtime collects garbage to stay below it. Keep it about 80% of `API_MEMORY_LIMIT`."
+  - name: POSTGRES_MEMORY_LIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "4g"
+    description: "Memory limit of the bundled `postgres` container; keep it above `shared_buffers` plus connections times `work_mem`."
+  - name: REDIS_MEMORY_LIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "1g"
+    description: "Memory limit of the bundled `redis` container."
+  - name: SIGNER_MEMORY_LIMIT
+    component: compose
+    group: "Docker Compose stack"
+    type: string
+    default: "256m"
+    description: "Memory limit of the `signer` container (`docker-compose.job-signer.yml`)."
   - name: GATEWAY
     component: allinone
     group: "All-in-one image"
