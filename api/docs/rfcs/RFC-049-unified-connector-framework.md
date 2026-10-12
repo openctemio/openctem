@@ -618,6 +618,11 @@ on committed ingest.
 - Drop the platform-wide `JIRA_WEBHOOK_SECRET` fallback once per-instance
   secrets cover every live Jira integration (a shared secret is a
   cross-tenant spoofing key if it is ever handed to a tenant).
+  for schemes without a timestamp.
+- No platform-wide secret: the former `JIRA_WEBHOOK_SECRET` fallback is
+  removed and startup refuses the variable (a shared secret is a
+  cross-tenant spoofing key if it is ever handed to a tenant). Each
+  organization's Jira integration verifies with its own secret.
 - Rate limit per instance; body cap 2 MiB; 2xx on processing errors so the
   sender does not retry-storm, with the failure recorded on the instance.
 - Sensor mode has no inbound webhooks: the sensor polls (`pull`) instead.

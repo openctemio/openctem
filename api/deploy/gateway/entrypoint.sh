@@ -85,6 +85,24 @@ passthrough)
 *) die "OPENCTEM_SENSOR_GATEWAY=${OPENCTEM_SENSOR_GATEWAY} is not one of: off, alpn, passthrough" ;;
 esac
 
+# A non-root gateway needs its data and config directories (certificates, the
+# internal CA, the ACME account, the autosaved config) to be its own. Volumes
+# written by an older gateway that ran as root hold root-owned files it cannot
+# read: say how to fix that instead of failing later with a TLS error.
+uid="$(id -u)"
+if [ "$uid" != 0 ]; then
+	for d in "$data_dir" "${XDG_CONFIG_HOME:-/config}"; do
+		[ -d "$d" ] || continue
+		other="$(find "$d" ! -user "$uid" -print 2>/dev/null | head -n 1)"
+		if [ -n "$other" ] || [ ! -w "$d" ]; then
+			die "$d holds files not owned by uid $uid (${other:-$d}), left by a gateway that ran as root. Change their owner once, e.g.: docker compose run --rm --no-deps --user 0 --entrypoint chown gateway -R $uid:$(id -g) /data /config /ca (api/docs/deployment/docker.md, \"Gateway user\")"
+		fi
+	done
+	if [ "$mode" = internal ] && [ -d "$ca_dir" ] && [ ! -w "$ca_dir" ]; then
+		echo "openctem-gateway: WARNING: $ca_dir is not writable by uid $uid, so the internal CA root is not exported there; chown it to $uid:$(id -g)" >&2
+	fi
+fi
+
 # The internal CA's root certificate, copied where the operator (and sensors)
 # can read it. Caddy writes its copy 0600 under /data; sensors need a
 # world-readable file. Written atomically, refreshed if the CA changes.
