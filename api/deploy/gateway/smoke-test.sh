@@ -81,9 +81,12 @@ fi
 echo "== Routing (TLS mode internal, stub upstreams)"
 docker network create "$net" >/dev/null
 # Each stub echoes which upstream it is and the client-address headers it got.
+# The padding makes the body long enough for the gateway to compress it.
+pad="$(printf 'p%.0s' $(seq 1 1024))"
 stub() {
 	docker run -d --name "$run-$1" --network "$net" --network-alias "$1" "$image" \
-		caddy respond --listen :8000 --body "$1 xrealip={http.request.header.X-Real-IP}" >/dev/null
+		caddy respond --listen :8000 --header "Content-Type: application/json" \
+		--body "$1 xrealip={http.request.header.X-Real-IP} $pad" >/dev/null
 }
 stub api
 stub web
@@ -200,6 +203,20 @@ if header_present 'x-content-type-options: nosniff'; then ok "nosniff"; else bad
 if header_present 'server:'; then bad "Server header present"; else ok "no Server header"; fi
 if header_present 'via:'; then bad "Via header present"; else ok "no Via header"; fi
 
+echo "== Compression"
+encoding() { # encoding <method> <path>: the Content-Encoding the gateway answers with
+	docker run --rm --network "$net" curlimages/curl:latest -sk -m 5 -o /dev/null -X "$1" \
+		-H 'Accept-Encoding: zstd, gzip' -H 'Authorization: Bearer x' -w '%header{content-encoding}' \
+		--resolve "gateway.test:443:$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$run-gw")" \
+		"https://gateway.test$2" 2>/dev/null || true
+}
+got="$(encoding GET /api/v1/findings)"
+if [ "$got" = zstd ]; then ok "GET JSON compressed ($got)"; else bad "GET JSON not compressed ('$got')"; fi
+for req in "POST /api/v1/findings" "GET /api/v1/auth/me" "GET /api/v2/sensor/hello" "GET /oauth/authorize"; do
+	got="$(encoding ${req% *} ${req#* })"
+	if [ -z "$got" ]; then ok "$req not compressed"; else bad "$req compressed ($got)"; fi
+done
+
 echo "== The access log never records an invitation token"
 # Links emailed before RFC-041 and the deprecated API aliases carry the token
 # in the path; the gateway's access log replaces it.
@@ -277,7 +294,10 @@ fi
 # protocol v2 signature (it ends in "QUIT") and the untouched ClientHello.
 docker run -d --name "$run-mtls" --network "$net" --network-alias mtls --entrypoint sh "$image" -c \
 	'i=0; while :; do i=$((i+1)); nc -l -p 8443 -w 3 >"/tmp/conn.$i" 2>/dev/null; done' >/dev/null
+# Run as api/deploy/docker-compose.yml runs it: non-root, no capability,
+# no-new-privileges, ports below 1024 opened by the namespaced sysctl.
 docker run -d --name "$run-gwl4" --network "$net" \
+	--cap-drop ALL --security-opt no-new-privileges:true --sysctl net.ipv4.ip_unprivileged_port_start=0 \
 	-e OPENCTEM_TLS_MODE=internal -e OPENCTEM_HOSTNAME=gateway.test \
 	-e OPENCTEM_SENSOR_GATEWAY=passthrough -e SENSOR_PUBLIC_HOSTNAME=sensors.gateway.test -e SENSOR_MTLS_UPSTREAM=mtls:8443 \
 	-e OPENCTEM_API_UPSTREAM=api:8000 -e OPENCTEM_WEB_UPSTREAM=web:8000 \
