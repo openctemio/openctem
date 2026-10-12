@@ -46,6 +46,10 @@ type FindingCampaignAccessChecker interface {
 	// removing evidence: the caller must be able to edit the finding (or
 	// write to the campaign), and the campaign must not be locked.
 	CheckFindingEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
+	// CheckRetestEvidenceWrite gates retest evidence: the right to submit a
+	// retest, allowed while the campaign's remediation is open (completed
+	// included).
+	CheckRetestEvidenceWrite(ctx context.Context, tenantID, findingID, userID string, isAdmin bool) error
 	CheckCampaignEvidenceWrite(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
 }
 
@@ -77,9 +81,11 @@ func (h *AttachmentHandler) SetAccessChecker(checker FindingCampaignAccessChecke
 }
 
 // verifyContextWrite checks the caller may add evidence to (upload/link into)
-// the given context: finding/retest contexts need the right to edit the
-// finding, campaign contexts a role that can upload evidence, and in both the
-// campaign must not be completed or canceled. Observers stay read-only.
+// the given context: finding contexts need the right to edit the finding and
+// a campaign that is not completed or canceled; retest contexts the right to
+// submit a retest and open remediation (completed allowed, canceled or
+// archived refused); campaign contexts a role that can upload evidence on a
+// campaign that is not completed or canceled. Observers stay read-only.
 // Empty/unknown context (a private orphan attachment owned by the uploader) is
 // allowed. No-op when no checker is configured.
 // Both "finding" and "retest" contexts use finding ID as context_id.
@@ -91,8 +97,10 @@ func (h *AttachmentHandler) verifyContextWrite(r *http.Request, contextType, con
 	userID := middleware.GetUserID(r.Context())
 	isAdmin := middleware.IsAdmin(r.Context())
 	switch contextType {
-	case attachmentCtxFinding, attachmentCtxRetest:
+	case attachmentCtxFinding:
 		return h.accessChecker.CheckFindingEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
+	case attachmentCtxRetest:
+		return h.accessChecker.CheckRetestEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
 	case attachmentCtxCampaign:
 		return h.accessChecker.CheckCampaignEvidenceWrite(r.Context(), tenantID, contextID, userID, isAdmin)
 	default:
