@@ -64,7 +64,8 @@ finish() {
 }
 
 # scenario DIR: a bare "origin" and a clone "work" shaped like this repository:
-#   main     v0.1.0, then a SQUASHED release of develop (single parent), v0.2.0
+#   main     v0.1.0 (with versions.yaml and its consumers, platform.release
+#            v0.1.0), then a SQUASHED release of develop (single parent), v0.2.0
 #   develop  branched at v0.1.0; after the release it gains a fix, a feature
 #            and deletes gone.txt (which main still has)
 # Prints nothing; sets nothing. The clone is "$DIR/work", origin "$DIR/origin.git".
@@ -73,6 +74,8 @@ scenario() {
   git init -q --bare -b main "$d/origin.git"
   new_repo "$w"
   git -C "$w" remote add origin "$d/origin.git"
+  version_fixture "$w"
+  sed -i 's/v0.8.0/v0.1.0/g' "$w/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
   commit "$w" "chore: init" a.txt
   git -C "$w" tag -a v0.1.0 -m v0.1.0
   git -C "$w" switch -q -c develop

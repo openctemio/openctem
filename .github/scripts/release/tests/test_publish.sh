@@ -38,6 +38,7 @@ commit "$w" "chore: side" side.txt
 side="$(git -C "$w" rev-parse HEAD)"
 git -C "$w" switch -q develop
 assert_rc "commit not on main refused" 1 bash "$TAG" --repo "$w" --version v0.3.0 --commit "$side" --release-head "$side"
+assert_rc "versions.yaml names another release: refused" 1 bash "$TAG" --repo "$w" --version v0.4.0 --commit "$merge" --release-head "$head"
 out="$(bash "$TAG" --repo "$w" --version v0.3.0 --commit "$merge" --release-head "$head" --push 2>&1)"; rc=$?
 assert_eq "tag: exit 0 ($out)" 0 "$rc"
 assert_eq "tag: annotated" tag "$(git -C "$w" cat-file -t v0.3.0)"
@@ -72,6 +73,19 @@ out="$(bash "$POST" --repo "$w" --version v0.3.0 --mode hotfix 2>/dev/null)"
 ph="$(sed -n 's/^HEAD=//p' <<<"$out")"
 assert_rc "post hotfix: no merge-back" 1 git -C "$w" merge-base --is-ancestor v0.3.0 "$ph"
 assert_contains "post hotfix: still bumps versions.yaml" "release: v0.3.0" "$(git -C "$w" show "$ph:versions.yaml")"
+git -C "$w" branch -q -D chore/post-release-v0.3.0
+
+# A train whose main carries more than the version commit is refused.
+git -C "$w" switch -q main
+commit "$w" "fix: made on main only" onlymain.txt
+sed -i 's/v0.3.0/v0.3.1/g' "$w/versions.yaml" "$w/api/deploy/.env.example" "$w/api/deploy/docker-compose.yml" "$w/api/deploy/docker-compose.job-signer.yml"
+git -C "$w" commit -qam "chore: v0.3.1"
+git -C "$w" tag -a v0.3.1 -m v0.3.1
+git -C "$w" push -q origin main --tags
+git -C "$w" switch -q develop
+out="$(bash "$POST" --repo "$w" --version v0.3.1 2>&1)"; rc=$?
+assert_eq "post: main-only change refused" 1 "$rc"
+assert_contains "post: main-only change explained" "beyond versions.yaml and its consumers" "$out"
 
 # --- helm-bump.sh ------------------------------------------------------------------
 HB="$RELEASE_DIR/helm-bump.sh"
