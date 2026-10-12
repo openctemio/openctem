@@ -108,6 +108,13 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		VALUES ($1, $2, '«secret:token#1»', 'token', $3, NOW() + interval '1 day')`, tenantID, evidenceID,
 		put("finding_evidence_secrets.ciphertext", "evidence:v1|t|e|p|bearer-token"))
 
+	// A pentest campaign test credential.
+	campaignID := "88888888-8888-7888-8888-888888888888"
+	exec(`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'rekey')`, campaignID, tenantID)
+	exec(`INSERT INTO pentest_campaign_secrets (id, tenant_id, campaign_id, label, kind, ciphertext)
+		VALUES ('99999999-9999-7999-8999-999999999999', $1, $2, 'admin', 'password', $3)`, tenantID, campaignID,
+		put("pentest_campaign_secrets.ciphertext", "test-account-password"))
+
 	// A GitLab group access token for CI statuses (RFC-077).
 	exec(`INSERT INTO scm_gitlab_connections (id, tenant_id, host, group_path, group_id, token_encrypted)
 		VALUES ('88888888-8888-7888-8888-888888888888', $1, 'gitlab.example.com', 'acme', 1, $2)`, tenantID,
@@ -176,6 +183,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		"user_mfa.secret_encrypted":                           `SELECT secret_encrypted FROM user_mfa`,
 		"user_mfa.pending_secret_encrypted":                   `SELECT pending_secret_encrypted FROM user_mfa`,
 		"finding_evidence_secrets.ciphertext":                 `SELECT ciphertext FROM finding_evidence_secrets`,
+		"pentest_campaign_secrets.ciphertext":                 `SELECT ciphertext FROM pentest_campaign_secrets`,
 		"scm_gitlab_connections.token_encrypted":              `SELECT token_encrypted FROM scm_gitlab_connections`,
 		"settings.value_json.access_key":                      `SELECT value_json->>'access_key' FROM settings WHERE key = 'storage_config'`,
 		"settings.value_json.secret_key":                      `SELECT value_json->>'secret_key' FROM settings WHERE key = 'storage_config'`,
