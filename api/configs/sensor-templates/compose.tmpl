@@ -49,8 +49,8 @@ services:
     tmpfs: [/tmp]
 {{- end}}
     environment:
-      SENSOR_API_URL: {{yamlQuote .BaseURL}}
-      SENSOR_API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
+      API_URL: {{yamlQuote .BaseURL}}
+      API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
 {{- with toolList .Sensor.EffectiveTools}}
       SENSOR_TOOLS: {{yamlQuote .}}
 {{- end}}
