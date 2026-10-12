@@ -74,7 +74,7 @@ func (unprovenTargets) UnverifiedTargets(_ context.Context, _ shared.ID, targets
 // platform sensors.
 func TestDecideWorkflowRouting_UnprovenStaysOnTenant(t *testing.T) {
 	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(),
-		activeProof: ActiveProofPlatformSensors, attributionGate: unprovenTargets{}}
+		proofPolicy: StaticProofPolicy(true), attributionGate: unprovenTargets{}}
 	sc := testScan("")
 	sc.SensorPreference = scan.SensorPreferenceAuto
 	got, err := svc.decideWorkflowRouting(context.Background(), sc, []string{"a.example.com"})

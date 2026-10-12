@@ -197,7 +197,7 @@ func TestEmailService_SendPasswordResetEmail_Success(t *testing.T) {
 	if data.Email != "user@example.com" {
 		t.Errorf("expected Email=user@example.com, got %s", data.Email)
 	}
-	expectedURL := "https://app.example.com/reset-password?token=reset-tok"
+	expectedURL := "https://app.example.com/reset-password#token=reset-tok"
 	if data.ResetURL != expectedURL {
 		t.Errorf("expected ResetURL=%s, got %s", expectedURL, data.ResetURL)
 	}
@@ -533,7 +533,7 @@ func TestEmailService_URLConstruction_DifferentBaseURLs(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			rData := mock.lastData.(email.PasswordResetData)
-			expectedResetURL := fmt.Sprintf("%s/reset-password?token=t2", tc.baseURL)
+			expectedResetURL := fmt.Sprintf("%s/reset-password#token=t2", tc.baseURL)
 			if rData.ResetURL != expectedResetURL {
 				t.Errorf("expected ResetURL=%s, got %s", expectedResetURL, rData.ResetURL)
 			}
@@ -677,7 +677,7 @@ func TestEmailService_SendAccountSetupEmail_Success(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected AccountSetupData, got %T", mock.lastData)
 	}
-	if data.SetupURL != "https://app.example.com/set-password?token=setup-tok" {
+	if data.SetupURL != "https://app.example.com/set-password#token=setup-tok" {
 		t.Errorf("unexpected SetupURL %s", data.SetupURL)
 	}
 	if data.TeamName != "Acme" || data.ExpiresIn != "24 hours" {
@@ -704,7 +704,7 @@ func TestEmailService_SendAccountSetupEmail_NotConfiguredIsAnError(t *testing.T)
 
 func TestEmailTemplate_AccountSetupRenders(t *testing.T) {
 	subject, body, err := email.NewTemplateEngine().Render(email.TemplateAccountSetup, email.AccountSetupData{
-		UserName: "New", TeamName: "Acme", SetupURL: "https://x/set-password?token=t", ExpiresIn: "24 hours", AppName: "OpenCTEM",
+		UserName: "New", TeamName: "Acme", SetupURL: "https://x/set-password#token=t", ExpiresIn: "24 hours", AppName: "OpenCTEM",
 	})
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -712,7 +712,7 @@ func TestEmailTemplate_AccountSetupRenders(t *testing.T) {
 	if subject != "Your OpenCTEM account for Acme is ready" {
 		t.Errorf("unexpected subject %q", subject)
 	}
-	if !strings.Contains(body, "https://x/set-password?token=t") || !strings.Contains(body, "24 hours") {
+	if !strings.Contains(body, "https://x/set-password#token=t") || !strings.Contains(body, "24 hours") {
 		t.Error("body must carry the link and its expiry")
 	}
 }
