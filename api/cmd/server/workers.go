@@ -887,6 +887,14 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.Attachment, time.Hour, log.With("controller", "attachment-retention")))
 	}
 
+	// Report templates and stored reports still held in Postgres move to the
+	// organization's file storage.
+	if repos.PentestReport != nil && repos.PentestReportTemplate != nil {
+		w.ControllerManager.Register(controller.NewReportFileMigrationController(
+			[]controller.ReportBytesMover{repos.PentestReportTemplate, repos.PentestReport},
+			time.Minute, log.With("controller", "report-file-migration")))
+	}
+
 	// Malware scan of new uploads, when STORAGE_CLAMD_ADDRESS is set.
 	if svc.Attachment != nil && cfg.Storage.ClamdAddress != "" {
 		w.ControllerManager.Register(controller.NewAttachmentScanController(

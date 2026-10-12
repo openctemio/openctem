@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -103,5 +105,58 @@ func TestS3Integration_StreamedRoundTripAndTenantIsolation(t *testing.T) {
 	}
 	if err := s.Delete(ctx, tenantB, keyB); err != nil {
 		t.Fatalf("delete is not idempotent: %v", err)
+	}
+}
+
+// local -> S3 -> local keeps every namespace, key and byte (and skips what is
+// already there); a signed GET made by the driver is accepted by the server
+// and answers with the forced download headers.
+func TestS3Integration_MigrateRoundTripAndSignedGet(t *testing.T) {
+	s := s3IntegrationStore(t)
+	ctx := context.Background()
+	tenant := shared.NewID().String()
+	src := NewLocalStorage(t.TempDir())
+	key, err := src.Upload(ctx, tenant, "evidence.png", "image/png", strings.NewReader(strings.Repeat("px", 70000)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := Migrate(ctx, src, s, MigrateOptions{})
+	if err != nil || res.Copied != 1 || res.Failed != 0 {
+		t.Fatalf("local -> s3: %+v %v", res, err)
+	}
+	if res, _ := Migrate(ctx, src, s, MigrateOptions{Verify: true}); res.Skipped != 1 {
+		t.Fatalf("second run: %+v", res)
+	}
+	back := NewLocalStorage(t.TempDir())
+	if res, err := Migrate(ctx, s, back, MigrateOptions{}); err != nil || res.Copied != 1 {
+		t.Fatalf("s3 -> local: %+v %v", res, err)
+	}
+	rc, _, err := back.Download(ctx, tenant, key)
+	if err != nil || readAll(t, rc) != strings.Repeat("px", 70000) {
+		t.Fatalf("round trip: %v", err)
+	}
+
+	signed, err := s.presignGet(ctx, tenant+"/"+key, "evidence.png", "image/png", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(signed) //nolint:gosec,noctx // test server URL
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || len(body) != 140000 {
+		t.Fatalf("signed GET: %d (%d bytes)", resp.StatusCode, len(body))
+	}
+	if cd := resp.Header.Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment") {
+		t.Errorf("Content-Disposition %q", cd)
+	}
+	tampered := strings.Replace(signed, key, key+"x", 1)
+	if r2, err := http.Get(tampered); err == nil { //nolint:gosec,noctx // test server URL
+		_ = r2.Body.Close()
+		if r2.StatusCode == http.StatusOK {
+			t.Error("a URL signed for one object opened another")
+		}
 	}
 }

@@ -205,8 +205,11 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `STORAGE_ACCESS_KEY` | string | empty |  | yes | Access key. Required with `s3` / `minio`. |
 | `STORAGE_BUCKET` | string | empty |  |  | Bucket for `s3` / `minio`. Required with those providers. |
 | `STORAGE_CLAMD_ADDRESS` | string | empty |  |  | ClamAV daemon (`host:port` or `unix:/path`, e.g. `clamav:3310` with `docker-compose.clamav.yml`) that scans new uploads. A flagged file is kept and marked, audited `attachment.malware_detected`, and downloads only after a confirmation. Unset: no scanning. |
+| `STORAGE_DIRECT_DOWNLOAD` | bool | `false` |  |  | Hand out 60-second signed URLs (`GET /api/v1/attachments/{id}/signed-url`) for files in an HTTPS bucket, after the same checks as a download through the API; the console uses them for file downloads. Files on local storage, in a plain-HTTP bucket and flagged files always download through the API. The bucket needs CORS only for downloads started with `fetch`. |
 | `STORAGE_ENDPOINT` | string | empty |  |  | Endpoint of an S3-compatible store, for example MinIO. Unset: AWS S3. |
 | `STORAGE_LOCAL_PATH` | string | `./data/attachments` |  |  | Directory for `local` storage, relative to the working directory (`/app` in the API image, so `/app/data/attachments`). Put it on a persistent volume and back it up. |
+| `STORAGE_SSE` | string | empty |  |  | Server-side encryption asked for on every object written to the server bucket: `AES256` or `aws:kms`. Unset: the bucket's default encryption. Only with `s3` / `minio`. |
+| `STORAGE_SSE_KMS_KEY_ID` | string | empty |  |  | KMS key (id or ARN) for `STORAGE_SSE=aws:kms`. Unset: the bucket's default KMS key. |
 | `STORAGE_TENANT_QUOTA_MB` | int | `20480` |  |  | Most attachment bytes one organization may hold, in MiB (20480 = 20 GiB). An upload that would pass it is refused with 413 `STORAGE_QUOTA_EXCEEDED`. 0 = no quota. |
 | `STORAGE_ORPHAN_GRACE_DAYS` | int | `7` |  |  | Days evidence files stay after their finding or campaign is deleted; then the retention sweep deletes them (audited `attachment.purged`). 0 = keep them. |
 | `STORAGE_UNLINKED_RETENTION_HOURS` | int | `24` |  |  | Hours an upload never linked to a finding or campaign stays before the retention sweep deletes it. Authorization letter files are never purged. 0 = keep them. |
