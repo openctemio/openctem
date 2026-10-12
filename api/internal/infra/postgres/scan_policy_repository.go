@@ -134,3 +134,59 @@ func (r *ScanPolicyRepository) SetOverride(ctx context.Context, tenantID shared.
 	}
 	return nil
 }
+
+var _ scanpolicy.ProofStore = (*ScanPolicyRepository)(nil)
+
+type proofValue struct {
+	Required *bool `json:"required"`
+}
+
+// GetProofRequired returns whether platform sensors need a verified domain,
+// or scanpolicy.ErrNotFound when nothing is stored.
+func (r *ScanPolicyRepository) GetProofRequired(ctx context.Context) (bool, int, error) {
+	var raw []byte
+	var version int
+	err := r.db.QueryRowContext(ctx, `SELECT value, version FROM platform_settings WHERE key = $1`,
+		scanpolicy.ProofSettingKey).Scan(&raw, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, 0, scanpolicy.ErrNotFound
+	}
+	if err != nil {
+		return false, 0, fmt.Errorf("get platform sensor proof setting: %w", err)
+	}
+	var v proofValue
+	if err := json.Unmarshal(raw, &v); err != nil || v.Required == nil {
+		return false, 0, fmt.Errorf("decode platform sensor proof setting: invalid value")
+	}
+	return *v.Required, version, nil
+}
+
+// SetProofRequired stores the setting when the stored version is
+// expectedVersion (0: nothing stored yet), and returns the new version.
+func (r *ScanPolicyRepository) SetProofRequired(ctx context.Context, required bool, expectedVersion int, by string, at time.Time) (int, error) {
+	raw, err := json.Marshal(proofValue{Required: &required})
+	if err != nil {
+		return 0, err
+	}
+	var version int
+	if expectedVersion == 0 {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO platform_settings (key, value, version, source, updated_by, updated_at)
+			VALUES ($1, $2, 1, 'console', $3, $4)
+			ON CONFLICT (key) DO NOTHING
+			RETURNING version`, scanpolicy.ProofSettingKey, raw, by, at).Scan(&version)
+	} else {
+		err = r.db.QueryRowContext(ctx, `
+			UPDATE platform_settings
+			   SET value = $2, version = version + 1, source = 'console', updated_by = $3, updated_at = $4
+			 WHERE key = $1 AND version = $5
+			RETURNING version`, scanpolicy.ProofSettingKey, raw, by, at, expectedVersion).Scan(&version)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, scanpolicy.ErrVersionConflict
+	}
+	if err != nil {
+		return 0, fmt.Errorf("set platform sensor proof setting: %w", err)
+	}
+	return version, nil
+}
