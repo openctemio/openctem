@@ -30,6 +30,7 @@ const EXPOSURE_TYPE_LABEL: Record<string, string> = {
   dangling_ns: 'Dangling delegation',
   email_security_weak: 'Weak email security',
   subdomain_takeover: 'Subdomain takeover',
+  lookalike_domain: 'Lookalike domain',
   port_open: 'Open port',
   service_detected: 'Exposed service',
 }

@@ -26,6 +26,9 @@ const (
 	ActionCIRunResultsUploaded Action = "ci_run.results_uploaded"
 	// ActionCIRunEvaluated records a gate verdict.
 	ActionCIRunEvaluated Action = "ci_run.evaluated"
+	// ActionCIRepoExceptionsRequested records suppression requests a
+	// repository's .openctem.yml made (pending approval).
+	ActionCIRepoExceptionsRequested Action = "ci_run.exceptions_requested"
 
 	ActionCIGatePolicyCreated Action = "ci_gate_policy.created"
 	ActionCIGatePolicyUpdated Action = "ci_gate_policy.updated"
@@ -72,30 +75,31 @@ const (
 )
 
 var _ = registerActions("ci", map[Action]Severity{
-	ActionCITrustConfigCreated:  SeverityHigh,
-	ActionCITrustConfigUpdated:  SeverityHigh,
-	ActionCITrustConfigDeleted:  SeverityMedium,
-	ActionCISettingsUpdated:     SeverityMedium,
-	ActionCIRunnerKeyRefused:    SeverityMedium,
-	ActionCIRunTokenIssued:      SeverityLow,
-	ActionCIRunTokenRefused:     SeverityMedium,
-	ActionCIRunResultsUploaded:  SeverityLow,
-	ActionCIRunEvaluated:        SeverityLow,
-	ActionCIGatePolicyCreated:   SeverityMedium,
-	ActionCIGatePolicyUpdated:   SeverityMedium,
-	ActionCIGatePolicyDeleted:   SeverityMedium,
-	ActionCIGateOverrideCreated: SeverityHigh,
-	ActionCIGateOverrideRevoked: SeverityMedium,
-	ActionCIGateOverrideUsed:    SeverityHigh,
-	ActionCIPipelineCreated:     SeverityLow,
-	ActionCIPipelinesRevoked:    SeverityMedium,
-	ActionCIPipelineRetired:     SeverityHigh,
-	ActionCIStaleSourceFindings: SeverityLow,
-	ActionCICoverageExpected:    SeverityLow,
-	ActionCICoverageUnexpected:  SeverityLow,
-	ActionSCMAppInstalled:       SeverityHigh,
-	ActionSCMAppRemoved:         SeverityMedium,
-	ActionSCMAppStatusChanged:   SeverityMedium,
+	ActionCITrustConfigCreated:      SeverityHigh,
+	ActionCITrustConfigUpdated:      SeverityHigh,
+	ActionCITrustConfigDeleted:      SeverityMedium,
+	ActionCISettingsUpdated:         SeverityMedium,
+	ActionCIRunnerKeyRefused:        SeverityMedium,
+	ActionCIRunTokenIssued:          SeverityLow,
+	ActionCIRunTokenRefused:         SeverityMedium,
+	ActionCIRunResultsUploaded:      SeverityLow,
+	ActionCIRunEvaluated:            SeverityLow,
+	ActionCIRepoExceptionsRequested: SeverityMedium,
+	ActionCIGatePolicyCreated:       SeverityMedium,
+	ActionCIGatePolicyUpdated:       SeverityMedium,
+	ActionCIGatePolicyDeleted:       SeverityMedium,
+	ActionCIGateOverrideCreated:     SeverityHigh,
+	ActionCIGateOverrideRevoked:     SeverityMedium,
+	ActionCIGateOverrideUsed:        SeverityHigh,
+	ActionCIPipelineCreated:         SeverityLow,
+	ActionCIPipelinesRevoked:        SeverityMedium,
+	ActionCIPipelineRetired:         SeverityHigh,
+	ActionCIStaleSourceFindings:     SeverityLow,
+	ActionCICoverageExpected:        SeverityLow,
+	ActionCICoverageUnexpected:      SeverityLow,
+	ActionSCMAppInstalled:           SeverityHigh,
+	ActionSCMAppRemoved:             SeverityMedium,
+	ActionSCMAppStatusChanged:       SeverityMedium,
 })
 
 func init() {

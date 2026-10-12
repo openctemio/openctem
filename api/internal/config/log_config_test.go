@@ -19,6 +19,7 @@ func TestLoad_LogLevelAndFormat(t *testing.T) {
 			t.Setenv("LOG_FORMAT", tc.format)
 			// Outside development, Load requires a real encryption key.
 			t.Setenv("APP_ENCRYPTION_KEY", "9f2c4e6a8b0d1f3e5a7c9b1d3f5e7a9c0b2d4f6e8a1c3e5b7d9f0a2c4e6b8d0f")
+			t.Setenv("DB_PASSWORD", "test-db-password")
 			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("Load: %v", err)

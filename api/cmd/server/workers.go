@@ -699,6 +699,16 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
+	// Passive lookalike-domain checks (RFC-083): hourly, bounded batches.
+	if svc.EASMLookalikes != nil {
+		w.ControllerManager.Register(controller.NewEASMLookalikeController(svc.EASMLookalikes, svc.Module, 0))
+	}
+
+	// Network seeds (RFC-082): re-expanded weekly from public routing data.
+	if svc.EASMNetworkSeeds != nil {
+		w.ControllerManager.Register(controller.NewEASMNetworkSeedController(svc.EASMNetworkSeeds, svc.Module, 0))
+	}
+
 	// Web evidence retention (RFC-081): screenshots after 30 days (O7),
 	// files of deleted rows, capture text after a year.
 	if svc.WebEvidence != nil {

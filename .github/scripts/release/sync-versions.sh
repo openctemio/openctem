@@ -41,7 +41,7 @@ MANIFEST="$ROOT/versions.yaml"
 # value's closing delimiter (closer: '"', '}' or nothing), which is put back.
 CONSUMERS=(
   'platform.release|api/deploy/.env.example||^(OPENCTEM_VERSION=)([^#]*)$'
-  'platform.release|api/deploy/docker-compose.yml||(OPENCTEM_VERSION is required, e\.g\. )([^}]*)'
+  'platform.release|api/deploy/docker-compose.yml|}|(OPENCTEM_VERSION:-)([^}]*)\}'
   'sensor.latest|api/internal/config/config.go|"|^(const DefaultSensorLatestVersion = ")([^"]*)"'
   'sensor.latest|api/internal/infra/http/handler/sensor_handler.go|"|^(const DefaultSensorImage = "ghcr\.io/openctemio/sensor:)([^"]*)"'
   'sensor.latest|api/deploy/docker-compose.yml|}|(SENSOR_LATEST_VERSION: \$\{SENSOR_LATEST_VERSION:-)([^}]*)\}'
