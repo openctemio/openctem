@@ -44,6 +44,9 @@ type AttachmentService struct {
 	storageFactory  StorageFactory            // Optional: creates provider from config
 	storageCache    sync.Map                  // tenantID → *storageCacheEntry
 	quotaBytes      int64                     // per-tenant total of attachment bytes; 0 = no quota
+	retentionRepo   attachmentdom.RetentionRepository
+	retention       RetentionSettings
+	audit           AttachmentAuditLogger
 	logger          *logger.Logger
 }
 
