@@ -24,7 +24,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-const stepUpPurposeScanPolicy = "scan approval policy change"
+const (
+	stepUpPurposeScanPolicy = "scan approval policy change"
+	stepUpPurposeProof      = "platform sensor proof change"
+)
 
 // AdminScanPolicyHandler serves the scan approval policy in the console.
 type AdminScanPolicyHandler struct {
@@ -106,7 +109,7 @@ func (h *AdminScanPolicyHandler) GetDefault(w http.ResponseWriter, r *http.Reque
 // @Router       /admin/settings/scan-approval-policy [put]
 func (h *AdminScanPolicyHandler) UpdateDefault(w http.ResponseWriter, r *http.Request) {
 	var req UpdateScanPolicyDefaultRequest
-	actor, ok := h.decodeAndStepUp(w, r, &req, func() (string, string) { return req.Reason, req.TOTPCode })
+	actor, ok := h.decodeAndStepUp(w, r, stepUpPurposeScanPolicy, &req, func() (string, string) { return req.Reason, req.TOTPCode })
 	if !ok {
 		return
 	}
@@ -155,7 +158,7 @@ func (h *AdminScanPolicyHandler) UpdateOrganization(w http.ResponseWriter, r *ht
 		return
 	}
 	var req UpdateScanPolicyOrganizationRequest
-	actor, ok := h.decodeAndStepUp(w, r, &req, func() (string, string) { return req.Reason, req.TOTPCode })
+	actor, ok := h.decodeAndStepUp(w, r, stepUpPurposeScanPolicy, &req, func() (string, string) { return req.Reason, req.TOTPCode })
 	if !ok {
 		return
 	}
@@ -216,7 +219,7 @@ func (h *AdminScanPolicyHandler) writeOrganization(w http.ResponseWriter, r *htt
 
 // decodeAndStepUp reads the body and checks the administrator, the reason
 // and a fresh authenticator code. It answers the request when it fails.
-func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.Request, dst any, fields func() (string, string)) (*admin.AdminUser, bool) {
+func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.Request, purpose string, dst any, fields func() (string, string)) (*admin.AdminUser, bool) {
 	actor := middleware.GetAdminUser(r.Context())
 	if actor == nil {
 		apierror.Unauthorized("administrator session required").WriteJSON(w)
@@ -237,7 +240,7 @@ func (h *AdminScanPolicyHandler) decodeAndStepUp(w http.ResponseWriter, r *http.
 			"Enter a code from your authenticator to confirm the change").WriteJSON(w)
 		return nil, false
 	}
-	if err := h.stepUp.StepUp(r.Context(), actor, code, stepUpPurposeScanPolicy, clientInfo(r)); err != nil {
+	if err := h.stepUp.StepUp(r.Context(), actor, code, purpose, clientInfo(r)); err != nil {
 		switch {
 		case errors.Is(err, admin.ErrStepUpUnavailable):
 			apierror.New(http.StatusForbidden, codeStepUpUnavailable,
@@ -260,7 +263,7 @@ func (h *AdminScanPolicyHandler) change(r *http.Request, actor *admin.AdminUser,
 func (h *AdminScanPolicyHandler) writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, scanpolicy.ErrVersionConflict):
-		apierror.Conflict("The policy was changed by someone else; reload and try again").WriteJSON(w)
+		apierror.Conflict("The setting was changed by someone else; reload and try again").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Organization").WriteJSON(w)
 	case errors.Is(err, shared.ErrValidation):
@@ -269,4 +272,67 @@ func (h *AdminScanPolicyHandler) writeErr(w http.ResponseWriter, err error) {
 		h.logger.Error("scan approval policy", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("could not save the policy").WriteJSON(w)
 	}
+}
+
+// PlatformSensorProofResponse is the verified-domain requirement for
+// platform sensors.
+type PlatformSensorProofResponse struct {
+	// Required: platform sensors scan only targets at or under a verified
+	// domain of the organization, and intrusive probes need one on any
+	// sensor. Default false.
+	Required bool `json:"required"`
+	// Version to send back on PUT (0: nothing stored, the default applies).
+	Version int `json:"version"`
+}
+
+// UpdatePlatformSensorProofRequest changes the requirement.
+type UpdatePlatformSensorProofRequest struct {
+	Required *bool  `json:"required"`
+	Version  int    `json:"version"`
+	Reason   string `json:"reason"`
+	TOTPCode string `json:"totp_code"`
+}
+
+// GetProof returns the requirement.
+// @Summary      Verified domain before platform sensors scan
+// @Description  Whether platform sensors scan only targets at or under a verified domain of the organization (and intrusive probes need one on any sensor). Default off: the organization's scope entry is the authorization. A public multi-tenant cloud should turn it on. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  PlatformSensorProofResponse
+// @Router       /admin/settings/platform-sensor-proof [get]
+func (h *AdminScanPolicyHandler) GetProof(w http.ResponseWriter, r *http.Request) {
+	v, ver, err := h.svc.ProofSetting(r.Context())
+	if err != nil {
+		h.logger.Error("read platform sensor proof setting", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("could not read the setting").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlatformSensorProofResponse{Required: v, Version: ver})
+}
+
+// UpdateProof changes the requirement.
+// @Summary      Change the verified domain requirement for platform sensors
+// @Description  Super admin with a fresh authenticator code and a reason. Turning it off never turns scope off: scope entries, exclusions, the deny list, scan zones for private addresses and tier ceilings stay. Audited (critical); the other administrators are emailed.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdatePlatformSensorProofRequest  true  "Setting"
+// @Success      200  {object}  PlatformSensorProofResponse
+// @Router       /admin/settings/platform-sensor-proof [put]
+func (h *AdminScanPolicyHandler) UpdateProof(w http.ResponseWriter, r *http.Request) {
+	var req UpdatePlatformSensorProofRequest
+	actor, ok := h.decodeAndStepUp(w, r, stepUpPurposeProof, &req, func() (string, string) { return req.Reason, req.TOTPCode })
+	if !ok {
+		return
+	}
+	if req.Required == nil {
+		apierror.BadRequest("required must be true or false").WriteJSON(w)
+		return
+	}
+	v, err := h.svc.UpdateProof(r.Context(), *req.Required, req.Version, h.change(r, actor, req.Reason))
+	if err != nil {
+		h.writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlatformSensorProofResponse{Required: *req.Required, Version: v})
 }
