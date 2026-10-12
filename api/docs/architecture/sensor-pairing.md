@@ -78,14 +78,20 @@ re-paired by an administrator.
 | Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants` keyed on `(tenant_id, sensor_id)`, and the trust level on `sensors.trust_level`; migration 001119: legacy-broad backfill, insert trigger for the narrow default) |
 | Service (narrow/widen, compare-and-swap, audit, notifications, pairing hook) | `internal/app/sensorgrant/service.go` |
 | Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (`command-claimed`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
-| Push ingest | `internal/app/ingest/quarantine.go` `admitPush` (grant first, then role and tenant policy): the segment's items are rejected with item error `push_ingest_not_granted` |
+| Push ingest | `internal/app/ingest/quarantine.go` `admitPush` (grant first, then role and tenant policy): the segment's items are rejected with item error `push_ingest_not_granted`; its detail and the error message name what is missing, the grant (`ErrPushIngestNotGranted`) or trust (`ErrPushIngestUntrusted`) |
 | Remote actions | the heartbeat doorbell rings a gated action (`rotate_key`) only when the grant lists it (`internal/app/sensor/doorbell.go`) |
 | Management API | `GET/PUT /api/v1/sensors/{id}/grant` (trust level included), `GET /api/v1/sensors/grant-profiles`, `GET /api/v1/sensors/grant-summaries` (list flags) |
 
 Every sensor has exactly one grant: sensors that existed before 001119 got
 `legacy-broad` at trust level `trusted`; a sensor inserted later gets
-`internal-network-scanner` (scan, validate, retest) at `new` from a trigger, and the pairing approval
-replaces it with the chosen profile in its transaction. A missing or
+`internal-network-scanner` (scan, validate, retest) at `new` from a trigger,
+or `collector` (collect, connector_sync, passive, push ingest) when its type
+is `collector` (migration 002075), and the pairing approval replaces it with
+the chosen profile in its transaction (with none chosen,
+`sensor.DefaultProfileFor` the sensor's type). Trust is never set
+automatically: creating a collector with `"trusted": true` is a promotion
+(`sensorgrant.Service.AuthorizeTrust` before the insert, then `Trust`), with
+the same permission, step-up, audit and notification as on the Grant. A missing or
 unreadable grant withholds every command and refuses push ingest (fail
 closed). Known gap: the heartbeat's `pending_jobs` count does not apply the
 grant, so a New sensor with only active work waiting polls at the busy

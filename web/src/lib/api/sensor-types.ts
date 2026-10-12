@@ -478,6 +478,11 @@ export interface CreateSensorRequest {
   max_concurrent_jobs?: number
   labels?: Record<string, string>
   config?: Record<string, unknown>
+  /**
+   * Create a collector at trust level trusted (collector only; needs
+   * sensors:grant:widen; audited, every administrator notified).
+   */
+  trusted?: boolean
 }
 
 /**
@@ -486,6 +491,8 @@ export interface CreateSensorRequest {
 export interface CreateSensorResponse {
   sensor: Sensor // Backend returns "sensor" field
   api_key: string // Only returned on create
+  /** Whether the sensor is trusted (false when not asked for or when the promotion failed). */
+  trusted?: boolean
 }
 
 /**
