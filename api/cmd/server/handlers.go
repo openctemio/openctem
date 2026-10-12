@@ -523,10 +523,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 			h := handler.NewPentestHandler(svc.Pentest, repos.User, v, log)
 			h.SetImportService(finding.NewFindingImportService(repos.Finding, log))
 			h.SetAuditService(svc.Audit)
+			h.SetChecklistService(svc.PentestChecklists)
 			return h
 		}(),
 		PentestCampaignRoleQry: repos.PentestCampaignMember,
 		PentestReportTemplate:  handler.NewPentestReportTemplateHandler(svc.Pentest, svc.Audit, log),
+		PentestChecklist:       handler.NewPentestChecklistHandler(svc.PentestChecklists, svc.Audit, log),
 
 		// File Attachments (shared across pentest/retest/campaign)
 		Attachment: newAttachmentHandlerWithAccessCheck(svc.Attachment, svc.Pentest, deps.DB.DB, svc.Encryptor, svc.Audit, log),
