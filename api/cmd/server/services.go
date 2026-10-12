@@ -1289,6 +1289,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Pentest.SetAssetRefChecker(s.DataScope)
 	s.Pentest.SetCampaignMemberRepository(repos.PentestCampaignMember)
+	if s.SLA != nil {
+		s.Pentest.SetSLACalculator(s.SLA) // deadline from the org SLA policy when a finding is published
+	}
 	s.Pentest.SetAuditService(s.Audit)                     // audit logging for team changes + status changes
 	s.Pentest.SetFindingActivityService(s.FindingActivity) // finding activity trail
 	// Cross-tenant guard: reject adding a campaign member from another tenant.
@@ -2575,6 +2578,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
+	s.SSO.SetAuditService(s.Audit)
 	s.SSO.SetSessionRevocationStore(sessionRevocations, revocationTTL)
 
 	// SSO P1: DNS-TXT domain-ownership verification. Wired as the PRIMARY JIT
@@ -2653,6 +2657,7 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		}
 		s.OAuth.SetInvitationLookup(repos.Tenant)
 		s.OAuth.SetIdentityRepo(repos.UserIdentity)
+		s.OAuth.SetAuditService(s.Audit)
 		if redisClient != nil {
 			s.OAuth.SetPKCEStore(redisClient)
 		} else {
