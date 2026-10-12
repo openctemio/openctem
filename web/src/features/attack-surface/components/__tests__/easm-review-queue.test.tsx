@@ -128,6 +128,6 @@ describe('EASMReviewQueue', () => {
     wrap(<EASMReviewQueue />)
     await screen.findByText('api.acme.io')
     expect(screen.queryByRole('checkbox')).toBeNull()
-    expect(screen.getByText(/needs the assets:write permission/)).toBeInTheDocument()
+    expect(screen.getByText(/needs permission to edit assets/)).toBeInTheDocument()
   })
 })

@@ -126,13 +126,13 @@ var Features = []Feature{
 		ID: "ci", Title: "CI pipelines",
 		Description: "CI runner identity, trust configurations, the central gate and its overrides.",
 		Stages:      []string{StageDiscovery, StageMobilization},
-		Registers:   []string{"registerCIRoutes"},
+		Registers:   []string{"registerCIRoutes", "registerSCMAppRoutes"},
 	},
 	{
 		ID: "pentest", Title: "Penetration testing",
-		Description: "Pentest campaigns, their findings, retests, templates and reports. Campaign membership decides who sees a campaign.",
+		Description: "Pentest campaigns, their findings, retests, templates, reports and the organization report templates. Campaign membership decides who sees a campaign.",
 		Stages:      []string{StageValidation},
-		Registers:   []string{"registerPentestRoutes"},
+		Registers:   []string{"registerPentestRoutes", "registerPentestReportTemplateRoutes"},
 	},
 	{
 		ID: "validation", Title: "Validation and simulation",
@@ -163,7 +163,7 @@ var Features = []Feature{
 		Description: "Ticketing, SCM, SIEM and notification integrations, inbound webhooks, the notification outbox and API keys.",
 		Stages:      []string{StageMobilization},
 		Registers: []string{
-			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerOutboxRoutes", "registerAPIKeyRoutes",
+			"registerIntegrationRoutes", "registerIncomingWebhookRoutes", "registerGitHubWebhookRoute", "registerOutboxRoutes", "registerAPIKeyRoutes",
 		},
 		Prefixes: []string{"/api/v1/webhooks/incoming"},
 	},

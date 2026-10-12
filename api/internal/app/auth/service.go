@@ -1231,6 +1231,27 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// LogoutByRefreshToken ends the session a refresh token belongs to. Signing
+// out must not depend on the 15-minute access token: a user who idles past
+// it and then signs out holds only the refresh token, and the session (with
+// its refresh chain) used to stay valid for days after the browser dropped
+// its cookies. The token's signature is checked and the stored row names the
+// session; a token that is unknown, expired or forged ends nothing and is
+// not an error the caller can act on, so it returns nil.
+func (s *AuthService) LogoutByRefreshToken(ctx context.Context, refreshToken string) error {
+	if _, err := s.tokenGenerator.ValidateRefreshToken(refreshToken); err != nil {
+		return nil //nolint:nilerr // nothing to end; the caller clears cookies either way
+	}
+	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, sessiondom.HashToken(refreshToken))
+	if err != nil {
+		if errors.Is(err, sessiondom.ErrRefreshTokenNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to get refresh token: %w", err)
+	}
+	return s.Logout(ctx, stored.SessionID().String())
+}
+
 // onRefreshTokenReuse handles a refresh token presented after it was already
 // rotated. Either the legitimate client or a thief holds a copy, and there is
 // no telling which, so the whole session ends: its token family, its other
