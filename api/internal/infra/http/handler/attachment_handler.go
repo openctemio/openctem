@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -377,7 +378,20 @@ func (h *AttachmentHandler) Download(w http.ResponseWriter, r *http.Request) {
 // scanner flagged never gets one; a storage that cannot sign (local
 // storage, an endpoint without HTTPS) or direct downloads turned off answer
 // 409 DIRECT_DOWNLOAD_UNAVAILABLE, and the caller uses Download.
-// GET /api/v1/attachments/{id}/signed-url
+//
+// @Summary      Signed download URL for an attachment
+// @Description  A 60-second URL signed for this one file in its bucket, after the same checks as a download. 409 DIRECT_DOWNLOAD_UNAVAILABLE: download through GET /attachments/{id}.
+// @Tags         Attachments
+// @Produce      json
+// @Param        id   path      string  true  "Attachment ID"
+// @Success      200  {object}  AttachmentSignedURLResponse
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Failure      503  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /attachments/{id}/signed-url [get]
 func (h *AttachmentHandler) DownloadURL(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
@@ -410,7 +424,13 @@ func (h *AttachmentHandler) DownloadURL(w http.ResponseWriter, r *http.Request) 
 	// never cached, never sent on as a referrer.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	writeJSON(w, http.StatusOK, map[string]any{"url": url, "expires_at": expires.UTC()})
+	writeJSON(w, http.StatusOK, AttachmentSignedURLResponse{URL: url, ExpiresAt: expires.UTC()})
+}
+
+// AttachmentSignedURLResponse is a signed download URL and when it expires.
+type AttachmentSignedURLResponse struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // Delete removes an attachment and its stored file.
