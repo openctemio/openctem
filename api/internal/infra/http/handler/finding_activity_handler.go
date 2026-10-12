@@ -73,6 +73,32 @@ func toFindingActivityResponse(a *vulnerability.FindingActivity) FindingActivity
 	}
 }
 
+// clientActivityKeys are the change details a pentest campaign client sees
+// per activity type: the status move, and a client-visible comment's text.
+// Reasons, notes, assignees and source metadata are the team's.
+var clientActivityKeys = map[string][]string{
+	"comment_added": {"comment_id", "content", "preview", "visibility"},
+}
+
+var clientStatusKeys = []string{"old_status", "new_status", "status"}
+
+// clientSafeActivity trims an activity to what a campaign client may read.
+func clientSafeActivity(a FindingActivityResponse) FindingActivityResponse {
+	keys, ok := clientActivityKeys[a.ActivityType]
+	if !ok {
+		keys = clientStatusKeys
+	}
+	changes := make(map[string]any, len(keys))
+	for _, k := range keys {
+		if v, ok := a.Changes[k]; ok {
+			changes[k] = v
+		}
+	}
+	a.Changes = changes
+	a.SourceMetadata = nil
+	return a
+}
+
 // ListActivities handles GET /api/v1/findings/{id}/activities
 func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
@@ -88,7 +114,9 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 	// campaign-membership gate and the Layer-2 data-scope check, leaking another
 	// campaign's / out-of-scope finding's activity trail to any findings:read user.
 	userID := middleware.GetUserID(r.Context())
-	_, err := h.vulnerabilityService.GetFindingWithScope(r.Context(), tenantID, findingID, userID, middleware.IsAdmin(r.Context()))
+	// A campaign client of a pentest finding reads the client view of the
+	// feed only (no team-only comments or team activity).
+	_, access, err := h.vulnerabilityService.AuthorizeFindingRead(r.Context(), tenantID, findingID, userID, middleware.IsAdmin(r.Context()))
 	if err != nil {
 		h.handleServiceError(w, err, "Finding")
 		return
@@ -120,6 +148,7 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 		ActivityTypes: activityTypes,
 		Page:          page,
 		PageSize:      pageSize,
+		ClientView:    access.ClientOnly,
 	}
 
 	result, err := h.activityService.ListActivities(r.Context(), input)
@@ -131,6 +160,9 @@ func (h *FindingActivityHandler) ListActivities(w http.ResponseWriter, r *http.R
 	data := make([]FindingActivityResponse, len(result.Data))
 	for i, a := range result.Data {
 		data[i] = toFindingActivityResponse(a)
+		if access.ClientOnly {
+			data[i] = clientSafeActivity(data[i])
+		}
 	}
 
 	response := struct {

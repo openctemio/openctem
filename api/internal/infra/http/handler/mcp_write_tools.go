@@ -35,6 +35,9 @@ type mcpConfirmer interface {
 // mcpFindingCommenter adds a comment to a finding (*finding.VulnerabilityService).
 type mcpFindingCommenter interface {
 	AddFindingCommentWithInput(ctx context.Context, in finding.AddFindingCommentInput) (*vulnerability.FindingComment, error)
+	// CommentVisibilityFor checks the requested visibility for the caller
+	// before the person is asked to confirm.
+	CommentVisibilityFor(ctx context.Context, tenantID, findingID, actingUserID string, isAdmin bool, requested string) (bool, vulnerability.CommentVisibility, error)
 }
 
 // SetWriteTools enables the write tools: confirmations and the services
@@ -58,11 +61,14 @@ func (h *MCPHandler) buildWriteTools() []mcpTool {
 	return []mcpTool{{
 		Name: "add_finding_comment",
 		Description: "Add an internal comment to a finding (visible to the organization's members, never sent to " +
-			"integrations). Changes data: the first call returns a link where the user confirms the exact comment " +
-			"in OpenCTEM; after they confirm, call again with the same arguments plus confirmation_id.",
+			"integrations). On a pentest finding the comment is team-only unless visibility is \"client\", which only " +
+			"the campaign lead or a reviewer may set; the client then reads it. Changes data: the first call returns a " +
+			"link where the user confirms the exact comment and its visibility in OpenCTEM; after they confirm, call " +
+			"again with the same arguments plus confirmation_id.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"finding_id":{"type":"string","description":"finding UUID"},` +
 			`"content":{"type":"string","description":"comment text (plain text, at most 4000 characters)"},` +
+			`"visibility":{"type":"string","enum":["team","client"],"description":"pentest findings: team (default, the campaign team only) or client (the campaign client reads it too; lead or reviewer only)"},` +
 			`"confirmation_id":{"type":"string","description":"the id returned by the first call, once the user confirmed"}},` +
 			`"required":["finding_id","content"]}`),
 		RequiredPerm: string(permission.FindingsComment),
@@ -73,8 +79,9 @@ func (h *MCPHandler) buildWriteTools() []mcpTool {
 }
 
 type addCommentArgs struct {
-	FindingID string `json:"finding_id"`
-	Content   string `json:"content"`
+	FindingID  string `json:"finding_id"`
+	Content    string `json:"content"`
+	Visibility string `json:"visibility"`
 }
 
 func parseAddCommentArgs(raw json.RawMessage) (addCommentArgs, error) {
@@ -89,11 +96,19 @@ func parseAddCommentArgs(raw json.RawMessage) (addCommentArgs, error) {
 	if a.Content == "" || utf8.RuneCountInString(a.Content) > maxMCPCommentLen {
 		return a, toolInputError{fmt.Sprintf("content is required, at most %d characters", maxMCPCommentLen)}
 	}
+	if a.Visibility != "" && a.Visibility != string(vulnerability.CommentVisibilityTeam) &&
+		a.Visibility != string(vulnerability.CommentVisibilityClient) {
+		return a, toolInputError{"visibility must be team or client"}
+	}
 	return a, nil
 }
 
 // prepareAddFindingComment checks the action and describes it for the
-// person: the finding must be one the user can see.
+// person: the finding must be one the user can see, and on a pentest
+// finding the summary says whether the campaign's client will read the
+// comment. The visibility is one of the confirmed arguments (the digest
+// covers every argument), so a confirmation for a team comment cannot be
+// replayed as a client one.
 func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID string, raw json.RawMessage) (string, error) {
 	a, err := parseAddCommentArgs(raw)
 	if err != nil {
@@ -103,7 +118,31 @@ func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID stri
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Add an internal comment to the finding %q (%s severity):\n\n%s", f.Title(), f.Severity(), a.Content), nil
+	pentestFinding, vis, err := h.comments.CommentVisibilityFor(ctx, tenantID, a.FindingID, actingUser(ctx), false, a.Visibility)
+	if err != nil {
+		if errors.Is(err, shared.ErrForbidden) || errors.Is(err, shared.ErrValidation) {
+			return "", toolInputError{commentVisibilityRefusal(err)}
+		}
+		return "", err
+	}
+	summary := fmt.Sprintf("Add an internal comment to the finding %q (%s severity):\n\n%s", f.Title(), f.Severity(), a.Content)
+	if pentestFinding {
+		visibleToClient := "no (campaign team only)"
+		if vis == vulnerability.CommentVisibilityClient {
+			visibleToClient = "yes"
+		}
+		summary += "\n\nVisible to the campaign's client: " + visibleToClient
+	}
+	return summary, nil
+}
+
+// commentVisibilityRefusal is the reason an AI client reads when the
+// requested visibility is not allowed.
+func commentVisibilityRefusal(err error) string {
+	if errors.Is(err, shared.ErrForbidden) {
+		return "only the campaign lead or a reviewer can make a comment visible to the client; leave visibility out for a team-only comment"
+	}
+	return "visibility must be team or client, and applies to pentest findings only"
 }
 
 func (h *MCPHandler) toolAddFindingComment(ctx context.Context, tenantID string, raw json.RawMessage) (any, error) {
@@ -115,13 +154,20 @@ func (h *MCPHandler) toolAddFindingComment(ctx context.Context, tenantID string,
 	if _, err := h.findings.GetFindingWithScope(ctx, tenantID, a.FindingID, actingUser(ctx), false); err != nil {
 		return nil, err
 	}
+	clientName := ""
+	if p := middleware.GetMCPPrincipal(ctx); p != nil {
+		clientName = p.ClientName
+	}
 	c, err := h.comments.AddFindingCommentWithInput(ctx, finding.AddFindingCommentInput{
 		TenantID: tenantID, FindingID: a.FindingID, AuthorID: actingUser(ctx), Content: a.Content, IsInternal: true,
+		ActingUserID: actingUser(ctx), Visibility: a.Visibility,
+		Source: string(vulnerability.SourceMCP), ClientName: clientName,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"status": "done", "comment_id": c.ID().String(), "finding_id": a.FindingID}, nil
+	return map[string]any{"status": "done", "comment_id": c.ID().String(), "finding_id": a.FindingID,
+		"visibility": string(c.Visibility())}, nil
 }
 
 // runWriteTool is the confirmation step in front of a write tool's
