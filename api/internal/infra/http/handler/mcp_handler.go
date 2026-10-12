@@ -100,6 +100,7 @@ type mcpAssetReader interface {
 // interface itself performs no membership check — callers must gate first.
 type mcpPentestReader interface {
 	CheckCampaignAccess(ctx context.Context, tenantID, campaignID, userID string, isAdmin bool) error
+	GetUserCampaignRole(ctx context.Context, tenantID, campaignID, userID string) (pentestdom.CampaignRole, error)
 	GetCampaign(ctx context.Context, tenantID, campaignID string) (*pentestdom.Campaign, error)
 	ListCampaignMembers(ctx context.Context, tenantID, campaignID string) ([]*pentestdom.CampaignMember, error)
 	GetCampaignStats(ctx context.Context, tenantID, campaignID string) (*pentestdom.CampaignStats, error)
