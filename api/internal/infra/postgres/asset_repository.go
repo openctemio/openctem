@@ -1447,6 +1447,38 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		argIndex++
 	}
 
+	// Triage filters (research/124, RFC-054 §15), each pinned to the
+	// asset's tenant.
+	if len(filter.ScopeStatuses) > 0 {
+		conditions = append(conditions, fmt.Sprintf("%s = ANY($%d)", assetScopeStatusSQL("a"), argIndex))
+		args = append(args, pq.Array(filter.ScopeStatuses))
+		argIndex++
+	}
+	if len(filter.DiscoveredBy) > 0 {
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM easm_evidence dbe WHERE dbe.asset_id = a.id AND dbe.tenant_id = a.tenant_id AND dbe.rule = ANY($%d))", argIndex))
+		args = append(args, pq.Array(filter.DiscoveredBy))
+		argIndex++
+	}
+	if len(filter.DiscoveryTechniques) > 0 {
+		conditions = append(conditions, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM easm_evidence dte WHERE dte.asset_id = a.id AND dte.tenant_id = a.tenant_id AND dte.technique = ANY($%d))", argIndex))
+		args = append(args, pq.Array(filter.DiscoveryTechniques))
+		argIndex++
+	}
+	// An asset without an attribution record counts as confidence 100.
+	const confidenceSQL = "COALESCE((SELECT acf.confidence FROM asset_attributions acf WHERE acf.asset_id = a.id AND acf.tenant_id = a.tenant_id), 100)"
+	if filter.MinConfidence != nil {
+		conditions = append(conditions, fmt.Sprintf("%s >= $%d", confidenceSQL, argIndex))
+		args = append(args, *filter.MinConfidence)
+		argIndex++
+	}
+	if filter.MaxConfidence != nil {
+		conditions = append(conditions, fmt.Sprintf("%s <= $%d", confidenceSQL, argIndex))
+		args = append(args, *filter.MaxConfidence)
+		argIndex++
+	}
+
 	// Bug-bounty program assets (RFC-065 §16.5).
 	switch filter.ProgramAssets {
 	case "only":

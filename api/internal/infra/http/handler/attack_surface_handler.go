@@ -96,6 +96,7 @@ type AssetChangeResponse struct {
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
+// @Param        include_discovered  query  bool  false  "Count discovered assets nobody claimed too (default: the attributed inventory only)"
 // @Router       /attack-surface/stats [get]
 func (h *AttackSurfaceHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
