@@ -123,9 +123,13 @@ type Run struct {
 	ScheduledFor *time.Time
 
 	// DeadlineAt is when the reaper settles the run if it is still open:
-	// started_at plus the scan timeout, capped at 24 h, fixed when the run
-	// starts (RFC-046 §6.3). Nil for runs started before migration 000674.
+	// started_at plus the policy cap (the scan's max duration, else the
+	// workflow's, else the platform's 24 h), fixed when the run starts
+	// (RFC-046 §6.3). Nil for runs started before migration 000674.
 	DeadlineAt *time.Time
+	// DeadlineReason is which policy set DeadlineAt (DeadlineReason*); ""
+	// when the run has none or started before the reason was recorded.
+	DeadlineReason string
 
 	// UnfinishedTargetCount is how many targets were still open when the run
 	// was settled at its deadline. The targets themselves are read with
@@ -355,3 +359,16 @@ func (r *Run) KindOrDefault() RunKind {
 	}
 	return r.Kind
 }
+
+// Why a run has the deadline it has (scan_runs.deadline_reason). The
+// deadline is a policy cap only; how long the work takes is tracked by the
+// commands' leases (research/122).
+const (
+	// DeadlineReasonScanMaxDuration: the scan's owner set a max duration.
+	DeadlineReasonScanMaxDuration = "scan_max_duration"
+	// DeadlineReasonWorkflowMaxDuration: the workflow sets a timeout.
+	DeadlineReasonWorkflowMaxDuration = "workflow_max_duration"
+	// DeadlineReasonPlatformCap: nothing set one; the platform's 24 h cap
+	// applies (the backstop that keeps a run from staying open forever).
+	DeadlineReasonPlatformCap = "platform_cap"
+)
