@@ -125,8 +125,9 @@ func (s *Service) ChangeExclusionTesting(ctx context.Context, in SetTestingInput
 }
 
 // WebScope is the web scope a web tool's job carries (sdk-go webscope.Scope,
-// RFC-055 §6.1): the paths it must never request and, when a rule blocks
-// only some methods there, the methods the whole job may use.
+// RFC-055 §6.1): the paths it must never request and the methods the whole
+// job may use (GET and HEAD when a rule blocks only some methods, every
+// method otherwise; never empty, see allMethods).
 type WebScope struct {
 	DenyPaths []string `json:"deny_paths,omitempty"`
 	Methods   []string `json:"methods,omitempty"`
@@ -134,6 +135,12 @@ type WebScope struct {
 
 // readMethods are what a job keeps when a rule blocks other methods only.
 var readMethods = []string{"GET", "HEAD"}
+
+// allMethods are every method a web scope may allow (sdk-go webscope). A
+// scope that only denies paths names them all: the SDK reads an empty
+// method list as GET, HEAD and OPTIONS only, which would refuse every other
+// method on every path of the job's hosts, not just under the denied paths.
+var allMethods = []string{"GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"}
 
 // BuildWebScope returns the web scope for a web job on targets, from the
 // path exclusions in effect whose host pattern covers a target host:
@@ -180,6 +187,9 @@ func (s *Service) BuildWebScope(ctx context.Context, tenantID shared.ID, targets
 	}
 	if len(ws.DenyPaths) == 0 && len(ws.Methods) == 0 {
 		return nil, nil
+	}
+	if len(ws.Methods) == 0 {
+		ws.Methods = slices.Clone(allMethods)
 	}
 	slices.Sort(ws.DenyPaths)
 	return ws, nil
