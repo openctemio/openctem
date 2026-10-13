@@ -85,9 +85,12 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 }
 
 // RequeueStalledCommands puts back to pending every running tenant command
-// with a budget that either finished no target for its stall window (only
-// when its sensor reports progress and targets remain) or ran past twice its
-// task budget plus command.OverrunGraceSeconds. Like a lost lease: unpinned,
+// with a budget whose sensor reports progress (so it knows budgets: it is
+// told the budget and stops the task itself at twice it) that either
+// finished no target for its stall window while targets remain, or ran past
+// twice its task budget plus command.OverrunGraceSeconds. A sensor that
+// reports no progress predates budgets: it is bounded by its lease and the
+// run's cap only, so a slow task of an older sensor is never cut here. Like a lost lease: unpinned,
 // one more dispatch attempt (fail_exhausted_commands ends a command that
 // keeps stalling), progress cleared, and the holder fenced out (its later
 // writes fail the sensor/state/epoch guard; its heartbeat is told to cancel).
@@ -111,9 +114,10 @@ func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]comma
 			  AND c.is_platform_job = FALSE
 			  AND c.started_at IS NOT NULL
 			  AND jsonb_typeof(c.payload->'budget') = 'object'
+			  AND c.progress_total > 0
 			  AND (
 			    NOW() > c.started_at + make_interval(secs => 2 * (`+task+`) + $3)
-			    OR (c.progress_total > 0 AND c.progress_done < c.progress_total
+			    OR (c.progress_done < c.progress_total
 			        AND NOW() > COALESCE(c.last_progress_at, c.started_at) + make_interval(secs => `+stall+`))
 			  )
 			FOR UPDATE OF c SKIP LOCKED
