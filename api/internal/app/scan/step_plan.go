@@ -228,6 +228,20 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// tool's keys as before, so an older sensor runs the step unchanged.
 	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
 		payload[PayloadKeyCapability] = st.ID()
+		// The platform decides how hosts are probed: a host discovery step
+		// that names no ports probes the platform's set, never a default
+		// a sensor picks.
+		if st.Key == stage.DiscoverHosts {
+			if key, ok := st.ToolParamKey(toolName, "ports"); ok {
+				if config == nil {
+					config = map[string]any{}
+				}
+				if _, set := config[key]; !set {
+					config[key] = stage.HostProbePorts
+					payload[scanworkflow.PayloadKeyConfig] = config
+				}
+			}
+		}
 	}
 	return payload, nil
 }

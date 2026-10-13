@@ -41,10 +41,10 @@ func TestTargetOptions_DefaultsAndSetter(t *testing.T) {
 	if err := s.SetTargetOptions(TargetOptions{CIDRMode: CIDRModeSweep}); err != nil {
 		t.Fatal(err)
 	}
-	if s.TargetOptions.CIDRMode != "" {
-		t.Errorf("sweep stored as %q, want the default (empty)", s.TargetOptions.CIDRMode)
+	if s.TargetOptions.CIDRMode != CIDRModeSweep || s.TargetOptions.IsZero() {
+		t.Errorf("an explicit sweep stored as %q, want it kept (a choice, not the default)", s.TargetOptions.CIDRMode)
 	}
-	if err := s.SetTargetOptions(TargetOptions{CIDRMode: "x"}); err == nil || s.TargetOptions.CIDRMode != "" {
+	if err := s.SetTargetOptions(TargetOptions{CIDRMode: "x"}); err == nil || s.TargetOptions.CIDRMode != CIDRModeSweep {
 		t.Error("an invalid option was stored")
 	}
 }
