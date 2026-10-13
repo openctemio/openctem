@@ -236,6 +236,7 @@ func (s Stage) ChunkAddressBudget() int {
 // scan workflow.stepToolSettings.
 var toolParams = map[string]map[string]string{
 	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
+	"dnsx":   {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
 	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
 	"rdap":   {"follow_registrar": "follow_registrar"},
 	"asn":    {"include_announced": "include_announced", "max_ranges": "max_ranges"},
