@@ -6,9 +6,15 @@ name: CI image mirror
 # quotas of public.ecr.aws and Docker Hub. The list file explains the format
 # and how to bump an image.
 #
-# Runs when the list or the script changes on develop, weekly (re-copies
-# anything missing and reports upstream drift), and on demand. Never on a pull
-# request: only trusted refs hold packages:write.
+# It also mirrors every digest-pinned base image of the Dockerfiles on main of
+# the public repositories in BASE_IMAGE_REPOS (.github/scripts/ci-image-bases.sh), as
+# <name>:sha256-<hex>: their CI and release builds swap each base for its
+# mirror copy (scripts/ci-mirror-contexts.sh there), so a new digest is
+# mirrored within a day of its merge without editing the list.
+#
+# Runs when the list or the scripts change on develop, daily (new base
+# digests; re-copies anything missing and reports upstream drift), and on
+# demand. Never on a pull request: only trusted refs hold packages:write.
 
 on:
   push:
@@ -16,9 +22,10 @@ on:
     paths:
       - '.github/ci-images.txt'
       - '.github/scripts/mirror-ci-images.sh'
+      - '.github/scripts/ci-image-bases.sh'
       - '.github/workflows/ci-image-mirror.yml'
   schedule:
-    - cron: '23 4 * * 1' # Monday 04:23 UTC; schedules run from the default branch (main)
+    - cron: '23 4 * * *' # daily 04:23 UTC; schedules run from the default branch (main)
   workflow_dispatch:
 
 permissions: {}
@@ -32,6 +39,10 @@ env:
   # sha256 of go-containerregistry_Linux_x86_64.tar.gz for CRANE_VERSION
   # (checksums.txt of the GitHub release).
   CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+  # Public repositories whose Dockerfile base images are mirrored (their
+  # main). The job token cannot read a private repository: the bases of
+  # openctemio/asset-collector are listed in .github/ci-images.txt instead.
+  BASE_IMAGE_REPOS: openctemio/sensor
 
 jobs:
   mirror:
@@ -72,11 +83,44 @@ jobs:
       - name: Mirror
         run: bash .github/scripts/mirror-ci-images.sh .github/ci-images.txt ghcr.io/openctemio/mirror
 
+      # The Dockerfiles are read from main (reviewed, merged code) of
+      # public repositories; only the allow-listed upstreams of
+      # ci-image-bases.sh are copied, each by digest. A repository that
+      # cannot be read fails the step after the others are mirrored.
+      - name: Mirror the base images of the other repositories
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/bases"
+          mkdir -p "$dir"
+          failed=0
+          for repo in $BASE_IMAGE_REPOS; do
+            files="$(bash .github/scripts/retry.sh gh api "repos/$repo/contents?ref=main" \
+              --jq '.[] | select(.type == "file" and (.name | test("^Dockerfile[A-Za-z0-9._-]*$"))) | .name')" \
+              || { echo "::error::cannot list $repo"; failed=1; continue; }
+            for f in $files; do
+              out="$dir/${repo//\//_}_$f"
+              bash .github/scripts/retry.sh gh api -H 'Accept: application/vnd.github.raw' \
+                "repos/$repo/contents/$f?ref=main" > "$out" \
+                || { echo "::error::cannot read $repo/$f"; failed=1; }
+            done
+          done
+          shopt -s nullglob
+          dockerfiles=("$dir"/*)
+          if [ "${#dockerfiles[@]}" -gt 0 ]; then
+            bash .github/scripts/ci-image-bases.sh "${dockerfiles[@]}" > "$RUNNER_TEMP/bases.txt"
+            cat "$RUNNER_TEMP/bases.txt"
+            bash .github/scripts/mirror-ci-images.sh "$RUNNER_TEMP/bases.txt" ghcr.io/openctemio/mirror || failed=1
+          fi
+          exit "$failed"
+
       # The packages must be public: fork pull requests and the other
       # openctemio repositories pull them anonymously. Visibility is set once
       # per package in the organisation's package settings (the API cannot set
       # it); this check makes a private package visible in the run summary.
       - name: Check the mirror is publicly pullable
+        if: ${{ !cancelled() }}
         run: |
           crane auth logout ghcr.io >/dev/null 2>&1 || true
           private=0
@@ -86,6 +130,6 @@ jobs:
               echo "::warning::ghcr.io/openctemio/mirror/$dst is not anonymously pullable: make the package public"
               private=1
             fi
-          done < .github/ci-images.txt
+          done < <(cat .github/ci-images.txt "$RUNNER_TEMP/bases.txt" 2>/dev/null)
           [ "$private" -eq 0 ] && echo "all mirror packages are public"
           exit 0
