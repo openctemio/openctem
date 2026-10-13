@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openctemio/sdk-go/pkg/politeness"
+	"github.com/openctemio/ctis/politeness"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // chunkHostKeys is the hosts a chunk of an active stage sends traffic to
-// (github.com/openctemio/sdk-go/pkg/politeness, the function the sensor
+// (github.com/openctemio/ctis/politeness, the function the sensor
 // admits the chunk with): a name or the host of a URL or a service; an
 // address and the marker of its /24 (IPv6 /120) bucket; for a range, the
 // range key of every bucket it covers. Sorted, without duplicates, at most
