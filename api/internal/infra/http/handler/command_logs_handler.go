@@ -84,7 +84,7 @@ func (h *CommandHandler) GetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := RunTaskLogsResponse{Lines: make([]RunTaskLogLine, 0, len(page.Lines)), Truncated: page.Truncated}
 	for _, l := range page.Lines {
-		resp.Lines = append(resp.Lines, RunTaskLogLine{TS: l.TS, Level: l.Level, Msg: l.Msg, Source: l.Source, Fields: l.Fields})
+		resp.Lines = append(resp.Lines, RunTaskLogLine{TS: l.TS, Level: l.Level, Msg: l.Msg, Source: l.Source, Fields: l.Fields, Attempt: l.Attempt})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
