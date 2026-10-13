@@ -487,6 +487,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
+	if binding.Kind == BindingUnsolicited && s.trustedCollector(ctx, agt, tenantID) {
+		// A trusted collector reports the tenant's own inventory systems.
+		sourceKind = asset.SourceKindIntegration
+	}
 	clampReportTimestamp(report, binding, time.Now())
 	observedAt := reportObservedAt(report, time.Now())
 	sourceRun := binding.Run()
