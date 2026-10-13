@@ -228,5 +228,10 @@
   "sensors.grant.collectorRefused.grantBody": "Its grant does not allow results without a job, so the platform refuses every report it sends. Change its profile to Collector, then promote it to Trusted.",
   "sensors.grant.collectorRefused.askAdmin": "An administrator who may widen sensor grants can change this.",
   "sensors.grant.collectorRefused.promote": "Promote to Trusted",
-  "sensors.grant.collectorRefused.editGrant": "Edit the grant"
+  "sensors.grant.collectorRefused.editGrant": "Edit the grant",
+  "sensors.review.sandboxTitle": "Tool sandbox",
+  "sensors.review.sandboxConfined": "Each scan task reaches only its targets. This sensor can take jobs that need confinement (a web scope).",
+  "sensors.review.sandboxUnknown": "This sensor does not report its sandbox (an older release). Jobs that need confinement go to other sensors.",
+  "sensors.review.sandboxNotConfined": "Jobs that need confinement (a web scope) go to other sensors. Run the container with the sensor's seccomp profile; its setup checklist names the cause.",
+  "sensors.review.sandboxDownload": "Download the seccomp profile"
 }

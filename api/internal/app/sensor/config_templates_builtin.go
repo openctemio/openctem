@@ -99,7 +99,15 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 sudo install -d -m 0755 /etc/openctem
 sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 
-# {{if .CACert}}3{{else}}2{{end}}. Start the sensor. It connects out to the platform (no inbound port)
+# {{if .CACert}}3{{else}}2{{end}}. Download the sensor's seccomp profile and check it: the container
+# runtime's default profile plus new namespaces, so each scan task runs in
+# its own network namespace and reaches only its targets (network
+# confinement). Jobs that need it (a web scope) go only to confined sensors.
+# Keep Docker's default AppArmor profile (never apparmor=unconfined).
+sudo curl -fsSL{{if .CACert}} --cacert /etc/openctem/certs/openctem-root-ca.crt{{end}} -o /etc/openctem/sensor-seccomp.json {{shellQuote .SeccompURL}}
+echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
+
+# {{if .CACert}}4{{else}}3{{end}}. Start the sensor. It connects out to the platform (no inbound port)
 # and runs the scans the platform dispatches. Results that cannot be delivered
 # yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
 # The {{$slug}}-state volume keeps the sensor's state, including the API key
@@ -108,7 +116,8 @@ sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
 # container does not download it again; it can be deleted at any time.
 # Hardened: read-only root filesystem, no capabilities, no privilege
-# escalation (add --cap-add NET_RAW only for naabu SYN scans). The sensor
+# escalation, the sensor's seccomp profile (add --cap-add NET_RAW only for
+# naabu SYN scans). The sensor
 # writes only /tmp besides its volumes, and its tools keep their settings
 # there (XDG_*); the image's home directory stays as built, with the
 # nuclei-templates release the sensor scans with until its first update.
@@ -116,6 +125,7 @@ sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # host owner creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --security-opt seccomp=/etc/openctem/sensor-seccomp.json \
   --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache \
   -e SENSOR_API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
@@ -200,7 +210,15 @@ export SSL_CERT_DIR=/etc/openctem/certs
 #      outside it; without the file it does not start), owned by root and
 #      read-only:
 #        sudo install -D -m 0644 -o root sensor-policy.yaml policy/sensor-policy.yaml
-#   3. Save this file as compose.yaml and run: docker compose up -d
+#   3. Download the sensor's seccomp profile next to compose.yaml and check
+#      it (each scan task then runs network-confined; keep Docker's default
+#      AppArmor profile):
+#        curl -fsSL{{if .CACert}} --cacert openctem-root-ca.crt{{end}} -o sensor-seccomp.json {{shellQuote .SeccompURL}}
+#        echo '{{.SeccompSHA256}}  sensor-seccomp.json' | sha256sum -c -
+{{- if .CACert}}
+#      (openctem-root-ca.crt: the platform's CA, the PEM under configs below)
+{{- end}}
+#   4. Save this file as compose.yaml and run: docker compose up -d
 #   Kill switch (no job runs while the file exists): sudo touch policy/STOP
 #   The policy and the kill switch need a sensor release later than v0.8.0;
 #   v0.8.0 and older ignore them and scan without a local policy.
@@ -222,13 +240,14 @@ services:
 {{- end}}
 {{- if isDaemon .Sensor}}
     # Hardened: read-only root filesystem, no capabilities, no privilege
-    # escalation (add NET_RAW to cap_add only for naabu SYN scans). The
+    # escalation, the sensor's seccomp profile (per-task network
+    # confinement); add NET_RAW to cap_add only for naabu SYN scans. The
     # sensor writes only /tmp besides its volumes (its tools too: XDG_*
     # below); the image's home directory keeps the nuclei-templates release
     # the sensor scans with until its first update.
     read_only: true
     cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
+    security_opt: ["no-new-privileges:true", "seccomp=./sensor-seccomp.json"]
     tmpfs: [/tmp]
 {{- end}}
     environment:
@@ -298,7 +317,16 @@ configs:
 #      sensor refuses every job outside it; without it the pod does not start.
 #      Keep write access to this ConfigMap with the network owner:
 #        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
-#   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
+#   2. Put the sensor's seccomp profile on every node that may run the pod,
+#      at <kubelet root>/seccomp/openctem/sensor-seccomp.json (usually
+#      /var/lib/kubelet/seccomp/...), and check it:
+#        curl -fsSL -o sensor-seccomp.json {{shellQuote .SeccompURL}}
+#        echo '{{.SeccompSHA256}}  sensor-seccomp.json' | sha256sum -c -
+#      Each scan task then runs network-confined. Where you cannot write to
+#      the nodes, set seccompProfile below to {type: RuntimeDefault}: the
+#      sensor then runs unconfined, and jobs that need confinement (a web
+#      scope) go to other sensors.
+#   3. kubectl apply -n <namespace> -f {{$slug}}.yaml
 #   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
 #   The policy needs a sensor release later than v0.8.0; v0.8.0 and older
 #   ignore it and scan without a local policy.
@@ -375,8 +403,11 @@ spec:
         runAsGroup: 999
         fsGroup: 999
         fsGroupChangePolicy: OnRootMismatch
+        # The sensor's own profile (step 2): the runtime default plus new
+        # namespaces, for per-task network confinement.
         seccompProfile:
-          type: RuntimeDefault
+          type: Localhost
+          localhostProfile: openctem/sensor-seccomp.json
       containers:
         - name: sensor
           image: {{.Image}}
@@ -537,8 +568,11 @@ kubectl create secret generic {{$slug}}-key \
 #    the policy and scan without one.
 
 # 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
-#    0.19.0 or later: the sensor runs hardened (non-root, read-only root
-#    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
+#    0.23.0 or later: the sensor runs hardened (non-root, read-only root
+#    filesystem, no capabilities, its own seccomp profile so each scan task
+#    runs network-confined; the chart installs the profile on the nodes with
+#    a DaemonSet: sensor.sandbox.seccompProfile=runtime-default turns that
+#    off, and the sensor then runs unconfined), mounts the policy
 #    read-only, keeps the nuclei-templates baked into its image, and keeps
 #    its state, outbox and content cache on one data volume (a release that
 #    already has the sensor's per-directory volumes keeps them).
@@ -550,6 +584,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
+  --set sensor.sandbox.seccompProfile=openctem \
   --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
   --set-file sensor.localPolicy.policy=sensor-policy.yaml
