@@ -359,6 +359,10 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 	for _, b := range plan.Batches {
 		cfg := batchScannerConfig(sc.ScannerConfig, b.Targets)
 		payloadMap := s.scannerPayload(sc, run, stepRun, cfg, batchContext, b.Targets, templates)
+		if err := s.attachJobExclusions(ctx, sc.TenantID, payloadMap, b.Targets); err != nil {
+			s.cancelCreated(ctx, created)
+			return err
+		}
 		payload, err := json.Marshal(payloadMap)
 		if err != nil {
 			s.cancelCreated(ctx, created)
