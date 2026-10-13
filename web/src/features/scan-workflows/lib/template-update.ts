@@ -36,7 +36,7 @@ export function applyTemplateUpdate(id: string, digest: string): Promise<ScanWor
 }
 
 export function dismissTemplateUpdate(id: string, digest: string): Promise<void> {
-  return post<void>(`${url(id)}/dismiss`, { template_digest: digest })
+  return post<void>(`${url(id)}/reject`, { template_digest: digest })
 }
 
 /** The names of the steps an update adds ("Host discovery"). */
