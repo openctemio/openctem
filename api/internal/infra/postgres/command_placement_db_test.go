@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,14 +61,24 @@ func newPlacementFixture(t *testing.T) *placementFixture {
 	dast := seedZoneSensor(ctx, t, sqlDB, &f.tenant, "d-dast", zoneSensorOpts{tools: []string{"nuclei"}})
 	grantNarrow := seedZoneSensor(ctx, t, sqlDB, &f.tenant, "e-grant-httpx", zoneSensorOpts{tools: []string{"nuclei"}})
 	never := seedZoneSensor(ctx, t, sqlDB, &f.tenant, "f-never-reported", zoneSensorOpts{tools: []string{"nuclei"}, declaredOnly: true})
-	f.sensors = []shared.ID{inZoneNuclei, outNuclei, inZoneHttpx, dast, grantNarrow, never}
+	confined := seedZoneSensor(ctx, t, sqlDB, &f.tenant, "g-confined", zoneSensorOpts{tools: []string{"nuclei"}})
+	declaredConfined := seedZoneSensor(ctx, t, sqlDB, &f.tenant, "h-declared-confined", zoneSensorOpts{tools: []string{"nuclei"}})
+	f.sensors = []shared.ID{inZoneNuclei, outNuclei, inZoneHttpx, dast, grantNarrow, never, confined, declaredConfined}
 	for _, s := range []shared.ID{inZoneNuclei, inZoneHttpx} {
 		if err := zones.AssignSensor(ctx, f.tenant, z.ID, s, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := sqlDB.ExecContext(ctx, `UPDATE sensors SET reported_capabilities = '{nuclei,dast}' WHERE id = $1`, dast.String()); err != nil {
-		t.Fatal(err)
+	for q, id := range map[string]shared.ID{
+		`UPDATE sensors SET reported_capabilities = '{nuclei,dast}' WHERE id = $1`: dast,
+		// Reported by the sensor: counts.
+		`UPDATE sensors SET reported_capabilities = '{nuclei,net.confined@1}' WHERE id = $1`: confined,
+		// Declared by an administrator only: never counts for a feature.
+		`UPDATE sensors SET capabilities = '{nuclei,net.confined@1}' WHERE id = $1`: declaredConfined,
+	} {
+		if _, err := sqlDB.ExecContext(ctx, q, id.String()); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	nuclei := func(extra map[string]any) map[string]any {
@@ -80,6 +91,8 @@ func newPlacementFixture(t *testing.T) *placementFixture {
 	f.cmds["zoned"] = createPayloadCommand(ctx, t, f.repo, f.tenant, &z.ID, nuclei(nil))
 	f.cmds["unzoned"] = createPayloadCommand(ctx, t, f.repo, f.tenant, nil, nuclei(nil))
 	f.cmds["needs-dast"] = createPayloadCommand(ctx, t, f.repo, f.tenant, nil, nuclei(map[string]any{"required_capabilities": []string{"dast"}}))
+	f.cmds["needs-confined"] = createPayloadCommand(ctx, t, f.repo, f.tenant, nil, nuclei(map[string]any{
+		command.PayloadKeyRequiredFeatures: []string{sensor.CapabilityNetConfined}, "web_scope": map[string]any{"deny_paths": []string{"/admin"}}}))
 	f.cmds["tool-less"] = createPayloadCommand(ctx, t, f.repo, f.tenant, nil, map[string]any{"targets": []string{"10.60.0.5"}})
 	f.cmds["pinned"] = createPayloadCommand(ctx, t, f.repo, f.tenant, nil, nuclei(nil))
 	f.cmds["refused"] = createPayloadCommand(ctx, t, f.repo, f.tenant, nil, nuclei(nil))
@@ -164,6 +177,8 @@ func TestPlacement_ReasonsPerSensor(t *testing.T) {
 		"needs-dast": {"a-zone-nuclei": command.PlacementCapabilityMissing},
 		"pinned":     {"a-zone-nuclei": command.PlacementPinnedElsewhere},
 		"refused":    {"b-nuclei": command.PlacementRefusedEarlier},
+		"needs-confined": {"a-zone-nuclei": command.PlacementNotConfined, "h-declared-confined": command.PlacementNotConfined,
+			"d-dast": command.PlacementNotConfined},
 	}
 	for cmd, bySensor := range want {
 		got := reasons(cmd)
@@ -173,7 +188,17 @@ func TestPlacement_ReasonsPerSensor(t *testing.T) {
 			}
 		}
 	}
-	p, err := f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["later"])
+	// Only the sensor that reported confinement may take the job.
+	p, err := f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["needs-confined"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sp := range p.Sensors {
+		if want := strings.HasPrefix(sp.Name, "g-confined"); sp.Eligible != want {
+			t.Errorf("needs-confined / %s: eligible %v, want %v (reasons %v)", sp.Name, sp.Eligible, want, sp.Reasons)
+		}
+	}
+	p, err = f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["later"])
 	if err != nil || !slices.Equal(p.JobReasons, []string{command.PlacementWindowClosed}) {
 		t.Fatalf("scheduled job: reasons %v err %v, want window_closed", p.JobReasons, err)
 	}
@@ -250,5 +275,72 @@ func TestPlacement_PlatformAndSettledJobs(t *testing.T) {
 	p, err = f.svc.ExplainPlacement(f.ctx, f.tenant, f.cmds["zoned"])
 	if err != nil || p.Status != command.CommandStatusCompleted || len(p.Sensors) != 0 {
 		t.Fatalf("completed job: %+v err %v", p, err)
+	}
+}
+
+// Only an active sensor of the tenant that REPORTED net.confined@1 counts;
+// a declared capability, a disabled sensor or another tenant's sensor does
+// not.
+func TestHasConfinedSensor(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewSensorRepository(&DB{DB: sqlDB})
+	tenant, other := seedTestTenant(ctx, t, sqlDB), seedTestTenant(ctx, t, sqlDB)
+	has := func(tid shared.ID) bool {
+		t.Helper()
+		ok, err := repo.HasConfinedSensor(ctx, tid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	set := func(q string, id shared.ID) {
+		t.Helper()
+		if _, err := sqlDB.ExecContext(ctx, q, id.String()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	declared := seedZoneSensor(ctx, t, sqlDB, &tenant, "declared", zoneSensorOpts{tools: []string{"nuclei"}})
+	set(`UPDATE sensors SET capabilities = '{net.confined@1}' WHERE id = $1`, declared)
+	disabled := seedZoneSensor(ctx, t, sqlDB, &tenant, "disabled", zoneSensorOpts{tools: []string{"nuclei"}, status: "disabled"})
+	set(`UPDATE sensors SET reported_capabilities = '{net.confined@1}' WHERE id = $1`, disabled)
+	foreign := seedZoneSensor(ctx, t, sqlDB, &other, "foreign", zoneSensorOpts{tools: []string{"nuclei"}})
+	set(`UPDATE sensors SET reported_capabilities = '{net.confined@1}' WHERE id = $1`, foreign)
+	if has(tenant) {
+		t.Fatal("a declared, a disabled or another tenant's confined sensor counted")
+	}
+	if !has(other) {
+		t.Fatal("the other tenant's reported confined sensor did not count for it")
+	}
+	reported := seedZoneSensor(ctx, t, sqlDB, &tenant, "reported", zoneSensorOpts{tools: []string{"nuclei"}})
+	set(`UPDATE sensors SET reported_capabilities = '{nuclei,net.confined@1}' WHERE id = $1`, reported)
+	if !has(tenant) {
+		t.Fatal("a reported confined sensor did not count")
+	}
+}
+
+// SECURITY: the feature gate holds on every claim path: the doorbell count,
+// a claim by id and a batch claim never give a confinement-needing job to a
+// sensor that did not report confinement, however its capabilities were
+// declared.
+func TestFeatureGate_EveryClaimPath(t *testing.T) {
+	f := newPlacementFixture(t)
+	job := f.cmds["needs-confined"]
+	confined, declared := f.sensors[6], f.sensors[7]
+
+	for _, s := range []shared.ID{declared, f.sensors[1]} {
+		sn, err := f.sensRep.GetByTenantAndID(f.ctx, f.tenant, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := f.repo.ClaimManyForSensor(f.ctx, f.tenant, s, sn.EffectiveCapabilities(), []shared.ID{job}); err != nil || len(got) != 0 {
+			t.Fatalf("batch claim by an unconfined sensor: %v err %v", got, err)
+		}
+		if ok, err := f.repo.ClaimForSensor(f.ctx, f.tenant, job, s.String()); err != nil || ok {
+			t.Fatalf("claim by id by an unconfined sensor: %v err %v", ok, err)
+		}
+	}
+	if ok, err := f.repo.ClaimForSensor(f.ctx, f.tenant, job, confined.String()); err != nil || !ok {
+		t.Fatalf("claim by id by the confined sensor: %v err %v", ok, err)
 	}
 }
