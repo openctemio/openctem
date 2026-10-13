@@ -1,0 +1,260 @@
+package command
+
+// Why a queued command waits (docs/architecture/placement.md).
+//
+// ExplainPlacement evaluates, for one command and every sensor of its
+// tenant, the checks a sensor's poll and claim apply, in the order they
+// apply them: the claim SQL's predicates (read back by the repository with
+// the same SQL), then the dispatch gate (grant, intensity, local policy,
+// private targets, opt-ins; the gate's own code), then the free slots. It
+// is read-only and never decides placement: the claim stays the authority,
+// and a test keeps the two in agreement (placement_db_test.go).
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+// MaxPlacementSensors bounds the sensors one explanation evaluates (by
+// name); a larger fleet is reported as truncated.
+const MaxPlacementSensors = 100
+
+// SensorPlacement is one sensor's verdict for a command.
+type SensorPlacement struct {
+	SensorID shared.ID
+	Name     string
+	// Eligible: the sensor may take the command (it may still be busy).
+	Eligible bool
+	// Busy: eligible, but it has no free scan slot now.
+	Busy bool
+	// Reasons are the checks that keep the command from this sensor, in
+	// the order the claim applies them (commanddom.Placement*).
+	Reasons []string
+}
+
+// ReasonCount is how many sensors one reason keeps the command from.
+type ReasonCount struct {
+	Code  string
+	Count int
+}
+
+// Placement explains where a command can go.
+type Placement struct {
+	Status commanddom.CommandStatus
+	// Platform: the command waits for platform scanning; no sensor is
+	// named or evaluated.
+	Platform bool
+	// JobReasons hold the command whatever the sensor.
+	JobReasons []string
+	// Sensors is the tenant's own sensors' verdicts (at most
+	// MaxPlacementSensors, by name); Truncated when there were more.
+	Sensors   []SensorPlacement
+	Truncated bool
+	// Eligible counts the sensors that may take it; Busy those of them
+	// with no free slot. Blocking counts each reason over the others, most
+	// frequent first.
+	Eligible int
+	Busy     int
+	Blocking []ReasonCount
+}
+
+// ExplainPlacement explains why the command waits. Only a pending command
+// is evaluated; for any other status the result carries just the status.
+// A command of another tenant is shared.ErrNotFound.
+func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shared.ID) (*Placement, error) {
+	reader, ok := s.repo.(commanddom.PlacementReader)
+	if !ok {
+		return nil, errors.New("placement is not available")
+	}
+	job, claims, err := reader.PlacementPredicates(ctx, tenantID, commandID, MaxPlacementSensors+1)
+	if err != nil {
+		return nil, err
+	}
+	out := &Placement{Status: job.Status, Platform: job.IsPlatformJob}
+	if job.Status != commanddom.CommandStatusPending || job.IsPlatformJob {
+		return out, nil
+	}
+	out.JobReasons = jobReasons(job)
+	if len(claims) > MaxPlacementSensors {
+		claims, out.Truncated = claims[:MaxPlacementSensors], true
+	}
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, fmt.Errorf("read command: %w", err)
+	}
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	for _, c := range claims {
+		sp, err := s.sensorPlacement(ctx, tenantID, cmd, c, now)
+		if err != nil {
+			return nil, err
+		}
+		out.Sensors = append(out.Sensors, sp)
+	}
+	out.summarize()
+	return out, nil
+}
+
+// ExplainRunTaskPlacement is ExplainPlacement for a task of a scan run: a
+// command that is not of that run (or not of the tenant) is
+// shared.ErrNotFound, so a run id cannot be used to read another run's
+// tasks.
+func (s *Service) ExplainRunTaskPlacement(ctx context.Context, tenantID, runID, commandID shared.ID) (*Placement, error) {
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	var p struct {
+		RunID string `json:"scan_run_id"`
+	}
+	if json.Unmarshal(cmd.Payload, &p) != nil || p.RunID != runID.String() {
+		return nil, fmt.Errorf("%w: task not found", shared.ErrNotFound)
+	}
+	return s.ExplainPlacement(ctx, tenantID, commandID)
+}
+
+// jobReasons are the job-level predicates that fail.
+func jobReasons(j commanddom.PlacementJob) []string {
+	var out []string
+	if !j.NotExpired {
+		out = append(out, commanddom.PlacementExpired)
+	}
+	if !j.Due {
+		out = append(out, commanddom.PlacementWindowClosed)
+	}
+	if !j.HostFree {
+		out = append(out, commanddom.PlacementHostBusy)
+	}
+	return out
+}
+
+// sensorPlacement is one sensor's verdict: its state, the claim SQL's
+// predicates (c), then, only when those pass, the dispatch gate and the
+// free slots, as the poll applies them.
+func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *commanddom.Command, c commanddom.SensorClaim, now time.Time) (SensorPlacement, error) {
+	sp := SensorPlacement{SensorID: c.SensorID}
+	var sn *sensordom.Sensor
+	if s.sensors != nil {
+		var err error
+		sn, err = s.sensors.GetByTenantAndID(ctx, tenantID, c.SensorID)
+		if err != nil && !errors.Is(err, shared.ErrNotFound) {
+			return sp, fmt.Errorf("read sensor: %w", err)
+		}
+	}
+	if sn != nil {
+		sp.Name = sn.Name
+		if sn.Status != sensordom.SensorStatusActive {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementInactive)
+		}
+		if !sensorReachable(sn.Health) {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementOffline)
+		}
+	}
+	sp.Reasons = append(sp.Reasons, claimReasons(c)...)
+	if len(sp.Reasons) > 0 {
+		return sp, nil
+	}
+	if r := s.gateFor(ctx, tenantID, &c.SensorID, []*commanddom.Command{cmd}).refusal(cmd); r != nil {
+		sp.Reasons = append(sp.Reasons, gateReason(r))
+		return sp, nil
+	}
+	sp.Eligible = true
+	if cmd.Type == commanddom.CommandTypeScan && sn != nil {
+		free := sn.FreeSlots(now)
+		sp.Busy = freeScanSlots(sn.EffectiveMaxConcurrentJobs(), c.HeldScans, &free) == 0
+	}
+	return sp, nil
+}
+
+// sensorReachable: the sensor checks in (online, or a little late).
+func sensorReachable(h sensordom.SensorHealth) bool {
+	return h == sensordom.SensorHealthOnline || h == sensordom.SensorHealthLate
+}
+
+// claimReasons are the claim SQL's per-sensor predicates that fail, in
+// the order the poll's WHERE lists them.
+func claimReasons(c commanddom.SensorClaim) []string {
+	var out []string
+	if !c.PinOK {
+		out = append(out, commanddom.PlacementPinnedElsewhere)
+	}
+	if !c.ZoneOK {
+		out = append(out, commanddom.PlacementOutsideZone)
+	}
+	if !c.ToolOK {
+		out = append(out, commanddom.PlacementToolMissing)
+	}
+	if !c.NotRefused {
+		out = append(out, commanddom.PlacementRefusedEarlier)
+	}
+	if !c.CapabilityOK {
+		out = append(out, commanddom.PlacementCapabilityMissing)
+	}
+	if !c.FeaturesOK {
+		// required_features holds only net.confined@1 today.
+		out = append(out, commanddom.PlacementNotConfined)
+	}
+	return out
+}
+
+// gateReason is the placement code of a dispatch gate refusal.
+func gateReason(r *sensordom.DispatchRefusal) string {
+	switch {
+	case r.Layer == RefusalLayerGrant && r.Rule == RuleIntensity:
+		return commanddom.PlacementIntensity
+	case r.Layer == RefusalLayerGrant:
+		return commanddom.PlacementGrantPrefix + r.Rule
+	case r.Layer == sensordom.RefusalLayerManaged && r.Rule == "unavailable":
+		return commanddom.PlacementPolicyUnavailable
+	case r.Rule == sensordom.RulePrivateNeedsLocalPlcy:
+		return commanddom.PlacementPrivateNeedsPolicy
+	case r.Layer == sensordom.RefusalLayerManaged && (r.Rule == sensordom.RuleAllowInteractsh || r.Rule == sensordom.RuleAllowCustomTemplates):
+		return commanddom.PlacementOptInDisabled
+	default:
+		return commanddom.PlacementLocalPolicy
+	}
+}
+
+// summarize fills the counts: eligible and busy sensors, and each
+// blocking reason over the others, most frequent first.
+func (p *Placement) summarize() {
+	counts := map[string]int{}
+	for _, sp := range p.Sensors {
+		switch {
+		case sp.Eligible:
+			p.Eligible++
+			if sp.Busy {
+				p.Busy++
+			}
+		default:
+			for _, r := range sp.Reasons {
+				counts[r]++
+			}
+		}
+	}
+	for code, n := range counts {
+		p.Blocking = append(p.Blocking, ReasonCount{Code: code, Count: n})
+	}
+	slices.SortFunc(p.Blocking, func(a, b ReasonCount) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		if a.Code < b.Code {
+			return -1
+		}
+		if a.Code > b.Code {
+			return 1
+		}
+		return 0
+	})
+}

@@ -224,7 +224,7 @@ Decisions taken while building it, where this RFC left room:
 | Topic | Decision |
 |---|---|
 | Permissions (D16) | `sensors:zones:read/write/delete`, in the `sensors` module next to `sensors:commands:*` (not a bare `zones:*`). Owner/admin all three, member/viewer read. Sensor assignment is `sensors:zones:write`. |
-| `scan_networks` | Not created: Phase 4 (D15) is its first reader. Zones carry no `network_id` yet; adding it later is additive. |
+| `scan_networks` | Not created: Phase 4 (D15) is its first reader. Zones carry no `network_id` yet; adding it later is additive. The design is in [RFC-089](RFC-089-reachability-aware-routing.md) §4.5. |
 | Table name | `scan_zone_sensors` (§5 said `scan_zone_scanners`; every row of `sensors` can be assigned until roles land in Phase 2). |
 | Same-tenant rule (§11) | Composite foreign keys `(tenant_id, zone_id)` and `(tenant_id, sensor_id)`; platform sensors are refused by the insert. |
 | Default zone | At most one per tenant; it may have no ranges; it receives public targets and public hostnames no range holds. Without one, those are dispatched as before zones (any tenant sensor, never silently platform, D14). |

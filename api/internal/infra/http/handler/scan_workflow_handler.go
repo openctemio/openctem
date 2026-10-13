@@ -38,6 +38,8 @@ type ScanWorkflowHandler struct {
 	// taskLogs reads a run task's logs (nil: GET .../tasks/{task_id}/logs
 	// answers an empty log).
 	taskLogs taskLogReader
+	// placement explains why a queued task waits (nil: not found).
+	placement taskPlacementExplainer
 	// findingScope checks the finding of a run about a finding (retest).
 	findingScope runFindingScope
 	// runLookup reads a run for the access check (the service when unset).

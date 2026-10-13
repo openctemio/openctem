@@ -160,6 +160,11 @@ const (
 	// one only in a sandbox that confines its network and the sensor's
 	// does not (RFC-055 §6.1). The same sensor fails the same way again.
 	FailureWebScopeUnsupported = "WEB_SCOPE_UNSUPPORTED"
+	// FailureNoConfinedSensor: the job needs a sensor whose tool runs are
+	// network-confined (net.confined@1; a web-scoped template scan) and
+	// the organization has no active sensor that reports it, so it could
+	// never be taken. Refused when the step is queued.
+	FailureNoConfinedSensor = "NO_CONFINED_SENSOR"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -181,6 +186,7 @@ var failureClasses = map[string]FailureClass{
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,
 	FailureWebScopeUnsupported: FailureClassPlacement,
+	FailureNoConfinedSensor:    FailureClassPlacement,
 	FailurePolicyRefused:       FailureClassPolicy,
 	FailureFreezeWindow:        FailureClassPolicy,
 	FailureCommandExhausted:    FailureClassTransient,
