@@ -38,8 +38,9 @@ of ranges, resolve-before-active for names and sensor-side re-checks.
 1. **Nothing outside scope is ever sent.** Every unit sent to a sensor is a
    subset of (target) minus (active exclusions) minus (the built-in deny
    list). Computed on the platform with exact interval arithmetic,
-   re-checked on the sensor, and (later) results outside the unit are
-   dropped at ingest.
+   re-checked on the sensor, and results outside the unit are dropped at
+   ingest (a scan command given only addresses and ranges: any reported
+   asset that names only other addresses).
 2. **Exclusions win at the finest grain.** A range is cut around an
    exclusion: never dropped whole, never scanned through.
 3. **The deny list is always on**, on both sides.
