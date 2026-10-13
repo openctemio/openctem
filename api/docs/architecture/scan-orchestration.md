@@ -148,7 +148,10 @@ advertises all of them.
 
 The recon tools (subfinder, dnsx, naabu, httpx, katana) ship in the sensor's
 full and platform images and take a target list, so a run of one of them is
-one command with every target, like nuclei.
+one command with every target, like nuclei. dnsx filters wildcard DNS by
+default (`-auto-wildcard`), and the platform sends `wildcard_filter: true`
+with every dnsx job that does not set it; the platform's own wildcard-only
+marks are a second layer behind it (RFC-088 §8).
 
 **System presets** (migration 000061, fixed by 000270): every step of an
 active preset names a shipped tool with catalog capabilities

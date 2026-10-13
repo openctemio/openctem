@@ -139,6 +139,8 @@ func (s *Service) CloneSystemTemplate(ctx context.Context, input CloneSystemTemp
 		}
 	}
 
+	s.recordLineage(ctx, tenantID, clone.ID, systemTemplate)
+
 	// Audit log: template cloned
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.CreatedBy},
 		NewSuccessEvent(audit.ActionScanWorkflowCreated, audit.ResourceTypeScanWorkflow, clone.ID.String()).
@@ -463,6 +465,10 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 		newTemplate.Steps = append(newTemplate.Steps, step)
 	}
 
+	if original.IsSystemTemplate {
+		s.recordLineage(ctx, tenantID, newTemplate.ID, original)
+	}
+
 	// Audit log: template cloned
 	s.logAudit(ctx, AuditContext{TenantID: input.TenantID, ActorID: input.ClonedBy},
 		NewSuccessEvent(audit.ActionScanWorkflowCreated, audit.ResourceTypeScanWorkflow, newTemplate.ID.String()).
@@ -471,4 +477,16 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 			WithMetadata("source_template_id", input.TemplateID))
 
 	return newTemplate, nil
+}
+
+// recordLineage keeps where a tenant's copy of a system template comes from,
+// so later changes of the template are offered to it (template_update.go).
+// Best effort: a copy without lineage is only never offered updates.
+func (s *Service) recordLineage(ctx context.Context, tenantID, copyID shared.ID, template *scanworkflow.Workflow) {
+	if s.lineage == nil || template == nil || !template.IsSystemTemplate {
+		return
+	}
+	if err := s.lineage.SetLineage(ctx, tenantID, copyID, template.ID, scanworkflow.SpecOf(template)); err != nil {
+		s.logger.Warn("scan workflow copy: lineage not recorded", "workflow_id", copyID.String(), "error", err)
+	}
 }

@@ -268,6 +268,12 @@ func registerScanWorkflowRoutes(
 		r.DELETE("/{id}/draft", h.DiscardDraft, middleware.Require(permission.ScanWorkflowsWrite))
 		r.POST("/{id}/publish", h.PublishDraft, middleware.Require(permission.ScanWorkflowsWrite))
 
+		// Template updates of a copy of a system template: shown to readers,
+		// applied or dismissed by writers; never applied on their own.
+		r.GET("/{id}/template-update", h.GetTemplateUpdate, middleware.Require(permission.ScanWorkflowsRead))
+		r.POST("/{id}/template-update/apply", h.ApplyTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
+		r.POST("/{id}/template-update/reject", h.DismissTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
+
 		r.DELETE("/{id}", h.DeleteTemplate, middleware.Require(permission.ScanWorkflowsDelete))
 
 		r.POST("/{id}/steps", h.AddStep, middleware.Require(permission.ScanWorkflowsWrite))
