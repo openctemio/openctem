@@ -23,6 +23,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -219,15 +220,37 @@ func (allowProbe) ResolveDispatchTargets(_ context.Context, in scansvc.DispatchT
 	return &scansvc.DispatchTargets{Allowed: in.Targets}, nil
 }
 
-// SECURITY: a nuclei validation or retest cannot keep to a web scope on the
-// sensor yet: on a host with a path exclusion it is refused and nothing is
-// queued; on another host it is dispatched.
+// seedConfinedSensor inserts an active sensor of tenant whose own report
+// lists net.confined@1 (sensor v0.19.0 or later, network-confined).
+func seedConfinedSensor(t *testing.T, db *sql.DB, tenant shared.ID) {
+	t.Helper()
+	id := shared.NewID()
+	if _, err := db.ExecContext(context.Background(),
+		`INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status, reported_capabilities)
+		 VALUES ($1, $2, $3, $4, 'pfx', 'active', $5)`,
+		id.String(), tenant.String(), "confined-"+id.String()[:8], "hash-"+id.String(),
+		"{"+sensordom.CapabilityNetConfined+"}"); err != nil {
+		t.Fatalf("seed confined sensor: %v", err)
+	}
+}
+
+// SECURITY: a nuclei validation or retest on a host with a path exclusion
+// carries its own organization's web scope and requires net.confined@1. It
+// is refused (nothing queued) while the organization has no sensor that
+// reports the feature, including when only another organization has one;
+// once it has one, the job is queued with the scope. On a host without a
+// rule it is dispatched unchanged.
 func TestWebScope_ValidationAndRetest(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
 	tenant := seedLifecycleTenant(ctx, t, db)
+	other := seedLifecycleTenant(ctx, t, db)
 	seedPathExclusion(t, db, tenant, webHost, "/admin")
-	d := validation.NewCommandDispatcher(guardedCommands(db, scopeService(db)), allowProbe{}, logger.New(logger.Config{Level: "error"}))
+	seedConfinedSensor(t, db, other)
+	pg := &postgres.DB{DB: db}
+	cmds := postgres.NewCommandRepository(pg)
+	cmds.SetCreateGuard(scopesvc.NewWebJobGuard(scopeService(db), postgres.NewSensorRepository(pg)))
+	d := validation.NewCommandDispatcher(cmds, allowProbe{}, logger.New(logger.Config{Level: "error"}))
 
 	validate := func(address string) error {
 		_, err := d.Dispatch(ctx, validation.ValidationJob{JobID: shared.NewID(), TenantID: tenant, FindingID: shared.NewID(),
@@ -239,16 +262,40 @@ func TestWebScope_ValidationAndRetest(t *testing.T) {
 			Tool: "nuclei", Target: validation.Target{Address: address}, RuleID: "some-template"})
 		return err
 	}
-	for name, run := range map[string]func(string) error{"validate": validate, "retest": retest} {
+	jobs := map[string]func(string) error{"validate": validate, "retest": retest}
+	for name, run := range jobs {
 		var de *shared.DomainError
-		if err := run("https://" + webHost + "/login"); !errors.As(err, &de) || de.Code != scanrundom.FailureWebScopeUnsupported {
-			t.Fatalf("%s on an excluded-path host: err = %v, want %s", name, err, scanrundom.FailureWebScopeUnsupported)
+		if err := run("https://" + webHost + "/login"); !errors.As(err, &de) || de.Code != scanrundom.FailureNoConfinedSensor {
+			t.Fatalf("%s without a capable sensor: err = %v, want %s", name, err, scanrundom.FailureNoConfinedSensor)
 		}
 		if n := len(commandPayloads(t, db, tenant, name)); n != 0 {
 			t.Fatalf("%s: %d command(s) queued for a refused job", name, n)
 		}
+	}
+
+	seedConfinedSensor(t, db, tenant)
+	for name, run := range jobs {
+		if err := run("https://" + webHost + "/login"); err != nil {
+			t.Fatalf("%s on an excluded-path host with a capable sensor: %v", name, err)
+		}
+		got := commandPayloads(t, db, tenant, name)
+		if len(got) != 1 {
+			t.Fatalf("%s: %d command(s) queued, want 1", name, len(got))
+		}
+		ws, _ := got[0][commanddom.PayloadKeyWebScope].(map[string]any)
+		if deny, _ := ws["deny_paths"].([]any); len(deny) != 1 || deny[0] != "/admin" {
+			t.Fatalf("%s: web_scope = %v, want deny_paths [/admin]", name, got[0][commanddom.PayloadKeyWebScope])
+		}
+		if f, _ := got[0][commanddom.PayloadKeyRequiredFeatures].([]any); len(f) != 1 || f[0] != sensordom.CapabilityNetConfined {
+			t.Fatalf("%s: required_features = %v, want [%s]", name, f, sensordom.CapabilityNetConfined)
+		}
+
 		if err := run("https://other.webscope.example.com/login"); err != nil {
 			t.Fatalf("%s on a host without path exclusions: %v", name, err)
+		}
+		got = commandPayloads(t, db, tenant, name)
+		if _, has := got[1][commanddom.PayloadKeyWebScope]; has || got[1][commanddom.PayloadKeyRequiredFeatures] != nil {
+			t.Fatalf("%s on a host without a rule carries %v", name, got[1])
 		}
 	}
 }

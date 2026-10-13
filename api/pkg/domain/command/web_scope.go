@@ -36,11 +36,22 @@ type WebJob struct {
 	Tool string
 	// Targets are the job's targets, the hosts its web scope is built for.
 	Targets []string
-	// Bindable: the sensor binds the tool to the job's web scope (a scan
-	// job). A validate or retest job is not bound yet, so it is refused
-	// when a path exclusion applies to its target.
+	// Bindable: the sensor binds the tool to the job's web scope: a scan
+	// job, or a validate or retest job of a tool whose finding check keeps
+	// to one (verifyBindsWebScope). Any other job is refused when a path
+	// exclusion applies to its target.
 	Bindable bool
+	// Verify: a validate or retest job (it re-checks a finding).
+	Verify bool
 }
+
+// verifyBindsWebScope are the tools whose validate and retest jobs the
+// sensor keeps to the job's web scope: the nuclei finding check runs in a
+// network-confined task sandbox whose forwarder checks every request (sensor
+// v0.19.0, sdk-go v0.25.0). Such a job is offered only to a sensor that
+// reported net.confined@1, which the sensor first advertises in the same
+// release (the job guard requires it).
+var verifyBindsWebScope = map[string]bool{"nuclei": true}
 
 // WebJobOf says whether a command is a web job, and which. A scan job is
 // one when its tool implements a web stage, or its capability (or a
@@ -63,7 +74,7 @@ func WebJobOf(cmd *Command) (WebJob, bool) {
 		if !stage.WebTool(tool) {
 			return WebJob{}, false
 		}
-		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload)}, true
+		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: verifyBindsWebScope[tool], Verify: true}, true
 	case CommandTypeValidate:
 		var p struct {
 			ExecutorKind string `json:"executor_kind"`
@@ -82,7 +93,7 @@ func WebJobOf(cmd *Command) (WebJob, bool) {
 		if a := strings.TrimSpace(p.Target.Address); a != "" {
 			targets = []string{a}
 		}
-		return WebJob{Tool: tool, Targets: targets}, true
+		return WebJob{Tool: tool, Targets: targets, Bindable: verifyBindsWebScope[tool], Verify: true}, true
 	}
 	return WebJob{}, false
 }
