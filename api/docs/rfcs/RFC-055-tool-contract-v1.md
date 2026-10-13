@@ -361,6 +361,17 @@ comes back (mutual distrust, RFC-040).
   repeated slashes), an in-scope regex for prefixes and hosts, field scope
   `fqdn`, no redirects and no form filling without POST; its results are
   filtered with the scope again.
+- A tool whose own requests do not follow a scope (nuclei: templates request
+  arbitrary paths) declares `features.web_scope` only because the task's
+  forwarder enforces it. On a sandbox that confines the network the
+  forwarder is the tool's only way out; it terminates TLS with a per-task
+  authority, checks every request and redirect with `pkg/webscope`, and
+  refuses the rest, and non-HTTP traffic. Such a tool refuses a web-scoped
+  job on a sensor that does not confine its tools' network, before it runs.
+- A step whose sensor refused the web scope fails with
+  `WEB_SCOPE_UNSUPPORTED` (class `placement`, never retried): the fix is a
+  sensor that can keep to it, not another attempt. Like any failed step, it
+  leaves the run `partial` when other steps completed (RFC-046 §7).
 
 ### 6.2 Endpoints and evidence on the wire
 

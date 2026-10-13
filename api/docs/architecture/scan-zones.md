@@ -203,6 +203,12 @@ Warnings: `no_sensors_assigned`, `private_ranges_without_healthy_sensor`,
   (egress profiles) are proposed in
   [RFC-034](../rfcs/RFC-034-sensor-network-egress.md); see
   [sensors.md](sensors.md#network-egress-and-proxies-rfc-034-proposed).
+- Routing does not know what a sensor can reach: an internal sensor without
+  internet egress may claim an unzoned internet job, and overlapping private
+  ranges at two sites cannot be told apart (no network on zones or assets).
+  Reachability-aware routing (sensor network self-description, per-target
+  reach outcomes, networks, vantage) is designed in
+  [RFC-089](../rfcs/RFC-089-reachability-aware-routing.md).
 
 ## UI contract
 
