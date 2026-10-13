@@ -16,7 +16,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/version"
 )
@@ -58,6 +60,12 @@ var (
 		"Sensor commands by state: pending (due, waiting for a sensor) and running (acknowledged or running)", []string{"state"}, nil)
 	descCommandOldest = prometheus.NewDesc("openctem_command_oldest_pending_seconds",
 		"How long the oldest due pending command has waited for a sensor", nil, nil)
+	descQueueDepth = prometheus.NewDesc("openctem_command_queue_depth",
+		"Pending sensor commands by stage, tool, priority class and why they wait (ready, host_busy, scheduled)", []string{"stage", "tool", "class", "wait"}, nil)
+	descQueueTenants = prometheus.NewDesc("openctem_command_queue_tenants",
+		"Tenants with at least one pending sensor command", nil, nil)
+	descQueueTopTenant = prometheus.NewDesc("openctem_command_queue_top_tenant_pending",
+		"Pending sensor commands of the tenant with the most (a fairness signal; no tenant identity)", nil, nil)
 	descScanRunsOpen = prometheus.NewDesc("openctem_scan_runs_open",
 		"Scan runs not finished (pending or running)", nil, nil)
 	descScanRunsStuck = prometheus.NewDesc("openctem_scan_runs_past_deadline",
@@ -97,7 +105,7 @@ func New(source Source, cfg Config, log *logger.Logger) *Collector {
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{
 		descUp, descBuild, descSchema, descSchemaDirty, descSensors, descSensorConfig, descSensorUnhardened, descSensorSDK,
-		descCommands, descCommandOldest, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest,
+		descCommands, descCommandOldest, descQueueDepth, descQueueTenants, descQueueTopTenant, descScanRunsOpen, descScanRunsStuck, descOutbox, descOutboxOldest,
 	} {
 		ch <- d
 	}
@@ -133,6 +141,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(descCommands, prometheus.GaugeValue, float64(snap.CommandsPending), "pending")
 	ch <- prometheus.MustNewConstMetric(descCommands, prometheus.GaugeValue, float64(snap.CommandsRunning), "running")
 	ch <- prometheus.MustNewConstMetric(descCommandOldest, prometheus.GaugeValue, snap.CommandOldestPendingSecs)
+	collectQueue(ch, snap.CommandQueue)
+	ch <- prometheus.MustNewConstMetric(descQueueTenants, prometheus.GaugeValue, float64(snap.CommandQueueTenants))
+	ch <- prometheus.MustNewConstMetric(descQueueTopTenant, prometheus.GaugeValue, float64(snap.CommandQueueTopTenant))
 	ch <- prometheus.MustNewConstMetric(descScanRunsOpen, prometheus.GaugeValue, float64(snap.ScanRunsOpen))
 	ch <- prometheus.MustNewConstMetric(descScanRunsStuck, prometheus.GaugeValue, float64(snap.ScanRunsPastDeadline))
 	ch <- prometheus.MustNewConstMetric(descOutbox, prometheus.GaugeValue, float64(snap.OutboxPending), "pending")
@@ -223,3 +234,49 @@ func boolValue(b bool) float64 {
 	}
 	return 0
 }
+
+// collectQueue emits the queue depth with closed-set labels: a stage outside
+// the catalog is "other" (none is "none"), a class outside the priorities
+// is "other", a wait outside the three reasons is dropped; the tool label is
+// already a platform tool, "_custom" or empty ("none").
+func collectQueue(ch chan<- prometheus.Metric, rows []postgres.OpsQueueDepth) {
+	stages := stageIDs()
+	sum := map[[4]string]int64{}
+	for _, r := range rows {
+		switch r.Wait {
+		case postgres.QueueWaitReady, postgres.QueueWaitHostBusy, postgres.QueueWaitScheduled:
+		default:
+			continue
+		}
+		st := r.Stage
+		switch {
+		case st == "":
+			st = "none"
+		case !stages[st]:
+			st = "other"
+		}
+		tool := r.Tool
+		if tool == "" {
+			tool = "none"
+		}
+		class := r.Class
+		switch command.CommandPriority(class) {
+		case command.CommandPriorityLow, command.CommandPriorityNormal, command.CommandPriorityHigh, command.CommandPriorityCritical:
+		default:
+			class = "other"
+		}
+		sum[[4]string{st, tool, class, r.Wait}] += r.Count
+	}
+	for k, n := range sum {
+		ch <- prometheus.MustNewConstMetric(descQueueDepth, prometheus.GaugeValue, float64(n), k[0], k[1], k[2], k[3])
+	}
+}
+
+// stageIDs is the catalog's stage ids ("scan.ports@1").
+var stageIDs = sync.OnceValue(func() map[string]bool {
+	out := map[string]bool{}
+	for _, s := range stage.All() {
+		out[s.ID()] = true
+	}
+	return out
+})
