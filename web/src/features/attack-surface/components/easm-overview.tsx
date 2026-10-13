@@ -7,7 +7,10 @@
  * GET /api/v1/easm/summary; nothing is computed from a page of rows.
  */
 
+import { useState } from 'react'
 import Link from '@/components/link'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -77,7 +80,10 @@ function Row({
 
 export function EASMOverview() {
   const { t } = useTranslation()
-  const { summary, isLoading, error, mutate } = useEASMSummary()
+  // Counts cover the attributed inventory unless the viewer asks for the
+  // discovered assets too (research/124): discovery noise never inflates them.
+  const [includeDiscovered, setIncludeDiscovered] = useState(false)
+  const { summary, isLoading, error, mutate } = useEASMSummary(includeDiscovered)
 
   if (error) {
     return (
@@ -109,6 +115,16 @@ export function EASMOverview() {
               'Who it belongs to, what is new, how fresh the watch is'
             )}
           </CardDescription>
+          <div className="flex items-center gap-2 pt-1">
+            <Switch
+              id="easm-include-discovered"
+              checked={includeDiscovered}
+              onCheckedChange={setIncludeDiscovered}
+            />
+            <Label htmlFor="easm-include-discovered" className="text-xs font-normal">
+              {t('easmReview.overview.includeDiscovered', 'Include discovered assets')}
+            </Label>
+          </div>
         </CardHeader>
         <CardContent className="divide-y">
           {isLoading || !summary ? (
@@ -128,6 +144,15 @@ export function EASMOverview() {
                   label={t('easmReview.overview.confirmed', 'Confirmed ours')}
                   value={a?.confirmed ?? 0}
                 />
+                {(a?.discovered ?? 0) > 0 && (
+                  <Row
+                    label={t(
+                      'easmReview.overview.discovered',
+                      'Discovered, passive only until in scope'
+                    )}
+                    value={a?.discovered ?? 0}
+                  />
+                )}
                 <Row
                   label={t('easmReview.overview.waiting', 'Found, not yet decided')}
                   value={(a?.needs_review ?? 0) + (a?.candidate ?? 0)}

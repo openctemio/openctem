@@ -298,7 +298,11 @@ func registerScopeRoutes(
 		// (RFC-054 §6.2); shortening one asks in the service.
 		r.POST("/{id}/deactivate", h.DeactivateExclusion, middleware.Require(permission.ScopeWrite), requireStepUp())
 
-		// Bulk operations
+		// Bulk operations. Adding exclusions only narrows scope (scope:write,
+		// no step-up); the preview reads the caller's visible inventory;
+		// deleting widens scope (step-up), and is the undo.
+		r.POST("/bulk", h.BulkCreateExclusions, middleware.Require(permission.ScopeWrite))
+		r.POST("/bulk/preview", h.PreviewBulkExclusions, middleware.Require(permission.ScopeRead))
 		r.POST("/bulk/delete", h.BulkDeleteExclusions, middleware.Require(permission.ScopeDelete), requireStepUp())
 
 		// Delete operations
@@ -355,7 +359,7 @@ func registerAttackSurfaceRoutes(
 ) {
 	// Build tenant middleware chain from JWT token.
 	// Append the module gate after tenant extraction so it can read the tenant.
-	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate, includeDiscoveredAssets)
 
 	// Attack Surface routes
 	router.Group("/api/v1/attack-surface", func(r Router) {
@@ -378,7 +382,9 @@ func registerEASMRoutes(
 	userSyncMiddleware Middleware,
 	moduleGate Middleware,
 ) {
-	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
+	// include_discovered=true counts discovered assets in the summary and
+	// the change feed (research/124).
+	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate, includeDiscoveredAssets)
 	router.Group("/api/v1/easm", func(r Router) {
 		r.GET("/summary", h.Summary, middleware.Require(permission.AssetsRead))
 		if h.HasChanges() {
