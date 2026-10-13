@@ -107,6 +107,10 @@ func (h *ScopeHandler) RejectTarget(w http.ResponseWriter, r *http.Request) {
 // ScopeSettingsResponse is the organization's scope settings (RFC-054 §6.3).
 type ScopeSettingsResponse struct {
 	AutoJoinDiscovered bool `json:"auto_join_discovered"`
+	// ConfirmAddsToScope: a person confirming an asset as the
+	// organization's also adds its exact scope entry (default true). Never
+	// in effect while scan approval is Strict (research/117).
+	ConfirmAddsToScope bool `json:"confirm_adds_to_scope"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -156,6 +160,7 @@ type ScopeApprovalPolicyView struct {
 // scope off.
 type ScopeSettingsRequest struct {
 	AutoJoinDiscovered *bool  `json:"auto_join_discovered"`
+	ConfirmAddsToScope *bool  `json:"confirm_adds_to_scope"`
 	OneOffTargets      string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
 	OneOffMaxDays      int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
 	WideningApprovals  *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
@@ -170,7 +175,8 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 	t2Days, t2Permanent := ss.T2Max()
 	mode, source := h.service.ApprovalPolicy(ctx, tenantID)
 	return ScopeSettingsResponse{
-		AutoJoinDiscovered: !ss.AutoJoinDisabled, OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
+		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
+		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
 		ActiveProof:   h.activeProofMode(ctx),
@@ -250,9 +256,21 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ss := tenant.ScopeSettings{
-		AutoJoinDisabled: req.AutoJoinDiscovered != nil && !*req.AutoJoinDiscovered,
-		OneOffTargets:    req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
+		AutoJoinDisabled:           req.AutoJoinDiscovered != nil && !*req.AutoJoinDiscovered,
+		ConfirmAddsToScopeDisabled: req.ConfirmAddsToScope != nil && !*req.ConfirmAddsToScope,
+		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
+	}
+	// A client that does not know confirm_adds_to_scope keeps the stored
+	// value instead of turning it back on.
+	if req.ConfirmAddsToScope == nil {
+		before, err := h.settings.GetScopeSettings(ctx, tenantID)
+		if err != nil {
+			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+			return
+		}
+		ss.ConfirmAddsToScopeDisabled = before.ConfirmAddsToScopeDisabled
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
