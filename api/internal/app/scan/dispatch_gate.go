@@ -121,6 +121,13 @@ type DispatchTargetsInput struct {
 	// refused when the job could reach other ports or paths (constrained;
 	// RFC-065 §16.8). The claim-time re-check always sets it.
 	Job *scopedom.JobShape
+	// SplitRanges cuts a range target (CIDR or "a-b") around the active
+	// exclusions of an address kind and the built-in deny list: the rest
+	// is dispatched as pieces (Allowed holds the pieces, Split names them)
+	// instead of the whole range being excluded. Off, a range that
+	// overlaps an exclusion is excluded whole: for callers that map
+	// Allowed back onto their own input list.
+	SplitRanges bool
 }
 
 // ReasonInternalOutsideZones is the reason an internal address is refused
@@ -161,6 +168,11 @@ type DispatchTargets struct {
 	Refused []RefusedTarget
 
 	ZoneOf map[string]*scanzone.Zone // allowed target -> zone; nil = unzoned
+
+	// Split are the range targets cut around exclusions and the deny list
+	// (SplitRanges); their pieces are in Allowed (or refused later, each on
+	// its own).
+	Split []SplitTarget
 }
 
 // Zone returns the scan zone an allowed target routes to, or nil when it is
@@ -269,13 +281,22 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	for _, a := range accepted {
 		ok[a] = true
 	}
-
-	candidates := make([]scope.ExclusionCandidate, 0, len(accepted))
-	byID := make(map[shared.ID]string, len(accepted))
+	ordered := make([]string, 0, len(accepted))
 	for _, t := range targets {
-		if !ok[t] {
-			continue
+		if ok[t] {
+			ordered = append(ordered, t)
 		}
+	}
+	if in.SplitRanges {
+		var err error
+		if ordered, err = s.splitRangeTargets(ctx, &in, ordered, out); err != nil {
+			return nil, err
+		}
+	}
+
+	candidates := make([]scope.ExclusionCandidate, 0, len(ordered))
+	byID := make(map[shared.ID]string, len(ordered))
+	for _, t := range ordered {
 		id := shared.NewID()
 		values := []string{t}
 		if a, ok := assetOf(in.Assets, t); ok {
