@@ -190,6 +190,10 @@ type Service struct {
 	scopeSnapshots ScopeSnapshotRecorder
 	scanRepo       scan.Repository
 	ownerActivity  OwnerActivity
+	// ownerAdmins and ownerNotifier tell the administrators once when a
+	// scan is paused for want of an active owner (owner.go).
+	ownerAdmins    AdminDirectory
+	ownerNotifier  InAppNotifier
 	templateRepo   scanworkflow.Repository
 	assetGroupRepo assetgroup.Repository
 	// selectorAssets reads the inventory behind dynamic target selectors
