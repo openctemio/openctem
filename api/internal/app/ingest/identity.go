@@ -99,6 +99,7 @@ var identifierProps = []struct {
 	{asset.IdentifierHostID, []string{"host_id", "machine_id", "sensor_host_id", "machine_guid"}, true},
 	{asset.IdentifierBIOSUUID, []string{"bios_uuid", "system_uuid", "smbios_uuid"}, true},
 	{asset.IdentifierSerial, []string{"serial_number", "hardware_serial"}, true},
+	{asset.IdentifierDirectoryObjectID, []string{"ad_object_guid", "object_guid", "directory_object_id"}, true},
 	{asset.IdentifierMAC, []string{"mac_address", "mac_addresses", "mac"}, true},
 }
 
