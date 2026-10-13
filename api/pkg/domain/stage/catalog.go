@@ -54,8 +54,9 @@ type Tier int
 const (
 	// TierPassive (T0): no traffic to the target beyond DNS, or no target
 	// traffic at all (third-party sources, code and image analysis). A T0
-	// stage may take names that are not confirmed yet (needs_review,
-	// candidate); it never takes a rejected or tombstoned name.
+	// stage may take names that are not confirmed yet (discovered,
+	// needs_review, candidate); it never takes a rejected or tombstoned
+	// name.
 	TierPassive Tier = 0
 	// TierActive (T1): non-intrusive active checks (connect scans, HTTP
 	// probes, crawling, non-intrusive templates). A T1 stage takes only

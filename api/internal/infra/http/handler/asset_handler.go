@@ -610,7 +610,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        providers             query string false "Filter by provider/source (comma-separated)"
 // @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
 // @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
-// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only)"
+// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), discovered, needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (the inventory: confirmed+unknown+discovered+dependency+monitor_only), attributed (approved without discovered)"
 // @Param        covered_by            query string false "Scope entry id: the assets the scope join confirmed through it"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
