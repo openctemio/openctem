@@ -80,6 +80,35 @@ in `GET /scan-runs/{id}/stages`.
 `include_stale`. Set on create and update (`target_options` in the body;
 omitted on update = unchanged), exported and imported, copied by clone.
 
+## Resolve before active
+
+An active stage (T1 and above, or a tool the catalogue does not know as
+passive) takes a host name only while the platform holds recent evidence
+that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
+
+- **Evidence** is the freshest observation of the name's inventory assets
+  in the asset freshness classes `dns`, `http`, `tls` and `ports`
+  (`asset_attribute_freshness`, tenant-scoped). A resolver answering for
+  it, or a tool reaching it by name, counts.
+- **Older than 7 days** (`assetfreshness.ResolveTTL`): the name is left out
+  (`not_resolving`) and its enrichment is requested (reason `stale`), so the
+  next run knows whether it resolves again.
+- **No evidence at all** (a name typed in and never resolved): it is handed
+  on. The sensor resolves it and reports it back as `unresolvable` when it
+  does not resolve.
+- Passive stages (DNS resolution, discovery) still take stale names: that
+  is how they get fresh evidence. Names a stage of the same run found are
+  fresh by construction.
+- Workflow steps apply it to their seeds (an active step left with nothing
+  settles without a command); a single-scanner run applies it at run start
+  (`not_resolving_target_count`, a warning; a run left with nothing is
+  refused `NO_RESOLVING_TARGETS`). A failed evidence read dispatches
+  nothing.
+- **Wildcard DNS.** The platform sends `wildcard_filter: true` with every
+  dnsx job that does not set it (`withWildcardFilter`). A name that resolves
+  only through a wildcard record is then never reported, gains no evidence,
+  and never reaches an active stage.
+
 ## Preview
 
 The New Scan wizard asks the inventory directly, under the caller's data

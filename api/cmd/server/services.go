@@ -2580,6 +2580,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	s.Asset.SetCreatedAssetsHook(requestNew)
+	// Resolve before active (RFC-088): active stages skip names without
+	// recent resolution evidence; their enrichment is asked for again.
+	var staleRefresher scan.StaleRefresher
+	if cfg.Worker.AssetEnrichmentEnabled {
+		staleRefresher = s.AssetEnricher
+	}
+	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
