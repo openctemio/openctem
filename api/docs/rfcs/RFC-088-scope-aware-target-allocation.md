@@ -38,8 +38,9 @@ of ranges, resolve-before-active for names and sensor-side re-checks.
 1. **Nothing outside scope is ever sent.** Every unit sent to a sensor is a
    subset of (target) minus (active exclusions) minus (the built-in deny
    list). Computed on the platform with exact interval arithmetic,
-   re-checked on the sensor, and (later) results outside the unit are
-   dropped at ingest.
+   re-checked on the sensor, and results outside the unit are dropped at
+   ingest (a scan command given only addresses and ranges: any reported
+   asset that names only other addresses).
 2. **Exclusions win at the finest grain.** A range is cut around an
    exclusion: never dropped whole, never scanned through.
 3. **The deny list is always on**, on both sides.
@@ -146,7 +147,25 @@ chained step may still take its predecessors' outputs.
   not conflict. Claims lock one advisory lock per bucket, so two claims of a
   range and an address inside it are serialised.
 
-## 7. Later steps
+## 7. Host discovery (step 5)
+
+`discover.hosts@1` (ctis taxonomy; discover.active, T1) takes addresses and
+ranges and reports each live address as an `ip_address` with the probe that
+answered (`properties.live_by`, for example `tcp:443`). The platform stage
+`discover.hosts` takes `ip_address` and `network`, emits `ip_address`, and is
+the `cidr → ip` adapter. Its chunks hold at most 64 targets and 4 096
+addresses (a /16 liveness pass is 16 chunks).
+
+naabu implements it next to `scan.ports`, by capability only: the sensor runs
+naabu as a TCP connect probe of a few ports (80, 443, 22, 3389, 8080, 8443
+unless the step names others) and keeps only the answering addresses. The
+tool sandbox grants no raw sockets, so ICMP is not used. A step that pins
+naabu without naming the capability stays a port scan, and a naabu report
+that names no capability is bound to `scan.ports`. A step that names
+`discover.hosts` requires the capability, so only sensors whose naabu
+implements it claim it.
+
+## 8. Later steps
 
 | # | Step | Security-sensitive |
 |---|---|---|
@@ -161,9 +180,10 @@ chained step may still take its predecessors' outputs.
 | 13 | Web: "What will be scanned" funnel and run funnel | – |
 | 14 | Tenant knobs and platform ceilings | – |
 
-Platform-sensor jobs do not check host keys yet; that joins step 7.
+Since step 7 a platform sensor's claim (`get_next_platform_job`) honours the
+same host keys and bucket locks as a tenant sensor's.
 
-## 8. Decisions
+## 9. Decisions
 
 | # | Question | Decision |
 |---|---|---|
@@ -176,7 +196,7 @@ Platform-sensor jobs do not check host keys yet; that joins step 7.
 | A7 | Where expansion lives | the platform planner is the authority; the sensor re-checks every unit and address; ingest drops out-of-unit results |
 | A8 | Over-cap selection | rotation by least recently scanned, not freshest |
 
-## 9. Threat model
+## 10. Threat model
 
 | Threat | Control |
 |---|---|
@@ -188,7 +208,7 @@ Platform-sensor jobs do not check host keys yet; that joins step 7.
 | Splitting bypasses ownership | pieces inherit the range asset's entry and are gated by its id |
 | Restricted member widens reach via pieces | pieces are subsets of a target the act scope already admitted, and each piece is checked again |
 
-## 10. Non-goals
+## 11. Non-goals
 
 - No ASN scan target (RFC-082 D6 stands).
 - No platform-side reverse-DNS sweep and no IPv6 sweeps wider than /112.

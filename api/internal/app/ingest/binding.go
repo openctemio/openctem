@@ -254,6 +254,10 @@ type alterScope struct {
 	commandTool string
 	commandType command.CommandType
 	targets     []coverTarget
+	// addrChunk: the bound scan command's targets are all addresses and
+	// ranges, so the report may only name those addresses
+	// (outsideAddressChunk).
+	addrChunk bool
 	// allowed are the persisted ids of the assets this report may change:
 	// those it created and the existing ones its command covers.
 	allowed map[shared.ID]bool
@@ -375,6 +379,7 @@ func newAlterScope(b Binding) *alterScope {
 	case BindingCommand:
 		s.targets = newCoverTargets(b.Targets)
 		s.commandBound = true
+		s.addrChunk = b.CommandType == command.CommandTypeScan && addressChunk(s.targets)
 		s.commandTool, s.commandType = b.Tool, b.CommandType
 	case BindingCIRun:
 		s.targets = newCoverTargets(b.Targets)
@@ -467,4 +472,78 @@ func (s *alterScope) allowedAsset(id shared.ID) bool {
 		return false
 	}
 	return s == nil || s.all || s.allowed[id]
+}
+
+// addressChunk reports whether every target of a command is an address, an
+// address range or a service on an address (and there is one): such a
+// command can only observe those addresses.
+func addressChunk(targets []coverTarget) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	for _, t := range targets {
+		if t.prefix != nil {
+			continue
+		}
+		if _, err := netip.ParseAddr(t.host); err != nil || t.path != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// reportedAddresses are the addresses a report asset names: its own name
+// (or the host of a service or URL) when that is an address, and the
+// addresses its properties list.
+func reportedAddresses(name string, properties map[string]any) []string {
+	var out []string
+	if host, _ := parseLocator(name); host != "" {
+		if _, err := netip.ParseAddr(host); err == nil {
+			out = append(out, host)
+		}
+	}
+	for _, key := range []string{asset.PropKeyIPAddresses, "ip", "ip_address", "host"} {
+		for _, v := range asset.PropertyStrings(properties, key) {
+			if _, err := netip.ParseAddr(strings.TrimSpace(v)); err == nil {
+				out = append(out, strings.TrimSpace(v))
+			}
+		}
+	}
+	return out
+}
+
+// outsideAddressChunk reports whether a report asset lies outside the
+// addresses its command was given (RFC-088): the command's targets are all
+// addresses or ranges, the asset names at least one address, and none of
+// them is a target or inside a target range. Such a result is dropped: a
+// sensor cannot have observed it on this job. An asset that names no
+// address (a name seen in a certificate) is left to the other checks.
+func (s *alterScope) outsideAddressChunk(name string, properties map[string]any) bool {
+	if s == nil || !s.addrChunk {
+		return false
+	}
+	addrs := reportedAddresses(name, properties)
+	if len(addrs) == 0 {
+		return false
+	}
+	for _, a := range addrs {
+		for _, t := range s.targets {
+			if t.coversLocator(strings.ToLower(a), "") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// skipOutsideChunk counts a report asset dropped because it lies outside
+// its command's addresses; its findings are dropped with it.
+func skipOutsideChunk(output *Output, ref string) {
+	output.AssetsOutsideChunk++
+	if ref != "" {
+		if output.OutOfScopeAssetRefs == nil {
+			output.OutOfScopeAssetRefs = map[string]bool{}
+		}
+		output.OutOfScopeAssetRefs[ref] = true
+	}
 }
