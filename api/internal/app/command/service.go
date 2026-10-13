@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -365,6 +364,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
 	}
+	defer observeClaimDuration(claimModePoll, time.Now())
 
 	held, err := claimer.CountHeldScans(ctx, tenantID, sensorID)
 	if err != nil {
@@ -381,16 +381,26 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	if err != nil {
 		return nil, err
 	}
+	n := len(cands)
 	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
+	claimSkipped(skipLocalPolicy, n, len(cands))
 	if len(cands) > limit {
 		cands = cands[:limit]
 	}
+	n = len(cands)
 	cands = capScanCommands(cands, slots)
+	claimSkipped(skipNoSlot, n, len(cands))
 	// The scope may have changed since the jobs were queued: their targets
 	// pass the dispatch gate again before the claim (scope_recheck.go).
+	n = len(cands)
 	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipScopeChanged, n, len(cands))
+	n = len(cands)
 	cands, rates := s.windowHold(ctx, tenantID, cands)
+	claimSkipped(skipWindowHold, n, len(cands))
+	n = len(cands)
 	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipProgramHold, n, len(cands))
 	rules = withWindowRates(rules, rates)
 	if len(cands) == 0 {
 		return nil, nil
@@ -422,6 +432,8 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		}
 		out = append(out, cmd)
 	}
+	claimSkipped(skipTaken, len(ids), len(claimed))
+	observeClaimed(claimModePoll, out, time.Now())
 	// The organization's HTTP policy and the template signatures go into the
 	// payload first, so the job signature covers them.
 	delivered, err := s.deliver(ctx, input.SensorID, out, rules)
@@ -537,6 +549,7 @@ func capScanCommands(cmds []*commanddom.Command, n int) []*commanddom.Command {
 
 // Acknowledge marks a command as acknowledged.
 func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID string) (*commanddom.Command, error) {
+	defer observeClaimDuration(claimModeByID, time.Now())
 	cmd, err := s.Get(ctx, tenantID, commandID)
 	if err != nil {
 		return nil, err
@@ -588,7 +601,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	if !claimed {
 		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
 	}
-	metrics.CommandClaimsTotal.WithLabelValues("claim").Inc()
+	observeClaimed(claimModeByID, []*commanddom.Command{cmd}, time.Now())
 
 	// Return the freshly-claimed state, with its programs' rules.
 	got, err := s.Get(ctx, tenantID, commandID)

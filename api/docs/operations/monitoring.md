@@ -90,7 +90,7 @@ OpenCTEM compose stack and publishes nothing on a public interface.
 
 UIs, bound to 127.0.0.1 on the host (use an SSH tunnel, e.g.
 `ssh -L 9093:127.0.0.1:9093 host`): Prometheus `:9091`, Alertmanager `:9093`,
-Grafana `:3001` (dashboard "OpenCTEM operations").
+Grafana `:3001` (dashboard "OpenCTEM operations"; its Dispatch row shows the queue by stage and wait reason, claim latency, the wait until claimed by class, claims and skipped candidates, and how many tenants wait).
 
 Memory: the containers are capped at 512M (Prometheus), 192M (cAdvisor), 64M
 each (Alertmanager, node-exporter, postgres-exporter), 32M each
@@ -141,6 +141,12 @@ Besides the Go runtime and process metrics:
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
 | `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
 | `openctem_commands`, `openctem_command_oldest_pending_seconds` | state | Sensor command queue. |
+| `openctem_command_queue_depth` | stage (catalogue id, `none`, `other`), tool (platform tool, `_custom`, `none`), class (priority), wait (`ready`, `host_busy`, `scheduled`) | Pending, unexpired commands by lane-ish key and why they wait: `ready` waits for an eligible sensor with a free slot, `host_busy` for another command of its tenant on the same host, `scheduled` for its scan window. |
+| `openctem_command_queue_tenants`, `openctem_command_queue_top_tenant_pending` | | Tenants with pending commands, and the pending count of the busiest one (fairness without tenant identity). |
+| `command_claim_duration_seconds` | mode (`claim`, `claim_n`) | How long a sensor's claim takes on the platform. |
+| `command_claim_wait_seconds` | class | How long a claimed command waited from due to claimed. |
+| `command_claims_total` | mode (`claim`, `claim_n`) | Commands claimed, one per command (the poll's `claim_n` included). |
+| `command_claim_skipped_total` | reason (`local_policy`, `no_slot`, `scope_changed`, `window_hold`, `program_hold`, `taken`) | Poll candidates not handed out, by why they wait. |
 | `openctem_scan_runs_open`, `openctem_scan_runs_past_deadline` | | Open scan runs and those the reaper should have ended. |
 | `openctem_outbox_entries`, `openctem_outbox_oldest_pending_seconds` | status | Notification outbox. |
 | `openctem_schema_version`, `openctem_schema_dirty` | source (applied, shipped) | Database migration state. |
