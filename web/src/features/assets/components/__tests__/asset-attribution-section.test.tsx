@@ -91,6 +91,22 @@ describe('AssetAttributionSection', () => {
     expect(toast.success).toHaveBeenCalled()
   })
 
+  it('says so when confirming added the exact scope entry', async () => {
+    api.get.mockResolvedValue(review)
+    api.put.mockResolvedValue({
+      ...review,
+      state: 'confirmed',
+      human_decided: true,
+      active_checks_allowed: true,
+      scope: {
+        entries: [{ asset_id: 'a1', name: 'x.acme.io', pattern: 'x.acme.io', outcome: 'added' }],
+      },
+    })
+    wrap(<AssetAttributionSection assetId="a1" />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Ours' }))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Added x.acme.io to scope'))
+  })
+
   it('a legacy asset reads as confirmed, without a confidence number', async () => {
     api.get.mockResolvedValue({
       state: 'confirmed',
@@ -127,7 +143,7 @@ describe('AssetAttributionSection', () => {
     expect(screen.getByRole('button', { name: 'Undo the decision' })).toBeInTheDocument()
   })
 
-  it('says confirming ownership is not a scope grant, and offers to add a scope entry', async () => {
+  it('says confirming also adds the exact scope entry, and offers to add a scope entry', async () => {
     perms = ['assets:read', 'assets:write', 'attack_surface:scope:write']
     api.get.mockResolvedValue({
       ...review,
@@ -142,7 +158,7 @@ describe('AssetAttributionSection', () => {
     expect(
       await screen.findByText('Out of scope: no scope entry covers this name.')
     ).toBeInTheDocument()
-    expect(screen.getByText(/It does not authorize scanning/)).toBeInTheDocument()
+    expect(screen.getByText(/also adds its exact scope entry/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Add to scope' }))
     expect(await screen.findByDisplayValue('promo.acme.io')).toBeInTheDocument()
   })

@@ -330,13 +330,13 @@ staleness key.
 
 | Step | Repo | Content | Depends | Security-sensitive | Status |
 |---|---|---|---|---|---|
-| 1 | sdk-go | `pkg/reach`: classifier, recorder, result summary | — | — | In progress |
-| 2 | sdk-go | `pkg/netctx`: self-description, manifest `network` member, doctor checks | — | yes | In progress |
-| 3 | sdk-go | `reach.Probe` + `RunReachSuite` conformance | 1 | yes | In progress |
+| 1 | sdk-go | `pkg/reach`: classifier, recorder, result summary | — | — | In review (openctemio/sdk-go#260) |
+| 2 | sdk-go | `pkg/netctx`: self-description, manifest `network` member, doctor checks | — | yes | In review (openctemio/sdk-go#262) |
+| 3 | sdk-go | `reach.Probe` + `RunReachSuite` conformance | 1 | yes | In review (openctemio/sdk-go#261) |
 | 4 | sensor | reach summaries from tool output, network report, `reach.probe` capability | 1–3 released | yes | Designed |
 | 5 | api | store network reports, egress echo, self-narrowing at claim, policy report carries allowed ranges, eligibility reasons | E1 (research/119), 2 | yes | Designed |
-| 6 | api | `TARGET_UNREACHABLE`, partial counts, text patterns for older sensors | — | — | In progress |
-| 7 | api docs | this RFC | — | — | Draft |
+| 6 | api | `TARGET_UNREACHABLE`, partial counts, text patterns for older sensors | — | — | Shipped (#1981) |
+| 7 | api docs | this RFC | — | — | Draft (#1977) |
 | 8 | api | networks (`scan_networks`, zone network, scope entries, command network, ambiguity, overlap check) | RFC-088 units | yes | Designed |
 | 9 | api | network context in asset identity, ingest stamping, output binding | 8 | yes | Designed |
 | 10 | api | learned reach evidence, verdicts, preferences | 4, 5, E1 | yes | Designed |

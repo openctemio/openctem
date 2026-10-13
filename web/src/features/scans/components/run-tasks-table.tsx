@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { enTranslate, type Translate } from '../lib/translate'
 import useSWRInfinite from 'swr/infinite'
@@ -15,6 +15,7 @@ import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
 import { RunTaskLogsDialog } from '@/features/scans/components/run-task-logs-dialog'
 import { holdText } from '@/features/scan-windows'
+import { TaskPlacementPanel, WhyWaitingButton } from '@/features/scans/components/task-placement'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -27,6 +28,11 @@ export function taskSensorLabel(
   if (task.platform) return t('scans.tasks.platformScanning')
   if (task.sensor_name) return task.sensor_name
   return task.status === 'queued' ? t('scans.tasks.waitingForSensor') : '-'
+}
+
+/** A queued task that is not waiting for its scan window can say why it waits. */
+function canExplain(task: Pick<RunTask, 'id' | 'status' | 'window_hold'>): boolean {
+  return task.status === 'queued' && !task.window_hold && !!task.id
 }
 
 /** What the API writes into a command handed back by its sensor (RFC-030 §5.12). */
@@ -161,6 +167,15 @@ export function RunTasksTable({
   const [started, setStarted] = useState(false)
   // The task whose logs are open (one dialog for the table).
   const [logsOf, setLogsOf] = useState<RunTask | null>(null)
+  // The queued tasks whose "why waiting" is open.
+  const [whyOpen, setWhyOpen] = useState<Set<string>>(() => new Set())
+  const toggleWhy = (id: string) =>
+    setWhyOpen((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   const { data, size, setSize, isValidating, error } = useSWRInfinite<RunTaskPage>(
     (index, prev: RunTaskPage | null) => {
       if (!started || !nextCursor) return null
@@ -213,59 +228,77 @@ export function RunTasksTable({
               const skipped = taskSkippedNote(task, t)
               const gaps = taskCoverageGapNote(task, t)
               return (
-                <tr key={task.id ?? i} className="border-t align-top">
-                  <td className="px-3 py-2">
-                    <RunStatusBadge status={task.status ?? ''} />
-                    {note?.kind === 'waiting' && (
-                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
-                        <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                        <TruncatedText value={note.text} label={t('scans.tasks.waiting')} />
-                      </div>
-                    )}
-                    {note?.kind === 'error' && (
-                      <TruncatedText
-                        value={note.text}
-                        label={t('scans.tasks.error')}
-                        className="mt-1 max-w-[220px] text-xs text-muted-foreground"
-                      />
-                    )}
-                    {skipped && (
-                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
-                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                        <TruncatedText value={skipped} label={t('scans.tasks.skippedTargets')} />
-                      </div>
-                    )}
-                    {gaps && (
-                      <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
-                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                        <TruncatedText value={gaps} label={t('scans.tasks.coverageGaps')} />
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">{task.tool || '-'}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(task, t)}</td>
-                  <td className="px-3 py-2 text-end tabular-nums">{task.targets ?? 0}</td>
-                  <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
-                    {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
-                    {ms !== undefined && !task.completed_at && t('scans.tasks.soFar')}
-                  </td>
-                  <td className="px-3 py-2 text-end">
-                    {task.id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1 px-2 text-xs"
-                        aria-label={t('scans.tasks.logsOf', undefined, {
-                          tool: task.tool || t('scans.tasks.task'),
-                        })}
-                        onClick={() => setLogsOf(task)}
-                      >
-                        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                        {t('scans.tasks.colLogs')}
-                      </Button>
-                    )}
-                  </td>
-                </tr>
+                <Fragment key={task.id ?? i}>
+                  <tr className="border-t align-top">
+                    <td className="px-3 py-2">
+                      <RunStatusBadge status={task.status ?? ''} />
+                      {note?.kind === 'waiting' && (
+                        <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
+                          <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                          <TruncatedText value={note.text} label={t('scans.tasks.waiting')} />
+                        </div>
+                      )}
+                      {canExplain(task) && (
+                        <WhyWaitingButton
+                          open={whyOpen.has(task.id ?? '')}
+                          onToggle={() => toggleWhy(task.id ?? '')}
+                        />
+                      )}
+                      {note?.kind === 'error' && (
+                        <TruncatedText
+                          value={note.text}
+                          label={t('scans.tasks.error')}
+                          className="mt-1 max-w-[220px] text-xs text-muted-foreground"
+                        />
+                      )}
+                      {skipped && (
+                        <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                          <TruncatedText value={skipped} label={t('scans.tasks.skippedTargets')} />
+                        </div>
+                      )}
+                      {gaps && (
+                        <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-warning">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                          <TruncatedText value={gaps} label={t('scans.tasks.coverageGaps')} />
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{task.tool || '-'}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{taskSensorLabel(task, t)}</td>
+                    <td className="px-3 py-2 text-end tabular-nums">{task.targets ?? 0}</td>
+                    <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
+                      {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
+                      {ms !== undefined && !task.completed_at && t('scans.tasks.soFar')}
+                    </td>
+                    <td className="px-3 py-2 text-end">
+                      {task.id && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          aria-label={t('scans.tasks.logsOf', undefined, {
+                            tool: task.tool || t('scans.tasks.task'),
+                          })}
+                          onClick={() => setLogsOf(task)}
+                        >
+                          <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t('scans.tasks.colLogs')}
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                  {canExplain(task) && whyOpen.has(task.id ?? '') && (
+                    <tr>
+                      <td colSpan={6} className="px-3 pb-3">
+                        {/* Phone width: the table scrolls sideways; the panel stays in view. */}
+                        <div className="sticky left-0 max-w-[calc(100vw-4rem)] sm:max-w-none">
+                          <TaskPlacementPanel runId={runId} taskId={task.id ?? ''} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>
