@@ -66,7 +66,7 @@ func TestEASMSuggestionCards_DB(t *testing.T) {
 	}
 	out := read(admin)
 	if !out.CanAdd || len(out.Cards) != 1 || out.Cards[0].Kind != easmapp.CardAddressesBehindNames || out.Cards[0].Count != 1 ||
-		out.Cards[0].Addresses[0].Address != "203.0.113.90" || out.Cards[0].UnknownNetworkCount != 1 {
+		out.Cards[0].Addresses[0].Address != "203.0.113.90" || out.Cards[0].UnknownNetworkCount != 1 || out.Total != 1 {
 		t.Fatalf("admin cards %+v", out)
 	}
 	var n int

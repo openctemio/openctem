@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { decisionsFor, describeEvidence, scanStanding } from './attribution'
+import { decisionsFor, describeEvidence, scanStanding, type AttributionT } from './attribution'
+
+// English fallback with {name} interpolation, like the provider's t().
+const t: AttributionT = (_key, fallback = '', vars) =>
+  fallback.replace(/\{(\w+)\}/g, (_, k) => String(vars?.[k] ?? ''))
 
 const base = {
   technique: 'cert_transparency',
@@ -12,7 +16,7 @@ const base = {
 describe('describeEvidence', () => {
   it('reads a verified-root CT sighting as a sentence', () => {
     expect(
-      describeEvidence({
+      describeEvidence(t, {
         ...base,
         rule: 'fqdn_under_verified_root',
         observed: { root: 'acme.com', first_seen: '2026-01-05T00:00:00Z' },
@@ -24,7 +28,7 @@ describe('describeEvidence', () => {
 
   it('says when the domain was only listed, and names Cert Spotter', () => {
     expect(
-      describeEvidence({
+      describeEvidence(t, {
         ...base,
         source: 'certspotter',
         rule: 'fqdn_under_asserted_root',
@@ -37,7 +41,7 @@ describe('describeEvidence', () => {
 
   it('falls back to readable text for unknown rules and techniques', () => {
     expect(
-      describeEvidence({ ...base, rule: 'favicon_hash', technique: 'http_probe', source: 's1' })
+      describeEvidence(t, { ...base, rule: 'favicon_hash', technique: 'http_probe', source: 's1' })
     ).toBe('favicon hash — seen in http probe (s1)')
   })
 })
@@ -51,10 +55,10 @@ describe('describeEvidence scan rules', () => {
     last_observed_at: '',
   }
   it('tells a scanned target from a name a scan found', () => {
-    expect(describeEvidence({ ...base, rule: 'tenant_scanned' })).toMatch(
+    expect(describeEvidence(t, { ...base, rule: 'tenant_scanned' })).toMatch(
       /^A target your organization scanned/
     )
-    expect(describeEvidence({ ...base, rule: 'tenant_scan_discovered' })).toMatch(
+    expect(describeEvidence(t, { ...base, rule: 'tenant_scan_discovered' })).toMatch(
       /^Found by a scan/
     )
   })
@@ -62,14 +66,18 @@ describe('describeEvidence scan rules', () => {
 
 describe('scanStanding', () => {
   it('explains what a scan does', () => {
-    expect(scanStanding({ active_checks_allowed: true, state: 'confirmed' })).toMatch(/can reach/)
-    expect(scanStanding({ active_checks_allowed: false, state: 'needs_review' })).toMatch(
+    expect(scanStanding(t, { active_checks_allowed: true, state: 'confirmed' })).toMatch(
+      /can reach/
+    )
+    expect(scanStanding(t, { active_checks_allowed: false, state: 'needs_review' })).toMatch(
       /until its ownership/
     )
-    expect(scanStanding({ active_checks_allowed: false, state: 'dependency' })).toMatch(/passively/)
+    expect(scanStanding(t, { active_checks_allowed: false, state: 'dependency' })).toMatch(
+      /passively/
+    )
     // A legacy asset (reported as confirmed) outside every scope target.
     expect(
-      scanStanding({
+      scanStanding(t, {
         active_checks_allowed: false,
         state: 'confirmed',
         active_checks_blocked_by: 'unattributed',
@@ -77,14 +85,14 @@ describe('scanStanding', () => {
     ).toMatch(/no scope target, seed or verified domain/)
     // Confirmed by a person, but nothing in Scoping covers it (RFC-054).
     expect(
-      scanStanding({
+      scanStanding(t, {
         active_checks_allowed: false,
         state: 'confirmed',
         active_checks_blocked_by: 'out_of_scope',
       })
     ).toMatch(/confirmed as yours, but no scope target/)
     expect(
-      scanStanding({
+      scanStanding(t, {
         active_checks_allowed: false,
         state: 'confirmed',
         active_checks_blocked_by: 'rejected',
