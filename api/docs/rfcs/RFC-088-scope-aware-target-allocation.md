@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft (2026-10-13); steps 1–4 in progress |
+| Status | Draft (2026-10-13); steps 1–4 implemented, steps 5–8 in progress |
 | Scope | api (target gate, `pkg/domain/scope/ipset`, stage literal gate, workflow chunking, command host keys), later sdk-go + sensor (range iterator, job exclusions, `discover.hosts`), web (preview funnel, knobs) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md), [scan-targets.md](../architecture/scan-targets.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-030 (scan distribution: pull, chunks, leases, fair share), RFC-040 (mutual distrust sensor/platform), RFC-054 (scope model, deny list, tiers), RFC-068 (dynamic target selectors), RFC-082 (network seeds), research/118 |
@@ -38,8 +38,9 @@ of ranges, resolve-before-active for names and sensor-side re-checks.
 1. **Nothing outside scope is ever sent.** Every unit sent to a sensor is a
    subset of (target) minus (active exclusions) minus (the built-in deny
    list). Computed on the platform with exact interval arithmetic,
-   re-checked on the sensor, and (later) results outside the unit are
-   dropped at ingest.
+   re-checked on the sensor, and results outside the unit are dropped at
+   ingest (a scan command given only addresses and ranges: any reported
+   asset that names only other addresses).
 2. **Exclusions win at the finest grain.** A range is cut around an
    exclusion: never dropped whole, never scanned through.
 3. **The deny list is always on**, on both sides.
@@ -102,9 +103,11 @@ until they learn about pieces.
 **Sensor side.** The sensor's local policy still refuses a range that
 overlaps its own deny list or `targets.deny` whole. Pieces from the platform
 never overlap the built-in deny list; an operator's local `targets.deny`
-overlapping a piece refuses that piece (fail safe). Cutting per address on
-the sensor needs the job to carry the exclusions and a range iterator in the
-SDK: step 6.
+overlapping a piece refuses that piece (fail safe). Since step 7 the job
+carries the tenant's exclusions inside the /24 (IPv6 /120) buckets of its
+ranges (payload `exclusions`, covered by the job signature), and the SDK
+walks each range address by address, leaving out what the job's
+exclusions, `targets.deny` or the built-in deny list covers.
 
 ## 5. Each stage gets only the kinds it accepts (step 3)
 
@@ -159,7 +162,8 @@ chained step may still take its predecessors' outputs.
 | 13 | Web: "What will be scanned" funnel and run funnel | – |
 | 14 | Tenant knobs and platform ceilings | – |
 
-Platform-sensor jobs do not check host keys yet; that joins step 7.
+Since step 7 a platform sensor's claim (`get_next_platform_job`) honours the
+same host keys and bucket locks as a tenant sensor's.
 
 ## 8. Decisions
 
