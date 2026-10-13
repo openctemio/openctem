@@ -441,6 +441,23 @@ export type AssetCategory = LegacyAssetCategory
 export const ASSET_CATEGORY_LABELS: Readonly<Record<AssetCategory, string>> =
   LEGACY_ASSET_CATEGORY_LABELS
 
+/**
+ * A list row's triage (research/124, RFC-054 §15): the asset's attribution
+ * and the active-scan gate's own answer, so the "not in scope: passive only"
+ * badge never disagrees with a scan.
+ */
+export interface AssetTriage {
+  /** confirmed (also without a record), discovered, needs_review, candidate, dependency, monitor_only, rejected */
+  attributionState: string
+  confidence: number
+  humanDecided: boolean
+  scanAllowed: boolean
+  /** The gate's answer when a scan may not reach it (discovered, unattributed, rejected, ...). */
+  scanBlockedBy?: string
+  /** The refusal code (no_entry, excluded, rejected, ...). */
+  scanRefusalCode?: string
+}
+
 export interface Asset {
   id: string
   type: AssetType
@@ -482,6 +499,8 @@ export interface Asset {
   systemTags?: string[]
   /** Came with a bug-bounty program and no own scope covers it. */
   programOnly?: boolean
+  /** Triage (list rows asked with_triage): attribution and what a scan would do now. */
+  triage?: AssetTriage
   riskScore: number // 0-100, calculated from criticality, exposure, and findings
   findingCount: number
   /** Open findings per severity (assets.finding_severity_counts). */
