@@ -198,7 +198,12 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
               {t('scans.edit.targetsReadOnly')}
             </div>
             {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-6 mt-4" />}
-            <TargetsStep data={formData} onChange={handleDataChange} showCoverage={false} />
+            <TargetsStep
+              data={formData}
+              onChange={handleDataChange}
+              showCoverage={false}
+              savedScan
+            />
           </div>
         )
       case 'options':
