@@ -52,6 +52,7 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   WEB_SCOPE_UNSUPPORTED: 'sensors',
   NO_CONFINED_SENSOR: 'sensors',
   TARGET_UNREACHABLE: 'zones',
+  DEADLINE_TOO_CLOSE: null,
 }
 
 /** Placement reason codes (api pkg/domain/command/placement.go) and their fix. */
