@@ -1585,5 +1585,15 @@
   "scans.placement.sensorCount": "sensors: {count}",
   "scans.placement.unknown": "Reason {code}: this console does not describe it yet.",
   "scans.failure.TARGET_UNREACHABLE.text": "The sensor could not reach the step's targets (no route, a filter refused it, every attempt timed out, or the names did not resolve in its network).",
-  "scans.failure.TARGET_UNREACHABLE.fix": "Run the step from a sensor that can reach the targets: assign one to the targets' scan zone."
+  "scans.failure.TARGET_UNREACHABLE.fix": "Run the step from a sensor that can reach the targets: assign one to the targets' scan zone.",
+  "scans.owner.title": "No active owner",
+  "scans.owner.missing": "This scan has no owner: the account that created it no longer exists.",
+  "scans.owner.inactive": "This scan's owner is no longer an active member.",
+  "scans.owner.scheduledEffect": "Its scheduled runs act as the owner, so they are refused and the scan is paused until someone takes ownership.",
+  "scans.owner.manualEffect": "Anyone who may run it can still start it by hand; a schedule needs an owner.",
+  "scans.owner.take": "Take ownership",
+  "scans.owner.taking": "Taking ownership…",
+  "scans.owner.taken": "You now own \"{name}\". Resume it to restart its schedule.",
+  "scans.owner.takeFailed": "Could not take ownership",
+  "scans.owner.askAdmin": "An owner or administrator can take ownership."
 }

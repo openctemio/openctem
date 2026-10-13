@@ -1739,6 +1739,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// without a job and heartbeat actions; a pairing approval sets the
 	// chosen profile in its transaction.
 	s.SensorGrant = sensorgrant.NewService(repos.SensorGrant, repos.Sensor, log)
+	s.SensorGrant.SetUsage(repos.SensorGrant, repos.Sensor)
 	s.SensorGrant.SetAudit(s.Audit)
 	s.SensorGrant.SetZoneChecker(repos.SensorGrant)
 	if s.SensorPairing != nil {
@@ -2815,6 +2816,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A widened grant notifies every administrator (RFC-052 D-5).
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
+	}
+	// A scan paused for want of an active owner tells every administrator
+	// once.
+	if s.Scan != nil {
+		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
 	}
 
 	// Scope entries: settings, the approval count and the widening notice to
