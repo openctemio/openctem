@@ -103,6 +103,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 				Sources: []string{"container"},
 				Targets: []string{"host", "k8s_workload"},
 			},
+			{
+				Sources: []string{"host"},
+				Targets: []string{"host"},
+			},
 		},
 	},
 	RelTypeDeployedTo: {
@@ -136,6 +140,10 @@ var RelationshipTypeRegistry = map[RelationshipType]RelationshipTypeMetadata{
 			{
 				Sources: []string{"host", "endpoint"},
 				Targets: []string{"container", "service", "database"},
+			},
+			{
+				Sources: []string{"host"},
+				Targets: []string{"ip_address"},
 			},
 			{
 				Sources: []string{"k8s_cluster"},
