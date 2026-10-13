@@ -45,6 +45,10 @@ type ScopeSettings struct {
 	// AutoJoinDisabled stops confirming discovered names a scope entry covers
 	// (they go to the review queue instead).
 	AutoJoinDisabled bool `json:"auto_join_disabled,omitempty"`
+	// ConfirmAddsToScopeDisabled stops a person's Confirm from adding the
+	// asset's exact scope entry (research/117). The default (false) adds it
+	// while scan approval is Off or On; under Strict it never does.
+	ConfirmAddsToScopeDisabled bool `json:"confirm_adds_to_scope_disabled,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).

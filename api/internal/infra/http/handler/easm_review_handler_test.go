@@ -21,6 +21,7 @@ type fakeReviewer struct {
 	query  easmapp.ReviewQuery
 	res    *easmapp.DecisionResult
 	err    error
+	actor  easmapp.ScopeActor
 }
 
 func (f *fakeReviewer) Queue(_ context.Context, tenantID shared.ID, q easmapp.ReviewQuery) (*easmapp.ReviewPage, error) {
@@ -28,8 +29,8 @@ func (f *fakeReviewer) Queue(_ context.Context, tenantID shared.ID, q easmapp.Re
 	return &easmapp.ReviewPage{Items: []easmapp.ReviewItem{}}, f.err
 }
 
-func (f *fakeReviewer) Decide(_ context.Context, tenantID shared.ID, _ []string, _ attribution.State, _ string) (*easmapp.DecisionResult, error) {
-	f.tenant = tenantID
+func (f *fakeReviewer) DecideAs(_ context.Context, tenantID shared.ID, _ []string, _ attribution.State, actor easmapp.ScopeActor) (*easmapp.DecisionResult, error) {
+	f.tenant, f.actor = tenantID, actor
 	return f.res, f.err
 }
 
