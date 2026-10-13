@@ -332,6 +332,8 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// findings.definition_id must name one of the finding's own links, which
 	// do not exist yet when the finding is seeded.
 	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
+	// A record never follows itself (chk_asset_attributions_follows_other).
+	"asset_attributions": func(*schemaSeeder) map[string]any { return map[string]any{"follows_host_id": nil} },
 	// A CI gate policy names its repository or business unit only for that
 	// scope (chk_ci_gate_policies_scope).
 	"ci_gate_policies": func(*schemaSeeder) map[string]any {

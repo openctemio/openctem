@@ -16,7 +16,8 @@ var _ easm.ScopeJoinStore = (*AttributionRepository)(nil)
 
 // PendingAutomatic lists up to limit of the tenant's live assets whose record
 // is needs_review or candidate and was not decided by a person, oldest record
-// first. Tenant-scoped on both tables.
+// first. A child that follows its host is left out: it takes the host's
+// outcome. Tenant-scoped on both tables.
 func (r *AttributionRepository) PendingAutomatic(ctx context.Context, tenantID shared.ID, limit int) ([]easm.JoinItem, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -28,6 +29,7 @@ func (r *AttributionRepository) PendingAutomatic(ctx context.Context, tenantID s
 		WHERE aa.tenant_id = $1
 		  AND aa.state IN ('needs_review', 'candidate')
 		  AND aa.decided_at IS NULL
+		  AND aa.follows_host_id IS NULL
 		  AND a.deleted_at IS NULL
 		ORDER BY aa.created_at, a.id
 		LIMIT $2`, tenantID.String(), limit)
