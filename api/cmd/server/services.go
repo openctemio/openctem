@@ -1952,6 +1952,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
 	s.Ingest.SetGrants(repos.SensorGrant, s.Sensor)
+	// RFC-040 §12: a trusted collector's complete reports may change the
+	// assets its source created and mark the ones it no longer lists.
+	s.Ingest.SetCollectorAssets(repos.CollectorAsset)
 	// Sensor lookups (fingerprint check, baseline diff, suppressions) answer
 	// only about assets the sensor reaches: its commands' targets and its
 	// zones' ranges.
