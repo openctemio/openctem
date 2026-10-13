@@ -52,6 +52,7 @@ func NewEASMHandler(svc EASMSummarizer, log *logger.Logger) *EASMHandler {
 // @Success      200  {object}  easmapp.Summary
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
+// @Param        include_discovered  query  bool  false  "Count discovered assets nobody claimed too (default: the attributed inventory only)"
 // @Router       /easm/summary [get]
 func (h *EASMHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
@@ -295,6 +296,7 @@ func (h *EASMHandler) HasChanges() bool { return h.changes != nil }
 // @Success      200  {object}  easmchange.Page
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
+// @Param        include_discovered  query  bool  false  "Count discovered assets nobody claimed too (default: the attributed inventory only)"
 // @Router       /easm/changes [get]
 func (h *EASMHandler) Changes(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
