@@ -427,6 +427,29 @@ func (r *ScanRepository) UpdateNextRunAt(ctx context.Context, tenantID, id share
 	return nil
 }
 
+// SetOwner sets a scan's owner (created_by) if it is still prev (nil: no
+// owner): a compare-and-swap, so two administrators taking ownership at once
+// cannot both win. False when the owner changed meanwhile or the scan is not
+// the tenant's.
+func (r *ScanRepository) SetOwner(ctx context.Context, tenantID, id shared.ID, prev *shared.ID, owner shared.ID) (bool, error) {
+	var prevArg any
+	if prev != nil {
+		prevArg = prev.String()
+	}
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE scans SET created_by = $3, updated_at = NOW()
+		 WHERE id = $1 AND tenant_id = $2 AND created_by IS NOT DISTINCT FROM $4::uuid`,
+		id.String(), tenantID.String(), owner.String(), prevArg)
+	if err != nil {
+		return false, fmt.Errorf("failed to set scan owner: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to set scan owner: %w", err)
+	}
+	return n == 1, nil
+}
+
 // GetStats returns aggregated statistics for scans.
 func (r *ScanRepository) GetStats(ctx context.Context, tenantID shared.ID) (*scan.Stats, error) {
 	stats := &scan.Stats{

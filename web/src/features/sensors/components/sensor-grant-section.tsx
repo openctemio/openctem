@@ -31,6 +31,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 
 import { TARGET_NETWORK_LABELS, formatGrantList, profileLabel, tierLabel } from '../lib/grant'
 import { SensorGrantEditDialog } from './sensor-grant-edit-dialog'
+import { SensorGrantSuggestionCard } from './sensor-grant-suggestion-card'
 
 /** The message to show for a failed grant change; a 409 also reloads. */
 export function grantErrorMessage(err: unknown): string {
@@ -150,7 +151,9 @@ export function SensorGrantSection({
         (canNarrow || canWiden) && (
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="h-3.5 w-3.5" />
-            {grant.legacy_broad ? 'Narrow' : 'Edit'}
+            {grant.legacy_broad
+              ? t('sensors.grant.narrow', 'Narrow')
+              : t('sensors.grant.edit', 'Edit')}
           </Button>
         )
       }
@@ -163,6 +166,14 @@ export function SensorGrantSection({
             matches what it does.
           </DetailCallout>
         </div>
+      )}
+
+      {(canNarrow || canWiden) && (
+        <SensorGrantSuggestionCard
+          sensorId={sensorId}
+          legacyBroad={grant.legacy_broad}
+          onApplied={(next) => void mutate(next, { revalidate: false })}
+        />
       )}
 
       {sensorType === 'collector' && refusal && (

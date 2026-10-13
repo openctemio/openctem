@@ -2340,6 +2340,7 @@ func TestScanService_CreateScan_ValidCrontab(t *testing.T) {
 		ScannerName:  "nuclei",
 		ScheduleType: "crontab",
 		ScheduleCron: "0 2 * * *", // Every day at 2am
+		CreatedBy:    shared.NewID().String(),
 	}
 
 	result, err := svc.CreateScan(context.Background(), input)
@@ -2674,9 +2675,9 @@ func TestScanService_TriggerScan_ScheduledRunWithoutOwnerRefused(t *testing.T) {
 		t.Fatalf("scheduled run of an ownerless scan: err = %v, want ErrScanHasNoOwner", err)
 	}
 	if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
-		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggeredBy: shared.NewID().String(),
+		TenantID: tenantID.String(), ScanID: s.ID.String(), TriggeredBy: shared.NewID().String(), Interactive: true,
 	}); err != nil {
-		t.Fatalf("a manual trigger by a person must still work: %v", err)
+		t.Fatalf("a manual trigger by a person must still work (the refusal paused the scan): %v", err)
 	}
 }
 
