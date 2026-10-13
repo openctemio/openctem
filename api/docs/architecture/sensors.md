@@ -1436,7 +1436,9 @@ anywhere. Each scan command carries a layered budget in its payload
   per-target budget, within 5 min – 24 h. The sensor stops the task at
   twice that (an explicit step `timeout_seconds` still wins).
 - **Progress.** A sensor on a platform that lists `command_progress` sends
-  `progress: {<command id>: {done, total}}` on every heartbeat. The platform
+  `progress: {<command id>: {done, total, finished}}` on every heartbeat
+  (`finished`: inclusive index ranges into the command's target list, for
+  settling targets one by one later; not stored yet). The platform
   records it only for commands that sensor holds (tenant, sensor, state),
   bounds it by the command's own target count, never lets `done` go down
   within a claim, and moves `last_progress_at` only when `done` grows. A
