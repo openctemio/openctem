@@ -4,6 +4,7 @@
   "actor.system.review_rule": "Accepted from a review rule",
   "actor.system.refusal_fix": "Allowed from a refused scan",
   "actor.system.confirmed_asset": "Added when an asset was confirmed as ours",
+  "actor.system.connector": "Synced by a connector",
   "actor.system.system": "OpenCTEM (automatic)",
   "actor.former": "Former member",
   "actor.member": "A team member"
