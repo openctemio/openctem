@@ -15,6 +15,10 @@ func TestClassifyStepFailure(t *testing.T) {
 		{"COMMAND_FAILED", "refusing to scan filesystem root", FailureTargetRefused, false},
 		{"COMMAND_FAILED", "no targets in payload", FailureNoTargets, false},
 		{FailureNoSensor, "nobody took it", FailureNoSensor, false},
+		// A web-scoped job the sensor's tool cannot keep to: permanent on
+		// that sensor, never retried there.
+		{"COMMAND_FAILED", "scan failed: nuclei does not keep to a web scope (features.web_scope); the job has one", FailureWebScopeUnsupported, false},
+		{"COMMAND_FAILED", "scan failed: nuclei keeps to a web scope only in a tool sandbox that confines its network, and this sensor's does not (SENSOR_SANDBOX_NETWORK; the container needs the seccomp profile in docker/seccomp); the job has a web scope", FailureWebScopeUnsupported, false},
 		// Transient: kept and retryable.
 		{"COMMAND_FAILED", "dial tcp: connection refused", "COMMAND_FAILED", true},
 		{"COMMAND_EXPIRED", "command expired", "COMMAND_EXPIRED", true},
