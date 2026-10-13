@@ -518,6 +518,10 @@ func (p *AssetProcessor) processBatch(
 			continue
 		}
 
+		// When the source last saw this asset (its last_seen, never later
+		// than the report).
+		seenAt := assetSeenAt(ctisAsset, observedAt)
+
 		// mergeInto folds this report asset into an existing one. A report
 		// that may not change the asset (RFC-040 §5.3) only marks it seen,
 		// and only while it is active: no flags, exposure, classification,
@@ -532,7 +536,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, observedAt, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -540,7 +544,7 @@ func (p *AssetProcessor) processBatch(
 					assetMap[ctisAsset.ID] = existing.ID()
 					return
 				}
-				existing.MarkSeenAt(observedAt)
+				existing.ObserveAt(seenAt)
 			}
 			if !isNew[id] && !queued[id] {
 				updateAssets = append(updateAssets, existing)
@@ -583,7 +587,7 @@ func (p *AssetProcessor) processBatch(
 			scope.dropUntrustedClaims(newAsset)
 			// Seen when its source saw it, so a later report observed earlier
 			// cannot pass it.
-			newAsset.MarkSeenAt(observedAt)
+			newAsset.MarkSeenAt(seenAt)
 			if skipExcluded(excl, newAsset, ctisAsset.ID, output) {
 				return
 			}
@@ -1995,7 +1999,7 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// Mark as seen. Capture the prior status first so we can tell when this
 	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
 	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
-	existing.MarkSeenAt(observedAt)
+	existing.ObserveAt(observedAt)
 	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
 		*recovered = append(*recovered, existing.ID())
 	}
