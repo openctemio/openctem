@@ -230,6 +230,15 @@ For each target, in order:
      check has an open `dangling_cname` on that asset in the same tenant.
      It applies to scan create, clone, quick scan and scan runs; `POST
      /commands` and the dispatch gate keep the plain rule;
+   - the name **resolves only through a wildcard DNS record**
+     (`wildcard_only`, RFC-088 decision A4; `asset_wildcard_dns`): a
+     completed dnsx resolution with the wildcard-DNS filter on was given the
+     name and did not report it. The name stays in the inventory and is
+     watched passively; a service or URL on it gets the same answer. A
+     person confirming this very asset, or a later filtered resolution that
+     reports it, lifts the refusal. A scope entry that covers the name does
+     not: a wildcard zone answers for any guessed name. The scope join
+     never confirms such a name automatically either;
    - the name, or any parent domain of it, is one the tenant rejected (a
      rejected asset or a live rejection tombstone), unless a person
      confirmed this very asset. This covers a rejected name that was deleted
@@ -250,7 +259,7 @@ For each target, in order:
    package, so a typed name and the same name in the inventory never
    disagree. Every refusal carries a structured code (RFC-054 §6.5:
    `rejected`, `needs_review`, `candidate`, `dependency`, `monitor_only`,
-   `no_entry`, `deny_list`, `proof_required`, …); requests refused as a whole
+   `wildcard_only`, `no_entry`, `deny_list`, `proof_required`, …); requests refused as a whole
    answer `TARGET_OUT_OF_SCOPE` with `details.refused[]` (`target`, `code`,
    `message`, `fixes`). The act scope runs first on those paths, so a
    restricted member never learns the state of an asset outside their data

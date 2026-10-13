@@ -64,6 +64,14 @@ const StateOutOfScope State = "out_of_scope"
 // refuse the target (deny list, RFC-054 §8.2). No tenant setting changes it.
 const StatePlatformDenied State = "platform_denied"
 
+// StateWildcardOnly is never stored either: the active-scan gate's answer
+// for a name that resolves only through a wildcard DNS record (a resolution
+// with the wildcard-DNS filter on did not report it), and for a service or
+// URL on such a host. It stays in the inventory and is watched passively
+// until a person confirms it or a filtered resolution reports it (RFC-088
+// decision A4).
+const StateWildcardOnly State = "wildcard_only"
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan
