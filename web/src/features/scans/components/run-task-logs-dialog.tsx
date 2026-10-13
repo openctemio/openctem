@@ -1,5 +1,6 @@
 'use client'
 
+import { Fragment } from 'react'
 import useSWR from 'swr'
 import { useTranslation } from '@/context/i18n-provider'
 import { enTranslate, type Translate } from '../lib/translate'
@@ -65,6 +66,23 @@ export function logsEmptyState(
     title: t('scans.logs.none'),
     description: t('scans.logs.noneHint'),
   }
+}
+
+/**
+ * Where each claim attempt of the task starts in its lines (index of the
+ * first line -> attempt number from 1). A task claimed again (its sensor
+ * restarted, or its lease ran out) logs each attempt from the start; the
+ * API returns them oldest attempt first. Empty when there was one attempt.
+ */
+export function attemptBoundaries(lines: RunTaskLogLine[]): Map<number, number> {
+  const starts = new Map<number, number>()
+  let prev: number | undefined
+  lines.forEach((l, i) => {
+    const a = l.attempt ?? 0
+    if (i === 0 || a !== prev) starts.set(i, starts.size + 1)
+    prev = a
+  })
+  return starts.size > 1 ? starts : new Map()
 }
 
 /** A line's time as HH:MM:SS (UTC kept in the tooltip). */
@@ -147,6 +165,7 @@ export function RunTaskLogsDialog({
     { revalidateOnFocus: false }
   )
   const lines = data?.lines ?? []
+  const attemptStarts = attemptBoundaries(lines)
   const empty = logsEmptyState(task, t)
 
   return (
@@ -183,9 +202,22 @@ export function RunTaskLogsDialog({
           )}
           {lines.length > 0 && (
             <ol aria-label={t('scans.logs.lines')} className="text-sm">
-              {lines.map((l, i) => (
-                <LogLineRow key={i} line={l} />
-              ))}
+              {lines.map((l, i) => {
+                const n = attemptStarts.get(i)
+                return (
+                  <Fragment key={i}>
+                    {n !== undefined && (
+                      <li
+                        role="separator"
+                        className="border-b bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground"
+                      >
+                        {t('scans.logs.attempt', undefined, { n })}
+                      </li>
+                    )}
+                    <LogLineRow line={l} />
+                  </Fragment>
+                )
+              })}
             </ol>
           )}
           {data?.truncated && (
