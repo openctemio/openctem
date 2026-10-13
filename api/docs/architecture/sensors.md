@@ -1443,9 +1443,11 @@ anywhere. Each scan command carries a layered budget in its payload
   new claim starts with no progress.
 - **Stall and overrun** (`JobRecoveryController`, every minute): a running
   command with a budget is re-queued (one more dispatch attempt, like a lost
-  lease) when its sensor reports progress, targets remain, and none finished
-  for `stall_seconds`; or when it ran past 2 × `task_seconds` + 5 min. A
-  slow but progressing task is never re-queued before that. Metric
+  lease) when its sensor reports progress and either targets remain and
+  none finished for `stall_seconds`, or it ran past 2 × `task_seconds` +
+  5 min. A slow but progressing task is never re-queued before that. A
+  sensor that reports no progress predates budgets and is bounded only by
+  its lease and the run's cap. Metric
   `commands_stalled_total`.
 - **Trust.** Progress is a liveness hint, never authority: faked progress
   only defers the stall check, never the overrun or the run's 24 h cap.
