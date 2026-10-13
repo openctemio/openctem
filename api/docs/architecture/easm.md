@@ -540,6 +540,26 @@ and the Weekly digest switch on the monitoring card.
 
 ## 5a. After a decision (built, P0-9)
 
+**Confirm adds the exact scope entry** (research/117, `internal/app/easm/confirm_scope.go`).
+Before a person's `confirmed` decision is saved (review queue, review by rule
+"accept selected", or the asset's Ownership tab), each confirmed domain,
+subdomain or public address gets the scope entry for exactly its name
+(`domain` or `ip_address`, origin `confirmed_asset`) through
+`scope.Service.CreateTargets`: guardrails, deny list, signer ledger, one
+step-up for the batch (a missing one answers 403 `STEP_UP_REQUIRED` and saves
+nothing), one notice to the administrators, and one `scope_target.created`
+audit event per entry. Never added: a wildcard or range, a name an active
+entry already covers (`covered`), a private or internal name, or a service,
+certificate or web endpoint (they follow their host). The answer carries
+`scope.entries[]` (`added`, `exists`, `covered`, `refused` with its code; the
+entry id makes Undo a plain entry delete) or `scope.skipped`: `strict` (scan
+approval Strict keeps confirmation as ownership only), `disabled` (the
+organization's `confirm_adds_to_scope` setting is off, or it could not be
+read), `needs_scope_write` (the caller has `assets:write` but not the scope
+write permission). Automation and rejections never add entries
+(`ReviewService.Decide`); people go through `DecideAs`. Existing confirmed
+but uncovered assets are not backfilled: they are offered as a suggestion.
+
 A person's attribution decision (review queue `POST /easm/candidates/decisions`
 or `PUT /assets/{id}/attribution`) is followed by
 `easm.DecisionEffects.AfterDecision`, best effort and only for the assets the
