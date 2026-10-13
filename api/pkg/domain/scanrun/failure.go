@@ -57,6 +57,13 @@ var failurePatterns = []struct {
 	{FailureNoTargets, []string{"no targets", "no target "}},
 	{FailureNoSensor, []string{"no sensor"}},
 	{FailureWebScopeUnsupported, []string{"does not keep to a web scope", "keeps to a web scope only in"}},
+	// A sensor that sends no reach summary reports an unreachable job as
+	// text: the SDK's tool error class, or the operating system's own
+	// connect errors toward the target.
+	{FailureTargetUnreachable, []string{
+		"target_unreachable", "target unreachable", "targets unreachable",
+		"network is unreachable", "no route to host", "host is unreachable",
+	}},
 }
 
 // ClassifyStepFailure returns the code to record for a step failure and
@@ -181,6 +188,7 @@ var failureClasses = map[string]FailureClass{
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,
 	FailureWebScopeUnsupported: FailureClassPlacement,
+	FailureTargetUnreachable:   FailureClassPlacement,
 	FailurePolicyRefused:       FailureClassPolicy,
 	FailureFreezeWindow:        FailureClassPolicy,
 	FailureCommandExhausted:    FailureClassTransient,
@@ -227,12 +235,13 @@ func IsKnownFailureCode(code string) bool {
 // what the sensor itself can observe. Platform-only codes (queue time,
 // placement, scope decisions) are refused from a sensor.
 var SensorFailureCodes = map[string]bool{
-	FailureScannerNotFound: true,
-	FailureTargetRefused:   true,
-	FailureNoTargets:       true,
-	FailurePolicyRefused:   true,
-	FailureToolExit:        true,
-	FailureParseError:      true,
-	FailureTimeout:         true,
-	FailureCommandFailed:   true,
+	FailureScannerNotFound:   true,
+	FailureTargetRefused:     true,
+	FailureTargetUnreachable: true,
+	FailureNoTargets:         true,
+	FailurePolicyRefused:     true,
+	FailureToolExit:          true,
+	FailureParseError:        true,
+	FailureTimeout:           true,
+	FailureCommandFailed:     true,
 }
