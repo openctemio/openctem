@@ -34,6 +34,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
@@ -129,9 +130,13 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 
 // newScanWorkflowHandler builds the scan workflow handler with the run page's task
 // logs (RFC-029 §4.4.1).
-func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, events command.EventReader, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, placement *commandapp.Service, events command.EventReader, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
 	h := handler.NewScanWorkflowHandler(svc, v, log)
 	h.SetTaskLogs(logs)
+	if placement != nil {
+		// Why a queued task waits (placement.md).
+		h.SetPlacement(placement)
+	}
 	h.SetUserNames(users)
 	h.SetRunEvents(events)
 	if scope != nil {
@@ -515,7 +520,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
 		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
-		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
+		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.Command, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
