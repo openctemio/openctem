@@ -318,6 +318,16 @@ var (
 		},
 	)
 
+	// CommandsStalledTotal counts running commands re-queued because they
+	// finished no target within their stall window or ran far past their
+	// task budget (research/122).
+	CommandsStalledTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "commands_stalled_total",
+			Help: "Running commands re-queued because they stalled or overran their task budget",
+		},
+	)
+
 	// ScanRunsReapedTotal counts runs the timeout controller ended, by
 	// reason: "deadline" (past its deadline; ends partial or timeout) or
 	// "unclaimed" (no sensor picked any work up in time).

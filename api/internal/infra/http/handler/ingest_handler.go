@@ -12,6 +12,7 @@ import (
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -145,6 +146,10 @@ type HeartbeatRequest struct {
 	// list is left out); the heartbeat renews their leases (RFC-035 D6).
 	// Sensor wire only: not part of the management API's documented types.
 	Running []string `json:"running,omitempty" swaggerignore:"true"`
+	// Progress is the finished targets of each held command (feature
+	// command_progress, research/122), untrusted: recorded only for commands
+	// the sensor holds and bounded by each command's target count.
+	Progress map[string]HeartbeatProgress `json:"progress,omitempty" swaggerignore:"true"`
 
 	// Build information, optional (docs/architecture/sensors.md "Build
 	// information"): sdk {name, version} and sensor {name, version, commit,
@@ -377,6 +382,28 @@ func (h *IngestHandler) commandsToCancel(ctx context.Context, s *sensor.Sensor, 
 		return nil
 	}
 	return h.sensorService.CommandsToCancel(ctx, s, req.Running)
+}
+
+// HeartbeatProgress is one held command's progress on a heartbeat.
+type HeartbeatProgress struct {
+	Done  int `json:"done"`
+	Total int `json:"total"`
+}
+
+// commandProgress is the heartbeat's progress for the sensor service, at
+// most commanddom.MaxProgressEntries entries; nil when it carried none.
+func (req *HeartbeatRequest) commandProgress() map[string]commanddom.Progress {
+	if req == nil || len(req.Progress) == 0 {
+		return nil
+	}
+	out := make(map[string]commanddom.Progress, min(len(req.Progress), commanddom.MaxProgressEntries))
+	for id, p := range req.Progress {
+		if len(out) == commanddom.MaxProgressEntries {
+			break
+		}
+		out[id] = commanddom.Progress{Done: p.Done, Total: p.Total}
+	}
+	return out
 }
 
 // BaselineDiffRequest asks which fingerprints are new vs a PR's base branch.
