@@ -113,6 +113,17 @@ describe('connector settings', () => {
     expect(back.coverageEnabled).toBe(true)
   })
 
+  it('keeps the connector assets in scope by default, and the switch off when set', () => {
+    expect(readConnectorSettings(integration({})).assetsInScope).toBe(true)
+    const off = connectorConfig({
+      ...DEFAULT_CONNECTOR_SETTINGS,
+      sensorId: 's1',
+      assetsInScope: false,
+    })
+    expect(off.assets_in_scope).toBe(false)
+    expect(readConnectorSettings(integration(off)).assetsInScope).toBe(false)
+  })
+
   it('reports the first problem', () => {
     const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
     expect(connectorSettingsError(ok)).toBeNull()

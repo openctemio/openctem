@@ -168,6 +168,19 @@ func TestParseConnectorConfigMap(t *testing.T) {
 			t.Errorf("%s: want a validation error, got %v", name, err)
 		}
 	}
+	if !ok.AssetsInScope {
+		t.Fatal("assets_in_scope defaults to on")
+	}
+	off := base()
+	off["assets_in_scope"] = false
+	if cc, err := ParseConnectorConfigMap(off); err != nil || cc.AssetsInScope {
+		t.Fatalf("assets_in_scope off: %+v %v", cc, err)
+	}
+	bad := base()
+	bad["assets_in_scope"] = "yes"
+	if _, err := ParseConnectorConfigMap(bad); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("assets_in_scope must be a boolean: %v", err)
+	}
 	m := base()
 	m["repositories"] = []any{float64(5), float64(7), float64(5)}
 	m["min_severity"] = float64(0)
@@ -466,5 +479,80 @@ func TestCapText(t *testing.T) {
 	}
 	if got := capText("ééé", 3); got != "é" {
 		t.Fatalf("rune boundary: %q", got)
+	}
+}
+
+// fakeScope records what a sync asked of scope.
+type fakeScope struct {
+	notified []string
+	added    []shared.ID
+}
+
+func (f *fakeScope) NotifyConnectorScope(_ context.Context, _ shared.ID, connector string) {
+	f.notified = append(f.notified, connector)
+}
+
+func (f *fakeScope) AddConnectorAssets(_ context.Context, _ shared.ID, _ string, commandID shared.ID) (int, error) {
+	f.added = append(f.added, commandID)
+	return 1, nil
+}
+
+func syncOnce(t *testing.T, e *env) shared.ID {
+	t.Helper()
+	ctx := context.Background()
+	res, err := e.svc.RequestSync(ctx, e.tenant, e.intg.ID(), TriggerManual, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete(t, e, res.CommandID, command.CommandStatusCompleted, map[string]any{"hosts": float64(1)})
+	e.reports.reports[res.CommandID] = []ingestreport.CoverageReport{{State: protov2.StateCompleted, ToolName: ToolName}}
+	if _, err := e.svc.Reconcile(ctx, e.intg); err != nil {
+		t.Fatal(err)
+	}
+	return res.CommandID
+}
+
+// TestReconcile_ConnectorAssetsInScope: an existing connector's first sync
+// after the change only tells the administrators; the next one adds its
+// assets to scope (research/117). A failed sync adds nothing, and the
+// connector's switch turns it off.
+func TestReconcile_ConnectorAssetsInScope(t *testing.T) {
+	e := newEnv(t)
+	sc := &fakeScope{}
+	e.svc.SetScopeAdder(sc)
+
+	syncOnce(t, e)
+	if len(sc.notified) != 1 || sc.notified[0] != "sc" || len(sc.added) != 0 {
+		t.Fatalf("first sync: notified %v added %v (notice first, nothing added)", sc.notified, sc.added)
+	}
+	if State(e.intg).ScopeNoticeAt == nil {
+		t.Fatal("the notice was not recorded")
+	}
+	second := syncOnce(t, e)
+	if len(sc.notified) != 1 || len(sc.added) != 1 || sc.added[0] != second {
+		t.Fatalf("second sync: notified %v added %v", sc.notified, sc.added)
+	}
+
+	// A failed sync adds nothing.
+	ctx := context.Background()
+	res, _ := e.svc.RequestSync(ctx, e.tenant, e.intg.ID(), TriggerManual, nil)
+	complete(t, e, res.CommandID, command.CommandStatusFailed, nil)
+	if _, err := e.svc.Reconcile(ctx, e.intg); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.added) != 1 {
+		t.Fatalf("a failed sync added assets: %v", sc.added)
+	}
+
+	// Switched off: nothing is added or announced.
+	off := newEnv(t)
+	off.intg.SetConfig(map[string]any{"engine": "tenable_sc", "execution_mode": "sensor",
+		"sensor_id": off.sensorID.String(), "instance": "sc-prod", "assets_in_scope": false})
+	offScope := &fakeScope{}
+	off.svc.SetScopeAdder(offScope)
+	syncOnce(t, off)
+	syncOnce(t, off)
+	if len(offScope.notified)+len(offScope.added) != 0 {
+		t.Fatalf("switched off: %+v", offScope)
 	}
 }
