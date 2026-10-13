@@ -38,6 +38,7 @@ type AssetHandler struct {
 	programFlags       ProgramAssetFlagReader
 	triageGate         AssetTriageGate
 	triageRecords      AssetTriageRecords
+	triageExclusions   AssetTriageExclusions
 }
 
 // NewAssetHandler creates a new asset handler.
@@ -741,7 +742,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		for i := range data {
 			repoPtrs[i] = &data[i].AssetResponse
 		}
-		h.addTriage(r, input.TenantID, repoPtrs)
+		h.addTriage(r, input.TenantID, repoPtrs, result.Data)
 
 		response := ListResponse[AssetWithRepositoryResponse]{
 			Data:       data,
@@ -770,7 +771,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		ptrs[i] = &data[i]
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
-	h.addTriage(r, input.TenantID, ptrs)
+	h.addTriage(r, input.TenantID, ptrs, result.Data)
 
 	response := ListResponse[AssetResponse]{
 		Data:       data,
