@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import {
   AttackSurfaceSectionTabs,
+  EASMDecidePanel,
   EASMOverview,
   useAttackSurfaceStats,
 } from '@/features/attack-surface'
@@ -120,6 +121,10 @@ export default function AttackSurfacePage() {
         description="What your organization exposes, and how it changed this week."
       />
       <AttackSurfaceSectionTabs />
+
+      <div className="mt-5 empty:hidden">
+        <EASMDecidePanel compact />
+      </div>
 
       {error && (
         <Alert variant="destructive" className="mt-5">

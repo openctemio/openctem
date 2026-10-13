@@ -1467,6 +1467,13 @@ export const scanRunEndpoints = {
    */
   taskLogs: (runId: string, taskId: string) =>
     `/api/v1/scan-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/logs`,
+
+  /**
+   * Why a queued task waits: the reasons, how many sensors can take it, and
+   * (with sensors:read) each sensor's verdict.
+   */
+  taskPlacement: (runId: string, taskId: string) =>
+    `/api/v1/scan-runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/placement`,
 } as const
 
 /**

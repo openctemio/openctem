@@ -175,3 +175,19 @@ func TestExplainAddresses_SeededNetworkOffersTheRange(t *testing.T) {
 		t.Fatalf("shared space seeded: %+v %+v", it.Network, it.Fixes)
 	}
 }
+
+// An address in a published CDN edge range is shared space even with no
+// network data on its record: no fix is offered (research/117).
+func TestExplainAddresses_EdgeRangeGetsNoFix(t *testing.T) {
+	store := &fakeAddrStore{resolved: map[string][]string{"104.16.5.5": {"www.example.co.uk"}}}
+	s := &ReviewService{coverage: coverNames{"www.example.co.uk": true}}
+	s.SetAddressExplainer(store, func(context.Context, shared.ID) (string, error) { return "EXAMPLECO", nil })
+	page := &ReviewPage{Items: []ReviewItem{{AssetID: "1", Name: "104.16.5.5", Type: "ip_address"}}}
+	if err := s.explainAddresses(context.Background(), shared.NewID(), nil, ReviewCaller{CanApprove: true}, page); err != nil {
+		t.Fatal(err)
+	}
+	it := page.Items[0]
+	if it.Network == nil || !it.Network.Shared || it.Network.SharedProvider != "Cloudflare" || len(it.Fixes) != 0 {
+		t.Fatalf("network %+v fixes %+v", it.Network, it.Fixes)
+	}
+}

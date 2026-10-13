@@ -102,6 +102,7 @@ export function scanApprovalFact(
 export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
   return {
     auto_join_discovered: s.auto_join_discovered ?? true,
+    confirm_adds_to_scope: s.confirm_adds_to_scope ?? true,
     one_off_targets: (s.one_off_targets as ScopeOneOffPolicy) || 'admins_and_requests',
     one_off_max_days: s.one_off_max_days ?? 7,
     widening_approvals: s.widening_approvals ?? null,
@@ -324,6 +325,22 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 id={`${id}-autojoin`}
                 checked={form.auto_join_discovered}
                 onCheckedChange={(v) => setForm({ ...form, auto_join_discovered: v })}
+                disabled={disabled}
+              />
+            </Row>
+
+            <Row
+              label={t('scope.settings.confirmAddsToScope', 'Confirming an asset adds it to scope')}
+              htmlFor={`${id}-confirmadds`}
+              hint={t(
+                'scope.settings.confirmAddsToScopeHint',
+                'A person who confirms a domain, subdomain or public address as yours also adds the scope entry for exactly that name, with the same re-authentication, notice and audit as adding it by hand. Addresses behind your names are never added this way. Under Strict scan approval confirming records ownership only.'
+              )}
+            >
+              <Switch
+                id={`${id}-confirmadds`}
+                checked={form.confirm_adds_to_scope}
+                onCheckedChange={(v) => setForm({ ...form, confirm_adds_to_scope: v })}
                 disabled={disabled}
               />
             </Row>
