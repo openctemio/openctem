@@ -335,9 +335,20 @@ payload comes from one builder, `scan.StepCommandPayload`.
   sensor and a tenant sensor never take overlapping hosts at once. Only acknowledged and running commands count, so a finish, a failure,
   a release or an expired lease frees the hosts with nothing to clean up.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
-  work never holds a tenant back. The sensor's own `PerHostConcurrency` stays
-  as defense in depth. Platform jobs (`get_next_platform_job`) do not check
-  host keys yet.
+  work never holds a tenant back.
+  **One key function on both sides** (RFC-090): the keys are computed by
+  `github.com/openctemio/sdk-go/pkg/politeness`, which the sensor runtime
+  uses too, and every catalog-stage chunk carries the keys the platform
+  holds for it in its payload (`host_keys`; an empty list for a passive
+  stage). The sensor's local per-host limit (`limits.per_host_concurrency`,
+  default 1) admits the chunk under exactly those keys with the same
+  conflict relation, so it never hands back a chunk the platform has just
+  offered because the two keyed a host differently (the "its hosts are busy
+  on this sensor" loop). Addresses are canonical (an IPv4-mapped address is
+  the IPv4 address; `a.b.c.d/32` is the address). With a network context
+  (RFC-089) the keys of private addresses and names carry the network, so
+  overlapping private ranges at two sites never hold each other back;
+  public addresses never do.
   Not yet: the candidate tool list per chunk (claim by any candidate),
   placement modes and a spread cap.
 
