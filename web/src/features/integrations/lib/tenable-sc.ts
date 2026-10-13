@@ -118,6 +118,8 @@ export interface ConnectorSettings {
   instance: string
   minSeverity: number
   fullSyncDays: number
+  /** The public names and addresses it syncs get their exact scope entries. */
+  assetsInScope: boolean
   coverageEnabled: boolean
   coveragePolicyId: number
   coverageRepositoryId: number
@@ -131,6 +133,7 @@ export const DEFAULT_CONNECTOR_SETTINGS: ConnectorSettings = {
   instance: 'default',
   minSeverity: 1,
   fullSyncDays: 7,
+  assetsInScope: true,
   coverageEnabled: false,
   coveragePolicyId: 0,
   coverageRepositoryId: 0,
@@ -148,6 +151,7 @@ export function readConnectorSettings(integration: Integration | undefined): Con
     instance: str(c.instance) ?? 'default',
     minSeverity: c.min_severity === 0 ? 0 : n('min_severity', 1),
     fullSyncDays: n('full_sync_days', 7),
+    assetsInScope: c.assets_in_scope !== false,
     coverageEnabled: c.coverage_enabled === true || c.coverage_enabled === 'true',
     coveragePolicyId: n('coverage_policy_id'),
     coverageRepositoryId: n('coverage_repository_id'),
@@ -188,6 +192,7 @@ export function connectorConfig(
     instance: s.instance,
     min_severity: s.minSeverity,
     full_sync_days: s.fullSyncDays,
+    assets_in_scope: s.assetsInScope,
     coverage_enabled: s.coverageEnabled,
   }
   const optional: Array<[string, number]> = [
