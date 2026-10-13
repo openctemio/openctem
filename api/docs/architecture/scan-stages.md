@@ -289,7 +289,10 @@ payload comes from one builder, `scan.StepCommandPayload`.
   run in parallel. Claims serialize on the keys with transaction
   advisory locks (`lockHostKeys`; a bucket marker and a range key of the
   same bucket share one lock), and a batch claim takes one chunk per host
-  and never a range with an address inside it. Only acknowledged and running commands count, so a finish, a failure,
+  and never a range with an address inside it. A platform sensor's claim
+  (`get_next_platform_job`, migration `platform_jobs_host_keys`) applies the
+  same predicate and the same bucket locks, then checks again, so a platform
+  sensor and a tenant sensor never take overlapping hosts at once. Only acknowledged and running commands count, so a finish, a failure,
   a release or an expired lease frees the hosts with nothing to clean up.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
   work never holds a tenant back. The sensor's own `PerHostConcurrency` stays
