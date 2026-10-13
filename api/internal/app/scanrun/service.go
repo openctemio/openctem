@@ -197,6 +197,7 @@ type Service struct {
 	endpoints         EndpointSelector          // incremental web scanning (web_endpoints.go)
 	runNotifier       RunNotifier               // live run updates (run_notify.go); nil: none
 	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow
+	lineage           scanworkflow.LineageStore // lineage of tenant copies of system templates (template_update.go); nil offers no updates
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)

@@ -2507,6 +2507,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The live run map: a run that changes tells its run:{id} watchers,
 	// at most once a second per run.
 	s.ScanRun.SetRunNotifier(newRunChangeThrottle(s.WebSocketHub, time.Second))
+	// Copies of system templates keep their lineage and are offered the
+	// template's later changes (applied only by a person).
+	s.ScanRun.SetTemplateLineage(repos.ScanWorkflow)
 	// A role assigned, removed or redefined, or a membership removed or
 	// suspended, closes the user's live sockets in that tenant; the client
 	// reconnects through every upgrade gate again (RFC-045).
