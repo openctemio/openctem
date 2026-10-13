@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -48,8 +49,13 @@ type AssetAttributionHandler struct {
 	activeGate  ActiveScanGate
 	scope       AssetScopeReader
 	effects     *easmapp.DecisionEffects
+	confirm     *easmapp.ConfirmScope
 	logger      *logger.Logger
 }
+
+// SetConfirmScope makes a person's confirmation add the asset's exact scope
+// entry (research/117). Nil: a confirmation records ownership only.
+func (h *AssetAttributionHandler) SetConfirmScope(c *easmapp.ConfirmScope) { h.confirm = c }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after a
 // decision (research/22 P0-9).
@@ -112,6 +118,9 @@ type AssetAttributionResponse struct {
 	CoveredBy   *scopeauth.Via             `json:"covered_by,omitempty"`
 	DecidedAt   *time.Time                 `json:"decided_at,omitempty"`
 	Evidence    []AssetAttributionEvidence `json:"evidence"`
+	// Scope: on a confirmation, the exact scope entry it added (or why
+	// not); absent otherwise (research/117).
+	Scope *easmapp.ConfirmScopeResult `json:"scope,omitempty"`
 }
 
 // AssetAttributionEvidence is one reason.
@@ -268,6 +277,20 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 	if before != nil && before.Record.State != "" {
 		from = string(before.Record.State)
 	}
+	// A confirmation adds the asset's exact scope entry first: a missing
+	// re-authentication (403 STEP_UP_REQUIRED) saves nothing.
+	var added *easmapp.ConfirmScopeResult
+	if state == attribution.StateConfirmed && h.confirm != nil {
+		added, err = h.confirm.Add(ctx, tenantID, []string{assetID}, confirmActor(ctx), easmapp.ConfirmReason)
+		if err != nil {
+			if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+				return
+			}
+			h.logger.Error("failed to add the confirmed asset's scope entry", "error", logger.SanitizeError(err))
+			apierror.InternalServerError("failed to add the scope entry").WriteJSON(w)
+			return
+		}
+	}
 	ok, err := h.attribution.SaveDecision(ctx, tenantID, assetID, state, userID)
 	if err != nil {
 		h.logger.Error("failed to save attribution decision", "error", logger.SanitizeError(err))
@@ -285,10 +308,12 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 			WithMetadata("from", from).
 			WithMetadata("to", string(state)).
 			WithSeverity(auditdom.SeverityMedium)
-		_ = h.audit.LogEvent(ctx, auditapp.AuditContext{
+		actx := auditapp.AuditContext{
 			TenantID: tenant, ActorID: userID, ActorEmail: auditActorEmail(ctx),
 			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
-		}, event)
+		}
+		_ = h.audit.LogEvent(ctx, actx, event)
+		auditConfirmEntries(ctx, h.audit, actx, added, "ownership_tab")
 	}
 	view, found, err := h.attribution.Get(ctx, tenantID, assetID)
 	if err != nil {
@@ -297,6 +322,7 @@ func (h *AssetAttributionHandler) Decide(w http.ResponseWriter, r *http.Request)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	resp := toAssetAttributionResponse(view, found)
+	resp.Scope = added
 	h.applyActiveGate(ctx, tenantID, assetID, &resp)
 	_ = json.NewEncoder(w).Encode(resp)
 }

@@ -489,6 +489,9 @@ type RuleActionInput struct {
 	Reason     string
 	AssetIDs   []string
 	Actor      scope.Actor
+	// CanWriteScope: the caller holds the scope write permission, so
+	// accept_selected also adds each confirmed name's exact entry.
+	CanWriteScope bool
 }
 
 // RuleRefusal is why an action cannot be taken.
@@ -732,7 +735,8 @@ func (s *RuleService) Apply(ctx context.Context, tenantID shared.ID, in RuleActi
 		if len(ids) == 0 {
 			return out, nil
 		}
-		if out.Decisions, err = s.review.Decide(ctx, tenantID, ids, attribution.StateConfirmed, in.Actor.UserID); err != nil {
+		if out.Decisions, err = s.review.DecideAs(ctx, tenantID, ids, attribution.StateConfirmed,
+			ScopeActor{Actor: in.Actor, CanWriteScope: in.CanWriteScope}); err != nil {
 			return nil, err
 		}
 		for _, d := range out.Decisions.Decided {
