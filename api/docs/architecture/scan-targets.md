@@ -89,7 +89,7 @@ omitted on update = unchanged), exported and imported, copied by clone.
 | `liveness` | Host discovery (`discover.hosts`) and passive lookups get the range pieces. Every other active step gets the addresses host discovery found live (through the hop router) and the addresses the inventory holds in the range, never the range. |
 | `sweep` | Every step that takes ranges gets the pieces; an address host discovery found inside a range the same step sweeps is not added again (`covered_by_range`). |
 | `inventory` | The inventory's addresses inside the range only. |
-| none stored | Sweep: a scan saved before liveness existed sweeps until it is edited. |
+| none stored | Sweep: a scan saved before liveness existed keeps sweeping, also when it is edited (an edit that names no mode keeps the stored one). The edit form and the scan detail page suggest live hosts first, with a one-click switch, when its scan can run it (a single scanner, or a workflow with Host discovery). |
 
 - **Default.** A scan saved with a range and no mode gets `liveness` when it
   can run it: a single-scanner scan, or a workflow with a Host discovery

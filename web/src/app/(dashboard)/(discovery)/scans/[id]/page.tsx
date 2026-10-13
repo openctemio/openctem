@@ -43,6 +43,7 @@ import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
 import { ScanApprovalPanel } from '@/features/scans/components/approval/scan-approval-panel'
 import { ScanOwnerBanner } from '@/features/scans/components/scan-owner-banner'
+import { LivenessHint } from '@/features/scans/components/liveness-hint'
 import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
@@ -444,6 +445,10 @@ export default function ScanDetailPage() {
 
       <div className="mt-5 empty:hidden">
         <ScanOwnerBanner config={config} onChanged={() => void refetchConfig()} />
+      </div>
+
+      <div className="mt-5 empty:hidden">
+        <LivenessHint config={config} onChanged={() => void refetchConfig()} />
       </div>
 
       <div className="mt-5 empty:hidden">

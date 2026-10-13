@@ -160,7 +160,9 @@ export function describeTargetOptions(
     out.push(
       o?.cidr_mode === 'inventory'
         ? t('scans.targetOptions.rangesInventory')
-        : t('scans.targetOptions.rangesSweep')
+        : o?.cidr_mode === 'liveness'
+          ? t('scans.targetOptions.rangesLiveness')
+          : t('scans.targetOptions.rangesSweep')
     )
   }
   if (selectorsOf(targets, o).length > 0) {
