@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented, R3–R5 awaiting owner decision); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -134,8 +134,12 @@ stages keep only steps 1–4.
 
 **Ownership tab.** Before this RFC, a person confirming an asset on its
 Ownership tab authorized it for active checks even outside every root. Now
-confirmation records ownership only; a scope entry must still cover the
-name. The refusal offers "add scope entry".
+confirmation alone never authorizes: a scope entry must cover the name. Since
+§14.5 (R3) a person's confirmation of a domain, subdomain or public address
+adds that exact entry through the scope service while scan approval is Off or
+On and the organization's `confirm_adds_to_scope` setting is on; under Strict,
+or with the setting off, confirmation records ownership only and the refusal
+offers "add scope entry".
 
 ### 4.3 Discovered names (S4, refined 2026-10-07)
 
@@ -535,7 +539,7 @@ saved or scanned; with no target left the create is refused
 | `deny_list` | platform policy (§8.2) | `contact_support` |
 | `excluded` | an active exclusion matches | `remove_exclusion` (approver) |
 | `rejected` | the tenant rejected this name or a parent | `review_asset` |
-| `needs_review`, `candidate`, `monitor_only` | attribution not confirmed | `review_asset` |
+| `needs_review`, `candidate`, `monitor_only` | attribution not confirmed (an automatic `needs_review` or `candidate` record is lifted by an active entry that covers the name, §14.5) | `review_asset` |
 | `dependency` | the tenant's name on third-party infrastructure | `review_asset` |
 | `no_entry` | nothing covers it | `add_entry`, `allow_temporarily` (approver), `request_access` (member) |
 | `entry_pending` | covered only by an entry awaiting approval | `approve_entry` (approver) |
@@ -1119,8 +1123,8 @@ turns scope off.
 |---|---|---|---|---|
 | R1 | Add many entries | one pattern per request; one notice to every administrator per entry | `POST /scope/targets/bulk` (≤ 200 items): step-up once before any write, each item an ordinary create, a result per item, one notice for the batch | implemented |
 | R2 | Add from anywhere | one asset's ownership section, the review queue, a scan refusal | inventory selection → "Add to scope" (exact entries), the scan wizard's "add the missing targets" and finding actions use R1 | inventory: implemented; others follow |
-| R3 | A person confirms an asset | confirmation records ownership only (§4.2) | proposed: a tenant setting `confirm_adds_to_scope` (Off and On only) creates the exact entry when a person confirms; automated sources never do | owner decision pending |
-| R4 | Addresses behind in-scope names | never inherit (S4) | proposed: a one-click suggestion of the addresses in-scope names resolve to, excluding addresses that look shared (provider edge ranges, an address several registrable domains of the inventory resolve to); never automatic | owner decision pending |
+| R3 | A person confirms an asset | confirmation records ownership only (§4.2) | the tenant setting `confirm_adds_to_scope` (default on; Off and On only, Strict keeps ownership only) creates the exact entry when a person confirms; automated sources never do (§14.5) | adopted 2026-10-11, implemented |
+| R4 | Addresses behind in-scope names | never inherit (S4) | one grouped suggestion card of the addresses in-scope names resolve to (`GET /easm/suggestions`); shared addresses (CDN record, provider network, published CDN edge ranges, 3+ registrable domains, another organization's network) are listed apart and never offered; an unknown network is said, never implied safe; never automatic (§14.5) | adopted 2026-10-11, implemented |
 | R5 | Private targets on the organization's own sensor | refused without a scan zone (`zone_none`) | proposed: allowed when the scan runs on a tenant sensor whose reported local policy `targets.allow` contains the target; platform sensors never; zones stay for routing | owner decision pending |
 | R6 | Approvals, tiers, requests | Strict only (RFC-073) | unchanged | — |
 | R7 | Exclusions, deny list, public suffixes, CIDR caps, audit, signer ledger, sensor local policy | always on | unchanged, always on; a bulk add runs every item through them | — |
@@ -1177,4 +1181,34 @@ Response `200`:
 |---|---|
 | P0 | R1 bulk add (API); inventory "Add to scope"; pasting a list on the Scope page |
 | P1 | R3, R4, R5 after the owner's decision; "Add host to scope" on findings |
-| P2 | connector assets as scope (a per-connector switch, default off); the scan preflight explains a sensor's local-policy refusals from its reported policy |
+| P2 | connector assets as scope: implemented with a per-connector switch **default on** (owner decision 2026-10-11, §14.5; supersedes the default off proposed here); the scan preflight explains a sensor's local-policy refusals from its reported policy |
+
+### 14.5 Decisions 2026-10-13: the attack surface review flow
+
+The owner adopted option B of the review-flow study: the attribution review
+queue stops acting as a gate. Only two kinds of decision still need a person,
+addresses behind in-scope names and names found outside every entry, and each
+is offered as one grouped suggestion. Everything else follows from data the
+organization already stated. Scope entries and exclusions stay the only
+authority; nothing below adds authority without a person or the
+organization's own connector.
+
+| # | Decision | Implementation |
+|---|---|---|
+| D1 | An active scope entry, a one-off entry included, lets probes reach a name whose attribution automation left pending (`needs_review`, `candidate`); the record stays pending and the asset does not join the inventory. A person's decision (a pending state a person set, `dependency`, `monitor_only`, `rejected`), a rejected parent name, a tombstone and an exclusion still refuse, and an expired entry lifts nothing. A service or URL never gets more than its host. | `easm.ActiveGate` (`automaticPending`, `hostRefusals`); architecture `active-probe-gate.md` |
+| D2 | Services, certificates and web endpoints follow their host: linked by a stored relationship of the tenant (`exposes`, `serves_certificate`) or the host in their own name, only when exactly one host exists; the host's state cascades to its automatic children; a person's decision on a child ends the link; the queue lists the host with its children counted. A one-time migration linked existing pending children of pending hosts without changing state. | `asset_attributions.follows_host_id`; `postgres.LinkChildren`; architecture `easm.md` §4 |
+| D3 | R3: a person's confirmation adds the exact entry (`confirm_adds_to_scope`, default on; Strict and callers without the scope write permission record ownership only). Step-up once for the batch before anything is saved; one admin notice; an audit event per entry; origin `confirmed_asset`; the answer names each entry so Undo deletes exactly those. No backfill: earlier confirmations appear as a suggestion card. | `easm.ConfirmScope`; architecture `easm.md` §5a |
+| D4 | R4: addresses behind in-scope names are one suggestion card; accepting it is an ordinary bulk add (§14.2) of exact address entries. Shared and CDN addresses are listed apart and never offered; an address whose network is unknown is marked so. Nothing is added automatically. | `GET /easm/suggestions` (`easm.SuggestionService`); architecture `easm.md` §4b2 |
+| D5 | The Attack surface page shows these decisions as cards (a Decide panel); the Review tab is renamed Suggestions and its badge counts cards, not rows; the row list stays one click away. | web `easm-decide-panel.tsx` |
+| D6 | Connector assets are in scope by default: after a successful sync, the public names and addresses a tenant connector synced get their exact entries as the system (origin `connector`, audited, one notice per sync), with a per-connector switch `assets_in_scope` (default on); each connector's first sync only notifies the administrators; Strict adds nothing. | `easm.ConnectorScope`; architecture `tenable-sc-connector.md` |
+
+Threat model of D1–D6 (in addition to §14.3):
+
+| Decision | Abuse case | Control | Residual |
+|---|---|---|---|
+| D1 | a scan reaches a discovered third-party name | only an entry the organization added (scope write, step-up, guardrails) lifts the record; a person's "not ours" or "monitor only" and exclusions win; a typed scan alone never lifts it | the organization scans what it put in scope, as for any entry |
+| D2 | a child is confirmed through the wrong host | links only from the tenant's stored relationships or the child's own name, exactly one host, automatic records only, composite tenant foreign key | a wrong relationship written by a scan of the tenant's own sensor |
+| D3 | a lookalike confirmed by mistake becomes scannable | exact entry, step-up, notice, audit, undo; off under Strict and per setting | as §14.3 R3 |
+| D4 | dangling DNS points an in-scope name at a released address | suggestion only, shared addresses left out, unknown networks flagged, the person sees the names each address came from | as §14.3 R4 |
+| D6 | a misconfigured or compromised connector widens scope | exact entries with guardrails per item, a notice before the first change and per sync, audit, per-connector switch, Strict adds nothing | entries for names the connector really reports |
+

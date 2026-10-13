@@ -9,6 +9,7 @@
 
 import Link from '@/components/link'
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EASMMonitoringCard } from './easm-monitoring-card'
 import { EVENT_TYPE_CONFIG, type ExposureEventType } from '@/lib/api/exposure-types'
@@ -22,17 +23,17 @@ import {
 } from '@/features/shared'
 import { useEASMSummary } from '../hooks/use-easm-summary'
 
-const EXPOSURE_TYPE_LABEL: Record<string, string> = {
-  subdomain_discovered: 'Subdomain seen in CT',
-  certificate_expiring: 'Certificate expiring',
-  certificate_expired: 'Certificate expired',
-  dangling_cname: 'Dangling CNAME',
-  dangling_ns: 'Dangling delegation',
-  email_security_weak: 'Weak email security',
-  subdomain_takeover: 'Subdomain takeover',
-  lookalike_domain: 'Lookalike domain',
-  port_open: 'Open port',
-  service_detected: 'Exposed service',
+const EXPOSURE_TYPE_LABEL: Record<string, [string, string]> = {
+  subdomain_discovered: ['easmReview.exposure.subdomainDiscovered', 'Subdomain seen in CT'],
+  certificate_expiring: ['easmReview.exposure.certificateExpiring', 'Certificate expiring'],
+  certificate_expired: ['easmReview.exposure.certificateExpired', 'Certificate expired'],
+  dangling_cname: ['easmReview.exposure.danglingCname', 'Dangling CNAME'],
+  dangling_ns: ['easmReview.exposure.danglingNs', 'Dangling delegation'],
+  email_security_weak: ['easmReview.exposure.emailSecurityWeak', 'Weak email security'],
+  subdomain_takeover: ['easmReview.exposure.subdomainTakeover', 'Subdomain takeover'],
+  lookalike_domain: ['easmReview.exposure.lookalikeDomain', 'Lookalike domain'],
+  port_open: ['easmReview.exposure.portOpen', 'Open port'],
+  service_detected: ['easmReview.exposure.serviceDetected', 'Exposed service'],
 }
 
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info', 'none']
@@ -45,12 +46,13 @@ export function toSeverity(s: string | undefined): Severity {
   return SEVERITIES.includes(s as Severity) ? (s as Severity) : 'info'
 }
 
-export function exposureTypeLabel(t: string): string {
-  return (
-    EXPOSURE_TYPE_LABEL[t] ??
-    EVENT_TYPE_CONFIG[t as ExposureEventType]?.label ??
-    t.replace(/_/g, ' ')
-  )
+type T = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+/** The exposure type in words; without a translator the English text. */
+export function exposureTypeLabel(type: string, t?: T): string {
+  const known = EXPOSURE_TYPE_LABEL[type]
+  if (known) return t ? t(known[0], known[1]) : known[1]
+  return EVENT_TYPE_CONFIG[type as ExposureEventType]?.label ?? type.replace(/_/g, ' ')
 }
 
 function Row({
@@ -74,12 +76,17 @@ function Row({
 }
 
 export function EASMOverview() {
+  const { t } = useTranslation()
   const { summary, isLoading, error, mutate } = useEASMSummary()
 
   if (error) {
     return (
       <div className="mt-5">
-        <ErrorState title="the external attack surface" error={error} onRetry={() => mutate()} />
+        <ErrorState
+          title={t('easmReview.overview.errorTitle', 'the external attack surface')}
+          error={error}
+          onRetry={() => mutate()}
+        />
       </div>
     )
   }
@@ -93,8 +100,15 @@ export function EASMOverview() {
     <div className="mt-5 grid gap-5 lg:grid-cols-3">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">External surface</CardTitle>
-          <CardDescription>Who it belongs to, what is new, how fresh the watch is</CardDescription>
+          <CardTitle className="text-base">
+            {t('easmReview.overview.surface', 'External surface')}
+          </CardTitle>
+          <CardDescription>
+            {t(
+              'easmReview.overview.surfaceHint',
+              'Who it belongs to, what is new, how fresh the watch is'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent className="divide-y">
           {isLoading || !summary ? (
@@ -107,19 +121,23 @@ export function EASMOverview() {
             <>
               <div className="pb-2">
                 <Row
-                  label="Domains, subdomains, IPs, certificates"
+                  label={t('easmReview.overview.total', 'Domains, subdomains, IPs, certificates')}
                   value={summary.surface?.total ?? 0}
                 />
-                <Row label="Confirmed ours" value={a?.confirmed ?? 0} />
                 <Row
-                  label="Needs review"
+                  label={t('easmReview.overview.confirmed', 'Confirmed ours')}
+                  value={a?.confirmed ?? 0}
+                />
+                <Row
+                  label={t('easmReview.overview.waiting', 'Found, not yet decided')}
                   value={(a?.needs_review ?? 0) + (a?.candidate ?? 0)}
                   hint={
                     (a?.needs_review ?? 0) + (a?.candidate ?? 0) > 0 ? (
                       <>
                         {a?.review_oldest_since && (
                           <>
-                            oldest <RelativeTime date={a.review_oldest_since} className="text-xs" />
+                            {t('easmReview.overview.oldest', 'oldest')}{' '}
+                            <RelativeTime date={a.review_oldest_since} className="text-xs" />
                             {' · '}
                           </>
                         )}
@@ -127,7 +145,7 @@ export function EASMOverview() {
                           href={EASM_REVIEW_HREF}
                           className="font-medium text-foreground underline underline-offset-2"
                         >
-                          Review
+                          {t('easmReview.overview.suggestions', 'Suggestions')}
                         </Link>
                       </>
                     ) : undefined
@@ -135,31 +153,47 @@ export function EASMOverview() {
                 />
                 {(a?.dependency ?? 0) + (a?.monitor_only ?? 0) > 0 && (
                   <Row
-                    label="Dependency or monitor only"
+                    label={t('easmReview.overview.dependency', 'Dependency or monitor only')}
                     value={(a?.dependency ?? 0) + (a?.monitor_only ?? 0)}
                   />
                 )}
               </div>
               <div className="py-2">
-                <Row label="New in the last 7 days" value={n?.last_7_days ?? 0} />
-                <Row label="New in the last 30 days" value={n?.last_30_days ?? 0} />
                 <Row
-                  label="New since the CTEM cycle started"
+                  label={t('easmReview.overview.new7', 'New in the last 7 days')}
+                  value={n?.last_7_days ?? 0}
+                />
+                <Row
+                  label={t('easmReview.overview.new30', 'New in the last 30 days')}
+                  value={n?.last_30_days ?? 0}
+                />
+                <Row
+                  label={t('easmReview.overview.newCycle', 'New since the CTEM cycle started')}
                   value={n?.since_cycle ?? '—'}
-                  hint={n?.since_cycle === undefined ? 'no cycle started' : undefined}
+                  hint={
+                    n?.since_cycle === undefined
+                      ? t('easmReview.overview.noCycle', 'no cycle started')
+                      : undefined
+                  }
                 />
               </div>
               <div className="pt-2">
-                <Row label="Domains watched in CT logs" value={m?.ct_domains_watched ?? 0} />
+                <Row
+                  label={t('easmReview.overview.ctWatched', 'Domains watched in CT logs')}
+                  value={m?.ct_domains_watched ?? 0}
+                />
                 {(m?.ct_failing ?? 0) > 0 && (
-                  <Row label="CT lookups failing" value={m?.ct_failing} />
+                  <Row
+                    label={t('easmReview.overview.ctFailing', 'CT lookups failing')}
+                    value={m?.ct_failing}
+                  />
                 )}
                 <Row
-                  label="Oldest CT check"
+                  label={t('easmReview.overview.ctOldest', 'Oldest CT check')}
                   value={m?.ct_oldest_success ? <RelativeTime date={m.ct_oldest_success} /> : '—'}
                   hint={
                     !m?.ct_oldest_success && (m?.ct_domains_watched ?? 0) > 0
-                      ? 'not checked yet'
+                      ? t('easmReview.overview.notChecked', 'not checked yet')
                       : undefined
                   }
                 />
@@ -171,10 +205,14 @@ export function EASMOverview() {
 
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle className="text-base">Top external risks</CardTitle>
+          <CardTitle className="text-base">
+            {t('easmReview.overview.risks', 'Top external risks')}
+          </CardTitle>
           <CardDescription>
-            Open external exposures, most severe first
-            {summary?.exposures?.open ? ` · ${summary.exposures.open} open in total` : ''}
+            {t('easmReview.overview.risksHint', 'Open external exposures, most severe first')}
+            {summary?.exposures?.open
+              ? ` · ${t('easmReview.overview.openTotal', '{n} open in total', { n: summary.exposures.open })}`
+              : ''}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -187,19 +225,25 @@ export function EASMOverview() {
           ) : risks.length === 0 ? (
             <EmptyState
               icon={ShieldCheck}
-              title="No open external risks"
-              description="Nothing of medium severity or above is open on the external surface."
+              title={t('easmReview.overview.noRisks', 'No open external risks')}
+              description={t(
+                'easmReview.overview.noRisksHint',
+                'Nothing of medium severity or above is open on the external surface.'
+              )}
               card={false}
             />
           ) : (
-            <ul className="divide-y" aria-label="Top external risks">
+            <ul
+              className="divide-y"
+              aria-label={t('easmReview.overview.risks', 'Top external risks')}
+            >
               {risks.map((r) => (
                 <li key={r.id} className="flex items-center gap-3 py-2 text-sm">
                   <SeverityBadge severity={toSeverity(r.severity)} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{r.title}</div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {exposureTypeLabel(r.type ?? '')}
+                      {exposureTypeLabel(r.type ?? '', t)}
                       {r.asset_name ? ` · ${r.asset_name}` : ''}
                     </div>
                   </div>
@@ -214,7 +258,7 @@ export function EASMOverview() {
               className="mt-3 inline-flex items-center gap-1 text-sm text-primary hover:underline"
             >
               <ShieldAlert className="h-4 w-4" />
-              All exposures
+              {t('easmReview.overview.allExposures', 'All exposures')}
             </Link>
           )}
         </CardContent>

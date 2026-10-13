@@ -65,6 +65,16 @@ identify one machine: multicast, locally administered and all-zero MACs, the
 shared MACs of VRRP/HSRP/GLBP and of common VPN and dial-up adapters, and
 vendor placeholder UUIDs and serials. SCM IDs are stored as `<host>:<id>`.
 
+**Network devices.** A network asset of a device sub-type (firewall,
+router, switch, load balancer, VPN gateway, wireless controller, access
+point, IDS/IPS; `asset.NetworkDeviceSubTypes`) that no identifier or name
+matched is matched by address to the tenant's existing network device that
+is named by or records one of its addresses
+(`AssetRepository.FindNetworkDevicesByIPs`). The same trust window as hosts
+applies, and several matching devices are ambiguous: no match, and a dedup
+review. Only devices match devices: segments (VPCs, subnets, VLANs) and
+hosts or address assets with the same IP are never matched this way.
+
 **Veto.** A candidate found by a strong identifier is skipped when it holds a
 different value of a single-valued kind ranked above the one that matched,
 and the incoming asset carries that kind. For the name, hostname and IP steps

@@ -357,6 +357,43 @@ func (r *AssetRepository) FindByIPs(ctx context.Context, tenantID shared.ID, ips
 	return result, nil
 }
 
+// FindNetworkDevicesByIPs finds the tenant's network devices (network
+// assets of a device sub-type) named by, or recording, any of the IPs.
+// Returns map[ip][]Asset.
+func (r *AssetRepository) FindNetworkDevicesByIPs(ctx context.Context, tenantID shared.ID, ips []string) (map[string][]*asset.Asset, error) {
+	if len(ips) == 0 {
+		return make(map[string][]*asset.Asset), nil
+	}
+	query := r.selectQuery() + ` WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+		AND a.asset_type = 'network' AND a.sub_type = ANY($3)
+		AND (
+			a.name = ANY($2)
+			OR ` + addressPredicate("$2", true) + `
+		)
+		LIMIT 100`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(ips), pq.Array(asset.NetworkDeviceSubTypes()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to find network devices by IPs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make(map[string][]*asset.Asset)
+	for rows.Next() {
+		a, scanErr := r.scanAssetFromRows(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		for _, ip := range ips {
+			if assetMatchesIP(a, ip) {
+				result[ip] = append(result[ip], a)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate network devices by IPs: %w", err)
+	}
+	return result, nil
+}
+
 // assetMatchesIP checks if an asset is named by, or records, the given IP.
 func assetMatchesIP(a *asset.Asset, ip string) bool {
 	return a.Name() == ip || slices.Contains(asset.IPAddresses(a.Properties()), ip)

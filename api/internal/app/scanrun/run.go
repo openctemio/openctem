@@ -479,7 +479,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	chunks := stepChunks(resolved, stepTargets)
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk, stageKeyOf(resolved))
+		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time.
@@ -527,14 +527,6 @@ func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.Disp
 		g.Actor = actor.String()
 	}
 	return g
-}
-
-// stageKeyOf is the catalog stage a resolved step runs ("" when none).
-func stageKeyOf(resolved scanapp.StepTool) stage.Key {
-	if !resolved.HasStage {
-		return ""
-	}
-	return resolved.Stage.Key
 }
 
 // stepChunks cuts a step's targets into the chunks its commands carry:
@@ -604,18 +596,13 @@ func targetWeight(t string, weighRanges bool) uint64 {
 }
 
 // stepCommand builds one command of a step for the given chunk of its
-// targets, after the payload passed the security validator.
+// targets, after the payload passed the security validator. Its web scope
+// is attached when the command is stored (command.CreateGuard).
 func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
-	chunk *scanapp.StepTargets, key stage.Key,
+	chunk *scanapp.StepTargets,
 ) (*command.Command, error) {
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
-		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
-	}
-	if err := s.applyWebScope(ctx, run.TenantID, key, payload); err != nil {
-		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
-	}
-	if err := s.requireConfinedSensor(ctx, run.TenantID, payload); err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 
@@ -857,22 +844,35 @@ type Partial struct {
 	// blocked the scan; RFC-074); GapSummary is the step message.
 	Gaps       int
 	GapSummary string
+	// Unreached targets the sensor could not reach (no route, refused by a
+	// filter, timeout, name not resolving; RFC-089); UnreachedSummary is
+	// the step message.
+	Unreached        int
+	UnreachedSummary string
+	// AllUnreached says the sensor tried targets and reached none of them;
+	// UnreachableMessage is then the step's failure message.
+	AllUnreached       bool
+	UnreachableMessage string
 }
 
-func (p Partial) any() bool { return p.Skipped > 0 || p.Gaps > 0 }
+func (p Partial) any() bool { return p.Skipped > 0 || p.Gaps > 0 || p.Unreached > 0 }
 
-// message and code of a partial step: the skipped targets' when there are
-// any, else the coverage gaps'; both messages when both apply.
+// message and code of a partial step: the skipped targets' code when there
+// are any, else the unreached targets', else the coverage gaps'; every
+// message that applies.
 func (p Partial) message() (string, string) {
 	var parts []string
-	for _, m := range []string{p.SkippedSummary, p.GapSummary} {
+	for _, m := range []string{p.SkippedSummary, p.UnreachedSummary, p.GapSummary} {
 		if m != "" {
 			parts = append(parts, m)
 		}
 	}
 	code := scanrun.ErrCodeCoverageGaps
-	if p.Skipped > 0 {
+	switch {
+	case p.Skipped > 0:
 		code = scanrun.ErrCodeTargetsSkipped
+	case p.Unreached > 0:
+		code = scanrun.FailureTargetUnreachable
 	}
 	return strings.Join(parts, "; "), code
 }
@@ -882,7 +882,9 @@ func (p Partial) message() (string, string) {
 // hosts it could not fully cover. The step ends partial with the summary as
 // its message (the results are kept), and so does the run; a skipped
 // target is not retried, since the sensor would refuse it again, and a
-// host with a gap is never read as "no findings".
+// host with a gap is never read as "no findings". A task that reached
+// none of its targets and found nothing fails the step with
+// TARGET_UNREACHABLE: unreachable is not "nothing found".
 func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
@@ -927,15 +929,12 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 			return s.settleBatchedStep(ctx, run, stepRun, b)
 		}
 		findingsCount = b.findings
-		p = Partial{Skipped: b.skipped, Gaps: b.gaps}
-		if b.skipped > 0 {
-			p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
-		}
-		if b.gaps > 0 {
-			p.GapSummary = fmt.Sprintf("Completed with %d host(s) not fully covered (see the tasks)", b.gaps)
-		}
+		p = b.partial()
 	}
 
+	if stepRun != nil && p.AllUnreached && findingsCount == 0 {
+		return s.failStep(ctx, run, stepRun, p.UnreachableMessage, scanrun.FailureTargetUnreachable)
+	}
 	if stepRun != nil && p.any() {
 		msg, code := p.message()
 		stepRun.Partial(findingsCount, msg, code)
@@ -1237,6 +1236,30 @@ type stepBatches struct {
 	skipped    int // targets the completed batches' sensors skipped
 	gaps       int // hosts the completed batches' sensors did not fully cover
 	firstError string
+	// Reach of the completed batches (RFC-089): targets tried, reached and
+	// not reached, and how many batches reported reach at all.
+	reachBatches, reachTargets, reached, unreached int
+}
+
+// partial is the outcome of a batched step whose batches all completed.
+// The step fails as unreachable only when every batch reported its reach
+// and no batch reached a target.
+func (b stepBatches) partial() Partial {
+	p := Partial{Skipped: b.skipped, Gaps: b.gaps, Unreached: b.unreached}
+	if b.skipped > 0 {
+		p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
+	}
+	if b.gaps > 0 {
+		p.GapSummary = fmt.Sprintf("Completed with %d host(s) not fully covered (see the tasks)", b.gaps)
+	}
+	if b.unreached > 0 {
+		p.UnreachedSummary = fmt.Sprintf("Completed with %d target(s) unreachable from the sensors (see the tasks)", b.unreached)
+	}
+	if b.reachBatches == b.total && b.reachTargets > 0 && b.reached == 0 && b.unreached > 0 {
+		p.AllUnreached = true
+		p.UnreachableMessage = fmt.Sprintf("No target was reachable from the sensors (%d target(s) in %d scan batches)", b.unreached, b.total)
+	}
+	return p
 }
 
 func (b stepBatches) summary() string {
@@ -1270,7 +1293,8 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 	if st.Total <= 1 {
 		return stepBatches{}
 	}
-	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError}
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError,
+		reachBatches: st.ReachBatches, reachTargets: st.ReachTargets, reached: st.Reached, unreached: st.Unreached}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
 			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "active", st.Active, "total", st.Total)

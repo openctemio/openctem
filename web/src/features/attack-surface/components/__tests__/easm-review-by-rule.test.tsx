@@ -259,7 +259,9 @@ describe('review queue', () => {
     wrap(<EASMReviewQueue />)
     const ip = (await screen.findByText('198.51.100.20')).closest('tr')!
     expect(within(ip).getByText(/Names never grant their addresses/)).toBeInTheDocument()
-    expect(within(ip).getByText('www.example.co.uk')).toBeInTheDocument()
+    expect(
+      within(ip).getByText(/Resolved from example.co.uk, www.example.co.uk/)
+    ).toBeInTheDocument()
     expect(within(ip).getByText(/matches your organization/)).toBeInTheDocument()
     expect(
       within(ip).getByRole('button', { name: 'Add to scope: 198.51.100.20' })
