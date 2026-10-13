@@ -432,9 +432,9 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mk("completed", `{"findings_count": 3, "metadata": {"refused_targets_total": 2}}`, "")
+	mk("completed", `{"findings_count": 3, "metadata": {"refused_targets_total": 2, "reach": {"targets": 4, "reached": 1, "unreached": 3}}}`, "")
 	mk("running", "", "")
-	mk("failed", `{"metadata": {"refused_targets_total": 7}}`, "nuclei crashed")
+	mk("failed", `{"metadata": {"refused_targets_total": 7, "reach": {"targets": 9, "reached": 0, "unreached": 9}}}`, "nuclei crashed")
 
 	b, err := cmds.StepBatchState(ctx, tenant, srID)
 	if err != nil {
@@ -443,6 +443,10 @@ func TestCommandRepository_StepBatchGate(t *testing.T) {
 	// Skipped counts the completed batches' skipped targets only.
 	if b.Total != 3 || b.Active != 1 || b.Failed != 1 || b.Findings != 3 || b.Skipped != 2 || b.FirstError != "nuclei crashed" {
 		t.Errorf("batch state = %+v", b)
+	}
+	// Reach counts the completed batches only (the failed one's is ignored).
+	if b.ReachBatches != 1 || b.ReachTargets != 4 || b.Reached != 1 || b.Unreached != 3 {
+		t.Errorf("batch reach = %+v", b)
 	}
 	if other, _ := cmds.StepBatchState(ctx, seedTestTenant(ctx, t, sqlDB), srID); other.Total != 0 {
 		t.Error("another tenant saw the step's batches")

@@ -1,12 +1,20 @@
-/** The rules that put a name in the review queue, in words (reason filter). */
-export const REVIEW_REASON_LABEL: Record<string, string> = {
-  fqdn_under_verified_root: 'Under a verified domain',
-  fqdn_under_asserted_root: 'Under a domain you listed, not verified',
-  tenant_scanned: 'A target your organization scanned',
-  tenant_scan_discovered: 'Found by one of your scans',
-  matches_scope_target: 'Covered by a scope entry',
-}
+/** A translator as `useTranslation()` returns it. */
+type T = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
-export function reviewReasonLabel(reason: string): string {
-  return REVIEW_REASON_LABEL[reason] ?? reason.replace(/_/g, ' ')
+/** The rules that put a name in the review queue, in words (reason filter). */
+export function reviewReasonLabel(t: T, reason: string): string {
+  switch (reason) {
+    case 'fqdn_under_verified_root':
+      return t('easmReview.reason.verifiedRoot', 'Under a verified domain')
+    case 'fqdn_under_asserted_root':
+      return t('easmReview.reason.assertedRoot', 'Under a domain you listed, not verified')
+    case 'tenant_scanned':
+      return t('easmReview.reason.scanned', 'A target your organization scanned')
+    case 'tenant_scan_discovered':
+      return t('easmReview.reason.scanDiscovered', 'Found by one of your scans')
+    case 'matches_scope_target':
+      return t('easmReview.reason.matchesScope', 'Covered by a scope entry')
+    default:
+      return reason.replace(/_/g, ' ')
+  }
 }
