@@ -4,7 +4,8 @@
  * empty list gets the shared empty state.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
 import { EASMOverview, exposureTypeLabel } from '../easm-overview'
@@ -63,6 +64,17 @@ describe('EASMOverview', () => {
     expect(screen.getByRole('link', { name: 'Suggestions' })).toHaveAttribute(
       'href',
       '/attack-surface/review'
+    )
+  })
+
+  it('counts discovered assets only when asked (research/124)', async () => {
+    api.get.mockResolvedValue(summary)
+    wrap(<EASMOverview />)
+    await screen.findByText('Dangling CNAME: old.acme.com')
+    expect(api.get).toHaveBeenCalledWith('/api/v1/easm/summary')
+    await userEvent.click(screen.getByRole('switch', { name: 'Include discovered assets' }))
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith('/api/v1/easm/summary?include_discovered=true')
     )
   })
 
