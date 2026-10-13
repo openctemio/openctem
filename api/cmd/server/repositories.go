@@ -116,6 +116,8 @@ type Repositories struct {
 	SensorPairing *postgres.SensorPairingRepository
 	// SensorGrant: per-sensor grants (RFC-052 §5).
 	SensorGrant *postgres.SensorGrantRepository
+	// CollectorAsset: which assets each trusted collector source reported (RFC-040 §12).
+	CollectorAsset *postgres.CollectorAssetRepository
 	// SensorReach: what a sensor's lookups may answer about (fingerprints,
 	// baseline diff, suppressions).
 	SensorReach *postgres.SensorReachRepository
@@ -419,6 +421,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorSigningKey:       postgres.NewSensorSigningKeyRepository(db),
 		SensorPairing:          postgres.NewSensorPairingRepository(db),
 		SensorGrant:            postgres.NewSensorGrantRepository(db),
+		CollectorAsset:         postgres.NewCollectorAssetRepository(db),
 		SensorReach:            postgres.NewSensorReachRepository(db),
 		SensorEvent:            postgres.NewSensorEventRepository(db),
 		CommandEvent:           postgres.NewCommandEventRepository(db),

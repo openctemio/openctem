@@ -1952,6 +1952,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
 	s.Ingest.SetGrants(repos.SensorGrant, s.Sensor)
+	// RFC-040 §12: a trusted collector's complete reports may change the
+	// assets its source created and mark the ones it no longer lists.
+	s.Ingest.SetCollectorAssets(repos.CollectorAsset)
 	// Sensor lookups (fingerprint check, baseline diff, suppressions) answer
 	// only about assets the sensor reaches: its commands' targets and its
 	// zones' ranges.
@@ -2034,6 +2037,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
+	// Connector assets are in scope by default (research/117): after a
+	// successful sync, the public names and addresses it synced get their
+	// exact scope entries, unless the connector's assets_in_scope is off.
+	if s.TenableSC != nil {
+		var audit easmapp.ScopeJoinAudit
+		if s.Audit != nil {
+			audit = s.Audit
+		}
+		s.TenableSC.SetScopeAdder(easmapp.NewConnectorScope(s.Scope, s.Scope, repos.Asset, s.ActiveGate,
+			repos.IngestReport, audit, log))
+	}
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(

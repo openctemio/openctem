@@ -94,6 +94,29 @@ A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
   polls `scanResult`, stops it on cancel or timeout, pulls the individual
   result and deletes the definition it created.
 
+## Synced assets are in scope (research/117)
+
+The organization's own scanner is an ownership source: after a successful
+sync, the public names and addresses its reports wrote get their exact scope
+entries (`easm.ConnectorScope`, called from `tenablesc.Service.finish`):
+
+- Setting `assets_in_scope` in the connector config, default **on**; the
+  connector dialog has the switch. Off stops new entries; entries already added
+  stay and are listed on the Scope page with origin `connector`.
+- **One notice first.** The first successful sync of a connector (existing
+  ones included) only tells the administrators that its assets will be added
+  from the next sync and where to turn it off (`SyncState.scope_notice_at`);
+  later syncs add them. A failed sync adds nothing.
+- The assets are the live, tenant-scoped assets the sync command's completed
+  reports touched (`IngestReportRepository.TouchedAssetsByCommand`). Only a
+  domain, subdomain or public address gets an entry, for exactly its name
+  (never a wildcard or range, never a private name, a service, a certificate
+  or a host); a name an active entry covers is skipped.
+- Entries go through `scope.Service.CreateTargets` as the system (guardrails,
+  deny list and signer ledger per item, 200 per batch), with origin
+  `connector`; each is audited `scope_target.created` (actor system) and one
+  notice per sync names them. Strict scan approval adds nothing.
+
 ## Audit
 
 Source-asserted resolve writes one audit entry per report:

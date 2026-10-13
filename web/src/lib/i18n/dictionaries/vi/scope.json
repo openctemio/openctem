@@ -276,5 +276,7 @@
   "scope.bulk.skip.no_entry_needed": "{count} không cần mục phạm vi (kho mã, tài khoản đám mây)",
   "scope.bulk.skip.unrecognized": "{count} không phải tên miền hay địa chỉ",
   "scope.settings.confirmAddsToScope": "Xác nhận tài sản sẽ thêm vào phạm vi",
-  "scope.settings.confirmAddsToScopeHint": "Khi một người xác nhận tên miền, tên miền con hoặc địa chỉ công khai là của bạn, mục phạm vi chính xác cho tên đó cũng được thêm, với cùng bước xác thực lại, thông báo và nhật ký như khi thêm thủ công. Địa chỉ phía sau các tên miền không bao giờ được thêm theo cách này. Với chế độ duyệt quét Nghiêm ngặt, xác nhận chỉ ghi nhận quyền sở hữu."
+  "scope.settings.confirmAddsToScopeHint": "Khi một người xác nhận tên miền, tên miền con hoặc địa chỉ công khai là của bạn, mục phạm vi chính xác cho tên đó cũng được thêm, với cùng bước xác thực lại, thông báo và nhật ký như khi thêm thủ công. Địa chỉ phía sau các tên miền không bao giờ được thêm theo cách này. Với chế độ duyệt quét Nghiêm ngặt, xác nhận chỉ ghi nhận quyền sở hữu.",
+  "scope.connector.assetsInScope": "Tài sản nằm trong phạm vi",
+  "scope.connector.assetsInScopeHint": "Sau mỗi lần đồng bộ, các tên miền và địa chỉ công khai mà trình kết nối này đồng bộ sẽ có mục phạm vi chính xác, nên các lượt quét có thể chạm tới. Tắt tính năng này vẫn giữ các mục đã thêm."
 }

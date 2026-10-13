@@ -123,8 +123,12 @@ type Service struct {
 	resultLimits sensorresult.Limits
 	// grants and pushRefusals enforce the sensor's push-ingest grant before
 	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
-	grants       GrantReader
-	pushRefusals PushRefusalObserver
+	grants GrantReader
+	// collectorAssets records which assets each trusted collector source
+	// reported (collector_reports.go). Nil: collector reports keep the
+	// unsolicited limits.
+	collectorAssets CollectorAssetStore
+	pushRefusals    PushRefusalObserver
 	// contracts reads the submitting sensor's manifest, where a ported
 	// tool declares what it produces (output_binding.go). Nil-safe.
 	contracts ToolContractSource
@@ -487,7 +491,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
-	if binding.Kind == BindingUnsolicited && s.trustedCollector(ctx, agt, tenantID) {
+	trustedCollector := binding.Kind == BindingUnsolicited && s.trustedCollector(ctx, agt, tenantID)
+	if trustedCollector {
 		// A trusted collector reports the tenant's own inventory systems.
 		sourceKind = asset.SourceKindIntegration
 	}
@@ -498,6 +503,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		sourceRun = opts.SourceRun
 	}
 	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind, sourceName)
+	// A trusted collector's report: its source's sightings, and for a
+	// complete report the existing assets the source owns.
+	collector := s.collectorScopeFor(ctx, trustedCollector, agt.ID, tenantID, report)
+	scope.collector = collector
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(ctx, tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
@@ -523,6 +532,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	output.AssetMap = assetMap
+	s.recordCollectorSightings(ctx, collector, scope, observedAt, assetMap)
 
 	// The tracked values this report states (RFC-069), before findings are
 	// prioritized on the assets' criticality and exposure.

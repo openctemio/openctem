@@ -276,5 +276,7 @@
   "scope.bulk.skip.no_entry_needed": "{count} need no scope entry (repositories, cloud accounts)",
   "scope.bulk.skip.unrecognized": "{count} not a name or address",
   "scope.settings.confirmAddsToScope": "Confirming an asset adds it to scope",
-  "scope.settings.confirmAddsToScopeHint": "A person who confirms a domain, subdomain or public address as yours also adds the scope entry for exactly that name, with the same re-authentication, notice and audit as adding it by hand. Addresses behind your names are never added this way. Under Strict scan approval confirming records ownership only."
+  "scope.settings.confirmAddsToScopeHint": "A person who confirms a domain, subdomain or public address as yours also adds the scope entry for exactly that name, with the same re-authentication, notice and audit as adding it by hand. Addresses behind your names are never added this way. Under Strict scan approval confirming records ownership only.",
+  "scope.connector.assetsInScope": "Assets are in scope",
+  "scope.connector.assetsInScopeHint": "After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added."
 }
