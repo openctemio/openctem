@@ -153,14 +153,14 @@ func (c *collectorScope) prime(ids []shared.ID) {
 	}
 }
 
-// collectorScopeFor builds the authority of a trusted collector's report,
-// or nil for any other report.
-func (s *Service) collectorScopeFor(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding, report *ctis.Report) *collectorScope {
-	if s.collectorAssets == nil || binding.Kind != BindingUnsolicited || report == nil ||
-		!s.trustedCollector(ctx, agt, tenantID) {
+// collectorScopeFor builds the authority of a report from a trusted
+// collector (trusted: the caller checked trustedCollector for this report's
+// unsolicited binding), or nil for any other report.
+func (s *Service) collectorScopeFor(ctx context.Context, trusted bool, sensorID, tenantID shared.ID, report *ctis.Report) *collectorScope {
+	if s.collectorAssets == nil || !trusted || report == nil {
 		return nil
 	}
-	src := collectorSourceOf(tenantID, agt.ID, report.Tool, report.Metadata)
+	src := collectorSourceOf(tenantID, sensorID, report.Tool, report.Metadata)
 	if src == nil {
 		return nil
 	}
