@@ -351,7 +351,12 @@ come from logs (`tenant_id`, `run_id`) and traces.
 | `scan_runs_in_progress` | — | runs in progress (this replica) |
 | `scan_run_steps_total` | `step_key`, `status` | step outcomes |
 | `commands_total`, `commands_expired_total` | `type`, `status` / — | command outcomes, expiries |
-| `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed |
+| `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed, one per command (the poll's `claim_n` included) |
+| `command_claim_duration_seconds` | `mode` | how long a claim takes on the platform |
+| `command_claim_wait_seconds` | `class` | how long a claimed command waited from due to claimed |
+| `command_claim_skipped_total` | `reason` (`local_policy`, `no_slot`, `scope_changed`, `window_hold`, `program_hold`, `taken`) | poll candidates not handed out |
+| `openctem_command_queue_depth` | `stage`, `tool`, `class`, `wait` (`ready`, `host_busy`, `scheduled`) | pending commands by lane-ish key and why they wait (ops collector) |
+| `openctem_command_queue_tenants`, `openctem_command_queue_top_tenant_pending` | — | tenants waiting, and the busiest tenant's pending count |
 | `command_leases_expired_total` | — | commands re-queued after their lease ran out |
 | `scan_runs_reaped_total` | `reason` (`deadline`, `unclaimed`) | runs the timeout controller ended |
 | `scans_scheduled_total`, `scan_schedule_outcomes_total` | — / `outcome` | scheduler occurrences and what they became |

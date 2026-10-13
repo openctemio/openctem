@@ -796,13 +796,261 @@
       }
     },
     {
+      "id": 23,
+      "type": "row",
+      "title": "Dispatch",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Queue by stage and why it waits",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "openctem-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "sum by (stage, wait) (openctem_command_queue_depth)",
+          "legendFormat": "{{stage}} {{wait}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Claim latency (p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "openctem-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 32,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(command_claim_duration_seconds_bucket{job=\"openctem-api\"}[5m])))",
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Wait until claimed (p95, by class)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "openctem-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 32,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, class) (rate(command_claim_wait_seconds_bucket{job=\"openctem-api\"}[15m])))",
+          "legendFormat": "{{class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Claimed and left waiting (per 5m)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "openctem-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "sum by (mode) (increase(command_claims_total{job=\"openctem-api\"}[5m]))",
+          "legendFormat": "claimed {{mode}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "sum by (reason) (increase(command_claim_skipped_total{job=\"openctem-api\"}[5m]))",
+          "legendFormat": "waiting: {{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Tenants waiting",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "openctem-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "max(openctem_command_queue_tenants)",
+          "legendFormat": "tenants with pending work"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "openctem-prometheus"
+          },
+          "expr": "max(openctem_command_queue_top_tenant_pending)",
+          "legendFormat": "pending of the busiest tenant"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
       "id": 17,
       "type": "row",
       "title": "Data and host",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 31,
+        "y": 48,
         "w": 24,
         "h": 1
       },
@@ -818,7 +1066,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 49,
         "w": 8,
         "h": 8
       },
@@ -871,7 +1119,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 32,
+        "y": 49,
         "w": 8,
         "h": 8
       },
@@ -915,7 +1163,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 32,
+        "y": 49,
         "w": 8,
         "h": 8
       },
@@ -959,7 +1207,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 57,
         "w": 12,
         "h": 8
       },
@@ -1003,7 +1251,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 40,
+        "y": 57,
         "w": 12,
         "h": 8
       },
