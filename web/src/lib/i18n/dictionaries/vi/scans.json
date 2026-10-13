@@ -1582,5 +1582,7 @@
   "scans.placement.sensorBusy": "có thể nhận, đang bận",
   "scans.placement.sensorEligible": "có thể nhận",
   "scans.placement.sensorCount": "cảm biến: {count}",
-  "scans.placement.unknown": "Lý do {code}: bảng điều khiển này chưa mô tả lý do này."
+  "scans.placement.unknown": "Lý do {code}: bảng điều khiển này chưa mô tả lý do này.",
+  "scans.failure.TARGET_UNREACHABLE.text": "Cảm biến không kết nối được tới mục tiêu của bước (không có tuyến, bị bộ lọc chặn, mọi lần thử đều hết thời gian, hoặc tên không phân giải được trong mạng của nó).",
+  "scans.failure.TARGET_UNREACHABLE.fix": "Chạy bước từ một cảm biến kết nối được tới mục tiêu: gán một cảm biến vào vùng quét của các mục tiêu."
 }
