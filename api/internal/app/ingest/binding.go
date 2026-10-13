@@ -267,6 +267,13 @@ type alterScope struct {
 	// untrusted are the tracked attributes the report's source may not
 	// decide (RFC-069): an asset it creates does not take its claims.
 	untrusted map[asset.TrackedAttribute]bool
+	// collector is a trusted collector's authority (collector_reports.go):
+	// a complete report may change the existing assets its source owns.
+	collector *collectorScope
+	// viaCollector are the existing assets the report may change only
+	// because its collector source owns them: their findings a person
+	// resolved stay resolved.
+	viaCollector map[shared.ID]bool
 }
 
 // dropUntrustedClaims clears, on an asset this report creates, the tracked
@@ -389,7 +396,40 @@ func (s *alterScope) mayAlter(a *asset.Asset) bool {
 	if a == nil {
 		return false
 	}
-	return s.coversLocated(a.Name(), a.Properties())
+	if s.coversLocated(a.Name(), a.Properties()) {
+		return true
+	}
+	if s.collector.owns(a.ID()) {
+		if s.viaCollector == nil {
+			s.viaCollector = map[shared.ID]bool{}
+		}
+		s.viaCollector[a.ID()] = true
+		return true
+	}
+	return false
+}
+
+// primeCollector looks up, in one call, whether the report's collector
+// source owns these existing assets.
+func (s *alterScope) primeCollector(existing map[string]*asset.Asset) {
+	if s == nil || s.collector == nil || len(existing) == 0 {
+		return
+	}
+	ids := make([]shared.ID, 0, len(existing))
+	for _, a := range existing {
+		ids = append(ids, a.ID())
+	}
+	s.collector.prime(ids)
+}
+
+// mayReopen reports whether a finding a person resolved on the persisted
+// asset id may be reopened by this report: the assets it may change, except
+// those it may change only as their collector source.
+func (s *alterScope) mayReopen(id shared.ID) bool {
+	if s != nil && s.viaCollector[id] {
+		return false
+	}
+	return s.allowedAsset(id)
 }
 
 // coversLocated reports whether a target covers an asset with this name and
