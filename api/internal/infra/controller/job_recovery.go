@@ -217,6 +217,29 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 		}
 	}
 
+	// Step 2d: Take back running commands that stalled (no target finished
+	// within their stall window, while their sensor reports progress) or
+	// ran far past their task budget (research/122). A slow but progressing
+	// task is left alone; a dead sensor is step 2c.
+	if reaper, ok := c.commandRepo.(command.StallReaper); ok {
+		requeued, err := reaper.RequeueStalledCommands(ctx)
+		if err != nil {
+			c.logger.Error("failed to re-queue stalled commands", "error", err)
+		} else if len(requeued) > 0 {
+			metrics.CommandsStalledTotal.Add(float64(len(requeued)))
+			for _, rq := range requeued {
+				holder := ""
+				if rq.SensorID != nil {
+					holder = rq.SensorID.String()
+				}
+				c.logger.Info("re-queued command: stalled or past its budget",
+					"command_id", rq.ID.String(), "tenant_id", rq.TenantID.String(),
+					"sensor_id", holder, "lease_epoch", rq.Epoch)
+			}
+			totalProcessed += len(requeued)
+		}
+	}
+
 	// Step 3: Fail commands that have exceeded max retry attempts, and tell
 	// their scan runs (poison commands).
 	if failer, ok := c.commandRepo.(command.ExhaustedFailer); ok && c.steps != nil {

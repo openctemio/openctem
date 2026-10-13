@@ -1421,6 +1421,41 @@ A sensor holds every command it claims under a **lease** (migration 000260:
   (`recover_stuck_tenant_commands`) only handles commands without a lease
   (claimed before migration 000260).
 
+### Task budgets, progress and stalls
+
+A lease says the sensor is alive; it does not say the task is getting
+anywhere. Each scan command carries a layered budget in its payload
+(`budget`: `target_seconds`, `task_seconds`, `stall_seconds`;
+`pkg/domain/toolbudget`), from per-tool defaults:
+
+- **Per target.** The sensor passes `target_seconds` to the tool as its own
+  per-request timeout and bounds each target with it (sdk-go
+  `core.RunPerTarget`). A target over its budget is that target's reach
+  `timeout`; the other targets go on.
+- **Per task.** `task_seconds` = overhead + ceil(targets / concurrency) ×
+  per-target budget, within 5 min – 24 h. The sensor stops the task at
+  twice that (an explicit step `timeout_seconds` still wins).
+- **Progress.** A sensor on a platform that lists `command_progress` sends
+  `progress: {<command id>: {done, total, finished}}` on every heartbeat
+  (`finished`: inclusive index ranges into the command's target list, for
+  settling targets one by one later; not stored yet). The platform
+  records it only for commands that sensor holds (tenant, sensor, state),
+  bounds it by the command's own target count, never lets `done` go down
+  within a claim, and moves `last_progress_at` only when `done` grows. A
+  new claim starts with no progress.
+- **Stall and overrun** (`JobRecoveryController`, every minute): a running
+  command with a budget is re-queued (one more dispatch attempt, like a lost
+  lease) when its sensor reports progress and either targets remain and
+  none finished for `stall_seconds`, or it ran past 2 × `task_seconds` +
+  5 min. A slow but progressing task is never re-queued before that. A
+  sensor that reports no progress predates budgets and is bounded only by
+  its lease and the run's cap. Metric
+  `commands_stalled_total`.
+- **Trust.** Progress is a liveness hint, never authority: faked progress
+  only defers the stall check, never the overrun or the run's 24 h cap.
+- The run page shows each task's `done/total`, its budget and how long
+  since a target last finished.
+
 ## Sensor-local policy (RFC-040 §5.7)
 
 > **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
