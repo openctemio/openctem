@@ -2189,8 +2189,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithHopStore(scanHops),
 		// A run executes the workflow version it started with (research/62 P0-10).
 		scanrun.WithVersionStore(repos.ScanWorkflow),
-		// Web steps carry the path exclusions of their hosts (RFC-056).
+		// Web steps carry the path exclusions of their hosts (RFC-056); a
+		// web-scoped nuclei step needs a confined sensor (NO_CONFINED_SENSOR).
 		scanrun.WithWebScope(s.Scope),
+		scanrun.WithConfinedSensors(repos.Sensor),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
 		scanrun.WithEndpointSelector(repos.WebEndpoint),
 	)

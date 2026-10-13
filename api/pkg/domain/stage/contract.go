@@ -209,6 +209,23 @@ var chunkSizes = map[Key]int{
 	DASTWeb:            10,
 }
 
+// chunkAddressBudgets are how many addresses one chunk of an active
+// capability may reach when its targets include ranges: a range weighs its
+// address count, every other target 1 (RFC-088 §6). Absent: chunks count
+// targets only.
+var chunkAddressBudgets = map[Key]int{
+	ScanPorts: 1024,
+}
+
+// ChunkAddressBudget is the stage's address budget per chunk (0: none). A
+// passive stage sends no traffic to its targets and has none.
+func (s Stage) ChunkAddressBudget() int {
+	if s.Tier.Passive() {
+		return 0
+	}
+	return chunkAddressBudgets[s.Key]
+}
+
 // toolParams maps a tool's standard params to its own config keys: the keys
 // the sensor's settings schema for that tool declares. A tool listed with
 // no entry for a param does not accept it yet. Keep in step with

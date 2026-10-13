@@ -86,9 +86,10 @@ func TestScanOwnershipGate(t *testing.T) {
 	// unattributed (22b HIGH 1), and a name under a rejected one.
 	rejected := seedOwnedAsset(t, db, tenantA, "www.scoped.example.com", "subdomain")
 	decide(t, db, tenantA, rejected, attribution.StateRejected)
-	review := seedOwnedAsset(t, db, tenantA, "dev.scoped.example.com", "subdomain")
+	// Pending records outside every entry: no entry lifts them.
+	review := seedOwnedAsset(t, db, tenantA, "dev.unscoped.example.com", "subdomain")
 	automatic(t, db, tenantA, review, attribution.StateNeedsReview)
-	candidate := seedOwnedAsset(t, db, tenantA, "cand.example.org", "subdomain")
+	candidate := seedOwnedAsset(t, db, tenantA, "cand.unscoped.example.com", "subdomain")
 	automatic(t, db, tenantA, candidate, attribution.StateCandidate)
 	seedOwnedAsset(t, db, tenantA, "manual.example.net", "domain")
 
@@ -103,8 +104,8 @@ func TestScanOwnershipGate(t *testing.T) {
 		"www.scoped.example.com",               // rejected asset (B1)
 		"https://www.scoped.example.com/login", // the same, as a URL
 		"api.www.scoped.example.com",           // a name under the rejected one
-		"dev.scoped.example.com",               // needs review
-		"cand.example.org",                     // candidate
+		"dev.unscoped.example.com",             // needs review, no entry
+		"cand.unscoped.example.com",            // candidate, no entry
 		"manual.example.net",                   // no record, outside scope and seeds
 		"confirmed.example.net",                // confirmed, outside scope and seeds
 		"free.example.net",                     // free text outside scope (tenant B's *.example.net does not count)
@@ -153,8 +154,8 @@ func TestScanOwnershipGate(t *testing.T) {
 			refused(t, err, target)
 		}
 		want := map[string]string{
-			"www.scoped.example.com": scopedom.RefusalRejected, "dev.scoped.example.com": scopedom.RefusalNeedsReview,
-			"cand.example.org": scopedom.RefusalCandidate, "manual.example.net": scopedom.RefusalNoEntry,
+			"www.scoped.example.com": scopedom.RefusalRejected, "dev.unscoped.example.com": scopedom.RefusalNeedsReview,
+			"cand.unscoped.example.com": scopedom.RefusalCandidate, "manual.example.net": scopedom.RefusalNoEntry,
 			"confirmed.example.net": scopedom.RefusalNoEntry,
 		}
 		for target, code := range want {
@@ -276,6 +277,149 @@ func TestScanOwnershipGate(t *testing.T) {
 		ids, err := gate.ActiveCheckBlocked(ctx, tenantB, []string{confirmed.String()})
 		if err != nil || ids[confirmed.String()] != attribution.StateUnattributed {
 			t.Fatalf("tenant A's asset id in tenant B: %v %v", ids, err)
+		}
+	})
+}
+
+// TestScanOwnershipGate_PendingUnderEntry: an automatic pending record
+// (needs_review, candidate) is no decision, so an active scope entry that
+// covers the name lets scans reach it, a one-off entry included
+// (research/117 F4). A person's decision, an exclusion, a rejection, an
+// expired entry and another tenant's entry never do.
+func TestScanOwnershipGate_PendingUnderEntry(t *testing.T) {
+	db := openLifecycleDB(t)
+	ctx := context.Background()
+	tenantA := seedLifecycleTenant(ctx, t, db)
+	tenantB := seedLifecycleTenant(ctx, t, db)
+
+	seedScopeTarget(t, db, tenantA, "domain", "*.perm.example.com")
+	seedScopeTarget(t, db, tenantA, "ip_range", "198.51.100.0/24")
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	// A one-off entry in effect, and one whose expiry passed (still marked
+	// active: the expiry sweep has not run yet) and one the sweep marked.
+	exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status, expires_at)
+	      VALUES ($1, 'domain', 'once.example.com', 'active', NOW() + interval '2 days')`, tenantA.String())
+	exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status, expires_at)
+	      VALUES ($1, 'domain', 'lapsed.example.com', 'active', NOW() - interval '1 hour')`, tenantA.String())
+	exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status, expires_at)
+	      VALUES ($1, 'domain', 'swept.example.com', 'expired', NOW() - interval '1 day')`, tenantA.String())
+	seedApprovedExclusion(t, db, tenantA, "domain", "excl.perm.example.com")
+	// Tenant B authorizes a name tenant A has pending.
+	seedScopeTarget(t, db, tenantB, "domain", "*.theirs.example.com")
+
+	pending := func(name, typ string, state attribution.State) shared.ID {
+		id := seedOwnedAsset(t, db, tenantA, name, typ)
+		automatic(t, db, tenantA, id, state)
+		return id
+	}
+	pending("app.perm.example.com", "subdomain", attribution.StateNeedsReview)
+	pending("cand.perm.example.com", "subdomain", attribution.StateCandidate)
+	pending("198.51.100.20", "ip_address", attribution.StateNeedsReview)
+	pending("once.example.com", "domain", attribution.StateNeedsReview)
+	pending("lapsed.example.com", "domain", attribution.StateNeedsReview)
+	pending("swept.example.com", "domain", attribution.StateNeedsReview)
+	pending("excl.perm.example.com", "subdomain", attribution.StateNeedsReview)
+	pending("app.theirs.example.com", "subdomain", attribution.StateNeedsReview)
+	pending("203.0.113.20", "ip_address", attribution.StateNeedsReview)
+	// A person's decisions under an entry.
+	sentBack := seedOwnedAsset(t, db, tenantA, "back.perm.example.com", "subdomain")
+	decide(t, db, tenantA, sentBack, attribution.StateNeedsReview)
+	watched := seedOwnedAsset(t, db, tenantA, "watch.perm.example.com", "subdomain")
+	decide(t, db, tenantA, watched, attribution.StateMonitorOnly)
+	dep := seedOwnedAsset(t, db, tenantA, "198.51.100.21", "ip_address")
+	decide(t, db, tenantA, dep, attribution.StateDependency)
+	gone := seedOwnedAsset(t, db, tenantA, "gone.perm.example.com", "subdomain")
+	decide(t, db, tenantA, gone, attribution.StateRejected)
+	pending("api.gone.perm.example.com", "subdomain", attribution.StateNeedsReview)
+	// A child never gets more than its host; another tenant's host decision
+	// never applies.
+	host := seedOwnedAsset(t, db, tenantA, "198.51.100.30", "ip_address")
+	decide(t, db, tenantA, host, attribution.StateMonitorOnly)
+	pending("198.51.100.30:443", "service", attribution.StateNeedsReview)
+	pending("198.51.100.31:443", "service", attribution.StateNeedsReview)
+	bHost := seedOwnedAsset(t, db, tenantB, "198.51.100.31", "ip_address")
+	decide(t, db, tenantB, bHost, attribution.StateRejected)
+
+	allowed := []string{"app.perm.example.com", "cand.perm.example.com", "198.51.100.20", "once.example.com", "https://once.example.com/x", "198.51.100.31:443"}
+	refused := map[string]string{
+		"lapsed.example.com":        scopedom.RefusalNeedsReview,
+		"swept.example.com":         scopedom.RefusalNeedsReview,
+		"app.theirs.example.com":    scopedom.RefusalNeedsReview,
+		"203.0.113.20":              scopedom.RefusalNeedsReview,
+		"back.perm.example.com":     scopedom.RefusalNeedsReview,
+		"watch.perm.example.com":    "",
+		"198.51.100.21":             "",
+		"gone.perm.example.com":     scopedom.RefusalRejected,
+		"api.gone.perm.example.com": scopedom.RefusalRejected,
+		"198.51.100.30:443":         "",
+	}
+	// An exclusion is applied where targets are dispatched (a scan keeps its
+	// other targets): checked in the dispatch gate below.
+	const excluded = "excl.perm.example.com"
+
+	svc := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
+		scansvc.WithAttributionGate(ownershipGate(db)))
+
+	for _, target := range allowed {
+		if _, err := svc.CreateScan(ctx, scansvc.CreateScanInput{
+			TenantID: tenantA.String(), Name: "pend " + shared.NewID().String(), ScanType: "single",
+			ScannerName: "nuclei", Targets: []string{target}, TenantRunner: true,
+		}); err != nil {
+			t.Fatalf("%s refused: %v", target, err)
+		}
+	}
+	for target, code := range refused {
+		_, err := svc.CreateScan(ctx, scansvc.CreateScanInput{
+			TenantID: tenantA.String(), Name: "pend " + shared.NewID().String(), ScanType: "single",
+			ScannerName: "nuclei", Targets: []string{target}, TenantRunner: true,
+		})
+		var de *shared.DomainError
+		if !errors.As(err, &de) {
+			t.Fatalf("%s: allowed, want refused (err %v)", target, err)
+		}
+		if code == "" {
+			continue
+		}
+		details, _ := de.Details.(map[string]any)
+		list, _ := details["refused"].([]scopedom.Refusal)
+		if len(list) == 0 || list[0].Code != code {
+			t.Errorf("%s: refusal %+v, want %s", target, list, code)
+		}
+	}
+
+	t.Run("dispatch gate", func(t *testing.T) {
+		targets := slices.Clone(allowed)
+		for k := range refused {
+			targets = append(targets, k)
+		}
+		targets = append(targets, excluded)
+		got, err := svc.ResolveDispatchTargets(ctx, scansvc.DispatchTargetsInput{TenantID: tenantA, Targets: targets})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got.Allowed, allowed) {
+			t.Fatalf("allowed = %v, want %v (an exclusion must win over the entry)", got.Allowed, allowed)
+		}
+	})
+
+	t.Run("cross-tenant", func(t *testing.T) {
+		// Tenant B's entry covers app.theirs.example.com for B only, and
+		// tenant A's entries authorize nothing for B: B has no asset of
+		// that name, so its free text is judged by B's scope.
+		b, err := ownershipGate(db).BlockedTargets(ctx, tenantB, []string{"app.theirs.example.com", "app.perm.example.com", "once.example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, no := b["app.theirs.example.com"]; no {
+			t.Fatalf("tenant B's own entry refused: %v", b)
+		}
+		if b["app.perm.example.com"] != attribution.StateUnattributed || b["once.example.com"] != attribution.StateUnattributed {
+			t.Fatalf("tenant A's entries reached tenant B: %v", b)
 		}
 	})
 }
