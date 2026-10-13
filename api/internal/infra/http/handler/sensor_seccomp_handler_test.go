@@ -22,3 +22,11 @@ func TestServeSensorSeccompProfile(t *testing.T) {
 		t.Fatalf("headers %v", w.Header())
 	}
 }
+
+// routes.go registers the profile at a literal path (the route manifest is
+// read from the source); it must be the path the snippets download from.
+func TestSeccompProfilePath_IsTheRoute(t *testing.T) {
+	if sensorapp.SeccompProfilePath != "/api/v1/sensors/install/seccomp.json" {
+		t.Fatalf("snippets download %s, routes.go serves /api/v1/sensors/install/seccomp.json", sensorapp.SeccompProfilePath)
+	}
+}

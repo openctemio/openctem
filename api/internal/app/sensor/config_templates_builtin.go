@@ -108,13 +108,16 @@ sudo curl -fsSL{{if .CACert}} --cacert /etc/openctem/certs/openctem-root-ca.crt{
 echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 
 # {{if .CACert}}4{{else}}3{{end}}. Start the sensor. It connects out to the platform (no inbound port)
-# and runs the scans the platform dispatches. Results that cannot be delivered
-# yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
-# The {{$slug}}-state volume keeps the sensor's state, including the API key
-# it renews on its own: keep it with the container (a new container without it
-# starts with the key above, which a renewal has retired). {{$slug}}-content
-# caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
-# container does not download it again; it can be deleted at any time.
+# and runs the scans the platform dispatches. One volume, {{$slug}}-data at
+# /var/lib/openctem, holds everything the sensor keeps:
+#   outbox/   results that cannot be delivered yet (a restart or an outage
+#             loses nothing);
+#   state/    the sensor's identity and the API key it renews on its own:
+#             keep the volume with the container (a new container without it
+#             starts with the key above, which a renewal has retired);
+#   content/  scanner content cache (trivy DB, nuclei templates, semgrep
+#             rules), so a new container does not download it again; it can
+#             be deleted at any time.
 # Hardened: read-only root filesystem, no capabilities, no privilege
 # escalation, the sensor's seccomp profile (add --cap-add NET_RAW only for
 # naabu SYN scans). The sensor
