@@ -51,13 +51,13 @@ func (s *Service) settleStepDeadlineTooClose(ctx context.Context, run *scanrun.R
 	if rec, ok := s.runRepo.(scanrun.UnfinishedTargetRecorder); ok && len(e.targets) > 0 {
 		if err := rec.AddUnfinishedTargets(ctx, run.TenantID, run.ID, e.targets); err != nil {
 			s.logger.Error("failed to record the targets of a step not started before the deadline",
-				"run_id", run.ID.String(), "step_key", stepKey, "error", err)
+				"run_id", run.ID.String(), "step_key", sanitizeLogValue(stepKey), "error", err)
 		}
 	}
 	s.logger.Info("step not started: the run's deadline is too close",
-		"run_id", run.ID.String(), "step_key", stepKey, "left", e.left, "need", e.need, "targets", len(e.targets))
+		"run_id", run.ID.String(), "step_key", sanitizeLogValue(stepKey), "left", e.left, "need", e.need, "targets", len(e.targets))
 	stepRun.Fail(e.Error(), scanrun.FailureDeadlineTooClose)
 	if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
-		s.logger.Error("failed to settle a step not started before the deadline", "step_key", stepKey, "error", err)
+		s.logger.Error("failed to settle a step not started before the deadline", "step_key", sanitizeLogValue(stepKey), "error", err)
 	}
 }
