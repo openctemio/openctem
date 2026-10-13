@@ -572,6 +572,36 @@ compose file):
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
 
+### Hardened installs: the sensor's seccomp profile
+
+Every daemon install runs the sensor under its own seccomp profile, so each
+tool task can run network-confined (its own network namespace; only its
+targets, through its forwarder; RFC-060). The container runtime's default
+profile refuses the namespaces this needs.
+
+- **Served by the platform:** `GET /api/v1/sensors/install/seccomp-profile`
+  (public, rate limited per IP, `X-Content-SHA256`). It is the sensor
+  release's `docker/seccomp/sensor.json`, embedded in the API
+  (`internal/app/sensor/seccomp/sensor.json`); a test pins its SHA-256, so a
+  change comes from a sensor release on purpose.
+- **Checked before use:** the docker and compose snippets download it with
+  `curl -fsSL` (with the platform CA when there is one) and run
+  `sha256sum -c` against the digest the API rendered into the snippet, before
+  the container starts. A tampered or truncated download stops the install.
+- **docker:** `--security-opt seccomp=/etc/openctem/sensor-seccomp.json`
+  next to `no-new-privileges`. **compose:** `security_opt` gains
+  `seccomp=./sensor-seccomp.json`. **Kubernetes:** a `Localhost` profile
+  `openctem/sensor-seccomp.json`, put on the nodes by the operator (the
+  snippet says how, and how to fall back to `RuntimeDefault`). **Helm:**
+  `sensor.sandbox.seccompProfile=openctem` (the chart installs it on the nodes
+  with a DaemonSet; the default from chart 0.23.0).
+- The default AppArmor profile stays: on hosts that restrict unprivileged
+  user namespaces, `apparmor=unconfined` stops confinement working.
+- **Setup checklist:** the sensor reports `runtime.sandbox_network`
+  (`confined`, or the detected cause: `userns_blocked`, `userns_restricted`,
+  `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
+  its fix ([fix the setup checklist](../how-to/fix-sensor-setup-checklist.md)).
+
 ## Pairing, key-bound identity and grants (RFC-052)
 
 A sensor can join without any key being copied: it pairs with a code and a
