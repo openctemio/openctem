@@ -732,6 +732,7 @@
   "scans.logs.description": "Những gì sensor ghi lại khi chạy tác vụ này. Được giữ 14 ngày.",
   "scans.logs.loading": "Đang tải nhật ký…",
   "scans.logs.loadFailed": "Không tải được nhật ký của tác vụ này.",
+  "scans.logs.attempt": "Lần chạy {n}",
   "scans.logs.lines": "Các dòng nhật ký",
   "scans.logs.truncated": "Một số dòng không được hiển thị: tác vụ đã đạt giới hạn nhật ký, hoặc có hơn 5.000 dòng.",
   "scans.compat.thisTool": "công cụ này",
