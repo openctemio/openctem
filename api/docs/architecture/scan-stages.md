@@ -225,6 +225,17 @@ payload comes from one builder, `scan.StepCommandPayload`.
   does not know fall back to the tenant's tool lookup (tenant-scoped, platform
   tools first). Platform implementations are read with
   `GetPlatformToolByName`, never another tenant's tool of the same name.
+- **Target kinds (RFC-088).** After the type gate, every target of a step
+  goes only to a stage that takes its kind (`stage.AcceptsKind`): a name, an
+  address, a network range, a URL or a service. A typed-in target is
+  decided by its kind; an inventory target by its stored type, except a
+  range, which is decided by kind whatever its type. A range reaches only
+  `scan.ports` (which expands it itself) and network lookups
+  (`lookup.asn`, connector network scans); never `probe.http`,
+  `crawl.web` or `vuln.templates`. A step left with nothing fails with
+  `INCOMPATIBLE_TARGETS`; a chained step keeps an empty seed list. A
+  single-scanner scan applies the same rule for its scanner's stage and
+  counts what it left out as incompatible.
 - **F2.** A step condition the scheduler cannot evaluate (`expression`, or a
   type this version does not know) never passes; the step is skipped with
   "Condition type ... cannot be evaluated". `SetCondition` already refused

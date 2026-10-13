@@ -242,6 +242,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if err := countRefusals(out, gated.Refused); err != nil {
 		return nil, err
 	}
+	gateScannerKinds(sc.ScannerName, out, func(t string) bool { _, ok := types[t]; return ok })
 	for _, t := range out.Targets {
 		if ref, typed := types[t]; typed && ref.Type != "" {
 			if out.TargetTypes == nil {
@@ -355,4 +356,33 @@ func isInternalAddr(a netip.Addr) bool {
 	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() ||
 		a.IsLinkLocalMulticast() || a.IsUnspecified() ||
 		netip.MustParsePrefix("100.64.0.0/10").Contains(a) // carrier-grade NAT
+}
+
+// gateScannerKinds leaves out of a single-scanner run every typed-in target
+// whose kind the scanner's stage does not take (stage.AcceptsKind), and
+// every range, typed in or from the inventory: a network range never
+// reaches an HTTP prober or a template scanner. Inventory targets are
+// otherwise decided by their stored type (scannerTypeGate). They are
+// counted as incompatible, with the reason.
+func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) bool) {
+	if scanner == "" {
+		return
+	}
+	st, ok := stage.ForStep(scanner, nil)
+	if !ok {
+		return
+	}
+	kept, refused := st.FilterKinds(out.Targets, typed)
+	if len(refused) == 0 {
+		return
+	}
+	reason := st.DescribeRefusedKinds(refused)
+	n := len(out.Targets) - len(kept)
+	out.Incompatible += n
+	out.Targets = kept
+	if out.IncompatibleReason != "" {
+		out.IncompatibleReason += "; "
+	}
+	out.IncompatibleReason += reason
+	out.Warnings = append(out.Warnings, fmt.Sprintf("%d target(s) were skipped: %s", n, reason))
 }
