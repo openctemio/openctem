@@ -435,6 +435,19 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		}
 	}
 
+	// Every target, typed in or from the inventory, goes only to a stage
+	// that takes its kind: a network range never reaches HTTP probing or
+	// templates.
+	kindGated, kerr := gateStepKinds(resolved, stepTargets, run.Context, chained)
+	if kerr != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
+	}
+	stepTargets = kindGated
+	if stepTargets != nil && stepTargets.Refused > 0 {
+		s.logger.Info("step targets of a kind the stage does not take were left out",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "refused", stepTargets.Refused, "reason", stepTargets.Reason)
+	}
+
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
 	// not from the known names the run expanded under it (RFC-068).
 	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
@@ -1836,4 +1849,58 @@ func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scan
 			shared.ErrValidation, resolved.Name)
 	}
 	return nil
+}
+
+// gateStepKinds keeps the step's targets whose kind its stage takes
+// (stage.AcceptsKind) and adds the rest to the step's refusals. A target
+// with a stored type (the run's target_types) is decided by the scanner type
+// gate, except a range, which is refused here whatever its type. A step
+// outside the catalog, or with no explicit target list, is left as is. A
+// step left with nothing fails (INCOMPATIBLE_TARGETS); a chained step keeps
+// an empty seed list, its targets come from its predecessors.
+func gateStepKinds(resolved scanapp.StepTool, st *scanapp.StepTargets, runContext map[string]any, chained bool) (*scanapp.StepTargets, error) {
+	if !resolved.HasStage {
+		return st, nil
+	}
+	targets := chunkTargets(st, runContext)
+	if targets == nil {
+		return st, nil
+	}
+	types := runTargetTypes(runContext)
+	kept, refused := resolved.Stage.FilterKinds(targets, func(t string) bool { _, ok := types[t]; return ok })
+	if len(refused) == 0 {
+		return st, nil
+	}
+	out := &scanapp.StepTargets{Targets: kept}
+	if st != nil {
+		out.Refused, out.Reason = st.Refused, st.Reason
+	}
+	reason := resolved.Stage.DescribeRefusedKinds(refused)
+	out.Refused += len(targets) - len(kept)
+	if out.Reason != "" {
+		out.Reason += "; "
+	}
+	out.Reason += reason
+	if len(kept) == 0 && !chained {
+		return nil, shared.NewDomainError("INCOMPATIBLE_TARGETS",
+			"No target of this step can be scanned: "+reason+".", shared.ErrValidation)
+	}
+	return out, nil
+}
+
+// runTargetTypes reads the run's target_types (a map[string]string before
+// the run is stored, a map[string]any after a JSON round trip).
+func runTargetTypes(rc map[string]any) map[string]bool {
+	out := map[string]bool{}
+	switch m := rc[scanapp.RunContextKeyTargetTypes].(type) {
+	case map[string]string:
+		for k := range m {
+			out[k] = true
+		}
+	case map[string]any:
+		for k := range m {
+			out[k] = true
+		}
+	}
+	return out
 }
