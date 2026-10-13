@@ -157,7 +157,7 @@ type UpdateScanRequest struct {
 	ProfileID        *string    `json:"profile_id" validate:"omitempty"`
 	// ScanZoneID: omitted = unchanged, "" = Automatic routing, id = pin to that zone.
 	ScanZoneID          *string `json:"scan_zone_id" validate:"omitempty"`
-	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=0,max=86400"`
 	MaxRetries          *int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds *int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
 }
