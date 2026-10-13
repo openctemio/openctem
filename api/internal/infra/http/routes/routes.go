@@ -9,7 +9,6 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -736,7 +735,7 @@ func Register(
 
 	// The sensor's seccomp profile for the install commands: public (the
 	// open-source release's file, no tenant data), rate limited per IP.
-	router.GET(sensorapp.SeccompProfilePath, handler.ServeSensorSeccompProfile, middleware.RateLimit(&cfg.RateLimit, log))
+	router.GET("/api/v1/sensors/install/seccomp.json", handler.ServeSensorSeccompProfile, middleware.RateLimit(&cfg.RateLimit, log))
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
