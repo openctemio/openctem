@@ -20,6 +20,9 @@
 > (`enforce` for new installs, `audit` for upgraded ones until the
 > bootstrap ceremony). Custom template versions are approved through the
 > ledger and listed by digest in the signed job (§11.5).
+> Amended 2026-10-13 (§12): a complete report of a trusted collector may
+> change the assets its own collector source created and mark the ones it
+> no longer lists as not seen (built, migration `002081`).
 > Scope: api (sensor gateway, signer, ingest pipeline, audit, detections) +
 > web (output encoding) + sdk-go (job verification, local policy, credential
 > providers, local audit) + sensor (`openctemio/sensor`) + helm-charts and
@@ -1103,4 +1106,70 @@ Off and On the ledger keeps refusing jobs outside its entries and keeps
 stopping database writers and bypass paths, but no longer requires a
 recorded approval for an entry; Strict keeps the guarantee above. An
 operator who wants it everywhere sets the floors and forces Strict.
+
+## 12. Amendment (2026-10-13): complete reports from trusted collectors
+
+**Problem.** A collector's reports name no command, so §5.3 treats them as
+unsolicited: they may create assets but never change one. An inventory feed
+(a hypervisor manager, a directory) that re-collects therefore refreshes
+nothing that changed on known assets, and an asset removed at the source
+stays active until the lifecycle worker's threshold passes. Widening this
+widens what a sensor may change, so the exception is narrow and every
+condition fails closed.
+
+**Rule.** A report from a *trusted collector* with `coverage_type: full`
+may change the existing assets *its own collector source created*, and at
+commit marks the ones it no longer lists as not seen. Nothing is ever
+deleted.
+
+1. *Trusted collector.* The stored sensor row is an active `collector` of
+   the report's tenant, not a platform sensor, and its grant is at trust
+   level `trusted` with push ingest in effect: an administrator's audited
+   promotion (RFC-052). Any read failure is "not trusted".
+2. *Collector source.* (sensor, tool, `metadata.source_ref`). A sensor
+   that runs several instances (two hypervisor managers) has one source per
+   instance, so one instance's complete report never speaks for another.
+   The `source_ref` is the sensor's own claim and only ever selects among
+   that sensor's own sources.
+3. *Ownership.* Every report of a trusted collector records the assets the
+   source reported and whether that report created them
+   (`collector_assets`, tenant-scoped, composite foreign keys to the asset
+   and the sensor). A source owns only the assets it created. An asset that
+   existed before (another source, a person, an import) is never owned, and
+   ownership is lost while a person's decision is on the asset: a manual
+   attribute lock or a manual status override. An asset merge never moves
+   ownership to the kept asset.
+4. *Changing.* Only a complete report changes owned assets; a partial or
+   incremental report keeps the unsolicited limits. Attribute claims still
+   go through reconciliation (RFC-069), where a person's value is a lock. A
+   finding a person resolved stays resolved.
+5. *Not seen.* At the commit of a complete protocol v2 report, the owned
+   assets the report does not list, that the source last reported before
+   the report's time and that no source saw at or after it, are marked
+   missing and the active ones demoted to `stale`, with a `disappeared`
+   history row. Skipped when the report is empty, when any segment refused,
+   quarantined or failed an asset, and held when more than 100 and more
+   than half of the source's assets would go (the auto-resolve blinding
+   guard).
+6. *Replay.* An identical replay is a no-op at the receiver (RFC-026). A
+   resent older report under a new id cannot overwrite newer values (the
+   property merge and last-seen keep the newer observation) and cannot mark
+   assets a newer report listed (their source last-seen is newer than its
+   time).
+
+**Threat model.** A compromised trusted collector can change and stale the
+assets it created itself, which it could already have created with any
+content; it cannot change another source's assets, an asset a person
+decided on, or anything of another tenant, and it cannot delete. A
+compromised untrusted collector gains nothing (its reports are refused at
+the push gate). A forged tenant is refused by the report's foreign key and,
+in the ingest core, by the stored row's tenant.
+
+**Not covered.** Assets collectors created before the migration are not
+owned until the collector creates them again; there is no backfill, by
+design (nothing records which sensor created them). Protocol v1 reports
+(retired) never mark anything.
+
+Design and operation: [architecture/sensor-result-binding.md](../architecture/sensor-result-binding.md)
+("Complete reports from a trusted collector").
 
