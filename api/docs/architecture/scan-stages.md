@@ -181,7 +181,7 @@ Migration 001201 seeds five system workflows built only from capability steps
 | Discover | `discover.subdomains` → `resolve.dns` → `probe.http` |
 | Discover + Vuln | `discover.subdomains` → `resolve.dns` → `scan.ports` → `probe.http` → `vuln.templates` (fed by the probe and the ports) |
 | Web app | `probe.http` → `crawl.web` → `vuln.templates` |
-| Network | `scan.ports` → `probe.http` → `vuln.templates` |
+| Network | `discover.hosts` → `scan.ports` → `probe.http` → `vuln.templates` (Host discovery added by migration `network_workflow_host_discovery`) |
 | Code / CI | `secrets.code`, `sast.code`, `sca.deps` and `iac.misconfig`, in parallel |
 
 They are tagged `starter`. The new-scan wizard offers them first, next to a

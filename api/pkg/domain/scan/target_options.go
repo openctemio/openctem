@@ -24,6 +24,12 @@ const (
 	// CIDRModeInventory replaces the range, at each run, with the address
 	// assets of the inventory inside it.
 	CIDRModeInventory CIDRMode = "inventory"
+	// CIDRModeLiveness finds the live hosts first: the range goes to host
+	// discovery (and passive lookups) only; every other active stage gets
+	// the addresses host discovery found live plus the inventory's
+	// addresses inside the range (RFC-088). The default for a new scan
+	// with a range; a scan saved before keeps sweeping until it is edited.
+	CIDRModeLiveness CIDRMode = "liveness"
 )
 
 // MaxSeenWithinDays bounds the freshness window.
@@ -32,7 +38,8 @@ const MaxSeenWithinDays = 365
 // TargetOptions tunes how a run resolves the scan's selectors. The zero
 // value is the default: CIDRs swept, every non-archived, non-stale asset.
 type TargetOptions struct {
-	// CIDRMode: sweep (default) or inventory.
+	// CIDRMode: sweep (the default of a stored scan without one),
+	// inventory or liveness.
 	CIDRMode CIDRMode `json:"cidr_mode,omitempty"`
 	// SeenWithinDays keeps only inventory assets seen in the last N days
 	// (0: any). Applies to what a selector adds, never to a typed host.
@@ -52,9 +59,9 @@ type TargetOptions struct {
 // Validate refuses an unknown CIDR mode or an out-of-range window.
 func (o TargetOptions) Validate() error {
 	switch o.CIDRMode {
-	case "", CIDRModeSweep, CIDRModeInventory:
+	case "", CIDRModeSweep, CIDRModeInventory, CIDRModeLiveness:
 	default:
-		return fmt.Errorf("%w: target_options.cidr_mode must be sweep or inventory", shared.ErrValidation)
+		return fmt.Errorf("%w: target_options.cidr_mode must be sweep, inventory or liveness", shared.ErrValidation)
 	}
 	if o.SeenWithinDays < 0 || o.SeenWithinDays > MaxSeenWithinDays {
 		return fmt.Errorf("%w: target_options.seen_within_days must be between 0 and %d", shared.ErrValidation, MaxSeenWithinDays)
@@ -70,9 +77,10 @@ func (o TargetOptions) EffectiveCIDRMode() CIDRMode {
 	return o.CIDRMode
 }
 
-// IsZero reports whether every option is the default.
+// IsZero reports whether every option is the default (no CIDR mode
+// chosen).
 func (o TargetOptions) IsZero() bool {
-	return o.EffectiveCIDRMode() == CIDRModeSweep && o.SeenWithinDays == 0 && !o.IncludeStale && !o.NewSinceLastRun
+	return o.CIDRMode == "" && o.SeenWithinDays == 0 && !o.IncludeStale && !o.NewSinceLastRun
 }
 
 // SetTargetOptions sets the options after validating them.
@@ -80,9 +88,9 @@ func (s *Scan) SetTargetOptions(o TargetOptions) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
-	if o.CIDRMode == CIDRModeSweep {
-		o.CIDRMode = ""
-	}
+	// An explicit sweep is kept as chosen: an empty mode means the scan
+	// was saved without a choice (it sweeps; a new scan with a range gets
+	// liveness instead, see the scan service).
 	s.TargetOptions = o
 	s.UpdatedAt = time.Now()
 	return nil

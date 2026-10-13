@@ -165,6 +165,19 @@ that names no capability is bound to `scan.ports`. A step that names
 `discover.hosts` requires the capability, so only sensors whose naabu
 implements it claim it.
 
+### Live hosts first (step 6)
+
+`target_options.cidr_mode` gains `liveness`, the default of a new scan with
+a range when its scan can run it (a single scanner, or a workflow with a
+Host discovery step); a workflow without one keeps sweeping, and an
+explicit `liveness` there is refused. A scan saved before keeps sweeping
+until it is edited (decision A1). In a liveness run the range pieces go to
+Host discovery and passive lookups only; every other active step gets the
+live hosts Host discovery found plus the inventory's addresses inside the
+ranges. The platform sends the probe ports with every host discovery job.
+The Network starter workflow now starts with Host discovery. Details:
+[scan-targets.md](../architecture/scan-targets.md).
+
 ## 8. Later steps
 
 | # | Step | Security-sensitive |

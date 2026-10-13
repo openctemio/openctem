@@ -342,11 +342,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		case errors.As(err, &noInputs):
 			// Planned, and nothing passed: settled without a command, so its
 			// successors run on what they have.
-			stepRun.Complete(0, map[string]any{"no_inputs": true})
-			stepRun.SkipReason = noInputs.Error()
-			if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
-				s.logger.Error("failed to settle a step with no inputs", "step_key", step.StepKey, "error", uerr)
-			}
+			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
 			settledInline = true
 		default:
 			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
@@ -426,6 +422,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
 		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
+		if ferr != nil && findsNoHosts(resolved, ferr) {
+			return &noInputsError{summary: "no address or range to probe"}
+		}
 		if ferr != nil {
 			var de *shared.DomainError
 			if !chained || !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
@@ -447,6 +446,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// that takes its kind: a network range never reaches HTTP probing or
 	// templates.
 	kindGated, kerr := gateStepKinds(resolved, stepTargets, run.Context, chained)
+	if kerr != nil && findsNoHosts(resolved, kerr) {
+		return &noInputsError{summary: "no address or range to probe"}
+	}
 	if kerr != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
 	}
@@ -459,6 +461,17 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
 	// not from the known names the run expanded under it (RFC-068).
 	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
+
+	// Live hosts first: an active stage other than host discovery never
+	// takes a range; its live hosts come from the host discovery step it
+	// follows (RFC-088).
+	before := chunkTargets(stepTargets, run.Context)
+	stepTargets = scanapp.LivenessSeeds(run.Context, resolved, stepTargets)
+	if stepTargets != nil && len(stepTargets.Targets) == 0 && len(before) > 0 && !chained {
+		return fmt.Errorf("step %s: %w", step.StepKey, shared.NewDomainError(scanapp.CodeLivenessNeedsHostDiscovery,
+			"This step scans hosts, the scan finds the live hosts of its address ranges first, and no Host discovery step comes before it. Add one before this step, or scan every address of the ranges.",
+			shared.ErrValidation))
+	}
 
 	// Resolve before active: an active stage skips the names the platform's
 	// freshest evidence says have not resolved for a week (RFC-088 A5).
@@ -554,6 +567,15 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
 	return s.stepRunRepo.Update(ctx, stepRun)
+}
+
+// findsNoHosts reports whether err says a host discovery step has no
+// address or range to probe: the step is settled without a command (a run of
+// names only), so the steps after it run on their own targets.
+func findsNoHosts(resolved scanapp.StepTool, err error) bool {
+	var de *shared.DomainError
+	return resolved.HasStage && resolved.Stage.Key == stage.DiscoverHosts &&
+		errors.As(err, &de) && de.Code == "INCOMPATIBLE_TARGETS"
 }
 
 // StaleNameFilter drops the names without recent resolution evidence
@@ -1933,12 +1955,34 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 		if errors.Is(qerr, errStageAlreadyPlanned) {
 			return nil // queued by a concurrent call
 		}
+		var noInputs *noInputsError
+		if errors.As(qerr, &noInputs) {
+			// Nothing to do (a host discovery step of a run of names):
+			// settled without a command; the caller advances the run so
+			// the steps after it start.
+			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
+			s.notifyRun(run.TenantID, run.ID)
+			return scanapp.ErrStepSettled
+		}
 		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
 		s.notifyRun(run.TenantID, run.ID)
 		return qerr
 	}
 	s.notifyRun(run.TenantID, run.ID)
 	return nil
+}
+
+// settleNoInputs completes a step that has nothing to do, without a
+// command: its successors run on what they have.
+func (s *Service) settleNoInputs(ctx context.Context, stepRun *scanrun.StepRun, stepKey string, noInputs *noInputsError) {
+	if stepRun == nil {
+		return
+	}
+	stepRun.Complete(0, map[string]any{"no_inputs": true})
+	stepRun.SkipReason = noInputs.Error()
+	if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+		s.logger.Error("failed to settle a step with no inputs", "step_key", stepKey, "error", uerr)
+	}
 }
 
 // failQueuedStep records a step that could not be queued: failed, with the

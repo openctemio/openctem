@@ -51,6 +51,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -169,7 +170,15 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		return nil, err
 	}
 	targets := append([]string{}, seedList...)
+	inRange := seedRanges(seedList)
 	for _, c := range planned {
+		if coveredByRange(inRange, c.key) {
+			// The step scans the range this address is in already (a range
+			// swept and also found live): once is enough.
+			rows = append(rows, c.row(scanrun.TargetSkipped, reasonCoveredByRange))
+			plan.Skipped[reasonCoveredByRange]++
+			continue
+		}
 		targets = append(targets, c.key)
 		rows = append(rows, c.row(scanrun.TargetPlanned, plannedReason(st)))
 		plan.MaxHop = max(plan.MaxHop, c.hop)
@@ -203,6 +212,34 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		return nil, &noInputsError{summary: skipSummary(plan.Skipped)}
 	}
 	return out, nil
+}
+
+// reasonCoveredByRange: a derived address a range seed of the same step
+// already covers.
+const reasonCoveredByRange = "covered_by_range"
+
+// seedRanges is the address set of a step's range seeds.
+func seedRanges(seeds []string) ipset.Set {
+	var rs []ipset.Range
+	for _, t := range seeds {
+		t = strings.TrimSpace(t)
+		if !strings.ContainsAny(t, "/-") {
+			continue
+		}
+		if r, ok := ipset.Parse(t); ok {
+			rs = append(rs, r)
+		}
+	}
+	return ipset.Of(rs...)
+}
+
+// coveredByRange reports whether key is an address inside the set.
+func coveredByRange(set ipset.Set, key string) bool {
+	if set.Empty() {
+		return false
+	}
+	a, err := netip.ParseAddr(strings.TrimSpace(key))
+	return err == nil && set.Contains(a.Unmap())
 }
 
 func (s *Service) savePlan(ctx context.Context, plan *scanrun.StagePlan, rows []scanrun.RunTarget, out *scanapp.StepTargets) (*scanapp.StepTargets, error) {

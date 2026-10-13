@@ -86,13 +86,18 @@ describe('DynamicTargetsPanel', () => {
     )
   })
 
-  it('offers sweep or known hosts for a range, and previews the known hosts', async () => {
+  it('offers live hosts first, sweep or known hosts for a range, and previews the known hosts', async () => {
     const onChange = vi.fn()
     get.mockResolvedValue({ data: [{ name: '203.0.113.5' }], total: 1 })
     const user = userEvent.setup()
     render(<Harness targets={['203.0.113.0/24']} onChange={onChange} />)
-    expect(screen.getByRole('radio', { name: 'Sweep the whole range' })).toBeChecked()
+    // No choice saved: live hosts first is shown, with the notice.
+    expect(screen.getByRole('radio', { name: 'Find live hosts first' })).toBeChecked()
+    expect(screen.getByText(/No choice saved yet/)).toBeInTheDocument()
     expect(get).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('radio', { name: 'Sweep the whole range' }))
+    expect(onChange).toHaveBeenLastCalledWith({ cidr_mode: 'sweep' })
 
     await user.click(screen.getByRole('radio', { name: 'Only the hosts already in the inventory' }))
     expect(onChange).toHaveBeenLastCalledWith({ cidr_mode: 'inventory' })
