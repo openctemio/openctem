@@ -95,6 +95,22 @@ as defence in depth.
 - At most 100 sensors are evaluated (by name); `truncated` says there were
   more.
 
+## Run page
+
+- **Tasks table:** a queued task that is not waiting for its scan window has
+  a "Why waiting?" toggle. It asks the endpoint above only when opened and
+  shows the summary (how many sensors can take the task, how many are busy),
+  each reason with its count, what it means, the fix and a link to the page
+  that applies it, and, for a caller with `sensors:read`, each sensor's
+  verdict (`web/src/features/scans/components/task-placement.tsx`).
+- **Step panel:** a failed, partial, skipped or canceled step shows its error
+  code, its class and the code's meaning, fix and link
+  (`code-help.tsx`).
+- Every step error code (`pkg/domain/scanrun/failure.go`) and placement
+  reason (`pkg/domain/command/placement.go`) has an entry with en and vi
+  text (`web/src/features/scans/lib/placement-help.ts`); a web test reads
+  both Go files and fails on a code without one.
+
 ## Security
 
 - **Tenant isolation.** The tenant comes from the caller's session. The run
