@@ -88,6 +88,10 @@ type ReviewItem struct {
 	Hint string `json:"hint,omitempty"`
 	// Fixes the caller may take (POST /scope/targets).
 	Fixes []scopedom.Fix `json:"fixes,omitempty"`
+	// Children: how many services, certificates and web endpoints follow
+	// this host, by asset type. They are not rows of their own: a decision
+	// on the host is theirs too.
+	Children map[string]int `json:"children,omitempty"`
 }
 
 // ReviewCoverage names what covers each name (*ActiveGate).
