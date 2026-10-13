@@ -63,16 +63,17 @@ var ErrScanRunInProgress = scanrun.ErrScanRunActive
 var ErrScanActorRequired = fmt.Errorf("%w: the acting user is required", shared.ErrValidation)
 
 // ErrScanHasNoOwner is returned when a scheduled run is due for a scan with
-// no owner (created_by). Such a run would act as the unrestricted system, so
-// it is refused (research 21b H2/H3, RFC-050 SP-3).
+// no owner (created_by): the account that created it was deleted, or it was
+// saved without one. Such a run would act as the unrestricted system, so it
+// is refused and the scan is paused (research 21b H2/H3, RFC-050 SP-3).
 var ErrScanHasNoOwner = shared.NewDomainError("SCAN_HAS_NO_OWNER",
-	"This scan has no owner, so its scheduled runs are refused. Clone or re-save it as a member to take ownership.",
+	"This scan has no owner, so its scheduled runs are refused and the scan was paused. An administrator can take ownership on the scan's page, then resume it.",
 	shared.ErrValidation)
 
 // ErrScanOwnerInactive is returned when a scheduled run is due for a scan
 // whose owner is no longer an active member; the scan is paused.
 var ErrScanOwnerInactive = shared.NewDomainError("SCAN_OWNER_INACTIVE",
-	"This scan's owner is disabled or left the organization, so the scan was paused. Reassign it to resume.",
+	"This scan's owner is disabled or left the organization, so the scan was paused. An administrator can take ownership on the scan's page, then resume it.",
 	shared.ErrValidation)
 
 // OwnerActivity reports whether a user is an active member of a tenant with
@@ -85,13 +86,15 @@ type OwnerActivity interface {
 func (s *Service) SetOwnerActivity(o OwnerActivity) { s.ownerActivity = o }
 
 // refuseOwnerlessSchedule stops a scheduled run that would act for nobody:
-// a scan without an owner is refused, a scan whose owner is no longer active
-// is paused and refused. A lookup error refuses (fail closed).
+// a scan without an owner, or whose owner is no longer an active member, is
+// refused and paused, and the administrators are told once (owner.go). A
+// lookup error refuses (fail closed).
 func (s *Service) refuseOwnerlessSchedule(ctx context.Context, sc *scan.Scan) error {
 	if sc.CreatedBy == nil || sc.CreatedBy.IsZero() {
+		s.pauseForOwner(ctx, sc, OwnerStateMissing)
 		s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
 			NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), ErrScanHasNoOwner).
-				WithResourceName(sc.Name).WithMessage("Scheduled run refused: the scan has no owner"))
+				WithResourceName(sc.Name).WithMessage("Scheduled run refused and scan paused: the scan has no owner"))
 		return ErrScanHasNoOwner
 	}
 	if s.ownerActivity == nil {
@@ -104,11 +107,7 @@ func (s *Service) refuseOwnerlessSchedule(ctx context.Context, sc *scan.Scan) er
 	if active {
 		return nil
 	}
-	if perr := sc.Pause(); perr == nil {
-		if uerr := s.scanRepo.Update(ctx, sc); uerr != nil {
-			s.logger.Warn("failed to pause a scan whose owner is inactive", "scan_id", sc.ID.String(), "error", uerr)
-		}
-	}
+	s.pauseForOwner(ctx, sc, OwnerStateInactive)
 	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
 		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), ErrScanOwnerInactive).
 			WithResourceName(sc.Name).WithMessage("Scheduled run refused and scan paused: the owner is not an active member"))

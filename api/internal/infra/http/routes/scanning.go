@@ -491,6 +491,10 @@ func registerScanRoutes(
 			r.POST("/{id}/trigger", h.TriggerScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		}
 
+		// Take ownership of a scan whose owner is missing or left: owners and
+		// administrators only (an API key is never an admin), audited.
+		r.POST("/{id}/take-ownership", h.TakeScanOwnership, middleware.RequireAdmin(), middleware.Require(permission.ScansWrite))
+
 		// Clone scan
 		r.POST("/{id}/clone", h.CloneScan, middleware.Require(permission.ScansWrite))
 		// Save an unsaved quick scan as a configuration ("Save as scan", D10)

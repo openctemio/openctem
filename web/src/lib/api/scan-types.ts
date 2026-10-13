@@ -176,6 +176,13 @@ export interface ScanConfig {
   scan_workflow_name?: string
   created_by?: string
   created_by_name?: string
+  /**
+   * Whether the scan has an owner who is an active member. A scheduled run
+   * acts as the owner: with none (missing) or a departed one (inactive) the
+   * scan is paused and an administrator takes ownership. Lists report
+   * missing only.
+   */
+  owner_state?: 'ok' | 'missing' | 'inactive'
   created_at: string
   updated_at: string
 }
