@@ -1186,6 +1186,7 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		}
 		return t.Name(), nil
 	})
+	review.SetConfirmScope(newConfirmScope(repos, svc))
 	h.SetReview(review, audit)
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1240,7 +1241,18 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 		h.SetAuditService(svc.Audit)
 	}
 	h.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	h.SetConfirmScope(newConfirmScope(repos, svc))
 	return h
+}
+
+// newConfirmScope makes a person's confirmation add the asset's exact scope
+// entry through the scope service (research/117); nil while scope or the
+// ownership gate is not wired (a confirmation then records ownership only).
+func newConfirmScope(repos *Repositories, svc *Services) *easmapp.ConfirmScope {
+	if svc.Scope == nil || svc.ActiveGate == nil || svc.Tenant == nil {
+		return nil
+	}
+	return easmapp.NewConfirmScope(svc.Scope, svc.Tenant, repos.Asset, svc.ActiveGate)
 }
 
 // newAssetImportHandler builds the asset import handler with its audit trail.
