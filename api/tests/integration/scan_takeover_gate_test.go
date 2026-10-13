@@ -46,7 +46,9 @@ func TestScanTakeoverGate(t *testing.T) {
 	openDangling(t, db, tenantA, fixed, "fixed.tko.example.com", "resolved")
 
 	review := seedOwnedAsset(t, db, tenantA, "rev.tko.example.com", "subdomain")
-	automatic(t, db, tenantA, review, attribution.StateNeedsReview)
+	// Sent back to review by a person: an automatic pending record under
+	// the entry would be scannable like any in-scope name (research/117).
+	decide(t, db, tenantA, review, attribution.StateNeedsReview)
 	openDangling(t, db, tenantA, review, "rev.tko.example.com", "active")
 
 	// Tenant B's open dangling CNAME on the same name never admits A's asset.
