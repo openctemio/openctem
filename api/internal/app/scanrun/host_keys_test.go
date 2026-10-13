@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/sdk-go/pkg/politeness"
+	"github.com/openctemio/ctis/politeness"
 
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -26,7 +26,7 @@ func TestChunkHostKeys(t *testing.T) {
 }
 
 // The platform keys a chunk with the function the sensor admits it with
-// (sdk-go pkg/politeness), over every target form a step carries: names,
+// (ctis politeness), over every target form a step carries: names,
 // URLs, services in every name form, addresses (mapped and IPv6 too) and
 // ranges. The sensor side proves, with the same keys, that it admits a
 // chunk exactly when the platform offers it (sdk-go core
