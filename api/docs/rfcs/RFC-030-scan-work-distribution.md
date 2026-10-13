@@ -566,6 +566,17 @@ command answers 409. Without it a draining sensor's work waited for the
 10-minute acknowledged reaper (or, with leases, the lease). A v1 sensor has
 no release; the SDK falls back to `fail` with `released: <reason>`.
 
+### 5.13 Placement explanation (implemented)
+
+A queued task says why it waits. `GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement`
+evaluates, for the task and every sensor of the organization, the checks the
+poll and the claim apply (claim SQL, then the dispatch gate, then free
+slots) and answers how many sensors may take it, how many of those are busy,
+and each reason that keeps it from the others. The predicates are the claim
+SQL's own fragments bound to each sensor row, and a database test keeps the
+explanation in agreement with the poll for a table of tasks and sensors.
+Details: [placement](../architecture/placement.md).
+
 ## 6. Simulation
 
 `docs/rfcs/RFC-030-sim/scan_distribution_sim.py`, 20 seeds per row, median

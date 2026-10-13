@@ -79,8 +79,15 @@ var refusedCases = []refusedCase{
 	{"private address, tenant without zones", func(fx *fixture) shared.ID {
 		return fx.newTypedAsset("10.9.0.6", "ip_address")
 	}},
-	{"ownership not confirmed", func(fx *fixture) shared.ID {
-		fx.attribution(fx.asset, "needs_review")
+	{"ownership sent back to review by a person", func(fx *fixture) shared.ID {
+		// An automatic needs_review under a scope entry is scannable
+		// (research/117); a person's decision is not.
+		fx.exec(`INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, decided_at) VALUES ($1, $2, 'needs_review', 100, NOW())`,
+			fx.asset.String(), fx.tenant.String())
+		return fx.asset
+	}},
+	{"ownership monitor only", func(fx *fixture) shared.ID {
+		fx.attribution(fx.asset, "monitor_only")
 		return fx.asset
 	}},
 	{"ownership rejected", func(fx *fixture) shared.ID {

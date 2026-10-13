@@ -34,7 +34,7 @@ func TestScanDynamicTargets(t *testing.T) {
 	seedOwnedAsset(t, db, tenantA, "app.dyn.example.com", "subdomain")  // no record, under the entry: allowed
 	seedOwnedAsset(t, db, tenantA, "excl.dyn.example.com", "subdomain") // excluded
 	review := seedOwnedAsset(t, db, tenantA, "rev.dyn.example.com", "subdomain")
-	automatic(t, db, tenantA, review, attribution.StateNeedsReview) // not confirmed
+	decide(t, db, tenantA, review, attribution.StateNeedsReview) // sent back to review by a person
 	rejected := seedOwnedAsset(t, db, tenantA, "rej.dyn.example.com", "subdomain")
 	decide(t, db, tenantA, rejected, attribution.StateRejected) // rejected
 	archived := seedOwnedAsset(t, db, tenantA, "old.dyn.example.com", "subdomain")
