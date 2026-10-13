@@ -86,6 +86,15 @@
 /api/internal/app/scangov/gate.go @0xmanhnv
 /api/internal/app/scan/dispatch_gate.go @0xmanhnv
 /api/internal/app/command/scope_recheck.go @0xmanhnv
+/api/internal/app/scope/web_job.go @0xmanhnv
+/api/internal/infra/postgres/command_web_scope.go @0xmanhnv
+/api/pkg/domain/command/web_scope.go @0xmanhnv
+# sensor-result-trust
+/api/internal/app/ingest/binding.go @0xmanhnv
+/api/internal/app/ingest/collector_trust.go @0xmanhnv
+/api/internal/app/ingest/collector_reports.go @0xmanhnv
+/api/internal/app/ingest/exclusions.go @0xmanhnv
+/api/internal/infra/postgres/collector_asset_repository.go @0xmanhnv
 # web-session-headers
 /web/src/proxy.ts @0xmanhnv
 /web/src/app/api/** @0xmanhnv
