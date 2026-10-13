@@ -116,3 +116,48 @@ func (r *AssetFreshnessRepository) ListForAsset(ctx context.Context, tenantID, a
 	}
 	return out, rows.Err()
 }
+
+var _ assetfreshness.NameEvidenceReader = (*AssetFreshnessRepository)(nil)
+
+// maxEvidenceNames bounds one evidence lookup (a run dispatches at most
+// 10 000 targets).
+const maxEvidenceNames = 10000
+
+// FreshestByName returns, for each of the tenant's assets named in names,
+// its freshest observation of the classes. Tenant-scoped: another tenant's
+// asset of the same name is never read.
+func (r *AssetFreshnessRepository) FreshestByName(ctx context.Context, tenantID shared.ID, names []string, classes []assetfreshness.Class) ([]assetfreshness.NameEvidence, error) {
+	if len(names) == 0 || len(classes) == 0 {
+		return nil, nil
+	}
+	if len(names) > maxEvidenceNames {
+		return nil, fmt.Errorf("resolution evidence: %d names, at most %d", len(names), maxEvidenceNames)
+	}
+	cls := make([]string, len(classes))
+	for i, c := range classes {
+		cls[i] = string(c)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, a.name, max(f.observed_at)
+		  FROM assets a
+		  JOIN asset_attribute_freshness f ON f.tenant_id = a.tenant_id AND f.asset_id = a.id
+		 WHERE a.tenant_id = $1 AND a.name = ANY($2) AND f.class = ANY($3)
+		 GROUP BY a.id, a.name`, tenantID.String(), pq.Array(names), pq.Array(cls))
+	if err != nil {
+		return nil, fmt.Errorf("read resolution evidence: %w", err)
+	}
+	defer rows.Close()
+	var out []assetfreshness.NameEvidence
+	for rows.Next() {
+		var e assetfreshness.NameEvidence
+		var id string
+		if err := rows.Scan(&id, &e.Name, &e.ObservedAt); err != nil {
+			return nil, fmt.Errorf("scan resolution evidence: %w", err)
+		}
+		if e.AssetID, err = shared.IDFromString(id); err != nil {
+			return nil, fmt.Errorf("scan resolution evidence: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
