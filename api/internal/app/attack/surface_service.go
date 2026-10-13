@@ -181,7 +181,12 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	// still in review, or one discovery added and nobody claimed is never
 	// counted as the organization's exposed surface (research/22 P0-12,
 	// research/124).
-	approved, _, _ := attribution.ParseFilter([]string{attribution.FilterAttributed})
+	population := attribution.FilterAttributed
+	if shared.DiscoveredAssetsIncluded(ctx) {
+		// The request asked for discovered assets too (include_discovered).
+		population = attribution.FilterApproved
+	}
+	approved, _, _ := attribution.ParseFilter([]string{population})
 
 	// Get total assets count
 	totalAssets, err := s.assetRepo.Count(ctx, asset.Filter{

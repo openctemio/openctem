@@ -85,5 +85,7 @@
   "easmReview.suggestions.strongHint": "Under a domain you verified.",
   "easmReview.suggestions.title": "Suggested rules",
   "easmReview.suggestions.weak": "Weak",
-  "easmReview.suggestions.weakHint": "Only the names themselves point to it."
+  "easmReview.suggestions.weakHint": "Only the names themselves point to it.",
+  "easmReview.overview.includeDiscovered": "Include discovered assets",
+  "easmReview.overview.discovered": "Discovered, passive only until in scope"
 }

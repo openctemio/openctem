@@ -1285,6 +1285,13 @@ entries cover. Discovery noise never inflates the surface or risk. The scope
 coverage count (§6.8) counts `discovered` as inventory, so what no entry
 covers shows.
 
+A request may ask for the whole inventory with `include_discovered=true`
+(`shared.WithDiscoveredAssets`, `postgres.MetricsInventorySQL`) on
+`/dashboard/*`, `/attack-surface/*` and `/easm/summary`, `/easm/changes`. It
+changes counts only, never what may be scanned; the review queue and
+rejected assets stay out. The Attack surface overview has the switch
+"Include discovered assets" (off by default).
+
 ### 15.7 Threat model
 
 | Threat | Control | Residual |
