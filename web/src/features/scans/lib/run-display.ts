@@ -1,5 +1,5 @@
 import type { ScanRun } from '@/lib/api/scan-types'
-import { scanSuccessRate } from './format'
+import { formatScanDuration, scanSuccessRate } from './format'
 import { enTranslate, type Translate } from './translate'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -126,6 +126,36 @@ export function elapsedMs(
   const end = item.completed_at ? Date.parse(item.completed_at) : now
   const ms = end - start
   return Number.isFinite(ms) && ms >= 0 ? ms : undefined
+}
+
+/**
+ * A run's deadline for display: "in 23m 10s" (or "passed") while the run is
+ * open, the reason it is set (which policy), and the deadline time. Null when
+ * the run has no deadline (not started, or started before deadlines).
+ */
+export function runDeadline(
+  run: { status: string; deadline_at?: string | null; deadline_reason?: string | null },
+  t: Translate = enTranslate,
+  now: number = Date.now()
+): { relative: string | null; reason: string; at: string } | null {
+  if (!run.deadline_at) return null
+  const at = Date.parse(run.deadline_at)
+  if (!Number.isFinite(at)) return null
+  let relative: string | null = null
+  if (isRunInProgress(run)) {
+    const left = at - now
+    relative =
+      left > 0
+        ? t('scans.runDetail.deadlineIn', undefined, {
+            duration: formatScanDuration(left) || '<1s',
+          })
+        : t('scans.runDetail.deadlinePassed')
+  }
+  const key = (['scan_max_duration', 'workflow_max_duration', 'platform_cap'] as const).find(
+    (k) => k === run.deadline_reason
+  )
+  const reason = t(`scans.runDetail.deadlineReason.${key ?? 'legacy'}`)
+  return { relative, reason, at: run.deadline_at }
 }
 
 /** How often an open run refreshes: every 5 s while it is live, never once settled. */

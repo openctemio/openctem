@@ -33,6 +33,7 @@ import { toDisplayText } from '@/lib/untrusted-text'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import {
   elapsedMs,
+  runDeadline,
   runKindLabel,
   runRefreshInterval,
   runSubjectFindingId,
@@ -115,6 +116,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
   )
   const duration = run ? durationOf(run, t) : null
   const progress = run ? runTaskProgress(run.task_summary, t) : null
+  const deadline = run ? runDeadline(run, t) : null
   // A run that executes no scan workflow (a retest) has no stages or
   // dispatch plan; it is about a finding instead.
   const isScanRun = !run?.kind || run.kind === 'scan' || run.kind === 'quick'
@@ -144,6 +146,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               ? t('scans.runDetail.started', undefined, { time: formatTime(run.started_at) })
               : null,
             duration,
+            deadline?.relative ?? null,
           ]}
           menu={
             runId
@@ -274,6 +277,15 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                 <DetailField label={t('scans.runDetail.completed')}>
                   {formatTime(run.completed_at)}
                 </DetailField>
+                {deadline && (
+                  <DetailField label={t('scans.runDetail.deadline')} full>
+                    <span>
+                      {formatTime(deadline.at)}
+                      {deadline.relative && ` · ${deadline.relative}`}
+                    </span>
+                    <span className="text-muted-foreground block text-xs">{deadline.reason}</span>
+                  </DetailField>
+                )}
                 {runId && (
                   <DetailField label={t('scans.runDetail.runId')} full>
                     <DetailCopyId id={runId} label={t('scans.runDetail.runId')} />
