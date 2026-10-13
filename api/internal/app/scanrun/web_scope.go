@@ -10,8 +10,12 @@ package scanrun
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -45,6 +49,53 @@ func (s *Service) applyWebScope(ctx context.Context, tenantID shared.ID, key sta
 	}
 	if ws != nil {
 		payload["web_scope"] = ws
+		if tool, _ := payload["scanner"].(string); webScopeNeedsConfinement[tool] {
+			payload[command.PayloadKeyRequiredFeatures] = []string{sensordom.CapabilityNetConfined}
+		}
+	}
+	return nil
+}
+
+// webScopeNeedsConfinement are the tools that keep to a web scope only
+// through the task forwarder of a network-confined sandbox: their requests
+// cannot be bound by flags (nuclei templates request arbitrary paths), so
+// a web-scoped job of theirs requires net.confined@1 and waits for a
+// sensor that reported it.
+var webScopeNeedsConfinement = map[string]bool{"nuclei": true}
+
+// ConfinedSensors says whether the organization has an active sensor
+// that reported net.confined@1 (the sensor repository).
+type ConfinedSensors interface {
+	HasConfinedSensor(ctx context.Context, tenantID shared.ID) (bool, error)
+}
+
+// WithConfinedSensors refuses, when it is queued, a step whose jobs need a
+// confined sensor while the organization has none (NO_CONFINED_SENSOR):
+// it could never be taken. Without it such a step waits until the run's
+// deadline.
+func WithConfinedSensors(c ConfinedSensors) Option {
+	return func(s *Service) { s.confined = c }
+}
+
+// requireConfinedSensor refuses a command that needs a confined sensor
+// when the organization has none. A lookup error is returned as is (the
+// step fails to queue, and its run may retry).
+func (s *Service) requireConfinedSensor(ctx context.Context, tenantID shared.ID, payload map[string]any) error {
+	if s.confined == nil {
+		return nil
+	}
+	need, _ := payload[command.PayloadKeyRequiredFeatures].([]string)
+	if !slices.Contains(need, sensordom.CapabilityNetConfined) {
+		return nil
+	}
+	ok, err := s.confined.HasConfinedSensor(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("confined sensor lookup: %w", err)
+	}
+	if !ok {
+		return shared.NewDomainError(scanrundom.FailureNoConfinedSensor,
+			"this step has a web scope, and its tool keeps to one only on a sensor whose tool network is confined; "+
+				"no sensor of the organization reports that (run the sensor with its seccomp profile)", shared.ErrValidation)
 	}
 	return nil
 }

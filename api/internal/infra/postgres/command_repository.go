@@ -161,12 +161,13 @@ func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities
 	args := []any{tenantID.String()}
 	if sensorID != nil {
 		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +
-			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2")
+			" AND " + toolClaimPredicate("$2") + " AND " + refusedByPredicate("$2") + " AND " + featureClaimPredicate("$2")
 		args = append(args, sensorID.String())
 	} else {
 		// No sensor identity: nothing pinned, no zone membership and no tools
 		// to prove.
-		where += " AND commands.sensor_id IS NULL AND commands.scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL"
+		where += " AND commands.sensor_id IS NULL AND commands.scan_zone_id IS NULL AND " + commandToolSQL + " IS NULL" +
+			" AND " + noRequiredFeaturesSQL
 	}
 	where += " AND " + capabilityClaimPredicate(fmt.Sprintf("$%d", len(args)+1))
 	args = append(args, pq.Array(capabilities))
@@ -272,6 +273,33 @@ func capabilityClaimPredicate(capsParam string) string {
 		)`
 }
 
+// noRequiredFeaturesSQL keeps a command that requires no sensor feature
+// (payload required_features missing, not an array, or empty).
+const noRequiredFeaturesSQL = `(jsonb_typeof(commands.payload->'` + command.PayloadKeyRequiredFeatures + `') IS DISTINCT FROM 'array'
+			OR jsonb_array_length(commands.payload->'` + command.PayloadKeyRequiredFeatures + `') = 0)`
+
+// featureClaimPredicate is the feature gate: keep a command only if it
+// requires no feature (payload required_features), or the sensor bound to
+// sensorParam (same tenant as the command) REPORTED every one of them
+// (sensors.reported_capabilities). What an administrator declared never
+// counts: a feature such as net.confined@1 is something the sensor's
+// runtime enforces, so only the sensor can say it has it.
+func featureClaimPredicate(sensorParam string) string {
+	return `(
+			` + noRequiredFeaturesSQL + `
+			OR NOT EXISTS (
+				SELECT 1
+				FROM jsonb_array_elements_text(commands.payload->'` + command.PayloadKeyRequiredFeatures + `') AS rf(feature)
+				WHERE NOT EXISTS (
+					SELECT 1 FROM sensors fs
+					WHERE fs.id = ` + sensorParam + `
+					  AND fs.tenant_id = commands.tenant_id
+					  AND rf.feature = ANY(COALESCE(fs.reported_capabilities, ARRAY[]::text[]))
+				)
+			)
+		)`
+}
+
 // PendingWorkForSensor is the heartbeat doorbell's read (RFC-023 §9.2a): how
 // many commands the sensor could claim right now (capped at limit), and a
 // fingerprint of its zone assignments, in one statement.
@@ -292,6 +320,7 @@ func (r *CommandRepository) PendingWorkForSensor(ctx context.Context, tenantID, 
 		AND ` + zoneClaimPredicate("$2") + `
 		AND ` + toolClaimPredicate("$2") + `
 		AND ` + refusedByPredicate("$2") + `
+		AND ` + featureClaimPredicate("$2") + `
 		AND ` + capabilityClaimPredicate("$3")
 	query := `
 		SELECT
@@ -445,8 +474,8 @@ func (r *CommandRepository) List(ctx context.Context, filter command.Filter, pag
 // poller already acknowledged it, so two sensors polling the same unassigned
 // command can't both proceed (double dispatch).
 //
-// The zone predicate, the tool gate and the capability gate are the same as
-// the poll's (RFC-023 layer 2, RFC-030 B5, RFC-052 §3): a sensor cannot
+// The zone predicate, the tool gate, the capability gate and the feature
+// gate are the same as the poll's (RFC-023 layer 2, RFC-030 B5, RFC-052 §3): a sensor cannot
 // acknowledge, by id, a command it would never have been offered. The
 // capabilities are the sensor's stored effective capabilities, which the poll
 // also uses.
@@ -470,6 +499,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + toolClaimPredicate("$3") + `
 		  AND ` + capabilityClaimPredicate(claimSensorCapabilities) + `
 		  AND ` + refusedByPredicate("$3") + `
+		  AND ` + featureClaimPredicate("$3") + `
 		  AND ` + scheduledDuePredicate + `
 		  AND ` + hostFreePredicate + `
 	`

@@ -200,6 +200,10 @@ func claimReasons(c commanddom.SensorClaim) []string {
 	if !c.CapabilityOK {
 		out = append(out, commanddom.PlacementCapabilityMissing)
 	}
+	if !c.FeaturesOK {
+		// required_features holds only net.confined@1 today.
+		out = append(out, commanddom.PlacementNotConfined)
+	}
 	return out
 }
 
