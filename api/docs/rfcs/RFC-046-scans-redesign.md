@@ -352,6 +352,7 @@ the window where a manual trigger slips in between.
 | Failure class | Code(s) | Retry |
 |---|---|---|
 | Permanent | `SCANNER_NOT_FOUND`, `TARGET_REFUSED`, `NO_TARGETS`, `NO_SENSOR` | never |
+| Unreachable (RFC-089 §4.7) | `TARGET_UNREACHABLE`: the sensor reached none of the step's targets (some unreached: the step ends `partial` with the same code) | never: the fix is routing to a sensor that reaches them |
 | Lost work | lease expiry (`COMMAND_EXHAUSTED`), `timeout` | ×2, backoff `retry_backoff × 2^attempt` with jitter |
 | Tool error | anything else | the scan's `max_retries` (default 0) |
 
