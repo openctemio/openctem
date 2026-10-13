@@ -1739,6 +1739,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// without a job and heartbeat actions; a pairing approval sets the
 	// chosen profile in its transaction.
 	s.SensorGrant = sensorgrant.NewService(repos.SensorGrant, repos.Sensor, log)
+	s.SensorGrant.SetUsage(repos.SensorGrant, repos.Sensor)
 	s.SensorGrant.SetAudit(s.Audit)
 	s.SensorGrant.SetZoneChecker(repos.SensorGrant)
 	if s.SensorPairing != nil {
