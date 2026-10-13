@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -21,8 +21,14 @@ function failureCodes(): string[] {
   const block = src.slice(src.indexOf('var failureClasses'))
   const body = block.slice(0, block.indexOf('\n}'))
   const names = [...body.matchAll(/^\s*(Failure\w+):/gm)].map((m) => m[1])
+  // The values may be declared in any file of the package (reach.go).
+  const dir = resolve(api, 'pkg/domain/scanrun')
+  const all = readdirSync(dir)
+    .filter((f) => f.endsWith('.go') && !f.endsWith('_test.go'))
+    .map((f) => readFileSync(resolve(dir, f), 'utf8'))
+    .join('\n')
   const values = new Map(
-    [...src.matchAll(/^\s*(Failure\w+)\s*=\s*"([A-Z_]+)"/gm)].map((m) => [m[1], m[2]])
+    [...all.matchAll(/^\s*(?:const\s+)?(Failure\w+)\s*=\s*"([A-Z_]+)"/gm)].map((m) => [m[1], m[2]])
   )
   return names.map((n) => {
     const v = values.get(n)
