@@ -482,8 +482,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
-			// chunk, so no other sensor hits them at the same time.
+			// chunk, so no other sensor hits them at the same time; the
+			// sensor admits the chunk under the same keys (host_keys).
 			cmd.HostKeys = chunkHostKeys(resolved.Stage, resolved.HasStage, chunkTargets(chunk, run.Context))
+			if resolved.HasStage {
+				cmd.Payload, err = withHostKeys(cmd.Payload, cmd.HostKeys)
+			}
+		}
+		if err == nil {
 			// What the step's targets were gated with: the claim gates
 			// them again with it (claim-time scope re-check).
 			cmd.DispatchGate = stepDispatchGate(run, resolved)
