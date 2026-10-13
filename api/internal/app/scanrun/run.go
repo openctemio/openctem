@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	scandom "github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -524,22 +526,68 @@ func stageKeyOf(resolved scanapp.StepTool) stage.Key {
 
 // stepChunks cuts a step's targets into the chunks its commands carry:
 // pieces of the capability's chunk size for a tool that takes a target
-// list (stage.ChunkSizeFor), else one chunk with every target. A step with
-// no explicit target list is one chunk (nil targets).
+// list (stage.ChunkSizeFor), else one chunk with every target. An active
+// capability with an address budget (stage.ChunkAddressBudget) also closes
+// a chunk before its addresses would exceed the budget: a range weighs its
+// address count, any other target 1, so a /16 port scan is many chunks that
+// every eligible sensor shares, not one. A target heavier than the budget
+// gets a chunk of its own. A step with no explicit target list is one chunk
+// (nil targets).
 func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.StepTargets {
-	size := 0
+	size, budget := 0, 0
 	if resolved.HasStage {
 		size = resolved.Stage.ChunkSizeFor(resolved.Name)
+		if size > 0 {
+			budget = resolved.Stage.ChunkAddressBudget()
+		}
 	}
-	if st == nil || size <= 0 || len(st.Targets) <= size {
+	if st == nil || size <= 0 {
 		return []*scanapp.StepTargets{st}
 	}
-	out := make([]*scanapp.StepTargets, 0, (len(st.Targets)+size-1)/size)
-	for i := 0; i < len(st.Targets); i += size {
-		end := min(i+size, len(st.Targets))
-		out = append(out, &scanapp.StepTargets{Targets: st.Targets[i:end:end], Refused: st.Refused, Reason: st.Reason})
+	weights := make([]uint64, len(st.Targets))
+	var total uint64
+	for i, t := range st.Targets {
+		weights[i] = targetWeight(t, budget > 0)
+		total = addSat(total, weights[i])
 	}
+	if len(st.Targets) <= size && (budget <= 0 || total <= uint64(budget)) {
+		return []*scanapp.StepTargets{st}
+	}
+	var out []*scanapp.StepTargets
+	start, sum := 0, uint64(0)
+	for i := range st.Targets {
+		full := i-start >= size || (budget > 0 && i > start && addSat(sum, weights[i]) > uint64(budget))
+		if full {
+			out = append(out, &scanapp.StepTargets{Targets: st.Targets[start:i:i], Refused: st.Refused, Reason: st.Reason})
+			start, sum = i, 0
+		}
+		sum = addSat(sum, weights[i])
+	}
+	end := len(st.Targets)
+	out = append(out, &scanapp.StepTargets{Targets: st.Targets[start:end:end], Refused: st.Refused, Reason: st.Reason})
 	return out
+}
+
+// addSat adds without wrapping.
+func addSat(a, b uint64) uint64 {
+	if a > math.MaxUint64-b {
+		return math.MaxUint64
+	}
+	return a + b
+}
+
+// targetWeight is what one target counts against a chunk's address budget:
+// a range its address count (saturated), anything else 1.
+func targetWeight(t string, weighRanges bool) uint64 {
+	if !weighRanges {
+		return 1
+	}
+	r, ok := ipset.Parse(strings.TrimSpace(t))
+	if !ok || r.Lo == r.Hi || !strings.ContainsAny(t, "/-") {
+		return 1
+	}
+	n, _ := r.Size()
+	return n
 }
 
 // stepCommand builds one command of a step for the given chunk of its

@@ -174,8 +174,9 @@ func TestSplitRanges_HugeRangesRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"198.51.0.0/16"}; !reflect.DeepEqual(got.Allowed, want) {
-		t.Fatalf("allowed = %v, want %v", got.Allowed, want)
+	// The /16 itself is allowed, as 256 pieces of a /24.
+	if len(got.Allowed) != 256 || !allowedSet(t, got.Allowed).Equal(allowedSet(t, []string{"198.51.0.0/16"})) {
+		t.Fatalf("allowed %d targets, want the /16 as 256 pieces", len(got.Allowed))
 	}
 	if !sameSet(refusedTargets(got), huge) {
 		t.Fatalf("refused = %v, want %v", refusedTargets(got), huge)
@@ -328,5 +329,28 @@ func TestResolveScanTargets_SplitsRangeAroundExclusion(t *testing.T) {
 	}
 	if w := strings.Join(got.Warnings, "\n"); !strings.Contains(w, "198.51.100.0/24: 64 excluded") {
 		t.Fatalf("warnings = %q, want the split named", w)
+	}
+}
+
+// A range wider than one piece is cut into pieces of at most /24 (IPv6
+// /120), even with nothing excluded, so it can be chunked by address count;
+// a range that fits one piece is kept as written. No warning: nothing was
+// left out.
+func TestSplitRanges_PiecesOfAtMostSlash24(t *testing.T) {
+	tenant := shared.NewID()
+	svc := splitGate(&tenantExclusionRepo{}, nil)
+	got, err := svc.ResolveDispatchTargets(context.Background(),
+		triggerInput(tenant, "198.51.100.0/22", "203.0.113.0/25", "2001:db8::/118", "192.0.2.10-192.0.2.20"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"198.51.100.0/24", "198.51.101.0/24", "198.51.102.0/24", "198.51.103.0/24", "203.0.113.0/25",
+		"2001:db8::/120", "2001:db8::100/120", "2001:db8::200/120", "2001:db8::300/120",
+		"192.0.2.10/31", "192.0.2.12/30", "192.0.2.16/30", "192.0.2.20"}
+	if !reflect.DeepEqual(got.Allowed, want) {
+		t.Fatalf("allowed = %v, want %v", got.Allowed, want)
+	}
+	if w := splitWarnings(got.Split); len(w) != 0 {
+		t.Fatalf("warnings = %v, want none (nothing left out)", w)
 	}
 }

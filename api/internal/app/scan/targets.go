@@ -366,6 +366,9 @@ func isInternalAddr(a netip.Addr) bool {
 func splitWarnings(split []SplitTarget) []string {
 	out := make([]string, 0, len(split))
 	for _, sp := range split {
+		if sp.Removed == 0 {
+			continue // only cut into pieces
+		}
 		out = append(out, fmt.Sprintf("range %s: %d excluded or denied address(es) left out; the rest is scanned as %d piece(s)",
 			sp.Target, sp.Removed, len(sp.Pieces)))
 	}
