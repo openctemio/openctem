@@ -479,7 +479,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	chunks := stepChunks(resolved, stepTargets)
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk, stageKeyOf(resolved))
+		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time.
@@ -527,14 +527,6 @@ func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.Disp
 		g.Actor = actor.String()
 	}
 	return g
-}
-
-// stageKeyOf is the catalog stage a resolved step runs ("" when none).
-func stageKeyOf(resolved scanapp.StepTool) stage.Key {
-	if !resolved.HasStage {
-		return ""
-	}
-	return resolved.Stage.Key
 }
 
 // stepChunks cuts a step's targets into the chunks its commands carry:
@@ -604,18 +596,13 @@ func targetWeight(t string, weighRanges bool) uint64 {
 }
 
 // stepCommand builds one command of a step for the given chunk of its
-// targets, after the payload passed the security validator.
+// targets, after the payload passed the security validator. Its web scope
+// is attached when the command is stored (command.CreateGuard).
 func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
-	chunk *scanapp.StepTargets, key stage.Key,
+	chunk *scanapp.StepTargets,
 ) (*command.Command, error) {
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
-		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
-	}
-	if err := s.applyWebScope(ctx, run.TenantID, key, payload); err != nil {
-		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
-	}
-	if err := s.requireConfinedSensor(ctx, run.TenantID, payload); err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 
