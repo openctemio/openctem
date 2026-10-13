@@ -1594,5 +1594,9 @@
   "scans.owner.taking": "Đang nhận quyền sở hữu…",
   "scans.owner.taken": "Bạn hiện sở hữu \"{name}\". Hãy tiếp tục lượt quét để khởi động lại lịch chạy.",
   "scans.owner.takeFailed": "Không thể nhận quyền sở hữu",
-  "scans.owner.askAdmin": "Chủ sở hữu tổ chức hoặc quản trị viên có thể nhận quyền sở hữu."
+  "scans.owner.askAdmin": "Chủ sở hữu tổ chức hoặc quản trị viên có thể nhận quyền sở hữu.",
+  "scans.tasks.progressDone": "xong {done}/{total} mục tiêu",
+  "scans.tasks.lastTarget": "mục tiêu gần nhất {ago} trước",
+  "scans.tasks.budget": "ngân sách {budget}",
+  "scans.tasks.stalling": "Không có mục tiêu nào xong trong {quiet}; sẽ bị thu hồi vì treo sau {stall}"
 }
