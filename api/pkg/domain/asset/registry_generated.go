@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "ecb9aa51a9146fc3"
+const RegistryVersion = "bd153e0c308103c2"
 
 // Lenses.
 const (
@@ -207,6 +207,7 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
 			},
 			In: []RelationshipRule{
+				{Relationship: "contains", Peers: []TypeRef{{Type: "host"}}},
 				{Relationship: "resolves_to", Peers: []TypeRef{{Type: "domain"}, {Type: "subdomain"}}},
 			},
 		},
@@ -600,7 +601,7 @@ var registryTypes = []TypeDefinition{
 		SubTypes:       []string{"compute", "serverless", "workstation"},
 		LegacyCategory: CategoryInfrastructure,
 		Storage:        "core",
-		IdentityKeys:   []string{"host_id", "cloud_id", "bios_uuid", "serial_number", "mac", "fqdn", "hostname", "ip", "name"},
+		IdentityKeys:   []string{"host_id", "cloud_id", "bios_uuid", "serial_number", "directory_object_id", "mac", "fqdn", "hostname", "ip", "name"},
 		Attributes: []AttributeDefinition{
 			{Name: "hostname", Kind: "string"},
 			{Name: "fqdn", Kind: "string"},
@@ -623,7 +624,8 @@ var registryTypes = []TypeDefinition{
 		Sections: []string{"overview", "attributes", "services", "findings", "components", "relationships", "owners", "exposure", "sources", "history"},
 		Relationships: TypeRelationships{
 			Out: []RelationshipRule{
-				{Relationship: "contains", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "host"}}},
+				{Relationship: "contains", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}, {Type: "ip_address"}}},
 				{Relationship: "contains", SubType: "workstation", Peers: []TypeRef{{Type: "container"}, {Type: "service"}, {Type: "database"}}},
 				{Relationship: "exposes", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
 				{Relationship: "exposes", SubType: "workstation", Peers: []TypeRef{{Type: "service", SubType: "discovered_url"}, {Type: "service"}, {Type: "application", SubType: "api"}}},
@@ -633,7 +635,7 @@ var registryTypes = []TypeDefinition{
 				{Relationship: "protected_by", SubType: "compute", Peers: []TypeRef{{Type: "service"}}},
 			},
 			In: []RelationshipRule{
-				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "database"}, {Type: "container"}}},
+				{Relationship: "runs_on", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}, {Type: "database"}, {Type: "container"}, {Type: "host"}}},
 				{Relationship: "runs_on", SubType: "workstation", Peers: []TypeRef{{Type: "service"}, {Type: "application", SubType: "api"}, {Type: "application", SubType: "website"}}},
 				{Relationship: "deployed_to", Peers: []TypeRef{{Type: "repository"}, {Type: "container", SubType: "image"}}},
 				{Relationship: "contains", Peers: []TypeRef{{Type: "cloud_account"}, {Type: "network"}}},
@@ -695,7 +697,7 @@ var registryTypes = []TypeDefinition{
 		SubTypes:       []string{},
 		LegacyCategory: CategoryInfrastructure,
 		Storage:        "core",
-		IdentityKeys:   []string{"host_id", "bios_uuid", "serial_number", "mac", "hostname", "name"},
+		IdentityKeys:   []string{"host_id", "bios_uuid", "serial_number", "directory_object_id", "mac", "hostname", "name"},
 		Attributes: []AttributeDefinition{
 			{Name: "ip_addresses", Kind: "list"},
 			{Name: "hostname", Kind: "string"},

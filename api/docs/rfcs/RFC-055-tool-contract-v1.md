@@ -345,6 +345,22 @@ domain and every name under it), `path_prefixes`, `deny_paths` (`/logout`,
 platform sets it; the sensor enforces it, and the platform re-checks what
 comes back (mutual distrust, RFC-040).
 
+- The platform sets it in one place: the command repository's create
+  guard, which every command passes before it is stored. A job is a web
+  job when its tool implements a web stage (`crawl.web`, `vuln.templates`,
+  `dast.web`), or its capability or a required capability word names one,
+  whatever path built it: a quick scan, a workflow step with or without a
+  stage, a scheduled or retried scan, a zone batch, an automation's scan, a
+  command created through the API. The scope is the command's own tenant's;
+  a `web_scope` the caller put in the payload is replaced. A failed lookup
+  refuses the job; so does a repository without the guard when the tenant
+  has a path exclusion. Commands are inserted only by `Create` and by the
+  window hold's split of a stored command (a test fails on any other).
+- A nuclei validation (`validate`) or a nuclei retest (`retest`) cannot
+  carry a web scope to the sensor yet: on a target host with a path
+  exclusion it is refused with `WEB_SCOPE_UNSUPPORTED` and nothing is
+  queued.
+
 - The SDK (`pkg/webscope`) checks a request as the server sees its path:
   percent-decoded, dot segments resolved, backslash as a slash. A path with
   an encoded slash, backslash or NUL is refused. Deny paths match by prefix,
@@ -361,6 +377,25 @@ comes back (mutual distrust, RFC-040).
   repeated slashes), an in-scope regex for prefixes and hosts, field scope
   `fqdn`, no redirects and no form filling without POST; its results are
   filtered with the scope again.
+- A tool whose own requests do not follow a scope (nuclei: templates request
+  arbitrary paths) declares `features.web_scope` only because the task's
+  forwarder enforces it. On a sandbox that confines the network the
+  forwarder is the tool's only way out; it terminates TLS with a per-task
+  authority, checks every request and redirect with `pkg/webscope`, and
+  refuses the rest, and non-HTTP traffic. Such a tool refuses a web-scoped
+  job on a sensor that does not confine its tools' network, before it runs.
+- The platform places such a job only on a sensor that keeps to the scope:
+  a web-scoped nuclei job carries `required_features: ["net.confined@1"]`,
+  and the claim offers it only to a sensor that itself reported
+  `net.confined@1` (its tools run out of process, network-confined), never
+  on an administrator's declaration. Other sensors leave it queued, and the
+  run page says `not_confined` ([placement](../architecture/placement.md)).
+  When the organization has no active sensor that reported it, the job is
+  refused when it is created with `NO_CONFINED_SENSOR` (class `placement`).
+- A step whose sensor refused the web scope fails with
+  `WEB_SCOPE_UNSUPPORTED` (class `placement`, never retried): the fix is a
+  sensor that can keep to it, not another attempt. Like any failed step, it
+  leaves the run `partial` when other steps completed (RFC-046 §7).
 
 ### 6.2 Endpoints and evidence on the wire
 

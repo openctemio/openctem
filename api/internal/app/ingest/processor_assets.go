@@ -465,6 +465,8 @@ func (p *AssetProcessor) processBatch(
 		"total", len(names),
 		"existing", len(existingMap),
 	)
+	// A trusted collector's complete report: which of them its source owns.
+	scope.primeCollector(existingMap)
 
 	// Step 3: Separate new vs existing assets
 	// With IP correlation: if name doesn't match but IPs do, merge into existing.
@@ -518,6 +520,10 @@ func (p *AssetProcessor) processBatch(
 			continue
 		}
 
+		// When the source last saw this asset (its last_seen, never later
+		// than the report).
+		seenAt := assetSeenAt(ctisAsset, observedAt)
+
 		// mergeInto folds this report asset into an existing one. A report
 		// that may not change the asset (RFC-040 §5.3) only marks it seen,
 		// and only while it is active: no flags, exposure, classification,
@@ -532,7 +538,7 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, observedAt, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -540,7 +546,7 @@ func (p *AssetProcessor) processBatch(
 					assetMap[ctisAsset.ID] = existing.ID()
 					return
 				}
-				existing.MarkSeenAt(observedAt)
+				existing.ObserveAt(seenAt)
 			}
 			if !isNew[id] && !queued[id] {
 				updateAssets = append(updateAssets, existing)
@@ -583,7 +589,7 @@ func (p *AssetProcessor) processBatch(
 			scope.dropUntrustedClaims(newAsset)
 			// Seen when its source saw it, so a later report observed earlier
 			// cannot pass it.
-			newAsset.MarkSeenAt(observedAt)
+			newAsset.MarkSeenAt(seenAt)
 			if skipExcluded(excl, newAsset, ctisAsset.ID, output) {
 				return
 			}
@@ -677,6 +683,29 @@ func (p *AssetProcessor) processBatch(
 					rename(existing, result.CorrelationType)
 				}
 				// Cache for later assets in same batch
+				existingMap[normalizedName] = existing
+				continue
+			}
+			createNew()
+
+		case p.correlator != nil && isNetworkDevice(coreType, rt.stored.SubType):
+			// 4b. A network device of the tenant with the same address.
+			props := p.buildPropertiesFromCTIS(ctisAsset)
+			result, corrErr := p.correlator.CorrelateNetworkDevice(ctx, tenantID, normalizedName, props, cfg)
+			if corrErr != nil {
+				p.logger.Warn("network device correlation failed, creating new asset",
+					"name", logger.SanitizeValue(normalizedName), "error", corrErr)
+			}
+			if result != nil && len(result.Ambiguous) > 1 {
+				p.enqueueDedupReview(ctx, tenantID, normalizedName, string(coreType), result.Ambiguous[0], result.Ambiguous[1:])
+			}
+			if result != nil && result.Matched != nil &&
+				(idx == nil || !idx.vetoed(result.Matched, idx.incoming[i], allKinds)) {
+				existing := result.Matched
+				mergeInto(existing)
+				if result.ShouldRename {
+					rename(existing, result.CorrelationType)
+				}
 				existingMap[normalizedName] = existing
 				continue
 			}
@@ -862,6 +891,9 @@ func (p *AssetProcessor) processBatch(
 	// it served).
 	if p.relRepo != nil {
 		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
+		// Step 8b: the report's typed relationships and a host's placement
+		// (hypervisor host, addresses).
+		p.createReportRelationships(ctx, tenantID, report, existingMap, assetMap, mayChange)
 	}
 
 	// What this ingest wrote, for attribution (scan_attribution.go): every
@@ -963,6 +995,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 ) {
 	// Collect unique root domains that need to be created
 	needed := make(map[string]bool)
+	// publicRoot: a root some name outside a private DNS zone named. A root
+	// only private-zone names name is private too.
+	publicRoot := make(map[string]bool)
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
 		if ctisAsset.Type != ctis.AssetTypeSubdomain {
@@ -993,6 +1028,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		}
 
 		needed[rootDomain] = true
+		if !privateZone(ctisAsset) {
+			publicRoot[rootDomain] = true
+		}
 	}
 
 	if len(needed) == 0 {
@@ -1044,8 +1082,11 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		if skipExcluded(excl, domainAsset, "", output) {
 			continue
 		}
-		// Same exposure inference as scanner-reported domains (public by nature).
-		if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
+		// Same exposure inference as scanner-reported domains (public by
+		// nature), unless only names of private DNS zones named it.
+		if !publicRoot[domainName] {
+			domainAsset.SetExposure(asset.ExposurePrivate)
+		} else if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
 			domainAsset.SetExposure(inferred)
 		}
 
@@ -1905,6 +1946,8 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// PII/PHI all feed the prioritization engine's reachability + business-
 	// context gates. Before this, only regulatory_owner was read.
 	p.applyCTEMSignals(newAsset, ctisAsset, true)
+	// A name in a private DNS zone is not internet-facing.
+	applyPrivateZone(newAsset, ctisAsset)
 
 	// Infer internet exposure when the scanner didn't provide one. Exposure is
 	// the reachability signal the prioritization engine reads, and it was
@@ -1928,7 +1971,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 // The data classification is applied only to a new asset (classify);
 // an existing asset's is decided by attribute reconciliation (RFC-069).
 func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset, classify bool) {
-	if ctisAsset.IsInternetAccessible {
+	if ctisAsset.IsInternetAccessible && !privateZone(ctisAsset) {
 		a.SetInternetAccessible(true)
 		if a.Exposure() == asset.ExposureUnknown {
 			a.SetExposure(asset.ExposurePublic)
@@ -1995,7 +2038,7 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// Mark as seen. Capture the prior status first so we can tell when this
 	// scan reactivates a stale/inactive asset (MarkSeen flips it to active).
 	wasInactive := existing.Status() == asset.StatusStale || existing.Status() == asset.StatusInactive
-	existing.MarkSeenAt(observedAt)
+	existing.ObserveAt(observedAt)
 	if recovered != nil && wasInactive && existing.Status() == asset.StatusActive {
 		*recovered = append(*recovered, existing.ID())
 	}

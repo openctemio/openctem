@@ -37,14 +37,15 @@ func (c *OwnerResolutionController) Interval() time.Duration { return 30 * time.
 // ownerResolutionQuery adds the member whose email equals owner_ref
 // (case-insensitive) as the asset's primary owner, unless the asset already has
 // an owner_ref-derived owner or that member already owns the asset in any role
-// (an explicit RACI choice is never overridden). The member must belong to the
-// asset's tenant. The unique index (asset_id, user_id) makes it idempotent.
+// (an explicit RACI choice is never overridden). The member must be an active
+// member of the asset's tenant; an owner_ref that matches nobody stays text
+// and nobody is invited. The unique index (asset_id, user_id) makes it idempotent.
 const ownerResolutionQuery = `
 	INSERT INTO asset_owners (asset_id, user_id, ownership_type, assigned_at, assignment_source)
 	SELECT a.id, u.id, 'primary', NOW(), 'owner_ref'
 	FROM assets a
 	JOIN users u ON LOWER(u.email) = LOWER(a.owner_ref)
-	JOIN tenant_members tm ON tm.user_id = u.id AND tm.tenant_id = a.tenant_id
+	JOIN tenant_members tm ON tm.user_id = u.id AND tm.tenant_id = a.tenant_id AND tm.status = 'active'
 	WHERE a.deleted_at IS NULL
 	  AND a.owner_ref IS NOT NULL
 	  AND a.owner_ref LIKE '%@%'

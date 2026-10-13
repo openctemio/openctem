@@ -46,18 +46,48 @@ export interface AssetAttribution {
   covered_by?: { kind?: string; id?: string; pattern?: string; proof?: string }
   /** The refusal code (RFC-054 §6.5) when active checks are blocked. */
   blocked_code?: string
+  /**
+   * Only on the PUT response: the scope entries a confirmation added for the
+   * asset's exact name (skipped: why none were tried).
+   */
+  scope?: {
+    skipped?: string
+    entries: {
+      asset_id?: string
+      name?: string
+      pattern?: string
+      target_type?: string
+      target_id?: string
+      status?: string
+      outcome: 'added' | 'exists' | 'covered' | 'refused'
+      code?: string
+    }[]
+  }
 }
 
 /** The decisions a person can take (PUT /assets/{id}/attribution). */
 export type AttributionDecision = Exclude<AttributionState, 'candidate'>
 
-export const ATTRIBUTION_STATE_LABEL: Record<AttributionState, string> = {
-  confirmed: 'Confirmed',
-  needs_review: 'Needs review',
-  candidate: 'Candidate',
-  dependency: 'Dependency',
-  monitor_only: 'Monitor only',
-  rejected: 'Not ours',
+/** A translator as `useTranslation()` returns it. */
+export type AttributionT = (
+  key: string,
+  fallback?: string,
+  vars?: Record<string, string | number>
+) => string
+
+const STATE_LABEL: Record<AttributionState, [string, string]> = {
+  confirmed: ['assets.attribution.state.confirmed', 'Confirmed'],
+  needs_review: ['assets.attribution.state.needsReview', 'Needs review'],
+  candidate: ['assets.attribution.state.candidate', 'Candidate'],
+  dependency: ['assets.attribution.state.dependency', 'Dependency'],
+  monitor_only: ['assets.attribution.state.monitorOnly', 'Monitor only'],
+  rejected: ['assets.attribution.state.rejected', 'Not ours'],
+}
+
+/** The state in words. */
+export function attributionStateLabel(t: AttributionT, state: AttributionState): string {
+  const [key, fallback] = STATE_LABEL[state] ?? ['', state]
+  return key ? t(key, fallback) : String(state).replace(/_/g, ' ')
 }
 
 /** Theme-token tint per state (ui-style-contract §6). */
@@ -70,46 +100,62 @@ export const ATTRIBUTION_STATE_CLASS: Record<AttributionState, string> = {
   rejected: 'bg-destructive/15 text-destructive',
 }
 
-const TECHNIQUE_LABEL: Record<string, string> = {
-  cert_transparency: 'Certificate Transparency',
-}
-
-const SOURCE_LABEL: Record<string, string> = {
-  'crt.sh': 'crt.sh',
-  certspotter: 'Cert Spotter',
-}
-
 /**
  * One evidence row as a sentence a reviewer can check, for example
  * "Under verified domain acme.com — seen in Certificate Transparency (crt.sh)
  * since 5 Jan 2026".
  */
-export function describeEvidence(e: AttributionEvidence): string {
+export function describeEvidence(t: AttributionT, e: AttributionEvidence): string {
   const root = typeof e.observed?.root === 'string' ? e.observed.root : ''
   let what: string
   switch (e.rule) {
     case 'fqdn_under_verified_root':
-      what = root ? `Under verified domain ${root}` : 'Under a verified domain'
+      what = root
+        ? t('assets.attribution.evidence.verifiedRoot', 'Under verified domain {root}', { root })
+        : t('assets.attribution.evidence.verifiedRootAny', 'Under a verified domain')
       break
     case 'fqdn_under_asserted_root':
       what = root
-        ? `Under ${root}, a domain you listed but have not verified`
-        : 'Under a domain you listed but have not verified'
+        ? t(
+            'assets.attribution.evidence.assertedRoot',
+            'Under {root}, a domain you listed but have not verified',
+            { root }
+          )
+        : t(
+            'assets.attribution.evidence.assertedRootAny',
+            'Under a domain you listed but have not verified'
+          )
       break
     case 'tenant_scanned':
-      what = 'A target your organization scanned'
+      what = t('assets.attribution.evidence.scanned', 'A target your organization scanned')
       break
     case 'tenant_scan_discovered':
-      what = 'Found by a scan your organization ran (not one of its targets)'
+      what = t(
+        'assets.attribution.evidence.scanDiscovered',
+        'Found by a scan your organization ran (not one of its targets)'
+      )
       break
     default:
       what = e.rule.replace(/_/g, ' ')
   }
-  const technique = TECHNIQUE_LABEL[e.technique] ?? e.technique.replace(/_/g, ' ')
-  const source = evidenceSourceText(e)
+  const technique =
+    e.technique === 'cert_transparency'
+      ? t('assets.attribution.technique.certTransparency', 'Certificate Transparency')
+      : e.technique.replace(/_/g, ' ')
+  const source = evidenceSourceText(t, e)
   const first = typeof e.observed?.first_seen === 'string' ? e.observed.first_seen : ''
-  const since = first ? ` since ${formatDay(first)}` : ''
-  return `${what} — seen in ${technique} (${source})${since}`
+  if (first) {
+    return t(
+      'assets.attribution.evidence.lineSince',
+      '{what} — seen in {technique} ({source}) since {date}',
+      { what, technique, source, date: formatDay(first) }
+    )
+  }
+  return t('assets.attribution.evidence.line', '{what} — seen in {technique} ({source})', {
+    what,
+    technique,
+    source,
+  })
 }
 
 /**
@@ -119,16 +165,24 @@ export function describeEvidence(e: AttributionEvidence): string {
  * not name reads "a removed sensor".
  */
 export function evidenceSourceText(
+  t: AttributionT,
   e: Pick<AttributionEvidence, 'source' | 'source_label'>
 ): string {
   if (e.source_label) return e.source_label
-  if (e.source.startsWith('sensor:')) return 'a removed sensor'
-  return SOURCE_LABEL[e.source] ?? e.source
+  if (e.source.startsWith('sensor:'))
+    return t('assets.attribution.source.removedSensor', 'a removed sensor')
+  if (e.source === 'certspotter') return t('assets.attribution.source.certSpotter', 'Cert Spotter')
+  return e.source
 }
 
-/** The review hint of an address row (RFC-054 §4.3, §6.6). */
-export const REVIEW_HINT_TEXT: Record<string, string> = {
-  ip_needs_ip_entry: 'Names never grant their addresses; this IP needs its own scope entry.',
+/** The review hint of an address row (RFC-054 §4.3, §6.6); '' for an unknown one. */
+export function reviewHintText(t: AttributionT, hint: string | undefined): string {
+  if (hint === 'ip_needs_ip_entry')
+    return t(
+      'assets.attribution.hint.ipNeedsIpEntry',
+      'Names never grant their addresses; this IP needs its own scope entry.'
+    )
+  return ''
 }
 
 export interface ReviewNetworkFacts {
@@ -140,15 +194,26 @@ export interface ReviewNetworkFacts {
 }
 
 /** One line about the network an address sits in, for the review queue. */
-export function reviewNetworkText(n: ReviewNetworkFacts | null | undefined): string | null {
+export function reviewNetworkText(
+  t: AttributionT,
+  n: ReviewNetworkFacts | null | undefined
+): string | null {
   if (!n) return null
   const who = [n.asn, n.org].filter(Boolean).join(' ')
   if (n.shared) {
-    const provider = n.shared_provider ? ` (${n.shared_provider})` : ''
-    return `${who ? `${who}: ` : ''}shared provider space${provider}; it cannot be added, because these addresses serve other organizations.`
+    return t(
+      'assets.attribution.network.shared',
+      '{who}shared provider space{provider}; it cannot be added, because these addresses serve other organizations.',
+      {
+        who: who ? `${who}: ` : '',
+        provider: n.shared_provider ? ` (${n.shared_provider})` : '',
+      }
+    )
   }
   if (!who) return null
-  return n.org_matches ? `${who}, which matches your organization.` : `${who}.`
+  return n.org_matches
+    ? t('assets.attribution.network.matches', '{who}, which matches your organization.', { who })
+    : t('assets.attribution.network.plain', '{who}.', { who })
 }
 
 function formatDay(iso: string): string {
@@ -168,36 +233,58 @@ function formatDay(iso: string): string {
  * verified domain covers it; `canAdd` when adding a scope entry would help.
  */
 export function scopeStandingText(
+  t: AttributionT,
   a: Pick<AssetAttribution, 'scope_status' | 'covered_by'>
 ): { text: string; ok: boolean; canAdd: boolean } | null {
   const via = a.covered_by
   switch (a.scope_status) {
     case 'in_scope': {
       const pattern = via?.pattern
-      const proof = via?.proof === 'verified' ? ' (verified)' : ''
+      if (!pattern)
+        return { text: t('assets.attribution.scope.inScope', 'In scope.'), ok: true, canAdd: false }
+      const verified = via?.proof === 'verified'
       const kind =
         via?.kind === 'seed'
-          ? 'seed'
+          ? t('assets.attribution.scope.kindSeed', 'seed')
           : via?.kind === 'verified_domain'
-            ? 'verified domain'
-            : 'scope entry'
+            ? t('assets.attribution.scope.kindVerifiedDomain', 'verified domain')
+            : t('assets.attribution.scope.kindEntry', 'scope entry')
       return {
-        text: pattern ? `In scope through the ${kind} ${pattern}${proof}.` : 'In scope.',
+        text: verified
+          ? t(
+              'assets.attribution.scope.throughVerified',
+              'In scope through the {kind} {pattern} (verified).',
+              { kind, pattern }
+            )
+          : t('assets.attribution.scope.through', 'In scope through the {kind} {pattern}.', {
+              kind,
+              pattern,
+            }),
         ok: true,
         canAdd: false,
       }
     }
     case 'out_of_scope':
       return {
-        text: 'Out of scope: no scope entry covers this name.',
+        text: t(
+          'assets.attribution.scope.outOfScope',
+          'Out of scope: no scope entry covers this name.'
+        ),
         ok: false,
         canAdd: true,
       }
     case 'internal':
-      return { text: 'A private target: its scan zone decides.', ok: true, canAdd: false }
+      return {
+        text: t('assets.attribution.scope.internal', 'A private target: its scan zone decides.'),
+        ok: true,
+        canAdd: false,
+      }
     case 'not_applicable':
       return {
-        text: 'Scope entries do not apply to this kind of asset.',
+        text: t(
+          'assets.attribution.scope.notApplicable',
+          'Scope entries do not apply to this kind of asset.'
+        ),
         ok: true,
         canAdd: false,
       }
@@ -208,18 +295,35 @@ export function scopeStandingText(
 
 /** What a scan does with this asset, in words. */
 export function scanStanding(
+  t: AttributionT,
   a: Pick<AssetAttribution, 'active_checks_allowed' | 'state' | 'active_checks_blocked_by'>
 ): string {
-  if (a.active_checks_allowed) return 'Scans can reach this asset.'
+  if (a.active_checks_allowed)
+    return t('assets.attribution.scan.reachable', 'Scans can reach this asset.')
   if (a.active_checks_blocked_by === 'unattributed')
-    return 'Scans skip this asset: no scope target, seed or verified domain covers it. Add it to Scoping › Scope.'
+    return t(
+      'assets.attribution.scan.unattributed',
+      'Scans skip this asset: no scope target, seed or verified domain covers it. Add it to Scoping › Scope.'
+    )
   if (a.active_checks_blocked_by === 'out_of_scope')
-    return 'Scans skip this asset: it is confirmed as yours, but no scope target, seed or verified domain covers it. Add it to Scoping › Scope to scan it.'
+    return t(
+      'assets.attribution.scan.outOfScope',
+      'Scans skip this asset: it is confirmed as yours, but no scope target, seed or verified domain covers it. Add it to Scoping › Scope to scan it.'
+    )
   if (a.active_checks_blocked_by === 'rejected' && a.state !== 'rejected')
-    return 'Scans skip this asset: a name it sits under was marked not yours.'
+    return t(
+      'assets.attribution.scan.underRejected',
+      'Scans skip this asset: a name it sits under was marked not yours.'
+    )
   if (a.state === 'needs_review' || a.state === 'candidate')
-    return 'Scans skip this asset until its ownership is confirmed.'
-  return 'Scans skip this asset; it is watched passively only.'
+    return t(
+      'assets.attribution.scan.untilConfirmed',
+      'Scans skip this asset until its ownership is confirmed.'
+    )
+  return t(
+    'assets.attribution.scan.passive',
+    'Scans skip this asset; it is watched passively only.'
+  )
 }
 
 /** The decisions to offer for a state (never the state it is already in). */

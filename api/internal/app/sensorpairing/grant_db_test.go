@@ -94,3 +94,26 @@ func TestPairing_ApprovalCreatesGrant_DB(t *testing.T) {
 		t.Fatalf("expectation profile not used: %+v", g)
 	}
 }
+
+// A collector approved without a chosen profile gets the collector profile
+// (push ingest in the grant), still at trust level New.
+func TestPairing_CollectorDefaultProfile_DB(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	grants := f.withGrants()
+	a := f.org("org-grant-collector")
+
+	s := newSensor(41)
+	f.start(s, "", "")
+	f.reveal(s)
+	id, _ := shared.IDFromString(s.resp.PairingID)
+	in := approve(s.resp.UserCode)
+	in.Type = sensordom.SensorTypeCollector
+	if _, err := f.svc.Approve(ctx, a, id, in); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	g := f.grant(grants, a.TenantID, f.status(s).Identity.SensorID)
+	if g.Profile != sensordom.ProfileCollector || g.TrustLevel != sensordom.TrustNew || !g.AllowPushIngest || g.Effective().AllowPushIngest {
+		t.Fatalf("collector grant after approval: %+v", g)
+	}
+}

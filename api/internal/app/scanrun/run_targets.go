@@ -73,6 +73,8 @@ func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, trigge
 		// The person who starts the run (or, from a workflow, triggered_by
 		// when it names a user) may scan only targets in their act scope.
 		ActScope: true, FallbackUser: userIDOf(triggeredBy),
+		// A range that overlaps an exclusion is cut around it, not dropped.
+		SplitRanges: true,
 	})
 	if err != nil {
 		return nil, err

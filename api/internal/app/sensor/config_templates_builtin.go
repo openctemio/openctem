@@ -99,16 +99,28 @@ sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
 sudo install -d -m 0755 /etc/openctem
 sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 
-# {{if .CACert}}3{{else}}2{{end}}. Start the sensor. It connects out to the platform (no inbound port)
-# and runs the scans the platform dispatches. Results that cannot be delivered
-# yet wait in the {{$slug}}-outbox volume, so a restart or an outage loses nothing.
-# The {{$slug}}-state volume keeps the sensor's state, including the API key
-# it renews on its own: keep it with the container (a new container without it
-# starts with the key above, which a renewal has retired). {{$slug}}-content
-# caches scanner content (trivy DB, nuclei templates, semgrep rules) so a new
-# container does not download it again; it can be deleted at any time.
+# {{if .CACert}}3{{else}}2{{end}}. Download the sensor's seccomp profile and check it: the container
+# runtime's default profile plus new namespaces, so each scan task runs in
+# its own network namespace and reaches only its targets (network
+# confinement). Jobs that need it (a web scope) go only to confined sensors.
+# Keep Docker's default AppArmor profile (never apparmor=unconfined).
+sudo curl -fsSL{{if .CACert}} --cacert /etc/openctem/certs/openctem-root-ca.crt{{end}} -o /etc/openctem/sensor-seccomp.json {{shellQuote .SeccompURL}}
+echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
+
+# {{if .CACert}}4{{else}}3{{end}}. Start the sensor. It connects out to the platform (no inbound port)
+# and runs the scans the platform dispatches. One volume, {{$slug}}-data at
+# /var/lib/openctem, holds everything the sensor keeps:
+#   outbox/   results that cannot be delivered yet (a restart or an outage
+#             loses nothing);
+#   state/    the sensor's identity and the API key it renews on its own:
+#             keep the volume with the container (a new container without it
+#             starts with the key above, which a renewal has retired);
+#   content/  scanner content cache (trivy DB, nuclei templates, semgrep
+#             rules), so a new container does not download it again; it can
+#             be deleted at any time.
 # Hardened: read-only root filesystem, no capabilities, no privilege
-# escalation (add --cap-add NET_RAW only for naabu SYN scans). The sensor
+# escalation, the sensor's seccomp profile (add --cap-add NET_RAW only for
+# naabu SYN scans). The sensor
 # writes only /tmp besides its volumes, and its tools keep their settings
 # there (XDG_*); the image's home directory stays as built, with the
 # nuclei-templates release the sensor scans with until its first update.
@@ -116,6 +128,7 @@ sudo install -m 0644 sensor-policy.yaml /etc/openctem/sensor-policy.yaml
 # host owner creates with sudo touch /etc/openctem/STOP.
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+  --security-opt seccomp=/etc/openctem/sensor-seccomp.json \
   --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/.config -e XDG_CACHE_HOME=/tmp/.cache \
   -e SENSOR_API_URL={{shellQuote .BaseURL}} \
 {{- if .APIKey}}
@@ -200,7 +213,15 @@ export SSL_CERT_DIR=/etc/openctem/certs
 #      outside it; without the file it does not start), owned by root and
 #      read-only:
 #        sudo install -D -m 0644 -o root sensor-policy.yaml policy/sensor-policy.yaml
-#   3. Save this file as compose.yaml and run: docker compose up -d
+#   3. Download the sensor's seccomp profile next to compose.yaml and check
+#      it (each scan task then runs network-confined; keep Docker's default
+#      AppArmor profile):
+#        curl -fsSL{{if .CACert}} --cacert openctem-root-ca.crt{{end}} -o sensor-seccomp.json {{shellQuote .SeccompURL}}
+#        echo '{{.SeccompSHA256}}  sensor-seccomp.json' | sha256sum -c -
+{{- if .CACert}}
+#      (openctem-root-ca.crt: the platform's CA, the PEM under configs below)
+{{- end}}
+#   4. Save this file as compose.yaml and run: docker compose up -d
 #   Kill switch (no job runs while the file exists): sudo touch policy/STOP
 #   The policy and the kill switch need a sensor release later than v0.8.0;
 #   v0.8.0 and older ignore them and scan without a local policy.
@@ -222,13 +243,14 @@ services:
 {{- end}}
 {{- if isDaemon .Sensor}}
     # Hardened: read-only root filesystem, no capabilities, no privilege
-    # escalation (add NET_RAW to cap_add only for naabu SYN scans). The
+    # escalation, the sensor's seccomp profile (per-task network
+    # confinement); add NET_RAW to cap_add only for naabu SYN scans. The
     # sensor writes only /tmp besides its volumes (its tools too: XDG_*
     # below); the image's home directory keeps the nuclei-templates release
     # the sensor scans with until its first update.
     read_only: true
     cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
+    security_opt: ["no-new-privileges:true", "seccomp=./sensor-seccomp.json"]
     tmpfs: [/tmp]
 {{- end}}
     environment:
@@ -298,7 +320,16 @@ configs:
 #      sensor refuses every job outside it; without it the pod does not start.
 #      Keep write access to this ConfigMap with the network owner:
 #        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
-#   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
+#   2. Put the sensor's seccomp profile on every node that may run the pod,
+#      at <kubelet root>/seccomp/openctem/sensor-seccomp.json (usually
+#      /var/lib/kubelet/seccomp/...), and check it:
+#        curl -fsSL -o sensor-seccomp.json {{shellQuote .SeccompURL}}
+#        echo '{{.SeccompSHA256}}  sensor-seccomp.json' | sha256sum -c -
+#      Each scan task then runs network-confined. Where you cannot write to
+#      the nodes, set seccompProfile below to {type: RuntimeDefault}: the
+#      sensor then runs unconfined, and jobs that need confinement (a web
+#      scope) go to other sensors.
+#   3. kubectl apply -n <namespace> -f {{$slug}}.yaml
 #   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
 #   The policy needs a sensor release later than v0.8.0; v0.8.0 and older
 #   ignore it and scan without a local policy.
@@ -375,8 +406,11 @@ spec:
         runAsGroup: 999
         fsGroup: 999
         fsGroupChangePolicy: OnRootMismatch
+        # The sensor's own profile (step 2): the runtime default plus new
+        # namespaces, for per-task network confinement.
         seccompProfile:
-          type: RuntimeDefault
+          type: Localhost
+          localhostProfile: openctem/sensor-seccomp.json
       containers:
         - name: sensor
           image: {{.Image}}
@@ -537,8 +571,11 @@ kubectl create secret generic {{$slug}}-key \
 #    the policy and scan without one.
 
 # 3. Turn the bundled sensor on (release "openctem"; use yours). Use chart
-#    0.19.0 or later: the sensor runs hardened (non-root, read-only root
-#    filesystem, no capabilities, seccomp RuntimeDefault), mounts the policy
+#    0.23.0 or later: the sensor runs hardened (non-root, read-only root
+#    filesystem, no capabilities, its own seccomp profile so each scan task
+#    runs network-confined; the chart installs the profile on the nodes with
+#    a DaemonSet: sensor.sandbox.seccompProfile=runtime-default turns that
+#    off, and the sensor then runs unconfined), mounts the policy
 #    read-only, keeps the nuclei-templates baked into its image, and keeps
 #    its state, outbox and content cache on one data volume (a release that
 #    already has the sensor's per-directory volumes keeps them).
@@ -550,6 +587,7 @@ helm upgrade openctem openctem/openctem --reuse-values \
 {{- with toolList .Sensor.EffectiveTools}}
   --set-string 'sensor.tools={{replaceComma .}}' \
 {{- end}}
+  --set sensor.sandbox.seccompProfile=openctem \
   --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
   --set-file sensor.localPolicy.policy=sensor-policy.yaml
@@ -619,5 +657,363 @@ allow_interactsh: false
 # While this file exists the sensor runs no job and reports "paused by local
 # policy": sudo touch /etc/openctem/STOP (remove it to resume).
 kill_switch_file: /etc/openctem/STOP
+`,
+	"collector-yaml": `# Asset collector configuration for {{slugify .Sensor.Name}} (config.yaml)
+# Generated by OpenCTEM at {{.GeneratedAt}}. Optional: the environment variables
+# of the "env" tab are enough for one vendor. For several sources and
+# schedules, mount this file at /app/config.yaml. Values support ${VAR} and
+# ${VAR:default}; every variable can come from VAR_FILE.
+sensor:
+  name: {{yamlQuote (slugify .Sensor.Name)}}
+
+api:
+  base_url: ${SENSOR_API_URL}
+  api_key: ${SENSOR_API_KEY}
+
+ldap_servers:
+  - name: ad
+    enabled: true
+    schedule: "0 0 */6 * * *"   # every 6 hours
+    url: ${LDAP_URL}
+    bind_dn: ${LDAP_BIND_DN}
+    password: ${LDAP_PASSWORD}
+    base_dn: ${LDAP_BASE_DN}
+    filter: "(objectClass=computer)"
+`,
+	"collector-env": `# Environment variables for the OpenCTEM collector {{slugify .Sensor.Name}}
+# Generated by OpenCTEM at {{.GeneratedAt}}.
+# Every variable can come from a file instead: set VAR_FILE to its path
+# (SENSOR_API_KEY_FILE, LDAP_PASSWORD_FILE): a secret in a file does not show
+# in the process environment.
+export SENSOR_API_URL={{shellQuote .BaseURL}}
+{{- if .APIKey}}
+export SENSOR_API_KEY={{shellQuote .APIKey}}
+{{- else}}
+# The API key is shown once, when the sensor is created or its key is rotated.
+export SENSOR_API_KEY_FILE=/run/secrets/sensor-api-key
+{{- end}}
+# One vendor (Active Directory, read-only account); replace with yours.
+export LDAP_URL='ldaps://dc1.example.local:636'
+export LDAP_BIND_DN='svc-openctem@example.local'
+export LDAP_PASSWORD_FILE=/run/secrets/ldap-password
+export LDAP_BASE_DN='DC=example,DC=local'
+{{- if .CACert}}
+export SSL_CERT_DIR=/etc/openctem/certs
+{{- end}}
+`,
+	"collector-docker": `{{- $slug := slugify .Sensor.Name -}}
+# OpenCTEM collector "{{$slug}}": docker run
+# Generated by OpenCTEM at {{.GeneratedAt}}. Run it on a host that can reach the
+# systems it reads. Edit configs/sensor-templates/collector-docker.tmpl on the
+# API host to change it.
+#
+# The asset collector reads inventory from your systems (vCenter, Active
+# Directory/LDAP, DNS, monitoring tools) and sends it to the platform. It takes
+# no scan jobs and runs no scanner: it needs no local policy and no seccomp
+# profile. Every vendor and its settings: docs.openctem.io, Asset collector.
+{{- if .CACert}}
+
+# 0. Trust the platform's certificate authority (it uses a private CA).
+sudo mkdir -p /etc/openctem/certs
+sudo tee /etc/openctem/certs/openctem-root-ca.crt >/dev/null <<'OPENCTEM_CA'
+{{.CACert}}OPENCTEM_CA
+sudo chmod 0644 /etc/openctem/certs/openctem-root-ca.crt
+{{- end}}
+
+# 1. Secrets as files (they do not show in docker inspect), readable only by
+#    the collector's user (uid 65532): the sensor API key, and each vendor
+#    password (here the directory's bind password; write it into the file).
+install -d -m 0700 secrets
+{{- if .APIKey}}
+printf '%s' {{shellQuote .APIKey}} > secrets/sensor-api-key
+{{- else}}
+# The key is shown once, when the sensor is created or its key is rotated.
+printf '%s' "${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" > secrets/sensor-api-key
+{{- end}}
+install -m 0600 /dev/null secrets/ldap-password   # then write the password into it
+sudo chown -R 65532:65532 secrets && sudo chmod 0400 secrets/*
+
+# 2. The settings: the platform, and one vendor (here Active Directory with a
+#    read-only account; replace with yours).
+install -m 0600 /dev/null {{$slug}}.env
+cat >> {{$slug}}.env <<'OPENCTEM_ENV'
+SENSOR_API_URL={{.BaseURL}}
+SENSOR_API_KEY_FILE=/run/secrets/sensor-api-key
+LDAP_URL=ldaps://dc1.example.local:636
+LDAP_BIND_DN=svc-openctem@example.local
+LDAP_PASSWORD_FILE=/run/secrets/ldap-password
+LDAP_BASE_DN=DC=example,DC=local
+{{- if .CACert}}
+SSL_CERT_DIR=/etc/openctem/certs
+{{- end}}
+OPENCTEM_ENV
+
+# 3. Check the platform, the key and the vendor (read-only; prints a fix for
+#    anything wrong). The {{$slug}}-data volume keeps the collector's identity
+#    (state/) and the results not yet delivered (outbox/): keep it and back it
+#    up like a credential.
+docker volume create {{$slug}}-data
+docker run --rm --env-file {{$slug}}.env \
+  -v "$PWD/secrets:/run/secrets:ro" -v {{$slug}}-data:/var/lib/openctem \
+{{- if .CACert}}
+  -v /etc/openctem/certs:/etc/openctem/certs:ro \
+{{- end}}
+  {{.Image}} doctor
+
+# 4. Start it. Hardened: read-only root filesystem, no capabilities, no
+#    privilege escalation; it writes only /tmp and its volume.
+docker run -d --name {{$slug}} --restart unless-stopped \
+  --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp \
+  --env-file {{$slug}}.env \
+  -v "$PWD/secrets:/run/secrets:ro" \
+  -v {{$slug}}-data:/var/lib/openctem \
+{{- if .CACert}}
+  -v /etc/openctem/certs:/etc/openctem/certs:ro \
+{{- end}}
+  {{.Image}} -daemon
+
+# Check it: docker logs -f {{$slug}}   (the Sensors page shows it online
+# within a minute; its grant must allow results without a job: profile
+# Collector, trusted)
+`,
+	"collector-cli": `# Asset collector binary commands for {{slugify .Sensor.Name}}
+# Generated by OpenCTEM at {{.GeneratedAt}}.
+# Set the variables of the "env" tab first (secrets as *_FILE paths).
+
+# Check the platform, the key and the vendors (read-only):
+openctem-asset-collector doctor
+
+# Print what would be sent, without sending it:
+openctem-asset-collector -dry-run
+
+# Run continuously (every collector at start, then on its schedule):
+openctem-asset-collector -daemon
+`,
+	"collector-compose": `{{- $slug := slugify .Sensor.Name -}}
+# OpenCTEM collector "{{$slug}}": Docker Compose
+# Generated by OpenCTEM at {{.GeneratedAt}}. Edit
+# configs/sensor-templates/collector-compose.tmpl on the API host to change it.
+#
+# The asset collector reads inventory from your systems and sends it to the
+# platform. It takes no scan jobs and runs no scanner: no local policy and no
+# seccomp profile are needed.
+#
+# In an empty directory on the host that should collect:
+#   1. Secrets as files (they do not show in docker inspect):
+{{- if .APIKey}}
+#        install -d -m 0700 secrets && printf '%s' '{{.APIKey}}' > secrets/sensor-api-key
+{{- else}}
+#        install -d -m 0700 secrets && printf '%s' 'octs_...' > secrets/sensor-api-key
+#      (the key is shown once, when the sensor is created or its key rotated)
+{{- end}}
+#        install -m 0600 /dev/null secrets/ldap-password   # write the password into it
+{{- if .CACert}}
+#   Save the platform's CA (the PEM under configs below) as openctem-root-ca.crt.
+{{- end}}
+#   2. Replace the example vendor (Active Directory) with yours, save this file
+#      as compose.yaml and check, then start:
+#        docker compose run --rm collector doctor
+#        docker compose up -d
+services:
+  collector:
+    image: {{.Image}}
+    container_name: {{$slug}}
+    restart: unless-stopped
+    command: ["-daemon"]
+    # Hardened: read-only root filesystem, no capabilities, no privilege
+    # escalation; it writes only /tmp and its volume.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      SENSOR_API_URL: {{yamlQuote .BaseURL}}
+      SENSOR_API_KEY_FILE: /run/secrets/sensor_api_key
+      LDAP_URL: ldaps://dc1.example.local:636
+      LDAP_BIND_DN: svc-openctem@example.local
+      LDAP_PASSWORD_FILE: /run/secrets/ldap_password
+      LDAP_BASE_DN: DC=example,DC=local
+{{- if .CACert}}
+      SSL_CERT_DIR: /etc/openctem/certs
+{{- end}}
+    secrets: [sensor_api_key, ldap_password]
+    volumes:
+      # state/ (the collector's identity) and outbox/ (results not yet
+      # delivered): keep it and back it up like a credential.
+      - data:/var/lib/openctem
+{{- if .CACert}}
+    configs:
+      - source: openctem_ca
+        target: /etc/openctem/certs/openctem-root-ca.crt
+        mode: 0444
+{{- end}}
+
+secrets:
+  sensor_api_key:
+    file: ./secrets/sensor-api-key
+  ldap_password:
+    file: ./secrets/ldap-password
+
+volumes:
+  data:
+{{- if .CACert}}
+
+configs:
+  openctem_ca:
+    content: |
+{{indent 6 .CACert}}
+{{- end}}
+`,
+	"collector-kubernetes": `{{- $slug := slugify .Sensor.Name -}}
+# OpenCTEM collector "{{$slug}}": Kubernetes manifests
+# Generated by OpenCTEM at {{.GeneratedAt}}. Edit
+# configs/sensor-templates/collector-kubernetes.tmpl on the API host to change it.
+#
+# The asset collector reads inventory from your systems and sends it to the
+# platform. It takes no scan jobs and runs no scanner. Replace the example
+# vendor (Active Directory) with yours, then:
+#   kubectl apply -n <namespace> -f {{$slug}}.yaml
+{{- if not .APIKey}}
+# Replace octs_... below with the sensor's API key first (it is shown once,
+# when the sensor is created or its key is rotated).
+{{- end}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{$slug}}
+  labels:
+    app.kubernetes.io/name: openctem-asset-collector
+    app.kubernetes.io/instance: {{$slug}}
+type: Opaque
+stringData:
+  api-key: {{if .APIKey}}{{.APIKey}}{{else}}octs_...{{end}}
+  ldap-password: "<the bind password>"
+{{- if .CACert}}
+  ca.crt: |
+{{indent 4 .CACert}}
+{{- end}}
+---
+# The collector's data: state/ (its identity) and outbox/ (results not yet
+# delivered). Keep it; back it up like a credential.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{$slug}}-data
+  labels:
+    app.kubernetes.io/name: openctem-asset-collector
+    app.kubernetes.io/instance: {{$slug}}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{$slug}}
+  labels:
+    app.kubernetes.io/name: openctem-asset-collector
+    app.kubernetes.io/instance: {{$slug}}
+spec:
+  # One identity and one outbox: a single replica, the old pod stops first.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{$slug}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openctem-asset-collector
+        app.kubernetes.io/instance: {{$slug}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        # It starts no tool processes: the runtime's default profile fits.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: collector
+          image: {{.Image}}
+          args: ["-daemon"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: SENSOR_API_URL
+              value: {{yamlQuote .BaseURL}}
+            - name: SENSOR_API_KEY_FILE
+              value: /run/secrets/openctem/api-key
+            - name: LDAP_URL
+              value: ldaps://dc1.example.local:636
+            - name: LDAP_BIND_DN
+              value: svc-openctem@example.local
+            - name: LDAP_PASSWORD_FILE
+              value: /run/secrets/openctem/ldap-password
+            - name: LDAP_BASE_DN
+              value: DC=example,DC=local
+{{- if .CACert}}
+            - name: SSL_CERT_DIR
+              value: /etc/openctem/certs
+{{- end}}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/openctem
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /run/secrets/openctem
+              readOnly: true
+{{- if .CACert}}
+            - name: ca
+              mountPath: /etc/openctem/certs
+              readOnly: true
+{{- end}}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{$slug}}-data
+        - name: tmp
+          emptyDir: {}
+        - name: secrets
+          secret:
+            secretName: {{$slug}}
+            defaultMode: 0400
+            items:
+              - key: api-key
+                path: api-key
+              - key: ldap-password
+                path: ldap-password
+{{- if .CACert}}
+        - name: ca
+          secret:
+            secretName: {{$slug}}
+            items:
+              - key: ca.crt
+                path: openctem-root-ca.crt
+{{- end}}
+`,
+	"collector-helm": `{{- $slug := slugify .Sensor.Name -}}
+# OpenCTEM collector "{{$slug}}": Helm
+# Generated by OpenCTEM at {{.GeneratedAt}}. Edit
+# configs/sensor-templates/collector-helm.tmpl on the API host to change it.
+#
+# The openctem chart bundles the scanner sensor only. Run the asset collector
+# with the Kubernetes manifests (or docker run / Compose) instead.
+`,
+	"collector-policy": `# OpenCTEM collector "{{slugify .Sensor.Name}}": local policy
+# Generated by OpenCTEM at {{.GeneratedAt}}.
+#
+# A collector takes no scan jobs. Without a policy file it uses a built-in
+# local policy that admits no target and no tool, so no file is needed.
 `,
 }

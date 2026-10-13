@@ -5,6 +5,7 @@ import { Check, KeyRound, Loader2, RadioTower } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useTranslation } from '@/context/i18n-provider'
 import { OneTimeSecretField } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { assignSensorToZone, useScanZones } from '@/lib/api/scan-zone-hooks'
@@ -236,8 +238,12 @@ export function SensorInstallFlow({
   const [zoneId, setZoneId] = useState<string>('')
   const [created, setCreated] = useState<{ sensor: Sensor; apiKey: string } | null>(null)
   const [assigning, setAssigning] = useState(false)
+  // Trust is an explicit choice for a collector only, off by default.
+  const [trustCollector, setTrustCollector] = useState(false)
+  const { t } = useTranslation()
 
   const { trigger: createSensor, isMutating } = useCreateSensor()
+  const canTrust = useHasPermission(Permission.SensorsGrantWiden)
   const canWriteZones = useHasPermission(Permission.ScanZonesWrite)
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const { data: zonesData } = useScanZones(canReadZones)
@@ -271,8 +277,22 @@ export function SensorInstallFlow({
       // No tools or capabilities: the sensor reports what it has on its
       // first heartbeat, and jobs use every installed tool it reports (the
       // sensor grant narrows them).
-      const res = await createSensor({ name: trimmed, type: r.type, execution_mode: r.mode })
+      const trusted = role === 'collector' && canTrust && trustCollector
+      const res = await createSensor({
+        name: trimmed,
+        type: r.type,
+        execution_mode: r.mode,
+        ...(trusted ? { trusted: true } : {}),
+      })
       if (!res?.api_key || !res.sensor) throw new Error('The response had no key')
+      if (trusted && !res.trusted) {
+        toast.warning(
+          t(
+            'sensors.install.trustCollector.notApplied',
+            "The collector was created, but trusting it failed. It stays untrusted until it is promoted on the sensor's Grant."
+          )
+        )
+      }
       setCreated({ sensor: res.sensor, apiKey: res.api_key })
       setStep('install')
       onCreated?.(res.sensor)
@@ -422,6 +442,38 @@ export function SensorInstallFlow({
                 The sensor reports which scanners it has when it connects; jobs use every one of
                 them.
               </p>
+            )}
+
+            {role === 'collector' && (
+              <div className="flex items-start gap-2 rounded-lg border bg-background p-3">
+                <Checkbox
+                  id="install-trust-collector"
+                  checked={canTrust && trustCollector}
+                  onCheckedChange={(c) => setTrustCollector(c === true)}
+                  disabled={!canTrust}
+                  aria-describedby="install-trust-collector-help"
+                  className="mt-0.5"
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="install-trust-collector" className="leading-snug">
+                    {t(
+                      'sensors.install.trustCollector.label',
+                      'Trust this collector to push asset reports'
+                    )}
+                  </Label>
+                  <p id="install-trust-collector-help" className="text-xs text-muted-foreground">
+                    {canTrust
+                      ? t(
+                          'sensors.install.trustCollector.help',
+                          'A new collector starts untrusted, and the platform refuses every report it sends until it is trusted.'
+                        )
+                      : t(
+                          'sensors.install.trustCollector.noPermission',
+                          'Only an administrator who may widen sensor grants can trust a collector.'
+                        )}
+                  </p>
+                </div>
+              </div>
             )}
 
             <div className="flex justify-end">

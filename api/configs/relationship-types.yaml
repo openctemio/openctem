@@ -97,6 +97,9 @@ types:
         targets: [k8s_cluster]
       - sources: [container]
         targets: [host, k8s_workload]
+      # A virtual machine runs on its hypervisor host.
+      - sources: [host]
+        targets: [host]
 
   - id: deployed_to
     category: attack_surface_mapping
@@ -127,6 +130,9 @@ types:
         targets: [host, cloud_account, load_balancer]
       - sources: [host, endpoint]
         targets: [container, service, database]
+      # A host holds the addresses assigned to it.
+      - sources: [host]
+        targets: [ip_address]
       # K8s hierarchy
       - sources: [k8s_cluster]
         targets: [k8s_workload, kubernetes_namespace]

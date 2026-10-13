@@ -217,5 +217,21 @@
   "sensors.transport.reason.identity_refused": "Nền tảng từ chối danh tính của sensor: hãy ghép nối hoặc bật lại sensor.",
   "sensors.transport.reason.platform_certificate_refused": "Chứng chỉ của điểm gRPC không khớp CA nền tảng mà sensor đã ghim.",
   "sensors.transport.reason.platform_unreachable": "Nền tảng không phản hồi lần kiểm tra gần nhất; sensor giữ kết nối và sẽ kiểm tra lại sớm.",
-  "sensors.transport.reason.other": "Sensor báo một lý do khác."
+  "sensors.transport.reason.other": "Sensor báo một lý do khác.",
+  "sensors.install.trustCollector.label": "Tin cậy collector này để gửi báo cáo tài sản",
+  "sensors.install.trustCollector.help": "Collector mới bắt đầu ở trạng thái chưa tin cậy, và nền tảng từ chối mọi báo cáo nó gửi cho đến khi được tin cậy. Khi được tin cậy, nó có thể gửi báo cáo tài sản không gắn với job: các báo cáo này có thể thêm tài sản mới nhưng không bao giờ thay đổi tài sản đã có, và các loại trừ phạm vi vẫn áp dụng. Chỉ chọn mục này cho collector do chính bạn cài đặt. Thao tác được ghi nhật ký kiểm toán và mọi quản trị viên đều được thông báo.",
+  "sensors.install.trustCollector.noPermission": "Chỉ quản trị viên có quyền mở rộng quyền hạn của sensor mới có thể tin cậy collector. Bạn có thể tạo nó ngay bây giờ và nhờ tin cậy sau trong mục Quyền hạn của sensor.",
+  "sensors.install.trustCollector.notApplied": "Collector đã được tạo nhưng không tin cậy được. Nó vẫn chưa được tin cậy cho đến khi được nâng cấp trong mục Quyền hạn của sensor.",
+  "sensors.grant.collectorRefused.untrustedTitle": "Báo cáo của collector này bị từ chối: nó chưa được tin cậy",
+  "sensors.grant.collectorRefused.untrustedBody": "Quyền hạn của nó cho phép gửi báo cáo tài sản, nhưng sensor chưa được tin cậy không thể gửi kết quả không gắn với job, nên nền tảng từ chối mọi báo cáo nó gửi. Hãy nâng lên Tin cậy nếu bạn đã cài đặt nó và biết nó chạy ở đâu.",
+  "sensors.grant.collectorRefused.grantTitle": "Báo cáo của collector này bị từ chối: quyền hạn của nó không cho phép",
+  "sensors.grant.collectorRefused.grantBody": "Quyền hạn của nó không cho phép kết quả không gắn với job, nên nền tảng từ chối mọi báo cáo nó gửi. Hãy đổi hồ sơ quyền hạn sang Collector, rồi nâng lên Tin cậy.",
+  "sensors.grant.collectorRefused.askAdmin": "Quản trị viên có quyền mở rộng quyền hạn của sensor có thể thay đổi điều này.",
+  "sensors.grant.collectorRefused.promote": "Nâng lên Tin cậy",
+  "sensors.grant.collectorRefused.editGrant": "Sửa quyền hạn",
+  "sensors.review.sandboxTitle": "Hộp cát công cụ",
+  "sensors.review.sandboxConfined": "Mỗi tác vụ quét chỉ kết nối tới mục tiêu của nó. Cảm biến này có thể nhận các tác vụ cần cô lập mạng (có phạm vi web).",
+  "sensors.review.sandboxUnknown": "Cảm biến này không báo cáo hộp cát của nó (phiên bản cũ). Các tác vụ cần cô lập mạng sẽ chuyển sang cảm biến khác.",
+  "sensors.review.sandboxNotConfined": "Các tác vụ cần cô lập mạng (có phạm vi web) sẽ chuyển sang cảm biến khác. Hãy chạy container với hồ sơ seccomp của cảm biến; danh sách kiểm tra thiết lập của nó nêu rõ nguyên nhân.",
+  "sensors.review.sandboxDownload": "Tải hồ sơ seccomp"
 }

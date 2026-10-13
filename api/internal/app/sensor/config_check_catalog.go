@@ -58,6 +58,26 @@ type checkCatalogEntry struct {
 }
 
 // Fix snippets shared by several entries.
+// sandboxDocs is the troubleshooting anchor of the network-confinement
+// check.
+const sandboxDocs = "https://docs.openctem.io/sensors/troubleshooting/#runtime-sandbox-network"
+
+// sandboxSeccompFix runs the sensor under its own seccomp profile, which the
+// platform serves at /api/v1/sensors/install/seccomp-profile.
+var sandboxSeccompFix = map[string]string{
+	FixFormatEnv: `# Download the sensor's seccomp profile (served by the platform; the
+# install commands check its SHA-256) and run the container with it:
+# docker run ... --security-opt seccomp=/etc/openctem/sensor-seccomp.json ...`,
+	FixFormatCompose: `services:
+  sensor:
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./sensor-seccomp.json`,
+	FixFormatHelm: `sensor:
+  sandbox:
+    seccompProfile: openctem`,
+}
+
 const (
 	// The templates mount one data volume at /var/lib/openctem (state/,
 	// outbox/, content/); a volume on the reported directory itself works
@@ -235,6 +255,22 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 	{ID: "runtime.command_poller", Code: "stopped", Group: "runtime", Title: "The sensor stopped taking jobs",
 		Why:  "The loop that fetches jobs from the platform stopped with an error, so the sensor runs nothing. Restart the sensor; the summary below is its message.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-command-poller"},
+
+	{ID: "runtime.sandbox_network", Code: "confined", Group: "runtime", Title: "Tool runs are network-confined",
+		Why: "Each tool task runs in its own network namespace and reaches only its targets, through its forwarder. The sensor can take jobs that need confinement (a web scope).", Docs: sandboxDocs},
+	{ID: "runtime.sandbox_network", Code: "userns_blocked", Group: "runtime", Title: "Tool runs are not network-confined: the container's seccomp profile blocks it",
+		Why:  "The container runtime's default seccomp profile refuses the namespaces confinement needs. Run the sensor with its own seccomp profile (the install commands download it). Until then jobs that need confinement (a web scope) go to other sensors.",
+		Docs: sandboxDocs, Fix: sandboxSeccompFix},
+	{ID: "runtime.sandbox_network", Code: "userns_restricted", Group: "runtime", Title: "Tool runs are not network-confined: the host restricts user namespaces",
+		Why:  "The host refuses unprivileged user namespaces (on Ubuntu 23.10 and later, the AppArmor restriction applies to unconfined processes). Keep the container runtime's default AppArmor profile (never apparmor=unconfined), or allow user namespaces on the host.",
+		Docs: sandboxDocs},
+	{ID: "runtime.sandbox_network", Code: "off", Group: "runtime", Title: "Network confinement is turned off",
+		Why: "SENSOR_SANDBOX_NETWORK=off: tool tasks are not confined, and jobs that need confinement (a web scope) go to other sensors. Remove the setting (the default is auto).", Docs: sandboxDocs},
+	{ID: "runtime.sandbox_network", Code: "sandbox_off", Group: "runtime", Title: "The tool sandbox is turned off",
+		Why: "SENSOR_SANDBOX=off: tool tasks run without the sandbox, so their network is not confined either. Remove the setting (the default is auto).", Docs: sandboxDocs},
+	{ID: "runtime.sandbox_network", Code: "unavailable", Group: "runtime", Title: "Tool runs are not network-confined",
+		Why:  "The sensor could not confine its tools' network; the summary below is its message. Jobs that need confinement (a web scope) go to other sensors.",
+		Docs: sandboxDocs, Fix: sandboxSeccompFix},
 
 	// --- config --------------------------------------------------------------
 	{ID: "config.alias_deprecated", Code: "legacy_name", Group: "config", Title: "Setting {name} has a new name",

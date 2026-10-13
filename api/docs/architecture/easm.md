@@ -158,6 +158,7 @@ the inventory changed meaning.
 | Storage, tenant-scoped writes (a foreign asset id writes nothing) | `internal/infra/postgres/attribution_repository.go` |
 | First producer: CT promotion (`fqdn_under_verified_root` 0.99 → confirmed; `fqdn_under_asserted_root` 0.85 → needs_review) | `internal/app/certmonitor/promote.go` |
 | Second producer: sensor reports (decision O8, narrowed by decision E7). A report bound to a command the tenant's own sensor ran: an asset that **is** one of the command's targets (same host or repository path, or an address inside a listed range) gets `tenant_scanned` (0.95, strong) with sensor, command, step run, pipeline run, scan, tool, report id and time; an automatic record is re-evaluated unless it is `needs_review` or `rejected` (a scan never takes a name past review). A name the scan **found** under a target (subfinder child, resolved address, auto-created root domain) gets `tenant_scan_discovered` (0.60, medium, never confirms alone); a new internet-facing one gets a `needs_review` record, or `confirmed` with `fqdn_under_verified_root` evidence when it is at/under a verified domain. An unsolicited sensor report gives a new internet-facing asset a `candidate` record and no evidence. A person's decision is never touched; an existing asset without a record keeps none. Server-side ingests (CT promotion, uploads) never come here. `root_domain` in a report must be a registrable strict parent of the reported name (`publicsuffix`), otherwise no domain is created | `internal/app/ingest/scan_attribution.go`, `internal/app/easm/scanned.go`, `internal/infra/postgres/easm_scan_evidence_repository.go` |
+| **Children follow their host** (research/117 F1). A service, certificate or web endpoint (application) with an automatic `needs_review`/`candidate` record is linked to the one host it was seen on: by a stored relationship of the same tenant (`exposes` host → service; `serves_certificate` service → certificate, which follows the service's host) or by the host part of its own name (`host:port`, a URL). A child with two or more candidate hosts is not linked. While linked (`asset_attributions.follows_host_id`, a composite tenant FK, cleared when the host is deleted) the child carries the host's state: every write to the host's record (a person's decision, the scope join, a re-evaluation) cascades to its automatic children in the same transaction, automation never moves the child on its own, and a person's decision on the child itself clears the link. The review queue and its counts list the host only, with `children` (count by type). Linking runs after every sensor report and at the start of every scope-join run (one system audit event `asset.attribution_children_linked` per run that links); migration `attribution_children_follow_host` linked the existing pending children of pending hosts by relationship, without changing any state | `internal/infra/postgres/attribution_hosts.go`, `internal/app/easm/scope_join.go` (`linkChildren`), `internal/app/easm/scanned.go` |
 | CT roots from domain assets: only approved ones (not `needs_review`, `candidate` or `rejected`), so a sensor-created domain cannot widen the CT watch list | `internal/app/certmonitor/service.go` (`gatherRoots`) |
 | Active-scan ownership gate on every active-scan path (typed targets and group members alike): refused when the asset's record is not `confirmed`, when the name or a parent of it was rejected (record or live tombstone), and when an internet-facing asset has **no record** and is neither inside an active scope target nor at/under a root-domain seed or verified domain (`unattributed`). Create, clone, import, quick scan and `POST /commands` refuse the request; a run skips the target with a warning; the dispatch gate refuses it. Generic reason to the caller, specific state in the log. Details: [active-probe-gate.md](active-probe-gate.md) | `internal/app/easm/active_gate.go`, `internal/app/scan/ownership.go` |
 | **Scope join** (RFC-054 §4.3, decision S4). A declared, permanent scope entry is an ownership claim: a name an active, non-expiring domain scope target covers (`x`, `*.x`) gets `matches_scope_target` (0.99, strong) and is confirmed without review; an IP address only when an IP, range or CIDR entry contains it (a name lends its address nothing). Exclusions, tombstones and rejected parent names win; a person's decision is never touched; confirmation is not proof (platform sensors still need a verified domain). Applied to CT promotion and to new names a tenant scan found. The `scope-join` controller re-evaluates every tenant's automatic `needs_review`/`candidate` records at start-up (the backfill) and every 6 h; the scope service asks for a run of the tenant after every committed change that can confirm a name (an entry created in effect, approved, activated or updated; an exclusion deleted, deactivated or shortened), debounced and serialized per tenant (`easm.JoinScheduler`). An apply response carries `join.confirmed_count` and `assets_filter.covered_by` (data-scoped); `POST /scope/targets/preview` gives `would_confirm`; `GET /assets?covered_by=<entry id>` lists them. Each run that confirms names writes one system audit event `asset.attribution_auto_confirmed` (count and up to 50 names). Removing the entry keeps the asset, its record and findings; active checks stop at once (`out_of_scope`) | `internal/app/easm/scope_join.go`, `internal/app/easm/join_scheduler.go`, `internal/app/scope/join.go`, `internal/infra/postgres/attribution_scope_join.go`, `internal/infra/controller/scope_join.go` |
@@ -271,6 +272,34 @@ individually), each with covered and blocked items, hints and a strength.
 approvals, notification; then the scope join confirms), `accept_selected`
 (confirm only the given items) and `reject_rule` (a pending exclusion and the
 covered items rejected). Code: `internal/app/easm/review_rules.go`.
+
+## 4b2. Suggestion cards (built, research/117)
+
+`GET /api/v1/easm/suggestions` (`assets:read`, data-scoped, read only) answers
+the scope decisions that still need a person, one card each
+(`internal/app/easm/suggestions.go`,
+`internal/infra/postgres/easm_suggestions_repository.go`):
+
+| Card | What it offers | Never offered |
+|---|---|---|
+| `addresses_behind_names` | address assets that in-scope names of the caller resolve to (`resolves_to`) and no entry covers, with `resolved_from` (up to 10 in-scope names), the network we hold and `names_count`; `unknown_network_count` counts the offered addresses we know nothing about (shown as "network unknown", never as "not shared") | `shared_addresses` with the reason: `cdn` (the address record says CDN), `provider` (a CDN or cloud provider network), `edge_range` (a published CDN edge range embedded in the code), `many_domains` (names of 3+ registrable domains of the organization resolve to it), `other_network` (its known network is announced by another organization and is not one of the organization's network seeds); addresses a person rejected, set to dependency or monitor only, or sent back to review |
+| `confirmed_out_of_scope` | domain, subdomain and public address assets a person confirmed that no active entry covers (confirmations made before a confirmation added its own entry) | private or internal names, wildcards |
+
+`total` is the number of decisions waiting: one per card, plus one per
+suggested rule about names and one for the names no rule groups (address rules
+belong to the addresses card). It is the Suggestions tab and sidebar badge
+(`GET /easm/suggestions?view=count`, seeded by the session bootstrap as
+`badges.easm_review`). The web console shows the cards in the Decide panel
+(`web/src/features/attack-surface/components/easm-decide-panel.tsx`) on the
+Suggestions tab and, with "Not now", at the top of the overview; the row list
+is behind "Show all items".
+A card holds at most 200 items (`truncated` says more exist). Accepting one
+is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`
+or `domain` entries: scope write permission, step-up, approvals, audit, one
+admin notice); `can_add` tells the caller whether it may. Nothing is ever
+added automatically: a name never lends its address authority (dangling DNS,
+shared hosting and released cloud addresses would make a scan probe a third
+party).
 
 ## 4c. Alerts (built, P0-7)
 
@@ -539,6 +568,26 @@ and the Weekly digest switch on the monitoring card.
   evidence, which is what MTTD is measured against.
 
 ## 5a. After a decision (built, P0-9)
+
+**Confirm adds the exact scope entry** (research/117, `internal/app/easm/confirm_scope.go`).
+Before a person's `confirmed` decision is saved (review queue, review by rule
+"accept selected", or the asset's Ownership tab), each confirmed domain,
+subdomain or public address gets the scope entry for exactly its name
+(`domain` or `ip_address`, origin `confirmed_asset`) through
+`scope.Service.CreateTargets`: guardrails, deny list, signer ledger, one
+step-up for the batch (a missing one answers 403 `STEP_UP_REQUIRED` and saves
+nothing), one notice to the administrators, and one `scope_target.created`
+audit event per entry. Never added: a wildcard or range, a name an active
+entry already covers (`covered`), a private or internal name, or a service,
+certificate or web endpoint (they follow their host). The answer carries
+`scope.entries[]` (`added`, `exists`, `covered`, `refused` with its code; the
+entry id makes Undo a plain entry delete) or `scope.skipped`: `strict` (scan
+approval Strict keeps confirmation as ownership only), `disabled` (the
+organization's `confirm_adds_to_scope` setting is off, or it could not be
+read), `needs_scope_write` (the caller has `assets:write` but not the scope
+write permission). Automation and rejections never add entries
+(`ReviewService.Decide`); people go through `DecideAs`. Existing confirmed
+but uncovered assets are not backfilled: they are offered as a suggestion.
 
 A person's attribution decision (review queue `POST /easm/candidates/decisions`
 or `PUT /assets/{id}/attribution`) is followed by

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	scandom "github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -435,6 +437,19 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 		}
 	}
 
+	// Every target, typed in or from the inventory, goes only to a stage
+	// that takes its kind: a network range never reaches HTTP probing or
+	// templates.
+	kindGated, kerr := gateStepKinds(resolved, stepTargets, run.Context, chained)
+	if kerr != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
+	}
+	stepTargets = kindGated
+	if stepTargets != nil && stepTargets.Refused > 0 {
+		s.logger.Info("step targets of a kind the stage does not take were left out",
+			"run_id", run.ID.String(), "step_key", step.StepKey, "refused", stepTargets.Refused, "reason", stepTargets.Reason)
+	}
+
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
 	// not from the known names the run expanded under it (RFC-068).
 	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
@@ -464,7 +479,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	chunks := stepChunks(resolved, stepTargets)
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk, stageKeyOf(resolved))
+		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time.
@@ -514,44 +529,80 @@ func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.Disp
 	return g
 }
 
-// stageKeyOf is the catalog stage a resolved step runs ("" when none).
-func stageKeyOf(resolved scanapp.StepTool) stage.Key {
-	if !resolved.HasStage {
-		return ""
-	}
-	return resolved.Stage.Key
-}
-
 // stepChunks cuts a step's targets into the chunks its commands carry:
 // pieces of the capability's chunk size for a tool that takes a target
-// list (stage.ChunkSizeFor), else one chunk with every target. A step with
-// no explicit target list is one chunk (nil targets).
+// list (stage.ChunkSizeFor), else one chunk with every target. An active
+// capability with an address budget (stage.ChunkAddressBudget) also closes
+// a chunk before its addresses would exceed the budget: a range weighs its
+// address count, any other target 1, so a /16 port scan is many chunks that
+// every eligible sensor shares, not one. A target heavier than the budget
+// gets a chunk of its own. A step with no explicit target list is one chunk
+// (nil targets).
 func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.StepTargets {
-	size := 0
+	size, budget := 0, 0
 	if resolved.HasStage {
 		size = resolved.Stage.ChunkSizeFor(resolved.Name)
+		if size > 0 {
+			budget = resolved.Stage.ChunkAddressBudget()
+		}
 	}
-	if st == nil || size <= 0 || len(st.Targets) <= size {
+	if st == nil || size <= 0 {
 		return []*scanapp.StepTargets{st}
 	}
-	out := make([]*scanapp.StepTargets, 0, (len(st.Targets)+size-1)/size)
-	for i := 0; i < len(st.Targets); i += size {
-		end := min(i+size, len(st.Targets))
-		out = append(out, &scanapp.StepTargets{Targets: st.Targets[i:end:end], Refused: st.Refused, Reason: st.Reason})
+	weights := make([]uint64, len(st.Targets))
+	var total uint64
+	for i, t := range st.Targets {
+		weights[i] = targetWeight(t, budget > 0)
+		total = addSat(total, weights[i])
 	}
+	if len(st.Targets) <= size && (budget <= 0 || total <= uint64(budget)) {
+		return []*scanapp.StepTargets{st}
+	}
+	var out []*scanapp.StepTargets
+	start, sum := 0, uint64(0)
+	for i := range st.Targets {
+		full := i-start >= size || (budget > 0 && i > start && addSat(sum, weights[i]) > uint64(budget))
+		if full {
+			out = append(out, &scanapp.StepTargets{Targets: st.Targets[start:i:i], Refused: st.Refused, Reason: st.Reason})
+			start, sum = i, 0
+		}
+		sum = addSat(sum, weights[i])
+	}
+	end := len(st.Targets)
+	out = append(out, &scanapp.StepTargets{Targets: st.Targets[start:end:end], Refused: st.Refused, Reason: st.Reason})
 	return out
 }
 
+// addSat adds without wrapping.
+func addSat(a, b uint64) uint64 {
+	if a > math.MaxUint64-b {
+		return math.MaxUint64
+	}
+	return a + b
+}
+
+// targetWeight is what one target counts against a chunk's address budget:
+// a range its address count (saturated), anything else 1.
+func targetWeight(t string, weighRanges bool) uint64 {
+	if !weighRanges {
+		return 1
+	}
+	r, ok := ipset.Parse(strings.TrimSpace(t))
+	if !ok || r.Lo == r.Hi || !strings.ContainsAny(t, "/-") {
+		return 1
+	}
+	n, _ := r.Size()
+	return n
+}
+
 // stepCommand builds one command of a step for the given chunk of its
-// targets, after the payload passed the security validator.
+// targets, after the payload passed the security validator. Its web scope
+// is attached when the command is stored (command.CreateGuard).
 func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
-	chunk *scanapp.StepTargets, key stage.Key,
+	chunk *scanapp.StepTargets,
 ) (*command.Command, error) {
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
-		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
-	}
-	if err := s.applyWebScope(ctx, run.TenantID, key, payload); err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
 
@@ -793,22 +844,35 @@ type Partial struct {
 	// blocked the scan; RFC-074); GapSummary is the step message.
 	Gaps       int
 	GapSummary string
+	// Unreached targets the sensor could not reach (no route, refused by a
+	// filter, timeout, name not resolving; RFC-089); UnreachedSummary is
+	// the step message.
+	Unreached        int
+	UnreachedSummary string
+	// AllUnreached says the sensor tried targets and reached none of them;
+	// UnreachableMessage is then the step's failure message.
+	AllUnreached       bool
+	UnreachableMessage string
 }
 
-func (p Partial) any() bool { return p.Skipped > 0 || p.Gaps > 0 }
+func (p Partial) any() bool { return p.Skipped > 0 || p.Gaps > 0 || p.Unreached > 0 }
 
-// message and code of a partial step: the skipped targets' when there are
-// any, else the coverage gaps'; both messages when both apply.
+// message and code of a partial step: the skipped targets' code when there
+// are any, else the unreached targets', else the coverage gaps'; every
+// message that applies.
 func (p Partial) message() (string, string) {
 	var parts []string
-	for _, m := range []string{p.SkippedSummary, p.GapSummary} {
+	for _, m := range []string{p.SkippedSummary, p.UnreachedSummary, p.GapSummary} {
 		if m != "" {
 			parts = append(parts, m)
 		}
 	}
 	code := scanrun.ErrCodeCoverageGaps
-	if p.Skipped > 0 {
+	switch {
+	case p.Skipped > 0:
 		code = scanrun.ErrCodeTargetsSkipped
+	case p.Unreached > 0:
+		code = scanrun.FailureTargetUnreachable
 	}
 	return strings.Join(parts, "; "), code
 }
@@ -818,7 +882,9 @@ func (p Partial) message() (string, string) {
 // hosts it could not fully cover. The step ends partial with the summary as
 // its message (the results are kept), and so does the run; a skipped
 // target is not retried, since the sensor would refuse it again, and a
-// host with a gap is never read as "no findings".
+// host with a gap is never read as "no findings". A task that reached
+// none of its targets and found nothing fails the step with
+// TARGET_UNREACHABLE: unreachable is not "nothing found".
 func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey string, findingsCount int, output map[string]any, p Partial) error {
 	rid, err := shared.IDFromString(runID)
 	if err != nil {
@@ -863,15 +929,12 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 			return s.settleBatchedStep(ctx, run, stepRun, b)
 		}
 		findingsCount = b.findings
-		p = Partial{Skipped: b.skipped, Gaps: b.gaps}
-		if b.skipped > 0 {
-			p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
-		}
-		if b.gaps > 0 {
-			p.GapSummary = fmt.Sprintf("Completed with %d host(s) not fully covered (see the tasks)", b.gaps)
-		}
+		p = b.partial()
 	}
 
+	if stepRun != nil && p.AllUnreached && findingsCount == 0 {
+		return s.failStep(ctx, run, stepRun, p.UnreachableMessage, scanrun.FailureTargetUnreachable)
+	}
 	if stepRun != nil && p.any() {
 		msg, code := p.message()
 		stepRun.Partial(findingsCount, msg, code)
@@ -1173,6 +1236,30 @@ type stepBatches struct {
 	skipped    int // targets the completed batches' sensors skipped
 	gaps       int // hosts the completed batches' sensors did not fully cover
 	firstError string
+	// Reach of the completed batches (RFC-089): targets tried, reached and
+	// not reached, and how many batches reported reach at all.
+	reachBatches, reachTargets, reached, unreached int
+}
+
+// partial is the outcome of a batched step whose batches all completed.
+// The step fails as unreachable only when every batch reported its reach
+// and no batch reached a target.
+func (b stepBatches) partial() Partial {
+	p := Partial{Skipped: b.skipped, Gaps: b.gaps, Unreached: b.unreached}
+	if b.skipped > 0 {
+		p.SkippedSummary = fmt.Sprintf("Completed with %d target(s) skipped by the sensor's local policy (see the tasks)", b.skipped)
+	}
+	if b.gaps > 0 {
+		p.GapSummary = fmt.Sprintf("Completed with %d host(s) not fully covered (see the tasks)", b.gaps)
+	}
+	if b.unreached > 0 {
+		p.UnreachedSummary = fmt.Sprintf("Completed with %d target(s) unreachable from the sensors (see the tasks)", b.unreached)
+	}
+	if b.reachBatches == b.total && b.reachTargets > 0 && b.reached == 0 && b.unreached > 0 {
+		p.AllUnreached = true
+		p.UnreachableMessage = fmt.Sprintf("No target was reachable from the sensors (%d target(s) in %d scan batches)", b.unreached, b.total)
+	}
+	return p
 }
 
 func (b stepBatches) summary() string {
@@ -1206,7 +1293,8 @@ func (s *Service) checkStepBatches(ctx context.Context, run *scanrun.Run, stepRu
 	if st.Total <= 1 {
 		return stepBatches{}
 	}
-	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError}
+	b := stepBatches{batched: true, total: st.Total, failed: st.Failed, findings: st.Findings, skipped: st.Skipped, gaps: st.Gaps, firstError: st.FirstError,
+		reachBatches: st.ReachBatches, reachTargets: st.ReachTargets, reached: st.Reached, unreached: st.Unreached}
 	if st.Active > 0 {
 		s.logger.Info("scan batch finished; waiting for the others",
 			"run_id", run.ID.String(), "step_key", stepRun.StepKey, "active", st.Active, "total", st.Total)
@@ -1836,4 +1924,58 @@ func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scan
 			shared.ErrValidation, resolved.Name)
 	}
 	return nil
+}
+
+// gateStepKinds keeps the step's targets whose kind its stage takes
+// (stage.AcceptsKind) and adds the rest to the step's refusals. A target
+// with a stored type (the run's target_types) is decided by the scanner type
+// gate, except a range, which is refused here whatever its type. A step
+// outside the catalog, or with no explicit target list, is left as is. A
+// step left with nothing fails (INCOMPATIBLE_TARGETS); a chained step keeps
+// an empty seed list, its targets come from its predecessors.
+func gateStepKinds(resolved scanapp.StepTool, st *scanapp.StepTargets, runContext map[string]any, chained bool) (*scanapp.StepTargets, error) {
+	if !resolved.HasStage {
+		return st, nil
+	}
+	targets := chunkTargets(st, runContext)
+	if targets == nil {
+		return st, nil
+	}
+	types := runTargetTypes(runContext)
+	kept, refused := resolved.Stage.FilterKinds(targets, func(t string) bool { _, ok := types[t]; return ok })
+	if len(refused) == 0 {
+		return st, nil
+	}
+	out := &scanapp.StepTargets{Targets: kept}
+	if st != nil {
+		out.Refused, out.Reason = st.Refused, st.Reason
+	}
+	reason := resolved.Stage.DescribeRefusedKinds(refused)
+	out.Refused += len(targets) - len(kept)
+	if out.Reason != "" {
+		out.Reason += "; "
+	}
+	out.Reason += reason
+	if len(kept) == 0 && !chained {
+		return nil, shared.NewDomainError("INCOMPATIBLE_TARGETS",
+			"No target of this step can be scanned: "+reason+".", shared.ErrValidation)
+	}
+	return out, nil
+}
+
+// runTargetTypes reads the run's target_types (a map[string]string before
+// the run is stored, a map[string]any after a JSON round trip).
+func runTargetTypes(rc map[string]any) map[string]bool {
+	out := map[string]bool{}
+	switch m := rc[scanapp.RunContextKeyTargetTypes].(type) {
+	case map[string]string:
+		for k := range m {
+			out[k] = true
+		}
+	case map[string]any:
+		for k := range m {
+			out[k] = true
+		}
+	}
+	return out
 }

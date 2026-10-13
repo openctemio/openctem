@@ -75,10 +75,10 @@ when you are satisfied (this needs the **Widen sensor grants** permission).
 
 | Profile | For |
 |---|---|
-| `internal-network-scanner` (default) | A scanner in one network zone (active, non-intrusive checks) |
+| `internal-network-scanner` (default for a scanner) | A scanner in one network zone (active, non-intrusive checks) |
 | `easm-external` | Internet-facing assets only |
 | `authenticated-scanner` | Scans that need credentials (only once Trusted) |
-| `collector:<integration>` | A connector, no target scanning |
+| `collector` / `collector:<integration>` (default for a sensor approved with role collector) | A collector or connector, no target scanning; results without a job allowed once Trusted |
 | `ci-runner` | Code scanning in a pipeline |
 | `endpoint-agent` | The local host only |
 
