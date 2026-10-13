@@ -162,7 +162,8 @@ chained step may still take its predecessors' outputs.
 | 13 | Web: "What will be scanned" funnel and run funnel | – |
 | 14 | Tenant knobs and platform ceilings | – |
 
-Platform-sensor jobs do not check host keys yet; that joins step 7.
+Since step 7 a platform sensor's claim (`get_next_platform_job`) honours the
+same host keys and bucket locks as a tenant sensor's.
 
 ## 8. Decisions
 
