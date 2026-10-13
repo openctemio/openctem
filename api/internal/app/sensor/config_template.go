@@ -60,6 +60,12 @@ type SensorTemplateData struct {
 	CACert      string
 	GeneratedAt string // RFC3339 timestamp
 
+	// SeccompURL is where the install commands download the sensor's
+	// seccomp profile (BaseURL + SeccompProfilePath) and SeccompSHA256 the
+	// digest they check; Render fills both.
+	SeccompURL    string
+	SeccompSHA256 string
+
 	// Policy is what the sensor-local policy template (RFC-040 §5.7,
 	// policy.tmpl) is prefilled with; PolicyFromZones builds it.
 	Policy PolicyTemplateData
@@ -184,6 +190,12 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	}
 	if data.Sensor == nil {
 		return nil, fmt.Errorf("render sensor templates: no sensor")
+	}
+	if data.SeccompURL == "" {
+		data.SeccompURL = strings.TrimRight(data.BaseURL, "/") + SeccompProfilePath
+	}
+	if data.SeccompSHA256 == "" {
+		data.SeccompSHA256 = SeccompProfileSHA256
 	}
 	if data.CACert != "" && !strings.HasSuffix(data.CACert, "\n") {
 		data.CACert += "\n"

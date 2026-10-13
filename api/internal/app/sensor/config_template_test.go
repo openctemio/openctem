@@ -244,8 +244,8 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 			t.Errorf("[%s] volumes = %v, want the data volume and the read-only policy", dir, s.Volumes)
 		}
 		// Hardened, with the sensor-local policy required (RFC-040).
-		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 1 ||
-			s.SecurityOpt[0] != "no-new-privileges:true" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
+		if !s.ReadOnly || len(s.CapDrop) != 1 || s.CapDrop[0] != "ALL" || len(s.SecurityOpt) != 2 ||
+			s.SecurityOpt[0] != "no-new-privileges:true" || s.SecurityOpt[1] != "seccomp=./sensor-seccomp.json" || len(s.Tmpfs) != 1 || s.Tmpfs[0] != "/tmp" ||
 			s.Environment["XDG_CONFIG_HOME"] != "/tmp/.config" || s.Environment["XDG_CACHE_HOME"] != "/tmp/.cache" ||
 			s.Environment["SENSOR_LOCAL_POLICY"] != "/etc/openctem/policy/sensor-policy.yaml" ||
 			s.Environment["SENSOR_KILL_SWITCH_FILE"] != "/etc/openctem/policy/STOP" {
@@ -440,5 +440,41 @@ func TestLoadCACertificate(t *testing.T) {
 	}
 	if pemOut, fp, err := LoadCACertificate(""); err != nil || pemOut != "" || fp != "" {
 		t.Errorf("unset path: want nothing, got %q %q %v", pemOut, fp, err)
+	}
+}
+
+// SECURITY: every daemon install runs the sensor under its own seccomp
+// profile, downloaded from the platform and checked by its SHA-256 before
+// the container starts, so tool tasks can run network-confined.
+func TestTemplates_SeccompProfileInEveryInstall(t *testing.T) {
+	for _, dir := range templateSources {
+		out := render(t, dir, fullData(t))
+		url := "https://192.0.2.204" + SeccompProfilePath
+		check := "echo '" + SeccompProfileSHA256 + "  "
+		for name, want := range map[string][]string{
+			"docker": {"--security-opt seccomp=/etc/openctem/sensor-seccomp.json",
+				"--cacert /etc/openctem/certs/openctem-root-ca.crt -o /etc/openctem/sensor-seccomp.json '" + url + "'",
+				check + "/etc/openctem/sensor-seccomp.json' | sha256sum -c -"},
+			"compose":    {"seccomp=./sensor-seccomp.json", url, check + "sensor-seccomp.json' | sha256sum -c -"},
+			"kubernetes": {"type: Localhost", "localhostProfile: openctem/sensor-seccomp.json", url, check},
+			"helm":       {"--set sensor.sandbox.seccompProfile=openctem"},
+		} {
+			got := map[string]string{"docker": out.Docker, "compose": out.Compose, "kubernetes": out.Kubernetes, "helm": out.Helm}[name]
+			for _, w := range want {
+				if !strings.Contains(got, w) {
+					t.Errorf("[%s] %s snippet lacks %q", dir, name, w)
+				}
+			}
+		}
+		// The download runs before the container starts.
+		if strings.Index(out.Docker, "sha256sum -c -") > strings.Index(out.Docker, "docker run -d") {
+			t.Errorf("[%s] docker: the profile is checked after the container starts", dir)
+		}
+	}
+	// A base URL with a trailing slash still gives one slash.
+	data := fullData(t)
+	data.BaseURL = "https://192.0.2.204/"
+	if d := render(t, templateSources[0], data).Docker; strings.Contains(d, "204//api") {
+		t.Fatal("double slash in the profile URL")
 	}
 }
