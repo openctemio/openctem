@@ -209,13 +209,16 @@ For each target, in order:
    - the inventory asset behind it (`DispatchTargetsInput.Assets`, or a typed
      target that names an asset as typed, lower-cased, or by the host of a
      URL or `host:port`) has an attribution record other than `confirmed`
-     (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`).
-     **Pending records written by automation** (`needs_review` or `candidate`
-     with no person's decision) are no decision: an active scope entry of
-     the tenant that covers the asset, a one-off entry included, lets
-     probes reach it (the entry is the authority; the record stays pending
-     and the asset does not join the inventory). Without such an entry, or
-     once the entry expires, the record refuses as before. A pending state a
+     (`discovered`, `needs_review`, `candidate`, `dependency`,
+     `monitor_only`, `rejected`).
+     **Pending records written by automation** (`discovered`,
+     `needs_review` or `candidate` with no person's decision) are no
+     decision: an active scope entry of the tenant that covers the asset, a
+     one-off entry included, lets probes reach it (the entry is the
+     authority; the record stays as it is). Without such an entry, or once
+     the entry expires, the record refuses: a `discovered` asset is in the
+     inventory and gets passive checks only (refusal code `no_entry`,
+     RFC-054 §15). A pending state a
      person set, `dependency`, `monitor_only`, `rejected`, a rejected parent
      name and an exclusion keep refusing whatever entry covers the name.
      **A child never gets more than its host**: a service (`host:port`) or

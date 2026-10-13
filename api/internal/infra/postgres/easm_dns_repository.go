@@ -91,8 +91,9 @@ func stripChecked(in []dueTarget) []easmdns.Target {
 
 // dnsCheckInventoryStates are the attribution states the DNS checks look at
 // without a scope entry: the inventory (attribution.InInventory; an asset with
-// no record counts as confirmed). A name still in review (needs_review,
-// candidate; what a sensor reported lands there) is checked only while an
+// no record counts as confirmed) without what discovery added. A discovered
+// name, or one still in review (needs_review, candidate; what a sensor
+// reported lands there), is checked only while an
 // active, unexpired domain scope entry of the tenant covers it and no approved
 // exclusion removes it: otherwise a tenant, or a hostile sensor, could make the
 // platform's resolver look up any third-party name (research/84 F9). Rejected
@@ -122,7 +123,7 @@ func (r *EASMDNSRepository) dueAssetTargets(ctx context.Context, tenantID shared
 		  AND a.status = 'active'
 		  AND (s.last_checked_at IS NULL OR s.last_checked_at < $4)
 		  AND (COALESCE(aa.state, 'confirmed') = ANY($6) OR (
-		       aa.state IN ('needs_review', 'candidate')
+		       aa.state IN ('discovered', 'needs_review', 'candidate')
 		       AND EXISTS (SELECT 1 FROM scope_targets t
 		            WHERE t.tenant_id = $1 AND t.status = 'active'
 		              AND (t.expires_at IS NULL OR t.expires_at > now())

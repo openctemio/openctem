@@ -68,8 +68,10 @@ func TestAttributionRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(blocked) != 1 || blocked[review] != attribution.StateNeedsReview {
-		t.Fatalf("blocked = %v, want only the needs_review asset", blocked)
+	// Inventory first: an automatic needs_review decision is stored as
+	// discovered (research/124), still blocked by its record.
+	if len(blocked) != 1 || blocked[review] != attribution.StateDiscovered {
+		t.Fatalf("blocked = %v, want only the discovered asset", blocked)
 	}
 	// Another tenant cannot read this tenant's records through the gate.
 	if b, _ := repo.ActiveCheckBlocked(ctx, other, []string{review}); len(b) != 0 {

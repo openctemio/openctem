@@ -4,12 +4,14 @@ package easm
 // as narrowed by research/22 E7):
 //
 //   - a target the tenant typed gets tenant_scanned evidence (strong); an
-//     automatic record is re-evaluated unless it is needs_review or
-//     rejected, so a scan cannot launder a name past the review queue;
+//     automatic record is re-evaluated unless it is discovered, needs_review
+//     or rejected, so a scan cannot launder a name into a confirmation;
 //   - a name the scan found while scanning something else gets
 //     tenant_scan_discovered evidence (medium, never confirms on its own).
-//     A new internet-facing name gets a needs_review record, or a confirmed
-//     one when it is at or under a verified domain;
+//     A new internet-facing name gets a discovered record (in the
+//     inventory, passive only; needs_review when the tenant keeps the review
+//     gate), or a confirmed one when it is at or under a verified domain or
+//     a permanent scope entry covers it;
 //   - an unsolicited report records nothing but a candidate record for a new
 //     internet-facing asset;
 //   - an existing asset without a record keeps having none (the active-scan
@@ -211,8 +213,8 @@ func toEvaluate(all []string, records map[string]attribution.Record, byID map[st
 			continue // a person decided; automation never overrides it
 		case has && rec.FollowsHost != "":
 			continue // it follows its host: its state is the host's
-		case byID[id].Typed && has && (rec.State == attribution.StateNeedsReview || rec.State == attribution.StateRejected):
-			continue // a scan of it does not take it past review (E7)
+		case byID[id].Typed && has && (rec.State == attribution.StateDiscovered || rec.State == attribution.StateNeedsReview || rec.State == attribution.StateRejected):
+			continue // a scan of it does not confirm it (E7)
 		case !has && !slices.Contains(fresh, id):
 			continue // no record: the active-scan gate decides by scope and seed
 		}

@@ -293,7 +293,9 @@ func TestGatherRoots_OnlyApprovedDomainAssets(t *testing.T) {
 		t.Fatalf("domain assets listed without the approved attribution filter: %+v", f)
 	}
 	for _, st := range f.States {
-		if st == attribution.StateNeedsReview || st == attribution.StateCandidate || st == attribution.StateRejected {
+		// discovered too (research/124): a domain a scan found is in the
+		// inventory, never a CT root.
+		if st == attribution.StateDiscovered || st == attribution.StateNeedsReview || st == attribution.StateCandidate || st == attribution.StateRejected {
 			t.Fatalf("CT roots include %s domain assets", st)
 		}
 	}

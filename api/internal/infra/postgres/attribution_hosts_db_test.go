@@ -21,6 +21,8 @@ func TestAttributionChildrenFollowHost(t *testing.T) {
 	repo := NewAttributionRepository(&DB{DB: db})
 	tenant := seedTestTenant(ctx, t, db)
 	other := seedTestTenant(ctx, t, db)
+	// The review queue: tenants that keep the review gate (RFC-054 §15).
+	keepReviewGate(ctx, t, db, tenant, other)
 
 	asset := func(tid shared.ID, name, typ string) string {
 		t.Helper()

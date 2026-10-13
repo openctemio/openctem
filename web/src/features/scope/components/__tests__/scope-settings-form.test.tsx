@@ -67,12 +67,15 @@ describe('ScopeSettingsForm', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(screen.getByText('Platform sensors need proof')).toBeInTheDocument()
     expect(screen.getByText('Always on')).toBeInTheDocument()
-    // The switches are auto-join and confirm-adds-to-scope; nothing else toggles.
+    // The switches are auto-join, confirm-adds-to-scope and the review gate
+    // (none of them changes what may be scanned); nothing else toggles.
     const switches = screen.getAllByRole('switch')
-    expect(switches).toHaveLength(2)
+    expect(switches).toHaveLength(3)
     expect(switches[0]).toHaveAccessibleName('Add discovered names automatically')
     expect(switches[1]).toHaveAccessibleName('Confirming an asset adds it to scope')
     expect(switches[1]).toBeChecked()
+    expect(switches[2]).toHaveAccessibleName('Review discovered assets first')
+    expect(switches[2]).not.toBeChecked()
     expect(screen.queryByText(/disable scope|turn scope off/i)).not.toBeInTheDocument()
   })
 
@@ -88,6 +91,7 @@ describe('ScopeSettingsForm', () => {
       expect(api.put).toHaveBeenCalledWith('/api/v1/scope/settings', {
         auto_join_discovered: false,
         confirm_adds_to_scope: true,
+        review_before_inventory: false,
         one_off_targets: 'admins_and_requests',
         one_off_max_days: 7,
         widening_approvals: null,
@@ -106,6 +110,20 @@ describe('ScopeSettingsForm', () => {
       expect(api.put).toHaveBeenCalledWith(
         '/api/v1/scope/settings',
         expect.objectContaining({ confirm_adds_to_scope: false })
+      )
+    )
+  })
+
+  it('keeps the review gate on request (RFC-054 §15)', async () => {
+    api.put.mockResolvedValue({ ...settings, review_before_inventory: true })
+    const user = userEvent.setup()
+    wrap(<ScopeSettingsForm settings={settings} />)
+    await user.click(screen.getByRole('switch', { name: 'Review discovered assets first' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/api/v1/scope/settings',
+        expect.objectContaining({ review_before_inventory: true })
       )
     )
   })

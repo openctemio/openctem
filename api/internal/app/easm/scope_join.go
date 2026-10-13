@@ -76,14 +76,16 @@ type ScopeJoinStore interface {
 	FiredRules(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string][]attribution.Rule, error)
 	SaveAutomatic(ctx context.Context, tenantID shared.ID, assetID string, d attribution.Decision) error
 	// PendingAutomatic lists up to limit of the tenant's assets whose record
-	// is needs_review or candidate and was not decided by a person.
+	// is discovered, needs_review or candidate and was not decided by a
+	// person.
 	PendingAutomatic(ctx context.Context, tenantID shared.ID, limit int) ([]JoinItem, error)
 	// TenantsWithPendingAutomatic lists the tenants that have such records.
 	TenantsWithPendingAutomatic(ctx context.Context) ([]shared.ID, error)
 }
 
 // ScopeJoinSettings reads the tenant's scope settings (*tenant.TenantService):
-// auto_join_discovered off sends every name to review (RFC-054 §6.3).
+// auto_join_discovered off leaves every name discovered, or in review when
+// the tenant keeps the review gate (RFC-054 §6.3, §15).
 type ScopeJoinSettings interface {
 	GetScopeSettings(ctx context.Context, tenantID string) (*tenant.ScopeSettings, error)
 }
@@ -436,8 +438,8 @@ func (j *ScopeJoin) Reevaluate(ctx context.Context, tenantID shared.ID) ([]strin
 	return names, err
 }
 
-// Run confirms the tenant's pending automatic records (needs_review,
-// candidate) that a permanent scope entry now covers, and returns them with
+// Run confirms the tenant's pending automatic records (discovered,
+// needs_review, candidate) that a permanent scope entry now covers, and returns them with
 // the entry that covers each. It is the backfill when the rule ships and runs
 // again after every scope change that can confirm something (JoinScheduler).
 // Idempotent: evidence is upserted per (asset, rule, source), and a confirmed
