@@ -57,6 +57,7 @@ vi.mock('@/lib/api/sensor-grant-hooks', async (orig) => {
       },
     }),
     updateSensorGrant: api.update,
+    useSensorGrantSuggestion: () => ({ data: undefined, mutate: api.mutate }),
   }
 })
 

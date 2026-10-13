@@ -305,7 +305,10 @@ func TestDefaultProfileFor(t *testing.T) {
 	if got := DefaultProfileFor(SensorTypeCollector); got != ProfileCollector {
 		t.Fatalf("collector default: %q", got)
 	}
-	for _, typ := range []SensorType{SensorTypeWorker, SensorTypeEASM, ""} {
+	if got := DefaultProfileFor(SensorTypeEASM); got != ProfileEASMExternal {
+		t.Fatalf("EASM sensor default: %q", got)
+	}
+	for _, typ := range []SensorType{SensorTypeWorker, ""} {
 		if got := DefaultProfileFor(typ); got != DefaultProfile {
 			t.Fatalf("%q default: %q", typ, got)
 		}
