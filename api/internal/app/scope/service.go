@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -1252,6 +1253,33 @@ func (s *Service) ExcludedTargets(ctx context.Context, tenantID string, candidat
 		}
 	}
 	return excluded, nil
+}
+
+// ExcludedAddressSet returns the addresses the tenant's ACTIVE exclusions of
+// an address kind (address, range, CIDR) cover, as one set, so the scan
+// target gate can cut a range target around them instead of dropping it. A
+// pattern that is not an address set is left out here: it still excludes by
+// the exact-match rule of ExcludedTargets. A failed lookup is an error (fail
+// closed).
+func (s *Service) ExcludedAddressSet(ctx context.Context, tenantID string) (ipset.Set, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return ipset.Set{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	exclusions, err := s.effectiveExclusions(ctx, parsedTenantID)
+	if err != nil {
+		return ipset.Set{}, fmt.Errorf("list active scope exclusions: %w", err)
+	}
+	ranges := make([]ipset.Range, 0, len(exclusions))
+	for _, e := range exclusions {
+		switch e.ExclusionType() {
+		case scopedom.ExclusionTypeIPAddress, scopedom.ExclusionTypeIPRange, scopedom.ExclusionTypeCIDR:
+			if r, ok := ipset.Parse(e.Pattern()); ok {
+				ranges = append(ranges, r)
+			}
+		}
+	}
+	return ipset.Of(ranges...), nil
 }
 
 // FilterExcludedTargets returns the set of candidate asset IDs that match an
