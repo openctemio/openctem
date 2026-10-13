@@ -155,7 +155,9 @@ func (h *EASMHandler) Candidates(w http.ResponseWriter, r *http.Request) {
 // EASMDecisionRequest is one decision on many assets.
 type EASMDecisionRequest struct {
 	AssetIDs []string `json:"asset_ids"`
-	// State: confirmed, rejected, dependency, monitor_only or needs_review.
+	// State: confirmed, rejected, dependency, monitor_only, needs_review,
+	// or automatic (forget a person's decision: the asset goes back to what
+	// its evidence says; the undo of "Not ours").
 	State string `json:"state"`
 	// Note is an optional reason, kept in the audit log.
 	Note string `json:"note,omitempty"`
