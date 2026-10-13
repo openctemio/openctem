@@ -205,3 +205,34 @@ func TestAssetFreshness_TenantAndScopeIsolation(t *testing.T) {
 		t.Fatalf("%d freshness rows outlived their tenant", n)
 	}
 }
+
+// Resolve before active (RFC-088): the freshest evidence of a name across
+// the resolving classes, of the asking tenant's assets only.
+func TestAssetFreshness_FreshestByName(t *testing.T) {
+	g := newFreshRig(t)
+	ctx := context.Background()
+	other := g.r.newTenant("dnsx")
+	const name = "evidence-a.example.com"
+	old := time.Now().UTC().Add(-10 * 24 * time.Hour).Truncate(time.Second)
+	recent := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+
+	g.importAs(g.tn, "dnsx", old, subdomainAsset(name))
+	g.importAs(g.tn, "httpx", recent, subdomainAsset(name))
+	g.importAs(g.tn, "nuclei", recent, subdomainAsset("noevidence.example.com"))
+	// Another tenant holds the same name with newer evidence.
+	g.importAs(other, "dnsx", time.Now().UTC().Truncate(time.Second), subdomainAsset(name))
+
+	ev, err := g.repo.FreshestByName(ctx, g.tn.tenant, []string{name, "noevidence.example.com", "unknown.example.com"},
+		assetfreshness.ResolveEvidenceClasses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ev) != 1 || ev[0].Name != name || ev[0].AssetID != g.idOf(g.tn, name) || !ev[0].ObservedAt.Equal(recent) {
+		t.Fatalf("evidence = %+v, want the tenant's own asset at %v", ev, recent)
+	}
+	// Only the dns class: the older observation.
+	ev, err = g.repo.FreshestByName(ctx, g.tn.tenant, []string{name}, []assetfreshness.Class{assetfreshness.ClassDNS})
+	if err != nil || len(ev) != 1 || !ev[0].ObservedAt.Equal(old) {
+		t.Fatalf("dns evidence = %+v %v", ev, err)
+	}
+}

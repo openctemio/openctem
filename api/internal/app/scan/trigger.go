@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -483,6 +484,13 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err != nil {
 		return nil, err
 	}
+	// Resolve before active: an active scanner skips the names without
+	// recent resolution evidence (resolve_evidence.go).
+	if stage.ProbeTier(sc.ScannerName) > stage.TierPassive {
+		if err := s.dropStaleRunNames(ctx, sc, resolved, runContext); err != nil {
+			return nil, err
+		}
+	}
 	if err := recordResolvedTargets(sc, resolved, runContext); err != nil {
 		return nil, err
 	}
@@ -808,6 +816,9 @@ func (s *Service) scannerPayload(
 		// the sensor with an empty scanner: "scanner not found").
 		"scanner": sc.ScannerName,
 		"config":  scannerConfig,
+	}
+	if c := withWildcardFilter(sc.ScannerName, scannerConfig); c != nil {
+		payloadMap["config"] = c
 	}
 	// The command handler reads `scan_run_id` + `step_key` to route a
 	// finished command back into the scan workflow; a payload carrying only `run_id`

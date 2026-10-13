@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -201,6 +202,10 @@ type Service struct {
 	selectorAssets SelectorAssets
 	runRepo        scanrun.RunRepository
 	stepRepo       scanworkflow.StepRepository
+	// resolveEvidence and staleRefresher: resolve before active
+	// (resolve_evidence.go); nil hands every name on.
+	resolveEvidence freshdom.NameEvidenceReader
+	staleRefresher  StaleRefresher
 	// approvalGate and governanceAssets: scan approval (governance.go).
 	approvalGate        ApprovalGate
 	governanceAssets    GovernanceAssets
