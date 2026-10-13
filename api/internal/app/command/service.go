@@ -16,6 +16,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -27,8 +28,11 @@ type Service struct {
 	templates TemplateSigner
 	// jobs signs every claimed command (job_signing.go); nil: claims
 	// carry no signed job.
-	jobs   JobSigner
-	logger *logger.Logger
+	jobs JobSigner
+	// durations learns each completed scan command's time per target
+	// (duration_learning.go); nil: nothing is learned.
+	durations toolbudget.StatsStore
+	logger    *logger.Logger
 	// refusals hears about failed commands (local_policy.go); nil: none.
 	refusals RefusalObserver
 	// privatePolicy keeps private targets from sensors without a local
@@ -699,6 +703,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
+	s.learnDuration(ctx, cmd)
 
 	return cmd, nil
 }
