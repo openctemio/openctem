@@ -402,6 +402,10 @@ type SensorConfigConfig struct {
 	// LatestVersion (DefaultSensorLatestVersion when that is off), never
 	// "latest", so a snippet installs the release the page compares against.
 	Image string
+	// CollectorImage is the image, with its tag, the install snippets of a
+	// collector sensor run (SENSOR_COLLECTOR_IMAGE, default
+	// DefaultCollectorImage): the asset collector, not the scanner image.
+	CollectorImage string
 	// CACertFile is the platform's private CA certificate (PEM) the install
 	// snippets install on the sensor host (SENSOR_CA_CERT_FILE). Set it when
 	// the platform uses the built-in gateway in TLS mode internal: mount the
@@ -441,6 +445,12 @@ const DefaultSensorSDKLatestVersion = "v0.23.0"
 // DefaultSensorSDKMinVersion is the oldest supported SDK release
 // (SENSOR_SDK_MIN_VERSION); empty means no minimum.
 const DefaultSensorSDKMinVersion = ""
+
+// DefaultCollectorImage is the asset collector image the install snippets of
+// a collector run. The collector has no release tag after the SENSOR_*
+// settings rename (v0.1.1 predates it), so the default follows its latest
+// build; pin a release with SENSOR_COLLECTOR_IMAGE once one is tagged.
+const DefaultCollectorImage = "ghcr.io/openctemio/asset-collector:latest"
 
 // DefaultSensorImageRepository is the published sensor image.
 const DefaultSensorImageRepository = "ghcr.io/openctemio/sensor"
@@ -1240,6 +1250,7 @@ func Load() (*Config, error) {
 			SDKMinVersion:         sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", DefaultSensorSDKMinVersion)),
 			SDKLatestVersion:      sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", DefaultSensorSDKLatestVersion)),
 			Image:                 getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
+			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
 			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
 		},
 		Storage: StorageConfig{
