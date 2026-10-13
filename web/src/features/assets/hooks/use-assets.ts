@@ -103,6 +103,13 @@ export interface AssetSearchFilters {
   // Attribution (RFC-036): states, or the aliases unknown / unconfirmed /
   // approved. Empty = no attribution filter (every asset).
   attribution?: string[]
+  // Triage (research/124): scope status (in_scope, not_covered, excluded,
+  // internal), the attribution rules behind the asset, first seen since.
+  scopeStatus?: string[]
+  discoveredBy?: string[]
+  firstSeenAfter?: string
+  /** Ask each row's triage (attribution and the scan gate's answer). */
+  withTriage?: boolean
 
   // Properties filter: key=value pairs for JSONB containment (server-side)
   propertiesFilter?: Record<string, string[]>
@@ -137,6 +144,14 @@ interface BackendAsset {
   is_crown_jewel?: boolean // the assets.is_crown_jewel column
   system_tags?: string[] // derived from bug-bounty program links; never editable
   program_only?: boolean // came with a program; no own scope covers it
+  triage?: {
+    attribution_state: string
+    confidence: number
+    human_decided: boolean
+    scan_allowed: boolean
+    scan_blocked_by?: string
+    scan_refusal_code?: string
+  }
   risk_score: number // 0-100
   finding_count: number
   finding_severity_counts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
@@ -191,6 +206,16 @@ function transformAsset(backend: BackendAsset): Asset {
     isCrownJewel: backend.is_crown_jewel ?? undefined,
     systemTags: backend.system_tags,
     programOnly: backend.program_only ?? undefined,
+    triage: backend.triage
+      ? {
+          attributionState: backend.triage.attribution_state,
+          confidence: backend.triage.confidence,
+          humanDecided: backend.triage.human_decided,
+          scanAllowed: backend.triage.scan_allowed,
+          scanBlockedBy: backend.triage.scan_blocked_by || undefined,
+          scanRefusalCode: backend.triage.scan_refusal_code || undefined,
+        }
+      : undefined,
     riskScore: backend.risk_score,
     findingCount: backend.finding_count,
     // Detail fields the API always sent but the transform used to drop, so the
@@ -449,6 +474,10 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.expiresAfter) params.expires_after = filters.expiresAfter
   if (filters.expiresBefore) params.expires_before = filters.expiresBefore
   if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
+  if (filters.scopeStatus?.length) params.scope_status = filters.scopeStatus.join(',')
+  if (filters.discoveredBy?.length) params.discovered_by = filters.discoveredBy.join(',')
+  if (filters.firstSeenAfter) params.first_seen_after = filters.firstSeenAfter
+  if (filters.withTriage) params.with_triage = 'true'
 
   // Sorting
   if (filters.sort) params.sort = filters.sort

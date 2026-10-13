@@ -20,6 +20,10 @@ import {
   Network,
   UserX,
   Bookmark,
+  CircleSlash,
+  Radar,
+  ShieldOff,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,6 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTranslation } from '@/context/i18n-provider'
 import { QUICK_PRESETS, type QuickPreset } from '../../lib/inventory-facets'
 import type { InventoryFilters } from '../../lib/inventory-url'
 
@@ -42,6 +47,10 @@ const PRESET_ICONS: Record<string, React.ElementType> = {
   stale: Clock,
   expired: CalendarX,
   'expiring-30d': CalendarClock,
+  'not-in-scope': ShieldOff,
+  discovered: Radar,
+  'out-of-scope': CircleSlash,
+  'new-since-visit': Sparkles,
 }
 
 interface InventoryViewsMenuProps {
@@ -56,10 +65,17 @@ export function InventoryViewsMenu({
   onToggle,
   extraPresets = [],
 }: InventoryViewsMenuProps) {
+  const { t } = useTranslation()
   const presets = [...QUICK_PRESETS, ...extraPresets]
   const active = presets.filter((p) => p.isActive(filters))
+  const labelOf = (p: QuickPreset) => (p.labelKey ? t(p.labelKey, p.label) : p.label)
+  const viewsLabel = t('assets.views.trigger', 'Views')
   const triggerLabel =
-    active.length === 0 ? 'Views' : active.length === 1 ? active[0].label : `${active.length} views`
+    active.length === 0
+      ? viewsLabel
+      : active.length === 1
+        ? labelOf(active[0])
+        : t('assets.views.count', '{count} views', { count: active.length })
 
   return (
     <DropdownMenu>
@@ -70,7 +86,7 @@ export function InventoryViewsMenu({
           variant="outline"
           // Icon-only below sm, so the search box keeps its room on phones.
           className="relative h-9 w-auto justify-between gap-2 px-3 font-normal sm:min-w-36"
-          aria-label={active.length > 0 ? `Views (${triggerLabel})` : 'Views'}
+          aria-label={active.length > 0 ? `${viewsLabel} (${triggerLabel})` : viewsLabel}
         >
           <span className="flex min-w-0 items-center gap-2">
             <Bookmark className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -87,7 +103,7 @@ export function InventoryViewsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          Quick views
+          {t('assets.views.quick', 'Quick views')}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {presets.map((preset) => {
@@ -101,7 +117,7 @@ export function InventoryViewsMenu({
               onSelect={(e) => e.preventDefault()}
             >
               <Icon className="h-4 w-4 text-muted-foreground" />
-              {preset.label}
+              {labelOf(preset)}
             </DropdownMenuCheckboxItem>
           )
         })}

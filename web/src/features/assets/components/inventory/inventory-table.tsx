@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ScopeCheckBadge, useScopeCheck } from '@/features/scope'
+import { ScopeTriageBadge } from './scope-triage-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
@@ -251,6 +252,20 @@ export function InventoryTable({
           </div>
         ),
       },
+      // The scope standing from each row's triage, when the typed scope
+      // check column below is not shown (research/124).
+      ...(!(typeView?.scannable && scopeAvailable)
+        ? [
+            {
+              id: 'scan_scope',
+              enableSorting: false,
+              header: ({ column }) => (
+                <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
+              ),
+              cell: ({ row }) => <ScopeTriageBadge triage={row.original.triage} />,
+            } as ColumnDef<Asset>,
+          ]
+        : []),
       {
         // External-surface facts (status, IP, technologies, TLS …) for the
         // types cellsForType lists; other types have none to show here.
@@ -511,6 +526,8 @@ export function InventoryTable({
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <CriticalityBadge criticality={a.criticality} size="sm" showTooltip={false} />
+                    {/* Scope standing only when a scan may not reach it (research/124). */}
+                    {a.triage && !a.triage.scanAllowed && <ScopeTriageBadge triage={a.triage} />}
                     {/* Most assets are active; say so only when one is not. */}
                     {a.status !== 'active' && (
                       <AssetStatusBadge
