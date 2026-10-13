@@ -11,8 +11,12 @@ import type { RunMapNode, RunStepOutputs, RunTask } from '@/lib/api/generated'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { nodeBadgeLines, outputsByType, outputsDeltaLabel, stepTasks } from '../lib/run-map'
 import { RunTasksTable } from './run-tasks-table'
+import { StepFailureHelp } from './code-help'
 
 const PREVIEW_LIMIT = 20
+
+/** Map states whose reason is the step's error code. */
+const FAILED_STATES = new Set(['failed', 'partial', 'skipped', 'canceled'])
 
 /**
  * One step of the run map, opened by clicking it: its state and why, its
@@ -72,6 +76,9 @@ export function RunStepPanel({
         ))}
         {node.error_message ? (
           <p className="whitespace-pre-wrap text-destructive">{node.error_message}</p>
+        ) : null}
+        {node.reason && FAILED_STATES.has(node.state ?? '') ? (
+          <StepFailureHelp code={node.reason} errorClass={node.error_class} />
         ) : null}
       </div>
 
