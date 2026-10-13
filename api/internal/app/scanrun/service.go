@@ -281,6 +281,13 @@ type StepTargetFilter interface {
 	FilterStepTargets(ctx context.Context, tenantID shared.ID, toolName string, runContext map[string]any) (*scanapp.StepTargets, error)
 }
 
+// JobExclusionSource answers the scope exclusions that touch a job's range
+// targets (RFC-088). A target gate that implements it (*scan.Service does)
+// has them added to every step command.
+type JobExclusionSource interface {
+	JobExclusions(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
+}
+
 // WithTargetGate wires the target gate. Without it a run started with
 // targets is refused (fail closed).
 func WithTargetGate(g TargetGate) Option {
