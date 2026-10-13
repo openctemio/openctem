@@ -1,6 +1,8 @@
 package scanrun
 
 import (
+	"time"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -323,6 +325,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
 		var noInputs *noInputsError
+		var tooClose *deadlineTooCloseError
 		switch {
 		case err == nil:
 			runningSteps++
@@ -333,6 +336,9 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 				"run_id", run.ID.String(), "step_key", step.StepKey)
 		case errors.Is(err, errStageAlreadyPlanned):
 			// Another planner (a concurrent completion) planned it.
+		case errors.As(err, &tooClose):
+			s.settleStepDeadlineTooClose(ctx, run, stepRun, step.StepKey, tooClose)
+			settledInline = true
 		case errors.As(err, &noInputs):
 			// Planned, and nothing passed: settled without a command, so its
 			// successors run on what they have.
@@ -477,6 +483,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// eligible sensor takes a share; the step settles with its last chunk
 	// (checkStepBatches). A step that fits one chunk stays one command.
 	chunks := stepChunks(resolved, stepTargets)
+	// Admission: a step is not started when its run's deadline would cut it
+	// before it can do anything useful; its targets roll over instead.
+	if tooClose := deadlineTooClose(run, resolved.Name, time.Now()); tooClose != nil {
+		for _, chunk := range chunks {
+			tooClose.targets = append(tooClose.targets, chunkTargets(chunk, run.Context)...)
+		}
+		return tooClose
+	}
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
 		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
