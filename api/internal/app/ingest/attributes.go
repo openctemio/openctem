@@ -109,7 +109,11 @@ func (p *AssetProcessor) attributeClaims(a *ctis.Asset) map[asset.TrackedAttribu
 	if o := p.extractOwnerRef(a); o != "" {
 		out[asset.AttrOwnerRef] = o
 	}
-	if a.IsInternetAccessible {
+	if privateZone(a) {
+		// A name in a private DNS zone is not internet-facing, whatever
+		// else the report says.
+		out[asset.AttrExposure] = asset.ExposurePrivate.String()
+	} else if a.IsInternetAccessible {
 		out[asset.AttrExposure] = asset.ExposurePublic.String()
 	} else if e, ok := a.Properties["exposure"].(string); ok && strings.TrimSpace(e) != "" {
 		out[asset.AttrExposure] = e

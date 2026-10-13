@@ -1441,6 +1441,27 @@ and narrows dispatch:
     would refuse them again.
   - A job whose every target is refused still fails (and is re-queued as
     above when it is routed work).
+- **Unreachable targets** (RFC-089 §4.7).
+  A sensor reports per-target reach in `result.metadata.reach` (`targets`,
+  `reached`, `unreached`, `classes`, per-block rows) and the unreached ones in
+  `unreached_targets` / `unreached_targets_total` (classes `no_route`,
+  `firewall_refused`, `timeout`, `dns_failure`; a closed port counts as
+  reached).
+  - The platform reads them when the command completes
+    (`scanrun.ParseReach`, `ParseUnreachedTargets`: counts clamped, at most 20
+    listed, every string cleaned to one bounded line, unknown classes
+    dropped).
+  - None reached and no findings: the step **fails** with
+    `TARGET_UNREACHABLE` (class `placement`, never retried) instead of
+    completing with zero results. Some unreached: the step ends `partial`
+    with code `TARGET_UNREACHABLE` and a per-class summary (`TARGETS_SKIPPED`
+    keeps precedence when targets were also skipped).
+  - Batched steps sum the completed batches' reach (`StepBatchState`); the
+    step fails only when every batch reported reach and none reached a target.
+  - A result without `reach` (an older sensor) keeps today's outcome; its
+    failure text (`target_unreachable`, `network is unreachable`, `no route
+    to host`, `host is unreachable`) is classified as `TARGET_UNREACHABLE`,
+    and a sensor may send that code in a structured fail.
 - **Tenant switch.** Security settings
   `require_sensor_local_policy_for_private_targets` (default off, owner
   decision Q3 (a)). On, a sensor that does not enforce a policy (absent,
