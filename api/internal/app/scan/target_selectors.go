@@ -148,6 +148,9 @@ func validateSelectorTargets(targets []string) error {
 func (s *Service) expandSelectors(ctx context.Context, sc *scan.Scan) (*selectorExpansion, error) {
 	out := &selectorExpansion{}
 	inventoryCIDR := sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeInventory
+	// Live hosts first: the range itself goes to host discovery, and the
+	// inventory's addresses inside it go to every stage.
+	livenessCIDR := sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness
 	var seenSince *time.Time
 	if d := sc.TargetOptions.SeenWithinDays; d > 0 {
 		t := time.Now().UTC().AddDate(0, 0, -d)
@@ -180,7 +183,10 @@ func (s *Service) expandSelectors(ctx context.Context, sc *scan.Scan) (*selector
 			}
 			out.Roots = append(out.Roots, root)
 			q, kind = scan.SelectorQuery{UnderDomain: root}, SelectorKindWildcard
-		case inventoryCIDR && isCIDRTarget(t):
+		case (inventoryCIDR || livenessCIDR) && isCIDRTarget(t):
+			if livenessCIDR {
+				out.Literal = append(out.Literal, t)
+			}
 			q, kind = scan.SelectorQuery{InCIDR: t}, SelectorKindCIDR
 		default:
 			out.Literal = append(out.Literal, t)
