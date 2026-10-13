@@ -274,5 +274,7 @@
   "scope.bulk.refused": "{count} bị từ chối",
   "scope.bulk.skip.internal": "{count} địa chỉ riêng hoặc nội bộ (do vùng quét quyết định)",
   "scope.bulk.skip.no_entry_needed": "{count} không cần mục phạm vi (kho mã, tài khoản đám mây)",
-  "scope.bulk.skip.unrecognized": "{count} không phải tên miền hay địa chỉ"
+  "scope.bulk.skip.unrecognized": "{count} không phải tên miền hay địa chỉ",
+  "scope.connector.assetsInScope": "Tài sản nằm trong phạm vi",
+  "scope.connector.assetsInScopeHint": "Sau mỗi lần đồng bộ, các tên miền và địa chỉ công khai mà trình kết nối này đồng bộ sẽ có mục phạm vi chính xác, nên các lượt quét có thể chạm tới. Tắt tính năng này vẫn giữ các mục đã thêm."
 }

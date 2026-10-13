@@ -38,8 +38,9 @@ type BulkTargetsInput struct {
 	CreatedBy string
 	Actor     Actor
 	// Origin is import (the default: a pasted list or a selection),
-	// refusal_fix (the targets a scan refused) or confirmed_asset (a person
-	// confirmed the assets as the organization's; set by the server only).
+	// refusal_fix (the targets a scan refused), confirmed_asset (a person
+	// confirmed the assets as the organization's) or connector (a connector
+	// synced them); the last two are set by the server only.
 	Origin scopedom.Origin
 }
 
@@ -74,7 +75,7 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 		return nil, ErrBulkTargetsTooMany
 	}
 	origin := in.Origin
-	if origin != scopedom.OriginRefusalFix && origin != scopedom.OriginConfirmed {
+	if origin != scopedom.OriginRefusalFix && origin != scopedom.OriginConfirmed && origin != scopedom.OriginConnector {
 		origin = scopedom.OriginImport
 	}
 

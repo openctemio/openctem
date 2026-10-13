@@ -4,6 +4,7 @@
   "actor.system.review_rule": "Chấp nhận từ quy tắc rà soát",
   "actor.system.refusal_fix": "Cho phép từ lần quét bị chặn",
   "actor.system.confirmed_asset": "Thêm khi tài sản được xác nhận là của tổ chức",
+  "actor.system.connector": "Đồng bộ từ trình kết nối",
   "actor.system.system": "OpenCTEM (tự động)",
   "actor.former": "Cựu thành viên",
   "actor.member": "Một thành viên"
