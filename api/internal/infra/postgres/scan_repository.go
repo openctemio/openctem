@@ -80,10 +80,8 @@ func (r *ScanRepository) Create(ctx context.Context, s *scan.Scan) error {
 	if sensorPref == "" {
 		sensorPref = string(scan.SensorPreferenceAuto)
 	}
-	timeoutSecs := s.TimeoutSeconds
-	if timeoutSecs <= 0 {
-		timeoutSecs = scan.DefaultScanTimeoutSeconds
-	}
+	// 0 = no max duration: stored as NULL (the platform cap applies).
+	timeoutSecs := sql.NullInt64{Int64: int64(s.TimeoutSeconds), Valid: s.TimeoutSeconds > 0}
 	retryBackoff := s.RetryBackoffSeconds
 	if retryBackoff <= 0 {
 		retryBackoff = scan.DefaultRetryBackoffSeconds
@@ -258,10 +256,8 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	if sensorPref == "" {
 		sensorPref = string(scan.SensorPreferenceAuto)
 	}
-	timeoutSecs := s.TimeoutSeconds
-	if timeoutSecs <= 0 {
-		timeoutSecs = scan.DefaultScanTimeoutSeconds
-	}
+	// 0 = no max duration: stored as NULL (the platform cap applies).
+	timeoutSecs := sql.NullInt64{Int64: int64(s.TimeoutSeconds), Valid: s.TimeoutSeconds > 0}
 	retryBackoff := s.RetryBackoffSeconds
 	if retryBackoff <= 0 {
 		retryBackoff = scan.DefaultRetryBackoffSeconds
@@ -785,8 +781,6 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 
 	if timeoutSeconds.Valid && timeoutSeconds.Int64 > 0 {
 		s.TimeoutSeconds = int(timeoutSeconds.Int64)
-	} else {
-		s.TimeoutSeconds = scan.DefaultScanTimeoutSeconds
 	}
 
 	if maxRetries.Valid && maxRetries.Int64 >= 0 {

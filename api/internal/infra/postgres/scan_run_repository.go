@@ -52,11 +52,12 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, refusal_code, kind, subject,
+			created_at, scheduled_for, deadline_at, deadline_reason, refusal_code, kind, subject,
 			scan_workflow_version, spec_digest
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `,
+		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -183,7 +184,10 @@ func (r *ScanRunRepository) Update(ctx context.Context, run *scanrun.Run) error 
 		    total_steps = $4, completed_steps = $5, failed_steps = $6, skipped_steps = $7, total_findings = $8,
 		    started_at = $9, completed_at = $10, error_message = $11,
 		    scan_profile_id = $12, quality_gate_result = $13, retry_attempt = $14,
-		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `)
+		    deadline_at = COALESCE(deadline_at, ` + runDeadlineSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `),
+		    deadline_reason = CASE WHEN deadline_at IS NULL
+		        THEN ` + runDeadlineReasonSQL("$9::timestamptz", "scan_runs.scan_id", "scan_runs.scan_workflow_id") + `
+		        ELSE deadline_reason END
 		WHERE id = $1
 		  AND status NOT IN ` + terminalRunStatusesSQL + `
 	`
@@ -490,11 +494,12 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			started_at, completed_at, error_message,
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
-			created_at, scheduled_for, deadline_at, refusal_code, kind, subject,
+			created_at, scheduled_for, deadline_at, deadline_reason, refusal_code, kind, subject,
 			scan_workflow_version, spec_digest
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
-		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
+		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `,
+		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
 	`
 
 	_, err = tx.ExecContext(ctx, insertQuery,
@@ -563,23 +568,43 @@ func isOccurrenceConflict(err error) bool {
 const AbsoluteRunTimeoutSeconds = 24 * 60 * 60
 
 // runDeadlineSQL is the deadline of a run that started at startedAt for the
-// scan scanID and the scan workflow workflowID: the scan's timeout; for a run
-// with no scan (or a scan with none), the workflow's timeout_seconds setting
-// (research/62 SG-7: it was stored and shown but never applied); otherwise
-// AbsoluteRunTimeoutSeconds. Always capped at AbsoluteRunTimeoutSeconds.
-// NULL while the run has not started. It is written once, when the run
-// starts, so a scan or workflow edit never moves the deadline of a run
-// already in flight (RFC-046 §6.3).
+// scan scanID and the scan workflow workflowID. The deadline is policy, not a
+// guess at how long the work takes (RFC-046 §6.3 as amended by research/122):
+// the scan's max duration when its owner set one; for a run with no scan (or
+// a scan with none), the workflow's timeout_seconds setting (research/62
+// SG-7); otherwise AbsoluteRunTimeoutSeconds, the platform's backstop. Always
+// capped at AbsoluteRunTimeoutSeconds. NULL while the run has not started.
+// It is written once, when the run starts, so a scan or workflow edit never
+// moves the deadline of a run already in flight. A run that is slow but alive
+// is kept alive by its commands' leases, not by this clock.
 func runDeadlineSQL(startedAt, scanID, workflowID string) string {
 	return fmt.Sprintf(`CASE WHEN %[1]s IS NULL THEN NULL ELSE %[1]s + make_interval(secs => LEAST(
-		COALESCE(
-			(SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = %[2]s),
-			(SELECT CASE WHEN (w.settings->>'timeout_seconds') ~ '^[0-9]{1,9}$'
-			              THEN NULLIF((w.settings->>'timeout_seconds')::bigint, 0) END
-			 FROM scan_workflows w WHERE w.id = %[3]s),
-			%[4]d),
+		COALESCE(%[2]s, %[3]s, %[4]d),
 		%[4]d)) END`,
-		startedAt, scanID, workflowID, AbsoluteRunTimeoutSeconds)
+		startedAt, scanCapSQL(scanID), workflowCapSQL(workflowID), AbsoluteRunTimeoutSeconds)
+}
+
+// runDeadlineReasonSQL is why runDeadlineSQL gives the deadline it gives
+// (scanrun.DeadlineReason*): the run page says which policy set it.
+func runDeadlineReasonSQL(startedAt, scanID, workflowID string) string {
+	return fmt.Sprintf(`CASE WHEN %[1]s IS NULL THEN NULL
+		WHEN %[2]s IS NOT NULL THEN '%[4]s'
+		WHEN %[3]s IS NOT NULL THEN '%[5]s'
+		ELSE '%[6]s' END`,
+		startedAt, scanCapSQL(scanID), workflowCapSQL(workflowID),
+		scanrun.DeadlineReasonScanMaxDuration, scanrun.DeadlineReasonWorkflowMaxDuration, scanrun.DeadlineReasonPlatformCap)
+}
+
+// scanCapSQL is the max duration the scan's owner set, NULL when none.
+func scanCapSQL(scanID string) string {
+	return fmt.Sprintf(`(SELECT NULLIF(s.timeout_seconds, 0) FROM scans s WHERE s.id = %s)`, scanID)
+}
+
+// workflowCapSQL is the workflow's timeout_seconds setting, NULL when none.
+func workflowCapSQL(workflowID string) string {
+	return fmt.Sprintf(`(SELECT CASE WHEN (w.settings->>'timeout_seconds') ~ '^[0-9]{1,9}$'
+			              THEN NULLIF((w.settings->>'timeout_seconds')::bigint, 0) END
+			 FROM scan_workflows w WHERE w.id = %s)`, workflowID)
 }
 
 // MaxUnfinishedTargets bounds the unfinished targets a run records at its
@@ -658,7 +683,7 @@ func (r *ScanRunRepository) MarkTimedOutRunsReporting(ctx context.Context) ([]sc
 			UPDATE scan_runs pr
 			SET status = CASE WHEN d.kept THEN 'partial' ELSE 'timeout' END,
 			    completed_at = NOW(),
-			    unfinished_targets = o.targets,
+			    unfinished_targets = ` + mergeTargetsSQL("pr.unfinished_targets", "o.targets") + `,
 			    error_message = CASE
 			        WHEN d.kept THEN 'deadline reached with '
 			            || COALESCE(jsonb_array_length(o.targets), 0)::text
@@ -735,6 +760,42 @@ func parseReapedRuns(keys []string) []scanrun.ReapedRun {
 		}
 	}
 	return out
+}
+
+// mergeTargetsSQL is the JSON array of the targets in existing followed by
+// those in added, deduplicated (first position wins), without empty ones,
+// at most MaxUnfinishedTargets; NULL when there are none.
+func mergeTargetsSQL(existing, added string) string {
+	return fmt.Sprintf(`(SELECT jsonb_agg(m.t ORDER BY m.ord) FROM (
+		SELECT x.t, MIN(x.ord) AS ord
+		FROM jsonb_array_elements_text(COALESCE(%s, '[]'::jsonb) || COALESCE(%s, '[]'::jsonb)) WITH ORDINALITY AS x(t, ord)
+		WHERE x.t <> ''
+		GROUP BY x.t
+		ORDER BY MIN(x.ord)
+		LIMIT %d) m)`, existing, added, MaxUnfinishedTargets)
+}
+
+var _ scanrun.UnfinishedTargetRecorder = (*ScanRunRepository)(nil)
+
+// AddUnfinishedTargets appends targets to the unfinished targets of an open
+// run (scanrun.UnfinishedTargetRecorder).
+func (r *ScanRunRepository) AddUnfinishedTargets(ctx context.Context, tenantID, runID shared.ID, targets []string) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(targets)
+	if err != nil {
+		return fmt.Errorf("failed to encode unfinished targets: %w", err)
+	}
+	_, err = r.db.ExecContext(ctx, `
+		UPDATE scan_runs
+		SET unfinished_targets = `+mergeTargetsSQL("unfinished_targets", "$3::jsonb")+`
+		WHERE tenant_id = $1 AND id = $2 AND status IN ('pending', 'running')`,
+		tenantID.String(), runID.String(), string(raw))
+	if err != nil {
+		return fmt.Errorf("failed to record unfinished targets: %w", err)
+	}
+	return nil
 }
 
 // GetUnfinishedTargets returns the targets runID recorded as unfinished at its
@@ -1103,7 +1164,7 @@ func (r *ScanRunRepository) selectQuery() string {
 		       started_at, completed_at, error_message,
 		       scan_profile_id, quality_gate_result, retry_attempt,
 		       created_at, scheduled_for,
-		       deadline_at, COALESCE(jsonb_array_length(unfinished_targets), 0),
+		       deadline_at, COALESCE(deadline_reason, ''), COALESCE(jsonb_array_length(unfinished_targets), 0),
 		       COALESCE(refusal_code, ''), kind, subject,
 		       COALESCE(scan_workflow_version, 0), COALESCE(spec_digest, '')
 		FROM scan_runs
@@ -1250,6 +1311,7 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 		&run.CreatedAt,
 		&scheduledFor,
 		&deadlineAt,
+		&run.DeadlineReason,
 		&run.UnfinishedTargetCount,
 		&run.RefusalCode,
 		&kind,
@@ -1375,6 +1437,7 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 		&run.CreatedAt,
 		&scheduledFor,
 		&deadlineAt,
+		&run.DeadlineReason,
 		&run.UnfinishedTargetCount,
 		&run.RefusalCode,
 		&kind,

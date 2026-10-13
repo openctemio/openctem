@@ -237,6 +237,10 @@ type RunResponse struct {
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
 	DeadlineAt *string `json:"deadline_at,omitempty"`
+	// DeadlineReason is which policy set DeadlineAt: scan_max_duration,
+	// workflow_max_duration, platform_cap, or legacy (set before reasons
+	// were recorded).
+	DeadlineReason string `json:"deadline_reason,omitempty"`
 	// UnfinishedTargetCount is how many targets were still open when the run
 	// was settled at its deadline; the next scheduled run plans them first.
 	UnfinishedTargetCount int                      `json:"unfinished_target_count,omitempty"`
@@ -1407,6 +1411,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 	if r.DeadlineAt != nil {
 		d := r.DeadlineAt.Format("2006-01-02T15:04:05Z07:00")
 		resp.DeadlineAt = &d
+		resp.DeadlineReason = r.DeadlineReason
 	}
 	resp.UnfinishedTargetCount = r.UnfinishedTargetCount
 
