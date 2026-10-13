@@ -589,7 +589,7 @@ tool task can run network-confined (its own network namespace; only its
 targets, through its forwarder; RFC-060). The container runtime's default
 profile refuses the namespaces this needs.
 
-- **Served by the platform:** `GET /api/v1/sensors/install/seccomp.json`
+- **Served by the platform:** `GET /api/v1/sensors/install/seccomp-profile`
   (public, rate limited per IP, `X-Content-SHA256`). It is the sensor
   release's `docker/seccomp/sensor.json`, embedded in the API
   (`internal/app/sensor/seccomp/sensor.json`); a test pins its SHA-256, so a

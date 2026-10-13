@@ -63,7 +63,7 @@ type checkCatalogEntry struct {
 const sandboxDocs = "https://docs.openctem.io/sensors/troubleshooting/#runtime-sandbox-network"
 
 // sandboxSeccompFix runs the sensor under its own seccomp profile, which the
-// platform serves at /api/v1/sensors/install/seccomp.json.
+// platform serves at /api/v1/sensors/install/seccomp-profile.
 var sandboxSeccompFix = map[string]string{
 	FixFormatEnv: `# Download the sensor's seccomp profile (served by the platform; the
 # install commands check its SHA-256) and run the container with it:
