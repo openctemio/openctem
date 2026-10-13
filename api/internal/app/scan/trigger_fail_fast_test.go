@@ -84,3 +84,34 @@ func TestScheduleWorkflowSteps_QueueFailureSettlesTheRunAtOnce(t *testing.T) {
 		t.Fatalf("a clean start was re-evaluated %d times", len(q.advanced))
 	}
 }
+
+// settlingQueuer settles one first step without a command (a host
+// discovery step of a run of names).
+type settlingQueuer struct{ failingQueuer }
+
+func (q *settlingQueuer) QueueRunStep(_ context.Context, _ *scanrun.Run, step *scanworkflow.Step) error {
+	if step.StepKey == "hosts" {
+		return ErrStepSettled
+	}
+	q.queued = append(q.queued, step.StepKey)
+	return nil
+}
+
+// A first step settled without a command is not a failure, and the run is
+// advanced at once so the steps after it start (they would wait forever
+// otherwise: nothing else completes to schedule them).
+func TestScheduleWorkflowSteps_SettledStepAdvancesTheRun(t *testing.T) {
+	steps := []*scanworkflow.Step{
+		{ID: shared.NewID(), StepKey: "hosts", Capabilities: []string{"discover.hosts"}, Condition: scanworkflow.AlwaysCondition()},
+		{ID: shared.NewID(), StepKey: "ports", Capabilities: []string{"scan.ports"}, DependsOn: []string{"hosts"}, Condition: scanworkflow.AlwaysCondition()},
+	}
+	q := &settlingQueuer{}
+	s := &Service{logger: logger.NewNop(), stepQueuer: q}
+	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), StartedAt: ptrTime(time.Now())}
+	if err := s.scheduleWorkflowSteps(context.Background(), run, steps, 3); err != nil {
+		t.Fatalf("schedule: %v (a settled step is not a failed start)", err)
+	}
+	if !reflect.DeepEqual(q.advanced, []shared.ID{run.ID}) {
+		t.Fatalf("advanced %v, want the run advanced once", q.advanced)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/activity"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
@@ -118,7 +119,9 @@ type Service struct {
 	// commands binds reports to the commands they name; results holds the
 	// tenant policy for unsolicited reports and their quarantine (RFC-040
 	// §5.3). Without results every tenant behaves as in "warn" mode.
-	commands     commandReader
+	commands commandReader
+	// wildcardDNS keeps the names a filtered resolution did not report.
+	wildcardDNS  assetfreshness.WildcardDNSStore
 	results      sensorresult.Repository
 	resultLimits sensorresult.Limits
 	// grants and pushRefusals enforce the sensor's push-ingest grant before

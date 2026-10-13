@@ -1,44 +1,27 @@
 package scanrun
 
 import (
-	"net"
-	"net/netip"
-	"net/url"
-	"slices"
-	"strings"
+	"encoding/json"
+	"fmt"
+
+	"github.com/openctemio/ctis/politeness"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
-// maxHostKeys bounds the host keys one chunk carries (a chunk has at most a
-// few hundred targets; anything beyond is not limited per host).
-const maxHostKeys = 500
-
-// chunkHostKeys is the hosts a chunk of an active stage sends traffic to,
-// one key per host (lower-case name or address, without scheme, port or
-// path), sorted and without duplicates. A passive (T0) stage touches no
-// target host and gets none, so it is never held back.
+// chunkHostKeys is the hosts a chunk of an active stage sends traffic to
+// (github.com/openctemio/ctis/politeness, the function the sensor
+// admits the chunk with): a name or the host of a URL or a service; an
+// address and the marker of its /24 (IPv6 /120) bucket; for a range, the
+// range key of every bucket it covers. Sorted, without duplicates, at most
+// politeness.MaxKeys. A passive (T0) stage touches no target host and gets
+// none, so it is never held back.
 func chunkHostKeys(st stage.Stage, hasStage bool, targets []string) []string {
-	if !hasStage || st.Tier.Passive() || len(targets) == 0 {
+	if !hasStage || st.Tier.Passive() {
 		return nil
 	}
-	keys := make([]string, 0, 2*len(targets))
-	for _, t := range targets {
-		keys = append(keys, targetHostKeys(t)...)
-	}
-	slices.Sort(keys)
-	keys = slices.Compact(keys)
-	if len(keys) > maxHostKeys {
-		keys = keys[:maxHostKeys]
-	}
-	if len(keys) == 0 {
-		return nil
-	}
-	return keys
+	return politeness.Keys(targets, "")
 }
 
 // chunkTargets is the targets a chunk's command carries: the chunk's own,
@@ -62,75 +45,25 @@ func chunkTargets(chunk *scanapp.StepTargets, runContext map[string]any) []strin
 	return nil
 }
 
-// targetHostKeys are the keys of one target: for a range, the range key of
-// every /24 (IPv6 /120) bucket it covers; for an address (also the host of a
-// URL or a service), the address and the bucket marker of its bucket; for a
-// name, the name. A range and an address inside it then conflict, two
-// addresses of one bucket do not (command.HostKeyConflicts).
-func targetHostKeys(target string) []string {
-	if r, ok := ipset.Parse(strings.TrimSpace(target)); ok && r.Lo != r.Hi {
-		ps, err := ipset.Of(r).Prefixes(ipset.PieceBits{V4: command.BucketBitsV4, V6: command.BucketBitsV6}, maxHostKeys)
-		if err != nil {
-			// Wider than maxHostKeys buckets: hold the widest bucket keys
-			// instead (never fewer keys than the range touches).
-			ps, _ = ipset.Of(r).Prefixes(ipset.PieceBits{}, maxHostKeys)
-		}
-		out := make([]string, 0, len(ps))
-		seen := map[string]bool{}
-		for _, p := range ps {
-			b, _ := p.Addr().Prefix(min(p.Bits(), bucketBits(p.Addr())))
-			k := command.HostKeyRangeBucket + b.String()
-			if !seen[k] {
-				seen[k] = true
-				out = append(out, k)
-			}
-		}
-		return out
+// withHostKeys writes the keys the platform holds for a chunk into its
+// payload ("host_keys"), so the sensor admits the chunk under exactly these
+// keys and never hands back what the platform has just offered. A passive
+// stage's chunk carries an empty list: it touches no target host and is
+// never held back, on either side.
+func withHostKeys(payload json.RawMessage, keys []string) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if len(payload) == 0 || string(payload) == "null" {
+		fields = map[string]json.RawMessage{}
+	} else if err := json.Unmarshal(payload, &fields); err != nil {
+		return nil, fmt.Errorf("step command payload: %w", err)
 	}
-	k := hostKey(target)
-	if k == "" {
-		return nil
+	if keys == nil {
+		keys = []string{}
 	}
-	if a, err := netip.ParseAddr(k); err == nil {
-		return []string{k, command.HostKeyAddrInBucket + command.AddrBucket(a).String()}
+	b, err := json.Marshal(keys)
+	if err != nil {
+		return nil, err
 	}
-	return []string{k}
-}
-
-func bucketBits(a netip.Addr) int {
-	if a.Is4() {
-		return command.BucketBitsV4
-	}
-	return command.BucketBitsV6
-}
-
-// hostKey is the host a target names: the host of a URL, a host:port
-// without its port, an address, a name (ranges: targetHostKeys). Empty when
-// nothing can be read.
-func hostKey(target string) string {
-	t := strings.ToLower(strings.TrimSpace(target))
-	if t == "" {
-		return ""
-	}
-	if strings.Contains(t, "://") {
-		u, err := url.Parse(t)
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSuffix(u.Hostname(), ".")
-	}
-	if h, _, _, ok := asset.SplitServiceName(t); ok {
-		return h // a service in any name form leases its host
-	}
-	if strings.Contains(t, "/") {
-		if _, _, err := net.ParseCIDR(t); err == nil {
-			return t
-		}
-		t, _, _ = strings.Cut(t, "/")
-	}
-	if host, _, err := net.SplitHostPort(t); err == nil {
-		t = host
-	}
-	t = strings.Trim(t, "[]")
-	return strings.TrimSuffix(t, ".")
+	fields["host_keys"] = b
+	return json.Marshal(fields)
 }

@@ -80,13 +80,16 @@ re-paired by an administrator.
 | Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (`command-claimed`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
 | Push ingest | `internal/app/ingest/quarantine.go` `admitPush` (grant first, then role and tenant policy): the segment's items are rejected with item error `push_ingest_not_granted`; its detail and the error message name what is missing, the grant (`ErrPushIngestNotGranted`) or trust (`ErrPushIngestUntrusted`) |
 | Remote actions | the heartbeat doorbell rings a gated action (`rotate_key`) only when the grant lists it (`internal/app/sensor/doorbell.go`) |
-| Management API | `GET/PUT /api/v1/sensors/{id}/grant` (trust level included), `GET /api/v1/sensors/grant-profiles`, `GET /api/v1/sensors/grant-summaries` (list flags) |
+| Management API | `GET/PUT /api/v1/sensors/{id}/grant` (trust level included), `GET /api/v1/sensors/grant-profiles`, `GET /api/v1/sensors/grant-summaries` (list flags), `GET /api/v1/sensors/{id}/grant/suggestion`, `POST /api/v1/sensors/{id}/grant/suggestion/apply` |
+| Suggestion | `pkg/domain/sensor/grant_suggest.go` (`SuggestGrant`), `internal/app/sensorgrant/suggest.go`, usage read `internal/infra/postgres/sensor_grant_usage.go` |
 
 Every sensor has exactly one grant: sensors that existed before 001119 got
 `legacy-broad` at trust level `trusted`; a sensor inserted later gets
 `internal-network-scanner` (scan, validate, retest) at `new` from a trigger,
-or `collector` (collect, connector_sync, passive, push ingest) when its type
-is `collector` (migration 002075), and the pairing approval replaces it with
+`collector` (collect, connector_sync, passive, push ingest) when its type
+is `collector` (migration 002075), `easm-external` (scan, validate, retest
+at T1, public targets only) when its type is `sensor` (EASM, migration
+002084), and the pairing approval replaces it with
 the chosen profile in its transaction (with none chosen,
 `sensor.DefaultProfileFor` the sensor's type). Trust is never set
 automatically: creating a collector with `"trusted": true` is a promotion
@@ -96,6 +99,40 @@ unreadable grant withholds every command and refuses push ingest (fail
 closed). Known gap: the heartbeat's `pending_jobs` count does not apply the
 grant, so a New sensor with only active work waiting polls at the busy
 interval and gets nothing.
+
+### Leaving the legacy grant
+
+A sensor still on `legacy-broad` (or on any grant) can be moved to the
+narrowest profile that would have admitted what it did in the last 30 days.
+`SuggestGrant` reads the distinct jobs the sensor was given in the window
+(type, payload, scan zone), whether it sent results without a job (v2
+reports with no command, v1 queue reports, held unsolicited results) and its
+assigned zones. It tries the profiles narrowest first (`collector`,
+`ci-runner`, `endpoint-agent`, `easm-external`, `internal-network-scanner`,
+`authenticated-scanner`) and returns the first that admits every job, at the
+tier the sensor's tool contract gives it (the claim's own `AdmitContract`),
+and push ingest when it was used. A zone-bound profile keeps to the zones the
+jobs ran in and the assigned zones. The trust level and the remote actions
+are kept. A candidate that widens the current grant on any dimension
+(`Widened`) is skipped, so the suggestion is never wider than the current
+grant. No suggestion is made when the window holds more than 5000 distinct
+jobs (`usage_incomplete`), when no profile fits (`no_profile_fits`, for
+example a T2 job), or when the current grant is already the suggestion
+(`already_narrowest`). An idle sensor gets the default of its kind
+(`no_activity`).
+
+Applying (`POST .../grant/suggestion/apply` with the version and profile the
+caller saw) needs `sensors:grant:narrow` (or widen) and a recent sign-in or
+step-up (`STEP_UP_REQUIRED`; fail closed when step-up is not wired). The
+server computes the suggestion again: a different profile or version answers
+409 and writes nothing; `Widened` is checked once more before the
+compare-and-swap write. The change is audited as `sensor.grant_changed` with
+the diff, `source: suggestion` and the usage summary. The console shows the
+suggestion as a card on the sensor's Grant section.
+
+Jobs older than the window (a monthly schedule) are not seen: the card shows
+the window and the usage it was based on, and a refused job names the grant
+dimension in the sensor's timeline, from where the grant can be widened.
 
 ## Audit and timeline
 

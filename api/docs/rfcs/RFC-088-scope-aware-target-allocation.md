@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft (2026-10-13); steps 1–4 in progress |
+| Status | Accepted (2026-10-13); steps 1–8 implemented, steps 9–14 planned |
 | Scope | api (target gate, `pkg/domain/scope/ipset`, stage literal gate, workflow chunking, command host keys), later sdk-go + sensor (range iterator, job exclusions, `discover.hosts`), web (preview funnel, knobs) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md), [scan-targets.md](../architecture/scan-targets.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-030 (scan distribution: pull, chunks, leases, fair share), RFC-040 (mutual distrust sensor/platform), RFC-054 (scope model, deny list, tiers), RFC-068 (dynamic target selectors), RFC-082 (network seeds), research/118 |
@@ -38,8 +38,9 @@ of ranges, resolve-before-active for names and sensor-side re-checks.
 1. **Nothing outside scope is ever sent.** Every unit sent to a sensor is a
    subset of (target) minus (active exclusions) minus (the built-in deny
    list). Computed on the platform with exact interval arithmetic,
-   re-checked on the sensor, and (later) results outside the unit are
-   dropped at ingest.
+   re-checked on the sensor, and results outside the unit are dropped at
+   ingest (a scan command given only addresses and ranges: any reported
+   asset that names only other addresses).
 2. **Exclusions win at the finest grain.** A range is cut around an
    exclusion: never dropped whole, never scanned through.
 3. **The deny list is always on**, on both sides.
@@ -102,9 +103,11 @@ until they learn about pieces.
 **Sensor side.** The sensor's local policy still refuses a range that
 overlaps its own deny list or `targets.deny` whole. Pieces from the platform
 never overlap the built-in deny list; an operator's local `targets.deny`
-overlapping a piece refuses that piece (fail safe). Cutting per address on
-the sensor needs the job to carry the exclusions and a range iterator in the
-SDK: step 6.
+overlapping a piece refuses that piece (fail safe). Since step 7 the job
+carries the tenant's exclusions inside the /24 (IPv6 /120) buckets of its
+ranges (payload `exclusions`, covered by the job signature), and the SDK
+walks each range address by address, leaving out what the job's
+exclusions, `targets.deny` or the built-in deny list covers.
 
 ## 5. Each stage gets only the kinds it accepts (step 3)
 
@@ -144,37 +147,103 @@ chained step may still take its predecessors' outputs.
   not conflict. Claims lock one advisory lock per bucket, so two claims of a
   range and an address inside it are serialised.
 
-## 7. Later steps
+## 7. Host discovery (step 5)
 
-| # | Step | Security-sensitive |
-|---|---|---|
-| 5 | `discover.hosts` capability (light ICMP/TCP liveness, naabu host discovery) across ctis, sdk-go, sensor and api | – |
-| 6 | Liveness-first `cidr_mode` (default for new scans): liveness, then deep stages on live plus known addresses; `sweep` only up to /24 | – |
-| 7 | Exclusions in the signed job; SDK range iterator skips them and the deny list per address; naabu `-exclude-hosts`; ingest drops results outside the chunk's units | yes |
-| 8 | Wildcard-DNS detection on by default; active stages skip names that do not resolve or resolve only through a wildcard | yes |
-| 9 | Bounded recursive discovery of sub-zones (depth 2, max 3; budgets 5 000 per root, 10 000 per run) | – |
-| 10 | Name grant vs address grant for port scans (names without an address entry: web ports only; shared edges never fully scanned) | yes |
-| 11 | Single-scanner list tools chunked like workflow steps | – |
-| 12 | Coverage rotation (least recently scanned first) and deep-stage freshness | – |
-| 13 | Web: "What will be scanned" funnel and run funnel | – |
-| 14 | Tenant knobs and platform ceilings | – |
+`discover.hosts@1` (ctis taxonomy; discover.active, T1) takes addresses and
+ranges and reports each live address as an `ip_address` with the probe that
+answered (`properties.live_by`, for example `tcp:443`). The platform stage
+`discover.hosts` takes `ip_address` and `network`, emits `ip_address`, and is
+the `cidr → ip` adapter. Its chunks hold at most 64 targets and 4 096
+addresses (a /16 liveness pass is 16 chunks).
 
-Platform-sensor jobs do not check host keys yet; that joins step 7.
+naabu implements it next to `scan.ports`, by capability only: the sensor runs
+naabu as a TCP connect probe of a few ports (80, 443, 22, 3389, 8080, 8443
+unless the step names others) and keeps only the answering addresses. The
+tool sandbox grants no raw sockets, so ICMP is not used. A step that pins
+naabu without naming the capability stays a port scan, and a naabu report
+that names no capability is bound to `scan.ports`. A step that names
+`discover.hosts` requires the capability, so only sensors whose naabu
+implements it claim it.
 
-## 8. Decisions
+### Live hosts first (step 6)
+
+`target_options.cidr_mode` gains `liveness`, the default of a new scan with
+a range when its scan can run it (a single scanner, or a workflow with a
+Host discovery step); a workflow without one keeps sweeping, and an
+explicit `liveness` there is refused. A scan saved before keeps sweeping,
+also when it is edited, until a person chooses live hosts first (decision
+A1); the console suggests it where the scan can run it. In a liveness run the range pieces go to
+Host discovery and passive lookups only; every other active step gets the
+live hosts Host discovery found plus the inventory's addresses inside the
+ranges. The platform sends the probe ports with every host discovery job.
+The Network starter workflow now starts with Host discovery. Details:
+[scan-targets.md](../architecture/scan-targets.md).
+
+## 8. Wildcard DNS (step 8)
+
+A zone with a wildcard record answers for any name under it, so passive
+sources, permutations and guesses all "resolve". Two layers keep such names
+from being treated as the tenant's hosts:
+
+- **Sensor (first layer).** dnsx runs with `-auto-wildcard` by default
+  (sensor #234; `dnsx.NewScanner`, `RespectWildcard`): a name that resolves only
+  through a wildcard record of its zone is not reported. The platform also
+  sends `wildcard_filter: true` with every dnsx job that does not set it
+  (`withWildcardFilter`), so an older sensor or a sensor with another
+  default filters the same way.
+- **Platform (second layer).** A finished filtered resolution marks the
+  names it was given and did not report (`asset_wildcard_dns`); the
+  active-probe gate refuses a marked name, and a service or URL on it, as
+  `wildcard_only` (passive only) until a person confirms it or a filtered
+  resolution reports it; the scope join never confirms it; and active
+  stages take a name only with recent resolution evidence (A5).
+
+The sensor-side filter stays on as defence in depth; the two layers back
+each other up. The sensor filter keeps wildcard answers out of the inventory
+at the source, so a wildcard-only name never gains DNS evidence. The
+platform marks hold for a name that reached the inventory by another path (a
+passive source, an earlier unfiltered run, auto-confirmation before it was
+resolved) and decide at the gate, so a scope entry over a wildcard zone does
+not make its guessed names scannable. A step that sets `wildcard_filter:
+false` turns the filter off for that job on purpose: its resolution changes
+no mark either way. Architecture:
+[scan-targets.md](../architecture/scan-targets.md#resolve-before-active),
+[active-probe-gate.md](../architecture/active-probe-gate.md).
+
+## 9. Steps
+
+Steps 1–4 are described in §3–§6, steps 5 and 6 in §7, step 8 in §8.
+
+| # | Step | Security-sensitive | Status |
+|---|---|---|---|
+| 5 | `discover.hosts` capability (light ICMP/TCP liveness, naabu host discovery) across ctis, sdk-go, sensor and api (§7) | – | implemented |
+| 6 | Liveness-first `cidr_mode` (default for new scans): liveness, then deep stages on live plus known addresses; `sweep` only up to /24 | – | implemented |
+| 7 | Exclusions in the signed job; SDK range iterator skips them and the deny list per address; naabu `-exclude-hosts`; ingest drops results outside the chunk's units | yes | implemented |
+| 8 | Wildcard-DNS detection on by default; active stages skip names that do not resolve or resolve only through a wildcard (§8) | yes | implemented |
+| 9 | Bounded recursive discovery of sub-zones (depth 2, max 3; budgets 5 000 per root, 10 000 per run) | – | planned |
+| 10 | Name grant vs address grant for port scans (names without an address entry: web ports only; shared edges never fully scanned) | yes | planned |
+| 11 | Single-scanner list tools chunked like workflow steps | – | planned |
+| 12 | Coverage rotation (least recently scanned first) and deep-stage freshness | – | planned |
+| 13 | Web: "What will be scanned" funnel and run funnel | – | planned |
+| 14 | Tenant knobs and platform ceilings | – | planned |
+
+Since step 7 a platform sensor's claim (`get_next_platform_job`) honours the
+same host keys and bucket locks as a tenant sensor's.
+
+## 10. Decisions
 
 | # | Question | Decision |
 |---|---|---|
-| A1 | Default for a range in a new scan | liveness first (step 6); existing scans keep sweeping until edited |
+| A1 | Default for a range in a new scan | liveness first (step 6); an existing scan keeps its mode on edit and is never switched silently: the edit form and the scan detail page suggest "Live hosts first (recommended)" with a one-click switch where the scan can run it |
 | A2 | Exclusion inside a range | cut the range (exact subtraction); never drop, never scan through |
 | A3 | Discovery depth | 2 levels below the root by default, max 3, budgets 5 000 per root and 10 000 per run |
-| A4 | Wildcard-DNS filter | on by default; names that resolve only through a wildcard are never active units and never auto-confirmed |
-| A5 | Names that no longer resolve | skipped by active stages (`not_resolving`, 7-day freshness) |
+| A4 | Wildcard-DNS filter | on by default; names that resolve only through a wildcard are never active units and never auto-confirmed. Step 8: the platform sends `wildcard_filter: true` with every dnsx job that does not set it, so such names never gain resolution evidence. A finished filtered job marks the names it was given and did not report (`asset_wildcard_dns`); the active-probe gate refuses a marked name as `wildcard_only` (passive only) until a person confirms it or a filtered job reports it, and the scope join never confirms it |
+| A5 | Names that no longer resolve | skipped by active stages (`not_resolving`, 7-day freshness). Step 8: decided by the platform from the freshest evidence it holds (asset freshness classes dns, http, tls, ports); a name without any evidence is handed on and the sensor resolves it; a skipped name's enrichment is requested again ([scan-targets.md](../architecture/scan-targets.md#resolve-before-active)) |
 | A6 | Port scan of a name without an address entry | web ports only; shared edges never fully scanned |
 | A7 | Where expansion lives | the platform planner is the authority; the sensor re-checks every unit and address; ingest drops out-of-unit results |
 | A8 | Over-cap selection | rotation by least recently scanned, not freshest |
 
-## 9. Threat model
+## 11. Threat model
 
 | Threat | Control |
 |---|---|
@@ -186,7 +255,7 @@ Platform-sensor jobs do not check host keys yet; that joins step 7.
 | Splitting bypasses ownership | pieces inherit the range asset's entry and are gated by its id |
 | Restricted member widens reach via pieces | pieces are subsets of a target the act scope already admitted, and each piece is checked again |
 
-## 10. Non-goals
+## 12. Non-goals
 
 - No ASN scan target (RFC-082 D6 stands).
 - No platform-side reverse-DNS sweep and no IPv6 sweeps wider than /112.

@@ -57,8 +57,16 @@ var webScopeNeedsConfinement = map[string]bool{"nuclei": true}
 // `web_scope`: a value the caller put in the payload is replaced. The
 // lookup is the command's own tenant's, so one organization's exclusions
 // never reach another's job. A failed lookup refuses the job (fail
-// closed), as does a scope on a job the sensor cannot bind to one
-// (validate, retest).
+// closed), as does a scope on a job the sensor cannot bind to one (a
+// validate or retest job of a tool whose finding check does not keep to a
+// web scope).
+//
+// A validate or retest job that keeps to its scope (nuclei) requires
+// net.confined@1, like a nuclei scan: the finding check keeps to the scope
+// only in a confined sandbox, and a sensor that reports the feature (v0.19.0
+// or later) is one that honors web_scope on these jobs; an older sensor
+// would drop the scope, so it is never offered the job. Without such a
+// sensor in the organization the job is refused (NO_CONFINED_SENSOR).
 func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) error {
 	job, ok := commanddom.WebJobOf(cmd)
 	if !ok {
@@ -88,11 +96,11 @@ func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) 
 	}
 	if !job.Bindable {
 		return shared.NewDomainError(scanrundom.FailureWebScopeUnsupported, fmt.Sprintf(
-			"a path exclusion applies to the target of this %s job, and a %s job cannot keep to a web scope yet; it is not dispatched",
-			cmd.Type, cmd.Type), shared.ErrValidation)
+			"a path exclusion applies to the target of this %s job, and a %s job of %s cannot keep to a web scope; it is not dispatched",
+			cmd.Type, cmd.Type, job.Tool), shared.ErrValidation)
 	}
 	fields[commanddom.PayloadKeyWebScope] = ws
-	if webScopeNeedsConfinement[job.Tool] {
+	if webScopeNeedsConfinement[job.Tool] || job.Verify {
 		fields[commanddom.PayloadKeyRequiredFeatures] = withFeature(fields[commanddom.PayloadKeyRequiredFeatures], sensordom.CapabilityNetConfined)
 		if err := g.requireConfinedSensor(ctx, cmd.TenantID); err != nil {
 			return err

@@ -82,6 +82,7 @@ import {
 import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
 import { AddToScopeAction } from '@/features/scope/components/add-to-scope-action'
+import { ArchiveAssetsAction, MarkOutOfScopeAction } from './mark-out-of-scope-action'
 
 interface BulkBarProps {
   selected: Asset[]
@@ -379,6 +380,9 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       <BulkActionBar count={count} onClear={onClear} noun="selected">
         {/* Scope is its own permission (scope:write), not assets:write. */}
         <AddToScopeAction names={selectedNames} onDone={onDone} />
+        {/* Triage after the fact (research/124): each checks its own permission. */}
+        <MarkOutOfScopeAction selected={selected} onDone={onDone} />
+        <ArchiveAssetsAction selected={selected} onDone={onDone} />
         {canWrite ? (
           <>
             <Button variant="ghost" size="sm" onClick={() => setDialog('owner')}>

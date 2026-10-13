@@ -56,6 +56,14 @@ type Task struct {
 	StartedAt    *time.Time
 	CompletedAt  *time.Time
 	ErrorMessage string
+	// Progress is the finished targets its sensor last reported (nil: none
+	// reported, e.g. an older sensor or a queued task). Untrusted, bounded
+	// by the task's target count when recorded.
+	Progress *TaskProgress
+	// BudgetSeconds and StallSeconds are the task's expected time and stall
+	// window from its budget (0: the task carries none; research/122).
+	BudgetSeconds int
+	StallSeconds  int
 	// Skipped are the targets the sensor's local policy skipped in a task
 	// that completed on the rest (at most MaxTaskSkippedTargets; cleaned);
 	// SkippedTotal counts all of them.
@@ -84,4 +92,12 @@ type TaskReader interface {
 	// TaskSummaries returns the task summary of each of runIDs that has
 	// tasks.
 	TaskSummaries(ctx context.Context, tenantID shared.ID, runIDs []shared.ID) (map[shared.ID]TaskSummary, error)
+}
+
+// TaskProgress is a running task's finished targets and when the count last
+// grew (the stall clock).
+type TaskProgress struct {
+	Done   int
+	Total  int
+	LastAt *time.Time
 }

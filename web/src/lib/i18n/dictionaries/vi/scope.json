@@ -17,6 +17,8 @@
   "scope.refusal.message.dependency": "Tên này chạy trên hạ tầng của bên thứ ba; chỉ áp dụng kiểm tra thụ động và kiểm tra chiếm quyền (takeover).",
   "scope.refusal.label.monitor_only": "Chỉ giám sát",
   "scope.refusal.message.monitor_only": "Tài sản này chỉ được giám sát thụ động.",
+  "scope.refusal.label.wildcard_only": "Chỉ phân giải qua DNS wildcard",
+  "scope.refusal.message.wildcard_only": "Tên này chỉ phân giải được qua bản ghi DNS wildcard; nó chỉ được giám sát thụ động cho đến khi có người xác nhận hoặc nó phân giải được mà không qua wildcard.",
   "scope.refusal.label.no_entry": "Ngoài phạm vi",
   "scope.refusal.message.no_entry": "Không có mục phạm vi, seed hay tên miền đã xác minh nào bao phủ mục tiêu này.",
   "scope.refusal.label.entry_pending": "Đang chờ phê duyệt",
@@ -275,8 +277,12 @@
   "scope.bulk.skip.internal": "{count} địa chỉ riêng hoặc nội bộ (do vùng quét quyết định)",
   "scope.bulk.skip.no_entry_needed": "{count} không cần mục phạm vi (kho mã, tài khoản đám mây)",
   "scope.bulk.skip.unrecognized": "{count} không phải tên miền hay địa chỉ",
+  "scope.settings.autoJoin": "Tự động thêm các tên được phát hiện",
+  "scope.settings.autoJoinHint": "Tên do quá trình phát hiện tìm thấy dưới một mục phạm vi cố định được xác nhận là của bạn. Địa chỉ IP chỉ được xác nhận qua mục IP; mục dùng một lần không bao giờ xác nhận tên; loại trừ và các tên bị đánh dấu không phải của bạn luôn được ưu tiên. Tắt: các tên đó vẫn ở trạng thái đã phát hiện cho đến khi một người xác nhận (mục phạm vi vẫn cho phép quét chúng).",
   "scope.settings.confirmAddsToScope": "Xác nhận tài sản sẽ thêm vào phạm vi",
   "scope.settings.confirmAddsToScopeHint": "Khi một người xác nhận tên miền, tên miền con hoặc địa chỉ công khai là của bạn, mục phạm vi chính xác cho tên đó cũng được thêm, với cùng bước xác thực lại, thông báo và nhật ký như khi thêm thủ công. Địa chỉ phía sau các tên miền không bao giờ được thêm theo cách này. Với chế độ duyệt quét Nghiêm ngặt, xác nhận chỉ ghi nhận quyền sở hữu.",
+  "scope.settings.reviewBeforeInventory": "Xem xét tài sản được phát hiện trước",
+  "scope.settings.reviewBeforeInventoryHint": "Tắt (mặc định): những gì quá trình phát hiện tìm thấy được đưa vào kho tài sản ngay và chỉ được kiểm tra thụ động cho đến khi có mục phạm vi bao phủ. Bật: các tên nằm ngoài mọi mục phạm vi cố định chờ một người xem xét trong Gợi ý trước khi vào kho tài sản. Thiết lập này không bao giờ thay đổi những gì được phép quét.",
   "scope.connector.assetsInScope": "Tài sản nằm trong phạm vi",
   "scope.connector.assetsInScopeHint": "Sau mỗi lần đồng bộ, các tên miền và địa chỉ công khai mà trình kết nối này đồng bộ sẽ có mục phạm vi chính xác, nên các lượt quét có thể chạm tới. Tắt tính năng này vẫn giữ các mục đã thêm."
 }

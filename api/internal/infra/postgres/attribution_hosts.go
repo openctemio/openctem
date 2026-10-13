@@ -45,7 +45,7 @@ func (r *AttributionRepository) LinkChildren(ctx context.Context, tenantID share
 			WHERE c.tenant_id = $1
 			  AND c.follows_host_id IS NULL
 			  AND c.decided_at IS NULL
-			  AND c.state IN ('needs_review', 'candidate')
+			  AND c.state IN ('discovered', 'needs_review', 'candidate')
 			  AND ca.deleted_at IS NULL
 			  AND ca.asset_type IN ('service', 'certificate', 'application')
 		), cand AS (

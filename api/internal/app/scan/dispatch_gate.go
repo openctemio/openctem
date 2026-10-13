@@ -68,8 +68,9 @@ type DispatchTargetsInput struct {
 	// PassiveOnly gates targets for a passive (T0) stage of a chain
 	// (research/27 §5.7): the ownership gate refuses only rejected names
 	// (a rejection tombstone, a rejected record, or a name under a rejected
-	// parent). A name that is not confirmed yet (needs_review, candidate,
-	// unattributed) may be resolved, never actively probed: every other
+	// parent). A name that is not confirmed yet (discovered, needs_review,
+	// candidate, unattributed) may be resolved, never actively probed
+	// without a scope entry: every other
 	// path leaves this off and gets the full active-scan gate.
 	PassiveOnly bool
 	// DryRun answers POST /scope/check: nothing is logged as refused.

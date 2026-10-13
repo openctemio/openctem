@@ -129,7 +129,6 @@ func NewScan(tenantID shared.ID, name string, assetGroupID shared.ID, scanType S
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
 		SensorPreference:    SensorPreferenceAuto,
-		TimeoutSeconds:      DefaultScanTimeoutSeconds,
 		MaxRetries:          0,
 		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
 		Status:              StatusActive,
@@ -172,7 +171,6 @@ func NewScanWithTargets(tenantID shared.ID, name string, targets []string, scanT
 		ScheduleTimezone:    "UTC",
 		Tags:                []string{},
 		SensorPreference:    SensorPreferenceAuto,
-		TimeoutSeconds:      DefaultScanTimeoutSeconds,
 		MaxRetries:          0,
 		RetryBackoffSeconds: DefaultRetryBackoffSeconds,
 		Status:              StatusActive,
@@ -588,22 +586,20 @@ func (s *Scan) SetProfileID(profileID *shared.ID) {
 	s.UpdatedAt = time.Now()
 }
 
-// SetTimeoutSeconds sets the maximum execution time in seconds.
-// Enforces [MinScanTimeoutSeconds, MaxScanTimeoutSeconds] bounds at the domain layer
-// (defense-in-depth — even if HTTP validation is bypassed, the domain enforces the floor).
-// If <= 0, defaults to DefaultScanTimeoutSeconds.
+// SetTimeoutSeconds sets the scan's max duration in seconds; 0 (or less)
+// clears it, so only the platform's 24 h cap bounds the scan's runs. A set
+// value is kept in [MinScanTimeoutSeconds, MaxScanTimeoutSeconds] at the
+// domain layer (defense in depth: even if HTTP validation is bypassed).
 func (s *Scan) SetTimeoutSeconds(seconds int) {
-	if seconds <= 0 {
-		seconds = DefaultScanTimeoutSeconds
-	}
-	if seconds < MinScanTimeoutSeconds {
+	switch {
+	case seconds <= 0:
+		seconds = 0
+	case seconds < MinScanTimeoutSeconds:
 		seconds = MinScanTimeoutSeconds
-	}
-	if seconds > MaxScanTimeoutSeconds {
+	case seconds > MaxScanTimeoutSeconds:
 		seconds = MaxScanTimeoutSeconds
 	}
 	s.TimeoutSeconds = seconds
-	s.UpdatedAt = time.Now()
 }
 
 // SetRetryConfig configures the retry behavior for failed runs.

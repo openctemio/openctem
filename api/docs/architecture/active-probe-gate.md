@@ -192,18 +192,33 @@ For each target, in order:
    connectors, the claim-time re-check, the dry run) keep the whole-target
    rule: a range that overlaps an exclusion is excluded whole. No address
    list is ever built.
+
+   **The job carries the exclusions near its ranges.** Every scan command
+   whose targets include a range (workflow chunks, single-scanner commands
+   and zone batches) carries, in its payload key `exclusions`, the tenant's
+   active address exclusions inside the /24 (IPv6 /120) buckets of its
+   ranges, as the fewest prefixes (`scan.Service.JobExclusions`). The job
+   signature covers the payload. The sensor SDK cuts its range targets
+   around them again, address by address, together with its own
+   `targets.deny` and the built-in deny list, and hands them to tools that
+   can skip hosts (naabu `-exclude-hosts`). A failed exclusion lookup creates
+   no command; more than 4 096 prefixes is `RANGE_TOO_FRAGMENTED`. Another
+   tenant's exclusions never travel with a job.
 3. **Ownership** (RFC-036 §6.3 `active_allowed`, `internal/app/easm/active_gate.go`).
    A target is refused when:
    - the inventory asset behind it (`DispatchTargetsInput.Assets`, or a typed
      target that names an asset as typed, lower-cased, or by the host of a
      URL or `host:port`) has an attribution record other than `confirmed`
-     (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`).
-     **Pending records written by automation** (`needs_review` or `candidate`
-     with no person's decision) are no decision: an active scope entry of
-     the tenant that covers the asset, a one-off entry included, lets
-     probes reach it (the entry is the authority; the record stays pending
-     and the asset does not join the inventory). Without such an entry, or
-     once the entry expires, the record refuses as before. A pending state a
+     (`discovered`, `needs_review`, `candidate`, `dependency`,
+     `monitor_only`, `rejected`).
+     **Pending records written by automation** (`discovered`,
+     `needs_review` or `candidate` with no person's decision) are no
+     decision: an active scope entry of the tenant that covers the asset, a
+     one-off entry included, lets probes reach it (the entry is the
+     authority; the record stays as it is). Without such an entry, or once
+     the entry expires, the record refuses: a `discovered` asset is in the
+     inventory and gets passive checks only (refusal code `no_entry`,
+     RFC-054 §15). A pending state a
      person set, `dependency`, `monitor_only`, `rejected`, a rejected parent
      name and an exclusion keep refusing whatever entry covers the name.
      **A child never gets more than its host**: a service (`host:port`) or
@@ -218,6 +233,15 @@ For each target, in order:
      check has an open `dangling_cname` on that asset in the same tenant.
      It applies to scan create, clone, quick scan and scan runs; `POST
      /commands` and the dispatch gate keep the plain rule;
+   - the name **resolves only through a wildcard DNS record**
+     (`wildcard_only`, RFC-088 decision A4; `asset_wildcard_dns`): a
+     completed dnsx resolution with the wildcard-DNS filter on was given the
+     name and did not report it. The name stays in the inventory and is
+     watched passively; a service or URL on it gets the same answer. A
+     person confirming this very asset, or a later filtered resolution that
+     reports it, lifts the refusal. A scope entry that covers the name does
+     not: a wildcard zone answers for any guessed name. The scope join
+     never confirms such a name automatically either;
    - the name, or any parent domain of it, is one the tenant rejected (a
      rejected asset or a live rejection tombstone), unless a person
      confirmed this very asset. This covers a rejected name that was deleted
@@ -238,7 +262,7 @@ For each target, in order:
    package, so a typed name and the same name in the inventory never
    disagree. Every refusal carries a structured code (RFC-054 §6.5:
    `rejected`, `needs_review`, `candidate`, `dependency`, `monitor_only`,
-   `no_entry`, `deny_list`, `proof_required`, …); requests refused as a whole
+   `wildcard_only`, `no_entry`, `deny_list`, `proof_required`, …); requests refused as a whole
    answer `TARGET_OUT_OF_SCOPE` with `details.refused[]` (`target`, `code`,
    `message`, `fixes`). The act scope runs first on those paths, so a
    restricted member never learns the state of an asset outside their data

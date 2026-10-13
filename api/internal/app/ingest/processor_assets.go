@@ -519,6 +519,13 @@ func (p *AssetProcessor) processBatch(
 		if normalizedName == "" {
 			continue
 		}
+		// A scan command whose targets are all addresses and ranges reports
+		// only on them: an asset naming only other addresses is dropped,
+		// with its findings (RFC-088 output binding).
+		if scope.outsideAddressChunk(normalizedName, ctisAsset.Properties) {
+			skipOutsideChunk(output, ctisAsset.ID)
+			continue
+		}
 
 		// When the source last saw this asset (its last_seen, never later
 		// than the report).

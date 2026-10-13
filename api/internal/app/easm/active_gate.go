@@ -10,18 +10,24 @@ package easm
 //     rejected asset on its name or on any parent domain of it (unless a
 //     person confirmed this very asset);
 //   - its attribution record, if any, is confirmed (dependency, monitor_only
-//     and rejected are refused). A pending record (needs_review or
-//     candidate) written by automation is no decision: an active scope entry
-//     that covers the asset, a one-off entry included, lets probes reach it
-//     (the entry is the authority; research/117 F4). A pending record a
-//     person set, a rejection and an exclusion still refuse;
+//     and rejected are refused). A pending record (discovered, needs_review
+//     or candidate) written by automation is no decision: an active scope
+//     entry that covers the asset, a one-off entry included, lets probes
+//     reach it (the entry is the authority; research/117 F4). A discovered
+//     asset is in the inventory, and that grants nothing: without an entry
+//     it gets passive checks only (research/124). A pending record a person
+//     set, a rejection and an exclusion still refuse;
 //   - an internet-facing asset, or typed text naming an internet host or
 //     address, is covered by the tenant's scope authority (scopeauth: an
 //     active scope target, or a name at or under a root-domain seed or
 //     verified domain; RFC-054 §4.2). A confirmed record does not replace
 //     that: a person confirming an asset on its Ownership tab records
 //     ownership, it does not authorize active probes outside every scope
-//     entry (out_of_scope). Without a record it is "unattributed".
+//     entry (out_of_scope). Without a record it is "unattributed";
+//   - a name that resolves only through a wildcard DNS record (a filtered
+//     resolution did not report it; RFC-088 decision A4), or a service or
+//     URL on such a host, is passive only (wildcard_only) until a person
+//     confirms it or a filtered resolution reports it.
 //
 // Every lookup is tenant-scoped, and every lookup error refuses (the caller
 // dispatches nothing). Another tenant's assets, records, tombstones, scope
@@ -38,6 +44,7 @@ import (
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -83,6 +90,38 @@ type ActiveGate struct {
 	// (only in the Strict scan approval mode, RFC-073 §6); nil enforces
 	// them for every tenant.
 	tiers TierPolicy
+	// wildcard reports the names that resolve only through a wildcard
+	// record; nil checks none.
+	wildcard assetfreshness.WildcardDNSReader
+}
+
+// SetWildcardDNS makes names that resolve only through a wildcard record
+// (and their services and URLs) passive only.
+func (g *ActiveGate) SetWildcardDNS(r assetfreshness.WildcardDNSReader) { g.wildcard = r }
+
+// wildcardOnly reports which of the given assets are marked; a read error
+// refuses (the caller dispatches nothing).
+func (g *ActiveGate) wildcardOnly(ctx context.Context, tenantID shared.ID, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if g.wildcard == nil || len(ids) == 0 {
+		return out, nil
+	}
+	parsed := make([]shared.ID, 0, len(ids))
+	for _, raw := range ids {
+		if id, err := shared.IDFromString(raw); err == nil {
+			parsed = append(parsed, id)
+		}
+	}
+	marked, err := g.wildcard.WildcardOnly(ctx, tenantID, parsed)
+	if err != nil {
+		return nil, fmt.Errorf("load wildcard-DNS marks for the ownership check: %w", err)
+	}
+	for id, m := range marked {
+		if m {
+			out[id.String()] = true
+		}
+	}
+	return out, nil
 }
 
 // TierPolicy answers whether a tenant's scope entry tier ceilings are in
@@ -618,6 +657,10 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 	if err != nil {
 		return nil, err
 	}
+	wildcard, err := g.wildcardOnly(ctx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	var auth *scopeauth.Authority
 	for _, id := range ids {
@@ -644,6 +687,12 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			out[id] = st
 			continue
 		}
+		// Resolves only through a wildcard record: passive only until a
+		// person confirms this very asset.
+		if wildcard[id] && !humanConfirmed {
+			out[id] = attribution.StateWildcardOnly
+			continue
+		}
 		if recorded && rec.State != attribution.StateConfirmed {
 			if !automaticPending(rec) {
 				out[id] = rec.State
@@ -651,8 +700,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 			// An automatic pending record: only an active scope entry that
 			// covers the name lets probes reach it, whatever its type (a
-			// private address too). The state stays pending; nothing joins
-			// the inventory.
+			// private address too). The state stays as it is.
 			if auth == nil {
 				if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
 					return nil, err
@@ -730,12 +778,21 @@ func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids [
 	if err != nil {
 		return nil, fmt.Errorf("load host attribution for the ownership check: %w", err)
 	}
+	wildcardHost, err := g.wildcardOnly(ctx, tenantID, hostIDs)
+	if err != nil {
+		return nil, err
+	}
 	for id, h := range hostName {
 		hid, ok := idOfHost[h]
 		if !ok {
 			continue
 		}
 		rec, ok := recs[hid]
+		hostConfirmedByPerson := ok && rec.State == attribution.StateConfirmed && rec.HumanDecided
+		if wildcardHost[hid] && !hostConfirmedByPerson {
+			out[id] = attribution.StateWildcardOnly
+			continue
+		}
 		if !ok || rec.State == attribution.StateConfirmed || automaticPending(rec) {
 			continue
 		}
@@ -745,15 +802,19 @@ func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids [
 }
 
 // automaticPending reports whether rec is a pending record written by
-// automation (discovery, a scan, an unsolicited report): needs_review or
-// candidate that no person set. Such a record is no decision, so a scope
-// entry covering the asset decides. A person's needs_review (sent back to
-// review) is a decision and keeps refusing.
+// automation (discovery, a scan, an unsolicited report): discovered,
+// needs_review or candidate that no person set. Such a record is no
+// decision, so a scope entry covering the asset decides. A person's
+// needs_review (sent back to review) is a decision and keeps refusing.
 func automaticPending(rec attribution.Record) bool {
 	if rec.HumanDecided {
 		return false
 	}
-	return rec.State == attribution.StateNeedsReview || rec.State == attribution.StateCandidate
+	switch rec.State {
+	case attribution.StateDiscovered, attribution.StateNeedsReview, attribution.StateCandidate:
+		return true
+	}
+	return false
 }
 
 // rejectedNames returns the names among the given hosts and their parent

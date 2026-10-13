@@ -267,3 +267,91 @@ func (r *AttributionRepository) SaveDecisions(ctx context.Context, tenantID shar
 	}
 	return out, nil
 }
+
+// ResetDecisions forgets a person's decision on each of the given assets
+// that has one (research/124: the undo of "Not ours" and the other
+// decisions). In one transaction: the rejection tombstones of those names
+// go, a record whose asset has no evidence is removed (the asset is back to
+// "no record"), and every other record gets the state its evidence gives
+// (attribution.Evaluate) with no person's decision. Then each is saved again
+// through SaveAutomatic, so the tenant's review-gate setting and the
+// children that follow it apply exactly as for any automatic write.
+// Tenant-scoped: another tenant's asset ids change nothing.
+func (r *AttributionRepository) ResetDecisions(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error) {
+	out := map[string]attribution.State{}
+	if len(assetIDs) == 0 {
+		return out, nil
+	}
+	fired, err := r.FiredRules(ctx, tenantID, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("reset attribution decisions: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := func() error {
+		rows, err := tx.QueryContext(ctx, `
+			SELECT asset_id, state FROM asset_attributions
+			WHERE tenant_id = $1 AND asset_id = ANY($2::uuid[]) AND decided_at IS NOT NULL
+			FOR UPDATE`, tenantID.String(), pq.Array(assetIDs))
+		if err != nil {
+			return fmt.Errorf("reset attribution decisions: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, state string
+			if err := rows.Scan(&id, &state); err != nil {
+				return err
+			}
+			out[id] = attribution.State(state)
+		}
+		return rows.Err()
+	}(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(out))
+	for id := range out {
+		ids = append(ids, id)
+	}
+	if err := syncTombstones(ctx, tx, tenantID, ids, attribution.StateConfirmed, nil); err != nil {
+		return nil, err
+	}
+	decisions := map[string]attribution.Decision{}
+	for _, id := range ids {
+		if len(fired[id]) == 0 {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM asset_attributions WHERE tenant_id = $1 AND asset_id = $2`, tenantID.String(), id); err != nil {
+				return nil, fmt.Errorf("reset attribution decisions: %w", err)
+			}
+			continue
+		}
+		dec, err := attribution.Evaluate(fired[id])
+		if err != nil {
+			return nil, err
+		}
+		decisions[id] = dec
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE asset_attributions SET state = $3, confidence = $4, reason = $5,
+				decided_at = NULL, decided_by = NULL, updated_at = now()
+			WHERE tenant_id = $1 AND asset_id = $2`,
+			tenantID.String(), id, string(dec.State), dec.Confidence, string(dec.Reason)); err != nil {
+			return nil, fmt.Errorf("reset attribution decisions: %w", err)
+		}
+	}
+	if err := cascadeToChildren(ctx, tx, tenantID, ids); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("reset attribution decisions: %w", err)
+	}
+	for id, dec := range decisions {
+		if err := r.SaveAutomatic(ctx, tenantID, id, dec); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}

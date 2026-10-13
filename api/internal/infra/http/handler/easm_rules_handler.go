@@ -57,7 +57,7 @@ type EASMRuleRequest struct {
 // @Tags         Attack Surface
 // @Produce      json
 // @Security     BearerAuth
-// @Param        states  query string false "Attribution states (comma-separated); default needs_review"
+// @Param        states  query string false "Attribution states (comma-separated); default discovered,needs_review"
 // @Param        limit   query int    false "Suggestions to return" default(50) maximum(50)
 // @Success      200  {object}  easmapp.RuleSuggestions
 // @Failure      400  {object}  apierror.Error

@@ -49,13 +49,13 @@ const (
 	SensorPreferencePlatform SensorPreference = "platform"
 )
 
-// Timeout constants for scan execution.
+// Max-duration bounds of a scan (TimeoutSeconds). A scan has no max
+// duration unless its owner sets one: the run is then bounded by the
+// platform's 24 h cap and kept alive by its commands' leases (research/122).
 const (
 	// MinScanTimeoutSeconds is the minimum allowed scan timeout (30 seconds).
 	// Lower values would create DoS pressure on the timeout sweeper.
 	MinScanTimeoutSeconds = 30
-	// DefaultScanTimeoutSeconds is the default scan timeout (1 hour).
-	DefaultScanTimeoutSeconds = 3600
 	// MaxScanTimeoutSeconds is the maximum allowed scan timeout (24 hours).
 	MaxScanTimeoutSeconds = 86400
 )

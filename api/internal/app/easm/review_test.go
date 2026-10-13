@@ -16,7 +16,19 @@ type fakeReviewStore struct {
 	query     ReviewQuery
 	scopeUser *shared.DataScope
 	saved     []string
+	reset     []string
 	prev      map[string]attribution.State
+}
+
+func (f *fakeReviewStore) ResetDecisions(_ context.Context, _ shared.ID, ids []string) (map[string]attribution.State, error) {
+	f.reset = append(f.reset, ids...)
+	out := map[string]attribution.State{}
+	for _, id := range ids {
+		if p, ok := f.prev[id]; ok {
+			out[id] = p
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeReviewStore) ListForReview(_ context.Context, _ shared.ID, scopeUserID *shared.DataScope, q ReviewQuery) (*ReviewPage, error) {
@@ -263,4 +275,31 @@ func (*scopeRepo) AssetIDsVisible(_ context.Context, _, _ shared.ID, ids []share
 
 func (*scopeRepo) FindingIDsVisible(_ context.Context, _, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	return ids, nil
+}
+
+// Reset to automatic (the undo of a decision, research/124) goes through
+// the same data-scope filter and never through SaveDecisions.
+func TestDecide_ResetAutomatic(t *testing.T) {
+	inScope, outOfScope := shared.NewID(), shared.NewID()
+	store := &fakeReviewStore{prev: map[string]attribution.State{inScope.String(): attribution.StateRejected}}
+	repo := &scopeRepo{in: map[shared.ID]bool{inScope: true}}
+	svc := NewReviewService(store, memberEnforcer(repo, shared.NewID()))
+
+	res, err := svc.Decide(context.Background(), shared.NewID(),
+		[]string{inScope.String(), outOfScope.String()}, ResetAutomatic, shared.NewID().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.saved) != 0 {
+		t.Fatalf("a reset saved a decision: %v", store.saved)
+	}
+	if len(store.reset) != 1 || store.reset[0] != inScope.String() {
+		t.Fatalf("reset %v, want only the in-scope asset", store.reset)
+	}
+	if len(res.Decided) != 1 || res.Decided[0].From != "rejected" || res.Decided[0].To != "automatic" {
+		t.Fatalf("decided = %+v", res.Decided)
+	}
+	if len(res.NotFound) != 1 || res.NotFound[0] != outOfScope.String() {
+		t.Fatalf("not found = %v", res.NotFound)
+	}
 }

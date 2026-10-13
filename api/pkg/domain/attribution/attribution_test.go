@@ -89,7 +89,9 @@ func TestParseFilter(t *testing.T) {
 		{[]string{"unknown"}, nil, true, true},
 		{[]string{"rejected"}, []State{StateRejected}, false, true},
 		{[]string{"unconfirmed"}, []State{StateCandidate, StateNeedsReview}, false, true},
-		{[]string{"approved"}, []State{StateConfirmed, StateDependency, StateMonitorOnly}, true, true},
+		{[]string{"approved"}, []State{StateConfirmed, StateDependency, StateDiscovered, StateMonitorOnly}, true, true},
+		{[]string{"attributed"}, []State{StateConfirmed, StateDependency, StateMonitorOnly}, true, true},
+		{[]string{"discovered"}, []State{StateDiscovered}, false, true},
 		{[]string{"needs_review", "unconfirmed"}, []State{StateCandidate, StateNeedsReview}, false, true},
 		// research/22 P0-12: "all" means no filter, whatever comes with it.
 		{[]string{"all"}, nil, false, false},
@@ -111,5 +113,53 @@ func TestParseFilter(t *testing.T) {
 	}
 	if _, _, err := ParseFilter([]string{"confirmed", "x' OR 1=1"}); err == nil {
 		t.Fatal("unknown value accepted")
+	}
+}
+
+// Inventory first (research/124): discovered is in the inventory, is not
+// attributed, never allows active checks by itself, and is automatic.
+func TestDiscoveredMembership(t *testing.T) {
+	if !InInventory(StateDiscovered) || Attributed(StateDiscovered) {
+		t.Fatal("discovered must be in the inventory but not attributed")
+	}
+	if StateDiscovered.AllowsActiveChecks() {
+		t.Fatal("discovered must not allow active checks by itself")
+	}
+	for _, s := range []State{StateNeedsReview, StateCandidate, StateRejected} {
+		if InInventory(s) || Attributed(s) {
+			t.Fatalf("%s must stay outside the inventory", s)
+		}
+	}
+	for _, s := range []State{"", StateConfirmed, StateDependency, StateMonitorOnly} {
+		if !InInventory(s) || !Attributed(s) {
+			t.Fatalf("%q must be in the attributed inventory", s)
+		}
+	}
+	if !StateDiscovered.Automatic() || StateRejected.Automatic() || StateDependency.Automatic() || StateMonitorOnly.Automatic() {
+		t.Fatal("only automatic states may be stored by automation")
+	}
+}
+
+func TestMerge_Discovered(t *testing.T) {
+	needs := Decision{State: StateNeedsReview, Confidence: 60, Reason: RuleScanDiscovered}
+	// A discovered record stays discovered on new medium evidence.
+	got := Merge(&Record{State: StateDiscovered, Confidence: 60}, needs)
+	if got.State != StateDiscovered {
+		t.Fatalf("discovered + needs_review = %s, want discovered", got.State)
+	}
+	// Strong evidence raises it to confirmed.
+	got = Merge(&Record{State: StateDiscovered}, Decision{State: StateConfirmed, Confidence: 99})
+	if got.State != StateConfirmed {
+		t.Fatalf("discovered + confirmed = %s", got.State)
+	}
+	// Automation never lowers a confirmed record to discovered.
+	got = Merge(&Record{State: StateConfirmed, Confidence: 99}, needs)
+	if got.State != StateConfirmed {
+		t.Fatalf("confirmed + needs_review = %s", got.State)
+	}
+	// A person's decision wins.
+	got = Merge(&Record{State: StateRejected, HumanDecided: true}, Decision{State: StateConfirmed})
+	if got.State != StateRejected {
+		t.Fatalf("human rejected overridden: %s", got.State)
 	}
 }

@@ -35,6 +35,9 @@ type RunTaskLogLine struct {
 	Msg    string         `json:"msg"`
 	Source string         `json:"source,omitempty"`
 	Fields map[string]any `json:"fields,omitempty"`
+	// Attempt is the claim attempt (the command's lease epoch) that wrote
+	// the line; lines come oldest attempt first.
+	Attempt int `json:"attempt"`
 }
 
 // RunTaskLogsResponse is a task's log. Truncated: lines were dropped (the
@@ -89,7 +92,7 @@ func (h *ScanWorkflowHandler) GetRunTaskLogs(w http.ResponseWriter, r *http.Requ
 		}
 		resp.Truncated = page.Truncated
 		for _, l := range page.Lines {
-			resp.Lines = append(resp.Lines, RunTaskLogLine{TS: l.TS, Level: l.Level, Msg: l.Msg, Source: l.Source, Fields: l.Fields})
+			resp.Lines = append(resp.Lines, RunTaskLogLine{TS: l.TS, Level: l.Level, Msg: l.Msg, Source: l.Source, Fields: l.Fields, Attempt: l.Attempt})
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

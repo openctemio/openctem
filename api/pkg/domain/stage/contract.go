@@ -139,6 +139,7 @@ var adapters = []Adapter{
 	{From: PortHostname, To: PortURL, Capability: ProbeHTTP},
 	{From: PortHostname, To: PortIP, Capability: ResolveDNS},
 	{From: PortIP, To: PortService, Capability: ScanPorts},
+	{From: PortCIDR, To: PortIP, Capability: DiscoverHosts},
 	{From: PortHostname, To: PortService, Capability: ScanPorts},
 	{From: PortService, To: PortURL, Capability: ProbeHTTP},
 	{From: PortIP, To: PortURL, Capability: ProbeHTTP},
@@ -182,6 +183,7 @@ var requiredFields = map[Key][]string{
 	ResolveDNS:         []string{"name", "resolves_to"},
 	LookupRDAP:         []string{"name", "registration"},
 	LookupASN:          []string{"address", "asn"},
+	DiscoverHosts:      []string{"address", "live_by"},
 	ScanPorts:          []string{"host", "port", "protocol"},
 	ProbeHTTP:          []string{"url", "status_code", "title"},
 	CrawlWeb:           []string{"url", "parent_url"},
@@ -202,6 +204,7 @@ var chunkSizes = map[Key]int{
 	ResolveDNS:         200,
 	LookupRDAP:         100,
 	LookupASN:          500,
+	DiscoverHosts:      64,
 	ScanPorts:          50,
 	ProbeHTTP:          200,
 	CrawlWeb:           10,
@@ -214,7 +217,8 @@ var chunkSizes = map[Key]int{
 // address count, every other target 1 (RFC-088 §6). Absent: chunks count
 // targets only.
 var chunkAddressBudgets = map[Key]int{
-	ScanPorts: 1024,
+	DiscoverHosts: 4096,
+	ScanPorts:     1024,
 }
 
 // ChunkAddressBudget is the stage's address budget per chunk (0: none). A
@@ -226,12 +230,31 @@ func (s Stage) ChunkAddressBudget() int {
 	return chunkAddressBudgets[s.Key]
 }
 
+// HostProbePorts are the TCP ports a host discovery step probes when the
+// step names none: a host that answers on one of them is live. The platform
+// sends them with every host discovery job; a sensor never picks its own.
+const HostProbePorts = "80,443,22,3389,8080,8443"
+
+// ToolParamKey is the tool's config key of a standard param of the stage
+// (false when the tool does not take it).
+func (s Stage) ToolParamKey(tool, param string) (string, bool) {
+	tool = normalizeTool(tool)
+	for _, im := range s.Implementations {
+		if im.Tool == tool {
+			k, ok := im.Params[param]
+			return k, ok
+		}
+	}
+	return "", false
+}
+
 // toolParams maps a tool's standard params to its own config keys: the keys
 // the sensor's settings schema for that tool declares. A tool listed with
 // no entry for a param does not accept it yet. Keep in step with
 // scan workflow.stepToolSettings.
 var toolParams = map[string]map[string]string{
 	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
+	"dnsx":   {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
 	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
 	"rdap":   {"follow_registrar": "follow_registrar"},
 	"asn":    {"include_announced": "include_announced", "max_ranges": "max_ranges"},

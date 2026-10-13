@@ -137,20 +137,24 @@ func TestIngest_SensorReportAttribution(t *testing.T) {
 	if n, _ := evidence("api.new.example.com", attribution.RuleTenantScanned); n != 0 {
 		t.Fatal("a discovered name was stamped as a scanned target")
 	}
-	if got := state(tid, idOf("api.new.example.com")); got != attribution.StateNeedsReview {
-		t.Fatalf("discovered name = %q, want needs_review", got)
+	// Inventory first (RFC-054 §15): in the inventory as discovered.
+	if got := state(tid, idOf("api.new.example.com")); got != attribution.StateDiscovered {
+		t.Fatalf("discovered name = %q, want discovered", got)
 	}
-	if n, _ := evidence("ct.example.com", attribution.RuleTenantScanned); n != 0 || state(tid, idOf("ct.example.com")) != attribution.StateNeedsReview {
+	if n, _ := evidence("ct.example.com", attribution.RuleTenantScanned); n != 0 || state(tid, idOf("ct.example.com")) != attribution.StateDiscovered {
 		t.Fatal("a command raised an asset outside its targets")
 	}
 
 	// A command that targets the names in review and rejected: a scan does
 	// not take them past review (E7, 22b S3), nor override a person.
 	cmd2 := shared.NewID()
-	run(agt, ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd2, Targets: []string{"ct.example.com", "gone.example.com"}},
-		sn("ct.example.com"), sn("gone.example.com"))
-	if got := state(tid, idOf("ct.example.com")); got != attribution.StateNeedsReview {
-		t.Fatalf("a scan confirmed a name in review: %s", got)
+	run(agt, ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd2, Targets: []string{"ct.example.com", "gone.example.com", "api.new.example.com"}},
+		sn("ct.example.com"), sn("gone.example.com"), sn("api.new.example.com"))
+	if got := state(tid, idOf("ct.example.com")); got != attribution.StateDiscovered {
+		t.Fatalf("a scan confirmed a discovered name: %s", got)
+	}
+	if got := state(tid, idOf("api.new.example.com")); got != attribution.StateDiscovered {
+		t.Fatalf("a scan confirmed a discovered name: %s", got)
 	}
 	if got := state(tid, idOf("gone.example.com")); got != attribution.StateRejected {
 		t.Fatalf("automation overrode a rejection: %s", got)
@@ -175,8 +179,9 @@ func TestIngest_SensorReportAttribution(t *testing.T) {
 			t.Fatalf("root_domain %q was created from a name it is not a parent of", n)
 		}
 	}
-	if got := state(tid, idOf("example.net")); got != attribution.StateNeedsReview {
-		t.Fatalf("auto-created root domain = %q, want needs_review", got)
+	// In the inventory as discovered; never a CT root (attributed only).
+	if got := state(tid, idOf("example.net")); got != attribution.StateDiscovered {
+		t.Fatalf("auto-created root domain = %q, want discovered", got)
 	}
 
 	// Cross-tenant: the other tenant's sensor reporting the same names
@@ -185,7 +190,7 @@ func TestIngest_SensorReportAttribution(t *testing.T) {
 	cmd5 := shared.NewID()
 	run(otherAgt, ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd5, Targets: []string{"ct.example.com"}},
 		sn("ct.example.com"))
-	if got := state(tid, idOf("ct.example.com")); got != attribution.StateNeedsReview {
+	if got := state(tid, idOf("ct.example.com")); got != attribution.StateDiscovered {
 		t.Fatalf("another tenant's report changed this tenant's record: %s", got)
 	}
 	if got := state(oid, idIn(oid, "ct.example.com")); got != "" {

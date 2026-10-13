@@ -34,6 +34,7 @@ const (
 	ResolveDNS         Key = "resolve.dns"
 	LookupRDAP         Key = "lookup.rdap"
 	LookupASN          Key = "lookup.asn"
+	DiscoverHosts      Key = "discover.hosts"
 	ScanPorts          Key = "scan.ports"
 	ProbeHTTP          Key = "probe.http"
 	CrawlWeb           Key = "crawl.web"
@@ -53,8 +54,9 @@ type Tier int
 const (
 	// TierPassive (T0): no traffic to the target beyond DNS, or no target
 	// traffic at all (third-party sources, code and image analysis). A T0
-	// stage may take names that are not confirmed yet (needs_review,
-	// candidate); it never takes a rejected or tombstoned name.
+	// stage may take names that are not confirmed yet (discovered,
+	// needs_review, candidate); it never takes a rejected or tombstoned
+	// name.
 	TierPassive Tier = 0
 	// TierActive (T1): non-intrusive active checks (connect scans, HTTP
 	// probes, crawling, non-intrusive templates). A T1 stage takes only
@@ -82,6 +84,11 @@ type Implementation struct {
 	// Batch: the tool takes a list of targets in one task; otherwise one
 	// target per task (contract.go batchTools).
 	Batch bool `json:"batch"`
+	// ByCapability: the tool runs this stage only for a step or job that
+	// names the capability. A step that pins the tool without naming a
+	// capability runs the tool's other stage (naabu: a port scan, not host
+	// discovery).
+	ByCapability bool `json:"by_capability,omitempty"`
 	// Params maps the capability's standard params this tool accepts to
 	// the tool's own config key (contract.go toolParams).
 	Params map[string]string `json:"params"`
@@ -229,6 +236,17 @@ var catalog = []Stage{
 		Tier:        TierPassive,
 		Implementations: []Implementation{
 			{Tool: "asn", Default: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		Key: DiscoverHosts, Name: "Host discovery",
+		Description: "Find the live addresses of a range or an address list with light probes before deeper scans.",
+		Inputs:      []asset.TypeRef{tIP, tNetwork},
+		Outputs:     []asset.TypeRef{tIP},
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: "naabu", Default: true, ByCapability: true},
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
@@ -674,6 +692,31 @@ func ForStep(tool string, caps []string) (Stage, bool) {
 		return stages[0], true
 	case len(stages) > 1 && capErr == nil && byCaps.Implements(tool):
 		return byCaps, true
+	case len(stages) > 1:
+		// A pinned tool whose capabilities name none of its stages runs
+		// its one stage that is not reached by capability only.
+		if own := withoutByCapability(stages, tool); len(own) == 1 {
+			return own[0], true
+		}
 	}
 	return Stage{}, false
+}
+
+// withoutByCapability keeps the stages tool runs without being asked for
+// the capability (Implementation.ByCapability).
+func withoutByCapability(stages []Stage, tool string) []Stage {
+	tool = normalizeTool(tool)
+	var out []Stage
+	for _, st := range stages {
+		byCap := false
+		for _, im := range st.Implementations {
+			if im.Tool == tool && im.ByCapability {
+				byCap = true
+			}
+		}
+		if !byCap {
+			out = append(out, st)
+		}
+	}
+	return out
 }

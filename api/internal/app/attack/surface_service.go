@@ -176,12 +176,17 @@ func (s *SurfaceService) GetStats(ctx context.Context, tenantID shared.ID) (*Sur
 	if err != nil {
 		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
-	// Every count and list here covers approved assets only (confirmed,
-	// dependency, monitor only, or no record), the same population the
-	// inventory shows by default: a name a person rejected, or one still in
-	// review, is never counted as the organization's exposed surface
-	// (research/22 P0-12).
-	approved, _, _ := attribution.ParseFilter([]string{attribution.FilterApproved})
+	// Every count and list here covers attributed assets only (confirmed,
+	// dependency, monitor only, or no record): a name a person rejected, one
+	// still in review, or one discovery added and nobody claimed is never
+	// counted as the organization's exposed surface (research/22 P0-12,
+	// research/124).
+	population := attribution.FilterAttributed
+	if shared.DiscoveredAssetsIncluded(ctx) {
+		// The request asked for discovered assets too (include_discovered).
+		population = attribution.FilterApproved
+	}
+	approved, _, _ := attribution.ParseFilter([]string{population})
 
 	// Get total assets count
 	totalAssets, err := s.assetRepo.Count(ctx, asset.Filter{

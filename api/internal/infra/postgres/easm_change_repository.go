@@ -39,17 +39,18 @@ var easmChangeSkippedExposureTypes = []string{
 
 // changeAssetFilter keeps an asset that is part of the external surface (a
 // surface type, or anything internet-facing), not deleted, and in the
-// inventory (neither waiting for review nor rejected).
-func changeAssetFilter(alias string) string {
+// attributed inventory (not discovered without a claim, not waiting for
+// review, not rejected).
+func changeAssetFilter(ctx context.Context, alias string) string {
 	return fmt.Sprintf(` AND %[1]s.deleted_at IS NULL AND (%[1]s.asset_type = ANY($4) OR %[1]s.exposure = 'public')`, alias) +
-		InInventorySQL(alias+".id")
+		MetricsInventorySQL(ctx, alias+".id")
 }
 
 // changeUnion is the typed change feed: $1 tenant, $2 from, $3 to, $4 the
 // surface types, $5 the skipped exposure types. Every branch is
 // tenant-scoped on its own table and on the joined asset.
-func changeUnion() string {
-	surface := changeAssetFilter("a")
+func changeUnion(ctx context.Context) string {
+	surface := changeAssetFilter(ctx, "a")
 	return `
 	SELECT h.id::text AS id, h.changed_at AS at, h.asset_id AS asset_id, a.name AS asset_name, a.asset_type AS asset_type,
 	       CASE WHEN h.change_type IN ('appeared', 'recovered') THEN
@@ -155,7 +156,7 @@ func (r *EASMChangeRepository) ListChanges(ctx context.Context, tenantID shared.
 	args = append(args, q.Limit+1)
 	query := `SELECT c.id, c.at, c.asset_id, c.asset_name, c.asset_type, c.kind, c.detail, c.old_value, c.new_value,
 	                 c.added, c.removed, c.severity, c.exposure_id
-	          FROM (` + changeUnion() + `) c
+	          FROM (` + changeUnion(ctx) + `) c
 	          WHERE ` + strings.Join(where, " AND ") + sc + `
 	          ORDER BY c.at DESC, c.id DESC, c.kind DESC
 	          LIMIT $` + fmt.Sprint(len(args))
@@ -199,7 +200,7 @@ func (r *EASMChangeRepository) ListChanges(ctx context.Context, tenantID shared.
 func (r *EASMChangeRepository) CountChanges(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, from, to time.Time) (map[easmchange.Kind]int, int, error) {
 	args := r.baseArgs(tenantID, easmchange.Query{From: from, To: to})
 	sc, args := scopeClause("c.asset_id", scope, args)
-	rows, err := r.db.QueryContext(ctx, `SELECT c.kind, count(*) FROM (`+changeUnion()+`) c WHERE TRUE`+sc+` GROUP BY c.kind`, args...)
+	rows, err := r.db.QueryContext(ctx, `SELECT c.kind, count(*) FROM (`+changeUnion(ctx)+`) c WHERE TRUE`+sc+` GROUP BY c.kind`, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("easm change counts: %w", err)
 	}

@@ -52,12 +52,37 @@ const notRejected = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions rj WHERE 
 
 func notRejectedFor(col string) string { return fmt.Sprintf(notRejected, col) }
 
-// inInventory keeps assets in the inventory (RFC-054 §4.4,
-// attribution.InInventory): not in the review queue and not rejected.
-const inInventory = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND iv.state IN ('needs_review', 'candidate', 'rejected'))`
+// attributed keeps the attributed inventory (attribution.Attributed): not
+// discovered by automation without anyone's claim, not in the review queue
+// and not rejected. Counts and metrics use it, so discovery noise never
+// inflates the organization's surface or risk (research/124).
+const attributed = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND iv.state IN ('discovered', 'needs_review', 'candidate', 'rejected'))`
 
-// InInventorySQL is the inventory-membership condition for an asset id column.
-func InInventorySQL(col string) string { return fmt.Sprintf(inInventory, col) }
+// AttributedSQL is the attributed-inventory condition for an asset id column.
+func AttributedSQL(col string) string { return fmt.Sprintf(attributed, col) }
+
+// inventory keeps the whole inventory (attribution.InInventory): discovered
+// assets included, the review queue and rejected assets left out.
+const inventory = ` AND NOT EXISTS (SELECT 1 FROM asset_attributions iv WHERE iv.asset_id = %s AND iv.state IN ('needs_review', 'candidate', 'rejected'))`
+
+// MetricsInventorySQL is the population a metric counts for an asset id
+// column: the attributed inventory, or the whole inventory when the request
+// asks for discovered assets too (shared.WithDiscoveredAssets).
+func MetricsInventorySQL(ctx context.Context, col string) string {
+	if shared.DiscoveredAssetsIncluded(ctx) {
+		return fmt.Sprintf(inventory, col)
+	}
+	return AttributedSQL(col)
+}
+
+// metricsCounts reports whether a recorded state is in the population a
+// metric counts (see MetricsInventorySQL).
+func metricsCounts(ctx context.Context, s attribution.State) bool {
+	if shared.DiscoveredAssetsIncluded(ctx) {
+		return attribution.InInventory(s)
+	}
+	return attribution.Attributed(s)
+}
 
 // scopeClause returns the SQL that narrows an asset id column to the data
 // scope (dataScopeCondAt: scope rows for a restricted scope, and never an
@@ -105,7 +130,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 	sc, args = scopeClause("a.id", scope, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM assets a
-		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+InInventorySQL("a.id")+sc,
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = 'service' AND a.is_internet_accessible AND a.status <> 'archived'`+MetricsInventorySQL(ctx, "a.id")+sc,
 		args...).Scan(&out.ExposedServices); err != nil {
 		return nil, fmt.Errorf("easm exposed services: %w", err)
 	}
@@ -127,7 +152,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 		       count(*) FILTER (WHERE a.first_seen >= $4),
 		       count(*) FILTER (WHERE a.first_seen >= $5)
 		FROM assets a
-		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+InInventorySQL("a.id")+sc,
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.asset_type = ANY($2) AND a.status <> 'archived'`+MetricsInventorySQL(ctx, "a.id")+sc,
 		args...).Scan(&out.NewSince7d, &out.NewSince30d, &out.NewSinceCycle); err != nil {
 		return nil, fmt.Errorf("easm new assets: %w", err)
 	}
@@ -203,7 +228,7 @@ func (r *EASMSummaryRepository) surfaceCounts(ctx context.Context, tenantID shar
 		if err := rows.Scan(&typ, &state, &n); err != nil {
 			return err
 		}
-		if attribution.InInventory(attribution.State(state)) {
+		if metricsCounts(ctx, attribution.State(state)) {
 			out.AssetsByType[typ] += n
 		}
 		out.AttributionByState[state] += n

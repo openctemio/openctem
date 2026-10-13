@@ -651,6 +651,11 @@ type SensorHeartbeatData struct {
 	Running         []string
 	RunningReported bool
 
+	// Progress is the finished targets of each command the sensor holds
+	// (research/122), untrusted: the repository records it only for
+	// commands this sensor holds and bounds it by their target counts.
+	Progress map[string]commanddom.Progress
+
 	// Load is the load report the heartbeat carried (resources, capacity,
 	// local queue), untrusted; nil when it carried none. Clamped here before
 	// it is stored (sensordom.LoadReport.Clamp).
@@ -849,6 +854,7 @@ func (s *SensorService) UpdateHeartbeat(ctx context.Context, sensorID shared.ID,
 
 	s.observeInstance(ctx, a, data.InstanceID, data.Hostname, now)
 	s.renewLeases(ctx, a, data)
+	s.recordProgress(ctx, a, data)
 	s.observeHeartbeat(ctx, a, data, now)
 
 	// Record a connect event only on an offline/unknown/error -> online
@@ -957,6 +963,19 @@ func (s *SensorService) renewLeases(ctx context.Context, a *sensordom.Sensor, da
 	}
 	if _, err := s.leases.RenewLeases(ctx, *a.TenantID, a.ID, ids, !data.RunningReported); err != nil {
 		s.logger.Warn("command leases not renewed", "sensor_id", a.ID.String(), "error", err)
+	}
+}
+
+// recordProgress records the progress the heartbeat reports for the
+// commands the tenant sensor holds. Best effort: a failure is logged; the
+// next heartbeat reports the progress again.
+func (s *SensorService) recordProgress(ctx context.Context, a *sensordom.Sensor, data SensorHeartbeatData) {
+	rec, ok := s.leases.(commanddom.ProgressRecorder)
+	if !ok || a.TenantID == nil || len(data.Progress) == 0 {
+		return
+	}
+	if _, err := rec.RecordProgress(ctx, *a.TenantID, a.ID, data.Progress); err != nil {
+		s.logger.Warn("command progress not recorded", "sensor_id", a.ID.String(), "error", err)
 	}
 }
 

@@ -277,7 +277,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	rules := outputRules{stages: outputContract(tool), declared: s.declaredContract(ctx, agt, tool)}
 	// The capability the report answers is the platform's, from the
 	// command's tool: the sensor's metadata.capability is only a hint.
-	report.Metadata.Capability = boundCapability(rules, report.Metadata.Capability)
+	report.Metadata.Capability = boundCapability(rules, report.Metadata.Capability, tool)
 	s.checkCapabilityContract(agt, tenantID, tool, report)
 	if rules.empty() {
 		return report // no contract: a tool the catalog does not know, without a declaration

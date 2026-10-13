@@ -1321,6 +1321,16 @@ type ListAssetsInput struct {
 	// CoveredBy: assets the scope join confirmed through this scope entry
 	// (RFC-054 §4.3), the link behind "N assets confirmed".
 	CoveredBy string `validate:"omitempty,uuid"`
+	// Triage (research/124, RFC-054 §15): scope status (in_scope,
+	// not_covered, excluded, internal), the attribution rules and discovery
+	// techniques behind the asset, its attribution confidence, and when it
+	// was first seen.
+	ScopeStatus        []string `validate:"max=4,dive,oneof=in_scope not_covered excluded internal"`
+	DiscoveredBy       []string `validate:"max=10,dive,max=40"`
+	DiscoveryTechnique []string `validate:"max=10,dive,max=50"`
+	MinConfidence      *int     `validate:"omitempty,min=0,max=100"`
+	MaxConfidence      *int     `validate:"omitempty,min=0,max=100"`
+	FirstSeenAfter     *time.Time
 	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
 	// out program-only assets), RFC-065 §16.5.
 	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
@@ -1488,6 +1498,18 @@ func (s *AssetService) ListAssets(ctx context.Context, input ListAssetsInput) (p
 			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: covered_by must be a scope entry id", shared.ErrValidation)
 		}
 		filter.CoveredByScopeTarget = &id
+	}
+	for _, r := range input.DiscoveredBy {
+		if _, _, err := attribution.Weight(attribution.Rule(r)); err != nil {
+			return pagination.Result[*assetdom.Asset]{}, fmt.Errorf("%w: unknown discovered_by rule %q", shared.ErrValidation, r)
+		}
+	}
+	filter.ScopeStatuses = input.ScopeStatus
+	filter.DiscoveredBy = input.DiscoveredBy
+	filter.DiscoveryTechniques = input.DiscoveryTechnique
+	filter.MinConfidence, filter.MaxConfidence = input.MinConfidence, input.MaxConfidence
+	if input.FirstSeenAfter != nil {
+		filter.CreatedAfter = input.FirstSeenAfter
 	}
 	filter.ProgramAssets = input.ProgramAssets
 	filter.Freshness = input.Freshness

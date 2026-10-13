@@ -18,9 +18,10 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | Stage | Inputs → outputs | Tier | Tools (default first) |
 |---|---|---|---|
 | `discover.subdomains` | domain → domain, subdomain | T0 | subfinder |
-| `resolve.dns` | domain, subdomain → domain, subdomain, ip_address (`resolves_to`, `cname_of`) | T0 | dnsx |
+| `resolve.dns` | domain, subdomain → domain, subdomain, ip_address (`resolves_to`, `cname_of`); wildcard-DNS filter on (RFC-088 §8) | T0 | dnsx |
 | `lookup.rdap` | domain → domain (registrar, registrant organization, name servers, dates) | T0 | rdap |
 | `lookup.asn` | ip_address, network → ip_address, network (origin AS, holder, announced range) | T0 | asn |
+| `discover.hosts` | ip_address, network → ip_address (live, with the probe that answered) | T1 | naabu (only for a step that names the capability) |
 | `scan.ports` | domain, subdomain, ip_address, host → ip_address, host, open_port | T1 | naabu |
 | `probe.http` | names, addresses, open_port, http_service → http_service, certificate, ip_address | T1 | httpx |
 | `crawl.web` | http_service, discovered_url, website → discovered_url | T1 | katana |
@@ -98,13 +99,19 @@ tool runs it:
   schema declares (naabu: `top_n` → `top_ports`). A tool with no mapping for
   a param does not accept that param.
 - **Required output fields** are what a report of the capability must carry.
+- **By capability only.** An implementation may run its stage only for a
+  step or job that names the capability (`Implementation.ByCapability`).
+  naabu implements `scan.ports` and `discover.hosts`; a step that pins naabu
+  without naming `discover.hosts` (every existing naabu step and quick scan)
+  is a port scan, and a report that names no capability is bound to
+  `scan.ports`.
 - **Batch.** Each implementation states whether the tool takes a list of
   targets per task (`stage.AcceptsTargetList`). This replaces the scan
   package's hardcoded scanner map. The Tenable bridge names, which are not catalogue
   tools, keep their entry.
 - **Adapters.** One table says which capability turns one port type into another
   (`hostname → url`: `probe.http`; `hostname → ip`: `resolve.dns`;
-  `ip → service`: `scan.ports`; …). The editor offers it when two incompatible
+  `ip → service`: `scan.ports`; `cidr → ip`: `discover.hosts`; …). The editor offers it when two incompatible
   ports are wired.
 - **Taxonomy v1** lists 22 capabilities. The 13 routed stages above have
   implementations. Nine are **planned**: they have a contract but no routed
@@ -174,13 +181,45 @@ Migration 001201 seeds five system workflows built only from capability steps
 | Discover | `discover.subdomains` → `resolve.dns` → `probe.http` |
 | Discover + Vuln | `discover.subdomains` → `resolve.dns` → `scan.ports` → `probe.http` → `vuln.templates` (fed by the probe and the ports) |
 | Web app | `probe.http` → `crawl.web` → `vuln.templates` |
-| Network | `scan.ports` → `probe.http` → `vuln.templates` |
+| Network | `discover.hosts` → `scan.ports` → `probe.http` → `vuln.templates` (Host discovery added by migration `network_workflow_host_discovery`) |
 | Code / CI | `secrets.code`, `sast.code`, `sca.deps` and `iac.misconfig`, in parallel |
 
 They are tagged `starter`. The new-scan wizard offers them first, next to a
 single check. An integration test checks that each passes the graph check
 and resolves a seeded platform tool for every step. The presets they replace
 are deactivated, not deleted.
+
+#### Template updates
+
+A tenant's copy of a system workflow keeps its lineage
+(`scan_workflows.source_template_id` and `source_spec`, migration
+`workflow_template_lineage`): the template it was made from and that
+template's settings and steps as the copy last took them (the base). Both
+clone paths record it. Copies made before the lineage existed got it from the
+audit event of the copy (same tenant) or, without one, from a system template
+whose name they have ("Network", "Network (Copy)") when they share a step
+key. Their base is their own steps.
+
+When the template changes (a migration adds Host discovery to Network, for
+example), `GET /scan-workflows/{id}/template-update` offers the copy the
+changes since the base that it can take (`scanworkflow.TemplateChanges`):
+
+- a step the template added that the copy does not have (`add_step`);
+- the dependencies of a step the template rewired, when the copy's step
+  still depends on what the base had (`depends_on`).
+
+A step the template removed, renamed or reconfigured is not offered: the
+copy's step is the tenant's. The builder shows "Update available: add Host
+discovery" with a preview of each change. `POST .../template-update/apply`
+(scan workflows write) applies it like a published draft: checked, steps
+replaced in place, version moved on and pinned, the base moved to the
+template, audited (`scan_workflow.updated` with `template_update: applied`
+and the changes). It is refused while the copy has an unpublished draft and
+when the template changed since the preview (`template_digest`, 409).
+`POST .../template-update/reject` keeps the copy and moves the base
+(audited). A tenant workflow is never changed without one of these calls;
+every lookup is by the caller's tenant (another tenant's copy is not found)
+and the source must be a system template.
 
 ### 1.4 Workflow preview
 
@@ -261,7 +300,8 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. An active capability with an address budget also closes a
   chunk before its addresses would pass the budget (`scan.ports`: 1 024
-  addresses; RFC-088 §6): a range piece weighs its address count, any other
+  addresses, `discover.hosts`: 4 096 addresses in chunks of at most 64
+  targets; RFC-088 §6): a range piece weighs its address count, any other
   target 1, and a target heavier than the budget gets a chunk of its own.
   The target gate cuts every range into pieces of at most /24 (IPv6 /120),
   so a /16 port scan is 64 chunks of four /24s that every eligible sensor
@@ -289,12 +329,26 @@ payload comes from one builder, `scan.StepCommandPayload`.
   run in parallel. Claims serialize on the keys with transaction
   advisory locks (`lockHostKeys`; a bucket marker and a range key of the
   same bucket share one lock), and a batch claim takes one chunk per host
-  and never a range with an address inside it. Only acknowledged and running commands count, so a finish, a failure,
+  and never a range with an address inside it. A platform sensor's claim
+  (`get_next_platform_job`, migration `platform_jobs_host_keys`) applies the
+  same predicate and the same bucket locks, then checks again, so a platform
+  sensor and a tenant sensor never take overlapping hosts at once. Only acknowledged and running commands count, so a finish, a failure,
   a release or an expired lease frees the hosts with nothing to clean up.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
-  work never holds a tenant back. The sensor's own `PerHostConcurrency` stays
-  as defense in depth. Platform jobs (`get_next_platform_job`) do not check
-  host keys yet.
+  work never holds a tenant back.
+  **One key function on both sides** (RFC-090): the keys are computed by
+  `github.com/openctemio/ctis/politeness` (the CTIS contract), which the sensor runtime
+  uses too, and every catalog-stage chunk carries the keys the platform
+  holds for it in its payload (`host_keys`; an empty list for a passive
+  stage). The sensor's local per-host limit (`limits.per_host_concurrency`,
+  default 1) admits the chunk under exactly those keys with the same
+  conflict relation, so it never hands back a chunk the platform has just
+  offered because the two keyed a host differently (the "its hosts are busy
+  on this sensor" loop). Addresses are canonical (an IPv4-mapped address is
+  the IPv4 address; `a.b.c.d/32` is the address). With a network context
+  (RFC-089) the keys of private addresses and names carry the network, so
+  overlapping private ranges at two sites never hold each other back;
+  public addresses never do.
   Not yet: the candidate tool list per chunk (claim by any candidate),
   placement modes and a spread cap.
 

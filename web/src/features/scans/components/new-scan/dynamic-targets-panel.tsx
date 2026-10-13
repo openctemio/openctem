@@ -8,9 +8,10 @@
  */
 
 import { useMemo } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Sparkles } from 'lucide-react'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -24,12 +25,14 @@ import {
 import type { ScanTargetOptions } from '@/lib/api/scan-types'
 import { formatRelative } from '@/lib/format-date'
 import {
+  asCidrMode,
   hasCidrTarget,
   MAX_SELECTOR_TARGETS,
   SEEN_WITHIN_CHOICES,
   selectorsOf,
 } from '../../lib/dynamic-targets'
 import { useSelectorPreview } from '../../hooks/use-selector-preview'
+import { effectiveCidrMode } from '../../lib/liveness'
 
 interface DynamicTargetsPanelProps {
   /** The targets as they will be stored (after the coverage level). */
@@ -38,6 +41,13 @@ interface DynamicTargetsPanelProps {
   onChange: (options: ScanTargetOptions) => void
   /** A workflow: discovery steps add names during the run. */
   workflow?: boolean
+  /**
+   * An edit of a saved scan: without a stored mode it sweeps, and it keeps
+   * its mode until a person switches it (never switched on save).
+   */
+  savedScan?: boolean
+  /** The scan can run live hosts first (a single scanner, or a workflow with Host discovery). */
+  livenessAvailable?: boolean
 }
 
 export function DynamicTargetsPanel({
@@ -45,6 +55,8 @@ export function DynamicTargetsPanel({
   options,
   onChange,
   workflow,
+  savedScan = false,
+  livenessAvailable = false,
 }: DynamicTargetsPanelProps) {
   const { t } = useTranslation()
   const selectors = useMemo(() => selectorsOf(targets, options), [targets, options])
@@ -125,10 +137,23 @@ export function DynamicTargetsPanel({
         <div className="space-y-1.5">
           <p className="text-sm">{t('scans.dynamic.addressRanges')}</p>
           <RadioGroup
-            value={options?.cidr_mode === 'inventory' ? 'inventory' : 'sweep'}
-            onValueChange={(v) => set({ cidr_mode: v === 'inventory' ? 'inventory' : undefined })}
+            value={effectiveCidrMode(options?.cidr_mode, savedScan)}
+            onValueChange={(v) => set({ cidr_mode: asCidrMode(v) })}
             className="gap-1"
           >
+            <label className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-muted/50">
+              <RadioGroupItem
+                value="liveness"
+                className="mt-0.5"
+                aria-label={t('scans.dynamic.liveness')}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm">{t('scans.dynamic.liveness')}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t('scans.dynamic.livenessHint')}
+                </span>
+              </span>
+            </label>
             <label className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-muted/50">
               <RadioGroupItem
                 value="sweep"
@@ -156,6 +181,37 @@ export function DynamicTargetsPanel({
               </span>
             </label>
           </RadioGroup>
+          {savedScan &&
+            livenessAvailable &&
+            effectiveCidrMode(options?.cidr_mode, savedScan) === 'sweep' && (
+              <div
+                role="note"
+                className="flex flex-wrap items-center gap-2 rounded-md border border-info/40 bg-info/10 px-3 py-2"
+                data-testid="liveness-suggestion"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-info" aria-hidden />
+                <span className="min-w-0 flex-1 text-xs">
+                  <span className="block font-medium">{t('scans.dynamic.livenessSuggestion')}</span>
+                  <span className="block text-muted-foreground">
+                    {t('scans.dynamic.livenessSuggestionHint')}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => set({ cidr_mode: 'liveness' })}
+                >
+                  {t('scans.dynamic.livenessSwitch')}
+                </Button>
+              </div>
+            )}
+          {!options?.cidr_mode && (
+            <p className="text-xs text-muted-foreground">
+              {t(savedScan ? 'scans.dynamic.cidrModeNoticeSaved' : 'scans.dynamic.cidrModeNotice')}
+            </p>
+          )}
         </div>
       )}
 

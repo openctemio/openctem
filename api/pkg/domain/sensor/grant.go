@@ -41,13 +41,18 @@ const (
 	DefaultProfile = ProfileInternalScanner
 )
 
-// DefaultProfileFor is the profile a new sensor of type t gets when none is
-// chosen: collector for a collector (so its reports are not refused by the
-// grant; trust still decides), else DefaultProfile. The sensors insert
-// trigger applies the same rule.
+// DefaultProfileFor is the least-privilege profile a new sensor of type t
+// gets when none is chosen: collector for a collector (so its reports are not
+// refused by the grant; trust still decides), easm-external for an EASM
+// sensor (public targets only), else DefaultProfile (a worker may scan
+// internal networks; the zones chosen at approval bound it). The sensors
+// insert trigger applies the same rule.
 func DefaultProfileFor(t SensorType) string {
-	if t == SensorTypeCollector {
+	switch t {
+	case SensorTypeCollector:
 		return ProfileCollector
+	case SensorTypeEASM:
+		return ProfileEASMExternal
 	}
 	return DefaultProfile
 }

@@ -48,7 +48,7 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 		LEFT JOIN asset_attributions aa ON aa.asset_id = ip.id AND aa.tenant_id = ip.tenant_id
 		WHERE ip.tenant_id = $1 AND ip.asset_type = 'ip_address' AND ip.deleted_at IS NULL
 		  AND (aa.asset_id IS NULL OR aa.state = 'confirmed'
-		       OR (aa.state IN ('needs_review', 'candidate') AND aa.decided_at IS NULL))`+sc+fmt.Sprintf(`
+		       OR (aa.state IN ('discovered', 'needs_review', 'candidate') AND aa.decided_at IS NULL))`+sc+fmt.Sprintf(`
 		GROUP BY ip.id, ip.name, ip.properties
 		ORDER BY ip.name
 		LIMIT $%d`, len(args)), args...)

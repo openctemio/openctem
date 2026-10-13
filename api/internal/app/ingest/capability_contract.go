@@ -51,13 +51,21 @@ func candidateCapabilities(rules outputRules) []string {
 }
 
 // boundCapability is the capability the platform binds the report to.
-func boundCapability(rules outputRules, claimed string) string {
+func boundCapability(rules outputRules, claimed, tool string) string {
 	cands := candidateCapabilities(rules)
 	if claimed != "" && slices.Contains(cands, claimed) {
 		return claimed
 	}
 	if len(cands) == 1 {
 		return cands[0]
+	}
+	// A tool with several stages, one of them run only when a job names it
+	// (naabu: host discovery): a report that names none is the tool's own
+	// stage (naabu: a port scan).
+	if st, ok := stage.ForStep(tool, nil); ok {
+		if ref := fmt.Sprintf("%s@%d", st.Key, stage.ContractVersion); slices.Contains(cands, ref) {
+			return ref
+		}
 	}
 	return ""
 }

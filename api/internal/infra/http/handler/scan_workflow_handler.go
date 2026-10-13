@@ -237,6 +237,10 @@ type RunResponse struct {
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open (RFC-046 §6.3).
 	DeadlineAt *string `json:"deadline_at,omitempty"`
+	// DeadlineReason is which policy set DeadlineAt: scan_max_duration,
+	// workflow_max_duration, platform_cap, or legacy (set before reasons
+	// were recorded).
+	DeadlineReason string `json:"deadline_reason,omitempty"`
 	// UnfinishedTargetCount is how many targets were still open when the run
 	// was settled at its deadline; the next scheduled run plans them first.
 	UnfinishedTargetCount int                      `json:"unfinished_target_count,omitempty"`
@@ -334,6 +338,13 @@ type RunTaskResponse struct {
 	// WindowHold: a queued task waits for a scan window (why, until when,
 	// or never).
 	WindowHold *scanwindow.Hold `json:"window_hold,omitempty"`
+	// Progress is a running task's finished targets as its sensor last
+	// reported them, and when that count last grew (research/122).
+	Progress *RunTaskProgress `json:"progress,omitempty"`
+	// BudgetSeconds is the task's expected time; StallSeconds how long it
+	// may finish no target before it is re-queued as stalled. 0: none.
+	BudgetSeconds int `json:"budget_seconds,omitempty"`
+	StallSeconds  int `json:"stall_seconds,omitempty"`
 }
 
 // RunTaskCoverageGap is one host a sensor could not fully cover, and why:
@@ -363,6 +374,13 @@ func toRunTaskSummaryResponse(s scanrundom.TaskSummary) *RunTaskSummaryResponse 
 		Total: s.Total, Queued: s.Queued, Running: s.Running, Completed: s.Completed,
 		Failed: s.Failed, Canceled: s.Canceled, Sensors: s.Sensors,
 	}
+}
+
+// RunTaskProgress is a running task's progress.
+type RunTaskProgress struct {
+	Done           int     `json:"done"`
+	Total          int     `json:"total"`
+	LastProgressAt *string `json:"last_progress_at,omitempty"`
 }
 
 func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
@@ -396,6 +414,14 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 		if t.CompletedAt != nil {
 			v := t.CompletedAt.Format(time.RFC3339)
 			r.CompletedAt = &v
+		}
+		r.BudgetSeconds, r.StallSeconds = t.BudgetSeconds, t.StallSeconds
+		if p := t.Progress; p != nil {
+			r.Progress = &RunTaskProgress{Done: p.Done, Total: p.Total}
+			if p.LastAt != nil {
+				v := p.LastAt.Format(time.RFC3339)
+				r.Progress.LastProgressAt = &v
+			}
 		}
 		out = append(out, r)
 	}
@@ -1407,6 +1433,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 	if r.DeadlineAt != nil {
 		d := r.DeadlineAt.Format("2006-01-02T15:04:05Z07:00")
 		resp.DeadlineAt = &d
+		resp.DeadlineReason = r.DeadlineReason
 	}
 	resp.UnfinishedTargetCount = r.UnfinishedTargetCount
 
