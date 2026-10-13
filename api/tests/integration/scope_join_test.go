@@ -95,9 +95,12 @@ func TestScopeJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	slices.Sort(confirmed)
-	// *.join-a.example covers its apex too (RFC-054 §4.1).
-	want := []string{"198.51.100.7", "198.51.100.8:443:tcp", "api.join-a.example", "api.join-a.example:8443/tcp",
-		"join-a.example", "join-a.example:443:tcp", "www.seeded-a.example"}
+	// *.join-a.example covers its apex too (RFC-054 §4.1). The services on
+	// join-a.example and api.join-a.example follow those hosts (research/117):
+	// the join decides the hosts and the services take the outcome (checked
+	// below); a service with no host asset is joined on its own.
+	want := []string{"198.51.100.7", "198.51.100.8:443:tcp", "api.join-a.example",
+		"join-a.example", "www.seeded-a.example"}
 	if !slices.Equal(confirmed, want) {
 		t.Fatalf("confirmed = %v, want %v", confirmed, want)
 	}
@@ -159,5 +162,72 @@ func TestScopeJoin(t *testing.T) {
 	}
 	if st := attributionState(t, db, tenantA, sub); st != attribution.StateConfirmed {
 		t.Fatalf("the record changed on removal: %s", st)
+	}
+}
+
+// TestScopeJoin_ChildrenFollowHost: the join links pending services and
+// certificates to their pending host (one audited system event), decides
+// the host only, and the host's outcome cascades to its automatic children.
+// A host the entries do not cover keeps its children in review; another
+// tenant's entry and host never count (research/117 F1).
+func TestScopeJoin_ChildrenFollowHost(t *testing.T) {
+	db := openLifecycleDB(t)
+	ctx := context.Background()
+	tenantA := seedLifecycleTenant(ctx, t, db)
+	tenantB := seedLifecycleTenant(ctx, t, db)
+	seedScopeTarget(t, db, tenantA, "ip_range", "198.51.100.0/24")
+	seedScopeTarget(t, db, tenantB, "ip_range", "203.0.113.0/24")
+
+	edge := func(tenant, src, dst shared.ID, typ string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, `INSERT INTO asset_relationships (tenant_id, source_asset_id, target_asset_id, relationship_type)
+			VALUES ($1, $2, $3, $4)`, tenant.String(), src.String(), dst.String(), typ); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pendingAsset := func(tenant shared.ID, name, typ string) shared.ID {
+		id := seedOwnedAsset(t, db, tenant, name, typ)
+		automatic(t, db, tenant, id, attribution.StateNeedsReview)
+		return id
+	}
+	ip := pendingAsset(tenantA, "198.51.100.40", "ip_address")
+	svc := pendingAsset(tenantA, "198.51.100.40:443", "service")
+	cert := pendingAsset(tenantA, "f00dcafe", "certificate")
+	edge(tenantA, ip, svc, "exposes")
+	edge(tenantA, svc, cert, "serves_certificate")
+	// Outside every entry of tenant A (tenant B's entry covers it).
+	outIP := pendingAsset(tenantA, "203.0.113.40", "ip_address")
+	outSvc := pendingAsset(tenantA, "203.0.113.40:22", "service")
+	edge(tenantA, outIP, outSvc, "exposes")
+
+	if _, err := scopeJoin(db).Run(ctx, tenantA); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []shared.ID{ip, svc, cert} {
+		if st := attributionState(t, db, tenantA, id); st != attribution.StateConfirmed {
+			t.Fatalf("%s = %s, want confirmed (host in scope)", id, st)
+		}
+	}
+	for _, id := range []shared.ID{outIP, outSvc} {
+		if st := attributionState(t, db, tenantA, id); st != attribution.StateNeedsReview {
+			t.Fatalf("%s = %s, want needs_review (host outside tenant A's scope)", id, st)
+		}
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'asset.attribution_children_linked'`,
+		tenantA.String()).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("children-linked audit events in tenant A = %d (%v), want 1", n, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'asset.attribution_children_linked'`,
+		tenantB.String()).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("children-linked audit events in tenant B = %d (%v), want 0", n, err)
+	}
+	// Idempotent: nothing more to link, nothing more audited.
+	if _, err := scopeJoin(db).Run(ctx, tenantA); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'asset.attribution_children_linked'`,
+		tenantA.String()).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("second run audited again: %d (%v)", n, err)
 	}
 }
