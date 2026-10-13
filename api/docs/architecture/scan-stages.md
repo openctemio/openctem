@@ -259,7 +259,13 @@ payload comes from one builder, `scan.StepCommandPayload`.
   contract, not from the tool: `resolve.dns` and `probe.http` 200,
   `discover.subdomains` and `scan.ports` 50, `vuln.templates` 25,
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
-  are not cut. A one-target tool keeps one command per step. If a later
+  are not cut. An active capability with an address budget also closes a
+  chunk before its addresses would pass the budget (`scan.ports`: 1 024
+  addresses; RFC-088 §6): a range piece weighs its address count, any other
+  target 1, and a target heavier than the budget gets a chunk of its own.
+  The target gate cuts every range into pieces of at most /24 (IPv6 /120),
+  so a /16 port scan is 64 chunks of four /24s that every eligible sensor
+  shares. A one-target tool keeps one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
   Where the chunks went: `GET /scan-runs/{id}/stages` gives each stage
   its chunk counts by state and the share of each tenant sensor that took
@@ -274,9 +280,16 @@ payload comes from one builder, `scan.StepCommandPayload`.
   to in `commands.host_keys` (lower-case name or address, no scheme, port or
   path). The poll offers, and a claim takes, such a chunk only while no other
   acknowledged or running command of the tenant holds one of its hosts
-  (`hostFreePredicate`). Claims serialize on the keys with transaction
-  advisory locks (`lockHostKeys`), and a batch claim takes one chunk per
-  host. Only acknowledged and running commands count, so a finish, a failure,
+  (`hostFreePredicate`). Addresses and ranges know about overlap (RFC-088
+  §6): an address chunk also holds an `in:` marker of its /24 (IPv6 /120)
+  bucket, a range piece holds the `net:` key of each bucket it covers, and
+  a chunk waits while another holds a key it conflicts with
+  (`command.HostKeyConflicts`): the same name or address, or a range and an
+  address in its bucket, either way round. Two addresses of one bucket still
+  run in parallel. Claims serialize on the keys with transaction
+  advisory locks (`lockHostKeys`; a bucket marker and a range key of the
+  same bucket share one lock), and a batch claim takes one chunk per host
+  and never a range with an address inside it. Only acknowledged and running commands count, so a finish, a failure,
   a release or an expired lease frees the hosts with nothing to clean up.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
   work never holds a tenant back. The sensor's own `PerHostConcurrency` stays
