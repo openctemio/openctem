@@ -116,3 +116,36 @@ func TestApproveAndMerge_KeepsAttributionDecisions(t *testing.T) {
 		t.Errorf("case 4: kept evidence rows=%d oldest=%dd, want 2 rows and the 9-day-old first sighting", n, oldDays)
 	}
 }
+
+// TestApproveAndMerge_ChildrenFollowTheKeptHost: a child that followed a
+// merged host follows the kept asset; a kept asset that followed the merged
+// one follows nobody (research/117).
+func TestApproveAndMerge_ChildrenFollowTheKeptHost(t *testing.T) {
+	db := openLifecycleDB(t)
+	ctx := context.Background()
+	tenant := seedLifecycleTenant(ctx, t, db)
+	keep := seedOwnedAsset(t, db, tenant, "host-keep.example.com", "subdomain")
+	gone := seedOwnedAsset(t, db, tenant, "host-gone.example.com", "subdomain")
+	child := seedOwnedAsset(t, db, tenant, "host-gone.example.com:443", "service")
+	for _, id := range []shared.ID{keep, gone, child} {
+		automatic(t, db, tenant, id, "needs_review")
+	}
+	if _, err := db.Exec(`UPDATE asset_attributions SET follows_host_id = $1 WHERE asset_id = ANY($2::uuid[])`,
+		gone.String(), pq.Array([]string{child.String(), keep.String()})); err != nil {
+		t.Fatal(err)
+	}
+	mergeOne(t, db, tenant, keep, gone)
+	follows := func(id shared.ID) string {
+		var f sql.NullString
+		if err := db.QueryRow(`SELECT follows_host_id FROM asset_attributions WHERE asset_id = $1`, id.String()).Scan(&f); err != nil {
+			t.Fatal(err)
+		}
+		return f.String
+	}
+	if got := follows(child); got != keep.String() {
+		t.Fatalf("child follows %q, want the kept asset", got)
+	}
+	if got := follows(keep); got != "" {
+		t.Fatalf("kept asset follows %q, want nobody", got)
+	}
+}
