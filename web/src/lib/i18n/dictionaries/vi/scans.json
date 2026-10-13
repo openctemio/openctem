@@ -154,8 +154,8 @@
   "scans.options.targetsOne": "{count} đích",
   "scans.options.targetsMany": "{count} đích",
   "scans.options.perJobHelp": "Số đích mà một tác vụ sensor quét. Tác vụ nhỏ giúp chia một lần quét cho nhiều sensor hơn; tác vụ lớn thì cần ít tác vụ hơn.",
-  "scans.options.timeout": "Thời gian chờ (giây)",
-  "scans.options.timeoutRange": "30 giây – 24 giờ",
+  "scans.options.timeout": "Thời lượng tối đa (giây, tùy chọn)",
+  "scans.options.timeoutRange": "Để trống: không giới hạn (áp dụng giới hạn 24 giờ của nền tảng). 30 giây – 24 giờ",
   "scans.options.maxRetries": "Số lần thử lại tối đa",
   "scans.options.noRetries": "0 = không thử lại",
   "scans.options.backoff": "Chờ giữa các lần thử lại (giây)",
@@ -1595,5 +1595,14 @@
   "scans.owner.taking": "Đang nhận quyền sở hữu…",
   "scans.owner.taken": "Bạn hiện sở hữu \"{name}\". Hãy tiếp tục lượt quét để khởi động lại lịch chạy.",
   "scans.owner.takeFailed": "Không thể nhận quyền sở hữu",
-  "scans.owner.askAdmin": "Chủ sở hữu tổ chức hoặc quản trị viên có thể nhận quyền sở hữu."
+  "scans.owner.askAdmin": "Chủ sở hữu tổ chức hoặc quản trị viên có thể nhận quyền sở hữu.",
+  "scans.runDetail.deadline": "Hạn chót",
+  "scans.runDetail.deadlineIn": "còn {duration} đến hạn chót",
+  "scans.runDetail.deadlinePassed": "đã quá hạn chót, đang kết thúc",
+  "scans.runDetail.deadlineReason.scan_max_duration": "Do thời lượng tối đa của lần quét này đặt. Công việc chậm nhưng vẫn chạy không bị cắt trước mốc này.",
+  "scans.runDetail.deadlineReason.workflow_max_duration": "Do cài đặt thời gian chờ của quy trình đặt.",
+  "scans.runDetail.deadlineReason.platform_cap": "Chưa đặt thời lượng tối đa: áp dụng giới hạn 24 giờ của nền tảng, chỉ để chặn các lần chạy không bao giờ kết thúc.",
+  "scans.runDetail.deadlineReason.legacy": "Được đặt khi lần chạy bắt đầu, theo thời gian chờ của lần quét lúc đó.",
+  "scans.failure.DEADLINE_TOO_CLOSE.text": "Chưa chạy: thời gian còn lại trước hạn chót của lần chạy quá ít để bước này làm được việc gì hữu ích.",
+  "scans.failure.DEADLINE_TOO_CLOSE.fix": "Các mục tiêu của bước được chuyển sang lần chạy theo lịch kế tiếp. Tăng hoặc bỏ thời lượng tối đa của lần quét nếu cần chạy xong trong một lần."
 }
