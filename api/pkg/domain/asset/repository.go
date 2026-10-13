@@ -339,6 +339,20 @@ type Filter struct {
 	// this scope entry (matches_scope_target evidence from it).
 	CoveredByScopeTarget *shared.ID
 
+	// Triage filters (research/124, RFC-054 §15). ScopeStatuses keeps the
+	// assets whose scope status is one of in_scope, not_covered, excluded or
+	// internal (computed from the tenant's entries and exclusions).
+	// DiscoveredBy keeps assets with evidence of one of these attribution
+	// rules, DiscoveryTechniques with evidence from one of these techniques
+	// (cert_transparency, a scanner name, ...). Min/MaxConfidence bound the
+	// recorded attribution confidence (assets without a record count as
+	// 100, as the attribution API reports them).
+	ScopeStatuses       []string
+	DiscoveredBy        []string
+	DiscoveryTechniques []string
+	MinConfidence       *int
+	MaxConfidence       *int
+
 	// ProgramAssets: "only" keeps the assets a bug-bounty program lists or
 	// covers (system tag bug-bounty); "exclude" leaves out the program-only
 	// ones (RFC-065 §16.5). Empty: no filter.

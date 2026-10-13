@@ -301,6 +301,44 @@ added automatically: a name never lends its address authority (dangling DNS,
 shared hosting and released cloud addresses would make a scan probe a third
 party).
 
+## 4b3. Inventory triage (built, research/124)
+
+Discovered assets are triaged after the fact, in the inventory, in bulk
+(RFC-054 §15). The active-scan gate stays the only authority on what a
+scan may reach.
+
+**Filters on `GET /assets`** (all pinned to the asset's tenant, inside the
+caller's data scope like every list filter):
+
+| Param | Meaning | Implementation |
+|---|---|---|
+| `scope_status` | `in_scope` (an active, unexpired entry covers it), `not_covered` (no entry: passive only), `excluded` (an active, approved exclusion matches, or the organization marked it not its own), `internal` (a private or internal name, or a type the internet scope does not govern) | `postgres.assetScopeStatusSQL`, the same match as the coverage count |
+| `discovered_by` | attribution rules behind the asset | `easm_evidence.rule` |
+| `discovery_technique` | `cert_transparency`, a scanner name, … | `easm_evidence.technique` |
+| `min_confidence`, `max_confidence` | attribution confidence (no record counts as 100) | `asset_attributions.confidence` |
+| `first_seen_after` | added to the inventory since | `assets.created_at` |
+| `with_triage=true` | each row gets `triage`: attribution state and confidence, and what an active scan would do now (`scan_allowed`, `scan_blocked_by`, `scan_refusal_code`) | `easm.ActiveGate` for the page; a failed read leaves `triage` out |
+
+The `scope_status` filter is a filter, computed in SQL. A row's
+`triage.scan_allowed` is the gate's own answer, so a badge never disagrees
+with a scan.
+
+**Mark out of scope in bulk:**
+
+- `POST /scope/exclusions/bulk/preview` (`attack_surface:scope:read`):
+  - up to 200 candidate exclusions;
+  - for each, how many of the caller's visible inventory assets it would match, up to ten names, or why it would be refused;
+  - nothing is written.
+- `POST /scope/exclusions/bulk` (`attack_surface:scope:write`):
+  - each item is an ordinary `CreateExclusion` (pattern validation, duplicates, the Strict approval rule, the signer ledger), audited per exclusion;
+  - kinds: domain, subdomain, address, range, CIDR, URL and repository;
+  - results are created, exists or refused.
+- **Undo** is the existing `POST /scope/exclusions/bulk/delete`. It needs a recent re-authentication because removing an exclusion widens scope.
+- **"Not ours"** stays `POST /easm/candidates/decisions` with `rejected`. Its undo is the same route with `state: "automatic"`:
+  - the person's decision is forgotten and the tombstone goes;
+  - the record gets what its evidence says through `SaveAutomatic`, or is removed when there is no evidence;
+  - findings the rejection resolved stay resolved.
+
 ## 4c. Alerts (built, P0-7)
 
 EASM exposures reach the notification outbox (decision E4). The CT monitor, the DNS checks and takeover confirmation write

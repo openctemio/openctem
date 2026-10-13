@@ -51,6 +51,8 @@ type Service struct {
 	// caller's data scope.
 	coverage  CoverageCounter
 	dataScope DataScopeResolver
+	// exclusionMatches backs the bulk exclusion preview (bulk_exclusions.go).
+	exclusionMatches ExclusionMatchCounter
 	// The scope join after a committed change (join.go).
 	joiner  ScopeJoiner
 	visible VisibleAssetCounter
