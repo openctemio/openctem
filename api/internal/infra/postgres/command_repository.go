@@ -232,17 +232,29 @@ const pendingReadyPredicate = `commands.status = 'pending'
 const scheduledDuePredicate = `(commands.scheduled_at IS NULL OR commands.scheduled_at <= NOW())`
 
 // hostFreePredicate keeps a command whose hosts are free: it carries no host
-// keys, or no other acknowledged or running command of its tenant holds one
-// of them (platform-side per-host politeness for workflow chunks, research/49
-// §3.12.3). A claim re-checks it under advisory locks on the keys
-// (lockHostKeys), so two sensors never take overlapping hosts at once.
+// keys, or no other acknowledged or running command of its tenant holds a
+// key it conflicts with (platform-side per-host politeness for workflow
+// chunks, research/49 §3.12.3): the same name or address, or an address and
+// a range scan of the same /24 (IPv6 /120) bucket, in either direction
+// (command.HostKeyConflicts, RFC-088 §6). A claim re-checks it under
+// advisory locks on the keys (lockHostKeys), so two sensors never take
+// overlapping hosts at once.
 const hostFreePredicate = `(commands.host_keys IS NULL OR NOT EXISTS (
 			SELECT 1 FROM commands hk
 			WHERE hk.tenant_id = commands.tenant_id
 			  AND hk.id <> commands.id
 			  AND hk.host_keys IS NOT NULL
 			  AND hk.status IN ('acknowledged', 'running')
-			  AND hk.host_keys && commands.host_keys))`
+			  AND hk.host_keys && ` + hostKeyConflictsSQL + `))`
+
+// hostKeyConflictsSQL is command.HostKeyConflicts of commands.host_keys: an
+// "in:" bucket marker becomes the "net:" key of its bucket, a "net:" key adds
+// the "in:" marker of its bucket, every other key stays.
+const hostKeyConflictsSQL = `ARRAY(
+				SELECT CASE WHEN k LIKE 'in:%' THEN 'net:' || substr(k, 4) ELSE k END
+				FROM unnest(commands.host_keys) AS k
+				UNION ALL
+				SELECT 'in:' || substr(k, 5) FROM unnest(commands.host_keys) AS k WHERE k LIKE 'net:%')`
 
 // capabilityClaimPredicate is the capability gate: keep a command only if it
 // declares no required capabilities, or every required capability is one the
@@ -478,15 +490,20 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 // lockHostKeys takes a transaction advisory lock on every host key of the
 // given commands of tenantID, in key order, so claims of commands that share
 // a host run one after the other: the second sees the first one's claim and
-// the host-free predicate holds it back. Commands without host keys take no
-// lock.
+// the host-free predicate holds it back. An address's bucket marker and a
+// range key of the same bucket take one lock (command.HostKeyLock), so an
+// address chunk and a range chunk of one bucket are serialized too.
+// Commands without host keys take no lock.
 func lockHostKeys(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) error {
 	_, err := tx.ExecContext(ctx, `
 		SELECT count(pg_advisory_xact_lock(hashtextextended('host|' || $1 || '|' || keys.k, 0)))
 		FROM (
-			SELECT DISTINCT k FROM commands c, unnest(c.host_keys) AS k
+			SELECT DISTINCT CASE WHEN k LIKE 'in:%' THEN 'b:' || substr(k, 4)
+			                     WHEN k LIKE 'net:%' THEN 'b:' || substr(k, 5)
+			                     ELSE k END AS k
+			FROM commands c, unnest(c.host_keys) AS k
 			WHERE c.tenant_id = $1 AND c.id = ANY($2::uuid[]) AND c.host_keys IS NOT NULL
-			ORDER BY k
+			ORDER BY 1
 		) keys`, tenantID.String(), pq.Array(ids))
 	if err != nil {
 		return fmt.Errorf("failed to lock command hosts: %w", err)
@@ -494,8 +511,9 @@ func lockHostKeys(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []str
 	return nil
 }
 
-// dropSharedHosts keeps, in order, the ids whose host keys do not overlap an
-// earlier kept id's: one batch claim never takes two commands for one host.
+// dropSharedHosts keeps, in order, the ids whose host keys do not conflict
+// with an earlier kept id's (command.HostKeyConflicts): one batch claim
+// never takes two commands for one host, or a range and an address in it.
 func dropSharedHosts(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT c.id, c.host_keys FROM commands c
@@ -520,17 +538,17 @@ func dropSharedHosts(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []
 	if len(keysOf) == 0 {
 		return ids, nil
 	}
-	taken := map[string]bool{}
+	held := map[string]bool{}
 	out := make([]string, 0, len(ids))
 next:
 	for _, id := range ids {
-		for _, k := range keysOf[id] {
-			if taken[k] {
+		for _, k := range command.HostKeyConflicts(keysOf[id]) {
+			if held[k] {
 				continue next
 			}
 		}
 		for _, k := range keysOf[id] {
-			taken[k] = true
+			held[k] = true
 		}
 		out = append(out, id)
 	}
