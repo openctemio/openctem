@@ -40,6 +40,9 @@ type CommandRepository struct {
 	// notify hears about writes that give or take a sensor's work
 	// (command_notify.go); nil: none.
 	notify CommandChangeNotifier
+	// guard completes every command before it is stored: the web scope of
+	// a web job (command_web_scope.go).
+	guard command.CreateGuard
 }
 
 // NewCommandRepository creates a new CommandRepository.
@@ -49,6 +52,11 @@ func NewCommandRepository(db *DB) *CommandRepository {
 
 // Create persists a new command.
 func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) error {
+	// The one point every command is created through: a web job gets its
+	// web scope here, or is refused, whatever path built it.
+	if err := r.guardCreate(ctx, cmd); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO commands (
 			id, tenant_id, sensor_id, type, priority, payload,
