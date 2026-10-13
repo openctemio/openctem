@@ -28,12 +28,14 @@ type EASMSummarizer interface {
 
 // EASMHandler serves the EASM overview (RFC-036 §6.10).
 type EASMHandler struct {
-	svc     EASMSummarizer
-	review  EASMReviewer
-	rules   EASMRuleService
-	audit   AttributionAuditor
-	changes EASMChangeLister
-	logger  *logger.Logger
+	svc    EASMSummarizer
+	review EASMReviewer
+	rules  EASMRuleService
+	// suggestions: the attack surface suggestion cards.
+	suggestions EASMSuggester
+	audit       AttributionAuditor
+	changes     EASMChangeLister
+	logger      *logger.Logger
 }
 
 // NewEASMHandler creates the handler.

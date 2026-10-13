@@ -1172,8 +1172,8 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	}
 	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
 	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
-	if repos.EASMNetworkSeed != nil {
-		review.SetSeededNetworks(repos.EASMNetworkSeed.Networks) // range fixes in seeded networks (RFC-082)
+	if seeded := seededNetworks(repos); seeded != nil {
+		review.SetSeededNetworks(seeded) // range fixes in seeded networks (RFC-082)
 	}
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
@@ -1188,11 +1188,32 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	})
 	review.SetConfirmScope(newConfirmScope(repos, svc))
 	h.SetReview(review, audit)
+	// Suggestion cards (research/117): addresses behind in-scope names and
+	// confirmed assets no entry covers; read only.
+	if svc.ActiveGate != nil {
+		h.SetSuggestions(easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+			func(ctx context.Context, tenantID shared.ID) (string, error) {
+				t, err := repos.Tenant.GetByID(ctx, tenantID)
+				if err != nil {
+					return "", err
+				}
+				return t.Name(), nil
+			}, seededNetworks(repos)))
+	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
 		h.SetRules(easmapp.NewRuleService(review, svc.ScopeJoin, svc.Scope, repos.Asset, svc.ActiveGate, svc.ScopeGuardrails))
 	}
 	return h
+}
+
+// seededNetworks reads the organization's network seeds (RFC-082); nil
+// when they are not wired.
+func seededNetworks(repos *Repositories) easmapp.SeededNetworks {
+	if repos.EASMNetworkSeed == nil {
+		return nil
+	}
+	return repos.EASMNetworkSeed.Networks
 }
 
 // easmDecisionEffects reclassifies the decided assets' findings now and, on a
