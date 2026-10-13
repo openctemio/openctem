@@ -1166,6 +1166,24 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
 - **Adding a collector type.** Add a catalog row with `metadata.kind =
   "collector"` in a migration, then report it from the collector.
 
+### What ingest makes of a collector report
+
+The fields each collector sends are listed in the collector's
+`docs/DATA.md`. Ingest uses them as follows; every lookup and write stays
+inside the reporting organization.
+
+| Report data | Stored as | Rule |
+|---|---|---|
+| `relationships` (CTIS) | Asset relationships | `hosted_by` becomes `runs_on` (a virtual machine on its hypervisor host) or, for an address, the host `contains` it; `subdomain_of` is stored parent first; the other types keep their name. Only pairs the relationship registry allows; only when the report may change the edge's source asset (`report_relationships.go`). |
+| `esxi_host` on a virtual machine | `runs_on` edge to the hypervisor host | The host must be in the report or already in the organization. The vSphere cluster and datacenter stay properties: there is no asset type for them. |
+| `ip_addresses` on a host | `contains` edges to address assets | Only to address assets that already exist, at most 32 per host; addresses are never created from a host's properties. |
+| `ad_object_guid` | Identifier `directory_object_id` | Strong and single-valued: a computer renamed or moved in the directory stays the same asset ([asset-identity-resolution.md](asset-identity-resolution.md)). The vCenter instance UUID is the `cloud_id` identifier. |
+| `last_seen` | The asset's last-seen time | Only when earlier than the report and not before 2000; it never moves the stored time backwards, and an older observation never reactivates a stale asset (`last_seen.go`, `Asset.ObserveAt`). |
+| `owner` (mail or UPN) | `owner_ref`, then a primary owner | A trusted collector is an `integration` source, so its owner claim is used under the reconciliation policy; an untrusted one's is dropped. The owner-resolution job names only an active member of the organization whose email matches; an unknown owner stays text and nobody is invited. An owner never grants data access. |
+| `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
+| A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
+| `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
+
 ## Result binding and the results quarantine (RFC-040)
 
 A report changes existing assets, reopens findings a person resolved and
