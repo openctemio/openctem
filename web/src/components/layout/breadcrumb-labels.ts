@@ -30,6 +30,8 @@ const PATH_LABELS: Record<string, string> = {
   // section, the crumb after the page (its siblings humanize to "Business
   // services" and "Business units").
   '/crown-jewels': 'Crown jewels',
+  // Attack surface > Suggestions (the decisions that still need a person).
+  '/attack-surface/review': 'Suggestions',
 }
 
 /** Segments that are not sidebar entries themselves (section roots, sub-pages). */
