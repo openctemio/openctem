@@ -278,6 +278,9 @@ func registerScanWorkflowRoutes(
 		r.GET("/{id}/tasks", h.ListRunTasks, middleware.Require(permission.ScansRead))
 		// One task's log lines, as its sensor sent them (RFC-029 4.4.1).
 		r.GET("/{id}/tasks/{task_id}/logs", h.GetRunTaskLogs, middleware.Require(permission.ScansRead))
+		// Why a queued task waits: counts and reasons; the sensors' own
+		// verdicts only for sensors:read (placement.md).
+		r.GET("/{id}/tasks/{task_id}/placement", h.GetRunTaskPlacement, middleware.Require(permission.ScansRead))
 		// How each stage of the run was planned (counts by reason).
 		r.GET("/{id}/stages", h.ListRunStages, middleware.Require(permission.ScansRead))
 		// What happened to each task of the run, in order (research/62 P0-4).

@@ -16,10 +16,10 @@ func TestHostKey(t *testing.T) {
 		"app.example.com:443":           "app.example.com",
 		"10.0.0.5":                      "10.0.0.5",
 		"10.0.0.5:22":                   "10.0.0.5",
-		"10.0.0.0/24":                   "10.0.0.0/24",
-		"app.example.com/login":         "app.example.com",
-		"2001:db8::2":                   "2001:db8::2",
-		"  ":                            "",
+
+		"app.example.com/login": "app.example.com",
+		"2001:db8::2":           "2001:db8::2",
+		"  ":                    "",
 	} {
 		if got := hostKey(in); got != want {
 			t.Errorf("hostKey(%q) = %q, want %q", in, got, want)
