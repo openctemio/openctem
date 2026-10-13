@@ -150,7 +150,10 @@ func TestRequeueStalledCommands(t *testing.T) {
 	set(overrun, `progress_done = 9, progress_total = 10, last_progress_at = NOW(), started_at = NOW() - interval '26 minutes'`)
 	noBudget := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, nil)
 	set(noBudget, `progress_done = 1, progress_total = 10, last_progress_at = NOW() - interval '5 hours', started_at = NOW() - interval '5 hours'`)
-	silent := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, budget) // an older sensor: no progress, within 2 × budget
+	// An older sensor reports no progress: never cut here, even far past
+	// twice its budget (its lease and the run's cap bound it).
+	silent := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, budget)
+	set(silent, `started_at = NOW() - interval '3 hours'`)
 
 	rq, err := cmds.RequeueStalledCommands(ctx)
 	if err != nil {
