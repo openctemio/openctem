@@ -104,6 +104,21 @@ scope-gate:
   - api/internal/app/scangov/gate.go
   - api/internal/app/scan/dispatch_gate.go
   - api/internal/app/command/scope_recheck.go
+  # The web scope of every web job (path exclusions): the command create
+  # guard and its fail-closed fallback.
+  - api/internal/app/scope/web_job.go
+  - api/internal/infra/postgres/command_web_scope.go
+  - api/pkg/domain/command/web_scope.go
+
+# Sensor results: which existing objects a report may change (result
+# binding), trusted collectors and their complete reports, and exclusions at
+# ingest.
+sensor-result-trust:
+  - api/internal/app/ingest/binding.go
+  - api/internal/app/ingest/collector_trust.go
+  - api/internal/app/ingest/collector_reports.go
+  - api/internal/app/ingest/exclusions.go
+  - api/internal/infra/postgres/collector_asset_repository.go
 
 # Web session, CSRF, proxying and security headers.
 web-session-headers:
