@@ -131,6 +131,8 @@ type Repositories struct {
 	// CommandLog keeps the per-task logs sensors send (command_logs).
 	CommandLog *postgres.CommandLogRepository
 	Command    *postgres.CommandRepository
+	// ToolDurationStats are the learned per-target durations (research/122).
+	ToolDurationStats *postgres.ToolDurationStatsRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
 	// SensorResult is the policy and quarantine for sensor results without a
@@ -428,6 +430,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		CommandLog:             postgres.NewCommandLogRepository(db),
 		Command:                postgres.NewCommandRepository(db),
+		ToolDurationStats:      postgres.NewToolDurationStatsRepository(db),
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
 		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),
