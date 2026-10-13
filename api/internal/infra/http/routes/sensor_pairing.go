@@ -127,3 +127,10 @@ func pairingRouteName(r *http.Request) string {
 	}
 	return "pairing"
 }
+
+// registerSensorInstallRoutes mounts the public files the install commands
+// download: the sensor's seccomp profile (the open-source release's file,
+// the same for every organization, no tenant data), rate limited per IP.
+func registerSensorInstallRoutes(router Router, rateLimit Middleware) {
+	router.GET("/api/v1/sensors/install/seccomp-profile", handler.ServeSensorSeccompProfile, rateLimit)
+}
