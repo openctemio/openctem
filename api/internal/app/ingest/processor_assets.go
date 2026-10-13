@@ -967,6 +967,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 ) {
 	// Collect unique root domains that need to be created
 	needed := make(map[string]bool)
+	// publicRoot: a root some name outside a private DNS zone named. A root
+	// only private-zone names name is private too.
+	publicRoot := make(map[string]bool)
 	for i := range report.Assets {
 		ctisAsset := &report.Assets[i]
 		if ctisAsset.Type != ctis.AssetTypeSubdomain {
@@ -997,6 +1000,9 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		}
 
 		needed[rootDomain] = true
+		if !privateZone(ctisAsset) {
+			publicRoot[rootDomain] = true
+		}
 	}
 
 	if len(needed) == 0 {
@@ -1048,8 +1054,11 @@ func (p *AssetProcessor) ensureRootDomainAssets(
 		if skipExcluded(excl, domainAsset, "", output) {
 			continue
 		}
-		// Same exposure inference as scanner-reported domains (public by nature).
-		if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
+		// Same exposure inference as scanner-reported domains (public by
+		// nature), unless only names of private DNS zones named it.
+		if !publicRoot[domainName] {
+			domainAsset.SetExposure(asset.ExposurePrivate)
+		} else if inferred := inferAssetExposure(domainAsset); inferred != asset.ExposureUnknown {
 			domainAsset.SetExposure(inferred)
 		}
 
@@ -1909,6 +1918,8 @@ func (p *AssetProcessor) createAssetFromCTIS(
 	// PII/PHI all feed the prioritization engine's reachability + business-
 	// context gates. Before this, only regulatory_owner was read.
 	p.applyCTEMSignals(newAsset, ctisAsset, true)
+	// A name in a private DNS zone is not internet-facing.
+	applyPrivateZone(newAsset, ctisAsset)
 
 	// Infer internet exposure when the scanner didn't provide one. Exposure is
 	// the reachability signal the prioritization engine reads, and it was
@@ -1932,7 +1943,7 @@ func (p *AssetProcessor) createAssetFromCTIS(
 // The data classification is applied only to a new asset (classify);
 // an existing asset's is decided by attribute reconciliation (RFC-069).
 func (p *AssetProcessor) applyCTEMSignals(a *asset.Asset, ctisAsset *ctis.Asset, classify bool) {
-	if ctisAsset.IsInternetAccessible {
+	if ctisAsset.IsInternetAccessible && !privateZone(ctisAsset) {
 		a.SetInternetAccessible(true)
 		if a.Exposure() == asset.ExposureUnknown {
 			a.SetExposure(asset.ExposurePublic)
