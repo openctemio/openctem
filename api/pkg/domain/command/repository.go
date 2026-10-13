@@ -171,6 +171,13 @@ type StepBatch struct {
 	Skipped    int    // sum of the completed batches' refused_targets_total
 	Gaps       int    // sum of the completed batches' coverage_gaps_total
 	FirstError string // first failure message, in completion order
+	// Reach of the completed batches (sensor-reported, each bounded):
+	// batches with a reach summary, and the sums of its targets, reached
+	// and unreached counts.
+	ReachBatches int
+	ReachTargets int
+	Reached      int
+	Unreached    int
 }
 
 // ConditionalExpirer is implemented by the command repository. It is asserted

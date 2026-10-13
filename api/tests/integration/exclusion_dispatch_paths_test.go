@@ -142,13 +142,14 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 
 	gate := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
 		scansvc.WithActScope(actScopeChecker(db)), scansvc.WithAttributionGate(ownershipGate(db)))
+	cmdRepo := postgres.NewCommandRepository(pg)
+	cmdRepo.SetCreateGuard(scopesvc.NewWebJobGuard(scopeService(db), nil))
 	svc := scanrun.NewService(
 		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
-		postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg),
+		postgres.NewSensorRepository(pg), cmdRepo,
 		nil, logger.New(logger.Config{Level: "error"}),
 		scanrun.WithTargetGate(gate),
-		scanrun.WithWebScope(scopeService(db)),
 	)
 	trigger := func(runContext map[string]any) error {
 		_, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{
