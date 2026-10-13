@@ -44,6 +44,9 @@ const (
 	// PlacementCapabilityMissing: the sensor does not offer a capability
 	// the command requires.
 	PlacementCapabilityMissing = "capability_missing"
+	// PlacementNotConfined: the command needs network confinement
+	// (PayloadKeyRequiredFeatures) and the sensor did not report it.
+	PlacementNotConfined = "not_confined"
 	// PlacementGrantPrefix prefixes a refusal by the sensor's grant:
 	// "grant_" + the grant dimension (job_types, zones, tools, tier, ...).
 	PlacementGrantPrefix = "grant_"
@@ -68,6 +71,12 @@ const (
 	PlacementNoFreeSlot = "no_free_slot"
 )
 
+// PayloadKeyRequiredFeatures lists what a sensor must enforce to take the
+// command (today only sensor.CapabilityNetConfined): matched against the
+// capabilities the sensor itself reported, never against an
+// administrator's list. Kept apart from the signed job's statement fields.
+const PayloadKeyRequiredFeatures = "required_features"
+
 // PlacementJob is the job-level half of the claim predicates for one
 // command, as the repository evaluates them.
 type PlacementJob struct {
@@ -88,6 +97,7 @@ type SensorClaim struct {
 	ToolOK       bool
 	NotRefused   bool
 	CapabilityOK bool
+	FeaturesOK   bool
 	HeldScans    int
 }
 

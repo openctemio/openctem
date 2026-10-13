@@ -19,7 +19,7 @@ var _ command.PlacementReader = (*CommandRepository)(nil)
 // PlacementPredicates evaluates the claim predicates of one command of the
 // tenant: the job-level ones (not expired, due, hosts free) and, for at
 // most maxSensors sensors of the same tenant (by name), the per-sensor ones
-// (pinning, zone, tool, refusal, capability), with the scans each holds.
+// (pinning, zone, tool, refusal, capability, features), with the scans each holds.
 // Platform sensors are never the tenant's and never read. A command of
 // another tenant is shared.ErrNotFound.
 func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, commandID shared.ID, maxSensors int) (command.PlacementJob, []command.SensorClaim, error) {
@@ -56,6 +56,7 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 		       COALESCE(`+toolClaimPredicate("ps.id")+`, FALSE),
 		       COALESCE(`+refusedByPredicate("ps.id")+`, FALSE),
 		       COALESCE(`+capabilityClaimPredicate("ps.effective_capabilities")+`, FALSE),
+		       COALESCE(`+featureClaimPredicate("ps.id")+`, FALSE),
 		       (SELECT count(*) FROM commands held
 		         WHERE held.tenant_id = ps.tenant_id AND held.sensor_id = ps.id AND held.type = 'scan'
 		           AND held.status IN ('acknowledged', 'running'))
@@ -74,7 +75,7 @@ func (r *CommandRepository) PlacementPredicates(ctx context.Context, tenantID, c
 	for rows.Next() {
 		var c command.SensorClaim
 		var id string
-		if err := rows.Scan(&id, &c.PinOK, &c.ZoneOK, &c.ToolOK, &c.NotRefused, &c.CapabilityOK, &c.HeldScans); err != nil {
+		if err := rows.Scan(&id, &c.PinOK, &c.ZoneOK, &c.ToolOK, &c.NotRefused, &c.CapabilityOK, &c.FeaturesOK, &c.HeldScans); err != nil {
 			return job, nil, fmt.Errorf("scan sensor placement: %w", err)
 		}
 		if c.SensorID, err = shared.IDFromString(id); err != nil {

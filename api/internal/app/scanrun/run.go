@@ -554,6 +554,9 @@ func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanw
 	if err := s.applyWebScope(ctx, run.TenantID, key, payload); err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
+	if err := s.requireConfinedSensor(ctx, run.TenantID, payload); err != nil {
+		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
 
 	// Final payload validation before sending to sensor
 	if s.securityValidator != nil {
