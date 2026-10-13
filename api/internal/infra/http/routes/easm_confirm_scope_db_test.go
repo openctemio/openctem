@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -151,6 +152,26 @@ func TestEASMConfirmAddsScopeEntry_DB(t *testing.T) {
 		t.Fatalf("setting turned back on by an unrelated change: %+v", out.Scope)
 	}
 	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"confirm_adds_to_scope":true}`, http.StatusOK)
+
+	// review_before_inventory (RFC-054 §15): set, kept by a change that does
+	// not name it, cleared when named.
+	gate := func() string {
+		t.Helper()
+		var v sql.NullString
+		if err := h.db.QueryRow(`SELECT settings->'scope'->>'review_before_inventory' FROM tenants WHERE id = $1`, org).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v.String
+	}
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"review_before_inventory":true}`, http.StatusOK)
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"one_off_max_days":6}`, http.StatusOK)
+	if gate() != "true" {
+		t.Fatalf("review_before_inventory = %q after an unrelated change", gate())
+	}
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"review_before_inventory":false}`, http.StatusOK)
+	if gate() == "true" {
+		t.Fatal("review_before_inventory not cleared")
+	}
 
 	// Strict keeps confirmation as ownership only.
 	h.exec(`UPDATE tenants SET scan_approval_policy = 'strict' WHERE id = $1`, org)

@@ -26,6 +26,7 @@ export const DATA_CLASSIFICATION_LABELS: Record<string, string> = {
 export const ATTRIBUTION_FILTER_LABELS: Record<string, string> = {
   confirmed: 'Confirmed',
   unknown: 'No record (added before EASM)',
+  discovered: 'Discovered',
   needs_review: 'Needs review',
   candidate: 'Candidate',
   dependency: 'Dependency',
