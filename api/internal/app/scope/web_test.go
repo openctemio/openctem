@@ -95,7 +95,10 @@ func TestBuildWebScope(t *testing.T) {
 	ctx := context.Background()
 
 	ws, err := svc.BuildWebScope(ctx, tenantID, []string{"https://app.example.com"})
-	if err != nil || ws == nil || !slices.Equal(ws.DenyPaths, []string{"/admin/debug", "/logout"}) || len(ws.Methods) != 0 {
+	// Deny paths only: every method stays allowed elsewhere (an empty list
+	// would mean GET/HEAD/OPTIONS only on the sensor and refuse every POST
+	// template on the whole host).
+	if err != nil || ws == nil || !slices.Equal(ws.DenyPaths, []string{"/admin/debug", "/logout"}) || !slices.Equal(ws.Methods, allMethods) {
 		t.Fatalf("app.example.com scope = %+v, %v", ws, err)
 	}
 	// A write-only rule keeps the path readable and limits the job to GET/HEAD.
