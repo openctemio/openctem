@@ -272,7 +272,7 @@ func registerScanWorkflowRoutes(
 		// applied or dismissed by writers; never applied on their own.
 		r.GET("/{id}/template-update", h.GetTemplateUpdate, middleware.Require(permission.ScanWorkflowsRead))
 		r.POST("/{id}/template-update/apply", h.ApplyTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
-		r.POST("/{id}/template-update/dismiss", h.DismissTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
+		r.POST("/{id}/template-update/reject", h.DismissTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
 
 		r.DELETE("/{id}", h.DeleteTemplate, middleware.Require(permission.ScanWorkflowsDelete))
 

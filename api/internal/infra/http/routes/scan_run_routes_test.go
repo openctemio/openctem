@@ -91,7 +91,7 @@ func TestScanWorkflowRoutes_NeedWorkflowPermissions(t *testing.T) {
 		{http.MethodPost, wf + "/clone", permission.ScanWorkflowsWrite},
 		{http.MethodGet, wf + "/template-update", permission.ScanWorkflowsRead},
 		{http.MethodPost, wf + "/template-update/apply", permission.ScanWorkflowsWrite},
-		{http.MethodPost, wf + "/template-update/dismiss", permission.ScanWorkflowsWrite},
+		{http.MethodPost, wf + "/template-update/reject", permission.ScanWorkflowsWrite},
 		{http.MethodDelete, wf, permission.ScanWorkflowsDelete},
 		{http.MethodDelete, wf + "/steps/s1", permission.ScanWorkflowsDelete},
 	} {
@@ -135,7 +135,7 @@ func TestScanWorkflowRoutes_OldPathsAreGone(t *testing.T) {
 // is refused.
 func TestScanWorkflowRoutes_TemplateUpdateNeedsWrite(t *testing.T) {
 	const wf = "/api/v1/scan-workflows/" + testRunID
-	for _, path := range []string{wf + "/template-update/apply", wf + "/template-update/dismiss"} {
+	for _, path := range []string{wf + "/template-update/apply", wf + "/template-update/reject"} {
 		if code, reached := serveScanWorkflowRoutes(t, []string{permission.ScanWorkflowsRead.String()}, http.MethodPost, path); reached || code != http.StatusForbidden {
 			t.Errorf("POST %s with read only: reached=%v code=%d", path, reached, code)
 		}
