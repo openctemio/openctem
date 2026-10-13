@@ -27,7 +27,7 @@ describe('install review: sandbox check', () => {
     expect(within(box).getByText(/Not confined/)).toBeInTheDocument()
     const link = within(box).getByRole('link', { name: /seccomp profile/i })
     expect(link).toHaveAttribute('href', SENSOR_SECCOMP_PROFILE_URL)
-    expect(SENSOR_SECCOMP_PROFILE_URL).toBe('/api/v1/sensors/install/seccomp.json')
+    expect(SENSOR_SECCOMP_PROFILE_URL).toBe('/api/v1/sensors/install/seccomp-profile')
   })
 
   it('an older sensor that reports no posture says so', () => {

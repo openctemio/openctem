@@ -16,7 +16,7 @@ import { normalizeSensorVersion, sensorSdkVersion } from '../lib/sensor-version'
 import { postureNetwork } from '../lib/posture'
 
 /** Where the platform serves the sensor's seccomp profile (public, no tenant data). */
-export const SENSOR_SECCOMP_PROFILE_URL = '/api/v1/sensors/install/seccomp.json'
+export const SENSOR_SECCOMP_PROFILE_URL = '/api/v1/sensors/install/seccomp-profile'
 
 /**
  * The install checklist's sandbox check: whether the sensor's tool runs are

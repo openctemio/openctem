@@ -21,7 +21,7 @@ var seccompProfile []byte
 
 // SeccompProfilePath is where the platform serves the profile (public: the
 // file is part of the open-source sensor release and holds no tenant data).
-const SeccompProfilePath = "/api/v1/sensors/install/seccomp.json"
+const SeccompProfilePath = "/api/v1/sensors/install/seccomp-profile"
 
 // SeccompProfileSHA256 is the hex SHA-256 of the served profile.
 var SeccompProfileSHA256 = func() string {
