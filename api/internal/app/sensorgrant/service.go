@@ -91,7 +91,11 @@ type Service struct {
 	admins   AdminDirectory
 	notifier InAppNotifier
 	approver WideningApprover
-	log      *logger.Logger
+	// usage, manifests and stepUp serve the grant suggestion (suggest.go).
+	usage     UsageReader
+	manifests ManifestReader
+	stepUp    shared.RecentAuthGate
+	log       *logger.Logger
 }
 
 // NewService builds the grant service.
@@ -312,6 +316,12 @@ func (s *Service) build(cur sensordom.Grant, in UpdateInput) (sensordom.Grant, e
 }
 
 func (s *Service) onChanged(ctx context.Context, actor Actor, cur, next sensordom.Grant, changed, widened []string) {
+	s.onChangedWith(ctx, actor, cur, next, changed, widened, nil)
+}
+
+// onChangedWith audits a change (with extra metadata) and notifies the
+// administrators of a widening.
+func (s *Service) onChangedWith(ctx context.Context, actor Actor, cur, next sensordom.Grant, changed, widened []string, extra map[string]any) {
 	name := sensorID(next)
 	if s.sensors != nil {
 		if sen, err := s.sensors.GetByTenantAndID(ctx, actor.TenantID, next.SensorID); err == nil && sen != nil {
@@ -323,11 +333,15 @@ func (s *Service) onChanged(ctx context.Context, actor Actor, cur, next sensordo
 		sev, verb = audit.SeverityHigh, "widened"
 	}
 	msg := fmt.Sprintf("Grant of sensor %q %s by %s (%s)", name, verb, actor.Email, strings.Join(changed, ", "))
-	s.logAudit(ctx, actor, auditapp.NewSuccessEvent(audit.ActionSensorGrantChanged, audit.ResourceTypeSensor, next.SensorID.String()).
+	ev := auditapp.NewSuccessEvent(audit.ActionSensorGrantChanged, audit.ResourceTypeSensor, next.SensorID.String()).
 		WithResourceName(name).WithMessage(msg).WithSeverity(sev).
 		WithMetadata("changed", changed).WithMetadata("widened", widened).
 		WithMetadata("before", GrantView(cur)).WithMetadata("after", GrantView(next)).
-		WithMetadata("version", next.Version))
+		WithMetadata("version", next.Version)
+	for k, v := range extra {
+		ev = ev.WithMetadata(k, v)
+	}
+	s.logAudit(ctx, actor, ev)
 	if len(widened) > 0 {
 		s.notifyAdmins(ctx, actor.TenantID, "Sensor grant widened: "+name, msg)
 	}
