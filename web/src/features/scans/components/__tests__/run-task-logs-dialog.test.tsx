@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
+import type { RunTaskLogLine } from '@/lib/api/generated'
 
-import { RunTaskLogsDialog, logLevelTone, logsEmptyState } from '../run-task-logs-dialog'
+import {
+  RunTaskLogsDialog,
+  attemptBoundaries,
+  logLevelTone,
+  logsEmptyState,
+} from '../run-task-logs-dialog'
 import { RunTasksTable } from '../run-tasks-table'
 
 const getMock = vi.fn()
@@ -101,6 +107,33 @@ describe('RunTaskLogsDialog', () => {
       logsEmptyState({ status: 'failed', error_message: 'refused by local policy: x\u202ey' })
         .description
     ).not.toContain('\u202e')
+  })
+
+  it('marks where each claim attempt starts, only when there was more than one', async () => {
+    const line = (attempt: number, msg: string): RunTaskLogLine => ({
+      ts: '2026-10-13T12:00:00Z',
+      level: 'info',
+      msg,
+      attempt,
+    })
+    expect(attemptBoundaries([line(1, 'a'), line(1, 'b')]).size).toBe(0)
+    expect([
+      ...attemptBoundaries([line(1, 'a'), line(3, 'b'), line(3, 'c'), line(4, 'd')]),
+    ]).toEqual([
+      [0, 1],
+      [1, 2],
+      [3, 3],
+    ])
+
+    getMock.mockResolvedValue({
+      truncated: false,
+      lines: [line(1, 'first-0'), line(1, 'first-1'), line(2, 'second-0'), line(2, 'second-1')],
+    })
+    fresh(<RunTaskLogsDialog runId="r1" taskId="t1" open onOpenChange={() => {}} />)
+    const list = await screen.findByRole('list', { name: 'Log lines' })
+    const seps = within(list).getAllByRole('separator')
+    expect(seps.map((s) => s.textContent)).toEqual(['Attempt 1', 'Attempt 2'])
+    expect(within(list).getAllByRole('listitem')).toHaveLength(4)
   })
 
   it('maps levels to tones', () => {

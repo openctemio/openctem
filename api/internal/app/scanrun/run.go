@@ -1,6 +1,8 @@
 package scanrun
 
 import (
+	"time"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -323,6 +325,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
 		var noInputs *noInputsError
+		var tooClose *deadlineTooCloseError
 		switch {
 		case err == nil:
 			runningSteps++
@@ -333,6 +336,9 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 				"run_id", run.ID.String(), "step_key", step.StepKey)
 		case errors.Is(err, errStageAlreadyPlanned):
 			// Another planner (a concurrent completion) planned it.
+		case errors.As(err, &tooClose):
+			s.settleStepDeadlineTooClose(ctx, run, stepRun, step.StepKey, tooClose)
+			settledInline = true
 		case errors.As(err, &noInputs):
 			// Planned, and nothing passed: settled without a command, so its
 			// successors run on what they have.
@@ -467,6 +473,31 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 			shared.ErrValidation))
 	}
 
+	// Resolve before active: an active stage skips the names the platform's
+	// freshest evidence says have not resolved for a week (RFC-088 A5).
+	if f, ok := s.targetGate.(StaleNameFilter); ok && activeStep(resolved) {
+		seeds := chunkTargets(stepTargets, run.Context)
+		kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+		if serr != nil {
+			return fmt.Errorf("step %s: %w", step.StepKey, serr)
+		}
+		if len(stale) > 0 {
+			out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
+			if stepTargets != nil {
+				out.Refused += stepTargets.Refused
+				if stepTargets.Reason != "" {
+					out.Reason = stepTargets.Reason + "; " + out.Reason
+				}
+			}
+			stepTargets = out
+			s.logger.Info("step names without recent resolution evidence were left out",
+				"run_id", run.ID.String(), "step_key", step.StepKey, "skipped", len(stale))
+			if len(kept) == 0 && !chained {
+				return &noInputsError{summary: fmt.Sprintf("%d name(s) %s", len(stale), scanapp.ReasonNotResolving)}
+			}
+		}
+	}
+
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
 	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
@@ -490,6 +521,14 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// eligible sensor takes a share; the step settles with its last chunk
 	// (checkStepBatches). A step that fits one chunk stays one command.
 	chunks := stepChunks(resolved, stepTargets)
+	// Admission: a step is not started when its run's deadline would cut it
+	// before it can do anything useful; its targets roll over instead.
+	if tooClose := deadlineTooClose(run, resolved.Name, time.Now()); tooClose != nil {
+		for _, chunk := range chunks {
+			tooClose.targets = append(tooClose.targets, chunkTargets(chunk, run.Context)...)
+		}
+		return tooClose
+	}
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
 		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
@@ -531,6 +570,21 @@ func findsNoHosts(resolved scanapp.StepTool, err error) bool {
 	var de *shared.DomainError
 	return resolved.HasStage && resolved.Stage.Key == stage.DiscoverHosts &&
 		errors.As(err, &de) && de.Code == "INCOMPATIBLE_TARGETS"
+}
+
+// StaleNameFilter drops the names without recent resolution evidence
+// (*scan.Service).
+type StaleNameFilter interface {
+	DropStaleNames(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, err error)
+}
+
+// activeStep reports whether a step sends traffic to its targets: an
+// active catalog stage, or a tool the catalog does not know as passive.
+func activeStep(resolved scanapp.StepTool) bool {
+	if resolved.HasStage {
+		return !resolved.Stage.Tier.Passive()
+	}
+	return !stage.PassiveTool(resolved.Name)
 }
 
 // stepDispatchGate is the gate record of a step's commands: the run
