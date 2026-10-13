@@ -108,7 +108,7 @@ func (r *AttributionRepository) Records(ctx context.Context, tenantID shared.ID,
 		return out, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT asset_id, state, confidence, reason, decided_at IS NOT NULL
+		SELECT asset_id, state, confidence, reason, decided_at IS NOT NULL, COALESCE(follows_host_id::text, '')
 		FROM asset_attributions
 		WHERE tenant_id = $1 AND asset_id = ANY($2::uuid[])`, tenantID.String(), pq.Array(assetIDs))
 	if err != nil {
@@ -120,7 +120,7 @@ func (r *AttributionRepository) Records(ctx context.Context, tenantID shared.ID,
 			id, state, reason string
 			rec               attribution.Record
 		)
-		if err := rows.Scan(&id, &state, &rec.Confidence, &reason, &rec.HumanDecided); err != nil {
+		if err := rows.Scan(&id, &state, &rec.Confidence, &reason, &rec.HumanDecided, &rec.FollowsHost); err != nil {
 			return nil, err
 		}
 		rec.State, rec.Reason = attribution.State(state), attribution.Rule(reason)
@@ -130,13 +130,20 @@ func (r *AttributionRepository) Records(ctx context.Context, tenantID shared.ID,
 }
 
 // SaveAutomatic stores an automatic decision. It never overwrites a human
-// decision (decided_at set): the update is skipped for such rows. The caller
-// computes the decision with attribution.Merge so automation only raises.
+// decision (decided_at set) nor a child that follows its host (its state is
+// the host's): the update is skipped for such rows. The caller computes the
+// decision with attribution.Merge so automation only raises. The children
+// that follow the asset take its new state.
 func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shared.ID, assetID string, d attribution.Decision) error {
 	if !d.State.Valid() {
 		return fmt.Errorf("%w: invalid attribution state %q", shared.ErrValidation, d.State)
 	}
-	_, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("save attribution: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason)
 		SELECT a.id, a.tenant_id, $3, $4, $5
 		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
@@ -145,9 +152,15 @@ func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shar
 			confidence = EXCLUDED.confidence,
 			reason     = EXCLUDED.reason,
 			updated_at = now()
-		WHERE asset_attributions.decided_at IS NULL`,
+		WHERE asset_attributions.decided_at IS NULL AND asset_attributions.follows_host_id IS NULL`,
 		assetID, tenantID.String(), string(d.State), d.Confidence, string(d.Reason))
 	if err != nil {
+		return fmt.Errorf("save attribution: %w", err)
+	}
+	if err := cascadeToChildren(ctx, tx, tenantID, []string{assetID}); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("save attribution: %w", err)
 	}
 	return nil
@@ -250,10 +263,11 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 		SELECT a.id, a.tenant_id, $3, 0, '', (SELECT u.id FROM users u WHERE u.id = $4::uuid), now()
 		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 		ON CONFLICT (asset_id) DO UPDATE SET
-			state      = EXCLUDED.state,
-			decided_by = EXCLUDED.decided_by,
-			decided_at = now(),
-			updated_at = now()
+			state           = EXCLUDED.state,
+			decided_by      = EXCLUDED.decided_by,
+			decided_at      = now(),
+			follows_host_id = NULL,
+			updated_at      = now()
 		RETURNING asset_id`,
 		assetID, tenantID.String(), string(state), by).Scan(&got)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -263,6 +277,9 @@ func (r *AttributionRepository) SaveDecision(ctx context.Context, tenantID share
 		return false, fmt.Errorf("save attribution decision: %w", err)
 	}
 	if err := syncTombstones(ctx, tx, tenantID, []string{got}, state, by); err != nil {
+		return false, err
+	}
+	if err := cascadeToChildren(ctx, tx, tenantID, []string{got}); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
