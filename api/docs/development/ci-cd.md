@@ -26,7 +26,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Release Reminder (`release-reminder.yml`) | Mondays 01:00 UTC (train weeks only); manual | Opens/updates the issue "Release train vX.Y.Z" with the proposal and changelog preview | — |
 | Security Gate (`security-gate.yml`) | PR (opened, pushed, labelled, retargeted); merge queue | Classifies the PR against `.github/security-paths.yml` and reviews its diff; a security-sensitive PR passes only with the `security-ack` label and no open HIGH (see [Security gate](#security-gate)). **Security gate self-test**: the gate's unit tests and the CODEOWNERS mirror | **security-gate** |
 | Release Tooling (`release-tooling.yml`) | PR / push touching `versions.yaml`, the release scripts or a versioned default | **Release scripts** (shellcheck + shell tests) and **Version consistency** (`sync-versions.sh --check`; on `release/vX.Y.Z` and on `main` right after it merges, `--release vX.Y.Z`: `platform.release` must be that version) | — |
-| CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the script; weekly (Mon 04:23 UTC); manual | Copies the third-party images CI pulls to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
+| CI image mirror (`ci-image-mirror.yml`) | Push to `develop` changing the list or the scripts; daily (04:23 UTC); manual | Copies the third-party images CI pulls, and the digest-pinned base images of the sensor's Dockerfiles, to `ghcr.io/openctemio/mirror` (see [CI image mirror](#ci-image-mirror)) | — |
 
 Scheduled runs (weekly security, nightly fuzz) run from the default branch, `main`.
 
@@ -271,8 +271,18 @@ GHCR, authenticated with the job's `GITHUB_TOKEN`:
   `ci-image-mirror.yml` copies it with `crane copy` to
   `ghcr.io/openctemio/mirror/<name>:<tag>` (manifest bytes kept, so the digest is
   the upstream one) and verifies the digest. A `docker.io/library/` source falls
-  back to `public.ecr.aws/docker/library/`. The weekly run re-copies anything
+  back to `public.ecr.aws/docker/library/`. The daily run re-copies anything
   missing and adds a notice when an upstream tag has moved past its pin.
+- The same workflow mirrors every digest-pinned base image of the Dockerfiles
+  on `main` of openctemio/sensor (`.github/scripts/ci-image-bases.sh`: only
+  `public.ecr.aws/docker/library/*` and `gcr.io/distroless/*`) as
+  `<name>:sha256-<hex>`, so a bumped base is mirrored within a day of its merge
+  without editing the list, and never moves a tag something else pins. The
+  sensor and asset-collector builds (CI, image smoke test and Docker Publish)
+  swap each base for its mirror copy through buildx named contexts
+  (`scripts/ci-mirror-contexts.sh` there) and fall back to the upstream while a
+  digest is not mirrored yet. asset-collector is private (the job token cannot
+  read it), so its bases are in the list.
 - Service containers (`api-ci.yml`, `allinone-ci.yml`, `docker-publish.yml`), the
   Semgrep job container and the e2e stack (`web/e2e/ci/compose.yml`) use the
   mirror with `credentials:` from `GITHUB_TOKEN` (workflow `packages: read`).
