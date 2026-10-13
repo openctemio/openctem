@@ -1176,7 +1176,10 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
     a collector and links the fix.
   - Once admitted, a collector report may create assets but never change an
     existing one, and scope exclusions apply (see the result binding
-    section below).
+    section below). The exception: a complete report (`coverage_type:
+    full`) of a trusted collector may change the assets its own collector
+    source created and marks the ones it no longer lists as not seen
+    (RFC-040 §12; [sensor-result-binding.md](sensor-result-binding.md)).
 - **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to
