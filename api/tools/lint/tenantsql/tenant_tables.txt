@@ -203,6 +203,7 @@ threat_actors
 threat_model_threats
 threat_models
 tool_categories
+tool_duration_stats
 tools
 user_accessible_assets
 user_dashboards
