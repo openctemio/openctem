@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
@@ -199,4 +200,84 @@ func rangeTooFragmentedError() error {
 	return shared.NewDomainError(CodeRangeTooFragmented,
 		fmt.Sprintf("The exclusions cut the network ranges of this scan into more than %d pieces. Merge nearby exclusions into wider ones, or scan smaller ranges.", MaxRangePieces),
 		shared.ErrValidation)
+}
+
+// MaxJobExclusions bounds the exclusions one job carries (the sensor SDK
+// refuses a job with more).
+const MaxJobExclusions = 4096
+
+// PayloadKeyExclusions is the job payload key of the exclusions that touch
+// the job's ranges. The job signature covers the payload, so a relay cannot
+// add or drop one.
+const PayloadKeyExclusions = "exclusions"
+
+// rangeBucket widens r to the /24 (IPv4) or /120 (IPv6) buckets that hold
+// it: the neighborhood whose exclusions a sensor is told about.
+func rangeBucket(r ipset.Range) ipset.Range {
+	bits := MaxPieceBits.V4
+	if !r.Lo.Is4() {
+		bits = MaxPieceBits.V6
+	}
+	return ipset.Range{
+		Lo: netip.PrefixFrom(r.Lo, bits).Masked().Addr(),
+		Hi: ipset.LastAddr(netip.PrefixFrom(r.Hi, bits)),
+	}
+}
+
+// JobExclusions are the tenant's active exclusions of an address kind that
+// touch the range targets of one job: every range widened to its /24 or
+// /120 buckets, intersected with the excluded addresses, written as the
+// fewest prefixes. The pieces the gate dispatches already leave these
+// addresses out; the sensor cuts its ranges around them again, address by
+// address, so a planning mistake cannot reach an excluded address. nil when
+// the job has no range target or no exclusion is near one. A lookup error is
+// returned (fail closed: the job is not created), and more than
+// MaxJobExclusions prefixes is RANGE_TOO_FRAGMENTED.
+func (s *Service) JobExclusions(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	var near []ipset.Range
+	for _, t := range targets {
+		if r, ok := rangeTarget(strings.TrimSpace(t)); ok {
+			near = append(near, rangeBucket(r))
+		}
+	}
+	if len(near) == 0 {
+		return nil, nil
+	}
+	src, ok := s.scopeExclusions.(ExclusionAddressSource)
+	if !ok {
+		return nil, nil
+	}
+	excluded, err := src.ExcludedAddressSet(ctx, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("scope exclusion check failed, nothing dispatched: %w", err)
+	}
+	touching := excluded.Intersect(ipset.Of(near...))
+	if touching.Empty() {
+		return nil, nil
+	}
+	prefixes, err := touching.Prefixes(ipset.PieceBits{}, MaxJobExclusions)
+	if err != nil {
+		if errors.Is(err, ipset.ErrTooManyPieces) {
+			return nil, rangeTooFragmentedError()
+		}
+		return nil, err
+	}
+	out := make([]string, len(prefixes))
+	for i, p := range prefixes {
+		out[i] = p.String()
+	}
+	return out, nil
+}
+
+// attachJobExclusions adds the exclusions that touch the job's range
+// targets to its payload (JobExclusions).
+func (s *Service) attachJobExclusions(ctx context.Context, tenantID shared.ID, payload map[string]any, targets []string) error {
+	excl, err := s.JobExclusions(ctx, tenantID, targets)
+	if err != nil {
+		return err
+	}
+	if len(excl) > 0 {
+		payload[PayloadKeyExclusions] = excl
+	}
+	return nil
 }
