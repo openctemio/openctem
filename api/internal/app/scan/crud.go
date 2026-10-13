@@ -234,12 +234,17 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		sc.SetProfileID(&profileID)
 	}
 
-	// Set created by
+	// Set created by. A scheduled scan's runs act as its owner, so one
+	// without an owner (an API key that belongs to no user) is refused
+	// rather than saved to be refused at every due run.
 	if input.CreatedBy != "" {
 		createdByID, err := shared.IDFromString(input.CreatedBy)
-		if err == nil {
+		if err == nil && !createdByID.IsZero() {
 			sc.SetCreatedBy(createdByID)
 		}
+	}
+	if sc.CreatedBy == nil && sc.ScheduleType != scan.ScheduleManual {
+		return nil, ErrScheduledScanNeedsOwner
 	}
 
 	// Save to repository
@@ -1024,6 +1029,17 @@ func (s *Service) ActivateScan(ctx context.Context, tenantID, scanID string) (*s
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
 		return nil, err
+	}
+
+	// A scheduled scan without an owner would be refused and paused again
+	// at its next due run: an administrator takes ownership first.
+	if sc.ScheduleType != scan.ScheduleManual {
+		switch s.OwnerState(ctx, sc) {
+		case OwnerStateMissing:
+			return nil, ErrScanHasNoOwner
+		case OwnerStateInactive:
+			return nil, ErrScanOwnerInactive
+		}
 	}
 
 	previousStatus := string(sc.Status)

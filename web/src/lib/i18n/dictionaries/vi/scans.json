@@ -1585,5 +1585,15 @@
   "scans.placement.sensorCount": "cảm biến: {count}",
   "scans.placement.unknown": "Lý do {code}: bảng điều khiển này chưa mô tả lý do này.",
   "scans.failure.TARGET_UNREACHABLE.text": "Cảm biến không kết nối được tới mục tiêu của bước (không có tuyến, bị bộ lọc chặn, mọi lần thử đều hết thời gian, hoặc tên không phân giải được trong mạng của nó).",
-  "scans.failure.TARGET_UNREACHABLE.fix": "Chạy bước từ một cảm biến kết nối được tới mục tiêu: gán một cảm biến vào vùng quét của các mục tiêu."
+  "scans.failure.TARGET_UNREACHABLE.fix": "Chạy bước từ một cảm biến kết nối được tới mục tiêu: gán một cảm biến vào vùng quét của các mục tiêu.",
+  "scans.owner.title": "Không có chủ sở hữu đang hoạt động",
+  "scans.owner.missing": "Lượt quét này không có chủ sở hữu: tài khoản đã tạo nó không còn tồn tại.",
+  "scans.owner.inactive": "Chủ sở hữu của lượt quét này không còn là thành viên đang hoạt động.",
+  "scans.owner.scheduledEffect": "Các lần chạy theo lịch hoạt động với tư cách chủ sở hữu, nên chúng bị từ chối và lượt quét bị tạm dừng cho đến khi có người nhận quyền sở hữu.",
+  "scans.owner.manualEffect": "Người có quyền chạy vẫn có thể khởi chạy thủ công; lịch chạy cần có chủ sở hữu.",
+  "scans.owner.take": "Nhận quyền sở hữu",
+  "scans.owner.taking": "Đang nhận quyền sở hữu…",
+  "scans.owner.taken": "Bạn hiện sở hữu \"{name}\". Hãy tiếp tục lượt quét để khởi động lại lịch chạy.",
+  "scans.owner.takeFailed": "Không thể nhận quyền sở hữu",
+  "scans.owner.askAdmin": "Chủ sở hữu tổ chức hoặc quản trị viên có thể nhận quyền sở hữu."
 }

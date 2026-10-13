@@ -194,6 +194,10 @@ func (h *SensorHandler) writeGrantError(w http.ResponseWriter, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, sensorgrant.ErrStepUpUnavailable):
+		middleware.WriteStepUpError(w, middleware.ErrStepUpUnavailable, authapp.StepUpWindow)
+	case errors.Is(err, sensorgrant.ErrSuggestionChanged):
+		apierror.Conflict("The suggested grant changed since it was read; reload and retry").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Sensor").WriteJSON(w)
 	case errors.Is(err, sensorgrant.ErrWidenForbidden):
@@ -207,4 +211,79 @@ func (h *SensorHandler) writeGrantError(w http.ResponseWriter, err error) {
 	default:
 		h.handleServiceError(w, err)
 	}
+}
+
+// ApplySensorGrantSuggestionRequest applies the suggestion the caller saw.
+type ApplySensorGrantSuggestionRequest struct {
+	// Version is the grant version the suggestion was computed against.
+	Version int `json:"version"`
+	// Profile is the suggested profile the caller saw.
+	Profile string `json:"profile"`
+}
+
+// GetGrantSuggestion godoc
+// @Summary      Suggest a narrower grant for a sensor
+// @Description  The narrowest profile that admits every job the sensor ran in the last 30 days and its results sent without a job, never wider than the current grant on any dimension.
+// @Tags         Sensors
+// @Produce      json
+// @Param        id   path      string  true  "Sensor ID"
+// @Success      200  {object}  sensorgrant.SuggestionView
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/{id}/grant/suggestion [get]
+func (h *SensorHandler) GetGrantSuggestion(w http.ResponseWriter, r *http.Request) {
+	tid, sid, ok := h.tenantAndSensor(w, r)
+	if !ok {
+		return
+	}
+	if h.grants == nil {
+		apierror.NotFound("Sensor").WriteJSON(w)
+		return
+	}
+	v, err := h.grants.Suggest(r.Context(), tid, sid)
+	if err != nil {
+		h.writeGrantError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// ApplyGrantSuggestion godoc
+// @Summary      Apply the suggested grant of a sensor
+// @Description  Stores the suggested profile when it is still the suggestion and the grant is still at version. Needs sensors:grant:narrow (or widen) and a recent sign-in or step-up (STEP_UP_REQUIRED otherwise); never widens; audited.
+// @Tags         Sensors
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                             true  "Sensor ID"
+// @Param        body  body      ApplySensorGrantSuggestionRequest  true  "Suggestion seen"
+// @Success      200   {object}  sensorgrant.View
+// @Failure      400   {object}  apierror.Error
+// @Failure      401   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      409   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/{id}/grant/suggestion/apply [post]
+func (h *SensorHandler) ApplyGrantSuggestion(w http.ResponseWriter, r *http.Request) {
+	tid, sid, ok := h.tenantAndSensor(w, r)
+	if !ok {
+		return
+	}
+	if h.grants == nil {
+		apierror.NotFound("Sensor").WriteJSON(w)
+		return
+	}
+	var req ApplySensorGrantSuggestionRequest
+	dec := json.NewDecoder(io.LimitReader(r.Body, 4<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil || req.Profile == "" || req.Version <= 0 {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	g, err := h.grants.ApplySuggestion(r.Context(), h.grantActor(r, tid), sid, req.Version, req.Profile)
+	if err != nil {
+		h.writeGrantError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sensorgrant.GrantView(*g))
 }

@@ -1166,6 +1166,11 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
     002075; `sensor.DefaultProfileFor`). Sensors created before that keep
     their grant; a collector still on `internal-network-scanner` needs its
     profile changed to `collector` on its Grant.
+  - *EASM sensors.* A sensor created with type `sensor` gets
+    `easm-external` (public targets only, migration 002084). Sensors still
+    on `legacy-broad` get a one-click narrower profile on their Grant,
+    suggested from their last 30 days of jobs
+    ([sensor-pairing.md](sensor-pairing.md#leaving-the-legacy-grant)).
   - *Trust.* Trust is never automatic. A new collector starts at trust level
     `new`, and every report is refused until an administrator promotes it,
     either on the sensor's Grant (**Promote to Trusted**) or at creation

@@ -450,6 +450,12 @@ var scanZoneErrorCodes = map[string]bool{
 	"TOOL_NOT_FOUND":      true,
 	"TOOL_DISABLED":       true,
 	"TOOL_NOT_SCANNER":    true,
+	// Scan ownership (docs/architecture/scan-ownership.md).
+	"SCAN_HAS_NO_OWNER":   true,
+	"SCAN_OWNER_INACTIVE": true,
+	"SCAN_OWNER_REQUIRED": true,
+	"SCAN_OWNER_ACTIVE":   true,
+	"SCAN_OWNER_CHANGED":  true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.
