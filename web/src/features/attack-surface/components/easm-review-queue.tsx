@@ -27,14 +27,17 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable, ErrorState, RelativeTime } from '@/features/shared'
 import { useDebounce } from '@/hooks/use-debounce'
 import { useListParams } from '@/hooks/use-list-params'
-import type { EASMReviewItem } from '@/lib/api/generated'
+import type { EASMConfirmScopeResult, EASMReviewItem } from '@/lib/api/generated'
+import { del } from '@/lib/api/client'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { invalidateScopeCache } from '@/features/scope/api/use-scope-api'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import {
   ATTRIBUTION_STATE_CLASS,
-  ATTRIBUTION_STATE_LABEL,
+  attributionStateLabel,
   describeEvidence,
-  REVIEW_HINT_TEXT,
+  reviewHintText,
   reviewNetworkText,
   type AttributionDecision,
   type AttributionEvidence,
@@ -43,7 +46,6 @@ import {
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { useDecideReviewBatch, useEASMReviewQueue } from '../hooks/use-easm-review'
 import { useEASMSummary } from '../hooks/use-easm-summary'
-import { EASMRuleSuggestions } from './easm-rule-suggestions'
 import { reviewReasonLabel } from '../lib/review-reasons'
 import { ScopeEntryDialog, ScopeFixButtons, type ScopeEntryDraft } from '@/features/scope'
 import {
@@ -57,16 +59,104 @@ import { useTranslation } from '@/context/i18n-provider'
 
 /** The queue views: what is waiting, and what was rejected (for undo). */
 export const REVIEW_VIEWS: { id: string; label: string; states: AttributionState[] }[] = [
-  { id: 'review', label: 'Awaiting review', states: ['needs_review', 'candidate'] },
+  { id: 'review', label: 'Awaiting a decision', states: ['needs_review', 'candidate'] },
   { id: 'rejected', label: 'Not ours', states: ['rejected'] },
 ]
 
 const DECISIONS: { state: AttributionDecision; label: string; icon: React.ElementType }[] = [
-  { state: 'confirmed', label: 'Confirm', icon: Check },
+  { state: 'confirmed', label: 'Ours: add to scope', icon: Check },
   { state: 'rejected', label: 'Not ours', icon: Ban },
   { state: 'dependency', label: 'Dependency', icon: Network },
   { state: 'monitor_only', label: 'Monitor only', icon: Eye },
 ]
+
+type TFn = ReturnType<typeof useTranslation>['t']
+
+/** "+ 3 services, 2 certificates": the children that follow a host. */
+export function childrenText(t: TFn, children: Record<string, number> | undefined): string {
+  const parts = Object.entries(children ?? {})
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, n]) =>
+      n === 1
+        ? t(`attackSurface.queue.child.${type}.one`, `1 ${type.replace(/_/g, ' ')}`, { count: n })
+        : t(`attackSurface.queue.child.${type}.other`, `{count} ${type.replace(/_/g, ' ')}`, {
+            count: n,
+          })
+    )
+  return parts.length > 0 ? `+ ${parts.join(', ')}` : ''
+}
+
+/**
+ * What a confirmation did to scope, as one toast; the entries it added can be
+ * removed again from the toast (Undo deletes exactly those entries).
+ */
+export function reportConfirmScope(
+  t: TFn,
+  scope: EASMConfirmScopeResult | undefined,
+  onUndone?: () => void
+) {
+  if (!scope) return
+  if (scope.skipped === 'needs_scope_write') {
+    toast.info(
+      t(
+        'attackSurface.queue.scopeSkipped.needs_scope_write',
+        'Recorded as yours. Adding them to scope needs permission to edit scope.'
+      )
+    )
+    return
+  }
+  const added = (scope.entries ?? []).filter((e) => e.outcome === 'added' && e.target_id)
+  const refused = (scope.entries ?? []).filter((e) => e.outcome === 'refused')
+  if (refused.length > 0) {
+    toast.warning(
+      t(
+        'attackSurface.queue.scopeRefused',
+        '{count} could not be added to scope ({first}: {code})',
+        {
+          count: refused.length,
+          first: refused[0].pattern ?? refused[0].name ?? '',
+          code: refused[0].code ?? '',
+        }
+      )
+    )
+  }
+  if (added.length === 0) return
+  const ids = added.map((e) => e.target_id as string)
+  toast.success(
+    added.length === 1
+      ? t('attackSurface.queue.scopeAdded.one', 'Added {pattern} to scope', {
+          pattern: added[0].pattern ?? '',
+        })
+      : t('attackSurface.queue.scopeAdded.other', 'Added {count} entries to scope', {
+          count: added.length,
+        }),
+    {
+      action: {
+        label: t('attackSurface.queue.undo', 'Undo'),
+        onClick: () => {
+          void (async () => {
+            try {
+              await Promise.all(
+                ids.map((id) => del<void>(`/api/v1/scope/targets/${encodeURIComponent(id)}`))
+              )
+              await invalidateScopeCache()
+              toast.success(t('attackSurface.queue.undone', 'Removed the scope entries again'))
+              onUndone?.()
+            } catch (e) {
+              toast.error(
+                getErrorMessage(
+                  e,
+                  t('attackSurface.queue.undoFailed', 'Could not remove the entries')
+                )
+              )
+            }
+          })()
+        },
+      },
+    }
+  )
+}
 
 const PAGE_SIZE = 50
 
@@ -119,16 +209,29 @@ export function EASMReviewQueue() {
       const res = await decide(ids, state)
       const done = res.decided?.length ?? 0
       const missed = res.not_found?.length ?? 0
-      const label = ATTRIBUTION_STATE_LABEL[state].toLowerCase()
-      if (done > 0) toast.success(`${done} ${done === 1 ? 'asset' : 'assets'} set to ${label}`)
+      const label = attributionStateLabel(t, state)
+      if (done > 0)
+        toast.success(
+          done === 1
+            ? t('attackSurface.queue.decided.one', '1 asset set to {state}', { state: label })
+            : t('attackSurface.queue.decided.other', '{count} assets set to {state}', {
+                count: done,
+                state: label,
+              })
+        )
       if (missed > 0)
         toast.warning(
-          `${missed} ${missed === 1 ? 'asset was' : 'assets were'} not changed: no longer available to you`
+          t('attackSurface.queue.notFound', '{count} not changed: no longer available to you', {
+            count: missed,
+          })
         )
+      reportConfirmScope(t, res.scope, () => void mutate())
       clearSelection()
       void mutate()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save the decision')
+      toast.error(
+        getErrorMessage(e, t('attackSurface.queue.decideFailed', 'Could not save the decision'))
+      )
     }
   }
 
@@ -144,14 +247,16 @@ export function EASMReviewQueue() {
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
+            aria-label={t('attackSurface.queue.selectAll', 'Select all')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={`Select ${row.original.name ?? 'asset'}`}
+            aria-label={t('attackSurface.queue.selectRow', 'Select {name}', {
+              name: row.original.name ?? '',
+            })}
           />
         ),
         enableSorting: false,
@@ -161,51 +266,65 @@ export function EASMReviewQueue() {
     cols.push(
       {
         id: 'name',
-        header: 'Name',
-        cell: ({ row }) =>
-          row.original.asset_id ? (
-            <Link
-              href={assetDetailHref(row.original.asset_id)}
-              className="font-medium hover:underline"
-            >
-              {row.original.name}
-            </Link>
-          ) : (
-            <span className="font-medium">{row.original.name}</span>
-          ),
+        header: t('attackSurface.queue.col.name', 'Name'),
+        cell: ({ row }) => {
+          const kids = childrenText(t, row.original.children)
+          return (
+            <div className="min-w-0">
+              {row.original.asset_id ? (
+                <Link
+                  href={assetDetailHref(row.original.asset_id)}
+                  className="font-medium hover:underline"
+                >
+                  {row.original.name}
+                </Link>
+              ) : (
+                <span className="font-medium">{row.original.name}</span>
+              )}
+              {kids && <p className="text-xs text-muted-foreground">{kids}</p>}
+            </div>
+          )
+        },
       },
       {
         id: 'state',
-        header: 'State',
+        header: t('attackSurface.queue.col.state', 'State'),
         cell: ({ row }) => {
           const st = stateOf(row.original)
           return (
             <Badge variant="outline" className={cn('border-0', ATTRIBUTION_STATE_CLASS[st])}>
-              {ATTRIBUTION_STATE_LABEL[st]}
+              {attributionStateLabel(t, st)}
             </Badge>
           )
         },
       },
       {
         id: 'confidence',
-        header: 'Confidence',
+        header: t('attackSurface.queue.col.confidence', 'Confidence'),
         cell: ({ row }) => <span className="tabular-nums">{row.original.confidence ?? 0}</span>,
       },
       {
         id: 'evidence',
-        header: 'Why it may be yours',
+        header: t('attackSurface.queue.col.evidence', 'Why it may be yours'),
         cell: ({ row }) => {
           const ev = row.original.evidence ?? []
-          if (ev.length === 0) return <span className="text-muted-foreground">No evidence</span>
+          if (ev.length === 0)
+            return (
+              <span className="text-muted-foreground">
+                {t('attackSurface.queue.noEvidence', 'No evidence')}
+              </span>
+            )
           return (
             <ul className="space-y-0.5 text-sm">
               {ev.slice(0, 2).map((e, i) => (
                 <li key={i} className="text-muted-foreground">
-                  {describeEvidence(e as AttributionEvidence)}
+                  {describeEvidence(t, e as AttributionEvidence)}
                 </li>
               ))}
               {ev.length > 2 && (
-                <li className="text-xs text-muted-foreground">+{ev.length - 2} more</li>
+                <li className="text-xs text-muted-foreground">
+                  {t('attackSurface.queue.moreEvidence', '+{count} more', { count: ev.length - 2 })}
+                </li>
               )}
             </ul>
           )
@@ -213,7 +332,7 @@ export function EASMReviewQueue() {
       },
       {
         id: 'covered',
-        header: 'Covered by',
+        header: t('attackSurface.queue.col.covered', 'Covered by'),
         cell: ({ row }) => {
           const c = row.original.covered_by
           if (c?.pattern) {
@@ -221,7 +340,9 @@ export function EASMReviewQueue() {
               <span className="text-sm">
                 <code className="break-all">{c.pattern}</code>
                 {c.proof === 'verified' && (
-                  <span className="ms-1 text-xs text-success">verified</span>
+                  <span className="ms-1 text-xs text-success">
+                    {t('attackSurface.queue.verified', 'verified')}
+                  </span>
                 )}
               </span>
             )
@@ -230,20 +351,19 @@ export function EASMReviewQueue() {
           // §4.3). The server explains why and offers the fixes this caller
           // may take; shared provider space gets none.
           if (row.original.hint) {
-            const net = reviewNetworkText(row.original.network)
+            const net = reviewNetworkText(t, row.original.network)
             const from = row.original.resolved_from ?? []
             return (
               <div className="max-w-sm space-y-1 text-xs text-muted-foreground">
-                <p>Not in scope. {REVIEW_HINT_TEXT[row.original.hint] ?? ''}</p>
+                <p>
+                  {t('attackSurface.queue.notInScope', 'Not in scope.')}{' '}
+                  {reviewHintText(t, row.original.hint)}
+                </p>
                 {from.length > 0 && (
                   <p>
-                    Resolved from{' '}
-                    {from.map((n, i) => (
-                      <span key={n}>
-                        {i > 0 && ', '}
-                        <code className="break-all">{n}</code>
-                      </span>
-                    ))}
+                    {t('attackSurface.queue.resolvedFrom', 'Resolved from {names}', {
+                      names: from.join(', '),
+                    })}
                   </p>
                 )}
                 {net && <p>{net}</p>}
@@ -251,11 +371,11 @@ export function EASMReviewQueue() {
               </div>
             )
           }
-          // Nothing covers it: confirming records ownership, but scans still
-          // need a scope entry (RFC-054 §4.2), so offer that first.
+          // Nothing covers it: confirming adds its exact entry (where the
+          // organization's setting allows); the entry can also be added alone.
           return (
             <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              Not in scope
+              {t('attackSurface.queue.notInScopeShort', 'Not in scope')}
               {canAddScope && row.original.name && (
                 <Button
                   size="sm"
@@ -268,7 +388,7 @@ export function EASMReviewQueue() {
                     })
                   }
                 >
-                  Add to scope
+                  {t('attackSurface.queue.addToScope', 'Add to scope')}
                 </Button>
               )}
             </span>
@@ -277,16 +397,22 @@ export function EASMReviewQueue() {
       },
       {
         id: 'since',
-        header: 'In queue since',
+        header: t('attackSurface.queue.col.since', 'In queue since'),
         cell: ({ row }) =>
           row.original.in_queue_since ? <RelativeTime date={row.original.in_queue_since} /> : null,
       }
     )
     return cols
-  }, [canDecide, canAddScope, setAddDraft, mutate])
+  }, [canDecide, canAddScope, setAddDraft, mutate, t])
 
   if (error) {
-    return <ErrorState title="the review queue" error={error} onRetry={() => void mutate()} />
+    return (
+      <ErrorState
+        title={t('attackSurface.queue.errorTitle', 'the attack surface items')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
   }
 
   return (
@@ -302,24 +428,27 @@ export function EASMReviewQueue() {
         <TabsList>
           {REVIEW_VIEWS.map((v) => (
             <TabsTrigger key={v.id} value={v.id}>
-              {v.label}
+              {t(`attackSurface.queue.view.${v.id}`, v.label)}
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
 
-      {view === 'review' && <EASMRuleSuggestions onApplied={() => void mutate()} />}
-
       {canDecide && selected.length > 0 && (
         <div
           role="toolbar"
-          aria-label="Decide selected assets"
+          aria-label={t('attackSurface.queue.toolbar', 'Decide selected assets')}
           className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2"
         >
-          <span className="text-sm">{selected.length} selected</span>
+          <span className="text-sm">
+            {t('attackSurface.queue.selected', '{count} selected', { count: selected.length })}
+          </span>
           {view === 'review' && selected.some((s) => !s.covered_by) && (
             <span className="text-xs text-muted-foreground">
-              Confirming records ownership only; names no scope entry covers stay out of scans.
+              {t(
+                'attackSurface.queue.confirmHint',
+                'Confirming a domain or address as yours adds its exact scope entry, unless your organization turned this off or uses Strict scan approval.'
+              )}
             </span>
           )}
           {DECISIONS.filter((d) => !states.includes(d.state as AttributionState)).map((d) => {
@@ -337,12 +466,12 @@ export function EASMReviewQueue() {
                 ) : (
                   <Icon className="h-4 w-4" aria-hidden />
                 )}
-                {d.label}
+                {t(`attackSurface.queue.decision.${d.state}`, d.label)}
               </Button>
             )
           })}
           <Button size="sm" variant="ghost" onClick={clearSelection} disabled={saving}>
-            Clear
+            {t('attackSurface.queue.clear', 'Clear')}
           </Button>
         </div>
       )}
@@ -372,8 +501,8 @@ export function EASMReviewQueue() {
                   setSearchInput(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Search names"
-                aria-label="Search names"
+                placeholder={t('attackSurface.queue.search', 'Search names')}
+                aria-label={t('attackSurface.queue.search', 'Search names')}
                 className="ps-8"
               />
             </div>
@@ -385,14 +514,19 @@ export function EASMReviewQueue() {
                   setPage(1)
                 }}
               >
-                <SelectTrigger className="h-9 w-auto min-w-44" aria-label="Filter by reason">
+                <SelectTrigger
+                  className="h-9 w-auto min-w-44"
+                  aria-label={t('attackSurface.queue.reasonFilter', 'Filter by reason')}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Every reason</SelectItem>
+                  <SelectItem value="all">
+                    {t('attackSurface.queue.everyReason', 'Every reason')}
+                  </SelectItem>
                   {reasons.map(([r, n]) => (
                     <SelectItem key={r} value={r}>
-                      {reviewReasonLabel(r)} ({n})
+                      {reviewReasonLabel(t, r)} ({n})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -401,13 +535,20 @@ export function EASMReviewQueue() {
           </div>
         }
         emptyMessage={
-          isLoading ? 'Loading…' : view === 'review' ? 'Nothing to review' : 'No rejected assets'
+          isLoading
+            ? t('attackSurface.queue.loading', 'Loading…')
+            : view === 'review'
+              ? t('attackSurface.queue.emptyReview', 'Nothing waits for a decision')
+              : t('attackSurface.queue.emptyRejected', 'No rejected assets')
         }
         emptyDescription={
           isLoading
             ? undefined
             : view === 'review'
-              ? 'Every discovered name has a decision, or none has been found yet.'
+              ? t(
+                  'attackSurface.queue.emptyReviewDescription',
+                  'Every discovered name has a decision, or none has been found yet.'
+                )
               : undefined
         }
       />
@@ -421,7 +562,7 @@ export function EASMReviewQueue() {
         <p className="text-sm text-muted-foreground">
           {t(
             'scope.review.readOnly',
-            'You can view this queue. Deciding ownership needs permission to edit assets.'
+            'You can view these items. Deciding ownership needs permission to edit assets.'
           )}
         </p>
       )}
