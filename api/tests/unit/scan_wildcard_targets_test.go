@@ -447,8 +447,9 @@ func TestCIDRTarget_SweepAndInventoryModes(t *testing.T) {
 			inv.byCIDR["203.0.113.0/24"] = []string{"203.0.113.7", "203.0.113.10"}
 			svc, deps := newTestScanService()
 			svc.SetSelectorAssets(inv)
-			deps.toolRepo.addTool("nuclei", true)
-			sc := directScan(deps, tenantID, "nuclei", "203.0.113.0/24")
+			// A swept range goes to a port scanner only (RFC-088).
+			deps.toolRepo.addTool("naabu", true)
+			sc := directScan(deps, tenantID, "naabu", "203.0.113.0/24")
 			sc.TargetOptions = scan.TargetOptions{CIDRMode: tc.mode}
 			if _, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 				TenantID: tenantID.String(), ScanID: sc.ID.String(),

@@ -217,6 +217,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		ActScopeAssetsByID:     true,
 		MaxTargets:             2 * maxResolvedTargets,
 		Path:                   "scan_run",
+		SplitRanges:            true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scan not dispatched: %w", err)
@@ -234,6 +235,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		Expansion:     exp.Report,
 		SelectorRoots: exp.Roots,
 	}
+	out.Warnings = append(out.Warnings, splitWarnings(gated.Split)...)
 	if n := gate.total(); n > 0 {
 		out.Incompatible = n
 		out.IncompatibleReason = gate.describe()
@@ -242,6 +244,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if err := countRefusals(out, gated.Refused); err != nil {
 		return nil, err
 	}
+	gateScannerKinds(sc.ScannerName, out, func(t string) bool { _, ok := types[t]; return ok })
 	for _, t := range out.Targets {
 		if ref, typed := types[t]; typed && ref.Type != "" {
 			if out.TargetTypes == nil {
@@ -297,6 +300,8 @@ func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 			out.TierExceeded++
 		case r.Code == scopedom.RefusalOutOfDataScope, r.Code == scopedom.RefusalNotAnAsset, r.Code == scopedom.RefusalNoEntry:
 			out.OutOfScope++
+		case r.Reason == ReasonRangeDenied, r.Reason == ReasonRangeTooLarge:
+			out.Warnings = append(out.Warnings, fmt.Sprintf("range %s was skipped: %s", r.Target, r.Reason))
 		default:
 			return fmt.Errorf("scan not dispatched: target refused with an unexpected code %q", r.Code)
 		}
@@ -355,4 +360,47 @@ func isInternalAddr(a netip.Addr) bool {
 	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() ||
 		a.IsLinkLocalMulticast() || a.IsUnspecified() ||
 		netip.MustParsePrefix("100.64.0.0/10").Contains(a) // carrier-grade NAT
+}
+
+// gateScannerKinds leaves out of a single-scanner run every typed-in target
+// whose kind the scanner's stage does not take (stage.AcceptsKind), and
+// every range, typed in or from the inventory: a network range never
+// reaches an HTTP prober or a template scanner. Inventory targets are
+// otherwise decided by their stored type (scannerTypeGate). They are
+// counted as incompatible, with the reason.
+func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) bool) {
+	if scanner == "" {
+		return
+	}
+	st, ok := stage.ForStep(scanner, nil)
+	if !ok {
+		return
+	}
+	kept, refused := st.FilterKinds(out.Targets, typed)
+	if len(refused) == 0 {
+		return
+	}
+	reason := st.DescribeRefusedKinds(refused)
+	n := len(out.Targets) - len(kept)
+	out.Incompatible += n
+	out.Targets = kept
+	if out.IncompatibleReason != "" {
+		out.IncompatibleReason += "; "
+	}
+	out.IncompatibleReason += reason
+	out.Warnings = append(out.Warnings, fmt.Sprintf("%d target(s) were skipped: %s", n, reason))
+}
+
+// splitWarnings tells the run which range targets were cut around
+// exclusions and the deny list, and how much was left out.
+func splitWarnings(split []SplitTarget) []string {
+	out := make([]string, 0, len(split))
+	for _, sp := range split {
+		if sp.Removed == 0 {
+			continue // only cut into pieces
+		}
+		out = append(out, fmt.Sprintf("range %s: %d excluded or denied address(es) left out; the rest is scanned as %d piece(s)",
+			sp.Target, sp.Removed, len(sp.Pieces)))
+	}
+	return out
 }

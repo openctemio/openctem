@@ -391,6 +391,11 @@ func registerEASMRoutes(
 		// Review by rule (RFC-054 §6.7): a rule is a scope entry or an
 		// exclusion, created through the scope service (its own step-up and
 		// approvals); scope:write is checked in the handler for those.
+		// Suggestion cards: read only; accepting one is POST
+		// /scope/targets/bulk with its own gates.
+		if h.HasSuggestions() {
+			r.GET("/suggestions", h.SuggestionCards, middleware.Require(permission.AssetsRead))
+		}
 		if h.HasRules() {
 			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
 			r.POST("/candidates/rules/preview", h.PreviewRule, middleware.Require(permission.AssetsRead))

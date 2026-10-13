@@ -119,13 +119,14 @@ func seedLifecycleTenant(ctx context.Context, t *testing.T, db *sql.DB) shared.I
 //
 // The tool is looked up rather than invented: the migrations seed the builtin
 // catalog, and a hand-inserted row would have to reproduce every column
-// scanTool reads. Picking the lowest active name keeps it deterministic.
+// scanTool reads. dnsx (a passive resolver that takes the scan's name
+// target) is preferred, else the lowest active name: deterministic.
 func seedLifecycleScan(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID) shared.ID {
 	t.Helper()
 
 	var toolName string
 	if err := db.QueryRowContext(ctx,
-		`SELECT name FROM tools WHERE is_active ORDER BY name LIMIT 1`).Scan(&toolName); err != nil {
+		`SELECT name FROM tools WHERE is_active ORDER BY (name = 'dnsx') DESC, name LIMIT 1`).Scan(&toolName); err != nil {
 		t.Skipf("no active tool seeded in this database, cannot trigger a scan: %v", err)
 	}
 
