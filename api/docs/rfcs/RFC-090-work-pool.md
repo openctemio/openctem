@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Accepted (2026-10-13); W0–W2 in progress, the rest designed |
-| Scope | api (planner, claim, settlement, streaming, metrics), sdk-go (`pkg/politeness`, progress with finished targets, yield), sensor (picks up the SDK), web (run Work panel, Scans → Queue) |
+| Scope | api (planner, claim, settlement, streaming, metrics), ctis (`politeness`), sdk-go (progress with finished targets, yield), sensor (picks up the SDK), web (run Work panel, Scans → Queue) |
 | Architecture | [scan-orchestration.md](../architecture/scan-orchestration.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Amends | RFC-030 §5.1–§5.3 (its Phase 2, claim-time cutting, becomes this pool), RFC-046 §5.2 (planning per run, stage and unit; streaming between steps) |
 | Related | RFC-030 (pull, leases, fair share; decisions §9), RFC-040 (claim-time signed jobs, local policy), RFC-046 (Scan → Run → Task), RFC-074 (adaptive control), RFC-088 (typed work units, pieces, host keys), RFC-089 (network context, reach outcomes) |
@@ -47,7 +47,7 @@ Two live faults are pool problems:
 | P5 | Fairness | Class → tenant (shared pool) → run → step (downstream first), start-time fair queuing on lane rows, ageing |
 | P6 | Urgent work | Cooperative yield; a running item is never killed for priority |
 | P7 | Pipelines | Stream per task by default; a barrier only when the stage declares one |
-| P8 | Politeness | One key function in the sdk-go core used by both sides; no cross-tenant exclusivity |
+| P8 | Politeness | One key function in the CTIS contract (ctis), used by both sides; no cross-tenant exclusivity |
 | P9 | Dedup across scans | Later, opt-in, tenant-local, never for verify or credentialed runs |
 | P10 | Offline sensors | Later, bounded expeditions on key-bound signed-job sensors only |
 
@@ -186,7 +186,7 @@ CREATE TABLE work_items (
   unit_kind smallint NOT NULL,            -- name | addr | range | url | service
   unit_key text NOT NULL,                 -- canonical, ≤ 2 KiB
   weight integer NOT NULL,                -- 1, or the address count of a range piece
-  host_keys text[] NOT NULL,              -- pkg/politeness, network-scoped
+  host_keys text[] NOT NULL,              -- ctis/politeness, network-scoped
   ord bigint NOT NULL,                    -- planner order (hop, rotation, criticality)
   class smallint NOT NULL,
   state smallint NOT NULL,                -- pending | leased | done | failed | skipped | canceled | held_offline | following
@@ -340,8 +340,10 @@ them: today's behaviour, no regression.
 
 ### 5.9 Politeness
 
-One key function lives in the sdk-go core as its own module,
-`github.com/openctemio/sdk-go/pkg/politeness` (standard library only):
+One key function lives in the CTIS contract,
+`github.com/openctemio/ctis/politeness` (standard library only), which the
+platform and the sensor SDK both import (the platform never depends on the
+SDK):
 
 - a name, and the host of a URL or a service: the lower-case name without
   a trailing dot;
@@ -482,7 +484,7 @@ durations keyed by (tenant, tool) behind an exported budget lookup.
 | # | Repo | Step | Depends | SEC |
 |---|---|---|---|---|
 | W0 | api docs | This RFC; RFC-030 and RFC-046 amendment notes; architecture; index | — | — |
-| W1 | sdk-go → api → sensor | One politeness key function (`pkg/politeness`, own module); api delegates and sends the keys it holds with each chunk; the SDK admits under those keys with the same conflict relation; agreement test on a table of target pairs | — | **SEC** |
+| W1 | ctis → sdk-go → api → sensor | One politeness key function (`ctis/politeness`, in the contract repository); api delegates and sends the keys it holds with each chunk; the SDK admits under those keys with the same conflict relation; agreement test on a table of target pairs | — | **SEC** |
 | W2 | api | Claim latency, queue depth by class and by stage/tool, wait-reason counts, claim wait seconds; fix `claim_n` | — | — |
 | W3 | api | Work items and lanes in shadow: migration, planner writes, counters, compaction, run `work` summary; cross-tenant and out-of-scope negative tests | W0 | **SEC** |
 | W4 | api | Settle items from task results (finished indexes + reach), whole-task fallback | W3, SDK progress | — |
