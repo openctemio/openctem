@@ -1834,6 +1834,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Scope.SetLedger(s.JobSigner)
 		log.Info("sensor jobs are signed by the job signer", "socket", sock)
 	}
+	// research/122: completed scan commands teach per-target durations.
+	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
