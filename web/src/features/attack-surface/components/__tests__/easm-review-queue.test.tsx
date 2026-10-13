@@ -4,12 +4,12 @@
  * longer act on, and offers no decision controls without assets:write.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
 
-const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
 const perms = vi.hoisted(() => ({ write: true }))
 vi.mock('@/lib/permissions', async (orig) => {
@@ -21,7 +21,12 @@ vi.mock('@/lib/permissions', async (orig) => {
     }),
   }
 })
-const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }))
+const toast = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
@@ -73,6 +78,7 @@ const queue = {
       state: 'candidate',
       confidence: 30,
       evidence: [],
+      children: { service: 3, certificate: 1 },
     },
   ],
 }
@@ -113,13 +119,76 @@ describe('EASMReviewQueue', () => {
     await screen.findByText('api.acme.io')
     await user.click(screen.getByRole('checkbox', { name: 'Select all' }))
     const bar = screen.getByRole('toolbar', { name: 'Decide selected assets' })
-    await user.click(within(bar).getByRole('button', { name: /Confirm/ }))
+    await user.click(within(bar).getByRole('button', { name: /Ours: add to scope/ }))
     expect(api.post).toHaveBeenCalledWith('/api/v1/easm/candidates/decisions', {
       asset_ids: [A, B],
       state: 'confirmed',
     })
-    expect(toast.success).toHaveBeenCalledWith('1 asset set to confirmed')
+    expect(toast.success).toHaveBeenCalledWith('1 asset set to Confirmed')
     expect(toast.warning).toHaveBeenCalled()
+  })
+
+  it('lists a host with the children that follow it, never the children as rows', async () => {
+    api.get.mockImplementation(byUrl(queue))
+    wrap(<EASMReviewQueue />)
+    expect(await screen.findByText('+ 1 certificate, 3 services')).toBeInTheDocument()
+  })
+
+  it('says which scope entries a confirmation added, and Undo removes exactly those', async () => {
+    api.get.mockImplementation(byUrl(queue))
+    api.del.mockResolvedValue(undefined)
+    api.post.mockResolvedValue({
+      decided: [{ asset_id: A, from: 'needs_review', to: 'confirmed' }],
+      not_found: [],
+      scope: {
+        entries: [
+          {
+            asset_id: A,
+            name: 'api.acme.io',
+            pattern: 'api.acme.io',
+            outcome: 'added',
+            target_id: 'T1',
+            status: 'active',
+          },
+          {
+            asset_id: B,
+            name: 'old.acme.io',
+            pattern: 'old.acme.io',
+            outcome: 'covered',
+            target_id: 'T0',
+          },
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    wrap(<EASMReviewQueue />)
+    await screen.findByText('api.acme.io')
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    const bar = screen.getByRole('toolbar', { name: 'Decide selected assets' })
+    await user.click(within(bar).getByRole('button', { name: /Ours: add to scope/ }))
+    const call = toast.success.mock.calls.find((c) => c[0] === 'Added api.acme.io to scope')
+    expect(call).toBeDefined()
+    call![1].action.onClick()
+    await waitFor(() => expect(api.del).toHaveBeenCalledTimes(1))
+    expect(api.del).toHaveBeenCalledWith('/api/v1/scope/targets/T1')
+  })
+
+  it('tells a caller without scope write that only ownership was recorded', async () => {
+    api.get.mockImplementation(byUrl(queue))
+    api.post.mockResolvedValue({
+      decided: [{ asset_id: A, from: 'needs_review', to: 'confirmed' }],
+      not_found: [],
+      scope: { skipped: 'needs_scope_write', entries: [] },
+    })
+    const user = userEvent.setup()
+    wrap(<EASMReviewQueue />)
+    await screen.findByText('api.acme.io')
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    const bar = screen.getByRole('toolbar', { name: 'Decide selected assets' })
+    await user.click(within(bar).getByRole('button', { name: /Ours: add to scope/ }))
+    expect(toast.info).toHaveBeenCalledWith(
+      'Recorded as yours. Adding them to scope needs permission to edit scope.'
+    )
   })
 
   it('offers no decisions without assets:write', async () => {

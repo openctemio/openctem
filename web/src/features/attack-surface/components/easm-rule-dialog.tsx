@@ -103,7 +103,10 @@ export function EASMRuleDialog({
         }
       })
       .catch((err) => {
-        if (!cancelled) setPreviewError(scopeErrorMessage(t, err, 'The preview failed.'))
+        if (!cancelled)
+          setPreviewError(
+            scopeErrorMessage(t, err, t('easmReview.rule.previewFailed', 'The preview failed.'))
+          )
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -131,19 +134,27 @@ export function EASMRuleDialog({
           summary: refusal
             ? undefined
             : accept
-              ? `scope entry · covers ${coversText({ pattern: entry?.pattern ?? suggestion.pattern })} · permanent`
-              : 'exclusion · names it covers are marked not ours',
+              ? t('easmReview.rule.summaryAccept', 'scope entry · covers {what} · permanent', {
+                  what: coversText({ pattern: entry?.pattern ?? suggestion.pattern }),
+                })
+              : t(
+                  'easmReview.rule.summaryReject',
+                  'exclusion · names it covers are marked not ours'
+                ),
           message: refusal ?? undefined,
           impact: refusal
             ? []
             : [
                 accept
-                  ? { title: 'Confirmed as yours', names: confirm }
-                  : { title: 'Marked not ours', names: reject },
+                  ? {
+                      title: t('easmReview.rule.confirmedTitle', 'Confirmed as yours'),
+                      names: confirm,
+                    }
+                  : { title: t('easmReview.rule.rejectedTitle', 'Marked not ours'), names: reject },
                 ...(blocked.length > 0
                   ? [
                       {
-                        title: 'Stay out',
+                        title: t('easmReview.rule.stayOutTitle', 'Stay out'),
                         names: blocked.map((b) => b.name ?? ''),
                         notes: Object.fromEntries(
                           blocked.map((b) => [b.name ?? '', scopeRefusalLabel(t, b.code)])
@@ -170,23 +181,51 @@ export function EASMRuleDialog({
       if (accept) {
         toast.success(
           res?.entry?.status === 'active'
-            ? `${suggestion.pattern} is in scope; ${changed} ${changed === 1 ? 'name' : 'names'} confirmed`
-            : `${suggestion.pattern} is waiting for approval`,
+            ? t(
+                changed === 1
+                  ? 'easmReview.rule.toastActiveOne'
+                  : 'easmReview.rule.toastActiveMany',
+                changed === 1
+                  ? '{pattern} is in scope; {n} name confirmed'
+                  : '{pattern} is in scope; {n} names confirmed',
+                { pattern: suggestion.pattern ?? '', n: changed }
+              )
+            : t('easmReview.rule.toastPending', '{pattern} is waiting for approval', {
+                pattern: suggestion.pattern ?? '',
+              }),
           res?.entry?.status === 'active'
             ? undefined
             : {
-                description: 'The names it covers are confirmed once another approver approves it.',
+                description: t(
+                  'easmReview.rule.toastPendingHint',
+                  'The names it covers are confirmed once another approver approves it.'
+                ),
               }
         )
       } else {
-        toast.success(`${changed} ${changed === 1 ? 'name' : 'names'} marked not ours`, {
-          description: `The exclusion ${suggestion.pattern} waits for its approval; until then it does not stop scans.`,
-        })
+        toast.success(
+          t(
+            changed === 1
+              ? 'easmReview.rule.toastRejectedOne'
+              : 'easmReview.rule.toastRejectedMany',
+            changed === 1 ? '{n} name marked not ours' : '{n} names marked not ours',
+            { n: changed }
+          ),
+          {
+            description: t(
+              'easmReview.rule.toastRejectedHint',
+              'The exclusion {pattern} waits for its approval; until then it does not stop scans.',
+              { pattern: suggestion.pattern ?? '' }
+            ),
+          }
+        )
       }
       onApplied()
       onOpenChange(false)
     } catch (err) {
-      toast.error(scopeErrorMessage(t, err, 'The rule was not applied.'))
+      toast.error(
+        scopeErrorMessage(t, err, t('easmReview.rule.applyFailed', 'The rule was not applied.'))
+      )
     } finally {
       setSaving(false)
     }
@@ -196,18 +235,29 @@ export function EASMRuleDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{accept ? 'Accept as rule' : 'Reject as rule'}</DialogTitle>
+          <DialogTitle>
+            {accept
+              ? t('easmReview.rule.accept', 'Accept as rule')
+              : t('easmReview.rule.reject', 'Reject as rule')}
+          </DialogTitle>
           <DialogDescription>
             {accept ? (
               <>
-                Adds the scope entry <code className="break-all">{suggestion.pattern}</code>. Names
-                below it are confirmed as yours once it is in effect, now and when discovery finds
-                more.
+                {t('easmReview.rule.acceptIntro1', 'Adds the scope entry')}{' '}
+                <code className="break-all">{suggestion.pattern}</code>.{' '}
+                {t(
+                  'easmReview.rule.acceptIntro2',
+                  'Names below it are confirmed as yours once it is in effect, now and when discovery finds more.'
+                )}
               </>
             ) : (
               <>
-                Adds the exclusion <code className="break-all">{suggestion.pattern}</code> and marks
-                the names it covers as not yours. New names it matches are rejected on arrival.
+                {t('easmReview.rule.rejectIntro1', 'Adds the exclusion')}{' '}
+                <code className="break-all">{suggestion.pattern}</code>{' '}
+                {t(
+                  'easmReview.rule.rejectIntro2',
+                  'and marks the names it covers as not yours. New names it matches are rejected on arrival.'
+                )}
               </>
             )}
           </DialogDescription>
@@ -222,7 +272,8 @@ export function EASMRuleDialog({
             )}
             {loading && !preview ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Working out what changes…
+                <Loader2 className="h-4 w-4 animate-spin" />{' '}
+                {t('easmReview.rule.working', 'Working out what changes…')}
               </p>
             ) : (
               preview && (
@@ -246,7 +297,7 @@ export function EASMRuleDialog({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor={`${id}-reason`}>Reason</Label>
+              <Label htmlFor={`${id}-reason`}>{t('easmReview.rule.reason', 'Reason')}</Label>
               <Textarea
                 id={`${id}-reason`}
                 rows={2}
@@ -254,19 +305,27 @@ export function EASMRuleDialog({
                 value={reason}
                 placeholder={
                   accept
-                    ? 'Why is this yours? For example: our dev environment, ticket OPS-12.'
-                    : 'Why is this not yours? For example: a reseller domain.'
+                    ? t(
+                        'easmReview.rule.reasonPlaceholderAccept',
+                        'Why is this yours? For example: our dev environment, ticket OPS-12.'
+                      )
+                    : t(
+                        'easmReview.rule.reasonPlaceholderReject',
+                        'Why is this not yours? For example: a reseller domain.'
+                      )
                 }
                 onChange={(e) => setReason(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">Required. Kept in the audit log.</p>
+              <p className="text-xs text-muted-foreground">
+                {t('easmReview.rule.reasonHint', 'Required. Kept in the audit log.')}
+              </p>
             </div>
           </div>
         </DialogBody>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t('easmReview.rule.cancel', 'Cancel')}
           </Button>
           <Button
             variant={accept ? 'default' : 'destructive'}
@@ -274,7 +333,9 @@ export function EASMRuleDialog({
             disabled={saving || !reason.trim() || !!refusal || !preview}
           >
             {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            {accept ? 'Accept as rule' : 'Reject as rule'}
+            {accept
+              ? t('easmReview.rule.accept', 'Accept as rule')
+              : t('easmReview.rule.reject', 'Reject as rule')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -62,7 +62,7 @@ func TestNormalizeIdentifierPlaceholders(t *testing.T) {
 
 func TestIdentifierKindOrder(t *testing.T) {
 	order := []IdentifierKind{IdentifierHostID, IdentifierCloudID, IdentifierBIOSUUID, IdentifierSerial,
-		IdentifierMAC, IdentifierSCMRepoID, IdentifierFQDN, IdentifierHostname, IdentifierIP}
+		IdentifierDirectoryObjectID, IdentifierMAC, IdentifierSCMRepoID, IdentifierFQDN, IdentifierHostname, IdentifierIP}
 	for i := 1; i < len(order); i++ {
 		if order[i-1].Rank() >= order[i].Rank() {
 			t.Fatalf("%s must rank above %s", order[i-1], order[i])
@@ -85,5 +85,26 @@ func TestSCMRepoIdentifier(t *testing.T) {
 	}
 	if got := SCMRepoIdentifier("acme/repo", "123"); got != "123" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// A directory objectGUID is a strong, single-valued identifier in one
+// canonical form; anything that is not a GUID is refused.
+func TestNormalizeDirectoryObjectID(t *testing.T) {
+	k := IdentifierDirectoryObjectID
+	if !k.IsValid() || !k.IsStrong() || !k.IsSingleValued() {
+		t.Fatalf("directory_object_id: valid=%v strong=%v single=%v", k.IsValid(), k.IsStrong(), k.IsSingleValued())
+	}
+	want := "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+	for _, in := range []string{want, "{6F9619FF-8B86-D011-B42D-00C04FC964FF}", " 6f9619ff8b86d011b42d00c04fc964ff "} {
+		if got, ok := NormalizeIdentifier(k, in); !ok || got != want {
+			t.Errorf("NormalizeIdentifier(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"", "pc01", "00000000-0000-0000-0000-000000000000",
+		"ffffffff-ffff-ffff-ffff-ffffffffffff", "6f9619ff-8b86-d011-b42d-00c04fc964", "zz9619ff-8b86-d011-b42d-00c04fc964ff"} {
+		if got, ok := NormalizeIdentifier(k, in); ok {
+			t.Errorf("NormalizeIdentifier(%q) = %q, accepted", in, got)
+		}
 	}
 }

@@ -121,7 +121,7 @@ func (r *AssetIdentityBackfillRepository) RenamedHostCandidates(ctx context.Cont
 		  AND NOT EXISTS (
 		      SELECT 1 FROM asset_identifiers xa
 		      JOIN asset_identifiers xb ON xb.asset_id = b.id AND xb.kind = xa.kind AND xb.value <> xa.value
-		      WHERE xa.asset_id = a.id AND xa.kind IN ('host_id', 'cloud_id', 'bios_uuid', 'serial_number')
+		      WHERE xa.asset_id = a.id AND xa.kind IN ('host_id', 'cloud_id', 'bios_uuid', 'serial_number', 'directory_object_id')
 		        AND NOT EXISTS (SELECT 1 FROM asset_identifiers xc
 		                        WHERE xc.asset_id = b.id AND xc.kind = xa.kind AND xc.value = xa.value))
 		ORDER BY ia.asset_id, ib.asset_id, ia.value

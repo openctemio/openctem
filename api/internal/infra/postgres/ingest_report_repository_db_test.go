@@ -244,3 +244,69 @@ func TestIngestReportRepository_ExpireAndReopen(t *testing.T) {
 		t.Fatalf("reopened state %s", got.State)
 	}
 }
+
+// TouchedAssetsByCommand: the live assets the completed reports of one
+// command wrote, each once; never another command's, an unfinished report's,
+// a deleted asset or another tenant's.
+func TestIngestReportRepository_TouchedAssetsByCommand(t *testing.T) {
+	db, tenantID, sensorID := ingestReportFixture(t)
+	ctx := context.Background()
+	repo := NewIngestReportRepository(&DB{DB: db})
+	cmd := shared.NewID()
+	asset := func(name string) string {
+		t.Helper()
+		id := shared.NewID().String()
+		if _, err := db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, $3, 'ip_address', 'active')`,
+			id, tenantID.String(), name); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	a, b, gone, other := asset("203.0.113.1"), asset("203.0.113.2"), asset("203.0.113.3"), asset("203.0.113.4")
+	if _, err := db.ExecContext(ctx, `UPDATE assets SET deleted_at = now() WHERE id = $1`, gone); err != nil {
+		t.Fatal(err)
+	}
+	report := func(command shared.ID, state string, touched ...string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, `INSERT INTO commands (id, tenant_id, type) VALUES ($1, $2, 'connector_sync') ON CONFLICT DO NOTHING`,
+			command.String(), tenantID.String()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `INSERT INTO ingest_reports (id, tenant_id, sensor_id, report_id, command_id, state, media_type,
+				sensor_type, header_digest, header, tool_name, expires_at, received_at, touched_asset_ids)
+			VALUES ($1, $2, $3, $4, $5, $6, 'application/vnd.ctis+json', 'scanner', 'sha-256=:AAAA:', '{}', 'tenable_sc', now() + interval '1 hour', now(), $7::uuid[])`,
+			shared.NewID().String(), tenantID.String(), sensorID.String(), shared.NewID().String(), command.String(), state, "{"+joinIDs(touched)+"}"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report(cmd, "completed", a, b, gone)
+	report(cmd, "completed", a)
+	report(cmd, "processing", other)
+	report(shared.NewID(), "completed", other)
+
+	got, err := repo.TouchedAssetsByCommand(ctx, tenantID, cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, id := range got {
+		seen[id.String()] = true
+	}
+	if len(got) != 2 || !seen[a] || !seen[b] {
+		t.Fatalf("touched %v, want %s and %s", got, a, b)
+	}
+	if got, err := repo.TouchedAssetsByCommand(ctx, shared.NewID(), cmd); err != nil || len(got) != 0 {
+		t.Fatalf("another tenant: %v %v", got, err)
+	}
+}
+
+func joinIDs(ids []string) string {
+	out := ""
+	for i, id := range ids {
+		if i > 0 {
+			out += ","
+		}
+		out += id
+	}
+	return out
+}

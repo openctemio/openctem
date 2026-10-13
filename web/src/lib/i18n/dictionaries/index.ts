@@ -16,6 +16,7 @@ import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
 import en_assetTimeline from './en/assetTimeline.json'
 import en_attackSurface from './en/attackSurface.json'
+import en_easmReview from './en/easmReview.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
 import en_common from './en/common.json'
@@ -56,6 +57,7 @@ import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
 import vi_attackSurface from './vi/attackSurface.json'
+import vi_easmReview from './vi/easmReview.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
@@ -101,6 +103,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   assets: en_assets,
   assetTimeline: en_assetTimeline,
   attackSurface: en_attackSurface,
+  easmReview: en_easmReview,
   auth: en_auth,
   automations: en_automations,
   common: en_common,
@@ -144,6 +147,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   assets: vi_assets,
   assetTimeline: vi_assetTimeline,
   attackSurface: vi_attackSurface,
+  easmReview: vi_easmReview,
   auth: vi_auth,
   automations: vi_automations,
   common: vi_common,

@@ -58,6 +58,7 @@ ci_run_tokens
 ci_runs
 ci_trust_configs
 ci_trust_owner_pins
+collector_assets
 command_events
 command_logs
 commands
