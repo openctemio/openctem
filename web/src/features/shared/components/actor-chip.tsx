@@ -35,6 +35,7 @@ export const SYSTEM_ACTOR_TEXT: Record<string, string> = {
   seed_migration: 'OpenCTEM upgrade (was a discovery seed)',
   review_rule: 'Accepted from a review rule',
   refusal_fix: 'Allowed from a refused scan',
+  confirmed_asset: 'Added when an asset was confirmed as ours',
   system: 'OpenCTEM (automatic)',
 }
 
