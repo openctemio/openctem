@@ -356,10 +356,14 @@ comes back (mutual distrust, RFC-040).
   refuses the job; so does a repository without the guard when the tenant
   has a path exclusion. Commands are inserted only by `Create` and by the
   window hold's split of a stored command (a test fails on any other).
-- A nuclei validation (`validate`) or a nuclei retest (`retest`) cannot
-  carry a web scope to the sensor yet: on a target host with a path
-  exclusion it is refused with `WEB_SCOPE_UNSUPPORTED` and nothing is
-  queued.
+- A nuclei validation (`validate`) or a nuclei retest (`retest`) on a target
+  host with a path exclusion carries the web scope like a scan, and requires
+  `net.confined@1` (below): the sensor keeps these jobs to the scope (sensor
+  v0.19.0, sdk-go v0.25.0) only in a network-confined sandbox, and
+  `net.confined@1` is first reported by that same release, so an older sensor
+  that would drop the scope is never offered the job. A validation or retest
+  of any other web tool is still refused there with `WEB_SCOPE_UNSUPPORTED`
+  and nothing is queued.
 
 - The SDK (`pkg/webscope`) checks a request as the server sees its path:
   percent-decoded, dot segments resolved, backslash as a slash. A path with
