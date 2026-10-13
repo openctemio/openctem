@@ -1604,5 +1604,9 @@
   "scans.runDetail.deadlineReason.platform_cap": "Chưa đặt thời lượng tối đa: áp dụng giới hạn 24 giờ của nền tảng, chỉ để chặn các lần chạy không bao giờ kết thúc.",
   "scans.runDetail.deadlineReason.legacy": "Được đặt khi lần chạy bắt đầu, theo thời gian chờ của lần quét lúc đó.",
   "scans.failure.DEADLINE_TOO_CLOSE.text": "Chưa chạy: thời gian còn lại trước hạn chót của lần chạy quá ít để bước này làm được việc gì hữu ích.",
-  "scans.failure.DEADLINE_TOO_CLOSE.fix": "Các mục tiêu của bước được chuyển sang lần chạy theo lịch kế tiếp. Tăng hoặc bỏ thời lượng tối đa của lần quét nếu cần chạy xong trong một lần."
+  "scans.failure.DEADLINE_TOO_CLOSE.fix": "Các mục tiêu của bước được chuyển sang lần chạy theo lịch kế tiếp. Tăng hoặc bỏ thời lượng tối đa của lần quét nếu cần chạy xong trong một lần.",
+  "scans.tasks.progressDone": "xong {done}/{total} mục tiêu",
+  "scans.tasks.lastTarget": "mục tiêu gần nhất {ago} trước",
+  "scans.tasks.budget": "ngân sách {budget}",
+  "scans.tasks.stalling": "Không có mục tiêu nào xong trong {quiet}; sẽ bị thu hồi vì treo sau {stall}"
 }

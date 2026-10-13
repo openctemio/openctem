@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -148,6 +149,12 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-queue commands with an expired lease: %w", err)
 	}
+	return r.collectRequeued(rows)
+}
+
+// collectRequeued reads the (id, tenant, old sensor, old epoch) rows of a
+// re-queue statement and wakes each tenant's streams once.
+func (r *CommandRepository) collectRequeued(rows *sql.Rows) ([]command.RequeuedCommand, error) {
 	defer rows.Close()
 	var out []command.RequeuedCommand
 	for rows.Next() {
@@ -158,6 +165,7 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 			return nil, fmt.Errorf("failed to scan re-queued command: %w", err)
 		}
 		rq := command.RequeuedCommand{Epoch: epoch}
+		var err error
 		if rq.ID, err = shared.IDFromString(id); err != nil {
 			continue
 		}

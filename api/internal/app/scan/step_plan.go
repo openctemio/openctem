@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
 )
 
 // Error codes of the planner.
@@ -218,6 +219,11 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 			payload["targets"] = st.Targets
 		}
 	}
+	// The task's layered budget (research/122): the sensor bounds each
+	// target with it and stops the task only at twice its expected time;
+	// the platform calls the task stalled when no target finishes within
+	// the stall window.
+	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
@@ -233,6 +239,21 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 		payload[scanworkflow.PayloadKeyConfig] = c
 	}
 	return payload, nil
+}
+
+// PayloadKeyBudget is the command payload key of the task's budget
+// (toolbudget.Task; sdk-go ScanCommandPayload.Budget).
+const PayloadKeyBudget = "budget"
+
+// payloadTargetCount is how many targets a payload's "targets" holds.
+func payloadTargetCount(v any) int {
+	switch ts := v.(type) {
+	case []string:
+		return len(ts)
+	case []any:
+		return len(ts)
+	}
+	return 1
 }
 
 // wildcardFilterKey is dnsx's setting that drops names resolving only

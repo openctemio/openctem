@@ -81,7 +81,7 @@ func (h *SensorControlV2Handler) Features() []string {
 		out = append(out, protov2.FeatureManifest)
 	}
 	if h.ingest != nil {
-		out = append(out, protov2.FeatureLocalPolicy)
+		out = append(out, protov2.FeatureLocalPolicy, protov2.FeatureCommandProgress)
 	}
 	if h.ingest != nil && h.ingest.sensorService.SupportsManifests() {
 		out = append(out, protov2.FeaturePosture)
@@ -447,6 +447,7 @@ func heartbeatData(r *http.Request, req *HeartbeatRequest, protocol int) sensora
 		// left out when empty); one that does not renews everything it holds.
 		Running:         req.Running,
 		RunningReported: req.Queue != nil,
+		Progress:        req.commandProgress(),
 		Build:           req.buildReport(),
 		// v1 has no manifest: its heartbeat is always the source.
 		ManifestDigest: manifestDigestFor(req, protocol),

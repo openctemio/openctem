@@ -1604,5 +1604,9 @@
   "scans.runDetail.deadlineReason.platform_cap": "No max duration is set: the platform's 24 h cap applies, only as a backstop against runs that never end.",
   "scans.runDetail.deadlineReason.legacy": "Set when the run started, by the scan's timeout at that time.",
   "scans.failure.DEADLINE_TOO_CLOSE.text": "Not started: too little time was left before the run's deadline for this step to do anything useful.",
-  "scans.failure.DEADLINE_TOO_CLOSE.fix": "Its targets roll over to the next scheduled run. Raise or clear the scan's max duration if the run should finish in one go."
+  "scans.failure.DEADLINE_TOO_CLOSE.fix": "Its targets roll over to the next scheduled run. Raise or clear the scan's max duration if the run should finish in one go.",
+  "scans.tasks.progressDone": "{done}/{total} targets done",
+  "scans.tasks.lastTarget": "last {ago} ago",
+  "scans.tasks.budget": "budget {budget}",
+  "scans.tasks.stalling": "No target finished for {quiet}; taken back as stalled after {stall}"
 }
