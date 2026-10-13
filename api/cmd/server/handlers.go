@@ -988,6 +988,9 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.Sensor != nil {
 		svc.Sensor.SetStepUpGate(gate)
 	}
+	if svc.SensorGrant != nil {
+		svc.SensorGrant.SetStepUpGate(gate)
+	}
 }
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
