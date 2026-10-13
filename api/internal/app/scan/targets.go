@@ -217,6 +217,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		ActScopeAssetsByID:     true,
 		MaxTargets:             2 * maxResolvedTargets,
 		Path:                   "scan_run",
+		SplitRanges:            true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scan not dispatched: %w", err)
@@ -234,6 +235,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		Expansion:     exp.Report,
 		SelectorRoots: exp.Roots,
 	}
+	out.Warnings = append(out.Warnings, splitWarnings(gated.Split)...)
 	if n := gate.total(); n > 0 {
 		out.Incompatible = n
 		out.IncompatibleReason = gate.describe()
@@ -297,6 +299,8 @@ func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 			out.TierExceeded++
 		case r.Code == scopedom.RefusalOutOfDataScope, r.Code == scopedom.RefusalNotAnAsset, r.Code == scopedom.RefusalNoEntry:
 			out.OutOfScope++
+		case r.Reason == ReasonRangeDenied, r.Reason == ReasonRangeTooLarge:
+			out.Warnings = append(out.Warnings, fmt.Sprintf("range %s was skipped: %s", r.Target, r.Reason))
 		default:
 			return fmt.Errorf("scan not dispatched: target refused with an unexpected code %q", r.Code)
 		}
@@ -355,4 +359,15 @@ func isInternalAddr(a netip.Addr) bool {
 	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() ||
 		a.IsLinkLocalMulticast() || a.IsUnspecified() ||
 		netip.MustParsePrefix("100.64.0.0/10").Contains(a) // carrier-grade NAT
+}
+
+// splitWarnings tells the run which range targets were cut around
+// exclusions and the deny list, and how much was left out.
+func splitWarnings(split []SplitTarget) []string {
+	out := make([]string, 0, len(split))
+	for _, sp := range split {
+		out = append(out, fmt.Sprintf("range %s: %d excluded or denied address(es) left out; the rest is scanned as %d piece(s)",
+			sp.Target, sp.Removed, len(sp.Pieces)))
+	}
+	return out
 }
