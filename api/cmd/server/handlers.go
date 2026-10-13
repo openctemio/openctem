@@ -685,7 +685,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
-		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution)
+		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
 	}
 	handlers.Scope.SetHiddenPrograms(svc.BountyProgram)
 	if svc.Scan != nil && svc.ActiveGate != nil {
