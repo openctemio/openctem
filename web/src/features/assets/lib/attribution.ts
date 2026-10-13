@@ -5,7 +5,13 @@
  */
 
 export type AttributionState =
-  'confirmed' | 'needs_review' | 'candidate' | 'dependency' | 'monitor_only' | 'rejected'
+  | 'confirmed'
+  | 'discovered'
+  | 'needs_review'
+  | 'candidate'
+  | 'dependency'
+  | 'monitor_only'
+  | 'rejected'
 
 export interface AttributionEvidence {
   rule: string
@@ -33,7 +39,7 @@ export interface AssetAttribution {
    * `rejected` also for a name under a rejected name, or `unattributed` (no
    * record, and no scope target, seed or verified domain covers it).
    */
-  active_checks_blocked_by?: AttributionState | 'unattributed' | 'out_of_scope'
+  active_checks_blocked_by?: AttributionState | 'unattributed' | 'out_of_scope' | 'wildcard_only'
   decided_at?: string
   evidence: AttributionEvidence[]
   /**
@@ -77,6 +83,7 @@ export type AttributionT = (
 
 const STATE_LABEL: Record<AttributionState, [string, string]> = {
   confirmed: ['assets.attribution.state.confirmed', 'Confirmed'],
+  discovered: ['assets.attribution.state.discovered', 'Discovered'],
   needs_review: ['assets.attribution.state.needsReview', 'Needs review'],
   candidate: ['assets.attribution.state.candidate', 'Candidate'],
   dependency: ['assets.attribution.state.dependency', 'Dependency'],
@@ -93,6 +100,7 @@ export function attributionStateLabel(t: AttributionT, state: AttributionState):
 /** Theme-token tint per state (ui-style-contract §6). */
 export const ATTRIBUTION_STATE_CLASS: Record<AttributionState, string> = {
   confirmed: 'bg-success/15 text-success',
+  discovered: 'bg-muted text-foreground',
   needs_review: 'bg-warning/15 text-warning',
   candidate: 'bg-muted text-muted-foreground',
   dependency: 'bg-info/15 text-info',
@@ -309,6 +317,16 @@ export function scanStanding(
     return t(
       'assets.attribution.scan.outOfScope',
       'Scans skip this asset: it is confirmed as yours, but no scope target, seed or verified domain covers it. Add it to Scoping › Scope to scan it.'
+    )
+  if (a.active_checks_blocked_by === 'wildcard_only')
+    return t(
+      'assets.attribution.scan.wildcardOnly',
+      'Scans skip this asset: the name resolves only through a wildcard DNS record. Confirm it is yours before any active scan.'
+    )
+  if (a.active_checks_blocked_by === 'discovered')
+    return t(
+      'assets.attribution.scan.discovered',
+      'Not in scope: passive only. Discovery found this asset and no scope entry covers it. Add it to scope to scan it.'
     )
   if (a.active_checks_blocked_by === 'rejected' && a.state !== 'rejected')
     return t(

@@ -45,8 +45,9 @@ func NewScopeCoverageRepository(db *DB) *ScopeCoverageRepository {
 var scopeCoverageAssetTypes = []string{"domain", "subdomain", "ip_address", "service", "application"}
 
 // scopeCoverageInventoryStates are the attribution states inside the inventory
-// (RFC-054 §4.4); an asset with no attribution record is in it too.
-var scopeCoverageInventoryStates = []string{"confirmed", "dependency", "monitor_only"}
+// (RFC-054 §4.4, §15: discovered included, so what no entry covers shows);
+// an asset with no attribution record is in it too.
+var scopeCoverageInventoryStates = []string{"confirmed", "discovered", "dependency", "monitor_only"}
 
 const scopeCoverageQuery = `
 WITH inv AS (

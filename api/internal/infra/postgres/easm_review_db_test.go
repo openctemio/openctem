@@ -21,6 +21,8 @@ func TestEASMReviewQueue(t *testing.T) {
 	repo := NewAttributionRepository(&DB{DB: db})
 	tenant := seedTestTenant(ctx, t, db)
 	other := seedTestTenant(ctx, t, db)
+	// The review queue: tenants that keep the review gate (RFC-054 §15).
+	keepReviewGate(ctx, t, db, tenant, other)
 
 	review := seedTestAsset(ctx, t, db, tenant).String()
 	candidate := seedTestAsset(ctx, t, db, tenant).String()

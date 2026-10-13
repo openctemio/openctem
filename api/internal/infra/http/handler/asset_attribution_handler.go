@@ -88,7 +88,7 @@ func NewAssetAttributionHandler(attr AttributionReader, assets ScopedAssetGetter
 
 // AssetAttributionResponse is an asset's attribution.
 type AssetAttributionResponse struct {
-	// State: confirmed, needs_review, candidate, dependency, monitor_only,
+	// State: confirmed, discovered, needs_review, candidate, dependency, monitor_only,
 	// rejected. An asset with no record is a legacy asset and reports
 	// confirmed with recorded=false.
 	State      string `json:"state"`
@@ -100,7 +100,9 @@ type AssetAttributionResponse struct {
 	// ActiveChecksAllowed: whether a scan may touch the asset.
 	ActiveChecksAllowed bool `json:"active_checks_allowed"`
 	// ActiveChecksBlockedBy says why a scan may not touch the asset when
-	// active_checks_allowed is false: its state (needs_review, candidate,
+	// active_checks_allowed is false: its state (discovered: in the
+	// inventory, no scope entry covers it, passive only; needs_review,
+	// candidate,
 	// dependency, monitor_only, rejected; rejected also for a name under a
 	// rejected name), unattributed: no record, and neither inside a scope
 	// entry, or

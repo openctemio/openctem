@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -219,8 +219,11 @@ tenant's entries have no effect.
 
 ### 4.4 Inventory membership (one definition)
 
+Amended by §15: `discovered` is in the inventory too, and metrics count the
+attributed inventory.
+
 An asset is **in the inventory** when its attribution is confirmed (recorded,
-or no record: a legacy asset), `dependency` or `monitor_only`
+or no record: a legacy asset), `discovered`, `dependency` or `monitor_only`
 (`attribution.FilterApproved`). The review queue (`needs_review`,
 `candidate`) and `rejected` assets are not. Every surface uses this one
 definition: the Assets list default, dashboard and attack-surface counts and
@@ -1212,3 +1215,83 @@ Threat model of D1–D6 (in addition to §14.3):
 | D4 | dangling DNS points an in-scope name at a released address | suggestion only, shared addresses left out, unknown networks flagged, the person sees the names each address came from | as §14.3 R4 |
 | D6 | a misconfigured or compromised connector widens scope | exact entries with guardrails per item, a notice before the first change and per sync, audit, per-connector switch, Strict adds nothing | entries for names the connector really reports |
 
+## 15. Amendment 2026-10-13: inventory first, scope later
+
+Owner decision: what discovery finds joins the assets at once; the
+organization filters it and marks what is not in scope afterwards. Review
+before inventory was too much work for no safety gain, because inventory
+membership never authorized anything. Design study: research/124 (local).
+
+### 15.1 Principle
+
+- **Inventory membership means "we saw it"**: automatic, no review.
+- **Active probes need scope**, unchanged: active entries, exclusions, the
+  deny list, governance and the signer ledger (§4.2, §8). Inventory state
+  never grants authority.
+- A discovered asset that no entry covers is in the inventory and gets
+  **passive checks only**. That is how the platform still never actively
+  scans a third party.
+
+### 15.2 The `discovered` state
+
+| Item | Rule |
+|---|---|
+| Stored value | `asset_attributions.state = 'discovered'`; automatic only (a person's decisions are the other states) |
+| Written | by every automatic writer (scan stamper, CT promotion, scope join) through `AttributionRepository.SaveAutomatic`: an automatic `needs_review` decision is stored as `discovered` unless the tenant keeps the review gate (§15.4); read in the same statement from the asset's own tenant |
+| Raised | to `confirmed` by the scope join (§4.3, a permanent entry covers it) or a verified root; automation never lowers a confirmed record |
+| Typed scan | a scan that names it adds evidence and does not confirm it (research/22 E7) |
+| Inventory | in (`InInventory`, filter `approved`); filter `attributed` leaves it out |
+| Gate | as an automatic pending record (§14.5 D1): an active entry covering it, a one-off entry included, lets probes reach it; otherwise refused with code `no_entry` ("not in scope: passive only") |
+| Passive work | DNS checks only under an entry (as before for pending names); never a CT watch-list root; findings stay capped at P2 |
+| `candidate` | unchanged: an unsolicited sensor report stays hidden (RFC-040 mutual distrust) |
+
+### 15.3 Wildcard-only names
+
+A name that resolves only through a wildcard DNS record of its zone may be
+any name at all. Such a name is discovered like any other (it is in the
+inventory), and the wildcard-DNS mark of RFC-088 decision A4
+(`asset_wildcard_dns`) keeps it passive: the scope join never confirms it and
+the gate refuses it with code `wildcard_only`, whatever entry covers it,
+until a person confirms that asset or a later resolution clears the mark.
+The inventory shows the mark as a filter and a badge.
+
+Whether an entry covers an asset is never stored: it is computed when the
+list or the gate asks.
+
+### 15.4 Keeping the review gate
+
+Scope setting `review_before_inventory` (default off; `PUT /scope/settings`,
+scope approve permission and step-up, audited; omitted keeps the stored
+value). When on, new automatic findings outside every permanent entry are
+stored as `needs_review` and wait outside the inventory as before §15. Meant
+for organizations that run scan approval Strict; it never changes what may
+be scanned.
+
+### 15.5 Migration
+
+Migration `inventory_first_discovered`: the state constraint gains
+`discovered`; every automatic `needs_review` record (no person decided it; children that follow
+a host included) of a tenant without `review_before_inventory` becomes
+`discovered`. A person's `needs_review`, `candidate` and every other state are
+left alone. Idempotent; down restores `needs_review` (exactly the old
+meaning).
+
+### 15.6 Metrics
+
+Dashboards, attack-surface counts and recent changes, the exposed-surface
+counts and the CT watch list count the **attributed** inventory
+(`AttributedSQL`, filter `attributed`): what the organization claimed or its
+entries cover. Discovery noise never inflates the surface or risk. The scope
+coverage count (§6.8) counts `discovered` as inventory, so what no entry
+covers shows.
+
+### 15.7 Threat model
+
+| Threat | Control | Residual |
+|---|---|---|
+| a discovered third-party name is actively probed | inventory grants nothing; `discovered` is refused unless an entry the organization added covers it; exclusions, rejections and tombstones win; every dispatch path (scan create, quick scan, trigger by schedule or automation, workflow step, hop gate) goes through the one gate | the organization scans what it put in scope |
+| a wildcard zone floods the inventory and its names are probed under a wildcard entry | the RFC-088 A4 mark refuses (`wildcard_only`) until a person confirms; never auto-confirmed | names a person confirms |
+| a discovered domain widens passive lookups | CT roots are attributed assets only; DNS checks of discovered names need an entry | none new |
+| cross-tenant | every write and read is pinned to the tenant; the migration joins each record to its own tenant | none |
+| a hostile sensor fills the inventory | unsolicited reports stay `candidate`, hidden | as before |
+| a Strict organization loses its review step | `review_before_inventory` | rows migrated before the setting was turned on stay in the inventory; they can be filtered and marked out of scope |

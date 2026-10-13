@@ -270,13 +270,15 @@ export function toggleExcludedTag(f: InventoryFilters, tag: string): InventoryFi
 
 /**
  * Attribution values the inventory offers (RFC-036). With none selected the
- * inventory shows only assets that are the organisation's: confirmed
- * (including assets with no attribution record), dependency and monitor only
- * (the API alias `approved`). Names awaiting review and rejected names are
+ * inventory shows every asset in it (the API alias `approved`): confirmed
+ * (including assets with no attribution record), discovered (found by
+ * discovery, passive only until a scope entry covers it; RFC-054 §15),
+ * dependency and monitor only. Names awaiting review and rejected names are
  * hidden until asked for.
  */
 export const ATTRIBUTION_FILTER_VALUES = [
   'confirmed',
+  'discovered',
   'unknown',
   'needs_review',
   'candidate',

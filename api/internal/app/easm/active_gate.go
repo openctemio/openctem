@@ -10,11 +10,13 @@ package easm
 //     rejected asset on its name or on any parent domain of it (unless a
 //     person confirmed this very asset);
 //   - its attribution record, if any, is confirmed (dependency, monitor_only
-//     and rejected are refused). A pending record (needs_review or
-//     candidate) written by automation is no decision: an active scope entry
-//     that covers the asset, a one-off entry included, lets probes reach it
-//     (the entry is the authority; research/117 F4). A pending record a
-//     person set, a rejection and an exclusion still refuse;
+//     and rejected are refused). A pending record (discovered, needs_review
+//     or candidate) written by automation is no decision: an active scope
+//     entry that covers the asset, a one-off entry included, lets probes
+//     reach it (the entry is the authority; research/117 F4). A discovered
+//     asset is in the inventory, and that grants nothing: without an entry
+//     it gets passive checks only (research/124). A pending record a person
+//     set, a rejection and an exclusion still refuse;
 //   - an internet-facing asset, or typed text naming an internet host or
 //     address, is covered by the tenant's scope authority (scopeauth: an
 //     active scope target, or a name at or under a root-domain seed or
@@ -651,8 +653,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			}
 			// An automatic pending record: only an active scope entry that
 			// covers the name lets probes reach it, whatever its type (a
-			// private address too). The state stays pending; nothing joins
-			// the inventory.
+			// private address too). The state stays as it is.
 			if auth == nil {
 				if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
 					return nil, err
@@ -745,15 +746,19 @@ func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids [
 }
 
 // automaticPending reports whether rec is a pending record written by
-// automation (discovery, a scan, an unsolicited report): needs_review or
-// candidate that no person set. Such a record is no decision, so a scope
-// entry covering the asset decides. A person's needs_review (sent back to
-// review) is a decision and keeps refusing.
+// automation (discovery, a scan, an unsolicited report): discovered,
+// needs_review or candidate that no person set. Such a record is no
+// decision, so a scope entry covering the asset decides. A person's
+// needs_review (sent back to review) is a decision and keeps refusing.
 func automaticPending(rec attribution.Record) bool {
 	if rec.HumanDecided {
 		return false
 	}
-	return rec.State == attribution.StateNeedsReview || rec.State == attribution.StateCandidate
+	switch rec.State {
+	case attribution.StateDiscovered, attribution.StateNeedsReview, attribution.StateCandidate:
+		return true
+	}
+	return false
 }
 
 // rejectedNames returns the names among the given hosts and their parent

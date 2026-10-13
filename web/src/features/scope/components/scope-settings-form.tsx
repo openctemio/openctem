@@ -103,6 +103,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
   return {
     auto_join_discovered: s.auto_join_discovered ?? true,
     confirm_adds_to_scope: s.confirm_adds_to_scope ?? true,
+    review_before_inventory: s.review_before_inventory ?? false,
     one_off_targets: (s.one_off_targets as ScopeOneOffPolicy) || 'admins_and_requests',
     one_off_max_days: s.one_off_max_days ?? 7,
     widening_approvals: s.widening_approvals ?? null,
@@ -317,9 +318,12 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
             </Row>
 
             <Row
-              label="Add discovered names automatically"
+              label={t('scope.settings.autoJoin', 'Add discovered names automatically')}
               htmlFor={`${id}-autojoin`}
-              hint="A name discovery finds under a permanent scope entry or seed joins the inventory without review. IP addresses join only through IP entries; one-off entries never add names; exclusions and names marked not yours always win. Off: every new name waits in the review queue."
+              hint={t(
+                'scope.settings.autoJoinHint',
+                'A name discovery finds under a permanent scope entry is confirmed as yours. IP addresses are confirmed only through IP entries; one-off entries never confirm names; exclusions and names marked not yours always win. Off: such names stay discovered until a person confirms them (a scope entry still lets scans reach them).'
+              )}
             >
               <Switch
                 id={`${id}-autojoin`}
@@ -341,6 +345,22 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 id={`${id}-confirmadds`}
                 checked={form.confirm_adds_to_scope}
                 onCheckedChange={(v) => setForm({ ...form, confirm_adds_to_scope: v })}
+                disabled={disabled}
+              />
+            </Row>
+
+            <Row
+              label={t('scope.settings.reviewBeforeInventory', 'Review discovered assets first')}
+              htmlFor={`${id}-reviewfirst`}
+              hint={t(
+                'scope.settings.reviewBeforeInventoryHint',
+                'Off (default): what discovery finds joins the inventory at once and gets passive checks only until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.'
+              )}
+            >
+              <Switch
+                id={`${id}-reviewfirst`}
+                checked={form.review_before_inventory}
+                onCheckedChange={(v) => setForm({ ...form, review_before_inventory: v })}
                 disabled={disabled}
               />
             </Row>

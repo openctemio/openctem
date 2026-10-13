@@ -98,6 +98,21 @@ describe('scanStanding', () => {
         active_checks_blocked_by: 'rejected',
       })
     ).toMatch(/marked not yours/)
+    // Inventory first (RFC-054 §15): discovered and uncovered is passive only.
+    expect(
+      scanStanding(t, {
+        active_checks_allowed: false,
+        state: 'discovered',
+        active_checks_blocked_by: 'discovered',
+      })
+    ).toMatch(/Not in scope: passive only/)
+    expect(
+      scanStanding(t, {
+        active_checks_allowed: false,
+        state: 'discovered',
+        active_checks_blocked_by: 'wildcard_only',
+      })
+    ).toMatch(/wildcard DNS record/)
   })
 })
 
