@@ -55,7 +55,7 @@ func (s *Service) settleStepDeadlineTooClose(ctx context.Context, run *scanrun.R
 		}
 	}
 	s.logger.Info("step not started: the run's deadline is too close",
-		"run_id", run.ID.String(), "step_key", sanitizeLogValue(stepKey), "left", e.left, "need", e.need, "targets", len(e.targets))
+		"run_id", run.ID.String(), "step_key", sanitizeLogValue(stepKey), "left_seconds", int64(e.left/time.Second), "need_seconds", int64(e.need/time.Second), "targets", len(e.targets))
 	stepRun.Fail(e.Error(), scanrun.FailureDeadlineTooClose)
 	if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 		s.logger.Error("failed to settle a step not started before the deadline", "step_key", sanitizeLogValue(stepKey), "error", err)
