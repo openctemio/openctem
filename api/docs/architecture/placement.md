@@ -23,6 +23,7 @@ it, instead of "Waiting for a sensor".
 | Claim SQL | the sensor reported the tool installed | `tool_missing` |
 | Claim SQL | the sensor has not refused this task | `refused_earlier` |
 | Claim SQL | every required capability offered | `capability_missing` |
+| Claim SQL | every required feature *reported by the sensor* (`required_features`: `net.confined@1` for a web-scoped nuclei job) | `not_confined` |
 | Dispatch gate | the sensor grant admits the task | `grant_<dimension>` (`grant_tools`, `grant_tier_ceiling`, `grant_target_network`, …) |
 | Dispatch gate | the job's tier on this sensor is within the scan's intensity | `intensity` |
 | Dispatch gate | the grant and policy could be read (fail closed) | `policy_unavailable` |
@@ -53,6 +54,23 @@ The claim SQL lives in `internal/infra/postgres/command_repository.go`
   decides nothing; the claim stays the only authority.
 - Gate checks run only for sensors that pass the claim SQL, as the poll
   does; a sensor blocked by the SQL lists those reasons only.
+
+## Jobs that need a confined sensor
+
+A web-scoped nuclei job (the tenant excluded a path on the host) keeps to
+its scope only through the task forwarder of a network-confined sandbox.
+The step stamps `required_features: ["net.confined@1"]` on its commands, and
+the claim's feature gate (`featureClaimPredicate`, on the poll, the batch
+claim, the claim by id and the doorbell count) offers them only to a sensor
+whose own report lists `net.confined@1`; a capability an administrator
+declared never counts, because confinement is something only the sensor's
+runtime can enforce. Other sensors leave the job queued (`not_confined`).
+When the organization has no active sensor that reported it, the step is
+refused when it is queued, with `NO_CONFINED_SENSOR` (class `placement`,
+never retried), instead of waiting until the run's deadline. The sensor
+advertises `net.confined@1` from its runtime status only (sensor and sdk-go),
+and still refuses a web-scoped job it cannot confine (`WEB_SCOPE_UNSUPPORTED`)
+as defence in depth.
 
 ## API
 
