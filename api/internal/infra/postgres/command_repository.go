@@ -500,6 +500,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
 		    lease_epoch = lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
+		    progress_done = NULL, progress_total = NULL, last_progress_at = NULL,
 		    lease_expires_at = NOW() + make_interval(secs => $4)
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
@@ -662,6 +663,7 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 		UPDATE commands c
 		SET status = 'acknowledged', sensor_id = $2, acknowledged_at = NOW(),
 		    lease_epoch = c.lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
+		    progress_done = NULL, progress_total = NULL, last_progress_at = NULL,
 		    lease_expires_at = NOW() + make_interval(secs => ` + leaseParam + `)
 		WHERE c.id IN (
 			SELECT commands.id FROM commands

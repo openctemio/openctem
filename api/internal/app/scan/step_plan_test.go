@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -186,6 +187,8 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 		"asset_id":              asset.String(),
 		// A capability job (RFC-055): subfinder runs them on the sensor.
 		"capability": "discover.subdomains@1",
+		// The task's layered budget (research/122): one subfinder target.
+		"budget": toolbudget.ForTask("subfinder", 1),
 	}
 	if len(p) != len(want) {
 		t.Errorf("keys = %d, want %d: %v", len(p), len(want), p)
