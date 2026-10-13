@@ -37,7 +37,7 @@
   "scans.dynamic.addressRanges": "Address ranges",
   "scans.dynamic.liveness": "Find live hosts first",
   "scans.dynamic.livenessHint": "A light probe finds the live addresses; the deeper steps scan those and the addresses your inventory already holds in the range. A workflow needs a Host discovery step for this.",
-  "scans.dynamic.cidrModeNotice": "No choice saved yet: a new scan finds live hosts first when it can; a scan saved before this choice existed scans every address until you save it again.",
+  "scans.dynamic.cidrModeNotice": "No choice saved yet: a new scan finds live hosts first when it can.",
   "scans.dynamic.sweep": "Sweep the whole range",
   "scans.dynamic.sweepHint": "The scanner probes every address in it.",
   "scans.dynamic.inventoryOnly": "Only the hosts already in the inventory",
@@ -1611,5 +1611,16 @@
   "scans.tasks.progressDone": "{done}/{total} targets done",
   "scans.tasks.lastTarget": "last {ago} ago",
   "scans.tasks.budget": "budget {budget}",
-  "scans.tasks.stalling": "No target finished for {quiet}; taken back as stalled after {stall}"
+  "scans.tasks.stalling": "No target finished for {quiet}; taken back as stalled after {stall}",
+  "scans.dynamic.livenessSuggestion": "Live hosts first (recommended)",
+  "scans.dynamic.livenessSuggestionHint": "This scan sweeps every address of its ranges. It can find the live hosts first and scan only those and the addresses your inventory knows.",
+  "scans.dynamic.livenessSwitch": "Use live hosts first",
+  "scans.dynamic.cidrModeNoticeSaved": "No choice saved: this scan sweeps every address of its ranges, and keeps doing so until you choose otherwise.",
+  "scans.liveness.title": "Live hosts first (recommended)",
+  "scans.liveness.hintWorkflow": "This scan sweeps every address of its ranges. Its workflow has a Host discovery step, so it can find the live hosts first and scan only those and the addresses your inventory knows.",
+  "scans.liveness.hintScanner": "This scan sweeps every address of its ranges. It can find the live hosts first and scan only those and the addresses your inventory knows.",
+  "scans.liveness.switch": "Use live hosts first",
+  "scans.liveness.switched": "The scan now finds live hosts first",
+  "scans.liveness.switchFailed": "The scan could not be switched",
+  "scans.targetOptions.rangesLiveness": "Ranges: live hosts first"
 }
