@@ -229,6 +229,10 @@ type Record struct {
 	Confidence   int
 	Reason       Rule
 	HumanDecided bool
+	// FollowsHost is the asset id of the host this child (a service, a
+	// certificate, a web endpoint) follows: its automatic state is the
+	// host's. Empty when it follows nobody.
+	FollowsHost string
 }
 
 // Evidence is one typed observation supporting (or contradicting) that an

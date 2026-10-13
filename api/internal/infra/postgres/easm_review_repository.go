@@ -31,6 +31,8 @@ func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shar
 	where := []string{
 		"aa.tenant_id = $1", "aa.state = ANY($2)", "aa.confidence >= $3",
 		"a.tenant_id = aa.tenant_id", "a.deleted_at IS NULL",
+		// A child that follows its host is listed under the host (Children).
+		"aa.follows_host_id IS NULL",
 	}
 	if len(q.Types) > 0 {
 		args = append(args, pq.Array(q.Types))
@@ -83,6 +85,10 @@ func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shar
 		return page, nil
 	}
 
+	if err := r.countChildren(ctx, tenantID, scope, ids, index, page); err != nil {
+		return nil, err
+	}
+
 	ev, err := r.db.QueryContext(ctx, `
 		SELECT asset_id, rule, technique, source, weight, observed, first_observed_at, last_observed_at
 		FROM easm_evidence WHERE tenant_id = $1 AND asset_id = ANY($2::uuid[])
@@ -109,6 +115,39 @@ func (r *AttributionRepository) ListForReview(ctx context.Context, tenantID shar
 		return nil, err
 	}
 	return page, r.labelSensors(ctx, tenantID, page)
+}
+
+// countChildren fills Children: how many live children of each type follow
+// each listed host, narrowed to the caller's data scope like the rows.
+func (r *AttributionRepository) countChildren(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, ids []string, index map[string]int, page *easm.ReviewPage) error {
+	args := []any{tenantID.String(), pq.Array(ids)}
+	sc, args := scopeClause("a.id", scope, args)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT f.follows_host_id, a.asset_type, count(*)
+		FROM asset_attributions f
+		JOIN assets a ON a.id = f.asset_id AND a.tenant_id = f.tenant_id AND a.deleted_at IS NULL
+		WHERE f.tenant_id = $1 AND f.follows_host_id = ANY($2::uuid[])`+sc+`
+		GROUP BY 1, 2`, args...)
+	if err != nil {
+		return fmt.Errorf("count review children: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			host, typ string
+			n         int
+		)
+		if err := rows.Scan(&host, &typ, &n); err != nil {
+			return err
+		}
+		if i, ok := index[host]; ok {
+			if page.Items[i].Children == nil {
+				page.Items[i].Children = map[string]int{}
+			}
+			page.Items[i].Children[typ] = n
+		}
+	}
+	return rows.Err()
 }
 
 // labelSensors names the sensor of "sensor:<id>" evidence (source_label and
@@ -187,10 +226,11 @@ func (r *AttributionRepository) SaveDecisions(ctx context.Context, tenantID shar
 			SELECT a.id, a.tenant_id, $3, 0, '', (SELECT u.id FROM users u WHERE u.id = $4::uuid), now()
 			FROM assets a WHERE a.id = ANY($1::uuid[]) AND a.tenant_id = $2 AND a.deleted_at IS NULL
 			ON CONFLICT (asset_id) DO UPDATE SET
-				state      = EXCLUDED.state,
-				decided_by = EXCLUDED.decided_by,
-				decided_at = now(),
-				updated_at = now()
+				state           = EXCLUDED.state,
+				decided_by      = EXCLUDED.decided_by,
+				decided_at      = now(),
+				follows_host_id = NULL,
+				updated_at      = now()
 			WHERE asset_attributions.tenant_id = $2
 			RETURNING asset_id
 		)
@@ -217,6 +257,9 @@ func (r *AttributionRepository) SaveDecisions(ctx context.Context, tenantID shar
 		written = append(written, id)
 	}
 	if err := syncTombstones(ctx, tx, tenantID, written, state, by); err != nil {
+		return nil, err
+	}
+	if err := cascadeToChildren(ctx, tx, tenantID, written); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
