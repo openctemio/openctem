@@ -177,7 +177,7 @@ core_fields: [name, type, sub_type, class, lens, criticality, effective_critical
 # Identity keys: RFC-028 identifier kinds (pkg/domain/asset/identifier.go),
 # `name` (exact canonical name) or `attr.<attribute>` for a type attribute.
 # Listed in match order; every type ends with `name`.
-identity_kinds: [host_id, cloud_id, bios_uuid, serial_number, mac, scm_repo_id, fqdn, hostname, ip]
+identity_kinds: [host_id, cloud_id, bios_uuid, serial_number, directory_object_id, mac, scm_repo_id, fqdn, hostname, ip]
 
 # Property schema (RFC-042 §6.3.9). An asset's free-form `properties` hold
 # the attributes of its type (`attributes` of each type below) plus the
@@ -800,7 +800,7 @@ types:
       macos: { attributes: { os_family: macos } }
       bsd: { attributes: { os_family: bsd } }
       kubernetes_cluster: { type: kubernetes, sub_type: cluster }
-    identity_keys: [host_id, cloud_id, bios_uuid, serial_number, mac, fqdn, hostname, ip, name]
+    identity_keys: [host_id, cloud_id, bios_uuid, serial_number, directory_object_id, mac, fqdn, hostname, ip, name]
     attributes:
       - { name: hostname, type: string }
       - { name: fqdn, type: string }
@@ -853,7 +853,7 @@ types:
     class: host
     alias_of: { type: host, sub_type: workstation }
     legacy_category: infrastructure
-    identity_keys: [host_id, bios_uuid, serial_number, mac, hostname, name]
+    identity_keys: [host_id, bios_uuid, serial_number, directory_object_id, mac, hostname, name]
     attributes:
       - { name: ip_addresses, type: list }
       - { name: hostname, type: string }

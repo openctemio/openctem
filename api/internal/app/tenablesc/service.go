@@ -98,6 +98,7 @@ type Service struct {
 	commands     CommandStore
 	reports      ReportReader
 	claimer      SyncClaimer
+	scope        ScopeAdder
 	audit        *auditapp.AuditService
 	logger       *logger.Logger
 	now          func() time.Time
@@ -153,6 +154,50 @@ type SyncState struct {
 	// LastCoverageOutcome the final status of the previous one.
 	CoverageCommandID   string `json:"coverage_command_id,omitempty"`
 	LastCoverageOutcome string `json:"last_coverage_outcome,omitempty"`
+	// ScopeNoticeAt: when the administrators were told that this connector's
+	// assets are added to scope; the first sync after that adds them.
+	ScopeNoticeAt *time.Time `json:"scope_notice_at,omitempty"`
+}
+
+// ScopeAdder adds a connector's synced assets to scope (*easm.ConnectorScope).
+type ScopeAdder interface {
+	NotifyConnectorScope(ctx context.Context, tenantID shared.ID, connector string)
+	AddConnectorAssets(ctx context.Context, tenantID shared.ID, connector string, commandID shared.ID) (int, error)
+}
+
+// SetScopeAdder makes a successful sync add the exact scope entries of the
+// public names and addresses it synced, while the connector's
+// assets_in_scope setting is on (the default). Nil: nothing is added.
+func (s *Service) SetScopeAdder(a ScopeAdder) { s.scope = a }
+
+// applyScope runs after a successful sync, best effort: the first time it
+// only tells the administrators (one notice per connector, so an existing
+// connector never widens scope without one), afterwards it adds the entries.
+// A failure is logged and never fails the sync.
+func (s *Service) applyScope(ctx context.Context, intg *integration.Integration, state *SyncState, cmd *command.Command) {
+	if s.scope == nil || cmd == nil {
+		return
+	}
+	cfg, err := ParseConnectorConfig(intg)
+	if err != nil || !cfg.AssetsInScope {
+		return
+	}
+	if state.ScopeNoticeAt == nil {
+		s.scope.NotifyConnectorScope(ctx, intg.TenantID(), intg.Name())
+		at := s.now().UTC()
+		state.ScopeNoticeAt = &at
+		return
+	}
+	n, err := s.scope.AddConnectorAssets(ctx, intg.TenantID(), intg.Name(), cmd.ID)
+	if err != nil {
+		s.logger.Warn("tenable.sc sync: assets not added to scope", "tenant_id", intg.TenantID().String(),
+			"integration_id", intg.ID().String(), "error", logger.SanitizeError(err))
+		return
+	}
+	if n > 0 {
+		s.logger.Info("tenable.sc sync: assets added to scope", "tenant_id", intg.TenantID().String(),
+			"integration_id", intg.ID().String(), "count", n)
+	}
 }
 
 // Outcomes recorded in SyncState.LastOutcome.
@@ -513,6 +558,7 @@ func (s *Service) finish(ctx context.Context, intg *integration.Integration, sta
 		if res.Catalog != nil {
 			state.Catalog = res.Catalog
 		}
+		s.applyScope(ctx, intg, &state, cmd)
 		writeState(intg, state)
 		stats := intg.Stats()
 		stats.TotalAssets, stats.TotalFindings = res.Hosts, res.Open
