@@ -1,7 +1,7 @@
 'use client'
 
 import { useId, useState } from 'react'
-import { Check, Info } from 'lucide-react'
+import { AlertTriangle, Check, Download, Info } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
@@ -13,6 +13,74 @@ import { SensorTag } from './sensor-cells'
 import { hasReportedTools } from '../lib/capabilities'
 import { reportedToolNames } from '../lib/sensor-edit'
 import { normalizeSensorVersion, sensorSdkVersion } from '../lib/sensor-version'
+import { postureNetwork } from '../lib/posture'
+
+/** Where the platform serves the sensor's seccomp profile (public, no tenant data). */
+export const SENSOR_SECCOMP_PROFILE_URL = '/api/v1/sensors/install/seccomp-profile'
+
+/**
+ * The install checklist's sandbox check: whether the sensor's tool runs are
+ * network-confined, from its self-reported posture (display only; the
+ * platform matches jobs on what the sensor reports, never on this view).
+ * Not confined: jobs that need confinement go to other sensors, and the fix
+ * is the sensor's seccomp profile.
+ */
+function SandboxCheck({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
+  const value = postureNetwork(sensor)
+  const confined = value.tone === 'ok'
+  const unknown = value.tone === 'muted'
+  return (
+    <section
+      aria-label={t('sensors.review.sandboxTitle', 'Tool sandbox')}
+      className={cn(
+        'flex items-start gap-3 rounded-lg border p-3 text-sm',
+        confined && 'border-success/40 bg-success/10',
+        !confined && !unknown && 'border-warning/40 bg-warning/10'
+      )}
+      data-testid="sandbox-check"
+    >
+      {confined ? (
+        <Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
+      ) : unknown ? (
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      ) : (
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+      )}
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium">
+          {t('sensors.review.sandboxTitle', 'Tool sandbox')}: {t(value.labelKey, value.label)}
+        </p>
+        <p className="text-muted-foreground">
+          {confined
+            ? t(
+                'sensors.review.sandboxConfined',
+                'Each scan task reaches only its targets. This sensor can take jobs that need confinement (a web scope).'
+              )
+            : unknown
+              ? t(
+                  'sensors.review.sandboxUnknown',
+                  'This sensor does not report its sandbox (an older release). Jobs that need confinement go to other sensors.'
+                )
+              : t(
+                  'sensors.review.sandboxNotConfined',
+                  "Jobs that need confinement (a web scope) go to other sensors. Run the container with the sensor's seccomp profile; its setup checklist names the cause."
+                )}
+        </p>
+        {!confined && (
+          <a
+            href={SENSOR_SECCOMP_PROFILE_URL}
+            download="openctem-sensor-seccomp.json"
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            {t('sensors.review.sandboxDownload', 'Download the seccomp profile')}
+          </a>
+        )}
+      </div>
+    </section>
+  )
+}
 
 /**
  * The platform cannot know which tools a sensor has (a third-party sensor
@@ -126,6 +194,8 @@ export function SensorFirstReport({
           </DetailField>
         </DetailFieldGrid>
       </section>
+
+      <SandboxCheck sensor={sensor} />
 
       {!reported ? (
         <ToolsNote

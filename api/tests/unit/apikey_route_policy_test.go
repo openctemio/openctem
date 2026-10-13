@@ -17,17 +17,18 @@ import (
 // keyChainExempt lists allowlisted prefixes that are not mounted on a
 // key-capable chain (buildTokenTenantMiddlewares), with the reason.
 var keyChainExempt = map[string]string{
-	"/api/v2/sensor":              "sensor protocol v2: sensor authenticator only",
-	"/scim/v2":                    "SCIM bearer token auth only",
-	"/api/v1/scim":                "SCIM bearer token auth only (token management is /api/v1/scim-tokens, denied)",
-	"/api/v1/mcp":                 "key-only endpoint (the MCP server)",
-	"/api/v1/webhooks/incoming":   "HMAC-verified inbound webhooks",
-	"/api/v1/module-presets":      "JWT-only base chain",
-	"/api/v1/version":             "JWT-only base chain (authMiddleware, no oct_ keys)",
-	"/api/v1/announcements":       "JWT-only base chain (authMiddleware, no oct_ keys)",
-	"/api/v1/client-errors":       "public, no chain: counts a web error kind",
-	"/api/v1/legal":               "public, no chain: the operator's legal information, no tenant data",
-	"/api/v1/validation/evidence": "sensor-key auth only",
+	"/api/v2/sensor":                          "sensor protocol v2: sensor authenticator only",
+	"/scim/v2":                                "SCIM bearer token auth only",
+	"/api/v1/scim":                            "SCIM bearer token auth only (token management is /api/v1/scim-tokens, denied)",
+	"/api/v1/mcp":                             "key-only endpoint (the MCP server)",
+	"/api/v1/webhooks/incoming":               "HMAC-verified inbound webhooks",
+	"/api/v1/module-presets":                  "JWT-only base chain",
+	"/api/v1/version":                         "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/announcements":                   "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/client-errors":                   "public, no chain: counts a web error kind",
+	"/api/v1/legal":                           "public, no chain: the operator's legal information, no tenant data",
+	"/api/v1/sensors/install/seccomp-profile": "public, no chain: the sensor release's seccomp profile, no tenant data",
+	"/api/v1/validation/evidence":             "sensor-key auth only",
 	// CI runner routes (RFC-051): mounted outside every key chain, with
 	// their own authentication (the CI OIDC token, the CI run token).
 	"/api/v1/ci/oidc/exchange":                "own authenticator (CI OIDC token), outside the key chains",
