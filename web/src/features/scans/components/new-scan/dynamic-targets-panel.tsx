@@ -24,6 +24,7 @@ import {
 import type { ScanTargetOptions } from '@/lib/api/scan-types'
 import { formatRelative } from '@/lib/format-date'
 import {
+  asCidrMode,
   hasCidrTarget,
   MAX_SELECTOR_TARGETS,
   SEEN_WITHIN_CHOICES,
@@ -125,10 +126,23 @@ export function DynamicTargetsPanel({
         <div className="space-y-1.5">
           <p className="text-sm">{t('scans.dynamic.addressRanges')}</p>
           <RadioGroup
-            value={options?.cidr_mode === 'inventory' ? 'inventory' : 'sweep'}
-            onValueChange={(v) => set({ cidr_mode: v === 'inventory' ? 'inventory' : undefined })}
+            value={options?.cidr_mode ?? 'liveness'}
+            onValueChange={(v) => set({ cidr_mode: asCidrMode(v) })}
             className="gap-1"
           >
+            <label className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-muted/50">
+              <RadioGroupItem
+                value="liveness"
+                className="mt-0.5"
+                aria-label={t('scans.dynamic.liveness')}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm">{t('scans.dynamic.liveness')}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t('scans.dynamic.livenessHint')}
+                </span>
+              </span>
+            </label>
             <label className="flex cursor-pointer items-start gap-3 rounded-md p-1.5 hover:bg-muted/50">
               <RadioGroupItem
                 value="sweep"
@@ -156,6 +170,9 @@ export function DynamicTargetsPanel({
               </span>
             </label>
           </RadioGroup>
+          {!options?.cidr_mode && (
+            <p className="text-xs text-muted-foreground">{t('scans.dynamic.cidrModeNotice')}</p>
+          )}
         </div>
       )}
 

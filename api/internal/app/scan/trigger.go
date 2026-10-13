@@ -317,6 +317,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext["routing_tags"] = sc.Tags
+	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
+		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
+	} else {
+		delete(runContext, RunContextKeyCIDRMode)
+	}
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
 	// The zone of the run is the routing decision below, never a value from
 	// the trigger context a caller sent: it stamps every step command and
@@ -457,6 +462,11 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext["scanner_config"] = sc.ScannerConfig
+	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
+		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
+	} else {
+		delete(runContext, RunContextKeyCIDRMode)
+	}
 	runContext["targets_per_job"] = sc.TargetsPerJob
 	runContext["routing_tags"] = sc.Tags
 	runContext["tenant_runner_only"] = sc.RunOnTenantRunner
@@ -657,6 +667,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 	// a run in which nothing can start fails now, with that reason, instead
 	// of staying "running" until its deadline.
 	var queueErr error
+	settled := false
 	for _, step := range steps { // sorted by step_order
 		if len(step.DependsOn) > 0 {
 			continue
@@ -677,7 +688,10 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		if s.stepQueuer == nil {
 			return ErrStepQueuerUnavailable
 		}
-		if err := s.stepQueuer.QueueRunStep(ctx, run, step); err != nil {
+		if err := s.stepQueuer.QueueRunStep(ctx, run, step); errors.Is(err, ErrStepSettled) {
+			settled = true
+			continue
+		} else if err != nil {
 			s.logger.Warn("a first step of the workflow could not be queued",
 				"run_id", run.ID.String(), "step_key", oneLine(step.StepKey), "error", err)
 			if queueErr == nil {
@@ -687,7 +701,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 		}
 		queued++
 	}
-	if queueErr != nil {
+	if queueErr != nil || settled {
 		if advancer, ok := s.stepQueuer.(RunAdvancer); ok {
 			if err := advancer.AdvanceRun(ctx, run); err != nil {
 				s.logger.Error("failed to settle a run whose first step could not be queued",

@@ -44,11 +44,14 @@ describe('toWildcards', () => {
 })
 
 describe('apiTargetOptions', () => {
-  it('sends only what differs from the defaults', () => {
+  it('sends only what differs from the defaults, and any chosen CIDR mode', () => {
     expect(apiTargetOptions(undefined)).toBeUndefined()
+    expect(apiTargetOptions({ seen_within_days: 0, include_stale: false })).toBeUndefined()
+    // A chosen mode is sent, sweep too: without one the API picks the default.
     expect(
       apiTargetOptions({ cidr_mode: 'sweep', seen_within_days: 0, include_stale: false })
-    ).toBeUndefined()
+    ).toEqual({ cidr_mode: 'sweep' })
+    expect(apiTargetOptions({ cidr_mode: 'liveness' })).toEqual({ cidr_mode: 'liveness' })
     expect(
       apiTargetOptions({ cidr_mode: 'inventory', seen_within_days: 30, include_stale: true })
     ).toEqual({

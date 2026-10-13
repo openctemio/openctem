@@ -5,8 +5,10 @@
  *
  * - `*.example.com`: the apex and every domain or subdomain asset at or
  *   under it;
- * - a CIDR: swept whole (default), or with `cidr_mode: 'inventory'` the
- *   address assets the inventory holds inside it.
+ * - a CIDR: live hosts first (`cidr_mode: 'liveness'`, the default of a new
+ *   scan: host discovery on the range, deeper stages on the live hosts and
+ *   the inventory's addresses inside it), swept whole (`'sweep'`), or only
+ *   the address assets the inventory holds inside it (`'inventory'`).
  *
  * Every expanded target still goes through the API's scope gate. These
  * helpers only shape the request and the preview.
@@ -16,7 +18,12 @@ import type { ScanTargetOptions } from '@/lib/api/scan-types'
 import { enTranslate, type Translate } from './translate'
 import { classifyTarget } from './target-format'
 
-export type CidrMode = 'sweep' | 'inventory'
+export type CidrMode = 'liveness' | 'sweep' | 'inventory'
+
+/** A radio value as a CIDR mode (liveness for anything unknown). */
+export function asCidrMode(v: string): CidrMode {
+  return v === 'sweep' || v === 'inventory' ? v : 'liveness'
+}
 
 /** Freshness windows offered (0: any). The API takes 0-365. */
 export const SEEN_WITHIN_CHOICES = [0, 7, 30, 90] as const
@@ -102,7 +109,9 @@ export function toWildcards(targets: readonly string[]): string[] {
 export function apiTargetOptions(o?: ScanTargetOptions): ScanTargetOptions | undefined {
   if (!o) return undefined
   const out: ScanTargetOptions = {}
-  if (o.cidr_mode === 'inventory') out.cidr_mode = 'inventory'
+  // A chosen mode is always sent: without one the API decides (live hosts
+  // first for a new scan that can run it; a scan saved before keeps sweeping).
+  if (o.cidr_mode) out.cidr_mode = o.cidr_mode
   if (o.seen_within_days && o.seen_within_days > 0) out.seen_within_days = o.seen_within_days
   if (o.include_stale) out.include_stale = true
   if (o.new_since_last_run) out.new_since_last_run = true
