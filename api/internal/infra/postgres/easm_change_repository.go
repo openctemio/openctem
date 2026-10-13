@@ -39,10 +39,11 @@ var easmChangeSkippedExposureTypes = []string{
 
 // changeAssetFilter keeps an asset that is part of the external surface (a
 // surface type, or anything internet-facing), not deleted, and in the
-// inventory (neither waiting for review nor rejected).
+// attributed inventory (not discovered without a claim, not waiting for
+// review, not rejected).
 func changeAssetFilter(alias string) string {
 	return fmt.Sprintf(` AND %[1]s.deleted_at IS NULL AND (%[1]s.asset_type = ANY($4) OR %[1]s.exposure = 'public')`, alias) +
-		InInventorySQL(alias+".id")
+		AttributedSQL(alias+".id")
 }
 
 // changeUnion is the typed change feed: $1 tenant, $2 from, $3 to, $4 the

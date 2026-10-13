@@ -25,12 +25,12 @@ func (s *PriorityClassificationService) SetAttributionLookup(l AttributionLookup
 }
 
 // capsPriority reports whether an attribution state caps priority: the
-// automatic states below confirmed and a rejection. dependency and
+// automatic states below confirmed (discovered included) and a rejection. dependency and
 // monitor_only are a person's decision that the name is the tenant's, so they
 // are not capped (a takeover of a dependency is the tenant's problem).
 func capsPriority(st attribution.State) bool {
 	switch st {
-	case attribution.StateNeedsReview, attribution.StateCandidate, attribution.StateRejected:
+	case attribution.StateDiscovered, attribution.StateNeedsReview, attribution.StateCandidate, attribution.StateRejected:
 		return true
 	}
 	return false

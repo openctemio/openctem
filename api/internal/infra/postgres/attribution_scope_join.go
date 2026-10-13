@@ -15,9 +15,9 @@ import (
 var _ easm.ScopeJoinStore = (*AttributionRepository)(nil)
 
 // PendingAutomatic lists up to limit of the tenant's live assets whose record
-// is needs_review or candidate and was not decided by a person, oldest record
-// first. A child that follows its host is left out: it takes the host's
-// outcome. Tenant-scoped on both tables.
+// is discovered, needs_review or candidate and was not decided by a person,
+// oldest record first. A child that follows its host is left out: it takes
+// the host's outcome. Tenant-scoped on both tables.
 func (r *AttributionRepository) PendingAutomatic(ctx context.Context, tenantID shared.ID, limit int) ([]easm.JoinItem, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -27,7 +27,7 @@ func (r *AttributionRepository) PendingAutomatic(ctx context.Context, tenantID s
 		FROM asset_attributions aa
 		JOIN assets a ON a.id = aa.asset_id AND a.tenant_id = aa.tenant_id
 		WHERE aa.tenant_id = $1
-		  AND aa.state IN ('needs_review', 'candidate')
+		  AND aa.state IN ('discovered', 'needs_review', 'candidate')
 		  AND aa.decided_at IS NULL
 		  AND aa.follows_host_id IS NULL
 		  AND a.deleted_at IS NULL
@@ -56,7 +56,7 @@ func (r *AttributionRepository) PendingAutomatic(ctx context.Context, tenantID s
 func (r *AttributionRepository) TenantsWithPendingAutomatic(ctx context.Context) ([]shared.ID, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT DISTINCT tenant_id FROM asset_attributions
-		WHERE state IN ('needs_review', 'candidate') AND decided_at IS NULL`)
+		WHERE state IN ('discovered', 'needs_review', 'candidate') AND decided_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("list tenants with pending attribution: %w", err)
 	}

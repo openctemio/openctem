@@ -86,8 +86,11 @@ type SurfaceBlock struct {
 // AttributionBlock counts assets by attribution state. Legacy counts assets
 // with no attribution record (in the inventory before EASM; confirmed).
 type AttributionBlock struct {
-	Confirmed   int        `json:"confirmed"`
-	Legacy      int        `json:"legacy"`
+	Confirmed int `json:"confirmed"`
+	Legacy    int `json:"legacy"`
+	// Discovered: in the inventory, found by discovery, nobody claimed it
+	// (passive only unless an entry covers it; RFC-054 §15).
+	Discovered  int        `json:"discovered"`
 	NeedsReview int        `json:"needs_review"`
 	Candidate   int        `json:"candidate"`
 	Dependency  int        `json:"dependency"`
@@ -173,6 +176,7 @@ func build(d *SummaryData, now time.Time) *Summary {
 	a := &out.Attribution
 	a.Legacy = d.AttributionByState[""]
 	a.Confirmed = d.AttributionByState["confirmed"] + a.Legacy
+	a.Discovered = d.AttributionByState["discovered"]
 	a.NeedsReview = d.AttributionByState["needs_review"]
 	a.Candidate = d.AttributionByState["candidate"]
 	a.Dependency = d.AttributionByState["dependency"]
