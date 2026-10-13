@@ -18,7 +18,7 @@ import useSWR, { type SWRConfiguration } from 'swr'
 
 import { useTenant } from '@/context/tenant-provider'
 
-import { get, put } from './client'
+import { get, post, put } from './client'
 
 export type TrustLevel = 'new' | 'trusted'
 export type TargetNetwork = 'any' | 'public' | 'none'
@@ -158,4 +158,58 @@ export function grantUpdateRequest(
     remote_actions: g.remote_actions,
     ...changes,
   }
+}
+
+/** What the sensor did in the suggestion's window. */
+export interface SensorGrantUsageSummary {
+  job_count: number
+  job_types: string[]
+  tools: string[]
+  max_tier: number
+  private_targets: boolean
+  public_targets: boolean
+  zone_count: number
+  push_ingest: boolean
+  complete: boolean
+}
+
+export type SensorGrantSuggestionReason =
+  'usage_incomplete' | 'no_profile_fits' | 'no_activity' | 'already_narrowest'
+
+/**
+ * The narrowest profile that admits every job of the window, never wider
+ * than the current grant. Reading and applying need a grant permission;
+ * applying also needs a recent sign-in or step-up (the API client's
+ * re-authentication dialog handles STEP_UP_REQUIRED).
+ */
+export interface SensorGrantSuggestion {
+  sensor_id: string
+  available: boolean
+  profile: string
+  reason?: SensorGrantSuggestionReason | (string & {})
+  current_profile: string
+  current_version: number
+  changed: string[]
+  grant?: SensorGrant
+  window_days: number
+  usage: SensorGrantUsageSummary
+}
+
+export const sensorGrantSuggestionPath = (id: string) => `${sensorGrantPath(id)}/suggestion`
+
+export function useSensorGrantSuggestion(sensorId: string | null, enabled = true) {
+  const { currentTenant } = useTenant()
+  return useSWR<SensorGrantSuggestion>(
+    currentTenant && sensorId && enabled ? sensorGrantSuggestionPath(sensorId) : null,
+    (url: string) => get<SensorGrantSuggestion>(url),
+    config
+  )
+}
+
+/** Apply the suggestion the caller saw (409 when it changed since). */
+export function applySensorGrantSuggestion(
+  sensorId: string,
+  body: { version: number; profile: string }
+): Promise<SensorGrant> {
+  return post<SensorGrant>(`${sensorGrantSuggestionPath(sensorId)}/apply`, body)
 }

@@ -547,6 +547,9 @@ const (
 	ActionScanConfigDisabled  Action = "scan_config.disabled"
 	ActionScanConfigExported  Action = "scan_config.exported"
 	ActionScanConfigImported  Action = "scan_config.imported"
+	// ActionScanConfigOwnerTaken: an administrator became the owner of a
+	// scan whose owner was missing or no longer an active member.
+	ActionScanConfigOwnerTaken Action = "scan_config.owner_taken"
 
 	// Scan profile actions
 	ActionScanProfileCreated            Action = "scan_profile.created"
@@ -732,7 +735,7 @@ func (a Action) IsValid() bool {
 		ActionScanRunTriggered, ActionScanRunCompleted, ActionScanRunPartial, ActionScanRunFailed, ActionScanRunCanceled,
 		ActionScanConfigCreated, ActionScanConfigUpdated, ActionScanConfigDeleted, ActionScanConfigTriggered,
 		ActionScanConfigPaused, ActionScanConfigActivated, ActionScanConfigDisabled,
-		ActionScanConfigExported, ActionScanConfigImported,
+		ActionScanConfigExported, ActionScanConfigImported, ActionScanConfigOwnerTaken,
 		ActionScanProfileCreated, ActionScanProfileUpdated, ActionScanProfileDeleted,
 		ActionScanProfileDefaultSet, ActionScanProfileCloned, ActionScanProfileQualityGateUpdated,
 		ActionCommandCreated, ActionCommandCanceled, ActionCommandDeleted,
