@@ -1750,6 +1750,15 @@ var _ command.StepBatchGate = (*CommandRepository)(nil)
 // The expiration checker asserts this; without it, it refuses to expire.
 var _ command.ConditionalExpirer = (*CommandRepository)(nil)
 
+// reachSum is the bounded sum of one count of the completed batches' reach
+// summaries (sensor-supplied: each value clamped to [0, $5], the sum too).
+func reachSum(field string) string {
+	v := `(result->'metadata'->'reach'->>'` + field + `')::numeric`
+	return `LEAST(COALESCE(sum(CASE WHEN status = 'completed'
+		                       AND jsonb_typeof(result->'metadata'->'reach'->'` + field + `') = 'number'
+		                      THEN LEAST(GREATEST(` + v + `, 0), $5) END), 0), $5)::bigint`
+}
+
 // StepBatchState reports the zone batches that share one step run.
 func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRunID shared.ID) (command.StepBatch, error) {
 	var b command.StepBatch
@@ -1767,10 +1776,17 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 		                               THEN LEAST(GREATEST((result->'metadata'->>'coverage_gaps_total')::numeric, 0), $4) END), 0), $4)::bigint,
 		       COALESCE((array_agg(error_message ORDER BY completed_at NULLS LAST, id)
 		                 FILTER (WHERE status IN ('failed', 'expired', 'canceled')
-		                           AND COALESCE(error_message, '') <> ''))[1], '')
+		                           AND COALESCE(error_message, '') <> ''))[1], ''),
+		       count(*) FILTER (WHERE status = 'completed'
+		                          AND jsonb_typeof(result->'metadata'->'reach'->'targets') = 'number'),
+		       `+reachSum("targets")+`,
+		       `+reachSum("reached")+`,
+		       `+reachSum("unreached")+`
 		FROM commands
 		WHERE tenant_id = $1 AND scan_run_step_id = $2`,
-		tenantID.String(), stepRunID.String(), scanrun.MaxSkippedTargetsTotal, scanrun.MaxCoverageGapsTotal).Scan(&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.Gaps, &b.FirstError)
+		tenantID.String(), stepRunID.String(), scanrun.MaxSkippedTargetsTotal, scanrun.MaxCoverageGapsTotal, scanrun.MaxReachTargets).Scan(
+		&b.Total, &b.Active, &b.Failed, &b.Findings, &b.Skipped, &b.Gaps, &b.FirstError,
+		&b.ReachBatches, &b.ReachTargets, &b.Reached, &b.Unreached)
 	if err != nil {
 		return b, fmt.Errorf("step batch state: %w", err)
 	}
