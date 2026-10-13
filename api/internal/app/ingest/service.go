@@ -491,7 +491,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// Who this report is for attribute reconciliation (RFC-069), and when
 	// its source saw what it reports.
 	sourceKind, sourceName := reportSource(binding, opts, report)
-	if binding.Kind == BindingUnsolicited && s.trustedCollector(ctx, agt, tenantID) {
+	trustedCollector := binding.Kind == BindingUnsolicited && s.trustedCollector(ctx, agt, tenantID)
+	if trustedCollector {
 		// A trusted collector reports the tenant's own inventory systems.
 		sourceKind = asset.SourceKindIntegration
 	}
@@ -504,7 +505,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	scope.untrusted = untrustedAttributes(reconcilePolicy, sourceKind, sourceName)
 	// A trusted collector's report: its source's sightings, and for a
 	// complete report the existing assets the source owns.
-	collector := s.collectorScopeFor(ctx, agt, tenantID, binding, report)
+	collector := s.collectorScopeFor(ctx, trustedCollector, agt.ID, tenantID, report)
 	scope.collector = collector
 
 	// Step 1: Process assets using batch operations
