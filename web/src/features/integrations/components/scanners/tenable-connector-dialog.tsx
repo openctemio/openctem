@@ -46,6 +46,7 @@ import {
 } from '@/features/integrations/lib/tenable-sc'
 import type { Integration } from '@/features/integrations/types/integration.types'
 import { useAllSensors } from '@/lib/api/sensor-hooks'
+import { useTranslation } from '@/context/i18n-provider'
 import { CatalogSelect } from './catalog-select'
 
 const SEVERITIES = [
@@ -74,6 +75,7 @@ export function TenableConnectorDialog({
   integration,
   onSaved,
 }: TenableConnectorDialogProps) {
+  const { t } = useTranslation()
   const editing = Boolean(integration)
   const [name, setName] = useState('')
   const [settings, setSettings] = useState<ConnectorSettings>(DEFAULT_CONNECTOR_SETTINGS)
@@ -219,6 +221,25 @@ export function TenableConnectorDialog({
                   onChange={(e) => set({ fullSyncDays: Number(e.target.value) || 0 })}
                 />
               </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+              <div>
+                <Label htmlFor="tsc-in-scope">
+                  {t('scope.connector.assetsInScope', 'Assets are in scope')}
+                </Label>
+                <p className="text-muted-foreground text-xs">
+                  {t(
+                    'scope.connector.assetsInScopeHint',
+                    'After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added.'
+                  )}
+                </p>
+              </div>
+              <Switch
+                id="tsc-in-scope"
+                checked={settings.assetsInScope}
+                onCheckedChange={(v) => set({ assetsInScope: v })}
+              />
             </div>
 
             <div className="space-y-3 rounded-lg border p-3">

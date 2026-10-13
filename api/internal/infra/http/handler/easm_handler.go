@@ -243,11 +243,20 @@ func easmValidationMessage(err error) string {
 // HasReview reports whether the review queue is wired.
 func (h *EASMHandler) HasReview() bool { return h.review != nil }
 
-// ReviewCount is the size of the default review queue (needs review and
-// candidates) as GET /easm/candidates reports it in `total`: the same service
-// call with the request context, so the caller's data scope applies. The
-// caller checks the route's gates (assets:read, the attack_surface module).
+// ReviewCount is how many decisions wait on the attack surface, the number
+// the Suggestions tab and the sidebar badge show: one per suggestion card
+// (GET /easm/suggestions, rule cards included), not one per queue row
+// (research/117). The request context carries the caller, so the data scope
+// applies. Without suggestion cards it is the queue's row count. The caller
+// checks the route's gates (assets:read, the attack_surface module).
 func (h *EASMHandler) ReviewCount(ctx context.Context, tenantID shared.ID) (int, error) {
+	if h.suggestions != nil {
+		out, err := h.suggestionCards(ctx, tenantID, false)
+		if err != nil {
+			return 0, err
+		}
+		return out.Total, nil
+	}
 	if h.review == nil {
 		return 0, errors.New("review queue not configured")
 	}

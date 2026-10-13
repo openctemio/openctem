@@ -492,7 +492,7 @@ func (p *FindingProcessor) processBatch(
 	for _, fm := range validFindings {
 		if existsMap[fm.fingerprint] {
 			existingFingerprints = append(existingFingerprints, fm.fingerprint)
-			if !scope.allowedAsset(fm.assetID) {
+			if !scope.mayReopen(fm.assetID) {
 				guardedFingerprints = append(guardedFingerprints, fm.fingerprint)
 			}
 			// Track snippet for potential update (if current DB value is invalid)

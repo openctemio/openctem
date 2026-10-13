@@ -572,6 +572,36 @@ compose file):
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
 
+### Hardened installs: the sensor's seccomp profile
+
+Every daemon install runs the sensor under its own seccomp profile, so each
+tool task can run network-confined (its own network namespace; only its
+targets, through its forwarder; RFC-060). The container runtime's default
+profile refuses the namespaces this needs.
+
+- **Served by the platform:** `GET /api/v1/sensors/install/seccomp-profile`
+  (public, rate limited per IP, `X-Content-SHA256`). It is the sensor
+  release's `docker/seccomp/sensor.json`, embedded in the API
+  (`internal/app/sensor/seccomp/sensor.json`); a test pins its SHA-256, so a
+  change comes from a sensor release on purpose.
+- **Checked before use:** the docker and compose snippets download it with
+  `curl -fsSL` (with the platform CA when there is one) and run
+  `sha256sum -c` against the digest the API rendered into the snippet, before
+  the container starts. A tampered or truncated download stops the install.
+- **docker:** `--security-opt seccomp=/etc/openctem/sensor-seccomp.json`
+  next to `no-new-privileges`. **compose:** `security_opt` gains
+  `seccomp=./sensor-seccomp.json`. **Kubernetes:** a `Localhost` profile
+  `openctem/sensor-seccomp.json`, put on the nodes by the operator (the
+  snippet says how, and how to fall back to `RuntimeDefault`). **Helm:**
+  `sensor.sandbox.seccompProfile=openctem` (the chart installs it on the nodes
+  with a DaemonSet; the default from chart 0.23.0).
+- The default AppArmor profile stays: on hosts that restrict unprivileged
+  user namespaces, `apparmor=unconfined` stops confinement working.
+- **Setup checklist:** the sensor reports `runtime.sandbox_network`
+  (`confined`, or the detected cause: `userns_blocked`, `userns_restricted`,
+  `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
+  its fix ([fix the setup checklist](../how-to/fix-sensor-setup-checklist.md)).
+
 ## Pairing, key-bound identity and grants (RFC-052)
 
 A sensor can join without any key being copied: it pairs with a code and a
@@ -1146,7 +1176,10 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
     a collector and links the fix.
   - Once admitted, a collector report may create assets but never change an
     existing one, and scope exclusions apply (see the result binding
-    section below).
+    section below). The exception: a complete report (`coverage_type:
+    full`) of a trusted collector may change the assets its own collector
+    source created and marks the ones it no longer lists as not seen
+    (RFC-040 §12; [sensor-result-binding.md](sensor-result-binding.md)).
 - **Protocol.** It uses protocol v2 through sdk-go `pkg/sensorkit` (hello,
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to
@@ -1165,6 +1198,24 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
   claim the job.
 - **Adding a collector type.** Add a catalog row with `metadata.kind =
   "collector"` in a migration, then report it from the collector.
+
+### What ingest makes of a collector report
+
+The fields each collector sends are listed in the collector's
+`docs/DATA.md`. Ingest uses them as follows; every lookup and write stays
+inside the reporting organization.
+
+| Report data | Stored as | Rule |
+|---|---|---|
+| `relationships` (CTIS) | Asset relationships | `hosted_by` becomes `runs_on` (a virtual machine on its hypervisor host) or, for an address, the host `contains` it; `subdomain_of` is stored parent first; the other types keep their name. Only pairs the relationship registry allows; only when the report may change the edge's source asset (`report_relationships.go`). |
+| `esxi_host` on a virtual machine | `runs_on` edge to the hypervisor host | The host must be in the report or already in the organization. The vSphere cluster and datacenter stay properties: there is no asset type for them. |
+| `ip_addresses` on a host | `contains` edges to address assets | Only to address assets that already exist, at most 32 per host; addresses are never created from a host's properties. |
+| `ad_object_guid` | Identifier `directory_object_id` | Strong and single-valued: a computer renamed or moved in the directory stays the same asset ([asset-identity-resolution.md](asset-identity-resolution.md)). The vCenter instance UUID is the `cloud_id` identifier. |
+| `last_seen` | The asset's last-seen time | Only when earlier than the report and not before 2000; it never moves the stored time backwards, and an older observation never reactivates a stale asset (`last_seen.go`, `Asset.ObserveAt`). |
+| `owner` (mail or UPN) | `owner_ref`, then a primary owner | A trusted collector is an `integration` source, so its owner claim is used under the reconciliation policy; an untrusted one's is dropped. The owner-resolution job names only an active member of the organization whose email matches; an unknown owner stays text and nobody is invited. An owner never grants data access. |
+| `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
+| A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
+| `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)
 
@@ -1438,6 +1489,27 @@ and narrows dispatch:
     would refuse them again.
   - A job whose every target is refused still fails (and is re-queued as
     above when it is routed work).
+- **Unreachable targets** (RFC-089 §4.7).
+  A sensor reports per-target reach in `result.metadata.reach` (`targets`,
+  `reached`, `unreached`, `classes`, per-block rows) and the unreached ones in
+  `unreached_targets` / `unreached_targets_total` (classes `no_route`,
+  `firewall_refused`, `timeout`, `dns_failure`; a closed port counts as
+  reached).
+  - The platform reads them when the command completes
+    (`scanrun.ParseReach`, `ParseUnreachedTargets`: counts clamped, at most 20
+    listed, every string cleaned to one bounded line, unknown classes
+    dropped).
+  - None reached and no findings: the step **fails** with
+    `TARGET_UNREACHABLE` (class `placement`, never retried) instead of
+    completing with zero results. Some unreached: the step ends `partial`
+    with code `TARGET_UNREACHABLE` and a per-class summary (`TARGETS_SKIPPED`
+    keeps precedence when targets were also skipped).
+  - Batched steps sum the completed batches' reach (`StepBatchState`); the
+    step fails only when every batch reported reach and none reached a target.
+  - A result without `reach` (an older sensor) keeps today's outcome; its
+    failure text (`target_unreachable`, `network is unreachable`, `no route
+    to host`, `host is unreachable`) is classified as `TARGET_UNREACHABLE`,
+    and a sensor may send that code in a structured fail.
 - **Tenant switch.** Security settings
   `require_sensor_local_policy_for_private_targets` (default off, owner
   decision Q3 (a)). On, a sensor that does not enforce a policy (absent,
