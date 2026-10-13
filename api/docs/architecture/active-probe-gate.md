@@ -198,6 +198,19 @@ For each target, in order:
      target that names an asset as typed, lower-cased, or by the host of a
      URL or `host:port`) has an attribution record other than `confirmed`
      (`needs_review`, `candidate`, `dependency`, `monitor_only`, `rejected`).
+     **Pending records written by automation** (`needs_review` or `candidate`
+     with no person's decision) are no decision: an active scope entry of
+     the tenant that covers the asset, a one-off entry included, lets
+     probes reach it (the entry is the authority; the record stays pending
+     and the asset does not join the inventory). Without such an entry, or
+     once the entry expires, the record refuses as before. A pending state a
+     person set, `dependency`, `monitor_only`, `rejected`, a rejected parent
+     name and an exclusion keep refusing whatever entry covers the name.
+     **A child never gets more than its host**: a service (`host:port`) or
+     URL whose host is one of the tenant's assets is refused with the host's
+     state when the host's record is anything but `confirmed` or automatic
+     pending (a person confirming the child itself overrides this, as for a
+     rejected parent name).
      **Takeover exception** (`internal/app/easm/takeover_gate.go`):
      a `dependency` asset is admitted to a scan that runs only the nuclei
      `takeover` templates (scanner nuclei, `tags` exactly `takeover`, no

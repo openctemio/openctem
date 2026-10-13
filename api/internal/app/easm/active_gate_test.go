@@ -24,6 +24,9 @@ type gateFixture struct {
 	seeds   []string
 	vds     []string
 	err     error
+	// inEffectOnly: ListActiveTargets drops entries not in effect, as the
+	// scope service does.
+	inEffectOnly bool
 }
 
 func (f *gateFixture) mine(t shared.ID) bool { return t.Equals(f.tenant) }
@@ -88,6 +91,16 @@ func (f *gateFixture) GetByNames(_ context.Context, t shared.ID, names []string)
 func (f *gateFixture) ListActiveTargets(_ context.Context, t string) ([]*scopedom.Target, error) {
 	if t != f.tenant.String() {
 		return nil, nil
+	}
+	if f.inEffectOnly {
+		now := time.Now()
+		var out []*scopedom.Target
+		for _, x := range f.targets {
+			if x.InEffect(now) {
+				out = append(out, x)
+			}
+		}
+		return out, nil
 	}
 	return f.targets, nil
 }
@@ -187,11 +200,134 @@ func TestActiveGate_Assets(t *testing.T) {
 			f.record(a, attribution.StateConfirmed, true)
 			return a
 		}, ""},
-		{"needs review inside a scope target", func() *asset.Asset {
+		// An automatic pending record is no decision: a scope entry that
+		// covers the name lets probes reach it (research/117 F4).
+		{"automatic needs review inside a scope target", func() *asset.Asset {
 			a := f.add(t, "review.scoped.com", asset.AssetTypeSubdomain)
 			f.record(a, attribution.StateNeedsReview, false)
 			return a
+		}, ""},
+		{"automatic needs review IP inside a scope CIDR", func() *asset.Asset {
+			a := f.add(t, "198.51.100.44", asset.AssetTypeIPAddress)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, ""},
+		{"automatic candidate inside a scope target", func() *asset.Asset {
+			a := f.add(t, "cand.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateCandidate, false)
+			return a
+		}, ""},
+		{"automatic needs review service inside a scope CIDR", func() *asset.Asset {
+			a := f.add(t, "198.51.100.45:443", asset.AssetTypeService)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, ""},
+		{"automatic needs review outside every entry", func() *asset.Asset {
+			a := f.add(t, "pending.example.net", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
 		}, attribution.StateNeedsReview},
+		{"automatic needs review IP outside every range", func() *asset.Asset {
+			a := f.add(t, "203.0.113.44", asset.AssetTypeIPAddress)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateNeedsReview},
+		{"automatic needs review private address with no entry", func() *asset.Asset {
+			a := f.add(t, "10.0.0.44", asset.AssetTypeIPAddress)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateNeedsReview},
+		{"automatic needs review under a verified domain only: proof is not authority", func() *asset.Asset {
+			a := f.add(t, "x.verified.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateNeedsReview},
+		{"automatic needs review under a former seed with no entry", func() *asset.Asset {
+			a := f.add(t, "y.seeded.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateNeedsReview},
+		// A child never gets more than its host.
+		{"automatic pending service on a host a person set to monitor only", func() *asset.Asset {
+			h := f.add(t, "198.51.100.60", asset.AssetTypeIPAddress)
+			f.record(h, attribution.StateMonitorOnly, true)
+			a := f.add(t, "198.51.100.60:443", asset.AssetTypeService)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateMonitorOnly},
+		{"automatic pending service on a rejected address", func() *asset.Asset {
+			h := f.add(t, "198.51.100.61", asset.AssetTypeIPAddress)
+			f.record(h, attribution.StateRejected, true)
+			a := f.add(t, "198.51.100.61:22", asset.AssetTypeService)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateRejected},
+		{"unrecorded service on a dependency host", func() *asset.Asset {
+			h := f.add(t, "dep.scoped.com", asset.AssetTypeSubdomain)
+			f.record(h, attribution.StateDependency, true)
+			return f.add(t, "dep.scoped.com:443", asset.AssetTypeService)
+		}, attribution.StateDependency},
+		{"automatic pending URL on a host a person sent back to review", func() *asset.Asset {
+			h := f.add(t, "back2.scoped.com", asset.AssetTypeSubdomain)
+			f.record(h, attribution.StateNeedsReview, true)
+			a := f.add(t, "https://back2.scoped.com/login", asset.AssetTypeApplication)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateNeedsReview},
+		{"automatic pending service on an automatic pending host, both in an entry", func() *asset.Asset {
+			h := f.add(t, "198.51.100.62", asset.AssetTypeIPAddress)
+			f.record(h, attribution.StateNeedsReview, false)
+			a := f.add(t, "198.51.100.62:443", asset.AssetTypeService)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, ""},
+		{"a person confirmed the service on a monitor-only host", func() *asset.Asset {
+			h := f.add(t, "198.51.100.63", asset.AssetTypeIPAddress)
+			f.record(h, attribution.StateMonitorOnly, true)
+			a := f.add(t, "198.51.100.63:443", asset.AssetTypeService)
+			f.record(a, attribution.StateConfirmed, true)
+			return a
+		}, ""},
+		// A person's decision wins over the entry.
+		{"a person sent it back to review inside a scope target", func() *asset.Asset {
+			a := f.add(t, "sentback.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, true)
+			return a
+		}, attribution.StateNeedsReview},
+		{"a person's candidate inside a scope target", func() *asset.Asset {
+			a := f.add(t, "hcand.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateCandidate, true)
+			return a
+		}, attribution.StateCandidate},
+		{"monitor only by a person inside a scope target", func() *asset.Asset {
+			a := f.add(t, "watch.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateMonitorOnly, true)
+			return a
+		}, attribution.StateMonitorOnly},
+		{"dependency by a person inside a scope CIDR", func() *asset.Asset {
+			a := f.add(t, "198.51.100.46", asset.AssetTypeIPAddress)
+			f.record(a, attribution.StateDependency, true)
+			return a
+		}, attribution.StateDependency},
+		{"rejected inside a scope CIDR", func() *asset.Asset {
+			a := f.add(t, "198.51.100.47", asset.AssetTypeIPAddress)
+			f.record(a, attribution.StateRejected, true)
+			return a
+		}, attribution.StateRejected},
+		{"automatic needs review under a rejected parent inside a scope target", func() *asset.Asset {
+			p := f.add(t, "gone2.scoped.com", asset.AssetTypeSubdomain)
+			f.record(p, attribution.StateRejected, true)
+			a := f.add(t, "api.gone2.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateRejected},
+		{"automatic needs review on a tombstoned name inside a scope target", func() *asset.Asset {
+			f.tombs["tomb.scoped.com"] = true
+			a := f.add(t, "tomb.scoped.com", asset.AssetTypeSubdomain)
+			f.record(a, attribution.StateNeedsReview, false)
+			return a
+		}, attribution.StateRejected},
+
 		{"candidate", func() *asset.Asset {
 			a := f.add(t, "cand.seeded.com", asset.AssetTypeSubdomain)
 			f.record(a, attribution.StateCandidate, false)
@@ -254,6 +390,8 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 	f.record(rej, attribution.StateRejected, true)
 	rev := f.add(t, "dev.scoped.com", asset.AssetTypeSubdomain)
 	f.record(rev, attribution.StateNeedsReview, false)
+	pend := f.add(t, "pend.example.net", asset.AssetTypeSubdomain)
+	f.record(pend, attribution.StateNeedsReview, false)
 	f.add(t, "manual.example.net", asset.AssetTypeDomain)
 	f.add(t, "ok.scoped.com", asset.AssetTypeSubdomain)
 	f.tombs["dead.example.org"] = true
@@ -261,7 +399,8 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 	targets := []string{
 		"www.scoped.com",               // rejected asset
 		"https://WWW.scoped.com/login", // the same asset by URL
-		"dev.scoped.com:443",           // needs_review asset by host:port
+		"dev.scoped.com:443",           // automatic needs_review asset by host:port, inside an entry: allowed
+		"pend.example.net",             // automatic needs_review asset outside every entry
 		"manual.example.net",           // unattributed asset
 		"ok.scoped.com",                // allowed
 		"api.www.scoped.com",           // free text under a rejected asset
@@ -280,7 +419,7 @@ func TestActiveGate_BlockedTargets(t *testing.T) {
 	want := map[string]attribution.State{
 		"www.scoped.com":               attribution.StateRejected,
 		"https://WWW.scoped.com/login": attribution.StateRejected,
-		"dev.scoped.com:443":           attribution.StateNeedsReview,
+		"pend.example.net":             attribution.StateNeedsReview,
 		"manual.example.net":           attribution.StateUnattributed,
 		"api.www.scoped.com":           attribution.StateRejected,
 		"a.dead.example.org":           attribution.StateRejected,
@@ -691,5 +830,82 @@ func TestActiveGate_StatementLimits(t *testing.T) {
 	f.targets = append(f.targets, whole)
 	if got, _ := g.StatementLimits(ctx, f.tenant, targets[:1], scopedom.TierActive); len(got) != 0 {
 		t.Fatalf("an unlimited entry covers the host: %v", got)
+	}
+}
+
+// TestActiveGate_PendingNeedsAnEntryInEffect: a one-off entry lets probes
+// reach an automatic pending name while it is in effect; once it expires, or
+// when only another tenant's entry covers the name, the record refuses again.
+func TestActiveGate_PendingNeedsAnEntryInEffect(t *testing.T) {
+	f := newGateFixture(t)
+	g := NewActiveGate(f, f, f, f)
+	now := time.Now()
+	oneOff, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "once.example.net", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	soon := now.Add(24 * time.Hour)
+	oneOff.SetExpiry(&soon, now)
+	expired, err := scopedom.NewTarget(f.tenant, scopedom.TargetTypeDomain, "old.example.net", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := now.Add(-time.Hour)
+	expired.SetExpiry(&past, now)
+	f.targets = append(f.targets, oneOff, expired)
+	// The scope service returns entries in effect only; the fixture keeps
+	// that contract so the gate is tested against what production gives it.
+	f.inEffectOnly = true
+
+	pendingOnce := f.add(t, "once.example.net", asset.AssetTypeDomain)
+	f.record(pendingOnce, attribution.StateNeedsReview, false)
+	pendingOld := f.add(t, "old.example.net", asset.AssetTypeDomain)
+	f.record(pendingOld, attribution.StateNeedsReview, false)
+	monitored := f.add(t, "www.once.example.net", asset.AssetTypeSubdomain)
+	f.record(monitored, attribution.StateMonitorOnly, true)
+
+	got, err := g.ActiveCheckBlocked(context.Background(), f.tenant,
+		[]string{pendingOnce.ID().String(), pendingOld.ID().String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, no := got[pendingOnce.ID().String()]; no {
+		t.Fatalf("pending name under a one-off entry refused: %s", s)
+	}
+	if got[pendingOld.ID().String()] != attribution.StateNeedsReview {
+		t.Fatalf("pending name under an expired entry = %q, want needs_review", got[pendingOld.ID().String()])
+	}
+	// Typed text naming the pending asset gets the same answer.
+	typed, err := g.BlockedTargets(context.Background(), f.tenant, []string{"https://once.example.net/a", "old.example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, no := typed["https://once.example.net/a"]; no || typed["old.example.net"] != attribution.StateNeedsReview {
+		t.Fatalf("typed: %v", typed)
+	}
+
+	// Another tenant's entry never lifts this tenant's pending record.
+	f2 := newGateFixture(t)
+	g2 := NewActiveGate(f2, f2, f2, f2)
+	foreign, err := scopedom.NewTarget(shared.NewID(), scopedom.TargetTypeDomain, "*.theirs.example", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = foreign // registered under another tenant: f2.ListActiveTargets never returns it
+	p := f2.add(t, "app.theirs.example", asset.AssetTypeSubdomain)
+	f2.record(p, attribution.StateNeedsReview, false)
+	if b, err := g2.ActiveCheckBlocked(context.Background(), f2.tenant, []string{p.ID().String()}); err != nil || b[p.ID().String()] != attribution.StateNeedsReview {
+		t.Fatalf("foreign entry lifted a pending record: %v %v", b, err)
+	}
+	// Tenant A's in-scope pending asset id, asked by another tenant: not
+	// found, refused.
+	inScope := f.add(t, "p2.scoped.com", asset.AssetTypeSubdomain)
+	f.record(inScope, attribution.StateNeedsReview, false)
+	if b, err := g.ActiveCheckBlocked(context.Background(), shared.NewID(), []string{inScope.ID().String()}); err != nil || b[inScope.ID().String()] != attribution.StateUnattributed {
+		t.Fatalf("foreign tenant reached A's pending asset: %v %v", b, err)
+	}
+	// A person's monitor-only under the same one-off entry still refuses.
+	if b, _ := g.ActiveCheckBlocked(context.Background(), f.tenant, []string{monitored.ID().String()}); b[monitored.ID().String()] != attribution.StateMonitorOnly {
+		t.Fatalf("monitor only under a one-off entry: %v", b)
 	}
 }
