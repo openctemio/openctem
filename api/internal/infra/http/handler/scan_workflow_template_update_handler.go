@@ -98,7 +98,7 @@ func (h *ScanWorkflowHandler) ApplyTemplateUpdate(w http.ResponseWriter, r *http
 	_ = json.NewEncoder(w).Encode(toTemplateResponse(t))
 }
 
-// DismissTemplateUpdate handles POST /api/v1/scan-workflows/{id}/template-update/dismiss
+// DismissTemplateUpdate handles POST /api/v1/scan-workflows/{id}/template-update/reject
 // @Summary      Dismiss a template update
 // @Description  Keeps the copy as it is and stops offering the changes shown; audited. 409 when the template changed since template_digest was shown.
 // @Tags         Scan workflows
@@ -110,7 +110,7 @@ func (h *ScanWorkflowHandler) ApplyTemplateUpdate(w http.ResponseWriter, r *http
 // @Failure      404   {object}  apierror.Error
 // @Failure      409   {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /scan-workflows/{id}/template-update/dismiss [post]
+// @Router       /scan-workflows/{id}/template-update/reject [post]
 func (h *ScanWorkflowHandler) DismissTemplateUpdate(w http.ResponseWriter, r *http.Request) {
 	digest, ok := h.decodeTemplateUpdate(w, r)
 	if !ok {
