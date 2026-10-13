@@ -112,7 +112,8 @@ func (h *EASMHandler) ruleInput(w http.ResponseWriter, r *http.Request) (shared.
 	}
 	return tenantID, easmapp.RuleActionInput{
 		Action: req.Action, TargetType: req.TargetType, Pattern: req.Pattern, Reason: req.Reason, AssetIDs: req.AssetIDs,
-		Actor: scope.Actor{UserID: middleware.GetUserID(ctx), CanApprove: middleware.HasPermission(ctx, permission.ScopeApprove.String())},
+		Actor:         scope.Actor{UserID: middleware.GetUserID(ctx), CanApprove: middleware.HasPermission(ctx, permission.ScopeApprove.String())},
+		CanWriteScope: middleware.HasPermission(ctx, permission.ScopeWrite.String()),
 	}, true
 }
 
@@ -222,6 +223,7 @@ func (h *EASMHandler) auditRule(r *http.Request, in easmapp.RuleActionInput, res
 			WithMetadata("via", "review_rule").WithMetadata("reason", reason))
 	}
 	if res.Decisions != nil {
+		auditConfirmEntries(ctx, h.audit, actx, res.Decisions.Scope, "review_rule")
 		for _, d := range res.Decisions.Decided {
 			_ = h.audit.LogEvent(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionDecided, auditdom.ResourceTypeAsset, d.AssetID).
 				WithMessage("Attribution set to "+d.To).WithMetadata("from", d.From).WithMetadata("to", d.To).

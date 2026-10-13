@@ -52,6 +52,7 @@ func TestScanRunRoutes_FollowScanPermissions(t *testing.T) {
 		"/api/v1/scan-runs/",
 		"/api/v1/scan-runs/" + testRunID,
 		"/api/v1/scan-runs/" + testRunID + "/tasks",
+		"/api/v1/scan-runs/" + testRunID + "/tasks/" + testRunID + "/placement",
 		"/api/v1/scan-runs/" + testRunID + "/stages",
 		"/api/v1/scan-runs/" + testRunID + "/map",
 		"/api/v1/scan-runs/" + testRunID + "/outputs?step_key=ports",
