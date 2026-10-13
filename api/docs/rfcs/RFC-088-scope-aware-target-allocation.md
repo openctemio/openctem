@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft (2026-10-13); steps 1–4 implemented, steps 5–8 in progress |
+| Status | Accepted (2026-10-13); steps 1–8 implemented, steps 9–14 planned |
 | Scope | api (target gate, `pkg/domain/scope/ipset`, stage literal gate, workflow chunking, command host keys), later sdk-go + sensor (range iterator, job exclusions, `discover.hosts`), web (preview funnel, knobs) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md), [scan-targets.md](../architecture/scan-targets.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-030 (scan distribution: pull, chunks, leases, fair share), RFC-040 (mutual distrust sensor/platform), RFC-054 (scope model, deny list, tiers), RFC-068 (dynamic target selectors), RFC-082 (network seeds), research/118 |
@@ -178,25 +178,58 @@ ranges. The platform sends the probe ports with every host discovery job.
 The Network starter workflow now starts with Host discovery. Details:
 [scan-targets.md](../architecture/scan-targets.md).
 
-## 8. Later steps
+## 8. Wildcard DNS (step 8)
 
-| # | Step | Security-sensitive |
-|---|---|---|
-| 5 | `discover.hosts` capability (light ICMP/TCP liveness, naabu host discovery) across ctis, sdk-go, sensor and api | – |
-| 6 | Liveness-first `cidr_mode` (default for new scans): liveness, then deep stages on live plus known addresses; `sweep` only up to /24 | – |
-| 7 | Exclusions in the signed job; SDK range iterator skips them and the deny list per address; naabu `-exclude-hosts`; ingest drops results outside the chunk's units | yes |
-| 8 | Wildcard-DNS detection on by default; active stages skip names that do not resolve or resolve only through a wildcard | yes |
-| 9 | Bounded recursive discovery of sub-zones (depth 2, max 3; budgets 5 000 per root, 10 000 per run) | – |
-| 10 | Name grant vs address grant for port scans (names without an address entry: web ports only; shared edges never fully scanned) | yes |
-| 11 | Single-scanner list tools chunked like workflow steps | – |
-| 12 | Coverage rotation (least recently scanned first) and deep-stage freshness | – |
-| 13 | Web: "What will be scanned" funnel and run funnel | – |
-| 14 | Tenant knobs and platform ceilings | – |
+A zone with a wildcard record answers for any name under it, so passive
+sources, permutations and guesses all "resolve". Two layers keep such names
+from being treated as the tenant's hosts:
+
+- **Sensor (first layer).** dnsx runs with `-auto-wildcard` by default
+  (sensor #234; `dnsx.NewScanner`, `RespectWildcard`): a name that resolves only
+  through a wildcard record of its zone is not reported. The platform also
+  sends `wildcard_filter: true` with every dnsx job that does not set it
+  (`withWildcardFilter`), so an older sensor or a sensor with another
+  default filters the same way.
+- **Platform (second layer).** A finished filtered resolution marks the
+  names it was given and did not report (`asset_wildcard_dns`); the
+  active-probe gate refuses a marked name, and a service or URL on it, as
+  `wildcard_only` (passive only) until a person confirms it or a filtered
+  resolution reports it; the scope join never confirms it; and active
+  stages take a name only with recent resolution evidence (A5).
+
+The sensor-side filter stays on as defence in depth; the two layers back
+each other up. The sensor filter keeps wildcard answers out of the inventory
+at the source, so a wildcard-only name never gains DNS evidence. The
+platform marks hold for a name that reached the inventory by another path (a
+passive source, an earlier unfiltered run, auto-confirmation before it was
+resolved) and decide at the gate, so a scope entry over a wildcard zone does
+not make its guessed names scannable. A step that sets `wildcard_filter:
+false` turns the filter off for that job on purpose: its resolution changes
+no mark either way. Architecture:
+[scan-targets.md](../architecture/scan-targets.md#resolve-before-active),
+[active-probe-gate.md](../architecture/active-probe-gate.md).
+
+## 9. Steps
+
+Steps 1–4 are described in §3–§6, steps 5 and 6 in §7, step 8 in §8.
+
+| # | Step | Security-sensitive | Status |
+|---|---|---|---|
+| 5 | `discover.hosts` capability (light ICMP/TCP liveness, naabu host discovery) across ctis, sdk-go, sensor and api (§7) | – | implemented |
+| 6 | Liveness-first `cidr_mode` (default for new scans): liveness, then deep stages on live plus known addresses; `sweep` only up to /24 | – | implemented |
+| 7 | Exclusions in the signed job; SDK range iterator skips them and the deny list per address; naabu `-exclude-hosts`; ingest drops results outside the chunk's units | yes | implemented |
+| 8 | Wildcard-DNS detection on by default; active stages skip names that do not resolve or resolve only through a wildcard (§8) | yes | implemented |
+| 9 | Bounded recursive discovery of sub-zones (depth 2, max 3; budgets 5 000 per root, 10 000 per run) | – | planned |
+| 10 | Name grant vs address grant for port scans (names without an address entry: web ports only; shared edges never fully scanned) | yes | planned |
+| 11 | Single-scanner list tools chunked like workflow steps | – | planned |
+| 12 | Coverage rotation (least recently scanned first) and deep-stage freshness | – | planned |
+| 13 | Web: "What will be scanned" funnel and run funnel | – | planned |
+| 14 | Tenant knobs and platform ceilings | – | planned |
 
 Since step 7 a platform sensor's claim (`get_next_platform_job`) honours the
 same host keys and bucket locks as a tenant sensor's.
 
-## 9. Decisions
+## 10. Decisions
 
 | # | Question | Decision |
 |---|---|---|
@@ -209,7 +242,7 @@ same host keys and bucket locks as a tenant sensor's.
 | A7 | Where expansion lives | the platform planner is the authority; the sensor re-checks every unit and address; ingest drops out-of-unit results |
 | A8 | Over-cap selection | rotation by least recently scanned, not freshest |
 
-## 10. Threat model
+## 11. Threat model
 
 | Threat | Control |
 |---|---|
@@ -221,7 +254,7 @@ same host keys and bucket locks as a tenant sensor's.
 | Splitting bypasses ownership | pieces inherit the range asset's entry and are gated by its id |
 | Restricted member widens reach via pieces | pieces are subsets of a target the act scope already admitted, and each piece is checked again |
 
-## 11. Non-goals
+## 12. Non-goals
 
 - No ASN scan target (RFC-082 D6 stands).
 - No platform-side reverse-DNS sweep and no IPv6 sweeps wider than /112.
