@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 func snapshot() postgres.OpsSnapshot {
@@ -155,6 +156,43 @@ openctem_sensors_unhardened{kind="pin_none"} 0
 openctem_sensors_unhardened{kind="policy_none"} 2
 `
 	if err := testutil.CollectAndCompare(c, strings.NewReader(want), "openctem_sensors_unhardened"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The queue depth keeps closed-set labels: a stage outside the catalog is
+// "other", a class outside the priorities is "other", an unknown wait is
+// dropped, rows that fold into one key are summed; the tenant dimension is
+// two aggregates.
+func TestCollectorReportsTheQueue(t *testing.T) {
+	probe, _ := stage.Lookup(stage.ProbeHTTP)
+	snap := snapshot()
+	snap.CommandQueue = []postgres.OpsQueueDepth{
+		{Stage: probe.ID(), Tool: "httpx", Class: "high", Wait: postgres.QueueWaitReady, Count: 3},
+		{Stage: probe.ID(), Tool: "httpx", Class: "high", Wait: postgres.QueueWaitHostBusy, Count: 2},
+		{Stage: "tenant-secret@1", Tool: "_custom", Class: "high", Wait: postgres.QueueWaitReady, Count: 1},
+		{Stage: "another-secret@2", Tool: "_custom", Class: "high", Wait: postgres.QueueWaitReady, Count: 4},
+		{Stage: "", Tool: "", Class: "weird", Wait: postgres.QueueWaitScheduled, Count: 5},
+		{Stage: probe.ID(), Tool: "httpx", Class: "low", Wait: "made-up", Count: 9},
+	}
+	snap.CommandQueueTenants, snap.CommandQueueTopTenant = 2, 7
+	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snap, nil }, Config{}, nil)
+	want := `
+# HELP openctem_command_queue_depth Pending sensor commands by stage, tool, priority class and why they wait (ready, host_busy, scheduled)
+# TYPE openctem_command_queue_depth gauge
+openctem_command_queue_depth{class="high",stage="` + probe.ID() + `",tool="httpx",wait="host_busy"} 2
+openctem_command_queue_depth{class="high",stage="` + probe.ID() + `",tool="httpx",wait="ready"} 3
+openctem_command_queue_depth{class="high",stage="other",tool="_custom",wait="ready"} 5
+openctem_command_queue_depth{class="other",stage="none",tool="none",wait="scheduled"} 5
+# HELP openctem_command_queue_tenants Tenants with at least one pending sensor command
+# TYPE openctem_command_queue_tenants gauge
+openctem_command_queue_tenants 2
+# HELP openctem_command_queue_top_tenant_pending Pending sensor commands of the tenant with the most (a fairness signal; no tenant identity)
+# TYPE openctem_command_queue_top_tenant_pending gauge
+openctem_command_queue_top_tenant_pending 7
+`
+	if err := testutil.CollectAndCompare(c, strings.NewReader(want),
+		"openctem_command_queue_depth", "openctem_command_queue_tenants", "openctem_command_queue_top_tenant_pending"); err != nil {
 		t.Fatal(err)
 	}
 }
