@@ -154,8 +154,8 @@
   "scans.options.targetsOne": "{count} target",
   "scans.options.targetsMany": "{count} targets",
   "scans.options.perJobHelp": "How many targets one sensor job scans. Smaller jobs spread a scan over more sensors; larger ones mean fewer jobs.",
-  "scans.options.timeout": "Timeout (seconds)",
-  "scans.options.timeoutRange": "30s – 24h",
+  "scans.options.timeout": "Max duration (seconds, optional)",
+  "scans.options.timeoutRange": "Empty: no limit (the 24 h platform cap applies). 30s – 24h",
   "scans.options.maxRetries": "Max retries",
   "scans.options.noRetries": "0 = no retries",
   "scans.options.backoff": "Retry backoff (s)",
@@ -1594,5 +1594,14 @@
   "scans.owner.taking": "Taking ownership…",
   "scans.owner.taken": "You now own \"{name}\". Resume it to restart its schedule.",
   "scans.owner.takeFailed": "Could not take ownership",
-  "scans.owner.askAdmin": "An owner or administrator can take ownership."
+  "scans.owner.askAdmin": "An owner or administrator can take ownership.",
+  "scans.runDetail.deadline": "Deadline",
+  "scans.runDetail.deadlineIn": "deadline in {duration}",
+  "scans.runDetail.deadlinePassed": "deadline passed, settling",
+  "scans.runDetail.deadlineReason.scan_max_duration": "Set by this scan's max duration. Slow but active work is not cut before it.",
+  "scans.runDetail.deadlineReason.workflow_max_duration": "Set by the workflow's timeout setting.",
+  "scans.runDetail.deadlineReason.platform_cap": "No max duration is set: the platform's 24 h cap applies, only as a backstop against runs that never end.",
+  "scans.runDetail.deadlineReason.legacy": "Set when the run started, by the scan's timeout at that time.",
+  "scans.failure.DEADLINE_TOO_CLOSE.text": "Not started: too little time was left before the run's deadline for this step to do anything useful.",
+  "scans.failure.DEADLINE_TOO_CLOSE.fix": "Its targets roll over to the next scheduled run. Raise or clear the scan's max duration if the run should finish in one go."
 }
