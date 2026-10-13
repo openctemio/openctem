@@ -27,7 +27,7 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		"a0000002-0000-0000-0000-000000000001": 3, // Discover
 		"a0000002-0000-0000-0000-000000000002": 5, // Discover + Vuln
 		"a0000002-0000-0000-0000-000000000003": 3, // Web app
-		"a0000002-0000-0000-0000-000000000004": 3, // Network
+		"a0000002-0000-0000-0000-000000000004": 4, // Network: host discovery, ports, http, vulns
 		"a0000002-0000-0000-0000-000000000005": 4, // Code / CI
 		"a0000002-0000-0000-0000-000000000006": 4, // Passive discovery (with the RDAP and ASN lookups)
 		"a0000002-0000-0000-0000-000000000007": 2, // Probe new assets
