@@ -45,6 +45,10 @@ func TestBoundCapability(t *testing.T) {
 		{"claim outside", "acme-ports", "secrets.code@1", "scan.ports@1"},
 		// A built-in: the catalog decides.
 		{"catalog", "naabu", "", "scan.ports@1"},
+		// naabu also runs host discovery, only for a job that names it: a
+		// report naming it is host discovery, any other is a port scan.
+		{"by capability", "naabu", "discover.hosts@1", "discover.hosts@1"},
+		{"by capability, foreign claim", "naabu", "secrets.code@1", "scan.ports@1"},
 		// trivy has several stages: only a matching claim picks one.
 		{"several, no claim", "trivy", "", ""},
 		{"several, matching claim", "trivy", "container.image@1", "container.image@1"},

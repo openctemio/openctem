@@ -234,6 +234,17 @@ type RolloverStore interface {
 	LatestRollover(ctx context.Context, tenantID, scanID shared.ID) (*Rollover, error)
 }
 
+// UnfinishedTargetRecorder records targets an open run will not scan, so
+// the run's unfinished list (and the next scheduled run's rollover) keeps
+// them: a step not dispatched because its run's deadline was too close
+// (research/122).
+type UnfinishedTargetRecorder interface {
+	// AddUnfinishedTargets appends targets to runID's unfinished targets,
+	// deduplicated, in order, bounded like the reaper's list. Only an open
+	// run of tenantID is touched.
+	AddUnfinishedTargets(ctx context.Context, tenantID, runID shared.ID, targets []string) error
+}
+
 // CanceledRunClosure is what closing a canceled run changed.
 type CanceledRunClosure struct {
 	// Steps is how many open step runs ended canceled.

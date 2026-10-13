@@ -37,6 +37,7 @@ const KIND_OF_CODE: Record<string, RefusalGroupKind> = {
   candidate: 'ownership',
   dependency: 'ownership',
   monitor_only: 'ownership',
+  wildcard_only: 'ownership',
   out_of_data_scope: 'access',
   not_an_asset: 'access',
   invalid_target: 'invalid',

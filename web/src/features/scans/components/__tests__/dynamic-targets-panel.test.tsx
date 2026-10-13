@@ -24,10 +24,14 @@ function Harness({
   targets,
   initial,
   onChange,
+  savedScan,
+  livenessAvailable,
 }: {
   targets: string[]
   initial?: ScanTargetOptions
   onChange?: (o: ScanTargetOptions) => void
+  savedScan?: boolean
+  livenessAvailable?: boolean
 }) {
   const [options, setOptions] = React.useState<ScanTargetOptions | undefined>(initial)
   return (
@@ -40,6 +44,8 @@ function Harness({
           onChange?.(o)
         }}
         workflow
+        savedScan={savedScan}
+        livenessAvailable={livenessAvailable}
       />
     </SWRConfig>
   )
@@ -86,13 +92,18 @@ describe('DynamicTargetsPanel', () => {
     )
   })
 
-  it('offers sweep or known hosts for a range, and previews the known hosts', async () => {
+  it('offers live hosts first, sweep or known hosts for a range, and previews the known hosts', async () => {
     const onChange = vi.fn()
     get.mockResolvedValue({ data: [{ name: '203.0.113.5' }], total: 1 })
     const user = userEvent.setup()
     render(<Harness targets={['203.0.113.0/24']} onChange={onChange} />)
-    expect(screen.getByRole('radio', { name: 'Sweep the whole range' })).toBeChecked()
+    // No choice saved: live hosts first is shown, with the notice.
+    expect(screen.getByRole('radio', { name: 'Find live hosts first' })).toBeChecked()
+    expect(screen.getByText(/No choice saved yet/)).toBeInTheDocument()
     expect(get).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('radio', { name: 'Sweep the whole range' }))
+    expect(onChange).toHaveBeenLastCalledWith({ cidr_mode: 'sweep' })
 
     await user.click(screen.getByRole('radio', { name: 'Only the hosts already in the inventory' }))
     expect(onChange).toHaveBeenLastCalledWith({ cidr_mode: 'inventory' })
@@ -130,5 +141,43 @@ describe('DynamicTargetsPanel', () => {
     render(<Harness targets={['*.example.com']} />)
     expect(get).not.toHaveBeenCalled()
     expect(screen.getByText(/shown to people who can read assets/)).toBeInTheDocument()
+  })
+
+  // Decision A1 (owner, 2026-10-13): a saved scan is never switched to live
+  // hosts first by an edit; it is suggested, and switches with one click.
+  it('shows a saved scan without a mode as sweeping, with the suggestion', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<Harness targets={['203.0.113.0/24']} onChange={onChange} savedScan livenessAvailable />)
+    expect(screen.getByRole('radio', { name: 'Sweep the whole range' })).toBeChecked()
+    expect(screen.getByText(/keeps doing so until you choose otherwise/)).toBeInTheDocument()
+    expect(screen.getByTestId('liveness-suggestion')).toHaveTextContent(
+      'Live hosts first (recommended)'
+    )
+    expect(onChange).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Use live hosts first' }))
+    expect(onChange).toHaveBeenLastCalledWith({ cidr_mode: 'liveness' })
+    expect(screen.getByRole('radio', { name: 'Find live hosts first' })).toBeChecked()
+    expect(screen.queryByTestId('liveness-suggestion')).not.toBeInTheDocument()
+  })
+
+  it('suggests nothing when the scan cannot find live hosts', () => {
+    render(<Harness targets={['203.0.113.0/24']} savedScan livenessAvailable={false} />)
+    expect(screen.getByRole('radio', { name: 'Sweep the whole range' })).toBeChecked()
+    expect(screen.queryByTestId('liveness-suggestion')).not.toBeInTheDocument()
+  })
+
+  it('keeps a saved live hosts first choice', () => {
+    render(
+      <Harness
+        targets={['203.0.113.0/24']}
+        initial={{ cidr_mode: 'liveness' }}
+        savedScan
+        livenessAvailable
+      />
+    )
+    expect(screen.getByRole('radio', { name: 'Find live hosts first' })).toBeChecked()
+    expect(screen.queryByTestId('liveness-suggestion')).not.toBeInTheDocument()
   })
 })

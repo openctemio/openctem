@@ -54,7 +54,7 @@ type CreateScanInput struct {
 	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
 	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
 	ScanZoneID       string     `json:"scan_zone_id" validate:"omitempty,uuid"`                            // Optional: pin targets to one scan zone ("" = Automatic)
-	TimeoutSeconds   int        `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
+	TimeoutSeconds   int        `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max duration (0 = none: the platform 24 h cap applies; min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
@@ -176,6 +176,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.configureScanType(ctx, sc, tenantID, scanType, input); err != nil {
 		return nil, err
 	}
+	// Address ranges: live hosts first unless the scan says otherwise.
+	if err := s.applyCIDRMode(ctx, sc, input.TargetOptions != nil && input.TargetOptions.CIDRMode != ""); err != nil {
+		return nil, err
+	}
 	// A wildcard selector must be *.<domain> the platform lets anyone cover.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
@@ -211,7 +215,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	sc.SetScanZone(zoneID)
 
-	// Set timeout (defaults to DefaultScanTimeoutSeconds if 0)
+	// Max duration: 0 leaves the scan without one (research/122).
 	sc.SetTimeoutSeconds(input.TimeoutSeconds)
 
 	// Set retry config (defaults: max_retries=0 disables retry)
@@ -234,12 +238,17 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 		sc.SetProfileID(&profileID)
 	}
 
-	// Set created by
+	// Set created by. A scheduled scan's runs act as its owner, so one
+	// without an owner (an API key that belongs to no user) is refused
+	// rather than saved to be refused at every due run.
 	if input.CreatedBy != "" {
 		createdByID, err := shared.IDFromString(input.CreatedBy)
-		if err == nil {
+		if err == nil && !createdByID.IsZero() {
 			sc.SetCreatedBy(createdByID)
 		}
+	}
+	if sc.CreatedBy == nil && sc.ScheduleType != scan.ScheduleManual {
+		return nil, ErrScheduledScanNeedsOwner
 	}
 
 	// Save to repository
@@ -788,8 +797,9 @@ type UpdateScanInput struct {
 	// ScanZoneID: nil = leave unchanged, pointer to "" = Automatic routing,
 	// pointer to id = pin the scan's targets to that zone.
 	ScanZoneID *string `json:"scan_zone_id" validate:"omitempty"`
-	// TimeoutSeconds: nil = leave unchanged, otherwise min=30 max=86400
-	TimeoutSeconds *int `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	// TimeoutSeconds: nil = leave unchanged, 0 = clear the max duration,
+	// otherwise min=30 max=86400 (the domain clamps 1-29 up to 30).
+	TimeoutSeconds *int `json:"timeout_seconds" validate:"omitempty,min=0,max=86400"`
 	// Retry config: nil = leave unchanged
 	MaxRetries          *int `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds *int `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
@@ -873,7 +883,25 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		}
 	}
 	if input.TargetOptions != nil {
-		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+		// An edit keeps the scan's CIDR mode unless it names one (decision
+		// A1): a scan saved before live hosts first existed keeps sweeping
+		// when it is edited, and switches only when a person chooses it.
+		opts := *input.TargetOptions
+		if opts.CIDRMode == "" {
+			opts.CIDRMode = sc.TargetOptions.CIDRMode
+		}
+		if err := sc.SetTargetOptions(opts); err != nil {
+			return nil, err
+		}
+		if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
+			// Live hosts first must have a host discovery step to run.
+			if err := s.applyCIDRMode(ctx, sc, true); err != nil {
+				return nil, err
+			}
+		}
+	} else if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
+		// Live hosts first must still have a host discovery step to run.
+		if err := s.applyCIDRMode(ctx, sc, true); err != nil {
 			return nil, err
 		}
 	}
@@ -1024,6 +1052,17 @@ func (s *Service) ActivateScan(ctx context.Context, tenantID, scanID string) (*s
 	sc, err := s.GetScan(ctx, tenantID, scanID)
 	if err != nil {
 		return nil, err
+	}
+
+	// A scheduled scan without an owner would be refused and paused again
+	// at its next due run: an administrator takes ownership first.
+	if sc.ScheduleType != scan.ScheduleManual {
+		switch s.OwnerState(ctx, sc) {
+		case OwnerStateMissing:
+			return nil, ErrScanHasNoOwner
+		case OwnerStateInactive:
+			return nil, ErrScanOwnerInactive
+		}
 	}
 
 	previousStatus := string(sc.Status)

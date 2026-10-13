@@ -48,6 +48,9 @@ export type InventoryFilters = Pick<
   | 'expiresBefore'
   | 'expiresAfter'
   | 'attribution'
+  | 'scopeStatus'
+  | 'discoveredBy'
+  | 'firstSeenAfter'
   | 'sort'
   | 'page'
   | 'pageSize'
@@ -81,6 +84,8 @@ const ARRAY_PARAMS = {
   providers: 'providers',
   businessUnitIds: 'business_unit_ids',
   attribution: 'attribution',
+  scopeStatus: 'scope_status',
+  discoveredBy: 'discovered_by',
 } as const
 
 // Boolean-valued filter keys and their URL param names.
@@ -103,6 +108,7 @@ const STRING_PARAMS = {
   expiresAfter: 'expires_after',
   programAssets: 'program_assets',
   freshness: 'freshness',
+  firstSeenAfter: 'first_seen_after',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS
@@ -270,19 +276,37 @@ export function toggleExcludedTag(f: InventoryFilters, tag: string): InventoryFi
 
 /**
  * Attribution values the inventory offers (RFC-036). With none selected the
- * inventory shows only assets that are the organisation's: confirmed
- * (including assets with no attribution record), dependency and monitor only
- * (the API alias `approved`). Names awaiting review and rejected names are
+ * inventory shows every asset in it (the API alias `approved`): confirmed
+ * (including assets with no attribution record), discovered (found by
+ * discovery, passive only until a scope entry covers it; RFC-054 §15),
+ * dependency and monitor only. Names awaiting review and rejected names are
  * hidden until asked for.
  */
 export const ATTRIBUTION_FILTER_VALUES = [
   'confirmed',
+  'discovered',
   'unknown',
   'needs_review',
   'candidate',
   'dependency',
   'monitor_only',
   'rejected',
+] as const
+
+/**
+ * Scope statuses the inventory filters by (RFC-054 §15): an active entry
+ * covers it; no entry covers it (passive only); an exclusion matches or it
+ * was marked not ours; a private or internal name (scan zones govern it).
+ */
+export const SCOPE_STATUS_VALUES = ['in_scope', 'not_covered', 'excluded', 'internal'] as const
+
+/** The attribution rules an asset can be filtered by ("discovered by"). */
+export const DISCOVERED_BY_VALUES = [
+  'fqdn_under_verified_root',
+  'fqdn_under_asserted_root',
+  'tenant_scanned',
+  'tenant_scan_discovered',
+  'matches_scope_target',
 ] as const
 
 /** What the inventory asks the API for when no attribution is selected. */

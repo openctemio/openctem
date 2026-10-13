@@ -197,6 +197,7 @@ type Service struct {
 	endpoints         EndpointSelector          // incremental web scanning (web_endpoints.go)
 	runNotifier       RunNotifier               // live run updates (run_notify.go); nil: none
 	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow
+	lineage           scanworkflow.LineageStore // lineage of tenant copies of system templates (template_update.go); nil offers no updates
 	logger            *logger.Logger
 
 	// Quality Gate dependencies (optional)
@@ -279,6 +280,13 @@ type TargetGate interface {
 // step dispatch.
 type StepTargetFilter interface {
 	FilterStepTargets(ctx context.Context, tenantID shared.ID, toolName string, runContext map[string]any) (*scanapp.StepTargets, error)
+}
+
+// JobExclusionSource answers the scope exclusions that touch a job's range
+// targets (RFC-088). A target gate that implements it (*scan.Service does)
+// has them added to every step command.
+type JobExclusionSource interface {
+	JobExclusions(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
 }
 
 // WithTargetGate wires the target gate. Without it a run started with

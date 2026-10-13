@@ -1005,7 +1005,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	s.Scope.SetGuardrails(scopeGuardrails)
 	s.ScopeGuardrails = scopeGuardrails
-	s.Scope.SetCoverage(postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}), s.DataScope)
+	scopeCoverage := postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB})
+	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
+	s.Scope.SetExclusionMatches(scopeCoverage) // bulk exclusion preview (research/124)
 	// Program entries (RFC-065) cover nothing a program lists as out of
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
@@ -1739,6 +1741,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// without a job and heartbeat actions; a pairing approval sets the
 	// chosen profile in its transaction.
 	s.SensorGrant = sensorgrant.NewService(repos.SensorGrant, repos.Sensor, log)
+	s.SensorGrant.SetUsage(repos.SensorGrant, repos.Sensor)
 	s.SensorGrant.SetAudit(s.Audit)
 	s.SensorGrant.SetZoneChecker(repos.SensorGrant)
 	if s.SensorPairing != nil {
@@ -1833,6 +1836,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.Scope.SetLedger(s.JobSigner)
 		log.Info("sensor jobs are signed by the job signer", "socket", sock)
 	}
+	// research/122: completed scan commands teach per-target durations.
+	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -1870,6 +1875,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
 		s.ScopeJoin.SetSettings(s.Tenant)
+		s.ScopeJoin.SetWildcardDNS(repos.AssetWildcardDNS)
 		joinScheduler := easmapp.NewJoinScheduler(s.ScopeJoin, 0, log)
 		s.Scope.SetScopeJoin(joinScheduler, postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}))
 		s.BountyProgram.SetJoiner(joinScheduler)
@@ -1948,6 +1954,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// to; reports without one are applied with limits, or quarantined per the
 	// tenant's policy.
 	s.Ingest.SetCommandReader(repos.Command)
+	s.Ingest.SetWildcardDNS(repos.AssetWildcardDNS)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
@@ -2034,6 +2041,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
+	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
@@ -2506,6 +2514,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// The live run map: a run that changes tells its run:{id} watchers,
 	// at most once a second per run.
 	s.ScanRun.SetRunNotifier(newRunChangeThrottle(s.WebSocketHub, time.Second))
+	// Copies of system templates keep their lineage and are offered the
+	// template's later changes (applied only by a person).
+	s.ScanRun.SetTemplateLineage(repos.ScanWorkflow)
 	// A role assigned, removed or redefined, or a membership removed or
 	// suspended, closes the user's live sockets in that tenant; the client
 	// reconnects through every upgrade gate again (RFC-045).
@@ -2579,6 +2590,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		}
 	}
 	s.Asset.SetCreatedAssetsHook(requestNew)
+	// Resolve before active (RFC-088): active stages skip names without
+	// recent resolution evidence; their enrichment is asked for again.
+	var staleRefresher scan.StaleRefresher
+	if cfg.Worker.AssetEnrichmentEnabled {
+		staleRefresher = s.AssetEnricher
+	}
+	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
 	s.AssetImport.SetCreatedAssetsHook(requestNew)
 	s.Asset.SetEnrichmentRequests(repos.AssetEnrichmentRequests)
 	s.Ingest.SetAssetsDiscoveredCallback(func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
@@ -2815,6 +2833,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// A widened grant notifies every administrator (RFC-052 D-5).
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
+	}
+	// A scan paused for want of an active owner tells every administrator
+	// once.
+	if s.Scan != nil {
+		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
 	}
 
 	// Scope entries: settings, the approval count and the widening notice to

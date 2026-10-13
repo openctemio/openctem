@@ -309,12 +309,61 @@ var (
 		[]string{"mode"},
 	)
 
+	// CommandClaimDuration is how long a sensor's claim takes on the
+	// platform, by mode: "claim" (one by id) or "claim_n" (the poll, which
+	// selects, gates, re-checks scope, claims and signs a batch).
+	CommandClaimDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "command_claim_duration_seconds",
+			Help:    "How long a sensor's claim takes on the platform, by mode (claim, claim_n)",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+		},
+		[]string{"mode"},
+	)
+
+	// CommandClaimWait is how long a claimed command waited for a sensor:
+	// from when it was due (created, or the opening of its scan window) to
+	// its claim, by priority class.
+	CommandClaimWait = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "command_claim_wait_seconds",
+			Help:    "How long a command waited from due to claimed, by priority class",
+			Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800, 3600, 7200},
+		},
+		[]string{"class"},
+	)
+
+	// CommandClaimSkippedTotal counts candidates a poll selected but did
+	// not hand out, by why they wait: "local_policy" (the sensor's reported
+	// policy refuses them), "no_slot" (the sensor has no free scan slot),
+	// "scope_changed" (the scope narrowed them away), "window_hold" (outside
+	// their scan window), "program_hold" (a bug-bounty program rule holds
+	// them), "taken" (another sensor took them first, or one of their hosts
+	// is busy).
+	CommandClaimSkippedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "command_claim_skipped_total",
+			Help: "Poll candidates not handed out, by reason (local_policy, no_slot, scope_changed, window_hold, program_hold, taken)",
+		},
+		[]string{"reason"},
+	)
+
 	// CommandLeasesExpiredTotal counts commands taken back from a sensor
 	// whose lease ran out (it stopped renewing) and re-queued.
 	CommandLeasesExpiredTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "command_leases_expired_total",
 			Help: "Commands re-queued because the sensor holding them let the lease expire",
+		},
+	)
+
+	// CommandsStalledTotal counts running commands re-queued because they
+	// finished no target within their stall window or ran far past their
+	// task budget (research/122).
+	CommandsStalledTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "commands_stalled_total",
+			Help: "Running commands re-queued because they stalled or overran their task budget",
 		},
 	)
 

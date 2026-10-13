@@ -4,7 +4,14 @@
 // Confidence is the noisy-OR of the positive evidence weights, discounted by
 // the negative ones: c = (1 − Π(1 − w⁺)) · Π(1 − w⁻), shown as 0–100. An asset
 // is auto-confirmed only when at least one strong rule fired and c ≥ 90;
-// otherwise it waits for review (c ≥ 50) or stays a candidate.
+// otherwise it is discovered (c ≥ 50) or stays a candidate.
+//
+// Inventory first (research/124, RFC-054 §15): a discovered asset is in the
+// inventory at once and gets passive checks only, unless an active scope
+// entry covers it. Inventory membership never authorizes active probes;
+// scope entries do. A tenant that keeps the review gate
+// (scope.review_before_inventory) stores needs_review instead, outside the
+// inventory.
 //
 // An asset with no attribution record is a legacy asset. For the inventory
 // and the review queue it counts as confirmed. For active scanning it does
@@ -24,7 +31,14 @@ type State string
 const (
 	// StateConfirmed: the tenant's, and active checks within its tier may run.
 	StateConfirmed State = "confirmed"
-	// StateNeedsReview: probably the tenant's; a human decides. Passive only.
+	// StateDiscovered: found by the tenant's discovery (a scan, CT logs)
+	// and in the inventory, but nobody and no permanent scope entry said it
+	// is the tenant's. Written by automation only. Passive only, unless an
+	// active scope entry covers it (the entry is the authority).
+	StateDiscovered State = "discovered"
+	// StateNeedsReview: probably the tenant's; a human decides before it
+	// joins the inventory. Written instead of discovered when the tenant
+	// keeps the review gate, or set by a person. Passive only.
 	StateNeedsReview State = "needs_review"
 	// StateCandidate: weak evidence; hidden unless filtered for. Passive only.
 	StateCandidate State = "candidate"
@@ -40,7 +54,17 @@ const (
 // Valid reports whether s is a known state.
 func (s State) Valid() bool {
 	switch s {
-	case StateConfirmed, StateNeedsReview, StateCandidate, StateDependency, StateMonitorOnly, StateRejected:
+	case StateConfirmed, StateDiscovered, StateNeedsReview, StateCandidate, StateDependency, StateMonitorOnly, StateRejected:
+		return true
+	}
+	return false
+}
+
+// Automatic reports whether automation may store s as a decision of its own
+// (a person's decisions are the other states).
+func (s State) Automatic() bool {
+	switch s {
+	case StateConfirmed, StateDiscovered, StateNeedsReview, StateCandidate:
 		return true
 	}
 	return false
@@ -64,6 +88,14 @@ const StateOutOfScope State = "out_of_scope"
 // refuse the target (deny list, RFC-054 §8.2). No tenant setting changes it.
 const StatePlatformDenied State = "platform_denied"
 
+// StateWildcardOnly is never stored either: the active-scan gate's answer
+// for a name that resolves only through a wildcard DNS record (a resolution
+// with the wildcard-DNS filter on did not report it), and for a service or
+// URL on such a host. It stays in the inventory and is watched passively
+// until a person confirms it or a filtered resolution reports it (RFC-088
+// decision A4).
+const StateWildcardOnly State = "wildcard_only"
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan
@@ -78,7 +110,7 @@ func (s State) rank() int {
 	switch s {
 	case StateCandidate:
 		return 1
-	case StateNeedsReview:
+	case StateNeedsReview, StateDiscovered:
 		return 2
 	case StateConfirmed:
 		return 3
@@ -103,8 +135,8 @@ const (
 	RuleTenantScanned Rule = "tenant_scanned"
 	// RuleScanDiscovered: the tenant's own scan found the name while scanning
 	// something else (a subfinder child, a resolved address, a root domain
-	// named in a result). Medium: it brings a name to review, and never
-	// confirms one on its own (research/22 E7).
+	// named in a result). Medium: it brings a name into the inventory as
+	// discovered, and never confirms one on its own (research/22 E7).
 	RuleScanDiscovered Rule = "tenant_scan_discovered"
 	// RuleMatchesScopeTarget: an active, permanent scope target of the
 	// tenant (or a root-domain seed) covers the name; an IP address only
@@ -147,7 +179,8 @@ func Weight(r Rule) (float64, Class, error) {
 // AutoConfirmThreshold is O4's bar: at least one strong rule and c ≥ 90.
 const AutoConfirmThreshold = 90
 
-// ReviewThreshold separates needs_review from candidate.
+// ReviewThreshold separates needs_review (stored as discovered unless the
+// tenant keeps the review gate) from candidate.
 const ReviewThreshold = 50
 
 // Decision is the outcome of evaluating an asset's evidence.
@@ -206,9 +239,11 @@ func Evaluate(fired []Rule) (Decision, error) {
 // fresh automatic decision:
 //
 //   - a human decision is never overridden by automation;
-//   - automation only raises the state (candidate → needs_review →
-//     confirmed), never lowers it, so new weak evidence cannot demote a
-//     confirmed asset; confidence follows the evidence;
+//   - automation only raises the state (candidate → needs_review or
+//     discovered → confirmed), never lowers it, so new weak evidence cannot
+//     demote a confirmed asset; confidence follows the evidence. A stored
+//     discovered record stays discovered when the fresh decision is
+//     needs_review (the same rank: it is already in the inventory);
 //   - dependency / monitor_only / rejected are only ever set by a human.
 func Merge(current *Record, fresh Decision) Decision {
 	if current == nil {
@@ -219,6 +254,9 @@ func Merge(current *Record, fresh Decision) Decision {
 	}
 	if current.State.rank() > fresh.State.rank() {
 		return Decision{State: current.State, Confidence: max(fresh.Confidence, current.Confidence), Reason: current.Reason}
+	}
+	if current.State == StateDiscovered && fresh.State == StateNeedsReview {
+		fresh.State = StateDiscovered
 	}
 	return fresh
 }
@@ -248,11 +286,19 @@ type Evidence struct {
 }
 
 // InInventory reports whether an asset with this recorded state is in the
-// inventory (RFC-054 §4.4): confirmed, dependency, monitor_only, or no record
-// (""). The review queue (needs_review, candidate) and rejected assets are
-// not. Every surface counts and lists with this one definition
-// (FilterApproved is the same set as an asset-list filter).
+// inventory (RFC-054 §4.4, §15): confirmed, discovered, dependency,
+// monitor_only, or no record (""). The review queue (needs_review,
+// candidate) and rejected assets are not. Every list uses this one
+// definition (FilterApproved is the same set as an asset-list filter).
 func InInventory(s State) bool {
+	return s == StateDiscovered || Attributed(s)
+}
+
+// Attributed reports whether an asset with this recorded state is the
+// organization's by its own word or its scope entries: InInventory without
+// discovered (FilterAttributed). Metrics, the CT watch list and other
+// places where a discovered third-party name must not count use it.
+func Attributed(s State) bool {
 	switch s {
 	case "", StateConfirmed, StateDependency, StateMonitorOnly:
 		return true
@@ -260,16 +306,18 @@ func InInventory(s State) bool {
 	return false
 }
 
-// Filter values accepted by the asset list (?attribution=) besides the six
+// Filter values accepted by the asset list (?attribution=) besides the
 // states. Unrecorded matches assets with no attribution record (legacy:
 // in the inventory before EASM, counted as confirmed). Unconfirmed is the
 // review queue (needs_review and candidate). Approved is what the default
-// inventory shows: confirmed (recorded or legacy), dependency and
-// monitor_only; it leaves out the review queue and rejected assets.
+// inventory shows: confirmed (recorded or legacy), discovered, dependency
+// and monitor_only; it leaves out the review queue and rejected assets.
+// Attributed is Approved without discovered.
 const (
 	FilterUnrecorded  = "unknown"
 	FilterUnconfirmed = "unconfirmed"
 	FilterApproved    = "approved"
+	FilterAttributed  = "attributed"
 	// FilterAll asks for every asset whatever its attribution (no filter;
 	// research/22 P0-12: the web "Show all" sends it).
 	FilterAll = "all"
@@ -308,6 +356,9 @@ func ParseFilter(values []string) (StateFilter, bool, error) {
 		case FilterUnconfirmed:
 			add(StateNeedsReview, StateCandidate)
 		case FilterApproved:
+			add(StateConfirmed, StateDiscovered, StateDependency, StateMonitorOnly)
+			f.Unrecorded = true
+		case FilterAttributed:
 			add(StateConfirmed, StateDependency, StateMonitorOnly)
 			f.Unrecorded = true
 		default:

@@ -89,6 +89,9 @@ func TestScanWorkflowRoutes_NeedWorkflowPermissions(t *testing.T) {
 		{http.MethodPut, wf, permission.ScanWorkflowsWrite},
 		{http.MethodPost, "/api/v1/scan-workflows/verify", permission.ScanWorkflowsWrite},
 		{http.MethodPost, wf + "/clone", permission.ScanWorkflowsWrite},
+		{http.MethodGet, wf + "/template-update", permission.ScanWorkflowsRead},
+		{http.MethodPost, wf + "/template-update/apply", permission.ScanWorkflowsWrite},
+		{http.MethodPost, wf + "/template-update/reject", permission.ScanWorkflowsWrite},
 		{http.MethodDelete, wf, permission.ScanWorkflowsDelete},
 		{http.MethodDelete, wf + "/steps/s1", permission.ScanWorkflowsDelete},
 	} {
@@ -124,6 +127,17 @@ func TestScanWorkflowRoutes_OldPathsAreGone(t *testing.T) {
 		code, reached := serveScanWorkflowRoutes(t, all, rt.method, rt.path)
 		if reached || (code != http.StatusNotFound && code != http.StatusMethodNotAllowed) {
 			t.Errorf("%s %s: code=%d reached=%v, want 404 or 405", rt.method, rt.path, code, reached)
+		}
+	}
+}
+
+// Applying or dismissing a template update changes the workflow: a reader
+// is refused.
+func TestScanWorkflowRoutes_TemplateUpdateNeedsWrite(t *testing.T) {
+	const wf = "/api/v1/scan-workflows/" + testRunID
+	for _, path := range []string{wf + "/template-update/apply", wf + "/template-update/reject"} {
+		if code, reached := serveScanWorkflowRoutes(t, []string{permission.ScanWorkflowsRead.String()}, http.MethodPost, path); reached || code != http.StatusForbidden {
+			t.Errorf("POST %s with read only: reached=%v code=%d", path, reached, code)
 		}
 	}
 }

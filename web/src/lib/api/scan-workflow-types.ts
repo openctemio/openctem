@@ -276,6 +276,10 @@ export interface RunTrigger {
 export type ScanRunKind =
   'scan' | 'quick' | 'retest' | 'validation' | 'test' | 'connector' | 'system'
 
+/** Which policy set a run's deadline (scan_runs.deadline_reason). */
+export type RunDeadlineReason =
+  'scan_max_duration' | 'workflow_max_duration' | 'platform_cap' | 'legacy'
+
 export interface ScanRun {
   id: string
   tenant_id: string
@@ -301,6 +305,10 @@ export interface ScanRun {
   scheduled_for?: string
   started_at?: string
   completed_at?: string
+  /** When the run is settled if still open: a policy cap, fixed at start (RFC-046 §6.3). */
+  deadline_at?: string
+  /** Which policy set deadline_at. */
+  deadline_reason?: RunDeadlineReason
   total_steps: number
   completed_steps: number
   failed_steps: number

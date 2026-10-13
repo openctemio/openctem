@@ -192,6 +192,7 @@ var assetMergeLeftAlone = map[string]string{
 	"ctem_cycle_scope_snapshots.asset_id": "historical snapshot of a closed scope",
 	"ingest_reports.touched_asset_ids":    "historical record of one report",
 	"collector_assets.asset_id":           "a collector source's authority covers only the asset it created: a merge never hands it the kept asset, so the merged asset's rows go with it",
+	"asset_wildcard_dns.asset_id":         "a merged name's wildcard-only mark goes with it; the kept name keeps its own and the next filtered resolution marks it again",
 }
 
 // mergeAssetReferences moves everything that references mergeIDs onto keepID.

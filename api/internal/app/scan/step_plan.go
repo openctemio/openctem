@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
 )
 
 // Error codes of the planner.
@@ -218,6 +219,11 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 			payload["targets"] = st.Targets
 		}
 	}
+	// The task's layered budget (research/122): the sensor bounds each
+	// target with it and stops the task only at twice its expected time;
+	// the platform calls the task stalled when no target finishes within
+	// the stall window.
+	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
 	if run.AssetID != nil {
 		payload["asset_id"] = run.AssetID.String()
 	}
@@ -228,8 +234,63 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// tool's keys as before, so an older sensor runs the step unchanged.
 	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
 		payload[PayloadKeyCapability] = st.ID()
+		// The platform decides how hosts are probed: a host discovery step
+		// that names no ports probes the platform's set, never a default
+		// a sensor picks.
+		if st.Key == stage.DiscoverHosts {
+			if key, ok := st.ToolParamKey(toolName, "ports"); ok {
+				if config == nil {
+					config = map[string]any{}
+				}
+				if _, set := config[key]; !set {
+					config[key] = stage.HostProbePorts
+					payload[scanworkflow.PayloadKeyConfig] = config
+				}
+			}
+		}
+	}
+	if c := withWildcardFilter(toolName, config); c != nil {
+		payload[scanworkflow.PayloadKeyConfig] = c
 	}
 	return payload, nil
+}
+
+// PayloadKeyBudget is the command payload key of the task's budget
+// (toolbudget.Task; sdk-go ScanCommandPayload.Budget).
+const PayloadKeyBudget = "budget"
+
+// payloadTargetCount is how many targets a payload's "targets" holds.
+func payloadTargetCount(v any) int {
+	switch ts := v.(type) {
+	case []string:
+		return len(ts)
+	case []any:
+		return len(ts)
+	}
+	return 1
+}
+
+// wildcardFilterKey is dnsx's setting that drops names resolving only
+// through a wildcard record.
+const wildcardFilterKey = "wildcard_filter"
+
+// withWildcardFilter turns the wildcard-DNS filter on for a dnsx job that
+// does not set it (RFC-088 decision A4): the platform decides it, so a
+// wildcard zone never floods the inventory with names that only resolve
+// through it, whatever a sensor's own default is. nil when unchanged.
+func withWildcardFilter(tool string, config map[string]any) map[string]any {
+	if !strings.EqualFold(strings.TrimSpace(tool), "dnsx") {
+		return nil
+	}
+	if _, set := config[wildcardFilterKey]; set {
+		return nil
+	}
+	out := make(map[string]any, len(config)+1)
+	for k, v := range config {
+		out[k] = v
+	}
+	out[wildcardFilterKey] = true
+	return out
 }
 
 // PayloadKeyCapability is the command payload key of a capability job's

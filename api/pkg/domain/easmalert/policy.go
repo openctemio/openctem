@@ -103,7 +103,7 @@ func Label(e Exposure) string {
 		return LabelUnlinked
 	case e.Attribution == "":
 		return "unrecorded"
-	case e.Attribution == "needs_review" || e.Attribution == "candidate":
+	case e.Attribution == "discovered" || e.Attribution == "needs_review" || e.Attribution == "candidate":
 		return LabelUnverified
 	}
 	return e.Attribution

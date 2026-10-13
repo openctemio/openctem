@@ -131,7 +131,9 @@ func (s *RuleService) ready() error {
 // pending reads the caller's pending items (tenant and data scope).
 func (s *RuleService) pending(ctx context.Context, tenantID shared.ID, states []attribution.State) ([]ReviewItem, error) {
 	if len(states) == 0 {
-		states = []attribution.State{attribution.StateNeedsReview}
+		// Discovered names are in the inventory already; the rules are
+		// optional helpers over them too (research/124).
+		states = []attribution.State{attribution.StateDiscovered, attribution.StateNeedsReview}
 	}
 	scope, err := s.review.viewScope(ctx, tenantID)
 	if err != nil {
@@ -550,7 +552,7 @@ func refusalOf(err error) *RuleRefusal {
 // matching splits the caller's pending items a pattern covers into those an
 // action would change and those an exclusion or rejection keeps out.
 func (s *RuleService) matching(ctx context.Context, tenantID shared.ID, typ scopedom.TargetType, pattern string) ([]NamedAsset, []BlockedItem, error) {
-	items, err := s.pending(ctx, tenantID, []attribution.State{attribution.StateNeedsReview, attribution.StateCandidate})
+	items, err := s.pending(ctx, tenantID, []attribution.State{attribution.StateDiscovered, attribution.StateNeedsReview, attribution.StateCandidate})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -622,7 +624,7 @@ func (s *RuleService) Preview(ctx context.Context, tenantID shared.ID, in RuleAc
 			return nil, err
 		}
 	case RuleAcceptSelected:
-		items, err := s.pending(ctx, tenantID, []attribution.State{attribution.StateNeedsReview, attribution.StateCandidate})
+		items, err := s.pending(ctx, tenantID, []attribution.State{attribution.StateDiscovered, attribution.StateNeedsReview, attribution.StateCandidate})
 		if err != nil {
 			return nil, err
 		}

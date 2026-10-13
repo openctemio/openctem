@@ -59,7 +59,8 @@ The claim SQL lives in `internal/infra/postgres/command_repository.go`
 
 A web-scoped nuclei job (the tenant excluded a path on the host) keeps to
 its scope only through the task forwarder of a network-confined sandbox.
-The step stamps `required_features: ["net.confined@1"]` on its commands, and
+The step (or a web-scoped nuclei validation or retest) stamps
+`required_features: ["net.confined@1"]` on its commands, and
 the claim's feature gate (`featureClaimPredicate`, on the poll, the batch
 claim, the claim by id and the doorbell count) offers them only to a sensor
 whose own report lists `net.confined@1`; a capability an administrator
