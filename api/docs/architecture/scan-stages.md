@@ -18,7 +18,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | Stage | Inputs → outputs | Tier | Tools (default first) |
 |---|---|---|---|
 | `discover.subdomains` | domain → domain, subdomain | T0 | subfinder |
-| `resolve.dns` | domain, subdomain → domain, subdomain, ip_address (`resolves_to`, `cname_of`) | T0 | dnsx |
+| `resolve.dns` | domain, subdomain → domain, subdomain, ip_address (`resolves_to`, `cname_of`); wildcard-DNS filter on (RFC-088 §8) | T0 | dnsx |
 | `lookup.rdap` | domain → domain (registrar, registrant organization, name servers, dates) | T0 | rdap |
 | `lookup.asn` | ip_address, network → ip_address, network (origin AS, holder, announced range) | T0 | asn |
 | `discover.hosts` | ip_address, network → ip_address (live, with the probe that answered) | T1 | naabu (only for a step that names the capability) |
