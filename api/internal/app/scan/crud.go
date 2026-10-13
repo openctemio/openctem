@@ -883,14 +883,21 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		}
 	}
 	if input.TargetOptions != nil {
-		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+		// An edit keeps the scan's CIDR mode unless it names one (decision
+		// A1): a scan saved before live hosts first existed keeps sweeping
+		// when it is edited, and switches only when a person chooses it.
+		opts := *input.TargetOptions
+		if opts.CIDRMode == "" {
+			opts.CIDRMode = sc.TargetOptions.CIDRMode
+		}
+		if err := sc.SetTargetOptions(opts); err != nil {
 			return nil, err
 		}
-		// An edit that sends the target options settles the CIDR mode as a
-		// new scan does: a scan saved before liveness existed sweeps until
-		// it is edited.
-		if err := s.applyCIDRMode(ctx, sc, input.TargetOptions.CIDRMode != ""); err != nil {
-			return nil, err
+		if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
+			// Live hosts first must have a host discovery step to run.
+			if err := s.applyCIDRMode(ctx, sc, true); err != nil {
+				return nil, err
+			}
 		}
 	} else if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
 		// Live hosts first must still have a host discovery step to run.

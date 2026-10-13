@@ -170,8 +170,9 @@ implements it claim it.
 `target_options.cidr_mode` gains `liveness`, the default of a new scan with
 a range when its scan can run it (a single scanner, or a workflow with a
 Host discovery step); a workflow without one keeps sweeping, and an
-explicit `liveness` there is refused. A scan saved before keeps sweeping
-until it is edited (decision A1). In a liveness run the range pieces go to
+explicit `liveness` there is refused. A scan saved before keeps sweeping,
+also when it is edited, until a person chooses live hosts first (decision
+A1); the console suggests it where the scan can run it. In a liveness run the range pieces go to
 Host discovery and passive lookups only; every other active step gets the
 live hosts Host discovery found plus the inventory's addresses inside the
 ranges. The platform sends the probe ports with every host discovery job.
@@ -233,7 +234,7 @@ same host keys and bucket locks as a tenant sensor's.
 
 | # | Question | Decision |
 |---|---|---|
-| A1 | Default for a range in a new scan | liveness first (step 6); existing scans keep sweeping until edited |
+| A1 | Default for a range in a new scan | liveness first (step 6); an existing scan keeps its mode on edit and is never switched silently: the edit form and the scan detail page suggest "Live hosts first (recommended)" with a one-click switch where the scan can run it |
 | A2 | Exclusion inside a range | cut the range (exact subtraction); never drop, never scan through |
 | A3 | Discovery depth | 2 levels below the root by default, max 3, budgets 5 000 per root and 10 000 per run |
 | A4 | Wildcard-DNS filter | on by default; names that resolve only through a wildcard are never active units and never auto-confirmed. Step 8: the platform sends `wildcard_filter: true` with every dnsx job that does not set it, so such names never gain resolution evidence (and so never reach an active stage, A5) |

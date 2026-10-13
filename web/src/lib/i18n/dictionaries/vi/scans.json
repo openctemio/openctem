@@ -37,7 +37,7 @@
   "scans.dynamic.addressRanges": "Dải địa chỉ",
   "scans.dynamic.liveness": "Tìm máy chủ đang hoạt động trước",
   "scans.dynamic.livenessHint": "Một bước thăm dò nhẹ tìm các địa chỉ đang hoạt động; các bước sâu hơn quét những địa chỉ đó và các địa chỉ kho tài sản đã có trong dải. Quy trình quét cần có bước Phát hiện máy chủ.",
-  "scans.dynamic.cidrModeNotice": "Chưa lưu lựa chọn: lần quét mới sẽ tìm máy chủ đang hoạt động trước khi có thể; lần quét đã lưu trước khi có lựa chọn này vẫn quét mọi địa chỉ cho đến khi bạn lưu lại.",
+  "scans.dynamic.cidrModeNotice": "Chưa lưu lựa chọn: lượt quét mới sẽ tìm máy đang hoạt động trước khi có thể.",
   "scans.dynamic.sweep": "Quét toàn bộ dải",
   "scans.dynamic.sweepHint": "Trình quét thăm dò mọi địa chỉ trong dải.",
   "scans.dynamic.inventoryOnly": "Chỉ các máy chủ đã có trong kho tài sản",
@@ -1611,5 +1611,16 @@
   "scans.tasks.progressDone": "xong {done}/{total} mục tiêu",
   "scans.tasks.lastTarget": "mục tiêu gần nhất {ago} trước",
   "scans.tasks.budget": "ngân sách {budget}",
-  "scans.tasks.stalling": "Không có mục tiêu nào xong trong {quiet}; sẽ bị thu hồi vì treo sau {stall}"
+  "scans.tasks.stalling": "Không có mục tiêu nào xong trong {quiet}; sẽ bị thu hồi vì treo sau {stall}",
+  "scans.dynamic.livenessSuggestion": "Tìm máy đang hoạt động trước (khuyến nghị)",
+  "scans.dynamic.livenessSuggestionHint": "Lượt quét này quét mọi địa chỉ trong các dải. Nó có thể tìm các máy đang hoạt động trước rồi chỉ quét các máy đó và các địa chỉ đã có trong kho tài sản.",
+  "scans.dynamic.livenessSwitch": "Dùng tìm máy đang hoạt động trước",
+  "scans.dynamic.cidrModeNoticeSaved": "Chưa lưu lựa chọn: lượt quét này quét mọi địa chỉ trong các dải và giữ nguyên như vậy cho đến khi bạn chọn khác.",
+  "scans.liveness.title": "Tìm máy đang hoạt động trước (khuyến nghị)",
+  "scans.liveness.hintWorkflow": "Lượt quét này quét mọi địa chỉ trong các dải. Quy trình của nó có bước Khám phá máy chủ, nên có thể tìm các máy đang hoạt động trước rồi chỉ quét các máy đó và các địa chỉ đã có trong kho tài sản.",
+  "scans.liveness.hintScanner": "Lượt quét này quét mọi địa chỉ trong các dải. Nó có thể tìm các máy đang hoạt động trước rồi chỉ quét các máy đó và các địa chỉ đã có trong kho tài sản.",
+  "scans.liveness.switch": "Dùng tìm máy đang hoạt động trước",
+  "scans.liveness.switched": "Lượt quét giờ tìm máy đang hoạt động trước",
+  "scans.liveness.switchFailed": "Không thể chuyển chế độ của lượt quét",
+  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước"
 }

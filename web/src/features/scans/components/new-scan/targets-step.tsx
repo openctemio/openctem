@@ -27,18 +27,32 @@ import { GroupSource } from '../target-picker/group-source'
 import { PasteSource } from '../target-picker/paste-source'
 import { SelectionSummary, type SelectionChip } from '../target-picker/selection-summary'
 import { scopeCheckTier } from '../../lib/scan-intensity'
+import { canFindLiveHosts } from '../../lib/liveness'
+import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 
 interface TargetsStepProps {
   data: NewScanFormData
   onChange: (data: Partial<NewScanFormData>) => void
   /** Offer the coverage level (new scans; an edit keeps the stored targets). */
   showCoverage?: boolean
+  /** An edit of a saved scan: its CIDR mode is kept unless a person switches it. */
+  savedScan?: boolean
 }
 
 type Source = 'assets' | 'groups' | 'paste'
 
-export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStepProps) {
+export function TargetsStep({
+  data,
+  onChange,
+  showCoverage = true,
+  savedScan = false,
+}: TargetsStepProps) {
   const { t } = useTranslation()
+  const { data: chosenWorkflow } = useScanWorkflow(
+    data.mode === 'workflow' && data.workflowId ? data.workflowId : null,
+    { revalidateOnFocus: false }
+  )
+  const livenessAvailable = canFindLiveHosts(data.mode, chosenWorkflow) === true
   const targets = data.targets
   const [source, setSource] = useState<Source>(() =>
     targets.customTargets.length > 0 && targets.assetIds.length === 0
@@ -252,6 +266,8 @@ export function TargetsStep({ data, onChange, showCoverage = true }: TargetsStep
         options={targets.targetOptions}
         onChange={(targetOptions) => onChange({ targets: { ...targets, targetOptions } })}
         workflow={data.mode === 'workflow'}
+        savedScan={savedScan}
+        livenessAvailable={livenessAvailable}
       />
 
       <SelectionSummary
