@@ -255,6 +255,8 @@ export type RunTaskPage = Schemas['internal_infra_http_handler.RunTaskPageRespon
 /** GET /api/v1/scan-runs/{id}/tasks/{task_id}/logs — the log lines a task's sensor sent. */
 export type RunTaskLogs = Schemas['internal_infra_http_handler.RunTaskLogsResponse']
 export type RunTaskLogLine = Schemas['internal_infra_http_handler.RunTaskLogLine']
+/** GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement — why a queued task waits. */
+export type RunTaskPlacement = Schemas['internal_infra_http_handler.RunTaskPlacementResponse']
 /** GET /api/v1/scan-runs/{id}/stages — how each stage of a run was planned. */
 export type RunStage = Schemas['internal_infra_http_handler.RunStageResponse']
 export type RunStageList = Schemas['internal_infra_http_handler.RunStageListResponse']
