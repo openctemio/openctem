@@ -56,6 +56,14 @@ var failurePatterns = []struct {
 	}},
 	{FailureNoTargets, []string{"no targets", "no target "}},
 	{FailureNoSensor, []string{"no sensor"}},
+	{FailureWebScopeUnsupported, []string{"does not keep to a web scope", "keeps to a web scope only in"}},
+	// A sensor that sends no reach summary reports an unreachable job as
+	// text: the SDK's tool error class, or the operating system's own
+	// connect errors toward the target.
+	{FailureTargetUnreachable, []string{
+		"target_unreachable", "target unreachable", "targets unreachable",
+		"network is unreachable", "no route to host", "host is unreachable",
+	}},
 }
 
 // ClassifyStepFailure returns the code to record for a step failure and
@@ -153,6 +161,17 @@ const (
 	// FailureIntensityExceeded: the job probes above the intensity of the
 	// scan it belongs to (RFC-071); refused at claim.
 	FailureIntensityExceeded = "INTENSITY_EXCEEDED"
+	// FailureWebScopeUnsupported: the job has a web scope (the tenant
+	// excluded a path on a target host) and the sensor's tool cannot keep
+	// to it: the tool does not declare features.web_scope, or it keeps to
+	// one only in a sandbox that confines its network and the sensor's
+	// does not (RFC-055 §6.1). The same sensor fails the same way again.
+	FailureWebScopeUnsupported = "WEB_SCOPE_UNSUPPORTED"
+	// FailureNoConfinedSensor: the job needs a sensor whose tool runs are
+	// network-confined (net.confined@1; a web-scoped template scan) and
+	// the organization has no active sensor that reports it, so it could
+	// never be taken. Refused when the step is queued.
+	FailureNoConfinedSensor = "NO_CONFINED_SENSOR"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -173,6 +192,9 @@ var failureClasses = map[string]FailureClass{
 	FailureNoSensor:            FailureClassPlacement,
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,
+	FailureWebScopeUnsupported: FailureClassPlacement,
+	FailureTargetUnreachable:   FailureClassPlacement,
+	FailureNoConfinedSensor:    FailureClassPlacement,
 	FailurePolicyRefused:       FailureClassPolicy,
 	FailureFreezeWindow:        FailureClassPolicy,
 	FailureCommandExhausted:    FailureClassTransient,
@@ -219,12 +241,13 @@ func IsKnownFailureCode(code string) bool {
 // what the sensor itself can observe. Platform-only codes (queue time,
 // placement, scope decisions) are refused from a sensor.
 var SensorFailureCodes = map[string]bool{
-	FailureScannerNotFound: true,
-	FailureTargetRefused:   true,
-	FailureNoTargets:       true,
-	FailurePolicyRefused:   true,
-	FailureToolExit:        true,
-	FailureParseError:      true,
-	FailureTimeout:         true,
-	FailureCommandFailed:   true,
+	FailureScannerNotFound:   true,
+	FailureTargetRefused:     true,
+	FailureTargetUnreachable: true,
+	FailureNoTargets:         true,
+	FailurePolicyRefused:     true,
+	FailureToolExit:          true,
+	FailureParseError:        true,
+	FailureTimeout:           true,
+	FailureCommandFailed:     true,
 }

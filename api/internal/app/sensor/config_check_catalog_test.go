@@ -31,6 +31,7 @@ var contractChecks = map[string][]string{
 	"policy.local":               {"enforced", "absent", "required_absent"},
 	"policy.template_keys":       {"ok", "not_needed", "missing"},
 	"runtime.command_poller":     {"running", "stopped"},
+	"runtime.sandbox_network":    {"confined", "userns_blocked", "userns_restricted", "off", "sandbox_off", "unavailable"},
 	// openctemio/sensor
 	"config.file_unknown_key":  {"unknown_key"},
 	"config.file_unset_var":    {"unset_var"},

@@ -18,13 +18,15 @@ const (
 	OriginSeedMigration Origin = "seed_migration" // folded from a seed by an upgrade
 	OriginSystem        Origin = "system"         // written by the platform (an upgrade)
 	OriginProgram       Origin = "program"        // imported from a bug-bounty program (RFC-065)
+	OriginConfirmed     Origin = "confirmed_asset" // a person confirmed the asset as the organization's (research/117)
+	OriginConnector     Origin = "connector"       // synced by one of the organization's connectors (research/117)
 )
 
 // Valid reports whether o is a known origin.
 func (o Origin) Valid() bool {
 	switch o {
 	case OriginManual, OriginRequest, OriginImport, OriginReviewRule, OriginRefusalFix,
-		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram:
+		OriginSeed, OriginSeedMigration, OriginSystem, OriginProgram, OriginConfirmed, OriginConnector:
 		return true
 	}
 	return false

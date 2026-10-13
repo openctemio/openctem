@@ -2,12 +2,15 @@ package scanrun
 
 import (
 	"net"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
@@ -23,11 +26,9 @@ func chunkHostKeys(st stage.Stage, hasStage bool, targets []string) []string {
 	if !hasStage || st.Tier.Passive() || len(targets) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(targets))
+	keys := make([]string, 0, 2*len(targets))
 	for _, t := range targets {
-		if k := hostKey(t); k != "" {
-			keys = append(keys, k)
-		}
+		keys = append(keys, targetHostKeys(t)...)
 	}
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
@@ -61,9 +62,51 @@ func chunkTargets(chunk *scanapp.StepTargets, runContext map[string]any) []strin
 	return nil
 }
 
+// targetHostKeys are the keys of one target: for a range, the range key of
+// every /24 (IPv6 /120) bucket it covers; for an address (also the host of a
+// URL or a service), the address and the bucket marker of its bucket; for a
+// name, the name. A range and an address inside it then conflict, two
+// addresses of one bucket do not (command.HostKeyConflicts).
+func targetHostKeys(target string) []string {
+	if r, ok := ipset.Parse(strings.TrimSpace(target)); ok && r.Lo != r.Hi {
+		ps, err := ipset.Of(r).Prefixes(ipset.PieceBits{V4: command.BucketBitsV4, V6: command.BucketBitsV6}, maxHostKeys)
+		if err != nil {
+			// Wider than maxHostKeys buckets: hold the widest bucket keys
+			// instead (never fewer keys than the range touches).
+			ps, _ = ipset.Of(r).Prefixes(ipset.PieceBits{}, maxHostKeys)
+		}
+		out := make([]string, 0, len(ps))
+		seen := map[string]bool{}
+		for _, p := range ps {
+			b, _ := p.Addr().Prefix(min(p.Bits(), bucketBits(p.Addr())))
+			k := command.HostKeyRangeBucket + b.String()
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+		return out
+	}
+	k := hostKey(target)
+	if k == "" {
+		return nil
+	}
+	if a, err := netip.ParseAddr(k); err == nil {
+		return []string{k, command.HostKeyAddrInBucket + command.AddrBucket(a).String()}
+	}
+	return []string{k}
+}
+
+func bucketBits(a netip.Addr) int {
+	if a.Is4() {
+		return command.BucketBitsV4
+	}
+	return command.BucketBitsV6
+}
+
 // hostKey is the host a target names: the host of a URL, a host:port
-// without its port, an address, a name. A range (CIDR) is its own key.
-// Empty when nothing can be read.
+// without its port, an address, a name (ranges: targetHostKeys). Empty when
+// nothing can be read.
 func hostKey(target string) string {
 	t := strings.ToLower(strings.TrimSpace(target))
 	if t == "" {

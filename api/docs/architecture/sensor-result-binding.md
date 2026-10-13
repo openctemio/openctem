@@ -3,7 +3,8 @@
 > RFC: RFC-040 §5.3 and §6.1 group (C) (mutual distrust between the platform
 > and sensors; decision Q6 (a)). Protocols:
 > [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (v2 results),
-> [sensors.md](sensors.md). Migration: `000287_sensor_result_quarantine`.
+> [sensors.md](sensors.md). Migrations: `000287_sensor_result_quarantine`,
+> `002081_collector_assets` (complete collector reports, RFC-040 §12).
 
 A sensor key used to be enough to write and change any asset and finding of
 its tenant, with no job behind it. Since RFC-040 group (C) every sensor report
@@ -33,6 +34,45 @@ tenant whose mode is **quarantine** it never auto-resolves anything; in
 **warn** mode it auto-resolves as before. The response counts what was held
 back: `assets_limited`, `reopens_withheld`
 (`sensor_result_changes_withheld_total{kind}`).
+
+**Complete reports from a trusted collector** (RFC-040 §12, migration
+`002081_collector_assets`). One exception to the unsolicited limits, for the
+inventory a collector owns:
+
+- *Who.* A collector sensor of the tenant (stored row: type `collector`,
+  active, never a platform sensor) whose grant is at trust level `trusted`
+  with push ingest in effect (`ingest.trustedCollector`; fails closed when
+  the row or the grant cannot be read). Its reports are an `integration`
+  source for attribute reconciliation, named by the tool.
+- *Collector source.* The sensor, the tool (collector type, lower-case) and
+  `metadata.source_ref` (the collector instance, at most 255 characters).
+  Every report of a trusted collector, complete or not, records in
+  `collector_assets` which assets the source reported, when (never moving
+  backwards), and whether that report created them (`created_asset`, which
+  only ever turns on).
+- *Changing existing assets.* A report with `coverage_type: full` may change
+  the existing assets its own source created, like a bound report changes
+  its command's targets, unless a person decided on the asset (a manual
+  attribute lock in `asset_attribute_sources`, or a manual status override)
+  or it is deleted. Every other existing asset, including one another
+  source created, keeps the unsolicited limits. A finding a person resolved
+  on an asset the source owns still stays resolved.
+- *Not seen.* When a complete report is committed (protocol v2, at
+  finalize), the assets its source created that the report does not list,
+  that the source last reported before the report's time and that no source
+  saw at or after it are marked missing (`missing_since`), and the active
+  ones are demoted to `stale` (never a manual status override, never
+  deleted), with a `disappeared` state-history row. Nothing is marked when
+  the report is empty, when any segment refused, quarantined or failed an
+  asset, or when the share would blind the inventory (the auto-resolve
+  `BlindingGuard`: more than 100 and more than half of the source's assets).
+  A partial or incremental report never marks anything, and a report
+  replayed with an older time neither overwrites newer values nor marks
+  assets a newer report listed. Listed again, an asset is active again.
+- *Merges.* An asset merge never hands a collector source the kept asset:
+  the merged asset's rows are removed with it.
+- Assets collectors created before the migration have no rows, so no
+  collector changes or marks them until it creates them again.
 
 **Coverage.** A command covers an existing asset when one of its payload
 targets (`targets`, `target`) names the asset's host (or one of its IPs), a
@@ -109,6 +149,7 @@ pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 | Binding, coverage, roles | `api/internal/app/ingest/binding.go` |
 | Gate, quarantine, review, `OpenCommand` (shared with the v2 receiver) | `api/internal/app/ingest/quarantine.go` |
 | Limited asset merge | `api/internal/app/ingest/processor_assets.go` (`mergeInto`) |
+| Trusted collectors, complete reports | `api/internal/app/ingest/collector_trust.go`, `collector_reports.go`, `api/internal/infra/postgres/collector_asset_repository.go` |
 | Human-resolved reopen guard | `api/internal/app/ingest/processor_findings.go` (`withoutHumanResolved`), `api/internal/infra/postgres/finding_human_resolved.go` |
 | Auto-resolve gating | `api/internal/app/ingest/service.go` (v1), `v2.go` (`CommitV2Report`, `coveredByCommand`) |
 | v2 segment gate | `api/internal/app/ingest/v2_jobs.go` (`processSegment`) |

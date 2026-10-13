@@ -52,6 +52,7 @@ IP are not.
 | `cloud_id` | yes | yes | `identifiers.cloud_resource_id`; `technical.cloud.arn`/`resource_id`; properties `cloud_resource_id`, `instance_id`, `cloud_instance_id`, `vm_id`, `arn` |
 | `bios_uuid` | yes | yes | `identifiers.bios_uuid`; properties `bios_uuid`, `system_uuid`, `smbios_uuid` |
 | `serial_number` | yes | yes | `identifiers.serial_number`; properties `serial_number`, `hardware_serial` |
+| `directory_object_id` | yes | yes | properties `ad_object_guid` (the directory collector), `object_guid`, `directory_object_id`: the Active Directory objectGUID of a computer, stored as lower-case 8-4-4-4-12 hex (migration 002083) |
 | `mac` | yes | no (hosts have several) | `identifiers.mac_addresses`; properties `mac_address` (the Nessus parser), `mac_addresses`, `mac` |
 | `scm_repo_id` | yes | yes | `identifiers.scm_repo_id`; properties `scm_repo_id`, `repo_id`, `repository_id`, `project_id`; `asset_repositories.repo_id` |
 | `fqdn`, `hostname` | no | — | asset name; properties `hostname`, `fqdn`, `netbios_name` |
@@ -63,7 +64,18 @@ assets. Domains, subdomains and certificates stay keyed by name.
 Normalization (`pkg/domain/asset/identifier.go`) drops values that do not
 identify one machine: multicast, locally administered and all-zero MACs, the
 shared MACs of VRRP/HSRP/GLBP and of common VPN and dial-up adapters, and
-vendor placeholder UUIDs and serials. SCM IDs are stored as `<host>:<id>`.
+vendor placeholder UUIDs and serials, and a directory object id that is not a
+GUID (or is all zeros). SCM IDs are stored as `<host>:<id>`.
+
+**Network devices.** A network asset of a device sub-type (firewall,
+router, switch, load balancer, VPN gateway, wireless controller, access
+point, IDS/IPS; `asset.NetworkDeviceSubTypes`) that no identifier or name
+matched is matched by address to the tenant's existing network device that
+is named by or records one of its addresses
+(`AssetRepository.FindNetworkDevicesByIPs`). The same trust window as hosts
+applies, and several matching devices are ambiguous: no match, and a dedup
+review. Only devices match devices: segments (VPCs, subnets, VLANs) and
+hosts or address assets with the same IP are never matched this way.
 
 **Veto.** A candidate found by a strong identifier is skipped when it holds a
 different value of a single-valued kind ranked above the one that matched,

@@ -247,8 +247,8 @@ type LogsResponse struct {
 type FailRequest struct {
 	ErrorMessage string `json:"error_message"`
 	// ErrorCode, when set, names the failure in the platform's vocabulary
-	// (SCANNER_NOT_FOUND, TARGET_REFUSED, NO_TARGETS, POLICY_REFUSED,
-	// TOOL_EXIT, PARSE_ERROR, TIMEOUT). Optional: without it the platform
+	// (SCANNER_NOT_FOUND, TARGET_REFUSED, TARGET_UNREACHABLE, NO_TARGETS,
+	// POLICY_REFUSED, TOOL_EXIT, PARSE_ERROR, TIMEOUT). Optional: without it the platform
 	// classifies the message. A code outside that list is recorded as
 	// COMMAND_FAILED.
 	ErrorCode string `json:"error_code,omitempty"`

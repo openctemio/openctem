@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
+	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -36,6 +37,8 @@ type SensorHandler struct {
 	// sensorImage is the image the install snippets run, with its pinned
 	// tag (SENSOR_IMAGE + SENSOR_LATEST_VERSION).
 	sensorImage string
+	// collectorImage is the image a collector's install snippets run.
+	collectorImage string
 	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
 	// empty when the platform certificate is publicly trusted.
 	caCertFile string
@@ -120,6 +123,10 @@ func (h *SensorHandler) SetPublicAPIURL(url string) {
 	h.publicAPIURL = url
 }
 
+// SetCollectorImage sets the image reference (with tag) a collector's
+// install snippets run.
+func (h *SensorHandler) SetCollectorImage(image string) { h.collectorImage = image }
+
 // SetSensorImage sets the image reference (with tag) the install snippets run.
 func (h *SensorHandler) SetSensorImage(image string) {
 	h.sensorImage = image
@@ -140,6 +147,11 @@ type CreateSensorRequest struct {
 	Capabilities      []string `json:"capabilities" validate:"max=20,dive,max=50"`
 	ExecutionMode     string   `json:"execution_mode" validate:"omitempty,oneof=standalone daemon"`
 	MaxConcurrentJobs int      `json:"max_concurrent_jobs" validate:"omitempty,min=1,max=100"`
+	// Trusted creates a collector at trust level trusted, so its reports
+	// without a job are accepted at once. Collector only; needs
+	// sensors:grant:widen (like any promotion), is audited at high severity
+	// and notifies every administrator. Off by default.
+	Trusted bool `json:"trusted,omitempty"`
 }
 
 // SensorResponse represents the response for a sensor.
@@ -479,6 +491,11 @@ type SensorOutboxResponse struct {
 type CreateSensorResponse struct {
 	Sensor *SensorResponse `json:"sensor"`
 	APIKey string          `json:"api_key"`
+	// Trusted is whether the sensor is at trust level trusted. False when
+	// trust was not asked for, or when the promotion failed after the
+	// sensor was created (it then stays New and an administrator promotes
+	// it on the sensor's grant).
+	Trusted bool `json:"trusted"`
 }
 
 // Create handles POST /api/v1/sensors
@@ -508,6 +525,31 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tenantID := middleware.GetTenantID(r.Context())
 
+	// Trust at creation is an explicit, separately authorized choice: the
+	// same permission and step-up as a promotion, checked before the sensor
+	// exists so a refusal creates nothing.
+	var trustActor sensorgrant.Actor
+	if req.Trusted {
+		if req.Type != string(sensor.SensorTypeCollector) {
+			apierror.BadRequest("trusted can be set at creation only for a collector").WriteJSON(w)
+			return
+		}
+		if h.grants == nil {
+			apierror.BadRequest("sensor grants are not available").WriteJSON(w)
+			return
+		}
+		tid, err := shared.IDFromString(tenantID)
+		if err != nil {
+			apierror.Unauthorized("").WriteJSON(w)
+			return
+		}
+		trustActor = h.grantActor(r, tid)
+		if err := h.grants.AuthorizeTrust(r.Context(), trustActor); err != nil {
+			h.writeGrantError(w, err)
+			return
+		}
+	}
+
 	input := sensorapp.CreateSensorInput{
 		TenantID:          tenantID,
 		Name:              req.Name,
@@ -528,6 +570,15 @@ func (h *SensorHandler) Create(w http.ResponseWriter, r *http.Request) {
 	response := &CreateSensorResponse{
 		Sensor: h.toSensorResponse(r.Context(), output.Sensor),
 		APIKey: output.APIKey,
+	}
+	if req.Trusted {
+		// The sensor and its key exist: a failed promotion leaves it New
+		// (reported as trusted=false) rather than losing the one-time key.
+		if _, err := h.grants.Trust(r.Context(), trustActor, output.Sensor.ID); err != nil {
+			h.logger.Warn("new collector left untrusted: promotion failed", "sensor_id", output.Sensor.ID.String(), "error", err)
+		} else {
+			response.Trusted = true
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1404,6 +1455,13 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	image := h.sensorImage
 	if image == "" {
 		image = DefaultSensorImage
+	}
+	if a.Type.IsCollector() {
+		// A collector runs the asset collector, not the scanner image.
+		image = h.collectorImage
+		if image == "" {
+			image = config.DefaultCollectorImage
+		}
 	}
 
 	caPEM, caFingerprint, caErr := sensorapp.LoadCACertificate(h.caCertFile)

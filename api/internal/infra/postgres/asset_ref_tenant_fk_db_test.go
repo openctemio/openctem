@@ -49,9 +49,11 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// (program_target_assets, RFC-065 16.8), 1 from VEX statements
 	// (RFC-070), 1 from attribute class freshness (asset_freshness,
 	// RFC-075), 1 from enrichment requests (asset_enrichment_requests,
-	// RFC-075) and 1 from web evidence (asset_web_evidence, RFC-081).
-	if n != 45 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 45 validated", n, allValid.Bool)
+	// RFC-075), 1 from web evidence (asset_web_evidence, RFC-081), 1 from
+	// the host a child's attribution follows (asset_attributions.follows_host_id)
+	// and 1 from collector sources (collector_assets, RFC-040 §12).
+	if n != 47 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 47 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -88,6 +89,10 @@ type ReviewItem struct {
 	Hint string `json:"hint,omitempty"`
 	// Fixes the caller may take (POST /scope/targets).
 	Fixes []scopedom.Fix `json:"fixes,omitempty"`
+	// Children: how many services, certificates and web endpoints follow
+	// this host, by asset type. They are not rows of their own: a decision
+	// on the host is theirs too.
+	Children map[string]int `json:"children,omitempty"`
 }
 
 // ReviewCoverage names what covers each name (*ActiveGate).
@@ -122,6 +127,7 @@ type ReviewService struct {
 	addrs     ReviewAddressStore
 	orgName   OrgNamer
 	seeded    SeededNetworks
+	confirm   *ConfirmScope
 }
 
 // SetDecisionEffects runs reclassification and rejection hygiene after each
@@ -214,10 +220,34 @@ type Decision struct {
 type DecisionResult struct {
 	Decided  []Decision `json:"decided"`
 	NotFound []string   `json:"not_found"`
+	// Scope: the exact scope entries a confirmation added (research/117);
+	// absent for any other decision.
+	Scope *ConfirmScopeResult `json:"scope,omitempty"`
 }
 
-// Decide records one decision on many assets.
+// SetConfirmScope makes a person's confirmation add the exact scope entry
+// of each confirmed asset (DecideAs). Nil: a confirmation records ownership
+// only.
+func (s *ReviewService) SetConfirmScope(c *ConfirmScope) { s.confirm = c }
+
+// ConfirmReason is the reason the scope entries a confirmation adds carry.
+const ConfirmReason = "Confirmed as the organization's on the attack surface"
+
+// Decide records one decision on many assets. It never adds a scope entry
+// (automation and rejections use it); DecideAs is a person's decision.
 func (s *ReviewService) Decide(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actorID string) (*DecisionResult, error) {
+	return s.decide(ctx, tenantID, assetIDs, state, ScopeActor{Actor: scope.Actor{UserID: actorID}}, false)
+}
+
+// DecideAs records a person's decision on many assets. Confirming also adds
+// the exact scope entry of each confirmed asset (ConfirmScope) before any
+// decision is saved, so a missing re-authentication changes nothing.
+func (s *ReviewService) DecideAs(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor ScopeActor) (*DecisionResult, error) {
+	return s.decide(ctx, tenantID, assetIDs, state, actor, state == attribution.StateConfirmed)
+}
+
+func (s *ReviewService) decide(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor ScopeActor, addScope bool) (*DecisionResult, error) {
+	actorID := actor.UserID
 	if !decidable(state) {
 		return nil, fmt.Errorf("%w: state must be confirmed, rejected, dependency, monitor_only or needs_review", shared.ErrValidation)
 	}
@@ -256,6 +286,11 @@ func (s *ReviewService) Decide(ctx context.Context, tenantID shared.ID, assetIDs
 	}
 	if len(allowed) == 0 {
 		return res, nil
+	}
+	if addScope && s.confirm != nil {
+		if res.Scope, err = s.confirm.Add(ctx, tenantID, allowed, actor, ConfirmReason); err != nil {
+			return nil, err
+		}
 	}
 	prev, err := s.store.SaveDecisions(ctx, tenantID, allowed, state, actorID)
 	if err != nil {
