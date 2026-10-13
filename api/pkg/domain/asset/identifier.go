@@ -20,21 +20,25 @@ type IdentifierKind string
 
 // Identifier kinds, strongest first.
 const (
-	IdentifierHostID    IdentifierKind = "host_id"       // OS host ID read by a sensor
-	IdentifierCloudID   IdentifierKind = "cloud_id"      // cloud instance ID, VM ID or ARN
-	IdentifierBIOSUUID  IdentifierKind = "bios_uuid"     // SMBIOS system UUID
-	IdentifierSerial    IdentifierKind = "serial_number" // hardware serial number
-	IdentifierMAC       IdentifierKind = "mac"           // globally administered unicast MAC
-	IdentifierSCMRepoID IdentifierKind = "scm_repo_id"   // SCM repository / project ID
-	IdentifierFQDN      IdentifierKind = "fqdn"
-	IdentifierHostname  IdentifierKind = "hostname"
-	IdentifierIP        IdentifierKind = "ip"
+	IdentifierHostID   IdentifierKind = "host_id"       // OS host ID read by a sensor
+	IdentifierCloudID  IdentifierKind = "cloud_id"      // cloud instance ID, VM ID or ARN
+	IdentifierBIOSUUID IdentifierKind = "bios_uuid"     // SMBIOS system UUID
+	IdentifierSerial   IdentifierKind = "serial_number" // hardware serial number
+	// IdentifierDirectoryObjectID is the directory's own id of a computer
+	// object (Active Directory objectGUID): it survives renames and moves
+	// between OUs, and is unique per directory object.
+	IdentifierDirectoryObjectID IdentifierKind = "directory_object_id"
+	IdentifierMAC               IdentifierKind = "mac"         // globally administered unicast MAC
+	IdentifierSCMRepoID         IdentifierKind = "scm_repo_id" // SCM repository / project ID
+	IdentifierFQDN              IdentifierKind = "fqdn"
+	IdentifierHostname          IdentifierKind = "hostname"
+	IdentifierIP                IdentifierKind = "ip"
 )
 
 // AllIdentifierKinds returns every kind, strongest first.
 func AllIdentifierKinds() []IdentifierKind {
 	return []IdentifierKind{
-		IdentifierHostID, IdentifierCloudID, IdentifierBIOSUUID, IdentifierSerial,
+		IdentifierHostID, IdentifierCloudID, IdentifierBIOSUUID, IdentifierSerial, IdentifierDirectoryObjectID,
 		IdentifierMAC, IdentifierSCMRepoID, IdentifierFQDN, IdentifierHostname, IdentifierIP,
 	}
 }
@@ -57,7 +61,7 @@ func (k IdentifierKind) IsValid() bool { return k.Rank() < len(AllIdentifierKind
 func (k IdentifierKind) IsStrong() bool {
 	switch k {
 	case IdentifierHostID, IdentifierCloudID, IdentifierBIOSUUID, IdentifierSerial,
-		IdentifierMAC, IdentifierSCMRepoID:
+		IdentifierDirectoryObjectID, IdentifierMAC, IdentifierSCMRepoID:
 		return true
 	}
 	return false
@@ -69,7 +73,8 @@ func (k IdentifierKind) IsStrong() bool {
 // a different MAC proves nothing.
 func (k IdentifierKind) IsSingleValued() bool {
 	switch k {
-	case IdentifierHostID, IdentifierCloudID, IdentifierBIOSUUID, IdentifierSerial, IdentifierSCMRepoID:
+	case IdentifierHostID, IdentifierCloudID, IdentifierBIOSUUID, IdentifierSerial, IdentifierDirectoryObjectID,
+		IdentifierSCMRepoID:
 		return true
 	}
 	return false
@@ -111,6 +116,8 @@ func NormalizeIdentifier(k IdentifierKind, value string) (string, bool) {
 			return "", false
 		}
 		return v, true
+	case IdentifierDirectoryObjectID:
+		return normalizeGUID(v)
 	case IdentifierSerial:
 		if placeholderValue(strings.ToLower(v)) {
 			return "", false
@@ -138,6 +145,16 @@ func NormalizeIdentifier(k IdentifierKind, value string) (string, bool) {
 		return ip.String(), true
 	}
 	return "", false
+}
+
+// normalizeGUID returns a GUID as lower-case 8-4-4-4-12 hex. ok is false
+// for anything that is not a GUID, and for the all-zero or all-f GUID.
+func normalizeGUID(v string) (string, bool) {
+	hex := strings.ToLower(strings.ReplaceAll(strings.Trim(v, "{}"), "-", ""))
+	if len(hex) != 32 || strings.Trim(hex, "0123456789abcdef") != "" || placeholderValue(hex) {
+		return "", false
+	}
+	return hex[0:8] + "-" + hex[8:12] + "-" + hex[12:16] + "-" + hex[16:20] + "-" + hex[20:32], true
 }
 
 // placeholderValue reports BIOS UUIDs, host IDs and serials that vendors
