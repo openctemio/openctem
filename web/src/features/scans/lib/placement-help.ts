@@ -51,6 +51,7 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   INTENSITY_EXCEEDED: 'workflows',
   WEB_SCOPE_UNSUPPORTED: 'sensors',
   NO_CONFINED_SENSOR: 'sensors',
+  TARGET_UNREACHABLE: 'zones',
 }
 
 /** Placement reason codes (api pkg/domain/command/placement.go) and their fix. */
