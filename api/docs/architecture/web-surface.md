@@ -63,7 +63,7 @@ with step-up. It is enforced in three places:
 | Where | What |
 |---|---|
 | Dispatch (`scope.Service.ExcludedTargets`) | a URL target under a blocking rule (for GET) is excluded; a host target never is |
-| Job (`scanrun.applyWebScope`) | a crawl, template or web application step carries `web_scope`: `deny_paths` for rules that block GET or HEAD, `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A failed lookup refuses the step |
+| Job (`scope.WebJobGuard`, the command repository's create guard) | every job whose tool requests web paths (crawl, template or web application tool, or a step whose capability names one), whatever path created it (quick scan, workflow step, scheduled or retried scan, zone batch, automation, `POST /api/v1/commands`), carries `web_scope` of its own tenant's rules: `deny_paths` for rules that block GET or HEAD, `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A caller's own `web_scope` is replaced. A failed lookup refuses the job; a nuclei validation or retest with a rule on its host is refused (`WEB_SCOPE_UNSUPPORTED`) |
 | Ingest (`markExcluded`) | an endpoint whose method a rule blocks is stored `in_scope = false` with `exclusion_id`: excluded-untested, visible, never targeted |
 
 `GET /web-endpoints/stats` counts `excluded_untested`, so "0 findings" on an
