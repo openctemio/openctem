@@ -102,3 +102,21 @@ func TestIdentifiersFor_TypedBlockWinsOverProperties(t *testing.T) {
 		t.Errorf("repo identifiers = %v, want only the typed one", got[asset.IdentifierSCMRepoID])
 	}
 }
+
+// The directory collector's objectGUID property is the host's
+// directory_object_id; a domain never carries one.
+func TestIdentifiersFor_DirectoryObjectID(t *testing.T) {
+	ca := &ctis.Asset{
+		Type: ctis.AssetTypeHost, Value: "pc01.corp.example.com",
+		Properties: ctis.Properties{"ad_object_guid": "{6F9619FF-8B86-D011-B42D-00C04FC964FF}", "netbios_name": "PC01"},
+	}
+	got := kinds(identifiersFor(ca, asset.AssetTypeHost, "pc01.corp.example.com"))
+	if v := got[asset.IdentifierDirectoryObjectID]; len(v) != 1 || v[0] != "6f9619ff-8b86-d011-b42d-00c04fc964ff" {
+		t.Fatalf("directory_object_id = %v", v)
+	}
+	dom := &ctis.Asset{Type: ctis.AssetTypeDomain, Value: "corp.example.com",
+		Properties: ctis.Properties{"ad_object_guid": "6f9619ff-8b86-d011-b42d-00c04fc964ff"}}
+	if v := kinds(identifiersFor(dom, asset.AssetTypeDomain, "corp.example.com"))[asset.IdentifierDirectoryObjectID]; len(v) != 0 {
+		t.Fatalf("a domain got directory_object_id %v", v)
+	}
+}
