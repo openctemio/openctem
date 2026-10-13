@@ -178,6 +178,26 @@ Command Lifecycle:
                                    PrepareRetry()
 ```
 
+### Work distribution today, and the work pool
+
+A workflow step is cut into chunks when it starts (one command per chunk,
+sizes per stage), and sensors pull: a poll claims, in the fair order (class
+with ageing, round-robin across runs), the commands the sensor may run, with
+a lease. An active stage's chunk holds per-host politeness keys while it
+runs; the keys come from `github.com/openctemio/sdk-go/pkg/politeness`, the
+function the sensor runtime admits work with, and travel with the chunk
+(`host_keys`), so a sensor never hands back what the platform just offered.
+A step is runnable when every dependency finished.
+
+Shared platform sensors have no claim path today: the platform queue
+function `get_next_platform_job` has no caller and a tenant-less sensor is
+refused on the command routes.
+
+[RFC-090](../rfcs/RFC-090-work-pool.md) replaces step-start chunking with a
+work pool: typed items per step in lanes, a claim that cuts a task sized for
+the claiming sensor, per-item settlement and streaming between steps, built
+in steps behind a per-tenant flag.
+
 ### 5. Pipeline Progression
 
 ```go
