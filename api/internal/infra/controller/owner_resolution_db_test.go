@@ -38,11 +38,11 @@ func TestOwnerResolution_WritesAssetOwners_DB(t *testing.T) {
 	}
 
 	tenant, other := shared.NewID(), shared.NewID()
-	member, manual, outsider := shared.NewID(), shared.NewID(), shared.NewID()
+	member, manual, outsider, suspended := shared.NewID(), shared.NewID(), shared.NewID(), shared.NewID()
 	for _, id := range []shared.ID{tenant, other} {
 		exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'owner resolution test', $2)`, id.String(), "or-"+id.String())
 	}
-	for _, id := range []shared.ID{member, manual, outsider} {
+	for _, id := range []shared.ID{member, manual, outsider, suspended} {
 		exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'u')`, id.String(), id.String()+"@Owner-Res.test")
 	}
 	t.Cleanup(func() {
@@ -50,12 +50,13 @@ func TestOwnerResolution_WritesAssetOwners_DB(t *testing.T) {
 		for _, id := range []shared.ID{tenant, other} {
 			_, _ = db.ExecContext(bg, `DELETE FROM tenants WHERE id = $1`, id.String())
 		}
-		for _, id := range []shared.ID{member, manual, outsider} {
+		for _, id := range []shared.ID{member, manual, outsider, suspended} {
 			_, _ = db.ExecContext(bg, `DELETE FROM users WHERE id = $1`, id.String())
 		}
 	})
 	exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, member.String(), tenant.String())
 	exec(`INSERT INTO tenant_members (user_id, tenant_id, role) VALUES ($1, $2, 'member')`, manual.String(), tenant.String())
+	exec(`INSERT INTO tenant_members (user_id, tenant_id, role, status) VALUES ($1, $2, 'member', 'suspended')`, suspended.String(), tenant.String())
 
 	asset := func(tenantID shared.ID, ownerRef string) shared.ID {
 		id := shared.NewID()
@@ -67,6 +68,9 @@ func TestOwnerResolution_WritesAssetOwners_DB(t *testing.T) {
 	manualOwned := asset(tenant, manual.String()+"@owner-res.test")
 	notMember := asset(tenant, outsider.String()+"@owner-res.test")
 	wrongTenant := asset(other, member.String()+"@owner-res.test")
+	suspendedOwner := asset(tenant, suspended.String()+"@owner-res.test")
+	unknownEmail := asset(tenant, "nobody-"+tenant.String()+"@owner-res.test")
+	plainText := asset(tenant, "CN=Sales Desk")
 	exec(`INSERT INTO asset_owners (asset_id, user_id, ownership_type, assignment_source) VALUES ($1, $2, 'stakeholder', 'manual')`,
 		manualOwned.String(), manual.String())
 
@@ -109,6 +113,29 @@ func TestOwnerResolution_WritesAssetOwners_DB(t *testing.T) {
 	}
 	if got := owners(wrongTenant); len(got) != 0 {
 		t.Errorf("member of another tenant became an owner: %v", got)
+	}
+	if got := owners(suspendedOwner); len(got) != 0 {
+		t.Errorf("a suspended member became an owner: %v", got)
+	}
+	// An owner that matches no member stays text on the asset: no owner row,
+	// no account and no invitation is created for it.
+	for _, id := range []shared.ID{unknownEmail, plainText} {
+		if got := owners(id); len(got) != 0 {
+			t.Errorf("asset %s got owners %v from an unmatched owner_ref", id, got)
+		}
+	}
+	var ref string
+	if err := db.QueryRowContext(ctx, `SELECT owner_ref FROM assets WHERE id = $1`, unknownEmail.String()).Scan(&ref); err != nil ||
+		ref != "nobody-"+tenant.String()+"@owner-res.test" {
+		t.Errorf("unmatched owner_ref = %q (%v), want it kept as text", ref, err)
+	}
+	var made int
+	if err := db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM users WHERE lower(email) = lower($1))
+		+ (SELECT COUNT(*) FROM tenant_invitations WHERE lower(email) = lower($1))`, ref).Scan(&made); err != nil {
+		t.Fatal(err)
+	}
+	if made != 0 {
+		t.Errorf("an unmatched owner email created %d accounts or invitations", made)
 	}
 
 	var access int
