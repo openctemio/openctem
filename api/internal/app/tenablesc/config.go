@@ -50,6 +50,11 @@ type ConnectorConfig struct {
 	// Repositories optionally narrows the repositories the sensor reads; the
 	// sensor reads only their intersection with its own allow-list.
 	Repositories []int
+	// AssetsInScope: the public names and addresses this connector syncs are
+	// the organization's, so each gets its exact scope entry after a sync
+	// (research/117). Default true; "assets_in_scope": false turns it off
+	// (entries already added stay and are listed on the Scope page).
+	AssetsInScope bool
 }
 
 // ErrNotConnector: the integration is not a Tenable.sc sensor connector.
@@ -122,6 +127,15 @@ func ParseConnectorConfigMap(cfg map[string]any) (ConnectorConfig, error) {
 			return out, invalid("min_severity must be between 0 (info) and 4 (critical)")
 		}
 		out.MinSeverity = v
+	}
+
+	out.AssetsInScope = true
+	if raw, present := cfg["assets_in_scope"]; present && raw != nil {
+		v, ok := raw.(bool)
+		if !ok {
+			return out, invalid("assets_in_scope must be true or false")
+		}
+		out.AssetsInScope = v
 	}
 
 	if raw, present := cfg["repositories"]; present && raw != nil {

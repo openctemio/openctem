@@ -359,3 +359,31 @@ func scanIngestReport(row rowScanner) (*ingestreport.Report, error) {
 	rep.AutoResolve = autoResolve.String
 	return &rep, nil
 }
+
+// TouchedAssetsByCommand lists the live assets of the tenant that the
+// completed reports of one command wrote (each once). Tenant-scoped on the
+// reports and the assets.
+func (r *IngestReportRepository) TouchedAssetsByCommand(ctx context.Context, tenantID, commandID shared.ID) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT a.id
+		FROM ingest_reports ir
+		CROSS JOIN LATERAL unnest(ir.touched_asset_ids) AS t(asset_id)
+		JOIN assets a ON a.id = t.asset_id AND a.tenant_id = ir.tenant_id AND a.deleted_at IS NULL
+		WHERE ir.tenant_id = $1 AND ir.command_id = $2 AND ir.state = 'completed'`,
+		tenantID.String(), commandID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list assets the command's reports wrote: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if parsed, err := shared.IDFromString(id); err == nil {
+			out = append(out, parsed)
+		}
+	}
+	return out, rows.Err()
+}

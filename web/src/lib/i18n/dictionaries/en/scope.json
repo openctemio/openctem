@@ -274,5 +274,7 @@
   "scope.bulk.refused": "{count} refused",
   "scope.bulk.skip.internal": "{count} private or internal (scan zones decide)",
   "scope.bulk.skip.no_entry_needed": "{count} need no scope entry (repositories, cloud accounts)",
-  "scope.bulk.skip.unrecognized": "{count} not a name or address"
+  "scope.bulk.skip.unrecognized": "{count} not a name or address",
+  "scope.connector.assetsInScope": "Assets are in scope",
+  "scope.connector.assetsInScopeHint": "After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added."
 }
