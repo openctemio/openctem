@@ -9,8 +9,12 @@ package easm
 //   - nobody said it is not the tenant's: no rejection tombstone and no
 //     rejected asset on its name or on any parent domain of it (unless a
 //     person confirmed this very asset);
-//   - its attribution record, if any, is confirmed (needs_review, candidate,
-//     dependency, monitor_only and rejected are refused);
+//   - its attribution record, if any, is confirmed (dependency, monitor_only
+//     and rejected are refused). A pending record (needs_review or
+//     candidate) written by automation is no decision: an active scope entry
+//     that covers the asset, a one-off entry included, lets probes reach it
+//     (the entry is the authority; research/117 F4). A pending record a
+//     person set, a rejection and an exclusion still refuse;
 //   - an internet-facing asset, or typed text naming an internet host or
 //     address, is covered by the tenant's scope authority (scopeauth: an
 //     active scope target, or a name at or under a root-domain seed or
@@ -610,6 +614,10 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 	if err != nil {
 		return nil, err
 	}
+	hostRefusal, err := g.hostRefusals(ctx, tenantID, ids, assets)
+	if err != nil {
+		return nil, err
+	}
 
 	var auth *scopeauth.Authority
 	for _, id := range ids {
@@ -630,8 +638,29 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			out[id] = attribution.StateRejected
 			continue
 		}
+		// A child (a service, a URL) never gets more than its host: a
+		// host a person did not leave to automation refuses its children.
+		if st, ok := hostRefusal[id]; ok && !humanConfirmed {
+			out[id] = st
+			continue
+		}
 		if recorded && rec.State != attribution.StateConfirmed {
-			out[id] = rec.State
+			if !automaticPending(rec) {
+				out[id] = rec.State
+				continue
+			}
+			// An automatic pending record: only an active scope entry that
+			// covers the name lets probes reach it, whatever its type (a
+			// private address too). The state stays pending; nothing joins
+			// the inventory.
+			if auth == nil {
+				if auth, err = scopeauth.Load(ctx, tenantID, g.scope, g.roots); err != nil {
+					return nil, err
+				}
+			}
+			if _, ok := auth.Covers(a.Name()); !ok {
+				out[id] = rec.State
+			}
 			continue
 		}
 		if !internetFacing(a.Type(), a.SubType()) || isInternalName(a.Name()) {
@@ -654,6 +683,77 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 		}
 	}
 	return out, nil
+}
+
+// hostRefusals answers, for each asset whose name names a host other than
+// itself (a service "host:port", a URL), the state of that host asset when
+// it refuses probes on its own record: any state but confirmed, except an
+// automatic pending one (which defers to the scope entries, as the child
+// itself does). Hosts are the tenant's live assets only; a host with no
+// asset or no record adds nothing.
+func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids []string, assets map[string]*asset.Asset) (map[string]attribution.State, error) {
+	out := map[string]attribution.State{}
+	hostName := map[string]string{} // asset id -> host name
+	var names []string
+	for _, id := range ids {
+		a := assets[id]
+		if a == nil {
+			continue
+		}
+		h := normalizeHost(asset.HostOf(a.Name()))
+		if h == "" || h == normalizeHost(a.Name()) {
+			continue
+		}
+		hostName[id] = h
+		names = append(names, h)
+	}
+	if len(names) == 0 {
+		return out, nil
+	}
+	hosts, err := g.assets.GetByNames(ctx, tenantID, names)
+	if err != nil {
+		return nil, fmt.Errorf("load hosts for the ownership check: %w", err)
+	}
+	hostIDs := make([]string, 0, len(hosts))
+	idOfHost := map[string]string{} // host name -> host asset id
+	for n, h := range hosts {
+		if h == nil {
+			continue
+		}
+		idOfHost[n] = h.ID().String()
+		hostIDs = append(hostIDs, h.ID().String())
+	}
+	if len(hostIDs) == 0 {
+		return out, nil
+	}
+	recs, err := g.records.Records(ctx, tenantID, hostIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load host attribution for the ownership check: %w", err)
+	}
+	for id, h := range hostName {
+		hid, ok := idOfHost[h]
+		if !ok {
+			continue
+		}
+		rec, ok := recs[hid]
+		if !ok || rec.State == attribution.StateConfirmed || automaticPending(rec) {
+			continue
+		}
+		out[id] = rec.State
+	}
+	return out, nil
+}
+
+// automaticPending reports whether rec is a pending record written by
+// automation (discovery, a scan, an unsolicited report): needs_review or
+// candidate that no person set. Such a record is no decision, so a scope
+// entry covering the asset decides. A person's needs_review (sent back to
+// review) is a decision and keeps refusing.
+func automaticPending(rec attribution.Record) bool {
+	if rec.HumanDecided {
+		return false
+	}
+	return rec.State == attribution.StateNeedsReview || rec.State == attribution.StateCandidate
 }
 
 // rejectedNames returns the names among the given hosts and their parent
