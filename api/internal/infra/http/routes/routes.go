@@ -735,7 +735,7 @@ func Register(
 
 	// The sensor's seccomp profile for the install commands: public (the
 	// open-source release's file, no tenant data), rate limited per IP.
-	router.GET("/api/v1/sensors/install/seccomp.json", handler.ServeSensorSeccompProfile, middleware.RateLimit(&cfg.RateLimit, log))
+	registerSensorInstallRoutes(router, middleware.RateLimit(&cfg.RateLimit, log))
 
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
