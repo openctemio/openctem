@@ -276,7 +276,7 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
       targetOptions: config.target_options,
     },
     maxConcurrent: config.targets_per_job || 10,
-    timeoutSeconds: config.timeout_seconds || 3600,
+    timeoutSeconds: config.timeout_seconds || 0,
     maxRetries: config.max_retries ?? 0,
     retryBackoffSeconds: config.retry_backoff_seconds || 60,
     schedule: scheduleFromConfig(config),
@@ -327,4 +327,14 @@ export function formDataToUpdateRequest(
 
   applySchedule(form, request)
   return request
+}
+
+/**
+ * A scan's max duration from its input box: empty or 0 is none (the
+ * platform's 24 h cap applies); anything else is kept in 30 s – 24 h.
+ */
+export function maxDurationInput(value: string): number {
+  const n = parseInt(value || '0', 10)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.max(30, Math.min(86400, n))
 }
