@@ -891,6 +891,9 @@ func (p *AssetProcessor) processBatch(
 	// it served).
 	if p.relRepo != nil {
 		p.createRelatedAssetRelationships(ctx, tenantID, report, assetMap, alterRefs)
+		// Step 8b: the report's typed relationships and a host's placement
+		// (hypervisor host, addresses).
+		p.createReportRelationships(ctx, tenantID, report, existingMap, assetMap, mayChange)
 	}
 
 	// What this ingest wrote, for attribution (scan_attribution.go): every

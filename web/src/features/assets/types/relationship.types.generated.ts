@@ -207,6 +207,10 @@ export const GENERATED_RELATIONSHIP_CONSTRAINTS: Record<
       sourceTypes: ['container'],
       targetTypes: ['host', 'k8s_workload'],
     },
+    {
+      sourceTypes: ['host'],
+      targetTypes: ['host'],
+    },
   ],
   deployed_to: [
     {
@@ -234,6 +238,10 @@ export const GENERATED_RELATIONSHIP_CONSTRAINTS: Record<
     {
       sourceTypes: ['host', 'endpoint'],
       targetTypes: ['container', 'service', 'database'],
+    },
+    {
+      sourceTypes: ['host'],
+      targetTypes: ['ip_address'],
     },
     {
       sourceTypes: ['k8s_cluster'],
