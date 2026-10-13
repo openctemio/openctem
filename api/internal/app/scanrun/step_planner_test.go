@@ -246,6 +246,18 @@ func TestStepDispatch_ActiveChunksCarryHostKeys(t *testing.T) {
 		if got := created.cmds[0].HostKeys; !slices.Equal(got, tc.want) {
 			t.Errorf("%s: host keys = %v, want %v", tc.tool, got, tc.want)
 		}
+		// The sensor admits the chunk under the keys the platform holds:
+		// the same list in the payload, an empty one for a passive stage
+		// (never held back on the sensor either).
+		var p struct {
+			HostKeys *[]string `json:"host_keys"`
+		}
+		if err := json.Unmarshal(created.cmds[0].Payload, &p); err != nil || p.HostKeys == nil {
+			t.Fatalf("%s: payload host_keys missing (%v): %s", tc.tool, err, created.cmds[0].Payload)
+		}
+		if want := tc.want; (len(*p.HostKeys) != 0 || len(want) != 0) && !slices.Equal(*p.HostKeys, want) {
+			t.Errorf("%s: payload host_keys = %v, want %v", tc.tool, *p.HostKeys, want)
+		}
 	}
 }
 
