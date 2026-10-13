@@ -52,7 +52,7 @@ IP are not.
 | `cloud_id` | yes | yes | `identifiers.cloud_resource_id`; `technical.cloud.arn`/`resource_id`; properties `cloud_resource_id`, `instance_id`, `cloud_instance_id`, `vm_id`, `arn` |
 | `bios_uuid` | yes | yes | `identifiers.bios_uuid`; properties `bios_uuid`, `system_uuid`, `smbios_uuid` |
 | `serial_number` | yes | yes | `identifiers.serial_number`; properties `serial_number`, `hardware_serial` |
-| `directory_object_id` | yes | yes | properties `ad_object_guid` (the directory collector), `object_guid`, `directory_object_id`: the Active Directory objectGUID of a computer, stored as lower-case 8-4-4-4-12 hex (migration 002080) |
+| `directory_object_id` | yes | yes | properties `ad_object_guid` (the directory collector), `object_guid`, `directory_object_id`: the Active Directory objectGUID of a computer, stored as lower-case 8-4-4-4-12 hex (migration 002083) |
 | `mac` | yes | no (hosts have several) | `identifiers.mac_addresses`; properties `mac_address` (the Nessus parser), `mac_addresses`, `mac` |
 | `scm_repo_id` | yes | yes | `identifiers.scm_repo_id`; properties `scm_repo_id`, `repo_id`, `repository_id`, `project_id`; `asset_repositories.repo_id` |
 | `fqdn`, `hostname` | no | — | asset name; properties `hostname`, `fqdn`, `netbios_name` |
