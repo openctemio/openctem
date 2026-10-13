@@ -78,7 +78,7 @@ type AssetChangeResponse struct {
 	AssetName string `json:"asset_name" example:"new-api.example.com"`
 	AssetType string `json:"asset_type" example:"service"`
 	Timestamp string `json:"timestamp" example:"2024-01-15T10:30:00Z"`
-	// AttributionState: confirmed, needs_review, candidate, dependency,
+	// AttributionState: confirmed, discovered, needs_review, candidate, dependency,
 	// monitor_only, rejected, or empty for an asset with no record (legacy,
 	// confirmed). InInventory is false for the review queue and rejected
 	// assets, so the UI shows "Added · needs review" (RFC-054 §4.4).
@@ -96,6 +96,7 @@ type AssetChangeResponse struct {
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      500  {object}  apierror.Error
+// @Param        include_discovered  query  bool  false  "Count discovered assets nobody claimed too (default: the attributed inventory only)"
 // @Router       /attack-surface/stats [get]
 func (h *AttackSurfaceHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

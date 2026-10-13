@@ -122,6 +122,10 @@ func registerSensorManagementRoutes(
 		r.POST("/{id}/keys/{key_id}/revoke", h.RevokeSigningKey, middleware.RequireAny(permission.SensorsWrite, permission.SensorsRevoke), own)
 		r.GET("/{id}/grant", h.GetGrant, middleware.Require(permission.SensorsRead), own)
 		r.PUT("/{id}/grant", h.UpdateGrant, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden), own)
+		// Grant suggestion: read and apply need a grant permission (the
+		// service also asks for step-up on apply and never widens).
+		r.GET("/{id}/grant/suggestion", h.GetGrantSuggestion, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden), own)
+		r.POST("/{id}/grant/suggestion/apply", h.ApplyGrantSuggestion, middleware.RequireAny(permission.SensorsGrantNarrow, permission.SensorsGrantWiden), own)
 		r.GET("/{id}/config-templates", h.GetConfigTemplates, middleware.Require(permission.SensorsRead), own)
 		// Activity timeline. Audit-log items are added only for callers that
 		// also hold audit:read (the handler checks it).
@@ -263,6 +267,12 @@ func registerScanWorkflowRoutes(
 		r.PUT("/{id}/draft", h.SaveDraft, middleware.Require(permission.ScanWorkflowsWrite))
 		r.DELETE("/{id}/draft", h.DiscardDraft, middleware.Require(permission.ScanWorkflowsWrite))
 		r.POST("/{id}/publish", h.PublishDraft, middleware.Require(permission.ScanWorkflowsWrite))
+
+		// Template updates of a copy of a system template: shown to readers,
+		// applied or dismissed by writers; never applied on their own.
+		r.GET("/{id}/template-update", h.GetTemplateUpdate, middleware.Require(permission.ScanWorkflowsRead))
+		r.POST("/{id}/template-update/apply", h.ApplyTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
+		r.POST("/{id}/template-update/reject", h.DismissTemplateUpdate, middleware.Require(permission.ScanWorkflowsWrite))
 
 		r.DELETE("/{id}", h.DeleteTemplate, middleware.Require(permission.ScanWorkflowsDelete))
 
@@ -490,6 +500,10 @@ func registerScanRoutes(
 		} else {
 			r.POST("/{id}/trigger", h.TriggerScan, middleware.RequireAll(permission.ScansWrite, permission.ScansExecute))
 		}
+
+		// Take ownership of a scan whose owner is missing or left: owners and
+		// administrators only (an API key is never an admin), audited.
+		r.POST("/{id}/take-ownership", h.TakeScanOwnership, middleware.RequireAdmin(), middleware.Require(permission.ScansWrite))
 
 		// Clone scan
 		r.POST("/{id}/clone", h.CloneScan, middleware.Require(permission.ScansWrite))

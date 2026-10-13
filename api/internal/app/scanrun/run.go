@@ -1,6 +1,8 @@
 package scanrun
 
 import (
+	"time"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -323,6 +325,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step))
 		var noInputs *noInputsError
+		var tooClose *deadlineTooCloseError
 		switch {
 		case err == nil:
 			runningSteps++
@@ -333,14 +336,13 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 				"run_id", run.ID.String(), "step_key", step.StepKey)
 		case errors.Is(err, errStageAlreadyPlanned):
 			// Another planner (a concurrent completion) planned it.
+		case errors.As(err, &tooClose):
+			s.settleStepDeadlineTooClose(ctx, run, stepRun, step.StepKey, tooClose)
+			settledInline = true
 		case errors.As(err, &noInputs):
 			// Planned, and nothing passed: settled without a command, so its
 			// successors run on what they have.
-			stepRun.Complete(0, map[string]any{"no_inputs": true})
-			stepRun.SkipReason = noInputs.Error()
-			if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
-				s.logger.Error("failed to settle a step with no inputs", "step_key", step.StepKey, "error", uerr)
-			}
+			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
 			settledInline = true
 		default:
 			s.logger.Error("failed to queue step", "step_key", step.StepKey, "error", err)
@@ -420,6 +422,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
 		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
+		if ferr != nil && findsNoHosts(resolved, ferr) {
+			return &noInputsError{summary: "no address or range to probe"}
+		}
 		if ferr != nil {
 			var de *shared.DomainError
 			if !chained || !errors.As(ferr, &de) || (de.Code != "INCOMPATIBLE_TARGETS" && de.Code != scanapp.CodeStepTargetsRefused) {
@@ -441,6 +446,9 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// that takes its kind: a network range never reaches HTTP probing or
 	// templates.
 	kindGated, kerr := gateStepKinds(resolved, stepTargets, run.Context, chained)
+	if kerr != nil && findsNoHosts(resolved, kerr) {
+		return &noInputsError{summary: "no address or range to probe"}
+	}
 	if kerr != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
 	}
@@ -453,6 +461,42 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
 	// not from the known names the run expanded under it (RFC-068).
 	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
+
+	// Live hosts first: an active stage other than host discovery never
+	// takes a range; its live hosts come from the host discovery step it
+	// follows (RFC-088).
+	before := chunkTargets(stepTargets, run.Context)
+	stepTargets = scanapp.LivenessSeeds(run.Context, resolved, stepTargets)
+	if stepTargets != nil && len(stepTargets.Targets) == 0 && len(before) > 0 && !chained {
+		return fmt.Errorf("step %s: %w", step.StepKey, shared.NewDomainError(scanapp.CodeLivenessNeedsHostDiscovery,
+			"This step scans hosts, the scan finds the live hosts of its address ranges first, and no Host discovery step comes before it. Add one before this step, or scan every address of the ranges.",
+			shared.ErrValidation))
+	}
+
+	// Resolve before active: an active stage skips the names the platform's
+	// freshest evidence says have not resolved for a week (RFC-088 A5).
+	if f, ok := s.targetGate.(StaleNameFilter); ok && activeStep(resolved) {
+		seeds := chunkTargets(stepTargets, run.Context)
+		kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+		if serr != nil {
+			return fmt.Errorf("step %s: %w", step.StepKey, serr)
+		}
+		if len(stale) > 0 {
+			out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
+			if stepTargets != nil {
+				out.Refused += stepTargets.Refused
+				if stepTargets.Reason != "" {
+					out.Reason = stepTargets.Reason + "; " + out.Reason
+				}
+			}
+			stepTargets = out
+			s.logger.Info("step names without recent resolution evidence were left out",
+				"run_id", run.ID.String(), "step_key", step.StepKey, "skipped", len(stale))
+			if len(kept) == 0 && !chained {
+				return &noInputsError{summary: fmt.Sprintf("%d name(s) %s", len(stale), scanapp.ReasonNotResolving)}
+			}
+		}
+	}
 
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
@@ -477,13 +521,27 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// eligible sensor takes a share; the step settles with its last chunk
 	// (checkStepBatches). A step that fits one chunk stays one command.
 	chunks := stepChunks(resolved, stepTargets)
+	// Admission: a step is not started when its run's deadline would cut it
+	// before it can do anything useful; its targets roll over instead.
+	if tooClose := deadlineTooClose(run, resolved.Name, time.Now()); tooClose != nil {
+		for _, chunk := range chunks {
+			tooClose.targets = append(tooClose.targets, chunkTargets(chunk, run.Context)...)
+		}
+		return tooClose
+	}
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
 		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
-			// chunk, so no other sensor hits them at the same time.
+			// chunk, so no other sensor hits them at the same time; the
+			// sensor admits the chunk under the same keys (host_keys).
 			cmd.HostKeys = chunkHostKeys(resolved.Stage, resolved.HasStage, chunkTargets(chunk, run.Context))
+			if resolved.HasStage {
+				cmd.Payload, err = withHostKeys(cmd.Payload, cmd.HostKeys)
+			}
+		}
+		if err == nil {
 			// What the step's targets were gated with: the claim gates
 			// them again with it (claim-time scope re-check).
 			cmd.DispatchGate = stepDispatchGate(run, resolved)
@@ -509,6 +567,30 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
 	return s.stepRunRepo.Update(ctx, stepRun)
+}
+
+// findsNoHosts reports whether err says a host discovery step has no
+// address or range to probe: the step is settled without a command (a run of
+// names only), so the steps after it run on their own targets.
+func findsNoHosts(resolved scanapp.StepTool, err error) bool {
+	var de *shared.DomainError
+	return resolved.HasStage && resolved.Stage.Key == stage.DiscoverHosts &&
+		errors.As(err, &de) && de.Code == "INCOMPATIBLE_TARGETS"
+}
+
+// StaleNameFilter drops the names without recent resolution evidence
+// (*scan.Service).
+type StaleNameFilter interface {
+	DropStaleNames(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, err error)
+}
+
+// activeStep reports whether a step sends traffic to its targets: an
+// active catalog stage, or a tool the catalog does not know as passive.
+func activeStep(resolved scanapp.StepTool) bool {
+	if resolved.HasStage {
+		return !resolved.Stage.Tier.Passive()
+	}
+	return !stage.PassiveTool(resolved.Name)
 }
 
 // stepDispatchGate is the gate record of a step's commands: the run
@@ -604,6 +686,17 @@ func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanw
 	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	// The exclusions that touch the chunk's ranges travel with it: the
+	// sensor cuts its ranges around them again (RFC-088).
+	if src, ok := s.targetGate.(JobExclusionSource); ok {
+		excl, err := src.JobExclusions(ctx, run.TenantID, chunkTargets(chunk, run.Context))
+		if err != nil {
+			return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
+		}
+		if len(excl) > 0 {
+			payload[scanapp.PayloadKeyExclusions] = excl
+		}
 	}
 
 	// Final payload validation before sending to sensor
@@ -1862,12 +1955,34 @@ func (s *Service) QueueRunStep(ctx context.Context, run *scanrun.Run, step *scan
 		if errors.Is(qerr, errStageAlreadyPlanned) {
 			return nil // queued by a concurrent call
 		}
+		var noInputs *noInputsError
+		if errors.As(qerr, &noInputs) {
+			// Nothing to do (a host discovery step of a run of names):
+			// settled without a command; the caller advances the run so
+			// the steps after it start.
+			s.settleNoInputs(ctx, stepRun, step.StepKey, noInputs)
+			s.notifyRun(run.TenantID, run.ID)
+			return scanapp.ErrStepSettled
+		}
 		s.failQueuedStep(ctx, stepRun, step.StepKey, qerr)
 		s.notifyRun(run.TenantID, run.ID)
 		return qerr
 	}
 	s.notifyRun(run.TenantID, run.ID)
 	return nil
+}
+
+// settleNoInputs completes a step that has nothing to do, without a
+// command: its successors run on what they have.
+func (s *Service) settleNoInputs(ctx context.Context, stepRun *scanrun.StepRun, stepKey string, noInputs *noInputsError) {
+	if stepRun == nil {
+		return
+	}
+	stepRun.Complete(0, map[string]any{"no_inputs": true})
+	stepRun.SkipReason = noInputs.Error()
+	if uerr := s.stepRunRepo.Update(ctx, stepRun); uerr != nil {
+		s.logger.Error("failed to settle a step with no inputs", "step_key", stepKey, "error", uerr)
+	}
 }
 
 // failQueuedStep records a step that could not be queued: failed, with the

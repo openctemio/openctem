@@ -148,7 +148,10 @@ advertises all of them.
 
 The recon tools (subfinder, dnsx, naabu, httpx, katana) ship in the sensor's
 full and platform images and take a target list, so a run of one of them is
-one command with every target, like nuclei.
+one command with every target, like nuclei. dnsx filters wildcard DNS by
+default (`-auto-wildcard`), and the platform sends `wildcard_filter: true`
+with every dnsx job that does not set it; the platform's own wildcard-only
+marks are a second layer behind it (RFC-088 §8).
 
 **System presets** (migration 000061, fixed by 000270): every step of an
 active preset names a shipped tool with catalog capabilities
@@ -177,6 +180,26 @@ Command Lifecycle:
                                    CanRetry() ?
                                    PrepareRetry()
 ```
+
+### Work distribution today, and the work pool
+
+A workflow step is cut into chunks when it starts (one command per chunk,
+sizes per stage), and sensors pull: a poll claims, in the fair order (class
+with ageing, round-robin across runs), the commands the sensor may run, with
+a lease. An active stage's chunk holds per-host politeness keys while it
+runs; the keys come from `github.com/openctemio/ctis/politeness`, the
+function the sensor runtime admits work with, and travel with the chunk
+(`host_keys`), so a sensor never hands back what the platform just offered.
+A step is runnable when every dependency finished.
+
+Shared platform sensors have no claim path today: the platform queue
+function `get_next_platform_job` has no caller and a tenant-less sensor is
+refused on the command routes.
+
+[RFC-090](../rfcs/RFC-090-work-pool.md) replaces step-start chunking with a
+work pool: typed items per step in lanes, a claim that cuts a task sized for
+the claiming sensor, per-item settlement and streaming between steps, built
+in steps behind a per-tenant flag.
 
 ### 5. Pipeline Progression
 
@@ -351,7 +374,12 @@ come from logs (`tenant_id`, `run_id`) and traces.
 | `scan_runs_in_progress` | — | runs in progress (this replica) |
 | `scan_run_steps_total` | `step_key`, `status` | step outcomes |
 | `commands_total`, `commands_expired_total` | `type`, `status` / — | command outcomes, expiries |
-| `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed |
+| `command_claims_total` | `mode` (`claim`, `claim_n`) | commands sensors claimed, one per command (the poll's `claim_n` included) |
+| `command_claim_duration_seconds` | `mode` | how long a claim takes on the platform |
+| `command_claim_wait_seconds` | `class` | how long a claimed command waited from due to claimed |
+| `command_claim_skipped_total` | `reason` (`local_policy`, `no_slot`, `scope_changed`, `window_hold`, `program_hold`, `taken`) | poll candidates not handed out |
+| `openctem_command_queue_depth` | `stage`, `tool`, `class`, `wait` (`ready`, `host_busy`, `scheduled`) | pending commands by lane-ish key and why they wait (ops collector) |
+| `openctem_command_queue_tenants`, `openctem_command_queue_top_tenant_pending` | — | tenants waiting, and the busiest tenant's pending count |
 | `command_leases_expired_total` | — | commands re-queued after their lease ran out |
 | `scan_runs_reaped_total` | `reason` (`deadline`, `unclaimed`) | runs the timeout controller ended |
 | `scans_scheduled_total`, `scan_schedule_outcomes_total` | — / `outcome` | scheduler occurrences and what they became |

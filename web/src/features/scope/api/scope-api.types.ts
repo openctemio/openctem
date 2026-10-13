@@ -130,6 +130,8 @@ export interface UpdateScopeSettingsInput {
   auto_join_discovered: boolean
   /** A person's confirmation adds the asset's exact scope entry (not under Strict). */
   confirm_adds_to_scope: boolean
+  /** Discovered names wait for review outside the inventory (RFC-054 §15). */
+  review_before_inventory: boolean
   one_off_targets: ScopeOneOffPolicy
   one_off_max_days: number
   /** null: the default min(1, admins - 1). */

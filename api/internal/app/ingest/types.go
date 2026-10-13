@@ -192,11 +192,15 @@ type Output struct {
 	// change (Options.Actor): existing assets outside their data scope and
 	// hosts that would have been new. Their findings are skipped.
 	AssetsSkippedOutOfScope int `json:"assets_skipped_out_of_scope,omitempty"`
-	FindingsCreated         int `json:"findings_created"`
-	FindingsUpdated         int `json:"findings_updated"`
-	FindingsSkipped         int `json:"findings_skipped"`
-	FindingsAutoResolved    int `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened    int `json:"findings_auto_reopened,omitempty"`
+	// AssetsOutsideChunk counts report assets dropped because they name
+	// only addresses outside the addresses and ranges their command was
+	// given (RFC-088 output binding). Their findings are skipped.
+	AssetsOutsideChunk   int `json:"assets_outside_chunk,omitempty"`
+	FindingsCreated      int `json:"findings_created"`
+	FindingsUpdated      int `json:"findings_updated"`
+	FindingsSkipped      int `json:"findings_skipped"`
+	FindingsAutoResolved int `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened int `json:"findings_auto_reopened,omitempty"`
 	// FindingsSourceResolved counts open findings resolved because their
 	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
 	// FindingsSourceWouldResolve counts them instead.
@@ -276,8 +280,9 @@ type Output struct {
 	ExcludedAssetRefs map[string]bool `json:"-"`
 
 	// OutOfScopeAssetRefs are the CTIS asset ids of the report skipped
-	// because the upload's actor may not change them (Options.Actor). Their
-	// findings are skipped, never attached to another asset of the report.
+	// because the upload's actor may not change them (Options.Actor), or
+	// because they lie outside their command's addresses. Their findings
+	// are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
 }
 

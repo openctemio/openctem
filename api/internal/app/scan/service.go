@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -190,6 +191,10 @@ type Service struct {
 	scopeSnapshots ScopeSnapshotRecorder
 	scanRepo       scan.Repository
 	ownerActivity  OwnerActivity
+	// ownerAdmins and ownerNotifier tell the administrators once when a
+	// scan is paused for want of an active owner (owner.go).
+	ownerAdmins    AdminDirectory
+	ownerNotifier  InAppNotifier
 	templateRepo   scanworkflow.Repository
 	assetGroupRepo assetgroup.Repository
 	// selectorAssets reads the inventory behind dynamic target selectors
@@ -197,6 +202,10 @@ type Service struct {
 	selectorAssets SelectorAssets
 	runRepo        scanrun.RunRepository
 	stepRepo       scanworkflow.StepRepository
+	// resolveEvidence and staleRefresher: resolve before active
+	// (resolve_evidence.go); nil hands every name on.
+	resolveEvidence freshdom.NameEvidenceReader
+	staleRefresher  StaleRefresher
 	// approvalGate and governanceAssets: scan approval (governance.go).
 	approvalGate        ApprovalGate
 	governanceAssets    GovernanceAssets

@@ -13,6 +13,7 @@ A scan says **what** to scan in three ways, all resolved again at every run:
 | Asset groups | `scans.asset_group_ids` | the group's current members (not archived), by asset id |
 | Wildcard domain | `*.example.com` in `scans.targets` | the apex + every domain-class asset at or under it, by asset id |
 | Inventory-mode CIDR | a CIDR in `scans.targets` with `target_options.cidr_mode = inventory` | every address asset inside it, by asset id |
+| Live-hosts-first CIDR | a CIDR with `cidr_mode = liveness` (the default of a new scan) | the range itself (for host discovery and passive lookups only) + every address asset inside it, by asset id |
 
 `asset_ids` on `POST /scans` are names resolved once at create (they become
 literal targets).
@@ -26,6 +27,7 @@ targets + groups + selectors
   └─ expandSelectors (target_selectors.go)
        wildcard → apex (literal) + ListSelectorAssets(UnderDomain)
        cidr (inventory mode) → ListSelectorAssets(InCIDR)
+       cidr (liveness mode) → the range (literal) + ListSelectorAssets(InCIDR)
        options: seen_within_days, include_stale; cap 5 000 per selector
        new_since_last_run: only assets confirmed (or first seen without a
          record) since the previous completed/partial run; no apex literal (RFC-071)
@@ -79,6 +81,74 @@ in `GET /scan-runs/{id}/stages`.
 `cidr_mode` (`sweep` default, `inventory`), `seen_within_days` (0–365),
 `include_stale`. Set on create and update (`target_options` in the body;
 omitted on update = unchanged), exported and imported, copied by clone.
+
+### CIDR mode and live hosts first (RFC-088)
+
+| `cidr_mode` | What the steps get |
+|---|---|
+| `liveness` | Host discovery (`discover.hosts`) and passive lookups get the range pieces. Every other active step gets the addresses host discovery found live (through the hop router) and the addresses the inventory holds in the range, never the range. |
+| `sweep` | Every step that takes ranges gets the pieces; an address host discovery found inside a range the same step sweeps is not added again (`covered_by_range`). |
+| `inventory` | The inventory's addresses inside the range only. |
+| none stored | Sweep: a scan saved before liveness existed keeps sweeping, also when it is edited (an edit that names no mode keeps the stored one). The edit form and the scan detail page suggest live hosts first, with a one-click switch, when its scan can run it (a single scanner, or a workflow with Host discovery). |
+
+- **Default.** A scan saved with a range and no mode gets `liveness` when it
+  can run it: a single-scanner scan, or a workflow with a Host discovery
+  step. Otherwise it sweeps. An explicit `liveness` on a workflow without
+  Host discovery is refused (`LIVENESS_NEEDS_HOST_DISCOVERY`). An explicit
+  `sweep` is stored as chosen.
+- **Single-scanner scans** have no separate discovery step: a port scan
+  takes the range (it probes each address itself), and a scanner that does
+  not take ranges gets the inventory's addresses inside it.
+- **At run time** the run context carries `cidr_mode: liveness`. An active
+  step that would be left with nothing because only ranges were dropped,
+  and has no predecessor to feed it, fails with
+  `LIVENESS_NEEDS_HOST_DISCOVERY`. A Host discovery step with no address
+  or range to probe (a run of names) is settled without a command, and the
+  steps after it run on their own targets.
+- **Probe ports.** The platform names them in every host discovery job
+  (`stage.HostProbePorts`: 80, 443, 22, 3389, 8080, 8443, unless the step
+  sets `ports`); the sensor never picks its own.
+- The **Network** starter workflow starts with Host discovery
+  (migration `network_workflow_host_discovery`); copies a tenant made before
+  keep their steps.
+
+## Resolve before active
+
+An active stage (T1 and above, or a tool the catalogue does not know as
+passive) takes a host name only while the platform holds recent evidence
+that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
+
+- **Evidence** is the freshest observation of the name's inventory assets
+  in the asset freshness classes `dns`, `http`, `tls` and `ports`
+  (`asset_attribute_freshness`, tenant-scoped). A resolver answering for
+  it, or a tool reaching it by name, counts.
+- **Older than 7 days** (`assetfreshness.ResolveTTL`): the name is left out
+  (`not_resolving`) and its enrichment is requested (reason `stale`), so the
+  next run knows whether it resolves again.
+- **No evidence at all** (a name typed in and never resolved): it is handed
+  on. The sensor resolves it and reports it back as `unresolvable` when it
+  does not resolve.
+- Passive stages (DNS resolution, discovery) still take stale names: that
+  is how they get fresh evidence. Names a stage of the same run found are
+  fresh by construction.
+- Workflow steps apply it to their seeds (an active step left with nothing
+  settles without a command); a single-scanner run applies it at run start
+  (`not_resolving_target_count`, a warning; a run left with nothing is
+  refused `NO_RESOLVING_TARGETS`). A failed evidence read dispatches
+  nothing.
+- **Wildcard DNS.** The platform sends `wildcard_filter: true` with every
+  dnsx job that does not set it (`withWildcardFilter`). A name that resolves
+  only through a wildcard record is then never reported and gains no DNS
+  evidence. When the job is over (command completed with exit code 0, every
+  report filed under it completed with nothing rejected), ingest marks the
+  input names it did not report (`asset_wildcard_dns`,
+  `ingest.evaluateWildcardDNS`) and clears the mark of the names it did. A
+  marked name is passive only: the active-probe gate refuses it, and a
+  service or URL on it, as `wildcard_only` until a person confirms it or a
+  filtered resolution reports it, and the scope join never confirms it. A
+  run with the filter off proves nothing and changes no mark. A name that
+  stopped resolving at all is marked too; it has nothing to probe, and the
+  mark clears when it resolves again.
 
 ## Preview
 

@@ -69,6 +69,54 @@ export function taskStatusNote(
   return { kind: 'error', text: msg }
 }
 
+/** A duration for a progress line: "<1s" under a second. */
+function shortDuration(ms: number): string {
+  return ms < 1000 ? '<1s' : formatScanDuration(ms)
+}
+
+/**
+ * A running task's progress line (research/122): finished targets as its
+ * sensor reports them, how long since the last one, and its budget. A task
+ * that finished no target for more than half its stall window reads as
+ * stalling, with when the platform takes it back. Null for a task that is
+ * not running or reports nothing.
+ */
+export function taskProgressNote(
+  task: Pick<RunTask, 'status' | 'progress' | 'budget_seconds' | 'stall_seconds' | 'started_at'>,
+  t: Translate = enTranslate,
+  now: number = Date.now()
+): { kind: 'progress' | 'stalling'; text: string } | null {
+  if (task.status !== 'running') return null
+  const parts: string[] = []
+  const p = task.progress
+  const done = p?.done ?? 0
+  const total = p?.total ?? 0
+  if (p && total > 0) {
+    parts.push(t('scans.tasks.progressDone', undefined, { done, total }))
+    const since = Date.parse(p.last_progress_at ?? task.started_at ?? '')
+    const quietMs = Number.isFinite(since) ? Math.max(0, now - since) : undefined
+    const stallMs = (task.stall_seconds ?? 0) * 1000
+    if (quietMs !== undefined && stallMs > 0 && done < total && quietMs > stallMs / 2) {
+      return {
+        kind: 'stalling',
+        text: t('scans.tasks.stalling', undefined, {
+          quiet: shortDuration(quietMs),
+          stall: formatScanDuration(stallMs),
+        }),
+      }
+    }
+    if (quietMs !== undefined) {
+      parts.push(t('scans.tasks.lastTarget', undefined, { ago: shortDuration(quietMs) }))
+    }
+  }
+  if (task.budget_seconds) {
+    parts.push(
+      t('scans.tasks.budget', undefined, { budget: formatScanDuration(task.budget_seconds * 1000) })
+    )
+  }
+  return parts.length ? { kind: 'progress', text: parts.join(' · ') } : null
+}
+
 /** Skip reasons that have a translated label. */
 const SKIP_REASONS = new Set([
   'unresolvable',
@@ -227,6 +275,7 @@ export function RunTasksTable({
               const note = taskStatusNote(task, t)
               const skipped = taskSkippedNote(task, t)
               const gaps = taskCoverageGapNote(task, t)
+              const prog = taskProgressNote(task, t)
               return (
                 <Fragment key={task.id ?? i}>
                   <tr className="border-t align-top">
@@ -270,6 +319,17 @@ export function RunTasksTable({
                     <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">
                       {ms === undefined ? '-' : ms < 1000 ? '<1s' : formatScanDuration(ms)}
                       {ms !== undefined && !task.completed_at && t('scans.tasks.soFar')}
+                      {prog && (
+                        <div
+                          className={
+                            prog.kind === 'stalling'
+                              ? 'mt-1 text-xs text-warning'
+                              : 'mt-1 text-xs text-muted-foreground'
+                          }
+                        >
+                          {prog.text}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-end">
                       {task.id && (

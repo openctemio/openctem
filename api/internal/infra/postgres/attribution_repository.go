@@ -134,9 +134,15 @@ func (r *AttributionRepository) Records(ctx context.Context, tenantID shared.ID,
 // the host's): the update is skipped for such rows. The caller computes the
 // decision with attribution.Merge so automation only raises. The children
 // that follow the asset take its new state.
+//
+// Inventory first (RFC-054 §15): every automatic writer comes through here,
+// so this is where needs_review becomes discovered (in the inventory,
+// passive only) unless the tenant keeps the review gate
+// (settings.scope.review_before_inventory). The setting is read in the same
+// statement, from the asset's own tenant.
 func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shared.ID, assetID string, d attribution.Decision) error {
-	if !d.State.Valid() {
-		return fmt.Errorf("%w: invalid attribution state %q", shared.ErrValidation, d.State)
+	if !d.State.Valid() || !d.State.Automatic() {
+		return fmt.Errorf("%w: invalid automatic attribution state %q", shared.ErrValidation, d.State)
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -145,8 +151,9 @@ func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shar
 	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO asset_attributions (asset_id, tenant_id, state, confidence, reason)
-		SELECT a.id, a.tenant_id, $3, $4, $5
-		FROM assets a WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
+		SELECT a.id, a.tenant_id, `+automaticStateSQL("$3")+`, $4, $5
+		FROM assets a JOIN tenants t ON t.id = a.tenant_id
+		WHERE a.id = $1 AND a.tenant_id = $2 AND a.deleted_at IS NULL
 		ON CONFLICT (asset_id) DO UPDATE SET
 			state      = EXCLUDED.state,
 			confidence = EXCLUDED.confidence,
@@ -164,6 +171,20 @@ func (r *AttributionRepository) SaveAutomatic(ctx context.Context, tenantID shar
 		return fmt.Errorf("save attribution: %w", err)
 	}
 	return nil
+}
+
+// automaticStateSQL is the state an automatic decision is stored as, for a
+// query that has the tenant row as t: needs_review is stored as discovered
+// unless the tenant keeps the review gate. state is a placeholder, never
+// user input.
+func automaticStateSQL(state string) string {
+	return "CASE WHEN " + state + " = 'needs_review' AND " + reviewGateOffSQL("t") + " THEN 'discovered' ELSE " + state + " END"
+}
+
+// reviewGateOffSQL is true when the tenant row alias does not keep the
+// review gate (RFC-054 §15).
+func reviewGateOffSQL(alias string) string {
+	return "COALESCE(" + alias + ".settings->'scope'->>'review_before_inventory', '') <> 'true'"
 }
 
 // Get returns one asset's attribution and evidence. found=false means the

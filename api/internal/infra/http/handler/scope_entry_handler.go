@@ -111,6 +111,10 @@ type ScopeSettingsResponse struct {
 	// organization's also adds its exact scope entry (default true). Never
 	// in effect while scan approval is Strict (research/117).
 	ConfirmAddsToScope bool `json:"confirm_adds_to_scope"`
+	// ReviewBeforeInventory: discovered names outside every permanent entry
+	// wait for review outside the inventory (default false: they join the
+	// inventory as discovered, passive only; RFC-054 §15).
+	ReviewBeforeInventory bool `json:"review_before_inventory"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -159,12 +163,14 @@ type ScopeApprovalPolicyView struct {
 // ScopeSettingsRequest replaces the settings. There is no field that turns
 // scope off.
 type ScopeSettingsRequest struct {
-	AutoJoinDiscovered *bool  `json:"auto_join_discovered"`
-	ConfirmAddsToScope *bool  `json:"confirm_adds_to_scope"`
-	OneOffTargets      string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
-	OneOffMaxDays      int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
-	WideningApprovals  *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
-	DefaultMaxTier     string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	AutoJoinDiscovered *bool `json:"auto_join_discovered"`
+	ConfirmAddsToScope *bool `json:"confirm_adds_to_scope"`
+	// ReviewBeforeInventory: omitted keeps the stored value.
+	ReviewBeforeInventory *bool  `json:"review_before_inventory"`
+	OneOffTargets         string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
+	OneOffMaxDays         int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
+	WideningApprovals     *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
+	DefaultMaxTier        string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
 }
 
 func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss tenant.ScopeSettings) (ScopeSettingsResponse, error) {
@@ -176,7 +182,8 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 	mode, source := h.service.ApprovalPolicy(ctx, tenantID)
 	return ScopeSettingsResponse{
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
-		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
+		ReviewBeforeInventory: ss.ReviewBeforeInventory,
+		OneOffTargets:         ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
 		ActiveProof:   h.activeProofMode(ctx),
@@ -261,16 +268,24 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
 	}
-	// A client that does not know confirm_adds_to_scope keeps the stored
-	// value instead of turning it back on.
-	if req.ConfirmAddsToScope == nil {
+	if req.ReviewBeforeInventory != nil {
+		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
+	}
+	// A client that does not know confirm_adds_to_scope or
+	// review_before_inventory keeps the stored value instead of resetting it.
+	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
 			apierror.InternalServerError("failed to read the settings").WriteJSON(w)
 			return
 		}
-		ss.ConfirmAddsToScopeDisabled = before.ConfirmAddsToScopeDisabled
+		if req.ConfirmAddsToScope == nil {
+			ss.ConfirmAddsToScopeDisabled = before.ConfirmAddsToScopeDisabled
+		}
+		if req.ReviewBeforeInventory == nil {
+			ss.ReviewBeforeInventory = before.ReviewBeforeInventory
+		}
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),

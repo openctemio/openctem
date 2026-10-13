@@ -29,6 +29,7 @@ type Repositories struct {
 	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
+	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
 	APISpec                 *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
@@ -131,6 +132,8 @@ type Repositories struct {
 	// CommandLog keeps the per-task logs sensors send (command_logs).
 	CommandLog *postgres.CommandLogRepository
 	Command    *postgres.CommandRepository
+	// ToolDurationStats are the learned per-target durations (research/122).
+	ToolDurationStats *postgres.ToolDurationStatsRepository
 	// SensorContentPolicy is the tenant scanner content policy (RFC-031).
 	SensorContentPolicy *postgres.SensorContentPolicyRepository
 	// SensorResult is the policy and quarantine for sensor results without a
@@ -337,6 +340,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
@@ -428,6 +432,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SensorHeartbeatHistory: postgres.NewSensorHeartbeatHistoryRepository(db),
 		CommandLog:             postgres.NewCommandLogRepository(db),
 		Command:                postgres.NewCommandRepository(db),
+		ToolDurationStats:      postgres.NewToolDurationStatsRepository(db),
 		SensorContentPolicy:    postgres.NewSensorContentPolicyRepository(db),
 		SensorResult:           postgres.NewSensorResultRepository(db),
 		IngestJob:              postgres.NewIngestJobRepository(db),

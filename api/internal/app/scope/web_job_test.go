@@ -230,9 +230,11 @@ func TestWebJobGuard_NoConfinedSensor(t *testing.T) {
 	}
 }
 
-// SECURITY: a nuclei validation or retest cannot carry a web scope to the
-// sensor yet, so it is refused when a path exclusion applies to its
-// target, and dispatched unchanged when none does.
+// SECURITY: a nuclei validation or retest with a path exclusion on its
+// target carries the web scope and requires net.confined@1 (only a sensor
+// that reports it, v0.19.0 or later, keeps these jobs to the scope); it is
+// refused when the organization has no such sensor, and dispatched
+// unchanged when no rule applies.
 func TestWebJobGuard_ValidateAndRetest(t *testing.T) {
 	for name, mk := range map[string]func() *commanddom.Command{
 		"validate": func() *commanddom.Command {
@@ -240,27 +242,62 @@ func TestWebJobGuard_ValidateAndRetest(t *testing.T) {
 				"target": map[string]any{"address": "https://app.example.com/login"}})
 		},
 		"retest": func() *commanddom.Command {
-			return newCmd(t, commanddom.CommandTypeRetest, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com/login"}})
+			return newCmd(t, commanddom.CommandTypeRetest, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com/login"},
+				commanddom.PayloadKeyWebScope: map[string]any{"deny_paths": []string{}}})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeWebScope{ws: adminScope}
-			err := NewWebJobGuard(f, fakeConfined{has: true}).GuardCreate(context.Background(), mk())
-			var de *shared.DomainError
-			if !errors.As(err, &de) || de.Code != scanrundom.FailureWebScopeUnsupported || !errors.Is(err, shared.ErrValidation) {
-				t.Fatalf("err = %v, want %s", err, scanrundom.FailureWebScopeUnsupported)
+			cmd := mk()
+			if err := NewWebJobGuard(f, fakeConfined{has: true}).GuardCreate(context.Background(), cmd); err != nil {
+				t.Fatalf("scoped %s with a confined sensor: %v", name, err)
 			}
 			if !slices.Equal(f.targets, []string{"https://app.example.com/login"}) {
 				t.Fatalf("asked about %v", f.targets)
 			}
-			cmd := mk()
+			p := payloadOf(t, cmd)
+			if got := denyPaths(p); !slices.Equal(got, []string{"/admin"}) {
+				t.Fatalf("web_scope deny_paths %v, want the platform's [/admin] (a caller's scope is replaced)", got)
+			}
+			features, _ := p[commanddom.PayloadKeyRequiredFeatures].([]any)
+			if len(features) != 1 || features[0] != sensordom.CapabilityNetConfined {
+				t.Fatalf("required_features %v, want [%s]", features, sensordom.CapabilityNetConfined)
+			}
+
+			// No sensor of the organization can keep the job to its scope:
+			// refused up front, never retried.
+			err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, fakeConfined{}).GuardCreate(context.Background(), mk())
+			var de *shared.DomainError
+			if !errors.As(err, &de) || de.Code != scanrundom.FailureNoConfinedSensor || !errors.Is(err, shared.ErrValidation) {
+				t.Fatalf("no capable sensor: err = %v, want %s", err, scanrundom.FailureNoConfinedSensor)
+			}
+
+			// No rule on the target: unchanged, no sensor requirement.
+			cmd = mk()
+			if name == "retest" {
+				cmd = newCmd(t, commanddom.CommandTypeRetest, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com/login"}})
+			}
 			before := string(cmd.Payload)
-			if err := NewWebJobGuard(&fakeWebScope{}, nil).GuardCreate(context.Background(), cmd); err != nil || string(cmd.Payload) != before {
+			if err := NewWebJobGuard(&fakeWebScope{}, fakeConfined{}).GuardCreate(context.Background(), cmd); err != nil || string(cmd.Payload) != before {
 				t.Fatalf("no rule: err %v, payload %s", err, cmd.Payload)
 			}
 			if err := NewWebJobGuard(&fakeWebScope{err: errors.New("db down")}, nil).GuardCreate(context.Background(), mk()); err == nil {
 				t.Fatal("lookup error let the job through")
 			}
 		})
+	}
+}
+
+// SECURITY: a validation or retest of a web tool whose finding check does
+// not keep to a web scope is still refused when a path exclusion applies.
+func TestWebJobGuard_UnboundVerifyRefused(t *testing.T) {
+	cmd := newCmd(t, commanddom.CommandTypeRetest, map[string]any{"scanner": "katana", "targets": []string{"https://app.example.com/login"}})
+	if _, ok := commanddom.WebJobOf(cmd); !ok {
+		t.Skip("katana is not a web tool in the stage catalog")
+	}
+	err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, fakeConfined{has: true}).GuardCreate(context.Background(), cmd)
+	var de *shared.DomainError
+	if !errors.As(err, &de) || de.Code != scanrundom.FailureWebScopeUnsupported {
+		t.Fatalf("err = %v, want %s", err, scanrundom.FailureWebScopeUnsupported)
 	}
 }

@@ -119,7 +119,12 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		            THEN commands.result->'metadata'->'coverage_gaps' END,
 		       CASE WHEN jsonb_typeof(commands.result->'metadata'->'coverage_gaps_total') = 'number'
 		            THEN LEAST(GREATEST((commands.result->'metadata'->>'coverage_gaps_total')::numeric, 0), `+strconv.Itoa(scanrun.MaxCoverageGapsTotal)+`)::bigint
-		            ELSE 0 END
+		            ELSE 0 END,
+		       commands.progress_done, commands.progress_total, commands.last_progress_at,
+		       CASE WHEN (commands.payload->'budget'->>'task_seconds') ~ '^[0-9]{1,9}$'
+		            THEN LEAST((commands.payload->'budget'->>'task_seconds')::bigint, 86400) END,
+		       CASE WHEN (commands.payload->'budget'->>'stall_seconds') ~ '^[0-9]{1,9}$'
+		            THEN LEAST((commands.payload->'budget'->>'stall_seconds')::bigint, 86400) END
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND NOT s.is_platform_sensor
@@ -142,10 +147,14 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 			skipped, hold, gaps   []byte
 			skippedTotal          int
 			gapsTotal             int
+			progDone, progTotal   sql.NullInt64
+			progressAt            sql.NullTime
+			taskSecs, stallSecs   sql.NullInt64
 		)
 		if err := rows.Scan(&id, &stepRunID, &t.StepKey, &t.Tool, &status, &sensorID, &t.SensorName,
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage,
-			&skipped, &skippedTotal, &hold, &gaps, &gapsTotal); err != nil {
+			&skipped, &skippedTotal, &hold, &gaps, &gapsTotal,
+			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs); err != nil {
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		// Sensor-supplied: parsed defensively, bounded and cleaned.
@@ -159,6 +168,15 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		}
 		t.ID, _ = shared.IDFromString(id)
 		t.Status = scanrun.TaskStatus(status)
+		if progTotal.Valid && progTotal.Int64 > 0 {
+			t.Progress = &scanrun.TaskProgress{Done: int(progDone.Int64), Total: int(progTotal.Int64)}
+			if progressAt.Valid {
+				v := progressAt.Time
+				t.Progress.LastAt = &v
+			}
+		}
+		t.BudgetSeconds = int(taskSecs.Int64)
+		t.StallSeconds = int(stallSecs.Int64)
 		if stepRunID.Valid {
 			if sid, err := shared.IDFromString(stepRunID.String); err == nil {
 				t.StepRunID = &sid
