@@ -732,6 +732,7 @@
   "scans.logs.description": "What the sensor logged while it ran this task. Kept 14 days.",
   "scans.logs.loading": "Loading logs…",
   "scans.logs.loadFailed": "Could not load the logs of this task.",
+  "scans.logs.attempt": "Attempt {n}",
   "scans.logs.lines": "Log lines",
   "scans.logs.truncated": "Some lines are not shown: the task reached its log limit, or there are more than 5,000 lines.",
   "scans.compat.thisTool": "this tool",
