@@ -9,11 +9,7 @@ import { cleanup, render, renderHook, waitFor } from '@testing-library/react'
 import { SWRConfig } from 'swr'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { EASM_REVIEW_COUNT_URL, seedSessionCache } from '../bootstrap-session'
-import {
-  reviewQueueURL,
-  REVIEW_QUEUE_STATES,
-} from '@/features/attack-surface/hooks/use-easm-review'
+import { EASM_SUGGESTIONS_COUNT_URL, seedSessionCache } from '../bootstrap-session'
 
 const get = vi.fn()
 vi.mock('@/lib/api/client', () => ({
@@ -32,10 +28,9 @@ describe('session bootstrap cache', () => {
   beforeEach(() => get.mockReset())
   afterEach(() => cleanup())
 
-  it('seeds the review badge under the exact key the sidebar reads', () => {
-    expect(EASM_REVIEW_COUNT_URL).toBe(
-      reviewQueueURL({ states: REVIEW_QUEUE_STATES, page: 1, perPage: 1 })
-    )
+  it('seeds the attack surface badge under the key the sidebar and tab read', () => {
+    // One per suggestion card, never one per review row (research/117).
+    expect(EASM_SUGGESTIONS_COUNT_URL).toBe('/api/v1/easm/suggestions?view=count')
   })
 
   it('a seeded profile is read from the cache without a request', async () => {

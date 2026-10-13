@@ -138,3 +138,21 @@ func TestSuggestionCards_NothingToDecide(t *testing.T) {
 		t.Fatalf("%+v %v", out, err)
 	}
 }
+
+func TestNameRuleCards(t *testing.T) {
+	if NameRuleCards(nil) != 0 {
+		t.Fatal("nil")
+	}
+	rs := &RuleSuggestions{
+		Suggestions: []RuleSuggestion{{Kind: "domain_wildcard"}, {Kind: "domain_wildcard"}, {Kind: "ip_cidr"}},
+		Individual:  []IndividualItem{{Name: "203.0.113.5"}, {Name: "cname.target.example"}, {Name: "other.example"}},
+	}
+	// Two name rules and one card for the names no rule groups; address
+	// rules and addresses belong to the addresses card.
+	if n := NameRuleCards(rs); n != 3 {
+		t.Fatalf("cards = %d, want 3", n)
+	}
+	if n := NameRuleCards(&RuleSuggestions{Individual: []IndividualItem{{Name: "198.51.100.1:443"}}}); n != 0 {
+		t.Fatalf("address-only individuals = %d, want 0", n)
+	}
+}
