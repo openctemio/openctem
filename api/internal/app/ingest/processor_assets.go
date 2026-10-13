@@ -465,6 +465,8 @@ func (p *AssetProcessor) processBatch(
 		"total", len(names),
 		"existing", len(existingMap),
 	)
+	// A trusted collector's complete report: which of them its source owns.
+	scope.primeCollector(existingMap)
 
 	// Step 3: Separate new vs existing assets
 	// With IP correlation: if name doesn't match but IPs do, merge into existing.
