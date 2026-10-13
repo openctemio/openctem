@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft (2026-10-13); steps 1–4 in progress |
+| Status | Draft (2026-10-13); steps 1–4 implemented, steps 5–8 in progress |
 | Scope | api (target gate, `pkg/domain/scope/ipset`, stage literal gate, workflow chunking, command host keys), later sdk-go + sensor (range iterator, job exclusions, `discover.hosts`), web (preview funnel, knobs) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md), [scan-targets.md](../architecture/scan-targets.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-030 (scan distribution: pull, chunks, leases, fair share), RFC-040 (mutual distrust sensor/platform), RFC-054 (scope model, deny list, tiers), RFC-068 (dynamic target selectors), RFC-082 (network seeds), research/118 |
@@ -102,9 +102,11 @@ until they learn about pieces.
 **Sensor side.** The sensor's local policy still refuses a range that
 overlaps its own deny list or `targets.deny` whole. Pieces from the platform
 never overlap the built-in deny list; an operator's local `targets.deny`
-overlapping a piece refuses that piece (fail safe). Cutting per address on
-the sensor needs the job to carry the exclusions and a range iterator in the
-SDK: step 6.
+overlapping a piece refuses that piece (fail safe). Since step 7 the job
+carries the tenant's exclusions inside the /24 (IPv6 /120) buckets of its
+ranges (payload `exclusions`, covered by the job signature), and the SDK
+walks each range address by address, leaving out what the job's
+exclusions, `targets.deny` or the built-in deny list covers.
 
 ## 5. Each stage gets only the kinds it accepts (step 3)
 
