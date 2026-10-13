@@ -368,6 +368,14 @@ comes back (mutual distrust, RFC-040).
   authority, checks every request and redirect with `pkg/webscope`, and
   refuses the rest, and non-HTTP traffic. Such a tool refuses a web-scoped
   job on a sensor that does not confine its tools' network, before it runs.
+- The platform places such a job only on a sensor that keeps to the scope:
+  a web-scoped nuclei job carries `required_features: ["net.confined@1"]`,
+  and the claim offers it only to a sensor that itself reported
+  `net.confined@1` (its tools run out of process, network-confined), never
+  on an administrator's declaration. Other sensors leave it queued, and the
+  run page says `not_confined` ([placement](../architecture/placement.md)).
+  When the organization has no active sensor that reported it, the step is
+  refused when it is queued with `NO_CONFINED_SENSOR` (class `placement`).
 - A step whose sensor refused the web scope fails with
   `WEB_SCOPE_UNSUPPORTED` (class `placement`, never retried): the fix is a
   sensor that can keep to it, not another attempt. Like any failed step, it
