@@ -2816,6 +2816,11 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	if s.SensorGrant != nil {
 		s.SensorGrant.SetNotifications(repos.MemberLifecycle, s.Notification)
 	}
+	// A scan paused for want of an active owner tells every administrator
+	// once.
+	if s.Scan != nil {
+		s.Scan.SetOwnerNotifications(repos.MemberLifecycle, s.Notification)
+	}
 
 	// Scope entries: settings, the approval count and the widening notice to
 	// every administrator (RFC-054 §7).
