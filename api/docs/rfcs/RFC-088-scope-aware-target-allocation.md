@@ -147,7 +147,25 @@ chained step may still take its predecessors' outputs.
   not conflict. Claims lock one advisory lock per bucket, so two claims of a
   range and an address inside it are serialised.
 
-## 7. Later steps
+## 7. Host discovery (step 5)
+
+`discover.hosts@1` (ctis taxonomy; discover.active, T1) takes addresses and
+ranges and reports each live address as an `ip_address` with the probe that
+answered (`properties.live_by`, for example `tcp:443`). The platform stage
+`discover.hosts` takes `ip_address` and `network`, emits `ip_address`, and is
+the `cidr → ip` adapter. Its chunks hold at most 64 targets and 4 096
+addresses (a /16 liveness pass is 16 chunks).
+
+naabu implements it next to `scan.ports`, by capability only: the sensor runs
+naabu as a TCP connect probe of a few ports (80, 443, 22, 3389, 8080, 8443
+unless the step names others) and keeps only the answering addresses. The
+tool sandbox grants no raw sockets, so ICMP is not used. A step that pins
+naabu without naming the capability stays a port scan, and a naabu report
+that names no capability is bound to `scan.ports`. A step that names
+`discover.hosts` requires the capability, so only sensors whose naabu
+implements it claim it.
+
+## 8. Later steps
 
 | # | Step | Security-sensitive |
 |---|---|---|
@@ -165,7 +183,7 @@ chained step may still take its predecessors' outputs.
 Since step 7 a platform sensor's claim (`get_next_platform_job`) honours the
 same host keys and bucket locks as a tenant sensor's.
 
-## 8. Decisions
+## 9. Decisions
 
 | # | Question | Decision |
 |---|---|---|
@@ -178,7 +196,7 @@ same host keys and bucket locks as a tenant sensor's.
 | A7 | Where expansion lives | the platform planner is the authority; the sensor re-checks every unit and address; ingest drops out-of-unit results |
 | A8 | Over-cap selection | rotation by least recently scanned, not freshest |
 
-## 9. Threat model
+## 10. Threat model
 
 | Threat | Control |
 |---|---|
@@ -190,7 +208,7 @@ same host keys and bucket locks as a tenant sensor's.
 | Splitting bypasses ownership | pieces inherit the range asset's entry and are gated by its id |
 | Restricted member widens reach via pieces | pieces are subsets of a target the act scope already admitted, and each piece is checked again |
 
-## 10. Non-goals
+## 11. Non-goals
 
 - No ASN scan target (RFC-082 D6 stands).
 - No platform-side reverse-DNS sweep and no IPv6 sweeps wider than /112.

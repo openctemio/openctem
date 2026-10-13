@@ -80,10 +80,14 @@ func TestCatalog_ShippedToolsHaveAStage(t *testing.T) {
 			t.Errorf("%s implements no stage", tool)
 		}
 	}
-	for _, tool := range []string{"subfinder", "dnsx", "naabu", "httpx", "katana", "nuclei"} {
+	for _, tool := range []string{"subfinder", "dnsx", "httpx", "katana", "nuclei"} {
 		if n := len(ForTool(tool)); n != 1 {
 			t.Errorf("%s implements %d stages, want 1", tool, n)
 		}
+	}
+	// naabu also runs host discovery, only when a step names it.
+	if n := len(ForTool("naabu")); n != 2 {
+		t.Errorf("naabu implements %d stages, want 2 (port scan, host discovery)", n)
 	}
 	if ForTool("splunk") != nil {
 		t.Error("a collector implements a stage")
@@ -200,6 +204,20 @@ func TestForCapabilities(t *testing.T) {
 func TestForStep(t *testing.T) {
 	if s, ok := ForStep("naabu", []string{"recon"}); !ok || s.Key != ScanPorts {
 		t.Errorf("naabu -> %s %v", s.Key, ok)
+	}
+	// naabu runs host discovery only when the step names it; pinned
+	// without a capability (every existing naabu step and quick scan), it
+	// is a port scan.
+	for _, caps := range [][]string{nil, {"recon"}, {"portscan"}, {"scan.ports"}} {
+		if s, ok := ForStep("naabu", caps); !ok || s.Key != ScanPorts {
+			t.Errorf("naabu %v -> %s %v, want scan.ports", caps, s.Key, ok)
+		}
+	}
+	if s, ok := ForStep("naabu", []string{"discover.hosts"}); !ok || s.Key != DiscoverHosts {
+		t.Errorf("naabu discover.hosts -> %s %v", s.Key, ok)
+	}
+	if s, ok := ForStep("", []string{"discover.hosts"}); !ok || s.Key != DiscoverHosts || s.DefaultTool() != "naabu" {
+		t.Errorf("discover.hosts -> %s %v", s.Key, ok)
 	}
 	if s, ok := ForStep("trivy", []string{"iac"}); !ok || s.Key != IaCMisconfig {
 		t.Errorf("trivy iac -> %s %v", s.Key, ok)
