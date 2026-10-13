@@ -194,8 +194,6 @@ type Service struct {
 	targetGate        TargetGate                // checks run-context targets; nil refuses runs that carry targets
 	assetRefChecker   AssetRefChecker           // tenant + scope check of a run's asset_id; nil refuses runs that carry one
 	hops              scanrun.HopRepository     // stage chaining (hop_router.go); nil keeps every step on the run's seeds
-	webScope          WebScopeBuilder           // web_scope of web steps (web_scope.go); nil refuses web steps
-	confined          ConfinedSensors           // NO_CONFINED_SENSOR at queue time (web_scope.go); nil: not checked
 	endpoints         EndpointSelector          // incremental web scanning (web_endpoints.go)
 	runNotifier       RunNotifier               // live run updates (run_notify.go); nil: none
 	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow

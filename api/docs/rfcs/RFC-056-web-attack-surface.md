@@ -162,6 +162,11 @@ only) follow in a later change.
   prefix are dropped and audited), carried in the signed job as `web_scope`
   (hosts, path prefixes, deny paths, methods; RFC-055 §6.1), enforced by the
   SDK, and re-checked at ingest.
+- Every web job carries it, whatever path created it: it is attached when
+  the command is stored (RFC-055 §6.1). Before 2026-10-13 only workflow
+  steps with a web stage got it; a quick scan, a single-scanner scan, a
+  zone batch and a command created through the API went out without it,
+  so nuclei requested excluded paths.
 
 ## 6. API
 
