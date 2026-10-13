@@ -914,6 +914,12 @@ vars:
     type: duration
     default: "250ms"
     description: "Heartbeat query latency that counts as \"platform under load\"."
+  - name: SENSOR_COLLECTOR_IMAGE
+    component: api
+    group: "Sensors"
+    type: string
+    default: "ghcr.io/openctemio/asset-collector:latest"
+    description: "Image, with its tag, the install snippets of a collector sensor run (the asset collector, not the scanner). Pin a collector release here."
   - name: SENSOR_IMAGE
     component: api
     group: "Sensors"

@@ -572,6 +572,16 @@ compose file):
 - **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
   `[a-z0-9_-]` are dropped. The name becomes a slug.
 
+- **Collectors** (sensor type `collector`) get the asset collector's own
+  commands (`configs/sensor-templates/collector-*.tmpl`): the image
+  `SENSOR_COLLECTOR_IMAGE` (default `ghcr.io/openctemio/asset-collector:latest`
+  until the collector tags a release), `SENSOR_API_URL`, the API key and
+  vendor passwords as files (`SENSOR_API_KEY_FILE`, `LDAP_PASSWORD_FILE`),
+  one data volume at `/var/lib/openctem` (state and outbox), a `doctor` check
+  before `-daemon`, and no local policy or seccomp profile (a collector takes
+  no scan jobs and runs no tool). The Helm tab says the chart bundles the
+  scanner only.
+
 ### Hardened installs: the sensor's seccomp profile
 
 Every daemon install runs the sensor under its own seccomp profile, so each

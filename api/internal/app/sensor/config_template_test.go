@@ -9,11 +9,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -388,7 +390,7 @@ func TestTemplates_HostileValuesStayInert(t *testing.T) {
 // The files shipped in configs/sensor-templates and the built-in fallbacks are
 // the same templates; an edit to one must be made to the other.
 func TestTemplates_ShippedFilesMatchBuiltins(t *testing.T) {
-	for _, f := range templateFormats {
+	for _, f := range templateNames() {
 		b, err := os.ReadFile(filepath.Join(shippedTemplatesDir, f+".tmpl"))
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
@@ -476,5 +478,71 @@ func TestTemplates_SeccompProfileInEveryInstall(t *testing.T) {
 	data.BaseURL = "https://192.0.2.204/"
 	if d := render(t, templateSources[0], data).Docker; strings.Contains(d, "204//api") {
 		t.Fatal("double slash in the profile URL")
+	}
+}
+
+// A collector sensor's install commands run the asset collector image with
+// its own settings, never the scanner image, its local policy or its
+// seccomp profile; secrets come from files.
+func TestTemplates_CollectorRunsTheAssetCollector(t *testing.T) {
+	for _, dir := range templateSources {
+		data := fullData(t)
+		data.Sensor.Type = sensordom.SensorTypeCollector
+		data.Image = "ghcr.io/openctemio/asset-collector:v0.2.0"
+		out := render(t, dir, data)
+		bashSyntaxOK(t, dir+" collector docker", out.Docker)
+		continuationLinesOK(t, dir+" collector docker", out.Docker)
+		bashSyntaxOK(t, dir+" collector env", out.Env)
+		for name, got := range map[string]string{"docker": out.Docker, "compose": out.Compose, "kubernetes": out.Kubernetes} {
+			for _, want := range []string{"ghcr.io/openctemio/asset-collector:v0.2.0", "SENSOR_API_KEY_FILE", "LDAP_PASSWORD_FILE", "/var/lib/openctem"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("[%s] collector %s lacks %q", dir, name, want)
+				}
+			}
+			for _, never := range []string{"ghcr.io/openctemio/sensor", "sensor-policy.yaml", "seccomp=", "SENSOR_LOCAL_POLICY"} {
+				if strings.Contains(got, never) {
+					t.Errorf("[%s] collector %s carries %q", dir, name, never)
+				}
+			}
+		}
+		// The key is written to a secret file, never into the env file or the
+		// compose file's environment.
+		if !strings.Contains(out.Docker, "> secrets/sensor-api-key") || strings.Contains(out.Docker, "SENSOR_API_KEY=") {
+			t.Errorf("[%s] collector docker: the key is not kept in a file:\n%s", dir, out.Docker)
+		}
+		var doc struct {
+			Services map[string]struct {
+				Image       string            `yaml:"image"`
+				ReadOnly    bool              `yaml:"read_only"`
+				Environment map[string]string `yaml:"environment"`
+				Secrets     []string          `yaml:"secrets"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal([]byte(out.Compose), &doc); err != nil {
+			t.Fatalf("[%s] collector compose does not parse: %v", dir, err)
+		}
+		c := doc.Services["collector"]
+		if c.Image != data.Image || !c.ReadOnly || c.Environment["SENSOR_API_KEY_FILE"] != "/run/secrets/sensor_api_key" || len(c.Secrets) != 2 {
+			t.Errorf("[%s] collector compose service %+v", dir, c)
+		}
+		dec := yaml.NewDecoder(strings.NewReader(out.Kubernetes))
+		kinds := []string{}
+		for {
+			var m map[string]any
+			if err := dec.Decode(&m); err != nil {
+				break
+			}
+			kinds = append(kinds, fmt.Sprint(m["kind"]))
+		}
+		if !slices.Equal(kinds, []string{"Secret", "PersistentVolumeClaim", "Deployment"}) {
+			t.Errorf("[%s] collector kubernetes kinds %v", dir, kinds)
+		}
+		if !strings.Contains(out.Helm, "scanner sensor only") {
+			t.Errorf("[%s] collector helm: %s", dir, out.Helm)
+		}
+		// The scanner's templates are unchanged for a scanner.
+		if s := render(t, dir, fullData(t)); strings.Contains(s.Docker, "asset-collector") {
+			t.Errorf("[%s] a scanner renders the collector", dir)
+		}
 	}
 }

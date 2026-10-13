@@ -231,6 +231,7 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `SENSOR_HEARTBEAT_MAX_INTERVAL` | duration | `5m` |  |  | Upper clamp of every advised interval (also capped at half of `WORKER_HEARTBEAT_TIMEOUT`). |
 | `SENSOR_HEARTBEAT_MIN_INTERVAL` | duration | `5s` |  |  | Lower clamp of every advised interval. |
 | `SENSOR_HEARTBEAT_SLOW_QUERY` | duration | `250ms` |  |  | Heartbeat query latency that counts as "platform under load". |
+| `SENSOR_COLLECTOR_IMAGE` | string | `ghcr.io/openctemio/asset-collector:latest` |  |  | Image, with its tag, the install snippets of a collector sensor run (the asset collector, not the scanner). Pin a collector release here. |
 | `SENSOR_IMAGE` | string | `ghcr.io/openctemio/sensor` |  |  | Sensor image the install snippets run. The tag is `SENSOR_LATEST_VERSION`, never `latest`. |
 | `SENSOR_KEY_PEPPER` | string | empty |  | yes | Secret the sensor API-key hashes are keyed with. At least 32 characters when set. Unset: derived from `APP_ENCRYPTION_KEY`. |
 | `SENSOR_KEY_PEPPER_PREVIOUS` | list | empty |  | yes | Comma-separated earlier peppers, kept while keys move to a new `SENSOR_KEY_PEPPER`. |
