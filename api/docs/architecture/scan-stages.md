@@ -337,7 +337,7 @@ payload comes from one builder, `scan.StepCommandPayload`.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
   work never holds a tenant back.
   **One key function on both sides** (RFC-090): the keys are computed by
-  `github.com/openctemio/sdk-go/pkg/politeness`, which the sensor runtime
+  `github.com/openctemio/ctis/politeness` (the CTIS contract), which the sensor runtime
   uses too, and every catalog-stage chunk carries the keys the platform
   holds for it in its payload (`host_keys`; an empty list for a passive
   stage). The sensor's local per-host limit (`limits.per_host_concurrency`,
