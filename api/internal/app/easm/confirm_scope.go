@@ -8,7 +8,7 @@ package easm
 // (the default), confirming a domain, subdomain or public address adds the
 // exact entry for its name through the scope service: the same guardrails,
 // deny list, signer ledger, step-up and one notice to the administrators per
-// batch as any bulk add. Strict keeps the old behaviour (ownership only), and
+// batch as any bulk add. Strict keeps the old behavior (ownership only), and
 // so does a caller without the scope write permission.
 //
 // Never added: an entry wider than the name (no wildcard, no range), an
@@ -171,8 +171,8 @@ func (c *ConfirmScope) Add(ctx context.Context, tenantID shared.ID, assetIDs []s
 		entry ConfirmedEntry
 		typ   scopedom.TargetType
 	}
-	var plan []planned
-	var names []string
+	plan := make([]planned, 0, len(ids))
+	names := make([]string, 0, len(ids))
 	for _, id := range ids {
 		a := found[id.String()]
 		if a == nil {
@@ -192,8 +192,8 @@ func (c *ConfirmScope) Add(ctx context.Context, tenantID shared.ID, assetIDs []s
 	if err != nil {
 		return nil, err
 	}
-	var items []scope.BulkTargetItem
-	var pending []int // plan index of each item
+	items := make([]scope.BulkTargetItem, 0, len(plan))
+	pending := make([]int, 0, len(plan)) // plan index of each item
 	seen := map[string]int{}
 	for i := range plan {
 		p := &plan[i]
