@@ -1582,5 +1582,7 @@
   "scans.placement.sensorBusy": "can take it, busy",
   "scans.placement.sensorEligible": "can take it",
   "scans.placement.sensorCount": "sensors: {count}",
-  "scans.placement.unknown": "Reason {code}: this console does not describe it yet."
+  "scans.placement.unknown": "Reason {code}: this console does not describe it yet.",
+  "scans.failure.TARGET_UNREACHABLE.text": "The sensor could not reach the step's targets (no route, a filter refused it, every attempt timed out, or the names did not resolve in its network).",
+  "scans.failure.TARGET_UNREACHABLE.fix": "Run the step from a sensor that can reach the targets: assign one to the targets' scan zone."
 }
