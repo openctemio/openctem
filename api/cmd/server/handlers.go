@@ -1016,6 +1016,7 @@ func newSensorHandlerWithTemplates(
 	h.SetPublicAPIURL(publicAPIURL)
 	h.SetHealthPolicy(sensorHealthPolicy(cfg, log))
 	h.SetSensorImage(sensorInstallImage(cfg, log))
+	h.SetCollectorImage(collectorInstallImage(cfg, log))
 	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
 	return h
@@ -1044,6 +1045,20 @@ func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
 		tag = config.DefaultSensorLatestVersion
 	}
 	return repo + ":" + tag
+}
+
+// collectorInstallImage is the image a collector's install snippets run:
+// SENSOR_COLLECTOR_IMAGE when it is a plain image reference, else the
+// default.
+func collectorInstallImage(cfg *config.Config, log *logger.Logger) string {
+	img := strings.TrimSpace(cfg.SensorConfig.CollectorImage)
+	if !imageRepositoryRegexp.MatchString(img) || strings.Contains(img, "@") {
+		if img != "" {
+			log.Warn("ignoring SENSOR_COLLECTOR_IMAGE that is not an image reference", "value", img)
+		}
+		return config.DefaultCollectorImage
+	}
+	return img
 }
 
 // sensorHealthPolicy maps the heartbeat settings and the sensor release

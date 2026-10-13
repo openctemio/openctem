@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/audit"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
+	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -36,6 +37,8 @@ type SensorHandler struct {
 	// sensorImage is the image the install snippets run, with its pinned
 	// tag (SENSOR_IMAGE + SENSOR_LATEST_VERSION).
 	sensorImage string
+	// collectorImage is the image a collector's install snippets run.
+	collectorImage string
 	// caCertFile is the platform CA the snippets install (SENSOR_CA_CERT_FILE);
 	// empty when the platform certificate is publicly trusted.
 	caCertFile string
@@ -119,6 +122,10 @@ func (h *SensorHandler) SetTemplateService(svc *sensorapp.SensorConfigTemplateSe
 func (h *SensorHandler) SetPublicAPIURL(url string) {
 	h.publicAPIURL = url
 }
+
+// SetCollectorImage sets the image reference (with tag) a collector's
+// install snippets run.
+func (h *SensorHandler) SetCollectorImage(image string) { h.collectorImage = image }
 
 // SetSensorImage sets the image reference (with tag) the install snippets run.
 func (h *SensorHandler) SetSensorImage(image string) {
@@ -1448,6 +1455,13 @@ func (h *SensorHandler) GetConfigTemplates(w http.ResponseWriter, r *http.Reques
 	image := h.sensorImage
 	if image == "" {
 		image = DefaultSensorImage
+	}
+	if a.Type.IsCollector() {
+		// A collector runs the asset collector, not the scanner image.
+		image = h.collectorImage
+		if image == "" {
+			image = config.DefaultCollectorImage
+		}
 	}
 
 	caPEM, caFingerprint, caErr := sensorapp.LoadCACertificate(h.caCertFile)
