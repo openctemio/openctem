@@ -694,7 +694,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 func (g *ActiveGate) hostRefusals(ctx context.Context, tenantID shared.ID, ids []string, assets map[string]*asset.Asset) (map[string]attribution.State, error) {
 	out := map[string]attribution.State{}
 	hostName := map[string]string{} // asset id -> host name
-	var names []string
+	names := make([]string, 0, len(ids))
 	for _, id := range ids {
 		a := assets[id]
 		if a == nil {
