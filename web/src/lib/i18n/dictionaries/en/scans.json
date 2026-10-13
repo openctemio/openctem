@@ -1594,5 +1594,9 @@
   "scans.owner.taking": "Taking ownership…",
   "scans.owner.taken": "You now own \"{name}\". Resume it to restart its schedule.",
   "scans.owner.takeFailed": "Could not take ownership",
-  "scans.owner.askAdmin": "An owner or administrator can take ownership."
+  "scans.owner.askAdmin": "An owner or administrator can take ownership.",
+  "scans.tasks.progressDone": "{done}/{total} targets done",
+  "scans.tasks.lastTarget": "last {ago} ago",
+  "scans.tasks.budget": "budget {budget}",
+  "scans.tasks.stalling": "No target finished for {quiet}; taken back as stalled after {stall}"
 }

@@ -238,6 +238,10 @@ const (
 	// switch), which the platform stores and shows (RFC-040 §5.7). The
 	// policy itself is enforced on the sensor.
 	FeatureLocalPolicy = "local_policy"
+	// FeatureCommandProgress: heartbeats may carry "progress", the finished
+	// targets of each held command; the platform tells a slow but
+	// progressing task from a stuck one with it (research/122).
+	FeatureCommandProgress = "command_progress"
 	// FeatureCapacity: GET /commands claims what it returns (claim-N,
 	// RFC-030 §5.9, RFC-046 §11). A sensor that names it in
 	// HeaderSensorFeatures gets commands already acknowledged to it with
@@ -276,7 +280,7 @@ const (
 
 // ControlFeatures are the RFC-029 features, in hello order.
 func ControlFeatures() []string {
-	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
+	return []string{FeatureHeartbeat, FeatureCommands, FeatureSuppressions, FeatureFingerprints, FeatureKeys, FeatureLoad, FeatureRelease, FeatureManifest, FeatureLocalPolicy, FeatureCommandProgress, FeaturePosture, FeatureCapacity, FeatureRefusal, FeatureConfigReport, FeatureLogs}
 }
 
 // Deprecation announces a deprecated protocol on hello.
