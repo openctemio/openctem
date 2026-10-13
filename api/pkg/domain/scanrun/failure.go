@@ -56,6 +56,7 @@ var failurePatterns = []struct {
 	}},
 	{FailureNoTargets, []string{"no targets", "no target "}},
 	{FailureNoSensor, []string{"no sensor"}},
+	{FailureWebScopeUnsupported, []string{"does not keep to a web scope", "keeps to a web scope only in"}},
 }
 
 // ClassifyStepFailure returns the code to record for a step failure and
@@ -153,6 +154,12 @@ const (
 	// FailureIntensityExceeded: the job probes above the intensity of the
 	// scan it belongs to (RFC-071); refused at claim.
 	FailureIntensityExceeded = "INTENSITY_EXCEEDED"
+	// FailureWebScopeUnsupported: the job has a web scope (the tenant
+	// excluded a path on a target host) and the sensor's tool cannot keep
+	// to it: the tool does not declare features.web_scope, or it keeps to
+	// one only in a sandbox that confines its network and the sensor's
+	// does not (RFC-055 §6.1). The same sensor fails the same way again.
+	FailureWebScopeUnsupported = "WEB_SCOPE_UNSUPPORTED"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -173,6 +180,7 @@ var failureClasses = map[string]FailureClass{
 	FailureNoSensor:            FailureClassPlacement,
 	FailureNoSensorForTool:     FailureClassPlacement,
 	FailureNoSensorAvailable:   FailureClassPlacement,
+	FailureWebScopeUnsupported: FailureClassPlacement,
 	FailurePolicyRefused:       FailureClassPolicy,
 	FailureFreezeWindow:        FailureClassPolicy,
 	FailureCommandExhausted:    FailureClassTransient,
