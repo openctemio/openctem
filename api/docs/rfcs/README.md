@@ -105,6 +105,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-087](RFC-087-pentest-checklists.md) | Pentest methodology checklists | Implemented (2026-10-12): template library (built-in and organization templates, clone, edit with versions, archive), CSV/JSON/YAML import and export, campaign checklists (defaults, results, links, bulk changes, upgrade with a diff), checklist coverage in reports, web console (Settings > Pentest methodology > Checklists, the campaign Checklist tab, the checklist choice when creating a campaign) |
 | [RFC-088](RFC-088-scope-aware-target-allocation.md) | Scope-aware target allocation | Draft (2026-10-13); steps 1–4 implemented, steps 5–8 in progress |
 | [RFC-089](RFC-089-reachability-aware-routing.md) | Reachability-aware routing | Draft (2026-10-13); steps 1–4 and 6 in progress, the rest designed |
+| [RFC-090](RFC-090-work-pool.md) | Work pool | Accepted (2026-10-13); W0–W2 in progress, the rest designed |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

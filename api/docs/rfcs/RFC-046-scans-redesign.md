@@ -292,6 +292,11 @@ ceiling, `interactsh: true` only for T2 or with a tenant interactsh server
 
 ### 5.2 Chaining through the inventory
 
+> **Amended by [RFC-090](RFC-090-work-pool.md) (2026-10-13).** Planning moves
+> to one item per (run, stage, unit) in a work pool, and a stage's outputs
+> stream into the next stage per finished task instead of after the whole
+> stage; a stage that needs the full set declares a barrier.
+
 A stage is planned only after **its predecessors' tasks finished and every
 ingest report for them committed** (the outbox event that follows ingest
 commit, not command completion — that ordering is today's race). The planner
