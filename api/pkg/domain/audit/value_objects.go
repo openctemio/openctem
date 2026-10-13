@@ -62,6 +62,11 @@ const (
 	// names that a scope target or seed of the organization covers (RFC-054
 	// §4.3). A system decision; one event per run and organization.
 	ActionAssetAttributionAutoConfirmed Action = "asset.attribution_auto_confirmed"
+	// ActionAssetAttributionChildrenLinked: the platform linked discovered
+	// services, certificates and web endpoints to the host they were seen
+	// on; from then on they carry the host's attribution state
+	// (research/117). A system event; one per run and organization.
+	ActionAssetAttributionChildrenLinked Action = "asset.attribution_children_linked"
 	// ActionScopeSettingsUpdated: the organization's scope settings changed
 	// (RFC-054 §6.3).
 	ActionScopeSettingsUpdated Action = "scope.settings_updated"
@@ -643,7 +648,7 @@ func (a Action) IsValid() bool {
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdleExemptionChanged,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
-		ActionAssetAttributionAutoConfirmed, ActionScopeSettingsUpdated,
+		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramPaused, ActionBountyProgramResumed, ActionBountyProgramEnded,
@@ -1083,7 +1088,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
-		ActionAssetAttributionAutoConfirmed,
+		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
 		ActionAssetCreateMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported,
 		ActionMemberAdded, ActionInvitationAccepted,

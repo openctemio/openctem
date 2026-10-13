@@ -108,6 +108,9 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 	if len(assets) == 0 || prov.SensorID.IsZero() {
 		return nil
 	}
+	// New services, certificates and web endpoints follow their host (best
+	// effort: the scope join's runs link whatever this misses).
+	defer s.linkChildren(ctx, tenantID)
 	if prov.Unsolicited {
 		return s.holdUnsolicited(ctx, tenantID, assets)
 	}
@@ -192,6 +195,12 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 	return nil
 }
 
+func (s *ScanStamper) linkChildren(ctx context.Context, tenantID shared.ID) {
+	if l, ok := s.store.(ChildLinker); ok {
+		_, _ = l.LinkChildren(ctx, tenantID)
+	}
+}
+
 // toEvaluate picks the assets whose automatic record is (re)computed.
 func toEvaluate(all []string, records map[string]attribution.Record, byID map[string]ingest.ScannedAsset, fresh []string) []string {
 	out := make([]string, 0, len(all))
@@ -200,6 +209,8 @@ func toEvaluate(all []string, records map[string]attribution.Record, byID map[st
 		switch {
 		case has && rec.HumanDecided:
 			continue // a person decided; automation never overrides it
+		case has && rec.FollowsHost != "":
+			continue // it follows its host: its state is the host's
 		case byID[id].Typed && has && (rec.State == attribution.StateNeedsReview || rec.State == attribution.StateRejected):
 			continue // a scan of it does not take it past review (E7)
 		case !has && !slices.Contains(fresh, id):

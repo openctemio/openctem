@@ -399,6 +399,9 @@ func (j *ScopeJoin) Run(ctx context.Context, tenantID shared.ID) ([]scope.Joined
 	if err := j.ready(); err != nil {
 		return nil, err
 	}
+	// Children follow their host first, so the join below decides hosts
+	// only and their children take the outcome.
+	j.linkChildren(ctx, tenantID)
 	pending, err := j.store.PendingAutomatic(ctx, tenantID, maxReevaluate)
 	if err != nil {
 		return nil, fmt.Errorf("list pending attribution: %w", err)
@@ -482,6 +485,42 @@ func (j *ScopeJoin) Preview(ctx context.Context, tenantID shared.ID, candidate *
 		}
 	}
 	return out, nil
+}
+
+// ChildLinker links a tenant's pending children (services, certificates,
+// web endpoints) to their host and gives them its state
+// (*postgres.AttributionRepository).
+type ChildLinker interface {
+	LinkChildren(ctx context.Context, tenantID shared.ID) (int64, error)
+}
+
+// linkChildren is best effort: a failure leaves the children in review on
+// their own, as before this link existed, and the next run tries again.
+func (j *ScopeJoin) linkChildren(ctx context.Context, tenantID shared.ID) {
+	l, ok := j.store.(ChildLinker)
+	if !ok {
+		return
+	}
+	n, err := l.LinkChildren(ctx, tenantID)
+	if err != nil {
+		j.log.Warn("scope join: children not linked to their host", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	if n == 0 {
+		return
+	}
+	j.log.Info("discovered children now follow their host", "tenant_id", tenantID.String(), "count", n)
+	if j.audit == nil {
+		return
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionChildrenLinked, auditdom.ResourceTypeTenant, tenantID.String()).
+		WithMessage(fmt.Sprintf("%d discovered service(s), certificate(s) or web endpoint(s) now follow the host they were seen on", n)).
+		WithMetadata("count", n).
+		WithMetadata("actor", "system").
+		WithSeverity(auditdom.SeverityLow)
+	if err := j.audit.LogEvent(ctx, auditapp.AuditContext{TenantID: tenantID.String()}, event); err != nil {
+		j.log.Warn("children link audit failed", "error", logger.SanitizeError(err))
+	}
 }
 
 // maxAuditedNames bounds the names one audit event lists.
