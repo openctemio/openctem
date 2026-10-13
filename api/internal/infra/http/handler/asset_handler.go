@@ -36,6 +36,8 @@ type AssetHandler struct {
 	validator          *validator.Validator
 	logger             *logger.Logger
 	programFlags       ProgramAssetFlagReader
+	triageGate         AssetTriageGate
+	triageRecords      AssetTriageRecords
 }
 
 // NewAssetHandler creates a new asset handler.
@@ -304,7 +306,10 @@ type AssetResponse struct {
 	SystemTags []string `json:"system_tags,omitempty"`
 	// ProgramOnly: the asset came with a bug-bounty program and no own
 	// scope covers it; organization metrics leave it out by default.
-	ProgramOnly           bool                     `json:"program_only,omitempty"`
+	ProgramOnly bool `json:"program_only,omitempty"`
+	// Triage: attribution and what an active scan would do now; only with
+	// ?with_triage=true on the list (research/124).
+	Triage                *AssetTriage             `json:"triage,omitempty"`
 	ID                    string                   `json:"id"`
 	TenantID              string                   `json:"tenant_id,omitempty"`
 	ParentID              string                   `json:"parent_id,omitempty"`
@@ -612,6 +617,13 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
 // @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (confirmed+unknown+dependency+monitor_only)"
 // @Param        covered_by            query string false "Scope entry id: the assets the scope join confirmed through it"
+// @Param        scope_status          query string false "Scope status (comma-separated): in_scope (an active entry covers it), not_covered (no entry: passive only), excluded (an exclusion matches or marked not ours), internal (governed by scan zones)"
+// @Param        discovered_by         query string false "Attribution rules behind the asset (comma-separated): fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target"
+// @Param        discovery_technique   query string false "Discovery techniques (comma-separated, at most 10), e.g. cert_transparency or a scanner name"
+// @Param        min_confidence        query int    false "Lowest attribution confidence (0-100; no record counts as 100)"
+// @Param        max_confidence        query int    false "Highest attribution confidence (0-100)"
+// @Param        first_seen_after      query string false "First seen (added to the inventory) at/after this time (RFC3339 or YYYY-MM-DD)"
+// @Param        with_triage           query bool   false "Add each row's attribution and what an active scan would do with it now (triage)"
 // @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
 // @Param        page          query     int     false  "Page number"  default(1)
 // @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
@@ -668,6 +680,12 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		ExpiresBefore:        parseQueryTimePtr(query.Get("expires_before")),
 		Attribution:          parseQueryArray(query.Get("attribution")),
 		CoveredBy:            query.Get("covered_by"),
+		ScopeStatus:          parseQueryArray(query.Get("scope_status")),
+		DiscoveredBy:         parseQueryArray(query.Get("discovered_by")),
+		DiscoveryTechnique:   parseQueryArray(query.Get("discovery_technique")),
+		MinConfidence:        parseQueryIntPtr(query.Get("min_confidence")),
+		MaxConfidence:        parseQueryIntPtr(query.Get("max_confidence")),
+		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
 		ProgramAssets:        query.Get("program_assets"),
 		Freshness:            query.Get("freshness"),
 		Sort:                 query.Get("sort"),
@@ -719,6 +737,11 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 			data[i] = resp
 		}
+		repoPtrs := make([]*AssetResponse, len(data))
+		for i := range data {
+			repoPtrs[i] = &data[i].AssetResponse
+		}
+		h.addTriage(r, input.TenantID, repoPtrs)
 
 		response := ListResponse[AssetWithRepositoryResponse]{
 			Data:       data,
@@ -747,6 +770,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		ptrs[i] = &data[i]
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
+	h.addTriage(r, input.TenantID, ptrs)
 
 	response := ListResponse[AssetResponse]{
 		Data:       data,

@@ -26,6 +26,7 @@ import (
 
 	"github.com/lib/pq"
 
+	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -189,4 +190,60 @@ func (r *ScopeCoverageRepository) CountVisibleAssets(ctx context.Context, tenant
 		return 0, fmt.Errorf("count visible assets: %w", err)
 	}
 	return n, nil
+}
+
+var _ scopeapp.ExclusionMatchCounter = (*ScopeCoverageRepository)(nil)
+
+// maxExclusionSample is how many names a preview lists per pattern.
+const maxExclusionSample = 10
+
+// ExclusionMatches counts, for each candidate exclusion, the tenant's live
+// inventory assets it would match (the same match as the scope status filter
+// and the coverage count), narrowed to the data scope ds (nil: the whole
+// tenant), with up to ten names. Results are in item order. One statement.
+func (r *ScopeCoverageRepository) ExclusionMatches(ctx context.Context, tenantID shared.ID, ds *shared.DataScope, items []scopeapp.BulkExclusionItem) ([]scopeapp.ExclusionMatch, error) {
+	out := make([]scopeapp.ExclusionMatch, len(items))
+	if len(items) == 0 {
+		return out, nil
+	}
+	if ds != nil && !ds.TenantID.IsZero() && ds.TenantID != tenantID {
+		return out, nil // a scope for another tenant admits nothing (fail closed)
+	}
+	kinds := make([]string, len(items))
+	patterns := make([]string, len(items))
+	for i, it := range items {
+		kinds[i], patterns[i] = it.ExclusionType, it.Pattern
+	}
+	args := []any{tenantID.String(), pq.Array(kinds), pq.Array(patterns)}
+	sc, args := scopeClause("a.id", ds, args)
+	//nolint:gosec // G202: the match and scope clauses are fixed SQL with numbered placeholders
+	rows, err := r.db.QueryContext(ctx, `
+		WITH items AS (
+			SELECT i.kind, i.pattern, i.ord FROM unnest($2::text[], $3::text[]) WITH ORDINALITY AS i(kind, pattern, ord)
+		), inv AS (
+			SELECT a.id, a.name, lower(a.name) AS lname, hh.host,
+				CASE WHEN pg_input_is_valid(hh.host, 'inet') THEN hh.host::inet END AS ip
+			FROM assets a CROSS JOIN LATERAL (SELECT `+assetHostSQL("a")+` AS host) hh
+			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL`+sc+`
+		)
+		SELECT items.ord, count(inv.id), COALESCE((array_agg(inv.name ORDER BY inv.name) FILTER (WHERE inv.id IS NOT NULL))[1:`+fmt.Sprint(maxExclusionSample)+`], '{}')
+		FROM items
+		LEFT JOIN inv ON `+scopePatternMatchSQL("items.kind", "items.pattern", "inv.host", "inv.ip", "inv.lname")+`
+		GROUP BY items.ord
+		ORDER BY items.ord`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("preview exclusion matches: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ord, n int
+		var sample []string
+		if err := rows.Scan(&ord, &n, pq.Array(&sample)); err != nil {
+			return nil, err
+		}
+		if ord >= 1 && ord <= len(out) {
+			out[ord-1] = scopeapp.ExclusionMatch{Matched: n, Sample: sample}
+		}
+	}
+	return out, rows.Err()
 }

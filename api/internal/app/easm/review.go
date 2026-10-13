@@ -116,7 +116,18 @@ type ReviewStore interface {
 	// tenant's and not deleted. It returns, for each asset written, the state
 	// it had before ("" = no record, a legacy confirmed asset).
 	SaveDecisions(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, decidedBy string) (map[string]attribution.State, error)
+	// ResetDecisions forgets a person's decision on each asset that has one
+	// (the undo of "Not ours" and the other decisions; research/124): the
+	// record goes back to what its evidence says, as automation would
+	// write it, and a rejection's tombstone goes. It returns, for each asset
+	// reset, the state the person had set.
+	ResetDecisions(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error)
 }
+
+// ResetAutomatic is the decision that undoes a person's decision: the
+// asset's attribution goes back to automation (POST
+// /easm/candidates/decisions with state "automatic").
+const ResetAutomatic attribution.State = "automatic"
 
 // ReviewService serves the queue and records decisions.
 type ReviewService struct {
@@ -142,7 +153,7 @@ func NewReviewService(store ReviewStore, scope *datascope.Enforcer) *ReviewServi
 // DecidableStates are the states a person may set.
 var DecidableStates = []attribution.State{
 	attribution.StateConfirmed, attribution.StateRejected, attribution.StateDependency,
-	attribution.StateMonitorOnly, attribution.StateNeedsReview,
+	attribution.StateMonitorOnly, attribution.StateNeedsReview, ResetAutomatic,
 }
 
 func decidable(s attribution.State) bool {
@@ -249,7 +260,7 @@ func (s *ReviewService) DecideAs(ctx context.Context, tenantID shared.ID, assetI
 func (s *ReviewService) decide(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor ScopeActor, addScope bool) (*DecisionResult, error) {
 	actorID := actor.UserID
 	if !decidable(state) {
-		return nil, fmt.Errorf("%w: state must be confirmed, rejected, dependency, monitor_only or needs_review", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: state must be confirmed, rejected, dependency, monitor_only, needs_review or automatic", shared.ErrValidation)
 	}
 	if len(assetIDs) == 0 {
 		return nil, fmt.Errorf("%w: asset_ids is required", shared.ErrValidation)
@@ -292,7 +303,12 @@ func (s *ReviewService) decide(ctx context.Context, tenantID shared.ID, assetIDs
 			return nil, err
 		}
 	}
-	prev, err := s.store.SaveDecisions(ctx, tenantID, allowed, state, actorID)
+	var prev map[string]attribution.State
+	if state == ResetAutomatic {
+		prev, err = s.store.ResetDecisions(ctx, tenantID, allowed)
+	} else {
+		prev, err = s.store.SaveDecisions(ctx, tenantID, allowed, state, actorID)
+	}
 	if err != nil {
 		return nil, err
 	}
