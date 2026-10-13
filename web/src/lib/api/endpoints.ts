@@ -1660,6 +1660,12 @@ export const scanEndpoints = {
   clone: (scanId: string) => `${API_BASE.SCANS}/${scanId}/clone`,
 
   /**
+   * Take ownership of a scan whose owner is missing or left (owners and
+   * administrators)
+   */
+  takeOwnership: (scanId: string) => `${API_BASE.SCANS}/${scanId}/take-ownership`,
+
+  /**
    * Save an unsaved quick scan as a configuration ("Save as scan")
    */
   save: (scanId: string) => `${API_BASE.SCANS}/${scanId}/save`,
