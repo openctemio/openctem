@@ -15,11 +15,14 @@ package scan
 //     scan are left out of that step's command; a step with nothing left
 //     fails with INCOMPATIBLE_TARGETS instead of reaching a sensor.
 //
-// Only targets whose type is known are gated: asset-group members carry their
-// stored pair. A direct target is a string the tenant typed; it has no stored
-// type and keeps the checks it always had. An `unclassified` asset, a type the
-// registry does not know and a tool that declares no platform target type
-// cannot be decided and are never refused here.
+// Only targets whose type is known are gated here: asset-group members carry
+// their stored pair. A direct target is a string the tenant typed; it has no
+// stored type and is gated by its kind instead (stage.AcceptsKind: a name,
+// an address, a range, a URL, a service), as is every range, typed or not
+// (gateScannerKinds; the workflow step dispatch does the same). An
+// `unclassified` asset, a type the registry does not know and a tool that
+// declares no platform target type cannot be decided and are never refused
+// here.
 
 import (
 	"context"

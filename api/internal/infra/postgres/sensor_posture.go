@@ -1,7 +1,9 @@
 package postgres
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -31,4 +33,22 @@ func scanManifestPosture(id shared.ID, raw []byte) *sensor.ManifestPosture {
 		return nil
 	}
 	return sensor.SanitizeManifestPosture(&p)
+}
+
+// HasConfinedSensor reports whether the tenant has an active sensor of its
+// own that reported net.confined@1 (its tool runs are network-confined).
+// What an administrator declared never counts.
+func (r *SensorRepository) HasConfinedSensor(ctx context.Context, tenantID shared.ID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM sensors
+			WHERE tenant_id = $1 AND status = 'active'
+			  AND COALESCE(is_platform_sensor, FALSE) = FALSE
+			  AND $2 = ANY(COALESCE(reported_capabilities, ARRAY[]::text[])))`,
+		tenantID.String(), sensor.CapabilityNetConfined).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("look up confined sensors: %w", err)
+	}
+	return ok, nil
 }
