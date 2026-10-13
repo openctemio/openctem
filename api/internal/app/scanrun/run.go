@@ -627,6 +627,17 @@ func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanw
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
+	// The exclusions that touch the chunk's ranges travel with it: the
+	// sensor cuts its ranges around them again (RFC-088).
+	if src, ok := s.targetGate.(JobExclusionSource); ok {
+		excl, err := src.JobExclusions(ctx, run.TenantID, chunkTargets(chunk, run.Context))
+		if err != nil {
+			return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
+		}
+		if len(excl) > 0 {
+			payload[scanapp.PayloadKeyExclusions] = excl
+		}
+	}
 
 	// Final payload validation before sending to sensor
 	if s.securityValidator != nil {
