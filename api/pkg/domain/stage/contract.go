@@ -139,6 +139,7 @@ var adapters = []Adapter{
 	{From: PortHostname, To: PortURL, Capability: ProbeHTTP},
 	{From: PortHostname, To: PortIP, Capability: ResolveDNS},
 	{From: PortIP, To: PortService, Capability: ScanPorts},
+	{From: PortCIDR, To: PortIP, Capability: DiscoverHosts},
 	{From: PortHostname, To: PortService, Capability: ScanPorts},
 	{From: PortService, To: PortURL, Capability: ProbeHTTP},
 	{From: PortIP, To: PortURL, Capability: ProbeHTTP},
@@ -182,6 +183,7 @@ var requiredFields = map[Key][]string{
 	ResolveDNS:         []string{"name", "resolves_to"},
 	LookupRDAP:         []string{"name", "registration"},
 	LookupASN:          []string{"address", "asn"},
+	DiscoverHosts:      []string{"address", "live_by"},
 	ScanPorts:          []string{"host", "port", "protocol"},
 	ProbeHTTP:          []string{"url", "status_code", "title"},
 	CrawlWeb:           []string{"url", "parent_url"},
@@ -202,6 +204,7 @@ var chunkSizes = map[Key]int{
 	ResolveDNS:         200,
 	LookupRDAP:         100,
 	LookupASN:          500,
+	DiscoverHosts:      64,
 	ScanPorts:          50,
 	ProbeHTTP:          200,
 	CrawlWeb:           10,
@@ -214,7 +217,8 @@ var chunkSizes = map[Key]int{
 // address count, every other target 1 (RFC-088 §6). Absent: chunks count
 // targets only.
 var chunkAddressBudgets = map[Key]int{
-	ScanPorts: 1024,
+	DiscoverHosts: 4096,
+	ScanPorts:     1024,
 }
 
 // ChunkAddressBudget is the stage's address budget per chunk (0: none). A
