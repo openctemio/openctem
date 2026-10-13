@@ -53,6 +53,7 @@ describe('scope code catalogs', () => {
       'candidate',
       'dependency',
       'monitor_only',
+      'wildcard_only',
       'no_entry',
       'entry_pending',
       'entry_expired',

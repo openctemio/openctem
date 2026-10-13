@@ -17,6 +17,8 @@
   "scope.refusal.message.dependency": "Tên này chạy trên hạ tầng của bên thứ ba; chỉ áp dụng kiểm tra thụ động và kiểm tra chiếm quyền (takeover).",
   "scope.refusal.label.monitor_only": "Chỉ giám sát",
   "scope.refusal.message.monitor_only": "Tài sản này chỉ được giám sát thụ động.",
+  "scope.refusal.label.wildcard_only": "Chỉ phân giải qua DNS wildcard",
+  "scope.refusal.message.wildcard_only": "Tên này chỉ phân giải được qua bản ghi DNS wildcard; nó chỉ được giám sát thụ động cho đến khi có người xác nhận hoặc nó phân giải được mà không qua wildcard.",
   "scope.refusal.label.no_entry": "Ngoài phạm vi",
   "scope.refusal.message.no_entry": "Không có mục phạm vi, seed hay tên miền đã xác minh nào bao phủ mục tiêu này.",
   "scope.refusal.label.entry_pending": "Đang chờ phê duyệt",

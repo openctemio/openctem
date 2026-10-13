@@ -50,6 +50,11 @@ export const SCOPE_REFUSAL_TEXT = {
     label: 'Monitor only',
     message: 'This asset is watched passively only.',
   },
+  wildcard_only: {
+    label: 'Wildcard DNS only',
+    message:
+      'This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.',
+  },
   no_entry: {
     label: 'Not in scope',
     message: 'No scope entry, seed or verified domain covers this target.',
