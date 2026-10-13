@@ -73,6 +73,10 @@ var stepToolSettings = map[string]map[string]stepSetting{
 		"rate":          intSetting(1, 100000),
 		"retries":       intSetting(0, 10),
 	},
+	"dnsx": {
+		"record_types":    recordTypesSetting,
+		"wildcard_filter": boolSetting,
+	},
 	"nuclei": {
 		"tags":         tagsSetting(true),
 		"exclude_tags": tagsSetting(false),
@@ -242,6 +246,41 @@ func severitySetting(v any) (any, error) {
 		return nil, fmt.Errorf("must name at least one severity")
 	}
 	return out, nil
+}
+
+// dnsRecordTypes are the record types a dnsx step may query.
+var dnsRecordTypes = []string{"a", "aaaa", "cname", "mx", "ns", "txt"}
+
+// recordTypesSetting is dnsx's record_types: a non-empty list of known
+// record types, lower-case, de-duplicated.
+func recordTypesSetting(v any) (any, error) {
+	list, err := stringList(v)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(list))
+	for _, s := range list {
+		s = strings.ToLower(s)
+		if !slices.Contains(dnsRecordTypes, s) {
+			return nil, fmt.Errorf("%q is not one of %s", s, strings.Join(dnsRecordTypes, ", "))
+		}
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("must name at least one record type")
+	}
+	return out, nil
+}
+
+// boolSetting is a boolean written as true or false.
+func boolSetting(v any) (any, error) {
+	b, ok := v.(bool)
+	if !ok {
+		return nil, fmt.Errorf("must be true or false")
+	}
+	return b, nil
 }
 
 // stringList reads a list written as an array of strings or as one
