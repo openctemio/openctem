@@ -58,6 +58,7 @@ import {
   saveDraft,
 } from '@/features/scan-workflows/lib/draft'
 import { DraftIssuesPanel } from '@/features/scan-workflows/components/draft-issues-panel'
+import { TemplateUpdateCard } from '@/features/scan-workflows/components/template-update-card'
 
 // How long the builder waits after the last change before it saves the draft.
 const AUTOSAVE_MS = 1500
@@ -390,6 +391,21 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
     }
   }
 
+  // A template update was applied: show the version it published.
+  const handleTemplateUpdateApplied = async () => {
+    if (!workflow) return
+    try {
+      const fresh = await get<ScanWorkflow>(scanWorkflowEndpoints.get(workflow.id))
+      setWorkflow(fresh)
+      setLocalSteps(fresh.steps || [])
+      setGraphReport(null)
+      setHasChanges(false)
+      invalidateAllScanWorkflowCaches()
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('workflowStages.templateUpdate.failed')))
+    }
+  }
+
   // Discard the draft and go back to what runs.
   const handleDiscardDraft = async () => {
     if (!workflow) return
@@ -551,6 +567,14 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
               )}
             </div>
           </div>
+
+          {!isReadOnly && (
+            <TemplateUpdateCard
+              workflowId={workflow.id}
+              hasDraft={hasDraft || hasChanges}
+              onApplied={() => void handleTemplateUpdateApplied()}
+            />
+          )}
 
           {!isReadOnly && graphReport && (
             <DraftIssuesPanel
