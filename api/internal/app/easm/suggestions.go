@@ -31,6 +31,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -111,6 +112,9 @@ type SuggestionCard struct {
 // SuggestionCards is the answer.
 type SuggestionCards struct {
 	Cards []SuggestionCard `json:"cards"`
+	// Total: the decisions waiting, one per card, the review-by-rule cards
+	// of names included (the Suggestions tab badge).
+	Total int `json:"total"`
 	// CanAdd: the caller may accept a card (scope write permission).
 	CanAdd bool `json:"can_add"`
 }
@@ -417,4 +421,26 @@ func edgeRangeProvider(addr string) string {
 		}
 	}
 	return ""
+}
+
+// NameRuleCards counts the review-by-rule cards about names: one per
+// suggested name rule, and one for the names no rule groups. Addresses are
+// left out (the addresses card holds them).
+func NameRuleCards(rs *RuleSuggestions) int {
+	if rs == nil {
+		return 0
+	}
+	n := 0
+	for _, sg := range rs.Suggestions {
+		if sg.Kind != "ip_cidr" {
+			n++
+		}
+	}
+	for _, it := range rs.Individual {
+		if _, err := netip.ParseAddr(asset.HostOf(it.Name)); err != nil && !it.SharedIP {
+			n++
+			break
+		}
+	}
+	return n
 }

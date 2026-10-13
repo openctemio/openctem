@@ -18,7 +18,7 @@ import { useCredentialStatsApi } from '@/features/credentials/api'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { env } from '@/lib/env'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
-import { useEASMReviewCount } from '@/features/attack-surface/hooks/use-easm-review'
+import { useEASMSuggestionCount } from '@/features/attack-surface/hooks/use-easm-suggestions'
 
 // ============================================
 // TYPES
@@ -108,7 +108,7 @@ export function useDynamicBadges(): DynamicBadges {
   // shows whatever the sidebar-badges flag says (research/22 P0-12), one
   // cached call, only with assets:read and the attack_surface module.
   const { moduleIds } = useTenantModules()
-  const reviewWaiting = useEASMReviewCount(
+  const reviewWaiting = useEASMSuggestionCount(
     can(Permission.AssetsRead) && moduleIds.includes('attack_surface')
   )
 

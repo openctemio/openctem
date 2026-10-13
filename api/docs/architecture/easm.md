@@ -285,6 +285,14 @@ the scope decisions that still need a person, one card each
 | `addresses_behind_names` | address assets that in-scope names of the caller resolve to (`resolves_to`) and no entry covers, with `resolved_from` (up to 10 in-scope names), the network we hold and `names_count`; `unknown_network_count` counts the offered addresses we know nothing about (shown as "network unknown", never as "not shared") | `shared_addresses` with the reason: `cdn` (the address record says CDN), `provider` (a CDN or cloud provider network), `edge_range` (a published CDN edge range embedded in the code), `many_domains` (names of 3+ registrable domains of the organization resolve to it), `other_network` (its known network is announced by another organization and is not one of the organization's network seeds); addresses a person rejected, set to dependency or monitor only, or sent back to review |
 | `confirmed_out_of_scope` | domain, subdomain and public address assets a person confirmed that no active entry covers (confirmations made before a confirmation added its own entry) | private or internal names, wildcards |
 
+`total` is the number of decisions waiting: one per card, plus one per
+suggested rule about names and one for the names no rule groups (address rules
+belong to the addresses card). It is the Suggestions tab and sidebar badge
+(`GET /easm/suggestions?view=count`, seeded by the session bootstrap as
+`badges.easm_review`). The web console shows the cards in the Decide panel
+(`web/src/features/attack-surface/components/easm-decide-panel.tsx`) on the
+Suggestions tab and, with "Not now", at the top of the overview; the row list
+is behind "Show all items".
 A card holds at most 200 items (`truncated` says more exist). Accepting one
 is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`
 or `domain` entries: scope write permission, step-up, approvals, audit, one
