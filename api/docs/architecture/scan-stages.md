@@ -21,6 +21,7 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | `resolve.dns` | domain, subdomain → domain, subdomain, ip_address (`resolves_to`, `cname_of`) | T0 | dnsx |
 | `lookup.rdap` | domain → domain (registrar, registrant organization, name servers, dates) | T0 | rdap |
 | `lookup.asn` | ip_address, network → ip_address, network (origin AS, holder, announced range) | T0 | asn |
+| `discover.hosts` | ip_address, network → ip_address (live, with the probe that answered) | T1 | naabu (only for a step that names the capability) |
 | `scan.ports` | domain, subdomain, ip_address, host → ip_address, host, open_port | T1 | naabu |
 | `probe.http` | names, addresses, open_port, http_service → http_service, certificate, ip_address | T1 | httpx |
 | `crawl.web` | http_service, discovered_url, website → discovered_url | T1 | katana |
@@ -98,13 +99,19 @@ tool runs it:
   schema declares (naabu: `top_n` → `top_ports`). A tool with no mapping for
   a param does not accept that param.
 - **Required output fields** are what a report of the capability must carry.
+- **By capability only.** An implementation may run its stage only for a
+  step or job that names the capability (`Implementation.ByCapability`).
+  naabu implements `scan.ports` and `discover.hosts`; a step that pins naabu
+  without naming `discover.hosts` (every existing naabu step and quick scan)
+  is a port scan, and a report that names no capability is bound to
+  `scan.ports`.
 - **Batch.** Each implementation states whether the tool takes a list of
   targets per task (`stage.AcceptsTargetList`). This replaces the scan
   package's hardcoded scanner map. The Tenable bridge names, which are not catalogue
   tools, keep their entry.
 - **Adapters.** One table says which capability turns one port type into another
   (`hostname → url`: `probe.http`; `hostname → ip`: `resolve.dns`;
-  `ip → service`: `scan.ports`; …). The editor offers it when two incompatible
+  `ip → service`: `scan.ports`; `cidr → ip`: `discover.hosts`; …). The editor offers it when two incompatible
   ports are wired.
 - **Taxonomy v1** lists 22 capabilities. The 13 routed stages above have
   implementations. Nine are **planned**: they have a contract but no routed
@@ -261,7 +268,8 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `crawl.web` and `dast.web` 10; the code, image and connector capabilities
   are not cut. An active capability with an address budget also closes a
   chunk before its addresses would pass the budget (`scan.ports`: 1 024
-  addresses; RFC-088 §6): a range piece weighs its address count, any other
+  addresses, `discover.hosts`: 4 096 addresses in chunks of at most 64
+  targets; RFC-088 §6): a range piece weighs its address count, any other
   target 1, and a target heavier than the budget gets a chunk of its own.
   The target gate cuts every range into pieces of at most /24 (IPv6 /120),
   so a /16 port scan is 64 chunks of four /24s that every eligible sensor
