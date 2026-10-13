@@ -24,6 +24,9 @@ type AssetCorrelator struct {
 // CorrelationRepo defines the repository methods needed for correlation.
 type CorrelationRepo interface {
 	FindByIPs(ctx context.Context, tenantID shared.ID, ips []string) (map[string][]*asset.Asset, error)
+	// FindNetworkDevicesByIPs finds the tenant's network devices named by,
+	// or recording, any of the IPs.
+	FindNetworkDevicesByIPs(ctx context.Context, tenantID shared.ID, ips []string) (map[string][]*asset.Asset, error)
 	FindByHostname(ctx context.Context, tenantID shared.ID, hostname string) (*asset.Asset, error)
 	FindByExternalID(ctx context.Context, tenantID shared.ID, externalID string) (*asset.Asset, error)
 	FindByPropertyValue(ctx context.Context, tenantID shared.ID, key, value string) (*asset.Asset, error)
