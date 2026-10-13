@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "ecb9aa51a9146fc3"
+const RegistryVersion = "4b01b4938d2028e1"
 
 // Lenses.
 const (
@@ -600,7 +600,7 @@ var registryTypes = []TypeDefinition{
 		SubTypes:       []string{"compute", "serverless", "workstation"},
 		LegacyCategory: CategoryInfrastructure,
 		Storage:        "core",
-		IdentityKeys:   []string{"host_id", "cloud_id", "bios_uuid", "serial_number", "mac", "fqdn", "hostname", "ip", "name"},
+		IdentityKeys:   []string{"host_id", "cloud_id", "bios_uuid", "serial_number", "directory_object_id", "mac", "fqdn", "hostname", "ip", "name"},
 		Attributes: []AttributeDefinition{
 			{Name: "hostname", Kind: "string"},
 			{Name: "fqdn", Kind: "string"},
@@ -695,7 +695,7 @@ var registryTypes = []TypeDefinition{
 		SubTypes:       []string{},
 		LegacyCategory: CategoryInfrastructure,
 		Storage:        "core",
-		IdentityKeys:   []string{"host_id", "bios_uuid", "serial_number", "mac", "hostname", "name"},
+		IdentityKeys:   []string{"host_id", "bios_uuid", "serial_number", "directory_object_id", "mac", "hostname", "name"},
 		Attributes: []AttributeDefinition{
 			{Name: "ip_addresses", Kind: "list"},
 			{Name: "hostname", Kind: "string"},

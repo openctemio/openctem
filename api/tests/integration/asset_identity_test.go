@@ -259,3 +259,26 @@ func TestAssetIdentity_BackfillQueuesReviewsWithoutMerging(t *testing.T) {
 		t.Fatalf("reviews after rerun = %d, want 2", n)
 	}
 }
+
+// A computer renamed in the directory keeps its objectGUID: the collector's
+// next report lands on the same asset and renames it. Another tenant's
+// computer with the same objectGUID is never matched.
+func TestAssetIdentity_DirectoryObjectGUIDSurvivesRename(t *testing.T) {
+	const guid = "{6F9619FF-8B86-D011-B42D-00C04FC964FF}"
+	f := newIdentityFixture(t, "ident-adguid")
+	other := newIdentityFixture(t, "ident-adguid-other")
+	other.ingest(t, "ldap", host("pc01.corp.example.com", ctis.Properties{"ad_object_guid": guid}, nil))
+
+	f.ingest(t, "ldap", host("pc01.corp.example.com", ctis.Properties{"ad_object_guid": guid}, nil))
+	f.ingest(t, "ldap", host("sales-pc01.corp.example.com", ctis.Properties{"ad_object_guid": guid}, nil))
+	if got := f.names(t); len(got) != 1 || got[0] != "sales-pc01.corp.example.com" {
+		t.Fatalf("assets = %v, want one asset renamed to sales-pc01.corp.example.com", got)
+	}
+	if n := f.count(t, `SELECT count(*) FROM asset_identifiers WHERE tenant_id=$1 AND kind='directory_object_id'
+		AND value='6f9619ff-8b86-d011-b42d-00c04fc964ff' AND strong`, f.tenant.String()); n != 1 {
+		t.Fatalf("directory_object_id identifiers = %d, want 1", n)
+	}
+	if got := other.names(t); len(got) != 1 || got[0] != "pc01.corp.example.com" {
+		t.Fatalf("other tenant's assets = %v, want its own pc01 untouched", got)
+	}
+}
