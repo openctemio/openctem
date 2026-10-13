@@ -224,3 +224,46 @@ func TestScanStamper_PlatformSensorIsNeverNamed(t *testing.T) {
 		}
 	}
 }
+
+// linkingScanStore also links children, counting the calls.
+type linkingScanStore struct {
+	*fakeScanStore
+	links int
+}
+
+func (l *linkingScanStore) LinkChildren(context.Context, shared.ID) (int64, error) {
+	l.links++
+	return 0, nil
+}
+
+// TestScanStamper_ChildrenFollowTheirHost: a child that follows its host is
+// never re-evaluated on its own (its state is the host's), and every report
+// links new children to their host (research/117).
+func TestScanStamper_ChildrenFollowTheirHost(t *testing.T) {
+	store := &linkingScanStore{fakeScanStore: newFakeScanStore()}
+	follower := scanned("198.51.100.9:443", asset.AssetTypeService, false, false)
+	store.records[follower.ID.String()] = attribution.Record{State: attribution.StateConfirmed, Confidence: 99, FollowsHost: shared.NewID().String()}
+	own := scanned("198.51.100.9:22", asset.AssetTypeService, false, false)
+	store.records[own.ID.String()] = attribution.Record{State: attribution.StateNeedsReview, Confidence: 60}
+	err := NewScanStamper(store, nil).StampScanned(context.Background(), shared.NewID(),
+		[]ingest.ScannedAsset{follower, own}, ingest.ScanProvenance{SensorID: shared.NewID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, saved := store.saved[follower.ID.String()]; saved {
+		t.Fatal("a follower was re-evaluated on its own")
+	}
+	if _, saved := store.saved[own.ID.String()]; !saved {
+		t.Fatal("a child with no host was not re-evaluated")
+	}
+	if store.links != 1 {
+		t.Fatalf("links = %d, want 1 per report", store.links)
+	}
+	// An unsolicited report links too.
+	_ = NewScanStamper(store, nil).StampScanned(context.Background(), shared.NewID(),
+		[]ingest.ScannedAsset{scanned("203.0.113.9:80", asset.AssetTypeService, false, true)},
+		ingest.ScanProvenance{SensorID: shared.NewID(), Unsolicited: true})
+	if store.links != 2 {
+		t.Fatalf("links after an unsolicited report = %d, want 2", store.links)
+	}
+}

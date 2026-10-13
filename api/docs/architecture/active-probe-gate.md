@@ -175,6 +175,23 @@ For each target, in order:
    inventory asset, the asset's inventory name is matched too, so excluding
    `legacy.example.com` also refuses `https://www.legacy.example.com/login`
    probed as that asset.
+
+   **Range targets are cut, not dropped** (`SplitRanges`, set by the scan
+   trigger and `POST /scan-workflows/runs`; design: RFC-088). Before the
+   exclusion match, a CIDR or `a-b` range target is reduced by exact address
+   arithmetic (`pkg/domain/scope/ipset`) to its addresses minus the tenant's
+   active address, range and CIDR exclusions minus the built-in deny list;
+   the rest is dispatched as the fewest prefixes that hold it
+   (`198.51.100.0/24` minus `198.51.100.7` is eight pieces), each piece then
+   goes through every check below on its own, with the range's inventory
+   asset entry. A range with nothing left is excluded (refused `deny_list`
+   when only the deny list removed it); a range wider than 2^16 addresses is
+   refused; more than 4 096 pieces in one dispatch refuses it
+   (`RANGE_TOO_FRAGMENTED`). The run's warnings name every cut range. Paths
+   that map the result back onto their own target list (coverage, validation,
+   connectors, the claim-time re-check, the dry run) keep the whole-target
+   rule: a range that overlaps an exclusion is excluded whole. No address
+   list is ever built.
 3. **Ownership** (RFC-036 §6.3 `active_allowed`, `internal/app/easm/active_gate.go`).
    A target is refused when:
    - the inventory asset behind it (`DispatchTargetsInput.Assets`, or a typed

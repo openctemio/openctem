@@ -89,7 +89,7 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 	sc, args := scopeClause("aa.asset_id", scope, args)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT min(aa.created_at) FROM asset_attributions aa
-		WHERE aa.tenant_id = $1 AND aa.state = 'needs_review'`+sc, args...).Scan(&oldest); err != nil {
+		WHERE aa.tenant_id = $1 AND aa.state = 'needs_review' AND aa.follows_host_id IS NULL`+sc, args...).Scan(&oldest); err != nil {
 		return nil, fmt.Errorf("easm review age: %w", err)
 	}
 	out.OldestReviewSince = nullTimeValue(oldest)
@@ -157,14 +157,15 @@ func (r *EASMSummaryRepository) Summary(ctx context.Context, tenantID shared.ID,
 }
 
 // reviewByReason counts the review queue (needs_review, candidate) by the
-// rule that set each record, narrowed to the data scope.
+// rule that set each record, narrowed to the data scope. Children that
+// follow their host are counted under the host, not as rows.
 func (r *EASMSummaryRepository) reviewByReason(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (map[string]int, error) {
 	args := []any{tenantID.String()}
 	sc, args := scopeClause("aa.asset_id", scope, args)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT aa.reason, count(*) FROM asset_attributions aa
 		JOIN assets a ON a.id = aa.asset_id AND a.tenant_id = aa.tenant_id AND a.deleted_at IS NULL
-		WHERE aa.tenant_id = $1 AND aa.state IN ('needs_review', 'candidate')`+sc+`
+		WHERE aa.tenant_id = $1 AND aa.state IN ('needs_review', 'candidate') AND aa.follows_host_id IS NULL`+sc+`
 		GROUP BY 1`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("easm review by reason: %w", err)

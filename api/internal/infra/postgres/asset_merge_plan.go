@@ -181,6 +181,7 @@ var assetMergeSpecialRefs = map[string]string{
 	"asset_dedup_review.keep_asset_id":         "other pending reviews about a merged asset are dropped",
 	"asset_dedup_review.merge_asset_ids":       "other pending reviews about a merged asset are dropped",
 	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
+	"asset_attributions.follows_host_id":       "children of a merged host follow the kept asset (the kept asset itself follows nobody it absorbed)",
 }
 
 // assetMergeLeftAlone are references a merge deliberately does not move.
@@ -498,6 +499,16 @@ func mergeAttribution(ctx context.Context, tx *sql.Tx, tenantID, keepID string, 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_attributions WHERE tenant_id = $2 AND asset_id = ANY($1)`,
 		merge, tenantID); err != nil {
 		return fmt.Errorf("drop merged attribution: %w", err)
+	}
+	// Children of a merged host follow the kept asset; the kept asset stops
+	// following an asset it absorbed (a record never follows itself).
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE asset_attributions SET
+			follows_host_id = CASE WHEN asset_id = $1::uuid THEN NULL ELSE $1::uuid END,
+			updated_at = now()
+		WHERE tenant_id = $3 AND follows_host_id = ANY($2::uuid[])`,
+		keepID, merge, tenantID); err != nil {
+		return fmt.Errorf("move children of merged hosts: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE easm_evidence k SET
