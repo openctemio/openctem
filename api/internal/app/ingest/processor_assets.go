@@ -686,6 +686,29 @@ func (p *AssetProcessor) processBatch(
 			}
 			createNew()
 
+		case p.correlator != nil && isNetworkDevice(coreType, rt.stored.SubType):
+			// 4b. A network device of the tenant with the same address.
+			props := p.buildPropertiesFromCTIS(ctisAsset)
+			result, corrErr := p.correlator.CorrelateNetworkDevice(ctx, tenantID, normalizedName, props, cfg)
+			if corrErr != nil {
+				p.logger.Warn("network device correlation failed, creating new asset",
+					"name", logger.SanitizeValue(normalizedName), "error", corrErr)
+			}
+			if result != nil && len(result.Ambiguous) > 1 {
+				p.enqueueDedupReview(ctx, tenantID, normalizedName, string(coreType), result.Ambiguous[0], result.Ambiguous[1:])
+			}
+			if result != nil && result.Matched != nil &&
+				(idx == nil || !idx.vetoed(result.Matched, idx.incoming[i], allKinds)) {
+				existing := result.Matched
+				mergeInto(existing)
+				if result.ShouldRename {
+					rename(existing, result.CorrelationType)
+				}
+				existingMap[normalizedName] = existing
+				continue
+			}
+			createNew()
+
 		case p.correlator != nil:
 			// Extended correlation for other asset types (RFC-001 Phase 3)
 			var result *CorrelationResult
