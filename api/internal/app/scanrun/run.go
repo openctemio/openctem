@@ -454,6 +454,31 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// not from the known names the run expanded under it (RFC-068).
 	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
 
+	// Resolve before active: an active stage skips the names the platform's
+	// freshest evidence says have not resolved for a week (RFC-088 A5).
+	if f, ok := s.targetGate.(StaleNameFilter); ok && activeStep(resolved) {
+		seeds := chunkTargets(stepTargets, run.Context)
+		kept, stale, serr := f.DropStaleNames(ctx, run.TenantID, seeds)
+		if serr != nil {
+			return fmt.Errorf("step %s: %w", step.StepKey, serr)
+		}
+		if len(stale) > 0 {
+			out := &scanapp.StepTargets{Targets: kept, Refused: len(stale), Reason: scanapp.ReasonNotResolving}
+			if stepTargets != nil {
+				out.Refused += stepTargets.Refused
+				if stepTargets.Reason != "" {
+					out.Reason = stepTargets.Reason + "; " + out.Reason
+				}
+			}
+			stepTargets = out
+			s.logger.Info("step names without recent resolution evidence were left out",
+				"run_id", run.ID.String(), "step_key", step.StepKey, "skipped", len(stale))
+			if len(kept) == 0 && !chained {
+				return &noInputsError{summary: fmt.Sprintf("%d name(s) %s", len(stale), scanapp.ReasonNotResolving)}
+			}
+		}
+	}
+
 	// The hop router: seeds, plus what the predecessors produced that passes
 	// the per-hop gate; recorded once per (run, stage).
 	planned, err := s.planStage(ctx, run, step, resolved, preds, stepTargets)
@@ -509,6 +534,21 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
 	return s.stepRunRepo.Update(ctx, stepRun)
+}
+
+// StaleNameFilter drops the names without recent resolution evidence
+// (*scan.Service).
+type StaleNameFilter interface {
+	DropStaleNames(ctx context.Context, tenantID shared.ID, targets []string) (kept, stale []string, err error)
+}
+
+// activeStep reports whether a step sends traffic to its targets: an
+// active catalog stage, or a tool the catalog does not know as passive.
+func activeStep(resolved scanapp.StepTool) bool {
+	if resolved.HasStage {
+		return !resolved.Stage.Tier.Passive()
+	}
+	return !stage.PassiveTool(resolved.Name)
 }
 
 // stepDispatchGate is the gate record of a step's commands: the run
