@@ -60,6 +60,9 @@ var (
 	ErrNotFound = fmt.Errorf("%w: command not found", shared.ErrNotFound)
 	// ErrClosed: the command finished more than AcceptAfterFinish ago.
 	ErrClosed = errors.New("command logs closed")
+	// ErrStaleLease: the sensor stated a lease epoch the command is no
+	// longer held under (the batch is from an attempt that lost its lease).
+	ErrStaleLease = errors.New("command logs: stale lease epoch")
 )
 
 // Levels.
@@ -86,6 +89,9 @@ type Line struct {
 	Msg    string         `json:"msg"`
 	Source string         `json:"source,omitempty"`
 	Fields map[string]any `json:"fields,omitempty"`
+	// Attempt is the lease epoch the line's batch was written under, set
+	// on read (not part of the stored line).
+	Attempt int `json:"-"`
 }
 
 // Batch is one sanitized batch ready to store.
@@ -94,7 +100,11 @@ type Batch struct {
 	SensorID  shared.ID
 	CommandID shared.ID
 	Seq       int
-	Lines     []Line
+	// StatedEpoch is the lease epoch the sensor says it holds the command
+	// under, when it says one. It only fences (a mismatch is
+	// ErrStaleLease); the batch is always filed under the current epoch.
+	StatedEpoch *int
+	Lines       []Line
 	// JSON is Lines encoded; Bytes counts toward the per-command cap.
 	JSON []byte
 }
@@ -104,6 +114,11 @@ type AppendResult struct {
 	Stored    int  `json:"stored"`
 	Dropped   int  `json:"dropped"`
 	Truncated bool `json:"truncated"`
+	// Collided: a batch with this seq but other lines is already stored
+	// for this attempt; the batch was dropped (counted in Dropped).
+	Collided bool `json:"-"`
+	// Attempt is the lease epoch the batch was filed under.
+	Attempt int `json:"-"`
 }
 
 // Page is what a read returns.
@@ -175,7 +190,9 @@ type AppendInput struct {
 	SensorID  shared.ID
 	CommandID shared.ID
 	Seq       int
-	Lines     []RawLine
+	// StatedEpoch: the lease epoch the sensor states (a fence only).
+	StatedEpoch *int
+	Lines       []RawLine
 }
 
 // Append sanitizes and stores one batch.
@@ -199,7 +216,7 @@ func (s *Service) Append(ctx context.Context, in AppendInput) (AppendResult, err
 		return AppendResult{}, fmt.Errorf("encode lines: %w", err)
 	}
 	return s.store.Append(ctx, Batch{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID,
-		Seq: in.Seq, Lines: lines, JSON: b}, AcceptAfterFinish, MaxBatchesPerCommand, MaxBytesPerCommand)
+		Seq: in.Seq, StatedEpoch: in.StatedEpoch, Lines: lines, JSON: b}, AcceptAfterFinish, MaxBatchesPerCommand, MaxBytesPerCommand)
 }
 
 // ListForRunTask returns a task's logs for the run page.

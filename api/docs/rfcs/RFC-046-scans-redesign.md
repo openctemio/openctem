@@ -334,9 +334,25 @@ the window where a manual trigger slips in between.
 
 ### 6.3 Deadlines, `partial` and rollover
 
-- Every run gets `deadline_at = started_at + max(scan.timeout_seconds,
-  planned estimate)` (RFC-030 §5.5; existing scans never get a shorter limit),
-  capped by the 24 h absolute ceiling.
+- Every run gets `deadline_at = started_at + cap`, where the cap is policy,
+  never a guess at how long the work takes: the scan's max duration when its
+  owner set one, else the workflow's `timeout_seconds`, else the platform's
+  24 h backstop; always at most 24 h. `deadline_reason` records which one
+  (`scan_max_duration`, `workflow_max_duration`, `platform_cap`; `legacy` for
+  runs started before it was recorded) and the run page shows it.
+- **Amendment (2026-10-13).** A scan has no max duration by default: the old
+  column default of 1 h (which 15 of 18 live scans carried without anyone
+  choosing it) cut healthy multi-stage runs, and every "Discover + Vuln" run
+  of the month ended at it. Slow but alive work is kept alive by its
+  commands' leases (RFC-035); stuck sensors lose their lease; the 24 h cap is
+  the backstop. The layered model that replaces one run clock (budgets per
+  target, task, step and run; progress-based liveness; learned durations) is
+  designed in research note 122.
+- **Admission.** A step is not dispatched when less time is left before the
+  deadline than its tool's least useful time (overhead plus one expected
+  target): it fails `DEADLINE_TOO_CLOSE` (not retried) and its targets are
+  added to the run's unfinished targets, so they roll over instead of being
+  started and canceled seconds later.
 - At the deadline the reaper settles the run: tasks still queued are dropped,
   leased tasks get a cancel signal (§8), the run ends **`partial`** if any task
   completed, otherwise `timeout`.

@@ -220,7 +220,7 @@ export interface NewScanFormData {
   // Step 3: Options
   /** Targets bundled into one job (API targets_per_job). */
   maxConcurrent: number
-  /** Max execution time in seconds (30-86400, default 3600) */
+  /** Max duration in seconds (30-86400); 0 = none, the platform's 24 h cap applies */
   timeoutSeconds: number
   /** Max automatic retry attempts after failure (0-10, default 0) */
   maxRetries: number
@@ -245,7 +245,7 @@ export const DEFAULT_NEW_SCAN: NewScanFormData = {
   profileId: undefined,
   targets: DEFAULT_TARGETS,
   maxConcurrent: 10,
-  timeoutSeconds: 3600,
+  timeoutSeconds: 0,
   maxRetries: 0,
   retryBackoffSeconds: 60,
   schedule: {

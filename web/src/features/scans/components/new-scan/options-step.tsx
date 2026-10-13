@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { maxDurationInput } from '@/features/scans/lib/scan-form'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { useScanProfiles } from '@/lib/api/scan-profile-hooks'
 import type { NewScanFormData, SensorPreference } from '../../types'
@@ -169,15 +170,8 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
                 type="number"
                 min={30}
                 max={86400}
-                value={data.timeoutSeconds}
-                onChange={(e) =>
-                  onChange({
-                    timeoutSeconds: Math.max(
-                      30,
-                      Math.min(86400, parseInt(e.target.value || '0', 10) || 3600)
-                    ),
-                  })
-                }
+                value={data.timeoutSeconds > 0 ? data.timeoutSeconds : ''}
+                onChange={(e) => onChange({ timeoutSeconds: maxDurationInput(e.target.value) })}
               />
               <p className="text-muted-foreground text-[11px]">{t('scans.options.timeoutRange')}</p>
             </div>

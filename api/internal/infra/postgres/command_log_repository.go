@@ -1,8 +1,9 @@
 package postgres
 
-// Per-task logs from sensors: the command_logs table (migration 001130,
-// RFC-029 §4.4.1). One row per batch keyed by (command_id, seq); seq -1 counts
-// the lines refused by the per-command caps.
+// Per-task logs from sensors: the command_logs table (RFC-029 §4.4.1). One
+// row per batch keyed by (command_id, lease_epoch, seq): every claim of a
+// command is a new lease epoch and its sensor numbers that attempt's batches
+// from 0 again. seq -1 counts the lines refused by the per-command caps.
 
 import (
 	"context"
@@ -36,7 +37,12 @@ var _ commandlog.Store = (*CommandLogRepository)(nil)
 //
 // The command must be b.TenantID's and held (or last held) by b.SensorID;
 // anything else is commandlog.ErrNotFound. A command that finished more than
-// acceptAfterFinish ago is commandlog.ErrClosed.
+// acceptAfterFinish ago is commandlog.ErrClosed. The batch is filed under the
+// command's current lease epoch, read here under the lock: the sensor never
+// says which attempt it is. When the sensor states the epoch it holds the
+// command under (b.StatedEpoch) and that is not the current one, the batch
+// is from an attempt that lost its lease: commandlog.ErrStaleLease, so it is
+// never filed under another attempt.
 func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, acceptAfterFinish time.Duration,
 	maxBatches, maxBytes int,
 ) (commandlog.AppendResult, error) {
@@ -48,15 +54,16 @@ func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, a
 		var (
 			status string
 			closed bool
+			epoch  int
 		)
 		err := tx.QueryRowContext(ctx, `
-			SELECT status,
+			SELECT status, lease_epoch,
 			       status IN ('completed', 'failed', 'canceled', 'expired')
 			         AND COALESCE(completed_at, created_at) < NOW() - make_interval(secs => $4)
 			FROM commands
 			WHERE tenant_id = $1 AND id = $2 AND sensor_id = $3`,
 			b.TenantID.String(), b.CommandID.String(), b.SensorID.String(), acceptAfterFinish.Seconds()).
-			Scan(&status, &closed)
+			Scan(&status, &epoch, &closed)
 		if errors.Is(err, sql.ErrNoRows) {
 			return commandlog.ErrNotFound
 		}
@@ -67,12 +74,26 @@ func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, a
 			return fmt.Errorf("%w: the command is %s", commandlog.ErrClosed, status)
 		}
 
-		// A replay of a stored batch answers what it stored.
+		if b.StatedEpoch != nil && *b.StatedEpoch != epoch {
+			return fmt.Errorf("%w: stated lease epoch %d, current %d", commandlog.ErrStaleLease, *b.StatedEpoch, epoch)
+		}
+		out.Attempt = epoch
+
+		// A replay of a stored batch answers what it stored. A batch with
+		// the seq of a stored one but another line count is not a replay
+		// (the sensor reused a seq within one attempt): it is refused and
+		// reported as a collision, never answered as stored.
 		var stored int
-		err = tx.QueryRowContext(ctx, `SELECT line_count FROM command_logs WHERE tenant_id = $1 AND command_id = $2 AND seq = $3`,
-			b.TenantID.String(), b.CommandID.String(), b.Seq).Scan(&stored)
+		err = tx.QueryRowContext(ctx, `
+			SELECT line_count FROM command_logs
+			WHERE tenant_id = $1 AND command_id = $2 AND lease_epoch = $3 AND seq = $4`,
+			b.TenantID.String(), b.CommandID.String(), epoch, b.Seq).Scan(&stored)
 		if err == nil {
-			out = commandlog.AppendResult{Stored: stored}
+			if stored != len(b.Lines) {
+				out.Dropped, out.Collided = len(b.Lines), true
+				return nil
+			}
+			out.Stored = stored
 			return nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -87,22 +108,22 @@ func (r *CommandLogRepository) Append(ctx context.Context, b commandlog.Batch, a
 		}
 		if batches >= maxBatches || bytes+len(b.JSON) > maxBytes {
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO command_logs (tenant_id, command_id, seq, dropped)
-				VALUES ($1, $2, $3, $4)
-				ON CONFLICT (command_id, seq) DO UPDATE SET dropped = command_logs.dropped + EXCLUDED.dropped`,
-				b.TenantID.String(), b.CommandID.String(), dropSeq, len(b.Lines)); err != nil {
+				INSERT INTO command_logs (tenant_id, command_id, lease_epoch, seq, dropped)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (command_id, lease_epoch, seq) DO UPDATE SET dropped = command_logs.dropped + EXCLUDED.dropped`,
+				b.TenantID.String(), b.CommandID.String(), epoch, dropSeq, len(b.Lines)); err != nil {
 				return fmt.Errorf("count dropped lines: %w", err)
 			}
-			out = commandlog.AppendResult{Dropped: len(b.Lines), Truncated: true}
+			out.Dropped, out.Truncated = len(b.Lines), true
 			return nil
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO command_logs (tenant_id, command_id, seq, lines, line_count, bytes)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			b.TenantID.String(), b.CommandID.String(), b.Seq, b.JSON, len(b.Lines), len(b.JSON)); err != nil {
+			INSERT INTO command_logs (tenant_id, command_id, lease_epoch, seq, lines, line_count, bytes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			b.TenantID.String(), b.CommandID.String(), epoch, b.Seq, b.JSON, len(b.Lines), len(b.JSON)); err != nil {
 			return fmt.Errorf("store batch: %w", err)
 		}
-		out = commandlog.AppendResult{Stored: len(b.Lines)}
+		out.Stored = len(b.Lines)
 		return nil
 	})
 	return out, err
@@ -174,12 +195,13 @@ func (r *CommandLogRepository) SubjectFinding(ctx context.Context, tenantID, com
 	return &fid, nil
 }
 
-// readLogs reads a command's stored batches, oldest first.
+// readLogs reads a command's stored batches, oldest attempt first, each
+// attempt in batch order; every line carries its attempt (lease epoch).
 func (r *CommandLogRepository) readLogs(ctx context.Context, tenantID, commandID shared.ID, maxLines int) (commandlog.Page, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT seq, lines, dropped FROM command_logs
+		SELECT lease_epoch, seq, lines, dropped FROM command_logs
 		WHERE tenant_id = $1 AND command_id = $2
-		ORDER BY seq`, tenantID.String(), commandID.String())
+		ORDER BY lease_epoch, seq`, tenantID.String(), commandID.String())
 	if err != nil {
 		return commandlog.Page{}, fmt.Errorf("list task logs: %w", err)
 	}
@@ -187,10 +209,10 @@ func (r *CommandLogRepository) readLogs(ctx context.Context, tenantID, commandID
 	page := commandlog.Page{Lines: []commandlog.Line{}}
 	for rows.Next() {
 		var (
-			seq, dropped int
-			raw          []byte
+			epoch, seq, dropped int
+			raw                 []byte
 		)
-		if err := rows.Scan(&seq, &raw, &dropped); err != nil {
+		if err := rows.Scan(&epoch, &seq, &raw, &dropped); err != nil {
 			return commandlog.Page{}, fmt.Errorf("scan task logs: %w", err)
 		}
 		if dropped > 0 {
@@ -208,6 +230,7 @@ func (r *CommandLogRepository) readLogs(ctx context.Context, tenantID, commandID
 				page.Truncated = true
 				break
 			}
+			l.Attempt = epoch
 			page.Lines = append(page.Lines, l)
 		}
 	}
@@ -221,8 +244,8 @@ func (r *CommandLogRepository) DeleteOlderThan(ctx context.Context, before time.
 	}
 	res, err := r.db.ExecContext(ctx, `
 		DELETE FROM command_logs
-		WHERE (command_id, seq) IN (
-			SELECT command_id, seq FROM command_logs WHERE created_at < $1 ORDER BY created_at LIMIT $2)`,
+		WHERE (command_id, lease_epoch, seq) IN (
+			SELECT command_id, lease_epoch, seq FROM command_logs WHERE created_at < $1 ORDER BY created_at LIMIT $2)`,
 		before, limit)
 	if err != nil {
 		return 0, fmt.Errorf("delete old command logs: %w", err)
