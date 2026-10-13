@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"sync"
 	"testing"
 
@@ -138,5 +139,102 @@ func TestCommandHostKeys_RacingSensorsNeverShareAHost(t *testing.T) {
 			"{"+c1.String()+","+c2.String()+"}"); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// A range chunk and an address chunk inside it are never run at once by two
+// sensors, in either order, by poll, by id, in a batch or racing; two
+// addresses of one /24 still run in parallel; another tenant's range never
+// holds this tenant back (RFC-088 §6). Keys as scanrun writes them.
+func TestCommandHostKeys_RangeAndAddressOverlap(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	cmds := NewCommandRepository(&DB{DB: sqlDB})
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	other := seedTestTenant(ctx, t, sqlDB)
+	a := seedZoneSensor(ctx, t, sqlDB, &tenant, "a", zoneSensorOpts{tools: []string{"httpx"}})
+	b := seedZoneSensor(ctx, t, sqlDB, &tenant, "b", zoneSensorOpts{tools: []string{"httpx"}})
+	o := seedZoneSensor(ctx, t, sqlDB, &other, "o", zoneSensorOpts{tools: []string{"httpx"}})
+	done := func(ids ...shared.ID) {
+		t.Helper()
+		for _, id := range ids {
+			if _, err := sqlDB.ExecContext(ctx, `UPDATE commands SET status = 'completed' WHERE id = $1`, id.String()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	const bucket = "203.0.113.0/24"
+
+	// Another tenant scans the range: it never holds this tenant back.
+	theirs := createHostChunk(ctx, t, cmds, other, "net:"+bucket)
+	if ok, err := cmds.ClaimForSensor(ctx, other, theirs, o.String()); err != nil || !ok {
+		t.Fatalf("other tenant claim: %v %v", ok, err)
+	}
+
+	// Range first: an address inside it waits; an address elsewhere runs.
+	rng := createHostChunk(ctx, t, cmds, tenant, "net:"+bucket)
+	inside := createHostChunk(ctx, t, cmds, tenant, "203.0.113.7", "in:"+bucket)
+	outside := createHostChunk(ctx, t, cmds, tenant, "203.0.114.7", "in:203.0.114.0/24")
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, rng, a.String()); err != nil || !ok {
+		t.Fatalf("range chunk not claimed: %v %v", ok, err)
+	}
+	got := polledIDs(ctx, t, cmds, tenant, b)
+	if got[inside] || !got[outside] {
+		t.Fatalf("b was offered %v; want the address elsewhere, not the one inside the busy range", got)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, inside, b.String()); err != nil || ok {
+		t.Fatalf("an address inside a busy range was claimed: ok=%v err=%v", ok, err)
+	}
+	done(rng, outside)
+
+	// Address first: the range waits; another address of the bucket runs.
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, inside, a.String()); err != nil || !ok {
+		t.Fatalf("address chunk not claimed: %v %v", ok, err)
+	}
+	rng2 := createHostChunk(ctx, t, cmds, tenant, "net:"+bucket)
+	neighbor := createHostChunk(ctx, t, cmds, tenant, "203.0.113.200", "in:"+bucket)
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, rng2, b.String()); err != nil || ok {
+		t.Fatalf("a range holding a busy address was claimed: ok=%v err=%v", ok, err)
+	}
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, neighbor, b.String()); err != nil || !ok {
+		t.Fatalf("two addresses of one bucket must run in parallel: %v %v", ok, err)
+	}
+	done(inside, neighbor)
+
+	// A batch never takes a range and an address inside it together.
+	r3 := createHostChunk(ctx, t, cmds, tenant, "net:"+bucket)
+	a3 := createHostChunk(ctx, t, cmds, tenant, "203.0.113.9", "in:"+bucket)
+	a4 := createHostChunk(ctx, t, cmds, tenant, "203.0.113.10", "in:"+bucket)
+	claimed, err := cmds.ClaimManyForSensor(ctx, tenant, a, nil, []shared.ID{a3, r3, a4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(claimed, a3) || slices.Contains(claimed, r3) || !slices.Contains(claimed, a4) {
+		t.Fatalf("batch claimed %v; want both addresses, not the range", claimed)
+	}
+	done(a3, a4)
+	if ok, err := cmds.ClaimForSensor(ctx, tenant, r3, b.String()); err != nil || !ok {
+		t.Fatalf("range not claimable once its bucket was free: %v %v", ok, err)
+	}
+	done(r3, rng2)
+
+	// Racing claims of a range and an address inside it: exactly one wins.
+	for round := 0; round < 15; round++ {
+		r := createHostChunk(ctx, t, cmds, tenant, "net:"+bucket)
+		x := createHostChunk(ctx, t, cmds, tenant, "203.0.113.50", "in:"+bucket)
+		var wg sync.WaitGroup
+		var okR, okX bool
+		var errR, errX error
+		wg.Add(2)
+		go func() { defer wg.Done(); okR, errR = cmds.ClaimForSensor(ctx, tenant, r, a.String()) }()
+		go func() { defer wg.Done(); okX, errX = cmds.ClaimForSensor(ctx, tenant, x, b.String()) }()
+		wg.Wait()
+		if errR != nil || errX != nil {
+			t.Fatalf("round %d: claim errors %v / %v", round, errR, errX)
+		}
+		if okR == okX {
+			t.Fatalf("round %d: range=%v address=%v; want exactly one", round, okR, okX)
+		}
+		done(r, x)
 	}
 }

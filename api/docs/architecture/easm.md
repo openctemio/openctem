@@ -273,6 +273,26 @@ approvals, notification; then the scope join confirms), `accept_selected`
 (confirm only the given items) and `reject_rule` (a pending exclusion and the
 covered items rejected). Code: `internal/app/easm/review_rules.go`.
 
+## 4b2. Suggestion cards (built, research/117)
+
+`GET /api/v1/easm/suggestions` (`assets:read`, data-scoped, read only) answers
+the scope decisions that still need a person, one card each
+(`internal/app/easm/suggestions.go`,
+`internal/infra/postgres/easm_suggestions_repository.go`):
+
+| Card | What it offers | Never offered |
+|---|---|---|
+| `addresses_behind_names` | address assets that in-scope names of the caller resolve to (`resolves_to`) and no entry covers, with `resolved_from` (up to 10 in-scope names), the network we hold and `names_count`; `unknown_network_count` counts the offered addresses we know nothing about (shown as "network unknown", never as "not shared") | `shared_addresses` with the reason: `cdn` (the address record says CDN), `provider` (a CDN or cloud provider network), `edge_range` (a published CDN edge range embedded in the code), `many_domains` (names of 3+ registrable domains of the organization resolve to it), `other_network` (its known network is announced by another organization and is not one of the organization's network seeds); addresses a person rejected, set to dependency or monitor only, or sent back to review |
+| `confirmed_out_of_scope` | domain, subdomain and public address assets a person confirmed that no active entry covers (confirmations made before a confirmation added its own entry) | private or internal names, wildcards |
+
+A card holds at most 200 items (`truncated` says more exist). Accepting one
+is an ordinary `POST /scope/targets/bulk` with its items (exact `ip_address`
+or `domain` entries: scope write permission, step-up, approvals, audit, one
+admin notice); `can_add` tells the caller whether it may. Nothing is ever
+added automatically: a name never lends its address authority (dangling DNS,
+shared hosting and released cloud addresses would make a scan probe a third
+party).
+
 ## 4c. Alerts (built, P0-7)
 
 EASM exposures reach the notification outbox (decision E4). The CT monitor, the DNS checks and takeover confirmation write
@@ -540,6 +560,26 @@ and the Weekly digest switch on the monitoring card.
   evidence, which is what MTTD is measured against.
 
 ## 5a. After a decision (built, P0-9)
+
+**Confirm adds the exact scope entry** (research/117, `internal/app/easm/confirm_scope.go`).
+Before a person's `confirmed` decision is saved (review queue, review by rule
+"accept selected", or the asset's Ownership tab), each confirmed domain,
+subdomain or public address gets the scope entry for exactly its name
+(`domain` or `ip_address`, origin `confirmed_asset`) through
+`scope.Service.CreateTargets`: guardrails, deny list, signer ledger, one
+step-up for the batch (a missing one answers 403 `STEP_UP_REQUIRED` and saves
+nothing), one notice to the administrators, and one `scope_target.created`
+audit event per entry. Never added: a wildcard or range, a name an active
+entry already covers (`covered`), a private or internal name, or a service,
+certificate or web endpoint (they follow their host). The answer carries
+`scope.entries[]` (`added`, `exists`, `covered`, `refused` with its code; the
+entry id makes Undo a plain entry delete) or `scope.skipped`: `strict` (scan
+approval Strict keeps confirmation as ownership only), `disabled` (the
+organization's `confirm_adds_to_scope` setting is off, or it could not be
+read), `needs_scope_write` (the caller has `assets:write` but not the scope
+write permission). Automation and rejections never add entries
+(`ReviewService.Decide`); people go through `DecideAs`. Existing confirmed
+but uncovered assets are not backfilled: they are offered as a suggestion.
 
 A person's attribution decision (review queue `POST /easm/candidates/decisions`
 or `PUT /assets/{id}/attribution`) is followed by
