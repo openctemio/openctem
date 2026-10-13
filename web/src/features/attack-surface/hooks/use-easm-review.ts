@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import useSWR, { mutate as globalMutate } from 'swr'
 import { get, post } from '@/lib/api/client'
-import { useBootstrapPending } from '@/context/bootstrap-provider'
 import type { EASMDecisionResult, EASMReviewPage } from '@/lib/api/generated'
 import { usePermissions, Permission } from '@/lib/permissions'
+import { refreshEASMSuggestions } from './use-easm-suggestions'
 import type { AttributionDecision, AttributionState } from '@/features/assets/lib/attribution'
 
 export interface EASMReviewQuery {
@@ -65,6 +65,7 @@ export function useDecideReviewBatch() {
       void globalMutate(
         (key) => typeof key === 'string' && key.startsWith('/api/v1/easm/candidates?')
       )
+      void refreshEASMSuggestions()
       return result
     } finally {
       setSaving(false)
@@ -75,26 +76,3 @@ export function useDecideReviewBatch() {
 
 /** The review queue's states: what waits for a person. */
 export const REVIEW_QUEUE_STATES: AttributionState[] = ['needs_review', 'candidate']
-
-/**
- * How many names wait in the review queue (research/22 P0-12): the same
- * query and data scope as the queue's "Awaiting review" tab, so the sidebar
- * badge, the tab count and the queue always agree. Cached for a minute.
- */
-export function useEASMReviewCount(enabled = true) {
-  // The session bootstrap carries this count and seeds the key
-  // (context/bootstrap-session.ts EASM_REVIEW_COUNT_URL): wait for it, and do
-  // not fetch a seeded or cached count again on mount. A review decision
-  // revalidates it (useEASMDecide).
-  const bootstrapPending = useBootstrapPending()
-  const key =
-    enabled && !bootstrapPending
-      ? reviewQueueURL({ states: REVIEW_QUEUE_STATES, page: 1, perPage: 1 })
-      : null
-  const { data } = useSWR<EASMReviewPage>(key, get, {
-    revalidateOnFocus: false,
-    revalidateIfStale: false,
-    dedupingInterval: 60000,
-  })
-  return data?.total
-}
