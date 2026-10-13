@@ -415,11 +415,13 @@ func matchCIDR(pattern, value string) bool {
 }
 
 // matchIPExclusion is the EXCLUSION test: value is excluded when it shares ANY
-// address with pattern. A scan target is handed to the scanner as written, so a
+// address with pattern. A target is handed to the scanner as written, so a
 // target network that merely overlaps an excluded one would scan the excluded
-// addresses; the only safe outcome is to skip the whole target (split it to
-// scan the rest). A pattern that is not an address set falls back to an exact,
-// case-insensitive string match.
+// addresses. The scan target gate first cuts a range target around the
+// exclusions (exact subtraction, package ipset), so on that path only pieces
+// that hold no excluded address reach this test; everywhere else an overlap
+// excludes the whole value. A pattern that is not an address set falls back
+// to an exact, case-insensitive string match.
 func matchIPExclusion(pattern, value string) bool {
 	p, ok := parseIPSet(pattern)
 	if !ok {
