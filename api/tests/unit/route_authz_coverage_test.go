@@ -76,6 +76,7 @@ var allowlistPrefixes = []struct{ prefix, reason string }{
 	{"/api/v1/oauth/", "self-scoped (RFC-062 consent): the signed-in session answers its own MCP consent request in its current organization; the grant never exceeds what the user holds, API keys refused (APIKeyRouteDenied)"},
 	{"/api/v1/webhooks/incoming", "inbound webhook HMAC per-tenant"},
 	{"/api/v1/tenants", "base-auth + RequireMembership/RequireTeam* (role-gated, not permission-gated)"},
+	{"/api/v1/sensors/install/seccomp.json", "public static file: the open-source sensor release's seccomp profile, the same for every organization, no tenant data; rate limited per IP"},
 	{"/api/v1/module-presets", "auth-only catalog read (public preset list)"},
 	{"/api/v1/validation/evidence", "sensor API-key auth"},
 	{"/health", "public liveness"},

@@ -10,7 +10,16 @@
 #      sensor refuses every job outside it; without it the pod does not start.
 #      Keep write access to this ConfigMap with the network owner:
 #        kubectl create configmap {{$slug}}-policy -n <namespace> --from-file=sensor-policy.yaml
-#   2. kubectl apply -n <namespace> -f {{$slug}}.yaml
+#   2. Put the sensor's seccomp profile on every node that may run the pod,
+#      at <kubelet root>/seccomp/openctem/sensor-seccomp.json (usually
+#      /var/lib/kubelet/seccomp/...), and check it:
+#        curl -fsSL -o sensor-seccomp.json {{shellQuote .SeccompURL}}
+#        echo '{{.SeccompSHA256}}  sensor-seccomp.json' | sha256sum -c -
+#      Each scan task then runs network-confined. Where you cannot write to
+#      the nodes, set seccompProfile below to {type: RuntimeDefault}: the
+#      sensor then runs unconfined, and jobs that need confinement (a web
+#      scope) go to other sensors.
+#   3. kubectl apply -n <namespace> -f {{$slug}}.yaml
 #   Kill switch: set "kill_switch: true" in the ConfigMap and restart the pod.
 #   The policy needs a sensor release later than v0.8.0; v0.8.0 and older
 #   ignore it and scan without a local policy.
@@ -87,8 +96,11 @@ spec:
         runAsGroup: 999
         fsGroup: 999
         fsGroupChangePolicy: OnRootMismatch
+        # The sensor's own profile (step 2): the runtime default plus new
+        # namespaces, for per-task network confinement.
         seccompProfile:
-          type: RuntimeDefault
+          type: Localhost
+          localhostProfile: openctem/sensor-seccomp.json
       containers:
         - name: sensor
           image: {{.Image}}
