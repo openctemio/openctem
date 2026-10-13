@@ -27,7 +27,11 @@ func main() {
 
 var builtinTemplates = map[string]string{
 `)
-	for _, f := range []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm", "policy"} {
+	formats := []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm", "policy"}
+	for _, f := range formats {
+		formats = append(formats, "collector-"+f)
+	}
+	for _, f := range formats {
 		c, err := os.ReadFile(filepath.Join(dir, f+".tmpl"))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

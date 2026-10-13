@@ -34,6 +34,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
@@ -129,9 +130,13 @@ func WireAssetLifecycleWorker(w *assetapp.AssetLifecycleWorker) {
 
 // newScanWorkflowHandler builds the scan workflow handler with the run page's task
 // logs (RFC-029 §4.4.1).
-func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, events command.EventReader, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
+func newScanWorkflowHandler(svc *scanrun.Service, logs *commandlog.Service, placement *commandapp.Service, events command.EventReader, scope *datascope.Enforcer, users user.Repository, v *validator.Validator, log *logger.Logger) *handler.ScanWorkflowHandler {
 	h := handler.NewScanWorkflowHandler(svc, v, log)
 	h.SetTaskLogs(logs)
+	if placement != nil {
+		// Why a queued task waits (placement.md).
+		h.SetPlacement(placement)
+	}
 	h.SetUserNames(users)
 	h.SetRunEvents(events)
 	if scope != nil {
@@ -515,7 +520,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
 		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
-		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
+		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.Command, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
 		Workflow: handler.NewWorkflowHandler(svc.Workflow, v, log),
@@ -1011,6 +1016,7 @@ func newSensorHandlerWithTemplates(
 	h.SetPublicAPIURL(publicAPIURL)
 	h.SetHealthPolicy(sensorHealthPolicy(cfg, log))
 	h.SetSensorImage(sensorInstallImage(cfg, log))
+	h.SetCollectorImage(collectorInstallImage(cfg, log))
 	h.SetCACertificateFile(cfg.SensorConfig.CACertFile)
 
 	return h
@@ -1039,6 +1045,20 @@ func sensorInstallImage(cfg *config.Config, log *logger.Logger) string {
 		tag = config.DefaultSensorLatestVersion
 	}
 	return repo + ":" + tag
+}
+
+// collectorInstallImage is the image a collector's install snippets run:
+// SENSOR_COLLECTOR_IMAGE when it is a plain image reference, else the
+// default.
+func collectorInstallImage(cfg *config.Config, log *logger.Logger) string {
+	img := strings.TrimSpace(cfg.SensorConfig.CollectorImage)
+	if !imageRepositoryRegexp.MatchString(img) || strings.Contains(img, "@") {
+		if img != "" {
+			log.Warn("ignoring SENSOR_COLLECTOR_IMAGE that is not an image reference", "value", img)
+		}
+		return config.DefaultCollectorImage
+	}
+	return img
 }
 
 // sensorHealthPolicy maps the heartbeat settings and the sensor release
@@ -1172,8 +1192,8 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	}
 	review := easmapp.NewReviewService(repos.Attribution, svc.DataScope)
 	review.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
-	if repos.EASMNetworkSeed != nil {
-		review.SetSeededNetworks(repos.EASMNetworkSeed.Networks) // range fixes in seeded networks (RFC-082)
+	if seeded := seededNetworks(repos); seeded != nil {
+		review.SetSeededNetworks(seeded) // range fixes in seeded networks (RFC-082)
 	}
 	if svc.ActiveGate != nil {
 		review.SetCoverage(svc.ActiveGate) // covered_by on queue items (RFC-054 §6.6)
@@ -1186,12 +1206,34 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		}
 		return t.Name(), nil
 	})
+	review.SetConfirmScope(newConfirmScope(repos, svc))
 	h.SetReview(review, audit)
+	// Suggestion cards (research/117): addresses behind in-scope names and
+	// confirmed assets no entry covers; read only.
+	if svc.ActiveGate != nil {
+		h.SetSuggestions(easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+			func(ctx context.Context, tenantID shared.ID) (string, error) {
+				t, err := repos.Tenant.GetByID(ctx, tenantID)
+				if err != nil {
+					return "", err
+				}
+				return t.Name(), nil
+			}, seededNetworks(repos)))
+	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
 		h.SetRules(easmapp.NewRuleService(review, svc.ScopeJoin, svc.Scope, repos.Asset, svc.ActiveGate, svc.ScopeGuardrails))
 	}
 	return h
+}
+
+// seededNetworks reads the organization's network seeds (RFC-082); nil
+// when they are not wired.
+func seededNetworks(repos *Repositories) easmapp.SeededNetworks {
+	if repos.EASMNetworkSeed == nil {
+		return nil
+	}
+	return repos.EASMNetworkSeed.Networks
 }
 
 // easmDecisionEffects reclassifies the decided assets' findings now and, on a
@@ -1240,7 +1282,18 @@ func newAssetAttributionHandler(repos *Repositories, svc *Services, log *logger.
 		h.SetAuditService(svc.Audit)
 	}
 	h.SetDecisionEffects(easmDecisionEffects(repos, svc, log))
+	h.SetConfirmScope(newConfirmScope(repos, svc))
 	return h
+}
+
+// newConfirmScope makes a person's confirmation add the asset's exact scope
+// entry through the scope service (research/117); nil while scope or the
+// ownership gate is not wired (a confirmation then records ownership only).
+func newConfirmScope(repos *Repositories, svc *Services) *easmapp.ConfirmScope {
+	if svc.Scope == nil || svc.ActiveGate == nil || svc.Tenant == nil {
+		return nil
+	}
+	return easmapp.NewConfirmScope(svc.Scope, svc.Tenant, repos.Asset, svc.ActiveGate)
 }
 
 // newAssetImportHandler builds the asset import handler with its audit trail.

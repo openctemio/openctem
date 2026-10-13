@@ -42,6 +42,21 @@ type SensorConfigTemplateService struct {
 // templateFormats is every format, in response order.
 var templateFormats = []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm", "policy"}
 
+// collectorPrefix names a collector's template of a format
+// ("collector-docker"): a collector sensor runs the asset collector, with
+// its own image and settings, not the scanner.
+const collectorPrefix = "collector-"
+
+// templateNames is every template loaded: each format, and its collector
+// variant.
+func templateNames() []string {
+	out := slices.Clone(templateFormats)
+	for _, f := range templateFormats {
+		out = append(out, collectorPrefix+f)
+	}
+	return out
+}
+
 // SensorTemplateData is the data passed to every sensor config template.
 type SensorTemplateData struct {
 	Sensor *sensordom.Sensor
@@ -59,6 +74,12 @@ type SensorTemplateData struct {
 	// certificate. The snippets install it and point SSL_CERT_DIR at it.
 	CACert      string
 	GeneratedAt string // RFC3339 timestamp
+
+	// SeccompURL is where the install commands download the sensor's
+	// seccomp profile (BaseURL + SeccompProfilePath) and SeccompSHA256 the
+	// digest they check; Render fills both.
+	SeccompURL    string
+	SeccompSHA256 string
 
 	// Policy is what the sensor-local policy template (RFC-040 §5.7,
 	// policy.tmpl) is prefilled with; PolicyFromZones builds it.
@@ -125,8 +146,8 @@ func NewSensorConfigTemplateService(templatesDir string, log *logger.Logger) *Se
 // loadBuiltins installs the built-in templates (they always parse; a test
 // renders them).
 func (s *SensorConfigTemplateService) loadBuiltins() {
-	loaded := make(map[string]*template.Template, len(templateFormats))
-	for _, format := range templateFormats {
+	loaded := make(map[string]*template.Template, 2*len(templateFormats))
+	for _, format := range templateNames() {
 		loaded[format] = template.Must(template.New(format).Funcs(templateFuncs()).Parse(builtinTemplates[format]))
 	}
 	s.mu.Lock()
@@ -136,8 +157,8 @@ func (s *SensorConfigTemplateService) loadBuiltins() {
 
 // Reload re-reads all template files from disk. Safe to call at runtime.
 func (s *SensorConfigTemplateService) Reload() error {
-	loaded := make(map[string]*template.Template, len(templateFormats))
-	for _, format := range templateFormats {
+	loaded := make(map[string]*template.Template, 2*len(templateFormats))
+	for _, format := range templateNames() {
 		path := filepath.Join(s.templatesDir, format+".tmpl")
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -185,13 +206,23 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 	if data.Sensor == nil {
 		return nil, fmt.Errorf("render sensor templates: no sensor")
 	}
+	if data.SeccompURL == "" {
+		data.SeccompURL = strings.TrimRight(data.BaseURL, "/") + SeccompProfilePath
+	}
+	if data.SeccompSHA256 == "" {
+		data.SeccompSHA256 = SeccompProfileSHA256
+	}
 	if data.CACert != "" && !strings.HasSuffix(data.CACert, "\n") {
 		data.CACert += "\n"
 	}
 
+	prefix := ""
+	if data.Sensor.Type.IsCollector() {
+		prefix = collectorPrefix
+	}
 	out := make(map[string]string, len(templateFormats))
 	for _, format := range templateFormats {
-		tmpl, ok := tmpls[format]
+		tmpl, ok := tmpls[prefix+format]
 		if !ok {
 			return nil, fmt.Errorf("template %q not loaded", format)
 		}

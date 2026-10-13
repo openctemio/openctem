@@ -47,3 +47,20 @@ func TestSensorInstallImage(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectorInstallImage(t *testing.T) {
+	for in, want := range map[string]string{
+		"ghcr.io/openctemio/asset-collector:v0.2.0": "ghcr.io/openctemio/asset-collector:v0.2.0",
+		"registry.local:5000/sec/collector:v1":      "registry.local:5000/sec/collector:v1",
+		// Not an image reference (would land in a shell line): the default.
+		"evil; rm -rf /":       config.DefaultCollectorImage,
+		"":                     config.DefaultCollectorImage,
+		"ghcr.io/x@sha256:abc": config.DefaultCollectorImage,
+	} {
+		cfg := &config.Config{}
+		cfg.SensorConfig.CollectorImage = in
+		if got := collectorInstallImage(cfg, logger.NewNop()); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
+	}
+}

@@ -992,6 +992,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup.SetDataScope(s.DataScope)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
+	// Every web job carries the path exclusions of its hosts, whatever path
+	// creates it (RFC-056 §5): the command repository's create guard. A
+	// web-scoped nuclei job needs a confined sensor (NO_CONFINED_SENSOR).
+	repos.Command.SetCreateGuard(scope.NewWebJobGuard(s.Scope, repos.Sensor))
 	// The platform's scope guardrails (RFC-054 §8): public suffixes, the deny
 	// list and CIDR caps on every new entry; the deny list and the proof mode
 	// at dispatch (the ownership gate below).
@@ -1948,6 +1952,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
 	s.Ingest.SetGrants(repos.SensorGrant, s.Sensor)
+	// RFC-040 §12: a trusted collector's complete reports may change the
+	// assets its source created and mark the ones it no longer lists.
+	s.Ingest.SetCollectorAssets(repos.CollectorAsset)
 	// Sensor lookups (fingerprint check, baseline diff, suppressions) answer
 	// only about assets the sensor reaches: its commands' targets and its
 	// zones' ranges.
@@ -2030,6 +2037,17 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)
+	// Connector assets are in scope by default (research/117): after a
+	// successful sync, the public names and addresses it synced get their
+	// exact scope entries, unless the connector's assets_in_scope is off.
+	if s.TenableSC != nil {
+		var audit easmapp.ScopeJoinAudit
+		if s.Audit != nil {
+			audit = s.Audit
+		}
+		s.TenableSC.SetScopeAdder(easmapp.NewConnectorScope(s.Scope, s.Scope, repos.Asset, s.ActiveGate,
+			repos.IngestReport, audit, log))
+	}
 
 	// Initialize scan service with adapters for its interfaces
 	s.Scan = scan.NewService(
@@ -2189,8 +2207,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithHopStore(scanHops),
 		// A run executes the workflow version it started with (research/62 P0-10).
 		scanrun.WithVersionStore(repos.ScanWorkflow),
-		// Web steps carry the path exclusions of their hosts (RFC-056).
-		scanrun.WithWebScope(s.Scope),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
 		scanrun.WithEndpointSelector(repos.WebEndpoint),
 	)

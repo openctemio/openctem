@@ -298,3 +298,23 @@ func TestAdmit_GrantNarrowsReportedTools(t *testing.T) {
 		t.Fatalf("nuclei inside the grant refused: %v", r)
 	}
 }
+
+// A collector gets the collector profile by default (push ingest in the
+// grant, still off while New); every other type keeps the scanner default.
+func TestDefaultProfileFor(t *testing.T) {
+	if got := DefaultProfileFor(SensorTypeCollector); got != ProfileCollector {
+		t.Fatalf("collector default: %q", got)
+	}
+	for _, typ := range []SensorType{SensorTypeWorker, SensorTypeEASM, ""} {
+		if got := DefaultProfileFor(typ); got != DefaultProfile {
+			t.Fatalf("%q default: %q", typ, got)
+		}
+	}
+	g, err := NewGrantFromProfile(shared.NewID(), shared.NewID(), DefaultProfileFor(SensorTypeCollector), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.AllowPushIngest || g.Effective().AllowPushIngest {
+		t.Fatalf("collector default must allow push in the grant and keep it off until trusted: %+v", g)
+	}
+}

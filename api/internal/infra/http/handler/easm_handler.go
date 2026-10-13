@@ -9,6 +9,7 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -27,12 +28,14 @@ type EASMSummarizer interface {
 
 // EASMHandler serves the EASM overview (RFC-036 §6.10).
 type EASMHandler struct {
-	svc     EASMSummarizer
-	review  EASMReviewer
-	rules   EASMRuleService
-	audit   AttributionAuditor
-	changes EASMChangeLister
-	logger  *logger.Logger
+	svc    EASMSummarizer
+	review EASMReviewer
+	rules  EASMRuleService
+	// suggestions: the attack surface suggestion cards.
+	suggestions EASMSuggester
+	audit       AttributionAuditor
+	changes     EASMChangeLister
+	logger      *logger.Logger
 }
 
 // NewEASMHandler creates the handler.
@@ -69,7 +72,9 @@ func (h *EASMHandler) Summary(w http.ResponseWriter, r *http.Request) {
 // EASMReviewer serves the attribution review queue (RFC-036 §6.4).
 type EASMReviewer interface {
 	Queue(ctx context.Context, tenantID shared.ID, q easmapp.ReviewQuery) (*easmapp.ReviewPage, error)
-	Decide(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actorID string) (*easmapp.DecisionResult, error)
+	// DecideAs is a person's decision: confirming also adds each confirmed
+	// asset's exact scope entry where the organization's setting allows.
+	DecideAs(ctx context.Context, tenantID shared.ID, assetIDs []string, state attribution.State, actor easmapp.ScopeActor) (*easmapp.DecisionResult, error)
 }
 
 // SetReview wires the review queue and its audit trail.
@@ -190,8 +195,11 @@ func (h *EASMHandler) Decide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := middleware.GetUserID(ctx)
-	res, err := h.review.Decide(ctx, tenantID, req.AssetIDs, attribution.State(req.State), userID)
+	res, err := h.review.DecideAs(ctx, tenantID, req.AssetIDs, attribution.State(req.State), confirmActor(ctx))
 	if err != nil {
+		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+			return
+		}
 		if errors.Is(err, shared.ErrValidation) {
 			apierror.BadRequest(easmValidationMessage(err)).WriteJSON(w)
 			return
@@ -205,6 +213,7 @@ func (h *EASMHandler) Decide(w http.ResponseWriter, r *http.Request) {
 			TenantID: tenant, ActorID: userID, ActorEmail: auditActorEmail(ctx),
 			ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: r.Header.Get("X-Request-ID"),
 		}
+		auditConfirmEntries(ctx, h.audit, actx, res.Scope, "review_queue")
 		for _, d := range res.Decided {
 			event := auditapp.NewSuccessEvent(auditdom.ActionAssetAttributionDecided, auditdom.ResourceTypeAsset, d.AssetID).
 				WithMessage("Attribution set to "+d.To).
@@ -234,11 +243,20 @@ func easmValidationMessage(err error) string {
 // HasReview reports whether the review queue is wired.
 func (h *EASMHandler) HasReview() bool { return h.review != nil }
 
-// ReviewCount is the size of the default review queue (needs review and
-// candidates) as GET /easm/candidates reports it in `total`: the same service
-// call with the request context, so the caller's data scope applies. The
-// caller checks the route's gates (assets:read, the attack_surface module).
+// ReviewCount is how many decisions wait on the attack surface, the number
+// the Suggestions tab and the sidebar badge show: one per suggestion card
+// (GET /easm/suggestions, rule cards included), not one per queue row
+// (research/117). The request context carries the caller, so the data scope
+// applies. Without suggestion cards it is the queue's row count. The caller
+// checks the route's gates (assets:read, the attack_surface module).
 func (h *EASMHandler) ReviewCount(ctx context.Context, tenantID shared.ID) (int, error) {
+	if h.suggestions != nil {
+		out, err := h.suggestionCards(ctx, tenantID, false)
+		if err != nil {
+			return 0, err
+		}
+		return out.Total, nil
+	}
 	if h.review == nil {
 		return 0, errors.New("review queue not configured")
 	}

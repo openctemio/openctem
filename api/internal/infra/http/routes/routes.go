@@ -733,6 +733,10 @@ func Register(
 		registerMCPClientRoutes(router, h.MCPClients, authMiddleware, userSync)
 	}
 
+	// The sensor's seccomp profile for the install commands: public (the
+	// open-source release's file, no tenant data), rate limited per IP.
+	registerSensorInstallRoutes(router, middleware.RateLimit(&cfg.RateLimit, log))
+
 	// Read-only MCP server — authenticated by tenant-scoped API key, not JWT.
 	// Per-IP rate limit runs before auth to throttle junk-token floods; the
 	// organization IP allowlist runs after it (mcpMiddlewares).

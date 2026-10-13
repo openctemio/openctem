@@ -61,6 +61,13 @@ const CapabilityRetest = "retest"
 // top-ports scans on targets that only limited scope entries cover.
 const CapabilityScopeLimits = "scope.limits@1"
 
+// CapabilityNetConfined is the capability of a sensor whose tool runs are
+// confined to each task's forwarder (sdk-go executor.CapabilityNetConfined).
+// A job that needs confinement (command.PayloadKeyRequiredFeatures) is
+// claimable only by a sensor that reported it; what an administrator
+// declares never counts.
+const CapabilityNetConfined = "net.confined@1"
+
 // Tool kinds a sensor reports (sdk-go core.ToolKind).
 const (
 	ToolKindScanner   = "scanner"
@@ -391,7 +398,7 @@ func sanitizeToolCapabilities(in []string, knownTools, knownCaps map[string]bool
 }
 
 func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
-	if knownCaps[c] || knownTools[c] || c == CapabilityValidate || c == CapabilityScopeLimits {
+	if knownCaps[c] || knownTools[c] || c == CapabilityValidate || c == CapabilityScopeLimits || c == CapabilityNetConfined {
 		return true
 	}
 	// A capability of the OpenCTEM taxonomy (ctis/capability), as sensors on

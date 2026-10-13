@@ -197,6 +197,9 @@ func (p *V2JobProcessor) finalize(ctx context.Context, rep *ingestreport.Report)
 		p.logger.Error("v2: stored header does not parse", "report_ref", claimed.ID.String())
 	}
 	res := p.service.CommitV2Report(ctx, p.provenance(claimed, -1, nil), header, claimed.TouchedAssetIDs, p.guard)
+	// A complete report of a trusted collector: the assets its source
+	// created and no longer lists are marked not seen.
+	p.service.sweepCollectorReport(ctx, claimed, header, p.guard)
 	if err := p.reports.Finish(ctx, claimed.ID, protov2.StateCompleted, res.AutoResolved, res.AutoResolve); err != nil {
 		return fmt.Errorf("v2: finish report: %w", err)
 	}

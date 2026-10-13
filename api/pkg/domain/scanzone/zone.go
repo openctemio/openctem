@@ -70,6 +70,9 @@ func IsPrivate(a netip.Addr) bool {
 	return false
 }
 
+// DenyPrefixes returns a copy of the built-in deny list.
+func DenyPrefixes() []netip.Prefix { return append([]netip.Prefix(nil), denyRanges...) }
+
 // IsDenied reports whether a lies in the built-in deny list.
 func IsDenied(a netip.Addr) bool {
 	a = a.Unmap()
