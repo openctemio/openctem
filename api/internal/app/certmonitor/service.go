@@ -476,10 +476,11 @@ func (s *Service) gatherRoots(ctx context.Context, tenantID shared.ID) ([]rootDo
 	var in []rootDomain
 	assetsByName := map[string]shared.ID{}
 
-	// Only domain assets the tenant has not left to review or rejected: a
-	// domain a sensor report created (needs_review or candidate) must not
-	// widen the CT watch list by itself (research/22b S2).
-	approved, _, err := attribution.ParseFilter([]string{attribution.FilterApproved})
+	// Only domain assets the organization owns by its word or its entries:
+	// a domain a scan or a sensor report found (discovered, needs_review or
+	// candidate) must not widen the CT watch list by itself (research/22b
+	// S2), and neither may a rejected one.
+	approved, _, err := attribution.ParseFilter([]string{attribution.FilterAttributed})
 	if err != nil {
 		return nil, nil, err
 	}

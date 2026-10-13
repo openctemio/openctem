@@ -29,7 +29,8 @@ func RefusalCodeForState(s attribution.State) string {
 	case attribution.StatePlatformDenied:
 		return scopedom.RefusalDenyList
 	}
-	// unattributed, out_of_scope: nothing covers it.
+	// unattributed, out_of_scope, discovered: nothing covers it (a
+	// discovered asset is in the inventory, passive only).
 	return scopedom.RefusalNoEntry
 }
 
