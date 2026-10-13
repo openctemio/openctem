@@ -5,21 +5,21 @@ import { GatedSectionTabs } from '@/features/shared'
 import { ATTACK_SURFACE_SECTION_TABS } from '@/config/section-tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useVisibleSectionTabs } from '@/lib/permissions'
-import { useEASMReviewCount } from '../hooks/use-easm-review'
+import { useEASMSuggestionCount } from '../hooks/use-easm-suggestions'
 
 const REVIEW_HREF = '/attack-surface/review'
 const LOOKALIKES_HREF = '/attack-surface/lookalikes'
 
 /**
- * Overview | Review | Changes | Lookalikes, the route tabs of Discovery > Attack surface.
- * Review shows how many names wait for an ownership decision (the queue's
- * own count), fetched only when that tab is visible.
+ * Overview | Suggestions | Changes | Lookalikes, the route tabs of Discovery >
+ * Attack surface. Suggestions shows how many decisions wait (one per card, not
+ * per row), fetched only when that tab is visible.
  */
 export function AttackSurfaceSectionTabs() {
   const { t } = useTranslation()
   const visible = useVisibleSectionTabs(ATTACK_SURFACE_SECTION_TABS)
   const showsReview = visible.some((tab) => tab.href === REVIEW_HREF)
-  const waiting = useEASMReviewCount(showsReview)
+  const waiting = useEASMSuggestionCount(showsReview)
   const tabs = useMemo(
     () =>
       ATTACK_SURFACE_SECTION_TABS.map((tab) => {
@@ -27,7 +27,7 @@ export function AttackSurfaceSectionTabs() {
           case '/attack-surface':
             return { ...tab, label: t('attackSurface.tab.overview', tab.label) }
           case REVIEW_HREF:
-            return { ...tab, label: t('attackSurface.tab.review', tab.label) }
+            return { ...tab, label: t('attackSurface.tab.suggestions', tab.label) }
           case '/attack-surface/changes':
             return { ...tab, label: t('attackSurface.tab.changes', tab.label) }
           case LOOKALIKES_HREF:

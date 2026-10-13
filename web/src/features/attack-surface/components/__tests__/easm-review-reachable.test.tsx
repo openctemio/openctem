@@ -1,7 +1,7 @@
 /**
- * research/22 P0-12: the review queue is reachable and its count is honest.
- * The "Not ours" tab is deep-linkable (?tab=rejected); the Review tab and the
- * sidebar badge show the queue's own total for the awaiting states.
+ * research/22 P0-12, research/117: the item list is reachable and the count is
+ * honest. The "Not ours" tab is deep-linkable (?tab=rejected); the Suggestions
+ * tab and the sidebar badge count suggestion cards, not rows.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -28,7 +28,7 @@ vi.mock('@/context/tenant-provider', () => ({
 }))
 
 const { EASMReviewQueue } = await import('../easm-review-queue')
-const { useEASMReviewCount } = await import('../../hooks/use-easm-review')
+const { useEASMSuggestionCount } = await import('../../hooks/use-easm-suggestions')
 
 const swr = ({ children }: { children: ReactNode }) => (
   <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig>
@@ -53,23 +53,22 @@ describe('review queue reachability', () => {
     expect(screen.getByRole('tab', { name: 'Not ours' })).toHaveAttribute('data-state', 'active')
   })
 
-  it('falls back to Awaiting review on an unknown tab', async () => {
+  it('falls back to Awaiting a decision on an unknown tab', async () => {
     window.history.replaceState(null, '', '/attack-surface/review?tab=bogus')
     render(<EASMReviewQueue />, { wrapper: swr })
     await waitFor(() => expect(api.get).toHaveBeenCalled())
     expect(queueCall()).toContain('states=needs_review%2Ccandidate')
   })
 
-  it('counts the awaiting states with the queue query', async () => {
-    const { result } = renderHook(() => useEASMReviewCount(true), { wrapper: swr })
-    await waitFor(() => expect(result.current).toBe(7))
-    expect(api.get).toHaveBeenCalledWith(
-      '/api/v1/easm/candidates?states=needs_review%2Ccandidate&page=1&per_page=1'
-    )
+  it('counts suggestion cards, not rows', async () => {
+    api.get.mockResolvedValue({ total: 2, cards: [] })
+    const { result } = renderHook(() => useEASMSuggestionCount(true), { wrapper: swr })
+    await waitFor(() => expect(result.current).toBe(2))
+    expect(api.get).toHaveBeenCalledWith('/api/v1/easm/suggestions?view=count')
   })
 
   it('fetches nothing when disabled', () => {
-    renderHook(() => useEASMReviewCount(false), { wrapper: swr })
+    renderHook(() => useEASMSuggestionCount(false), { wrapper: swr })
     expect(api.get).not.toHaveBeenCalled()
   })
 })
