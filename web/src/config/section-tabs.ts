@@ -241,7 +241,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
     permission: Permission.AssetsRead,
   },
   {
-    label: 'Review',
+    label: 'Suggestions',
     href: '/attack-surface/review',
     icon: ClipboardCheck,
     module: 'attack_surface',
