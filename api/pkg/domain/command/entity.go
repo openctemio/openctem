@@ -37,7 +37,7 @@ const (
 	//   10m  JobRecoveryController.TenantStuckThresholdMinutes
 	//   30m  JobRecoveryController.StuckThresholdMinutes (platform jobs)
 	//   60m  ExpirationChecker.MaxQueueMinutes (platform job stuck in queue)
-	//    1h  scan.DefaultScanTimeoutSeconds -> ScanTimeoutController
+	//   ≤24h a scan run's policy cap (scan max duration, else 24 h) -> ScanTimeoutController
 	//   24h  scan.MaxScanTimeoutSeconds (the longest a scan may legitimately run)
 	//   24h  DefaultAuthTokenTTL (past this a platform job cannot authenticate,
 	//        so it can no longer be executed even if a sensor picked it up)

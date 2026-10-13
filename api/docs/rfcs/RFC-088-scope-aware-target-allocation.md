@@ -203,8 +203,8 @@ same host keys and bucket locks as a tenant sensor's.
 | A1 | Default for a range in a new scan | liveness first (step 6); existing scans keep sweeping until edited |
 | A2 | Exclusion inside a range | cut the range (exact subtraction); never drop, never scan through |
 | A3 | Discovery depth | 2 levels below the root by default, max 3, budgets 5 000 per root and 10 000 per run |
-| A4 | Wildcard-DNS filter | on by default; names that resolve only through a wildcard are never active units and never auto-confirmed |
-| A5 | Names that no longer resolve | skipped by active stages (`not_resolving`, 7-day freshness) |
+| A4 | Wildcard-DNS filter | on by default; names that resolve only through a wildcard are never active units and never auto-confirmed. Step 8: the platform sends `wildcard_filter: true` with every dnsx job that does not set it, so such names never gain resolution evidence (and so never reach an active stage, A5) |
+| A5 | Names that no longer resolve | skipped by active stages (`not_resolving`, 7-day freshness). Step 8: decided by the platform from the freshest evidence it holds (asset freshness classes dns, http, tls, ports); a name without any evidence is handed on and the sensor resolves it; a skipped name's enrichment is requested again ([scan-targets.md](../architecture/scan-targets.md#resolve-before-active)) |
 | A6 | Port scan of a name without an address entry | web ports only; shared edges never fully scanned |
 | A7 | Where expansion lives | the platform planner is the authority; the sensor re-checks every unit and address; ingest drops out-of-unit results |
 | A8 | Over-cap selection | rotation by least recently scanned, not freshest |

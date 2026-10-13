@@ -54,7 +54,7 @@ type CreateScanInput struct {
 	SensorPreference string     `json:"sensor_preference" validate:"omitempty,oneof=auto tenant platform"` // Sensor selection mode: auto (default), tenant, platform
 	ProfileID        string     `json:"profile_id" validate:"omitempty,uuid"`                              // Optional scan profile (tool configs, quality gates)
 	ScanZoneID       string     `json:"scan_zone_id" validate:"omitempty,uuid"`                            // Optional: pin targets to one scan zone ("" = Automatic)
-	TimeoutSeconds   int        `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max execution time (default 3600, min 30, max 86400)
+	TimeoutSeconds   int        `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`             // Max duration (0 = none: the platform 24 h cap applies; min 30, max 86400)
 	// Retry config: max_retries=0 disables retry; backoff is initial delay (exponential per attempt)
 	MaxRetries          int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
@@ -215,7 +215,7 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	sc.SetScanZone(zoneID)
 
-	// Set timeout (defaults to DefaultScanTimeoutSeconds if 0)
+	// Max duration: 0 leaves the scan without one (research/122).
 	sc.SetTimeoutSeconds(input.TimeoutSeconds)
 
 	// Set retry config (defaults: max_retries=0 disables retry)
@@ -797,8 +797,9 @@ type UpdateScanInput struct {
 	// ScanZoneID: nil = leave unchanged, pointer to "" = Automatic routing,
 	// pointer to id = pin the scan's targets to that zone.
 	ScanZoneID *string `json:"scan_zone_id" validate:"omitempty"`
-	// TimeoutSeconds: nil = leave unchanged, otherwise min=30 max=86400
-	TimeoutSeconds *int `json:"timeout_seconds" validate:"omitempty,min=30,max=86400"`
+	// TimeoutSeconds: nil = leave unchanged, 0 = clear the max duration,
+	// otherwise min=30 max=86400 (the domain clamps 1-29 up to 30).
+	TimeoutSeconds *int `json:"timeout_seconds" validate:"omitempty,min=0,max=86400"`
 	// Retry config: nil = leave unchanged
 	MaxRetries          *int `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds *int `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`

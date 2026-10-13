@@ -172,6 +172,10 @@ const (
 	// the organization has no active sensor that reports it, so it could
 	// never be taken. Refused when the step is queued.
 	FailureNoConfinedSensor = "NO_CONFINED_SENSOR"
+	// FailureDeadlineTooClose: the step was not started because less time
+	// was left before its run's deadline than its tool needs to do anything
+	// useful; its targets are the run's unfinished targets (research/122).
+	FailureDeadlineTooClose = "DEADLINE_TOO_CLOSE"
 )
 
 var failureClasses = map[string]FailureClass{
@@ -197,6 +201,7 @@ var failureClasses = map[string]FailureClass{
 	FailureNoConfinedSensor:    FailureClassPlacement,
 	FailurePolicyRefused:       FailureClassPolicy,
 	FailureFreezeWindow:        FailureClassPolicy,
+	FailureDeadlineTooClose:    FailureClassPolicy,
 	FailureCommandExhausted:    FailureClassTransient,
 	FailureCommandExpired:      FailureClassTransient,
 	FailureLeaseLost:           FailureClassTransient,
