@@ -992,6 +992,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.AssetGroup.SetDataScope(s.DataScope)
 	s.AssetType = asset.NewAssetTypeService(repos.AssetType, repos.AssetTypeCat, log)
 	s.Scope = scope.NewService(repos.ScopeTarget, repos.ScopeExcl, repos.Asset, log)
+	// Every web job carries the path exclusions of its hosts, whatever path
+	// creates it (RFC-056 §5): the command repository's create guard. A
+	// web-scoped nuclei job needs a confined sensor (NO_CONFINED_SENSOR).
+	repos.Command.SetCreateGuard(scope.NewWebJobGuard(s.Scope, repos.Sensor))
 	// The platform's scope guardrails (RFC-054 §8): public suffixes, the deny
 	// list and CIDR caps on every new entry; the deny list and the proof mode
 	// at dispatch (the ownership gate below).
@@ -2192,10 +2196,6 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithHopStore(scanHops),
 		// A run executes the workflow version it started with (research/62 P0-10).
 		scanrun.WithVersionStore(repos.ScanWorkflow),
-		// Web steps carry the path exclusions of their hosts (RFC-056); a
-		// web-scoped nuclei step needs a confined sensor (NO_CONFINED_SENSOR).
-		scanrun.WithWebScope(s.Scope),
-		scanrun.WithConfinedSensors(repos.Sensor),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
 		scanrun.WithEndpointSelector(repos.WebEndpoint),
 	)
