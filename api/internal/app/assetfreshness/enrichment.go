@@ -257,3 +257,20 @@ func (e *Enricher) settle(ctx context.Context, tenantID shared.ID, ids []shared.
 			"assets", len(ids), "error", logger.SanitizeError(err))
 	}
 }
+
+// RequestStale asks for the passive enrichment of assets whose resolution
+// evidence went stale (an active stage skipped them): the next run then
+// knows whether they still resolve. Best effort, like RequestAssets.
+func (e *Enricher) RequestStale(ctx context.Context, tenantID shared.ID, ids []shared.ID) {
+	if e == nil || len(ids) == 0 {
+		return
+	}
+	n, err := e.requests.Request(ctx, tenantID, ids, freshdom.ReasonStale, e.cfg.Cooldown)
+	if err != nil {
+		metrics.AssetEnrichmentSkippedTotal.WithLabelValues("request_error").Inc()
+		e.logger.Warn("stale enrichment not requested", "tenant_id", tenantID.String(), "assets", len(ids),
+			"error", logger.SanitizeError(err))
+		return
+	}
+	metrics.AssetEnrichmentRequestsTotal.WithLabelValues(string(freshdom.ReasonStale)).Add(float64(n))
+}

@@ -229,7 +229,33 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
 		payload[PayloadKeyCapability] = st.ID()
 	}
+	if c := withWildcardFilter(toolName, config); c != nil {
+		payload[scanworkflow.PayloadKeyConfig] = c
+	}
 	return payload, nil
+}
+
+// wildcardFilterKey is dnsx's setting that drops names resolving only
+// through a wildcard record.
+const wildcardFilterKey = "wildcard_filter"
+
+// withWildcardFilter turns the wildcard-DNS filter on for a dnsx job that
+// does not set it (RFC-088 decision A4): the platform decides it, so a
+// wildcard zone never floods the inventory with names that only resolve
+// through it, whatever a sensor's own default is. nil when unchanged.
+func withWildcardFilter(tool string, config map[string]any) map[string]any {
+	if !strings.EqualFold(strings.TrimSpace(tool), "dnsx") {
+		return nil
+	}
+	if _, set := config[wildcardFilterKey]; set {
+		return nil
+	}
+	out := make(map[string]any, len(config)+1)
+	for k, v := range config {
+		out[k] = v
+	}
+	out[wildcardFilterKey] = true
+	return out
 }
 
 // PayloadKeyCapability is the command payload key of a capability job's
