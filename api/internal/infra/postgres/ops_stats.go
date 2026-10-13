@@ -43,6 +43,15 @@ type OpsSnapshot struct {
 	CommandsRunning          int64
 	CommandOldestPendingSecs float64
 
+	// The command queue by lane-ish key: pending, unexpired commands by
+	// stage, platform tool, priority and why they wait. No tenant, sensor or
+	// run identity; the tenant dimension is two aggregates: how many tenants
+	// have pending commands, and the pending count of the tenant with the
+	// most.
+	CommandQueue          []OpsQueueDepth
+	CommandQueueTenants   int64
+	CommandQueueTopTenant int64
+
 	// Scan runs not finished, and those of them more than 10 minutes past
 	// their deadline (the timeout controller reaps on its own tick, so a
 	// run that stays past it means the reaper is not running).
@@ -62,6 +71,35 @@ type OpsSnapshot struct {
 	SchemaDirty   bool
 	SchemaKnown   bool
 }
+
+// OpsQueueDepth is the count of pending commands of one queue key.
+type OpsQueueDepth struct {
+	// Stage is the capability a step command runs ("scan.ports@1"), empty
+	// for a command that names none.
+	Stage string
+	// Tool is a platform tool's name, "_custom" for a tenant's own tool,
+	// empty for a command that names none.
+	Tool string
+	// Class is the command's priority.
+	Class string
+	// Wait is why it waits: "scheduled" (not due: a scan window opens
+	// later), "host_busy" (another running command of its tenant holds one
+	// of its hosts) or "ready" (due and free: waiting for an eligible sensor
+	// with a free slot).
+	Wait  string
+	Count int64
+}
+
+// Wait reasons of a pending command (OpsQueueDepth.Wait).
+const (
+	QueueWaitReady     = "ready"
+	QueueWaitHostBusy  = "host_busy"
+	QueueWaitScheduled = "scheduled"
+)
+
+// opsQueueToolCustom is the tool label of a tenant's own tool: tenant-defined
+// names never reach the platform's metrics.
+const opsQueueToolCustom = "_custom"
 
 // opsQuerier is a *sql.DB or a *sql.Tx: the snapshot reads within one
 // transaction when given one (its tests read before and after their own
@@ -98,6 +136,20 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 		return s, fmt.Errorf("commands: %w", err)
 	}
 
+	queue, err := readOpsQueue(ctx, db)
+	if err != nil {
+		return s, fmt.Errorf("command queue: %w", err)
+	}
+	s.CommandQueue = queue
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*), COALESCE(max(n), 0)
+		FROM (SELECT count(*) AS n FROM commands
+		      WHERE status = 'pending' AND (expires_at IS NULL OR expires_at > now())
+		      GROUP BY tenant_id) per_tenant`,
+	).Scan(&s.CommandQueueTenants, &s.CommandQueueTopTenant); err != nil {
+		return s, fmt.Errorf("command queue tenants: %w", err)
+	}
+
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(*),
 		       count(*) FILTER (WHERE deadline_at IS NOT NULL AND deadline_at < now() - interval '10 minutes')
@@ -131,6 +183,40 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 	}
 
 	return s, nil
+}
+
+// readOpsQueue counts pending, unexpired commands by stage, tool, priority
+// and wait reason. The wait reason uses the claim's own predicates: not
+// due (scheduledDuePredicate) is "scheduled", a held host
+// (hostFreePredicate) is "host_busy".
+func readOpsQueue(ctx context.Context, db opsQuerier) ([]OpsQueueDepth, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT COALESCE(commands.payload->>'capability', ''),
+		       CASE WHEN `+commandToolSQL+` IS NULL THEN ''
+		            WHEN EXISTS (SELECT 1 FROM tools t WHERE t.tenant_id IS NULL AND t.name = `+commandToolSQL+`)
+		                 THEN `+commandToolSQL+`
+		            ELSE '`+opsQueueToolCustom+`' END,
+		       COALESCE(commands.priority, ''),
+		       CASE WHEN NOT `+scheduledDuePredicate+` THEN '`+QueueWaitScheduled+`'
+		            WHEN NOT `+hostFreePredicate+` THEN '`+QueueWaitHostBusy+`'
+		            ELSE '`+QueueWaitReady+`' END,
+		       count(*)
+		FROM commands
+		WHERE commands.status = 'pending' AND (commands.expires_at IS NULL OR commands.expires_at > now())
+		GROUP BY 1, 2, 3, 4`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []OpsQueueDepth
+	for rows.Next() {
+		var d OpsQueueDepth
+		if err := rows.Scan(&d.Stage, &d.Tool, &d.Class, &d.Wait, &d.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func readOpsSensors(ctx context.Context, db opsQuerier) ([]OpsSensorCount, error) {
