@@ -15,6 +15,9 @@ package easm
 //   - expiring (one-off) entries authorize scanning only and never confirm;
 //   - an active exclusion, a tombstone, or a rejected name at or above the
 //     name always wins;
+//   - a name that resolves only through a wildcard DNS record (a filtered
+//     resolution did not report it; RFC-088 decision A4) is never confirmed
+//     by the join: a wildcard zone answers for any guessed name;
 //   - a person's decision is never touched (SaveAutomatic skips decided rows
 //     and attribution.Merge never overrides one).
 //
@@ -34,6 +37,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
@@ -100,6 +104,30 @@ type ScopeJoin struct {
 	log        *logger.Logger
 	// modules reports the modules a tenant has off; nil runs every tenant.
 	modules ScopeJoinModuleGuard
+	// wildcard reports the names that resolve only through a wildcard
+	// record; nil checks none.
+	wildcard assetfreshness.WildcardDNSReader
+}
+
+// SetWildcardDNS keeps names that resolve only through a wildcard record out
+// of the join.
+func (j *ScopeJoin) SetWildcardDNS(r assetfreshness.WildcardDNSReader) { j.wildcard = r }
+
+// ReasonWildcardOnly is the Blocked reason of a name that resolves only
+// through a wildcard record.
+const ReasonWildcardOnly = "wildcard_only"
+
+// wildcardOnly reports which of the candidate asset ids are marked; a read
+// error is returned (nothing is confirmed on a partial view).
+func (j *ScopeJoin) wildcardOnly(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]bool, error) {
+	if j.wildcard == nil || len(ids) == 0 {
+		return map[shared.ID]bool{}, nil
+	}
+	m, err := j.wildcard.WildcardOnly(ctx, tenantID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("read wildcard-DNS marks: %w", err)
+	}
+	return m, nil
 }
 
 // ScopeJoinModuleGuard reports the modules a tenant has off
@@ -277,13 +305,17 @@ func (j *ScopeJoin) covered(ctx context.Context, tenantID shared.ID, items []Joi
 	if err != nil {
 		return nil, fmt.Errorf("check scope exclusions: %w", err)
 	}
+	wildcard, err := j.wildcardOnly(ctx, tenantID, candIDs(byCand))
+	if err != nil {
+		return nil, err
+	}
 	gate := &ActiveGate{records: j.store, assets: j.assets}
 	rejected, err := gate.rejectedNames(ctx, tenantID, hostValues(hosts))
 	if err != nil {
 		return nil, err
 	}
 	for cid, assetID := range byCand {
-		if excluded[cid] {
+		if excluded[cid] || wildcard[cid] {
 			continue
 		}
 		if h, ok := hosts[assetID]; ok && underAny(h, rejected) {
@@ -323,6 +355,10 @@ func (j *ScopeJoin) Blocked(ctx context.Context, tenantID shared.ID, items []Joi
 	if err != nil {
 		return nil, fmt.Errorf("check scope exclusions: %w", err)
 	}
+	wildcard, err := j.wildcardOnly(ctx, tenantID, candIDs(byCand))
+	if err != nil {
+		return nil, err
+	}
 	gate := &ActiveGate{records: j.store, assets: j.assets}
 	rejected, err := gate.rejectedNames(ctx, tenantID, hostValues(hosts))
 	if err != nil {
@@ -334,9 +370,20 @@ func (j *ScopeJoin) Blocked(ctx context.Context, tenantID shared.ID, items []Joi
 			out[assetID] = "excluded"
 		case hosts[assetID] != "" && underAny(hosts[assetID], rejected):
 			out[assetID] = "rejected"
+		case wildcard[cid]:
+			out[assetID] = ReasonWildcardOnly
 		}
 	}
 	return out, nil
+}
+
+// candIDs lists the candidate ids.
+func candIDs(byCand map[shared.ID]string) []shared.ID {
+	out := make([]shared.ID, 0, len(byCand))
+	for id := range byCand {
+		out = append(out, id)
+	}
+	return out
 }
 
 // Evidence is the matches_scope_target evidence for the covered items.

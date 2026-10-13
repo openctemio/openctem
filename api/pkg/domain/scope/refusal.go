@@ -23,6 +23,7 @@ const (
 	RefusalCandidate     = "candidate"
 	RefusalDependency    = "dependency"
 	RefusalMonitorOnly   = "monitor_only"
+	RefusalWildcardOnly  = "wildcard_only"
 	RefusalNoEntry       = "no_entry"
 	RefusalEntryPending  = "entry_pending"
 	RefusalEntryExpired  = "entry_expired"
@@ -110,6 +111,7 @@ var RefusalMessages = map[string]string{
 	RefusalCandidate:          "This asset is a discovery candidate; its ownership is not confirmed.",
 	RefusalDependency:         "This name runs on third-party infrastructure; only passive and takeover checks apply.",
 	RefusalMonitorOnly:        "This asset is watched passively only.",
+	RefusalWildcardOnly:       "This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.",
 	RefusalNoEntry:            "No scope entry covers this target.",
 	RefusalEntryPending:       "The scope entry that covers this target is waiting for approval.",
 	RefusalEntryExpired:       "The scope entry that covered this target has expired.",
@@ -199,7 +201,7 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 		return nil
 	case RefusalExcluded:
 		return []Fix{{Action: FixRemoveExclusion, ID: id, Requires: permExclApprove}}
-	case RefusalRejected, RefusalNeedsReview, RefusalCandidate, RefusalDependency, RefusalMonitorOnly:
+	case RefusalRejected, RefusalNeedsReview, RefusalCandidate, RefusalDependency, RefusalMonitorOnly, RefusalWildcardOnly:
 		return []Fix{{Action: FixReviewAsset, ID: id, Requires: permAssetsWrite}}
 	case RefusalProofRequired:
 		out := []Fix{{Action: FixUseTenantSensor}}

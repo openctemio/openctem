@@ -17,6 +17,8 @@
   "scope.refusal.message.dependency": "This name runs on third-party infrastructure; only passive and takeover checks apply.",
   "scope.refusal.label.monitor_only": "Monitor only",
   "scope.refusal.message.monitor_only": "This asset is watched passively only.",
+  "scope.refusal.label.wildcard_only": "Wildcard DNS only",
+  "scope.refusal.message.wildcard_only": "This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.",
   "scope.refusal.label.no_entry": "Not in scope",
   "scope.refusal.message.no_entry": "No scope entry, seed or verified domain covers this target.",
   "scope.refusal.label.entry_pending": "Waiting for approval",

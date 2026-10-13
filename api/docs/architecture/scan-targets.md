@@ -138,8 +138,17 @@ that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
   nothing.
 - **Wildcard DNS.** The platform sends `wildcard_filter: true` with every
   dnsx job that does not set it (`withWildcardFilter`). A name that resolves
-  only through a wildcard record is then never reported, gains no evidence,
-  and never reaches an active stage.
+  only through a wildcard record is then never reported and gains no DNS
+  evidence. When the job is over (command completed with exit code 0, every
+  report filed under it completed with nothing rejected), ingest marks the
+  input names it did not report (`asset_wildcard_dns`,
+  `ingest.evaluateWildcardDNS`) and clears the mark of the names it did. A
+  marked name is passive only: the active-probe gate refuses it, and a
+  service or URL on it, as `wildcard_only` until a person confirms it or a
+  filtered resolution reports it, and the scope join never confirms it. A
+  run with the filter off proves nothing and changes no mark. A name that
+  stopped resolving at all is marked too; it has nothing to probe, and the
+  mark clears when it resolves again.
 
 ## Preview
 
