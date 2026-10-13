@@ -48,6 +48,9 @@ export type InventoryFilters = Pick<
   | 'expiresBefore'
   | 'expiresAfter'
   | 'attribution'
+  | 'scopeStatus'
+  | 'discoveredBy'
+  | 'firstSeenAfter'
   | 'sort'
   | 'page'
   | 'pageSize'
@@ -81,6 +84,8 @@ const ARRAY_PARAMS = {
   providers: 'providers',
   businessUnitIds: 'business_unit_ids',
   attribution: 'attribution',
+  scopeStatus: 'scope_status',
+  discoveredBy: 'discovered_by',
 } as const
 
 // Boolean-valued filter keys and their URL param names.
@@ -103,6 +108,7 @@ const STRING_PARAMS = {
   expiresAfter: 'expires_after',
   programAssets: 'program_assets',
   freshness: 'freshness',
+  firstSeenAfter: 'first_seen_after',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS
@@ -285,6 +291,22 @@ export const ATTRIBUTION_FILTER_VALUES = [
   'dependency',
   'monitor_only',
   'rejected',
+] as const
+
+/**
+ * Scope statuses the inventory filters by (RFC-054 §15): an active entry
+ * covers it; no entry covers it (passive only); an exclusion matches or it
+ * was marked not ours; a private or internal name (scan zones govern it).
+ */
+export const SCOPE_STATUS_VALUES = ['in_scope', 'not_covered', 'excluded', 'internal'] as const
+
+/** The attribution rules an asset can be filtered by ("discovered by"). */
+export const DISCOVERED_BY_VALUES = [
+  'fqdn_under_verified_root',
+  'fqdn_under_asserted_root',
+  'tenant_scanned',
+  'tenant_scan_discovered',
+  'matches_scope_target',
 ] as const
 
 /** What the inventory asks the API for when no attribution is selected. */

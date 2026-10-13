@@ -47,6 +47,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useTranslation } from '@/context/i18n-provider'
+import { useTenant } from '@/context/tenant-provider'
+import { useLastVisit } from '../../hooks/use-last-visit'
 import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
 import type { Asset } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
@@ -54,6 +57,7 @@ import {
   buildFacetGroups,
   deactivatePreset,
   expiryPresets,
+  triagePresets,
   type QuickPreset,
 } from '../../lib/inventory-facets'
 import {
@@ -108,6 +112,11 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     expiresAfter: f.expiresAfter,
     expiresBefore: f.expiresBefore,
     attribution: attributionQuery(f),
+    scopeStatus: f.scopeStatus,
+    discoveredBy: f.discoveredBy,
+    firstSeenAfter: f.firstSeenAfter,
+    // Each row's attribution and the scan gate's answer (the scope badge).
+    withTriage: true,
     sort: f.sort,
     page: f.page ?? 1,
     pageSize: f.pageSize ?? DEFAULT_PAGE_SIZE,
@@ -179,6 +188,10 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const { can } = usePermissions()
   const canRead = can(Permission.AssetsRead)
   const canWrite = can(Permission.AssetsWrite)
+  const { t } = useTranslation()
+  const { currentTenant } = useTenant()
+  // The viewer's previous visit, for "New since last visit" (research/124).
+  const lastVisit = useLastVisit('inventory', currentTenant?.id)
 
   // URL is the source of truth for all filter state.
   const filters = useMemo(
@@ -302,10 +315,16 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     return map
   }, [buData])
 
-  const facetGroups = useMemo(() => buildFacetGroups(businessUnitLabels), [businessUnitLabels])
+  const facetGroups = useMemo(
+    () => buildFacetGroups(businessUnitLabels, t),
+    [businessUnitLabels, t]
+  )
   // The expiry views, for a list that can hold expiring assets. Built on
   // every render (two small objects) so their "now" is never stale.
-  const extraPresets = viewHasExpiry(typeView) ? expiryPresets() : []
+  const extraPresets = [
+    ...triagePresets(lastVisit),
+    ...(viewHasExpiry(typeView) ? expiryPresets() : []),
+  ]
 
   const togglePreset = useCallback(
     (preset: QuickPreset) => {
@@ -499,8 +518,10 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         <div className="min-w-0 flex-1">
           {!filters.attribution?.length && (
             <p className="mb-2 text-sm text-muted-foreground" data-slot="attribution-default">
-              Showing assets that are yours. Names awaiting ownership review and names marked as not
-              yours are hidden.{' '}
+              {t(
+                'assets.triage.defaultHint',
+                'Showing your inventory, including what discovery found (passive only until a scope entry covers it). Names awaiting review and names marked not yours are hidden.'
+              )}{' '}
               <button
                 type="button"
                 className="font-medium text-foreground underline underline-offset-2"
@@ -508,7 +529,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                   setFilters({ ...filters, attribution: [...ATTRIBUTION_FILTER_VALUES], page: 1 })
                 }
               >
-                Show all
+                {t('assets.triage.showAll', 'Show all')}
               </button>
             </p>
           )}
