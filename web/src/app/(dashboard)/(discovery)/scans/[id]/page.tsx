@@ -42,6 +42,7 @@ import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
 import { ScanApprovalPanel } from '@/features/scans/components/approval/scan-approval-panel'
+import { ScanOwnerBanner } from '@/features/scans/components/scan-owner-banner'
 import { lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { formatScanDate, formatScanDuration } from '@/features/scans/lib/format'
 import {
@@ -146,7 +147,7 @@ export default function ScanDetailPage() {
   const { t } = useTranslation()
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
-  const { data: config, isLoading, error } = useScanConfig(scanId)
+  const { data: config, isLoading, error, mutate: refetchConfig } = useScanConfig(scanId)
   useBreadcrumbTitle(config?.name)
 
   // The latest runs, for the numbers above the tabs (runs still in progress
@@ -440,6 +441,10 @@ export default function ScanDetailPage() {
       </PageHeader>
 
       <MetricStrip className="mt-5" items={metrics} />
+
+      <div className="mt-5 empty:hidden">
+        <ScanOwnerBanner config={config} onChanged={() => void refetchConfig()} />
+      </div>
 
       <div className="mt-5 empty:hidden">
         <ScanApprovalPanel scanId={config.id} onRan={() => void refetchAll()} />

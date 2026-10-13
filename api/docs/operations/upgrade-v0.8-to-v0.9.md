@@ -508,8 +508,9 @@ in ways users or integrations notice. The "Check" column names the
 | 000241 | `gitleaks` becomes `betterleaks` in tools, scans, steps and findings. | — |
 
 Scheduled scans that were cloned or imported have no owner and are refused at
-their next scheduled run (`SCAN_HAS_NO_OWNER`): query C8; re-save each as the
-member who should own it.
+their next scheduled run (`SCAN_HAS_NO_OWNER`) and paused, and the
+administrators are notified once: query C8; an administrator takes ownership
+on the scan's page and resumes it (`docs/architecture/scan-ownership.md`).
 
 ### 5.4 Automations
 

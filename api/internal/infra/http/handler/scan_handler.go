@@ -309,8 +309,14 @@ type ScanDetailResponse struct {
 	ScanWorkflowName string  `json:"scan_workflow_name,omitempty"`
 	CreatedBy        *string `json:"created_by,omitempty"`
 	CreatedByName    *string `json:"created_by_name,omitempty"`
-	CreatedAt        string  `json:"created_at"`
-	UpdatedAt        string  `json:"updated_at"`
+	// OwnerState: ok, missing (no owner: the account that created the scan
+	// was deleted) or inactive (the owner is no longer an active member).
+	// A scheduled scan runs only with an active owner; an administrator
+	// takes ownership with POST /scans/{id}/take-ownership. Lists report
+	// missing only (no per-row membership lookup).
+	OwnerState string `json:"owner_state" enums:"ok,missing,inactive"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 // ScanStatsResponse represents the response for scan statistics.
@@ -1072,6 +1078,33 @@ func (h *ScanHandler) CloneScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
 }
 
+// TakeScanOwnership handles POST /api/v1/scans/{id}/take-ownership
+// @Summary      Take ownership of a scan
+// @Description  Makes the calling administrator the owner of a scan whose owner is missing (the account was deleted) or no longer an active member. A scheduled scan runs as its owner, so the caller's act scope must cover the scan's direct targets. The scan is not resumed: resume it afterwards. Refused (409 SCAN_OWNER_ACTIVE) while the owner is an active member. Owners and administrators only; audited.
+// @Tags         Scans
+// @Produce      json
+// @Param        id   path      string  true  "Scan ID"
+// @Success      200  {object}  ScanDetailResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scans/{id}/take-ownership [post]
+func (h *ScanHandler) TakeScanOwnership(w http.ResponseWriter, r *http.Request) {
+	s, err := h.service.TakeOwnership(h.auditCtx(r), scansvc.TakeOwnershipInput{
+		TenantID: middleware.GetTenantID(r.Context()),
+		ScanID:   chi.URLParam(r, "id"),
+		ActorID:  middleware.GetUserID(r.Context()),
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
+}
+
 // SaveScan handles POST /api/v1/scans/{id}/save
 // @Summary      Save a quick scan as a configuration
 // @Description  Turns an ad-hoc quick scan into a saved scan configuration with the given name ("Save as scan"). Its runs stay attached. Refused for a scan that is already a configuration.
@@ -1302,6 +1335,7 @@ func (h *ScanHandler) toScanResponse(ctx context.Context, s *scan.Scan) *ScanDet
 		}
 	}
 	resp := buildScanResponse(s, createdByName, canSeeScanConfigSecrets(ctx))
+	resp.OwnerState = h.service.OwnerState(ctx, s)
 	h.enrichScanResponses(ctx, s.TenantID.String(), []*scan.Scan{s}, []*ScanDetailResponse{resp})
 	return resp
 }
@@ -1393,7 +1427,12 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		}
 	}
 
+	ownerState := scansvc.OwnerStateOK
+	if s.CreatedBy == nil || s.CreatedBy.IsZero() {
+		ownerState = scansvc.OwnerStateMissing
+	}
 	resp := &ScanDetailResponse{
+		OwnerState:            ownerState,
 		ID:                    s.ID.String(),
 		TenantID:              s.TenantID.String(),
 		Name:                  s.Name,
@@ -1549,6 +1588,9 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// A target's scan windows never open: 409 with its own code, naming
 		// the targets and the windows.
 		apierror.New(http.StatusConflict, apierror.Code(scansvc.CodeWindowNeverOpens), scanWindowNeverOpens(err).Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.New(http.StatusConflict, scanZoneErrorCode(err, apierror.CodeConflict),
+			cleanErrorMessage(err, "Conflict")).WriteJSON(w)
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
