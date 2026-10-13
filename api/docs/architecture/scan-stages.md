@@ -189,6 +189,38 @@ single check. An integration test checks that each passes the graph check
 and resolves a seeded platform tool for every step. The presets they replace
 are deactivated, not deleted.
 
+#### Template updates
+
+A tenant's copy of a system workflow keeps its lineage
+(`scan_workflows.source_template_id` and `source_spec`, migration
+`workflow_template_lineage`): the template it was made from and that
+template's settings and steps as the copy last took them (the base). Both
+clone paths record it. Copies made before the lineage existed got it from the
+audit event of the copy (same tenant) or, without one, from a system template
+whose name they have ("Network", "Network (Copy)") when they share a step
+key. Their base is their own steps.
+
+When the template changes (a migration adds Host discovery to Network, for
+example), `GET /scan-workflows/{id}/template-update` offers the copy the
+changes since the base that it can take (`scanworkflow.TemplateChanges`):
+
+- a step the template added that the copy does not have (`add_step`);
+- the dependencies of a step the template rewired, when the copy's step
+  still depends on what the base had (`depends_on`).
+
+A step the template removed, renamed or reconfigured is not offered: the
+copy's step is the tenant's. The builder shows "Update available: add Host
+discovery" with a preview of each change. `POST .../template-update/apply`
+(scan workflows write) applies it like a published draft: checked, steps
+replaced in place, version moved on and pinned, the base moved to the
+template, audited (`scan_workflow.updated` with `template_update: applied`
+and the changes). It is refused while the copy has an unpublished draft and
+when the template changed since the preview (`template_digest`, 409).
+`POST .../template-update/reject` keeps the copy and moves the base
+(audited). A tenant workflow is never changed without one of these calls;
+every lookup is by the caller's tenant (another tenant's copy is not found)
+and the source must be a system template.
+
 ### 1.4 Workflow preview
 
 `POST /api/v1/scans/workflow-preview` (`scans:write`) answers what a workflow
