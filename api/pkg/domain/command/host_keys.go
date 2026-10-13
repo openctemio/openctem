@@ -1,14 +1,14 @@
 package command
 
 // Host keys of a chunk and when two chunks conflict. The keys are defined
-// once, in github.com/openctemio/sdk-go/pkg/politeness, which the sensor
+// once, in github.com/openctemio/ctis/politeness, which the sensor
 // runtime uses too: the platform holds and sends the keys the sensor admits
 // the work under (docs/rfcs/RFC-090-work-pool.md, RFC-088 §6).
 
 import (
 	"net/netip"
 
-	"github.com/openctemio/sdk-go/pkg/politeness"
+	"github.com/openctemio/ctis/politeness"
 )
 
 // Prefixes of the bucket host keys. Addresses fall in buckets of one IPv4

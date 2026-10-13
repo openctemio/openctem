@@ -187,7 +187,7 @@ A workflow step is cut into chunks when it starts (one command per chunk,
 sizes per stage), and sensors pull: a poll claims, in the fair order (class
 with ageing, round-robin across runs), the commands the sensor may run, with
 a lease. An active stage's chunk holds per-host politeness keys while it
-runs; the keys come from `github.com/openctemio/sdk-go/pkg/politeness`, the
+runs; the keys come from `github.com/openctemio/ctis/politeness`, the
 function the sensor runtime admits work with, and travel with the chunk
 (`host_keys`), so a sensor never hands back what the platform just offered.
 A step is runnable when every dependency finished.
