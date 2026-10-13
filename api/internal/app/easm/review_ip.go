@@ -161,6 +161,11 @@ func (s *ReviewService) explainAddresses(ctx context.Context, tenantID shared.ID
 			}
 		}
 		net := addressNetwork(props[addr], org)
+		// A published CDN edge range is shared space even when the address
+		// record holds no network data.
+		if p := edgeRangeProvider(addr); p != "" && !net.Shared {
+			net.Shared, net.SharedProvider, net.OrgMatches = true, p, false
+		}
 		if !net.Shared && seeds != nil && seededNetwork(*seeds, addr, net.ASN, net.Org) {
 			net.Seeded = true
 		}

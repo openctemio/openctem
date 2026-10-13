@@ -128,6 +128,8 @@ export type ScopeT2MaxDuration = '7d' | '30d' | '90d' | '365d' | 'permanent'
 
 export interface UpdateScopeSettingsInput {
   auto_join_discovered: boolean
+  /** A person's confirmation adds the asset's exact scope entry (not under Strict). */
+  confirm_adds_to_scope: boolean
   one_off_targets: ScopeOneOffPolicy
   one_off_max_days: number
   /** null: the default min(1, admins - 1). */

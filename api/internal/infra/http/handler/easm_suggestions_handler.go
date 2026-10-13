@@ -44,7 +44,7 @@ func (h *EASMHandler) SuggestionCards(w http.ResponseWriter, r *http.Request) {
 		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
 		return
 	}
-	out, err := h.suggestions.Cards(ctx, tenantID, middleware.HasPermission(ctx, permission.ScopeWrite.String()))
+	out, err := h.suggestionCards(ctx, tenantID, middleware.HasPermission(ctx, permission.ScopeWrite.String()))
 	if err != nil {
 		h.logger.Error("attack surface suggestions", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("failed to build suggestions").WriteJSON(w)
@@ -52,4 +52,25 @@ func (h *EASMHandler) SuggestionCards(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+// suggestionCards is the cards with Total: the cards plus the review-by-rule
+// cards of names (one per suggested rule, and one for the names no rule
+// groups). Address rule suggestions are left out: the addresses card holds
+// them.
+func (h *EASMHandler) suggestionCards(ctx context.Context, tenantID shared.ID, canAdd bool) (*easmapp.SuggestionCards, error) {
+	out, err := h.suggestions.Cards(ctx, tenantID, canAdd)
+	if err != nil {
+		return nil, err
+	}
+	out.Total = len(out.Cards)
+	if h.rules == nil {
+		return out, nil
+	}
+	rs, err := h.rules.Suggest(ctx, tenantID, nil, 50)
+	if err != nil {
+		return nil, err
+	}
+	out.Total += easmapp.NameRuleCards(rs)
+	return out, nil
 }
