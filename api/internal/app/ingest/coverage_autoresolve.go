@@ -311,6 +311,9 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		out.Reason = "error"
 		return out
 	}
+	// A finished filtered resolution marks the names it did not report
+	// (wildcard_dns.go), whatever the coverage mode.
+	s.evaluateWildcardDNS(ctx, tenantID, commandID, cov)
 	d := decideCoverage(cov)
 	if d.reason == coverageRepositoryScan {
 		return s.evaluateRepoCoverage(ctx, tenantID, commandID, cov, s.coverageGuard)

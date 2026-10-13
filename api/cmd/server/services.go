@@ -1871,6 +1871,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.ScopeJoin = easmapp.NewScopeJoin(s.Scope, s.Scope, repos.Attribution, repos.Asset, log)
 		s.ScopeJoin.SetAudit(s.Audit)
 		s.ScopeJoin.SetSettings(s.Tenant)
+		s.ScopeJoin.SetWildcardDNS(repos.AssetWildcardDNS)
 		joinScheduler := easmapp.NewJoinScheduler(s.ScopeJoin, 0, log)
 		s.Scope.SetScopeJoin(joinScheduler, postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB}))
 		s.BountyProgram.SetJoiner(joinScheduler)
@@ -1949,6 +1950,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// to; reports without one are applied with limits, or quarantined per the
 	// tenant's policy.
 	s.Ingest.SetCommandReader(repos.Command)
+	s.Ingest.SetWildcardDNS(repos.AssetWildcardDNS)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
@@ -2035,6 +2037,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ActiveGate = easmapp.NewActiveGate(repos.Attribution, repos.Asset, s.Scope, repos.VerifiedNames).
 		WithTakeoverEvidence(repos.EASMDNS).
 		WithPlatformPolicy(s.ScopeGuardrails)
+	s.ActiveGate.SetWildcardDNS(repos.AssetWildcardDNS)
 	// RFC-065 §16.8: signed jobs for sensors that enforce scope limits carry
 	// the limits of port- and path-limited targets.
 	s.Command.SetScopeLimits(s.ActiveGate)

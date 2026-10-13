@@ -29,6 +29,7 @@ type Repositories struct {
 	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
+	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
 	APISpec                 *postgres.APISpecRepository                // API descriptions of web origins (RFC-056)
@@ -337,6 +338,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
 		APISpec:                 postgres.NewAPISpecRepository(db),
