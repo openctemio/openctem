@@ -236,6 +236,12 @@ path discards the result anyway.
 
 ### 5.1 Model
 
+> **Amended by [RFC-090](RFC-090-work-pool.md) (2026-10-13).** Phase 2 of this
+> RFC (claim-time cutting from a per-run target list, §5.1–§5.3) is replaced
+> by the work pool: typed items per step grouped into lanes, a claim that
+> cuts a task of one lane sized for the claiming sensor, settlement per item
+> and streaming between steps. The decisions of §9 carry over unchanged.
+
 ```
 scan ──trigger──▶ run ──plan──▶ run targets (ordered, weighted, zoned, host key)
                                    │
