@@ -277,6 +277,16 @@ export type EASMReviewEvidence =
 /** POST /api/v1/easm/candidates/decisions */
 export type EASMDecisionResult =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.DecisionResult']
+/** The scope entries a confirmation added (research/117). */
+export type EASMConfirmScopeResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.ConfirmScopeResult']
+/** GET /api/v1/easm/suggestions — the attack surface suggestion cards. */
+export type EASMSuggestionCards =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SuggestionCards']
+export type EASMSuggestionCard =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SuggestionCard']
+export type EASMSuggestionAddress =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.SuggestionAddress']
 /** GET/POST/PATCH /api/v1/easm/seeds — EASM seeds (RFC-036 §6.3). */
 export type EASMSettings = Schemas['internal_infra_http_handler.EASMSettingsResponse']
 export type EASMSweepTicket =
