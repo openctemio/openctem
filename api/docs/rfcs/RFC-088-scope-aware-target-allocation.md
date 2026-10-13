@@ -108,9 +108,11 @@ SDK: step 6.
 
 ## 5. Each stage gets only the kinds it accepts (step 3)
 
-The step's catalogue stage declares its inputs. Every target of a step,
-typed or literal, is classified (`name`, `addr`, `range`, `url`, `service`)
-and kept only when the stage accepts that kind:
+The step's catalogue stage declares its inputs. Every target of a step is
+classified by its text (`name`, `addr`, `range`, `url`, `service`; no DNS).
+A typed-in target is kept only when the stage accepts its kind. An
+inventory target keeps the stored-type gate, except a range: a range is
+decided by kind whatever its stored type.
 
 | Stage | name | addr | range | url | service |
 |---|---|---|---|---|---|
