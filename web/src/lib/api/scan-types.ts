@@ -83,7 +83,7 @@ export interface ScannerConfigWarning {
  */
 export interface ScanTargetOptions {
   /** `sweep` hands a CIDR to the scanner whole; `inventory` scans the known hosts in it. */
-  cidr_mode?: 'sweep' | 'inventory'
+  cidr_mode?: 'liveness' | 'sweep' | 'inventory'
   /** Only assets seen in the last N days (0-365; 0 or absent = any). */
   seen_within_days?: number
   /** Also take assets marked stale or inactive (archived ones never). */

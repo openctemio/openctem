@@ -176,6 +176,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	if err := s.configureScanType(ctx, sc, tenantID, scanType, input); err != nil {
 		return nil, err
 	}
+	// Address ranges: live hosts first unless the scan says otherwise.
+	if err := s.applyCIDRMode(ctx, sc, input.TargetOptions != nil && input.TargetOptions.CIDRMode != ""); err != nil {
+		return nil, err
+	}
 	// A wildcard selector must be *.<domain> the platform lets anyone cover.
 	if err := s.refuseWildcardTargets(ctx, sc); err != nil {
 		return nil, err
@@ -880,6 +884,17 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 	}
 	if input.TargetOptions != nil {
 		if err := sc.SetTargetOptions(*input.TargetOptions); err != nil {
+			return nil, err
+		}
+		// An edit that sends the target options settles the CIDR mode as a
+		// new scan does: a scan saved before liveness existed sweeps until
+		// it is edited.
+		if err := s.applyCIDRMode(ctx, sc, input.TargetOptions.CIDRMode != ""); err != nil {
+			return nil, err
+		}
+	} else if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
+		// Live hosts first must still have a host discovery step to run.
+		if err := s.applyCIDRMode(ctx, sc, true); err != nil {
 			return nil, err
 		}
 	}

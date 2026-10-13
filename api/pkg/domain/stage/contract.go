@@ -230,6 +230,24 @@ func (s Stage) ChunkAddressBudget() int {
 	return chunkAddressBudgets[s.Key]
 }
 
+// HostProbePorts are the TCP ports a host discovery step probes when the
+// step names none: a host that answers on one of them is live. The platform
+// sends them with every host discovery job; a sensor never picks its own.
+const HostProbePorts = "80,443,22,3389,8080,8443"
+
+// ToolParamKey is the tool's config key of a standard param of the stage
+// (false when the tool does not take it).
+func (s Stage) ToolParamKey(tool, param string) (string, bool) {
+	tool = normalizeTool(tool)
+	for _, im := range s.Implementations {
+		if im.Tool == tool {
+			k, ok := im.Params[param]
+			return k, ok
+		}
+	}
+	return "", false
+}
+
 // toolParams maps a tool's standard params to its own config keys: the keys
 // the sensor's settings schema for that tool declares. A tool listed with
 // no entry for a param does not accept it yet. Keep in step with
