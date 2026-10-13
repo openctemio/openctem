@@ -9,7 +9,12 @@
  */
 
 import type { AssetStatsData } from '../hooks/use-assets'
-import { ATTRIBUTION_FILTER_VALUES, type InventoryFilters } from './inventory-url'
+import {
+  ATTRIBUTION_FILTER_VALUES,
+  DISCOVERED_BY_VALUES,
+  SCOPE_STATUS_VALUES,
+  type InventoryFilters,
+} from './inventory-url'
 import { ASSET_TYPE_LABELS, ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
 import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
@@ -71,6 +76,8 @@ export interface MultiFacetDef {
     | 'providers'
     | 'businessUnitIds'
     | 'attribution'
+    | 'scopeStatus'
+    | 'discoveredBy'
   >
   label: string
   source: FacetValueSource
@@ -108,8 +115,64 @@ const identity = (v: string) => v
  * Build the facet groups. `businessUnitLabels` maps a BU id -> name (fetched
  * separately) so the Business-unit facet shows names, not UUIDs.
  */
-export function buildFacetGroups(businessUnitLabels: Record<string, string>): FacetGroup[] {
+/** A translator as `useTranslation()` returns it. */
+export type FacetT = (key: string, fallback?: string) => string
+
+const englishT: FacetT = (_key, fallback) => fallback ?? ''
+
+/**
+ * The scoping facets (RFC-054 §15): scope status and what discovered the
+ * asset. Labels go through the translator.
+ */
+export function scopingFacetGroup(t: FacetT = englishT): FacetGroup {
+  return {
+    id: 'scoping',
+    label: t('assets.triage.facets.group', 'Scope'),
+    facets: [
+      {
+        kind: 'multi',
+        filterKey: 'scopeStatus',
+        label: t('assets.triage.facets.scopeStatus', 'Scope status'),
+        source: 'static',
+        values: [...SCOPE_STATUS_VALUES],
+        labelFor: (v) => t(`assets.triage.scopeStatus.${v}`, SCOPE_STATUS_FALLBACK[v] ?? v),
+        // The stats endpoint has no scope status breakdown.
+        counts: () => ({}),
+      },
+      {
+        kind: 'multi',
+        filterKey: 'discoveredBy',
+        label: t('assets.triage.facets.discoveredBy', 'Found by'),
+        source: 'static',
+        values: [...DISCOVERED_BY_VALUES],
+        labelFor: (v) => t(`assets.triage.discoveredBy.${v}`, DISCOVERED_BY_FALLBACK[v] ?? v),
+        counts: () => ({}),
+      },
+    ],
+  }
+}
+
+const SCOPE_STATUS_FALLBACK: Record<string, string> = {
+  in_scope: 'In scope',
+  not_covered: 'Not in scope (passive only)',
+  excluded: 'Out of scope',
+  internal: 'Internal',
+}
+
+const DISCOVERED_BY_FALLBACK: Record<string, string> = {
+  fqdn_under_verified_root: 'Certificate logs, verified domain',
+  fqdn_under_asserted_root: 'Certificate logs, listed domain',
+  tenant_scanned: 'A scan target',
+  tenant_scan_discovered: 'Found by a scan',
+  matches_scope_target: 'Under a scope entry',
+}
+
+export function buildFacetGroups(
+  businessUnitLabels: Record<string, string>,
+  t: FacetT = englishT
+): FacetGroup[] {
   return [
+    scopingFacetGroup(t),
     {
       id: 'kind',
       label: 'Kind',
@@ -256,6 +319,8 @@ export function buildFacetGroups(businessUnitLabels: Record<string, string>): Fa
 export interface QuickPreset {
   id: string
   label: string
+  /** i18n key of the label (the label is the English fallback). */
+  labelKey?: string
   /** The filter values this preset sets when activated. */
   apply: Partial<InventoryFilters>
   /** Active when every key in `apply` matches the current filters. */
@@ -270,42 +335,49 @@ export function staleBeforeISO(days = 30): string {
 export const QUICK_PRESETS: QuickPreset[] = [
   {
     id: 'crown-jewels',
+    labelKey: 'assets.views.crownJewels',
     label: 'Crown jewels',
     apply: { isCrownJewel: true },
     isActive: (f) => f.isCrownJewel === true,
   },
   {
     id: 'internet-facing',
+    labelKey: 'assets.views.internetFacing',
     label: 'Internet-facing',
     apply: { isInternetAccessible: true },
     isActive: (f) => f.isInternetAccessible === true,
   },
   {
     id: 'critical-with-findings',
+    labelKey: 'assets.views.criticalWithFindings',
     label: 'Critical + has findings',
     apply: { criticalities: ['critical'], hasFindings: true },
     isActive: (f) => f.criticalities?.includes('critical') === true && f.hasFindings === true,
   },
   {
     id: 'unowned',
+    labelKey: 'assets.views.unowned',
     label: 'Unowned',
     apply: { hasOwner: false },
     isActive: (f) => f.hasOwner === false,
   },
   {
     id: 'control-planes',
+    labelKey: 'assets.views.controlPlanes',
     label: 'Control planes',
     apply: { isControlPlane: true },
     isActive: (f) => f.isControlPlane === true,
   },
   {
     id: 'bug-bounty',
+    labelKey: 'assets.views.bugBounty',
     label: 'Bug bounty',
     apply: { programAssets: 'only' },
     isActive: (f) => f.programAssets === 'only',
   },
   {
     id: 'stale',
+    labelKey: 'assets.views.stale',
     label: 'Stale >30d',
     apply: { lastSeenBefore: staleBeforeISO(30) },
     isActive: (f) => !!f.lastSeenBefore,
@@ -313,6 +385,46 @@ export const QUICK_PRESETS: QuickPreset[] = [
 ]
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The triage views (research/124): what discovery added that no entry
+ * covers, what is out of scope, and what arrived since the viewer's last
+ * visit (`lastVisitISO`; without one, the last 7 days).
+ */
+export function triagePresets(lastVisitISO?: string, now = Date.now()): QuickPreset[] {
+  const since = lastVisitISO ?? new Date(now - 7 * DAY_MS).toISOString()
+  return [
+    {
+      id: 'not-in-scope',
+      label: 'Not in scope (passive only)',
+      labelKey: 'assets.views.notInScope',
+      apply: { scopeStatus: ['not_covered'] },
+      isActive: (f) => f.scopeStatus?.includes('not_covered') === true,
+    },
+    {
+      id: 'discovered',
+      label: 'Discovered',
+      labelKey: 'assets.views.discovered',
+      apply: { attribution: ['discovered'] },
+      isActive: (f) => f.attribution?.includes('discovered') === true,
+    },
+    {
+      id: 'out-of-scope',
+      label: 'Out of scope',
+      labelKey: 'assets.views.outOfScope',
+      // Names marked not ours are outside the default inventory: show all.
+      apply: { scopeStatus: ['excluded'], attribution: ['all'] },
+      isActive: (f) => f.scopeStatus?.includes('excluded') === true,
+    },
+    {
+      id: 'new-since-visit',
+      label: 'New since last visit',
+      labelKey: 'assets.views.newSinceVisit',
+      apply: { firstSeenAfter: since },
+      isActive: (f) => !!f.firstSeenAfter,
+    },
+  ]
+}
 
 /**
  * The expiry views (properties of format expiry: a certificate's not_after, a
@@ -325,12 +437,14 @@ export function expiryPresets(now = Date.now()): QuickPreset[] {
   return [
     {
       id: 'expired',
+      labelKey: 'assets.views.expired',
       label: 'Expired',
       apply: { expiresBefore: nowISO, expiresAfter: undefined },
       isActive: (f) => !!f.expiresBefore && !f.expiresAfter,
     },
     {
       id: 'expiring-30d',
+      labelKey: 'assets.views.expiring30d',
       label: 'Expiring in 30 days',
       apply: { expiresAfter: nowISO, expiresBefore: new Date(now + 30 * DAY_MS).toISOString() },
       isActive: (f) => !!f.expiresBefore && !!f.expiresAfter,
