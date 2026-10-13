@@ -1,31 +1,63 @@
 'use client'
 
 /**
- * Attack surface › Review: confirm or reject the names discovery found but
- * could not prove are the organisation's (RFC-036 §6.4, §6.11). Reached from
- * the sidebar row's Review tab (research/22 P0-12); `?tab=rejected` opens the
- * "Not ours" list.
+ * Attack surface › Suggestions (research/117): the scope decisions that still
+ * need a person, one card each (addresses behind in-scope names, names found
+ * outside every entry, confirmed assets no entry covers). Every row of the
+ * attribution queue stays one click away ("Show all items") for audits and
+ * the "Not ours" undo list (`?tab=rejected` opens it).
  */
 
+import { List } from 'lucide-react'
 import { Main } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/features/shared'
-import { AttackSurfaceSectionTabs, EASMReviewQueue } from '@/features/attack-surface'
+import {
+  AttackSurfaceSectionTabs,
+  EASMDecidePanel,
+  EASMReviewQueue,
+} from '@/features/attack-surface'
 import { useTranslation } from '@/context/i18n-provider'
+import { useUrlFilter } from '@/hooks/use-url-param'
 
-export default function AttackSurfaceReviewPage() {
+export default function AttackSurfaceSuggestionsPage() {
   const { t } = useTranslation()
+  const [all, setAll] = useUrlFilter('all', '0')
+  const [tab] = useUrlFilter('tab', '')
+  const showAll = all === '1' || tab !== ''
   return (
     <Main>
       <PageHeader
-        title={t('scope.review.title', 'Attack surface')}
+        title={t('attackSurface.title', 'Attack surface')}
         description={t(
-          'scope.review.description',
-          'Names discovery found that may be yours. Confirming records ownership; only a scope entry lets scans reach a name.'
+          'attackSurface.suggestions.description',
+          'Decisions that still need a person. Confirming a name or address as yours adds its exact scope entry; addresses are never added because a name points at them.'
         )}
       />
       <AttackSurfaceSectionTabs />
-      <div className="mt-5">
-        <EASMReviewQueue />
+      <div className="mt-5 space-y-5">
+        <EASMDecidePanel />
+        {showAll ? (
+          <section
+            aria-label={t('attackSurface.suggestions.allItems', 'All items')}
+            className="space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold">
+                {t('attackSurface.suggestions.allItems', 'All items')}
+              </h2>
+              <Button size="sm" variant="ghost" onClick={() => setAll('0')}>
+                {t('attackSurface.suggestions.hideAll', 'Hide items')}
+              </Button>
+            </div>
+            <EASMReviewQueue />
+          </section>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setAll('1')}>
+            <List className="me-2 h-4 w-4" aria-hidden />
+            {t('attackSurface.suggestions.showAll', 'Show all items')}
+          </Button>
+        )}
       </div>
     </Main>
   )

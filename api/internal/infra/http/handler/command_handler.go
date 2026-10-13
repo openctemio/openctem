@@ -881,6 +881,9 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 			RefusedTargetsTotal int             `json:"refused_targets_total"`
 			CoverageGaps        json.RawMessage `json:"coverage_gaps"`
 			CoverageGapsTotal   int             `json:"coverage_gaps_total"`
+			Reach               json.RawMessage `json:"reach"`
+			UnreachedTargets    json.RawMessage `json:"unreached_targets"`
+			UnreachedTotal      int             `json:"unreached_targets_total"`
 		} `json:"metadata"`
 	}
 
@@ -894,6 +897,10 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	gaps, gapsTotal := scanrundom.ParseCoverageGaps(result.Metadata.CoverageGaps, result.Metadata.CoverageGapsTotal)
 	partial := scanrun.Partial{Skipped: skippedTotal, SkippedSummary: skippedSummary,
 		Gaps: gapsTotal, GapSummary: scanrundom.CoverageGapSummary(gaps, gapsTotal)}
+	// Targets the sensor could not reach (RFC-089): none reached fails the
+	// step as unreachable, some unreached ends it partial. A result without
+	// a reach summary (an older sensor) keeps the outcome above.
+	partial = withReach(partial, result.Metadata.Reach, result.Metadata.UnreachedTargets, result.Metadata.UnreachedTotal)
 
 	// Trigger scan workflow progression asynchronously with independent context
 	// Use background context since the HTTP request context will be canceled after response
@@ -909,6 +916,25 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 			)
 		}
 	}()
+}
+
+// withReach adds a command result's reach outcome (sensor-supplied: parsed
+// defensively, bounded and cleaned) to the step's partial outcome.
+func withReach(p scanrun.Partial, reach, list json.RawMessage, total int) scanrun.Partial {
+	r := scanrundom.ParseReach(reach)
+	if !r.Present {
+		return p
+	}
+	unreached, unreachedTotal := scanrundom.ParseUnreachedTargets(list, total)
+	if r.AllUnreached() {
+		p.AllUnreached = true
+		p.UnreachableMessage = scanrundom.UnreachableFailure(r, unreached, unreachedTotal)
+	}
+	if r.Unreached > 0 {
+		p.Unreached = r.Unreached
+		p.UnreachedSummary = scanrundom.UnreachedSummary(r, unreached, unreachedTotal)
+	}
+	return p
 }
 
 // triggerScanRunFailed triggers scan workflow failure when a command fails.

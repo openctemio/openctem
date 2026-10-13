@@ -46,9 +46,11 @@ export interface BootstrapSessionData {
 /** The platform notices the announcement banner reads. */
 export const ANNOUNCEMENTS_URL = '/api/v1/announcements'
 
-/** The review-queue count the sidebar badge reads (one row, `total` only). */
-export const EASM_REVIEW_COUNT_URL =
-  '/api/v1/easm/candidates?states=needs_review%2Ccandidate&page=1&per_page=1'
+/**
+ * The attack surface decision count the sidebar badge and the Suggestions
+ * tab read: `total` of the suggestion cards (one per card, not per row).
+ */
+export const EASM_SUGGESTIONS_COUNT_URL = '/api/v1/easm/suggestions?view=count'
 
 /** Writes the session parts into the SWR cache, without revalidating them. */
 export async function seedSessionCache(data: BootstrapSessionData): Promise<void> {
@@ -61,7 +63,7 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
   if (typeof data.badges?.unread_notifications === 'number')
     seed(notificationEndpoints.unreadCount(), { count: data.badges.unread_notifications })
   if (typeof data.badges?.easm_review === 'number')
-    seed(EASM_REVIEW_COUNT_URL, { data: [], total: data.badges.easm_review })
+    seed(EASM_SUGGESTIONS_COUNT_URL, { cards: [], total: data.badges.easm_review, can_add: false })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
 
   await Promise.all(writes)
