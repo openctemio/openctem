@@ -192,6 +192,18 @@ For each target, in order:
    connectors, the claim-time re-check, the dry run) keep the whole-target
    rule: a range that overlaps an exclusion is excluded whole. No address
    list is ever built.
+
+   **The job carries the exclusions near its ranges.** Every scan command
+   whose targets include a range (workflow chunks, single-scanner commands
+   and zone batches) carries, in its payload key `exclusions`, the tenant's
+   active address exclusions inside the /24 (IPv6 /120) buckets of its
+   ranges, as the fewest prefixes (`scan.Service.JobExclusions`). The job
+   signature covers the payload. The sensor SDK cuts its range targets
+   around them again, address by address, together with its own
+   `targets.deny` and the built-in deny list, and hands them to tools that
+   can skip hosts (naabu `-exclude-hosts`). A failed exclusion lookup creates
+   no command; more than 4 096 prefixes is `RANGE_TOO_FRAGMENTED`. Another
+   tenant's exclusions never travel with a job.
 3. **Ownership** (RFC-036 §6.3 `active_allowed`, `internal/app/easm/active_gate.go`).
    A target is refused when:
    - the inventory asset behind it (`DispatchTargetsInput.Assets`, or a typed

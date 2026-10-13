@@ -150,7 +150,10 @@ classification: built-in → catalogue; certified → signed attestation; otherw
    digest, `capability@major`, sandbox status) → outbox.
 4. **Ingest.** CTIS validation → output binding (capability ∩ catalogue ∩
    descriptor `produces`; out-of-contract records are quarantined or warned
-   per tenant mode) → required paths (warned, then quarantined after one
+   per tenant mode) → chunk binding (a scan command whose targets are all
+   addresses and ranges reports only on them: an asset that names only
+   other addresses is dropped with its findings, `assets_outside_chunk`;
+   RFC-088) → required paths (warned, then quarantined after one
    release train) → derivations keyed by capability (open ports and
    `exposes`, DNS relations, finding source), never by tool name →
    fingerprint and dedup.

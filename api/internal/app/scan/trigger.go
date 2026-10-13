@@ -749,6 +749,9 @@ type EmbeddedTemplate struct {
 func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, targets []string, usePlatform bool) error {
 	templates := s.customTemplatesForScan(ctx, sc)
 	payloadMap := s.scannerPayload(sc, run, stepRun, sc.ScannerConfig, run.Context, targets, templates)
+	if err := s.attachJobExclusions(ctx, sc.TenantID, payloadMap, targets); err != nil {
+		return err
+	}
 	payload, _ := json.Marshal(payloadMap)
 
 	cmd, err := command.NewCommand(sc.TenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
