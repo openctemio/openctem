@@ -23,6 +23,23 @@ import (
 // too scattered to send as ranges.
 const MaxRangePieces = 4096
 
+// MaxPieceBits is the widest piece a range is dispatched as: an IPv4 /24,
+// an IPv6 /120 (256 addresses). A wider range is cut, so its pieces can be
+// chunked by address count and spread over sensors.
+var MaxPieceBits = ipset.PieceBits{V4: 24, V6: 120}
+
+// fitsOnePiece reports whether r is one prefix no wider than MaxPieceBits.
+func fitsOnePiece(r ipset.Range) bool {
+	p, ok := r.Prefix()
+	if !ok {
+		return false
+	}
+	if p.Addr().Is4() {
+		return p.Bits() >= MaxPieceBits.V4
+	}
+	return p.Bits() >= MaxPieceBits.V6
+}
+
 // MaxRangeAddresses bounds one range target: 2^16 addresses, the scan target
 // validator's own bound (an IPv4 /16, an IPv6 /112). A wider range is
 // refused here too, for the paths that skip the validator.
@@ -84,9 +101,10 @@ func rangeTarget(t string) (ipset.Range, bool) {
 }
 
 // splitRangeTargets replaces every range target that overlaps an active
-// exclusion of an address kind or the built-in deny list with the exact
-// rest: the fewest prefixes that hold the range's addresses minus the
-// excluded and denied ones. A range with nothing left is excluded (or
+// exclusion of an address kind or the built-in deny list, or is wider than
+// one piece (MaxPieceBits), with the exact rest: the fewest prefixes no
+// wider than a piece that hold the range's addresses minus the excluded and
+// denied ones. A range with nothing left is excluded (or
 // refused, when only the deny list removed it). A range target that also
 // matches by other names (DispatchAsset.AlsoMatch) is left to the
 // whole-target rule: an exclusion of one of its names is not an address
@@ -133,7 +151,7 @@ func (s *Service) splitRangeTargets(ctx context.Context, in *DispatchTargetsInpu
 		}
 		whole := ipset.Of(r)
 		rest := whole.Subtract(remove)
-		if rest.Equal(whole) {
+		if rest.Equal(whole) && fitsOnePiece(r) {
 			kept = append(kept, t)
 			continue
 		}
@@ -145,7 +163,7 @@ func (s *Service) splitRangeTargets(ctx context.Context, in *DispatchTargetsInpu
 			}
 			continue
 		}
-		prefixes, err := rest.Prefixes(ipset.PieceBits{}, budget)
+		prefixes, err := rest.Prefixes(MaxPieceBits, budget)
 		if err != nil {
 			if errors.Is(err, ipset.ErrTooManyPieces) {
 				return nil, rangeTooFragmentedError()
