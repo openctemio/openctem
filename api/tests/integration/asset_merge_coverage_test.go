@@ -146,8 +146,8 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($2,$4,'primary')`,
 		`INSERT INTO asset_owners (asset_id, user_id, ownership_type) VALUES ($3,$4,'primary')`, // conflict
 		`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($4,$1,$2)`,
-		`INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at) VALUES ($2,$1,NOW())`,
-		`INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at) VALUES ($3,$1,NOW())`, // conflict
+		`INSERT INTO asset_coverage (asset_id, tenant_id, capability) VALUES ($2,$1,'scan.ports')`,
+		`INSERT INTO asset_coverage (asset_id, tenant_id, capability) VALUES ($3,$1,'scan.ports')`, // conflict
 		`INSERT INTO asset_services (tenant_id, asset_id, port, protocol) VALUES ($1,$2,8080,'tcp')`,
 		`INSERT INTO relationship_suggestions (tenant_id, source_asset_id, target_asset_id, relationship_type, reason) VALUES ($1,$2,$5,'depends_on','r')`,
 		`INSERT INTO relationship_suggestions (tenant_id, source_asset_id, target_asset_id, relationship_type, reason) VALUES ($1,$2,$3,'depends_on','r')`, // loop
@@ -235,7 +235,7 @@ func TestApproveAndMerge_MovesEveryReference(t *testing.T) {
 		`SELECT count(*) FROM threat_model_threats WHERE entry_point_asset_id = $1 AND hop_asset_id = $1 AND target_asset_id = $1`: 1,
 		`SELECT count(*) FROM asset_owners WHERE asset_id = $1`:                                                                    2, // user (kept's own) + group
 		`SELECT count(*) FROM user_accessible_assets WHERE asset_id = $1`:                                                          1,
-		`SELECT count(*) FROM scan_coverage_state WHERE asset_id = $1`:                                                             1,
+		`SELECT count(*) FROM asset_coverage WHERE asset_id = $1`:                                                                  1,
 		`SELECT count(*) FROM asset_services WHERE asset_id = $1`:                                                                  1,
 		`SELECT count(*) FROM business_unit_assets WHERE asset_id = $1`:                                                            1,
 		`SELECT count(*) FROM business_service_assets WHERE asset_id = $1`:                                                         1,

@@ -183,7 +183,7 @@ func TestMarkDispatched_RepeatedAsset(t *testing.T) {
 	if err := repo.MarkDispatched(ctx, scancoverage.DispatchRecord{TenantID: tenant, AssetIDs: []string{assetID.String(), assetID.String()}}); err != nil {
 		t.Fatalf("MarkDispatched with a repeated asset failed: %v", err)
 	}
-	if n := countBatchRows(t, db, `SELECT count(*) FROM scan_coverage_state WHERE asset_id = $1`, assetID.String()); n != 1 {
+	if n := countBatchRows(t, db, `SELECT count(*) FROM asset_coverage WHERE asset_id = $1 AND capability = 'network_va.connector'`, assetID.String()); n != 1 {
 		t.Fatalf("coverage rows = %d, want 1", n)
 	}
 }

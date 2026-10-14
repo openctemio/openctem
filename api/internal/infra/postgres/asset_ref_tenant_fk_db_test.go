@@ -52,10 +52,12 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// RFC-075), 1 from web evidence (asset_web_evidence, RFC-081), 1 from
 	// the host a child's attribution follows (asset_attributions.follows_host_id)
 	// 1 from collector sources (collector_assets, RFC-040 §12), 1 from
-	// wildcard-only name marks (asset_wildcard_dns, RFC-088) and 1 from
-	// per-repository code scanning settings (code_scan_settings, RFC-091).
-	if n != 49 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 49 validated", n, allValid.Bool)
+	// wildcard-only name marks (asset_wildcard_dns, RFC-088), 1 from
+	// per-repository code scanning settings (code_scan_settings, RFC-091) and
+	// 1 from the coverage ledger (asset_coverage, RFC-093), which replaced
+	// the DNS check state and the connector rotation cursor (2 fewer).
+	if n != 48 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 48 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing

@@ -180,9 +180,8 @@ export SSL_CERT_DIR=/etc/openctem/certs
 # state, including the API key it renews on its own, in SENSOR_STATE_DIR
 # (default /var/lib/openctem/state when writable, else ~/.openctem). It runs
 # the tools it finds installed; narrow them in the local policy's tools.allow.
-# Newer sensor releases default to -daemon -enable-commands; released ones
-# still need both flags.
-./openctemio-sensor -daemon -enable-commands
+# Add -verbose for debug logs.
+./openctemio-sensor
 
 # One-shot: scan a directory once and send the results
 ./openctemio-sensor -tool {{firstTool .Sensor.EffectiveTools}} -target . -push

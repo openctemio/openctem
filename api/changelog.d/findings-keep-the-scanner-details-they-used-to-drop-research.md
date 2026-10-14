@@ -1,4 +1,4 @@
-### Changed: Findings keep the scanner details they used to drop (research 17 R2)
+### Changed: Findings keep the scanner details they used to drop
 
 - Ingest now stores the rule **family** (Nessus / Tenable.sc plugin family,
   scanner category), the scanner's **exploit-available** verdict as a column,

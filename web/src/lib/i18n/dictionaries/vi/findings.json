@@ -91,5 +91,20 @@
   "findings.list.location": "Vị trí",
   "findings.list.asset": "Tài sản",
   "findings.aiProposal.badge": "Đề xuất bởi AI phân loại",
-  "findings.aiProposal.hint": "Đây là gợi ý của AI, không phải quyết định. Hãy kiểm tra phát hiện trước khi phê duyệt."
+  "findings.aiProposal.hint": "Đây là gợi ý của AI, không phải quyết định. Hãy kiểm tra phát hiện trước khi phê duyệt.",
+  "findings.detail.tab.overview": "Tổng quan",
+  "findings.detail.tab.evidence": "Bằng chứng",
+  "findings.detail.tab.remediation": "Khắc phục",
+  "findings.detail.tab.attack-path": "Luồng dữ liệu",
+  "findings.detail.tab.pentest": "Chi tiết pentest",
+  "findings.detail.tab.related": "Liên quan",
+  "findings.detail.notFound.title": "Không tìm thấy phát hiện",
+  "findings.detail.notFound.description": "Phát hiện không tồn tại, hoặc bạn không có quyền truy cập.",
+  "findings.detail.notFound.back": "Quay lại danh sách phát hiện",
+  "findings.detail.propertiesAria": "Thuộc tính phát hiện",
+  "findings.detail.sla.overdueOne": "Quá hạn SLA 1 ngày",
+  "findings.detail.sla.overdueMany": "Quá hạn SLA {n} ngày",
+  "findings.detail.sla.breached": "Đã vi phạm SLA",
+  "findings.detail.sla.classPastDeadline": "Phát hiện {class} phải được khắc phục trong SLA; phát hiện này đã quá hạn.",
+  "findings.detail.sla.pastDeadline": "Phát hiện này đã quá hạn khắc phục."
 }

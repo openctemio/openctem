@@ -383,5 +383,19 @@
   "sensors.manifest.ignored.invalid-name": "tên không hợp lệ",
   "sensors.manifest.ignored.unknown-capability": "năng lực không xác định",
   "sensors.manifest.ignored.invalid-contract": "hợp đồng công cụ không hợp lệ",
-  "sensors.manifest.ignored.limit": "vượt quá giới hạn"
+  "sensors.manifest.ignored.limit": "vượt quá giới hạn",
+  "sensors.toolSettings.summaryChanged": "{count} thay đổi: {list}",
+  "sensors.toolSettings.groupChanged": "{count} thay đổi",
+  "sensors.toolSettings.changedFromDefault": "Đã đổi so với mặc định",
+  "sensors.toolSettings.resetOption": "Đặt về mặc định",
+  "sensors.toolSettings.resetOptionLabel": "Đặt {option} về mặc định",
+  "sensors.toolSettings.resetTool": "Đặt lại công cụ",
+  "sensors.toolSettings.unsaved": "Thay đổi chưa lưu",
+  "sensors.toolSettings.discard": "Hủy thay đổi",
+  "sensors.toolSettings.saveTool": "Lưu cài đặt của {tool}",
+  "sensors.toolSettings.needsAttention": "Cần xử lý",
+  "sensors.toolSettings.impactWarning": "Giá trị khác mặc định làm tăng tải hoặc phạm vi của mỗi lần quét.",
+  "sensors.toolSettings.searchLabel": "Tìm trong cài đặt công cụ",
+  "sensors.toolSettings.searchPlaceholder": "Tìm công cụ hoặc tùy chọn",
+  "sensors.toolSettings.searchEmpty": "Không có công cụ hoặc tùy chọn nào khớp với \"{query}\"."
 }

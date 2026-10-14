@@ -62,6 +62,7 @@ import (
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -555,6 +556,7 @@ type Services struct {
 
 	// Assets
 	Asset                  *asset.AssetService
+	AssetCoverage          *coverageapp.Service
 	AssetGroup             *asset.AssetGroupService
 	AssetType              *asset.AssetTypeService
 	AssetRelationship      *asset.AssetRelationshipService
@@ -977,6 +979,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetFreshness(repos.AssetFreshness)
+	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
 	// A precedence change re-resolves the organization's assets (RFC-069).
@@ -2605,8 +2609,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
 	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,
 		assetfreshnessapp.EnricherConfig{DailyBudget: cfg.Worker.AssetEnrichmentDailyBudget}, log)
+	// The asset coverage loop (RFC-093) supersedes it: it resolves and looks
+	// up every asset its policy names, new or not.
+	enrichNew := cfg.Worker.AssetEnrichmentEnabled && !cfg.Worker.AssetCoverageEnabled
 	requestNew := func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
-		if cfg.Worker.AssetEnrichmentEnabled {
+		if enrichNew {
 			s.AssetEnricher.RequestAssets(ctx, tenantID, assets, freshdom.ReasonNewAsset)
 		}
 	}
@@ -2614,7 +2621,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Resolve before active (RFC-088): active stages skip names without
 	// recent resolution evidence; their enrichment is asked for again.
 	var staleRefresher scan.StaleRefresher
-	if cfg.Worker.AssetEnrichmentEnabled {
+	if enrichNew {
 		staleRefresher = s.AssetEnricher
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)
