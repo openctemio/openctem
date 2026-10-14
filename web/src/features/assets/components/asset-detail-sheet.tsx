@@ -8,7 +8,7 @@
 'use client'
 
 import * as React from 'react'
-import { FileText, Hash, Pencil, Radar, Trash2 } from 'lucide-react'
+import { FileText, Hash, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
@@ -39,7 +39,7 @@ import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
 import { AssetScanningSection } from './asset-scanning-section'
 import { AssetScopeChip } from './asset-scope-chip'
-import { SurfaceFactsDetail, cellsForType } from './service-cells'
+import { KeyFactsSection, hasKeyFacts } from './key-facts'
 import {
   RiskSummarySection,
   OwnershipSection,
@@ -381,6 +381,10 @@ export function AssetDetailSheet<T extends Asset>({
           <DetailSections>
             {/* Order follows the triage question: how risky, who owns it,
                 what it is, how exposed, where it came from. */}
+            {/* What it is and what runs on it, first; typed pages pass their
+                own curated sections instead. */}
+            {overviewContent === undefined && <KeyFactsSection asset={asset} />}
+
             <RiskSummarySection
               asset={asset}
               onViewFindings={showFindingsTab ? () => setActiveTab('findings') : undefined}
@@ -413,21 +417,14 @@ export function AssetDetailSheet<T extends Asset>({
 
             <DiscoverySection asset={asset} />
 
-            {/* The typed pages pass their own curated sections; the mixed
-                lists (/assets) get the shared service cells for the
-                external-surface types, above the raw properties: the known
-                facts, then one "Not collected yet: …" line for the rest. */}
-            {overviewContent === undefined && cellsForType(asset.type, asset.subType) && (
-              <DetailSection title={t('assets.facts.title', 'Service facts')} icon={Radar}>
-                <SurfaceFactsDetail asset={asset} />
-              </DetailSection>
-            )}
-
             {renderProperties && (
               <PropertiesSection
                 properties={asset.metadata}
                 type={asset.type}
                 subType={asset.subType}
+                // Under the key facts the full list is the reference: named
+                // "All properties" and folded until asked for.
+                all={overviewContent === undefined && hasKeyFacts(asset)}
               />
             )}
 
