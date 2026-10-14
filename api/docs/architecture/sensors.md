@@ -569,8 +569,14 @@ compose file):
   outbox) on a fresh volume. Sensors installed with a volume per
   subdirectory keep working; the sensor README has the migration. The Helm
   snippet sets `sensor.data.persistence.enabled=true` (chart 0.19.0+).
-- **Tools** `SENSOR_TOOLS` from the sensor's tools; names other than
-  `[a-z0-9_-]` are dropped. The name becomes a slug.
+- **Tools**: no snippet lists them. The sensor offers the tools it finds
+  (a registered tool whose binary is installed), so the image variant
+  defines the set, and the local policy's `tools.allow` narrows it.
+  Re-emitting the tools a sensor last reported would pin a reinstalled
+  sensor to its old set, so `SENSOR_TOOLS`, `-tools` and `sensor.tools` stay
+  out of the snippets. A deployment that sets `SENSOR_TOOLS` keeps working
+  (it narrows the detected set). The one-shot examples still name one tool
+  (`-tool <name>`), a different mode. The sensor name becomes a slug.
 
 - **Collectors** (sensor type `collector`) get the asset collector's own
   commands (`configs/sensor-templates/collector-*.tmpl`): the image
