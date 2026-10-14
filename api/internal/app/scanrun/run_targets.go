@@ -24,6 +24,12 @@ const (
 	runContextKeyExcludedCount = "excluded_target_count"
 )
 
+// ExcludedExplainer lists the targets a gate decision's exclusions removed,
+// with the matching rules (*scan.Service).
+type ExcludedExplainer interface {
+	ExplainExcluded(ctx context.Context, tenantID shared.ID, d *scanapp.DispatchTargets) []scanapp.ExcludedTarget
+}
+
 // userIDOf parses a triggered_by user id; anything else is nil.
 func userIDOf(s string) *shared.ID {
 	id, err := shared.IDFromString(strings.TrimSpace(s))
@@ -103,6 +109,12 @@ func (s *Service) gateRunContext(ctx context.Context, tenantID shared.ID, trigge
 	out[runContextKeyTargets] = gated.Allowed
 	if len(gated.Excluded) > 0 {
 		out[runContextKeyExcludedCount] = len(gated.Excluded)
+	}
+	// Which exclusions left targets out, for the run page (informational).
+	if ex, ok := s.targetGate.(ExcludedExplainer); ok {
+		if detail := ex.ExplainExcluded(ctx, tenantID, gated); len(detail) > 0 {
+			out[scanapp.RunContextKeyExcludedTargets] = detail
+		}
 	}
 	if zone != nil {
 		out[scanrun.RunContextKeyScanZoneID] = zone.ID.String()
