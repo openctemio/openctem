@@ -67,6 +67,9 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 	}
 
 	capabilities := s.stepCapabilities(ctx, tenantID, input)
+	if err := s.checkStepToolConfig(ctx, tenantID, input); err != nil {
+		return nil, err
+	}
 	if s.securityValidator != nil {
 		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, capabilities, input.Config)
 		if !result.Valid {
@@ -427,6 +430,9 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 	}
 
 	tenantID, _ := shared.IDFromString(input.TenantID)
+	if err := s.checkStepToolConfig(ctx, tenantID, input); err != nil {
+		return nil, err
+	}
 	if s.securityValidator != nil {
 		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, input.Capabilities, input.Config)
 		if !result.Valid {
