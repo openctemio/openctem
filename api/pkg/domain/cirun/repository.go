@@ -96,6 +96,11 @@ type Repository interface {
 	// ActiveOverride returns the newest unrevoked, unexpired override that
 	// covers the commit, or nil.
 	ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*GateOverride, error)
+	// MissingExpectedCapabilities returns the capabilities the run's
+	// repository is expected to report (its coverage expectation; an empty
+	// list means every capability) that no tool the run reported has, per
+	// the tool catalog. None when the repository has no expectation.
+	MissingExpectedCapabilities(ctx context.Context, tenantID, runID shared.ID) ([]string, error)
 
 	PipelineRepository
 	CoverageRepository
