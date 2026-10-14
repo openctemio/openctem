@@ -190,6 +190,8 @@ a lease. An active stage's chunk holds per-host politeness keys while it
 runs; the keys come from `github.com/openctemio/ctis/politeness`, the
 function the sensor runtime admits work with, and travel with the chunk
 (`host_keys`), so a sensor never hands back what the platform just offered.
+Chunks are cut from whole hosts, so the chunks of one step never conflict
+with each other ([scan stages](scan-stages.md)).
 A step is runnable when every dependency finished.
 
 Shared platform sensors have no claim path today: the platform queue

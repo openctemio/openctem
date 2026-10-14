@@ -198,6 +198,7 @@ type Service struct {
 	assetRefChecker   AssetRefChecker           // tenant + scope check of a run's asset_id; nil refuses runs that carry one
 	hops              scanrun.HopRepository     // stage chaining (hop_router.go); nil keeps every step on the run's seeds
 	endpoints         EndpointSelector          // incremental web scanning (web_endpoints.go)
+	nameAddresses     NameAddressReader         // resolution relations for host-affine chunks (host_chunks.go); nil: keys only
 	runNotifier       RunNotifier               // live run updates (run_notify.go); nil: none
 	versions          scanworkflow.VersionStore // runs pinned to the workflow version they started with; nil reads the live workflow
 	lineage           scanworkflow.LineageStore // lineage of tenant copies of system templates (template_update.go); nil offers no updates
