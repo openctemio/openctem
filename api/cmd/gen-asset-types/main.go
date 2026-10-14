@@ -309,18 +309,18 @@ type typeCfg struct {
 	// ExposureDefault is the exposure an asset has by nature (domains and
 	// web applications are internet-facing); ingest applies it when the
 	// scanner sent none. "" = no default.
-	ExposureDefault string    `yaml:"exposure_default"`
+	ExposureDefault string `yaml:"exposure_default"`
 	// Coverage lists the capabilities an asset of the type needs and how
 	// often (the asset coverage ledger, RFC-093). On an alias it is the
 	// sub-type's own list; an alias without one inherits nothing.
 	Coverage       []coverageCfg `yaml:"coverage"`
 	LegacyCategory string        `yaml:"legacy_category"`
-	Storage         string    `yaml:"storage"`
-	IdentityKeys    []string  `yaml:"identity_keys"`
-	Attributes      []attrCfg `yaml:"attributes"`
-	Columns         []string  `yaml:"columns"`
-	Card            string    `yaml:"card"`
-	Sections        []string  `yaml:"sections"`
+	Storage        string        `yaml:"storage"`
+	IdentityKeys   []string      `yaml:"identity_keys"`
+	Attributes     []attrCfg     `yaml:"attributes"`
+	Columns        []string      `yaml:"columns"`
+	Card           string        `yaml:"card"`
+	Sections       []string      `yaml:"sections"`
 }
 
 // coverageCfg is one coverage rule as written in the YAML.
@@ -408,24 +408,24 @@ type inputOut struct {
 }
 
 type typeOut struct {
-	Type            string    `json:"type"`
-	Label           string    `json:"label"`
-	Plural          string    `json:"plural"`
-	Icon            string    `json:"icon"`
-	Class           string    `json:"class"`
-	Lens            string    `json:"lens,omitempty"`
-	AliasOf         *typeRef  `json:"alias_of,omitempty"`
-	SubTypes        []string  `json:"sub_types"`
-	LegacyCategory  string    `json:"legacy_category"`
-	Storage         string    `json:"storage"`
-	IdentityKeys    []string  `json:"identity_keys"`
-	Attributes      []attrCfg `json:"attributes"`
-	Facets          []string  `json:"facets"`
-	GroupBy         []string  `json:"group_by"`
-	Columns         []string  `json:"columns"`
-	Card            string    `json:"card"`
-	Sections        []string  `json:"sections"`
-	Relationships   typeRels  `json:"relationships"`
+	Type            string        `json:"type"`
+	Label           string        `json:"label"`
+	Plural          string        `json:"plural"`
+	Icon            string        `json:"icon"`
+	Class           string        `json:"class"`
+	Lens            string        `json:"lens,omitempty"`
+	AliasOf         *typeRef      `json:"alias_of,omitempty"`
+	SubTypes        []string      `json:"sub_types"`
+	LegacyCategory  string        `json:"legacy_category"`
+	Storage         string        `json:"storage"`
+	IdentityKeys    []string      `json:"identity_keys"`
+	Attributes      []attrCfg     `json:"attributes"`
+	Facets          []string      `json:"facets"`
+	GroupBy         []string      `json:"group_by"`
+	Columns         []string      `json:"columns"`
+	Card            string        `json:"card"`
+	Sections        []string      `json:"sections"`
+	Relationships   typeRels      `json:"relationships"`
 	ScannableBy     []string      `json:"scannable_by"`
 	ExposureDefault string        `json:"exposure_default,omitempty"`
 	Coverage        []coverageOut `json:"coverage,omitempty"`
