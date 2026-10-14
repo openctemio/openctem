@@ -138,6 +138,34 @@ func (c Claims) IsForkEvent() bool {
 	return forkEvents[c.Event]
 }
 
+// IsDefaultBranchRun reports whether a job counts as a run of the
+// repository's default branch: a push-style run (no pull request) on that
+// branch, never a fork event. A fork event (pull_request_target,
+// workflow_run, ...) carries the base branch's ref but runs code the fork
+// chose, so its results must not become default-branch exposure, its verdict
+// must not stand for the default branch, and no check goes on the base commit.
+func IsDefaultBranchRun(c Claims, defaultBranch string) bool {
+	return c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch && !c.IsForkEvent()
+}
+
+// ReportBranchName is the branch a run's findings are recorded on. A fork
+// event's branch claim names the base branch (or a branch of the fork that
+// may share a name with one of the repository's), so its findings go to a
+// branch of their own that never counts as exposure: they stay branch-only
+// until a run of a real branch sees them.
+func ReportBranchName(branch, event, pullRequest string, fork bool) string {
+	if !fork {
+		return branch
+	}
+	if pullRequest != "" {
+		return "fork/pr-" + pullRequest
+	}
+	if event == "" {
+		event = "event"
+	}
+	return "fork/" + event
+}
+
 // Refusal is why a trust configuration did not admit a job. Code is stable
 // (audit metadata, tests); the caller never sees it.
 type Refusal struct {

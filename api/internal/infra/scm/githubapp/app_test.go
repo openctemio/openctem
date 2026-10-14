@@ -153,3 +153,51 @@ func TestErrorsCarryNoToken(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+// A decoration token is narrowed to the one repository and the permissions
+// the post needs, and a token minted for one repository is never reused for
+// another.
+func TestRepositoryTokenIsNarrowedAndCachedPerScope(t *testing.T) {
+	var bodies []map[string]any
+	app, _ := testApp(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/app/installations/7/access_tokens":
+			b := map[string]any{}
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			bodies = append(bodies, b)
+			repos, _ := b["repositories"].([]any)
+			name := "all"
+			if len(repos) == 1 {
+				name = repos[0].(string)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": "ghs_" + name, "expires_at": time.Now().Add(time.Hour)})
+		case strings.HasPrefix(r.URL.Path, "/repos/acme/"):
+			repo := strings.Split(r.URL.Path, "/")[3]
+			if r.Header.Get("Authorization") != "Bearer ghs_"+repo {
+				http.Error(w, `{"message":"token for another repository"}`, http.StatusForbidden)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"number": 1})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	ctx := context.Background()
+	for _, repo := range []string{"api", "web", "api"} {
+		if _, err := app.GetPullRequest(ctx, 7, "acme", repo, 1); err != nil {
+			t.Fatalf("%s: %v", repo, err)
+		}
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("minted %d tokens, want 2 (one per repository, cached)", len(bodies))
+	}
+	perms, _ := bodies[0]["permissions"].(map[string]any)
+	if repos, _ := bodies[0]["repositories"].([]any); len(repos) != 1 || repos[0] != "api" ||
+		perms["checks"] != "write" || perms["pull_requests"] != "write" || perms["metadata"] != "read" || len(perms) != 3 {
+		t.Fatalf("token request = %v", bodies[0])
+	}
+	app.ForgetInstallation(7)
+	if _, err := app.GetPullRequest(ctx, 7, "acme", "api", 1); err != nil || len(bodies) != 3 {
+		t.Fatalf("after forget: %d %v", len(bodies), err)
+	}
+}
