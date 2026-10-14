@@ -2267,7 +2267,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	// organization. Each organization's Jira integration has its own secret.
 	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
 	// Each sensor product has its own release line, built into the API
-	// from versions.yaml (RFC-037 §9): one sensor-wide channel compared
+	// from versions.yaml (api/docs/rfcs/RFC-037): one sensor-wide channel compared
 	// every product with the scanning sensor's.
 	{"SENSOR_LATEST_VERSION", sensorLineMoved},
 	{"SENSOR_MIN_VERSION", sensorLineMoved},

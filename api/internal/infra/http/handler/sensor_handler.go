@@ -482,7 +482,7 @@ type SensorProtocolResponse struct {
 // stable (clients map it to their own wording and fix actions); message is a
 // plain-English fallback.
 type SensorHealthReasonResponse struct {
-	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_unsupported,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
+	Code     string `json:"code" enums:"outbox_backlog,outbox_dead_letters,outbox_evicted,key_expired,key_expiring,identity_cloned,version_unsupported,sdk_advisory,no_tools,error_reported,content_stale,content_refresh_failed,heartbeat_late,control_slow"`
 	Severity string `json:"severity" enums:"warning,critical"`
 	Message  string `json:"message"`
 }
@@ -1422,7 +1422,7 @@ var sensorAPIKeyHeaderRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{8,256}$`)
 // and can be edited without rebuilding the frontend.
 //
 // @Summary Get sensor configuration templates
-// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, pinned to the sensor image of SENSOR_LATEST_VERSION, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
+// @Description Returns the install and configuration snippets for a sensor: docker run, Compose, Kubernetes, Helm, YAML, env and CLI, for the chosen sensor product (default: the product the sensor reports, else the scanning sensor), pinned to that product's latest release in the built-in version manifest, pointed at the public platform URL, and installing the platform's private CA when SENSOR_CA_CERT_FILE is set.
 // @Tags Sensors
 // @Produce json
 // @Param id path string true "Sensor ID"

@@ -2,11 +2,11 @@
 // repository's versions.yaml (api/docs/rfcs/RFC-037), embedded at build time
 // and parsed once when the package is loaded.
 //
-// versions.yaml lives at the repository root, outside the Go module, and
-// go:embed cannot reach outside the module. .github/scripts/release/
-// sync-versions.sh therefore writes a byte-for-byte copy next to this file,
-// its --check (CI "Version consistency") fails while the two differ, and
-// TestEmbeddedCopyMatchesRoot fails the Go tests too. Every version default
+// versions.yaml lives at the repository root, outside the Go module, and an
+// embed pattern cannot reach outside the module. So
+// .github/scripts/release/sync-versions.sh writes a byte-for-byte copy next
+// to this file, its --check (CI "Version consistency") fails while the two
+// differ, and TestEmbeddedCopyMatchesRoot fails the Go tests too. Every version default
 // of the API comes from here, so a release bump changes YAML only.
 //
 // A malformed manifest is a build error, never a silent fallback: the package
