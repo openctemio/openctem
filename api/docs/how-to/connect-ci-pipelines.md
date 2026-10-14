@@ -219,5 +219,5 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 | `repository_binding` in the audit log | Bitbucket: another repository of the workspace already reports under that name |
 | `ssh_rerun` in the audit log | CircleCI: a re-run with SSH access, never admitted |
 | `missing_claims` on CircleCI or Jenkins | No commit was reported (CircleCI), or the Jenkins claim templates `repository` and `branch` are missing |
-| `403 RUNNER_OUTDATED` on the exchange | The `openctem-ci` release is older than the minimum supported version; update the pinned tag |
+| `403 RUNNER_OUTDATED` on the exchange | The `openctem-ci` release is older than the platform's minimum CI runner release (`CI_RUNNER_MIN_VERSION`); update the pinned tag |
 | `401` on upload after a long scan | The 15-minute run token expired; shorten the time between the token exchange and the verdict |

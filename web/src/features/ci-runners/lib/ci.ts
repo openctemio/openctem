@@ -33,7 +33,9 @@ export interface SnippetInput {
 
 /**
  * The openctemio/ci release the GitHub and GitLab snippets pin. A release tag
- * also pins the scanner images the workflow and templates run.
+ * also pins the scanner images the workflow and templates run. Copied from
+ * versions.yaml (ci.latest) by .github/scripts/release/sync-versions.sh:
+ * change it there, never here.
  */
 export const CI_RELEASE = 'v0.2.0'
 

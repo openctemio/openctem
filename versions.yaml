@@ -34,6 +34,15 @@ sdk:
   latest: v0.23.0
   min: ""
 
+# CI runner (openctemio/ci: the openctem-ci action, image and templates). Its
+# own release line, separate from the sensor's. latest: the console's pipeline
+# snippets pin this release and older runners show "update available". min: the
+# token exchange refuses an older runner and its pipeline is degraded; "" = no
+# minimum.
+ci:
+  latest: v0.2.0
+  min: ""
+
 # Helm chart (openctemio/helm-charts): the newest published chart whose
 # appVersion is platform.release. The chart is published after the tag, so a
 # tag still names the previous chart; the develop follow-up sets this one.

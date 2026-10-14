@@ -168,7 +168,7 @@ id is not recorded; an invalid draft fetches nothing.
 
 Every refusal answers the same `401 The CI token was not accepted`, with one
 exception decided after the token verified and was admitted: a runner that
-reports (User-Agent) a sensor version below `SENSOR_MIN_VERSION` gets `403
+reports (User-Agent) a CI runner version below `CI_RUNNER_MIN_VERSION` gets `403
 RUNNER_OUTDATED` and the refusal is audited (`runner_outdated`); the fix is on
 its side. The version is self-reported: this keeps known-bad releases out, it
 does not authenticate the binary. A client that reports no sensor version is
@@ -488,7 +488,7 @@ Three dimensions, kept apart, and one badge:
 |---|---|---|
 | Freshness | running · fresh · stale · archived · never | Last non-fork run against the cadence: two missed cycles of its schedule when it has scheduled runs (`event`/`pipeline_source` = `schedule`), else three times the median interval between its CI runs (jobs of one CI run count once), at least 7 and at most 30 days. Archived after 90 days idle; the next run revives it |
 | Gate | passing · failing · none | Last default-branch verdict of a non-fork run (pull request verdicts shown apart) |
-| Execution health | ok · degraded · unknown | Scanner failures the runner reported at the last evaluation; a runner older than `SENSOR_MIN_VERSION` |
+| Execution health | ok · degraded · unknown | Scanner failures the runner reported at the last evaluation; a runner older than `CI_RUNNER_MIN_VERSION` (CI runners have their own release line, never the sensor's) |
 
 Badge, in severity order: revoked > archived > never > failing > degraded >
 stale > running > fresh. Revoked, archived and never-run pipelines are
@@ -556,7 +556,7 @@ per run. The job runs every 15 minutes on one replica.
 | `ci.schedule_missed` | pipeline | scheduled and stale (two missed cycles) | on |
 | `ci.coverage_regression` | repository | has active pipelines, none fresh | on |
 | `ci.gate_failing` | pipeline | last default-branch verdict failed | opt-in |
-| `ci.runner_outdated` | pipeline | runner below `SENSOR_MIN_VERSION` | on |
+| `ci.runner_outdated` | pipeline | runner below `CI_RUNNER_MIN_VERSION` | on |
 | `ci.token_refusals` | tenant | at least 20 refused token exchanges (verified tokens, so audited) in 30 minutes | on |
 
 Revoked, retired and archived pipelines raise nothing. The job walks every
