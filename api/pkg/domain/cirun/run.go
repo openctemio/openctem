@@ -111,8 +111,13 @@ type Run struct {
 	ScanFailures  *int
 	Tools         []ToolLabel
 	TemplateRef   string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// DecorationState is where posting the verdict to the code host stands
+	// (Decoration* constants, "" when nothing was queued); DecorationDetail
+	// a short fixed explanation (never raw code-host text).
+	DecorationState  string
+	DecorationDetail string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // NewToken returns a fresh upload token and its hash. Only the hash is
