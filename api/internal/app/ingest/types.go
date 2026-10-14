@@ -273,6 +273,11 @@ type Output struct {
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
 	SightedFingerprints []string `json:"-"`
+	// FingerprintsByIndex maps the index of a finding in the report to the
+	// stored fingerprints it became (one, or one per CVE of a split network
+	// finding). A CI job uses it to learn which of its own results carry a
+	// decision; findings that were skipped have no entry.
+	FingerprintsByIndex map[int][]string `json:"-"`
 
 	// ExcludedAssetRefs are the CTIS asset ids of the report that were not
 	// added because they match a scope exclusion. Their findings are skipped,
