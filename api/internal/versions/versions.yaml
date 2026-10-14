@@ -46,7 +46,7 @@ platform:
 # The scanning sensor (openctemio/sensor).
 sensor:
   product: openctemio-sensor
-  latest: v0.22.2
+  latest: v0.23.0
   min: v0.9.0
   image: ghcr.io/openctemio/sensor
   install: sensor
