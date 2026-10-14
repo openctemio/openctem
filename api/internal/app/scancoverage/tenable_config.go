@@ -36,6 +36,19 @@ const (
 // the perf/time window, not a license limit.
 const DefaultCoverageBatch = 256
 
+// Rotation is how license capacity comes back between coverage batches.
+type Rotation string
+
+// Rotation modes.
+const (
+	RotationOff     Rotation = "off"
+	RotationAging   Rotation = "aging"
+	RotationRecycle Rotation = "recycle"
+)
+
+// DefaultRotationWaitHours is the aging wait after a batch.
+const DefaultRotationWaitHours = 12
+
 // TenableConfig is the normalized config of a Tenable integration, read from the
 // integration's JSONB config map.
 type TenableConfig struct {
@@ -52,6 +65,18 @@ type TenableConfig struct {
 	LicenseCap int
 	// SafetyMargin keeps the scheduler a few IPs below the cap (.sc only).
 	SafetyMargin int
+	// Rotation is how license capacity comes back between batches
+	// (research/143 §4): off (default: cover what the license holds),
+	// aging (the rotation repository's lifetimes free it at Tenable.sc's
+	// nightly cleanup) or recycle (the sensor deletes and recreates the
+	// rotation repository). Anything but off needs RotationAcknowledged.
+	Rotation Rotation
+	// RotationAcknowledged: an administrator confirmed that the customer's
+	// Tenable license terms allow rotating more assets than licensed.
+	RotationAcknowledged bool
+	// RotationWaitHours is how long aging waits after a batch before the
+	// next one is tried (the license guard verifies the capacity).
+	RotationWaitHours int
 	// SensorID optionally pins a specific runner (C3); empty → capability routing.
 	SensorID string
 	// TemplateUUID optionally overrides the runner's default Nessus template.
@@ -90,6 +115,27 @@ func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
 
 	if c.BatchSize < 0 || c.LicenseCap < 0 || c.SafetyMargin < 0 {
 		return c, fmt.Errorf("batch_size/license_cap/safety_margin must not be negative")
+	}
+
+	c.Rotation = RotationOff
+	if v := strings.ToLower(strings.TrimSpace(stringFromConfig(config, "coverage_rotation"))); v != "" {
+		switch Rotation(v) {
+		case RotationOff, RotationAging, RotationRecycle:
+			c.Rotation = Rotation(v)
+		default:
+			return c, fmt.Errorf("invalid coverage_rotation %q (want off|aging|recycle)", v)
+		}
+	}
+	c.RotationAcknowledged = boolFromConfig(config, "coverage_rotation_acknowledged")
+	c.RotationWaitHours = intFromConfig(config, "coverage_rotation_wait_hours")
+	if c.RotationWaitHours == 0 {
+		c.RotationWaitHours = DefaultRotationWaitHours
+	}
+	if c.RotationWaitHours < 1 || c.RotationWaitHours > 72 {
+		return c, fmt.Errorf("coverage_rotation_wait_hours must be 1..72")
+	}
+	if c.Rotation != RotationOff && !c.RotationAcknowledged {
+		return c, fmt.Errorf("coverage_rotation %q needs coverage_rotation_acknowledged: an administrator confirms the customer's Tenable license terms allow rotating more assets than licensed", c.Rotation)
 	}
 
 	return c, nil

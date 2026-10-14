@@ -30,4 +30,17 @@ type DispatchTenableInput struct {
 	// ScanZoneID is the scan zone the targets route to, or nil. A zoned
 	// command is claimable only by that zone's sensors.
 	ScanZoneID *shared.ID
+	// NewAddresses is how many addresses the batch may add to the license
+	// count (the sensor's license guard checks Tenable.sc has them free).
+	NewAddresses int
+}
+
+// BatchSettlement is how a license-aware coverage batch ended, per target
+// (research/143 §3.3): the targets it assessed, those that did not reply,
+// those it never finished (back to due, no failure counted) and those that
+// failed with the batch (Error says why). Targets are the batch command's
+// own, read against its payload.
+type BatchSettlement struct {
+	Done, Unreachable, Unfinished, Failed []string
+	Error                                 string
 }
