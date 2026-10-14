@@ -33,6 +33,7 @@ import type {
   SCMCompleteGitHubRequest,
   SCMGitLabConnection,
   SCMGitLabConnectRequest,
+  CITokenRefusal,
 } from '../types'
 import {
   fleetURL,
@@ -70,10 +71,15 @@ export function ciRunsURL(f: CIRunFilters = {}): string {
   return `${CI_BASE}/runs?${q.toString()}`
 }
 
-export function useCIRuns(filters: CIRunFilters, { enabled = true }: { enabled?: boolean } = {}) {
+export function useCIRuns(
+  filters: CIRunFilters,
+  { enabled = true, refreshInterval = 0 }: { enabled?: boolean; refreshInterval?: number } = {}
+) {
   const { currentTenant } = useTenant()
-  return useSWR<CIRunList>(currentTenant && enabled ? ciRunsURL(filters) : null, (url: string) =>
-    get<CIRunList>(url)
+  return useSWR<CIRunList>(
+    currentTenant && enabled ? ciRunsURL(filters) : null,
+    (url: string) => get<CIRunList>(url),
+    { refreshInterval }
   )
 }
 
@@ -324,5 +330,24 @@ export function useRemoveGitLab() {
     currentTenant ? SCM_APPS : null,
     async (_url: string, { arg }: { arg: string }) =>
       del<void>(`${SCM_APPS}/gitlab-connections/${encodeURIComponent(arg)}`)
+  )
+}
+
+/** The URL of the refused-pipeline listing; exported for tests. */
+export const CI_REFUSALS_URL = `${CI_BASE}/trust-refusals?limit=20`
+
+/**
+ * The latest refused CI token exchanges with their rule codes (scans:ci:write).
+ * `refreshInterval` polls while a pipeline is being set up.
+ */
+export function useTrustRefusals({
+  enabled = true,
+  refreshInterval = 0,
+}: { enabled?: boolean; refreshInterval?: number } = {}) {
+  const { currentTenant } = useTenant()
+  return useSWR<{ data?: CITokenRefusal[] }>(
+    currentTenant && enabled ? CI_REFUSALS_URL : null,
+    (url: string) => get<{ data?: CITokenRefusal[] }>(url),
+    { refreshInterval }
   )
 }

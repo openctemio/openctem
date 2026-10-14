@@ -17,6 +17,10 @@ func TestToRunDispatchResponse(t *testing.T) {
 			"jobs": 4, "targets_per_job": 1, "unzoned_targets": 0, "uncovered_targets": 1,
 			"zones": []map[string]any{{"zone_id": "z", "zone_name": "dc-a", "targets": 2, "jobs": 2, "queued_jobs": 0, "sensor_ids": []string{"s"}}},
 		},
+		"excluded_targets": []map[string]any{
+			{"target": "old.example.com", "rules": []map[string]string{{"kind": "exclusion", "id": "x1", "pattern": "old.example.com"}}},
+			{"target": "198.51.100.0/29", "cut": true, "removed_addresses": 1},
+		},
 		"scan_id": "ignored",
 	}
 	raw, _ := json.Marshal(fresh)
@@ -31,6 +35,10 @@ func TestToRunDispatchResponse(t *testing.T) {
 		if got.ResolvedTargets != 5 || got.ExcludedTargets != 1 || len(got.Warnings) != 1 ||
 			len(got.UncoveredTargets) != 1 || got.UncoveredTargets[0].Target != "db01" {
 			t.Errorf("%s: %+v", name, got)
+		}
+		if len(got.Excluded) != 2 || got.Excluded[0].Rules[0].Pattern != "old.example.com" ||
+			!got.Excluded[1].Cut || got.Excluded[1].RemovedAddresses != 1 {
+			t.Errorf("%s: excluded %+v", name, got.Excluded)
 		}
 		if got.ZoneRouting == nil || got.ZoneRouting.Jobs != 4 || len(got.ZoneRouting.Zones) != 1 ||
 			got.ZoneRouting.Zones[0].ZoneName != "dc-a" || got.ZoneRouting.Zones[0].SensorIDs[0] != "s" {

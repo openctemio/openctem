@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "bd153e0c308103c2"
+const RegistryVersion = "cebb3fc24d3eb181"
 
 // Lenses.
 const (
@@ -1717,7 +1717,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "scheme", Label: "Scheme", LabelVI: "Lược đồ"},
 	{Key: "secondary_cidrs", Label: "Secondary CIDRs", LabelVI: "Dải CIDR phụ", List: true},
 	{Key: "serial_number", Label: "Serial number", LabelVI: "Số sê-ri", Format: "code"},
-	{Key: "server", Label: "Server", LabelVI: "Máy chủ web", Synonyms: []string{"web_server"}},
+	{Key: "server", Label: "HTTP server header", LabelVI: "Header Server (HTTP)", Synonyms: []string{"web_server"}},
 	{Key: "service", Label: "Service", LabelVI: "Dịch vụ"},
 	{Key: "service_count", Label: "Services", LabelVI: "Số dịch vụ"},
 	{Key: "signature_algorithm", Label: "Signature algorithm", LabelVI: "Thuật toán chữ ký"},
@@ -1731,7 +1731,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "target_sdk_version", Label: "Target SDK", LabelVI: "SDK mục tiêu"},
 	{Key: "technologies", Label: "Technologies", LabelVI: "Công nghệ", Synonyms: []string{"technology"}, List: true},
 	{Key: "timeout_seconds", Label: "Timeout (s)", LabelVI: "Thời gian chờ (giây)"},
-	{Key: "title", Label: "Title", LabelVI: "Tiêu đề"},
+	{Key: "title", Label: "Page title", LabelVI: "Tiêu đề trang"},
 	{Key: "tls_version", Label: "TLS version", LabelVI: "Phiên bản TLS"},
 	{Key: "transport", Label: "Transport", LabelVI: "Giao thức truyền tải"},
 	{Key: "trust_policy", Label: "Trust policy", LabelVI: "Chính sách tin cậy"},
