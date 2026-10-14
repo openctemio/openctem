@@ -40,6 +40,25 @@ const (
 	maxSkippedInSummary    = 5
 )
 
+// SkipRuleTargetGuard is the rule of a target the sensor's target guard (its
+// built-in network and path checks, not a local policy rule) refused: sdk-go
+// core.RefusedTargetRuleGuard.
+const SkipRuleTargetGuard = "target_guard"
+
+// GuardRefusedCount is how many of a task's targets the sensor's target
+// guard refused, from its result's refused_targets list: guardListed of
+// the listed entries carry SkipRuleTargetGuard, total is the task's
+// refused_targets_total. A sensor lists a bounded number of entries; when
+// every listed one is the guard's, the unlisted rest are counted as the
+// guard's too. Never more than the task's targets (sensor-supplied).
+func GuardRefusedCount(guardListed, listed, total, targets int) int {
+	n := max(guardListed, 0)
+	if n > 0 && n == listed && total > listed {
+		n = total
+	}
+	return min(n, max(targets, 0))
+}
+
 // ErrCodeTargetsSkipped is the code of a step that completed with targets
 // its sensor skipped.
 const ErrCodeTargetsSkipped = "TARGETS_SKIPPED"
