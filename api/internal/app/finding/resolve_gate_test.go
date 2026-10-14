@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -14,6 +15,11 @@ type methodStubRepo struct {
 	bulkStubRepo
 	method vulnerability.ResolutionMethod
 	by     *shared.ID
+}
+
+// AcceptUntil records an accept like UpdateStatusBatch does.
+func (r *methodStubRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
+	return r.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
 }
 
 func (r *methodStubRepo) UpdateStatusBatch(ctx context.Context, tid shared.ID, ids []shared.ID, st vulnerability.FindingStatus, res string, by *shared.ID, m vulnerability.ResolutionMethod) error {
