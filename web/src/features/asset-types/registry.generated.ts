@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = 'bd153e0c308103c2'
+export const ASSET_REGISTRY_VERSION = 'cebb3fc24d3eb181'
 
 export type AssetLens =
   | 'external_surface'
@@ -865,7 +865,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   scheme: { label: 'Scheme', labelVi: 'Lược đồ' },
   secondary_cidrs: { label: 'Secondary CIDRs', labelVi: 'Dải CIDR phụ', list: true },
   serial_number: { label: 'Serial number', labelVi: 'Số sê-ri', format: 'code' },
-  server: { label: 'Server', labelVi: 'Máy chủ web', synonyms: ['web_server'] },
+  server: {
+    label: 'HTTP server header',
+    labelVi: 'Header Server (HTTP)',
+    synonyms: ['web_server'],
+  },
   service: { label: 'Service', labelVi: 'Dịch vụ' },
   service_count: { label: 'Services', labelVi: 'Số dịch vụ' },
   signature_algorithm: { label: 'Signature algorithm', labelVi: 'Thuật toán chữ ký' },
@@ -888,7 +892,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
     list: true,
   },
   timeout_seconds: { label: 'Timeout (s)', labelVi: 'Thời gian chờ (giây)' },
-  title: { label: 'Title', labelVi: 'Tiêu đề' },
+  title: { label: 'Page title', labelVi: 'Tiêu đề trang' },
   tls_version: { label: 'TLS version', labelVi: 'Phiên bản TLS' },
   transport: { label: 'Transport', labelVi: 'Giao thức truyền tải' },
   trust_policy: { label: 'Trust policy', labelVi: 'Chính sách tin cậy' },
