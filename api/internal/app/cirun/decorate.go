@@ -183,6 +183,12 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 		if !run.CommitVerified || run.CommitSHA == "" {
 			return cirun.DecorationSkipped, "no verified commit"
 		}
+		// A fork event (pull_request_target, workflow_run) carries the base
+		// branch's commit but judged code the fork chose: its verdict never
+		// goes on the base commit, where it would satisfy a required check.
+		if run.Fork {
+			return cirun.DecorationSkipped, "a fork event's verdict is not posted on the base commit"
+		}
 		sha = run.CommitSHA
 	}
 
