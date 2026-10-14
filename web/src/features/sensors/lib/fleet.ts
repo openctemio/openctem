@@ -2,6 +2,7 @@ import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
 
+import type { Tr } from './format'
 import { dispatchTools, sensorCapacity } from './capabilities'
 import { canTakeJobs, sensorState, SENSOR_STATES, type FleetThresholds } from './sensor-state'
 import {
@@ -309,16 +310,23 @@ const NO_VERSION = '__none__'
 export function groupSensors(
   sensors: Sensor[],
   by: FleetGroupBy,
-  zones: Pick<ScanZone, 'id' | 'name' | 'ranges' | 'sensor_ids'>[] = []
+  zones: Pick<ScanZone, 'id' | 'name' | 'ranges' | 'sensor_ids'>[] = [],
+  tr?: Tr
 ): SensorGroup[] {
-  if (by === 'none') return [{ key: 'all', label: 'All sensors', sensors }]
+  const L = (key: string, en: string) => (tr ? tr(key) : en)
+  if (by === 'none')
+    return [{ key: 'all', label: L('sensors.list.group.all', 'All sensors'), sensors }]
 
   if (by === 'role') {
     const scanners = sensors.filter((s) => sensorRoleOf(s.type) === 'scanner')
     const collectors = sensors.filter((s) => sensorRoleOf(s.type) === 'collector')
     return [
-      { key: 'scanner', label: 'Scanners', sensors: scanners },
-      { key: 'collector', label: 'Collectors', sensors: collectors },
+      { key: 'scanner', label: L('sensors.list.group.scanners', 'Scanners'), sensors: scanners },
+      {
+        key: 'collector',
+        label: L('sensors.list.group.collectors', 'Collectors'),
+        sensors: collectors,
+      },
     ].filter((g) => g.sensors.length > 0)
   }
 
@@ -336,7 +344,7 @@ export function groupSensors(
     })
     return keys.map((k) => ({
       key: k,
-      label: k === NO_VERSION ? 'Not reported' : k,
+      label: k === NO_VERSION ? L('sensors.list.group.noVersion', 'Not reported') : k,
       sensors: groups.get(k) ?? [],
     }))
   }
@@ -358,6 +366,7 @@ export function groupSensors(
     if (rows?.length) out.push({ key: z.id, label: z.name, sensors: rows, zone: z })
   }
   const rest = buckets.get(NO_ZONE)
-  if (rest?.length) out.push({ key: NO_ZONE, label: 'No zone', sensors: rest })
+  if (rest?.length)
+    out.push({ key: NO_ZONE, label: L('sensors.list.group.noZone', 'No zone'), sensors: rest })
   return out
 }
