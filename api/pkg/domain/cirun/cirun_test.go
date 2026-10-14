@@ -366,18 +366,29 @@ func TestStrictestAndPolicyValidate(t *testing.T) {
 
 func TestOverrideValidate(t *testing.T) {
 	now := time.Now()
-	o := GateOverride{CommitSHA: " ABCDEF1 ", Reason: "production outage fix", ExpiresAt: now.Add(time.Hour)}
-	if err := o.Validate(now); err != nil || o.CommitSHA != "abcdef1" {
+	full := strings.Repeat("abcdef12", 5)
+	o := GateOverride{CommitSHA: " " + strings.ToUpper(full) + " ", Reason: "production outage fix", ExpiresAt: now.Add(time.Hour)}
+	if err := o.Validate(now); err != nil || o.CommitSHA != full {
 		t.Fatalf("%v %q", err, o.CommitSHA)
 	}
-	if !o.MatchesCommit("abcdef1234") || o.MatchesCommit("abcdee1") {
-		t.Fatal("commit prefix matching")
+	if !o.MatchesCommit(strings.ToUpper(full)) {
+		t.Fatal("the override does not cover its own commit")
+	}
+	// A commit that only shares a prefix (one made to fit it) is not covered.
+	if o.MatchesCommit(full[:39]+"0") || o.MatchesCommit(full[:7]) || o.MatchesCommit("") {
+		t.Fatal("the override covers another commit")
+	}
+	sha256 := GateOverride{CommitSHA: strings.Repeat("ab", 32), Reason: "production outage fix", ExpiresAt: now.Add(time.Hour)}
+	if err := sha256.Validate(now); err != nil {
+		t.Fatalf("SHA-256 commit id refused: %v", err)
 	}
 	for name, bad := range map[string]GateOverride{
 		"not a sha":    {CommitSHA: "main", Reason: "production outage fix", ExpiresAt: now.Add(time.Hour)},
-		"short reason": {CommitSHA: "abcdef1", Reason: "because", ExpiresAt: now.Add(time.Hour)},
-		"too long":     {CommitSHA: "abcdef1", Reason: "production outage fix", ExpiresAt: now.Add(8 * 24 * time.Hour)},
-		"in the past":  {CommitSHA: "abcdef1", Reason: "production outage fix", ExpiresAt: now.Add(-time.Minute)},
+		"abbreviated":  {CommitSHA: "abcdef1", Reason: "production outage fix", ExpiresAt: now.Add(time.Hour)},
+		"41 chars":     {CommitSHA: full + "a", Reason: "production outage fix", ExpiresAt: now.Add(time.Hour)},
+		"short reason": {CommitSHA: full, Reason: "because", ExpiresAt: now.Add(time.Hour)},
+		"too long":     {CommitSHA: full, Reason: "production outage fix", ExpiresAt: now.Add(8 * 24 * time.Hour)},
+		"in the past":  {CommitSHA: full, Reason: "production outage fix", ExpiresAt: now.Add(-time.Minute)},
 	} {
 		if err := bad.Validate(now); !errors.Is(err, shared.ErrValidation) {
 			t.Fatalf("%s: %v", name, err)
@@ -393,5 +404,36 @@ func TestClaimsJobID(t *testing.T) {
 	gl := ParseGitLabClaims(map[string]any{"project_path": "grp/proj", "ref": "main", "job_id": 4242.0})
 	if gl.JobID != "4242" {
 		t.Fatalf("gitlab job id = %q", gl.JobID)
+	}
+}
+
+// A fork event carries the base branch's ref: it must never count as a run
+// of the default branch, and its findings go to a branch that is not one of
+// the repository's.
+func TestForkEventsAreNeverDefaultBranchRuns(t *testing.T) {
+	push := githubClaims(nil)
+	if !IsDefaultBranchRun(push, "main") {
+		t.Fatal("a push to main is a default-branch run")
+	}
+	if IsDefaultBranchRun(push, "develop") {
+		t.Fatal("a push to main is not a run of develop")
+	}
+	for _, ev := range []string{"pull_request_target", "workflow_run"} {
+		c := githubClaims(map[string]any{"event_name": ev})
+		if c.Branch != "main" {
+			t.Fatalf("%s: branch claim %q", ev, c.Branch)
+		}
+		if IsDefaultBranchRun(c, "main") {
+			t.Errorf("%s on main counted as a default-branch run", ev)
+		}
+	}
+	if got := ReportBranchName("main", "pull_request_target", "", true); got != "fork/pull_request_target" {
+		t.Errorf("fork event branch = %q", got)
+	}
+	if got := ReportBranchName("main", "pull_request", "12", true); got != "fork/pr-12" {
+		t.Errorf("fork pull request branch = %q", got)
+	}
+	if got := ReportBranchName("main", "push", "", false); got != "main" {
+		t.Errorf("own branch = %q", got)
 	}
 }
