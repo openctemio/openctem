@@ -30,6 +30,11 @@ type Repository interface {
 	// an issuer.
 	EnabledTrustConfigs(ctx context.Context, tenantID shared.ID, issuer string) ([]TrustConfig, error)
 	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error
+	// PipelineAudienceState: whether the pipeline exists and has exchanged a
+	// token with its configuration's current audience.
+	PipelineAudienceState(ctx context.Context, tenantID shared.ID, key PipelineKey) (exists, upgraded bool, err error)
+	// MarkPipelineAudienceUpgraded ends the legacy audience for the pipeline.
+	MarkPipelineAudienceUpgraded(ctx context.Context, tenantID shared.ID, key PipelineKey, at time.Time) error
 
 	// CIRequireOIDC reads whether the tenant refuses CI results sent with a
 	// sensor key; SetCIRequireOIDC writes it.
