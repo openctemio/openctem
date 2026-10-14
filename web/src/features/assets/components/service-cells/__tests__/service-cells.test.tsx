@@ -92,6 +92,25 @@ describe('OverflowChips', () => {
     ).toHaveTextContent('+2')
   })
 
+  it('"+N" opens a list of every hidden value on click (touch and keyboard, not hover only)', async () => {
+    render(<OverflowChips label="IP" values={['192.0.2.1', '192.0.2.2', '192.0.2.3']} />)
+    expect(screen.queryByText('192.0.2.3')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^2 more IP/ }))
+    expect(await screen.findByText('192.0.2.3')).toBeInTheDocument()
+    expect(screen.getByText('192.0.2.2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy all' })).toBeInTheDocument()
+  })
+
+  it('a detail view lists every value and has no "+N"', () => {
+    render(
+      <OverflowChips label="IP" values={['192.0.2.1', '192.0.2.2', '192.0.2.3']} max={Infinity} />
+    )
+    for (const ip of ['192.0.2.1', '192.0.2.2', '192.0.2.3']) {
+      expect(screen.getByText(ip)).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
   it('renders nothing for no values', () => {
     const { container } = render(<OverflowChips label="CNAME" values={[]} />)
     expect(container).toBeEmptyDOMElement()
@@ -337,6 +356,25 @@ describe('cellsForType', () => {
     expect(container).toBeEmptyDOMElement()
     rerender(<OpenPortChips asset={{ ...bareService, metadata: { ports: [] } } as Asset} />)
     expect(screen.getByText('No open ports')).toBeInTheDocument()
+  })
+})
+
+describe('drawer: every value', () => {
+  it('lists every IP and CNAME of a subdomain, with no "+N"', () => {
+    const sub = {
+      ...bareService,
+      type: 'subdomain',
+      subType: undefined,
+      metadata: {
+        cname_target: 'lb.example.net',
+        ip_addresses: ['203.0.113.21', '203.0.113.22', '203.0.113.23'],
+      },
+    } as unknown as Asset
+    render(<SurfaceFactsDetail asset={sub} />)
+    for (const ip of ['203.0.113.21', '203.0.113.22', '203.0.113.23']) {
+      expect(screen.getByText(ip)).toBeInTheDocument()
+    }
+    expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument()
   })
 })
 
