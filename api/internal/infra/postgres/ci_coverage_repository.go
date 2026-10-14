@@ -232,6 +232,36 @@ func (r *CIRunRepository) TokenRefusalsSince(ctx context.Context, tenantID share
 	return n, err
 }
 
+// RecentTokenRefusals lists the tenant's latest refused CI token exchanges
+// from the audit log, newest first.
+func (r *CIRunRepository) RecentTokenRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]cirun.TokenRefusal, error) {
+	if limit <= 0 || limit > cirun.MaxTokenRefusals {
+		limit = cirun.MaxTokenRefusals
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT logged_at, COALESCE(resource_name, ''), COALESCE(metadata->>'provider', ''),
+			COALESCE(metadata->>'ref', ''), COALESCE(metadata->>'event', ''),
+			COALESCE(metadata->'reasons', '[]'::jsonb), COALESCE(message, '')
+		FROM audit_logs WHERE tenant_id = $1 AND action = 'ci_run.token_refused'
+		ORDER BY logged_at DESC LIMIT $2`, tenantID.String(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []cirun.TokenRefusal{}
+	for rows.Next() {
+		var (
+			t       cirun.TokenRefusal
+			reasons []byte
+		)
+		if err := rows.Scan(&t.At, &t.Repository, &t.Provider, &t.Ref, &t.Event, &reasons, &t.Message); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(reasons, &t.Reasons)
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ClearAlert ends a firing alert (its condition no longer holds).
 func (r *CIRunRepository) ClearAlert(ctx context.Context, tenantID, subjectID shared.ID, kind cirun.AlertKind) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM ci_alert_state WHERE tenant_id = $1 AND subject_id = $2 AND kind = $3`,
