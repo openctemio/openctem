@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -21,6 +22,7 @@ export function PriorityClassBadge({
   assetId,
   className,
 }: PriorityClassBadgeProps) {
+  const { t } = useTranslation()
   const config = PRIORITY_CLASS_CONFIG[priorityClass]
 
   const badge = (
@@ -35,7 +37,9 @@ export function PriorityClassBadge({
     <Tooltip>
       <TooltipTrigger asChild>{badge}</TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
-        <p className="font-medium">{config.description}</p>
+        <p className="font-medium">
+          {t(`findings.priorityClass.${priorityClass}`, config.description)}
+        </p>
         <PriorityClassSla
           priorityClass={priorityClass}
           assetId={assetId}

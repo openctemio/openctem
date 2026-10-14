@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +12,17 @@ import {
 import { ChevronDown, Loader2, Shield, Check } from 'lucide-react'
 import { SEVERITY_CONFIG } from '../types'
 import type { Severity } from '@/features/shared/types'
+
+/** The severity name in the active language; `none` has no shared key. */
+function severityLabel(
+  t: (key: string, fallback?: string) => string,
+  severity: Severity,
+  label: string
+): string {
+  return severity === 'none'
+    ? t('findings.severitySelect.none', label)
+    : t(`severity.${severity}`, label)
+}
 
 interface SeveritySelectProps {
   /** Current severity value */
@@ -41,6 +53,7 @@ export function SeveritySelect({
   showCheck = false,
   showIcon = true,
 }: SeveritySelectProps) {
+  const { t } = useTranslation()
   const currentConfig = SEVERITY_CONFIG[value]
   const isProcessingRef = useRef(false)
 
@@ -71,7 +84,7 @@ export function SeveritySelect({
           ) : showIcon ? (
             <Shield className="me-1 h-3 w-3" />
           ) : null}
-          {currentConfig.label}
+          {severityLabel(t, value, currentConfig.label)}
           {cvss !== undefined && <span className="ms-1 font-mono text-[10px]">({cvss})</span>}
           {!disabled && <ChevronDown className="ms-1 h-3 w-3" />}
         </Button>
@@ -87,7 +100,7 @@ export function SeveritySelect({
               disabled={disabled || loading}
             >
               <div className={`h-2 w-2 rounded-full ${config.bgColor.replace('/20', '')}`} />
-              {config.label}
+              {severityLabel(t, severity, config.label)}
               <span className="text-muted-foreground ms-auto text-xs">{config.cvssRange}</span>
               {showCheck && severity === value && <Check className="ms-1 h-3 w-3" />}
             </DropdownMenuItem>

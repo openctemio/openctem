@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import {
   epssScoreToPercent,
   formatEpssPercentile,
@@ -22,8 +23,8 @@ interface ThreatIntelCardProps {
   priorityClassReason: string | null
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return 'N/A'
+function formatDate(dateStr: string | null, t: (key: string, fallback?: string) => string): string {
+  if (!dateStr) return t('findings.threatIntel.na', 'N/A')
   return new Date(dateStr).toLocaleDateString()
 }
 
@@ -37,20 +38,25 @@ export function ThreatIntelCard({
   priorityClass,
   priorityClassReason,
 }: ThreatIntelCardProps) {
+  const { t } = useTranslation()
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Target className="h-4 w-4" />
-          Threat Intelligence
+          {t('findings.threatIntel.title', 'Threat Intelligence')}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* EPSS Score */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">EPSS Score</span>
-            <span className="font-mono font-medium">{formatEpssScore(epssScore, 2, 'N/A')}</span>
+            <span className="text-muted-foreground">
+              {t('findings.threatIntel.epssScore', 'EPSS Score')}
+            </span>
+            <span className="font-mono font-medium">
+              {formatEpssScore(epssScore, 2, t('findings.threatIntel.na', 'N/A'))}
+            </span>
           </div>
           {epssScore !== null && (
             <div className="h-2 w-full rounded-full bg-muted">
@@ -71,8 +77,10 @@ export function ThreatIntelCard({
           )}
           {epssPercentile !== null && (
             <p className="text-xs text-muted-foreground">
-              Percentile: {formatEpssPercentile(epssPercentile)} (
-              {formatEpssTopPercent(epssPercentile)})
+              {t('findings.threatIntel.percentile', 'Percentile: {percentile} ({top})', {
+                percentile: formatEpssPercentile(epssPercentile),
+                top: formatEpssTopPercent(epssPercentile),
+              })}
             </p>
           )}
         </div>
@@ -81,20 +89,26 @@ export function ThreatIntelCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Known Exploited (KEV)</span>
+            <span className="text-muted-foreground">
+              {t('findings.threatIntel.kev', 'Known Exploited (KEV)')}
+            </span>
           </div>
           {isInKev ? (
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20">
-                In KEV
+                {t('findings.threatIntel.inKev', 'In KEV')}
               </Badge>
               {kevDueDate && (
-                <span className="text-xs text-muted-foreground">Due: {formatDate(kevDueDate)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('findings.threatIntel.due', 'Due: {date}', {
+                    date: formatDate(kevDueDate, t),
+                  })}
+                </span>
               )}
             </div>
           ) : (
             <Badge variant="outline" className="bg-muted text-muted-foreground">
-              Not in KEV
+              {t('findings.threatIntel.notInKev', 'Not in KEV')}
             </Badge>
           )}
         </div>
@@ -103,7 +117,9 @@ export function ThreatIntelCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
             <Network className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Reachability</span>
+            <span className="text-muted-foreground">
+              {t('findings.threatIntel.reachability', 'Reachability')}
+            </span>
           </div>
           {isReachable ? (
             <div className="flex items-center gap-2">
@@ -111,17 +127,23 @@ export function ThreatIntelCard({
                 variant="outline"
                 className="bg-orange-500/10 text-orange-500 border-orange-500/20"
               >
-                Reachable
+                {t('findings.threatIntel.reachable', 'Reachable')}
               </Badge>
               {reachableFromCount > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  from {reachableFromCount} path{reachableFromCount !== 1 ? 's' : ''}
+                  {reachableFromCount === 1
+                    ? t('findings.threatIntel.fromPathOne', 'from {count} path', {
+                        count: reachableFromCount,
+                      })
+                    : t('findings.threatIntel.fromPathMany', 'from {count} paths', {
+                        count: reachableFromCount,
+                      })}
                 </span>
               )}
             </div>
           ) : (
             <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
-              Not Reachable
+              {t('findings.threatIntel.notReachable', 'Not Reachable')}
             </Badge>
           )}
         </div>
@@ -132,7 +154,9 @@ export function ThreatIntelCard({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm">
                 <Shield className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Priority Class</span>
+                <span className="text-muted-foreground">
+                  {t('findings.threatIntel.priorityClass', 'Priority Class')}
+                </span>
               </div>
               <Badge
                 variant="outline"

@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { mutate } from 'swr'
@@ -46,6 +47,7 @@ export function CreateTicketDialog({
   open,
   onOpenChange,
 }: CreateTicketDialogProps) {
+  const { t } = useTranslation()
   const [projectKey, setProjectKey] = useState('')
   const [issueType, setIssueType] = useState('')
 
@@ -62,11 +64,11 @@ export function CreateTicketDialog({
       // Only offer "Open" for a real http(s) ticket URL (guard against a
       // javascript:/data: URL slipping through to window.open).
       const safeUrl = safeHref(info.ticket_url, { allowRelative: false })
-      toast.success(`Created ${info.ticket_key}`, {
-        description: 'Jira ticket linked to this finding.',
+      toast.success(t('findings.createTicket.created', 'Created {key}', { key: info.ticket_key }), {
+        description: t('findings.createTicket.linked', 'Jira ticket linked to this finding.'),
         action: safeUrl
           ? {
-              label: 'Open',
+              label: t('findings.createTicket.open', 'Open'),
               onClick: () => window.open(safeUrl, '_blank', 'noopener,noreferrer'),
             }
           : undefined,
@@ -77,14 +79,20 @@ export function CreateTicketDialog({
       setProjectKey('')
       setIssueType('')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create ticket'
+      const message =
+        err instanceof Error
+          ? err.message
+          : t('findings.createTicket.failed', 'Failed to create ticket')
       // Match the backend's specific "no destination project" validation, not any
       // error that merely contains the word "project" (e.g. "project not found",
       // permission errors) — those should surface their real message.
       const noProject = /no default project|project_key is required/i.test(message)
-      toast.error('Could not create ticket', {
+      toast.error(t('findings.createTicket.couldNot', 'Could not create ticket'), {
         description: noProject
-          ? 'No project specified and no default project is configured. Set a default project under Settings → Integrations → Ticketing, or enter a project key here.'
+          ? t(
+              'findings.createTicket.noProject',
+              'No project specified and no default project is configured. Set a default project under Settings → Integrations → Ticketing, or enter a project key here.'
+            )
           : message,
       })
     }
@@ -94,22 +102,35 @@ export function CreateTicketDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Create Jira ticket</DialogTitle>
+          <DialogTitle>{t('findings.createTicket.title', 'Create Jira ticket')}</DialogTitle>
           <DialogDescription>
             {findingTitle
-              ? `Create and link a Jira ticket for "${findingTitle}".`
-              : 'Create and link a Jira ticket for this finding.'}
+              ? t(
+                  'findings.createTicket.descriptionTitled',
+                  'Create and link a Jira ticket for "{title}".',
+                  {
+                    title: findingTitle,
+                  }
+                )
+              : t(
+                  'findings.createTicket.description',
+                  'Create and link a Jira ticket for this finding.'
+                )}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="ticket-project">Project</Label>
+              <Label htmlFor="ticket-project">
+                {t('findings.createTicket.project', 'Project')}
+              </Label>
               {projects.length > 0 && (
                 <Select value={projectKey || undefined} onValueChange={setProjectKey}>
                   <SelectTrigger id="ticket-project-picker">
-                    <SelectValue placeholder="Use default project" />
+                    <SelectValue
+                      placeholder={t('findings.createTicket.useDefault', 'Use default project')}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {projects.map((p) => (
@@ -124,20 +145,28 @@ export function CreateTicketDialog({
                 id="ticket-project"
                 value={projectKey}
                 onChange={(e) => setProjectKey(e.target.value.toUpperCase())}
-                placeholder="Leave blank to use the default project"
+                placeholder={t(
+                  'findings.createTicket.blankPlaceholder',
+                  'Leave blank to use the default project'
+                )}
               />
               <p className="text-muted-foreground text-xs">
-                Leave blank to route by your configured default project / routing rules.
+                {t(
+                  'findings.createTicket.blankHint',
+                  'Leave blank to route by your configured default project / routing rules.'
+                )}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="ticket-issue-type">Issue type (optional)</Label>
+              <Label htmlFor="ticket-issue-type">
+                {t('findings.createTicket.issueType', 'Issue type (optional)')}
+              </Label>
               <Input
                 id="ticket-issue-type"
                 value={issueType}
                 onChange={(e) => setIssueType(e.target.value)}
-                placeholder="e.g. Bug"
+                placeholder={t('findings.createTicket.issueTypePlaceholder', 'e.g. Bug')}
               />
             </div>
           </div>
@@ -145,11 +174,13 @@ export function CreateTicketDialog({
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button type="button" onClick={handleCreate} disabled={isMutating}>
             <ExternalLink className="me-2 h-4 w-4" />
-            {isMutating ? 'Creating...' : 'Create ticket'}
+            {isMutating
+              ? t('findings.createTicket.creating', 'Creating...')
+              : t('findings.createTicket.submit', 'Create ticket')}
           </Button>
         </DialogFooter>
       </DialogContent>
