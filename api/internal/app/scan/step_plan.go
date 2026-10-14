@@ -220,7 +220,9 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 		}
 	}
 	// The task's layered budget (research/122): the sensor bounds each
-	// target with it and stops the task only at twice its expected time;
+	// target with it and stops the task at the step's timeout_seconds when
+	// set, else at twice its expected time (the platform's overrun re-queue
+	// waits for the same deadline);
 	// the platform calls the task stalled when no target finishes within
 	// the stall window.
 	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
