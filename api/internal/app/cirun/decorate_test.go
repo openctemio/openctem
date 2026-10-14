@@ -133,6 +133,14 @@ func TestDecorateGitHub(t *testing.T) {
 	if st, _ := newJob(p).decorate(ctx, &run); st != cirun.DecorationPosted || p.checks[0].HeadSHA != "merge1" || len(p.comments) != 0 {
 		t.Fatalf("push run: %s %+v", st, p.checks)
 	}
+	// A fork event without a pull request (pull_request_target,
+	// workflow_run) carries the base commit: no check goes on it.
+	p = &fakePoster{}
+	run = base
+	run.PullRequest, run.Fork, run.Event = "", true, "pull_request_target"
+	if st, _ := newJob(p).decorate(ctx, &run); st != cirun.DecorationSkipped || len(p.checks) != 0 {
+		t.Fatalf("fork event on the base commit: %s %+v", st, p.checks)
+	}
 	// GitHub refusing access is final; a server error is retried.
 	run = base
 	run.PullRequest = ""
