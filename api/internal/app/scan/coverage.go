@@ -25,6 +25,10 @@ const CoverageTag = "auto-coverage"
 // maxCoverageTargets caps one coverage run.
 const maxCoverageTargets = 500
 
+// defaultCoverageChunk is the targets per command when the stage names no
+// chunk size.
+const defaultCoverageChunk = 25
+
 // CoverageScanName is the scan that carries one capability's coverage runs
 // for a tenant: one per capability, reused by every batch.
 func CoverageScanName(capability string) string { return "Continuous coverage: " + capability }
@@ -107,7 +111,13 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		return nil, err
 	}
 	sc.SetTargets(res.Kept)
-	if err := sc.SetSingleScanner(tool, map[string]any{"targets": res.Kept}, 1); err != nil {
+	// One command per chunk of the stage's size (list tools are efficient
+	// with lists), not one per target.
+	perJob := st.ChunkSizeFor(tool)
+	if perJob <= 0 {
+		perJob = defaultCoverageChunk
+	}
+	if err := sc.SetSingleScanner(tool, map[string]any{"targets": res.Kept}, perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
 	}
 	if err := s.applyIntensity(ctx, sc, string(intensity)); err != nil {
