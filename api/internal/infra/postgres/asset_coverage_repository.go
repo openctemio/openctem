@@ -4,10 +4,11 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"strconv"
 	"strings"
 	"time"
@@ -268,7 +269,9 @@ func retryOnDeadlock(ctx context.Context, fn func() error) error {
 	if !errors.As(err, &pqErr) || string(pqErr.Code) != deadlockDetected {
 		return err
 	}
-	wait := 50*time.Millisecond + time.Duration(rand.Int64N(int64(200*time.Millisecond))) //nolint:gosec // jitter, not security
+	var b [2]byte
+	_, _ = rand.Read(b[:]) // jitter only; a zero on error is fine
+	wait := 50*time.Millisecond + time.Duration(binary.LittleEndian.Uint16(b[:])%200)*time.Millisecond
 	select {
 	case <-ctx.Done():
 		return err
