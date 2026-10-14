@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { TagInput } from '@/components/ui/tag-input'
+import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState, PageHeader, RelativeTime } from '@/features/shared'
 import { DOCS } from '@/lib/docs-links'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -30,9 +31,9 @@ import {
 
 const FORM_ID = 'content-policy-form'
 
-const PIN_HELP: Record<string, string> = {
-  digest: 'Pin a database by its OCI digest (sha256:…). Empty: the newest the mirror has.',
-  tag: 'Pin a template release (v10.4.9). Empty: the newest release.',
+const PIN_HELP_KEY: Record<string, string> = {
+  digest: 'sensors.contentPolicy.pinHelp.digest',
+  tag: 'sensors.contentPolicy.pinHelp.tag',
 }
 
 function FieldError({ id, error }: { id: string; error?: string }) {
@@ -53,6 +54,7 @@ function PolicyForm({
   canWrite: boolean
   onSaved: (policy: ContentPolicy) => void
 }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<ContentPolicyForm>(() => policyToForm(data.policy))
   const [applyNow, setApplyNow] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -65,7 +67,7 @@ function PolicyForm({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const { policy, errors: errs } = formToPolicy(form)
+    const { policy, errors: errs } = formToPolicy(form, t)
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     setSaving(true)
@@ -73,35 +75,43 @@ function PolicyForm({
       const res = await updateContentPolicy({ policy, apply_now: applyNow })
       toast.success(
         applyNow
-          ? `Content policy saved and sent to ${res.commands_created} ${res.commands_created === 1 ? 'sensor' : 'sensors'}.`
-          : 'Content policy saved. Sensors get it with their next refresh request.'
+          ? t(
+              res.commands_created === 1
+                ? 'sensors.contentPolicy.savedSent.one'
+                : 'sensors.contentPolicy.savedSent.other',
+              undefined,
+              { count: res.commands_created }
+            )
+          : t('sensors.contentPolicy.saved')
       )
       onSaved(res.policy)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not save the content policy'))
+      toast.error(getErrorMessage(err, t('sensors.contentPolicy.saveError')))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <form id={FORM_ID} onSubmit={submit} className="space-y-5" aria-label="Content policy">
+    <form
+      id={FORM_ID}
+      onSubmit={submit}
+      className="space-y-5"
+      aria-label={t('sensors.contentPolicy.formLabel')}
+    >
       <Card>
         <CardHeader>
-          <CardTitle>Refresh schedule</CardTitle>
-          <CardDescription>
-            How often sensors check for new content. Content older than its maximum age is refreshed
-            at the next check, and the sensor shows as degraded until it is.
-          </CardDescription>
+          <CardTitle>{t('sensors.contentPolicy.schedule.title')}</CardTitle>
+          <CardDescription>{t('sensors.contentPolicy.schedule.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid max-w-xs gap-1.5">
-            <Label htmlFor="refresh-interval">Check every (hours)</Label>
+            <Label htmlFor="refresh-interval">{t('sensors.contentPolicy.checkEvery')}</Label>
             <Input
               id="refresh-interval"
               inputMode="numeric"
               value={form.refreshIntervalHours}
-              placeholder={hoursPlaceholder(defaults.refresh_interval_hours)}
+              placeholder={hoursPlaceholder(defaults.refresh_interval_hours, t)}
               disabled={readOnly}
               aria-invalid={!!errors.refreshIntervalHours}
               aria-describedby="refresh-interval-error"
@@ -114,11 +124,8 @@ function PolicyForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Content</CardTitle>
-          <CardDescription>
-            Maximum age and an optional pinned version per kind of content. Empty fields use the
-            platform default shown in grey.
-          </CardDescription>
+          <CardTitle>{t('sensors.contentPolicy.content.title')}</CardTitle>
+          <CardDescription>{t('sensors.contentPolicy.content.description')}</CardDescription>
         </CardHeader>
         <CardContent className="divide-y">
           {POLICY_CONTENT.map((name) => {
@@ -133,12 +140,12 @@ function PolicyForm({
               >
                 <p className="text-sm font-medium md:pt-7">{contentLabel(name)}</p>
                 <div className="grid gap-1.5">
-                  <Label htmlFor={`${name}-max-age`}>Maximum age (hours)</Label>
+                  <Label htmlFor={`${name}-max-age`}>{t('sensors.contentPolicy.maxAge')}</Label>
                   <Input
                     id={`${name}-max-age`}
                     inputMode="numeric"
                     value={f.maxAgeHours}
-                    placeholder={hoursPlaceholder(def?.max_age_hours)}
+                    placeholder={hoursPlaceholder(def?.max_age_hours, t)}
                     disabled={readOnly}
                     aria-invalid={!!errors[`${name}.maxAgeHours`]}
                     aria-describedby={`${name}-max-age-error`}
@@ -148,24 +155,24 @@ function PolicyForm({
                 </div>
                 {kind === 'rulesets' ? (
                   <div className="grid gap-1.5">
-                    <Label>Rulesets</Label>
+                    <Label>{t('sensors.contentPolicy.rulesets')}</Label>
                     <TagInput
                       value={f.rulesets}
                       onChange={(rulesets) => setPin(name, { rulesets })}
-                      placeholder="p/default, then Enter"
+                      placeholder={t('sensors.contentPolicy.rulesetsPlaceholder')}
                       maxTags={32}
                       disabled={readOnly}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Empty: semgrep fetches its own rules on every scan (--config auto, not
-                      controlled). Rulesets here are fetched, verified and pinned by the sensor, and
-                      change the rules scans use.
+                      {t('sensors.contentPolicy.rulesetsHelp')}
                     </p>
                     <FieldError id={`${name}-rulesets-error`} error={errors[`${name}.rulesets`]} />
                   </div>
                 ) : (
                   <div className="grid gap-1.5">
-                    <Label htmlFor={`${name}-version`}>Pinned version</Label>
+                    <Label htmlFor={`${name}-version`}>
+                      {t('sensors.contentPolicy.pinnedVersion')}
+                    </Label>
                     <Input
                       id={`${name}-version`}
                       className="font-mono"
@@ -177,7 +184,7 @@ function PolicyForm({
                       onChange={(e) => setPin(name, { version: e.target.value })}
                     />
                     <p id={`${name}-version-help`} className="text-xs text-muted-foreground">
-                      {PIN_HELP[kind]}
+                      {PIN_HELP_KEY[kind] ? t(PIN_HELP_KEY[kind]) : ''}
                     </p>
                     <FieldError id={`${name}-version-error`} error={errors[`${name}.version`]} />
                   </div>
@@ -196,9 +203,9 @@ function PolicyForm({
             onCheckedChange={setApplyNow}
             disabled={saving}
           />
-          <Label htmlFor="apply-now">Apply to sensors now</Label>
+          <Label htmlFor="apply-now">{t('sensors.contentPolicy.applyNow')}</Label>
           <span className="text-xs text-muted-foreground">
-            Sends the policy with a refresh request to every sensor that manages its content.
+            {t('sensors.contentPolicy.applyNowHint')}
           </span>
         </div>
       )}
@@ -213,6 +220,7 @@ function PolicyForm({
  * Read-only without sensors:write.
  */
 export function ContentPolicySettings() {
+  const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const { data, error, isLoading, mutate } = useContentPolicy()
   // Re-mount the form after a save so it shows what the API stored.
@@ -221,13 +229,13 @@ export function ContentPolicySettings() {
   return (
     <>
       <PageHeader
-        title="Scanner content"
-        description="How fresh the vulnerability databases, templates and rules your sensors scan with must be."
+        title={t('sensors.contentPolicy.page.title')}
+        description={t('sensors.contentPolicy.page.description')}
       >
         {canWrite && data && (
           <Button type="submit" form={FORM_ID} size="sm">
             <Save className="h-4 w-4" />
-            Save changes
+            {t('sensors.contentPolicy.saveChanges')}
           </Button>
         )}
       </PageHeader>
@@ -237,16 +245,14 @@ export function ContentPolicySettings() {
           <Info className="h-4 w-4" />
           <AlertDescription>
             <p>
-              Where content comes from (registries, mirrors, a local directory for air-gapped hosts)
-              is configured on each sensor host, never here, so the platform cannot point sensors at
-              other content.{' '}
+              {t('sensors.contentPolicy.sourceNote')}{' '}
               <a
                 href={DOCS.scanning.scannerContent}
                 target="_blank"
                 rel="noreferrer"
                 className="underline underline-offset-2"
               >
-                Scanner content updates
+                {t('sensors.contentPolicy.docsLink')}
               </a>
             </p>
           </AlertDescription>
@@ -255,12 +261,16 @@ export function ContentPolicySettings() {
         {!canWrite && (
           <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
             <Lock className="h-3.5 w-3.5" aria-hidden />
-            Changing the content policy needs an admin.
+            {t('sensors.contentPolicy.needsAdmin')}
           </p>
         )}
 
         {error ? (
-          <ErrorState title="the content policy" error={error} onRetry={() => mutate()} />
+          <ErrorState
+            title={t('sensors.contentPolicy.errorTitle')}
+            error={error}
+            onRetry={() => mutate()}
+          />
         ) : isLoading || !data ? (
           <div className="space-y-5" aria-busy>
             <Skeleton className="h-32 w-full" />
@@ -279,7 +289,8 @@ export function ContentPolicySettings() {
             />
             {data.updated_at && (
               <p className="text-xs text-muted-foreground">
-                Last changed <RelativeTime date={data.updated_at} className="text-xs" />
+                {t('sensors.contentPolicy.lastChanged')}{' '}
+                <RelativeTime date={data.updated_at} className="text-xs" />
               </p>
             )}
           </>
