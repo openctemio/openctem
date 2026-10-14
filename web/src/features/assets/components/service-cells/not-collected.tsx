@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * How a fact that was not collected is shown (ui-style-contract §7,
@@ -36,6 +37,11 @@ export function notCollectedText(items: readonly string[]): string | null {
   return unique.length > 0 ? `Not collected yet: ${unique.join(', ')}` : null
 }
 
+/** The i18n key of one missing-fact name ("HTTP status" → `assets.facts.missing.http_status`). */
+export function missingFactKey(item: string): string {
+  return `assets.facts.missing.${item.trim().toLowerCase().replace(/\s+/g, '_')}`
+}
+
 /** The single drawer line naming the facts no scan has recorded. */
 export function NotCollectedNote({
   items,
@@ -44,11 +50,14 @@ export function NotCollectedNote({
   items: readonly string[]
   className?: string
 }) {
-  const text = notCollectedText(items)
-  if (!text) return null
+  const { t } = useTranslation()
+  const unique = Array.from(new Set(items.filter(Boolean)))
+  if (unique.length === 0) return null
   return (
     <p data-slot="not-collected" className={cn('text-xs text-muted-foreground', className)}>
-      {text}
+      {t('assets.facts.notCollected', 'Not collected yet: {items}', {
+        items: unique.map((i) => t(missingFactKey(i), i)).join(', '),
+      })}
     </p>
   )
 }
