@@ -33,6 +33,9 @@ const (
 
 	ProblemCommandNotFound ProblemType = "command-not-found"
 	ProblemReportNotFound  ProblemType = "report-not-found"
+	// ProblemContentNotFound: a content pack or file the sensor may not hold
+	// (unknown, revoked, another organization's).
+	ProblemContentNotFound ProblemType = "content-not-found"
 
 	ProblemReportConflict        ProblemType = "report-conflict"
 	ProblemReportCommitted       ProblemType = "report-committed"
@@ -113,6 +116,7 @@ var problemDefs = map[ProblemType]problemDef{
 
 	ProblemCommandNotFound: {http.StatusNotFound, "Command not found", "No open command with this id is assigned to this sensor.", false, ""},
 	ProblemReportNotFound:  {http.StatusNotFound, "Report not found", "No report with this id exists for this sensor.", false, ""},
+	ProblemContentNotFound: {http.StatusNotFound, "Content not found", "This sensor may not hold this content pack or file.", false, ""},
 
 	ProblemReportConflict:        {http.StatusConflict, "Report conflict", "A different content was already received under this report id or segment.", false, ""},
 	ProblemReportCommitted:       {http.StatusConflict, "Report committed", "The report is committed; it accepts no more segments.", false, ""},
