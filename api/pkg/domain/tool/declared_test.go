@@ -51,21 +51,21 @@ func TestNewDeclaredTool(t *testing.T) {
 // single-line names; nothing is interpreted.
 func TestDeclaredToolTextIsSanitized(t *testing.T) {
 	d := toyDeclaration()
-	d.DisplayName = "  Evil‮\x00 <script>alert(1)</script>\n tool " + strings.Repeat("x", 300)
-	d.Description = "line one\nline two\x07​ " + strings.Repeat("y", 2000)
+	d.DisplayName = "  Evil\u202e\x00 <script>alert(1)</script>\n tool " + strings.Repeat("x", 300)
+	d.Description = "line one\nline two\x07\u200b " + strings.Repeat("y", 2000)
 	d.Category = "WEB<b>"
 	d.Icon = strings.Repeat("i", 40)
 	tl, err := NewDeclaredTool(shared.NewID(), d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.ContainsAny(tl.DisplayName, "‮\x00\n") || len([]rune(tl.DisplayName)) > 100 {
+	if strings.ContainsAny(tl.DisplayName, "\u202e\x00\n") || len([]rune(tl.DisplayName)) > 100 {
 		t.Fatalf("display name %q", tl.DisplayName)
 	}
 	if !strings.Contains(tl.DisplayName, "<script>") {
 		t.Fatal("markup is kept as text (rendered escaped), not stripped into something else")
 	}
-	if !strings.Contains(tl.Description, "line one\nline two") || strings.ContainsAny(tl.Description, "\x07​") ||
+	if !strings.Contains(tl.Description, "line one\nline two") || strings.ContainsAny(tl.Description, "\x07\u200b") ||
 		len([]rune(tl.Description)) > 1000 {
 		t.Fatalf("description %q", tl.Description)
 	}
