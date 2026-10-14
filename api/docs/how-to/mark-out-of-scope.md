@@ -47,12 +47,21 @@ cannot reach an excluded target.
    whole nor scanned through.
 2. **The job carries the exclusions.** A job with a range target carries, in
    `payload.exclusions`, the organization's address exclusions near its
-   ranges, so the sensor cuts its own ranges around them again (naabu
-   `-exclude-hosts`).
+   ranges, covered by the job signature. The sensor walks each range address
+   by address and leaves out the job's exclusions, its local policy's
+   `targets.deny` and the built-in deny list; naabu also gets them as
+   `-exclude-hosts`. An exclusion the sensor cannot read refuses the job.
+   Older sensors ignore the key; the platform's cut pieces still keep them
+   off excluded addresses.
 3. **Web jobs carry the deny paths.** A job for a web tool carries
    `web_scope` with the path exclusions of its hosts; the sensor's forwarder
-   refuses requests under them. A web job that cannot carry its scope is not
-   created.
+   refuses every request under a deny path, whatever its method, and checks
+   redirects again. A rule that blocks only methods other than GET and HEAD
+   (Read-only) limits the whole job to GET and HEAD. nuclei, validation and
+   retest jobs with a web scope run only on a sensor whose tool network is
+   confined (`net.confined@1`, sensor v0.19.0 or later with its seccomp
+   profile); without one they wait or are refused with `NO_CONFINED_SENSOR`.
+   A web job that cannot carry its scope is not created.
 4. **Re-check at claim.** When a sensor picks a job up, its targets pass the
    gate again: an exclusion added while the job was queued takes the target
    out (or fails the job when nothing is left).
@@ -72,8 +81,9 @@ short list of common ports at a low rate, HTTP GET of `/` and
 `/.well-known/*`, TLS and tech fingerprinting, nuclei info templates tagged
 tech or exposure. Platform guardrails keep it passive instead when its
 address is on a CDN, shared-hosting or cloud network, nothing is known about
-its network, many unrelated domains point at it, or a name is under none of
-your domains; a scan that names it reports the refusal `guardrailed`. Set the setting to **Off** for
+its network, names of 3 or more registrable domains point at it, or a name
+is under none of your domains; a name that resolves only through a wildcard
+DNS record is held until someone confirms it (`wildcard_only`); a scan that names it reports the refusal `guardrailed`. Set the setting to **Off** for
 passive only, or to **Full** for the scan's own intensity (still
 guardrailed). The Strict scan approval mode always means Off.
 

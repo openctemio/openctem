@@ -15,7 +15,7 @@ the two parts that ship together:
 | [`deploy/allinone/`](deploy/allinone/) | API + web + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
 Released separately, in their own repositories:
-[sensor](https://github.com/openctemio/sensor) (runs scans and collectors),
+[sensor](https://github.com/openctemio/sensor) (runs scans in your networks),
 [sdk-go](https://github.com/openctemio/sdk-go),
 [ctis](https://github.com/openctemio/ctis) (shared contract),
 [helm-charts](https://github.com/openctemio/helm-charts),
