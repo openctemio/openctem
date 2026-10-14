@@ -3,7 +3,7 @@
 - **Nobody is hard-deleted any more** (RFC-050 §2, owner decision 2026-10-04).
   Removing a member used to delete the membership and clean only its roles, so
   groups, grants and scope rows survived and a re-invite restored the old
-  access (research 21b L-13 / M-19).
+  access.
 - **Disable** (the existing suspend) now also suspends the member's API and
   MCP keys, drops their scope rows and pauses the scan schedules, report
   schedules and workflows they own (administrators are notified), in one
