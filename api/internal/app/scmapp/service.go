@@ -200,7 +200,7 @@ func (s *Service) CompleteGitHubInstall(ctx context.Context, tenantID shared.ID,
 	}
 	if !ok {
 		s.log.Warn("github app install refused: the person does not own the installation's account",
-			"tenant_id", tenantID.String(), "installation_id", in.InstallationID)
+			"tenant_id", tenantID.String())
 		return nil, scmapp.ErrNotAuthorized
 	}
 	var createdBy *shared.ID
