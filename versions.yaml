@@ -40,8 +40,8 @@ sdk:
 # token exchange refuses an older runner and its pipeline is degraded; "" = no
 # minimum.
 ci:
-  latest: v0.2.0
-  min: ""
+  latest: v0.3.0
+  min: v0.3.0
 
 # Helm chart (openctemio/helm-charts): the newest published chart whose
 # appVersion is platform.release. The chart is published after the tag, so a
