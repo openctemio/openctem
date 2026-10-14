@@ -59,13 +59,22 @@ type Repository interface {
 	// AddRunToken adds a job's upload token to a running aggregate run.
 	AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error
 	ListRuns(ctx context.Context, tenantID shared.ID, f RunFilter) ([]Run, int, error)
+	// ReserveRunReport takes one of the run's MaxRunReports report slots,
+	// atomically and only while the run is running: ErrRunEvaluated after
+	// the verdict, ErrRunReportCap when the slots are used up. A report is
+	// ingested only after its slot is reserved.
+	ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error
 	// RecordRunReport adds the fingerprints a report sighted (capped at
-	// MaxRunFindings per run) and counts the report.
+	// MaxRunFindings per run); ErrRunEvaluated once the run has its verdict.
 	RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
-	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error
+	// SaveVerdict stores the first verdict of a running run whose recorded
+	// findings count is still expectFindings (the count the verdict was
+	// computed from): ErrRunEvaluated when another verdict was stored first,
+	// ErrRunChanged when a report was recorded meanwhile.
+	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error
 
 	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]GatePolicy, error)
 	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*GatePolicy, error)

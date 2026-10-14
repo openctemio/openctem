@@ -34,6 +34,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	codescanapp "github.com/openctemio/openctem/api/internal/app/codescan"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -1221,14 +1222,18 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
 	if svc.ActiveGate != nil {
-		h.SetSuggestions(easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+		suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
 			func(ctx context.Context, tenantID shared.ID) (string, error) {
 				t, err := repos.Tenant.GetByID(ctx, tenantID)
 				if err != nil {
 					return "", err
 				}
 				return t.Name(), nil
-			}, seededNetworks(repos)))
+			}, seededNetworks(repos))
+		// The organization's own prefixes are offered only when the platform
+		// guardrails accept them as entries.
+		suggestions.SetGuardrails(svc.ScopeGuardrails)
+		h.SetSuggestions(suggestions)
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1391,6 +1396,13 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
+	if repos.CodeScan != nil {
+		var csAudit codescanapp.Auditor
+		if svc.Audit != nil {
+			csAudit = svc.Audit
+		}
+		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
+	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	// VEX documents a run uploads: stored on the run repository's findings,

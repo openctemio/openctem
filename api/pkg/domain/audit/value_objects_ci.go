@@ -30,6 +30,13 @@ const (
 	// repository's .openctem.yml made (pending approval).
 	ActionCIRepoExceptionsRequested Action = "ci_run.exceptions_requested"
 
+	// ActionCodeScanSettingsUpdated records a change of the tenant's code
+	// scanning template or of a repository's settings (reset included).
+	ActionCodeScanSettingsUpdated Action = "code_scan_settings.updated"
+	// ActionCodeScanRebaselineRequested records a person asking for a new
+	// full scan of a repository's protected branches.
+	ActionCodeScanRebaselineRequested Action = "code_scan.rebaseline_requested"
+
 	ActionCIGatePolicyCreated Action = "ci_gate_policy.created"
 	ActionCIGatePolicyUpdated Action = "ci_gate_policy.updated"
 	ActionCIGatePolicyDeleted Action = "ci_gate_policy.deleted"
@@ -71,6 +78,7 @@ const (
 	ResourceTypeCITrustConfig  ResourceType = "ci_trust_config"
 	ResourceTypeCIRun          ResourceType = "ci_run"
 	ResourceTypeCIGatePolicy   ResourceType = "ci_gate_policy"
+	ResourceTypeCodeScan       ResourceType = "code_scan"
 	ResourceTypeCIGateOverride ResourceType = "ci_gate_override"
 	ResourceTypeCIPipeline     ResourceType = "ci_pipeline"
 	ResourceTypeCISettings     ResourceType = "ci_settings"
@@ -78,36 +86,38 @@ const (
 )
 
 var _ = registerActions("ci", map[Action]Severity{
-	ActionCITrustConfigCreated:      SeverityHigh,
-	ActionCITrustConfigUpdated:      SeverityHigh,
-	ActionCITrustConfigDeleted:      SeverityMedium,
-	ActionCISettingsUpdated:         SeverityMedium,
-	ActionCIRunnerKeyRefused:        SeverityMedium,
-	ActionCIRunTokenIssued:          SeverityLow,
-	ActionCIRunTokenRefused:         SeverityMedium,
-	ActionCIRunResultsUploaded:      SeverityLow,
-	ActionCIRunEvaluated:            SeverityLow,
-	ActionCIRepoExceptionsRequested: SeverityMedium,
-	ActionCIGatePolicyCreated:       SeverityMedium,
-	ActionCIGatePolicyUpdated:       SeverityMedium,
-	ActionCIGatePolicyDeleted:       SeverityMedium,
-	ActionCIGatePolicyLoosened:      SeverityHigh,
-	ActionCIGateOverrideCreated:     SeverityHigh,
-	ActionCIGateOverrideRevoked:     SeverityMedium,
-	ActionCIGateOverrideUsed:        SeverityHigh,
-	ActionCIPipelineCreated:         SeverityLow,
-	ActionCIPipelinesRevoked:        SeverityMedium,
-	ActionCIPipelineRetired:         SeverityHigh,
-	ActionCIStaleSourceFindings:     SeverityLow,
-	ActionCICoverageExpected:        SeverityLow,
-	ActionCICoverageUnexpected:      SeverityLow,
-	ActionSCMAppInstalled:           SeverityHigh,
-	ActionSCMAppRemoved:             SeverityMedium,
-	ActionSCMAppStatusChanged:       SeverityMedium,
+	ActionCITrustConfigCreated:        SeverityHigh,
+	ActionCITrustConfigUpdated:        SeverityHigh,
+	ActionCITrustConfigDeleted:        SeverityMedium,
+	ActionCISettingsUpdated:           SeverityMedium,
+	ActionCIRunnerKeyRefused:          SeverityMedium,
+	ActionCIRunTokenIssued:            SeverityLow,
+	ActionCIRunTokenRefused:           SeverityMedium,
+	ActionCIRunResultsUploaded:        SeverityLow,
+	ActionCIRunEvaluated:              SeverityLow,
+	ActionCIRepoExceptionsRequested:   SeverityMedium,
+	ActionCIGatePolicyCreated:         SeverityMedium,
+	ActionCIGatePolicyUpdated:         SeverityMedium,
+	ActionCIGatePolicyDeleted:         SeverityMedium,
+	ActionCIGatePolicyLoosened:        SeverityHigh,
+	ActionCIGateOverrideCreated:       SeverityHigh,
+	ActionCIGateOverrideRevoked:       SeverityMedium,
+	ActionCIGateOverrideUsed:          SeverityHigh,
+	ActionCIPipelineCreated:           SeverityLow,
+	ActionCIPipelinesRevoked:          SeverityMedium,
+	ActionCIPipelineRetired:           SeverityHigh,
+	ActionCIStaleSourceFindings:       SeverityLow,
+	ActionCICoverageExpected:          SeverityLow,
+	ActionCICoverageUnexpected:        SeverityLow,
+	ActionSCMAppInstalled:             SeverityHigh,
+	ActionSCMAppRemoved:               SeverityMedium,
+	ActionSCMAppStatusChanged:         SeverityMedium,
+	ActionCodeScanSettingsUpdated:     SeverityMedium,
+	ActionCodeScanRebaselineRequested: SeverityLow,
 })
 
 func init() {
-	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings, ResourceTypeSCMApp} {
+	for _, r := range []ResourceType{ResourceTypeCITrustConfig, ResourceTypeCIRun, ResourceTypeCIGatePolicy, ResourceTypeCIGateOverride, ResourceTypeCIPipeline, ResourceTypeCISettings, ResourceTypeSCMApp, ResourceTypeCodeScan} {
 		configResourceTypes[r] = struct{}{}
 	}
 }
