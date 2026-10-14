@@ -154,6 +154,18 @@ func TestAssetCoverage_ReconcileFollowsPolicy(t *testing.T) {
 		t.Error("tenant B lists A's coverage rows")
 	}
 
+	// A pair a capability found not applicable (a DNS check on a name that
+	// is not registrable) stays so: reconcile flips only its own reasons.
+	if _, err := g.r.db.Exec(`UPDATE asset_coverage SET state = 'not_applicable', reason = '' WHERE asset_id = $1 AND capability = 'lookup.rdap'`, apex.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.svc.RunTenant(ctx, a.tenant); err != nil {
+		t.Fatal(err)
+	}
+	if got := g.states(a, apex)["lookup.rdap"]; got != "not_applicable:" {
+		t.Errorf("a capability's not-applicable answer was overridden: %q", got)
+	}
+
 	// Idempotent: a second pass adds and changes nothing.
 	if n, err := g.svc.RunTenant(ctx, a.tenant); err != nil || n != 0 {
 		t.Fatalf("second pass changed %d rows (%v)", n, err)
