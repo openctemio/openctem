@@ -30,11 +30,18 @@ import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { useCIRuns, useSCMApps, useSaveTrustConfig, useTrustRefusals } from '../api/use-ci'
+import {
+  useCIRuns,
+  useSCMApps,
+  useSaveTrustConfig,
+  useTrustConfigs,
+  useTrustRefusals,
+} from '../api/use-ci'
 import {
   CI_PROVIDERS,
   PROVIDER_LABEL,
   PROVIDER_TRAITS,
+  findCoveringTrust,
   issuerFor,
   parseList,
   snippetFor,
@@ -55,7 +62,11 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
   const [provider, setProvider] = useState<CIProvider>('github')
   const [issuer, setIssuer] = useState('')
   const [owners, setOwners] = useState('')
+  const [defaultBranch, setDefaultBranch] = useState('main')
   const [created, setCreated] = useState<CITrustConfig | null>(null)
+  // True when an existing trust configuration already admitted the owners and
+  // the wizard reuses it rather than creating a duplicate.
+  const [reused, setReused] = useState(false)
   const [copied, setCopied] = useState(false)
   // Runs and refusals older than the moment the configuration was created
   // are not this pipeline's.
@@ -64,6 +75,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
   const traits = PROVIDER_TRAITS[provider]
 
   const scm = useSCMApps()
+  const trusts = useTrustConfigs({ enabled: open })
   const suggestions = useMemo(
     () =>
       provider === 'github'
@@ -80,9 +92,11 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
     { enabled: open && waiting, refreshInterval: SETUP_POLL_MS }
   )
   const refusals = useTrustRefusals({ enabled: open && waiting, refreshInterval: SETUP_POLL_MS })
+  // A reused configuration has runs from before: only a run that started
+  // after this dialog counts as the first one.
   const firstRun = (runs.data?.data ?? []).find(
     (r) =>
-      (created?.id && r.trust_config_id === created.id) ||
+      (!reused && created?.id && r.trust_config_id === created.id) ||
       (!!r.created_at && Date.parse(r.created_at) >= since)
   )
   const lastRefusal = (refusals.data?.data ?? []).find((r) => !!r.at && Date.parse(r.at) >= since)
@@ -104,11 +118,19 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
         : t('scans.ci.trust.orgId', 'Organization id')
 
   const create = async () => {
+    const existing = findCoveringTrust(trusts.data?.data ?? [], provider, issuer, scopeList)
+    if (existing) {
+      setSince(Date.now() - 60_000)
+      setCreated(existing)
+      setReused(true)
+      setStep('snippet')
+      return
+    }
     const body: CITrustConfigRequest = {
       name: `${PROVIDER_LABEL[provider]} · ${scopeList.join(', ')}`.slice(0, 200),
       provider,
       issuer: traits.issuerInput === 'fixed' ? undefined : issuerFor(provider, issuer),
-      default_branch: 'main',
+      default_branch: defaultBranch.trim() || 'main',
       enabled: true,
       rules: {
         owners: traits.repositoriesById ? [] : scopeList,
@@ -124,6 +146,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
       const saved = await save({ body })
       setSince(Date.now() - 60_000)
       setCreated(saved)
+      setReused(false)
       setStep('snippet')
       toast.success(t('scans.ci.trust.added', 'CI trust added'))
     } catch (e) {
@@ -141,6 +164,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
                 : window.location.origin,
             tenantId: currentTenant?.id ?? '',
             audience: created.audience ?? '',
+            defaultBranch: created.default_branch,
           })
         : '',
     [created, provider, currentTenant]
@@ -227,6 +251,22 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
                   )}
                 </p>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ci-setup-branch">
+                  {t('scans.ci.setup.defaultBranch', 'Default branch')}
+                </Label>
+                <Input
+                  id="ci-setup-branch"
+                  value={defaultBranch}
+                  onChange={(e) => setDefaultBranch(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'scans.ci.setup.defaultBranchHint',
+                    'Pushes to this branch are scanned in full and become the baseline that pull requests are compared with.'
+                  )}
+                </p>
+              </div>
               {suggestions.length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-xs text-muted-foreground">
@@ -254,11 +294,25 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
 
           {step === 'snippet' && (
             <div className="space-y-2">
+              {reused && created && (
+                <p className="rounded-md border p-3 text-sm" data-testid="ci-setup-reused">
+                  {t(
+                    'scans.ci.setup.reused',
+                    'The trust configuration "{name}" already admits these pipelines, so nothing new was created. Use its snippet in every repository.',
+                    { name: created.name ?? '' }
+                  )}
+                </p>
+              )}
               <p className="text-sm text-muted-foreground">
-                {t(
-                  'scans.ci.setup.snippetHint',
-                  'Add this to the pipeline of a repository it admits and push a commit or open a pull request.'
-                )}
+                {provider === 'github'
+                  ? t(
+                      'scans.ci.setup.snippetHintGithub',
+                      'Save this as .github/workflows/openctem.yml in a repository it admits, then push a commit or open a pull request.'
+                    )
+                  : t(
+                      'scans.ci.setup.snippetHint',
+                      'Add this to the pipeline of a repository it admits and push a commit or open a pull request.'
+                    )}
               </p>
               <pre
                 className="overflow-x-auto rounded-md bg-muted p-3 text-xs"

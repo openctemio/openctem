@@ -31,7 +31,7 @@ func applyIdentityV2Of[T any](p *FindingProcessor, tenantID shared.ID, items []T
 			secretHMAC = p.secretFingerprinter.Fingerprint(tenantID, f.Secret.MaskedValue)
 		}
 		if k, ok := identityV2(assets[i], f, secretHMAC, occ[i]); ok {
-			set(&items[i], k, sastFormerLineKey(assets[i], f, k))
+			set(&items[i], k, formerKey(assets[i], f, k))
 		}
 	}
 }
