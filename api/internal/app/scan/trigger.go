@@ -781,6 +781,11 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		return err
 	}
 	cmd.DispatchGate = scanDispatchGate(sc, run)
+	if stepRun != nil {
+		// The step settles with the last command carrying its id (a
+		// follow-up of unfinished targets included).
+		cmd.SetStepRunID(stepRun.ID)
+	}
 
 	// usePlatform was decided before the run was created (decideSensorRouting).
 	if usePlatform {

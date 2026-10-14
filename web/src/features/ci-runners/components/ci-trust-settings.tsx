@@ -75,6 +75,8 @@ import {
   snippetFor,
 } from '../lib/ci'
 import { CITrustPreview } from './ci-trust-preview'
+import { CITrustRefusals } from './ci-refusals'
+import { CISetupEntry } from './ci-setup-wizard'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
@@ -143,6 +145,7 @@ function rulesSummary(c: CITrustConfig, t: TFn): string {
   add('scans.ci.trust.sumRefs', 'refs {list}', r.refs)
   add('scans.ci.trust.sumEnvironments', 'environments {list}', r.environments)
   add('scans.ci.trust.sumEvents', 'events {list}', r.events)
+  add('scans.ci.trust.sumWorkflowRefs', 'pipeline definitions {list}', r.workflow_refs)
   return parts.join(' · ')
 }
 
@@ -165,11 +168,13 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
     )
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {canWrite && <CISetupEntry canWrite />}
         <GatedButton
           allowed={canWrite}
           reason={t('scans.ci.noWrite', NO_WRITE)}
           size="sm"
+          variant={canWrite ? 'outline' : 'default'}
           onClick={() => setEditing('new')}
         >
           <Plus className="size-4" aria-hidden /> {t('scans.ci.trust.add', 'Add trust')}
@@ -268,6 +273,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
           }}
         />
       )}
+      <CITrustRefusals canWrite={canWrite} />
       {snippetOf && <SnippetDialog config={snippetOf} onClose={() => setSnippetOf(null)} />}
       <ConfirmDialog
         open={!!deleting}
@@ -325,6 +331,7 @@ function TrustConfigDialog({
   const [refs, setRefs] = useState(joinList(config?.rules?.refs))
   const [environments, setEnvironments] = useState(joinList(config?.rules?.environments))
   const [events, setEvents] = useState(joinList(config?.rules?.events))
+  const [workflowRefs, setWorkflowRefs] = useState(joinList(config?.rules?.workflow_refs))
   const [allowForks, setAllowForks] = useState(!!config?.rules?.allow_fork_pull_requests)
   const [protectedRef, setProtectedRef] = useState(!!config?.rules?.require_protected_ref)
   const [enabled, setEnabled] = useState(config?.enabled ?? true)
@@ -338,6 +345,7 @@ function TrustConfigDialog({
     if (!PROVIDER_TRAITS[p].events) setEvents('')
     if (!PROVIDER_TRAITS[p].environments) setEnvironments('')
     if (PROVIDER_TRAITS[p].protectedRef === 'none') setProtectedRef(false)
+    if (!PROVIDER_TRAITS[p].workflowRefs) setWorkflowRefs('')
   }
 
   const body = (): CITrustConfigRequest => ({
@@ -353,6 +361,7 @@ function TrustConfigDialog({
       refs: parseList(refs),
       environments: traits.environments ? parseList(environments) : [],
       events: traits.events ? parseList(events) : [],
+      workflow_refs: traits.workflowRefs ? parseList(workflowRefs) : [],
       allow_fork_pull_requests: allowForks,
       require_protected_ref: traits.protectedRef === 'none' ? false : protectedRef,
       workspace_uuid: provider === 'bitbucket' ? workspaceUUID.trim() || undefined : undefined,
@@ -599,6 +608,34 @@ function TrustConfigDialog({
                 <Input id="ci-events" value={events} onChange={(e) => setEvents(e.target.value)} />
               </Field>
             )}
+            {traits.workflowRefs && (
+              <Field
+                label={t('scans.ci.trust.workflowRefs', 'Pipeline definitions')}
+                id="ci-workflow-refs"
+                hint={
+                  provider === 'gitlab'
+                    ? t(
+                        'scans.ci.trust.workflowRefsGitlab',
+                        'Optional: admit only pipelines that use this configuration, as <host>/<project>//<file>@<ref> (the ci_config_ref_uri claim). A project that edits its own configuration is refused.'
+                      )
+                    : t(
+                        'scans.ci.trust.workflowRefsHint',
+                        'Optional: admit only jobs that run your central workflow, as owner/repo/.github/workflows/<file>@<ref> (the job_workflow_ref claim; * in the ref). A pull request that edits or adds a workflow is refused.'
+                      )
+                }
+              >
+                <Input
+                  id="ci-workflow-refs"
+                  placeholder={
+                    provider === 'gitlab'
+                      ? 'gitlab.com/acme/ci//scan.yml@refs/heads/main'
+                      : 'acme/security/.github/workflows/scan.yml@refs/heads/main'
+                  }
+                  value={workflowRefs}
+                  onChange={(e) => setWorkflowRefs(e.target.value)}
+                />
+              </Field>
+            )}
             <Field
               label={t('scans.ci.col.defaultBranch', 'Default branch')}
               id="ci-default"
@@ -747,6 +784,18 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
+          {!!config.rules?.workflow_refs?.length && (
+            <p
+              className="mb-2 text-sm text-muted-foreground"
+              data-testid="ci-snippet-workflow-refs"
+            >
+              {t(
+                'scans.ci.trust.snippetWorkflowRefs',
+                'This trust admits only jobs that run {list}. Put these steps in that pipeline definition and call it from each repository; a job defined anywhere else is refused.',
+                { list: joinList(config.rules.workflow_refs) }
+              )}
+            </p>
+          )}
           <pre
             className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs"
             data-testid="ci-snippet"
@@ -1176,7 +1225,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
   const hoursValue = Number(hours)
   const invalid =
     !assetId.trim() ||
-    !/^[0-9a-fA-F]{7,64}$/.test(sha.trim()) ||
+    !/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(sha.trim()) ||
     reason.trim().length < 10 ||
     !(hoursValue >= 1 && hoursValue <= 168)
 

@@ -284,5 +284,9 @@
   "scope.settings.reviewBeforeInventory": "Xem xét tài sản được phát hiện trước",
   "scope.settings.reviewBeforeInventoryHint": "Tắt (mặc định): những gì quá trình phát hiện tìm thấy được đưa vào kho tài sản ngay và chỉ được kiểm tra thụ động cho đến khi có mục phạm vi bao phủ. Bật: các tên nằm ngoài mọi mục phạm vi cố định chờ một người xem xét trong Gợi ý trước khi vào kho tài sản. Thiết lập này không bao giờ thay đổi những gì được phép quét.",
   "scope.connector.assetsInScope": "Tài sản nằm trong phạm vi",
-  "scope.connector.assetsInScopeHint": "Sau mỗi lần đồng bộ, các tên miền và địa chỉ công khai mà trình kết nối này đồng bộ sẽ có mục phạm vi chính xác, nên các lượt quét có thể chạm tới. Tắt tính năng này vẫn giữ các mục đã thêm."
+  "scope.connector.assetsInScopeHint": "Sau mỗi lần đồng bộ, các tên miền và địa chỉ công khai mà trình kết nối này đồng bộ sẽ có mục phạm vi chính xác, nên các lượt quét có thể chạm tới. Tắt tính năng này vẫn giữ các mục đã thêm.",
+  "scope.entries.deepestProbe": "Mức dò sâu nhất",
+  "scope.entries.perScan": "Chọn theo từng lần quét",
+  "scope.entries.perScanHint": "Cường độ quét được chọn trên từng lần quét. Giới hạn của mục phạm vi chỉ áp dụng ở chế độ quản trị Strict.",
+  "scope.entries.governanceLink": "Cài đặt phê duyệt quét"
 }

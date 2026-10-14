@@ -11,7 +11,10 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -84,7 +87,21 @@ func wireScopeApprovers(svc *Services, repos *Repositories, dir *postgres.ScopeA
 		svc.ScanPolicy.SetTierCeilings(svc.Scope)
 		if svc.ActiveGate != nil {
 			svc.ActiveGate.SetTierPolicy(svc.ScanPolicy)
+			// Unclassified assets (RFC-054 §16): the organization's setting,
+			// off under Strict; an unreadable setting is off.
+			if svc.Tenant != nil {
+				gov, tenants := svc.ScanPolicy, svc.Tenant
+				svc.ActiveGate.SetUnclassified(func(ctx context.Context, tenantID shared.ID) (string, error) {
+					mode, _ := gov.ScanGovernanceMode(ctx, tenantID)
+					ss, err := tenants.GetScopeSettings(ctx, tenantID.String())
+					if err != nil || ss == nil {
+						return tenantdom.UnclassifiedOff, err
+					}
+					return scangov.UnclassifiedMode(mode, ss.Unclassified()), nil
+				}, repos.Attribution)
+			}
 		}
+
 		wireScanGovernance(svc, repos, log)
 	}
 	var totp scopeapp.TOTPVerifier

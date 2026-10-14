@@ -76,6 +76,7 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | `rules.environments`, `rules.events` | Optional allowlists of the deployment environment and the trigger event |
 | `rules.allow_fork_pull_requests` | Admit `pull_request_target`, `workflow_run` and `external_pull_request_event`, which run fork code with the base repository's identity. Off by default |
 | `rules.require_protected_ref` | Only protected branches and tags. GitLab: the `ref_protected` claim. GitHub tokens carry no such claim: the configuration must list `environments` and the job must run in one of them (environments whose deployment branch rules admit only protected refs); a GitHub configuration with the switch and no environments is refused |
+| `rules.workflow_refs` | Optional: admit only jobs that run one of these pipeline definitions, `<path>@<ref>` (the path exact, the ref a pattern like `refs`). GitHub: the `job_workflow_ref` claim (`acme/security/.github/workflows/scan.yml@refs/heads/main`), so an organization can trust only its central reusable workflow, and a pull request that edits or adds a workflow file is refused (`workflow_not_allowed`). GitLab: the `ci_config_ref_uri` claim (`gitlab.example.com/grp/ci//scan.yml@refs/heads/main`). At most 20 entries. Other providers' tokens do not name the definition: the rule is refused when the configuration is saved, and a token without the claim is refused |
 | `default_branch` | The baseline branch when the platform does not know the repository's default branch yet. A pipeline cannot set it |
 | `rules.workspace_uuid` | Bitbucket only, required: the workspace's immutable id, compared with the token's `workspaceUuid` |
 
@@ -173,6 +174,21 @@ its side. The version is self-reported: this keeps known-bad releases out, it
 does not authenticate the binary. A client that reports no sensor version is
 admitted and its pipeline shows the version as unknown.
 
+The 401 says nothing, so the console says it instead. `GET
+/api/v1/ci/trust-refusals` (`scans:ci:write`) lists the tenant's latest
+refused exchanges from the audit log: repository, provider, ref, event, time
+and rule codes, newest first, at most 50. Only verified tokens are ever
+recorded. The CI/CD page shows them under Trust as "Recent refused
+pipelines", each code with its reason and fix. "Connect a pipeline" on the
+CI/CD page walks an administrator through four steps:
+1. pick the CI system;
+2. name the organization (GitHub App installations are offered);
+3. create the trust and copy the snippet;
+4. wait for the first run.
+
+While waiting, it polls the runs and the refusals every 10 seconds. A refused
+pipeline shows the rule and the fix at once.
+
 `run_id` asks for a fresh token for a run the pipeline already holds (a long
 job). It is honored only for the same tenant, repository, commit, CI run id,
 run attempt and job (when the run recorded one), before the run was evaluated
@@ -262,6 +278,24 @@ Policy resolution (`ci_gate_policies`): the repository's own policy, else the
 strictest of its business units' policies, else the tenant's, else the built-in
 default (enforce, high and above, new findings only, KEV fails, no EPSS
 threshold).
+
+**Changing a policy** (`scans:ci:write`):
+
+- A repository policy is listed, created, changed and deleted only for a
+  repository in the caller's data scope (404 otherwise). An organization or
+  business unit policy governs repositories outside a restricted data scope,
+  so changing one needs an unrestricted scope (403); reading them does not.
+- A change that **loosens** what applies to the scope (the policy, or what the
+  scope inherits when it has no enabled policy of its own) needs **step-up**,
+  exactly like a break-glass, and fails closed when step-up is unavailable.
+  Loosening is: `enforce` to `warn`, a higher `fail_on_severity`,
+  `new_findings_only` turned on, `fail_on_kev` turned off, a cleared or raised
+  EPSS threshold, or a weaker capability or rule mode. Disabling or deleting a
+  policy is judged against what the scope inherits then. Such a change is
+  audited at high severity (`ci_gate_policy.loosened`, with what loosened) and
+  announced to every active owner and administrator in-app and on the
+  `ci.break_glass` channel event (action `policy_loosened`). A change that
+  tightens the gate needs neither.
 
 For each finding the run reported:
 

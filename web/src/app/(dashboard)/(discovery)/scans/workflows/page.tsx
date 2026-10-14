@@ -104,6 +104,7 @@ import {
   SCAN_WORKFLOW_SENSOR_PREFERENCE_LABELS,
 } from '@/lib/api'
 import { useTranslation } from '@/context/i18n-provider'
+import { Permission, useHasPermission } from '@/lib/permissions'
 
 export default function ScanWorkflowsPage() {
   const { t } = useTranslation()
@@ -129,6 +130,9 @@ export default function ScanWorkflowsPage() {
     error: workflowsError,
   } = useScanWorkflows({ per_page: 100, include: 'readiness' })
   const { data: stats, isLoading: loadingStats } = useScanManagementStats()
+  // Changing a workflow (switch, edit, clone, use a template) needs
+  // scan_workflows:write, as the API requires.
+  const canWriteWorkflows = useHasPermission(Permission.ScanWorkflowsWrite)
 
   // Mutations
   const { trigger: createWorkflow, isMutating: creatingWorkflow } = useCreateScanWorkflow()
@@ -382,7 +386,7 @@ export default function ScanWorkflowsPage() {
             <Switch
               checked={row.original.is_active}
               onCheckedChange={() => handleToggleActive(row.original)}
-              disabled={togglingWorkflow === row.original.id}
+              disabled={!canWriteWorkflows || togglingWorkflow === row.original.id}
               aria-label={row.original.is_active ? 'Deactivate workflow' : 'Activate workflow'}
             />
           </div>
@@ -411,7 +415,7 @@ export default function ScanWorkflowsPage() {
                 <Eye className="me-2 h-4 w-4" />
                 View details
               </DropdownMenuItem>
-              {workflow.is_system_template ? (
+              {!canWriteWorkflows ? null : workflow.is_system_template ? (
                 <DropdownMenuItem
                   onClick={() => handleOpenCloneDialog(workflow)}
                   disabled={!workflow.is_active}
@@ -440,7 +444,7 @@ export default function ScanWorkflowsPage() {
                   </DropdownMenuItem>
                 </>
               )}
-              {!workflow.is_system_template && (
+              {canWriteWorkflows && !workflow.is_system_template && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => handleOpenCloneDialog(workflow)}>

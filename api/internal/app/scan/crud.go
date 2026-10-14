@@ -803,6 +803,17 @@ type UpdateScanInput struct {
 	// Retry config: nil = leave unchanged
 	MaxRetries          *int `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds *int `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	// Targets: nil = unchanged; otherwise the scan's direct targets become
+	// these plus the assets of AssetIDs (edit_targets.go).
+	Targets *[]string `json:"targets"`
+	// AssetIDs are inventory assets to scan, named by the server (with
+	// Targets: given = the direct targets are replaced).
+	AssetIDs []string `json:"asset_ids"`
+	// AssetGroupIDs: nil = unchanged; otherwise the scan's asset groups.
+	AssetGroupIDs *[]string `json:"asset_group_ids"`
+	// ActorID is the editing user: the new targets are checked against
+	// their act scope and assets are named for them.
+	ActorID string `json:"-"`
 }
 
 // UpdateScan updates a scan.
@@ -864,6 +875,13 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			}
 		}
 		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
+			return nil, err
+		}
+	}
+	// New targets or asset groups pass the gates a new scan's pass, as the
+	// editor, against the scan's (possibly new) scanner.
+	if input.targetsChanged() {
+		if err := s.applyTargetEdit(ctx, sc, input); err != nil {
 			return nil, err
 		}
 	}
@@ -1160,12 +1178,27 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 		return nil, err
 	}
 
+	// The same probe gates as a create: intrusive proof and the scope tier
+	// ceiling of the targets, for the scan's scanner.
+	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
+		return nil, err
+	}
+	if err := s.refuseTierExceeded(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
+		return nil, err
+	}
+
 	clone := sc.Clone(newName)
 	clone.SetCreatedBy(actor)
 
 	if err := s.scanRepo.Create(ctx, clone); err != nil {
 		return nil, err
 	}
+
+	s.logAudit(ctx, AuditContext{TenantID: tenantID, ActorID: actorID},
+		NewSuccessEvent(audit.ActionScanConfigCreated, audit.ResourceTypeScanConfig, clone.ID.String()).
+			WithResourceName(clone.Name).
+			WithMessage(fmt.Sprintf("Scan config '%s' cloned from '%s'", clone.Name, sc.Name)).
+			WithMetadata("cloned_from", sc.ID.String()))
 
 	s.logger.Info("scan cloned", "original_id", sc.ID.String(), "clone_id", clone.ID.String())
 	return clone, nil
