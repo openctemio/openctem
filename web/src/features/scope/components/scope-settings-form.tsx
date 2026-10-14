@@ -33,6 +33,7 @@ import { SettingsSection } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { updateScopeSettings } from '../api/use-scope-api'
 import type {
+  UnclassifiedScans,
   ApiScopeSettings,
   ScopeOneOffPolicy,
   UpdateScopeSettingsInput,
@@ -69,6 +70,13 @@ const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> =
 }
 
 const DEFAULT_SENTINEL = 'default'
+
+const UNCLASSIFIED_HINT: Record<UnclassifiedScans, string> = {
+  off: 'Assets no scope entry covers get passive checks only, until an entry covers them.',
+  low_impact:
+    'Assets no scope entry covers, and nobody excluded or marked not yours, get low-impact checks: common ports at a low rate, the home page and /.well-known/, certificate and technology fingerprinting. Platform guardrails keep shared, CDN, cloud and unknown networks and names outside your domains passive.',
+  full: 'Assets no scope entry covers get the scan’s own intensity, still behind the platform guardrails. Exclusions and Not ours always win.',
+}
 
 /** Scan approval as the scope page shows it (RFC-073 §6). */
 export function scanApprovalFact(
@@ -108,7 +116,18 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     one_off_max_days: s.one_off_max_days ?? 7,
     widening_approvals: s.widening_approvals ?? null,
     default_max_tier: s.default_max_tier === 't0' ? 't0' : 't1',
+    ...unclassifiedOf(s),
   }
+}
+
+/** The unclassified-scans setting and the mode in force, when the API has them. */
+function unclassifiedOf(s: ApiScopeSettings): { unclassified_scans?: UnclassifiedScans } {
+  const v = (s as { unclassified_scans?: string }).unclassified_scans
+  return v === 'off' || v === 'low_impact' || v === 'full' ? { unclassified_scans: v } : {}
+}
+
+function unclassifiedEffective(s: ApiScopeSettings): string | undefined {
+  return (s as { unclassified_scans_effective?: string }).unclassified_scans_effective
 }
 
 /**
@@ -349,12 +368,50 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               />
             </Row>
 
+            {form.unclassified_scans && (
+              <Row
+                label={t('scope.settings.unclassifiedLabel', 'Scan unclassified assets')}
+                htmlFor={`${id}-unclassified`}
+                hint={`${t(
+                  `scope.settings.unclassifiedHint.${form.unclassified_scans}`,
+                  UNCLASSIFIED_HINT[form.unclassified_scans]
+                )}${
+                  unclassifiedEffective(saved) === 'off' && form.unclassified_scans !== 'off'
+                    ? ` ${t('scope.settings.unclassifiedStrict', 'Strict scan approval is in force, so this is Off for now.')}`
+                    : ''
+                }`}
+              >
+                <Select
+                  value={form.unclassified_scans}
+                  onValueChange={(v) =>
+                    setForm({ ...form, unclassified_scans: v as UnclassifiedScans })
+                  }
+                  disabled={disabled}
+                >
+                  <SelectTrigger id={`${id}-unclassified`} className="w-full sm:w-72">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="off">
+                      {t('scope.settings.unclassifiedMode.off', 'Off (passive only)')}
+                    </SelectItem>
+                    <SelectItem value="low_impact">
+                      {t('scope.settings.unclassifiedMode.low_impact', 'Low-impact (default)')}
+                    </SelectItem>
+                    <SelectItem value="full">
+                      {t('scope.settings.unclassifiedMode.full', 'Full')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Row>
+            )}
+
             <Row
               label={t('scope.settings.reviewBeforeInventory', 'Review discovered assets first')}
               htmlFor={`${id}-reviewfirst`}
               hint={t(
                 'scope.settings.reviewBeforeInventoryHint',
-                'Off (default): what discovery finds joins the inventory at once and gets passive checks only until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.'
+                'Off (default): what discovery finds joins the inventory at once, and gets what Scan unclassified assets allows until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.'
               )}
             >
               <Switch

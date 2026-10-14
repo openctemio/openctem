@@ -282,7 +282,15 @@
   "scope.settings.confirmAddsToScope": "Confirming an asset adds it to scope",
   "scope.settings.confirmAddsToScopeHint": "A person who confirms a domain, subdomain or public address as yours also adds the scope entry for exactly that name, with the same re-authentication, notice and audit as adding it by hand. Addresses behind your names are never added this way. Under Strict scan approval confirming records ownership only.",
   "scope.settings.reviewBeforeInventory": "Review discovered assets first",
-  "scope.settings.reviewBeforeInventoryHint": "Off (default): what discovery finds joins the inventory at once and gets passive checks only until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.",
+  "scope.settings.reviewBeforeInventoryHint": "Off (default): what discovery finds joins the inventory at once, and gets what Scan unclassified assets allows until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.",
   "scope.connector.assetsInScope": "Assets are in scope",
-  "scope.connector.assetsInScopeHint": "After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added."
+  "scope.connector.assetsInScopeHint": "After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added.",
+  "scope.settings.unclassifiedLabel": "Scan unclassified assets",
+  "scope.settings.unclassifiedMode.off": "Off (passive only)",
+  "scope.settings.unclassifiedMode.low_impact": "Low-impact (default)",
+  "scope.settings.unclassifiedMode.full": "Full",
+  "scope.settings.unclassifiedHint.off": "Assets no scope entry covers get passive checks only, until an entry covers them.",
+  "scope.settings.unclassifiedHint.low_impact": "Assets no scope entry covers, and nobody excluded or marked not yours, get low-impact checks: common ports at a low rate, the home page and /.well-known/, certificate and technology fingerprinting. Platform guardrails keep shared, CDN, cloud and unknown networks and names outside your domains passive.",
+  "scope.settings.unclassifiedHint.full": "Assets no scope entry covers get the scan’s own intensity, still behind the platform guardrails. Exclusions and Not ours always win.",
+  "scope.settings.unclassifiedStrict": "Strict scan approval is in force, so this is Off for now."
 }
