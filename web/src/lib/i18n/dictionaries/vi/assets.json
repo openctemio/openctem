@@ -210,5 +210,11 @@
   "assets.sheet.idCopied": "Đã sao chép ID tài sản",
   "assets.sheet.delete": "Xóa {type}",
   "assets.sheet.edit": "Sửa",
-  "assets.sheet.description": "Mô tả"
+  "assets.sheet.description": "Mô tả",
+  "assets.scanning.title": "Phạm vi và quét",
+  "assets.scanning.details": "Vì sao",
+  "assets.scanning.allowed": "Có thể quét tài sản này.",
+  "assets.scanning.scanNow": "Quét ngay",
+  "assets.scanning.allowWildcard": "Xác nhận và cho phép quét",
+  "assets.scanning.confirmed": "Đã xác nhận là của bạn; giờ có thể quét"
 }
