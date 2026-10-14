@@ -1,4 +1,4 @@
-### Added: content delivery to sensors by digest (research/139 P0)
+### Added: content delivery to sensors by digest
 
 - New sensor routes under `/api/v2/sensor/content`:
   - `desired`: the organization's active packs, the platform's stable packs, and the revoked digests. It has an ETag; `If-None-Match` answers 304 with no body.
