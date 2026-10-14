@@ -18,6 +18,7 @@ import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CIPRFeedback } from './ci-pr-feedback'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -86,11 +87,24 @@ type TFn = ReturnType<typeof useTranslation>['t']
  * Trust, gate policy and break-glass. `embedded` drops the page header (the
  * CI/CD integration page shows these as its Trust and gate tab).
  */
+const SETUP_SECTIONS = ['trust', 'gate', 'break-glass', 'feedback'] as const
+type SetupSection = (typeof SETUP_SECTIONS)[number]
+
+/** The setup section a URL asks for; anything unknown is Trust. */
+export function setupSection(raw: string): SetupSection {
+  return (SETUP_SECTIONS as readonly string[]).includes(raw) ? (raw as SetupSection) : 'trust'
+}
+
 export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
   const canOverride = can(Permission.CIOverride)
+  // The open section lives in the URL (?section=), so a link (the GitHub App
+  // callback, an alert, the docs) can land on it.
+  const [sectionParam, setSectionParam] = useUrlFilter('section', 'trust')
+  const section = setupSection(sectionParam)
+  const setSection = (v: string) => setSectionParam(setupSection(v))
   return (
     <div className="space-y-4">
       {!embedded && (
@@ -103,7 +117,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
         />
       )}
       <CIRequireOIDC canWrite={canWrite} />
-      <Tabs defaultValue="trust">
+      <Tabs value={section} onValueChange={setSection}>
         <TabsList>
           <TabsTrigger value="trust">{t('scans.ci.trust.tab', 'Trust')}</TabsTrigger>
           <TabsTrigger value="gate">{t('scans.ci.gatePolicy.tab', 'Gate policy')}</TabsTrigger>

@@ -10,10 +10,8 @@
  */
 
 import { useMemo } from 'react'
-import Link from '@/components/link'
 import { Search, Workflow } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -301,23 +299,23 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
           </div>
           <EmptyState
             icon={Workflow}
-            title={t('scans.ci.noPipelinesTitle', 'No CI pipelines yet')}
-            description={t(
-              'scans.ci.noPipelines',
-              'A pipeline appears after its first run. Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
-            )}
-            action={
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <CISetupEntry canWrite={canWrite} />
-                {canWrite && (
-                  <Button asChild size="sm" variant="outline">
-                    <Link href="/ci-cd?tab=setup">
-                      {t('scans.ci.setUpTrust', 'Set up CI trust')}
-                    </Link>
-                  </Button>
-                )}
-              </div>
+            title={
+              canWrite
+                ? t('scans.ci.noPipelinesTitle', 'No CI pipelines yet')
+                : t('scans.ci.noPipelinesScopedTitle', 'No CI pipelines you can see')
             }
+            description={
+              canWrite
+                ? t(
+                    'scans.ci.noPipelines',
+                    'A pipeline appears after its first run. Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
+                  )
+                : t(
+                    'scans.ci.noPipelinesScoped',
+                    'A pipeline appears after its first run, and you see the pipelines of repositories you have access to. Ask an administrator to connect a pipeline or to give you access to a repository.'
+                  )
+            }
+            action={canWrite ? <CISetupEntry canWrite /> : undefined}
           />
         </>
       ) : (
@@ -333,7 +331,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
           getRowId={(p) => p.id ?? ''}
           onRowClick={(p) => setOpenId(p.id ?? '')}
           showSearch={false}
-          paginationNoun="pipelines"
+          paginationNoun={t('scans.ci.noun.pipelines', 'pipelines')}
           emptyMessage={t('scans.ci.noPipelineMatches', 'No pipeline matches')}
           emptyDescription={
             includeInactive
