@@ -91,5 +91,20 @@
   "findings.list.location": "Location",
   "findings.list.asset": "Asset",
   "findings.aiProposal.badge": "Proposed by AI triage",
-  "findings.aiProposal.hint": "An AI suggestion, not a decision. Check the finding before you approve it."
+  "findings.aiProposal.hint": "An AI suggestion, not a decision. Check the finding before you approve it.",
+  "findings.detail.tab.overview": "Overview",
+  "findings.detail.tab.evidence": "Evidence",
+  "findings.detail.tab.remediation": "Remediation",
+  "findings.detail.tab.attack-path": "Data flow",
+  "findings.detail.tab.pentest": "Pentest details",
+  "findings.detail.tab.related": "Related",
+  "findings.detail.notFound.title": "Finding not found",
+  "findings.detail.notFound.description": "It does not exist, or you do not have access to it.",
+  "findings.detail.notFound.back": "Back to findings",
+  "findings.detail.propertiesAria": "Finding properties",
+  "findings.detail.sla.overdueOne": "SLA overdue by 1 day",
+  "findings.detail.sla.overdueMany": "SLA overdue by {n} days",
+  "findings.detail.sla.breached": "SLA breached",
+  "findings.detail.sla.classPastDeadline": "{class} findings must be fixed within the SLA; this one is past its deadline.",
+  "findings.detail.sla.pastDeadline": "This finding is past its remediation deadline."
 }
