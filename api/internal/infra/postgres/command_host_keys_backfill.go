@@ -59,8 +59,8 @@ func backfillHostKeysBatch(ctx context.Context, db *sql.DB) (int, bool, error) {
 		}
 		res, err := tx.ExecContext(ctx, `
 			UPDATE commands SET host_keys = $2, payload = $3
-			WHERE id = $1 AND status = 'pending' AND host_keys IS NULL`,
-			r.id, hostKeysArg(cmd.HostKeys), cmd.Payload)
+			WHERE id = $1 AND tenant_id = $4 AND status = 'pending' AND host_keys IS NULL`,
+			r.id, hostKeysArg(cmd.HostKeys), cmd.Payload, r.tenantID)
 		if err != nil {
 			return 0, false, fmt.Errorf("backfill host keys: %w", err)
 		}
@@ -76,15 +76,16 @@ func backfillHostKeysBatch(ctx context.Context, db *sql.DB) (int, bool, error) {
 
 // keylessRow is a pending command without host keys.
 type keylessRow struct {
-	id      string
-	payload json.RawMessage
+	id       string
+	tenantID string
+	payload  json.RawMessage
 }
 
 // pendingWithoutHostKeys locks and reads one batch of pending commands that
 // name targets and have no host keys yet.
 func pendingWithoutHostKeys(ctx context.Context, tx *sql.Tx) ([]keylessRow, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, payload FROM commands
+		SELECT id, tenant_id, payload FROM commands
 		WHERE status = 'pending' AND host_keys IS NULL
 		  AND jsonb_typeof(payload) = 'object'
 		  AND NOT payload ? 'host_keys'
@@ -99,7 +100,7 @@ func pendingWithoutHostKeys(ctx context.Context, tx *sql.Tx) ([]keylessRow, erro
 	var batch []keylessRow
 	for rows.Next() {
 		var r keylessRow
-		if err := rows.Scan(&r.id, &r.payload); err != nil {
+		if err := rows.Scan(&r.id, &r.tenantID, &r.payload); err != nil {
 			return nil, fmt.Errorf("backfill host keys: %w", err)
 		}
 		batch = append(batch, r)
