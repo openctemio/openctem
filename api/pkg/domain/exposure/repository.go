@@ -50,16 +50,22 @@ type Repository interface {
 	// Uses batch INSERT with ON CONFLICT for better performance.
 	BulkUpsert(ctx context.Context, events []*ExposureEvent) error
 
-	// CountByState returns counts grouped by state for a tenant.
-	CountByState(ctx context.Context, tenantID shared.ID) (map[State]int64, error)
+	// Stats counts the events a filter selects by state, severity and event
+	// type, and averages the resolution time of its resolved events. The
+	// filter carries the tenant and the caller's data scope, so the numbers
+	// match the list the same caller sees.
+	Stats(ctx context.Context, filter Filter) (Stats, error)
+}
 
-	// CountBySeverity returns counts grouped by severity for a tenant.
-	CountBySeverity(ctx context.Context, tenantID shared.ID) (map[Severity]int64, error)
-
-	// MeanTimeToResolveHours returns the average resolution time, in hours,
-	// across all resolved exposure events for a tenant. The bool is false when
-	// there are no resolved events to average (so the caller can omit the field).
-	MeanTimeToResolveHours(ctx context.Context, tenantID shared.ID) (float64, bool, error)
+// Stats are the aggregate numbers behind the exposures stats card.
+type Stats struct {
+	ByState     map[string]int64
+	BySeverity  map[string]int64
+	ByEventType map[string]int64
+	// MTTRHours is the mean of (resolved_at - first_seen_at) over resolved
+	// events; HasMTTR is false when no resolved event has a timestamp.
+	MTTRHours float64
+	HasMTTR   bool
 }
 
 // StateHistoryRepository defines the interface for state history persistence.

@@ -87,5 +87,7 @@
   "findings.approvalDialog.submitting": "Đang gửi...",
   "findings.approvalDialog.submit": "Gửi để phê duyệt",
   "findings.approvalDialog.submitted": "Đã gửi yêu cầu phê duyệt cho \"{status}\"",
-  "findings.approvalDialog.submitFailed": "Gửi yêu cầu phê duyệt thất bại"
+  "findings.approvalDialog.submitFailed": "Gửi yêu cầu phê duyệt thất bại",
+  "findings.list.location": "Vị trí",
+  "findings.list.asset": "Tài sản"
 }
