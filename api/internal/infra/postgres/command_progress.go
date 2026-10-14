@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/ctis/politeness"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -35,6 +36,23 @@ const commandTargetCountSQL = `GREATEST(CASE
 func budgetSecondsSQL(key string, lo, hi int) string {
 	return fmt.Sprintf(`CASE WHEN (c.payload->'budget'->>'%[1]s') ~ '^[0-9]{1,9}$'
 		THEN LEAST(GREATEST((c.payload->'budget'->>'%[1]s')::bigint, %[2]d), %[3]d) END`, key, lo, hi)
+}
+
+// overrunSecondsSQL is when the sensor stops a running command c itself,
+// in seconds after its start: sdk-go's job timeout. An explicit payload
+// timeout_seconds wins (at most scan.MaxScanTimeoutSeconds); without one it
+// is twice the task budget. The platform must not take a task back before
+// then: a step with a one-hour timeout and a five-minute budget estimate is
+// still within its time at sixteen minutes (live, 2026-10-14: an httpx task
+// was re-queued three times at twice its budget while its sensor was
+// allowed an hour, and then failed as exhausted). A sensor's local policy
+// may cap the timeout lower; that sensor stops earlier, and its result only
+// arrives sooner.
+func overrunSecondsSQL() string {
+	return fmt.Sprintf(`CASE WHEN (c.payload->>'timeout_seconds') ~ '^[0-9]{1,9}$'
+		AND (c.payload->>'timeout_seconds')::bigint > 0
+		THEN LEAST((c.payload->>'timeout_seconds')::bigint, %d)
+		ELSE 2 * (%s) END`, scan.MaxScanTimeoutSeconds, budgetSecondsSQL("task_seconds", 300, 86400))
 }
 
 // clearProgressSQL resets a command's progress, liveness, stop request and
@@ -266,9 +284,9 @@ func (r *CommandRepository) RequeueStopped(ctx context.Context, cmd *command.Com
 }
 
 // RequeueStalledCommands puts back to pending every running tenant command
-// with a budget whose sensor reports progress (so it knows budgets: it is
-// told the budget and stops the task itself at twice it) that either ran
-// past twice its task budget plus command.OverrunGraceSeconds, or was asked
+// with a budget whose sensor reports progress (so it knows budgets: it
+// stops the task itself at its deadline, overrunSecondsSQL) that either ran
+// past that deadline plus command.OverrunGraceSeconds, or was asked
 // to stop as stalled (RequestStopForStalled) and was not handed back within
 // command.StopGraceSeconds. A sensor that reports no progress predates
 // budgets: it is bounded by its lease and the run's cap only. Like a lost
@@ -277,7 +295,7 @@ func (r *CommandRepository) RequeueStopped(ctx context.Context, cmd *command.Com
 // (its later writes fail the sensor/state/epoch guard; its heartbeat is
 // told to cancel).
 func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]command.RequeuedCommand, error) {
-	task := budgetSecondsSQL("task_seconds", 300, 86400)
+	overrun := overrunSecondsSQL()
 	rows, err := r.db.QueryContext(ctx, `
 		UPDATE commands c
 		SET status = 'pending', sensor_id = NULL,
@@ -288,7 +306,7 @@ func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]comma
 		    error_message = s.msg
 		FROM (
 			SELECT c.id, c.sensor_id AS old_sensor_id, c.lease_epoch AS old_epoch,
-			       CASE WHEN NOW() > c.started_at + make_interval(secs => 2 * (`+task+`) + $3)
+			       CASE WHEN NOW() > c.started_at + make_interval(secs => (`+overrun+`) + $3)
 			            THEN $1 ELSE $2 END AS msg
 			FROM commands c
 			WHERE c.status = 'running'
@@ -297,7 +315,7 @@ func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]comma
 			  AND jsonb_typeof(c.payload->'budget') = 'object'
 			  AND c.progress_total > 0
 			  AND (
-			    NOW() > c.started_at + make_interval(secs => 2 * (`+task+`) + $3)
+			    NOW() > c.started_at + make_interval(secs => (`+overrun+`) + $3)
 			    OR NOW() > c.stop_requested_at + make_interval(secs => $4)
 			  )
 			FOR UPDATE OF c SKIP LOCKED

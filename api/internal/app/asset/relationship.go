@@ -579,6 +579,62 @@ func (s *AssetRelationshipService) ListAssetRelationships(
 	return s.relRepo.ListByAsset(ctx, parsedTenantID, parsedAssetID, filter)
 }
 
+// RelatedAssetsInput selects the related assets of one asset.
+type RelatedAssetsInput struct {
+	Type      string
+	Direction string
+	Search    string
+	Offset    int
+	Limit     int
+}
+
+// RelatedAssets returns the edges of an asset grouped by type and direction
+// with the asset at the other end. The asset itself must be in the caller's
+// data scope (404 otherwise); edges whose other asset is not are returned only
+// as HiddenCount.
+func (s *AssetRelationshipService) RelatedAssets(
+	ctx context.Context,
+	tenantID, assetID string,
+	in RelatedAssetsInput,
+) (*assetdom.RelatedAssets, error) {
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
+	parsedAssetID, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	q := assetdom.RelatedAssetsQuery{Search: strings.TrimSpace(in.Search), Offset: in.Offset, Limit: in.Limit}
+	if len(q.Search) > 200 {
+		return nil, fmt.Errorf("%w: search is longer than 200 characters", shared.ErrValidation)
+	}
+	if in.Type != "" {
+		if q.Type, err = assetdom.ParseRelationshipType(in.Type); err != nil {
+			return nil, err
+		}
+	}
+	switch in.Direction {
+	case "", assetdom.RelationshipDirectionOutgoing, assetdom.RelationshipDirectionIncoming:
+		q.Direction = in.Direction
+	default:
+		return nil, fmt.Errorf("%w: direction must be outgoing or incoming", shared.ErrValidation)
+	}
+
+	if _, err := s.assetRepo.GetByID(ctx, parsedTenantID, parsedAssetID); err != nil {
+		return nil, err
+	}
+	if err := s.dataScope.AssertAsset(ctx, parsedTenantID, parsedAssetID); err != nil {
+		return nil, err
+	}
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	q.Scope = scope
+	return s.relRepo.RelatedAssets(ctx, parsedTenantID, parsedAssetID, q)
+}
+
 // RelationshipTypeUsage holds usage stats for a single relationship type.
 type RelationshipTypeUsage struct {
 	ID          string `json:"id"`
