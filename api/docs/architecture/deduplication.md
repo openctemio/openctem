@@ -365,6 +365,7 @@ coverage.
 | E27 | Reopen respects deliberate dispositions (FP, accepted) | Covered: `internal/infra/postgres/finding_reopen_human_resolved_db_test.go` |
 | E28 | Fingerprint algorithm change keeps triage state | Not covered — no version is stored |
 | E29 | Sensor fingerprint scheme change (e.g. semgrep login on/off) | Not covered |
+| E29a | SAST engine change, semgrep to opengrep (same rules) | Covered: the ctis `opengrep` format keeps the semgrep fingerprint (path, rule, line) as the finding's fingerprint and puts opengrep's match-based id in `matchBasedId/v1`, so the first opengrep sighting adopts the stored version-1 finding and re-keys it to version 2 with its triage (`tests/integration/sast_engine_change_test.go`). SARIF imports are not carried over: the version-2 key holds the tool name, so semgrep and opengrep SARIF key differently |
 | E30 | Tool version renames a rule id | Not covered |
 | E31 | Pentest: two findings with one title in a campaign | Not covered — **fails** (**code**) |
 | E32 | Manual fingerprint field-boundary collision | Not covered — **fails** (P13) |
