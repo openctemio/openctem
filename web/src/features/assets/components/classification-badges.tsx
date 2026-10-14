@@ -305,14 +305,19 @@ const CIA_DIMENSIONS = [
     key: 'confidentiality',
     letter: 'C',
     label: 'Confidentiality',
-    consequence: 'unauthorized disclosure',
+    consequence: 'Business impact if unauthorized disclosure occurred.',
   },
-  { key: 'integrity', letter: 'I', label: 'Integrity', consequence: 'unauthorized modification' },
+  {
+    key: 'integrity',
+    letter: 'I',
+    label: 'Integrity',
+    consequence: 'Business impact if unauthorized modification occurred.',
+  },
   {
     key: 'availability',
     letter: 'A',
     label: 'Availability',
-    consequence: 'loss of access or uptime',
+    consequence: 'Business impact if loss of access or uptime occurred.',
   },
 ] as const
 
@@ -337,6 +342,7 @@ export function CIABadges({
   size = 'md',
   className,
 }: CIABadgesProps) {
+  const { t } = useTranslation()
   const values: Record<string, ImpactRating | undefined> = {
     confidentiality,
     integrity,
@@ -355,15 +361,18 @@ export function CIABadges({
               <TooltipTrigger asChild>
                 <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size))}>
                   <span className="font-semibold text-muted-foreground">{d.letter}</span>
-                  {IMPACT_RATING_LABELS[rating]}
+                  {t(`assets.cia.rating.${rating}`, IMPACT_RATING_LABELS[rating])}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-[220px]">
                 <p className="font-medium">
-                  {d.label}: {IMPACT_RATING_LABELS[rating]} impact
+                  {t('assets.cia.tooltipTitle', '{dimension}: {rating} impact', {
+                    dimension: t(`assets.cia.${d.key}`, d.label),
+                    rating: t(`assets.cia.rating.${rating}`, IMPACT_RATING_LABELS[rating]),
+                  })}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Business impact if {d.consequence} occurred.
+                  {t(`assets.cia.${d.key}.consequence`, d.consequence)}
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -392,10 +401,11 @@ export function ControlPlaneBadge({
   showTooltip = true,
   className,
 }: ControlPlaneBadgeProps) {
+  const { t } = useTranslation()
   const badge = (
     <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size), className)}>
       <Network className={cn(NEUTRAL_ICON, size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
-      Control plane
+      {t('assets.cia.controlPlane', 'Control plane')}
     </Badge>
   )
 
@@ -406,10 +416,12 @@ export function ControlPlaneBadge({
       <Tooltip delayDuration={200}>
         <TooltipTrigger asChild>{badge}</TooltipTrigger>
         <TooltipContent side="top" className="max-w-[220px]">
-          <p className="font-medium">Control-plane asset</p>
+          <p className="font-medium">{t('assets.cia.controlPlaneTitle', 'Control-plane asset')}</p>
           <p className="text-xs text-muted-foreground">
-            Governs other assets (identity, orchestration, CI/CD, secrets). Elevated blast radius if
-            compromised.
+            {t(
+              'assets.cia.controlPlaneHint',
+              'Governs other assets (identity, orchestration, CI/CD, secrets). Elevated blast radius if compromised.'
+            )}
           </p>
         </TooltipContent>
       </Tooltip>

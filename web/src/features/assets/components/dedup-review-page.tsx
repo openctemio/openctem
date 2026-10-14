@@ -49,26 +49,32 @@ export function DedupReviewPage() {
         if (action === 'approve') {
           await approveDedupReview(id)
           setPendingMerge(null)
-          toast.success('Duplicates merged')
+          toast.success(t('assets.dedup.merged', 'Duplicates merged'))
         } else {
           await rejectDedupReview(id)
-          toast.success('Kept as separate assets')
+          toast.success(t('assets.dedup.kept', 'Kept as separate assets'))
         }
         await mutate()
       } catch {
-        toast.error(`Failed to ${action} review`)
+        toast.error(
+          action === 'approve'
+            ? t('assets.dedup.approveFailed', 'Failed to approve review')
+            : t('assets.dedup.rejectFailed', 'Failed to reject review')
+        )
       } finally {
         setBusyId(null)
       }
     },
-    [mutate]
+    [mutate, t]
   )
 
   const columns = useMemo<ColumnDef<DedupReview>[]>(
     () => [
       {
         accessorKey: 'normalized_name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Identity" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.dedup.identity', 'Identity')} />
+        ),
         cell: ({ row }) => (
           <div>
             <div className="font-medium">{row.original.normalized_name}</div>
@@ -81,7 +87,9 @@ export function DedupReviewPage() {
       {
         id: 'reason',
         accessorFn: (r) => dedupReasonLabel(r.reason),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Reason" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.dedup.reason', 'Reason')} />
+        ),
         cell: ({ row }) => {
           const evidence = describeEvidence(row.original.evidence)
           return (
@@ -96,19 +104,25 @@ export function DedupReviewPage() {
       },
       {
         accessorKey: 'keep_asset_name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Keep" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.dedup.keep', 'Keep')} />
+        ),
         cell: ({ row }) => (
           <StackedCell
             primary={row.original.keep_asset_name}
-            secondary={`${row.original.keep_finding_count} finding${
-              row.original.keep_finding_count === 1 ? '' : 's'
-            }`}
+            secondary={
+              row.original.keep_finding_count === 1
+                ? t('assets.dedup.findingOne', '1 finding')
+                : t('assets.dedup.findingMany', '{count} findings', {
+                    count: row.original.keep_finding_count,
+                  })
+            }
           />
         ),
       },
       {
         id: 'merge',
-        header: 'Merge into it',
+        header: t('assets.dedup.mergeInto', 'Merge into it'),
         enableSorting: false,
         cell: ({ row }) => (
           <div>
@@ -120,22 +134,31 @@ export function DedupReviewPage() {
               ))}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {row.original.merge_asset_ids.length} asset
-              {row.original.merge_asset_ids.length === 1 ? '' : 's'} ·{' '}
-              {row.original.merge_finding_count} finding
-              {row.original.merge_finding_count === 1 ? '' : 's'}
+              {row.original.merge_asset_ids.length === 1
+                ? t('assets.dedup.assetOne', '1 asset')
+                : t('assets.dedup.assetMany', '{count} assets', {
+                    count: row.original.merge_asset_ids.length,
+                  })}{' '}
+              ·{' '}
+              {row.original.merge_finding_count === 1
+                ? t('assets.dedup.findingOne', '1 finding')
+                : t('assets.dedup.findingMany', '{count} findings', {
+                    count: row.original.merge_finding_count,
+                  })}
             </div>
           </div>
         ),
       },
       {
         accessorKey: 'created_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Flagged" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.dedup.flagged', 'Flagged')} />
+        ),
         cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
       },
       {
         id: 'actions',
-        header: () => <div className="text-end">Actions</div>,
+        header: () => <div className="text-end">{t('components.col.actions', 'Actions')}</div>,
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
@@ -148,7 +171,7 @@ export function DedupReviewPage() {
                 onClick={() => act(row.original.id, 'reject')}
               >
                 <X className="me-1 h-3.5 w-3.5" />
-                Keep separate
+                {t('assets.dedup.keepSeparate', 'Keep separate')}
               </Button>
               <Button
                 size="sm"
@@ -156,14 +179,14 @@ export function DedupReviewPage() {
                 onClick={() => setPendingMerge(row.original)}
               >
                 <GitMerge className="me-1 h-3.5 w-3.5" />
-                Merge
+                {t('assets.dedup.merge', 'Merge')}
               </Button>
             </div>
           </Can>
         ),
       },
     ],
-    [busyId, act]
+    [busyId, act, t]
   )
 
   return (
@@ -185,23 +208,32 @@ export function DedupReviewPage() {
       ) : error ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Failed to load duplicate reviews.
+            {t('assets.dedup.loadFailed', 'Failed to load duplicate reviews.')}
           </CardContent>
         </Card>
       ) : reviews.length === 0 ? (
         <EmptyState
           icon={CopyCheck}
-          title="No duplicates to review"
-          description="The correlator hasn't flagged any assets as likely duplicates."
+          title={t('assets.dedup.empty', 'No duplicates to review')}
+          description={t(
+            'assets.dedup.emptyHint',
+            "The correlator hasn't flagged any assets as likely duplicates."
+          )}
         />
       ) : (
-        <DataTable columns={columns} data={reviews} searchPlaceholder="Search reviews..." />
+        <DataTable
+          columns={columns}
+          data={reviews}
+          searchPlaceholder={t('assets.dedup.search', 'Search reviews...')}
+        />
       )}
 
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Check className="h-3 w-3" />
-        Merging preserves findings from all assets on the kept asset; rejecting leaves them
-        separate.
+        {t(
+          'assets.dedup.footnote',
+          'Merging preserves findings from all assets on the kept asset; rejecting leaves them separate.'
+        )}
       </p>
       <ConfirmDialog
         open={pendingMerge !== null}
