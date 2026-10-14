@@ -30,18 +30,30 @@ interface DataFlowTabProps {
   finding: FindingDetail
 }
 
+// Fixed accents: the code panel follows the highlighter's dark theme in both
+// modes, and each step role keeps its own colour.
+const STYLE = {
+  codePanel: 'border-slate-700/50 bg-[#1e1e2e]', // palette-ok: code panel, highlighter theme
+  codeHeader: 'border-slate-700/50 bg-slate-800/50', // palette-ok: code panel, highlighter theme
+  codeHeaderText: 'text-slate-400', // palette-ok: code panel, highlighter theme
+  ok: 'text-green-400', // palette-ok: success and remediation accent
+  fn: 'bg-cyan-500/10 text-cyan-400', // palette-ok: function accent
+  cls: 'bg-purple-500/10 text-purple-400', // palette-ok: class accent
+  guidance: 'border-green-500/20 bg-green-500/5', // palette-ok: remediation accent
+}
+
 const STEP_BORDER: Record<DataFlowLocationType, string> = {
-  source: 'border-blue-500',
-  intermediate: 'border-yellow-500',
-  sanitizer: 'border-green-500',
-  sink: 'border-red-500',
+  source: 'border-blue-500', // palette-ok: step-role accent
+  intermediate: 'border-yellow-500', // palette-ok: step-role accent
+  sanitizer: 'border-green-500', // palette-ok: step-role accent
+  sink: 'border-red-500', // palette-ok: step-role accent
 }
 
 const CARD_BORDER: Record<DataFlowLocationType, string> = {
-  source: 'border-blue-500/30',
-  intermediate: 'border-yellow-500/30',
-  sanitizer: 'border-green-500/30',
-  sink: 'border-red-500/30',
+  source: 'border-blue-500/30', // palette-ok: step-role accent
+  intermediate: 'border-yellow-500/30', // palette-ok: step-role accent
+  sanitizer: 'border-green-500/30', // palette-ok: step-role accent
+  sink: 'border-red-500/30', // palette-ok: step-role accent
 }
 
 function LocationIcon({ type }: { type: DataFlowLocationType }) {
@@ -161,7 +173,7 @@ function DataFlowStepCard({
                     className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
                     aria-hidden
                   />
-                  <span className="truncate font-mono text-blue-400">{step.path}</span>
+                  <span className="truncate font-mono text-primary">{step.path}</span>
                   {step.line ? (
                     <span className="font-mono text-muted-foreground">:{step.line}</span>
                   ) : null}
@@ -182,9 +194,14 @@ function DataFlowStepCard({
                 )}
                 {step.content && (
                   <div className="group relative">
-                    <div className="overflow-hidden rounded-md border border-slate-700/50 bg-[#1e1e2e]">
-                      <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-800/50 px-3 py-1.5">
-                        <span className="truncate font-mono text-xs text-slate-400">
+                    <div className={cn('overflow-hidden rounded-md border', STYLE.codePanel)}>
+                      <div
+                        className={cn(
+                          'flex items-center justify-between border-b px-3 py-1.5',
+                          STYLE.codeHeader
+                        )}
+                      >
+                        <span className={cn('truncate font-mono text-xs', STYLE.codeHeaderText)}>
                           {step.path?.split('/').pop() || t('findings.dataFlow.code', 'code')}
                           {step.line ? `:${step.line}` : ''}
                         </span>
@@ -202,7 +219,7 @@ function DataFlowStepCard({
                                 }}
                               >
                                 {copied ? (
-                                  <Check className="h-3 w-3 text-green-400" aria-hidden />
+                                  <Check className={cn('h-3 w-3', STYLE.ok)} aria-hidden />
                                 ) : (
                                   <Copy className="h-3 w-3" aria-hidden />
                                 )}
@@ -252,7 +269,7 @@ function DataFlowStepCard({
                     {step.functionName && (
                       <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
                         <span>{t('findings.dataFlow.function', 'Function')}</span>
-                        <code className="break-all rounded bg-cyan-500/10 px-1.5 py-0.5 text-cyan-400">
+                        <code className={cn('break-all rounded px-1.5 py-0.5', STYLE.fn)}>
                           {step.functionName}
                         </code>
                       </div>
@@ -260,7 +277,7 @@ function DataFlowStepCard({
                     {step.className && (
                       <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
                         <span>{t('findings.dataFlow.class', 'Class')}</span>
-                        <code className="break-all rounded bg-purple-500/10 px-1.5 py-0.5 text-purple-400">
+                        <code className={cn('break-all rounded px-1.5 py-0.5', STYLE.cls)}>
                           {step.className}
                         </code>
                       </div>
@@ -284,25 +301,25 @@ function DataFlowSummary({ steps }: { steps: DataFlowLocation[] }) {
       key: 'source',
       label: t('findings.dataFlow.sources', 'Sources'),
       value: count('source'),
-      className: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
+      className: 'border-blue-500/30 bg-blue-500/10 text-blue-400', // palette-ok: step-role accent
     },
     {
       key: 'intermediate',
       label: t('findings.dataFlow.propagation', 'Propagation steps'),
       value: count('intermediate'),
-      className: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400',
+      className: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400', // palette-ok: step-role accent
     },
     {
       key: 'sanitizer',
       label: t('findings.dataFlow.sanitizers', 'Sanitizers'),
       value: count('sanitizer'),
-      className: 'border-green-500/30 bg-green-500/10 text-green-400',
+      className: 'border-green-500/30 bg-green-500/10 text-green-400', // palette-ok: step-role accent
     },
     {
       key: 'sink',
       label: t('findings.dataFlow.sinks', 'Sinks'),
       value: count('sink'),
-      className: 'border-red-500/30 bg-red-500/10 text-red-400',
+      className: 'border-red-500/30 bg-red-500/10 text-red-400', // palette-ok: step-role accent
     },
   ]
   return (
@@ -369,9 +386,9 @@ export function DataFlowTab({ finding }: DataFlowTabProps) {
 
       <Separator />
 
-      <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4">
+      <div className={cn('rounded-lg border p-4', STYLE.guidance)}>
         <h4 className="mb-2 flex items-center gap-2 font-semibold">
-          <Shield className="h-4 w-4 text-green-400" aria-hidden />
+          <Shield className={cn('h-4 w-4', STYLE.ok)} aria-hidden />
           {t('findings.dataFlow.guidanceTitle', 'Remediation guidance')}
         </h4>
         <ul className="ms-2 list-inside list-disc space-y-1 text-sm text-muted-foreground">
