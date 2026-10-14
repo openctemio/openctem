@@ -442,6 +442,10 @@ func (p *FindingProcessor) processBatch(
 		if current, ok := aliases[fm.fingerprint]; ok {
 			fm.fingerprint = current
 		}
+		if output.FingerprintsByIndex == nil {
+			output.FingerprintsByIndex = make(map[int][]string, len(candidates))
+		}
+		output.FingerprintsByIndex[fm.index] = append(output.FingerprintsByIndex[fm.index], fm.fingerprint)
 		// The source says it is mitigated (RFC-047 §7.6): not a sighting.
 		if isSourceMitigated(report, &fm.finding) {
 			mitigations = append(mitigations, vulnerability.SourceMitigation{
