@@ -386,7 +386,10 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 			// Unzoned batches follow the routing decided before the run
 			// was created (decideSensorRouting); nothing is re-decided here.
 			if usePlatform {
-				cmd.SetPlatformJob(s.calculateInitialPriority(cmd.Priority))
+				if err := cmd.SetPlatformJob(s.calculateInitialPriority(cmd.Priority)); err != nil {
+					s.cancelCreated(ctx, created)
+					return err
+				}
 			}
 		}
 		if err := s.commandRepo.Create(ctx, cmd); err != nil {
