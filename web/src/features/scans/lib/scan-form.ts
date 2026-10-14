@@ -99,6 +99,7 @@ export function scheduleError(
   t: Translate = enTranslate
 ): string | null {
   const { schedule } = form
+  if (schedule.custom) return null
   if (schedule.runImmediately || schedule.saveOnly || schedule.frequency !== 'once') return null
   const at = onceRunAt(form)
   if (!at) return t('scans.err.dateTime')
@@ -238,6 +239,10 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
 /** A configuration's schedule as the wizard shows it (in the scan's zone). */
 function scheduleFromConfig(config: ScanConfig): NewScanFormData['schedule'] {
   const timezone = config.schedule_timezone || undefined
+  const custom = customSchedule(config)
+  if (custom) {
+    return { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, timezone, custom }
+  }
   const frequency = scheduleTypeToFrequency(config.schedule_type)
   const runAt =
     config.schedule_type === 'once' && config.schedule_run_at
@@ -253,6 +258,17 @@ function scheduleFromConfig(config: ScanConfig): NewScanFormData['schedule'] {
     runAtTime: runAt?.time,
     timezone,
   }
+}
+
+/** A cron or RRULE schedule, which the wizard keeps as stored. */
+function customSchedule(config: ScanConfig): NewScanFormData['schedule']['custom'] {
+  if (config.schedule_type === 'crontab') {
+    return { type: 'crontab', expression: config.schedule_cron ?? '' }
+  }
+  if (config.schedule_type === 'rrule') {
+    return { type: 'rrule', expression: config.schedule_rrule ?? '' }
+  }
+  return undefined
 }
 
 /** Edit: an existing configuration -> wizard form data. */
@@ -284,6 +300,14 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
   }
 }
 
+/** The same targets (or ids), ignoring order, case and repeats. */
+function sameTargets(a: string[], b: string[]): boolean {
+  const norm = (l: string[]) => new Set(l.map((x) => x.trim().toLowerCase()).filter(Boolean))
+  const x = norm(a)
+  const y = norm(b)
+  return x.size === y.size && [...x].every((v) => y.has(v))
+}
+
 /**
  * Edit: form -> PUT /scans/{id}.
  *
@@ -307,14 +331,33 @@ export function formDataToUpdateRequest(
     timeout_seconds: form.timeoutSeconds,
     max_retries: form.maxRetries,
     retry_backoff_seconds: form.retryBackoffSeconds,
-    schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
+  }
+  // A stored cron or RRULE schedule is left out (unchanged): sending it as
+  // a frequency would replace it, or be refused for a missing day.
+  if (!schedule.custom) {
+    request.schedule_type = onDemand(schedule)
+      ? 'manual'
+      : frequencyToScheduleType(schedule.frequency)
   }
   // Only someone who can see the zones may change the zone: otherwise an
   // empty picker would reset a restricted scan to Automatic.
   if (opts.canSetZone) request.scan_zone_id = form.scanZoneId ?? ''
   // Sent whole: {} resets every option to its default (RFC-068).
   request.target_options = apiTargetOptions(form.targets.targetOptions) ?? {}
+
+  // Targets and groups go only when the user changed them: the API runs
+  // the new-scan target checks on what it is sent, as the editor.
+  const typed = typedAndExpanded(form)
+  if (form.targets.assetIds.length > 0 || !sameTargets(typed, config.targets ?? [])) {
+    request.targets = typed
+    if (form.targets.assetIds.length > 0) request.asset_ids = [...form.targets.assetIds]
+  }
+  const storedGroups =
+    config.asset_group_ids ?? (config.asset_group_id ? [config.asset_group_id] : [])
+  if (!sameTargets(form.targets.assetGroupIds, storedGroups)) {
+    request.asset_group_ids = [...form.targets.assetGroupIds]
+  }
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName
@@ -325,7 +368,7 @@ export function formDataToUpdateRequest(
     )
   }
 
-  applySchedule(form, request)
+  if (!schedule.custom) applySchedule(form, request)
   return request
 }
 

@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { NodePalette } from '@/features/scan-workflows/components/node-palette'
 import type { AddNodeData, AvailableTool } from '@/features/scan-workflows'
 import { useTranslation } from '@/context/i18n-provider'
+import { Permission, useHasPermission } from '@/lib/permissions'
 // Lazy-load the visual builder so @xyflow/react stays out of this route's
 // initial bundle until the builder renders.
 const WorkflowBuilder = dynamic(
@@ -157,7 +158,11 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
     loadWorkflow()
   }, [id])
 
-  const isReadOnly = workflow?.is_system_template || false
+  // A system template is read-only for everyone; any workflow is for a
+  // member without scan_workflows:write (the API refuses their saves).
+  const canWriteWorkflows = useHasPermission(Permission.ScanWorkflowsWrite)
+  const isSystemTemplate = workflow?.is_system_template || false
+  const isReadOnly = isSystemTemplate || !canWriteWorkflows
 
   // Saves the draft (always accepted) and shows what its check found.
   const persistDraft = useCallback(async () => {
@@ -491,14 +496,16 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
               <div className="min-w-0">
                 <h1 className="text-base font-semibold truncate">{workflow.name}</h1>
                 <p className="text-xs text-muted-foreground whitespace-nowrap">
-                  {isReadOnly
+                  {isSystemTemplate
                     ? 'Read-only view - Clone to edit'
-                    : 'Drag nodes from palette • Connect nodes • Click to edit'}
+                    : isReadOnly
+                      ? t('scans.workflows.readOnlyNoPermission')
+                      : 'Drag nodes from palette • Connect nodes • Click to edit'}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {isReadOnly && (
+              {isSystemTemplate && (
                 <Badge className="bg-blue-500/15 text-blue-600 border-0 text-xs">
                   System Template
                 </Badge>
