@@ -132,6 +132,7 @@ type Service struct {
 	purgeMu   sync.Mutex
 	lastPurge time.Time
 	images    ImageLinker
+	stepUp    shared.RecentAuthGate
 }
 
 // Deps are the service's collaborators.

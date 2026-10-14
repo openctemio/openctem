@@ -263,6 +263,24 @@ strictest of its business units' policies, else the tenant's, else the built-in
 default (enforce, high and above, new findings only, KEV fails, no EPSS
 threshold).
 
+**Changing a policy** (`scans:ci:write`):
+
+- A repository policy is listed, created, changed and deleted only for a
+  repository in the caller's data scope (404 otherwise). An organization or
+  business unit policy governs repositories outside a restricted data scope,
+  so changing one needs an unrestricted scope (403); reading them does not.
+- A change that **loosens** what applies to the scope (the policy, or what the
+  scope inherits when it has no enabled policy of its own) needs **step-up**,
+  exactly like a break-glass, and fails closed when step-up is unavailable.
+  Loosening is: `enforce` to `warn`, a higher `fail_on_severity`,
+  `new_findings_only` turned on, `fail_on_kev` turned off, a cleared or raised
+  EPSS threshold, or a weaker capability or rule mode. Disabling or deleting a
+  policy is judged against what the scope inherits then. Such a change is
+  audited at high severity (`ci_gate_policy.loosened`, with what loosened) and
+  announced to every active owner and administrator in-app and on the
+  `ci.break_glass` channel event (action `policy_loosened`). A change that
+  tightens the gate needs neither.
+
 For each finding the run reported:
 
 - **honored**: accepted risk (unexpired), `accepted_risk`, false positive,
