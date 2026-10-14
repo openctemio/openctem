@@ -75,6 +75,10 @@ describe('Pull request feedback', () => {
     render(<CIPRFeedback canWrite />)
     expect(screen.queryByRole('button', { name: /install on github/i })).not.toBeInTheDocument()
     expect(screen.getByText(/no github app yet/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /github app guide/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('docs.openctem.io/scanning/ci-integration/#github-app-permissions')
+    )
     expect(screen.getByText('gitlab.com/acme')).toBeInTheDocument()
   })
 

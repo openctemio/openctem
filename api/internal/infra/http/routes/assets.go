@@ -566,6 +566,9 @@ func registerAssetRelationshipRoutes(
 	// Asset-scoped relationship routes
 	router.Group("/api/v1/assets/{id}/relationships", func(r Router) {
 		r.GET("/", h.ListByAsset, middleware.Require(permission.AssetsRead))
+		// Grouped by type and direction, with the related asset's state;
+		// related assets outside the caller's data scope are only counted.
+		r.GET("/groups", h.RelatedGroups, middleware.Require(permission.AssetsRead))
 		r.POST("/", h.Create, middleware.Require(permission.AssetsWrite))
 		// Bulk create — fan-out from one source asset to many targets
 		// in a single round trip. Source asset validation runs ONCE

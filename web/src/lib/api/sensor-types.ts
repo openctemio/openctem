@@ -246,6 +246,7 @@ export type SensorCapability = (typeof SENSOR_CAPABILITIES)[number]
 
 // Sensor tools
 export const SENSOR_TOOLS = [
+  'opengrep',
   'semgrep',
   'trivy',
   'nuclei',

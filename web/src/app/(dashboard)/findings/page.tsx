@@ -14,6 +14,7 @@ import {
   type FindingLens,
 } from '@/features/findings/lib/state-lens'
 import { findingsOverview } from '@/features/findings/lib/findings-overview'
+import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   useUrlParams,
   useUrlParam,
@@ -287,31 +288,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     // When api.data_flow is present (detail view), use full data
     hasDataFlow: api.has_data_flow || false,
     branchOnly: api.branch_only || false,
-    dataFlow: api.data_flow
-      ? {
-          sources: api.data_flow.sources?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-          })),
-          intermediates: api.data_flow.intermediates?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-          })),
-          sinks: api.data_flow.sinks?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-          })),
-        }
-      : undefined,
+    dataFlow: mapDataFlow(api.data_flow),
   }
 }
 
@@ -1130,11 +1107,7 @@ function FindingsContent() {
           // Use hasDataFlow flag from API (populated via subquery in list view)
           // Fall back to checking dataFlow object for detail view compatibility
           const hasDataFlow =
-            row.original.hasDataFlow ||
-            (row.original.dataFlow &&
-              ((row.original.dataFlow.sources?.length ?? 0) > 0 ||
-                (row.original.dataFlow.intermediates?.length ?? 0) > 0 ||
-                (row.original.dataFlow.sinks?.length ?? 0) > 0))
+            row.original.hasDataFlow || (row.original.dataFlow?.steps.length ?? 0) > 0
 
           return (
             <div
