@@ -79,7 +79,7 @@ type GrantSuggestion struct {
 // suggestOrder is the order profiles are tried in, narrowest first: the
 // passive, network-less ones, then public-only, then zone-bound internal,
 // then the one that carries credentials.
-var suggestOrder = []string{ProfileCollector, ProfileCIRunner, ProfileEndpoint, ProfileEASMExternal,
+var suggestOrder = []string{ProfileCollector, ProfileCIRunner, ProfileEndpoint, ProfileScanConnector, ProfileEASMExternal,
 	ProfileInternalScanner, ProfileAuthenticatedScanner}
 
 // ContractLookup returns the sensor's reported contract for a tool (nil:

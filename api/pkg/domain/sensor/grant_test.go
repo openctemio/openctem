@@ -321,3 +321,37 @@ func TestDefaultProfileFor(t *testing.T) {
 		t.Fatalf("collector default must allow push in the grant and keep it off until trusted: %+v", g)
 	}
 }
+
+// The scan-connector profile: a sensor that runs one connector to a scanner
+// product (the Tenable.sc connector image) gets exactly the connector job
+// types, at most T1, no credentials and no push ingest; trust New still
+// keeps it passive until an administrator trusts it.
+func TestScanConnectorProfile(t *testing.T) {
+	g := mustProfile(t, "scan-connector:tenable_sc")
+	if !slices.Equal(g.JobTypes, []string{"connector_scan", "connector_sync"}) || g.TierCeiling != TierActive ||
+		g.AllowCredentials || g.AllowPushIngest || !slices.Equal(g.Tools, []string{"tenable_sc"}) || g.TargetNetwork != TargetNetworkAny {
+		t.Fatalf("grant %+v", g)
+	}
+	if !ValidProfile("scan-connector") || !ValidProfile("scan-connector:tenable_sc") || ValidProfile("scan-connector:Bad Name") {
+		t.Fatal("profile names")
+	}
+	sync := json.RawMessage(`{"scanner":"tenable_sc","instance":"sc"}`)
+	scan := json.RawMessage(`{"scanner":"tenable_sc","targets":["10.0.0.1"]}`)
+	if r := g.Admit("connector_sync", sync, nil); r != nil {
+		t.Fatalf("sync refused: %v", r)
+	}
+	if r := g.Admit("connector_scan", scan, nil); r == nil || r.Dimension != DimTier {
+		t.Fatalf("trust New must keep a scan out: %v", r)
+	}
+	g.TrustLevel = TrustTrusted
+	if r := g.Admit("connector_scan", scan, nil); r != nil {
+		t.Fatalf("trusted scan refused: %v", r)
+	}
+	if r := g.Admit("scan", json.RawMessage(`{"scanner":"nuclei","targets":["10.0.0.1"]}`), nil); r == nil {
+		t.Fatal("a connector sensor ran a scanner job")
+	}
+	other := json.RawMessage(`{"scanner":"other_product","targets":["10.0.0.1"]}`)
+	if r := g.Admit("connector_scan", other, nil); r == nil || r.Dimension != DimTools {
+		t.Fatalf("another tool: %v", r)
+	}
+}
