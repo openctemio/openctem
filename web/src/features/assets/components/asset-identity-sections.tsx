@@ -9,6 +9,7 @@
 import { ArrowRight, Fingerprint, History, Tags } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, EmptyState, RelativeTime } from '@/features/shared'
 import { useAssetIdentifiers, useAssetRenames } from '../hooks/use-asset-identity'
 import {
@@ -63,6 +64,7 @@ export function AssetIdentitySections({
   assetName,
   properties,
 }: AssetIdentitySectionsProps) {
+  const { t } = useTranslation()
   const { identifiers, isLoading: idLoading, error: idError } = useAssetIdentifiers(assetId)
   const { renames, isLoading: renLoading, error: renError } = useAssetRenames(assetId)
 
@@ -71,11 +73,19 @@ export function AssetIdentitySections({
 
   return (
     <>
-      <DetailSection title="Also known as" icon={Tags} count={aka.length || undefined}>
+      <DetailSection
+        title={t('assets.identity.aka', 'Also known as')}
+        icon={Tags}
+        count={aka.length || undefined}
+      >
         {idLoading ? (
           <SectionSkeleton />
         ) : aka.length === 0 ? (
-          compactEmpty(Tags, 'No other names', 'Other hostnames, FQDNs and IPs appear here.')
+          compactEmpty(
+            Tags,
+            t('assets.identity.noNames', 'No other names'),
+            t('assets.identity.noNamesHint', 'Other hostnames, FQDNs and IPs appear here.')
+          )
         ) : (
           <ul className="flex flex-wrap gap-1.5">
             {aka.map((n) => (
@@ -83,7 +93,9 @@ export function AssetIdentitySections({
                 <Badge variant="secondary" className="gap-1 font-normal">
                   <span className="font-mono text-xs">{n.name}</span>
                   <span className="text-muted-foreground text-[10px]">
-                    {n.kind === 'alias' ? 'former name' : identifierKindLabel(n.kind)}
+                    {n.kind === 'alias'
+                      ? t('assets.identity.formerName', 'former name')
+                      : identifierKindLabel(n.kind)}
                   </span>
                 </Badge>
               </li>
@@ -92,16 +104,25 @@ export function AssetIdentitySections({
         )}
       </DetailSection>
 
-      <DetailSection title="Identifiers" icon={Fingerprint} count={sorted.length || undefined}>
+      <DetailSection
+        title={t('assets.identity.identifiers', 'Identifiers')}
+        icon={Fingerprint}
+        count={sorted.length || undefined}
+      >
         {idLoading ? (
           <SectionSkeleton />
         ) : idError ? (
-          <p className="text-sm text-muted-foreground">Identifiers could not be loaded.</p>
+          <p className="text-sm text-muted-foreground">
+            {t('assets.identity.loadFailed', 'Identifiers could not be loaded.')}
+          </p>
         ) : sorted.length === 0 ? (
           compactEmpty(
             Fingerprint,
-            'No identifiers recorded',
-            'Host IDs, MAC addresses and other stable identifiers appear after the next scan.'
+            t('assets.identity.noIds', 'No identifiers recorded'),
+            t(
+              'assets.identity.noIdsHint',
+              'Host IDs, MAC addresses and other stable identifiers appear after the next scan.'
+            )
           )
         ) : (
           <ul className="divide-y rounded-md border">
@@ -119,7 +140,9 @@ export function AssetIdentitySections({
                         variant={id.strong ? 'default' : 'outline'}
                         className="h-4 px-1 text-[10px]"
                       >
-                        {id.strong ? 'Strong' : 'Weak'}
+                        {id.strong
+                          ? t('assets.identity.strong', 'Strong')
+                          : t('assets.identity.weak', 'Weak')}
                       </Badge>
                     </div>
                     <p
@@ -133,18 +156,21 @@ export function AssetIdentitySections({
                     </p>
                     {!active && (
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Not used for matching (last seen more than {WEAK_IDENTIFIER_WINDOW_DAYS}{' '}
-                        days ago)
+                        {t(
+                          'assets.identity.notMatching',
+                          'Not used for matching (last seen more than {days} days ago)',
+                          { days: WEAK_IDENTIFIER_WINDOW_DAYS }
+                        )}
                       </p>
                     )}
                   </div>
                   <div className="shrink-0 text-xs text-muted-foreground sm:text-end">
                     {id.source && <div>{id.source}</div>}
                     <div>
-                      First <RelativeTime date={id.first_seen} />
+                      {t('assets.identity.first', 'First')} <RelativeTime date={id.first_seen} />
                     </div>
                     <div>
-                      Last <RelativeTime date={id.last_seen} />
+                      {t('assets.identity.last', 'Last')} <RelativeTime date={id.last_seen} />
                     </div>
                   </div>
                 </li>
@@ -154,13 +180,23 @@ export function AssetIdentitySections({
         )}
       </DetailSection>
 
-      <DetailSection title="Rename history" icon={History} count={renames.length || undefined}>
+      <DetailSection
+        title={t('assets.identity.renames', 'Rename history')}
+        icon={History}
+        count={renames.length || undefined}
+      >
         {renLoading ? (
           <SectionSkeleton />
         ) : renError ? (
-          <p className="text-sm text-muted-foreground">Rename history could not be loaded.</p>
+          <p className="text-sm text-muted-foreground">
+            {t('assets.identity.renamesFailed', 'Rename history could not be loaded.')}
+          </p>
         ) : renames.length === 0 ? (
-          compactEmpty(History, 'Never renamed', 'Name changes the platform followed appear here.')
+          compactEmpty(
+            History,
+            t('assets.identity.neverRenamed', 'Never renamed'),
+            t('assets.identity.neverRenamedHint', 'Name changes the platform followed appear here.')
+          )
         ) : (
           <ol className="space-y-2">
             {renames.map((r) => (
@@ -173,7 +209,10 @@ export function AssetIdentitySections({
                     <span className="font-mono">{r.new_value || '—'}</span>
                   </p>
                   <p className="mt-0.5 text-muted-foreground">
-                    {SOURCE_LABEL[r.source] ?? r.source} · <RelativeTime date={r.changed_at} />
+                    {SOURCE_LABEL[r.source]
+                      ? t(`assets.identity.source.${r.source}`, SOURCE_LABEL[r.source])
+                      : r.source}{' '}
+                    · <RelativeTime date={r.changed_at} />
                     {r.reason ? ` · ${r.reason}` : ''}
                   </p>
                 </div>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { useTranslation } from '@/context/i18n-provider'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -126,6 +127,7 @@ export function AssetFormDialogShared({
   isSubmitting,
   includeGroupSelect,
 }: AssetFormDialogSharedProps) {
+  const { t } = useTranslation()
   const [formData, setFormData] = useState<Record<string, string | boolean | number>>(() =>
     getInitialValues(fields, asset)
   )
@@ -152,12 +154,14 @@ export function AssetFormDialogShared({
       const raw = formData[field.name]
       if (field.type === 'boolean') continue // booleans always have a value
       if (raw === undefined || raw === '' || raw === null) {
-        newErrors[field.name] = `${field.label} is required`
+        newErrors[field.name] = t('assets.form.required', '{field} is required', {
+          field: field.label,
+        })
       }
     }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
-  }, [fields, formData])
+  }, [fields, formData, t])
 
   // Tags dedup and length validation
   const sanitizeTags = useCallback((raw: string): string[] => {
@@ -248,7 +252,12 @@ export function AssetFormDialogShared({
           <Select value={String(value ?? '')} onValueChange={(v) => handleChange(field.name, v)}>
             <SelectTrigger>
               <SelectValue
-                placeholder={field.placeholder || `Select ${field.label.toLowerCase()}`}
+                placeholder={
+                  field.placeholder ||
+                  t('assets.form.selectField', 'Select {field}', {
+                    field: field.label.toLowerCase(),
+                  })
+                }
               />
             </SelectTrigger>
             <SelectContent>
@@ -292,7 +301,9 @@ export function AssetFormDialogShared({
             id={field.name}
             value={String(value ?? '')}
             onChange={(e) => handleChange(field.name, e.target.value)}
-            placeholder={field.placeholder || 'Comma-separated values'}
+            placeholder={
+              field.placeholder || t('assets.form.csvPlaceholder', 'Comma-separated values')
+            }
             maxLength={500}
           />
         )
@@ -324,7 +335,11 @@ export function AssetFormDialogShared({
             triggering the warning.
           */}
           <DialogDescription>
-            {description ?? `Fill in the form below and save to apply your changes.`}
+            {description ??
+              t(
+                'assets.form.defaultDescription',
+                'Fill in the form below and save to apply your changes.'
+              )}
           </DialogDescription>
         </DialogHeader>
 
@@ -351,7 +366,7 @@ export function AssetFormDialogShared({
                     if (normalized && normalized !== String(formData.name)) {
                       return (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Will be saved as:{' '}
+                          {t('assets.form.savedAs', 'Will be saved as:')}{' '}
                           <code className="bg-muted px-1 rounded">{normalized}</code>
                         </p>
                       )
@@ -366,9 +381,21 @@ export function AssetFormDialogShared({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               {(
                 [
-                  { name: 'criticality', label: 'Criticality', options: CRITICALITY_OPTIONS },
-                  { name: 'scope', label: 'Scope', options: SCOPE_OPTIONS },
-                  { name: 'exposure', label: 'Exposure', options: EXPOSURE_OPTIONS },
+                  {
+                    name: 'criticality',
+                    label: t('assets.badge.criticality', 'Criticality'),
+                    options: CRITICALITY_OPTIONS,
+                  },
+                  {
+                    name: 'scope',
+                    label: t('scope.check.column', 'Scope'),
+                    options: SCOPE_OPTIONS,
+                  },
+                  {
+                    name: 'exposure',
+                    label: t('assets.badge.exposure', 'Exposure'),
+                    options: EXPOSURE_OPTIONS,
+                  },
                 ] as const
               ).map((f) => (
                 <div key={f.name}>
@@ -379,12 +406,18 @@ export function AssetFormDialogShared({
                       onValueChange={(v) => handleChange(f.name, v)}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder={`Select ${f.label.toLowerCase()}`} />
+                        <SelectValue
+                          placeholder={t('assets.form.selectField', 'Select {field}', {
+                            field: f.label.toLowerCase(),
+                          })}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {f.options.map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
+                            {f.name === 'criticality'
+                              ? t(`criticality.${opt.value}`, opt.label)
+                              : t(`assets.form.${f.name}.${opt.value}`, opt.label)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -400,14 +433,16 @@ export function AssetFormDialogShared({
               consequence of losing Confidentiality, Integrity, or
               Availability independently. */}
             <div>
-              <Label className="text-sm font-medium">Business Impact (CIA)</Label>
+              <Label className="text-sm font-medium">
+                {t('assets.form.cia', 'Business Impact (CIA)')}
+              </Label>
               <div className="mt-1.5 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {CIA_FIELDS.map((f) => {
                   const current = String(formData[f.name] ?? '')
                   return (
                     <div key={f.name}>
                       <Label htmlFor={f.name} className="text-xs text-muted-foreground">
-                        {f.label}
+                        {t(`assets.form.${f.name}`, f.label)}
                       </Label>
                       <div className="mt-1">
                         <Select
@@ -418,10 +453,12 @@ export function AssetFormDialogShared({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value={IMPACT_UNRATED}>Not rated</SelectItem>
+                            <SelectItem value={IMPACT_UNRATED}>
+                              {t('criticality.none', 'Not rated')}
+                            </SelectItem>
                             {IMPACT_RATING_OPTIONS.map((opt) => (
                               <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
+                                {t(`assets.form.impact.${opt.value}`, opt.label)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -432,8 +469,10 @@ export function AssetFormDialogShared({
                 })}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Optional — how severe the impact would be if this asset&apos;s confidentiality,
-                integrity, or availability were compromised.
+                {t(
+                  'assets.form.ciaHint',
+                  "Optional — how severe the impact would be if this asset's confidentiality, integrity, or availability were compromised."
+                )}
               </p>
             </div>
 
@@ -441,20 +480,22 @@ export function AssetFormDialogShared({
               label like a team name, contact email, or cost center. */}
             <div>
               <Label htmlFor="ownerRef" className="text-sm font-medium">
-                Owner Reference
+                {t('assets.form.ownerRef', 'Owner Reference')}
               </Label>
               <div className="mt-1.5">
                 <Input
                   id="ownerRef"
                   value={String(formData.ownerRef ?? '')}
                   onChange={(e) => handleChange('ownerRef', e.target.value)}
-                  placeholder="Team / contact / cost center"
+                  placeholder={t('assets.form.ownerRefPlaceholder', 'Team / contact / cost center')}
                   maxLength={500}
                 />
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Optional. If it is the email of a member, that member becomes a primary owner (see
-                the Owners tab).
+                {t(
+                  'assets.form.ownerRefHint',
+                  'Optional. If it is the email of a member, that member becomes a primary owner (see the Owners tab).'
+                )}
               </p>
             </div>
 
@@ -465,7 +506,7 @@ export function AssetFormDialogShared({
               of an existing asset from the Asset Groups page instead. */}
             {includeGroupSelect && !asset && (
               <div>
-                <Label className="text-sm font-medium">Group</Label>
+                <Label className="text-sm font-medium">{t('assets.form.group', 'Group')}</Label>
                 <div className="mt-1.5">
                   <AssetGroupSelect value={groupId} onValueChange={setGroupId} />
                 </div>
@@ -476,10 +517,14 @@ export function AssetFormDialogShared({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting || hasRequiredEmpty}>
-            {isSubmitting ? 'Saving...' : asset ? 'Save Changes' : 'Create'}
+            {isSubmitting
+              ? t('assets.form.saving', 'Saving...')
+              : asset
+                ? t('assets.form.saveChanges', 'Save Changes')
+                : t('assets.form.create', 'Create')}
           </Button>
         </DialogFooter>
       </DialogContent>
