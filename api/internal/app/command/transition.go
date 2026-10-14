@@ -280,8 +280,12 @@ func (s *Service) Release(ctx context.Context, in ReleaseInput) (*TransitionResu
 		return nil, &InvalidTransitionError{State: stateOf(cmd)}
 	}
 	reason := "released by sensor"
-	if r := truncateUTF8(in.Reason, MaxReleaseReasonBytes); r != "" {
-		reason += ": " + r
+	if commanddom.IsHostsBusyRelease(in.Reason) {
+		// The sensor's own per-host limit: one code, which the placement
+		// explainer and the run page read.
+		reason = commanddom.ReleasedBySensorPrefix + commanddom.ReleaseReasonHostsBusy
+	} else if r := truncateUTF8(in.Reason, MaxReleaseReasonBytes); r != "" {
+		reason = commanddom.ReleasedBySensorPrefix + r
 	}
 	released, err := rel.ReleaseForSensor(ctx, cmd.TenantID, cmd.ID, in.SensorID, reason)
 	if err != nil {

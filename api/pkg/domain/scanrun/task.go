@@ -77,6 +77,9 @@ type Task struct {
 	// WindowHold says why a queued task waits for a scan window and until
 	// when (nil: it does not).
 	WindowHold *scanwindow.Hold
+	// WaitingOnHosts: a queued task waits while another task of the tenant
+	// holds one of its hosts.
+	WaitingOnHosts bool
 }
 
 // MaxRunTasks bounds the tasks one run read returns; the summary still counts

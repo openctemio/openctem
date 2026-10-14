@@ -9,6 +9,7 @@ package command
 
 import (
 	"context"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -23,7 +24,28 @@ const (
 	// PlacementHostBusy: another task of the organization is scanning one
 	// of the command's hosts; it starts when that one ends.
 	PlacementHostBusy = "host_busy"
+	// PlacementSensorHostsBusy: the platform sees the command's hosts free,
+	// but the sensor that last took it handed it back because its own
+	// per-host limit holds one of them (ReleaseReasonHostsBusy); it runs
+	// when that sensor's host frees up, or on another sensor.
+	PlacementSensorHostsBusy = "sensor_hosts_busy"
 )
+
+// ReleaseReasonHostsBusy is the code a hand-back is stored under when the
+// sensor's own per-host limit held the command back (sdk-go: "its hosts are
+// busy on this sensor").
+const ReleaseReasonHostsBusy = "hosts_busy"
+
+// ReleasedBySensorPrefix starts the message a command handed back by its
+// sensor is stored with, before the sensor's reason.
+const ReleasedBySensorPrefix = "released by sensor: "
+
+// IsHostsBusyRelease reports whether a sensor's release reason is the
+// per-host limit (the code, or the text sdk-go sends).
+func IsHostsBusyRelease(reason string) bool {
+	r := strings.ToLower(strings.TrimSpace(reason))
+	return r == ReleaseReasonHostsBusy || r == "its hosts are busy on this sensor"
+}
 
 // Sensor-level placement reasons, in the order the explainer checks them.
 const (
@@ -85,6 +107,33 @@ type PlacementJob struct {
 	NotExpired    bool
 	Due           bool
 	HostFree      bool
+	// SensorHostsBusy: the sensor that last took it handed it back for its
+	// own per-host limit (error_message is the hosts_busy release).
+	SensorHostsBusy bool
+}
+
+// MaxHostHolders bounds the tasks a host wait names.
+const MaxHostHolders = 3
+
+// HostHolder is a task of the same tenant that holds hosts a pending
+// command waits for: which task, of which run and step, with which tool,
+// and the command's conflicting keys it still holds (never shown: only
+// counted).
+type HostHolder struct {
+	CommandID shared.ID
+	RunID     string
+	StepKey   string
+	Tool      string
+	Keys      []string
+}
+
+// HostHoldersReader reads, for one pending command of the tenant, its host
+// keys and the tenant's running tasks that hold one it conflicts with (not
+// released by their settled targets), at most limit of them, most shared
+// keys first. Another tenant's tasks are never read. A command of another
+// tenant is shared.ErrNotFound.
+type HostHoldersReader interface {
+	HostHolders(ctx context.Context, tenantID, commandID shared.ID, limit int) (keys []string, holders []HostHolder, err error)
 }
 
 // SensorClaim is the per-sensor half of the claim predicates for one
