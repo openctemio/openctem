@@ -257,6 +257,8 @@ interface BackendAssetStats {
   total: number
   by_type: Record<string, number>
   by_sub_type?: Record<string, number>
+  /** Counts keyed "type" or "type/sub_type" (places each row in its registry class). */
+  by_type_sub_type?: Record<string, number>
   by_status: Record<string, number>
   by_criticality: Record<string, number>
   by_scope: Record<string, number>
@@ -281,6 +283,7 @@ export interface AssetStatsData {
   total: number
   byType: Record<string, number>
   bySubType: Record<string, number>
+  byTypeSubType: Record<string, number>
   byStatus: Record<string, number>
   byCriticality: Record<string, number>
   byScope: Record<string, number>
@@ -306,6 +309,7 @@ function transformAssetStats(backend: BackendAssetStats): AssetStatsData {
     total: backend.total || 0,
     byType: backend.by_type || {},
     bySubType: backend.by_sub_type || {},
+    byTypeSubType: backend.by_type_sub_type || {},
     byStatus: backend.by_status || {},
     byCriticality: backend.by_criticality || {},
     byScope: backend.by_scope || {},
@@ -796,6 +800,7 @@ export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetSt
     total: 0,
     byType: {},
     bySubType: {},
+    byTypeSubType: {},
     byStatus: {},
     byCriticality: {},
     byScope: {},
