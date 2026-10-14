@@ -2132,6 +2132,69 @@ type UpdatePentestSettingsRequest struct {
 	RequireAuthorizationBeforeStart *bool `json:"require_authorization_before_start"`
 }
 
+// FindingCorrelationSettingsRequest changes the correlation switches;
+// absent = unchanged.
+type FindingCorrelationSettingsRequest struct {
+	AutoDisabled        *bool `json:"auto_disabled"`
+	SuggestionsDisabled *bool `json:"suggestions_disabled"`
+}
+
+// GetFindingCorrelationSettings handles GET /api/v1/organization/settings/finding-correlation
+//
+//	@Summary	Finding correlation switches
+//	@Tags		Tenants
+//	@Produce	json
+//	@Security	BearerAuth
+//	@Success	200	{object}	tenant.FindingCorrelationSettings
+//	@Router		/organization/settings/finding-correlation [get]
+func (h *TenantHandler) GetFindingCorrelationSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	fc, err := h.service.GetFindingCorrelationSettings(r.Context(), tenantID.String())
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(fc)
+}
+
+// UpdateFindingCorrelationSettings handles PATCH /api/v1/organization/settings/finding-correlation
+//
+//	@Summary		Change the finding correlation switches
+//	@Description	Turns automatic cross-rule correlation (a detection becomes a reversible duplicate of the same issue's primary) or its "possibly related" suggestions off or on. Audited.
+//	@Tags			Tenants
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Param			request	body		FindingCorrelationSettingsRequest	true	"Switches"
+//	@Success		200		{object}	tenant.FindingCorrelationSettings
+//	@Router			/organization/settings/finding-correlation [patch]
+func (h *TenantHandler) UpdateFindingCorrelationSettings(w http.ResponseWriter, r *http.Request) {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+	var req FindingCorrelationSettingsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	fc, err := h.service.UpdateFindingCorrelationSettings(settingsWriteCtx(r), tenantID.String(),
+		tenantapp.UpdateFindingCorrelationSettingsInput{AutoDisabled: req.AutoDisabled, SuggestionsDisabled: req.SuggestionsDisabled},
+		h.buildAuditContext(r))
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(fc)
+}
+
 // GetPentestSettings handles GET /api/v1/tenants/{tenant}/settings/pentest
 func (h *TenantHandler) GetPentestSettings(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTeamID(r.Context())

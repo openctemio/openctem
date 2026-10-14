@@ -75,6 +75,11 @@ var findingMergeKeptRefs = map[string]string{
 	// reported (RFC-044 §5.7); the survivor keeps its own. The tombstone's
 	// findings.definition_id names one of these links, so they cannot move.
 	"finding_definitions.finding_id": "kept on the tombstone; the survivor keeps its own definitions",
+	// A correlation and an injection point describe the finding they were
+	// derived from; the survivor's own are re-derived on its next sighting.
+	"finding_injection_points.finding_id": "kept on the tombstone; re-derived for the survivor",
+	"finding_correlations.primary_id":     "kept on the tombstone; re-derived for the survivor",
+	"finding_correlations.member_id":      "kept on the tombstone; re-derived for the survivor",
 	// A suspended decision is the history of the finding it was made on.
 	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
 }

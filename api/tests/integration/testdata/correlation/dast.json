@@ -1,0 +1,523 @@
+{
+ "comment": "DAST cross-rule correlation golden corpus (research/134 section 12). merged: one becomes the other's correlated duplicate. not_merged: no status changes. Any wrong merge fails CI. Two templates of one CVE on one injection point are already one finding by identity (the DAST key names the CVE), so no pair is needed.",
+ "asset": "shop.example.com",
+ "cases": [
+  {
+   "name": "owner case: a generic open redirect and the CVE template on the same payload-free injection point are one issue",
+   "expect": "merged",
+   "primary": "b",
+   "a": {
+    "type": "vulnerability",
+    "title": "open-redirect-generic",
+    "severity": "medium",
+    "rule_id": "open-redirect-generic",
+    "location": {
+     "path": "https://shop.example.com/oast.me"
+    },
+    "web": {
+     "url": "https://shop.example.com/oast.me",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601"
+    },
+    "evidence_items": [
+     {
+      "kind": "http_exchange",
+      "version": 1,
+      "http": {
+       "request": {
+        "method": "GET",
+        "url": "https://shop.example.com/oast.me"
+       },
+       "response": {
+        "status": 302,
+        "headers": [
+         {
+          "name": "Location",
+          "value": "//oast.me"
+         }
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2025-54793",
+    "severity": "medium",
+    "rule_id": "CVE-2025-54793",
+    "location": {
+     "path": "https://shop.example.com/interact.sh/en"
+    },
+    "web": {
+     "url": "https://shop.example.com/interact.sh/en",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601",
+     "cve_id": "CVE-2025-54793"
+    },
+    "evidence_items": [
+     {
+      "kind": "http_exchange",
+      "version": 1,
+      "http": {
+       "request": {
+        "method": "GET",
+        "url": "https://shop.example.com/interact.sh/en"
+       },
+       "response": {
+        "status": 302,
+        "headers": [
+         {
+          "name": "Location",
+          "value": "//interact.sh/en/"
+         }
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "1: the same path with different parameter names stays apart",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "xss-generic",
+    "severity": "medium",
+    "rule_id": "xss-generic",
+    "location": {
+     "path": "https://shop.example.com/search"
+    },
+    "web": {
+     "url": "https://shop.example.com/search",
+     "method": "GET",
+     "parameter": {
+      "location": "query",
+      "name": "q"
+     }
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-79"
+     ],
+     "cwe_id": "CWE-79"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-2222",
+    "severity": "medium",
+    "rule_id": "CVE-2024-2222",
+    "location": {
+     "path": "https://shop.example.com/search"
+    },
+    "web": {
+     "url": "https://shop.example.com/search",
+     "method": "GET",
+     "parameter": {
+      "location": "query",
+      "name": "term"
+     }
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-79"
+     ],
+     "cwe_id": "CWE-79",
+     "cve_id": "CVE-2024-2222"
+    }
+   }
+  },
+  {
+   "name": "2: GET query and POST body with the same name stay apart",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "sqli-generic",
+    "severity": "medium",
+    "rule_id": "sqli-generic",
+    "location": {
+     "path": "https://shop.example.com/login"
+    },
+    "web": {
+     "url": "https://shop.example.com/login",
+     "method": "GET",
+     "parameter": {
+      "location": "query",
+      "name": "user"
+     }
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-89"
+     ],
+     "cwe_id": "CWE-89"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-3333",
+    "severity": "medium",
+    "rule_id": "CVE-2024-3333",
+    "location": {
+     "path": "https://shop.example.com/login"
+    },
+    "web": {
+     "url": "https://shop.example.com/login",
+     "method": "POST",
+     "parameter": {
+      "location": "form",
+      "name": "user"
+     }
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-89"
+     ],
+     "cwe_id": "CWE-89",
+     "cve_id": "CVE-2024-3333"
+    }
+   }
+  },
+  {
+   "name": "3: a broad CWE never merges",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "info-leak-generic",
+    "severity": "medium",
+    "rule_id": "info-leak-generic",
+    "location": {
+     "path": "https://shop.example.com/status"
+    },
+    "web": {
+     "url": "https://shop.example.com/status",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-200"
+     ],
+     "cwe_id": "CWE-200"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-4444",
+    "severity": "medium",
+    "rule_id": "CVE-2024-4444",
+    "location": {
+     "path": "https://shop.example.com/status"
+    },
+    "web": {
+     "url": "https://shop.example.com/status",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-200"
+     ],
+     "cwe_id": "CWE-200",
+     "cve_id": "CVE-2024-4444"
+    }
+   }
+  },
+  {
+   "name": "4: a missing CWE never merges",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "redirect-generic",
+    "severity": "medium",
+    "rule_id": "redirect-generic",
+    "location": {
+     "path": "https://shop.example.com/go"
+    },
+    "web": {
+     "url": "https://shop.example.com/go",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": []
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-5555",
+    "severity": "medium",
+    "rule_id": "CVE-2024-5555",
+    "location": {
+     "path": "https://shop.example.com/go"
+    },
+    "web": {
+     "url": "https://shop.example.com/go",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601",
+     "cve_id": "CVE-2024-5555"
+    }
+   }
+  },
+  {
+   "name": "5: different CVEs never merge",
+   "expect": "not_merged",
+   "no_suggestion": true,
+   "a": {
+    "type": "vulnerability",
+    "title": "CVE-2024-6666",
+    "severity": "medium",
+    "rule_id": "CVE-2024-6666",
+    "location": {
+     "path": "https://shop.example.com/api"
+    },
+    "web": {
+     "url": "https://shop.example.com/api",
+     "method": "GET",
+     "parameter": {
+      "location": "query",
+      "name": "url"
+     }
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-918"
+     ],
+     "cwe_id": "CWE-918",
+     "cve_id": "CVE-2024-6666"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-7777",
+    "severity": "medium",
+    "rule_id": "CVE-2024-7777",
+    "location": {
+     "path": "https://shop.example.com/api"
+    },
+    "web": {
+     "url": "https://shop.example.com/api",
+     "method": "GET",
+     "parameter": {
+      "location": "query",
+      "name": "url"
+     }
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-918"
+     ],
+     "cwe_id": "CWE-918",
+     "cve_id": "CVE-2024-7777"
+    }
+   }
+  },
+  {
+   "name": "6: http and https stay apart",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "redirect-generic",
+    "severity": "medium",
+    "rule_id": "redirect-generic",
+    "location": {
+     "path": "http://shop.example.com/r"
+    },
+    "web": {
+     "url": "http://shop.example.com/r",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-8888",
+    "severity": "medium",
+    "rule_id": "CVE-2024-8888",
+    "location": {
+     "path": "https://shop.example.com/r"
+    },
+    "web": {
+     "url": "https://shop.example.com/r",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601",
+     "cve_id": "CVE-2024-8888"
+    }
+   }
+  },
+  {
+   "name": "6: www and the apex stay apart",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "redirect-generic",
+    "severity": "medium",
+    "rule_id": "redirect-generic",
+    "location": {
+     "path": "https://www.shop.example.com/r"
+    },
+    "web": {
+     "url": "https://www.shop.example.com/r",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-8889",
+    "severity": "medium",
+    "rule_id": "CVE-2024-8889",
+    "location": {
+     "path": "https://shop.example.com/r"
+    },
+    "web": {
+     "url": "https://shop.example.com/r",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601",
+     "cve_id": "CVE-2024-8889"
+    }
+   }
+  },
+  {
+   "name": "7: a segment that only looks like a payload host is kept",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "redirect-generic",
+    "severity": "medium",
+    "rule_id": "redirect-generic",
+    "location": {
+     "path": "https://shop.example.com/oast.me"
+    },
+    "web": {
+     "url": "https://shop.example.com/oast.me",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-9999",
+    "severity": "medium",
+    "rule_id": "CVE-2024-9999",
+    "location": {
+     "path": "https://shop.example.com/interact.sh/en"
+    },
+    "web": {
+     "url": "https://shop.example.com/interact.sh/en",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-601"
+     ],
+     "cwe_id": "CWE-601",
+     "cve_id": "CVE-2024-9999"
+    },
+    "evidence_items": [
+     {
+      "kind": "http_exchange",
+      "version": 1,
+      "http": {
+       "request": {
+        "method": "GET",
+        "url": "https://shop.example.com/interact.sh/en"
+       },
+       "response": {
+        "status": 302,
+        "headers": [
+         {
+          "name": "Location",
+          "value": "//interact.sh/en/"
+         }
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "8: ids are not normalized",
+   "expect": "not_merged",
+   "a": {
+    "type": "vulnerability",
+    "title": "idor-generic",
+    "severity": "medium",
+    "rule_id": "idor-generic",
+    "location": {
+     "path": "https://shop.example.com/user/123"
+    },
+    "web": {
+     "url": "https://shop.example.com/user/123",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-22"
+     ],
+     "cwe_id": "CWE-22"
+    }
+   },
+   "b": {
+    "type": "vulnerability",
+    "title": "CVE-2024-1212",
+    "severity": "medium",
+    "rule_id": "CVE-2024-1212",
+    "location": {
+     "path": "https://shop.example.com/user/456"
+    },
+    "web": {
+     "url": "https://shop.example.com/user/456",
+     "method": "GET"
+    },
+    "vulnerability": {
+     "cwe_ids": [
+      "CWE-22"
+     ],
+     "cwe_id": "CWE-22",
+     "cve_id": "CVE-2024-1212"
+    }
+   }
+  }
+ ]
+}
