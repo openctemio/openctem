@@ -30,6 +30,8 @@ import type {
   SensorManifestListResponse,
   SensorConfigReport,
   SensorHeartbeatHistoryResponse,
+  SensorProduct,
+  SensorSdkStatus,
 } from './sensor-types'
 
 // ============================================
@@ -183,18 +185,17 @@ export interface TenantSensorStats {
   can_take_jobs?: number
   jobs_running?: number
   job_slots?: number
-  /** Release channel: "" when not configured. */
-  latest_version?: string
-  min_version?: string
+  /** The sensor products the platform knows, each with its release line. */
+  products?: SensorProduct[]
   /** State ladder thresholds. */
   online_window_seconds?: number
   offline_after_seconds?: number
-  /** Supported SDK range: "" when not configured. */
-  sdk_min_version?: string
+  /** The newest SDK release (informational) and the releases with an advisory. */
   sdk_latest_version?: string
+  sdk_advisories?: string[]
   /** Sensors per normalized SDK version ("v0.9.0", or "unknown"). */
   by_sdk_version?: Record<string, number>
-  by_sdk_status?: Partial<Record<'current' | 'outdated' | 'unsupported' | 'unknown', number>>
+  by_sdk_status?: Partial<Record<SensorSdkStatus, number>>
 }
 
 export function useTenantSensorStats(config?: SWRConfiguration) {

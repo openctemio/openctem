@@ -683,13 +683,7 @@ function ConnectionAndIdentity({
     <DetailSection title={t('sensors.detail.connection', 'Connection & identity')}>
       <DetailFieldGrid>
         <DetailField label={t('sensors.detail.f.version', 'Version')}>
-          <SensorVersionCell
-            sensor={sensor}
-            latest={channel?.latest}
-            min={channel?.min}
-            sdkLatest={channel?.sdkLatest}
-            sdkMin={channel?.sdkMin}
-          />
+          <SensorVersionCell sensor={sensor} channel={channel} />
         </DetailField>
         {sensor.protocol && (
           <DetailField label={t('sensors.detail.f.protocol', 'Protocol')}>

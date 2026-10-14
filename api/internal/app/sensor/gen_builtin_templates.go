@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -27,9 +29,23 @@ func main() {
 
 var builtinTemplates = map[string]string{
 `)
+	// Every shipped template: each format of the scanning sensor and of the
+	// collector (all required), then the <set>-<format> files of each
+	// product's snippet set, sorted, so the output is stable.
 	formats := []string{"yaml", "env", "docker", "cli", "compose", "kubernetes", "helm", "policy"}
 	for _, f := range formats {
 		formats = append(formats, "collector-"+f)
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "*.tmpl"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		if name := strings.TrimSuffix(filepath.Base(f), ".tmpl"); !slices.Contains(formats, name) {
+			formats = append(formats, name)
+		}
 	}
 	for _, f := range formats {
 		c, err := os.ReadFile(filepath.Join(dir, f+".tmpl"))

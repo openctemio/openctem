@@ -13,8 +13,10 @@ import { capacityLabel, sensorCapacity, type SensorToolRow } from '../lib/capabi
 import { formatDurationShort, keyExpiry } from '../lib/format'
 import { postureIssues } from '../lib/posture'
 import { isOneShotSensor } from '../lib/sensor-state'
+import type { ReleaseChannel } from '../lib/fleet'
 import {
   normalizeSensorVersion,
+  releaseLineOf,
   sensorSdkStatus,
   sensorSdkVersion,
   sensorVersionStatus,
@@ -216,17 +218,19 @@ const VERSION_TAG: Record<
   unknown: null,
 }
 
+// The SDK release is informational; only a release with a security
+// advisory is a warning.
 const SDK_TAG: Record<
   SensorSdkStatus,
-  { key: string; label: string; tone: 'warning' | 'destructive' } | null
+  { key: string; label: string; tone: 'info' | 'warning' } | null
 > = {
   current: null,
   unknown: null,
-  outdated: { key: 'sensors.version.sdkOutdated', label: 'SDK outdated', tone: 'warning' },
-  unsupported: {
-    key: 'sensors.version.sdkUnsupported',
-    label: 'SDK unsupported',
-    tone: 'destructive',
+  outdated: { key: 'sensors.version.sdkOutdated', label: 'SDK outdated', tone: 'info' },
+  advisory: {
+    key: 'sensors.version.sdkAdvisory',
+    label: 'SDK advisory',
+    tone: 'warning',
   },
 }
 
@@ -240,6 +244,10 @@ export type SensorVersionFields = Pick<
   | 'sensor_product'
   | 'sensor_commit'
   | 'sensor_build_time'
+  | 'product'
+  | 'product_known'
+  | 'product_latest_version'
+  | 'product_min_version'
 >
 
 /** The build facts behind the version, for the tooltip (empty when none). */
@@ -274,24 +282,19 @@ export function sensorBuildTooltip(
 
 /**
  * "v0.5.0" over "SDK v0.9.0" (unknown parts left out), how the sensor
- * version compares to the release channel, and a warning when its SDK is
- * outdated or unsupported. The build facts are in the tooltip. The table,
- * the phone cards and the drawer all show the version through this.
+ * version compares to its product's release line, and a tag when its SDK is
+ * outdated (informational) or has a security advisory. The build facts are in
+ * the tooltip. The table, the phone cards and the drawer all show the version
+ * through this.
  */
 export function SensorVersionCell({
   sensor,
-  latest,
-  min,
-  sdkLatest,
-  sdkMin,
+  channel,
   showChannelTag = true,
 }: {
   sensor: SensorVersionFields
-  latest?: string | null
-  min?: string | null
-  /** Supported SDK range from GET /sensors/stats, for the SDK tag's tooltip. */
-  sdkLatest?: string | null
-  sdkMin?: string | null
+  /** The product catalog and SDK entries from GET /sensors/stats. */
+  channel?: ReleaseChannel
   /** The latest / update / unsupported tag for the sensor release. */
   showChannelTag?: boolean
 }) {
@@ -305,6 +308,8 @@ export function SensorVersionCell({
       </span>
     )
   }
+  const { latest, min } = releaseLineOf(sensor, channel?.products)
+  const sdkLatest = channel?.sdkLatest
   const status = sensorVersionStatus(sensor, latest, min)
   const tag = v && showChannelTag ? VERSION_TAG[status] : null
   const title =
@@ -316,12 +321,8 @@ export function SensorVersionCell({
   const sdkStatus = sensorSdkStatus(sensor)
   const sdkTag = SDK_TAG[sdkStatus]
   const sdkTitle =
-    sdkStatus === 'unsupported'
-      ? sdkMin
-        ? t('sensors.version.sdkUnsupportedMin', 'Older than the minimum supported SDK {min}', {
-            min: sdkMin,
-          })
-        : t('sensors.version.sdkUnsupportedHint', 'Below the minimum supported SDK')
+    sdkStatus === 'advisory'
+      ? t('sensors.version.sdkAdvisoryHint', 'This SDK release has a published security advisory')
       : sdkStatus === 'outdated'
         ? sdkLatest
           ? t('sensors.version.sdkOutdatedLatest', 'SDK {latest} is available', {
