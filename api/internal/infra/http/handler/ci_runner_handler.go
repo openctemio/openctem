@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -149,6 +150,23 @@ func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 // @Failure      403  {object}  apierror.Error "RUNNER_OUTDATED: the runner reports a version below the minimum supported one"
 // @Failure      429  {object}  apierror.Error
 // @Router       /ci/oidc/exchange [post]
+// runnerOutdatedMessage tells the job exactly which line to change: the
+// openctemio/ci release to pin, in each form a pipeline uses it.
+func runnerOutdatedMessage(err error) string {
+	var oe *cirunapp.RunnerOutdatedError
+	if !errors.As(err, &oe) || oe.Pin == "" {
+		return "This CI runner is older than the oldest openctemio/ci release this platform accepts; pin the current openctemio/ci release"
+	}
+	have := oe.Version
+	if have == "" {
+		have = "an older release"
+	}
+	return fmt.Sprintf("This CI runner (openctem-ci %s) is older than %s, the oldest openctemio/ci release this platform accepts. "+
+		"Change the pin to %[3]s: GitHub `uses: openctemio/ci/.github/workflows/scan.yml@%[3]s` (or `openctemio/ci@%[3]s`); "+
+		"GitLab `- remote: https://raw.githubusercontent.com/openctemio/ci/%[3]s/gitlab/templates/all.yml`; "+
+		"other CI systems `ghcr.io/openctemio/ci:%[3]s`.", have, oe.Min, oe.Pin)
+}
+
 func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, maxExchangeBody)
@@ -168,8 +186,7 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, cirunapp.ErrRunnerOutdated) {
-			apierror.New(http.StatusForbidden, "RUNNER_OUTDATED",
-				"This CI runner is older than the minimum supported version; update the sensor image").WriteJSON(w)
+			apierror.New(http.StatusForbidden, "RUNNER_OUTDATED", runnerOutdatedMessage(err)).WriteJSON(w)
 			return
 		}
 		h.logger.Error("ci token exchange failed", "error", logger.SanitizeError(err))
