@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/lib/pq"
+
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 )
 
@@ -17,7 +19,8 @@ const hostKeysBackfillBatch = 500
 
 // BackfillPendingHostKeys gives the pending commands that name targets but
 // have no host keys yet (queued before command.AssignHostKeys ran on every
-// create) their keys, in the column and in the payload, so the claim holds
+// create) their keys, in the column only (the payload stays as queued), so
+// the claim holds
 // them back while their hosts are busy instead of offering them to a
 // sensor that hands them back. Idempotent and safe across replicas: a row
 // is written only while it is still pending without keys, and rows another
@@ -49,18 +52,19 @@ func backfillHostKeysBatch(ctx context.Context, db *sql.DB) (int, bool, error) {
 		if err := command.AssignHostKeys(cmd); err != nil {
 			continue
 		}
-		if cmd.HostKeys == nil {
-			// Its targets name no host: an empty list marks it done, so
-			// it is not read again.
-			cmd.HostKeys = []string{}
-			if err := command.AssignHostKeys(cmd); err != nil {
-				continue
-			}
+		keys := cmd.HostKeys
+		if keys == nil {
+			// Its targets name no remote host: an empty list marks it
+			// done, so it is not read again.
+			keys = []string{}
 		}
+		// The column only: the payload is left exactly as it was queued (a
+		// sensor computes the same keys from its targets by the same
+		// function, and nothing signed or recorded about it changes).
 		res, err := tx.ExecContext(ctx, `
-			UPDATE commands SET host_keys = $2, payload = $3
-			WHERE id = $1 AND tenant_id = $4 AND status = 'pending' AND host_keys IS NULL`,
-			r.id, hostKeysArg(cmd.HostKeys), cmd.Payload, r.tenantID)
+			UPDATE commands SET host_keys = $2::text[]
+			WHERE id = $1 AND tenant_id = $3 AND status = 'pending' AND host_keys IS NULL`,
+			r.id, pq.Array(keys), r.tenantID)
 		if err != nil {
 			return 0, false, fmt.Errorf("backfill host keys: %w", err)
 		}
