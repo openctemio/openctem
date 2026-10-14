@@ -63,7 +63,7 @@ export function CIOverrideDialog({
   const hoursValue = Number(hours)
   const invalid =
     !assetId.trim() ||
-    !/^[0-9a-fA-F]{7,64}$/.test(sha.trim()) ||
+    !/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(sha.trim()) ||
     reason.trim().length < 10 ||
     !(hoursValue >= 1 && hoursValue <= 168)
 
@@ -89,7 +89,7 @@ export function CIOverrideDialog({
               id="ov-sha"
               hint={t(
                 'scans.ci.breakGlass.commitHint',
-                'Full or abbreviated (at least 7 characters).'
+                'The full commit id (40 characters). The override covers exactly this commit.'
               )}
             >
               <Input

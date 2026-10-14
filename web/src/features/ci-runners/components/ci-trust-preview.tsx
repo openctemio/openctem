@@ -33,6 +33,7 @@ const NORMALIZED_LABELS: [string, string][] = [
   ['organization', 'Organization'],
   ['run_id', 'Run'],
   ['job_id', 'Job'],
+  ['workflow_definition', 'Pipeline definition'],
 ]
 
 export function CITrustPreview({

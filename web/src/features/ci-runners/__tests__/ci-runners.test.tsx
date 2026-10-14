@@ -202,6 +202,9 @@ describe('lib', () => {
     })
     expect(PROVIDER_TRAITS.bitbucket.repositoriesById).toBe(true)
     expect(PROVIDER_TRAITS.circleci.tenantAudience).toBe(true)
+    expect(PROVIDER_TRAITS.github.workflowRefs).toBe(true)
+    expect(PROVIDER_TRAITS.gitlab.workflowRefs).toBe(true)
+    expect(PROVIDER_TRAITS.jenkins.workflowRefs).toBe(false)
   })
 
   it('builds run list URLs', () => {
@@ -509,6 +512,51 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
+  })
+
+  it('admits only the central workflow when pipeline definitions are listed', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.type(screen.getByLabelText('Name'), 'GitHub org')
+    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.type(
+      screen.getByLabelText('Pipeline definitions'),
+      'acme/security/.github/workflows/scan.yml@refs/heads/main'
+    )
+    mockSaveTrust.mockResolvedValue({
+      id: 'c3',
+      name: 'GitHub org',
+      provider: 'github',
+      audience: 'openctem:tenant:t-123',
+      rules: {
+        owners: ['acme'],
+        workflow_refs: ['acme/security/.github/workflows/scan.yml@refs/heads/main'],
+      },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /^add$/i }))
+    expect(mockSaveTrust).toHaveBeenCalledWith({
+      id: undefined,
+      body: expect.objectContaining({
+        rules: expect.objectContaining({
+          workflow_refs: ['acme/security/.github/workflows/scan.yml@refs/heads/main'],
+        }),
+      }),
+    })
+    // The snippet says where the steps belong.
+    expect(await screen.findByTestId('ci-snippet-workflow-refs')).toHaveTextContent(
+      'acme/security/.github/workflows/scan.yml@refs/heads/main'
+    )
+  })
+
+  it('offers pipeline definitions only where the token names them', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    expect(screen.getByLabelText('Pipeline definitions')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Jenkins' }))
+    expect(screen.queryByLabelText('Pipeline definitions')).not.toBeInTheDocument()
   })
 
   it('guides a Bitbucket trust: workspace, its UUID, repositories by UUID', async () => {

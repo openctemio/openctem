@@ -70,7 +70,7 @@ func TestCISecurityAlerts(t *testing.T) {
 
 	// Created: both administrators in-app, and the channel event.
 	if _, err := r.svc.CreateOverride(ctx, r.tenant, cirunapp.OverrideInput{RepositoryAssetID: assetID,
-		CommitSHA: sha[:12], Reason: "release blocked by a known false positive"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
+		CommitSHA: sha, Reason: "release blocked by a known false positive"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(inApp.sent) != 2 || ob.count("ci.break_glass") != 1 {
