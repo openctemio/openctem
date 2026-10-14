@@ -433,6 +433,17 @@ type SuppressionRulePreviewResponse struct {
 // PreviewRule handles GET /api/v1/suppressions/{id}/preview: the number of
 // open findings an approval would close. The count is organization-wide, as
 // the approval is, so the route is gated like the approval itself.
+// @Summary      Preview a suppression rule's approval
+// @Description  The number of the organization's open findings the rule matches and an approval would close now (at most limit; capped when more match). Organization-wide, like the approval; needs findings:suppressions:approve.
+// @Tags         Suppressions
+// @Produce      json
+// @Param        id   path      string  true  "Suppression rule ID"
+// @Success      200  {object}  SuppressionRulePreviewResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /suppressions/{id}/preview [get]
 func (h *SuppressionHandler) PreviewRule(w http.ResponseWriter, r *http.Request) {
 	tenantUUID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
