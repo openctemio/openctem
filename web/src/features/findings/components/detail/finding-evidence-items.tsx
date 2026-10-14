@@ -38,6 +38,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { copyToClipboard } from '@/lib/clipboard'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import type { EvidenceItem } from '@/lib/api/generated'
@@ -108,6 +109,7 @@ function EvidenceItemCard({
   findingId: string
   record: FindingEvidenceItem
 }) {
+  const { t } = useTranslation()
   const canReveal = useHasPermission(Permission.EvidenceReveal)
   const [state, setState] = React.useState<RevealState>({ values: {}, until: 0 })
   const item = record.item as EvidenceItem
@@ -115,11 +117,11 @@ function EvidenceItemCard({
   // Re-mask when the reveal window ends, and never carry values to another item.
   React.useEffect(() => {
     if (!state.until) return
-    const t = window.setTimeout(
+    const timer = window.setTimeout(
       () => setState({ values: {}, until: 0 }),
       Math.max(0, state.until - Date.now())
     )
-    return () => window.clearTimeout(t)
+    return () => window.clearTimeout(timer)
   }, [state.until])
   React.useEffect(() => setState({ values: {}, until: 0 }), [record.id])
 
@@ -132,15 +134,25 @@ function EvidenceItemCard({
             values: { ...s.values, ...values },
             until: Date.now() + DEFAULT_MASK_AFTER_MS,
           }))
-          toast.info('Value revealed for 60 seconds. This access is recorded in the audit log.')
+          toast.info(
+            t(
+              'findings.evidenceItems.revealedToast',
+              'Value revealed for 60 seconds. This access is recorded in the audit log.'
+            )
+          )
         }
         return values
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Could not reveal the value'))
+        toast.error(
+          getErrorMessage(
+            err,
+            t('findings.evidenceItems.revealFailed', 'Could not reveal the value')
+          )
+        )
         return null
       }
     },
-    [findingId, record.id]
+    [findingId, record.id, t]
   )
 
   const ctx = React.useMemo<RevealContextValue>(
@@ -159,7 +171,9 @@ function EvidenceItemCard({
     <RevealContext.Provider value={ctx}>
       <section
         className="rounded-lg border bg-card"
-        aria-label={`${kindLabel(record.kind ?? '')} evidence`}
+        aria-label={t('findings.evidenceItems.itemAria', '{kind} evidence', {
+          kind: kindLabel(record.kind ?? ''),
+        })}
         data-testid="evidence-item"
       >
         <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
@@ -172,16 +186,19 @@ function EvidenceItemCard({
           )}
           {record.origin === 'retest' && (
             <Badge variant="outline" className="text-xs">
-              Retest attempt
+              {t('findings.evidenceItems.retest', 'Retest attempt')}
             </Badge>
           )}
           {record.truncated && (
             <Badge
               variant="outline"
               className="text-xs"
-              title="The tool's output was longer than the stored part"
+              title={t(
+                'findings.evidenceItems.truncatedTitle',
+                "The tool's output was longer than the stored part"
+              )}
             >
-              Truncated
+              {t('findings.evidenceItems.truncated', 'Truncated')}
             </Badge>
           )}
           <RelativeTime date={record.captured_at} className="ms-auto text-xs" />
@@ -197,6 +214,7 @@ function EvidenceItemCard({
 }
 
 function ItemActions({ record, item }: { record: FindingEvidenceItem; item: EvidenceItem }) {
+  const { t } = useTranslation()
   const { canReveal, available, revealable, reveal } = useReveal()
   const curl = record.curl ?? (record.kind === 'curl' ? item.text : undefined)
   const curlSecrets = curl ? (curl.match(/«secret:[a-z_]{1,32}#[0-9]{1,4}»/g) ?? []) : []
@@ -204,15 +222,19 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
     canReveal && available && curlSecrets.length > 0 && curlSecrets.every((p) => revealable.has(p))
 
   const copy = async (text: string, what: string) => {
-    if (await copyToClipboard(text)) toast.success(`${what} copied`)
-    else toast.error('Failed to copy to clipboard')
+    if (await copyToClipboard(text))
+      toast.success(t('findings.evidenceItems.copied', '{what} copied', { what }))
+    else toast.error(t('findings.evidenceItems.copyFailed', 'Failed to copy to clipboard'))
   }
 
   const copyCurlWithSecrets = async () => {
     if (!curl) return
     const values = await reveal([...new Set(curlSecrets)], 'copy_curl')
     if (!values) return
-    await copy(substitute(curl, values, true), 'curl with secrets')
+    await copy(
+      substitute(curl, values, true),
+      t('findings.evidenceItems.whatCurlSecrets', 'curl with secrets')
+    )
   }
 
   const download = () => {
@@ -237,11 +259,14 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() => void copy(curl, 'curl')}
-          title="Copy a curl command that repeats the request (secret values stay masked)"
+          onClick={() => void copy(curl, t('findings.evidenceItems.whatCurl', 'curl'))}
+          title={t(
+            'findings.evidenceItems.copyCurlTitle',
+            'Copy a curl command that repeats the request (secret values stay masked)'
+          )}
         >
           <Terminal className="me-1 h-3.5 w-3.5" aria-hidden />
-          Copy curl
+          {t('findings.evidenceItems.copyCurl', 'Copy curl')}
         </Button>
       )}
       {canCopyWithSecrets && (
@@ -251,10 +276,13 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
           size="sm"
           className="h-7 px-2 text-xs"
           onClick={() => void copyCurlWithSecrets()}
-          title="Copy the curl command with the real secret values (audited)"
+          title={t(
+            'findings.evidenceItems.withSecretsTitle',
+            'Copy the curl command with the real secret values (audited)'
+          )}
         >
           <KeyRound className="me-1 h-3.5 w-3.5" aria-hidden />
-          With secrets
+          {t('findings.evidenceItems.withSecrets', 'With secrets')}
         </Button>
       )}
       <Button
@@ -263,8 +291,8 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
         size="sm"
         className="h-7 w-7 p-0"
         onClick={download}
-        aria-label="Download the evidence (masked)"
-        title="Download (masked)"
+        aria-label={t('findings.evidenceItems.downloadAria', 'Download the evidence (masked)')}
+        title={t('findings.evidenceItems.downloadTitle', 'Download (masked)')}
       >
         <Download className="h-3.5 w-3.5" aria-hidden />
       </Button>
@@ -273,6 +301,7 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
 }
 
 function ItemBody({ item }: { item: EvidenceItem }) {
+  const { t } = useTranslation()
   switch (item.kind) {
     case 'http_exchange':
       return <HTTPExchangeView item={item} />
@@ -288,13 +317,16 @@ function ItemBody({ item }: { item: EvidenceItem }) {
                 : ''}
             </p>
           )}
-          <TextPane label="File excerpt" segments={splitPlaceholders(item.file?.snippet ?? '')} />
+          <TextPane
+            label={t('findings.evidenceItems.fileExcerpt', 'File excerpt')}
+            segments={splitPlaceholders(item.file?.snippet ?? '')}
+          />
         </div>
       )
     case 'screenshot':
       return (
         <p className="text-sm text-muted-foreground">
-          Screenshot{' '}
+          {t('findings.evidenceItems.screenshot', 'Screenshot')}{' '}
           {item.artifact?.media_type ? `(${toDisplayText(item.artifact.media_type, 100)})` : ''}
           {item.artifact?.sha256 ? ` · ${item.artifact.sha256.slice(0, 19)}…` : ''}
         </p>
@@ -318,20 +350,25 @@ function ItemBody({ item }: { item: EvidenceItem }) {
 }
 
 function HTTPExchangeView({ item }: { item: EvidenceItem }) {
+  const { t } = useTranslation()
   const q = item.http?.request
   const s = item.http?.response
   const [raw, setRaw] = React.useState(false)
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="View">
+        <div
+          className="inline-flex rounded-md border p-0.5 text-xs"
+          role="group"
+          aria-label={t('findings.evidenceItems.view', 'View')}
+        >
           <button
             type="button"
             className={cn('rounded px-2 py-0.5', !raw && 'bg-muted font-medium')}
             aria-pressed={!raw}
             onClick={() => setRaw(false)}
           >
-            Parsed
+            {t('findings.evidenceItems.parsed', 'Parsed')}
           </button>
           <button
             type="button"
@@ -339,7 +376,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
             aria-pressed={raw}
             onClick={() => setRaw(true)}
           >
-            Raw
+            {t('findings.evidenceItems.raw', 'Raw')}
           </button>
         </div>
       </div>
@@ -347,10 +384,13 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
         <div className="space-y-1.5">
           <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-            Request
+            {t('findings.evidenceItems.request', 'Request')}
           </h4>
           {raw ? (
-            <TextPane label="Raw request" segments={splitPlaceholders(rawRequestText(item))} />
+            <TextPane
+              label={t('findings.evidenceItems.rawRequest', 'Raw request')}
+              segments={splitPlaceholders(rawRequestText(item))}
+            />
           ) : (
             <>
               <p
@@ -366,9 +406,17 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
               <Headers headers={q.headers} />
               {q.body && (
                 <TextPane
-                  label="Request body"
+                  label={t('findings.evidenceItems.requestBody', 'Request body')}
                   segments={segmentBody(q.body, bodyRanges(item, 'request'))}
-                  note={q.body_truncated ? `truncated, ${q.body_size} bytes in all` : undefined}
+                  note={
+                    q.body_truncated
+                      ? t(
+                          'findings.evidenceItems.bodyTruncated',
+                          'truncated, {size} bytes in all',
+                          { size: q.body_size ?? 0 }
+                        )
+                      : undefined
+                  }
                 />
               )}
             </>
@@ -379,10 +427,13 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
         <div className="space-y-1.5">
           <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
             <ArrowDownLeft className="h-3.5 w-3.5" aria-hidden />
-            Response
+            {t('findings.evidenceItems.response', 'Response')}
           </h4>
           {raw ? (
-            <TextPane label="Raw response" segments={segmentBody(rawResponseText(item), [])} />
+            <TextPane
+              label={t('findings.evidenceItems.rawResponse', 'Raw response')}
+              segments={segmentBody(rawResponseText(item), [])}
+            />
           ) : (
             <>
               <p className="font-mono text-sm">
@@ -400,9 +451,17 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
               <Headers headers={s.headers} matched={partMatched(item, 'response', 'header')} />
               {s.body && (
                 <TextPane
-                  label="Response body"
+                  label={t('findings.evidenceItems.responseBody', 'Response body')}
                   segments={segmentBody(s.body, bodyRanges(item, 'response'))}
-                  note={s.body_truncated ? `truncated, ${s.body_size} bytes in all` : undefined}
+                  note={
+                    s.body_truncated
+                      ? t(
+                          'findings.evidenceItems.bodyTruncated',
+                          'truncated, {size} bytes in all',
+                          { size: s.body_size ?? 0 }
+                        )
+                      : undefined
+                  }
                 />
               )}
             </>
@@ -411,7 +470,7 @@ function HTTPExchangeView({ item }: { item: EvidenceItem }) {
       )}
       {item.extracted && item.extracted.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Extracted:{' '}
+          {t('findings.evidenceItems.extracted', 'Extracted:')}{' '}
           {item.extracted.map((v, i) => (
             <span key={i}>
               {i > 0 && ', '}
@@ -509,6 +568,7 @@ function Segments({ segments, inline }: { segments: Segment[]; inline?: boolean 
 }
 
 function SecretChip({ placeholder }: { placeholder: string }) {
+  const { t } = useTranslation()
   const { canReveal, available, revealable, values, reveal } = useReveal()
   const [copied, setCopied] = React.useState(false)
   const value = values[placeholder]
@@ -534,7 +594,11 @@ function SecretChip({ placeholder }: { placeholder: string }) {
           type="button"
           onClick={() => void onCopy()}
           className="text-muted-foreground hover:text-foreground"
-          aria-label={copied ? 'Copied' : `Copy ${kind} value`}
+          aria-label={
+            copied
+              ? t('findings.evidenceItems.copiedAria', 'Copied')
+              : t('findings.evidenceItems.copyValueAria', 'Copy {kind} value', { kind })
+          }
         >
           {copied ? (
             <Check className="h-3 w-3" aria-hidden />
@@ -551,10 +615,19 @@ function SecretChip({ placeholder }: { placeholder: string }) {
       data-testid="evidence-secret"
       title={
         revealableHere
-          ? 'Masked secret value. Reveal shows it for 60 seconds; the access is audited.'
+          ? t(
+              'findings.evidenceItems.secretRevealable',
+              'Masked secret value. Reveal shows it for 60 seconds; the access is audited.'
+            )
           : available
-            ? 'Masked secret value. Revealing needs the Reveal Evidence Secrets permission.'
-            : 'Masked secret value. It is no longer kept, so it cannot be revealed.'
+            ? t(
+                'findings.evidenceItems.secretNeedsPermission',
+                'Masked secret value. Revealing needs the Reveal Evidence Secrets permission.'
+              )
+            : t(
+                'findings.evidenceItems.secretGone',
+                'Masked secret value. It is no longer kept, so it cannot be revealed.'
+              )
       }
     >
       <Lock className="h-3 w-3" aria-hidden />
@@ -566,10 +639,10 @@ function SecretChip({ placeholder }: { placeholder: string }) {
           type="button"
           onClick={() => void reveal([placeholder], 'view')}
           className="inline-flex items-center gap-0.5 font-medium text-foreground hover:underline"
-          aria-label={`Reveal ${kind} #${n}`}
+          aria-label={t('findings.evidenceItems.revealAria', 'Reveal {kind} #{n}', { kind, n })}
         >
           <Eye className="h-3 w-3" aria-hidden />
-          Reveal
+          {t('findings.evidenceItems.reveal', 'Reveal')}
         </button>
       )}
     </span>
@@ -577,22 +650,44 @@ function SecretChip({ placeholder }: { placeholder: string }) {
 }
 
 function ItemFooter({ record }: { record: FindingEvidenceItem }) {
+  const { t } = useTranslation()
   const item = record.item as EvidenceItem
   const masked = placeholdersOf(item).length
   return (
     <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {record.tool_name && <span>Tool: {toDisplayText(record.tool_name, 100)}</span>}
-      {record.rule_id && <span>Rule: {toDisplayText(record.rule_id, 200)}</span>}
+      {record.tool_name && (
+        <span>
+          {t('findings.evidenceItems.footerTool', 'Tool: {value}', {
+            value: toDisplayText(record.tool_name, 100),
+          })}
+        </span>
+      )}
+      {record.rule_id && (
+        <span>
+          {t('findings.evidenceItems.footerRule', 'Rule: {value}', {
+            value: toDisplayText(record.rule_id, 200),
+          })}
+        </span>
+      )}
       {record.template_digest && (
-        <span title={record.template_digest}>Template {record.template_digest.slice(0, 19)}…</span>
+        <span title={record.template_digest}>
+          {t('findings.evidenceItems.footerTemplate', 'Template {digest}…', {
+            digest: record.template_digest.slice(0, 19),
+          })}
+        </span>
       )}
       <span title={record.content_sha256}>
-        Content {(record.content_sha256 ?? '').slice(0, 19)}…
+        {t('findings.evidenceItems.footerContent', 'Content {digest}…', {
+          digest: (record.content_sha256 ?? '').slice(0, 19),
+        })}
       </span>
       {masked > 0 && (
         <span>
-          {masked} masked value{masked > 1 ? 's' : ''}
-          {!record.secrets_available && ' (no longer revealable)'}
+          {masked > 1
+            ? t('findings.evidenceItems.maskedMany', '{count} masked values', { count: masked })
+            : t('findings.evidenceItems.maskedOne', '{count} masked value', { count: masked })}
+          {!record.secrets_available &&
+            ` ${t('findings.evidenceItems.noLongerRevealable', '(no longer revealable)')}`}
         </span>
       )}
     </p>

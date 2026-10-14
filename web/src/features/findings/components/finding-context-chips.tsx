@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useMemo } from 'react'
 import { Box, Boxes, FileCode, Layers, Radar, ShieldAlert, Tag, UserRound } from 'lucide-react'
 import { ContextFilterChips, type ContextFilterChip } from '@/features/shared'
@@ -70,6 +71,7 @@ export function FindingContextChips({
   onRemove,
   className,
 }: FindingContextChipsProps) {
+  const { t } = useTranslation()
   const validAssetId = assetId && UUID_RE.test(assetId) ? assetId : null
   const validComponentId = componentId && UUID_RE.test(componentId) ? componentId : null
   const { data: component, isLoading: componentLoading } = useComponentVersion(validComponentId)
@@ -88,17 +90,17 @@ export function FindingContextChips({
     if (assetId) {
       out.push({
         param: 'asset_id',
-        kind: 'Asset',
+        kind: t('findings.contextChips.asset', 'Asset'),
         icon: Box,
         fixedWidth: true,
         loading: !!validAssetId && assetLoading && !assetName,
-        label: assetName || UNKNOWN_ASSET_LABEL,
+        label: assetName || t('findings.contextChips.unknownAsset', UNKNOWN_ASSET_LABEL),
       })
     }
     if (scanId) {
       out.push({
         param: 'scan_id',
-        kind: 'Scan',
+        kind: t('findings.contextChips.scan', 'Scan'),
         icon: Radar,
         mono: true,
         label: scanId,
@@ -108,35 +110,52 @@ export function FindingContextChips({
       out.push({ param: 'cve_id', kind: 'CVE', icon: ShieldAlert, mono: true, label: cveId })
     }
     if (ruleId) {
-      out.push({ param: 'rule_id', kind: 'Rule', icon: FileCode, mono: true, label: ruleId })
+      out.push({
+        param: 'rule_id',
+        kind: t('findings.contextChips.rule', 'Rule'),
+        icon: FileCode,
+        mono: true,
+        label: ruleId,
+      })
     }
     if (family) {
-      out.push({ param: 'family', kind: 'Family', icon: Layers, label: family })
+      out.push({
+        param: 'family',
+        kind: t('findings.contextChips.family', 'Family'),
+        icon: Layers,
+        label: family,
+      })
     }
     if (findingType) {
-      out.push({ param: 'finding_type', kind: 'Type', icon: Tag, label: findingType })
+      out.push({
+        param: 'finding_type',
+        kind: t('findings.contextChips.type', 'Type'),
+        icon: Tag,
+        label: findingType,
+      })
     }
     if (componentId) {
       out.push({
         param: 'component_id',
-        kind: 'Component',
+        kind: t('findings.contextChips.component', 'Component'),
         icon: Boxes,
         fixedWidth: true,
         loading: !!validComponentId && componentLoading && !componentName,
-        label: componentName || UNKNOWN_COMPONENT_LABEL,
+        label:
+          componentName || t('findings.contextChips.unknownComponent', UNKNOWN_COMPONENT_LABEL),
       })
     }
     if (ownerUnassigned) {
       out.push({
         param: 'asset_owner_id_null',
-        kind: 'Owner',
+        kind: t('findings.contextChips.owner', 'Owner'),
         icon: UserRound,
-        label: 'Unassigned',
+        label: t('findings.contextChips.unassigned', 'Unassigned'),
       })
     } else if (ownerId) {
       out.push({
         param: 'asset_owner_id',
-        kind: 'Owner',
+        kind: t('findings.contextChips.owner', 'Owner'),
         icon: UserRound,
         mono: true,
         label: ownerId,
@@ -159,6 +178,7 @@ export function FindingContextChips({
     componentLoading,
     assetName,
     componentName,
+    t,
   ])
 
   return <ContextFilterChips chips={chips} onRemove={onRemove} className={className} />

@@ -7,6 +7,7 @@
  * in docs/ui-style-contract.md.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
@@ -117,6 +118,7 @@ const humanize = (v: string) => v.charAt(0).toUpperCase() + v.slice(1).replace(/
 
 /** Group name plus the facts that identify it (type, owner, CVSS / EPSS, KEV). */
 function GroupTitle({ group }: { group: FindingGroup }) {
+  const { t } = useTranslation()
   const stats = group.stats ?? EMPTY_STATS
   const meta = group.metadata ?? {}
   const facts: string[] = []
@@ -126,7 +128,8 @@ function GroupTitle({ group }: { group: FindingGroup }) {
   }
   if (group.group_type === 'asset') {
     if (meta.asset_type) facts.push(humanize(String(meta.asset_type)))
-    if (meta.owner) facts.push(`Owner ${String(meta.owner)}`)
+    if (meta.owner)
+      facts.push(t('findings.groupsTable.owner', 'Owner {name}', { name: String(meta.owner) }))
   }
   if (group.group_type === 'component' && meta.ecosystem) facts.push(String(meta.ecosystem))
   if (group.group_type === 'rule') {
@@ -134,9 +137,17 @@ function GroupTitle({ group }: { group: FindingGroup }) {
     if (group.label !== group.group_key) facts.push(group.group_key)
     if (Array.isArray(meta.tools) && meta.tools.length > 0) facts.push(meta.tools.join(', '))
   }
-  facts.push(`${stats.total} ${stats.total === 1 ? 'finding' : 'findings'}`)
+  facts.push(
+    stats.total === 1
+      ? t('findings.groupsTable.findingOne', '{count} finding', { count: stats.total })
+      : t('findings.groupsTable.findingMany', '{count} findings', { count: stats.total })
+  )
   if (group.group_type !== 'asset') {
-    facts.push(`${stats.affected_assets} ${stats.affected_assets === 1 ? 'asset' : 'assets'}`)
+    facts.push(
+      stats.affected_assets === 1
+        ? t('findings.groupsTable.assetOne', '{count} asset', { count: stats.affected_assets })
+        : t('findings.groupsTable.assetMany', '{count} assets', { count: stats.affected_assets })
+    )
   }
 
   const isSeverityGroup = group.group_type === 'severity'
@@ -177,11 +188,24 @@ function GroupTitle({ group }: { group: FindingGroup }) {
  * is coloured only when it has findings.
  */
 export function GroupStatusSummary({ stats }: { stats: FindingGroupStats }) {
+  const { t } = useTranslation()
   const parts: { label: string; value: number; dot: string }[] = [
-    { label: 'open', value: stats.open, dot: 'bg-destructive' },
-    { label: 'fixing', value: stats.in_progress, dot: 'bg-info' },
-    { label: 'applied', value: stats.fix_applied, dot: 'bg-warning' },
-    { label: 'resolved', value: stats.resolved, dot: 'bg-success' },
+    { label: t('findings.groupsTable.open', 'open'), value: stats.open, dot: 'bg-destructive' },
+    {
+      label: t('findings.groupsTable.fixing', 'fixing'),
+      value: stats.in_progress,
+      dot: 'bg-info',
+    },
+    {
+      label: t('findings.groupsTable.applied', 'applied'),
+      value: stats.fix_applied,
+      dot: 'bg-warning',
+    },
+    {
+      label: t('findings.groupsTable.resolved', 'resolved'),
+      value: stats.resolved,
+      dot: 'bg-success',
+    },
   ]
   const pct = Math.max(0, Math.min(100, stats.progress_pct))
   return (
@@ -200,18 +224,21 @@ export function GroupStatusSummary({ stats }: { stats: FindingGroupStats }) {
           </span>
         ))}
       </span>
-      <span className="flex items-center gap-1.5 whitespace-nowrap" title="Resolved and verified">
+      <span
+        className="flex items-center gap-1.5 whitespace-nowrap"
+        title={t('findings.groupsTable.resolvedVerified', 'Resolved and verified')}
+      >
         <span
           className="h-1.5 w-14 overflow-hidden rounded-full bg-muted-foreground/15"
           role="progressbar"
           aria-valuenow={Math.round(pct)}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label="Verified"
+          aria-label={t('findings.groupsTable.verifiedLabel', 'Verified')}
         >
           <span className="block h-full rounded-full bg-success" style={{ width: `${pct}%` }} />
         </span>
-        {pct.toFixed(0)}% verified
+        {t('findings.groupsTable.verifiedPct', '{pct}% verified', { pct: pct.toFixed(0) })}
       </span>
     </span>
   )
@@ -286,9 +313,10 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   toolbarEnd,
   reloadKey = 0,
   onGroupsLoaded,
-  emptyMessage = 'No findings to group',
+  emptyMessage,
   emptyDescription,
 }: FindingGroupsTableProps<TRow>) {
+  const { t } = useTranslation()
   const lens = statusesProp ? undefined : filters?.state
   const statuses = statusesProp || filters?.statuses || (lens ? '' : GROUPED_DEFAULT_STATUSES)
   const severities = filters?.severities
@@ -462,7 +490,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
         if (st.error instanceof GroupFilterUnsupported) {
           return (
             <span>
-              These findings open in the list.{' '}
+              {t('findings.groupsTable.opensInList', 'These findings open in the list.')}{' '}
               {onViewGroup && (
                 <Button
                   variant="link"
@@ -471,8 +499,10 @@ export function FindingGroupsTable<TRow extends { id: string }>({
                   onClick={() => onViewGroup(g)}
                 >
                   {(g.stats?.total ?? 0) === 1
-                    ? 'View the finding'
-                    : `View ${g.stats?.total ?? ''} findings`}
+                    ? t('findings.groupsTable.viewOne', 'View the finding')
+                    : t('findings.groupsTable.viewMany', 'View {count} findings', {
+                        count: g.stats?.total ?? '',
+                      })}
                 </Button>
               )}
             </span>
@@ -481,14 +511,14 @@ export function FindingGroupsTable<TRow extends { id: string }>({
         if (st.error) {
           return (
             <span className="text-destructive">
-              Could not load these findings.{' '}
+              {t('findings.groupsTable.loadFailed', 'Could not load these findings.')}{' '}
               <Button
                 variant="link"
                 size="sm"
                 className="h-auto p-0 text-xs"
                 onClick={() => lazy.retry(key)}
               >
-                Retry
+                {t('common.retry', 'Retry')}
               </Button>
             </span>
           )
@@ -500,7 +530,10 @@ export function FindingGroupsTable<TRow extends { id: string }>({
         return (
           <span className="flex flex-wrap items-center gap-x-3 tabular-nums">
             <span>
-              Showing {shown.length} of {st.total}
+              {t('findings.groupsTable.showing', 'Showing {shown} of {total}', {
+                shown: shown.length,
+                total: st.total,
+              })}
             </span>
             {canLoadMore ? (
               <Button
@@ -510,7 +543,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
                 disabled={st.loading}
                 onClick={() => lazy.showMore(key, MORE_ROWS)}
               >
-                Show {more} more
+                {t('findings.groupsTable.showMore', 'Show {count} more', { count: more })}
               </Button>
             ) : (
               onViewGroup && (
@@ -520,7 +553,9 @@ export function FindingGroupsTable<TRow extends { id: string }>({
                   className="h-auto p-0 text-xs"
                   onClick={() => onViewGroup(g)}
                 >
-                  View all {st.total} in the list
+                  {t('findings.groupsTable.viewAll', 'View all {count} in the list', {
+                    count: st.total,
+                  })}
                 </Button>
               )
             )}
@@ -538,11 +573,18 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       lazy,
       renderGroupActions,
       onViewGroup,
+      t,
     ]
   )
 
   if (error && !data) {
-    return <ErrorState title="finding groups" error={error} onRetry={() => mutateGroups()} />
+    return (
+      <ErrorState
+        title={t('findings.groupsTable.errorTitle', 'finding groups')}
+        error={error}
+        onRetry={() => mutateGroups()}
+      />
+    )
   }
 
   return (
@@ -559,8 +601,8 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       pagination={pagination}
       onPaginationChange={onPaginationChange}
       pageSizeOptions={pageSizeOptions}
-      paginationNoun="groups"
-      pageSizeLabel="Groups per page"
+      paginationNoun={t('findings.groupsTable.groupsNoun', 'groups')}
+      pageSizeLabel={t('findings.groupsTable.groupsPerPage', 'Groups per page')}
       isLoading={isLoading && !data}
       onRowClick={onRowClick}
       onSelectionChange={onSelectionChange}
@@ -568,7 +610,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       showSelectionCount={false}
       mobileRow={mobileRow}
       rowGroups={rowGroups}
-      emptyMessage={emptyMessage}
+      emptyMessage={emptyMessage ?? t('findings.groupsTable.empty', 'No findings to group')}
       emptyDescription={emptyDescription}
     />
   )
