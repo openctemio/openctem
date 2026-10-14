@@ -47,8 +47,9 @@ a list filter; it never maps one to another.
   stale source or expired feature branch marks open work `not_observed`, a VEX
   `not_affected` statement marks it `false_positive`, a retest moves
   `fix_applied`/`not_observed` to `validated_fixed`, an approved suppression
-  rule gives a new finding its disposition and lifting the rule returns it to
-  `new`.
+  rule gives a new finding, and on approval the open findings it matches
+  (`SuppressionApplyFromStatuses`), its disposition, and lifting the rule
+  returns them to `new` (`suppression-rules.md`).
 - `PentestStatusTransitions`: a pentest finding's lifecycle over the same
   statuses plus `draft` and `in_review` (`confirmed -> in_progress ->
   fix_applied -> resolved`, regression `resolved -> in_progress`); campaign roles
@@ -61,7 +62,7 @@ a list filter; it never maps one to another.
   map. There is no unchecked status setter.
 - Bulk SQL writes (coverage and default-branch auto-resolve, source-mitigated
   resolve, VEX, stale-source and branch expiry, regression reopen, suppression
-  lift and re-link) take their from-states from
+  approval, lift and re-link) take their from-states from
   `internal/infra/postgres/finding_status_sql.go`, which renders them from the
   domain sets and checks them against the platform map when the package loads:
   a list that drifts stops the server at start and fails every test.
@@ -79,6 +80,38 @@ a list filter; it never maps one to another.
 Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
+
+## Risk acceptance end
+
+An accepted risk always ends; a false positive does not (it is re-reviewed
+instead).
+
+- **One value, one meaning.** `finding_status_approvals.expires_at` is the end
+  of the decision the request asks for. A request for `accepted` gets 90 days
+  when it names no end and is refused with an end in the past or more than a
+  year ahead; a request for `false_positive` is refused when it names an end.
+  A pending request has no separate approve-by deadline: once the requested
+  end has passed it can no longer be approved (it would accept nothing) and is
+  submitted again with a new end. Approving an older `accepted` request that
+  has no end gives it the 90-day default from the approval.
+- **On the finding.** Approving `accepted` stores the end in
+  `findings.acceptance_expires_at` in the same statement as the status
+  (`FindingRepository.AcceptUntil`). A finding that an approved accepted-risk
+  or won't-fix suppression rule closes takes the rule's `expires_at` when the
+  finding-rule link is recorded (`SuppressionRepository.RecordSuppression`,
+  same tenant only); a rule without an expiry leaves it empty, and the rule's
+  own expiry lifts the suppression.
+- **Cleared on leaving accepted.** The trigger
+  `trg_findings_clear_acceptance_expiry` empties the column on any row that is
+  not `accepted`, whatever path wrote the status, so a later accept starts
+  clean.
+- **Who reads it.** The CI gate honors an accepted finding only until its end
+  (`cirun.honored`), even before the hourly approval-expiration controller
+  reopens it. Threat models read it as the acceptance horizon.
+
+Migration `002117` adds the trigger and fills the column for findings already
+accepted, from their latest approved acceptance request or their suppression
+rule. Findings accepted with no end anywhere stay empty.
 
 ## Four-eyes on exposure dispositions
 
@@ -111,6 +144,7 @@ Key files: `pkg/domain/exposure/disposition.go`,
 `002118`; web `features/exposures/components/pending-disposition.tsx`.
 The credentials page has no accept or false-positive control yet; its API
 responses carry `pending_disposition` the same way.
+||||||| a2193be20
 
 ## Upgrade
 

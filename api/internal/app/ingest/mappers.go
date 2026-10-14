@@ -322,6 +322,7 @@ var toolNameToSource = []struct {
 	source vulnerability.FindingSource
 }{
 	{"semgrep", vulnerability.FindingSourceSAST},
+	{"opengrep", vulnerability.FindingSourceSAST},
 	{"codeql", vulnerability.FindingSourceSAST},
 	{"sonarqube", vulnerability.FindingSourceSAST},
 	{"sonarcloud", vulnerability.FindingSourceSAST},
