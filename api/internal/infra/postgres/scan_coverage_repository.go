@@ -56,7 +56,7 @@ func (r *ScanCoverageRepository) ListCandidates(ctx context.Context, tenantID sh
 		limit = 1000
 	}
 	const query = `
-		SELECT a.id, a.name, a.criticality, c.last_attempt_at
+		SELECT a.id, a.name, a.criticality, c.last_attempt_at, c.last_success_at IS NOT NULL
 		FROM assets a
 		LEFT JOIN asset_coverage c
 		       ON c.tenant_id = a.tenant_id AND c.asset_id = a.id
@@ -78,14 +78,16 @@ func (r *ScanCoverageRepository) ListCandidates(ctx context.Context, tenantID sh
 		var (
 			id, name, criticality string
 			lastDispatched        sql.NullTime
+			assessed              bool
 		)
-		if err := rows.Scan(&id, &name, &criticality, &lastDispatched); err != nil {
+		if err := rows.Scan(&id, &name, &criticality, &lastDispatched, &assessed); err != nil {
 			return nil, fmt.Errorf("scan coverage candidate: %w", err)
 		}
 		cand := scancoverage.Candidate{
 			AssetID:     id,
 			Target:      name,
 			Criticality: criticality,
+			Assessed:    assessed,
 		}
 		if lastDispatched.Valid {
 			t := lastDispatched.Time
@@ -168,7 +170,8 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 
 // MarkDispatched advances the rotation cursor for every asset in a dispatched
 // batch: it upserts the ledger row of each asset with the dispatch time
-// so those assets sort last next cycle. Idempotent per (asset).
+// so those assets sort last next cycle, in state queued until the batch
+// settles (SettleConnectorBatch). Idempotent per (asset).
 func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancoverage.DispatchRecord) error {
 	if len(rec.AssetIDs) == 0 {
 		return nil
@@ -178,13 +181,13 @@ func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancov
 	assetIDs := dedupeLastWins(rec.AssetIDs, func(id string) string { return id })
 	const query = `
 		INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state,
-		                            last_attempt_at, last_success_at, last_outcome, updated_at)
-		SELECT a.tenant_id, a.id, '` + connectorCapability + `', '', 'covered', now(), now(), 'dispatched', now()
+		                            queued_at, last_attempt_at, last_outcome, updated_at)
+		SELECT a.tenant_id, a.id, '` + connectorCapability + `', '', 'queued', now(), now(), 'dispatched', now()
 		FROM assets a WHERE a.tenant_id = $2 AND a.id = ANY($1::uuid[])
 		ON CONFLICT (tenant_id, asset_id, capability, vantage) DO UPDATE SET
-			state           = 'covered',
+			state           = 'queued',
+			queued_at       = EXCLUDED.queued_at,
 			last_attempt_at = EXCLUDED.last_attempt_at,
-			last_success_at = EXCLUDED.last_success_at,
 			last_outcome    = EXCLUDED.last_outcome,
 			updated_at      = now()`
 
@@ -297,3 +300,63 @@ var (
 	_ scancoverage.CursorStore         = (*ScanCoverageRepository)(nil)
 	_ scancoverage.CoverageStatsReader = (*ScanCoverageRepository)(nil)
 )
+
+// SettleConnectorBatch settles a finished coverage batch's targets in the
+// ledger (research/143 §3.3): assessed → covered (last success now);
+// no reply → failed "unreachable"; unfinished → due again (no failure
+// counted); failed → failed with the batch's error. Targets are the batch
+// command's own (asset names); only this tenant's connector rows change.
+func (r *ScanCoverageRepository) SettleConnectorBatch(ctx context.Context, tenantID shared.ID, b scancoverage.BatchSettlement) error {
+	targets := make([]string, 0, len(b.Done)+len(b.Unreachable)+len(b.Unfinished)+len(b.Failed))
+	kinds := make([]string, 0, cap(targets))
+	add := func(list []string, kind string) {
+		for _, t := range list {
+			targets = append(targets, t)
+			kinds = append(kinds, kind)
+		}
+	}
+	add(b.Done, "done")
+	add(b.Unreachable, "unreachable")
+	add(b.Unfinished, "unfinished")
+	add(b.Failed, "failed")
+	if len(targets) == 0 {
+		return nil
+	}
+	const query = `
+		WITH s AS (SELECT * FROM unnest($2::text[], $3::text[]) AS s(target, kind))
+		UPDATE asset_coverage c SET
+			state           = CASE s.kind WHEN 'done' THEN 'covered' WHEN 'unfinished' THEN 'due' ELSE 'failed' END,
+			last_success_at = CASE WHEN s.kind = 'done' THEN now() ELSE c.last_success_at END,
+			last_outcome    = CASE s.kind WHEN 'done' THEN 'ok' ELSE s.kind END,
+			last_error      = CASE s.kind WHEN 'failed' THEN left($4, 500)
+			                              WHEN 'unreachable' THEN 'no reply to the Tenable.sc scan' ELSE '' END,
+			fail_streak     = CASE WHEN s.kind IN ('failed', 'unreachable') THEN LEAST(c.fail_streak + 1, 32767) ELSE 0 END,
+			queued_at       = NULL,
+			updated_at      = now()
+		FROM s
+		JOIN assets a ON a.tenant_id = $1 AND lower(a.name) = lower(s.target) AND a.deleted_at IS NULL
+		WHERE c.tenant_id = $1 AND c.asset_id = a.id
+		  AND c.capability = '` + connectorCapability + `' AND c.vantage = ''`
+	if _, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(targets), pq.Array(kinds), b.Error); err != nil {
+		return fmt.Errorf("settle coverage batch: %w", err)
+	}
+	return nil
+}
+
+// ConnectorCycleProgress counts the tenant's assets eligible for connector
+// coverage and those the connector assessed since a cycle started.
+func (r *ScanCoverageRepository) ConnectorCycleProgress(ctx context.Context, tenantID shared.ID, since time.Time) (eligible, assessed int, err error) {
+	const query = `
+		SELECT count(*), count(*) FILTER (WHERE c.last_success_at >= $3)
+		FROM assets a
+		LEFT JOIN asset_coverage c
+		       ON c.tenant_id = a.tenant_id AND c.asset_id = a.id
+		      AND c.capability = '` + connectorCapability + `' AND c.vantage = ''
+		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
+		  AND a.status = 'active'
+		  AND a.asset_type = ANY($2)`
+	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), pq.Array(coverageAssetTypes), since).Scan(&eligible, &assessed); err != nil {
+		return 0, 0, fmt.Errorf("coverage cycle progress: %w", err)
+	}
+	return eligible, assessed, nil
+}
