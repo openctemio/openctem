@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { refreshFleetContent } from '@/lib/api/sensor-content-hooks'
 import type { Sensor } from '@/lib/api/sensor-types'
@@ -17,6 +18,7 @@ import {
   contentAgeText,
   contentLabel,
   contentState,
+  contentStateLabel,
   worstContentState,
 } from '../lib/content'
 
@@ -31,18 +33,19 @@ export function SensorContentCell({
   sensor: Pick<Sensor, 'content'>
   now: number
 }) {
+  const { t } = useTranslation()
   const worst = worstContentState(sensor.content)
   if (!worst) return <span className="text-sm text-muted-foreground">—</span>
   const meta = CONTENT_STATE_META[worst]
   const title = (sensor.content ?? [])
     .map((c) => {
-      const age = contentAgeText(c, now)
-      return `${contentLabel(c.name)}: ${CONTENT_STATE_META[contentState(c)].label}${c.version ? ` · ${c.version}` : ''}${age ? ` · ${age}` : ''}`
+      const age = contentAgeText(c, now, t)
+      return `${contentLabel(c.name)}: ${contentStateLabel(contentState(c), t)}${c.version ? ` · ${c.version}` : ''}${age ? ` · ${age}` : ''}`
     })
     .join('\n')
   return (
     <SensorTag tone={meta.tone} title={title}>
-      {meta.label}
+      {contentStateLabel(worst, t)}
     </SensorTag>
   )
 }
@@ -64,6 +67,7 @@ export function FleetContentRefreshButton({
   sensors: Sensor[]
   onDone?: () => void
 }) {
+  const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -75,13 +79,21 @@ export function FleetContentRefreshButton({
     try {
       const res = await refreshFleetContent()
       toast.success(
-        `Refresh requested on ${res.commands_created} ${res.commands_created === 1 ? 'sensor' : 'sensors'}` +
-          (res.skipped ? ` (${res.skipped} skipped: already queued or not supported).` : '.')
+        t(
+          res.commands_created === 1
+            ? 'sensors.contentCells.requested.one'
+            : 'sensors.contentCells.requested.other',
+          undefined,
+          { count: res.commands_created }
+        ) +
+          (res.skipped
+            ? ` ${t('sensors.contentCells.skipped', undefined, { count: res.skipped })}`
+            : '.')
       )
       setOpen(false)
       onDone?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not request a content refresh'))
+      toast.error(getErrorMessage(err, t('sensors.contentCells.error')))
     } finally {
       setBusy(false)
     }
@@ -91,14 +103,20 @@ export function FleetContentRefreshButton({
     <>
       <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
         <RefreshCw className="h-4 w-4" />
-        Refresh content
+        {t('sensors.contentCells.refresh')}
       </Button>
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
-        title="Refresh scanner content?"
-        desc={`${targets.length} ${targets.length === 1 ? 'sensor' : 'sensors'} will download and verify the latest scanner content (vulnerability DB, templates, rules) allowed by your content policy. Running scans keep the content they started with.`}
-        confirmText="Refresh content"
+        title={t('sensors.contentCells.confirmTitle')}
+        desc={t(
+          targets.length === 1
+            ? 'sensors.contentCells.confirmDesc.one'
+            : 'sensors.contentCells.confirmDesc.other',
+          undefined,
+          { count: targets.length }
+        )}
+        confirmText={t('sensors.contentCells.refresh')}
         handleConfirm={confirm}
         isLoading={busy}
       />

@@ -70,7 +70,7 @@ import { FleetAllView } from './fleet-all-view'
 
 import {
   DEFAULT_FLEET_THRESHOLDS,
-  SENSOR_STATE_META,
+  stateLabel,
   SENSOR_STATES,
   stateTakesJobs,
   sensorState,
@@ -138,9 +138,9 @@ export function fleetPageMode(raw: string, canDaemon: boolean, canRunner: boolea
 }
 const PROTOCOLS: SensorProtocolFilter[] = ['v2', 'v1', 'unknown']
 const GROUP_LABELS: Record<Exclude<FleetGroupBy, 'none'>, string> = {
-  zone: 'Zone',
-  role: 'Role',
-  version: 'Version',
+  zone: 'sensors.list.groupBy.zone',
+  role: 'sensors.list.groupBy.role',
+  version: 'sensors.list.groupBy.version',
 }
 
 /** Old single-value links (?status=, ?tab=scanners, ?mode=collector) keep working. */
@@ -162,6 +162,7 @@ function legacyStates(status: string): SensorState[] {
 
 /** "Live · updated 3s ago": the list refreshes every 15s while the tab is visible. */
 function LiveIndicator({ updatedAt, now }: { updatedAt: number | null; now: number }) {
+  const { t } = useTranslation()
   if (!updatedAt) return null
   const secs = Math.max(0, Math.round((now - updatedAt) / 1000))
   return (
@@ -170,14 +171,16 @@ function LiveIndicator({ updatedAt, now }: { updatedAt: number | null; now: numb
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60 motion-reduce:hidden" />
         <span className="relative inline-flex size-2 rounded-full bg-success" />
       </span>
-      Live · updated {secs < 5 ? 'just now' : `${secs}s ago`}
+      {secs < 5
+        ? t('sensors.list.liveJustNow')
+        : t('sensors.list.liveAgo', undefined, { seconds: secs })}
     </span>
   )
 }
 
 export function SensorsSection({
-  title = 'Sensors',
-  description = 'The scanners and collectors that run inside your networks. CI/CD pipelines have their own page.',
+  title: titleProp,
+  description: descriptionProp,
 }: SensorsSectionProps) {
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -190,6 +193,8 @@ export function SensorsSection({
   // The sensor waiting for a disable confirmation.
   const [pendingDisable, setPendingDisable] = useState<Sensor | null>(null)
   const { t } = useTranslation()
+  const title = titleProp ?? t('sensors.list.title')
+  const description = descriptionProp ?? t('sensors.list.description')
   const [detailSheetOpen, setDetailSheetOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -417,8 +422,8 @@ export function SensorsSection({
       : 'none'
 
   const groups = useMemo(
-    () => groupSensors(filteredSensors, groupBy, zones),
-    [filteredSensors, groupBy, zones]
+    () => groupSensors(filteredSensors, groupBy, zones, t),
+    [filteredSensors, groupBy, zones, t]
   )
   const rowGroups = useMemo(() => {
     if (groupBy === 'none') return undefined
@@ -440,21 +445,28 @@ export function SensorsSection({
               <span className="font-mono">· {g.zone.ranges.slice(0, 2).join(', ')}</span>
             )}
             <span>
-              · {rows.length} {rows.length === 1 ? 'sensor' : 'sensors'}
+              ·{' '}
+              {t(
+                rows.length === 1 ? 'sensors.list.count.one' : 'sensors.list.count.other',
+                undefined,
+                {
+                  count: rows.length,
+                }
+              )}
             </span>
             {zoneGap ? (
-              <span className="text-destructive">· no online sensor, scans here will wait</span>
+              <span className="text-destructive">· {t('sensors.list.zoneGap')}</span>
             ) : (
-              <span>· {online} online</span>
+              <span>· {t('sensors.list.onlineCount', undefined, { count: online })}</span>
             )}
             {key === '__none__' && groupBy === 'zone' && (
-              <span>· takes jobs that no zone claims</span>
+              <span>· {t('sensors.list.noZoneHint')}</span>
             )}
           </span>
         )
       },
     }
-  }, [groupBy, groups, now, thresholds])
+  }, [groupBy, groups, now, thresholds, t])
 
   const roleCount = scopedSensors.length
 
@@ -462,8 +474,8 @@ export function SensorsSection({
   const handleRefresh = useCallback(async () => {
     await invalidateSensorsCache()
     await mutate()
-    toast.success('Sensors refreshed')
-  }, [mutate])
+    toast.success(t('sensors.list.toast.refreshed'))
+  }, [mutate, t])
 
   const handleViewSensor = useCallback((sensor: Sensor) => {
     setSelectedSensor(sensor)
@@ -492,14 +504,14 @@ export function SensorsSection({
     if (!selectedSensor) return
     try {
       await deleteSensorTrigger(selectedSensor.id)
-      toast.success(`Sensor "${selectedSensor.name}" deleted`)
+      toast.success(t('sensors.list.toast.deleted', undefined, { name: selectedSensor.name }))
       await invalidateSensorsCache()
       setDeleteDialogOpen(false)
       setSelectedSensor(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete sensor'))
+      toast.error(getErrorMessage(err, t('sensors.list.toast.deleteFailed')))
     }
-  }, [selectedSensor, deleteSensorTrigger])
+  }, [selectedSensor, deleteSensorTrigger, t])
 
   const handleBulkDeleteConfirm = useCallback(async () => {
     if (selectedIds.length === 0) return
@@ -510,35 +522,40 @@ export function SensorsSection({
       const failCount = results?.filter((r) => !r.success).length || 0
 
       if (failCount === 0) {
-        toast.success(`${successCount} sensor(s) deleted successfully`)
+        toast.success(t('sensors.list.toast.bulkDeleted', undefined, { count: successCount }))
       } else if (successCount > 0) {
-        toast.warning(`${successCount} deleted, ${failCount} failed`)
+        toast.warning(
+          t('sensors.list.toast.bulkPartial', undefined, {
+            success: successCount,
+            failed: failCount,
+          })
+        )
       } else {
-        toast.error('Failed to delete sensors')
+        toast.error(t('sensors.list.toast.bulkDeleteFailed'))
       }
 
       await invalidateSensorsCache()
       setBulkDeleteDialogOpen(false)
       clearSelection()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete sensors'))
+      toast.error(getErrorMessage(err, t('sensors.list.toast.bulkDeleteFailed')))
     }
-  }, [selectedIds, bulkDeleteSensorsTrigger, clearSelection])
+  }, [selectedIds, bulkDeleteSensorsTrigger, clearSelection, t])
 
   const handleActivateSensor = useCallback(
     async (sensor: Sensor) => {
       setSelectedSensor(sensor)
       try {
         const updatedSensor = await activateSensorTrigger(sensor.id)
-        toast.success(`Sensor "${sensor.name}" enabled`)
+        toast.success(t('sensors.list.toast.enabled', undefined, { name: sensor.name }))
         await invalidateSensorsCache()
         await mutate()
         if (updatedSensor) setSelectedSensor(updatedSensor)
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to enable sensor'))
+        toast.error(getErrorMessage(err, t('sensors.list.toast.enableFailed')))
       }
     },
-    [activateSensorTrigger, mutate]
+    [activateSensorTrigger, mutate, t]
   )
 
   const handleDeactivateSensor = useCallback(
@@ -546,16 +563,16 @@ export function SensorsSection({
       setSelectedSensor(sensor)
       try {
         const updatedSensor = await deactivateSensorTrigger(sensor.id)
-        toast.success(`Sensor "${sensor.name}" disabled`)
+        toast.success(t('sensors.list.toast.disabled', undefined, { name: sensor.name }))
         setPendingDisable(null)
         await invalidateSensorsCache()
         await mutate()
         if (updatedSensor) setSelectedSensor(updatedSensor)
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to disable sensor'))
+        toast.error(getErrorMessage(err, t('sensors.list.toast.disableFailed')))
       }
     },
-    [deactivateSensorTrigger, mutate]
+    [deactivateSensorTrigger, mutate, t]
   )
 
   const requestDeactivateSensor = useCallback((sensor: Sensor) => {
@@ -576,51 +593,54 @@ export function SensorsSection({
     setIsRevoking(true)
     try {
       const updatedSensor = await revokeSensorTrigger(selectedSensor.id)
-      toast.success(`Sensor "${selectedSensor.name}" access revoked`)
+      toast.success(t('sensors.list.toast.revoked', undefined, { name: selectedSensor.name }))
       await invalidateSensorsCache()
       await mutate()
       setRevokeDialogOpen(false)
       if (updatedSensor) setSelectedSensor(updatedSensor)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to revoke sensor'))
+      toast.error(getErrorMessage(err, t('sensors.list.toast.revokeFailed')))
     } finally {
       setIsRevoking(false)
     }
-  }, [selectedSensor, revokeSensorTrigger, mutate])
+  }, [selectedSensor, revokeSensorTrigger, mutate, t])
 
   const handleExport = useCallback(() => {
     exportToCsv(
       filteredSensors,
       [
-        { header: 'Name', accessor: (s) => s.name },
+        { header: t('sensors.list.csv.name'), accessor: (s) => s.name },
         {
-          header: 'Status',
-          accessor: (s) => SENSOR_STATE_META[sensorState(s, now, thresholds)].label,
+          header: t('sensors.list.csv.status'),
+          accessor: (s) => stateLabel(sensorState(s, now, thresholds), t),
         },
-        { header: 'Type', accessor: (s) => s.type },
-        { header: 'Mode', accessor: (s) => s.execution_mode },
-        { header: 'Version', accessor: (s) => normalizeSensorVersion(s.version) ?? '' },
+        { header: t('sensors.list.csv.type'), accessor: (s) => s.type },
+        { header: t('sensors.list.csv.mode'), accessor: (s) => s.execution_mode },
         {
-          header: 'Version status',
+          header: t('sensors.list.csv.version'),
+          accessor: (s) => normalizeSensorVersion(s.version) ?? '',
+        },
+        {
+          header: t('sensors.list.csv.versionStatus'),
           accessor: (s) => sensorVersionStatus(s, channel.latest, channel.min),
         },
-        { header: 'SDK', accessor: (s) => s.sdk_name ?? '' },
-        { header: 'SDK version', accessor: (s) => sensorSdkVersion(s) ?? '' },
-        { header: 'SDK status', accessor: (s) => sensorSdkStatus(s) },
-        { header: 'Hostname', accessor: (s) => s.hostname ?? '' },
-        { header: 'IP address', accessor: (s) => s.ip_address ?? '' },
-        { header: 'Current jobs', accessor: (s) => s.current_jobs ?? 0 },
-        { header: 'Max jobs', accessor: (s) => s.max_concurrent_jobs },
-        { header: 'Outbox pending', accessor: (s) => s.outbox?.pending_count ?? '' },
-        { header: 'Key expires', accessor: (s) => s.key_expires_at ?? '' },
-        { header: 'Tools', accessor: (s) => dispatchTools(s).join(' ') },
-        { header: 'Last heartbeat', accessor: (s) => s.last_seen_at ?? '' },
-        { header: 'Scans', accessor: (s) => s.total_scans },
-        { header: 'Findings', accessor: (s) => s.total_findings },
+        { header: t('sensors.list.csv.sdk'), accessor: (s) => s.sdk_name ?? '' },
+        { header: t('sensors.list.csv.sdkVersion'), accessor: (s) => sensorSdkVersion(s) ?? '' },
+        { header: t('sensors.list.csv.sdkStatus'), accessor: (s) => sensorSdkStatus(s) },
+        { header: t('sensors.list.csv.hostname'), accessor: (s) => s.hostname ?? '' },
+        { header: t('sensors.list.csv.ip'), accessor: (s) => s.ip_address ?? '' },
+        { header: t('sensors.list.csv.currentJobs'), accessor: (s) => s.current_jobs ?? 0 },
+        { header: t('sensors.list.csv.maxJobs'), accessor: (s) => s.max_concurrent_jobs },
+        { header: t('sensors.list.csv.outbox'), accessor: (s) => s.outbox?.pending_count ?? '' },
+        { header: t('sensors.list.csv.keyExpires'), accessor: (s) => s.key_expires_at ?? '' },
+        { header: t('sensors.list.csv.tools'), accessor: (s) => dispatchTools(s).join(' ') },
+        { header: t('sensors.list.csv.lastHeartbeat'), accessor: (s) => s.last_seen_at ?? '' },
+        { header: t('sensors.list.csv.scans'), accessor: (s) => s.total_scans },
+        { header: t('sensors.list.csv.findings'), accessor: (s) => s.total_findings },
       ],
       'sensors'
     )
-  }, [filteredSensors, now, thresholds, channel])
+  }, [filteredSensors, now, thresholds, channel, t])
 
   const toggleAttention = () => setFilters({ ...filters, attention: !filters.attention })
   const updatesActive =
@@ -654,9 +674,9 @@ export function SensorsSection({
       ? [
           {
             value: 'all' as const,
-            label: 'All',
+            label: t('sensors.list.mode.all'),
             count: runnerCount === undefined ? undefined : scopedSensors.length + runnerCount,
-            description: 'Daemons and CI pipelines in one list',
+            description: t('sensors.list.mode.allHint'),
           },
         ]
       : []),
@@ -664,9 +684,9 @@ export function SensorsSection({
       ? [
           {
             value: 'daemon' as const,
-            label: 'Daemon',
+            label: t('sensors.list.mode.daemon'),
             count: isLoading ? undefined : scopedSensors.length,
-            description: 'Sensors that run continuously and take jobs',
+            description: t('sensors.list.mode.daemonHint'),
           },
         ]
       : []),
@@ -687,11 +707,11 @@ export function SensorsSection({
   const modeLens =
     modeOptions.length > 1 ? (
       <SegmentedLens<FleetPageMode>
-        label="Mode"
+        label={t('sensors.list.mode.label')}
         value={fleetMode}
         options={modeOptions}
         onChange={setFleetMode}
-        countNoun="sensors"
+        countNoun={t('sensors.list.mode.countNoun')}
       />
     ) : null
 
@@ -701,25 +721,28 @@ export function SensorsSection({
       <div className="relative min-w-0 flex-1 sm:max-w-sm">
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Search name, host, IP, version or tool…"
-          aria-label="Search sensors"
+          placeholder={t('sensors.list.search.placeholder')}
+          aria-label={t('sensors.list.search.label')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="h-9 ps-9"
         />
       </div>
       <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
-        <SelectTrigger className="h-9 w-auto gap-2 sm:min-w-36" aria-label="Group sensors">
+        <SelectTrigger
+          className="h-9 w-auto gap-2 sm:min-w-36"
+          aria-label={t('sensors.list.groupBy.label')}
+        >
           <Layers className="h-4 w-4 text-muted-foreground" />
           <span className="sr-only sm:not-sr-only">
             <SelectValue />
           </span>
         </SelectTrigger>
         <SelectContent align="end">
-          <SelectItem value="none">No grouping</SelectItem>
-          {zones.length > 0 && <SelectItem value="zone">{GROUP_LABELS.zone}</SelectItem>}
-          <SelectItem value="role">{GROUP_LABELS.role}</SelectItem>
-          <SelectItem value="version">{GROUP_LABELS.version}</SelectItem>
+          <SelectItem value="none">{t('sensors.list.groupBy.none')}</SelectItem>
+          {zones.length > 0 && <SelectItem value="zone">{t(GROUP_LABELS.zone)}</SelectItem>}
+          <SelectItem value="role">{t(GROUP_LABELS.role)}</SelectItem>
+          <SelectItem value="version">{t(GROUP_LABELS.version)}</SelectItem>
         </SelectContent>
       </Select>
     </>
@@ -739,7 +762,7 @@ export function SensorsSection({
 
   let body: React.ReactNode
   if (error && !inlineInstall) {
-    body = <ErrorState title="sensors" error={error} onRetry={handleRefresh} />
+    body = <ErrorState title={t('sensors.list.errorTitle')} error={error} onRetry={handleRefresh} />
   } else if (isLoading && !inlineInstall) {
     body = <TableSkeleton rows={5} />
   } else if (fleetEmpty) {
@@ -750,7 +773,7 @@ export function SensorsSection({
         {modeLens && <div className="mb-4">{modeLens}</div>}
         {canInstallWithKey ? (
           <SensorInstallFlow
-            title="Install your first sensor"
+            title={t('sensors.list.empty.installTitle')}
             onCreated={() => setInlineInstall(true)}
             onOpen={(s) => {
               setInlineInstall(false)
@@ -761,15 +784,15 @@ export function SensorsSection({
         ) : canPairSensors ? (
           <EmptyState
             icon={RadioTower}
-            title="Pair your first sensor"
-            description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. Start it on the host with only the platform URL; it prints a code and a fingerprint to pair it here."
+            title={t('sensors.list.empty.pairTitle')}
+            description={t('sensors.list.empty.pairDesc')}
             action={<PairSensorButton onClick={() => setPairDialogOpen(true)} />}
           />
         ) : (
           <EmptyState
             icon={RadioTower}
-            title="No sensors yet"
-            description="A sensor runs inside your network, scans what the platform cannot reach and sends the results back over HTTPS. An organization admin can install one."
+            title={t('sensors.list.empty.noneTitle')}
+            description={t('sensors.list.empty.noneDesc')}
           />
         )}
       </>
@@ -805,7 +828,10 @@ export function SensorsSection({
   }
 
   const offlineAfter = thresholds.offlineAfterSeconds
-  const secondsLabel = (s: number) => (s % 60 === 0 && s >= 60 ? `${s / 60} min` : `${s}s`)
+  const secondsLabel = (s: number) =>
+    s % 60 === 0 && s >= 60
+      ? t('sensors.list.minutes', undefined, { count: s / 60 })
+      : t('sensors.list.seconds', undefined, { count: s })
 
   return (
     <>
@@ -814,7 +840,7 @@ export function SensorsSection({
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => setZoneCreateOpen(true)}>
               <Plus className="h-4 w-4" />
-              Add zone
+              {t('sensors.list.addZone')}
             </Button>
           </Can>
         ) : (
@@ -827,7 +853,7 @@ export function SensorsSection({
                 disabled={filteredSensors.length === 0}
               >
                 <Download className="h-4 w-4" />
-                Export
+                {t('sensors.list.export')}
               </Button>
             )}
             {fleetMode === 'runner' && (
@@ -842,7 +868,7 @@ export function SensorsSection({
             {canInstallWithKey && (
               <Button size="sm" onClick={() => setAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
-                Install sensor
+                {t('sensors.list.install')}
               </Button>
             )}
           </>
@@ -857,10 +883,10 @@ export function SensorsSection({
         >
           <TabsList>
             <TabsTrigger value="sensors">
-              Sensors <TabsCount value={isLoading ? null : roleCount} />
+              {t('sensors.list.tab.sensors')} <TabsCount value={isLoading ? null : roleCount} />
             </TabsTrigger>
             <TabsTrigger value="zones">
-              Scan zones <TabsCount value={zonesData ? zones.length : null} />
+              {t('sensors.list.tab.zones')} <TabsCount value={zonesData ? zones.length : null} />
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -918,7 +944,7 @@ export function SensorsSection({
               >
                 <aside
                   id="sensor-filters"
-                  aria-label="Sensor filters"
+                  aria-label={t('sensors.list.filters')}
                   className="flex max-h-[calc(100svh-7.5rem)] w-60 flex-col rounded-xl border bg-card p-4 shadow-sm"
                 >
                   {facetPanel}
@@ -929,11 +955,9 @@ export function SensorsSection({
               {body}
               {!fleetEmpty && !error && !isLoading && (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Each sensor is judged against its own heartbeat interval. Online: its next
-                  heartbeat is not yet due · Late: past due, still takes work · Stale: well past
-                  due, takes no new work · Offline: over 3 intervals (at least 90s) past due, at
-                  most {secondsLabel(offlineAfter)} without a heartbeat · Idle (CI): a CI sensor
-                  between runs
+                  {t('sensors.list.legend', undefined, {
+                    offlineAfter: secondsLabel(offlineAfter),
+                  })}
                 </p>
               )}
             </div>
@@ -944,14 +968,22 @@ export function SensorsSection({
       <FilterSheet
         open={filterSheetOpen}
         onOpenChange={setFilterSheetOpen}
-        title="Sensor filters"
-        resultLabel={`Show ${filteredSensors.length} ${filteredSensors.length === 1 ? 'sensor' : 'sensors'}`}
+        title={t('sensors.list.filters')}
+        resultLabel={t(
+          filteredSensors.length === 1 ? 'sensors.list.show.one' : 'sensors.list.show.other',
+          undefined,
+          { count: filteredSensors.length }
+        )}
       >
         {facetPanel}
       </FilterSheet>
 
       <Can permission={Permission.SensorsDelete}>
-        <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="sensors selected">
+        <BulkActionBar
+          count={selectedIds.length}
+          onClear={clearSelection}
+          noun={t('sensors.list.selected')}
+        >
           <Button
             variant="ghost"
             size="sm"
@@ -959,7 +991,7 @@ export function SensorsSection({
             onClick={() => setBulkDeleteDialogOpen(true)}
           >
             <Trash2 className="h-4 w-4" />
-            Delete
+            {t('confirm.delete', 'Delete')}
           </Button>
         </BulkActionBar>
       </Can>

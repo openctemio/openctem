@@ -1,9 +1,10 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import type { SensorHeartbeatBucket, SensorHeartbeatHistoryResponse } from '@/lib/api/sensor-types'
 import { cn } from '@/lib/utils'
 
-import { formatDurationShort } from '../lib/format'
+import { formatDurationShort, type Tr } from '../lib/format'
 
 /** A bucket whose largest gap is above this many intervals is late (as the card). */
 const LATE_GAP_FACTOR = 1.5
@@ -44,21 +45,35 @@ export function bucketIsLate(b: SensorHeartbeatBucket): boolean {
   return b.interval_s > 0 && b.max_gap_s > LATE_GAP_FACTOR * b.interval_s
 }
 
-function slotTitle(slot: HeartbeatSlot, widthMs: number): string {
+function slotTitle(slot: HeartbeatSlot, widthMs: number, t: Tr): string {
   const from = new Date(slot.start)
   const to = new Date(slot.start + widthMs)
   const range = `${from.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}–${to.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
   const b = slot.bucket
-  if (!b) return `${range}: no heartbeat`
-  const parts = [`${range}: ${b.beats} heartbeat${b.beats === 1 ? '' : 's'}`]
+  if (!b) return t('sensors.sparkline.slotEmpty', undefined, { range })
+  const parts = [
+    t(
+      b.beats === 1 ? 'sensors.sparkline.slotBeats.one' : 'sensors.sparkline.slotBeats.other',
+      undefined,
+      { range, count: b.beats }
+    ),
+  ]
   if (b.max_gap_s > 0) {
     parts.push(
-      `largest gap ${formatDurationShort(b.max_gap_s)} (average ${formatDurationShort(b.avg_gap_s)})`
+      t('sensors.sparkline.slotGap', undefined, {
+        max: formatDurationShort(b.max_gap_s),
+        avg: formatDurationShort(b.avg_gap_s),
+      })
     )
   }
-  if (b.interval_s > 0) parts.push(`interval ${formatDurationShort(b.interval_s)}`)
-  if (b.max_lag_ms > 0) parts.push(`timer lag up to ${b.max_lag_ms} ms`)
-  if (b.failures > 0) parts.push(`${b.failures} lost`)
+  if (b.interval_s > 0)
+    parts.push(
+      t('sensors.sparkline.slotInterval', undefined, {
+        interval: formatDurationShort(b.interval_s),
+      })
+    )
+  if (b.max_lag_ms > 0) parts.push(t('sensors.sparkline.slotLag', undefined, { ms: b.max_lag_ms }))
+  if (b.failures > 0) parts.push(t('sensors.sparkline.slotLost', undefined, { count: b.failures }))
   return parts.join(', ')
 }
 
@@ -79,11 +94,12 @@ export function HeartbeatGapSparkline({
   now: number
   className?: string
 }) {
+  const { t } = useTranslation()
   const slots = heartbeatSlots(history, now)
   const widthMs = Math.max(history.bucket_seconds, 60) * 1000
   const withData = slots.filter((s) => s.bucket)
   if (withData.length === 0) {
-    return <p className="text-xs text-muted-foreground">No heartbeat history yet.</p>
+    return <p className="text-xs text-muted-foreground">{t('sensors.sparkline.none')}</p>
   }
   const interval = Math.max(...withData.map((s) => s.bucket!.interval_s), 0)
   const top = Math.max(...withData.map((s) => s.bucket!.max_gap_s), interval * 2, 1)
@@ -95,10 +111,14 @@ export function HeartbeatGapSparkline({
   const late = withData.filter((s) => bucketIsLate(s.bucket!)).length
   const empty = slots.length - withData.length
   const label =
-    `Heartbeat gaps over the last ${history.hours} hours: ${withData.length} of ${slots.length} ` +
-    `${Math.round(widthMs / 60000)}-minute slots had heartbeats` +
-    (late > 0 ? `, ${late} late` : '') +
-    (empty > 0 ? `, ${empty} without any` : '')
+    t('sensors.sparkline.label', undefined, {
+      hours: history.hours,
+      withData: withData.length,
+      slots: slots.length,
+      minutes: Math.round(widthMs / 60000),
+    }) +
+    (late > 0 ? t('sensors.sparkline.labelLate', undefined, { count: late }) : '') +
+    (empty > 0 ? t('sensors.sparkline.labelEmpty', undefined, { count: empty }) : '')
   return (
     <figure className={cn('space-y-1', className)}>
       <svg
@@ -120,7 +140,7 @@ export function HeartbeatGapSparkline({
                 height={1}
                 className="fill-muted-foreground/30"
               >
-                <title>{slotTitle(s, widthMs)}</title>
+                <title>{slotTitle(s, widthMs, t)}</title>
               </rect>
             )
           }
@@ -136,7 +156,7 @@ export function HeartbeatGapSparkline({
               data-late={bucketIsLate(s.bucket) || undefined}
               className={bucketIsLate(s.bucket) ? 'fill-warning' : 'fill-primary/60'}
             >
-              <title>{slotTitle(s, widthMs)}</title>
+              <title>{slotTitle(s, widthMs, t)}</title>
             </rect>
           )
         })}
@@ -154,12 +174,20 @@ export function HeartbeatGapSparkline({
         )}
       </svg>
       <figcaption className="flex justify-between text-xs text-muted-foreground">
-        <span>{history.hours}h ago</span>
+        <span>{t('sensors.sparkline.hoursAgo', undefined, { hours: history.hours })}</span>
         <span>
-          Largest gap per {Math.round(widthMs / 60000)} min
-          {interval > 0 && <> · dashed: {formatDurationShort(interval)} interval</>}
+          {t('sensors.sparkline.gapPer', undefined, { minutes: Math.round(widthMs / 60000) })}
+          {interval > 0 && (
+            <>
+              {' '}
+              ·{' '}
+              {t('sensors.sparkline.dashed', undefined, {
+                interval: formatDurationShort(interval),
+              })}
+            </>
+          )}
         </span>
-        <span>now</span>
+        <span>{t('sensors.sparkline.now')}</span>
       </figcaption>
     </figure>
   )
