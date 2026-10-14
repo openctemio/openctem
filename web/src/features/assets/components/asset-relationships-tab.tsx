@@ -3,21 +3,14 @@
 /**
  * Asset Relationships Tab
  *
- * Self-contained tab component that owns all relationship CRUD state for an
- * asset detail sheet. Mirrors the AssetOwnersTab pattern: parent passes only
- * the assetId + a few asset descriptors, and this component handles fetching,
- * dialogs, mutations, and toast feedback internally.
- *
- * Why a container instead of plain RelationshipSection? Because the section
- * component is render-only and needs callbacks for every action. Wiring those
- * callbacks at every consumer site is what kept this feature dead — no
- * consumer in the codebase ever did it. By making the tab self-contained the
- * sheet just renders <AssetRelationshipsTab assetId=... /> and gets the full
- * Add / Edit / Delete experience for free.
+ * Self-contained tab for an asset detail sheet: the grouped related-assets
+ * list (RelatedAssetsList), an optional graph for small neighbourhoods, and
+ * the add / edit / remove flows. The parent passes the asset and a navigate
+ * callback; fetching, dialogs, mutations and toasts live here.
  */
 
-import { useCallback, useState } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
+import { List, Network, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -43,15 +36,19 @@ import {
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useTenant } from '@/context/tenant-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
   addAssetRelationshipBatch,
+  getAssetRelationship,
   removeAssetRelationship,
   updateAssetRelationship,
   useAssetRelationships,
 } from '../hooks/use-asset-relationships'
+import { useRelatedAssets, type RelatedAssetItem } from '../hooks/use-related-assets'
+import { relationVerbFallback, relationVerbKey } from '../lib/relationship-verbs'
 import type {
   Asset,
   AssetRelationship,
@@ -59,27 +56,25 @@ import type {
   ExtendedAssetType,
   RelationshipConfidence,
 } from '../types'
-import { RELATIONSHIP_LABELS } from '../types'
-import { RelationshipSection } from './relationships/relationship-section'
+import {
+  RELATED_PREVIEW_ROWS,
+  RelatedAssetsList,
+  revalidateRelatedAssets,
+} from './relationships/related-assets-list'
+import {
+  RelationshipGraphView,
+  buildGraphFromRelationships,
+} from './relationships/relationship-graph'
 import { AddRelationshipDialog, type AssetOption } from './relationships/add-relationship-dialog'
-import { useTranslation } from '@/context/i18n-provider'
 
 interface AssetRelationshipsTabProps {
   assetId: string
-  /** The current asset is the source for any new relationship. We need its
-   *  name and type for the dialog header and constraint validation. */
+  /** The current asset is the source for any new relationship. */
   sourceAsset: Pick<Asset, 'id' | 'name' | 'type' | 'subType'>
-  /**
-   * Optional. Called when the user clicks a related asset (in a card
-   * or list row) to navigate to it. The tab itself cannot swap the
-   * parent sheet's selected asset, so this is forwarded up.
-   */
-  onNavigateToAsset?: (assetId: string) => void
+  /** Opens a related asset; the sheet keeps the back trail. */
+  onNavigateToAsset?: (assetId: string, name: string) => void
 }
 
-// Backend asset list response shape (matching `useAssets`'s BackendAsset).
-// Inlined because we only need three fields and the full transform is
-// overkill for a search picker.
 interface BackendAssetSearchItem {
   id: string
   name: string
@@ -93,15 +88,11 @@ interface BackendAssetsListResponse {
 }
 
 const PICKER_PAGE_SIZE = 50
-
-// Format a list of asset names for inclusion in a toast message.
-// Joins the first N with commas, summarises the rest as "and K more"
-// to keep toasts readable when the user picked many targets.
-function truncateNameList(names: string[], max = 3): string {
-  if (names.length <= max) return names.join(', ')
-  const head = names.slice(0, max).join(', ')
-  return `${head}, and ${names.length - max} more`
-}
+/**
+ * The graph is offered only for a neighbourhood it can draw legibly; a larger
+ * one is read through the grouped list (counts, search, paging).
+ */
+const GRAPH_MAX_EDGES = 30
 
 export function AssetRelationshipsTab({
   assetId,
@@ -109,39 +100,48 @@ export function AssetRelationshipsTab({
   onNavigateToAsset,
 }: AssetRelationshipsTabProps) {
   const { t } = useTranslation()
-  const { relationships, isLoading, mutate } = useAssetRelationships(assetId)
+  // The flat list feeds the add dialog's duplicate check and the small graph.
+  const { relationships, mutate } = useAssetRelationships(assetId)
+  const { total } = useRelatedAssets(assetId, { limit: RELATED_PREVIEW_ROWS })
   const { can } = usePermissions()
   const { currentTenant } = useTenant()
   const canWrite = can(Permission.AssetsWrite)
   const canDelete = can(Permission.AssetsDelete)
 
-  // Dialog state
+  const [view, setView] = useState<'list' | 'graph'>('list')
+  const graphAvailable = total > 0 && total <= GRAPH_MAX_EDGES
+  const graphData = useMemo(
+    () =>
+      buildGraphFromRelationships(relationships, (type) =>
+        t(relationVerbKey(type, 'outgoing'), relationVerbFallback(type, 'outgoing'))
+      ),
+    [relationships, t]
+  )
+
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editTarget, setEditTarget] = useState<AssetRelationship | null>(null)
-  const [removeTarget, setRemoveTarget] = useState<AssetRelationship | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<RelatedAssetItem | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Edit form state — populated from `editTarget` when the dialog opens
   const [editDescription, setEditDescription] = useState('')
   const [editConfidence, setEditConfidence] = useState<RelationshipConfidence>('medium')
   const [editImpactWeight, setEditImpactWeight] = useState(5)
   const [editIsControlPlane, setEditIsControlPlane] = useState(false)
 
-  // ============================================
-  // Server-side asset search for the Add dialog
-  // ============================================
-  //
-  // Wrapped in useCallback so the dialog's effect dep array is stable.
-  // Calls GET /api/v1/assets?search=... and returns up to PICKER_PAGE_SIZE
-  // candidates. The dialog applies the relationship-type constraint filter
-  // on top of this — we don't try to push that down to the API because the
-  // constraint table is local and complex.
+  const refresh = useCallback(() => {
+    void mutate()
+    void revalidateRelatedAssets(assetId)
+  }, [assetId, mutate])
+
+  const verb = (type: string, direction: 'outgoing' | 'incoming') =>
+    t(relationVerbKey(type, direction), relationVerbFallback(type, direction))
+
+  // Server-side asset search for the Add dialog (the dialog applies the
+  // registry's type constraints on top).
   const searchAssets = useCallback(
     async (query: string): Promise<AssetOption[]> => {
       if (!currentTenant) return []
-      const params = new URLSearchParams({
-        per_page: String(PICKER_PAGE_SIZE),
-      })
+      const params = new URLSearchParams({ per_page: String(PICKER_PAGE_SIZE) })
       if (query.trim()) params.set('search', query.trim())
       try {
         const response = await get<BackendAssetsListResponse>(`/api/v1/assets?${params.toString()}`)
@@ -159,32 +159,14 @@ export function AssetRelationshipsTab({
     [currentTenant]
   )
 
-  // ============================================
-  // Handlers
-  // ============================================
+  const names = (list: string[], max = 3) =>
+    list.length <= max
+      ? list.join(', ')
+      : t('assets.related.toast.namesMore', '{names}, and {count} more', {
+          names: list.slice(0, max).join(', '),
+          count: list.length - max,
+        })
 
-  // Multi-select handler. The dialog passes one (input, targetName)
-  // per selected target. We send all of them in ONE call to the
-  // batch endpoint POST /assets/{id}/relationships/batch.
-  //
-  // The batch endpoint validates the source asset + tenant ONCE for
-  // the whole request (instead of per-item like the singleton path)
-  // and reports per-item status in the response. Per-item failures do
-  // not abort the batch — every target gets its own outcome.
-  //
-  // Why batch endpoint instead of N parallel POSTs: it's one HTTP
-  // round trip instead of N, source-asset validation is a single
-  // query instead of N, and the backend can rate-limit at the
-  // request level. Same UX as before — chunking is no longer needed
-  // because all the load is now on a single endpoint that the backend
-  // controls.
-  //
-  // Possible outcomes:
-  //   - All N created → green toast with the count
-  //   - All N duplicates → red toast naming the duplicates
-  //   - All N other-failed → red toast with first error
-  //   - Mixed → warning toast naming the skipped target(s)
-  //   - Whole-batch failure (bad source asset, etc.) → red toast
   const handleAdd = async (
     items: Array<{ input: CreateRelationshipInput; targetName: string }>
   ) => {
@@ -196,10 +178,8 @@ export function AssetRelationshipsTab({
         items.map((it) => it.input)
       )
 
-      // The batch endpoint doesn't carry the control-plane flag (api #467
-      // added it to the singleton create/update only). For every edge that
-      // was created AND requested control-plane, set the flag via a
-      // follow-up update on the returned relationship id.
+      // The batch endpoint does not take the control-plane flag: set it on
+      // the edges just created.
       const controlPlaneUpdates = result.results
         .filter(
           (r) =>
@@ -212,82 +192,90 @@ export function AssetRelationshipsTab({
         const settled = await Promise.allSettled(controlPlaneUpdates)
         if (settled.some((s) => s.status === 'rejected')) {
           toast.warning(
-            'Created, but some edges could not be marked as control-plane. Edit them to set the flag.'
+            t(
+              'assets.related.toast.controlPlanePartial',
+              'Created, but some relationships could not be marked as control plane. Edit them to set it.'
+            )
           )
         }
       }
 
-      const succeededNames: string[] = []
-      const duplicateNames: string[] = []
-      const otherFailedNames: string[] = []
-      const otherErrorMessages: string[] = []
-
+      const created: string[] = []
+      const duplicates: string[] = []
+      const failed: string[] = []
+      const errors: string[] = []
       result.results.forEach((r) => {
-        const name = items[r.index]?.targetName ?? '(unknown)'
-        if (r.status === 'created') {
-          succeededNames.push(name)
-        } else if (r.status === 'duplicate') {
-          duplicateNames.push(name)
-        } else {
-          otherFailedNames.push(name)
-          if (r.error) otherErrorMessages.push(r.error)
+        const name = items[r.index]?.targetName ?? '?'
+        if (r.status === 'created') created.push(name)
+        else if (r.status === 'duplicate') duplicates.push(name)
+        else {
+          failed.push(name)
+          if (r.error) errors.push(r.error)
         }
       })
 
-      const total = items.length
-      if (succeededNames.length === total) {
-        toast.success(total === 1 ? 'Relationship created' : `${total} relationships created`)
+      const n = items.length
+      if (created.length === n) {
+        toast.success(
+          t('assets.related.toast.created', '{count} relationships added', { count: n })
+        )
         setShowAddDialog(false)
-      } else if (succeededNames.length === 0 && otherFailedNames.length === 0) {
-        // Every attempt was a duplicate
+      } else if (created.length === 0 && failed.length === 0) {
+        toast.error(t('assets.related.toast.allExist', 'Already recorded'), {
+          description: names(duplicates),
+        })
+      } else if (created.length === 0) {
         toast.error(
-          total === 1
-            ? 'This relationship already exists'
-            : `All ${total} relationships already exist`,
+          errors[0] || t('assets.related.toast.createFailed', 'Could not add the relationships'),
           {
-            description:
-              total === 1
-                ? 'A relationship with the same type between these assets is already recorded.'
-                : `Already recorded: ${truncateNameList(duplicateNames)}`,
+            description: failed.length > 1 ? names(failed) : undefined,
           }
         )
-      } else if (succeededNames.length === 0) {
-        // Every attempt failed for non-duplicate reasons
-        toast.error(otherErrorMessages[0] || 'Failed to create relationships', {
-          description:
-            otherFailedNames.length > 1
-              ? `Failed: ${truncateNameList(otherFailedNames)}`
-              : undefined,
-        })
       } else {
-        // Mixed
-        const description =
-          duplicateNames.length > 0 && otherFailedNames.length === 0
-            ? `Already recorded: ${truncateNameList(duplicateNames)}`
-            : otherFailedNames.length > 0 && duplicateNames.length === 0
-              ? `Failed: ${truncateNameList(otherFailedNames)}${
-                  otherErrorMessages[0] ? ` (${otherErrorMessages[0]})` : ''
-                }`
-              : `${duplicateNames.length} already existed, ${otherFailedNames.length} failed`
-        toast.warning(`${succeededNames.length} of ${total} created`, { description })
+        toast.warning(
+          t('assets.related.toast.partial', '{created} of {total} added', {
+            created: created.length,
+            total: n,
+          }),
+          {
+            description: t(
+              'assets.related.toast.partialDetail',
+              '{duplicates} already recorded, {failed} failed',
+              { duplicates: duplicates.length, failed: failed.length }
+            ),
+          }
+        )
         setShowAddDialog(false)
       }
     } catch (error) {
-      // Whole-batch failure (bad source asset, missing tenant, etc.)
-      const message = getErrorMessage(error, 'Failed to create relationships')
-      toast.error(message)
+      toast.error(
+        getErrorMessage(
+          error,
+          t('assets.related.toast.createFailed', 'Could not add the relationships')
+        )
+      )
     } finally {
       setIsSubmitting(false)
-      mutate()
+      refresh()
     }
   }
 
-  const openEditDialog = (rel: AssetRelationship) => {
-    setEditTarget(rel)
-    setEditDescription(rel.description ?? '')
-    setEditConfidence(rel.confidence)
-    setEditImpactWeight(rel.impactWeight)
-    setEditIsControlPlane(rel.isControlPlane ?? false)
+  const openEditDialog = async (item: RelatedAssetItem) => {
+    try {
+      const rel = await getAssetRelationship(item.relationship_id)
+      setEditTarget(rel)
+      setEditDescription(rel.description ?? '')
+      setEditConfidence(rel.confidence)
+      setEditImpactWeight(rel.impactWeight)
+      setEditIsControlPlane(rel.isControlPlane ?? false)
+    } catch (error) {
+      toast.error(
+        getErrorMessage(
+          error,
+          t('assets.related.toast.loadFailed', 'Could not load the relationship')
+        )
+      )
+    }
   }
 
   const handleEdit = async () => {
@@ -300,11 +288,16 @@ export function AssetRelationshipsTab({
         impactWeight: editImpactWeight,
         isControlPlane: editIsControlPlane,
       })
-      toast.success('Relationship updated')
+      toast.success(t('assets.related.toast.updated', 'Relationship updated'))
       setEditTarget(null)
-      mutate()
+      refresh()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update relationship'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('assets.related.toast.updateFailed', 'Could not update the relationship')
+        )
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -314,37 +307,97 @@ export function AssetRelationshipsTab({
     if (!removeTarget) return
     setIsSubmitting(true)
     try {
-      await removeAssetRelationship(removeTarget.id)
-      toast.success('Relationship removed')
+      await removeAssetRelationship(removeTarget.relationship_id)
+      toast.success(t('assets.related.toast.removed', 'Relationship removed'))
       setRemoveTarget(null)
-      mutate()
+      refresh()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to remove relationship'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('assets.related.toast.removeFailed', 'Could not remove the relationship')
+        )
+      )
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // ============================================
-  // Render
-  // ============================================
+  const addButton = canWrite ? (
+    <Button size="sm" variant="outline" onClick={() => setShowAddDialog(true)}>
+      <Plus className="mr-1 h-4 w-4" />
+      {t('assets.related.add', 'Add relationship')}
+    </Button>
+  ) : null
+
+  const editingOutgoing = editTarget?.sourceAssetId === assetId
 
   return (
     <div className="space-y-4">
-      <RelationshipSection
-        relationships={relationships}
-        isLoading={isLoading}
-        currentAssetId={assetId}
-        onAddClick={canWrite ? () => setShowAddDialog(true) : undefined}
-        onEditClick={canWrite ? openEditDialog : undefined}
-        onDeleteClick={canDelete ? setRemoveTarget : undefined}
-        onAssetClick={onNavigateToAsset}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {graphAvailable ? (
+          <div
+            role="group"
+            aria-label={t('assets.related.viewLabel', 'View')}
+            className="inline-flex rounded-md border p-0.5"
+          >
+            {(['list', 'graph'] as const).map((v) => {
+              const Icon = v === 'list' ? List : Network
+              const label =
+                v === 'list'
+                  ? t('assets.related.viewList', 'List')
+                  : t('assets.related.viewGraph', 'Graph')
+              return (
+                <Button
+                  key={v}
+                  type="button"
+                  size="sm"
+                  variant={view === v ? 'secondary' : 'ghost'}
+                  className="h-7 px-2"
+                  aria-pressed={view === v}
+                  onClick={() => setView(v)}
+                >
+                  <Icon className="h-4 w-4" aria-hidden />
+                  <span className="ml-1">{label}</span>
+                </Button>
+              )
+            })}
+          </div>
+        ) : (
+          <span />
+        )}
+        {total > 0 && addButton}
+      </div>
 
-      {/* Add Relationship Dialog — server-side asset search.
-          existingRelationships is forwarded so the dialog can hide
-          candidates that already have a relationship of the chosen type
-          with the source (or its placement-mutex sibling). */}
+      {view === 'graph' && graphAvailable ? (
+        <div className="space-y-2">
+          <div className="h-[360px] rounded-md border">
+            <RelationshipGraphView
+              graph={graphData}
+              centralNodeId={assetId}
+              onNodeClick={(nodeId) => {
+                const node = graphData.nodes.find((n) => n.id === nodeId)
+                if (node && nodeId !== assetId) onNavigateToAsset?.(nodeId, node.name)
+              }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'assets.related.graphHint',
+              'The list is the complete, accessible view; the graph draws the same relationships around this asset.'
+            )}
+          </p>
+        </div>
+      ) : (
+        <RelatedAssetsList
+          assetId={assetId}
+          onNavigateToAsset={onNavigateToAsset}
+          onEdit={canWrite ? openEditDialog : undefined}
+          onRemove={canDelete ? setRemoveTarget : undefined}
+          addAction={addButton}
+        />
+      )}
+
       <AddRelationshipDialog
         open={showAddDialog}
         onOpenChange={setShowAddDialog}
@@ -360,7 +413,6 @@ export function AssetRelationshipsTab({
         isLoading={isSubmitting}
       />
 
-      {/* Edit Dialog */}
       <Dialog
         open={!!editTarget}
         onOpenChange={(open) => {
@@ -372,68 +424,74 @@ export function AssetRelationshipsTab({
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Edit Relationship</DialogTitle>
+            <DialogTitle>{t('assets.related.editTitle', 'Edit relationship')}</DialogTitle>
             <DialogDescription>
-              Update the metadata for this relationship. The source, target, and type cannot be
-              changed — delete and recreate if you need to change those.
+              {t(
+                'assets.related.editDescription',
+                'The two assets and the kind of relationship cannot change: remove it and add a new one instead.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
-              {/* Read-only context — shows the user *which* relationship they
-                are editing. Without this they have to remember which row
-                they clicked, especially when an asset has many edges of
-                the same type. */}
               {editTarget && (
-                <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap text-sm">
-                    <Badge variant="secondary" className="max-w-[180px] truncate">
-                      {editTarget.sourceAssetName}
-                    </Badge>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <Badge variant="outline">
-                      {RELATIONSHIP_LABELS[editTarget.type]?.direct ?? editTarget.type}
-                    </Badge>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <Badge variant="secondary" className="max-w-[180px] truncate">
-                      {editTarget.targetAssetName}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    These fields are immutable. To change the source, target, or type, remove this
-                    relationship and create a new one.
-                  </p>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
+                  <Badge variant="secondary" className="max-w-[200px] truncate">
+                    {sourceAsset.name}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    {verb(editTarget.type, editingOutgoing ? 'outgoing' : 'incoming')}
+                  </span>
+                  <Badge variant="secondary" className="max-w-[200px] truncate">
+                    {editingOutgoing ? editTarget.targetAssetName : editTarget.sourceAssetName}
+                  </Badge>
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label htmlFor="rel-edit-description">
+                  {t('assets.related.fieldDescription', 'Description')}
+                </Label>
                 <Textarea
+                  id="rel-edit-description"
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   rows={3}
-                  placeholder="Optional context for this relationship…"
+                  placeholder={t(
+                    'assets.related.fieldDescriptionHint',
+                    'Optional context for this relationship'
+                  )}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Confidence</Label>
+                  <Label>{t('assets.related.fieldConfidence', 'Confidence')}</Label>
                   <Select
                     value={editConfidence}
                     onValueChange={(v) => setEditConfidence(v as RelationshipConfidence)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger aria-label={t('assets.related.fieldConfidence', 'Confidence')}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="high">
+                        {t('assets.related.confidence.high', 'High')}
+                      </SelectItem>
+                      <SelectItem value="medium">
+                        {t('assets.related.confidence.medium', 'Medium')}
+                      </SelectItem>
+                      <SelectItem value="low">
+                        {t('assets.related.confidence.low', 'Low')}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Impact Weight: {editImpactWeight}</Label>
+                  <Label>
+                    {t('assets.related.fieldImpact', 'Impact on attack paths: {value}', {
+                      value: editImpactWeight,
+                    })}
+                  </Label>
                   <Slider
                     value={[editImpactWeight]}
                     onValueChange={([v]) => setEditImpactWeight(v)}
@@ -441,11 +499,11 @@ export function AssetRelationshipsTab({
                     max={10}
                     step={1}
                     className="mt-2"
+                    aria-label={t('assets.related.fieldImpactShort', 'Impact')}
                   />
                 </div>
               </div>
 
-              {/* Control-plane dependency flag (CTEM Scoping, api #467). */}
               <div className="flex items-start gap-2 rounded-lg border p-3">
                 <Checkbox
                   id="edit-is-control-plane"
@@ -456,13 +514,18 @@ export function AssetRelationshipsTab({
                 <div className="space-y-0.5">
                   <Label
                     htmlFor="edit-is-control-plane"
-                    className="text-sm font-normal cursor-pointer"
+                    className="cursor-pointer text-sm font-normal"
                   >
-                    Control-plane dependency (IdP / secrets / CI-CD / SIEM)
+                    {t(
+                      'assets.related.fieldControlPlane',
+                      'Control-plane dependency (identity provider, secrets, CI/CD, SIEM)'
+                    )}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Flag when the target governs this asset&apos;s security posture, so scoping can
-                    trace blast radius.
+                    {t(
+                      'assets.related.fieldControlPlaneHint',
+                      'Mark it when the other asset governs this one’s security, so scoping can trace the blast radius.'
+                    )}
                   </p>
                 </div>
               </div>
@@ -470,16 +533,17 @@ export function AssetRelationshipsTab({
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)}>
-              Cancel
+              {t('assets.related.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleEdit} disabled={isSubmitting}>
-              {isSubmitting ? 'Saving…' : 'Save'}
+              {isSubmitting
+                ? t('assets.related.saving', 'Saving…')
+                : t('assets.related.save', 'Save')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Remove confirmation */}
       <ConfirmDialog
         open={!!removeTarget}
         onOpenChange={(open) => {
@@ -489,8 +553,12 @@ export function AssetRelationshipsTab({
           'confirm.assetRelationship.removeTitle',
           'Remove the relationship between {source} and {target}?',
           {
-            source: removeTarget?.sourceAssetName ?? '',
-            target: removeTarget?.targetAssetName ?? '',
+            source:
+              removeTarget?.direction === 'incoming' ? removeTarget.asset.name : sourceAsset.name,
+            target:
+              removeTarget?.direction === 'incoming'
+                ? sourceAsset.name
+                : (removeTarget?.asset.name ?? ''),
           }
         )}
         desc={t(

@@ -14,6 +14,7 @@ import {
   type FindingLens,
 } from '@/features/findings/lib/state-lens'
 import { findingsOverview } from '@/features/findings/lib/findings-overview'
+import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   useUrlParams,
   useUrlParam,
@@ -130,10 +131,7 @@ import {
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
-import {
-  FindingContextChips,
-  hasFindingContextFilters,
-} from '@/features/findings/components/finding-context-chips'
+import { FindingContextChips } from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
@@ -158,6 +156,8 @@ import { ImportResultsDialog } from '@/features/findings/components/import-resul
 import { Permission } from '@/lib/permissions'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { findingAssetType } from '@/features/findings/lib/finding-asset-type'
+import { findingLocation } from '@/features/findings/lib/finding-location'
+import { middleEllipsis } from '@/lib/middle-ellipsis'
 import { FINDINGS_LEGACY_URL_ALIASES, migrateLegacyParams } from '@/lib/filters/url-codec'
 import { SavedViewsMenu } from '@/features/saved-views/components/saved-views-menu'
 import { savedViewId, type SavedView } from '@/features/saved-views/api/use-saved-views'
@@ -166,6 +166,13 @@ import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defa
 // ============================================
 // Transform API Finding to UI Finding
 // ============================================
+
+/**
+ * Columns hidden until the user turns them on in View: the scanner already
+ * shows under the title, and the first-seen date is in the detail. Without
+ * them, location, status and SLA fit at 1280px instead of scrolling away.
+ */
+const DEFAULT_HIDDEN_COLUMNS = { source: false, createdAt: false }
 
 function transformApiToUiFinding(api: ApiFinding): Finding {
   // Build location string — different sources have different location semantics:
@@ -191,6 +198,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
 
   return {
     id: api.id,
+    location: findingLocation(api),
     title: api.title || api.rule_name || api.message,
     description: api.description || api.snippet || api.message,
     severity: api.severity as Severity,
@@ -287,31 +295,7 @@ function transformApiToUiFinding(api: ApiFinding): Finding {
     // When api.data_flow is present (detail view), use full data
     hasDataFlow: api.has_data_flow || false,
     branchOnly: api.branch_only || false,
-    dataFlow: api.data_flow
-      ? {
-          sources: api.data_flow.sources?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-          })),
-          intermediates: api.data_flow.intermediates?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-          })),
-          sinks: api.data_flow.sinks?.map((loc) => ({
-            path: loc.path,
-            line: loc.line,
-            column: loc.column,
-            content: loc.content,
-            label: loc.label,
-          })),
-        }
-      : undefined,
+    dataFlow: mapDataFlow(api.data_flow),
   }
 }
 
@@ -1130,15 +1114,11 @@ function FindingsContent() {
           // Use hasDataFlow flag from API (populated via subquery in list view)
           // Fall back to checking dataFlow object for detail view compatibility
           const hasDataFlow =
-            row.original.hasDataFlow ||
-            (row.original.dataFlow &&
-              ((row.original.dataFlow.sources?.length ?? 0) > 0 ||
-                (row.original.dataFlow.intermediates?.length ?? 0) > 0 ||
-                (row.original.dataFlow.sinks?.length ?? 0) > 0))
+            row.original.hasDataFlow || (row.original.dataFlow?.steps.length ?? 0) > 0
 
           return (
             <div
-              className="cursor-pointer max-w-[200px] sm:max-w-md"
+              className="cursor-pointer max-w-[200px] sm:max-w-[260px] 2xl:max-w-md"
               role="button"
               tabIndex={0}
               // The title leads the name, so a screen reader announces which
@@ -1247,18 +1227,42 @@ function FindingsContent() {
         id: 'asset',
         enableSorting: false,
         accessorFn: (row) => row.assets[0]?.name || '-',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Location" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('findings.list.location')} />
+        ),
         cell: ({ row }) => {
           const asset = row.original.assets[0]
-          const name = asset?.name
-          if (!name || name === '-') {
-            return <span className="text-muted-foreground text-sm">—</span>
+          const loc = row.original.location
+          if (loc && (loc.asset || loc.detail)) {
+            // Asset on top, the place on it below, cut from the middle so the
+            // part that differs between two findings (the end of a path or
+            // URL) stays visible; the full value is in the tooltip.
+            return (
+              <div className="flex min-w-0 max-w-[240px] flex-col">
+                {loc.asset && (
+                  <TruncatedText
+                    value={loc.asset}
+                    label={t('findings.list.asset')}
+                    className="text-sm"
+                  />
+                )}
+                {loc.detail && (
+                  <TruncatedText
+                    value={loc.detail}
+                    label={t('findings.list.location')}
+                    middle={30}
+                    className={cn(
+                      'font-mono text-muted-foreground',
+                      loc.asset ? 'text-xs' : 'text-sm'
+                    )}
+                  />
+                )}
+              </div>
+            )
           }
-          // The transform falls back to the raw asset_id (a UUID) when the API
-          // response carries no asset name or file path — showing that verbatim
-          // reads as broken data. Detect it (name === the asset id) and render a
-          // compact, clickable asset reference instead of the bare UUID.
-          if (asset?.id && name === asset.id) {
+          // No asset name and no location: show a compact link to the asset
+          // instead of the bare UUID, which reads as broken data.
+          if (asset?.id) {
             return (
               <Link
                 href={`/assets/${asset.id}`}
@@ -1270,13 +1274,7 @@ function FindingsContent() {
               </Link>
             )
           }
-          return (
-            <TruncatedText
-              value={name}
-              label="Location"
-              className="max-w-[200px] font-mono text-sm text-muted-foreground"
-            />
-          )
+          return <span className="text-muted-foreground text-sm">—</span>
         },
       },
       {
@@ -1396,6 +1394,7 @@ function FindingsContent() {
     hasAnyPriority,
     remediationEnabled,
     integrationsEnabled,
+    t,
   ])
 
   // Error state
@@ -1779,7 +1778,6 @@ function FindingsContent() {
     ownerId: ownerParam,
     ownerUnassigned,
   }
-  const contextFilterOn = hasFindingContextFilters(contextFilterValues)
   const contextChips = (
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   )
@@ -1818,15 +1816,6 @@ function FindingsContent() {
     </>
   )
 
-  // Grouped view: the groups API takes severity / status / source / "mine";
-  // say so when a filter it cannot apply is on, rather than silently ignore it.
-  const listOnlyFilterOn =
-    contextFilterOn ||
-    !!searchQuery.trim() ||
-    priorityClasses.length > 0 ||
-    kevActive ||
-    reachableActive ||
-    slaFilter.length > 0
   // Phone layout of a finding row (list and grouped views alike).
   const mobileRow = (f: Finding) => (
     <button
@@ -1846,6 +1835,19 @@ function FindingsContent() {
             {f.scanner}
           </p>
         )}
+        {f.location?.asset && (
+          <p dir="auto" className="mt-0.5 truncate text-xs [unicode-bidi:isolate]">
+            {toDisplayText(f.location.asset, 500)}
+          </p>
+        )}
+        {f.location?.detail && (
+          <p
+            dir="auto"
+            className="truncate font-mono text-xs text-muted-foreground [unicode-bidi:isolate]"
+          >
+            {middleEllipsis(toDisplayText(f.location.detail, 2000), 28)}
+          </p>
+        )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {f.priorityClass && <PriorityClassBadge priorityClass={f.priorityClass} />}
           <FindingStatusBadge status={f.status} />
@@ -1859,13 +1861,6 @@ function FindingsContent() {
       </div>
       <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
     </button>
-  )
-
-  const listOnlyNote = listOnlyFilterOn && (
-    <span className="text-xs text-muted-foreground">
-      Search, priority, KEV, SLA and the asset, scan, CVE, rule, family, type, component and owner
-      filters apply to the ungrouped list.
-    </span>
   )
 
   // "View" on a group opens the list filtered to it, for every dimension
@@ -2037,15 +2032,7 @@ function FindingsContent() {
                 <FindingGroupsTable
                   {...groupedProps}
                   dimension={groupBy}
-                  filters={{
-                    severities: effectiveSeverities.join(',') || undefined,
-                    statuses: statuses.join(',') || undefined,
-                    sources: sourceFilter.join(',') || undefined,
-                    assignedToMe: mineActive,
-                    branchOnly: branchOnlyActive,
-                    view: savedId,
-                    state: !savedId || rawLens ? lens : undefined,
-                  }}
+                  query={apiFilters}
                   renderGroupActions={groupActions}
                   onViewGroup={viewableGroup ? viewGroup : undefined}
                   onGroupsLoaded={(groups) =>
@@ -2054,8 +2041,8 @@ function FindingsContent() {
                   toolbarStart={
                     <>
                       {filterButtons}
+                      {searchBox}
                       {contextChips}
-                      {listOnlyNote}
                     </>
                   }
                   toolbarEnd={
@@ -2100,6 +2087,7 @@ function FindingsContent() {
                   onSelectionChange={setSelectedFindings}
                   resetSelectionKey={selectionEpoch}
                   mobileRow={mobileRow}
+                  initialColumnVisibility={DEFAULT_HIDDEN_COLUMNS}
                   showSelectionCount={false}
                   emptyMessage="No findings match these filters"
                   emptyDescription={
