@@ -15,7 +15,8 @@ it, instead of "Waiting for a sensor".
 |---|---|---|
 | Job | not expired | `expired` |
 | Job | due (not deferred to its scan window's next opening) | `window_closed` |
-| Job | no other running task of the organization holds one of its hosts | `host_busy` |
+| Job | no other running task of the organization holds one of its hosts (one its settled targets have not released) | `host_busy` |
+| Job | the sensor that last took it did not hand it back for its own per-host limit (only while the hosts look free to the platform) | `sensor_hosts_busy` |
 | Sensor | sensor active (not disabled or revoked) | `inactive` |
 | Sensor | sensor checking in (online or late) | `offline` |
 | Claim SQL | not reserved for another sensor | `pinned_elsewhere` |
@@ -35,6 +36,23 @@ it, instead of "Waiting for a sensor".
 The claim SQL lives in `internal/infra/postgres/command_repository.go`
 (`pendingForSensorWhere`); the dispatch gate in
 `internal/app/command/local_policy.go`.
+
+## Waiting for hosts
+
+When `host_busy` holds a task, the answer says how many of its hosts other
+tasks of the organization hold and which tasks (`host_wait`: `hosts_held`
+of `hosts_total`, at most three holders, the one holding the most first,
+each with its tool, and its task, run and step when the caller can read
+that run). It never names a host. The holders are read with the holder half
+of `hostFreePredicate` (`HostHolders`): tenant-scoped, and a key a holder
+released because its targets settled no longer counts. The run page shows
+"Waiting: 10 of its 10 hosts are being scanned by httpx (step http). It
+starts when those hosts are free." instead of "should start shortly", with a
+link to the run that holds them; the task list flags such a task
+(`waiting_on_hosts`). A sensor that hands a task back for its own per-host
+limit ("its hosts are busy on this sensor") is stored as the release code
+`hosts_busy`; while the platform sees the hosts free, the explainer names it
+`sensor_hosts_busy`.
 
 ## How the explainer stays true
 

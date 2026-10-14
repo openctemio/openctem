@@ -57,6 +57,11 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	if err := r.guardCreate(ctx, cmd); err != nil {
 		return err
 	}
+	// ...and its host keys: the hosts it holds while it runs, sent to the
+	// sensor in its payload so both sides admit it under the same keys.
+	if err := command.AssignHostKeys(cmd); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO commands (
 			id, tenant_id, sensor_id, type, priority, payload,
@@ -242,8 +247,9 @@ const scheduledDuePredicate = `(commands.scheduled_at IS NULL OR commands.schedu
 
 // hostFreePredicate keeps a command whose hosts are free: it carries no host
 // keys, or no other acknowledged or running command of its tenant holds a
-// key it conflicts with (platform-side per-host politeness for workflow
-// chunks, research/49 §3.12.3): the same name or address, or an address and
+// key it conflicts with and has not released (platform-side per-host
+// politeness, research/49 §3.12.3; a running command frees each host as its
+// targets settle, research/130): the same name or address, or an address and
 // a range scan of the same /24 (IPv6 /120) bucket, in either direction
 // (command.HostKeyConflicts, RFC-088 §6). A claim re-checks it under
 // advisory locks on the keys (lockHostKeys), so two sensors never take
@@ -254,7 +260,16 @@ const hostFreePredicate = `(commands.host_keys IS NULL OR NOT EXISTS (
 			  AND hk.id <> commands.id
 			  AND hk.host_keys IS NOT NULL
 			  AND hk.status IN ('acknowledged', 'running')
-			  AND hk.host_keys && ` + hostKeyConflictsSQL + `))`
+			  AND hk.host_keys && ` + hostKeyConflictsSQL + `
+			  AND ` + holdsUnsettledSQL + `))`
+
+// holdsUnsettledSQL: holder hk still holds a key that conflicts with the
+// command: one its settled targets have not released (settled_host_keys,
+// research/130). The GIN probe above (&&) narrows the holders first; this
+// only looks at those.
+const holdsUnsettledSQL = `(hk.settled_host_keys IS NULL OR EXISTS (
+				SELECT 1 FROM unnest(` + hostKeyConflictsSQL + `) AS ck
+				WHERE ck = ANY(hk.host_keys) AND ck <> ALL(hk.settled_host_keys)))`
 
 // hostKeyConflictsSQL is command.HostKeyConflicts of commands.host_keys: an
 // "in:" bucket marker becomes the "net:" key of its bucket, a "net:" key adds
@@ -500,7 +515,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		UPDATE commands
 		SET status = 'acknowledged', sensor_id = $3, acknowledged_at = NOW(),
 		    lease_epoch = lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
-		    progress_done = NULL, progress_total = NULL, last_progress_at = NULL,
+		    ` + clearProgressSQL + `,
 		    lease_expires_at = NOW() + make_interval(secs => $4)
 		WHERE id = $1 AND tenant_id = $2 AND status = 'pending'
 		  AND (sensor_id IS NULL OR sensor_id = $3)
@@ -663,7 +678,7 @@ func (r *CommandRepository) ClaimManyForSensor(ctx context.Context, tenantID, se
 		UPDATE commands c
 		SET status = 'acknowledged', sensor_id = $2, acknowledged_at = NOW(),
 		    lease_epoch = c.lease_epoch + 1, window_hold = NULL, window_closed_at = NULL,
-		    progress_done = NULL, progress_total = NULL, last_progress_at = NULL,
+		    ` + clearProgressSQL + `,
 		    lease_expires_at = NOW() + make_interval(secs => ` + leaseParam + `)
 		WHERE c.id IN (
 			SELECT commands.id FROM commands

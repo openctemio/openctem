@@ -19,7 +19,8 @@ import (
 
 func newLeaseTestCommand(ctx context.Context, t *testing.T, cmds *CommandRepository, tenant shared.ID) shared.ID {
 	t.Helper()
-	raw, _ := json.Marshal(map[string]any{"scanner": "nuclei", "target": "10.9.0.1"})
+	// A host of its own: commands on one host are held back while one runs.
+	raw, _ := json.Marshal(map[string]any{"scanner": "nuclei", "target": uniqueTestHost()})
 	cmd, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, raw)
 	if err != nil {
 		t.Fatal(err)

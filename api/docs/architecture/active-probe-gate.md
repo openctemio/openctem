@@ -303,6 +303,34 @@ Ownership-tab confirmation no longer authorizes alone). Runs that skip such
 targets say so in their warnings; `GET /assets/{id}/attribution` answers
 `active_checks_blocked_by: out_of_scope`.
 
+## Unclassified assets (RFC-054 §16)
+
+An inventory asset no active entry covers and nobody excluded, rejected or
+held is **unclassified**. With the scope setting `unclassified_scans` at
+`low_impact` (default) or `full` (Strict forces `off`), `ActiveGate.decide`
+admits it unless a platform guardrail holds it (`easm/guardrail.go`:
+`shared_network`, `network_unknown`, `shared_hosting`, `foreign_domain`,
+`unplaceable`, `unavailable`); a held asset is refused as `guardrailed`. A
+classifier lookup that fails holds every candidate (fail closed). Typed text
+that names no asset still needs an entry.
+
+The intensity cap is applied where the tool and its settings are known, the
+claim-time re-check (`ConstraintRefused`):
+
+- an uncovered target in `low_impact` mode refuses a job outside the
+  low-impact profile (`scopedom.LowImpactRefusal`: tools, ports, paths,
+  nuclei severity and tags, rate, concurrency; code `low_impact`) and any T2
+  job (`tier_exceeds`), for enforcing sensors too;
+- a naabu job on a name is limited to the web ports (`web_ports_only`) while
+  an address the name resolves to is held, or none is known, and to the
+  low-impact ports while one is only unclassified (`namePortCaps`, reading
+  `resolves_to` through `AttributionRepository.AddressesOf`).
+
+When every refusal of a job is such a cap, the re-check clamps the job's
+`config` and `scanner_config` (`command/scope_clamp.go`) and hands it out;
+the clamped settings are checked against the profile first. Passive steps
+take an unclassified asset the gate admits (`UncoveredTargets`).
+
 ## Who calls it
 
 | Path | Where | Notes |

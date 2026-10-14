@@ -242,6 +242,8 @@ export interface ProviderTraits {
   tenantAudience: boolean
   /** Pull request builds count as fork builds (the token cannot tell). */
   pullRequestsAsForks: boolean
+  /** The token names the pipeline definition (workflow_refs rule). */
+  workflowRefs: boolean
 }
 
 export const AZURE_DEVOPS_AUDIENCE = 'api://AzureADTokenExchange'
@@ -255,6 +257,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: false,
     pullRequestsAsForks: false,
+    workflowRefs: true,
   },
   gitlab: {
     issuerInput: 'url',
@@ -264,6 +267,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: false,
     pullRequestsAsForks: false,
+    workflowRefs: true,
   },
   azure_devops: {
     issuerInput: 'organization_id',
@@ -274,6 +278,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     fixedAudience: AZURE_DEVOPS_AUDIENCE,
     tenantAudience: false,
     pullRequestsAsForks: true,
+    workflowRefs: false,
   },
   bitbucket: {
     issuerInput: 'workspace',
@@ -283,6 +288,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: true,
     tenantAudience: true,
     pullRequestsAsForks: false,
+    workflowRefs: false,
   },
   circleci: {
     issuerInput: 'organization_id',
@@ -292,6 +298,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: true,
     pullRequestsAsForks: true,
+    workflowRefs: false,
   },
   jenkins: {
     issuerInput: 'url',
@@ -301,6 +308,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: true,
     pullRequestsAsForks: true,
+    workflowRefs: false,
   },
 }
 
@@ -358,3 +366,39 @@ export const REASON_LABEL: Record<string, string> = {
 }
 
 export const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'none'] as const
+
+/**
+ * Refusal codes of a CI token exchange (api pkg/domain/cirun and the exchange
+ * itself). Each has the i18n keys scans.ci.refusal.<code> (why) and
+ * scans.ci.refusal.<code>Fix (how to fix); an unknown code shows as is.
+ */
+export const REFUSAL_CODES = [
+  'no_matching_configuration',
+  'missing_claims',
+  'owner_not_allowed',
+  'repository_not_allowed',
+  'ref_not_allowed',
+  'ref_not_protected',
+  'environment_not_allowed',
+  'event_not_allowed',
+  'fork_pull_request',
+  'workflow_not_allowed',
+  'organization_mismatch',
+  'owner_id_mismatch',
+  'repository_binding',
+  'pipeline_identity',
+  'ssh_rerun',
+  'replay',
+  'runner_outdated',
+  'pipeline_cap',
+  'pipeline_rate',
+  'run_mismatch',
+  'aggregate_no_run_id',
+] as const
+
+export type RefusalCode = (typeof REFUSAL_CODES)[number]
+
+/** Whether a code has translations. */
+export function isKnownRefusal(code: string): code is RefusalCode {
+  return (REFUSAL_CODES as readonly string[]).includes(code)
+}

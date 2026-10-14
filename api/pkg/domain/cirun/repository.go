@@ -59,13 +59,22 @@ type Repository interface {
 	// AddRunToken adds a job's upload token to a running aggregate run.
 	AddRunToken(ctx context.Context, tenantID, runID shared.ID, hash []byte, jobID string, expiresAt time.Time) error
 	ListRuns(ctx context.Context, tenantID shared.ID, f RunFilter) ([]Run, int, error)
+	// ReserveRunReport takes one of the run's MaxRunReports report slots,
+	// atomically and only while the run is running: ErrRunEvaluated after
+	// the verdict, ErrRunReportCap when the slots are used up. A report is
+	// ingested only after its slot is reserved.
+	ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error
 	// RecordRunReport adds the fingerprints a report sighted (capped at
-	// MaxRunFindings per run) and counts the report.
+	// MaxRunFindings per run); ErrRunEvaluated once the run has its verdict.
 	RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
-	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error
+	// SaveVerdict stores the first verdict of a running run whose recorded
+	// findings count is still expectFindings (the count the verdict was
+	// computed from): ErrRunEvaluated when another verdict was stored first,
+	// ErrRunChanged when a report was recorded meanwhile.
+	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error
 
 	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]GatePolicy, error)
 	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*GatePolicy, error)
@@ -112,6 +121,9 @@ type CoverageRepository interface {
 	// TokenRefusalsSince counts the tenant's refused CI token exchanges
 	// (audited, so verified tokens only) since the time.
 	TokenRefusalsSince(ctx context.Context, tenantID shared.ID, since time.Time) (int, error)
+	// RecentTokenRefusals lists the tenant's latest refused CI token
+	// exchanges, newest first, at most limit.
+	RecentTokenRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]TokenRefusal, error)
 	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
 	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }
@@ -134,9 +146,6 @@ type PipelineRepository interface {
 	// suppression rules on the repository asset, skipping any already open,
 	// and returns how many it created.
 	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
-	// MarkDecorationPending queues an evaluated run's verdict for posting to
-	// the code host (RFC-077).
-	MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error
 	// PinOwner records ownerID for the configuration's owner name unless one
 	// is pinned already, and returns the pinned id and whether this call
 	// pinned it.
@@ -174,3 +183,19 @@ type PipelineRepository interface {
 	// RecordRunTools merges tool labels into the run's (capped).
 	RecordRunTools(ctx context.Context, tenantID, runID shared.ID, tools []ToolLabel) error
 }
+
+// TokenRefusal is a refused CI token exchange, as audited: verified tokens
+// only (an unverified token is never recorded), with the rule codes that
+// refused it.
+type TokenRefusal struct {
+	At         time.Time
+	Repository string
+	Provider   string
+	Ref        string
+	Event      string
+	Reasons    []string
+	Message    string
+}
+
+// MaxTokenRefusals bounds a refusal listing.
+const MaxTokenRefusals = 50

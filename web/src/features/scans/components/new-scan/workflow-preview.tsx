@@ -12,6 +12,7 @@ import { SCAN_WINDOW_NEVER_OPENS, WindowWaits } from '@/features/scan-windows'
 import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import type { components } from '@/lib/api/generated/api.types'
+import { ExcludedTargetsList } from '../excluded-targets-list'
 
 type S = components['schemas']
 export type WorkflowPreview =
@@ -181,6 +182,12 @@ export function WorkflowPreviewBody({ preview }: { preview: WorkflowPreview }) {
             ? ` ${targets.error.message}`
             : ''}
         </p>
+      )}
+      {targets && (targets.excluded_detail?.length ?? 0) > 0 && (
+        <ExcludedTargetsList
+          items={targets.excluded_detail ?? []}
+          total={targets.excluded_targets ?? 0}
+        />
       )}
     </div>
   )

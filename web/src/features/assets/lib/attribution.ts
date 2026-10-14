@@ -39,7 +39,8 @@ export interface AssetAttribution {
    * `rejected` also for a name under a rejected name, or `unattributed` (no
    * record, and no scope target, seed or verified domain covers it).
    */
-  active_checks_blocked_by?: AttributionState | 'unattributed' | 'out_of_scope' | 'wildcard_only'
+  active_checks_blocked_by?:
+    AttributionState | 'unattributed' | 'out_of_scope' | 'wildcard_only' | 'guardrailed'
   decided_at?: string
   evidence: AttributionEvidence[]
   /**
@@ -322,6 +323,11 @@ export function scanStanding(
     return t(
       'assets.attribution.scan.wildcardOnly',
       'Scans skip this asset: the name resolves only through a wildcard DNS record. Confirm it is yours before any active scan.'
+    )
+  if (a.active_checks_blocked_by === 'guardrailed')
+    return t(
+      'assets.attribution.scan.guardrailed',
+      'Scans keep this asset passive: a platform guardrail holds it (a shared, CDN or cloud network, an unknown network, shared hosting, or a name outside your domains). Add it to Scoping › Scope if it is yours.'
     )
   if (a.active_checks_blocked_by === 'discovered')
     return t(
