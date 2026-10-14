@@ -75,6 +75,8 @@ var findingMergeKeptRefs = map[string]string{
 	// reported (RFC-044 §5.7); the survivor keeps its own. The tombstone's
 	// findings.definition_id names one of these links, so they cannot move.
 	"finding_definitions.finding_id": "kept on the tombstone; the survivor keeps its own definitions",
+	// A suspended decision is the history of the finding it was made on.
+	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to

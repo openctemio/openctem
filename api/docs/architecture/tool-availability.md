@@ -78,8 +78,11 @@ The `enabled` and `available` filters read the same data and need
 `GET /api/v1/tools?include=availability[&zone_id=<scan zone>]`.
 
 Every catalog tool the tenant sees (platform tools plus its own custom tools,
-active or not) is listed. So is every tool one of its sensors reports that the
-catalog does not list (`in_catalog: false`, never enabled). For each tool the
+active or not) is listed. A tool one of its sensors declares with a valid
+contract is in the catalog (a declared tool, RFC-092 §3.1: the organization's
+row projected from the tool's descriptor). A tool a sensor reports without a
+contract, that the catalog does not list, is listed too (`in_catalog: false`,
+never enabled). For each tool the
 response gives (per tool in `availability`; the tools only the sensors report
 are in `availability.unlisted`):
 

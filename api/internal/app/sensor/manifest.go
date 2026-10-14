@@ -100,6 +100,9 @@ func (s *SensorService) RegisterManifest(ctx context.Context, a *sensordom.Senso
 	if err != nil {
 		return nil, err
 	}
+	// The tools the manifest declares join the organization's catalog
+	// first, so the report below keeps them.
+	s.projectDeclaredTools(ctx, a, m)
 	in := m.CapabilityInput()
 	report := s.sanitizeReport(ctx, a, &in)
 	if report == nil {
