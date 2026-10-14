@@ -307,6 +307,65 @@ export function useDisableIntegrationApi(integrationId: string) {
 }
 
 /**
+ * Resume a Tenable.sc connector's stalled license rotation
+ * (POST /integrations/{id}/coverage/resume, integrations:manage). Returns the
+ * integration.
+ */
+export function useResumeCoverageRotationApi(integrationId: string) {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/coverage/resume` : null,
+    async (url: string) => {
+      return post<Integration>(url, {})
+    }
+  )
+}
+
+/**
+ * The tenant's Tenable.sc connectors (security integrations, filtered by the
+ * caller). Pass `enabled=false` to skip the call (no integrations:read): a
+ * refusal here is never shown, the actions that need it just stay hidden.
+ */
+export function useSecurityIntegrationsApi(enabled = true) {
+  const { currentTenant } = useTenant()
+  const key =
+    currentTenant && enabled
+      ? buildIntegrationsEndpoint({ category: 'security', per_page: 50 })
+      : null
+
+  return useSWR<IntegrationListResponse>(key, fetchIntegrations, {
+    ...defaultConfig,
+    onError: () => undefined,
+  })
+}
+
+/** The run a "scan now" started (the API's run response, the fields used here). */
+export interface ConnectorScanNowRun {
+  id: string
+  status: string
+}
+
+/**
+ * Scan inventory assets now through a Tenable.sc connector
+ * (POST /integrations/{id}/scan-now, scans:write). The API reads the assets
+ * within the caller's data scope and runs every scan gate.
+ */
+export function useConnectorScanNowApi() {
+  const { currentTenant } = useTenant()
+
+  return useSWRMutation(
+    currentTenant ? `${BASE_URL}/scan-now` : null,
+    async (_key: string, { arg }: { arg: { integrationId: string; assetIds: string[] } }) => {
+      return post<ConnectorScanNowRun>(
+        `${BASE_URL}/${encodeURIComponent(arg.integrationId)}/scan-now`,
+        { asset_ids: arg.assetIds }
+      )
+    }
+  )
+}
+
+/**
  * Test credentials without creating an integration
  */
 export function useTestCredentialsApi() {

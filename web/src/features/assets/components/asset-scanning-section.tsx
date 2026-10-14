@@ -14,7 +14,9 @@
  * - Confirm and allow scanning: a wildcard-only name is held until a person
  *   confirms it is theirs (`assets:write`);
  * - Scan now: a quick scan of the asset (`scans:write` + `scans:execute`),
- *   only when the gate allows it and the type has a scan target.
+ *   only when the gate allows it and the type has a scan target;
+ * - Scan with Tenable.sc: an IP address or host scanned now through a
+ *   Tenable.sc connector (`scans:write`, when the organization has one).
  */
 
 import { useState } from 'react'
@@ -32,6 +34,8 @@ import {
   type ScopeEntryDraft,
 } from '@/features/scope/components/scope-entry-dialog'
 import { ScanAssetsDialog } from '@/features/scans/components/scan-assets-dialog'
+import { TenableScanNowButton } from '@/features/integrations/components/scanners/tenable-scan-now'
+import { isTenableScannableAssetType } from '@/features/integrations/lib/tenable-sc'
 import { useAssetAttribution, useDecideAttribution } from '../hooks/use-asset-attribution'
 import {
   ATTRIBUTION_STATE_CLASS,
@@ -83,6 +87,7 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
   const canConfirm = can(Permission.AssetsWrite) && wildcard
   const canExclude =
     (can(Permission.ScopeWrite) || can(Permission.AssetsWrite)) && canMarkOut(attribution)
+  const tenableType = isTenableScannableAssetType(asset.type) && can(Permission.ScansWrite)
   const canScan =
     allowed &&
     QUICK_SCAN_TYPES.has(asset.type) &&
@@ -131,13 +136,24 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
               : scanStanding(t, attribution)}
           </span>
         </div>
-        {(canAddScope || canConfirm || canExclude || canScan) && (
+        {(canAddScope || canConfirm || canExclude || canScan || tenableType) && (
           <div className="flex flex-wrap items-center gap-2">
             {canScan && (
               <Button size="sm" className="h-8" onClick={() => setScanOpen(true)}>
                 <Play className="me-1.5 h-3.5 w-3.5" aria-hidden />
                 {t('assets.scanning.scanNow', 'Scan now')}
               </Button>
+            )}
+            {tenableType && (
+              <TenableScanNowButton
+                assetIds={[asset.id]}
+                className="h-8"
+                label={t('assets.scanning.tenableScan', 'Scan with Tenable.sc')}
+                title={t(
+                  'assets.scanning.tenableScanTitle',
+                  "Scan this asset now through the organization's Tenable.sc connector"
+                )}
+              />
             )}
             {canAddScope && (
               <Button

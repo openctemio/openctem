@@ -836,5 +836,9 @@
   "findings.detail.sla.overdueMany": "Quá hạn SLA {n} ngày",
   "findings.detail.sla.breached": "Đã vi phạm SLA",
   "findings.detail.sla.classPastDeadline": "Phát hiện {class} phải được khắc phục trong SLA; phát hiện này đã quá hạn.",
-  "findings.detail.sla.pastDeadline": "Phát hiện này đã quá hạn khắc phục."
+  "findings.detail.sla.pastDeadline": "Phát hiện này đã quá hạn khắc phục.",
+  "findings.tenableRescan.title": "Quét lại bằng Tenable.sc",
+  "findings.tenableRescan.now": "Quét lại",
+  "findings.tenableRescan.nowTitle": "Quét ngay tài sản của phát hiện này qua bộ kết nối Tenable.sc",
+  "findings.tenableRescan.help": "Sau khi khắc phục, hãy quét lại tài sản bằng Tenable.sc. Khi tổ chức bật tự động đóng theo phạm vi quét, phát hiện sẽ tự đóng khi một lần quét lại đầy đủ không còn báo cáo nó."
 }

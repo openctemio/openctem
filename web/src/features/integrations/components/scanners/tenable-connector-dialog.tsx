@@ -23,6 +23,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -38,13 +39,17 @@ import {
   useUpdateIntegrationApi,
 } from '@/features/integrations/api/use-integrations-api'
 import {
+  COVERAGE_ROTATIONS,
   DEFAULT_CONNECTOR_SETTINGS,
+  MAX_ROTATION_WAIT_HOURS,
+  MIN_ROTATION_WAIT_HOURS,
   connectorConfig,
   connectorSensorOptions,
   connectorSettingsError,
   readConnectorSettings,
   readTenableSync,
   type ConnectorSettings,
+  type CoverageRotation,
 } from '@/features/integrations/lib/tenable-sc'
 import type { Integration } from '@/features/integrations/types/integration.types'
 import { useAllSensors } from '@/lib/api/sensor-hooks'
@@ -58,6 +63,22 @@ const SEVERITIES = [
   { value: 3, key: 'tenableSc.dialog.severity.high', label: 'High and above' },
   { value: 4, key: 'tenableSc.dialog.severity.critical', label: 'Critical only' },
 ]
+
+/** Each license rotation mode, with what it does (translated at render). */
+const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string }> = {
+  off: {
+    label: 'Off',
+    hint: 'Covers what the license holds. Assets Tenable.sc already counts are rescanned; new ones only while the license has room.',
+  },
+  aging: {
+    label: 'Aging',
+    hint: "Tenable.sc's nightly cleanup frees the license from the rotation repository's data; the next batch is tried after the wait below.",
+  },
+  recycle: {
+    label: 'Recycle',
+    hint: 'The connector deletes and recreates its rotation repository before each batch, once the previous results are ingested.',
+  },
+}
 
 /** The connector image an administrator runs next to Tenable.sc. */
 export const CONNECTOR_IMAGE = 'ghcr.io/openctemio/connector-tenable'
@@ -382,6 +403,7 @@ export function TenableConnectorDialog({
                       />
                     </div>
                   </div>
+                  <RotationFields settings={settings} onChange={set} />
                 </div>
               )}
             </div>
@@ -410,5 +432,85 @@ export function TenableConnectorDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** License rotation: the mode, the acknowledgement it needs and the aging wait. */
+export function RotationFields({
+  settings,
+  onChange,
+}: {
+  settings: ConnectorSettings
+  onChange: (patch: Partial<ConnectorSettings>) => void
+}) {
+  const { t } = useTranslation()
+  const rotation = settings.rotation
+  return (
+    <div className="space-y-3 border-t pt-3">
+      <div className="space-y-2">
+        <Label htmlFor="tsc-rotation">{t('tenableSc.dialog.rotation', 'License rotation')}</Label>
+        <Select
+          value={rotation}
+          onValueChange={(v) => onChange({ rotation: v as CoverageRotation })}
+        >
+          <SelectTrigger
+            id="tsc-rotation"
+            aria-label={t('tenableSc.dialog.rotation', 'License rotation')}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {COVERAGE_ROTATIONS.map((r) => (
+              <SelectItem key={r} value={r}>
+                {t(`tenableSc.dialog.rotationMode.${r}`, ROTATION_TEXT[r].label)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-hint">
+          {t(`tenableSc.dialog.rotationHint.${rotation}`, ROTATION_TEXT[rotation].hint)}
+        </p>
+      </div>
+      {rotation !== 'off' && (
+        <>
+          <div className="flex items-start gap-2">
+            <Checkbox
+              id="tsc-rotation-ack"
+              checked={settings.rotationAcknowledged}
+              onCheckedChange={(v) => onChange({ rotationAcknowledged: v === true })}
+              className="mt-0.5"
+            />
+            <Label htmlFor="tsc-rotation-ack" className="text-xs leading-snug font-normal">
+              {t(
+                'tenableSc.dialog.rotationAck',
+                "I confirm this organization's Tenable license terms allow rotating more assets through the license than it holds"
+              )}{' '}
+              <span className="text-destructive">*</span>
+            </Label>
+          </div>
+          {rotation === 'aging' && (
+            <div className="space-y-2">
+              <Label htmlFor="tsc-rotation-wait">
+                {t('tenableSc.dialog.rotationWait', 'Wait after a batch (hours)')}
+              </Label>
+              <Input
+                id="tsc-rotation-wait"
+                type="number"
+                min={MIN_ROTATION_WAIT_HOURS}
+                max={MAX_ROTATION_WAIT_HOURS}
+                value={settings.rotationWaitHours || ''}
+                onChange={(e) => onChange({ rotationWaitHours: Number(e.target.value) || 0 })}
+              />
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  'tenableSc.dialog.rotationWaitHint',
+                  "1 to 72 hours, 12 by default. Match it to Tenable.sc's nightly cleanup; the license check before each batch confirms the capacity is free."
+                )}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   )
 }

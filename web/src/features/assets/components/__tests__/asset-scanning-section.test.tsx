@@ -34,6 +34,15 @@ vi.mock('@/features/scans/components/scan-assets-dialog', () => ({
   ScanAssetsDialog: ({ open }: { open: boolean }) => (open ? <div role="dialog">scan</div> : null),
 }))
 
+// The Tenable.sc button decides itself whether a connector exists (its own test).
+vi.mock('@/features/integrations/components/scanners/tenable-scan-now', () => ({
+  TenableScanNowButton: ({ label, assetIds }: { label: string; assetIds: string[] }) => (
+    <button type="button" data-asset-ids={assetIds.join(',')}>
+      {label}
+    </button>
+  ),
+}))
+
 import { AssetScanningSection } from '../asset-scanning-section'
 
 const SUBDOMAIN = { id: 'a1', name: 'portal.example.com', type: 'subdomain' as const }
@@ -139,6 +148,30 @@ describe('AssetScanningSection', () => {
       />
     )
     expect(screen.queryByRole('button', { name: 'Scan now' })).not.toBeInTheDocument()
+  })
+
+  it('an IP address or host is offered Scan with Tenable.sc with scans:write', () => {
+    state.attribution = attribution({})
+    state.perms = ['scans:write']
+    for (const type of ['ip_address', 'host'] as const) {
+      const { unmount } = render(
+        <AssetScanningSection asset={{ id: 'h1', name: '192.0.2.10', type }} />
+      )
+      const button = screen.getByRole('button', { name: 'Scan with Tenable.sc' })
+      expect(button).toHaveAttribute('data-asset-ids', 'h1')
+      unmount()
+    }
+  })
+
+  it('no Tenable.sc action for other types or without scans:write', () => {
+    state.attribution = attribution({})
+    state.perms = ALL
+    const { unmount } = render(<AssetScanningSection asset={SUBDOMAIN} />)
+    expect(screen.queryByRole('button', { name: 'Scan with Tenable.sc' })).not.toBeInTheDocument()
+    unmount()
+    state.perms = ['assets:read']
+    render(<AssetScanningSection asset={{ id: 'h1', name: '192.0.2.10', type: 'ip_address' }} />)
+    expect(screen.queryByRole('button', { name: 'Scan with Tenable.sc' })).not.toBeInTheDocument()
   })
 
   it('renders nothing without an answer', () => {
