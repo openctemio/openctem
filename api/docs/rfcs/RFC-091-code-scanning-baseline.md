@@ -57,7 +57,7 @@ API (all under `/api/v1/ci/code-scanning`, CI/CD module):
 | `GET /repositories` | read | the repositories in the caller's data scope, each with effective settings, branches and baseline counts |
 | `GET /repositories/{id}` | read | 404 outside the data scope |
 | `PUT /repositories/{id}/settings`, `DELETE …/settings` | write | override or reset to the template; 404 outside the data scope |
-| `POST /repositories/{id}/rebaseline` | write | queues a full scan of every known protected branch; records the default branch first; 409 when none is protected |
+| `POST /repositories/{id}/baseline` | write | sets a new baseline: queues a full scan of every known protected branch; records the default branch first; 409 when none is protected |
 
 ## 4. Baseline state
 
