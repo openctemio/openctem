@@ -494,13 +494,17 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/ci/runs` · `/runs/{id}` · `/pipelines` · `/pipelines/{id}` · `/trust-configs` · `/trust-configs/{id}` · `/gate-policies` · `/gate-overrides` | `scans:ci:read` |
-| `POST /api/v1/ci/trust-configs` · `PUT /{id}` · `DELETE /{id}` · `POST /api/v1/ci/gate-policies` · `PATCH /{id}` · `DELETE /{id}` | `scans:ci:write` |
+| `POST /api/v1/ci/trust-configs` · `PUT /{id}` · `DELETE /{id}` · `PUT /api/v1/ci/settings` · `/api/v1/ci/scm-apps/*` writes · `POST /api/v1/ci/pipelines/{id}/retire` | `scans:ci:write` |
+| `POST /api/v1/ci/gate-policies` · `PATCH /{id}` · `DELETE /{id}` · `PUT`/`DELETE /api/v1/ci/coverage/expectations/{id}` | `scans:ci:policy` |
 | `POST /api/v1/ci/gate-overrides` · `POST /{id}/revoke` | `scans:ci:override` |
 
-> `scans:ci:write` (trust configurations issue upload credentials) and
-> `scans:ci:override` (break-glass) are admin-only, like the sensor key
-> permissions: owner and admin carry them, no custom role may (the migration
-> `001077` extends the `000945` trigger). Members and viewers have
+> `scans:ci:write` (trust configurations, CI settings and code host
+> connections issue or admit upload credentials) is admin-only, like the sensor
+> key permissions: owner and admin carry it, no custom role may (the
+> `role_permissions` trigger, last replaced by `002120`). `scans:ci:policy`
+> (gate policies, coverage expectations; loosening needs step-up) and
+> `scans:ci:override` (break-glass, step-up, every administrator alerted) can
+> be delegated: the AppSec engineer role template carries both. Members and viewers have
 > `scans:ci:read`. Runs and overrides follow the data scope of the repository
 > asset (list: SQL condition; by id, and break-glass on a repository: 404 out of
 > scope). Every change, every token exchange (issued or refused after

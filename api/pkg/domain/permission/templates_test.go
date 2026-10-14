@@ -200,3 +200,21 @@ func TestRoleTemplates_ReturnsCopies(t *testing.T) {
 		t.Error("RoleTemplates shares its backing arrays")
 	}
 }
+
+// The AppSec engineer runs the CI gate: policies and break-glass. Both stay
+// out of every other template: letting a commit past the gate is the AppSec
+// engineer's call (with step-up), not a by-product of another job. CI trust
+// (scans:ci:write) is admin-only and in no template.
+func TestRoleTemplates_CIGateOwnedByAppSec(t *testing.T) {
+	for _, tpl := range permission.RoleTemplates() {
+		isAppSec := tpl.ID == "appsec-engineer"
+		if hasPerm(tpl, permission.CIWrite) {
+			t.Errorf("%s carries admin-only %s", tpl.ID, permission.CIWrite)
+		}
+		for _, p := range []permission.Permission{permission.CIPolicy, permission.CIOverride} {
+			if hasPerm(tpl, p) != isAppSec {
+				t.Errorf("%s: %s = %v", tpl.ID, p, hasPerm(tpl, p))
+			}
+		}
+	}
+}

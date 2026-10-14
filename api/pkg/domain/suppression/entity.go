@@ -77,14 +77,15 @@ type Rule struct {
 	suppressionType SuppressionType
 
 	// Approval workflow
-	status          RuleStatus
-	requestedBy     shared.ID
-	requestedAt     time.Time
-	approvedBy      *shared.ID
-	approvedAt      *time.Time
-	rejectedBy      *shared.ID
-	rejectedAt      *time.Time
-	rejectionReason string
+	status           RuleStatus
+	requestedBy      shared.ID
+	requestedByActor string
+	requestedAt      time.Time
+	approvedBy       *shared.ID
+	approvedAt       *time.Time
+	rejectedBy       *shared.ID
+	rejectedAt       *time.Time
+	rejectionReason  string
 
 	// Expiration
 	expiresAt *time.Time
@@ -141,40 +142,44 @@ type RuleData struct {
 	SuppressionType SuppressionType
 	Status          RuleStatus
 	RequestedBy     shared.ID
-	RequestedAt     time.Time
-	ApprovedBy      *shared.ID
-	ApprovedAt      *time.Time
-	RejectedBy      *shared.ID
-	RejectedAt      *time.Time
-	RejectionReason string
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// RequestedByActor names a requester that is not a user (a CI job:
+	// "ci:gitlab:alice"); RequestedBy is then zero.
+	RequestedByActor string
+	RequestedAt      time.Time
+	ApprovedBy       *shared.ID
+	ApprovedAt       *time.Time
+	RejectedBy       *shared.ID
+	RejectedAt       *time.Time
+	RejectionReason  string
+	ExpiresAt        *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // ReconstituteRule recreates a Rule from persistence.
 func ReconstituteRule(data RuleData) *Rule {
 	return &Rule{
-		id:              data.ID,
-		tenantID:        data.TenantID,
-		ruleID:          data.RuleID,
-		toolName:        data.ToolName,
-		pathPattern:     data.PathPattern,
-		assetID:         data.AssetID,
-		name:            data.Name,
-		description:     data.Description,
-		suppressionType: data.SuppressionType,
-		status:          data.Status,
-		requestedBy:     data.RequestedBy,
-		requestedAt:     data.RequestedAt,
-		approvedBy:      data.ApprovedBy,
-		approvedAt:      data.ApprovedAt,
-		rejectedBy:      data.RejectedBy,
-		rejectedAt:      data.RejectedAt,
-		rejectionReason: data.RejectionReason,
-		expiresAt:       data.ExpiresAt,
-		createdAt:       data.CreatedAt,
-		updatedAt:       data.UpdatedAt,
+		id:               data.ID,
+		tenantID:         data.TenantID,
+		ruleID:           data.RuleID,
+		toolName:         data.ToolName,
+		pathPattern:      data.PathPattern,
+		assetID:          data.AssetID,
+		name:             data.Name,
+		description:      data.Description,
+		suppressionType:  data.SuppressionType,
+		status:           data.Status,
+		requestedBy:      data.RequestedBy,
+		requestedByActor: data.RequestedByActor,
+		requestedAt:      data.RequestedAt,
+		approvedBy:       data.ApprovedBy,
+		approvedAt:       data.ApprovedAt,
+		rejectedBy:       data.RejectedBy,
+		rejectedAt:       data.RejectedAt,
+		rejectionReason:  data.RejectionReason,
+		expiresAt:        data.ExpiresAt,
+		createdAt:        data.CreatedAt,
+		updatedAt:        data.UpdatedAt,
 	}
 }
 
@@ -191,15 +196,18 @@ func (r *Rule) Description() string              { return r.description }
 func (r *Rule) SuppressionType() SuppressionType { return r.suppressionType }
 func (r *Rule) Status() RuleStatus               { return r.status }
 func (r *Rule) RequestedBy() shared.ID           { return r.requestedBy }
-func (r *Rule) RequestedAt() time.Time           { return r.requestedAt }
-func (r *Rule) ApprovedBy() *shared.ID           { return r.approvedBy }
-func (r *Rule) ApprovedAt() *time.Time           { return r.approvedAt }
-func (r *Rule) RejectedBy() *shared.ID           { return r.rejectedBy }
-func (r *Rule) RejectedAt() *time.Time           { return r.rejectedAt }
-func (r *Rule) RejectionReason() string          { return r.rejectionReason }
-func (r *Rule) ExpiresAt() *time.Time            { return r.expiresAt }
-func (r *Rule) CreatedAt() time.Time             { return r.createdAt }
-func (r *Rule) UpdatedAt() time.Time             { return r.updatedAt }
+
+// RequestedByActor is the requester when it is not a user ("" otherwise).
+func (r *Rule) RequestedByActor() string { return r.requestedByActor }
+func (r *Rule) RequestedAt() time.Time   { return r.requestedAt }
+func (r *Rule) ApprovedBy() *shared.ID   { return r.approvedBy }
+func (r *Rule) ApprovedAt() *time.Time   { return r.approvedAt }
+func (r *Rule) RejectedBy() *shared.ID   { return r.rejectedBy }
+func (r *Rule) RejectedAt() *time.Time   { return r.rejectedAt }
+func (r *Rule) RejectionReason() string  { return r.rejectionReason }
+func (r *Rule) ExpiresAt() *time.Time    { return r.expiresAt }
+func (r *Rule) CreatedAt() time.Time     { return r.createdAt }
+func (r *Rule) UpdatedAt() time.Time     { return r.updatedAt }
 
 // Setters for criteria
 

@@ -168,6 +168,23 @@ sequenceDiagram
   S-->>J: run + octci_ token
 ```
 
+### Inline ignore comments and scanner ignore files
+
+An inline ignore comment (`nosemgrep`, `noopengrep`, `nosem`) or a scanner
+ignore file (`.semgrepignore`) in the repository is the author's claim, not a
+decision. The CI job runs the scanner with `--disable-nosem` and
+`--x-ignore-semgrepignore-files`, so such results are still reported (CTIS
+`suppression.kind = in_source`), and the gate counts them like any other.
+From a verified default-branch run, with repository files allowed by the gate
+policy, each claim becomes a pending suppression request on the repository
+asset (`accepted_risk`, 90 days): the inline rule and path, or each
+ignore-file pattern (`metadata.properties.ignore_file_paths`) as a path-only
+rule. Requests name the CI identity in `suppression_rules.requested_by_actor`
+(`ci:<provider>:<login>`; `.openctem.yml` exceptions do too), write a
+`created` row in `suppression_rule_audit` and one
+`ci_run.exceptions_requested` audit event. At most 20 of each per upload; an
+open request for the same rule and path is not duplicated. Branch runs
+request nothing.
 ### Known decisions
 
 A decision made on the platform holds on the next run of the same repository:

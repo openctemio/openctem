@@ -111,16 +111,16 @@ func registerCIRoutes(
 		r.GET("/trust-refusals", admin.ListTokenRefusals, middleware.Require(permission.CIWrite))
 
 		r.GET("/coverage", admin.GetCoverage, middleware.Require(permission.CIRead))
-		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIWrite))
-		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIWrite))
+		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIPolicy))
+		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIPolicy))
 
 		r.GET("/runs", admin.ListRuns, middleware.Require(permission.CIRead))
 		r.GET("/runs/{id}", admin.GetRun, middleware.Require(permission.CIRead))
 
 		r.GET("/gate-policies", admin.ListGatePolicies, middleware.Require(permission.CIRead))
-		r.POST("/gate-policies", admin.CreateGatePolicy, middleware.Require(permission.CIWrite))
-		r.PATCH("/gate-policies/{id}", admin.UpdateGatePolicy, middleware.Require(permission.CIWrite))
-		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIWrite))
+		r.POST("/gate-policies", admin.CreateGatePolicy, middleware.Require(permission.CIPolicy))
+		r.PATCH("/gate-policies/{id}", admin.UpdateGatePolicy, middleware.Require(permission.CIPolicy))
+		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIPolicy))
 
 		r.GET("/code-scanning/settings", admin.GetCodeScanTemplate, middleware.Require(permission.CIRead))
 		r.PUT("/code-scanning/settings", admin.UpdateCodeScanTemplate, middleware.Require(permission.CIWrite))

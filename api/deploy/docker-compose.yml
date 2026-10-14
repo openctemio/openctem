@@ -37,7 +37,7 @@ services:
   # `up` (a no-op once the owner is right); only CHOWN, plus DAC_READ_SEARCH
   # to walk the gateway's own 0700 directories.
   gateway-init:
-    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.9.4}}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.9.5}}
     user: "0:0"
     entrypoint: ["chown", "-R", "1000:1000", "/data", "/config", "/ca"]
     network_mode: none
@@ -58,7 +58,7 @@ services:
   # the namespaced sysctl below, so no-new-privileges stays on and it holds
   # no capability.
   gateway:
-    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.9.4}}
+    image: ${GATEWAY_IMAGE:-ghcr.io/openctemio/openctem-gateway}:${GATEWAY_VERSION:-${OPENCTEM_VERSION:-v0.9.5}}
     user: "1000:1000"
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
@@ -122,7 +122,7 @@ services:
   # do not hold every later release: set UI_IMAGE / API_IMAGE to them only to
   # run such an old release with this file.
   web:
-    image: ${UI_IMAGE:-ghcr.io/openctemio/openctem-web}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.9.4}}
+    image: ${UI_IMAGE:-ghcr.io/openctemio/openctem-web}:${UI_VERSION:-${OPENCTEM_VERSION:-v0.9.5}}
     expose:
       - "3000"
     environment:
@@ -222,7 +222,7 @@ services:
   # Database migrations (one-shot, before the API), as the schema owner
   # ---------------------------------------------------------------------------
   migrate:
-    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.4}}
+    image: ${MIGRATIONS_IMAGE:-ghcr.io/openctemio/migrations}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.5}}
     command:
       - "-path=/migrations"
       - "-database"
@@ -246,7 +246,7 @@ services:
   # API (Go): internal only
   # ---------------------------------------------------------------------------
   api:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.4}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:-v0.9.5}}
     expose:
       - "8080"
     environment:

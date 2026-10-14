@@ -25,10 +25,10 @@ var adminOnlyPermissions = []Permission{
 	SensorsGrantNarrow,
 	SensorsGrantWiden,
 	SensorsRevoke,
-	// CI trust configurations issue upload credentials; the override lets a
-	// commit past the gate (RFC-051).
+	// CI trust configurations issue upload credentials (RFC-051). Gate
+	// policies (scans:ci:policy) and break-glass (scans:ci:override, with
+	// step-up and an alert to every administrator) can be delegated.
 	CIWrite,
-	CIOverride,
 }
 
 // AdminOnlyPermissions returns the permissions that only the system owner and

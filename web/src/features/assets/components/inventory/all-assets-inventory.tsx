@@ -51,7 +51,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useLastVisit } from '../../hooks/use-last-visit'
 import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
-import type { Asset } from '../../types/asset.types'
+import type { Asset, AssetType } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
 import {
   buildFacetGroups,
@@ -77,6 +77,7 @@ import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
 import { InventoryLensBar, inventoryLenses } from './inventory-lens-bar'
+import { lensCounts, lensOfType } from '../../lib/inventory-lenses'
 
 const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
 
@@ -291,6 +292,11 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     countBy: facetKeys.length > 0 ? facetKeys : undefined,
   })
   const scopeLabel = typeView?.plural ?? lensLabel
+  // Lens and type pill counts: the caller's scoped, unfiltered stats.
+  const lensCountsData = useMemo(
+    () => lensCounts(registry, stats.byTypeSubType),
+    [registry, stats.byTypeSubType]
+  )
   const attributeFacets = useMemo(
     () =>
       (typeView?.facets ?? []).map((attribute) => ({
@@ -470,20 +476,27 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       </PageHeader>
       <AssetsSectionTabs />
 
-      {!typeView && (
-        <InventoryLensBar
-          className="mt-5"
-          registry={registry}
-          value={filters.lens}
-          onChange={(lens) =>
-            // A lens replaces the type picks: a type outside it would match nothing.
-            setFilters({ ...filters, lens, types: undefined, subType: undefined, page: 1 })
-          }
-        />
-      )}
+      <InventoryLensBar
+        className="mt-5"
+        registry={registry}
+        // One type picked from a lens's chips (or a ?types= link) keeps its lens lit.
+        value={filters.lens ?? (typeView ? lensOfType(registry, filters.types?.[0]) : undefined)}
+        types={filters.types}
+        counts={statsLoading ? undefined : lensCountsData}
+        total={statsLoading ? undefined : stats.total}
+        onChange={({ lens, types }) =>
+          setFilters({
+            ...filters,
+            lens,
+            types: types as AssetType[] | undefined,
+            subType: undefined,
+            page: 1,
+          })
+        }
+      />
 
       <InventoryStatStrip
-        className={typeView ? 'mt-5' : 'mt-4'}
+        className="mt-4"
         stats={scopeLabel ? typeStats : stats}
         filters={filters}
         isLoading={scopeLabel ? typeStatsLoading : statsLoading}

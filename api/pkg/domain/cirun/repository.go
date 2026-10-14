@@ -151,10 +151,12 @@ type PipelineRepository interface {
 	// on the repository asset of that name: a name the token does not sign
 	// stays with the first repository id that used it.
 	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
-	// RequestRepoExceptions stores a repository file's exceptions as pending
-	// suppression rules on the repository asset, skipping any already open,
+	// RequestRepoExceptions stores exceptions a repository asks for (its
+	// .openctem.yml, inline ignore comments, an ignore file) as pending
+	// suppression rules on the repository asset, requested by actor (the CI
+	// identity), skipping any already open, with a "created" audit row each,
 	// and returns how many it created.
-	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
+	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository, actor string, exceptions []RepoException) (int, error)
 	// PinOwner records ownerID for the configuration's owner name unless one
 	// is pinned already, and returns the pinned id and whether this call
 	// pinned it.

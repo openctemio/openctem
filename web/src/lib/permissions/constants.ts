@@ -203,6 +203,7 @@ export const Permission = {
   // override are admin-only.
   CIRead: 'scans:ci:read',
   CIWrite: 'scans:ci:write',
+  CIPolicy: 'scans:ci:policy',
   CIOverride: 'scans:ci:override',
   // Scan window policies (RFC-067): change them; lift them for a short
   // time in an emergency (fresh authenticator code, audited).
@@ -407,7 +408,6 @@ export const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
   Permission.SensorsGrantWiden,
   Permission.SensorsRevoke,
   Permission.CIWrite,
-  Permission.CIOverride,
 ]
 
 /**
@@ -501,6 +501,7 @@ export const PermissionGroups = {
     Permission.TemplateSourcesWrite,
     Permission.SecretStoreWrite,
     Permission.CIWrite,
+    Permission.CIPolicy,
     Permission.CIOverride,
     Permission.ScanWindowsManage,
     Permission.ScanWindowsOverride,
@@ -673,7 +674,8 @@ export const PermissionLabels: Partial<Record<PermissionString, string>> = {
   [Permission.SecretStoreWrite]: 'Manage Secret Store',
   [Permission.SecretStoreDelete]: 'Delete Secrets',
   [Permission.CIRead]: 'View CI Runs',
-  [Permission.CIWrite]: 'Manage CI Trust and Gate',
+  [Permission.CIWrite]: 'Manage CI Trust',
+  [Permission.CIPolicy]: 'Manage CI Gate Policies',
   [Permission.CIOverride]: 'Override the CI Gate',
   [Permission.ScanWindowsManage]: 'Manage Scan Windows',
   [Permission.ScanWindowsOverride]: 'Override Scan Windows',
@@ -876,6 +878,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SecretStoreDelete,
     Permission.CIRead,
     Permission.CIWrite,
+    Permission.CIPolicy,
     Permission.CIOverride,
     Permission.ScanWindowsManage,
     Permission.ScanWindowsOverride,
@@ -1039,6 +1042,7 @@ export const RolePermissions: Record<RoleString, PermissionString[]> = {
     Permission.SecretStoreDelete,
     Permission.CIRead,
     Permission.CIWrite,
+    Permission.CIPolicy,
     Permission.CIOverride,
     Permission.ScanWindowsManage,
     Permission.ScanWindowsOverride,

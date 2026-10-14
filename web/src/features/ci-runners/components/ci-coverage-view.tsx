@@ -195,7 +195,8 @@ export interface CICoverageViewProps {
 export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const { t } = useTranslation()
   const { can } = usePermissions()
-  const canWrite = can(Permission.CIWrite)
+  // Coverage expectations are part of the gate (scans:ci:policy).
+  const canWrite = can(Permission.CIPolicy)
   const [filterParam, setFilterParam] = useUrlFilter('coverage', '')
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')

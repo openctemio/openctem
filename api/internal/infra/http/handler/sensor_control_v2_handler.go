@@ -44,6 +44,7 @@ type SensorControlV2Handler struct {
 	commands            *CommandHandler
 	suppressions        *SuppressionHandler
 	suppressionsEnabled func(ctx context.Context, tenantID string) bool
+	content             *SensorContentV2Handler
 	limits              protov2.Limits
 	logger              *logger.Logger
 }
@@ -113,6 +114,12 @@ func (h *SensorControlV2Handler) HasIngest() bool { return h.ingest != nil }
 
 // HasCommands reports whether the command routes are served.
 func (h *SensorControlV2Handler) HasCommands() bool { return h.commands != nil }
+
+// SetContent serves the content delivery routes with c (nil: none).
+func (h *SensorControlV2Handler) SetContent(c *SensorContentV2Handler) { h.content = c }
+
+// Content is the content delivery handler, nil when not served.
+func (h *SensorControlV2Handler) Content() *SensorContentV2Handler { return h.content }
 
 // HasSuppressions reports whether the suppressions route is served.
 func (h *SensorControlV2Handler) HasSuppressions() bool { return h.suppressions != nil }

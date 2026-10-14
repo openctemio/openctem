@@ -1172,6 +1172,8 @@
   "scans.ci.trust.addTitle": "Add CI trust",
   "scans.ci.trust.dialogDescription": "A pipeline is admitted when every rule you fill in matches its token. Lists are comma separated; patterns use * for one path segment and ** for any depth.",
   "scans.ci.trust.name": "Name",
+  "scans.ci.trust.githubIssuer": "GitHub Enterprise issuer (optional)",
+  "scans.ci.trust.githubIssuerHint": "Leave empty for github.com. GitHub Enterprise Server: https://<host>/_services/token. An enterprise with a customized issuer: https://token.actions.githubusercontent.com/<enterprise>.",
   "scans.ci.trust.gitlabIssuer": "GitLab URL (issuer)",
   "scans.ci.trust.gitlabIssuerHint": "Leave empty for gitlab.com.",
   "scans.ci.trust.issuer": "Issuer",

@@ -646,7 +646,7 @@ func (r *SuppressionRepository) selectQuery() string {
 			sr.name, sr.description, sr.suppression_type, sr.status,
 			sr.requested_by, sr.requested_at, sr.approved_by, sr.approved_at,
 			sr.rejected_by, sr.rejected_at, sr.rejection_reason, sr.expires_at,
-			sr.created_at, sr.updated_at
+			sr.created_at, sr.updated_at, sr.requested_by_actor
 		FROM suppression_rules sr
 	`
 }
@@ -654,26 +654,27 @@ func (r *SuppressionRepository) selectQuery() string {
 // scanRule scans a single row into a Rule.
 func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error) {
 	var (
-		id              string
-		tenantID        string
-		ruleID          sql.NullString
-		toolName        sql.NullString
-		pathPattern     sql.NullString
-		assetID         sql.NullString
-		name            string
-		description     sql.NullString
-		suppressionType string
-		status          string
-		requestedBy     sql.NullString // NULL once the requester is deleted
-		requestedAt     time.Time
-		approvedBy      sql.NullString
-		approvedAt      sql.NullTime
-		rejectedBy      sql.NullString
-		rejectedAt      sql.NullTime
-		rejectionReason sql.NullString
-		expiresAt       sql.NullTime
-		createdAt       time.Time
-		updatedAt       time.Time
+		id               string
+		tenantID         string
+		ruleID           sql.NullString
+		toolName         sql.NullString
+		pathPattern      sql.NullString
+		assetID          sql.NullString
+		name             string
+		description      sql.NullString
+		suppressionType  string
+		status           string
+		requestedBy      sql.NullString // NULL once the requester is deleted
+		requestedAt      time.Time
+		approvedBy       sql.NullString
+		approvedAt       sql.NullTime
+		rejectedBy       sql.NullString
+		rejectedAt       sql.NullTime
+		rejectionReason  sql.NullString
+		expiresAt        sql.NullTime
+		createdAt        time.Time
+		updatedAt        time.Time
+		requestedByActor sql.NullString
 	)
 
 	err := row.Scan(
@@ -681,7 +682,7 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		&name, &description, &suppressionType, &status,
 		&requestedBy, &requestedAt, &approvedBy, &approvedAt,
 		&rejectedBy, &rejectedAt, &rejectionReason, &expiresAt,
-		&createdAt, &updatedAt,
+		&createdAt, &updatedAt, &requestedByActor,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -696,7 +697,7 @@ func (r *SuppressionRepository) scanRule(row *sql.Row) (*suppression.Rule, error
 		name, description, suppressionType, status,
 		requestedBy.String, requestedAt, approvedBy, approvedAt,
 		rejectedBy, rejectedAt, rejectionReason, expiresAt,
-		createdAt, updatedAt,
+		createdAt, updatedAt, requestedByActor.String,
 	), nil
 }
 
@@ -706,26 +707,27 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 
 	for rows.Next() {
 		var (
-			id              string
-			tenantID        string
-			ruleID          sql.NullString
-			toolName        sql.NullString
-			pathPattern     sql.NullString
-			assetID         sql.NullString
-			name            string
-			description     sql.NullString
-			suppressionType string
-			status          string
-			requestedBy     sql.NullString // NULL once the requester is deleted
-			requestedAt     time.Time
-			approvedBy      sql.NullString
-			approvedAt      sql.NullTime
-			rejectedBy      sql.NullString
-			rejectedAt      sql.NullTime
-			rejectionReason sql.NullString
-			expiresAt       sql.NullTime
-			createdAt       time.Time
-			updatedAt       time.Time
+			id               string
+			tenantID         string
+			ruleID           sql.NullString
+			toolName         sql.NullString
+			pathPattern      sql.NullString
+			assetID          sql.NullString
+			name             string
+			description      sql.NullString
+			suppressionType  string
+			status           string
+			requestedBy      sql.NullString // NULL once the requester is deleted
+			requestedAt      time.Time
+			approvedBy       sql.NullString
+			approvedAt       sql.NullTime
+			rejectedBy       sql.NullString
+			rejectedAt       sql.NullTime
+			rejectionReason  sql.NullString
+			expiresAt        sql.NullTime
+			createdAt        time.Time
+			updatedAt        time.Time
+			requestedByActor sql.NullString
 		)
 
 		err := rows.Scan(
@@ -733,7 +735,7 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			&name, &description, &suppressionType, &status,
 			&requestedBy, &requestedAt, &approvedBy, &approvedAt,
 			&rejectedBy, &rejectedAt, &rejectionReason, &expiresAt,
-			&createdAt, &updatedAt,
+			&createdAt, &updatedAt, &requestedByActor,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan suppression rule: %w", err)
@@ -744,7 +746,7 @@ func (r *SuppressionRepository) scanRules(rows *sql.Rows) ([]*suppression.Rule, 
 			name, description, suppressionType, status,
 			requestedBy.String, requestedAt, approvedBy, approvedAt,
 			rejectedBy, rejectedAt, rejectionReason, expiresAt,
-			createdAt, updatedAt,
+			createdAt, updatedAt, requestedByActor.String,
 		))
 	}
 
@@ -762,26 +764,28 @@ func (r *SuppressionRepository) buildRule(
 	rejectedBy sql.NullString, rejectedAt sql.NullTime,
 	rejectionReason sql.NullString, expiresAt sql.NullTime,
 	createdAt, updatedAt time.Time,
+	requestedByActor string,
 ) *suppression.Rule {
 	idParsed, _ := shared.IDFromString(id)
 	tenantIDParsed, _ := shared.IDFromString(tenantID)
 	requestedByParsed, _ := shared.IDFromString(requestedBy)
 
 	data := suppression.RuleData{
-		ID:              idParsed,
-		TenantID:        tenantIDParsed,
-		RuleID:          ruleID.String,
-		ToolName:        toolName.String,
-		PathPattern:     pathPattern.String,
-		Name:            name,
-		Description:     description.String,
-		SuppressionType: suppression.SuppressionType(suppressionType),
-		Status:          suppression.RuleStatus(status),
-		RequestedBy:     requestedByParsed,
-		RequestedAt:     requestedAt,
-		RejectionReason: rejectionReason.String,
-		CreatedAt:       createdAt,
-		UpdatedAt:       updatedAt,
+		ID:               idParsed,
+		TenantID:         tenantIDParsed,
+		RuleID:           ruleID.String,
+		ToolName:         toolName.String,
+		PathPattern:      pathPattern.String,
+		Name:             name,
+		Description:      description.String,
+		SuppressionType:  suppression.SuppressionType(suppressionType),
+		Status:           suppression.RuleStatus(status),
+		RequestedBy:      requestedByParsed,
+		RequestedAt:      requestedAt,
+		RejectionReason:  rejectionReason.String,
+		CreatedAt:        createdAt,
+		UpdatedAt:        updatedAt,
+		RequestedByActor: requestedByActor,
 	}
 
 	if assetID.Valid {

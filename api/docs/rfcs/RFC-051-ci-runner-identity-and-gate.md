@@ -68,7 +68,7 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | Field | Meaning |
 |---|---|
 | `provider` | `github`, `gitlab`, `azure_devops`, `bitbucket`, `circleci` or `jenkins` (section 3.1) |
-| `issuer` | GitHub: `https://token.actions.githubusercontent.com` only. GitLab: `https://gitlab.com` or a self-managed instance's URL (https, no credentials, query or fragment). The others: section 3.1. Never a hosted provider's issuer under another provider |
+| `issuer` | GitHub: `https://token.actions.githubusercontent.com`, an enterprise's customized issuer `https://token.actions.githubusercontent.com/<enterprise slug>`, or a GitHub Enterprise Server `https://<host>/_services/token` (its repositories are named on that host; an internal host needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`). GitLab: `https://gitlab.com` or a self-managed instance's URL (https, no credentials, query or fragment). The others: section 3.1. Never a hosted provider's issuer under another provider |
 | `audience` | What the job asks its provider for; default `openctem:tenant:<tenant id>`, so a token minted for one organization is useless to another. Azure Pipelines: always `api://AzureADTokenExchange`. Bitbucket, CircleCI, Jenkins: must contain the tenant id |
 | `rules.owners` | GitHub organizations or users, GitLab top-level groups (exact) |
 | `rules.repositories` | `owner/name`, `owner/*` (one level), `owner/**` (any depth); the owner can never be a wildcard |
@@ -344,6 +344,22 @@ override expires (default 24 hours, at most 7 days) or is revoked. A reason of
 (`ci_gate_override.used`, with the run and the blocking count) are audited at
 high severity. Creating and every use also notify every active owner and
 administrator in-app and the `ci.break_glass` channel event.
+
+### 6.1 Who sees a run
+
+Runs, pipelines, coverage and break-glass follow the data scope of the
+repository asset. A developer sees the runs of a repository when it is in
+their scope, so the way to give a team its runs is to make the team (a group)
+an owner of the repository asset (asset ownership refreshes
+`user_accessible_assets`). Leaving the team takes the runs away. The pull
+request's check and comment are visible to everyone with access to the pull
+request, whatever their scope in the console. Someone outside the scope who
+follows the check's link sees "This run is not available to you".
+
+Later: a developer who pushed the commit (the token's `actor`, matched to a
+verified identity linked to their console account) could see that one run
+without owning the repository. This is not built. It needs the SCM identity
+linking, which does not exist yet.
 
 ## 7. Runner
 

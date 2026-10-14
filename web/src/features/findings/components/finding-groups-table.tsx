@@ -24,6 +24,7 @@ import {
 } from '../api/use-finding-groups'
 import { buildFindingsEndpoint, fetchFindings } from '../api/use-findings-api'
 import type { ApiFinding, FindingApiFilters } from '../api/finding-api.types'
+import { withoutPaging } from '../lib/list-query'
 
 /** The dimensions the Findings page groups by (the groups API's group_by). */
 export const GROUP_BY_DIMENSIONS: GroupByDimension[] = [
@@ -230,6 +231,12 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
     /** The state lens; when set, it is the status scope (no default statuses). */
     state?: 'open' | 'fixed' | 'dispositioned' | 'all'
   }
+  /**
+   * The ungrouped list's filter. When set, groups and their rows run exactly
+   * this filter (so search, priority, KEV, SLA and context filters apply), and
+   * `filters` is ignored.
+   */
+  query?: FindingApiFilters
   /** Status scope for groups and rows; defaults to the facet statuses, else the lens, else open-to-resolved. */
   statuses?: string
   columns: ColumnDef<TRow>[]
@@ -261,6 +268,7 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
 export function FindingGroupsTable<TRow extends { id: string }>({
   dimension,
   filters,
+  query: queryProp,
   statuses: statusesProp,
   columns,
   toRow,
@@ -288,12 +296,28 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   const assignedToMe = !!filters?.assignedToMe
   const branchOnly = !!filters?.branchOnly
   const savedView = filters?.view
+  // The list filter without paging; a fixed status scope (the verification
+  // queue) overrides its status and lens.
+  const query = React.useMemo(() => {
+    if (!queryProp) return undefined
+    const q = withoutPaging(queryProp)
+    if (!statusesProp) return q
+    const scoped: FindingApiFilters = {
+      ...q,
+      statuses: statusesProp.split(',') as NonNullable<FindingApiFilters['statuses']>,
+    }
+    delete scoped.state
+    delete scoped.exclude_statuses
+    return scoped
+  }, [queryProp, statusesProp])
+  const queryKey = query ? JSON.stringify(query) : ''
   const {
     data,
     error,
     isLoading,
     mutate: mutateGroups,
   } = useFindingGroups({
+    query,
     group_by: dimension,
     statuses: statuses || undefined,
     state: lens,
@@ -328,6 +352,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     filters?.assignedToMe ? 'mine' : '',
     branchOnly ? 'branch-only' : '',
     savedView ?? '',
+    queryKey,
     pagination.pageIndex,
     pagination.pageSize,
   ].join('|')
@@ -346,30 +371,32 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     async (key: string, limit: number) => {
       const groupFilter = groupRowFilter(dimension, key)
       if (!groupFilter) return { rows: [] as ApiFinding[], total: 0 }
-      const url = buildFindingsEndpoint({
-        ...(statuses && {
-          statuses: statuses.split(',') as NonNullable<FindingApiFilters['statuses']>,
-        }),
-        ...(lens && { state: lens }),
-        ...(severities && {
-          severities: severities.split(',') as NonNullable<FindingApiFilters['severities']>,
-        }),
-        ...(sources && {
-          sources: sources.split(',') as NonNullable<FindingApiFilters['sources']>,
-        }),
-        ...(assignedToMe && { assigned_to_me: true }),
-        ...(branchOnly && { branch_only: true }),
-        ...(savedView && { view: savedView }),
-        ...groupFilter,
-        page: 1,
-        per_page: limit,
-      })
+      const url = query
+        ? buildFindingsEndpoint({ ...query, ...groupFilter, page: 1, per_page: limit })
+        : buildFindingsEndpoint({
+            ...(statuses && {
+              statuses: statuses.split(',') as NonNullable<FindingApiFilters['statuses']>,
+            }),
+            ...(lens && { state: lens }),
+            ...(severities && {
+              severities: severities.split(',') as NonNullable<FindingApiFilters['severities']>,
+            }),
+            ...(sources && {
+              sources: sources.split(',') as NonNullable<FindingApiFilters['sources']>,
+            }),
+            ...(assignedToMe && { assigned_to_me: true }),
+            ...(branchOnly && { branch_only: true }),
+            ...(savedView && { view: savedView }),
+            ...groupFilter,
+            page: 1,
+            per_page: limit,
+          })
       const res = await fetchFindings(url)
       const rows = res.data ?? []
       if (rows.some((f) => !belongsToGroup(dimension, key, f))) throw new GroupFilterUnsupported()
       return { rows, total: res.total ?? rows.length }
     },
-    [dimension, statuses, lens, severities, sources, assignedToMe, branchOnly, savedView]
+    [dimension, query, statuses, lens, severities, sources, assignedToMe, branchOnly, savedView]
   )
 
   const lazy = useLazyGroupRows<ApiFinding>({

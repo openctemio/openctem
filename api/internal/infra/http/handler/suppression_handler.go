@@ -50,33 +50,36 @@ type SuppressionRuleResponse struct {
 	AssetID         *string `json:"asset_id,omitempty"`
 	Status          string  `json:"status"`
 	RequestedBy     string  `json:"requested_by"`
-	RequestedAt     string  `json:"requested_at"`
-	ApprovedBy      *string `json:"approved_by,omitempty"`
-	ApprovedAt      *string `json:"approved_at,omitempty"`
-	RejectedBy      *string `json:"rejected_by,omitempty"`
-	RejectedAt      *string `json:"rejected_at,omitempty"`
-	RejectionReason string  `json:"rejection_reason,omitempty"`
-	ExpiresAt       *string `json:"expires_at,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	// RequestedByActor names a requester that is not a user (a CI job).
+	RequestedByActor string  `json:"requested_by_actor,omitempty"`
+	RequestedAt      string  `json:"requested_at"`
+	ApprovedBy       *string `json:"approved_by,omitempty"`
+	ApprovedAt       *string `json:"approved_at,omitempty"`
+	RejectedBy       *string `json:"rejected_by,omitempty"`
+	RejectedAt       *string `json:"rejected_at,omitempty"`
+	RejectionReason  string  `json:"rejection_reason,omitempty"`
+	ExpiresAt        *string `json:"expires_at,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 // toSuppressionRuleResponse converts a domain rule to API response.
 func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 	resp := SuppressionRuleResponse{
-		ID:              r.ID().String(),
-		TenantID:        r.TenantID().String(),
-		Name:            r.Name(),
-		Description:     r.Description(),
-		SuppressionType: string(r.SuppressionType()),
-		RuleID:          r.RuleID(),
-		ToolName:        r.ToolName(),
-		PathPattern:     r.PathPattern(),
-		Status:          string(r.Status()),
-		RequestedBy:     r.RequestedBy().StringOrEmpty(),
-		RequestedAt:     r.RequestedAt().Format(time.RFC3339),
-		RejectionReason: r.RejectionReason(),
-		CreatedAt:       r.CreatedAt().Format(time.RFC3339),
+		ID:               r.ID().String(),
+		TenantID:         r.TenantID().String(),
+		Name:             r.Name(),
+		Description:      r.Description(),
+		SuppressionType:  string(r.SuppressionType()),
+		RuleID:           r.RuleID(),
+		ToolName:         r.ToolName(),
+		PathPattern:      r.PathPattern(),
+		Status:           string(r.Status()),
+		RequestedBy:      r.RequestedBy().StringOrEmpty(),
+		RequestedByActor: r.RequestedByActor(),
+		RequestedAt:      r.RequestedAt().Format(time.RFC3339),
+		RejectionReason:  r.RejectionReason(),
+		CreatedAt:        r.CreatedAt().Format(time.RFC3339),
 		// Full precision: an approval sends this back as the version it
 		// reviewed, and two edits in the same second must not look equal.
 		UpdatedAt: r.UpdatedAt().Format(time.RFC3339Nano),
