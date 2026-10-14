@@ -94,6 +94,11 @@ func TestAssetCoverage_ReconcileFollowsPolicy(t *testing.T) {
 	dead := g.asset(a, "old.cov.test", "subdomain", "", "")
 	ip := g.asset(a, "203.0.113.20", "ip_address", "", "")
 	g.rel(a, live, ip, "resolves_to")
+	// A name resolved by DNS only (records stored, no relation yet).
+	byDNS := g.asset(a, "dns.cov.test", "subdomain", "",
+		`{"dns_records": [{"name": "dns.cov.test", "type": "A", "value": "203.0.113.21"}]}`)
+	cnameOnly := g.asset(a, "alias.cov.test", "subdomain", "",
+		`{"dns_records": [{"name": "alias.cov.test", "type": "CNAME", "value": "gone.cov.test"}]}`)
 	web := g.asset(a, "203.0.113.20:443:tcp", "service", "open_port", `{"port": 443}`)
 	ssh := g.asset(a, "203.0.113.20:22:tcp", "service", "open_port", `{"port": 22}`)
 	origin := g.asset(a, "https://www.cov.test", "service", "http", "")
@@ -119,6 +124,8 @@ func TestAssetCoverage_ReconcileFollowsPolicy(t *testing.T) {
 		{web, "probe.http", "due:"},
 		{ssh, "probe.http", "not_applicable:web_port"},
 		{origin, "vuln.templates", "due:"},
+		{byDNS, "probe.http", "due:"},
+		{cnameOnly, "probe.http", "not_applicable:resolves"},
 	} {
 		if got := g.states(a, c.id)[c.cap_]; got != c.want {
 			t.Errorf("%s %s = %q, want %q", c.id, c.cap_, got, c.want)
