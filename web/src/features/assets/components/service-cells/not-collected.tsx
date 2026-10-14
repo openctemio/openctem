@@ -17,15 +17,13 @@ import { useTranslation } from '@/context/i18n-provider'
  */
 
 /** The muted `—` of a list cell with nothing known to show. */
-export function EmptyCell({
-  title = 'Not collected',
-  className,
-}: {
-  title?: string
-  className?: string
-}) {
+export function EmptyCell({ title, className }: { title?: string; className?: string }) {
+  const { t } = useTranslation()
   return (
-    <span className={cn('text-muted-foreground', className)} title={title}>
+    <span
+      className={cn('text-muted-foreground', className)}
+      title={title ?? t('assets.facts.notCollectedTitle', 'Not collected')}
+    >
       —
     </span>
   )
