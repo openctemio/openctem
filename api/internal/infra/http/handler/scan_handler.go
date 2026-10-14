@@ -160,6 +160,17 @@ type UpdateScanRequest struct {
 	TimeoutSeconds      *int    `json:"timeout_seconds" validate:"omitempty,min=0,max=86400"`
 	MaxRetries          *int    `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds *int    `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	// Targets: omitted = unchanged; given = the scan's direct targets
+	// become these plus the assets of asset_ids. They pass the checks a new
+	// scan's targets pass, as the editor (at most 1000 with asset_ids).
+	Targets *[]string `json:"targets" validate:"omitempty,max=1000"`
+	// AssetIDs are inventory assets to scan, named by the server; given =
+	// the direct targets are replaced (with targets). An id that is not the
+	// organization's or outside the editor's scope refuses the request.
+	AssetIDs []string `json:"asset_ids" validate:"omitempty,max=1000,dive,uuid"`
+	// AssetGroupIDs: omitted = unchanged; given = the scan's asset groups
+	// ([] = none; the scan must keep a target or a group).
+	AssetGroupIDs *[]string `json:"asset_group_ids" validate:"omitempty,max=100,dive,uuid"`
 }
 
 // TriggerScanRequest represents the request body for triggering a scan.
@@ -652,6 +663,10 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TimeoutSeconds:      req.TimeoutSeconds,
 		MaxRetries:          req.MaxRetries,
 		RetryBackoffSeconds: req.RetryBackoffSeconds,
+		Targets:             req.Targets,
+		AssetIDs:            req.AssetIDs,
+		AssetGroupIDs:       req.AssetGroupIDs,
+		ActorID:             middleware.GetUserID(r.Context()),
 	}
 
 	s, err := h.service.UpdateScan(h.auditCtx(r), input)
