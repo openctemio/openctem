@@ -365,6 +365,9 @@ export function issuerFor(provider: CIProvider, value: string): string | undefin
   }
 }
 
+/** The GitHub Actions issuer on github.com (the default). */
+export const GITHUB_ISSUER = 'https://token.actions.githubusercontent.com'
+
 /** The issuer of a GitLab trust configuration left empty (gitlab.com). */
 const GITLAB_COM = 'https://gitlab.com'
 
@@ -386,6 +389,8 @@ export function findCoveringTrust(
     issuer = issuerFor(provider, issuerValue) ?? (provider === 'gitlab' ? GITLAB_COM : undefined)
     if (!issuer) return undefined
   }
+  // The wizard connects github.com; an enterprise or server trust is another issuer.
+  if (provider === 'github') issuer = GITHUB_ISSUER
   const norm = (v: string) => v.trim().toLowerCase().replace(/\/+$/, '')
   const want = scope.map(norm)
   return configs.find((c) => {
@@ -408,6 +413,10 @@ export function organizationFromIssuer(provider: CIProvider, issuer: string | un
       return issuer.startsWith(CIRCLECI_ISSUER) ? issuer.slice(CIRCLECI_ISSUER.length) : ''
     case 'bitbucket':
       return BITBUCKET_ISSUER.exec(issuer)?.[1] ?? ''
+    case 'github':
+      // github.com is the default; only an enterprise or GitHub Enterprise
+      // Server issuer is shown.
+      return issuer === GITHUB_ISSUER ? '' : issuer
     default:
       return issuer
   }
