@@ -91,6 +91,9 @@ type FindingProcessor struct {
 	// (tenant-scoped). Nil-safe: when unwired, findings are never suppressed at
 	// ingest (prior behavior).
 	suppressionChecker SuppressionChecker
+	// correlations, when wired, re-derives cross-rule correlations of the
+	// batch's assets (correlation_findings.go).
+	correlations CorrelationStore
 
 	// suppressionModules, when wired, turns ingest suppression off for a
 	// tenant whose suppressions module is disabled.
@@ -835,6 +838,15 @@ func (p *FindingProcessor) processBatch(
 			}
 		}
 		p.evidence.StoreDetections(ctx, tenantID, dets)
+	}
+
+	// Step 10: cross-rule correlation of the batch's DAST findings.
+	if p.correlations != nil {
+		items := make([]correlationItem, len(validFindings))
+		for i := range validFindings {
+			items[i] = correlationItem{fingerprint: validFindings[i].fingerprint, assetID: validFindings[i].assetID, finding: &validFindings[i].finding}
+		}
+		p.correlateFindings(ctx, tenantID, items, fingerprints)
 	}
 
 	return nil

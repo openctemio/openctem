@@ -92,6 +92,7 @@ exposures
 finding_activities
 finding_branch_occurrences
 finding_comments
+finding_correlations
 finding_decision_suspensions
 finding_definitions
 finding_evidence
@@ -99,6 +100,7 @@ finding_evidence_secrets
 finding_fingerprints
 finding_group_assignments
 finding_imports
+finding_injection_points
 finding_rekey_runs
 finding_remediation_keys
 finding_retest_cursors
