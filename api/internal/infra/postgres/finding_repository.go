@@ -2033,6 +2033,17 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 // resolution_method, so a reopened or dispositioned finding never keeps a
 // stale "fixed" claim.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
+	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, method, nil)
+}
+
+// AcceptUntil moves one finding to accepted with the end of its acceptance in
+// the same statement. Leaving accepted later clears the end (database trigger
+// trg_findings_clear_acceptance_expiry).
+func (r *FindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, until time.Time, acceptedBy *shared.ID) error {
+	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy, "", &until)
+}
+
+func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod, acceptanceEnd *time.Time) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -2058,6 +2069,10 @@ func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shar
 		resolvedClause = ", resolved_at = NOW()"
 	} else {
 		resolvedClause = ", resolved_at = NULL"
+	}
+	if acceptanceEnd != nil {
+		args = append(args, *acceptanceEnd)
+		resolvedClause += fmt.Sprintf(", acceptance_expires_at = $%d", len(args))
 	}
 
 	// Security: Include tenant_id in WHERE clause
