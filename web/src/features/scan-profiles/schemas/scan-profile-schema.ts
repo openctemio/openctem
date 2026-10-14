@@ -109,23 +109,18 @@ export const SEVERITY_OPTIONS = [
   { value: 'critical', label: 'Critical' },
 ] as const
 
+// Tool choices of a scan profile. The description is an i18n key
+// (scans.toolOption.<tool>).
 export const TOOL_OPTIONS = [
-  { value: 'semgrep', label: 'Semgrep', description: 'Static application security testing (SAST)' },
-  {
-    value: 'trivy',
-    label: 'Trivy',
-    description: 'Container and dependency vulnerability scanning',
-  },
-  { value: 'nuclei', label: 'Nuclei', description: 'Web vulnerability scanner' },
-  {
-    value: 'betterleaks',
-    label: 'Betterleaks',
-    description: 'Secret detection in code, git history and archives (replaces Gitleaks)',
-  },
-  { value: 'checkov', label: 'Checkov', description: 'Infrastructure as code security scanner' },
-  { value: 'tfsec', label: 'Tfsec', description: 'Terraform security scanner' },
-  { value: 'grype', label: 'Grype', description: 'Software composition analysis (SCA)' },
-  { value: 'syft', label: 'Syft', description: 'SBOM generation and analysis' },
+  { value: 'opengrep', label: 'Opengrep', descriptionKey: 'scans.toolOption.opengrep' },
+  { value: 'semgrep', label: 'Semgrep', descriptionKey: 'scans.toolOption.semgrep' },
+  { value: 'trivy', label: 'Trivy', descriptionKey: 'scans.toolOption.trivy' },
+  { value: 'nuclei', label: 'Nuclei', descriptionKey: 'scans.toolOption.nuclei' },
+  { value: 'betterleaks', label: 'Betterleaks', descriptionKey: 'scans.toolOption.betterleaks' },
+  { value: 'checkov', label: 'Checkov', descriptionKey: 'scans.toolOption.checkov' },
+  { value: 'tfsec', label: 'Tfsec', descriptionKey: 'scans.toolOption.tfsec' },
+  { value: 'grype', label: 'Grype', descriptionKey: 'scans.toolOption.grype' },
+  { value: 'syft', label: 'Syft', descriptionKey: 'scans.toolOption.syft' },
 ] as const
 
 // Default Quality Gate configuration
