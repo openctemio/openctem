@@ -24,6 +24,10 @@
 //	                                   (a method the producer stopped sending;
 //	                                   the listed fixed-path templates per
 //	                                   origin); dry run unless -apply
+//	refingerprint -correlate [-apply]  one-time cross-rule correlation of
+//	                                   existing DAST findings (injection points
+//	                                   from stored evidence); dry run reports
+//	                                   "would link N" unless -apply
 //
 // Merges always go through the finding merge (earliest-created survives, the
 // other is kept as a tombstone); nothing is deleted.
@@ -59,6 +63,7 @@ func main() {
 	asJSON := flag.Bool("json", false, "print reports as JSON")
 	timeout := flag.Duration("timeout", 2*time.Hour, "overall time limit")
 	dastRepair := flag.Bool("dast-repair", false, "repair forked DAST findings instead of re-keying older versions")
+	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules (research/134 section 12)")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
@@ -86,6 +91,9 @@ func main() {
 	store := postgres.NewFindingRekeyRepository(&postgres.DB{DB: sqlDB})
 	svc := refingerprint.NewService(store)
 
+	if *correlate {
+		os.Exit(runCorrelate(ctx, sqlDB, *tenantFlag, *apply, *asJSON))
+	}
 	if *dastRepair {
 		os.Exit(runDASTRepair(ctx, sqlDB, store, *tenantFlag, vulnerability.ParseFoldRules(*foldRules), *apply, *asJSON))
 	}
@@ -237,4 +245,48 @@ func dastTenants(ctx context.Context, db *sql.DB) ([]shared.ID, error) {
 		}
 	}
 	return out, rows.Err()
+}
+
+// runCorrelate backfills cross-rule correlation for one tenant or every
+// tenant that has DAST findings.
+func runCorrelate(ctx context.Context, db *sql.DB, tenantFlag string, apply, asJSON bool) int {
+	var tenants []shared.ID
+	if tenantFlag != "" {
+		id, err := shared.IDFromString(tenantFlag)
+		if err != nil {
+			fail(2, "-tenant: not an id")
+		}
+		tenants = []shared.ID{id}
+	} else {
+		var err error
+		if tenants, err = dastTenants(ctx, db); err != nil {
+			fail(2, err.Error())
+		}
+	}
+	repo := postgres.NewFindingCorrelationRepository(&postgres.DB{DB: db})
+	code := 0
+	reports := make([]*postgres.CorrelationBackfill, 0, len(tenants))
+	for _, t := range tenants {
+		rep, err := repo.Backfill(ctx, t, apply)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "correlate: tenant %s: %v\n", t, err)
+			code = 1
+			continue
+		}
+		reports = append(reports, rep)
+		if !asJSON {
+			mode := "dry run"
+			if rep.Applied {
+				mode = "applied"
+			}
+			fmt.Printf("tenant %s (%s): injection points %d on %d asset(s); link %d, suggest %d, release %d\n",
+				rep.TenantID, mode, rep.Points, rep.Assets, rep.Linked, rep.Suggested, rep.Released)
+		}
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(reports)
+	}
+	return code
 }

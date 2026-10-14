@@ -273,6 +273,12 @@ func registerVulnerabilityRoutes(
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
 		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
+		// Cross-rule correlation (research/134 section 12): the detections of
+		// one issue; un-duplicating a correlated detection and confirming a
+		// suggestion are triage decisions.
+		r.GET("/{id}/detections", h.GetFindingDetections, middleware.Require(permission.FindingsRead))
+		r.POST("/{id}/correlation/release", h.ReleaseFindingCorrelation, middleware.Require(permission.FindingsTriage))
+		r.POST("/{id}/correlation/confirm", h.ConfirmFindingCorrelation, middleware.Require(permission.FindingsTriage))
 		// Verification is a segregation-of-duties control: moving a finding to
 		// resolved must require FindingsVerify (security/scanner), NOT the
 		// broader FindingsWrite that a developer role holds — otherwise a member

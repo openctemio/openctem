@@ -185,6 +185,8 @@ type Repositories struct {
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
+	// FindingCorrelation stores cross-rule finding correlations.
+	FindingCorrelation *postgres.FindingCorrelationRepository
 
 	// Access Control
 	Group *postgres.GroupRepository
@@ -477,7 +479,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
 
 		// Suppressions
-		Suppression: postgres.NewSuppressionRepository(db),
+		Suppression:        postgres.NewSuppressionRepository(db),
+		FindingCorrelation: postgres.NewFindingCorrelationRepository(db),
 
 		// Access Control
 		Group:            postgres.NewGroupRepository(db),
