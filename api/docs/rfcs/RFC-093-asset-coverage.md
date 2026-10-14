@@ -101,10 +101,11 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 
 | Step | Change | Status |
 |---|---|---|
-| P0-1 | HTTP probe results create web origin assets | PR |
-| P0-2 | Seed targets of a stage plan name their asset | PR |
-| P0-3 | Coverage policy in the registry and this RFC | this PR |
-| P0-4 | `asset_coverage` ledger; replaces two half-ledgers | planned |
+| P0-1 | HTTP probe results create web origin assets | #2127 |
+| P0-2 | Seed targets of a stage plan name their asset | #2128 |
+| P0-3 | Coverage policy in the registry and this RFC | #2129 |
+| P0-4 | `asset_coverage` ledger; replaces two half-ledgers | #2130 |
+| P0-5a | The ledger follows the policy (reconcile loop, preconditions) and the explanation endpoint `GET /assets/{id}/coverage` | PR |
 | P0-5 | Due marking at ingest, planner, gap detectors, explanation endpoint | planned |
 | P0-6 | Tenant setting for automatic coverage (default on; Strict off), audited | planned |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |

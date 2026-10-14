@@ -111,6 +111,7 @@ type Row struct {
 	LastRunID     *shared.ID
 	FailStreak    int
 	ChangeToken   int64
+	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
 
