@@ -305,7 +305,18 @@ payload comes from one builder, `scan.StepCommandPayload`.
   target 1, and a target heavier than the budget gets a chunk of its own.
   The target gate cuts every range into pieces of at most /24 (IPv6 /120),
   so a /16 port scan is 64 chunks of four /24s that every eligible sensor
-  shares. A one-target tool keeps one command per step. If a later
+  shares. Chunks are cut from whole hosts (`host_chunks.go`,
+  `politeness.GroupKeys`): every target of one host is in one chunk. One host
+  is a name with its URLs and services, an address with its `address:port`
+  forms (a port never makes a separate host), a range with the addresses of
+  its buckets, and a name with the addresses the inventory says it resolves
+  to (`resolves_to`, read for the step's names when it is cut). So two chunks
+  of a step never hold the same host and never wait for each other. The step
+  gets as many chunks as its size and budget need, each filled to an even
+  share in the order the hosts appear (450 targets of size 200 are three
+  chunks of 150). A host larger than a chunk gets chunks of its own, which
+  run one after the other as they would in one chunk. A one-target tool keeps
+  one command per step. If a later
   chunk cannot be created, the ones already created are canceled.
   Where the chunks went: `GET /scan-runs/{id}/stages` gives each stage
   its chunk counts by state and the share of each tenant sensor that took
