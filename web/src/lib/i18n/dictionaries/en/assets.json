@@ -173,5 +173,11 @@
   "assets.views.outOfScope": "Out of scope",
   "assets.views.newSinceVisit": "New since last visit",
   "assets.triage.defaultHint": "Showing your inventory, including what discovery found (passive only until a scope entry covers it). Names awaiting review and names marked not yours are hidden.",
-  "assets.triage.showAll": "Show all"
+  "assets.triage.showAll": "Show all",
+  "assets.scanning.title": "Scope and scanning",
+  "assets.scanning.details": "Why",
+  "assets.scanning.allowed": "Scans can reach this asset.",
+  "assets.scanning.scanNow": "Scan now",
+  "assets.scanning.allowWildcard": "Confirm and allow scanning",
+  "assets.scanning.confirmed": "Confirmed as yours; scans may reach it now"
 }

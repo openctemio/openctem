@@ -173,5 +173,11 @@
   "assets.views.outOfScope": "Đã loại khỏi phạm vi",
   "assets.views.newSinceVisit": "Mới từ lần truy cập trước",
   "assets.triage.defaultHint": "Đang hiển thị kho tài sản của bạn, gồm cả những gì quá trình phát hiện tìm thấy (chỉ thụ động cho đến khi có mục phạm vi bao phủ). Các tên đang chờ xem xét và các tên bị đánh dấu không phải của bạn được ẩn.",
-  "assets.triage.showAll": "Hiển thị tất cả"
+  "assets.triage.showAll": "Hiển thị tất cả",
+  "assets.scanning.title": "Phạm vi và quét",
+  "assets.scanning.details": "Vì sao",
+  "assets.scanning.allowed": "Có thể quét tài sản này.",
+  "assets.scanning.scanNow": "Quét ngay",
+  "assets.scanning.allowWildcard": "Xác nhận và cho phép quét",
+  "assets.scanning.confirmed": "Đã xác nhận là của bạn; giờ có thể quét"
 }
