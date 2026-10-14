@@ -46,11 +46,15 @@ const RELEASED_PREFIX = 'released by sensor'
  * it opens (window_hold, RFC-067). Any other message is the task's error.
  */
 export function taskStatusNote(
-  task: Pick<RunTask, 'status' | 'error_message' | 'window_hold'>,
+  task: Pick<RunTask, 'status' | 'error_message' | 'window_hold' | 'waiting_on_hosts'>,
   t: Translate = enTranslate
 ): { kind: 'waiting' | 'error'; text: string } | null {
   if (task.status === 'queued' && task.window_hold) {
     return { kind: 'waiting', text: holdText(task.window_hold) }
+  }
+  // Another task of the organization is scanning its hosts (research/130).
+  if (task.status === 'queued' && task.waiting_on_hosts) {
+    return { kind: 'waiting', text: t('scans.tasks.waitingForHosts') }
   }
   const msg = task.error_message?.trim()
   if (!msg) return null
@@ -59,6 +63,9 @@ export function taskStatusNote(
       .slice(RELEASED_PREFIX.length)
       .replace(/^[:\s]+/, '')
       .trim()
+    if (reason === 'hosts_busy') {
+      return { kind: 'waiting', text: t('scans.tasks.handedBackHostsBusy') }
+    }
     return {
       kind: 'waiting',
       text: reason

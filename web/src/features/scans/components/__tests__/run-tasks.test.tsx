@@ -119,6 +119,21 @@ describe('taskStatusNote', () => {
     })
   })
 
+  it('says a task waits for its hosts, and names the sensor-side hosts-busy hand-back', () => {
+    expect(taskStatusNote({ status: 'queued', waiting_on_hosts: true })).toEqual({
+      kind: 'waiting',
+      text: 'Waiting for its hosts: another task is scanning them',
+    })
+    expect(
+      taskStatusNote({ status: 'queued', error_message: 'released by sensor: hosts_busy' })
+    ).toEqual({
+      kind: 'waiting',
+      text: 'Handed back: its sensor is still scanning one of its hosts',
+    })
+    // Only a queued task waits.
+    expect(taskStatusNote({ status: 'running', waiting_on_hosts: true })).toBeNull()
+  })
+
   it('keeps real errors as errors and says nothing without a message', () => {
     expect(taskStatusNote({ status: 'failed', error_message: 'scanner exited 2' })).toEqual({
       kind: 'error',
