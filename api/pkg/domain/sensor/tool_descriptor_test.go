@@ -97,3 +97,28 @@ func TestManifestKeepsTheDescriptor(t *testing.T) {
 		t.Fatal("unknown tool")
 	}
 }
+
+// Only tools with a valid contract whose descriptor hashes to its digest are
+// declared; each name once, names normalized.
+func TestManifestDeclaredTools(t *testing.T) {
+	good := descriptorContract(goodDescriptor)
+	good.Descriptor = json.RawMessage(goodDescriptor)
+	swapped := descriptorContract(goodDescriptor)
+	swapped.Descriptor = json.RawMessage(`{"apiVersion":"openctem.io/tool/v1","version":"2.0.0","name":"swapped"}`)
+	noDescriptor := descriptorContract(goodDescriptor)
+	m := Manifest{Schema: ManifestSchema, Tools: []ManifestTool{
+		{Name: " Acme-Ports ", Installed: true, Contract: good},
+		{Name: "acme-ports", Installed: true, Contract: good},
+		{Name: "swapped", Installed: true, Contract: swapped},
+		{Name: "bare", Installed: true, Contract: noDescriptor},
+		{Name: "nocontract", Installed: true},
+		{Name: "Bad Name!", Installed: true, Contract: good},
+	}}
+	got := m.DeclaredTools()
+	if len(got) != 1 || got[0].Name != "acme-ports" || string(got[0].Contract.Descriptor) != goodDescriptor {
+		t.Fatalf("declared = %+v", got)
+	}
+	if got[0].Contract.Implements[0] != "scan.ports@1" {
+		t.Fatalf("implements = %v", got[0].Contract.Implements)
+	}
+}

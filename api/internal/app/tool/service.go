@@ -735,8 +735,8 @@ func (s *Service) UpdateCustomTool(ctx context.Context, input UpdateCustomToolIn
 		return nil, err
 	}
 
-	// Verify ownership
-	if err := t.CanManage(tenantID); err != nil {
+	// Verify ownership; a tool a sensor declares is edited on the sensor.
+	if err := t.CanEdit(tenantID); err != nil {
 		return nil, err
 	}
 
@@ -798,8 +798,9 @@ func (s *Service) DeleteCustomTool(ctx context.Context, tenantID, toolID string)
 		return err
 	}
 
-	// Verify ownership
-	if err := t.CanManage(tid); err != nil {
+	// Verify ownership; a tool a sensor declares is not deleted (the next
+	// manifest would bring it back): deactivate it instead.
+	if err := t.CanEdit(tid); err != nil {
 		return err
 	}
 

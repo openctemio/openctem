@@ -681,7 +681,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 		id               string
 		tenantID         sql.NullString
 		categoryID       sql.NullString
-		installMethod    string
+		installMethod    sql.NullString
 		capabilities     pq.StringArray
 		supportedTargets pq.StringArray
 		outputFormats    pq.StringArray
@@ -760,7 +760,7 @@ func (r *ToolRepository) scanTool(row *sql.Row) (*tool.Tool, error) {
 		catID, _ := shared.IDFromString(categoryID.String)
 		t.CategoryID = &catID
 	}
-	t.InstallMethod = tool.InstallMethod(installMethod)
+	t.InstallMethod = tool.InstallMethod(installMethod.String)
 	t.Capabilities = capabilities
 	t.SupportedTargets = supportedTargets
 	t.OutputFormats = outputFormats
@@ -809,7 +809,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 		id               string
 		tenantID         sql.NullString
 		categoryID       sql.NullString
-		installMethod    string
+		installMethod    sql.NullString
 		capabilities     pq.StringArray
 		supportedTargets pq.StringArray
 		outputFormats    pq.StringArray
@@ -885,7 +885,7 @@ func (r *ToolRepository) scanToolFromRows(rows *sql.Rows) (*tool.Tool, error) {
 		catID, _ := shared.IDFromString(categoryID.String)
 		t.CategoryID = &catID
 	}
-	t.InstallMethod = tool.InstallMethod(installMethod)
+	t.InstallMethod = tool.InstallMethod(installMethod.String)
 	t.Capabilities = capabilities
 	t.SupportedTargets = supportedTargets
 	t.OutputFormats = outputFormats
@@ -981,5 +981,77 @@ func (r *ToolRepository) DeleteTenantTool(ctx context.Context, tenantID, id shar
 		return shared.ErrNotFound
 	}
 
+	return nil
+}
+
+// CreateDeclared inserts a tool a sensor of the organization declares
+// (tool.NewDeclaredTool). It inserts nothing, and reports false, when the
+// platform has a tool of that name (a declared tool never shadows one), when
+// the organization already has a tool of that name, or when it holds
+// tool.MaxDeclaredToolsPerTenant declared tools.
+func (r *ToolRepository) CreateDeclared(ctx context.Context, t *tool.Tool) (bool, error) {
+	if t == nil || t.TenantID == nil || !t.IsDeclared() {
+		return false, fmt.Errorf("%w: not a declared tool", shared.ErrValidation)
+	}
+	configSchema, err := json.Marshal(t.ConfigSchema)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal config_schema: %w", err)
+	}
+	metadata, err := json.Marshal(t.Metadata)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	const query = `
+		INSERT INTO tools (
+			id, tenant_id, name, display_name, description, current_version,
+			config_schema, default_config, capabilities, supported_targets, output_formats,
+			is_active, is_builtin, tags, metadata, created_at, updated_at
+		)
+		SELECT $1::uuid, $2::uuid, $3::text, $4::text, $5::text, NULLIF($6::text, ''), $7::jsonb, '{}'::jsonb,
+		       $8::text[], $9::text[], '{}'::text[], TRUE, FALSE, '{}'::text[], $10::jsonb, $11::timestamptz, $11::timestamptz
+		WHERE NOT EXISTS (SELECT 1 FROM tools WHERE tenant_id IS NULL AND name = $3::text)
+		  AND (SELECT COUNT(*) FROM tools WHERE tenant_id = $2::uuid AND metadata->>'origin' = $12::text) < $13::int
+		ON CONFLICT (tenant_id, name) DO NOTHING`
+	res, err := r.db.ExecContext(ctx, query,
+		t.ID.String(), t.TenantID.String(), t.Name, t.DisplayName, t.Description, t.CurrentVersion,
+		configSchema, pq.Array(t.Capabilities), pq.Array(t.SupportedTargets), metadata, t.CreatedAt,
+		tool.OriginSensorManifest, tool.MaxDeclaredToolsPerTenant)
+	if err != nil {
+		return false, fmt.Errorf("failed to create declared tool: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to create declared tool: %w", err)
+	}
+	return n == 1, nil
+}
+
+// UpdateDeclared writes a refreshed declaration onto a declared row of the
+// organization. A row a member created (no sensor_manifest origin) is never
+// written; the row's active flag and the organization's settings are
+// untouched.
+func (r *ToolRepository) UpdateDeclared(ctx context.Context, t *tool.Tool) error {
+	if t == nil || t.TenantID == nil || !t.IsDeclared() {
+		return fmt.Errorf("%w: not a declared tool", shared.ErrValidation)
+	}
+	configSchema, err := json.Marshal(t.ConfigSchema)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config_schema: %w", err)
+	}
+	metadata, err := json.Marshal(t.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	const query = `
+		UPDATE tools SET display_name = $3, description = $4, current_version = NULLIF($5, ''),
+			config_schema = $6, capabilities = $7, supported_targets = $8, metadata = $9, updated_at = $10
+		WHERE id = $1 AND tenant_id = $2 AND metadata->>'origin' = $11`
+	_, err = r.db.ExecContext(ctx, query,
+		t.ID.String(), t.TenantID.String(), t.DisplayName, t.Description, t.CurrentVersion,
+		configSchema, pq.Array(t.Capabilities), pq.Array(t.SupportedTargets), metadata, t.UpdatedAt,
+		tool.OriginSensorManifest)
+	if err != nil {
+		return fmt.Errorf("failed to update declared tool: %w", err)
+	}
 	return nil
 }
