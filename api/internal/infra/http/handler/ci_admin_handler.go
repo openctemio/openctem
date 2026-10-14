@@ -47,6 +47,7 @@ type CIAdminHandler struct {
 	pipelines CIPipelineService
 	coverage  CICoverageService
 	settings  CISettingsService
+	refusals  CIRefusalService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
 }

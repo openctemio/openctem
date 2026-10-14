@@ -220,3 +220,10 @@ func (s *Service) RetirePipeline(ctx context.Context, tenantID, id shared.ID, re
 		WithSeverity(auditdom.SeverityHigh))
 	return p, closed, nil
 }
+
+// RecentRefusals lists the latest refused CI token exchanges of the tenant
+// (the rule codes say why), so an administrator setting up a pipeline sees
+// why it was refused.
+func (s *Service) RecentRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]cirun.TokenRefusal, error) {
+	return s.repo.RecentTokenRefusals(ctx, tenantID, limit)
+}
