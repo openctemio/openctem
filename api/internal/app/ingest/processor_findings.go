@@ -767,7 +767,7 @@ func (p *FindingProcessor) processBatch(
 	// without a trace leaves the stored one alone. Best-effort.
 	traces := make([]vulnerability.FindingTrace, 0)
 	for i := range validFindings {
-		if t, ok := findingTrace(validFindings[i].fingerprint, validFindings[i].finding.DataFlow); ok {
+		if t, ok := findingTrace(validFindings[i].fingerprint, traceCommit(report, &validFindings[i].finding), validFindings[i].finding.DataFlow); ok {
 			traces = append(traces, t)
 		}
 	}
@@ -2096,11 +2096,23 @@ func (p *FindingProcessor) persistDataFlows(ctx context.Context, tenantID shared
 
 // findingTrace is the stored form of a report finding's data flow; ok is
 // false when it has none.
-func findingTrace(fingerprint string, df *ctis.DataFlow) (vulnerability.FindingTrace, bool) {
+func findingTrace(fingerprint, commit string, df *ctis.DataFlow) (vulnerability.FindingTrace, bool) {
 	if df == nil {
 		return vulnerability.FindingTrace{}, false
 	}
-	return vulnerability.NewFindingTrace(fingerprint, []vulnerability.DataFlow{mapCTISDataFlowToDomain(df)})
+	return vulnerability.NewFindingTrace(fingerprint, commit, []vulnerability.DataFlow{mapCTISDataFlowToDomain(df)})
+}
+
+// traceCommit is the commit a finding's trace was reported for: the
+// finding's own location commit, else the report's branch commit.
+func traceCommit(report *ctis.Report, f *ctis.Finding) string {
+	if f.Location != nil && f.Location.CommitSHA != "" {
+		return f.Location.CommitSHA
+	}
+	if report != nil && report.Metadata.Branch != nil {
+		return report.Metadata.Branch.CommitSHA
+	}
+	return ""
 }
 
 // isValidFingerprint checks if a fingerprint is a valid hash-like string.

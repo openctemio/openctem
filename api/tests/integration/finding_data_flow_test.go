@@ -123,8 +123,11 @@ func TestFindingDataFlows_ReplacedOnlyWhenChanged(t *testing.T) {
 		t.Fatalf("an unchanged trace was rewritten: %+v -> %+v", first, again)
 	}
 
-	// A changed path: the trace is replaced, still one flow.
-	ingestAs(tn, flowReport(repo, flowOf("src/api/orders.js", 4)))
+	// A changed path: the trace is replaced, still one flow, with the
+	// commit it was reported for.
+	changedRep := flowReport(repo, flowOf("src/api/orders.js", 4))
+	changedRep.Findings[0].Location.CommitSHA = "0123456789abcdef0123456789abcdef01234567"
+	ingestAs(tn, changedRep)
 	changed := storedFlowOf(t, r, tn.tenant)
 	if changed.flowID == first.flowID || changed.sourcePath != "src/api/orders.js" || changed.hash == first.hash || changed.steps != 5 {
 		t.Fatalf("a changed trace was not replaced: %+v -> %+v", first, changed)
@@ -136,6 +139,12 @@ func TestFindingDataFlows_ReplacedOnlyWhenChanged(t *testing.T) {
 	_ = r.db.QueryRow(`SELECT count(*) FROM finding_flow_locations WHERE data_flow_id = $1`, first.flowID).Scan(&orphans)
 	if orphans != 0 {
 		t.Errorf("%d locations of the replaced flow remain", orphans)
+	}
+
+	var commit string
+	_ = r.db.QueryRow(`SELECT coalesce(commit_sha, '') FROM finding_data_flows WHERE id = $1`, changed.flowID).Scan(&commit)
+	if commit != "0123456789abcdef0123456789abcdef01234567" {
+		t.Errorf("trace commit %q", commit)
 	}
 
 	// A report without a trace keeps the stored one.
@@ -167,7 +176,7 @@ func TestFindingDataFlows_ReplacedOnlyWhenChanged(t *testing.T) {
 	ctx := context.Background()
 	// Repository, cross-tenant write: this tenant's fingerprint sent as
 	// another tenant resolves no finding and changes nothing.
-	trace, _ := vulnerability.NewFindingTrace(before.fingerprint, []vulnerability.DataFlow{{Steps: []vulnerability.DataFlowStep{{LocationType: "sink", Location: &vulnerability.FindingLocation{Path: "evil.js"}}}}})
+	trace, _ := vulnerability.NewFindingTrace(before.fingerprint, "", []vulnerability.DataFlow{{Steps: []vulnerability.DataFlowStep{{LocationType: "sink", Location: &vulnerability.FindingLocation{Path: "evil.js"}}}}})
 	stranger := shared.NewID()
 	if n, err := flows.ReplaceDataFlows(ctx, stranger, []vulnerability.FindingTrace{trace}); err != nil || n != 0 {
 		t.Fatalf("a write as another tenant replaced %d (%v)", n, err)

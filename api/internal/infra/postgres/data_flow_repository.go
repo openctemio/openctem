@@ -32,7 +32,7 @@ var _ vulnerability.DataFlowRepository = (*DataFlowRepository)(nil)
 // and their locations, in two queries.
 func (r *DataFlowRepository) GetDataFlowsWithLocations(ctx context.Context, tenantID, findingID shared.ID) ([]*vulnerability.FindingDataFlow, map[string][]*vulnerability.FindingFlowLocation, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT df.id, df.finding_id, df.flow_index, df.message, df.importance, df.created_at
+		SELECT df.id, df.finding_id, df.flow_index, df.message, df.importance, df.created_at, df.commit_sha
 		FROM finding_data_flows df
 		JOIN findings f ON f.id = df.finding_id
 		WHERE df.finding_id = $1 AND f.tenant_id = $2
@@ -187,9 +187,9 @@ func (r *DataFlowRepository) replaceOne(ctx context.Context, tenantID shared.ID,
 	for _, f := range t.Flows {
 		flowID := shared.NewID().String()
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO finding_data_flows (id, finding_id, flow_index, message, importance, trace_hash)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			flowID, findingID, f.Index, nullString(f.Message), f.Importance, t.Hash); err != nil {
+			INSERT INTO finding_data_flows (id, finding_id, flow_index, message, importance, trace_hash, commit_sha)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			flowID, findingID, f.Index, nullString(f.Message), f.Importance, t.Hash, nullString(t.CommitSHA)); err != nil {
 			return false, fmt.Errorf("failed to insert data flow: %w", err)
 		}
 		for _, s := range f.Steps {
@@ -281,8 +281,9 @@ func (r *DataFlowRepository) scanDataFlow(scan func(dest ...any) error) (*vulner
 		message      sql.NullString
 		importance   sql.NullString
 		createdAt    sql.NullTime
+		commitSHA    sql.NullString
 	)
-	if err := scan(&idStr, &findingIDStr, &flowIndex, &message, &importance, &createdAt); err != nil {
+	if err := scan(&idStr, &findingIDStr, &flowIndex, &message, &importance, &createdAt, &commitSHA); err != nil {
 		return nil, err
 	}
 	id, err := shared.IDFromString(idStr)
@@ -299,6 +300,7 @@ func (r *DataFlowRepository) scanDataFlow(scan func(dest ...any) error) (*vulner
 		FlowIndex:  flowIndex,
 		Message:    nullStringValue(message),
 		Importance: nullStringValue(importance),
+		CommitSHA:  nullStringValue(commitSHA),
 	}
 	if createdAt.Valid {
 		data.CreatedAt = createdAt.Time
