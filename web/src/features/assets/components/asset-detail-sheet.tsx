@@ -37,6 +37,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
+import { AssetScopeChip } from './asset-scope-chip'
 import { SurfaceFactsDetail, cellsForType } from './service-cells'
 import {
   RiskSummarySection,
@@ -250,8 +251,8 @@ export function AssetDetailSheet<T extends Asset>({
       .join(' · ')
 
   const tabs: DetailTab[] = [
-    { value: 'overview', label: 'Overview' },
-    ...(showOwnersTab ? [{ value: 'owners', label: 'Owners' }] : []),
+    { value: 'overview', label: t('assets.sheet.tab.overview', 'Overview') },
+    ...(showOwnersTab ? [{ value: 'owners', label: t('assets.sheet.tab.owners', 'Owners') }] : []),
     { value: 'timeline', label: t('assetTimeline.tab', 'Timeline') },
     ...(extraTabs ?? []).map((t) => ({ value: t.value, label: t.label })),
     ...(relationshipsOn
@@ -260,7 +261,7 @@ export function AssetDetailSheet<T extends Asset>({
             value: 'relationships',
             label: (
               <>
-                Relations
+                {t('assets.sheet.tab.relations', 'Relations')}
                 {relationships.length > 0 && <TabsCount value={relationships.length} />}
               </>
             ),
@@ -268,38 +269,40 @@ export function AssetDetailSheet<T extends Asset>({
         ]
       : []),
     // What the asset runs and the CVEs its versions fall in (RFC-066).
-    { value: 'software', label: 'Software' },
+    { value: 'software', label: t('assets.sheet.tab.software', 'Software') },
     ...(showFindingsTab
       ? [
           {
             value: 'findings',
             label: (
               <>
-                Findings
+                {t('assets.sheet.tab.findings', 'Findings')}
                 {asset.findingCount > 0 && <TabsCount value={asset.findingCount} />}
               </>
             ),
           },
         ]
       : []),
-    ...(showDetailsTab ? [{ value: 'details', label: 'Details' }] : []),
+    ...(showDetailsTab
+      ? [{ value: 'details', label: t('assets.sheet.tab.details', 'Details') }]
+      : []),
   ]
   const tab = tabs.some((t) => t.value === activeTab) ? activeTab : 'overview'
 
   // Security and lifecycle actions go in the ⋯ menu (style contract §8).
   const menu: DetailMenuItem[] = [
     {
-      label: 'Copy ID',
+      label: t('assets.sheet.copyId', 'Copy ID'),
       icon: Hash,
       onSelect: () => {
         copyToClipboard(asset.id)
-        toast.success('Asset ID copied')
+        toast.success(t('assets.sheet.idCopied', 'Asset ID copied'))
       },
     },
   ]
   if (canDelete) {
     menu.push({
-      label: `Delete ${assetTypeName.toLowerCase()}`,
+      label: t('assets.sheet.delete', 'Delete {type}', { type: assetTypeName.toLowerCase() }),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -322,14 +325,17 @@ export function AssetDetailSheet<T extends Asset>({
                   status={asset.status}
                   daysSinceLastSeen={daysSinceLastSeen(asset.lastSeen)}
                 />
-                {/* Classification and the CTEM scoping signals (control-plane
-                    flag, CIA business-impact ratings), api #467. */}
+                {/* May scans reach it now: the scope gate's own answer. */}
+                <AssetScopeChip asset={asset} />
+                {/* Named values, so "Internal" (network zone) never reads
+                    as the opposite of "Public" (exposure). */}
                 <ClassificationBadges
                   scope={asset.scope}
                   exposure={asset.exposure}
                   criticality={asset.criticality}
                   size="md"
                   showTooltips
+                  labelled
                   className="flex-wrap"
                 />
                 {isControlPlane && <ControlPlaneBadge size="md" />}
@@ -348,7 +354,7 @@ export function AssetDetailSheet<T extends Asset>({
                 {canEdit && (
                   <Button size="sm" onClick={onEdit}>
                     <Pencil className="h-4 w-4" />
-                    Edit
+                    {t('assets.sheet.edit', 'Edit')}
                   </Button>
                 )}
                 {quickActions}
@@ -383,7 +389,7 @@ export function AssetDetailSheet<T extends Asset>({
             />
 
             {asset.description && (
-              <DetailSection title="Description" icon={FileText}>
+              <DetailSection title={t('assets.sheet.description', 'Description')} icon={FileText}>
                 <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
                   {asset.description}
                 </p>

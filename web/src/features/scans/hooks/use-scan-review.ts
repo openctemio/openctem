@@ -90,11 +90,30 @@ export function useScanReview(
         .map((n) => n.blocking?.message)
         .filter((m): m is string => !!m)
       const why = reasons[0] ?? wf.targets?.error?.message
-      const msg = why
-        ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
-        : t('scans.review.workflowWouldNotStart')
-      blockers.push(msg)
-      otherBlockers.push(msg)
+      // Only sensors that are offline right now: a scan saved for later or
+      // scheduled is accepted (the API saves it; its run waits for a
+      // sensor), so it is a warning, not a blocker. A scan that runs now
+      // would be refused at its start, so it still blocks.
+      const onlyOffline =
+        !wf.targets?.error &&
+        (wf.nodes ?? []).every(
+          (n) =>
+            !n.blocking ||
+            (n.blocking.code === 'NO_SENSOR_FOR_TOOL' && n.availability?.status === 'offline_only')
+        )
+      if (onlyOffline && !form.schedule.runImmediately) {
+        warnings.push(
+          t('scans.review.sensorsOffline', undefined, {
+            why: why ?? t('scans.review.workflowWouldNotStart'),
+          })
+        )
+      } else {
+        const msg = why
+          ? t('scans.review.workflowWouldNotStartWhy', undefined, { why })
+          : t('scans.review.workflowWouldNotStart')
+        blockers.push(msg)
+        otherBlockers.push(msg)
+      }
     }
     const windows = wf?.targets?.windows
     if ((windows?.never_count ?? 0) > 0) {

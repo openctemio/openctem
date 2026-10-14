@@ -27,6 +27,49 @@ type gateFixture struct {
 	// inEffectOnly: ListActiveTargets drops entries not in effect, as the
 	// scope service does.
 	inEffectOnly bool
+	// resolves: name -> the addresses it resolves to (GuardrailNames);
+	// resolveErr fails those lookups.
+	resolves   map[string][]string
+	resolveErr error
+}
+
+func (f *gateFixture) NamesResolvingTo(_ context.Context, t shared.ID, ids []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if f.resolveErr != nil {
+		return nil, f.resolveErr
+	}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, id := range ids {
+		for _, a := range f.assets {
+			if a.ID().String() != id {
+				continue
+			}
+			for name, addrs := range f.resolves {
+				if slices.Contains(addrs, a.Name()) {
+					out[id] = append(out[id], name)
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *gateFixture) AddressesOf(_ context.Context, t shared.ID, names []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if f.resolveErr != nil {
+		return nil, f.resolveErr
+	}
+	if !f.mine(t) {
+		return out, nil
+	}
+	for _, n := range names {
+		if as, ok := f.resolves[n]; ok {
+			out[n] = as
+		}
+	}
+	return out, nil
 }
 
 func (f *gateFixture) mine(t shared.ID) bool { return t.Equals(f.tenant) }
@@ -746,7 +789,11 @@ func TestActiveGate_ConstraintRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.targets = append(f.targets, svc, path)
+	// The names resolve to addresses a scope range covers: a port scan of
+	// them is not narrowed to the web ports.
+	f.resolves = map[string][]string{"app.scoped.com": {"198.51.100.7"}, "api.limited.example": {"198.51.100.8"}}
 	g := NewActiveGate(f, f, f, f)
+	g.SetUnclassified(nil, f)
 	ctx := context.Background()
 	targets := []string{"api.limited.example:8443", "https://shop.limited.example/api/v1", "app.scoped.com", "10.0.0.5"}
 
