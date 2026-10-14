@@ -1412,7 +1412,7 @@
   "scans.ci.feedback.selectedRepos": "các kho mã đã chọn",
   "scans.ci.feedback.unbind": "Bỏ liên kết {name}",
   "scans.ci.feedback.gitlab": "Nhóm GitLab",
-  "scans.ci.feedback.gitlabDescription": "Một group access token (vai trò Developer, phạm vi api) cho phép OpenCTEM đặt trạng thái commit và bình luận trên merge request của nhóm. Token được lưu mã hóa và không bao giờ hiển thị lại.",
+  "scans.ci.feedback.gitlabDescription": "Một group access token (vai trò Developer, phạm vi api) cho phép OpenCTEM đặt trạng thái commit và bình luận trên merge request của nhóm. Personal access token sẽ bị từ chối. Token được lưu mã hóa và không bao giờ hiển thị lại.",
   "scans.ci.feedback.connectGitlab": "Kết nối nhóm GitLab",
   "scans.ci.feedback.noGitlab": "Chưa kết nối nhóm GitLab nào.",
   "scans.ci.feedback.expires": "token hết hạn {date}",
