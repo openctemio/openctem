@@ -1160,12 +1160,27 @@ func (s *Service) CloneScan(ctx context.Context, tenantID, scanID, newName, acto
 		return nil, err
 	}
 
+	// The same probe gates as a create: intrusive proof and the scope tier
+	// ceiling of the targets, for the scan's scanner.
+	if err := s.refuseUnprovenIntrusive(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
+		return nil, err
+	}
+	if err := s.refuseTierExceeded(ctx, sc.TenantID, sc.ScannerName, sc.Targets); err != nil {
+		return nil, err
+	}
+
 	clone := sc.Clone(newName)
 	clone.SetCreatedBy(actor)
 
 	if err := s.scanRepo.Create(ctx, clone); err != nil {
 		return nil, err
 	}
+
+	s.logAudit(ctx, AuditContext{TenantID: tenantID, ActorID: actorID},
+		NewSuccessEvent(audit.ActionScanConfigCreated, audit.ResourceTypeScanConfig, clone.ID.String()).
+			WithResourceName(clone.Name).
+			WithMessage(fmt.Sprintf("Scan config '%s' cloned from '%s'", clone.Name, sc.Name)).
+			WithMetadata("cloned_from", sc.ID.String()))
 
 	s.logger.Info("scan cloned", "original_id", sc.ID.String(), "clone_id", clone.ID.String())
 	return clone, nil
