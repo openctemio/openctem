@@ -141,6 +141,8 @@ func registerSensorManagementRoutes(
 		// administrators).
 		r.GET("/{id}/tool-settings", h.ListToolSettings, middleware.Require(permission.SensorsRead), own)
 		r.GET("/{id}/tool-settings/{tool}/effective", h.EffectiveToolSettings, middleware.Require(permission.SensorsRead), own)
+		// Read-only: resolves a scan's config, stores nothing.
+		r.POST("/{id}/tool-settings/{tool}/preview", h.PreviewToolSettings, middleware.Require(permission.SensorsRead), own)
 		r.PUT("/{id}/tool-settings/{tool}", h.UpdateToolSettings, middleware.Require(permission.SensorsWrite), own)
 		r.DELETE("/{id}/tool-settings/{tool}", h.ResetToolSettings, middleware.Require(permission.SensorsWrite), own)
 		// Setup checklist (research/26): the sensor's config report, explained
