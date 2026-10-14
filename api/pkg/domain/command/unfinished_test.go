@@ -50,6 +50,21 @@ func TestUnfinishedTargets(t *testing.T) {
 	}
 }
 
+// A target the sensor's network confinement kept the tool from reaching
+// is settled (failed/egress_refused): the same sensor would refuse it
+// again, so it is not handed out again as unfinished.
+func TestUnfinishedTargets_EgressRefusedSettles(t *testing.T) {
+	targets := hosts(2)
+	cmd := scanWithResult(t, targets, []outcome.Target{
+		{Target: targets[0], State: outcome.Failed, Class: outcome.EgressRefused},
+		{Target: targets[1], State: outcome.Done},
+	})
+	remaining, settled, ok := UnfinishedTargets(cmd)
+	if !ok || settled != 2 || len(remaining) != 0 {
+		t.Fatalf("remaining %v settled %d ok %v", remaining, settled, ok)
+	}
+}
+
 // A result without target_outcomes (a sensor that predates them) covered
 // every target: nothing is followed up.
 func TestUnfinishedTargets_OlderSensor(t *testing.T) {
