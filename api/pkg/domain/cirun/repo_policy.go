@@ -42,7 +42,17 @@ type RepoException struct {
 	Path    string `json:"path,omitempty"`
 	Reason  string `json:"reason"`
 	Expires string `json:"expires"` // YYYY-MM-DD
+	// Source says where the request came from (ExceptionSource*); empty is
+	// the repository's .openctem.yml. Never read from the file.
+	Source string `json:"-"`
 }
+
+// Where a repository exception request came from.
+const (
+	ExceptionSourceRepoFile   = ""
+	ExceptionSourceInline     = "inline"
+	ExceptionSourceIgnoreFile = "ignore_file"
+)
 
 func clean(s string, n int) (string, bool) {
 	s = strings.TrimSpace(s)

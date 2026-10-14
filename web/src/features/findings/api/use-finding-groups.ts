@@ -3,6 +3,10 @@
 import useSWR from 'swr'
 import { get } from '@/lib/api/client'
 
+import type { FindingApiFilters } from './finding-api.types'
+import { buildFindingsQuery } from './use-findings-api'
+import { withoutPaging } from '../lib/list-query'
+
 // ============================================
 // Types
 // ============================================
@@ -75,6 +79,12 @@ export interface FindingGroupsFilters {
   view?: string
   /** The state lens (open | fixed | dispositioned | all). */
   state?: string
+  /**
+   * The list's own filter. When set, the groups run exactly the filter the
+   * ungrouped list runs (search, priority, KEV, SLA, asset, ...), and the
+   * facet fields above are ignored; page, per_page and sort are the groups'.
+   */
+  query?: FindingApiFilters
 }
 
 // ============================================
@@ -82,6 +92,13 @@ export interface FindingGroupsFilters {
 // ============================================
 
 export function buildGroupsUrl(filters: FindingGroupsFilters): string {
+  if (filters.query) {
+    const params = buildFindingsQuery(withoutPaging(filters.query))
+    params.set('group_by', filters.group_by)
+    if (filters.page) params.set('page', String(filters.page))
+    if (filters.per_page) params.set('per_page', String(filters.per_page))
+    return `/api/v1/findings/groups?${params.toString()}`
+  }
   const params = new URLSearchParams()
   params.set('group_by', filters.group_by)
   // The list query contract's param names (RFC-048); the old plural names

@@ -132,7 +132,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
           <TrustConfigsSection canWrite={canWrite} />
         </TabsContent>
         <TabsContent value="gate" className="mt-4">
-          <GatePolicySection canWrite={canWrite} />
+          <GatePolicySection canWrite={can(Permission.CIPolicy)} />
         </TabsContent>
         <TabsContent value="break-glass" className="mt-4">
           <OverridesSection canOverride={canOverride} />
@@ -364,7 +364,12 @@ function TrustConfigDialog({
   const body = (): CITrustConfigRequest => ({
     name: name.trim() || 'preview',
     provider,
-    issuer: traits.issuerInput === 'fixed' ? undefined : issuerFor(provider, organization),
+    issuer:
+      provider === 'github'
+        ? organization.trim() || undefined
+        : traits.issuerInput === 'fixed'
+          ? undefined
+          : issuerFor(provider, organization),
     audience: traits.fixedAudience ? undefined : audience.trim() || undefined,
     default_branch: defaultBranch.trim() || undefined,
     enabled,
@@ -441,6 +446,23 @@ function TrustConfigDialog({
                 </SelectContent>
               </Select>
             </Field>
+            {provider === 'github' && (
+              <Field
+                label={t('scans.ci.trust.githubIssuer', 'GitHub Enterprise issuer (optional)')}
+                id="ci-issuer"
+                hint={t(
+                  'scans.ci.trust.githubIssuerHint',
+                  'Leave empty for github.com. GitHub Enterprise Server: https://<host>/_services/token. An enterprise with a customized issuer: https://token.actions.githubusercontent.com/<enterprise>.'
+                )}
+              >
+                <Input
+                  id="ci-issuer"
+                  placeholder="https://token.actions.githubusercontent.com"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                />
+              </Field>
+            )}
             {provider === 'gitlab' && (
               <Field
                 label={t('scans.ci.trust.gitlabIssuer', 'GitLab URL (issuer)')}

@@ -12,8 +12,10 @@ import (
 
 // Control-plane paths under PathPrefix.
 const (
-	HeartbeatPath         = "/heartbeat"
-	SuppressionsPath      = "/suppressions"
+	HeartbeatPath    = "/heartbeat"
+	SuppressionsPath = "/suppressions"
+	// ContentPath is the content delivery prefix (research/139).
+	ContentPath           = "/content"
 	FingerprintsCheckPath = "/fingerprints/check"
 	BaselineDiffPath      = "/fingerprints/baseline-diff"
 	KeysPath              = "/keys"

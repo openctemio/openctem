@@ -405,7 +405,8 @@ func (s *Service) requestRepoExceptions(ctx context.Context, run *cirun.Run, exc
 	if len(exceptions) == 0 || !run.IsDefaultBranch || run.Fork || !run.CommitVerified {
 		return
 	}
-	created, err := s.repo.RequestRepoExceptions(ctx, run.TenantID, run.RepositoryAssetID, run.Repository, exceptions)
+	actor := Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})}
+	created, err := s.repo.RequestRepoExceptions(ctx, run.TenantID, run.RepositoryAssetID, run.Repository, actor.Email, exceptions)
 	if err != nil {
 		s.log.Warn("repository exceptions not requested", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
 		return
@@ -413,10 +414,17 @@ func (s *Service) requestRepoExceptions(ctx context.Context, run *cirun.Run, exc
 	if created == 0 {
 		return
 	}
-	actor := Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})}
+	from := ".openctem.yml"
+	switch exceptions[0].Source {
+	case cirun.ExceptionSourceInline:
+		from = "inline ignore comments"
+	case cirun.ExceptionSourceIgnoreFile:
+		from = "a scanner ignore file"
+	}
 	s.logAudit(ctx, run.TenantID, actor, auditapp.NewSuccessEvent(auditdom.ActionCIRepoExceptionsRequested, auditdom.ResourceTypeCIRun, run.ID.String()).
 		WithResourceName(run.Repository).
-		WithMessage(fmt.Sprintf("%s requested %d suppression(s) from .openctem.yml at %s (pending approval)", run.Repository, created, shortSHA(run.CommitSHA))).
+		WithMessage(fmt.Sprintf("%s requested %d suppression(s) from %s at %s (pending approval)", run.Repository, created, from, shortSHA(run.CommitSHA))).
 		WithMetadata("requested", created).
+		WithMetadata("source", nonEmptyPrefix("", exceptions[0].Source)).
 		WithMetadata("commit_sha", run.CommitSHA))
 }

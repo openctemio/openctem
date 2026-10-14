@@ -907,37 +907,74 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 // suppression rules on the repository asset (tenant-scoped). An exception
 // with the same rule and path already pending or approved on the asset is
 // skipped, so a file seen on every run asks once.
-func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []cirun.RepoException) (int, error) {
+func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository, actor string, exceptions []cirun.RepoException) (int, error) {
 	created := 0
+	if len(actor) > 255 {
+		actor = actor[:255]
+	}
+	var requester sql.NullString
+	if actor != "" {
+		requester = sql.NullString{String: actor, Valid: true}
+	}
 	for _, e := range exceptions {
 		expires, err := time.Parse("2006-01-02", e.Expires)
 		if err != nil {
 			continue
 		}
-		var path sql.NullString
+		var rule, path sql.NullString
+		if e.RuleID != "" {
+			rule = sql.NullString{String: e.RuleID, Valid: true}
+		}
 		if e.Path != "" {
 			path = sql.NullString{String: e.Path, Valid: true}
 		}
-		name := e.RuleID + " in " + repository
+		if !rule.Valid && !path.Valid {
+			continue
+		}
+		subject := e.RuleID
+		if subject == "" {
+			subject = "all rules on " + e.Path
+		}
+		name := subject + " in " + repository
 		if len(name) > 255 {
 			name = name[:255]
 		}
+		desc := "Requested by the repository's .openctem.yml: " + e.Reason
+		switch e.Source {
+		case cirun.ExceptionSourceInline:
+			desc = "Requested by an inline ignore comment in the repository: " + e.Reason
+		case cirun.ExceptionSourceIgnoreFile:
+			desc = "Requested by the repository's scanner ignore file: " + e.Reason
+		}
+		id := shared.NewID().String()
 		res, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rules (id, tenant_id, rule_id, path_pattern, asset_id,
-				name, description, suppression_type, status, expires_at)
-			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz
+				name, description, suppression_type, status, expires_at, requested_by_actor)
+			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz, $9::varchar
 			WHERE NOT EXISTS (SELECT 1 FROM suppression_rules
-				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id = $3::varchar
+				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id IS NOT DISTINCT FROM $3::varchar
 				  AND path_pattern IS NOT DISTINCT FROM $4::varchar AND status IN ('pending', 'approved'))`,
-			shared.NewID().String(), tenantID.String(), e.RuleID, path, assetID.String(), name,
-			"Requested by the repository's .openctem.yml: "+e.Reason, expires.Add(24*time.Hour-time.Second))
+			id, tenantID.String(), rule, path, assetID.String(), name, desc, expires.Add(24*time.Hour-time.Second), requester)
 		if err != nil {
 			return created, err
 		}
-		if n, _ := res.RowsAffected(); n == 1 {
-			created++
+		if n, _ := res.RowsAffected(); n != 1 {
+			continue
+		}
+		created++
+		details, _ := json.Marshal(map[string]string{"requested_by_actor": actor, "source": nonEmptyOr(e.Source, "repo_file"), "repository": repository})
+		if _, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rule_audit (suppression_rule_id, action, details)
+			VALUES ($1, 'created', $2::jsonb)`, id, string(details)); err != nil {
+			return created, fmt.Errorf("audit exception request: %w", err)
 		}
 	}
 	return created, nil
+}
+
+func nonEmptyOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // ------------------------------------------------------------ decoration ---
