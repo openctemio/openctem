@@ -259,6 +259,21 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                   value: c.audience ?? '',
                 })}
               </span>
+              {c.legacy_audience && c.legacy_audience_until && (
+                <span
+                  className="break-all text-warning sm:col-span-2"
+                  data-testid="ci-legacy-audience"
+                >
+                  {t(
+                    'scans.ci.trust.legacyAudience',
+                    'Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet.',
+                    {
+                      value: c.legacy_audience,
+                      until: new Date(c.legacy_audience_until).toLocaleDateString(),
+                    }
+                  )}
+                </span>
+              )}
               <span>
                 {t('scans.ci.trust.defaultBranchValue', 'Default branch: {value}', {
                   value: c.default_branch ?? '',

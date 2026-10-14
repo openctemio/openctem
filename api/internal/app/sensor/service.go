@@ -18,6 +18,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/sensorkey"
@@ -35,7 +36,10 @@ type SensorService struct {
 	keyUse       keyUseDebouncer
 	repo         sensordom.Repository
 	auditService *auditapp.AuditService
-	logger       *logger.Logger
+	// declaredTools is where a manifest's declared tools join the
+	// organization's catalog (SetDeclaredTools); nil: they do not.
+	declaredTools tooldom.DeclaredStore
+	logger        *logger.Logger
 	// statusChanged is told when a sensor's status or keys change
 	// (SetStatusNotifier); nil: nobody.
 	statusChanged func(tenantID, sensorID string)

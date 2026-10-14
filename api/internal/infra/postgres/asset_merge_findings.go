@@ -80,6 +80,8 @@ var findingMergeKeptRefs = map[string]string{
 	"finding_injection_points.finding_id": "kept on the tombstone; re-derived for the survivor",
 	"finding_correlations.primary_id":     "kept on the tombstone; re-derived for the survivor",
 	"finding_correlations.member_id":      "kept on the tombstone; re-derived for the survivor",
+	// A suspended decision is the history of the finding it was made on.
+	"finding_decision_suspensions.finding_id": "kept on the tombstone; history of that finding",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
