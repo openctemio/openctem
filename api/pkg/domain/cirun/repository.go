@@ -143,9 +143,6 @@ type PipelineRepository interface {
 	// suppression rules on the repository asset, skipping any already open,
 	// and returns how many it created.
 	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
-	// MarkDecorationPending queues an evaluated run's verdict for posting to
-	// the code host (RFC-077).
-	MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error
 	// PinOwner records ownerID for the configuration's owner name unless one
 	// is pinned already, and returns the pinned id and whether this call
 	// pinned it.
