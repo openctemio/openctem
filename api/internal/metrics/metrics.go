@@ -348,6 +348,16 @@ var (
 		[]string{"reason"},
 	)
 
+	// CommandHostSplitsTotal counts pending commands split at claim time
+	// because some of their hosts were busy: the targets on free hosts
+	// started, the others waited in a new command of the same step.
+	CommandHostSplitsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "command_host_splits_total",
+			Help: "Pending commands split at claim time so the targets on free hosts start while the others wait",
+		},
+	)
+
 	// CommandLeasesExpiredTotal counts commands taken back from a sensor
 	// whose lease ran out (it stopped renewing) and re-queued.
 	CommandLeasesExpiredTotal = promauto.NewCounter(
