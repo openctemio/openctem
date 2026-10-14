@@ -117,7 +117,20 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     widening_approvals: s.widening_approvals ?? null,
     default_max_tier: s.default_max_tier === 't0' ? 't0' : 't1',
     ...unclassifiedOf(s),
+    ...autoCoverageOf(s),
   }
+}
+
+/** The stored automatic-coverage choice, when the organization made one. */
+function autoCoverageOf(s: ApiScopeSettings): { auto_coverage?: boolean } {
+  const v = (s as { auto_coverage?: boolean | null }).auto_coverage
+  return typeof v === 'boolean' ? { auto_coverage: v } : {}
+}
+
+/** Whether automatic coverage runs now (undefined when the API predates it). */
+function autoCoverageEffective(s: ApiScopeSettings): boolean | undefined {
+  const v = (s as { auto_coverage_effective?: boolean }).auto_coverage_effective
+  return typeof v === 'boolean' ? v : undefined
 }
 
 /** The unclassified-scans setting and the mode in force, when the API has them. */
@@ -407,6 +420,30 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                     </SelectItem>
                   </SelectContent>
                 </Select>
+              </Row>
+            )}
+
+            {autoCoverageEffective(saved) !== undefined && (
+              <Row
+                label={t('scope.settings.autoCoverage', 'Automatic coverage')}
+                htmlFor={`${id}-autocoverage`}
+                hint={
+                  t(
+                    'scope.settings.autoCoverageHint',
+                    'On (default): every asset your scope covers gets the checks its type needs (DNS, ports, HTTP probe, templates) on a schedule and when it appears or changes, with no scan to set up. Scope, exclusions, windows and guardrails still decide what may be scanned; intrusive checks never run this way.'
+                  ) +
+                  (saved.approval_policy?.scan_approval === 'strict' &&
+                  typeof (saved as { auto_coverage?: boolean | null }).auto_coverage !== 'boolean'
+                    ? ` ${t('scope.settings.autoCoverageStrict', 'Strict scan approval is in force, so it is off until you turn it on.')}`
+                    : '')
+                }
+              >
+                <Switch
+                  id={`${id}-autocoverage`}
+                  checked={form.auto_coverage ?? autoCoverageEffective(saved) ?? false}
+                  onCheckedChange={(v) => setForm({ ...form, auto_coverage: v })}
+                  disabled={disabled}
+                />
               </Row>
             )}
 

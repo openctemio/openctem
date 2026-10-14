@@ -5,6 +5,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
 // ModeSource is the scan approval mode in force for a tenant.
@@ -12,10 +13,19 @@ type ModeSource interface {
 	EffectiveMode(ctx context.Context, tenantID shared.ID) (scangov.Mode, string, scangov.PlatformPolicy, error)
 }
 
-// GovernanceSwitch turns automatic coverage off for a tenant whose scan
-// approval mode in force is Strict (owner decision D1: Strict-governance
-// organizations are off until they enable it).
-type GovernanceSwitch struct{ Modes ModeSource }
+// ScopeSettingsReader reads the organization's scope settings.
+type ScopeSettingsReader interface {
+	GetScopeSettings(ctx context.Context, tenantID string) (*tenant.ScopeSettings, error)
+}
+
+// GovernanceSwitch decides automatic coverage per tenant: the
+// organization's choice (scope settings, auto_coverage), else on unless the
+// scan approval mode in force is Strict (owner decision D1). A read error
+// is off (fail closed).
+type GovernanceSwitch struct {
+	Modes    ModeSource
+	Settings ScopeSettingsReader // nil: the default only
+}
 
 // CoverageEnabled reports whether automatic coverage runs for the tenant.
 func (g GovernanceSwitch) CoverageEnabled(ctx context.Context, tenantID shared.ID) (bool, error) {
@@ -23,5 +33,16 @@ func (g GovernanceSwitch) CoverageEnabled(ctx context.Context, tenantID shared.I
 	if err != nil {
 		return false, err
 	}
-	return m.Normalized() != scangov.ModeStrict, nil
+	strict := m.Normalized() == scangov.ModeStrict
+	if g.Settings == nil {
+		return !strict, nil
+	}
+	ss, err := g.Settings.GetScopeSettings(ctx, tenantID.String())
+	if err != nil {
+		return false, err
+	}
+	if ss == nil {
+		return !strict, nil
+	}
+	return ss.AutoCoverageOn(strict), nil
 }
