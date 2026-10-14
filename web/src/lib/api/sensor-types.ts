@@ -567,6 +567,12 @@ export interface SensorToolContract {
   network?: 'none' | 'targets' | 'egress-proxy' | 'vendor' | (string & {})
   consumes?: string[] | null
   produces: string[]
+  /**
+   * The tool's whole manifest (canonical JSON of its tool.yaml), kept by the
+   * platform only when it hashes to the digest. A sensor claim: read it with
+   * a checking reader (features/sensors/lib/tool-options.ts), never trust it.
+   */
+  descriptor?: unknown
 }
 
 /** One tool of a sensor manifest. */

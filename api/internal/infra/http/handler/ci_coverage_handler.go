@@ -346,3 +346,63 @@ func (h *CIAdminHandler) RetirePipeline(w http.ResponseWriter, r *http.Request) 
 	}
 	ciWriteJSON(w, http.StatusOK, CIRetirePipelineResponse{PipelineID: id.String(), FindingsClosed: len(closed)})
 }
+
+// CIRefusalService lists refused CI token exchanges.
+type CIRefusalService interface {
+	RecentRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]cirun.TokenRefusal, error)
+}
+
+// SetRefusalService wires the refusal listing (nil leaves it 404).
+func (h *CIAdminHandler) SetRefusalService(svc CIRefusalService) { h.refusals = svc }
+
+// CITokenRefusalResponse is one refused CI token exchange.
+type CITokenRefusalResponse struct {
+	At         time.Time `json:"at"`
+	Repository string    `json:"repository,omitempty"`
+	Provider   string    `json:"provider,omitempty"`
+	Ref        string    `json:"ref,omitempty"`
+	Event      string    `json:"event,omitempty"`
+	// Reasons are the rule codes that refused it (fork_refused,
+	// owner_not_allowed, workflow_not_allowed, replay, ...).
+	Reasons []string `json:"reasons"`
+	Message string   `json:"message,omitempty"`
+}
+
+// ListTokenRefusals handles GET /api/v1/ci/trust-refusals
+// @Summary      List refused CI pipelines
+// @Description  The latest CI token exchanges no trust configuration admitted (verified tokens only), newest first, with the rule codes that refused them: why a pipeline being set up does not report. At most 50.
+// @Tags         CI
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit query int false "At most 50 (default 20)"
+// @Success      200  {object}  object{data=[]CITokenRefusalResponse}
+// @Router       /ci/trust-refusals [get]
+func (h *CIAdminHandler) ListTokenRefusals(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.tenant(w, r)
+	if !ok {
+		return
+	}
+	if h.refusals == nil {
+		apierror.NotFound("CI refusals").WriteJSON(w)
+		return
+	}
+	limit, ok := listLimit(w, r, 20, cirun.MaxTokenRefusals)
+	if !ok {
+		return
+	}
+	list, err := h.refusals.RecentRefusals(r.Context(), tenantID, limit)
+	if err != nil {
+		h.writeErr(w, err, "list CI token refusals", "CI refusals")
+		return
+	}
+	data := make([]CITokenRefusalResponse, 0, len(list))
+	for _, t := range list {
+		reasons := t.Reasons
+		if reasons == nil {
+			reasons = []string{}
+		}
+		data = append(data, CITokenRefusalResponse{At: t.At, Repository: t.Repository, Provider: t.Provider, Ref: t.Ref,
+			Event: t.Event, Reasons: reasons, Message: t.Message})
+	}
+	ciWriteJSON(w, http.StatusOK, map[string]any{"data": data})
+}

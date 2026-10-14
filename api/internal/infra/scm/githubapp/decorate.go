@@ -71,11 +71,38 @@ var decorationPermissions = map[string]string{"checks": "write", "pull_requests"
 // installationDo sends a request about one repository with an installation
 // token narrowed to that repository and to decorationPermissions.
 func (a *App) installationDo(ctx context.Context, installationID int64, repo, method, path string, body, out any) error {
-	tok, err := a.RepositoryToken(ctx, installationID, repo, decorationPermissions)
+	return a.installationDoWith(ctx, installationID, repo, decorationPermissions, method, path, body, out)
+}
+
+// commitReadPermissions read a commit (its parents). An installation that
+// was not granted contents read gets 422 from the token request, which the
+// caller treats as "cannot tell".
+var commitReadPermissions = map[string]string{"contents": "read", "metadata": "read"}
+
+func (a *App) installationDoWith(ctx context.Context, installationID int64, repo string, perms map[string]string, method, path string, body, out any) error {
+	tok, err := a.RepositoryToken(ctx, installationID, repo, perms)
 	if err != nil {
 		return err
 	}
 	return a.do(ctx, method, a.cfg.APIURL+path, "Bearer "+tok, body, out)
+}
+
+// CommitParents returns the parent commit ids of a commit.
+func (a *App) CommitParents(ctx context.Context, installationID int64, owner, repo, sha string) ([]string, error) {
+	var c struct {
+		Parents []struct {
+			SHA string `json:"sha"`
+		} `json:"parents"`
+	}
+	if err := a.installationDoWith(ctx, installationID, repo, commitReadPermissions, http.MethodGet,
+		repoPath(owner, repo)+"/commits/"+url.PathEscape(sha), nil, &c); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(c.Parents))
+	for _, p := range c.Parents {
+		out = append(out, p.SHA)
+	}
+	return out, nil
 }
 
 // CreateCheckRun posts a completed check run (annotations capped at 50, the

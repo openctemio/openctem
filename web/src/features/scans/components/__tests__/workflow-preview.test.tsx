@@ -97,4 +97,38 @@ describe('WorkflowPreviewBody', () => {
     expect(screen.getByTestId('window-waits-waiting').textContent).toContain('app.example.com')
     expect(screen.getByTestId('window-waits-waiting').textContent).toContain('Change freeze')
   })
+
+  it('lists the targets exclusions leave out, with the matching rules', () => {
+    render(
+      <WorkflowPreviewBody
+        preview={{
+          ...base,
+          targets: {
+            ...base.targets,
+            excluded_targets: 1,
+            excluded_detail: [
+              {
+                target: 'old.acme.io',
+                rules: [{ kind: 'exclusion', id: 'x1', pattern: 'old.acme.io' }],
+              },
+              { target: '198.51.100.0/29', cut: true, removed_addresses: 1 },
+            ],
+          },
+        }}
+      />
+    )
+    const list = screen.getByTestId('excluded-targets')
+    expect(list).toHaveTextContent('2 targets left out by exclusions')
+    expect(list).toHaveTextContent('Range scanned without 1 excluded address(es)')
+    expect(list).toHaveTextContent('Matching rule not recorded')
+    expect(screen.getByRole('link', { name: 'Exclusion old.acme.io' })).toHaveAttribute(
+      'href',
+      '/scope?tab=out'
+    )
+  })
+
+  it('shows no exclusion list when nothing was left out', () => {
+    render(<WorkflowPreviewBody preview={base} />)
+    expect(screen.queryByTestId('excluded-targets')).toBeNull()
+  })
 })

@@ -47,6 +47,9 @@ const (
 	conclusionSuccess = "success"
 	conclusionFailure = "failure"
 	conclusionNeutral = "neutral"
+	// conclusionActionRequired: only a scanner failure fails the gate; the
+	// run must be fixed and run again, nothing in the code was judged.
+	conclusionActionRequired = "action_required"
 )
 
 // GitHubPoster posts to GitHub with an installation (githubapp.App).
@@ -55,6 +58,7 @@ type GitHubPoster interface {
 	GetPullRequest(ctx context.Context, installationID int64, owner, repo string, number int) (*githubapp.PullRequest, error)
 	UpsertIssueComment(ctx context.Context, installationID int64, owner, repo string, number int, marker, body string) error
 	PullRequestsForCommit(ctx context.Context, installationID int64, owner, repo, sha string) ([]githubapp.PullRequest, error)
+	CommitParents(ctx context.Context, installationID int64, owner, repo, sha string) ([]string, error)
 }
 
 // InstallationFinder finds the tenant's installation on an account.
@@ -176,7 +180,16 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 		// This is also what stops a run from putting its verdict on another
 		// pull request's commit: the head comes from GitHub, not the job.
 		if !strings.EqualFold(pr.MergeCommitSHA, run.CommitSHA) && !strings.EqualFold(pr.Head.SHA, run.CommitSHA) {
-			return cirun.DecorationSkipped, "the pull request has newer commits"
+			// GitHub recomputes the merge commit when the base branch moves;
+			// a run that judged the same head merged into an older base
+			// still decides the head (the parents come from GitHub).
+			ok, err := j.mergeOfHead(ctx, inst.InstallationID, owner, repo, run.CommitSHA, pr.Head.SHA)
+			if err != nil {
+				return outcome(err, "read the run's commit")
+			}
+			if !ok {
+				return cirun.DecorationSkipped, "the pull request has newer commits"
+			}
 		}
 		sha, prNumber = pr.Head.SHA, n
 	} else {
@@ -211,6 +224,31 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 		}
 	}
 	return cirun.DecorationPosted, ""
+}
+
+// mergeOfHead reports whether commit is a merge commit with head among its
+// parents, as GitHub reports them.
+func (j *DecorationJob) mergeOfHead(ctx context.Context, installationID int64, owner, repo, commit, head string) (bool, error) {
+	if commit == "" || head == "" {
+		return false, nil
+	}
+	parents, err := j.github.CommitParents(ctx, installationID, owner, repo, commit)
+	var se *githubapp.StatusError
+	if errors.As(err, &se) && (se.Status == 404 || se.Status == 422) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if len(parents) < 2 {
+		return false, nil
+	}
+	for _, p := range parents {
+		if strings.EqualFold(p, head) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // checkUngatedMerge alerts when the default-branch commit came from a merged
@@ -295,7 +333,7 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 		return cirun.DecorationRetry, "could not read the other verdicts on the commit"
 	}
 	state := "success"
-	if commitConclusion(&v, others) == conclusionFailure {
+	if c := commitConclusion(&v, others); c == conclusionFailure || c == conclusionActionRequired {
 		state = "failed"
 	}
 	runURL := j.webBase + RunPath(run.ID)
@@ -320,10 +358,13 @@ func gitlabOutcome(err error, what string) (string, string) {
 }
 
 // outcome maps a GitHub error: a refusal GitHub will repeat (the app has no
-// access to the repository, the commit is unknown) is final; anything else
-// is retried.
+// access to the repository, the commit is unknown) is final; a rate limit
+// and anything else is retried.
 func outcome(err error, what string) (string, string) {
 	var se *githubapp.StatusError
+	if errors.As(err, &se) && se.RateLimited {
+		return cirun.DecorationRetry, fmt.Sprintf("could not %s: GitHub rate limit", what)
+	}
 	if errors.As(err, &se) && (se.Status == 401 || se.Status == 403 || se.Status == 404 || se.Status == 422) {
 		return cirun.DecorationFailed, fmt.Sprintf("could not %s: GitHub answered %d", what, se.Status)
 	}
@@ -376,6 +417,8 @@ func commitConclusion(v *Verdict, others commitFailures) string {
 	switch {
 	case c == conclusionFailure || others.Failed > 0:
 		return conclusionFailure
+	case c == conclusionActionRequired:
+		return conclusionActionRequired
 	case c == conclusionNeutral || others.WouldFail > 0:
 		return conclusionNeutral
 	}
@@ -410,6 +453,8 @@ func commentMarker(run *cirun.Run) string {
 
 func conclusion(v *Verdict) string {
 	switch {
+	case v.Verdict == cirun.VerdictFail && onlyScanFailures(v):
+		return conclusionActionRequired
 	case v.Verdict == cirun.VerdictFail:
 		return conclusionFailure
 	case v.WouldFail:
@@ -419,8 +464,25 @@ func conclusion(v *Verdict) string {
 	}
 }
 
+// onlyScanFailures reports whether the blocking reasons are scanner
+// failures only: no finding blocked.
+func onlyScanFailures(v *Verdict) bool {
+	scan := false
+	for _, r := range v.Reasons {
+		switch {
+		case r.Code == cirun.ReasonScanFailure:
+			scan = true
+		case r.Mode == "" && isBlockingCode(r.Code):
+			return false
+		}
+	}
+	return scan
+}
+
 func checkTitle(v *Verdict) string {
 	switch conclusion(v) {
+	case conclusionActionRequired:
+		return "Action required: a scanner failed, the run could not be judged"
 	case conclusionFailure:
 		return fmt.Sprintf("Failed: %d blocking finding(s)", v.Summary.Blocking)
 	case conclusionNeutral:
@@ -441,8 +503,13 @@ func buildCheckRun(run *cirun.Run, v *Verdict, sha, runURL string, others commit
 		if r.File == "" || r.Line <= 0 || !isBlockingCode(r.Code) {
 			continue
 		}
+		l := level
+		if r.Mode == cirun.FindingModeComment {
+			// Listed by the policy without failing the gate.
+			l = "notice"
+		}
 		c.Annotations = append(c.Annotations, githubapp.CheckAnnotation{Path: r.File, StartLine: r.Line, EndLine: r.Line,
-			AnnotationLevel: level, Title: plain(r.Title, 200), Message: plain(r.Message, 500)})
+			AnnotationLevel: l, Title: plain(r.Title, 200), Message: plain(r.Message, 500)})
 	}
 	return c
 }
@@ -474,6 +541,9 @@ func writeReasons(b *strings.Builder, v *Verdict, limit int) {
 			break
 		}
 		line := "- **" + md(reasonLabel(r.Code), 40) + "**"
+		if r.Mode == cirun.FindingModeComment {
+			line += " (not blocking)"
+		}
 		if r.Severity != "" {
 			line += " (" + md(r.Severity, 20) + ")"
 		}
@@ -519,7 +589,8 @@ func reasonLabel(code string) string {
 func buildComment(run *cirun.Run, v *Verdict, runURL, marker string, others commitFailures) string {
 	var b strings.Builder
 	b.WriteString(marker + "\n")
-	icon := map[string]string{conclusionFailure: "Failed", conclusionNeutral: "Passed (warn mode)", conclusionSuccess: "Passed"}[commitConclusion(v, others)]
+	icon := map[string]string{conclusionFailure: "Failed", conclusionNeutral: "Passed (warn mode)", conclusionSuccess: "Passed",
+		conclusionActionRequired: "Action required (a scanner failed)"}[commitConclusion(v, others)]
 	fmt.Fprintf(&b, "### %s: %s\n\n", CheckName, icon)
 	fmt.Fprintf(&b, "Commit `%s` compared with `%s`.\n\n", code(shortSHA(run.CommitSHA), 12),
 		code(nonEmpty(v.Baseline.Branch, "the default branch"), 100))

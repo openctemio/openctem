@@ -93,3 +93,39 @@ func TestScanHandler_ToolUnavailableDetails(t *testing.T) {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
 }
+
+// The target refusals a run start answers keep their code too: the live
+// console showed "BAD_REQUEST" for a scan whose targets were unconfirmed,
+// with no way to tell what to fix.
+func TestScanHandler_TargetRefusalKeepsItsCode(t *testing.T) {
+	h := &ScanHandler{logger: logger.NewNop()}
+	for _, c := range []string{"ALL_TARGETS_UNCONFIRMED", "NO_COMPATIBLE_TARGETS", "TIER_EXCEEDS",
+		"INTERNAL_TARGET_OUTSIDE_ZONES", "NO_RESOLVING_TARGETS", "INTENSITY_EXCEEDED", "LIVENESS_NEEDS_HOST_DISCOVERY"} {
+		rec := httptest.NewRecorder()
+		h.handleServiceError(rec, fmt.Errorf("trigger: %w", shared.NewDomainError(c, "refused: "+c, shared.ErrValidation)))
+		code, msg := errorBody(t, rec)
+		if rec.Code != http.StatusBadRequest || code != c || msg != "refused: "+c {
+			t.Errorf("%s: status=%d code=%q message=%q", c, rec.Code, code, msg)
+		}
+	}
+}
+
+// A governed scan's refused run says it needs (or waits for) an approval;
+// any other forbidden stays a plain 403 with no message.
+func TestScanHandler_ApprovalRefusalKeepsItsCode(t *testing.T) {
+	h := &ScanHandler{logger: logger.NewNop()}
+	for _, c := range []string{"SCAN_APPROVAL_REQUIRED", "SCAN_APPROVAL_PENDING"} {
+		rec := httptest.NewRecorder()
+		h.handleServiceError(rec, shared.NewDomainError(c, "needs approval", shared.ErrForbidden))
+		code, msg := errorBody(t, rec)
+		if rec.Code != http.StatusForbidden || code != c || msg != "needs approval" {
+			t.Errorf("%s: status=%d code=%q message=%q", c, rec.Code, code, msg)
+		}
+	}
+	rec := httptest.NewRecorder()
+	h.handleServiceError(rec, shared.NewDomainError("SOMETHING_INTERNAL", "secret detail", shared.ErrForbidden))
+	code, msg := errorBody(t, rec)
+	if rec.Code != http.StatusForbidden || code == "SOMETHING_INTERNAL" || msg == "secret detail" {
+		t.Errorf("other forbidden: status=%d code=%q message=%q, want a plain 403", rec.Code, code, msg)
+	}
+}

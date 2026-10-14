@@ -221,6 +221,24 @@ func (c *JobRecoveryController) Reconcile(ctx context.Context) (int, error) {
 	// within their stall window, while their sensor reports progress) or
 	// ran far past their task budget (research/122). A slow but progressing
 	// task is left alone; a dead sensor is step 2c.
+	// A stalled task's holder is first asked to stop it and hand back what
+	// it finished (its heartbeat answer lists it as stop_command_ids); the
+	// re-queue below takes it back only if no answer comes in time.
+	if stopper, ok := c.commandRepo.(command.StallStopper); ok {
+		stopped, err := stopper.RequestStopForStalled(ctx)
+		if err != nil {
+			c.logger.Error("failed to request stops of stalled commands", "error", err)
+		}
+		for _, rq := range stopped {
+			holder := ""
+			if rq.SensorID != nil {
+				holder = rq.SensorID.String()
+			}
+			c.logger.Info("stalled command: asked its sensor to stop it and hand back what it finished",
+				"command_id", rq.ID.String(), "tenant_id", rq.TenantID.String(), "sensor_id", holder)
+		}
+		totalProcessed += len(stopped)
+	}
 	if reaper, ok := c.commandRepo.(command.StallReaper); ok {
 		requeued, err := reaper.RequeueStalledCommands(ctx)
 		if err != nil {

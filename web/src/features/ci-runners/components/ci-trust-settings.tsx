@@ -74,6 +74,8 @@ import {
 } from '../lib/ci'
 import { CITrustPreview } from './ci-trust-preview'
 import { CIOverrideDialog } from './ci-override-dialog'
+import { CITrustRefusals } from './ci-refusals'
+import { CISetupEntry } from './ci-setup-wizard'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
 
 const NO_WRITE = 'Only owners and administrators can change CI trust and the gate'
@@ -165,11 +167,13 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
     )
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {canWrite && <CISetupEntry canWrite />}
         <GatedButton
           allowed={canWrite}
           reason={t('scans.ci.noWrite', NO_WRITE)}
           size="sm"
+          variant={canWrite ? 'outline' : 'default'}
           onClick={() => setEditing('new')}
         >
           <Plus className="size-4" aria-hidden /> {t('scans.ci.trust.add', 'Add trust')}
@@ -268,6 +272,7 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
           }}
         />
       )}
+      <CITrustRefusals canWrite={canWrite} />
       {snippetOf && <SnippetDialog config={snippetOf} onClose={() => setSnippetOf(null)} />}
       <ConfirmDialog
         open={!!deleting}

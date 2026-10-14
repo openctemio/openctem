@@ -382,3 +382,54 @@ describe('Scan approval Off: no approval wording for scope changes', () => {
     expect(await screen.findAllByRole('listitem')).toHaveLength(2)
   })
 })
+
+describe('Entry tier ceilings follow governance', () => {
+  const entry = {
+    ...pendingEntry,
+    id: 'e9',
+    status: 'active',
+    max_tier: 't2',
+    pattern: 'deep.acme.io',
+  }
+  const show = (tierCeilings: boolean) => {
+    api.get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes('/scope/settings')
+          ? {
+              one_off_max_days: 7,
+              approval_policy: { entries_need_approval: tierCeilings, tier_ceilings: tierCeilings },
+            }
+          : { total: 1, data: [entry] }
+      )
+    )
+    wrap(
+      <ScopeEntriesTable
+        query={{ search: '', kind: 'all', status: 'all', page: 1, perPage: 20 }}
+        searchInput=""
+        onSearchInput={() => {}}
+        onKindChange={() => {}}
+        onStatusChange={() => {}}
+        onPagination={() => {}}
+      />
+    )
+  }
+
+  it('outside Strict the column says the scan picks the intensity, with a link to governance', async () => {
+    show(false)
+    expect(await screen.findByText('Set per scan')).toBeInTheDocument()
+    expect(screen.queryByText('T2 intrusive')).not.toBeInTheDocument()
+    const note = await screen.findByTestId('scope-tier-per-scan-note')
+    expect(note).toHaveTextContent('Entry ceilings apply only in Strict governance')
+    expect(within(note).getByRole('link')).toHaveAttribute(
+      'href',
+      '/settings/scanning/scan-approval'
+    )
+  })
+
+  it('in Strict the entry ceiling is shown', async () => {
+    show(true)
+    expect(await screen.findByText('T2 intrusive')).toBeInTheDocument()
+    expect(screen.queryByText('Set per scan')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('scope-tier-per-scan-note')).not.toBeInTheDocument()
+  })
+})

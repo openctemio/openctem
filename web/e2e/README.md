@@ -42,6 +42,7 @@ tests that cover the console's most user-visible flows.
 | `15-route-protection.spec.ts`               | Signed-out redirects and public routes                     |
 | `16-dialog-layout.spec.ts`                  | Dialog header and actions stay put while the body scrolls  |
 | `18-pentest-finding-editor.spec.ts`         | New pentest finding: evidence, publish, closed campaign    |
+| `19-scan-lifecycle.spec.ts`                 | Scan create, edit (name, targets, duration), run, run view |
 
 Each spec is designed to:
 
