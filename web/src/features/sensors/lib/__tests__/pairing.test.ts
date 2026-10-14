@@ -39,6 +39,7 @@ describe('pairing helpers', () => {
       'easm-external',
       'authenticated-scanner',
       'collector',
+      'scan-connector',
       'ci-runner',
       'endpoint-agent',
     ])
@@ -48,6 +49,7 @@ describe('pairing helpers', () => {
     expect(grantProfileValue('collector', ' GitHub ')).toBe('collector:github')
     expect(grantProfileValue('collector', '')).toBe('collector')
     expect(grantProfileValue('easm-external', 'x')).toBe('easm-external')
+    expect(grantProfileValue('scan-connector', ' tenable_sc ')).toBe('scan-connector:tenable_sc')
     expect(validIntegrationName('github')).toBe(true)
     expect(validIntegrationName('bad name')).toBe(false)
   })

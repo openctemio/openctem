@@ -80,6 +80,12 @@ export const GRANT_PROFILES: GrantProfileOption[] = [
     description: 'Runs one connector; no target scanning.',
   },
   {
+    value: 'scan-connector',
+    label: 'Scanner connector',
+    description:
+      'Runs one connector to a scanner product your organization runs (the Tenable.sc connector): its syncs and its scans; no scanner of its own.',
+  },
+  {
     value: 'ci-runner',
     label: 'CI runner',
     description: 'Code scanning only; no network targets.',
@@ -93,14 +99,18 @@ export const GRANT_PROFILES: GrantProfileOption[] = [
 
 export const DEFAULT_GRANT_PROFILE = 'internal-network-scanner'
 
+/** Profiles that take the one connector or tool the sensor runs. */
+export const PARAMETERISED_PROFILES = ['collector', 'scan-connector']
+
 /**
- * The profile value sent to the API: `collector:<integration>` when an
- * integration is named. Integration names are lower-case tokens.
+ * The profile value sent to the API: `<profile>:<integration>` when an
+ * integration is named for a parameterised profile. Names are lower-case
+ * tokens.
  */
 export function grantProfileValue(profile: string, integration: string): string {
-  if (profile !== 'collector') return profile
+  if (!PARAMETERISED_PROFILES.includes(profile)) return profile
   const name = integration.trim().toLowerCase()
-  return name ? `collector:${name}` : profile
+  return name ? `${profile}:${name}` : profile
 }
 
 export function validIntegrationName(name: string): boolean {

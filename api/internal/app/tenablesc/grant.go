@@ -31,7 +31,7 @@ const grantRefusalCode = "CONNECTOR_GRANT_REFUSES"
 func grantRefuses(r *sensordom.GrantRefusal) error {
 	return shared.NewDomainError(grantRefusalCode,
 		"the connector sensor's grant does not allow this ("+r.Dimension+": "+r.Detail+
-			"); an administrator can allow it on the sensor's grant (job types connector_sync and connector_scan, tool tenable_sc, trusted, tier T1 for scans)",
+			"); an administrator can give the sensor the scan-connector profile (scan-connector:tenable_sc) and trust it before scans",
 		shared.ErrConflict)
 }
 

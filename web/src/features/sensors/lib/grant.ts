@@ -38,6 +38,7 @@ export const PROFILE_LABELS: Record<string, string> = {
   'easm-external': 'External attack surface',
   'authenticated-scanner': 'Authenticated scanner',
   collector: 'Collector',
+  'scan-connector': 'Scanner connector',
   'ci-runner': 'CI runner',
   'endpoint-agent': 'Endpoint',
   custom: 'Custom',

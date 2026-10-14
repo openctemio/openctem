@@ -83,7 +83,11 @@ func (s *Service) ruleOf(capability string) covdom.Rule {
 	return covdom.Rule{Capability: capability, Every: 24 * time.Hour}
 }
 
-// settle settles the queued pairs of every finished run of the tenant.
+// settle settles the queued pairs of every finished run of the tenant, per
+// target: from what happened to each pair's own target across every task of
+// the run (claim-time splits and follow-ups included), never from the run's
+// overall status. A target no task carried fails as not dispatched, with the
+// run's error; a run unfinished after a day fails its pairs as stalled.
 func (s *Service) settle(ctx context.Context, tenantID shared.ID) (int, error) {
 	runs, err := s.planner.QueuedRuns(ctx, tenantID)
 	if err != nil {
@@ -91,50 +95,78 @@ func (s *Service) settle(ctx context.Context, tenantID shared.ID) (int, error) {
 	}
 	total := 0
 	for _, rs := range runs {
-		var success bool
+		stalled := false
 		switch rs.Status {
-		case "completed", "partial":
-			success = true
-		case "failed", "canceled", "timeout", "blocked":
+		case "completed", "partial", "failed", "canceled", "timeout", "blocked":
 		default:
 			if s.now().Sub(rs.QueuedAt) < StallAfter {
 				continue // still running
 			}
-			rs.Error = "the run did not finish within a day"
+			stalled = true
 		}
-		var unfinished []shared.ID
-		if success && len(rs.Unfinished) > 0 {
-			if unfinished, err = s.unfinishedAssets(ctx, tenantID, rs); err != nil {
-				return total, err
-			}
-		}
-		n, err := s.planner.SettleRun(ctx, tenantID, rs, s.ruleOf(rs.Capability), success, unfinished)
+		n, err := s.settleRun(ctx, tenantID, rs, stalled)
+		total += n
 		if err != nil {
 			return total, err
 		}
-		total += n
 	}
 	return total, nil
 }
 
-// unfinishedAssets maps a run's unfinished targets back to the queued pairs'
-// assets.
-func (s *Service) unfinishedAssets(ctx context.Context, tenantID shared.ID, rs covdom.RunState) ([]shared.ID, error) {
-	want := map[string]bool{}
-	for _, t := range rs.Unfinished {
-		want[strings.ToLower(t)] = true
-	}
+func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.RunState, stalled bool) (int, error) {
+	rule := s.ruleOf(rs.Capability)
 	queued, err := s.planner.QueuedTargets(ctx, tenantID, rs.RunID, rs.Capability)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	var out []shared.ID
+	var verdicts map[string]covdom.Verdict
+	if !stalled {
+		tasks, err := s.planner.RunTasks(ctx, tenantID, rs.RunID)
+		if err != nil {
+			return 0, err
+		}
+		verdicts = covdom.Verdicts(tasks, rs.Unfinished)
+	}
+	var covered []shared.ID
+	var failed []covdom.FailedPair
+	blocked := map[shared.ID]string{}
 	for _, d := range queued {
-		if want[strings.ToLower(d.Target())] {
-			out = append(out, d.AssetID)
+		v, ok := verdicts[covdom.TargetKey(d.Target())]
+		switch {
+		case stalled:
+			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: covdom.OutcomeStalled,
+				Error: "the run did not finish within a day"})
+		case !ok:
+			msg := rs.Error
+			if msg == "" {
+				msg = "no task of the run carried this target"
+			}
+			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: covdom.OutcomeNotDispatched, Error: msg})
+		case v.Kind == covdom.VerdictCovered:
+			covered = append(covered, d.AssetID)
+		case v.Kind == covdom.VerdictBlocked:
+			blocked[d.AssetID] = v.Reason
+		default:
+			msg := v.Error
+			if msg == "" {
+				msg = rs.Error
+			}
+			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: v.Outcome, Error: msg})
 		}
 	}
-	return out, nil
+	n, err := s.planner.SettleCovered(ctx, tenantID, rs.RunID, rs.Capability, covered, rule.Every, rule.Expects == "http_service")
+	if err != nil {
+		return n, err
+	}
+	k, err := s.planner.SettleFailed(ctx, tenantID, rs.RunID, rs.Capability, failed, rule.Every)
+	n += k
+	if err != nil {
+		return n, err
+	}
+	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
+		return n, err
+	}
+	return n + len(blocked), nil
 }
 
 // plan starts every planned capability on its due pairs, within the

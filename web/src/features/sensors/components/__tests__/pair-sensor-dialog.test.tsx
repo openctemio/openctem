@@ -180,7 +180,7 @@ describe('PairSensorDialog', () => {
     await findByCode(user)
     await user.click(await screen.findByTestId('grant-profile'))
     expect(screen.queryByRole('option', { name: /legacy/i })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('option').length).toBe(6)
+    expect(screen.getAllByRole('option').length).toBe(7)
   })
 
   it('cannot approve without sensors:approve', async () => {

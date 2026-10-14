@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import en from '@/lib/i18n/dictionaries/en/tenableSc.json'
+import vi from '@/lib/i18n/dictionaries/vi/tenableSc.json'
+
 import type { Integration } from '@/features/integrations/types/integration.types'
 import type { Sensor } from '@/lib/api/sensor-types'
 import {
@@ -127,9 +130,9 @@ describe('connector settings', () => {
   it('reports the first problem', () => {
     const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
     expect(connectorSettingsError(ok)).toBeNull()
-    expect(connectorSettingsError({ ...ok, sensorId: '' })).toMatch(/sensor/)
-    expect(connectorSettingsError({ ...ok, instance: '../x' })).toMatch(/Instance/)
-    expect(connectorSettingsError({ ...ok, coverageEnabled: true })).toMatch(/policy/)
+    expect(connectorSettingsError({ ...ok, sensorId: '' })?.fallback).toMatch(/sensor/)
+    expect(connectorSettingsError({ ...ok, instance: '../x' })?.fallback).toMatch(/Instance/)
+    expect(connectorSettingsError({ ...ok, coverageEnabled: true })?.fallback).toMatch(/policy/)
   })
 })
 
@@ -196,7 +199,29 @@ describe('tenable scan config', () => {
       repository_id: 5,
       other: 1,
     })
-    expect(tenableScanConfigError({ ...c, policyId: 0 })).toMatch(/policy/)
-    expect(tenableScanConfigError({ ...c, integrationId: '' })).toMatch(/connector/)
+    expect(tenableScanConfigError({ ...c, policyId: 0 })?.fallback).toMatch(/policy/)
+    expect(tenableScanConfigError({ ...c, integrationId: '' })?.fallback).toMatch(/connector/)
+  })
+})
+
+describe('validation messages', () => {
+  it('carry a tenableSc key present in en and vi, with the English text as fallback', () => {
+    const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
+    const messages = [
+      connectorSettingsError({ ...ok, sensorId: '' }),
+      connectorSettingsError({ ...ok, instance: '../x' }),
+      connectorSettingsError({ ...ok, minSeverity: 9 }),
+      connectorSettingsError({ ...ok, fullSyncDays: 0 }),
+      connectorSettingsError({ ...ok, coverageEnabled: true }),
+      tenableScanConfigError({ integrationId: '', policyId: 0, repositoryId: 0, zoneId: 0 }),
+      tenableScanConfigError({ integrationId: 'i1', policyId: 0, repositoryId: 0, zoneId: 0 }),
+      tenableScanConfigError({ integrationId: 'i1', policyId: 1, repositoryId: 0, zoneId: 0 }),
+    ]
+    for (const m of messages) {
+      expect(m).not.toBeNull()
+      const key = m!.key as keyof typeof en
+      expect(en[key], m!.key).toBe(m!.fallback)
+      expect(vi[key as keyof typeof vi], m!.key).toBeTruthy()
+    }
   })
 })

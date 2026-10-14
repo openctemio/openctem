@@ -5,12 +5,21 @@ describes what is built and where it lives.
 
 ## Switch
 
-Everything here is behind `integration.TenableConnectorEnabled` (decision
-D-14; `TENABLE_CONNECTOR_ENABLED` in the web). While it is false,
-Tenable integrations cannot be created (the connector validator is not
-wired), the sync and coverage controllers are not registered, and the page
-stays hidden. It is turned on once a sensor release with the connector is out
-(**Planned**).
+On, as **Beta**: `integration.TenableConnectorEnabled` (decision D-14;
+`TENABLE_CONNECTOR_ENABLED` in the web) is true. The connector runs as its own
+image (`ghcr.io/openctemio/connector-tenable`, from v0.1.0). Turning the switch
+off refuses new Tenable integrations (the connector validator is not wired),
+stops registering the sync and coverage controllers and hides the page;
+stored rows are kept. It stays Beta until a run against a real Tenable.sc has
+confirmed the API details only the documentation states (RFC-047 §12.6), in
+particular the unit of `maxScanTime`.
+
+**`maxScanTime`.** The connector sends the scan's maximum duration in
+seconds. The Tenable.sc API reference states a default of 3600 without a
+unit, and the user guide speaks of hours, so Tenable.sc may let a scan run
+longer than asked. The connector does not rely on it: it stops the scan
+itself at `max_scan_seconds` plus 30 minutes for the import and reports it
+partial.
 
 ## Shape
 
@@ -24,7 +33,8 @@ tenablesc.Service.RequestSync ── connector_sync command, pinned to sensor_id
    │                              (payload: scanner=tenable_sc, instance, mode,
    │                               window_days, include, min_severity, repositories)
    ▼
-sensor (openctemio/sensor internal/connector/tenablesc; keys and URL only there)
+connector image ghcr.io/openctemio/connector-tenable (openctemio/connector-tenable):
+a sensor that runs nothing but the connector; keys and URL only there
    │  Tenable.sc /rest/analysis, /rest/plugin, /rest/status
    ▼
 CTIS reports, tool tenable_sc, coverage incremental, bound to the command
@@ -46,6 +56,17 @@ integration metadata.tenable_sync (cursor, counts, license), status connected
 | Command types `connector_sync`, `connector_scan` | `pkg/domain/command`, migration `000496` |
 | Tool catalog row `tenable_sc` (kind `connector`, never scannable) | migration `000495`, `tool.Tool.IsConnector` |
 | Source-asserted resolve | `internal/app/ingest/source_resolve.go`, `FindingRepository.ResolveSourceMitigated` |
+
+## Install and grant
+
+The connector is the image `ghcr.io/openctemio/connector-tenable`, run next to
+Tenable.sc and paired like any sensor (README of openctemio/connector-tenable;
+the connector dialog shows the run command). Approve it with the grant profile
+`scan-connector` (or `scan-connector:tenable_sc` to limit it to that tool):
+job types `connector_sync` and `connector_scan`, tier ceiling T1, no
+credentials, no push ingest, zone-bound like the internal scanner. A sensor at
+trust level New only receives syncs (T0); an administrator trusts it before
+scans (T1). The narrower `collector:tenable_sc` profile allows syncs only.
 
 ## Security rules (enforced and tested)
 

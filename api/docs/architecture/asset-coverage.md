@@ -38,13 +38,22 @@ checks such as `dns.dangling`, connectors).
 
 Each pass, per tenant, after reconciling:
 
-1. **Settle** every run that holds `queued` pairs: `completed`/`partial` →
-   `covered` (outcome `ok`, or `no_output` when the rule expects a web origin
-   and none of the asset was observed since it was queued); targets the run
-   did not finish, and runs that `failed`, were `canceled`, `timeout` or
-   `blocked` → `failed` with the run's error, failure streak + 1, due again
-   after 1 h doubled per failure (at most the cadence, at most a day). A run
-   not finished after a day fails its pairs as stalled.
+1. **Settle** every finished run that holds `queued` pairs, **per target**:
+   a step may end with more tasks than chunks (claim-time splits, follow-ups
+   of unfinished targets), so each pair is settled from what happened to its
+   own target across every task of the run (`target_outcomes`, read against
+   the task's own targets). `done` → `covered` (`ok`, or `no_output` when
+   the rule expects a web origin and none of the asset was observed since it
+   was queued; a target the sensor reported unreached fails as
+   `unreachable`); `failed` keeps its class (`unreachable`, `timeout`,
+   `tool_error`, `egress_refused`); `skipped` → `blocked` with its class; a
+   task without outcomes covers its targets when it completed and fails them
+   with its error otherwise; the best verdict across tasks wins (a follow-up
+   that finished a target covers it). The run's own unfinished targets
+   (including a connector's) fail as `unfinished`; a target no task carried
+   fails as `not_dispatched` with the run's error. Failed pairs are due
+   again after 1 h doubled per failure (at most the cadence, at most a day);
+   a run not finished after a day fails its pairs as `stalled`.
 2. **Plan**, when the organization has automatic coverage on (Scoping >
    Settings, `auto_coverage`; default on, except while the scan approval
    mode in force is Strict, until the organization turns it on): for

@@ -32,8 +32,13 @@ const (
 	ProfileInternalScanner      = "internal-network-scanner"
 	ProfileAuthenticatedScanner = "authenticated-scanner"
 	ProfileCollector            = "collector"
-	ProfileCIRunner             = "ci-runner"
-	ProfileEndpoint             = "endpoint-agent"
+	// ProfileScanConnector is a connector to a scanner product the
+	// organization runs (the Tenable.sc connector image): it syncs from the
+	// product and launches the product's scans on targets, and runs no
+	// scanner of its own.
+	ProfileScanConnector = "scan-connector"
+	ProfileCIRunner      = "ci-runner"
+	ProfileEndpoint      = "endpoint-agent"
 	// ProfileCustom marks a grant edited away from its profile.
 	ProfileCustom = "custom"
 
@@ -149,14 +154,15 @@ func (g *Grant) LegacyBroad() bool { return g != nil && g.Profile == ProfileLega
 // (legacy-broad is never selectable).
 func SelectableProfiles() []string {
 	return []string{ProfileInternalScanner, ProfileEASMExternal, ProfileAuthenticatedScanner,
-		ProfileCollector, ProfileCIRunner, ProfileEndpoint}
+		ProfileCollector, ProfileScanConnector, ProfileCIRunner, ProfileEndpoint}
 }
 
-// ValidProfile reports whether name may be picked ("collector:<name>" too).
+// ValidProfile reports whether name may be picked ("collector:<name>" and
+// "scan-connector:<tool>" too).
 func ValidProfile(name string) bool {
 	base, param, has := strings.Cut(name, ":")
 	if has {
-		return base == ProfileCollector && isToken(param)
+		return ParameterisedProfile(base) && isToken(param)
 	}
 	return slices.Contains(SelectableProfiles(), name)
 }
@@ -186,12 +192,27 @@ func NewGrantFromProfile(tenantID, sensorID shared.ID, profile string, zones []s
 		if param != "" {
 			g.Tools = []string{CanonicalTool(param)}
 		}
+	case ProfileScanConnector:
+		// Syncs (T0) and the product's scans (T1) on targets in the chosen
+		// zones; never credentials, never push ingest. Trust level New still
+		// caps it at passive work: an administrator trusts it before scans.
+		g.JobTypes, g.TierCeiling = []string{"connector_sync", "connector_scan"}, TierActive
+		g.ZoneIDs = zoneLimit(zones)
+		if param != "" {
+			g.Tools = []string{CanonicalTool(param)}
+		}
 	case ProfileCIRunner:
 		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = scanJobTypes(), TierPassive, TargetNetworkNone, true
 	case ProfileEndpoint:
 		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = append(scanJobTypes(), "collect"), TierPassive, TargetNetworkNone, true
 	}
 	return g, nil
+}
+
+// ParameterisedProfile reports whether a profile takes a ":<name>" (the one
+// connector or tool the sensor runs).
+func ParameterisedProfile(base string) bool {
+	return base == ProfileCollector || base == ProfileScanConnector
 }
 
 // scanJobTypes are the job types of a profile that may scan: a profile that
