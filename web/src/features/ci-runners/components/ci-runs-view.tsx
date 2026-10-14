@@ -17,6 +17,7 @@ import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { safeHref } from '@/lib/safe-href'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +52,13 @@ import { PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
 import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
+import { CISetupEntry } from './ci-setup-wizard'
+
+/** Whether a load error is a 404: the run is missing or out of the caller's data scope. */
+function isNotFound(error: unknown): boolean {
+  if (error instanceof ApiClientError) return error.isNotFoundError()
+  return (error as { statusCode?: number } | null)?.statusCode === 404
+}
 
 export function VerdictBadge({
   verdict,
@@ -136,6 +144,8 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
   const selected = runParam || null
   const setSelected = (id: string | null) => setRunParam(id ?? '')
   const { data, error, isLoading, mutate } = useCIRuns({ verdict, page })
+  const { can } = usePermissions()
+  const canWrite = can(Permission.CIWrite)
   const runs = data?.data ?? []
   const totalPages = data?.total_pages ?? 1
 
@@ -191,6 +201,24 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
             ))}
           </CardContent>
         </Card>
+      ) : runs.length === 0 && verdict ? (
+        <EmptyState
+          icon={Workflow}
+          title={t('scans.ci.noRunsFilteredTitle', 'No runs with this verdict')}
+          description={t(
+            'scans.ci.noRunsFiltered',
+            'Choose another verdict, or all verdicts, to see the other runs.'
+          )}
+        />
+      ) : runs.length === 0 && !canWrite ? (
+        <EmptyState
+          icon={Workflow}
+          title={t('scans.ci.noRunsScopedTitle', 'No CI runs you can see')}
+          description={t(
+            'scans.ci.noRunsScoped',
+            'You see the runs of repositories you have access to. If a pull request check links here, ask an administrator for access to its repository.'
+          )}
+        />
       ) : runs.length === 0 ? (
         <EmptyState
           icon={Workflow}
@@ -199,11 +227,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
             'scans.ci.noRuns',
             'Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
           )}
-          action={
-            <Button asChild size="sm">
-              <Link href="/ci-cd?tab=setup">{t('scans.ci.setUpTrust', 'Set up CI trust')}</Link>
-            </Button>
-          }
+          action={<CISetupEntry canWrite={canWrite} />}
         />
       ) : (
         <Card>
@@ -212,8 +236,8 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('scans.ci.col.repository', 'Repository')}</TableHead>
-                  <TableHead>{t('scans.ci.col.ref', 'Ref')}</TableHead>
                   <TableHead>{t('scans.ci.col.verdict', 'Verdict')}</TableHead>
+                  <TableHead>{t('scans.ci.col.ref', 'Ref')}</TableHead>
                   <TableHead>{t('scans.ci.col.findings', 'Findings')}</TableHead>
                   <TableHead>{t('scans.ci.col.actor', 'Actor')}</TableHead>
                   <TableHead>{t('scans.ci.col.started', 'Started')}</TableHead>
@@ -236,15 +260,15 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-56">
-                      <RefCell run={run} />
-                    </TableCell>
                     <TableCell>
                       <VerdictBadge
                         verdict={run.verdict}
                         wouldFail={run.would_fail}
                         status={run.status}
                       />
+                    </TableCell>
+                    <TableCell className="max-w-56">
+                      <RefCell run={run} />
                     </TableCell>
                     <TableCell>{run.findings_count ?? 0}</TableCell>
                     <TableCell className="text-sm">{run.actor}</TableCell>
@@ -382,7 +406,18 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
           </SheetDescription>
         </SheetHeader>
         <SheetBody className="p-0">
-          {error ? (
+          {error && isNotFound(error) ? (
+            <div className="p-4">
+              <EmptyState
+                icon={ShieldAlert}
+                title={t('scans.ci.runNotFoundTitle', 'This run is not available to you')}
+                description={t(
+                  'scans.ci.runNotFound',
+                  'The run does not exist, or its repository is not in your access. The comment on the pull or merge request lists what blocked it; ask an administrator for access to the repository to see the details here.'
+                )}
+              />
+            </div>
+          ) : error ? (
             <div className="p-4">
               <ErrorState title={t('scans.ci.theRun', 'the run')} error={error} />
             </div>
