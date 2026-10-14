@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -326,12 +328,46 @@ func (c *Command) CanBeAcknowledged() bool {
 // Platform Job Methods
 // =============================================================================
 
-// SetPlatformJob marks this command as a platform job and enqueues it.
-func (c *Command) SetPlatformJob(queuePriority int) {
+// ErrRegistryRulesOnPlatform refuses a platform job that would make the
+// platform's sensor fetch rules from the semgrep registry for a tenant: the
+// registry rules licence does not allow providing them as a service.
+// Platform scans run static analysis with opengrep and the OpenCTEM rules
+// pack (research/132).
+var ErrRegistryRulesOnPlatform = fmt.Errorf("%w: platform scans run static analysis with opengrep and the OpenCTEM rules pack; semgrep would fetch registry rules", shared.ErrValidation)
+
+// registryRuleTools are the tools that fetch registry rules when a sensor
+// has no managed rules: semgrep defaults to --config auto. opengrep runs
+// local rules only.
+var registryRuleTools = map[string]bool{"semgrep": true}
+
+// CheckPlatformJob refuses a payload a platform sensor must not run.
+func CheckPlatformJob(payload json.RawMessage) error {
+	var p struct {
+		Scanner string `json:"scanner"`
+	}
+	if len(payload) > 0 {
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return fmt.Errorf("%w: platform job payload: %v", shared.ErrValidation, err)
+		}
+	}
+	if registryRuleTools[strings.ToLower(strings.TrimSpace(p.Scanner))] {
+		return ErrRegistryRulesOnPlatform
+	}
+	return nil
+}
+
+// SetPlatformJob marks this command as a platform job and enqueues it,
+// unless its payload is one a platform sensor must not run
+// (CheckPlatformJob).
+func (c *Command) SetPlatformJob(queuePriority int) error {
+	if err := CheckPlatformJob(c.Payload); err != nil {
+		return err
+	}
 	c.IsPlatformJob = true
 	c.QueuePriority = queuePriority
 	now := time.Now()
 	c.QueuedAt = &now
+	return nil
 }
 
 // AssignToPlatformSensor assigns this job to a specific platform sensor.
