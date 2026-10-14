@@ -200,6 +200,29 @@ func (s *SensorService) CommandsToCancel(ctx context.Context, a *sensordom.Senso
 	return ids
 }
 
+// CommandsToStop returns the commands among running (the heartbeat's
+// running list, untrusted) that sensor a holds and is asked to stop as
+// stalled, handing back what they finished (stop_command_ids). Best effort,
+// like CommandsToCancel; nil when the cancel finder cannot find stops.
+func (s *SensorService) CommandsToStop(ctx context.Context, a *sensordom.Sensor, running []string) []string {
+	f, ok := s.cancels.(commanddom.StopFinder)
+	if !ok || a == nil || a.TenantID == nil || len(running) == 0 {
+		return nil
+	}
+	if len(running) > maxRenewedCommands {
+		running = running[:maxRenewedCommands]
+	}
+	ids, err := f.CommandsToStop(ctx, *a.TenantID, a.ID, running)
+	if err != nil {
+		s.logger.Warn("commands to stop not looked up", "sensor_id", a.ID.String(), "error", err)
+		return nil
+	}
+	if len(ids) > MaxCancelCommandIDs {
+		ids = ids[:MaxCancelCommandIDs]
+	}
+	return ids
+}
+
 // SetEventRepository wires the sensor activity store: heartbeat diffs and
 // online transitions are recorded there under the limits.
 func (s *SensorService) SetEventRepository(repo sensordom.EventRepository, limits sensordom.EventLimits) {
