@@ -9,15 +9,15 @@ type Origin string
 
 // Origins.
 const (
-	OriginManual        Origin = "manual"         // added on the Scope page or the API
-	OriginRequest       Origin = "request"        // a member's request (pending)
-	OriginImport        Origin = "import"         // bulk paste or CSV
-	OriginReviewRule    Origin = "review_rule"    // accepted or rejected as a review rule
-	OriginRefusalFix    Origin = "refusal_fix"    // a fix offered on a refused scan target
-	OriginSeed          Origin = "seed"           // added as an EASM root-domain seed
-	OriginSeedMigration Origin = "seed_migration" // folded from a seed by an upgrade
-	OriginSystem        Origin = "system"         // written by the platform (an upgrade)
-	OriginProgram       Origin = "program"        // imported from a bug-bounty program (RFC-065)
+	OriginManual        Origin = "manual"          // added on the Scope page or the API
+	OriginRequest       Origin = "request"         // a member's request (pending)
+	OriginImport        Origin = "import"          // bulk paste or CSV
+	OriginReviewRule    Origin = "review_rule"     // accepted or rejected as a review rule
+	OriginRefusalFix    Origin = "refusal_fix"     // a fix offered on a refused scan target
+	OriginSeed          Origin = "seed"            // added as an EASM root-domain seed
+	OriginSeedMigration Origin = "seed_migration"  // folded from a seed by an upgrade
+	OriginSystem        Origin = "system"          // written by the platform (an upgrade)
+	OriginProgram       Origin = "program"         // imported from a bug-bounty program (RFC-065)
 	OriginConfirmed     Origin = "confirmed_asset" // a person confirmed the asset as the organization's (research/117)
 	OriginConnector     Origin = "connector"       // synced by one of the organization's connectors (research/117)
 )
