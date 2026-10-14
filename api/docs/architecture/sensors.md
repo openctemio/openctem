@@ -1861,7 +1861,7 @@ each tool of one of the organization's own sensors from the sensor drawer's
   flag, sensitive, group). A descriptor without `config` means the tool has
   no settings; a schema the contract refuses is ignored (logged). There is
   no upload route: the schema always comes from the sensor's own manifest.
-- *Storage.* Table `sensor_tool_settings` (migration `002111`): `tenant_id`,
+- *Storage.* Table `sensor_tool_settings` (migration `002114`): `tenant_id`,
   `sensor_id`, `tool`, `values` (jsonb), `schema_digest` (the digest of the
   schema the values were validated against), `updated_by`, `updated_at`;
   primary key (`sensor_id`, `tool`); foreign key (`tenant_id`, `sensor_id`) →
