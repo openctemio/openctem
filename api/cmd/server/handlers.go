@@ -19,6 +19,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
+	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -56,6 +57,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
@@ -511,6 +513,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
@@ -1437,6 +1440,9 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+		runner.SetSecretKeys(fp)
+	}
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
 	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))
