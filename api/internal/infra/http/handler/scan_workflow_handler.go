@@ -349,6 +349,9 @@ type RunTaskResponse struct {
 	// WaitingOnHosts: a queued task waits while another task of the
 	// organization scans one of its hosts (the placement explains which).
 	WaitingOnHosts bool `json:"waiting_on_hosts,omitempty"`
+	// HostWait says, for a task waiting on its hosts, how many are held,
+	// by which task, and how many of its targets can start.
+	HostWait *RunTaskHostWait `json:"host_wait,omitempty"`
 	// Progress is a running task's finished targets as its sensor last
 	// reported them, and when that count last grew (research/122).
 	Progress *RunTaskProgress `json:"progress,omitempty"`
@@ -1177,6 +1180,7 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	if tasks != nil {
 		resp.TaskSummary = toRunTaskSummaryResponse(tasks.Summary)
 		resp.Tasks = toRunTaskResponses(tasks.Items)
+		h.withHostWaits(r.Context(), tenantID, run.ID.String(), resp.Tasks)
 		resp.TasksTruncated = tasks.Truncated
 		resp.TasksNextCursor = tasks.NextCursor
 	}
@@ -1291,6 +1295,7 @@ func (h *ScanWorkflowHandler) ListRunTasks(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	resp := RunTaskPageResponse{Data: toRunTaskResponses(page.Items), NextCursor: page.NextCursor}
+	h.withHostWaits(r.Context(), tenantID, runID, resp.Data)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
