@@ -824,7 +824,21 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	}
 
 	fence := fenceOf(cmd, input.SensorID)
-	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
+	msg := truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes)
+	// A task the platform asked to stop as stalled that stopped with
+	// nothing finished has not failed: it is re-queued, as a stall was.
+	if r, ok := s.repo.(commanddom.StopRequeuer); ok && cmd.SensorID != nil {
+		requeued, err := r.RequeueStopped(ctx, cmd, fence, truncateUTF8(commanddom.StoppedEmptyMessage+": "+msg, MaxFailErrorMessageBytes))
+		if err != nil {
+			return nil, err
+		}
+		if requeued {
+			cmd.Status, cmd.SensorID, cmd.StartedAt, cmd.AcknowledgedAt = commanddom.CommandStatusPending, nil, nil, nil
+			cmd.DispatchAttempts++
+			return cmd, nil
+		}
+	}
+	cmd.Fail(msg)
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}

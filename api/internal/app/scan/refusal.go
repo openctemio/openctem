@@ -30,6 +30,8 @@ func RefusalCodeForState(s attribution.State) string {
 		return scopedom.RefusalDenyList
 	case attribution.StateWildcardOnly:
 		return scopedom.RefusalWildcardOnly
+	case attribution.StateGuardrailed:
+		return scopedom.RefusalGuardrailed
 	}
 	// unattributed, out_of_scope, discovered: nothing covers it (a
 	// discovered asset is in the inventory, passive only).

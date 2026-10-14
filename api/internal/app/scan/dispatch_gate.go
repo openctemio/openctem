@@ -580,14 +580,26 @@ func (s *Service) refuseConstrained(ctx context.Context, in DispatchTargetsInput
 	}
 	allowed := make([]string, 0, len(kept))
 	for _, t := range kept {
-		if _, no := refused[t]; no {
-			out.Refused = append(out.Refused, RefusedTarget{Target: t, Code: scopedom.RefusalConstrained,
-				Reason: scopedom.RefusalMessages[scopedom.RefusalConstrained]})
+		if reason, no := refused[t]; no {
+			code := constraintCode(reason)
+			out.Refused = append(out.Refused, RefusedTarget{Target: t, Code: code, Reason: scopedom.RefusalMessages[code]})
 			continue
 		}
 		allowed = append(allowed, t)
 	}
 	return allowed, nil
+}
+
+// constraintCode is the refusal code of a ConstraintRefused reason: the
+// low-impact cap, the web-port cap of a name and the tier cap of an
+// unclassified asset keep their own codes (RFC-054 §16); a port- or
+// path-limited entry's reasons are constrained.
+func constraintCode(reason string) string {
+	switch reason {
+	case scopedom.RefusalLowImpact, scopedom.RefusalWebPortsOnly, scopedom.RefusalTierExceeds:
+		return reason
+	}
+	return scopedom.RefusalConstrained
 }
 
 // refuseOverTier moves every kept target the scope authority covers only

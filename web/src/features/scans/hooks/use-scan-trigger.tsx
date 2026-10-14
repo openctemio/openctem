@@ -37,6 +37,7 @@ import {
   DialogBody,
 } from '@/components/ui/dialog'
 import { get, post } from '@/lib/api/client'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { scanEndpoints } from '@/lib/api/endpoints'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { invalidateScanConfigsCache } from '@/lib/api/scan-hooks'
@@ -146,7 +147,7 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
                   'scanWindows.trigger.neverHint',
                   'Change the scan windows in Settings > Scan windows, or remove these targets from the scan.'
                 )
-              : triggerErrorHint(error),
+              : (triggerErrorHint(error) ?? refusalFix(error, t)),
           }
         )
       }
@@ -245,4 +246,17 @@ export function useScanTrigger({ onTriggered, onViewRun }: UseScanTriggerOptions
   )
 
   return { trigger, isTriggering, dialog }
+}
+
+/**
+ * What to do about a refused run start, from its code (the run failure
+ * catalog's fix text), or undefined for a code without one.
+ */
+export function refusalFix(
+  error: unknown,
+  t: (key: string, fallback?: string) => string
+): string | undefined {
+  if (!(error instanceof ApiClientError) || !error.code) return undefined
+  const fix = t(`scans.failure.${error.code}.fix`, '')
+  return fix || undefined
 }

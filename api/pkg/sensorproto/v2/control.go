@@ -149,6 +149,12 @@ type HeartbeatResponse struct {
 	// after the lease ran out, or held by another sensor. Stop and release
 	// them; their results are refused anyway. At most 256.
 	CancelCommandIDs []string `json:"cancel_command_ids"`
+	// StopCommandIDs are commands the sensor listed as running that
+	// stalled: stop each and complete it with what it finished (partial,
+	// the rest unfinished); the platform runs only the unfinished targets
+	// again. A sensor that cannot is re-queued after a grace period. At
+	// most 256.
+	StopCommandIDs []string `json:"stop_command_ids,omitempty"`
 }
 
 // Command is a command as the v2 command resources return it. sensor_id is

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,39 +90,75 @@ func TestInstallationTokenUsesAppJWTAndCaches(t *testing.T) {
 
 // The install is accepted only when the person's own token reaches it; the
 // error never carries a token.
-func TestUserCanAccessInstallation(t *testing.T) {
+func TestUserMayBindInstallation(t *testing.T) {
+	var revoked atomic.Int32
+	// Users by token: alice is an admin of acme (id 100), bob a member,
+	// carol a pending admin, dave the user account 300.
 	app, _ := testApp(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/login/oauth/access_token":
+		auth := r.Header.Get("Authorization")
+		switch {
+		case r.URL.Path == "/login/oauth/access_token":
 			var b map[string]string
 			_ = json.NewDecoder(r.Body).Decode(&b)
 			if b["client_secret"] != "csecret" || b["code"] == "bad" {
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "bad_verification_code"})
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "ghu_user"})
-		case "/user/installations":
-			if r.Header.Get("Authorization") != "Bearer ghu_user" {
+			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "ghu_" + b["code"]})
+		case r.URL.Path == "/applications/cid/token" && r.Method == http.MethodDelete:
+			if auth != "Basic Y2lkOmNzZWNyZXQ=" {
 				http.Error(w, `{"message":"no"}`, http.StatusUnauthorized)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"installations": []map[string]any{{"id": 11}}})
+			revoked.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/user/memberships/orgs/acme":
+			m := map[string]map[string]any{
+				"Bearer ghu_alice": {"state": "active", "role": "admin"},
+				"Bearer ghu_bob":   {"state": "active", "role": "member"},
+				"Bearer ghu_carol": {"state": "pending", "role": "admin"},
+			}[auth]
+			if m == nil {
+				http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+				return
+			}
+			m["organization"] = map[string]any{"id": 100}
+			_ = json.NewEncoder(w).Encode(m)
+		case r.URL.Path == "/user":
+			id := map[string]int{"Bearer ghu_dave": 300, "Bearer ghu_alice": 1}[auth]
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	ctx := context.Background()
-	if ok, err := app.UserCanAccessInstallation(ctx, "good", 11); err != nil || !ok {
-		t.Fatalf("own installation: %v %v", ok, err)
+	org := &Installation{ID: 11, Account: Account{Login: "acme", ID: 100, Type: "Organization"}}
+	renamed := &Installation{ID: 12, Account: Account{Login: "acme", ID: 999, Type: "Organization"}}
+	user := &Installation{ID: 13, Account: Account{Login: "dave", ID: 300, Type: "User"}}
+	for _, c := range []struct {
+		name string
+		code string
+		inst *Installation
+		want bool
+	}{
+		{"organization admin", "alice", org, true},
+		{"member who sees the installation", "bob", org, false},
+		{"pending admin", "carol", org, false},
+		{"not in the organization", "erin", org, false},
+		{"organization id differs", "alice", renamed, false},
+		{"the user account itself", "dave", user, true},
+		{"another user's account", "alice", user, false},
+		{"bad code", "bad", org, false},
+		{"no code", "", org, false},
+	} {
+		ok, err := app.UserMayBindInstallation(ctx, c.code, c.inst)
+		if err != nil || ok != c.want {
+			t.Errorf("%s: got %v %v, want %v", c.name, ok, err, c.want)
+		}
 	}
-	if ok, _ := app.UserCanAccessInstallation(ctx, "good", 12); ok {
-		t.Fatal("someone else's installation accepted")
-	}
-	if ok, _ := app.UserCanAccessInstallation(ctx, "bad", 11); ok {
-		t.Fatal("a bad code accepted")
-	}
-	if ok, _ := app.UserCanAccessInstallation(ctx, "", 11); ok {
-		t.Fatal("no code accepted")
+	// Every user token obtained was revoked (7 exchanges succeeded).
+	if n := revoked.Load(); n != 7 {
+		t.Errorf("revoked %d user tokens, want 7", n)
 	}
 }
 
@@ -151,6 +188,53 @@ func TestErrorsCarryNoToken(t *testing.T) {
 	_, err := app.InstallationToken(context.Background(), 1)
 	if err == nil || strings.Contains(err.Error(), "Bearer") || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// A rate limit (429, or 403 with Retry-After or no requests left) is marked
+// so the caller retries; a plain 403 is a refusal.
+func TestRateLimitedErrors(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		header map[string]string
+		want   bool
+	}{
+		{http.StatusTooManyRequests, nil, true},
+		{http.StatusForbidden, map[string]string{"Retry-After": "60"}, true},
+		{http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "0"}, true},
+		{http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "12"}, false},
+		{http.StatusNotFound, map[string]string{"Retry-After": "60"}, false},
+	} {
+		app, _ := testApp(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			for k, v := range tc.header {
+				w.Header().Set(k, v)
+			}
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(`{"message":"limited"}`))
+		}))
+		_, err := app.InstallationToken(context.Background(), 1)
+		var se *StatusError
+		if !errors.As(err, &se) || se.Status != tc.status || se.RateLimited != tc.want {
+			t.Fatalf("%d %v: %#v", tc.status, tc.header, err)
+		}
+	}
+}
+
+// CommitParents reads the parents of a commit with the installation token.
+func TestCommitParents(t *testing.T) {
+	app, _ := testApp(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/access_tokens"):
+			_, _ = w.Write([]byte(`{"token":"ghs_x","expires_at":"` + time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+		case r.URL.Path == "/repos/acme/api/commits/merge2" && r.Header.Get("Authorization") == "Bearer ghs_x":
+			_, _ = w.Write([]byte(`{"sha":"merge2","parents":[{"sha":"base2"},{"sha":"head1"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	got, err := app.CommitParents(context.Background(), 7, "acme", "api", "merge2")
+	if err != nil || strings.Join(got, ",") != "base2,head1" {
+		t.Fatalf("parents = %v %v", got, err)
 	}
 }
 

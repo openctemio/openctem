@@ -262,6 +262,12 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 	if retryBackoff <= 0 {
 		retryBackoff = scan.DefaultRetryBackoffSeconds
 	}
+	var skipped []byte
+	if len(s.SkippedTargets) > 0 {
+		if skipped, err = json.Marshal(s.SkippedTargets); err != nil {
+			return fmt.Errorf("failed to marshal skipped_targets: %w", err)
+		}
+	}
 
 	query := `
 		UPDATE scans
@@ -272,7 +278,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		    tags = $18, run_on_tenant_runner = $19, sensor_preference = $20, profile_id = $21, timeout_seconds = $22,
 		    max_retries = $23, retry_backoff_seconds = $24, status = $25,
 		    updated_at = $26, scan_zone_id = $28, ad_hoc = $29, schedule_rrule = NULLIF($30, ''), schedule_run_at = $31,
-		    target_options = $32, intensity = $33
+		    target_options = $32, intensity = $33, skipped_targets = $34
 		WHERE id = $1 AND tenant_id = $27
 	`
 
@@ -310,6 +316,7 @@ func (r *ScanRepository) Update(ctx context.Context, s *scan.Scan) error {
 		s.ScheduleRunAt,                // $31
 		targetOptions,                  // $32
 		string(s.EffectiveIntensity()), // $33
+		skipped,                        // $34
 	)
 
 	if err != nil {
