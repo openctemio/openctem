@@ -12,6 +12,7 @@ import (
 	"crypto/hmac"
 	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -296,11 +297,15 @@ func (a *App) ForgetInstallation(id int64) {
 	a.mu.Unlock()
 }
 
-// UserCanAccessInstallation exchanges the OAuth code GitHub sent with the
-// setup redirect for a user token and reports whether that user can access
-// the installation. The user token is used for this one call and dropped.
-func (a *App) UserCanAccessInstallation(ctx context.Context, code string, installationID int64) (bool, error) {
-	if code == "" || len(code) > 200 {
+// UserMayBindInstallation exchanges the OAuth code GitHub sent with the
+// setup redirect for a user token and reports whether that user owns the
+// installation's account: an active admin (owner) of the organization, or
+// the user account itself. Seeing the installation is not enough: any member
+// of the organization can, and binding decides which OpenCTEM organization
+// posts the gate check for every repository of the account. The user token
+// is used for this check only and revoked afterwards (best effort).
+func (a *App) UserMayBindInstallation(ctx context.Context, code string, inst *Installation) (bool, error) {
+	if code == "" || len(code) > 200 || inst == nil || inst.Account.ID <= 0 {
 		return false, nil
 	}
 	var tok struct {
@@ -314,24 +319,53 @@ func (a *App) UserCanAccessInstallation(ctx context.Context, code string, instal
 	if tok.AccessToken == "" {
 		return false, nil
 	}
-	for page := 1; page <= 10; page++ {
-		var list struct {
-			Installations []Installation `json:"installations"`
+	defer a.revokeUserToken(ctx, tok.AccessToken)
+	auth := "Bearer " + tok.AccessToken
+	switch inst.Account.Type {
+	case "Organization":
+		var m struct {
+			State        string `json:"state"`
+			Role         string `json:"role"`
+			Organization struct {
+				ID int64 `json:"id"`
+			} `json:"organization"`
 		}
-		u := fmt.Sprintf("%s/user/installations?per_page=100&page=%d", a.cfg.APIURL, page)
-		if err := a.do(ctx, http.MethodGet, u, "Bearer "+tok.AccessToken, nil, &list); err != nil {
+		err := a.do(ctx, http.MethodGet, a.cfg.APIURL+"/user/memberships/orgs/"+url.PathEscape(inst.Account.Login), auth, nil, &m)
+		if notAMember(err) {
+			return false, nil
+		}
+		if err != nil {
 			return false, err
 		}
-		for _, i := range list.Installations {
-			if i.ID == installationID {
-				return true, nil
-			}
+		return m.State == "active" && m.Role == "admin" && m.Organization.ID == inst.Account.ID, nil
+	case "User":
+		var u struct {
+			ID int64 `json:"id"`
 		}
-		if len(list.Installations) < 100 {
-			break
+		if err := a.do(ctx, http.MethodGet, a.cfg.APIURL+"/user", auth, nil, &u); err != nil {
+			return false, err
 		}
+		return u.ID == inst.Account.ID, nil
 	}
 	return false, nil
+}
+
+// notAMember: GitHub answers 403 or 404 when the user has no membership of
+// the organization (or cannot see it).
+func notAMember(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && (se.Status == http.StatusNotFound || se.Status == http.StatusForbidden)
+}
+
+// revokeUserToken deletes a user token the install check obtained, so it
+// cannot be used after the check even if it leaked. Failures are ignored:
+// the token expires on its own.
+func (a *App) revokeUserToken(ctx context.Context, token string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	basic := base64.StdEncoding.EncodeToString([]byte(a.cfg.ClientID + ":" + a.cfg.ClientSecret))
+	_ = a.do(ctx, http.MethodDelete, a.cfg.APIURL+"/applications/"+url.PathEscape(a.cfg.ClientID)+"/token",
+		"Basic "+basic, map[string]string{"access_token": token}, nil)
 }
 
 // VerifySignature checks GitHub's X-Hub-Signature-256 over the raw body in

@@ -115,6 +115,14 @@ type ScopeSettingsResponse struct {
 	// wait for review outside the inventory (default false: they join the
 	// inventory as discovered, passive only; RFC-054 §15).
 	ReviewBeforeInventory bool `json:"review_before_inventory"`
+	// UnclassifiedScans is the setting: what active scans may do to an
+	// asset no scope entry covers and nobody excluded or rejected (RFC-054
+	// §16): off (passive only), low_impact (default) or full. The platform
+	// guardrails apply in every mode.
+	UnclassifiedScans string `json:"unclassified_scans" enums:"off,low_impact,full"`
+	// UnclassifiedScansEffective is the mode in force: off under the
+	// Strict scan approval mode, else the setting (read-only).
+	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -166,11 +174,14 @@ type ScopeSettingsRequest struct {
 	AutoJoinDiscovered *bool `json:"auto_join_discovered"`
 	ConfirmAddsToScope *bool `json:"confirm_adds_to_scope"`
 	// ReviewBeforeInventory: omitted keeps the stored value.
-	ReviewBeforeInventory *bool  `json:"review_before_inventory"`
-	OneOffTargets         string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
-	OneOffMaxDays         int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
-	WideningApprovals     *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
-	DefaultMaxTier        string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	ReviewBeforeInventory *bool `json:"review_before_inventory"`
+	// UnclassifiedScans: off, low_impact or full; omitted keeps the stored
+	// value.
+	UnclassifiedScans string `json:"unclassified_scans" validate:"omitempty,oneof=off low_impact full"`
+	OneOffTargets     string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
+	OneOffMaxDays     int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
+	WideningApprovals *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
+	DefaultMaxTier    string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
 }
 
 func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss tenant.ScopeSettings) (ScopeSettingsResponse, error) {
@@ -183,7 +194,8 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 	return ScopeSettingsResponse{
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
 		ReviewBeforeInventory: ss.ReviewBeforeInventory,
-		OneOffTargets:         ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
+		UnclassifiedScans:     ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
+		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
 		ActiveProof:   h.activeProofMode(ctx),
@@ -267,13 +279,15 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		ConfirmAddsToScopeDisabled: req.ConfirmAddsToScope != nil && !*req.ConfirmAddsToScope,
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
+		UnclassifiedScans: req.UnclassifiedScans,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
 	}
-	// A client that does not know confirm_adds_to_scope or
-	// review_before_inventory keeps the stored value instead of resetting it.
-	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil {
+	// A client that does not know confirm_adds_to_scope,
+	// review_before_inventory or unclassified_scans keeps the stored value
+	// instead of resetting it.
+	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -286,6 +300,10 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if req.ReviewBeforeInventory == nil {
 			ss.ReviewBeforeInventory = before.ReviewBeforeInventory
 		}
+		if req.UnclassifiedScans == "" {
+			ss.UnclassifiedScans = before.UnclassifiedScans
+		}
+
 	}
 	actx := auditapp.AuditContext{
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),

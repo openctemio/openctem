@@ -24,6 +24,7 @@ package scope
 // pattern: it is set at creation and never changed.
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
@@ -392,6 +393,34 @@ type JobShape struct {
 	// signed job: the limits travel in the signed statement, so any tool
 	// may run inside them.
 	LimitsEnforced bool
+	// Settings is the job's tool settings as canonical JSON (LowImpactConfig
+	// of its config and scanner_config); "" when it has none and
+	// SettingsUnreadable when they cannot be read. A JSON string keeps the
+	// shape comparable (jobs are grouped by it).
+	Settings string
+	// CustomTemplates: the job carries custom templates. Interactsh: it asks
+	// for out-of-band callbacks.
+	CustomTemplates bool
+	Interactsh      bool
+}
+
+// SettingsUnreadable marks a job whose settings cannot be read (the
+// low-impact check refuses it).
+const SettingsUnreadable = "!"
+
+// LowImpactJob is the job as the low-impact check reads it.
+func (j JobShape) LowImpactJob() LowImpactJob {
+	out := LowImpactJob{Tool: j.Tool, CustomTemplates: j.CustomTemplates, Interactsh: j.Interactsh, Config: map[string]any{}}
+	switch j.Settings {
+	case "":
+	case SettingsUnreadable:
+		out.Tool = "" // refused
+	default:
+		if json.Unmarshal([]byte(j.Settings), &out.Config) != nil {
+			out.Tool = ""
+		}
+	}
+	return out
 }
 
 // Overlaps reports whether two constraints allow a common port (a zero
