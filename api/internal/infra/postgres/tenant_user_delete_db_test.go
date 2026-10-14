@@ -288,6 +288,8 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		return map[string]any{"kind": "organization", "redirect_uris": "{https://client.example/cb}"}
 	},
 	"scan_zones": func(*schemaSeeder) map[string]any { return map[string]any{"is_default": "true"} },
+	// capability is "<verb>.<object>" (CHECK, RFC-093).
+	"asset_coverage": func(*schemaSeeder) map[string]any { return map[string]any{"capability": "scan.ports"} },
 	// A report file is in the row (content) or in the file storage (key and
 	// provider); CHECK chk_*_stored wants one of them.
 	"pentest_report_templates": func(*schemaSeeder) map[string]any { return map[string]any{"content": "docx"} },
