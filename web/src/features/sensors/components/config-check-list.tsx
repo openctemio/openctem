@@ -93,7 +93,10 @@ export function FixSnippetTabs({
         </TabsList>
         {shown.map((f) => (
           <TabsContent key={f.key} value={f.key} className="mt-2">
-            <UntrustedTextBlock text={fix[f.key] ?? ''} label={`Fix (${f.label})`} />
+            <UntrustedTextBlock
+              text={fix[f.key] ?? ''}
+              label={t('sensors.checks.fixFormat', 'Fix ({format})', { format: f.label })}
+            />
           </TabsContent>
         ))}
       </Tabs>
@@ -376,7 +379,10 @@ export function ConfigCheckList({ report }: { report: SensorConfigReport }) {
               title={t(`sensors.setup.group.${g.group}`, g.label)}
               count={g.checks.length}
             >
-              <ul className="divide-y rounded-lg border" aria-label={g.label}>
+              <ul
+                className="divide-y rounded-lg border"
+                aria-label={t(`sensors.setup.group.${g.group}`, g.label)}
+              >
                 {g.checks.map((c, i) => (
                   <CheckRow key={`${c.id}:${i}`} check={c} runtimeKind={report.runtime_kind} />
                 ))}

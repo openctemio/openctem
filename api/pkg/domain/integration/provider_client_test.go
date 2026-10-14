@@ -18,11 +18,10 @@ func TestProviderHasClient(t *testing.T) {
 		ProviderAWS, ProviderGCP, ProviderAzure,
 		ProviderLinear, ProviderAsana,
 	}
-	if !TenableConnectorEnabled {
-		// Paused until the RFC-047 runner ships (D-14).
-		withoutClient = append(withoutClient, ProviderTenable)
-	} else {
+	if TenableConnectorEnabled {
 		withClient = append(withClient, ProviderTenable)
+	} else {
+		withoutClient = append(withoutClient, ProviderTenable)
 	}
 	for _, p := range withClient {
 		if !p.IsValid() {

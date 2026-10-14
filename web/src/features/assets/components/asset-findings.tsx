@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailSheetFooter, EmptyState } from '@/features/shared'
 import { SEVERITY_BADGE_SOFT, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import { SEVERITY_LABELS, SEVERITY_LEVELS, normalizeSeverity } from '@/lib/severity'
@@ -122,6 +123,7 @@ function mapApiFinding(f: ApiFinding): AssetFinding {
 }
 
 export function AssetFindings({ assetId, className }: AssetFindingsProps) {
+  const { t } = useTranslation()
   const { data: response, isLoading, error } = useAssetFindingsApi(assetId, undefined, 1, 50)
 
   const findings = React.useMemo<AssetFinding[]>(() => {
@@ -169,9 +171,14 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
     return (
       <div className={cn('flex flex-col items-center justify-center py-8 text-center', className)}>
         <AlertCircle className="h-12 w-12 text-destructive mb-3" />
-        <h3 className="font-medium">Failed to load findings</h3>
+        <h3 className="font-medium">
+          {t('assets.findings.loadFailed', 'Failed to load findings')}
+        </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Could not fetch findings for this asset. Please try again later.
+          {t(
+            'assets.findings.loadFailedHint',
+            'Could not fetch findings for this asset. Please try again later.'
+          )}
         </p>
       </div>
     )
@@ -182,8 +189,8 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
       <EmptyState
         card={false}
         icon={Shield}
-        title="No findings"
-        description="This asset has no security findings."
+        title={t('assets.findings.empty', 'No findings')}
+        description={t('assets.findings.emptyHint', 'This asset has no security findings.')}
         className={className}
       />
     )
@@ -232,7 +239,7 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-medium break-words">{finding.title}</h4>
                     <Badge variant={status.variant} className="text-xs">
-                      {status.label}
+                      {t(`assets.findings.status.${finding.status}`, status.label)}
                     </Badge>
                   </div>
                   {finding.description && finding.description !== finding.title && (
@@ -245,18 +252,24 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <TypeIcon className="h-3 w-3" />
-                      {type.label}
+                      {t(`assets.findings.type.${finding.type}`, type.label)}
                     </span>
                     {finding.cveId && <span className="font-mono">{finding.cveId}</span>}
                     {finding.cvssScore && <span>CVSS {finding.cvssScore}</span>}
                     {finding.rule && <span className="font-mono break-all">{finding.rule}</span>}
-                    <span>First seen {new Date(finding.firstSeen).toLocaleDateString()}</span>
+                    <span>
+                      {t('assets.findings.firstSeen', 'First seen {date}', {
+                        date: new Date(finding.firstSeen).toLocaleDateString(),
+                      })}
+                    </span>
                   </div>
 
                   {/* Remediation preview */}
                   {finding.remediation && (
                     <p className="mt-2 line-clamp-2 rounded bg-muted/50 p-2 text-xs">
-                      <span className="font-medium">Remediation: </span>
+                      <span className="font-medium">
+                        {t('assets.findings.remediation', 'Remediation:')}{' '}
+                      </span>
                       <span className="text-muted-foreground">{finding.remediation}</span>
                     </p>
                   )}
@@ -273,7 +286,9 @@ export function AssetFindings({ assetId, className }: AssetFindingsProps) {
         <Button asChild variant="outline" className="w-full">
           <Link href={`/findings?asset_id=${assetId}`}>
             <FileWarning className="me-2 h-4 w-4" />
-            View all findings ({response?.total ?? findings.length})
+            {t('assets.findings.viewAll', 'View all findings ({count})', {
+              count: response?.total ?? findings.length,
+            })}
             <ChevronRight className="ms-2 h-4 w-4" />
           </Link>
         </Button>

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 import { ExternalLink, FileText, Link2, ShieldCheck, Ticket } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +51,7 @@ import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingRetestSection } from './detail/finding-retest'
+import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
 import { FindingActivity } from './finding-activity'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
@@ -89,6 +91,7 @@ export function FindingDetailDrawer({
   onSeverityChange,
   onAssigneeChange,
 }: FindingDetailDrawerProps) {
+  const { t } = useTranslation()
   const router = useRouter()
   const integrationsEnabled = useModuleEnabled('integrations')
   const [ticketOpen, setTicketOpen] = useState(false)
@@ -134,15 +137,15 @@ export function FindingDetailDrawer({
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && t.tagName !== 'TEXTAREA') {
+      const el = e.target as HTMLElement
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && el.tagName !== 'TEXTAREA') {
         e.preventDefault()
         openPage()
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
         if (
-          t.tagName !== 'TEXTAREA' &&
-          t.tagName !== 'INPUT' &&
+          el.tagName !== 'TEXTAREA' &&
+          el.tagName !== 'INPUT' &&
           !window.getSelection()?.toString()
         ) {
           e.preventDefault()
@@ -158,15 +161,21 @@ export function FindingDetailDrawer({
 
   const menu: DetailMenuItem[] = [
     {
-      label: 'Copy link',
+      label: t('findings.drawer.copyLink', 'Copy link'),
       icon: Link2,
       onSelect: () => {
         void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-        toast.success('Link copied')
+        toast.success(t('findings.drawer.linkCopied', 'Link copied'))
       },
     },
     ...(integrationsEnabled
-      ? [{ label: 'Create ticket', icon: Ticket, onSelect: () => setTicketOpen(true) }]
+      ? [
+          {
+            label: t('findings.drawer.createTicket', 'Create ticket'),
+            icon: Ticket,
+            onSelect: () => setTicketOpen(true),
+          },
+        ]
       : []),
   ]
 
@@ -233,9 +242,13 @@ export function FindingDetailDrawer({
             <DetailSections>
               <FindingProperties finding={detail} triage={triage} hideTriage />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
+              <FindingTenableRescanSection finding={detail} />
 
               {description.text && (
-                <DetailSection title="Description" icon={FileText}>
+                <DetailSection
+                  title={t('findings.drawer.description', 'Description')}
+                  icon={FileText}
+                >
                   <p className="line-clamp-6 text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
                     {description.text}
                   </p>
@@ -243,7 +256,11 @@ export function FindingDetailDrawer({
               )}
 
               {approvals && approvals.length > 0 && (
-                <DetailSection title="Approval history" icon={ShieldCheck} count={approvals.length}>
+                <DetailSection
+                  title={t('findings.drawer.approvalHistory', 'Approval history')}
+                  icon={ShieldCheck}
+                  count={approvals.length}
+                >
                   <ul className="space-y-2">
                     {approvals.map((a: ApiApproval) => (
                       <li key={a.id} className="space-y-1 rounded-md border p-2.5 text-xs">
@@ -260,7 +277,7 @@ export function FindingDetailDrawer({
                           </span>
                         </div>
                         <p className="text-muted-foreground">
-                          Requested:{' '}
+                          {t('findings.drawer.requested', 'Requested:')}{' '}
                           <span className="font-medium text-foreground">
                             {FINDING_STATUS_CONFIG[a.requested_status as FindingStatus]?.label ??
                               a.requested_status}
@@ -272,7 +289,7 @@ export function FindingDetailDrawer({
                         )}
                         {a.rejection_reason && (
                           <p className="line-clamp-2 text-destructive">
-                            Reason: {a.rejection_reason}
+                            {t('findings.drawer.reason', 'Reason:')} {a.rejection_reason}
                           </p>
                         )}
                       </li>
@@ -293,7 +310,7 @@ export function FindingDetailDrawer({
             <DetailSheetFooter>
               <Button className="w-full" onClick={() => openPage()}>
                 <ExternalLink className="h-4 w-4" />
-                Open full details
+                {t('findings.drawer.openFullDetails', 'Open full details')}
               </Button>
             </DetailSheetFooter>
           </div>

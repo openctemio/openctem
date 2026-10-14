@@ -39,7 +39,7 @@ func chunkSizes(chunks []*scanapp.StepTargets) []int {
 // chunk, 12 800 addresses each). A port scan chunk now holds at most 1 024
 // addresses: 64 chunks of 4 pieces that every eligible sensor shares.
 func TestStepChunks_PortScanByAddressCount(t *testing.T) {
-	chunks := stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: slash24s(256)})
+	chunks := stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: slash24s(256)}, nil)
 	if len(chunks) != 64 {
 		t.Fatalf("chunks = %d, want 64", len(chunks))
 	}
@@ -61,21 +61,22 @@ func TestStepChunks_PortScanByAddressCount(t *testing.T) {
 func TestStepChunks_MixedWeights(t *testing.T) {
 	targets := []string{"203.0.113.1", "203.0.113.2", "203.0.113.3",
 		"198.51.0.0/24", "198.51.1.0/24", "198.51.2.0/24", "198.51.3.0/24", "app.example.com"}
-	chunks := stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: targets, Refused: 2, Reason: "r"})
-	// 3 + 768 = 771 addresses; the fourth /24 would make 1 027 > 1 024.
-	if got := chunkSizes(chunks); !slices.Equal(got, []int{6, 2}) {
-		t.Fatalf("chunk sizes = %v, want [6 2]", got)
+	chunks := stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: targets, Refused: 2, Reason: "r"}, nil)
+	// 3 + 1 024 + 1 = 1 028 addresses > 1 024: two chunks, each filled to
+	// an even share of the addresses (3 + 256 = 259, then 768 + 1 = 769).
+	if got := chunkSizes(chunks); !slices.Equal(got, []int{4, 4}) {
+		t.Fatalf("chunk sizes = %v, want [4 4]", got)
 	}
 	if chunks[1].Refused != 2 || chunks[1].Reason != "r" {
 		t.Fatalf("refusals not carried: %+v", chunks[1])
 	}
 	// A target heavier than the budget gets a chunk of its own.
-	chunks = stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: []string{"203.0.113.1", "198.51.0.0/22", "203.0.113.2"}})
+	chunks = stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: []string{"203.0.113.1", "198.51.0.0/22", "203.0.113.2"}}, nil)
 	if got := chunkSizes(chunks); !slices.Equal(got, []int{1, 1, 1}) {
 		t.Fatalf("chunk sizes = %v, want [1 1 1]", got)
 	}
 	// Few small targets stay one chunk.
-	if chunks := stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: []string{"198.51.0.0/24", "203.0.113.1"}}); len(chunks) != 1 {
+	if chunks := stepChunks(stepTool(t, "naabu"), &scanapp.StepTargets{Targets: []string{"198.51.0.0/24", "203.0.113.1"}}, nil); len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want 1", len(chunks))
 	}
 }
@@ -83,14 +84,15 @@ func TestStepChunks_MixedWeights(t *testing.T) {
 // A passive stage sends no traffic to its targets: a range weighs 1 there,
 // and stages without an address budget keep counting targets.
 func TestStepChunks_NoBudgetCountsTargets(t *testing.T) {
-	if got := chunkSizes(stepChunks(stepTool(t, "asn"), &scanapp.StepTargets{Targets: slash24s(256)})); len(got) != 1 {
+	if got := chunkSizes(stepChunks(stepTool(t, "asn"), &scanapp.StepTargets{Targets: slash24s(256)}, nil)); len(got) != 1 {
 		t.Fatalf("asn chunks = %v, want one chunk of 256", got)
 	}
 	targets := make([]string, 450)
 	for i := range targets {
 		targets[i] = fmt.Sprintf("h%d.example.com", i)
 	}
-	if got := chunkSizes(stepChunks(stepTool(t, "httpx"), &scanapp.StepTargets{Targets: targets})); !slices.Equal(got, []int{200, 200, 50}) {
+	// Three chunks of an even share, not 200, 200 and 50.
+	if got := chunkSizes(stepChunks(stepTool(t, "httpx"), &scanapp.StepTargets{Targets: targets}, nil)); !slices.Equal(got, []int{150, 150, 150}) {
 		t.Fatalf("httpx chunk sizes = %v", got)
 	}
 }

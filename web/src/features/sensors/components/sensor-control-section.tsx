@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailField, DetailFieldGrid, DetailSection } from '@/features/shared'
 import type { Sensor, SensorHeartbeatHistoryResponse } from '@/lib/api/sensor-types'
 import { cn } from '@/lib/utils'
@@ -42,16 +43,17 @@ export function SensorControlSection({
   now: number
   history?: SensorHeartbeatHistoryResponse | null
 }) {
+  const { t } = useTranslation()
   const c = sensor.control
   const showHistory = hasHeartbeatHistory(history)
   if (!c && !showHistory) return null
   return (
-    <DetailSection title="Control channel">
+    <DetailSection title={t('sensors.control.title')}>
       {c && <ControlFields sensor={sensor} control={c} now={now} />}
       {showHistory && history && (
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground">
-            Heartbeats, last {history.hours} hours
+            {t('sensors.control.history', undefined, { hours: history.hours })}
           </p>
           <HeartbeatGapSparkline history={history} now={now} />
         </div>
@@ -69,13 +71,14 @@ function ControlFields({
   control: NonNullable<Sensor['control']>
   now: number
 }) {
+  const { t } = useTranslation()
   const gapLate = c.interval_s > 0 && c.gap_s > CONTROL_LATE_GAP_FACTOR * c.interval_s
   const lagSlow = c.lag_ms > CONTROL_SLOW_MS
   const buildSlow = c.build_ms > CONTROL_SLOW_MS
   return (
     <>
       <DetailFieldGrid>
-        <DetailField label="Heartbeat interval">
+        <DetailField label={t('sensors.control.interval')}>
           <span className="tabular-nums">
             {seconds(c.interval_s)}
             {sensor.heartbeat_due_at && (
@@ -83,40 +86,42 @@ function ControlFields({
                 className="block text-xs text-muted-foreground"
                 title={exactTime(sensor.heartbeat_due_at)}
               >
-                next due {dueLabel(sensor.heartbeat_due_at, now)}
+                {t('sensors.control.nextDue', undefined, {
+                  when: dueLabel(sensor.heartbeat_due_at, now, t),
+                })}
               </span>
             )}
           </span>
         </DetailField>
-        <DetailField label="Gap between heartbeats">
+        <DetailField label={t('sensors.control.gap')}>
           <span
             className={cn('tabular-nums', gapLate && 'text-warning')}
-            title="Time between the last two heartbeats that reached the platform"
+            title={t('sensors.control.gapHint')}
           >
             {seconds(c.gap_s)}
-            {gapLate && <span className="block text-xs">more than 1.5 intervals</span>}
+            {gapLate && <span className="block text-xs">{t('sensors.control.gapLate')}</span>}
           </span>
         </DetailField>
-        <DetailField label="Timer lag">
+        <DetailField label={t('sensors.control.lag')}>
           <span
             className={cn('tabular-nums', lagSlow && 'text-warning')}
-            title="How late the heartbeat timer fired: the sensor waiting for a CPU"
+            title={t('sensors.control.lagHint')}
           >
             {millis(c.lag_ms)}
           </span>
         </DetailField>
-        <DetailField label="Report build">
+        <DetailField label={t('sensors.control.build')}>
           <span
             className={cn('tabular-nums', buildSlow && 'text-warning')}
-            title="How long building the heartbeat report took (tool probes, snapshot)"
+            title={t('sensors.control.buildHint')}
           >
             {millis(c.build_ms)}
           </span>
         </DetailField>
-        <DetailField label="Round trip">
+        <DetailField label={t('sensors.control.rtt')}>
           <span className="tabular-nums">{millis(c.rtt_ms)}</span>
         </DetailField>
-        <DetailField label="Heartbeats lost">
+        <DetailField label={t('sensors.control.lost')}>
           <span className={cn('tabular-nums', c.failures > 0 && 'text-warning')}>
             {c.failures.toLocaleString()}
           </span>
@@ -124,7 +129,7 @@ function ControlFields({
       </DetailFieldGrid>
       {c.reported_at && (
         <p className="text-xs text-muted-foreground" title={exactTime(c.reported_at)}>
-          Reported by the sensor {agoShort(c.reported_at, now)}.
+          {t('sensors.control.reportedBy', undefined, { when: agoShort(c.reported_at, now, t) })}
         </p>
       )}
     </>
@@ -132,11 +137,11 @@ function ControlFields({
 }
 
 /** "in 12s", or "12s ago" once the deadline has passed. */
-function dueLabel(iso: string, now: number): string {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return ''
-  const d = (t - now) / 1000
-  if (d >= 1) return `in ${formatDurationShort(d)}`
-  if (d > -1) return 'now'
-  return `${formatDurationShort(-d)} ago`
+function dueLabel(iso: string, now: number, t: ReturnType<typeof useTranslation>['t']): string {
+  const due = new Date(iso).getTime()
+  if (Number.isNaN(due)) return ''
+  const d = (due - now) / 1000
+  if (d >= 1) return t('sensors.control.dueIn', undefined, { duration: formatDurationShort(d) })
+  if (d > -1) return t('sensors.control.dueNow')
+  return t('sensors.time.ago', undefined, { duration: formatDurationShort(-d) })
 }

@@ -141,6 +141,7 @@ func TestCommandsInsertedOnlyThroughTheChokePoint(t *testing.T) {
 		"command_repository.go":  true, // Create: AssignHostKeys
 		"command_follow_up.go":   true, // NewFollowUp: keys of the remaining targets
 		"command_window_hold.go": true, // copies the held row's keys and payload
+		"command_host_split.go":  true, // SplitHostBusy: keys of the waiting targets, within the row's
 	}
 	var found []string
 	err := filepath.WalkDir("../..", func(path string, d os.DirEntry, err error) error {

@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection, ErrorState, RelativeTime } from '@/features/shared'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
@@ -55,6 +56,7 @@ function LockEditor({
   onLock: (value: string) => void
   onCancel: () => void
 }) {
+  const { t } = useTranslation()
   const [value, setValue] = useState(current)
   const options = ATTRIBUTE_VALUES[attr]
   return (
@@ -64,7 +66,12 @@ function LockEditor({
           value={value === '' ? NOT_SET : value}
           onValueChange={(v) => setValue(v === NOT_SET ? '' : v)}
         >
-          <SelectTrigger className="h-7 w-44" aria-label={`${ATTRIBUTE_LABEL[attr]} value`}>
+          <SelectTrigger
+            className="h-7 w-44"
+            aria-label={t('assets.attrSources.valueAria', '{attribute} value', {
+              attribute: ATTRIBUTE_LABEL[attr],
+            })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -80,7 +87,9 @@ function LockEditor({
           className="h-7 w-56"
           value={value}
           maxLength={500}
-          aria-label={`${ATTRIBUTE_LABEL[attr]} value`}
+          aria-label={t('assets.attrSources.valueAria', '{attribute} value', {
+            attribute: ATTRIBUTE_LABEL[attr],
+          })}
           onChange={(e) => setValue(e.target.value)}
         />
       )}
@@ -90,10 +99,10 @@ function LockEditor({
         ) : (
           <Lock className="me-1 h-3 w-3" />
         )}
-        Set and lock
+        {t('assets.attrSources.setAndLock', 'Set and lock')}
       </Button>
       <Button size="sm" variant="ghost" className="h-7" onClick={onCancel}>
-        Cancel
+        {t('common.cancel', 'Cancel')}
       </Button>
     </div>
   )
@@ -112,6 +121,7 @@ function AttributeRow({
   onLock: (attr: TrackedAttribute, value: string) => Promise<boolean>
   onRelease: (attr: TrackedAttribute) => void
 }) {
+  const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const conflict = conflictText(a)
   const others = a.sources.filter((s) => s.status !== 'winner')
@@ -123,7 +133,7 @@ function AttributeRow({
         {a.locked && (
           <Badge variant="outline" className="gap-1">
             <Lock className="h-3 w-3" aria-hidden />
-            Locked
+            {t('assets.attrSources.locked', 'Locked')}
           </Badge>
         )}
         {conflict && (
@@ -136,7 +146,7 @@ function AttributeRow({
         {decidedByText(a)}
         {a.decided_by && (
           <>
-            {' · seen '}
+            {t('assets.attrSources.seen', ' · seen ')}
             <RelativeTime date={a.decided_by.observed_at} />
           </>
         )}
@@ -144,7 +154,9 @@ function AttributeRow({
       {others.length > 0 && (
         <ul
           className="space-y-0.5 text-xs sm:ps-42"
-          aria-label={`Other sources of ${ATTRIBUTE_LABEL[a.attribute]}`}
+          aria-label={t('assets.attrSources.othersAria', 'Other sources of {attribute}', {
+            attribute: ATTRIBUTE_LABEL[a.attribute],
+          })}
         >
           {others.map((s) => (
             <li
@@ -159,9 +171,12 @@ function AttributeRow({
                 {SOURCE_KIND_LABEL[s.kind]}
                 {s.name ? ` (${s.name})` : ''}
               </span>
-              <span className="break-all">says {displayValue(s.value)}</span>
+              <span className="break-all">
+                {t('assets.attrSources.says', 'says {value}', { value: displayValue(s.value) })}
+              </span>
               <span>
-                · {SOURCE_STATUS_LABEL[s.status]}, seen <RelativeTime date={s.observed_at} />
+                · {SOURCE_STATUS_LABEL[s.status]}, {t('assets.attrSources.seenShort', 'seen')}{' '}
+                <RelativeTime date={s.observed_at} />
               </span>
             </li>
           ))}
@@ -183,7 +198,9 @@ function AttributeRow({
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" className="h-7" onClick={() => setEditing(true)}>
                 <Lock className="me-1 h-3 w-3" />
-                {a.locked ? 'Change locked value' : 'Set and lock'}
+                {a.locked
+                  ? t('assets.attrSources.changeLocked', 'Change locked value')
+                  : t('assets.attrSources.setAndLock', 'Set and lock')}
               </Button>
               {a.locked && (
                 <Button
@@ -194,7 +211,7 @@ function AttributeRow({
                   onClick={() => onRelease(a.attribute)}
                 >
                   <LockOpen className="me-1 h-3 w-3" />
-                  Release lock
+                  {t('assets.attrSources.release', 'Release lock')}
                 </Button>
               )}
             </div>
@@ -207,6 +224,7 @@ function AttributeRow({
 
 /** Renders one DetailSection; place it inside a <DetailSections>. */
 export function AssetAttributeSourcesSection({ assetId }: { assetId: string }) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useAttributeSources(assetId)
   const { lock, release, saving } = useAttributeLock(assetId)
   const { can } = usePermissions()
@@ -216,10 +234,18 @@ export function AssetAttributeSourcesSection({ assetId }: { assetId: string }) {
     try {
       await lock(attr, value)
       await mutate()
-      toast.success(`${ATTRIBUTE_LABEL[attr]} locked`)
+      toast.success(
+        t('assets.attrSources.lockedToast', '{attribute} locked', {
+          attribute: ATTRIBUTE_LABEL[attr],
+        })
+      )
       return true
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not lock the value')
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('assets.attrSources.lockFailed', 'Could not lock the value')
+      )
       return false
     }
   }
@@ -227,26 +253,40 @@ export function AssetAttributeSourcesSection({ assetId }: { assetId: string }) {
     try {
       await release(attr)
       await mutate()
-      toast.success(`${ATTRIBUTE_LABEL[attr]} is decided by its sources again`)
+      toast.success(
+        t('assets.attrSources.releasedToast', '{attribute} is decided by its sources again', {
+          attribute: ATTRIBUTE_LABEL[attr],
+        })
+      )
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not release the lock')
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t('assets.attrSources.releaseFailed', 'Could not release the lock')
+      )
     }
   }
 
   return (
-    <DetailSection title="Where values come from" icon={GitMerge}>
+    <DetailSection title={t('assets.attrSources.title', 'Where values come from')} icon={GitMerge}>
       {isLoading ? (
         <div className="space-y-2">
           <Skeleton className="h-5 w-1/2" />
           <Skeleton className="h-5 w-2/3" />
         </div>
       ) : error ? (
-        <ErrorState title="value sources" error={error} onRetry={() => mutate()} />
+        <ErrorState
+          title={t('assets.attrSources.errorTitle', 'value sources')}
+          error={error}
+          onRetry={() => mutate()}
+        />
       ) : data ? (
         <div className="space-y-2 text-sm">
           <p className="text-xs text-muted-foreground">
-            Each value comes from the source your organization trusts most for it, and among equal
-            sources from the one that saw the asset last. A locked value stays until it is released.
+            {t(
+              'assets.attrSources.intro',
+              'Each value comes from the source your organization trusts most for it, and among equal sources from the one that saw the asset last. A locked value stays until it is released.'
+            )}
           </p>
           <ul className="divide-y">
             {data.attributes.map((a) => (

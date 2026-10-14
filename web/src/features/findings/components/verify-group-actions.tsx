@@ -6,6 +6,7 @@
  * status fix_applied) on the Findings page.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
@@ -34,6 +35,7 @@ interface VerifyGroupActionsProps {
 
 /** Approve / Reject for one CVE group in the verification queue. */
 export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
   const [reason, setReason] = useState('')
@@ -45,10 +47,14 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
         filter: { cve_ids: [group.group_key] },
         note: `Batch verified: ${group.label}`,
       })
-      toast.success(`${result.updated} findings verified`)
+      toast.success(
+        t('findings.verifyGroup.verified', '{count} findings verified', { count: result.updated })
+      )
       onDone?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to verify findings'))
+      toast.error(
+        getErrorMessage(error, t('findings.verifyGroup.verifyFailed', 'Failed to verify findings'))
+      )
     } finally {
       setBusy(false)
     }
@@ -62,12 +68,18 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
         filter: { cve_ids: [group.group_key] },
         reason: reason.trim(),
       })
-      toast.success(`${result.updated} findings rejected, sent back to the assignee`)
+      toast.success(
+        t('findings.verifyGroup.rejected', '{count} findings rejected, sent back to the assignee', {
+          count: result.updated,
+        })
+      )
       setRejectOpen(false)
       setReason('')
       onDone?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to reject fix'))
+      toast.error(
+        getErrorMessage(error, t('findings.verifyGroup.rejectFailed', 'Failed to reject fix'))
+      )
     } finally {
       setBusy(false)
     }
@@ -81,7 +93,7 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
         ) : (
           <CheckCircle className="me-1 h-3.5 w-3.5 text-success" />
         )}
-        Approve
+        {t('findings.verifyGroup.approve', 'Approve')}
       </Button>
       <Button
         variant="outline"
@@ -91,31 +103,39 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
         disabled={busy}
       >
         <XCircle className="me-1 h-3.5 w-3.5 text-destructive" />
-        Reject
+        {t('findings.verifyGroup.reject', 'Reject')}
       </Button>
 
       <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reject fix</AlertDialogTitle>
+            <AlertDialogTitle>{t('findings.verifyGroup.rejectFix', 'Reject fix')}</AlertDialogTitle>
             <AlertDialogDescription>
-              The findings go back to the assignee as In progress. Say why the fix is not enough.
+              {t(
+                'findings.verifyGroup.rejectDesc',
+                'The findings go back to the assignee as In progress. Say why the fix is not enough.'
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogBody className="grid gap-4">
             <div className="my-2 rounded-lg border bg-muted/50 p-3">
               <p className="font-medium">{group.label}</p>
               <p className="text-sm text-muted-foreground">
-                {group.stats?.fix_applied ?? 0} findings will be reopened
+                {t('findings.verifyGroup.reopened', '{count} findings will be reopened', {
+                  count: group.stats?.fix_applied ?? 0,
+                })}
               </p>
             </div>
             <div className="space-y-2">
               <label htmlFor={`reject-${group.group_key}`} className="text-sm font-medium">
-                Reason
+                {t('findings.verifyGroup.reason', 'Reason')}
               </label>
               <Textarea
                 id={`reject-${group.group_key}`}
-                placeholder="e.g. Vulnerability still present: log4j 2.14.0 detected on server"
+                placeholder={t(
+                  'findings.verifyGroup.reasonPlaceholder',
+                  'e.g. Vulnerability still present: log4j 2.14.0 detected on server'
+                )}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 rows={3}
@@ -123,7 +143,7 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
             </div>
           </AlertDialogBody>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel', 'Cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault()
@@ -132,7 +152,7 @@ export function VerifyGroupActions({ group, onDone }: VerifyGroupActionsProps) {
               disabled={!reason.trim() || busy}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Reject fix
+              {t('findings.verifyGroup.rejectFix', 'Reject fix')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

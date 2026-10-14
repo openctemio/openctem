@@ -5,9 +5,9 @@ import { ScannerImportsView } from '@/features/integrations/components/scanners/
 import { TenableConnectorView } from '@/features/integrations/components/scanners/tenable-connector-view'
 
 /**
- * Vulnerability scanners. While the Tenable connector is paused (owner
- * decision D-14, rebuilt by RFC-047) only the .nessus import and paused rows
- * are shown; see features/integrations/config/feature-gates.ts.
+ * Vulnerability scanners: the Tenable.sc connector view (Beta) while
+ * TENABLE_CONNECTOR_ENABLED, otherwise only the .nessus import and paused
+ * rows; see features/integrations/config/feature-gates.ts.
  */
 export default function SecurityScannersPage() {
   return TENABLE_CONNECTOR_ENABLED ? <TenableConnectorView /> : <ScannerImportsView />

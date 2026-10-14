@@ -1,7 +1,6 @@
 'use client'
 
 import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
-import { formatDistanceStrict } from 'date-fns'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -10,8 +9,8 @@ import type { Sensor } from '@/lib/api/sensor-types'
 import { SensorStateBadge } from './sensor-state-badge'
 import { ConfigHealthTag, ProtocolTag, SensorGrantTags, SensorPostureTag } from './sensor-cells'
 import { sensorCapacity } from '../lib/capabilities'
-import { CONTENT_STATE_META, worstContentState } from '../lib/content'
-import { formatDurationShort, keyExpiry } from '../lib/format'
+import { contentStateLabel, worstContentState } from '../lib/content'
+import { agoShort, formatDurationShort, keyExpiry } from '../lib/format'
 import { isOneShotSensor, sensorState, type FleetThresholds } from '../lib/sensor-state'
 import {
   normalizeSensorVersion,
@@ -49,20 +48,30 @@ export function SensorMobileCard({
   const ob = sensor.outbox
   if (ob && ob.pending_count > 0) {
     facts.push({
-      text: `${ob.pending_count.toLocaleString()} results waiting${ob.oldest_age_seconds ? ` · ${formatDurationShort(ob.oldest_age_seconds)}` : ''}`,
+      text: `${t('sensors.mobile.resultsWaiting', undefined, { count: ob.pending_count.toLocaleString() })}${ob.oldest_age_seconds ? ` · ${formatDurationShort(ob.oldest_age_seconds)}` : ''}`,
       tone: sensor.outbox_warning ? 'warning' : undefined,
     })
   }
   if (sensor.last_seen_at && state !== 'disabled' && state !== 'revoked') {
-    facts.push({ text: `${formatDistanceStrict(new Date(sensor.last_seen_at), now)} ago` })
+    facts.push({ text: agoShort(sensor.last_seen_at, now, t) })
   }
   if (!isOneShotSensor(sensor) && state !== 'disabled' && state !== 'revoked') {
-    facts.push({ text: `${sensor.current_jobs ?? 0}/${sensorCapacity(sensor).effective} jobs` })
+    facts.push({
+      text: t('sensors.mobile.jobs', undefined, {
+        current: sensor.current_jobs ?? 0,
+        max: sensorCapacity(sensor).effective,
+      }),
+    })
   }
   const v = normalizeSensorVersion(sensor.version)
   const vs = sensorVersionStatus(sensor, channel.latest, channel.min)
-  if (v && vs === 'update_available') facts.push({ text: `${v} · update` })
-  if (v && vs === 'unsupported') facts.push({ text: `${v} unsupported`, tone: 'destructive' })
+  if (v && vs === 'update_available')
+    facts.push({ text: t('sensors.mobile.updateAvailable', undefined, { version: v }) })
+  if (v && vs === 'unsupported')
+    facts.push({
+      text: t('sensors.mobile.unsupported', undefined, { version: v }),
+      tone: 'destructive',
+    })
   // The SDK only when it needs attention, worded like the table's tag.
   const sdk = sensorSdkVersion(sensor)
   const sdkStatus = sensorSdkStatus(sensor)
@@ -83,13 +92,20 @@ export function SensorMobileCard({
     })
   }
   const k = keyExpiry(sensor.key_expires_at, now)
-  if (k.kind === 'soon') facts.push({ text: `key expires in ${k.days}d`, tone: 'warning' })
-  if (k.kind === 'expired') facts.push({ text: 'key expired', tone: 'destructive' })
-  if (sensor.legacy_key) facts.push({ text: 'legacy key' })
+  if (k.kind === 'soon')
+    facts.push({
+      text: t('sensors.mobile.keyExpires', undefined, { days: k.days }),
+      tone: 'warning',
+    })
+  if (k.kind === 'expired')
+    facts.push({ text: t('sensors.mobile.keyExpired'), tone: 'destructive' })
+  if (sensor.legacy_key) facts.push({ text: t('sensors.mobile.legacyKey') })
   const content = worstContentState(sensor.content)
   if (content === 'failed' || content === 'stale') {
     facts.push({
-      text: `content ${CONTENT_STATE_META[content].label.toLowerCase()}`,
+      text: t('sensors.mobile.content', undefined, {
+        state: contentStateLabel(content, t).toLowerCase(),
+      }),
       tone: content === 'failed' ? 'destructive' : 'warning',
     })
   }

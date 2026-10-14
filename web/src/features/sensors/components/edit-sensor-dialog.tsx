@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Ban, Loader2, Trash2 } from 'lucide-react'
-import { formatDistanceToNowStrict } from 'date-fns'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -40,6 +39,7 @@ import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import { sensorCapacity } from '../lib/capabilities'
+import { agoShort, type Tr } from '../lib/format'
 import {
   isSensorEditDirty,
   MAX_JOBS_LIMIT,
@@ -68,9 +68,9 @@ type Draft = Omit<SensorEditDraft, 'zoneIds'> & {
   zoneIds: string[] | null
 }
 
-const EXECUTION_MODE_TEXT: Record<Sensor['execution_mode'], { label: string; text: string }> = {
-  daemon: { label: 'Daemon', text: 'runs all the time and takes jobs from the platform' },
-  standalone: { label: 'Standalone', text: 'runs one scan from a pipeline and exits' },
+const EXECUTION_MODE_KEYS: Record<Sensor['execution_mode'], 'daemon' | 'standalone'> = {
+  daemon: 'daemon',
+  standalone: 'standalone',
 }
 
 function Section({
@@ -105,33 +105,41 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   )
 }
 
-function lastSeen(at: string | undefined): string {
-  if (!at) return 'Never connected'
-  const d = new Date(at)
-  return Number.isNaN(d.getTime()) ? '—' : formatDistanceToNowStrict(d, { addSuffix: true })
+function lastSeen(at: string | undefined, tr: Tr): string {
+  if (!at) return tr('sensors.edit.neverConnected')
+  return agoShort(at, Date.now(), tr)
 }
 
 /** Read-only facts the sensor reports about itself. */
 function AboutSensor({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
   const version = normalizeSensorVersion(sensor.version)
   const p = sensor.protocol
   const platform = [sensor.reported?.os, sensor.reported?.arch].filter(Boolean).join('/')
   const facts: { label: string; value: string }[] = [
-    { label: 'Version', value: version ?? 'Not reported' },
-    { label: 'SDK', value: normalizeSensorVersion(sensor.sdk_version) ?? '—' },
     {
-      label: 'Protocol',
-      value: p ? `v${p.version}${p.deprecated || p.version < 2 ? ' (deprecated)' : ''}` : '—',
+      label: t('sensors.edit.about.version'),
+      value: version ?? t('sensors.edit.about.notReported'),
     },
-    { label: 'Platform', value: platform || '—' },
     {
-      label: 'Last seen',
-      value: lastSeen(sensor.last_seen_at),
+      label: t('sensors.edit.about.sdk'),
+      value: normalizeSensorVersion(sensor.sdk_version) ?? '—',
+    },
+    {
+      label: t('sensors.edit.about.protocol'),
+      value: p
+        ? `v${p.version}${p.deprecated || p.version < 2 ? ` (${t('sensors.edit.about.deprecated')})` : ''}`
+        : '—',
+    },
+    { label: t('sensors.edit.about.platform'), value: platform || '—' },
+    {
+      label: t('sensors.edit.about.lastSeen'),
+      value: lastSeen(sensor.last_seen_at, t),
     },
   ]
   return (
     <dl
-      aria-label="About this sensor"
+      aria-label={t('sensors.edit.about.label')}
       className="flex flex-wrap gap-x-8 gap-y-3 rounded-lg border px-4 py-3"
     >
       {facts.map((f) => (
@@ -201,16 +209,16 @@ export function EditSensorDialog({
   const initial: SensorEditDraft = { ...base, zoneIds: sensorZoneIds }
   const current: SensorEditDraft = { ...draft, zoneIds: draft.zoneIds ?? sensorZoneIds }
   const dirty = isSensorEditDirty(current, initial)
-  const errors = validateSensorEdit(current, initial)
+  const errors = validateSensorEdit(current, initial, t)
   const hasErrors = Object.keys(errors).length > 0
 
   const reported = reportedToolNames(sensor)
   const reportedVersions = new Map(
-    (sensor.reported?.tools ?? []).filter((t) => t.installed).map((t) => [t.name, t.version])
+    (sensor.reported?.tools ?? []).filter((x) => x.installed).map((x) => [x.name, x.version])
   )
   const capacity = sensorCapacity(sensor)
   const revoked = sensor.status === 'revoked'
-  const mode = EXECUTION_MODE_TEXT[sensor.execution_mode] ?? EXECUTION_MODE_TEXT.daemon
+  const modeKey = EXECUTION_MODE_KEYS[sensor.execution_mode] ?? 'daemon'
   const busy = saving || isRevoking || isDeleting
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
@@ -237,12 +245,12 @@ export function EditSensorDialog({
         ])
         await invalidateScanZonesCache()
       }
-      toast.success(`Sensor "${current.name.trim()}" updated`)
+      toast.success(t('sensors.edit.updated', undefined, { name: current.name.trim() }))
       await invalidateSensorsCache()
       close()
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not update the sensor'))
+      toast.error(getErrorMessage(err, t('sensors.edit.updateFailed')))
     } finally {
       setSaving(false)
     }
@@ -251,26 +259,26 @@ export function EditSensorDialog({
   const handleRevoke = async () => {
     try {
       await revokeSensor(sensor.id)
-      toast.success(`Sensor "${sensor.name}" access revoked`)
+      toast.success(t('sensors.edit.revoked', undefined, { name: sensor.name }))
       await invalidateSensorsCache()
       setRevokeOpen(false)
       close()
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not revoke the sensor'))
+      toast.error(getErrorMessage(err, t('sensors.edit.revokeFailed')))
     }
   }
 
   const handleDelete = async () => {
     try {
       await deleteSensor(sensor.id)
-      toast.success(`Sensor "${sensor.name}" deleted`)
+      toast.success(t('sensors.edit.deleted', undefined, { name: sensor.name }))
       await invalidateSensorsCache()
       setDeleteOpen(false)
       close()
       onDeleted?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not delete the sensor'))
+      toast.error(getErrorMessage(err, t('sensors.edit.deleteFailed')))
     }
   }
 
@@ -281,7 +289,7 @@ export function EditSensorDialog({
       <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : requestClose())}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Edit sensor</DialogTitle>
+            <DialogTitle>{t('sensors.edit.title')}</DialogTitle>
             <DialogDescription className="truncate">{sensor.name}</DialogDescription>
           </DialogHeader>
 
@@ -299,17 +307,14 @@ export function EditSensorDialog({
               {revoked ? (
                 <Alert>
                   <Ban className="h-4 w-4" aria-hidden />
-                  <AlertTitle>This sensor is revoked</AlertTitle>
-                  <AlertDescription>
-                    Its key no longer works and its settings can&apos;t be changed. Install a new
-                    sensor to replace it, then delete this one.
-                  </AlertDescription>
+                  <AlertTitle>{t('sensors.edit.revokedTitle')}</AlertTitle>
+                  <AlertDescription>{t('sensors.edit.revokedBody')}</AlertDescription>
                 </Alert>
               ) : (
                 <>
-                  <Section title="General">
+                  <Section title={t('sensors.edit.general')}>
                     <div className="space-y-1.5">
-                      <Label htmlFor={ids.name}>Name</Label>
+                      <Label htmlFor={ids.name}>{t('sensors.edit.name')}</Label>
                       <Input
                         id={ids.name}
                         value={draft.name}
@@ -323,14 +328,16 @@ export function EditSensorDialog({
 
                     <div className="space-y-1.5">
                       <Label htmlFor={ids.description}>
-                        Description{' '}
-                        <span className="font-normal text-muted-foreground">(optional)</span>
+                        {t('sensors.edit.description')}{' '}
+                        <span className="font-normal text-muted-foreground">
+                          ({t('sensors.edit.optional')})
+                        </span>
                       </Label>
                       <Textarea
                         id={ids.description}
                         value={draft.description}
                         onChange={(e) => set('description', e.target.value)}
-                        placeholder="What does this sensor do?"
+                        placeholder={t('sensors.edit.descriptionPlaceholder')}
                         className="resize-none"
                         rows={2}
                         aria-invalid={!!errors.description}
@@ -338,18 +345,16 @@ export function EditSensorDialog({
                       <FieldError id={`${ids.description}-error`} message={errors.description} />
                       {descriptionCleared && (
                         <p className="text-xs text-muted-foreground">
-                          A description can be replaced but not removed yet; an empty one keeps the
-                          current text.
+                          {t('sensors.edit.descriptionCleared')}
                         </p>
                       )}
                     </div>
 
                     <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
                       <div className="space-y-0.5">
-                        <Label htmlFor={ids.enabled}>Enabled</Label>
+                        <Label htmlFor={ids.enabled}>{t('sensors.edit.enabled')}</Label>
                         <p className="text-sm text-muted-foreground">
-                          A disabled sensor keeps its key but gets no work until you enable it
-                          again.
+                          {t('sensors.edit.enabledHelp')}
                         </p>
                       </div>
                       <Switch
@@ -360,45 +365,44 @@ export function EditSensorDialog({
                     </div>
                   </Section>
 
-                  <Section
-                    title="Work"
-                    description="The sensor reports what it has. You can limit how much the platform sends it."
-                  >
+                  <Section title={t('sensors.edit.work')} description={t('sensors.edit.workHelp')}>
                     <div className="space-y-1">
-                      <p className="text-sm font-medium">Execution mode</p>
+                      <p className="text-sm font-medium">{t('sensors.edit.executionMode')}</p>
                       <p className="text-sm text-muted-foreground">
-                        <span className="text-foreground">{mode.label}</span>: {mode.text}. Set by
-                        the role chosen at install.
+                        <span className="text-foreground">
+                          {t(`sensors.edit.mode.${modeKey}.label`)}
+                        </span>
+                        : {t(`sensors.edit.mode.${modeKey}.text`)}. {t('sensors.edit.modeSetBy')}
                       </p>
                     </div>
 
                     <div className="space-y-2">
-                      <p className="text-sm font-medium">Tools</p>
+                      <p className="text-sm font-medium">{t('sensors.edit.tools')}</p>
                       {reported == null ? (
                         <p className="text-sm text-muted-foreground">
-                          This sensor hasn&apos;t reported its tools yet. Once it connects, the
-                          tools it has installed show here and the platform can send it work for
-                          them.
+                          {t('sensors.edit.toolsNotReported')}
                         </p>
                       ) : reported.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
-                          The sensor reports no scanning tools installed.
+                          {t('sensors.edit.toolsNone')}
                         </p>
                       ) : (
                         <>
                           <p className="text-sm text-muted-foreground">
-                            The platform uses every tool the sensor reports installed. To narrow
-                            them, edit the sensor&apos;s grant.
+                            {t('sensors.edit.toolsHelp')}
                           </p>
-                          <ul className="flex flex-wrap gap-2 pt-1" aria-label="Reported tools">
-                            {reported.map((t) => {
-                              const v = reportedVersions.get(t)
+                          <ul
+                            className="flex flex-wrap gap-2 pt-1"
+                            aria-label={t('sensors.edit.toolsReported')}
+                          >
+                            {reported.map((tool) => {
+                              const v = reportedVersions.get(tool)
                               return (
                                 <li
-                                  key={t}
+                                  key={tool}
                                   className="rounded-full border bg-muted/50 px-3 py-1 text-sm"
                                 >
-                                  {v ? `${t} ${v}` : t}
+                                  {v ? `${tool} ${v}` : tool}
                                 </li>
                               )
                             })}
@@ -408,12 +412,18 @@ export function EditSensorDialog({
                     </div>
 
                     <div className="space-y-1.5">
-                      <Label htmlFor={ids.maxJobs}>Concurrent jobs</Label>
+                      <Label htmlFor={ids.maxJobs}>{t('sensors.edit.maxJobs')}</Label>
                       <p className="text-sm text-muted-foreground">
                         {capacity.reported != null
-                          ? `The sensor reports ${capacity.reported} ${capacity.reported === 1 ? 'slot' : 'slots'}. `
-                          : "The sensor hasn't reported its capacity. "}
-                        The platform sends at most the smaller of that and this limit.
+                          ? t(
+                              capacity.reported === 1
+                                ? 'sensors.edit.slotsReported.one'
+                                : 'sensors.edit.slotsReported.other',
+                              undefined,
+                              { count: capacity.reported }
+                            )
+                          : t('sensors.edit.slotsUnknown')}{' '}
+                        {t('sensors.edit.maxJobsHelp')}
                       </p>
                       <div className="flex items-center gap-3">
                         <Input
@@ -429,7 +439,7 @@ export function EditSensorDialog({
                           aria-describedby={errors.maxJobs ? `${ids.maxJobs}-error` : undefined}
                         />
                         <span className="text-sm text-muted-foreground tabular-nums">
-                          Now: {capacity.effective} at once
+                          {t('sensors.edit.nowAtOnce', undefined, { count: capacity.effective })}
                         </span>
                       </div>
                       <FieldError id={`${ids.maxJobs}-error`} message={errors.maxJobs} />
@@ -437,9 +447,9 @@ export function EditSensorDialog({
 
                     {canReadZones && zones.length > 0 && (
                       <fieldset className="space-y-2">
-                        <legend className="text-sm font-medium">Scan zones</legend>
+                        <legend className="text-sm font-medium">{t('sensors.edit.zones')}</legend>
                         <p className="text-sm text-muted-foreground">
-                          Scans of a zone&apos;s ranges go only to the zone&apos;s sensors.
+                          {t('sensors.edit.zonesHelp')}
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {zones.map((z) => {
@@ -473,8 +483,8 @@ export function EditSensorDialog({
                 <DangerZone as="h3">
                   {!revoked && (
                     <DangerZoneItem
-                      title="Revoke access"
-                      description="The key stops working at once and for good. The sensor can't be enabled again; you install a new one instead."
+                      title={t('sensors.edit.revokeAccess')}
+                      description={t('sensors.edit.revokeAccessHelp')}
                       action={
                         <Button
                           type="button"
@@ -484,14 +494,14 @@ export function EditSensorDialog({
                           disabled={busy}
                         >
                           <Ban className="h-4 w-4" aria-hidden />
-                          Revoke
+                          {t('sensors.edit.revoke')}
                         </Button>
                       }
                     />
                   )}
                   <DangerZoneItem
-                    title="Delete sensor"
-                    description="Removes the sensor from the platform. Its key stops working."
+                    title={t('sensors.edit.deleteSensor')}
+                    description={t('sensors.edit.deleteSensorHelp')}
                     action={
                       <Button
                         type="button"
@@ -502,7 +512,7 @@ export function EditSensorDialog({
                         disabled={busy}
                       >
                         <Trash2 className="h-4 w-4" aria-hidden />
-                        Delete
+                        {t('sensors.edit.delete')}
                       </Button>
                     }
                   />
@@ -513,12 +523,12 @@ export function EditSensorDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={requestClose} disabled={busy}>
-              {revoked ? 'Close' : 'Cancel'}
+              {revoked ? t('sensors.edit.close') : t('common.cancel')}
             </Button>
             {!revoked && (
               <Button type="submit" form={ids.form} disabled={!dirty || hasErrors || busy}>
                 {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-                Save changes
+                {t('sensors.edit.save')}
               </Button>
             )}
           </DialogFooter>

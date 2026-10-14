@@ -25,6 +25,7 @@ import { TonePill } from '@/features/shared/components/tone-pill'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { useFleet } from '@/features/ci-runners/api/use-ci'
 import {
   FleetModeBadge,
@@ -33,19 +34,30 @@ import {
 import type { FleetItem, FleetList } from '@/features/ci-runners/types'
 import type { SensorState } from '@/lib/api/sensor-types'
 
-import { SENSOR_STATE_META } from '../lib/sensor-state'
+import { SENSOR_STATE_META, stateDescription, stateLabel } from '../lib/sensor-state'
+
+type TranslateFn = ReturnType<typeof useTranslation>['t']
 
 function DaemonStatus({ status }: { status?: string }) {
+  const { t } = useTranslation()
   const meta = SENSOR_STATE_META[status as SensorState]
-  if (!meta) return <TonePill tone="muted" label={status || 'Unknown'} />
-  return <TonePill tone={meta.tone} label={meta.label} title={meta.description} state={status} />
+  if (!meta) return <TonePill tone="muted" label={status || t('sensors.fleet.unknown')} />
+  const state = status as SensorState
+  return (
+    <TonePill
+      tone={meta.tone}
+      label={stateLabel(state, t)}
+      title={stateDescription(state, t)}
+      state={status}
+    />
+  )
 }
 
-export function fleetColumns(): ColumnDef<FleetItem>[] {
+export function fleetColumns(t: TranslateFn): ColumnDef<FleetItem>[] {
   return [
     {
       id: 'name',
-      header: 'Name',
+      header: t('sensors.fleet.col.name'),
       cell: ({ row }) => (
         <StackedCell
           truncate
@@ -57,19 +69,19 @@ export function fleetColumns(): ColumnDef<FleetItem>[] {
     },
     {
       id: 'mode',
-      header: 'Mode',
+      header: t('sensors.fleet.col.mode'),
       cell: ({ row }) => <FleetModeBadge mode={row.original.mode} />,
     },
     {
       id: 'role',
-      header: 'Role',
+      header: t('sensors.fleet.col.role'),
       cell: ({ row }) => (
         <span className="text-sm capitalize text-muted-foreground">{row.original.role}</span>
       ),
     },
     {
       id: 'status',
-      header: 'Status',
+      header: t('sensors.fleet.col.status'),
       cell: ({ row }) =>
         row.original.mode === 'runner' ? (
           <PipelineStatusBadge status={row.original.status} />
@@ -79,12 +91,12 @@ export function fleetColumns(): ColumnDef<FleetItem>[] {
     },
     {
       id: 'last_seen',
-      header: 'Last seen',
+      header: t('sensors.fleet.col.lastSeen'),
       cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
     },
     {
       id: 'version',
-      header: 'Version',
+      header: t('sensors.fleet.col.version'),
       cell: ({ row }) => (
         <span className="text-sm tabular-nums text-muted-foreground">
           {row.original.version || '—'}
@@ -98,7 +110,8 @@ export function fleetColumns(): ColumnDef<FleetItem>[] {
 export function fleetMetrics(
   data: FleetList | undefined,
   attention: boolean,
-  onToggleAttention: () => void
+  onToggleAttention: () => void,
+  t: TranslateFn
 ): MetricStripItem[] {
   const d = data?.counts?.daemon
   const r = data?.counts?.runner
@@ -110,28 +123,36 @@ export function fleetMetrics(
     const offline = (ds.offline ?? 0) + (ds.stale ?? 0) + (ds.never_connected ?? 0)
     items.push({
       key: 'daemons',
-      label: 'Daemons online',
+      label: t('sensors.fleet.metric.daemonsOnline'),
       value: online,
-      hint: `of ${(d.total ?? 0) - (d.inactive ?? 0)}`,
-      detail: offline > 0 ? `${offline} offline or stale` : 'every daemon is heartbeating',
+      hint: t('sensors.fleet.metric.ofTotal', undefined, {
+        total: (d.total ?? 0) - (d.inactive ?? 0),
+      }),
+      detail:
+        offline > 0
+          ? t('sensors.fleet.metric.offlineOrStale', undefined, { count: offline })
+          : t('sensors.fleet.metric.allHeartbeating'),
     })
   }
   if (r) {
     const active = (r.total ?? 0) - (r.inactive ?? 0)
     items.push({
       key: 'pipelines',
-      label: 'CI pipelines fresh',
+      label: t('sensors.fleet.metric.pipelinesFresh'),
       value: (rs.fresh ?? 0) + (rs.running ?? 0),
-      hint: `of ${active}`,
-      detail: `${rs.failing ?? 0} failing · ${(rs.stale ?? 0) + (rs.degraded ?? 0)} stale or degraded`,
+      hint: t('sensors.fleet.metric.ofTotal', undefined, { total: active }),
+      detail: t('sensors.fleet.metric.pipelineDetail', undefined, {
+        failing: rs.failing ?? 0,
+        stale: (rs.stale ?? 0) + (rs.degraded ?? 0),
+      }),
     })
   }
   items.push({
     key: 'attention',
-    label: 'Needs attention',
+    label: t('sensors.fleet.metric.needsAttention'),
     value: (d?.attention ?? 0) + (r?.attention ?? 0),
     tone: 'warning',
-    detail: 'offline daemons; failing, stale or degraded pipelines',
+    detail: t('sensors.fleet.metric.attentionDetail'),
     onClick: onToggleAttention,
     active: attention,
   })
@@ -145,6 +166,7 @@ export interface FleetAllViewProps {
 }
 
 export function FleetAllView({ toolbarStart, onOpenDaemon, onOpenRunner }: FleetAllViewProps) {
+  const { t } = useTranslation()
   const [q, setQ] = useUrlFilter('q', '')
   const [attentionParam, setAttention] = useUrlFilter('attention', '')
   const [inactiveParam, setInactive] = useUrlFilter('inactive', '')
@@ -165,16 +187,21 @@ export function FleetAllView({ toolbarStart, onOpenDaemon, onOpenRunner }: Fleet
     <div className="mt-5 space-y-5">
       <MetricStrip
         loading={isLoading && !data}
-        items={fleetMetrics(data, attention, () => {
-          setAttention(attention ? '' : '1')
-          resetPage()
-        })}
+        items={fleetMetrics(
+          data,
+          attention,
+          () => {
+            setAttention(attention ? '' : '1')
+            resetPage()
+          },
+          t
+        )}
       />
       {error ? (
-        <ErrorState title="the fleet" error={error} onRetry={() => mutate()} />
+        <ErrorState title={t('sensors.fleet.errorTitle')} error={error} onRetry={() => mutate()} />
       ) : (
         <DataTable
-          columns={fleetColumns()}
+          columns={fleetColumns(t)}
           data={data?.data ?? []}
           isLoading={isLoading}
           manualPagination
@@ -187,16 +214,16 @@ export function FleetAllView({ toolbarStart, onOpenDaemon, onOpenRunner }: Fleet
             it.mode === 'runner' ? onOpenRunner(it.id ?? '') : onOpenDaemon(it.id ?? '')
           }
           showSearch={false}
-          paginationNoun="rows"
-          emptyMessage="Nothing matches"
+          paginationNoun={t('sensors.fleet.rows')}
+          emptyMessage={t('sensors.fleet.empty')}
           toolbarStart={
             <>
               {toolbarStart}
               <div className="relative min-w-0 flex-1 sm:max-w-xs">
                 <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search name, repository or workflow…"
-                  aria-label="Search the fleet"
+                  placeholder={t('sensors.fleet.searchPlaceholder')}
+                  aria-label={t('sensors.fleet.searchLabel')}
                   value={q}
                   onChange={(e) => {
                     setQ(e.target.value)
@@ -218,7 +245,7 @@ export function FleetAllView({ toolbarStart, onOpenDaemon, onOpenRunner }: Fleet
                 }}
               />
               <Label htmlFor="fleet-inactive" className="text-sm font-normal">
-                Show inactive
+                {t('sensors.fleet.showInactive')}
               </Label>
             </div>
           }

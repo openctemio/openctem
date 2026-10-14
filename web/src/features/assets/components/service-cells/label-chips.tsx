@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { defaultT, type TFn } from '../../lib/default-t'
 import { MoreChip } from './more-chip'
 import { FactChip, factChipBase } from './fact-chip'
 
@@ -18,13 +19,19 @@ export const MAX_TAGS_PER_ASSET = 50
 export const MAX_TAG_LENGTH = 50
 
 /** Why a new label cannot be added, or null when it can. */
-export function labelError(existing: string[], raw: string): string | null {
+export function labelError(existing: string[], raw: string, t: TFn = defaultT): string | null {
   const label = raw.trim()
-  if (!label) return 'Enter a label'
-  if (label.length > MAX_TAG_LENGTH) return `A label is at most ${MAX_TAG_LENGTH} characters`
-  if (existing.includes(label)) return 'The asset already has this label'
+  if (!label) return t('assets.labels.enter', 'Enter a label')
+  if (label.length > MAX_TAG_LENGTH)
+    return t('assets.labels.tooLong', 'A label is at most {max} characters', {
+      max: MAX_TAG_LENGTH,
+    })
+  if (existing.includes(label))
+    return t('assets.labels.duplicate', 'The asset already has this label')
   if (existing.length >= MAX_TAGS_PER_ASSET)
-    return `An asset can have at most ${MAX_TAGS_PER_ASSET} labels`
+    return t('assets.labels.tooMany', 'An asset can have at most {max} labels', {
+      max: MAX_TAGS_PER_ASSET,
+    })
   return null
 }
 
@@ -112,6 +119,7 @@ function AddLabelButton({
   labels: string[]
   onSave: (labels: string[]) => Promise<unknown>
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
@@ -122,7 +130,7 @@ function AddLabelButton({
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const problem = labelError(labels, value)
+    const problem = labelError(labels, value, t)
     if (problem) {
       setError(problem)
       return
@@ -158,20 +166,20 @@ function AddLabelButton({
           )}
         >
           <Plus aria-hidden="true" />
-          Add label
+          {t('assets.labels.add', 'Add label')}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-3" onClick={(e) => e.stopPropagation()}>
         <form onSubmit={submit} className="space-y-2">
           <label htmlFor={inputId} className="text-sm font-medium">
-            Add label
+            {t('assets.labels.add', 'Add label')}
           </label>
           <Input
             id={inputId}
             autoFocus
             value={value}
             maxLength={MAX_TAG_LENGTH}
-            placeholder="e.g. marketing-site"
+            placeholder={t('assets.labels.placeholder', 'e.g. marketing-site')}
             aria-invalid={!!error}
             aria-describedby={error ? errorId : undefined}
             onChange={(e) => {
@@ -189,7 +197,7 @@ function AddLabelButton({
           <div className="flex justify-end">
             <Button type="submit" size="sm" className="h-7" disabled={saving}>
               {saving && <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />}
-              Add
+              {t('assets.labels.addShort', 'Add')}
             </Button>
           </div>
         </form>

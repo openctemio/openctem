@@ -9,6 +9,9 @@
 
 import type { Sensor } from '@/lib/api/sensor-types'
 
+import { msg } from './content'
+import type { Tr } from './format'
+
 /** How one tool stands on a sensor. */
 export type SensorToolStatus =
   /** Installed, and dispatch may use it. */
@@ -104,11 +107,13 @@ export function sensorCapacity(sensor: CapacitySource): SensorCapacity {
  * "Runs 4 at once now · operator cap 64 · your limit 5": each number that is
  * known; "your limit 5" alone when the sensor reports neither.
  */
-export function capacityLabel(sensor: CapacitySource): string {
+export function capacityLabel(sensor: CapacitySource, tr?: Tr): string {
   const c = sensorCapacity(sensor)
   const parts: string[] = []
-  if (c.slots != null) parts.push(`Runs ${c.slots} at once now`)
-  if (c.reported != null) parts.push(`operator cap ${c.reported}`)
-  parts.push(`your limit ${c.limit}`)
+  if (c.slots != null)
+    parts.push(msg(tr, 'sensors.detail.capRunsNow', 'Runs {n} at once now', { n: c.slots }))
+  if (c.reported != null)
+    parts.push(msg(tr, 'sensors.detail.capOperator', 'operator cap {n}', { n: c.reported }))
+  parts.push(msg(tr, 'sensors.detail.capLimit', 'your limit {n}', { n: c.limit }))
   return parts.join(' · ')
 }

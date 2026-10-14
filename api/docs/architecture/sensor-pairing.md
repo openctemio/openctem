@@ -108,8 +108,8 @@ narrowest profile that would have admitted what it did in the last 30 days.
 (type, payload, scan zone), whether it sent results without a job (v2
 reports with no command, v1 queue reports, held unsolicited results) and its
 assigned zones. It tries the profiles narrowest first (`collector`,
-`ci-runner`, `endpoint-agent`, `easm-external`, `internal-network-scanner`,
-`authenticated-scanner`) and returns the first that admits every job, at the
+`ci-runner`, `endpoint-agent`, `scan-connector`, `easm-external`,
+`internal-network-scanner`, `authenticated-scanner`) and returns the first that admits every job, at the
 tier the sensor's tool contract gives it (the claim's own `AdmitContract`),
 and push ingest when it was used. A zone-bound profile keeps to the zones the
 jobs ran in and the assigned zones. The trust level and the remote actions

@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { SensorInstallSnippets } from './sensor-install-snippets'
 import { SensorFirstReport } from './sensor-tool-review'
 import { hasReportedTools } from '../lib/capabilities'
+import type { Tr } from '../lib/format'
 
 /** What the sensor does, mapped to the API's legacy type and execution mode. */
 export type InstallRole = 'scanner' | 'collector'
@@ -84,16 +85,22 @@ export function installStepIndex(step: InstallStep): number {
   return step === 'name' ? 0 : step === 'connected' ? 2 : 1
 }
 
-export function installStepLabel(step: InstallStep): string {
+export function installStepLabel(step: InstallStep, tr?: Tr): string {
   const i = installStepIndex(step)
-  return `Step ${i + 1} of ${STEPS.length}: ${STEPS[i].title}`
+  if (!tr) return `Step ${i + 1} of ${STEPS.length}: ${STEPS[i].title}`
+  return tr('sensors.installFlow.stepOf', undefined, {
+    n: i + 1,
+    total: STEPS.length,
+    title: tr(`sensors.installFlow.step.${STEPS[i].key}.title`, STEPS[i].title),
+  })
 }
 
 function StepList({ step }: { step: Step }) {
+  const { t } = useTranslation()
   const steps = STEPS
   const doneIdx = installStepIndex(step)
   return (
-    <ol className="space-y-4" aria-label="Steps">
+    <ol className="space-y-4" aria-label={t('sensors.installFlow.steps')}>
       {steps.map((s, i) => {
         const done = i < doneIdx
         const current = i === doneIdx
@@ -112,10 +119,12 @@ function StepList({ step }: { step: Step }) {
             </span>
             <span>
               <span className="block text-sm font-semibold">
-                {s.title}
-                {done && <span className="sr-only"> (done)</span>}
+                {t(`sensors.installFlow.step.${s.key}.title`, s.title)}
+                {done && <span className="sr-only"> ({t('sensors.installFlow.done')})</span>}
               </span>
-              <span className="block text-sm text-muted-foreground">{s.text}</span>
+              <span className="block text-sm text-muted-foreground">
+                {t(`sensors.installFlow.step.${s.key}.text`, s.text)}
+              </span>
             </span>
           </li>
         )
@@ -152,6 +161,7 @@ function FirstHeartbeat({
   /** Shown with the review, above its buttons (the zone picker). */
   children?: React.ReactNode
 }) {
+  const { t } = useTranslation()
   const { data: s } = useSensor(sensorId, { refreshInterval: firstHeartbeatInterval })
   const connected = !!s?.last_seen_at
   const notified = useRef(false)
@@ -179,10 +189,11 @@ function FirstHeartbeat({
         aria-hidden
       />
       <div>
-        <p className="font-medium">Waiting for the first heartbeat…</p>
+        <p className="font-medium">{t('sensors.installFlow.waiting')}</p>
         <p className="text-muted-foreground">
-          Checking every {FIRST_HEARTBEAT_POLL_MS / 1000}s. If nothing arrives within two minutes,
-          check the platform URL, the certificate and that the host can reach port 443.
+          {t('sensors.installFlow.waitingHelp', undefined, {
+            seconds: FIRST_HEARTBEAT_POLL_MS / 1000,
+          })}
         </p>
       </div>
     </div>
@@ -219,7 +230,7 @@ export function SensorInstallFlow({
   onCreated,
   onOpen,
   onDone,
-  title = 'Install a sensor',
+  title,
   variant = 'card',
   onStepChange,
   className,
@@ -241,6 +252,7 @@ export function SensorInstallFlow({
   // Trust is an explicit choice for a collector only, off by default.
   const [trustCollector, setTrustCollector] = useState(false)
   const { t } = useTranslation()
+  const heading = title ?? t('sensors.installFlow.title')
 
   const { trigger: createSensor, isMutating } = useCreateSensor()
   const canTrust = useHasPermission(Permission.SensorsGrantWiden)
@@ -254,16 +266,16 @@ export function SensorInstallFlow({
       ? null
       : NAME_RE.test(name.trim())
         ? null
-        : 'Letters, digits, spaces, dots, dashes and underscores; start with a letter or digit.'
+        : t('sensors.installFlow.nameInvalid')
 
   const assignZone = async (sensorId: string, zone: string) => {
     if (!zone || !canWriteZones) return
     setAssigning(true)
     try {
       await assignSensorToZone(zone, sensorId)
-      toast.success('Sensor assigned to the zone')
+      toast.success(t('sensors.installFlow.zoneAssigned'))
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not assign the zone'))
+      toast.error(getErrorMessage(err, t('sensors.installFlow.zoneAssignFailed')))
     } finally {
       setAssigning(false)
     }
@@ -284,7 +296,7 @@ export function SensorInstallFlow({
         execution_mode: r.mode,
         ...(trusted ? { trusted: true } : {}),
       })
-      if (!res?.api_key || !res.sensor) throw new Error('The response had no key')
+      if (!res?.api_key || !res.sensor) throw new Error(t('sensors.installFlow.noKey'))
       if (trusted && !res.trusted) {
         toast.warning(
           t(
@@ -299,7 +311,7 @@ export function SensorInstallFlow({
       await invalidateSensorsCache()
       if (zoneId) await assignZone(res.sensor.id, zoneId)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Could not create the sensor'))
+      toast.error(getErrorMessage(err, t('sensors.installFlow.createFailed')))
     }
   }
 
@@ -312,7 +324,8 @@ export function SensorInstallFlow({
   const zoneSelect = canReadZones && zones.length > 0 && (
     <div className="space-y-1.5">
       <Label htmlFor="install-zone">
-        Zone <span className="font-normal text-muted-foreground">(optional)</span>
+        {t('sensors.installFlow.zone')}{' '}
+        <span className="font-normal text-muted-foreground">({t('sensors.edit.optional')})</span>
       </Label>
       <Select
         value={zoneId || 'none'}
@@ -323,11 +336,11 @@ export function SensorInstallFlow({
         }}
         disabled={!canWriteZones || assigning}
       >
-        <SelectTrigger id="install-zone" aria-label="Zone">
-          <SelectValue placeholder="No zone" />
+        <SelectTrigger id="install-zone" aria-label={t('sensors.installFlow.zone')}>
+          <SelectValue placeholder={t('sensors.installFlow.noZone')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="none">No zone</SelectItem>
+          <SelectItem value="none">{t('sensors.installFlow.noZone')}</SelectItem>
           {zones.map((z) => (
             <SelectItem key={z.id} value={z.id}>
               {z.name}
@@ -341,10 +354,7 @@ export function SensorInstallFlow({
 
   const inDialog = variant === 'dialog'
   const intro = (
-    <p className="max-w-prose text-sm text-muted-foreground">
-      A sensor runs inside your network. It scans what the platform can&apos;t reach and sends the
-      results back over HTTPS. It only connects out, so you don&apos;t open any inbound port.
-    </p>
+    <p className="max-w-prose text-sm text-muted-foreground">{t('sensors.installFlow.intro')}</p>
   )
 
   return (
@@ -366,7 +376,7 @@ export function SensorInstallFlow({
               <RadioTower className="h-5 w-5" />
             </span>
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">{title}</h2>
+              <h2 className="text-xl font-semibold">{heading}</h2>
               {intro}
             </div>
           </>
@@ -394,7 +404,7 @@ export function SensorInstallFlow({
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="install-name">Name</Label>
+                <Label htmlFor="install-name">{t('sensors.installFlow.name')}</Label>
                 <Input
                   id="install-name"
                   value={name}
@@ -414,8 +424,12 @@ export function SensorInstallFlow({
             </div>
 
             <fieldset className="space-y-2">
-              <legend className="text-sm font-medium">Role</legend>
-              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Role">
+              <legend className="text-sm font-medium">{t('sensors.installFlow.role')}</legend>
+              <div
+                className="grid gap-2 sm:grid-cols-2"
+                role="radiogroup"
+                aria-label={t('sensors.installFlow.role')}
+              >
                 {(Object.keys(INSTALL_ROLES) as InstallRole[]).map((r) => (
                   <button
                     key={r}
@@ -428,9 +442,11 @@ export function SensorInstallFlow({
                       role === r ? 'border-primary ring-1 ring-primary' : 'hover:bg-accent'
                     )}
                   >
-                    <span className="block text-sm font-medium">{INSTALL_ROLES[r].label}</span>
+                    <span className="block text-sm font-medium">
+                      {t(`sensors.installFlow.roles.${r}.label`, INSTALL_ROLES[r].label)}
+                    </span>
                     <span className="block text-xs text-muted-foreground">
-                      {INSTALL_ROLES[r].hint}
+                      {t(`sensors.installFlow.roles.${r}.hint`, INSTALL_ROLES[r].hint)}
                     </span>
                   </button>
                 ))}
@@ -439,8 +455,7 @@ export function SensorInstallFlow({
 
             {role !== 'collector' && (
               <p className="text-xs text-muted-foreground">
-                The sensor reports which scanners it has when it connects; jobs use every one of
-                them.
+                {t('sensors.installFlow.scannerNote')}
               </p>
             )}
 
@@ -479,7 +494,7 @@ export function SensorInstallFlow({
             <div className="flex justify-end">
               <Button type="submit" disabled={!name.trim() || !!nameError || isMutating}>
                 {isMutating && <Loader2 className="h-4 w-4 animate-spin" />}
-                Create and show the command
+                {t('sensors.installFlow.create')}
               </Button>
             </div>
           </form>
@@ -491,11 +506,14 @@ export function SensorInstallFlow({
                   <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
                   <div className="min-w-0 space-y-2">
                     <p>
-                      <span className="font-medium">Copy the key now.</span> It is shown only once
-                      and is already in the commands below. If you lose it, an admin can rotate it,
-                      which disconnects the old key.
+                      <span className="font-medium">{t('sensors.installFlow.copyKeyLead')}</span>{' '}
+                      {t('sensors.installFlow.copyKeyBody')}
                     </p>
-                    <OneTimeSecretField label="API key" noun="API key" value={created.apiKey} />
+                    <OneTimeSecretField
+                      label={t('sensors.installFlow.apiKey')}
+                      noun={t('sensors.installFlow.apiKey')}
+                      value={created.apiKey}
+                    />
                   </div>
                 </div>
                 <SensorInstallSnippets sensorId={created.sensor.id} apiKey={created.apiKey} />

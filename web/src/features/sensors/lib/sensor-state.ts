@@ -1,5 +1,7 @@
 import type { Sensor, SensorState } from '@/lib/api/sensor-types'
 
+import type { Tr } from './format'
+
 /**
  * The thresholds of the state ladder. The API returns its own in
  * GET /sensors/stats (online_window_seconds, offline_after_seconds); these are
@@ -124,6 +126,16 @@ export const SENSOR_STATE_META: Record<
   },
   disabled: { label: 'Disabled', tone: 'muted', description: 'Disabled by an admin.' },
   revoked: { label: 'Revoked', tone: 'muted', description: 'Access revoked for good.' },
+}
+
+/** The label of a state; with `tr`, from the catalog (sensors.state.<state>.label). */
+export function stateLabel(state: SensorState, tr?: Tr): string {
+  return tr ? tr(`sensors.state.${state}.label`) : SENSOR_STATE_META[state].label
+}
+
+/** The one-line meaning of a state; with `tr`, from the catalog. */
+export function stateDescription(state: SensorState, tr?: Tr): string {
+  return tr ? tr(`sensors.state.${state}.description`) : SENSOR_STATE_META[state].description
 }
 
 /** The ladder order, for sorting and breakdowns. */

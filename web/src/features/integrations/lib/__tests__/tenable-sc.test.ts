@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import en from '@/lib/i18n/dictionaries/en/tenableSc.json'
+import vi from '@/lib/i18n/dictionaries/vi/tenableSc.json'
+
 import type { Integration } from '@/features/integrations/types/integration.types'
 import type { Sensor } from '@/lib/api/sensor-types'
 import {
@@ -9,7 +12,11 @@ import {
   connectorSettingsError,
   coverageNumbers,
   isTenableSCConnector,
+  isTenableSCFinding,
+  isTenableScannableAssetType,
   readConnectorSettings,
+  rotationProgress,
+  tenableSCConnectors,
   readTenableScanConfig,
   readTenableSync,
   tenableScanConfigError,
@@ -127,9 +134,9 @@ describe('connector settings', () => {
   it('reports the first problem', () => {
     const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
     expect(connectorSettingsError(ok)).toBeNull()
-    expect(connectorSettingsError({ ...ok, sensorId: '' })).toMatch(/sensor/)
-    expect(connectorSettingsError({ ...ok, instance: '../x' })).toMatch(/Instance/)
-    expect(connectorSettingsError({ ...ok, coverageEnabled: true })).toMatch(/policy/)
+    expect(connectorSettingsError({ ...ok, sensorId: '' })?.fallback).toMatch(/sensor/)
+    expect(connectorSettingsError({ ...ok, instance: '../x' })?.fallback).toMatch(/Instance/)
+    expect(connectorSettingsError({ ...ok, coverageEnabled: true })?.fallback).toMatch(/policy/)
   })
 })
 
@@ -196,7 +203,203 @@ describe('tenable scan config', () => {
       repository_id: 5,
       other: 1,
     })
-    expect(tenableScanConfigError({ ...c, policyId: 0 })).toMatch(/policy/)
-    expect(tenableScanConfigError({ ...c, integrationId: '' })).toMatch(/connector/)
+    expect(tenableScanConfigError({ ...c, policyId: 0 })?.fallback).toMatch(/policy/)
+    expect(tenableScanConfigError({ ...c, integrationId: '' })?.fallback).toMatch(/connector/)
+  })
+})
+
+describe('validation messages', () => {
+  it('carry a tenableSc key present in en and vi, with the English text as fallback', () => {
+    const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
+    const messages = [
+      connectorSettingsError({ ...ok, sensorId: '' }),
+      connectorSettingsError({ ...ok, instance: '../x' }),
+      connectorSettingsError({ ...ok, minSeverity: 9 }),
+      connectorSettingsError({ ...ok, fullSyncDays: 0 }),
+      connectorSettingsError({ ...ok, coverageEnabled: true }),
+      connectorSettingsError({ ...ok, rotation: 'aging' }),
+      connectorSettingsError({ ...ok, rotationWaitHours: 0 }),
+      tenableScanConfigError({ integrationId: '', policyId: 0, repositoryId: 0, zoneId: 0 }),
+      tenableScanConfigError({ integrationId: 'i1', policyId: 0, repositoryId: 0, zoneId: 0 }),
+      tenableScanConfigError({ integrationId: 'i1', policyId: 1, repositoryId: 0, zoneId: 0 }),
+    ]
+    for (const m of messages) {
+      expect(m).not.toBeNull()
+      const key = m!.key as keyof typeof en
+      expect(en[key], m!.key).toBe(m!.fallback)
+      expect(vi[key as keyof typeof vi], m!.key).toBeTruthy()
+    }
+  })
+})
+
+describe('license rotation settings', () => {
+  const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
+
+  it('defaults to off with a 12 hour wait when the config has none', () => {
+    const s = readConnectorSettings(integration(connectorCfg))
+    expect(s.rotation).toBe('off')
+    expect(s.rotationAcknowledged).toBe(false)
+    expect(s.rotationWaitHours).toBe(12)
+  })
+
+  it('reads the config keys, tolerating case, strings and unknown modes', () => {
+    const s = readConnectorSettings(
+      integration({
+        ...connectorCfg,
+        coverage_rotation: 'Recycle',
+        coverage_rotation_acknowledged: 'true',
+        coverage_rotation_wait_hours: '24',
+      })
+    )
+    expect(s).toMatchObject({
+      rotation: 'recycle',
+      rotationAcknowledged: true,
+      rotationWaitHours: 24,
+    })
+    expect(readConnectorSettings(integration({ coverage_rotation: 'wipe' })).rotation).toBe('off')
+  })
+
+  it('writes the three keys and round-trips them', () => {
+    const cfg = connectorConfig({
+      ...ok,
+      rotation: 'aging',
+      rotationAcknowledged: true,
+      rotationWaitHours: 6,
+    })
+    expect(cfg).toMatchObject({
+      coverage_rotation: 'aging',
+      coverage_rotation_acknowledged: true,
+      coverage_rotation_wait_hours: 6,
+    })
+    expect(readConnectorSettings(integration(cfg))).toMatchObject({
+      rotation: 'aging',
+      rotationAcknowledged: true,
+      rotationWaitHours: 6,
+    })
+  })
+
+  it('drops the acknowledgement when rotation is off, so turning it on asks again', () => {
+    const cfg = connectorConfig({ ...ok, rotation: 'off', rotationAcknowledged: true })
+    expect(cfg.coverage_rotation_acknowledged).toBe(false)
+  })
+
+  it('refuses rotation without the acknowledgement and a wait outside 1-72 hours', () => {
+    expect(connectorSettingsError({ ...ok, rotation: 'aging' })?.key).toBe(
+      'tenableSc.error.rotationNeedsAck'
+    )
+    expect(connectorSettingsError({ ...ok, rotation: 'recycle' })?.key).toBe(
+      'tenableSc.error.rotationNeedsAck'
+    )
+    expect(
+      connectorSettingsError({ ...ok, rotation: 'recycle', rotationAcknowledged: true })
+    ).toBeNull()
+    for (const h of [0, 73, 1.5]) {
+      expect(connectorSettingsError({ ...ok, rotationWaitHours: h })?.key).toBe(
+        'tenableSc.error.rotationWaitHours'
+      )
+    }
+    expect(connectorSettingsError({ ...ok, rotationWaitHours: 1 })).toBeNull()
+    expect(connectorSettingsError({ ...ok, rotationWaitHours: 72 })).toBeNull()
+  })
+
+  it('sizes the next batch with rotation: the last batch leaves the count', () => {
+    const cfg = { ...connectorCfg, coverage_enabled: true, safety_margin: 10 }
+    const sync = { licensed_ips: 1000, active_ips: 900, last_batch_added: 300 }
+    expect(coverageNumbers(integration(cfg, sync)).headroom).toBe(90)
+    expect(
+      coverageNumbers(
+        integration(
+          { ...cfg, coverage_rotation: 'aging', coverage_rotation_acknowledged: true },
+          sync
+        )
+      ).headroom
+    ).toBe(390)
+  })
+})
+
+describe('rotationProgress', () => {
+  const now = new Date('2026-10-14T10:00:00Z')
+  const cfg = {
+    ...connectorCfg,
+    coverage_rotation: 'recycle',
+    coverage_rotation_acknowledged: true,
+  }
+
+  it('reads the cycle, its progress and ETA', () => {
+    const r = rotationProgress(
+      integration(cfg, {
+        cycle: 3,
+        cycle_assessed: 250,
+        cycle_eligible: 1000,
+        cycle_eta: '2026-10-20T00:00:00Z',
+      }),
+      now
+    )
+    expect(r).toMatchObject({
+      rotation: 'recycle',
+      cycle: 3,
+      assessed: 250,
+      eligible: 1000,
+      percent: 25,
+      eta: '2026-10-20T00:00:00Z',
+    })
+    expect(r.stalled).toBeUndefined()
+  })
+
+  it('says when and why the next batch waits, only while it does', () => {
+    const waiting = rotationProgress(
+      integration(cfg, {
+        next_batch_at: '2026-10-14T12:00:00Z',
+        coverage_wait: 'the previous batch failed',
+      }),
+      now
+    )
+    expect(waiting.nextBatchAt).toBe('2026-10-14T12:00:00Z')
+    expect(waiting.waitReason).toBe('the previous batch failed')
+    const past = rotationProgress(
+      integration(cfg, { next_batch_at: '2026-10-14T08:00:00Z', coverage_wait: 'x' }),
+      now
+    )
+    expect(past.nextBatchAt).toBeUndefined()
+    expect(past.waitReason).toBeUndefined()
+  })
+
+  it('reports a stalled rotation and no progress before the first batch', () => {
+    const r = rotationProgress(integration(cfg, { rotation_stalled: 'rotation stalled: x' }), now)
+    expect(r.stalled).toBe('rotation stalled: x')
+    expect(r.cycle).toBe(0)
+    expect(r.percent).toBeNull()
+  })
+
+  it('never shows more assessed than eligible', () => {
+    const r = rotationProgress(
+      integration(cfg, { cycle: 1, cycle_assessed: 12, cycle_eligible: 10 }),
+      now
+    )
+    expect(r.assessed).toBe(10)
+    expect(r.percent).toBe(100)
+  })
+})
+
+describe('scan now helpers', () => {
+  it('lists only Tenable.sc connectors', () => {
+    const conn = integration(connectorCfg)
+    const nessus = { ...integration({ engine: 'nessus_pro' }), id: 'i2' } as Integration
+    expect(tenableSCConnectors([conn, nessus]).map((i) => i.id)).toEqual(['i1'])
+    expect(tenableSCConnectors(undefined)).toEqual([])
+  })
+
+  it('offers IP addresses and hosts only', () => {
+    expect(isTenableScannableAssetType('ip_address')).toBe(true)
+    expect(isTenableScannableAssetType('host')).toBe(true)
+    expect(isTenableScannableAssetType('domain')).toBe(false)
+    expect(isTenableScannableAssetType(undefined)).toBe(false)
+  })
+
+  it('recognises a finding the connector reported', () => {
+    expect(isTenableSCFinding({ toolName: 'tenable_sc' })).toBe(true)
+    expect(isTenableSCFinding({ source: 'tenable_sc' })).toBe(true)
+    expect(isTenableSCFinding({ toolName: 'nuclei' })).toBe(false)
+    expect(isTenableSCFinding(undefined)).toBe(false)
   })
 })

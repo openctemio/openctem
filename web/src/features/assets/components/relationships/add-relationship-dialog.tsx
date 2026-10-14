@@ -11,6 +11,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Link2, ArrowRight, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -212,6 +213,7 @@ export function AddRelationshipDialog({
   onSubmit,
   isLoading = false,
 }: AddRelationshipDialogProps) {
+  const { t } = useTranslation()
   // Form state
   const [relationshipType, setRelationshipType] = React.useState<RelationshipType | ''>('')
   // Multi-select: every relationship type can have one or many targets.
@@ -388,8 +390,12 @@ export function AddRelationshipDialog({
         onInteractOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>Add Relationship</DialogTitle>
-          <DialogDescription>Create a new relationship from {sourceAsset.name}</DialogDescription>
+          <DialogTitle>{t('assets.relationshipAdd.title', 'Add Relationship')}</DialogTitle>
+          <DialogDescription>
+            {t('assets.relationshipAdd.description', 'Create a new relationship from {name}', {
+              name: sourceAsset.name,
+            })}
+          </DialogDescription>
         </DialogHeader>
 
         <DialogBody>
@@ -407,7 +413,8 @@ export function AddRelationshipDialog({
               <div className="flex-1">
                 <p className="text-sm font-medium">{sourceAsset.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]} (Source)
+                  {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]}{' '}
+                  {t('assets.relationshipAdd.sourceSuffix', '(Source)')}
                 </p>
               </div>
             </div>
@@ -420,15 +427,18 @@ export function AddRelationshipDialog({
                 <div className="flex items-start gap-3">
                   <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">No relationship types available</p>
+                    <p className="text-sm font-medium">
+                      {t('assets.relationshipAdd.noTypesTitle', 'No relationship types available')}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      The asset type{' '}
+                      {t('assets.relationshipAdd.noTypesBefore', 'The asset type')}{' '}
                       <strong>
                         {EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type] ?? sourceAsset.type}
                       </strong>{' '}
-                      has no relationship constraints defined yet. Create the relationship from the
-                      other end of the edge instead, or contact your administrator to extend the
-                      constraint table.
+                      {t(
+                        'assets.relationshipAdd.noTypesAfter',
+                        'has no relationship constraints defined yet. Create the relationship from the other end of the edge instead, or contact your administrator to extend the constraint table.'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -439,7 +449,7 @@ export function AddRelationshipDialog({
               caused Radix to render it inside the trigger as well, creating
               a 2-line trigger and a duplicate of the helper text below. */
               <div className="space-y-2">
-                <Label>Relationship Type</Label>
+                <Label>{t('assets.relationshipAdd.typeLabel', 'Relationship Type')}</Label>
                 <Select
                   value={relationshipType}
                   onValueChange={(v) => {
@@ -451,7 +461,12 @@ export function AddRelationshipDialog({
                   }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select relationship type" />
+                    <SelectValue
+                      placeholder={t(
+                        'assets.relationshipAdd.typePlaceholder',
+                        'Select relationship type'
+                      )}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {/* Group the dropdown by category. Categories with no
@@ -494,9 +509,15 @@ export function AddRelationshipDialog({
                   <div className="flex items-start gap-2 rounded-md border border-warning/50 bg-warning/5 p-2.5 text-xs">
                     <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                     <span>
-                      No target asset types are defined for this relationship from a{' '}
-                      <strong>{EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]}</strong>. Pick a
-                      different relationship type.
+                      {t(
+                        'assets.relationshipAdd.noTargetsBefore',
+                        'No target asset types are defined for this relationship from a'
+                      )}{' '}
+                      <strong>{EXTENDED_ASSET_TYPE_LABELS[sourceAsset.type]}</strong>
+                      {t(
+                        'assets.relationshipAdd.noTargetsAfter',
+                        '. Pick a different relationship type.'
+                      )}
                     </span>
                   </div>
                 )}
@@ -519,14 +540,18 @@ export function AddRelationshipDialog({
                 <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 {selectedTargets.length === 0 ? (
                   <Badge variant="secondary" className="max-w-[180px] truncate">
-                    Select target…
+                    {t('assets.relationshipAdd.selectTarget', 'Select target…')}
                   </Badge>
                 ) : selectedTargets.length === 1 ? (
                   <Badge variant="secondary" className="max-w-[180px] truncate">
                     {selectedTargets[0].name}
                   </Badge>
                 ) : (
-                  <Badge variant="secondary">{selectedTargets.length} assets</Badge>
+                  <Badge variant="secondary">
+                    {t('assets.relationshipAdd.nAssets', '{n} assets', {
+                      n: selectedTargets.length,
+                    })}
+                  </Badge>
                 )}
               </div>
             )}
@@ -534,26 +559,36 @@ export function AddRelationshipDialog({
             {/* Target Asset Selector — server-side search */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Target Asset</Label>
+                <Label>{t('assets.relationshipAdd.targetLabel', 'Target Asset')}</Label>
                 {/* Live count of selected targets — invisible state from
                   the picker would otherwise be confusing when the user
                   scrolls or filters and can't see what they've picked. */}
                 {selectedTargets.length > 0 && (
                   <span className="text-xs text-muted-foreground">
-                    {selectedTargets.length} selected
+                    {t('assets.relationshipAdd.nSelected', '{n} selected', {
+                      n: selectedTargets.length,
+                    })}
                   </span>
                 )}
               </div>
               {!relationshipType ? (
                 <div className="flex items-center gap-2 p-4 rounded-lg border border-dashed text-muted-foreground">
                   <AlertCircle className="h-4 w-4" />
-                  <span className="text-sm">Select a relationship type first</span>
+                  <span className="text-sm">
+                    {t(
+                      'assets.relationshipAdd.selectTypeFirst',
+                      'Select a relationship type first'
+                    )}
+                  </span>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center gap-2">
                     <Input
-                      placeholder="Search assets by name…"
+                      placeholder={t(
+                        'assets.relationshipAdd.searchPlaceholder',
+                        'Search assets by name…'
+                      )}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="flex-1"
@@ -579,7 +614,7 @@ export function AddRelationshipDialog({
                           })
                         }}
                       >
-                        Select all
+                        {t('assets.relationshipAdd.selectAll', 'Select all')}
                       </Button>
                     )}
                     {selectedTargets.length > 0 && (
@@ -589,7 +624,7 @@ export function AddRelationshipDialog({
                         size="sm"
                         onClick={() => setSelectedTargets([])}
                       >
-                        Clear
+                        {t('assets.relationshipAdd.clear', 'Clear')}
                       </Button>
                     )}
                   </div>
@@ -597,19 +632,25 @@ export function AddRelationshipDialog({
                     {isSearching ? (
                       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                         <Loader2 className="h-6 w-6 animate-spin mb-2" />
-                        <p className="text-sm">Searching…</p>
+                        <p className="text-sm">
+                          {t('assets.relationshipAdd.searching', 'Searching…')}
+                        </p>
                       </div>
                     ) : filteredAssets.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4 text-center">
                         <Link2 className="h-8 w-8 mb-2" />
                         <p className="text-sm">
                           {debouncedQuery
-                            ? `No compatible assets match "${debouncedQuery}"`
-                            : 'No compatible assets found'}
+                            ? t(
+                                'assets.relationshipAdd.noMatch',
+                                'No compatible assets match "{query}"',
+                                { query: debouncedQuery }
+                              )
+                            : t('assets.relationshipAdd.noneFound', 'No compatible assets found')}
                         </p>
                         {validTargetTypes.length > 0 && (
                           <p className="text-xs mt-1">
-                            Looking for:{' '}
+                            {t('assets.relationshipAdd.lookingFor', 'Looking for:')}{' '}
                             {validTargetTypes
                               .map((t) => EXTENDED_ASSET_TYPE_LABELS[t])
                               .filter(Boolean)
@@ -622,9 +663,16 @@ export function AddRelationshipDialog({
                           is broken. */}
                         {takenTargetIds.size > 0 && !debouncedQuery && (
                           <p className="text-xs mt-2">
-                            {takenTargetIds.size} compatible asset
-                            {takenTargetIds.size === 1 ? ' is' : 's are'} already related and
-                            therefore hidden.
+                            {takenTargetIds.size === 1
+                              ? t(
+                                  'assets.relationshipAdd.takenHiddenOne',
+                                  '1 compatible asset is already related and therefore hidden.'
+                                )
+                              : t(
+                                  'assets.relationshipAdd.takenHiddenMany',
+                                  '{n} compatible assets are already related and therefore hidden.',
+                                  { n: takenTargetIds.size }
+                                )}
                           </p>
                         )}
                         {/* Smart redirect for the most common confusion:
@@ -636,9 +684,11 @@ export function AddRelationshipDialog({
                         {relationshipType === 'resolves_to' && (
                           <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-2.5 text-start">
                             <p className="text-xs text-foreground">
-                              <strong>Tip:</strong> Resolves To is for the literal DNS endpoint (an
-                              IP address or load balancer). To link this domain to a website / API /
-                              service, switch to{' '}
+                              <strong>{t('assets.relationshipAdd.tip', 'Tip:')}</strong>{' '}
+                              {t(
+                                'assets.relationshipAdd.resolvesToTip',
+                                'Resolves To is for the literal DNS endpoint (an IP address or load balancer). To link this domain to a website / API / service, switch to'
+                              )}{' '}
                               {/* Clickable redirect — flips the relationship
                                 type dropdown to Exposes immediately so the
                                 user doesn't have to scroll back up. */}
@@ -650,9 +700,12 @@ export function AddRelationshipDialog({
                                   setSelectedTargets([])
                                 }}
                               >
-                                Exposes
+                                {RELATIONSHIP_LABELS.exposes.direct}
                               </button>
-                              . For subdomain → parent domain or CNAME aliases use{' '}
+                              {t(
+                                'assets.relationshipAdd.cnameTip',
+                                '. For subdomain → parent domain or CNAME aliases use'
+                              )}{' '}
                               <button
                                 type="button"
                                 className="font-semibold text-primary hover:underline"
@@ -661,7 +714,7 @@ export function AddRelationshipDialog({
                                   setSelectedTargets([])
                                 }}
                               >
-                                CNAME Of
+                                {RELATIONSHIP_LABELS.cname_of.direct}
                               </button>
                               .
                             </p>
@@ -683,10 +736,16 @@ export function AddRelationshipDialog({
                         })}
                         {takenTargetIds.size > 0 && (
                           <p className="text-[11px] text-muted-foreground text-center pt-2 border-t mt-2">
-                            {takenTargetIds.size} asset
-                            {takenTargetIds.size === 1 ? ' is' : 's are'} hidden because{' '}
-                            {takenTargetIds.size === 1 ? 'it already has' : 'they already have'} a
-                            relationship of this type with the source.
+                            {takenTargetIds.size === 1
+                              ? t(
+                                  'assets.relationshipAdd.hiddenOne',
+                                  '1 asset is hidden because it already has a relationship of this type with the source.'
+                                )
+                              : t(
+                                  'assets.relationshipAdd.hiddenMany',
+                                  '{n} assets are hidden because they already have a relationship of this type with the source.',
+                                  { n: takenTargetIds.size }
+                                )}
                           </p>
                         )}
                       </div>
@@ -705,15 +764,22 @@ export function AddRelationshipDialog({
                 {/* Description */}
                 <div className="space-y-2">
                   <Label>
-                    Description (Optional)
+                    {t('assets.relationshipAdd.descriptionLabel', 'Description (Optional)')}
                     {selectedTargets.length > 1 && (
                       <span className="ms-1 text-xs font-normal text-muted-foreground">
-                        — applied to all {selectedTargets.length} relationships
+                        {t(
+                          'assets.relationshipAdd.appliedToAll',
+                          '— applied to all {n} relationships',
+                          { n: selectedTargets.length }
+                        )}
                       </span>
                     )}
                   </Label>
                   <Textarea
-                    placeholder="Describe this relationship..."
+                    placeholder={t(
+                      'assets.relationshipAdd.descriptionPlaceholder',
+                      'Describe this relationship...'
+                    )}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     rows={2}
@@ -723,7 +789,7 @@ export function AddRelationshipDialog({
                 {/* Confidence & Impact */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Confidence</Label>
+                    <Label>{t('assets.relationshipAdd.confidence', 'Confidence')}</Label>
                     <Select
                       value={confidence}
                       onValueChange={(v) => setConfidence(v as RelationshipConfidence)}
@@ -732,15 +798,25 @@ export function AddRelationshipDialog({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="high">
+                          {t('assets.relationshipAdd.confidenceHigh', 'High')}
+                        </SelectItem>
+                        <SelectItem value="medium">
+                          {t('assets.relationshipAdd.confidenceMedium', 'Medium')}
+                        </SelectItem>
+                        <SelectItem value="low">
+                          {t('assets.relationshipAdd.confidenceLow', 'Low')}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Impact Weight: {impactWeight}</Label>
+                    <Label>
+                      {t('assets.relationshipAdd.impactWeight', 'Impact Weight: {n}', {
+                        n: impactWeight,
+                      })}
+                    </Label>
                     <Slider
                       value={[impactWeight]}
                       onValueChange={([v]) => setImpactWeight(v)}
@@ -768,16 +844,25 @@ export function AddRelationshipDialog({
                       htmlFor="is-control-plane"
                       className="text-sm font-normal cursor-pointer"
                     >
-                      Control-plane dependency (IdP / secrets / CI-CD / SIEM)
+                      {t(
+                        'assets.relationshipAdd.controlPlane',
+                        'Control-plane dependency (IdP / secrets / CI-CD / SIEM)'
+                      )}
                       {selectedTargets.length > 1 && (
                         <span className="ms-1 text-xs text-muted-foreground">
-                          — applied to all {selectedTargets.length} relationships
+                          {t(
+                            'assets.relationshipAdd.appliedToAll',
+                            '— applied to all {n} relationships',
+                            { n: selectedTargets.length }
+                          )}
                         </span>
                       )}
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Flag when the target governs this asset&apos;s security posture, so scoping
-                      can trace blast radius.
+                      {t(
+                        'assets.relationshipAdd.controlPlaneHint',
+                        "Flag when the target governs this asset's security posture, so scoping can trace blast radius."
+                      )}
                     </p>
                   </div>
                 </div>
@@ -788,16 +873,20 @@ export function AddRelationshipDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('assets.relationshipAdd.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!isValid || isLoading}>
             {isLoading
               ? selectedTargets.length > 1
-                ? `Creating ${selectedTargets.length}…`
-                : 'Creating…'
+                ? t('assets.relationshipAdd.creatingN', 'Creating {n}…', {
+                    n: selectedTargets.length,
+                  })
+                : t('assets.relationshipAdd.creating', 'Creating…')
               : selectedTargets.length > 1
-                ? `Create ${selectedTargets.length} Relationships`
-                : 'Create Relationship'}
+                ? t('assets.relationshipAdd.createN', 'Create {n} Relationships', {
+                    n: selectedTargets.length,
+                  })
+                : t('assets.relationshipAdd.create', 'Create Relationship')}
           </Button>
         </DialogFooter>
       </DialogContent>

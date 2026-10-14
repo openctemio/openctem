@@ -1,4 +1,5 @@
 import Link from '@/components/link'
+import { useTranslation } from '@/context/i18n-provider'
 import { ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FINDINGS_OPEN_STATUSES } from '@/features/findings/lib/list-defaults'
@@ -31,13 +32,20 @@ export interface IssuesChipProps {
  * nothing at zero: a zero is not a problem and is never coloured.
  */
 export function IssuesChip({ assetId, count, className }: IssuesChipProps) {
+  const { t } = useTranslation()
   if (!Number.isFinite(count) || count <= 0) return null
-  const label = `${count} ${count === 1 ? 'issue' : 'issues'} found`
+  const label =
+    count === 1
+      ? t('assets.issues.one', '1 issue found')
+      : t('assets.issues.many', '{count} issues found', { count })
   return (
     <Link
       href={assetFindingsHref(assetId)}
       onClick={(e) => e.stopPropagation()}
-      title="Findings on this asset that are not resolved. Opens its open findings."
+      title={t(
+        'assets.issues.title',
+        'Findings on this asset that are not resolved. Opens its open findings.'
+      )}
       className={cn(
         factChipBase,
         'border-transparent bg-warning/15 font-medium text-warning tabular-nums hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

@@ -24,6 +24,7 @@ import { PRIORITY_CLASS_CONFIG, type FindingDetail } from '../../types'
 import { PriorityClassSla } from '@/features/sla/components/priority-class-sla'
 import { riskSignals, type RiskSignal, type SignalGroup } from '../../lib/finding-signals'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
+import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * The API caps a finding at P2 while its asset's attribution is not
@@ -36,10 +37,20 @@ export function isAttributionCapped(reason: string | null | undefined): boolean 
   return !!reason && reason.includes(ATTRIBUTION_CAP_PHRASE)
 }
 
-const GROUPS: { key: SignalGroup; label: string; icon: React.ElementType }[] = [
-  { key: 'exploitation', label: 'Exploitation', icon: Activity },
-  { key: 'exposure', label: 'Exposure', icon: Globe },
-  { key: 'impact', label: 'Business impact', icon: Building2 },
+const GROUPS: { key: SignalGroup; labelKey: string; label: string; icon: React.ElementType }[] = [
+  {
+    key: 'exploitation',
+    labelKey: 'findings.whyItMatters.exploitation',
+    label: 'Exploitation',
+    icon: Activity,
+  },
+  { key: 'exposure', labelKey: 'findings.whyItMatters.exposure', label: 'Exposure', icon: Globe },
+  {
+    key: 'impact',
+    labelKey: 'findings.whyItMatters.impact',
+    label: 'Business impact',
+    icon: Building2,
+  },
 ]
 
 const EFFECT_DOT: Record<RiskSignal['effect'], string> = {
@@ -48,10 +59,10 @@ const EFFECT_DOT: Record<RiskSignal['effect'], string> = {
   neutral: 'bg-muted-foreground/50',
 }
 
-const EFFECT_WORD: Record<RiskSignal['effect'], string> = {
-  raises: 'raises priority',
-  lowers: 'lowers priority',
-  neutral: 'context',
+const EFFECT_WORD: Record<RiskSignal['effect'], { key: string; fallback: string }> = {
+  raises: { key: 'findings.whyItMatters.raises', fallback: 'raises priority' },
+  lowers: { key: 'findings.whyItMatters.lowers', fallback: 'lowers priority' },
+  neutral: { key: 'findings.whyItMatters.context', fallback: 'context' },
 }
 
 function sentence(s: string): string {
@@ -60,6 +71,7 @@ function sentence(s: string): string {
 }
 
 export function SignalChip({ signal }: { signal: RiskSignal }) {
+  const { t } = useTranslation()
   return (
     <li
       className="inline-flex min-h-7 items-center gap-1.5 rounded-md border bg-card px-2 py-0.5 text-sm"
@@ -71,17 +83,22 @@ export function SignalChip({ signal }: { signal: RiskSignal }) {
         className={cn('size-1.5 shrink-0 rounded-full', EFFECT_DOT[signal.effect])}
       />
       <span>{signal.label}</span>
-      <span className="sr-only">({EFFECT_WORD[signal.effect]})</span>
+      <span className="sr-only">
+        ({t(EFFECT_WORD[signal.effect].key, EFFECT_WORD[signal.effect].fallback)})
+      </span>
     </li>
   )
 }
 
 function ScoreDetails({ findingId }: { findingId: string }) {
+  const { t } = useTranslation()
   const { explanation, isLoading } = useFindingPriorityExplanation(findingId)
   if (isLoading) return <Skeleton className="mt-2 h-28 w-full max-w-md" />
   if (!explanation) {
     return (
-      <p className="mt-2 text-sm text-muted-foreground">No score breakdown for this finding.</p>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {t('findings.whyItMatters.noBreakdown', 'No score breakdown for this finding.')}
+      </p>
     )
   }
   return (
@@ -89,7 +106,9 @@ function ScoreDetails({ findingId }: { findingId: string }) {
       {explanation.source === 'rule' && explanation.rule_name && (
         <Badge variant="secondary" className="gap-1">
           <Gavel className="h-3 w-3" aria-hidden />
-          Set by rule: {explanation.rule_name}
+          {t('findings.whyItMatters.setByRule', 'Set by rule: {rule}', {
+            rule: explanation.rule_name,
+          })}
         </Badge>
       )}
       {explanation.score_breakdown && <ScoreBreakdown breakdown={explanation.score_breakdown} />}
@@ -105,6 +124,7 @@ export interface FindingWhyItMattersProps {
 }
 
 export function FindingWhyItMatters({ finding, compact, className }: FindingWhyItMattersProps) {
+  const { t } = useTranslation()
   const [scoreOpen, setScoreOpen] = useState(false)
   const signals = riskSignals(finding)
   const pc = finding.priorityClass
@@ -120,7 +140,7 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
       className={cn('rounded-lg border bg-card p-4', className)}
     >
       <h2 id={`why-${finding.id}`} className="text-sm font-semibold">
-        Why it matters
+        {t('findings.whyItMatters.heading', 'Why it matters')}
       </h2>
 
       {pc && cfg && (
@@ -135,7 +155,7 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
           />
           {finding.priorityClassOverride && (
             <Badge variant="outline" className="text-xs">
-              Set manually
+              {t('findings.whyItMatters.setManually', 'Set manually')}
             </Badge>
           )}
         </div>
@@ -144,20 +164,22 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
       {isAttributionCapped(reason) && (
         <div
           role="note"
-          aria-label="Ownership not confirmed"
+          aria-label={t('findings.whyItMatters.ownershipNote', 'Ownership not confirmed')}
           className="mt-2 flex flex-wrap items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm"
         >
           <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
           <span className="min-w-0 flex-1">
-            This asset has not been confirmed as your organisation&apos;s, so the finding is held at
-            P2.
+            {t(
+              'findings.whyItMatters.ownershipText',
+              "This asset has not been confirmed as your organisation's, so the finding is held at P2."
+            )}
           </span>
           {isLinkableAssetId(finding.assets[0]?.id) && (
             <Link
               href={assetDetailHref(finding.assets[0].id)}
               className="font-medium underline underline-offset-2"
             >
-              Verify ownership
+              {t('findings.whyItMatters.verifyOwnership', 'Verify ownership')}
             </Link>
           )}
         </div>
@@ -165,7 +187,10 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
 
       {signals.length > 0 &&
         (compact ? (
-          <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Risk signals">
+          <ul
+            className="mt-3 flex flex-wrap gap-1.5"
+            aria-label={t('findings.whyItMatters.riskSignals', 'Risk signals')}
+          >
             {signals.map((s) => (
               <SignalChip key={s.key} signal={s} />
             ))}
@@ -180,9 +205,9 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
                 <div key={g.key} className="min-w-0">
                   <h3 className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Icon className="h-3.5 w-3.5" aria-hidden />
-                    {g.label}
+                    {t(g.labelKey, g.label)}
                   </h3>
-                  <ul className="flex flex-wrap gap-1.5" aria-label={g.label}>
+                  <ul className="flex flex-wrap gap-1.5" aria-label={t(g.labelKey, g.label)}>
                     {items.map((s) => (
                       <SignalChip key={s.key} signal={s} />
                     ))}
@@ -203,7 +228,7 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
               className="h-3 w-3 transition-transform group-open:rotate-90"
               aria-hidden
             />
-            How this was scored
+            {t('findings.whyItMatters.howScored', 'How this was scored')}
           </summary>
           {scoreOpen && <ScoreDetails findingId={finding.id} />}
         </details>
