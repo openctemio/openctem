@@ -8,6 +8,7 @@
  * uploaded file and is rendered as text.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { AlertTriangle, FileUp, Loader2 } from 'lucide-react'
@@ -59,6 +60,7 @@ export function ImportResultsDialog({
   onImported,
   minSeverity,
 }: ImportResultsDialogProps) {
+  const { t } = useTranslation()
   const [file, setFile] = useState<File | null>(null)
   const [kb, setKb] = useState<File | null>(null)
   const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
@@ -84,15 +86,21 @@ export function ImportResultsDialog({
         setPreview(resp)
       } else {
         setResult(resp)
-        const t = importTotals(resp.files ?? [])
-        toast.success(`Imported ${t.created} new and ${t.updated} updated findings`)
+        const totals = importTotals(resp.files ?? [])
+        toast.success(
+          t(
+            'findings.importResults.imported',
+            'Imported {created} new and {updated} updated findings',
+            { created: totals.created, updated: totals.updated }
+          )
+        )
         onImported?.()
       }
     } catch (e) {
       if (e instanceof FindingImportError) {
         setError({ message: e.message, file: e.file })
       } else {
-        setError({ message: 'The import failed' })
+        setError({ message: t('findings.importResults.failed', 'The import failed') })
       }
       if (dryRun) setPreview(null)
     } finally {
@@ -113,12 +121,12 @@ export function ImportResultsDialog({
     >
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Import results</DialogTitle>
+          <DialogTitle>{t('findings.importResults.title', 'Import results')}</DialogTitle>
           <DialogDescription>
-            Upload results another tool exported: Nessus, Qualys, SARIF, trivy, grype, semgrep,
-            gitleaks, nuclei, ZAP, vuls, CycloneDX, SPDX, OSV, CSAF, OpenVEX or DefectDojo, or a ZIP
-            of them. The format is detected from the file. Findings land only on assets you can
-            change, and an import never resolves other findings.
+            {t(
+              'findings.importResults.description',
+              'Upload results another tool exported: Nessus, Qualys, SARIF, trivy, grype, semgrep, gitleaks, nuclei, ZAP, vuls, CycloneDX, SPDX, OSV, CSAF, OpenVEX or DefectDojo, or a ZIP of them. The format is detected from the file. Findings land only on assets you can change, and an import never resolves other findings.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -126,7 +134,7 @@ export function ImportResultsDialog({
           {!result && (
             <div className="space-y-3">
               <div className="space-y-1">
-                <Label htmlFor="import-file">File</Label>
+                <Label htmlFor="import-file">{t('findings.importResults.file', 'File')}</Label>
                 <Input
                   id="import-file"
                   type="file"
@@ -140,7 +148,10 @@ export function ImportResultsDialog({
               </div>
               <div className="space-y-1">
                 <Label htmlFor="import-kb">
-                  Qualys KnowledgeBase <span className="text-muted-foreground">(optional)</span>
+                  {t('findings.importResults.qualysKb', 'Qualys KnowledgeBase')}{' '}
+                  <span className="text-muted-foreground">
+                    ({t('findings.importResults.optional', 'optional')})
+                  </span>
                 </Label>
                 <Input
                   id="import-kb"
@@ -153,8 +164,10 @@ export function ImportResultsDialog({
                 />
                 {needsKb && !kb && (
                   <p className="text-muted-foreground text-xs">
-                    Without the KnowledgeBase, Qualys detections keep their QID but have no title,
-                    CVEs or CVSS.
+                    {t(
+                      'findings.importResults.noKbHint',
+                      'Without the KnowledgeBase, Qualys detections keep their QID but have no title, CVEs or CVSS.'
+                    )}
                   </p>
                 )}
               </div>
@@ -179,7 +192,9 @@ export function ImportResultsDialog({
           {shown && (
             <div className="space-y-3" data-testid="import-summary">
               <p className="text-muted-foreground text-xs">
-                {shown.dry_run ? 'Preview: nothing was written. ' : ''}
+                {shown.dry_run
+                  ? t('findings.importResults.previewNote', 'Preview: nothing was written.') + ' '
+                  : ''}
                 {vexModeText(shown.vex_mode, shown.vex_can_close)}
               </p>
               {(shown.files ?? []).map((f, i) => (
@@ -191,11 +206,13 @@ export function ImportResultsDialog({
 
         <DialogFooter>
           {result ? (
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
+            <Button onClick={() => onOpenChange(false)}>
+              {t('findings.importResults.close', 'Close')}
+            </Button>
           ) : (
             <>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button
                 type="button"
@@ -204,7 +221,7 @@ export function ImportResultsDialog({
                 onClick={() => run(true)}
               >
                 {busy === 'preview' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Preview
+                {t('findings.importResults.preview', 'Preview')}
               </Button>
               <Button
                 type="button"
@@ -221,7 +238,7 @@ export function ImportResultsDialog({
                 ) : (
                   <FileUp className="me-2 h-4 w-4" />
                 )}
-                Import
+                {t('findings.importResults.import', 'Import')}
               </Button>
             </>
           )}
@@ -253,6 +270,7 @@ function Count({ label, value }: { label: string; value: number }) {
 }
 
 function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boolean }) {
+  const { t } = useTranslation()
   const stats = file.stats
   const sev = severityCounts(file)
   return (
@@ -268,10 +286,22 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Count label="Assets" value={stats?.assets ?? 0} />
-            <Count label="Findings" value={stats?.findings ?? 0} />
-            <Count label="Components" value={stats?.components ?? 0} />
-            <Count label="VEX statements" value={stats?.statements ?? 0} />
+            <Count
+              label={t('findings.importResults.assets', 'Assets')}
+              value={stats?.assets ?? 0}
+            />
+            <Count
+              label={t('findings.importResults.findings', 'Findings')}
+              value={stats?.findings ?? 0}
+            />
+            <Count
+              label={t('findings.importResults.components', 'Components')}
+              value={stats?.components ?? 0}
+            />
+            <Count
+              label={t('findings.importResults.vexStatements', 'VEX statements')}
+              value={stats?.statements ?? 0}
+            />
           </div>
           {sev.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -283,25 +313,56 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
             </div>
           )}
           {(stats?.skipped ?? 0) > 0 && (
-            <p className="text-muted-foreground text-xs">{stats?.skipped} records skipped.</p>
+            <p className="text-muted-foreground text-xs">
+              {t('findings.importResults.skipped', '{count} records skipped.', {
+                count: stats?.skipped ?? 0,
+              })}
+            </p>
           )}
           {file.vex && (
             <p className="text-xs">
-              VEX: {file.vex.matched} matching findings
+              {t('findings.importResults.vexMatched', 'VEX: {count} matching findings', {
+                count: file.vex.matched ?? 0,
+              })}
               {dryRun
-                ? `, ${file.vex.would_close} would be closed`
-                : `, stored on ${file.vex.stored}, ${file.vex.closed} closed${file.vex.would_close ? `, ${file.vex.would_close} would be closed` : ''}`}
+                ? t('findings.importResults.vexWouldClose', ', {count} would be closed', {
+                    count: file.vex.would_close ?? 0,
+                  })
+                : t('findings.importResults.vexStored', ', stored on {stored}, {closed} closed', {
+                    stored: file.vex.stored ?? 0,
+                    closed: file.vex.closed ?? 0,
+                  }) +
+                  (file.vex.would_close
+                    ? t('findings.importResults.vexWouldClose', ', {count} would be closed', {
+                        count: file.vex.would_close ?? 0,
+                      })
+                    : '')}
               {(file.vex.unmatchable ?? 0) > 0
-                ? `; ${file.vex.unmatchable} statements cannot be matched (no package URL)`
+                ? t(
+                    'findings.importResults.vexUnmatchable',
+                    '; {count} statements cannot be matched (no package URL)',
+                    { count: file.vex.unmatchable ?? 0 }
+                  )
                 : ''}
             </p>
           )}
           {file.ingest && (
             <p className="text-xs">
-              {file.ingest.findings_created} findings created, {file.ingest.findings_updated}{' '}
-              updated, {file.ingest.assets_created} assets created
+              {t(
+                'findings.importResults.ingestSummary',
+                '{created} findings created, {updated} updated, {assets} assets created',
+                {
+                  created: file.ingest.findings_created ?? 0,
+                  updated: file.ingest.findings_updated ?? 0,
+                  assets: file.ingest.assets_created ?? 0,
+                }
+              )}
               {(file.ingest.assets_skipped_out_of_scope ?? 0) > 0
-                ? `; ${file.ingest.assets_skipped_out_of_scope} hosts skipped (outside the assets you can change)`
+                ? t(
+                    'findings.importResults.ingestSkipped',
+                    '; {count} hosts skipped (outside the assets you can change)',
+                    { count: file.ingest.assets_skipped_out_of_scope ?? 0 }
+                  )
                 : ''}
             </p>
           )}
@@ -309,14 +370,20 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
       )}
       {file.issues && file.issues.length > 0 && (
         <div>
-          <p className="text-xs font-medium">{file.issues.length} problems</p>
+          <p className="text-xs font-medium">
+            {t('findings.importResults.problems', '{count} problems', {
+              count: file.issues.length,
+            })}
+          </p>
           <IssueList issues={file.issues} />
         </div>
       )}
       {file.unmapped && file.unmapped.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger className="text-muted-foreground text-xs underline">
-            {file.unmapped.length} source fields not recognized
+            {t('findings.importResults.unmapped', '{count} source fields not recognized', {
+              count: file.unmapped.length,
+            })}
           </CollapsibleTrigger>
           <CollapsibleContent>
             <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-[11px]">

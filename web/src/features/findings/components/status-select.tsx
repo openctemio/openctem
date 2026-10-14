@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -55,6 +56,7 @@ export function StatusSelect({
   showCheck = false,
   source,
 }: StatusSelectProps) {
+  const { t } = useTranslation()
   const currentConfig = FINDING_STATUS_CONFIG[value]
   const allTransitions = STATUS_TRANSITIONS[value]
   // Filter transitions by source type (pentest vs automated have different valid statuses)
@@ -68,6 +70,10 @@ export function StatusSelect({
     validStatuses ? allTransitions.filter((s) => validStatuses.includes(s)) : allTransitions
   ).filter((s) => canResolve || s !== 'resolved')
   const isProcessingRef = useRef(false)
+  const describe = (s: FindingStatus) => {
+    const en = STATUS_DESCRIPTIONS[s]
+    return en ? t(`findings.statusSelect.desc.${s}`, en) : undefined
+  }
 
   // Debounced onChange to prevent race conditions
   const handleChange = useCallback(
@@ -96,13 +102,13 @@ export function StatusSelect({
                 disabled={disabled || loading}
               >
                 {loading && <Loader2 className="me-1 h-3 w-3 animate-spin" />}
-                {currentConfig.label}
+                {t(currentConfig.labelKey, currentConfig.label)}
                 {!disabled && <ChevronDown className="ms-1 h-3 w-3" />}
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-[200px]">
-            <p className="text-xs">{STATUS_DESCRIPTIONS[value]}</p>
+            <p className="text-xs">{describe(value)}</p>
           </TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="start" className="w-56">
@@ -117,12 +123,12 @@ export function StatusSelect({
                     disabled={disabled || loading}
                   >
                     <div className={`h-2 w-2 rounded-full ${config.bgColor.replace('/20', '')}`} />
-                    {config.label}
+                    {t(config.labelKey, config.label)}
                     {showCheck && status === value && <Check className="ms-auto h-3 w-3" />}
                   </DropdownMenuItem>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-[200px]">
-                  <p className="text-xs">{STATUS_DESCRIPTIONS[status]}</p>
+                  <p className="text-xs">{describe(status)}</p>
                 </TooltipContent>
               </Tooltip>
             )
