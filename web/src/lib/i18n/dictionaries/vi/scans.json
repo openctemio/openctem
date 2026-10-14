@@ -334,7 +334,6 @@
   "scans.edit.description": "Cập nhật cấu hình của \"{name}\"",
   "scans.edit.updated": "Đã cập nhật quét \"{name}\"",
   "scans.edit.updateFailed": "Không cập nhật được quét. Vui lòng thử lại.",
-  "scans.edit.targetsReadOnly": "Muốn đổi đích quét thì cần tạo cấu hình quét mới. Các đích hiển thị ở đây chỉ để xem.",
   "scans.edit.saveChanges": "Lưu thay đổi",
   "scans.quick.title": "Quét nhanh",
   "scans.quick.description": "Chạy một trình quét trên các đích ngay bây giờ. Sẽ không lưu gì trừ khi bạn chọn lưu.",

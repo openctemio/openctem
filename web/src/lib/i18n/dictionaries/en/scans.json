@@ -334,7 +334,6 @@
   "scans.edit.description": "Update the configuration for \"{name}\"",
   "scans.edit.updated": "Scan \"{name}\" updated successfully",
   "scans.edit.updateFailed": "Failed to update scan. Please try again.",
-  "scans.edit.targetsReadOnly": "Target changes require creating a new scan configuration. Targets shown here are read-only.",
   "scans.edit.saveChanges": "Save Changes",
   "scans.quick.title": "Quick Scan",
   "scans.quick.description": "Run a scanner on targets now. Nothing is saved unless you choose to.",
