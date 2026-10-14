@@ -28,9 +28,9 @@ import (
 // called. A missing file falls back to the built-in template of the same name
 // (identical to the shipped file; a test keeps them in step).
 //
-// Every snippet must work as pasted, for the sensor release the image tag
-// pins (SENSOR_LATEST_VERSION): tests run `bash -n` on the shell snippets and
-// parse the YAML ones.
+// Every snippet must work as pasted, for the release the image tag pins (the
+// product's latest release in versions.yaml): tests run `bash -n` on the
+// shell snippets and parse the YAML ones.
 type SensorConfigTemplateService struct {
 	templatesDir string
 	logger       *logger.Logger

@@ -25,7 +25,7 @@ platform:
   release: v0.9.6
 
 # Sensor products: every top-level section other than platform, sdk, ci and
-# chart is one sensor product (api/docs/rfcs/RFC-037 §9). A sensor reports its
+# chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
 # product in its heartbeat (sensor.name, else its User-Agent product token);
 # one that reports none is the scanning sensor, the only product before
 # products were reported. A sensor of a product listed here is judged against
