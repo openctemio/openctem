@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
 )
@@ -96,6 +97,9 @@ type ciRig struct {
 	other  shared.ID
 }
 
+// ciSecretFingerprinter keys secret identities in the CI rig.
+var ciSecretFingerprinter = vulnerability.NewSecretFingerprinter([]byte("ci-rig-server-secret-0123456789abcdef")) //nolint:gochecknoglobals // test fixture
+
 func newCIRig(t *testing.T) *ciRig {
 	t.Helper()
 	return newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"})
@@ -112,6 +116,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
+	ing.SetSecretFingerprinter(ciSecretFingerprinter)
 	idp := newCIIdP(t)
 	repo := postgres.NewCIRunRepository(db)
 	d := cirunapp.Deps{
@@ -126,6 +131,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 	svc.SetStepUpGate(recentAuth{})
 
 	h := handler.NewCIRunnerHandler(svc, log)
+	h.SetSecretKeys(ciSecretFingerprinter)
 	router := infrahttp.NewChiRouter()
 	router.POST("/api/v1/ci/oidc/exchange", h.Exchange)
 	router.POST("/api/v1/ci/runs/{id}/results", h.UploadResults, h.AuthenticateRun)

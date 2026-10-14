@@ -550,9 +550,11 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 			if zoneID != nil {
 				cmd.SetScanZone(*zoneID)
 			} else if usePlatform {
-				cmd.SetPlatformJob(s.calculateScanRunInitialPriority(cmd.Priority))
+				err = cmd.SetPlatformJob(s.calculateScanRunInitialPriority(cmd.Priority))
 			}
-			err = s.commandRepo.Create(ctx, cmd)
+			if err == nil {
+				err = s.commandRepo.Create(ctx, cmd)
+			}
 		}
 		if err != nil {
 			s.cancelStepCommands(ctx, created)
