@@ -13,6 +13,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
 import { SensorTag } from './sensor-cells'
+import { SensorToolOptions } from './sensor-tool-options'
 import { shortDigest } from '../lib/content'
 import { agoShort, exactTime } from '../lib/format'
 import {
@@ -162,6 +163,9 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
               </div>
             )}
             {t.contract && <ToolContract tool={t.name} c={t.contract} />}
+            {t.contract?.descriptor != null && (
+              <SensorToolOptions tool={t.name} descriptor={t.contract.descriptor} />
+            )}
           </li>
         ))}
       </ul>
