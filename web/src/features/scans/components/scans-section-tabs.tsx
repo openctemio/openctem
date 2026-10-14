@@ -49,7 +49,8 @@ export function ScanCreateActions() {
     <>
       <NewScanDialog open={dialogOpen} onOpenChange={setDialogOpen} />
       <QuickScanDialog open={quickScanOpen} onOpenChange={setQuickScanOpen} />
-      <Can permission={Permission.ScansWrite} mode="disable">
+      {/* A quick scan creates and starts a run: scans:write and scans:execute. */}
+      <Can permission={[Permission.ScansWrite, Permission.ScansExecute]} requireAll mode="disable">
         <Button variant="outline" size="sm" onClick={() => setQuickScanOpen(true)}>
           <Zap className="me-2 h-4 w-4" />
           {t('scans.header.quickScan')}
