@@ -578,7 +578,8 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 // that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6`,
+		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6`,
 		tenantID.String(), runID.String(), verdict, detail, at, expectFindings)
 	if err != nil {
 		return err
@@ -912,26 +913,27 @@ func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, a
 
 // ------------------------------------------------------------ decoration ---
 
-// MarkDecorationPending queues a GitHub or GitLab run's verdict for posting
-// to the code host (RFC-077 phase C). Other providers have nothing to post.
-func (r *CIRunRepository) MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET decoration_state = 'pending', decoration_attempts = 0,
-			decoration_detail = '', decoration_updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2 AND provider IN ('github', 'gitlab') AND status = 'evaluated'`,
-		tenantID.String(), runID.String())
-	return err
-}
+// decorationQueued is the SET clause that queues a GitHub or GitLab run's
+// verdict for posting to the code host (RFC-077 phase C), in the same
+// statement that stores the verdict, so no later step can lose it. Other
+// providers have nothing to post.
+const decorationQueued = `
+		decoration_state = CASE WHEN provider IN ('github', 'gitlab') THEN 'pending' ELSE decoration_state END,
+		decoration_attempts = 0, decoration_detail = '', decoration_updated_at = NOW()`
 
 // ClaimDecorations takes up to limit runs waiting to be posted, across
-// tenants (a system job; each run carries its tenant). A claim older than
-// ten minutes (a crashed replica) is taken again; runs evaluated more than a
-// day ago are no longer posted.
+// tenants (a system job; each run carries its tenant). A run queued again
+// after a failed attempt waits 30 seconds doubling with each attempt, at
+// most 30 minutes (decoration_updated_at is when the last attempt
+// finished). A claim older than ten minutes (a crashed replica) is taken
+// again; runs evaluated more than a day ago are no longer posted.
 func (r *CIRunRepository) ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error) {
 	rows, err := r.db.QueryContext(ctx, `UPDATE ci_runs SET decoration_state = 'posting',
 			decoration_attempts = decoration_attempts + 1, decoration_updated_at = NOW()
 		WHERE id IN (
 			SELECT id FROM ci_runs
-			WHERE (decoration_state = 'pending'
+			WHERE ((decoration_state = 'pending' AND (decoration_attempts = 0 OR decoration_updated_at <= NOW()
+			        - LEAST(INTERVAL '30 seconds' * power(2, decoration_attempts - 1), INTERVAL '30 minutes')))
 			    OR (decoration_state = 'posting' AND decoration_updated_at < NOW() - INTERVAL '10 minutes'))
 			  AND evaluated_at > NOW() - INTERVAL '1 day'
 			ORDER BY decoration_updated_at

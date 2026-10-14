@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
 | Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
@@ -1302,3 +1302,126 @@ rejected assets stay out. The Attack surface overview has the switch
 | cross-tenant | every write and read is pinned to the tenant; the migration joins each record to its own tenant | none |
 | a hostile sensor fills the inventory | unsolicited reports stay `candidate`, hidden | as before |
 | a Strict organization loses its review step | `review_before_inventory` | rows migrated before the setting was turned on stay in the inventory; they can be filtered and marked out of scope |
+
+## 16. Amendment 2026-10-14: unclassified assets, low-impact checks, guardrails
+
+Owner decision: an asset that no scope entry covers and that nobody excluded
+or rejected (**unclassified**) is no longer passive only. It gets the
+**low-impact** profile of active checks, unless a **platform guardrail** keeps
+it passive. The organization filters afterwards (marks things out of scope,
+rejects them, or adds them to scope for the full scan). Design study:
+research/124 (local).
+
+### 16.1 Intensity by asset state
+
+The platform decides the intensity a target may get and caps each job to it;
+the sensor only enforces.
+
+| Asset state | Active checks |
+|---|---|
+| In scope (an active entry covers it) | the scan's tier, as before |
+| Unclassified, passes the guardrails | passive in full, plus the low-impact profile (§16.3) |
+| Unclassified, guardrailed (§16.2) | passive only (code `guardrailed`) |
+| Excluded, rejected, "Not ours", deny list, wildcard-only, held by a person | nothing active, as before |
+
+Unclassified means: an inventory asset with no record, an automatic pending
+record (`discovered`, `needs_review`, `candidate` written by automation), or a
+confirmed record that no entry covers. Typed text that names no inventory
+asset is not unclassified: it still needs an entry (the platform is not a
+free scanner of arbitrary names). When the asset is later added to scope it
+gets its full tier on the next job: whether an entry covers it is computed at
+dispatch and again at claim, never stored.
+
+### 16.2 Platform guardrails
+
+Always on; no tenant setting changes them (`easm/guardrail.go`):
+
+| Guardrail | Reason code |
+|---|---|
+| address in a CDN, shared-hosting or cloud-provider network (its record's `cdn`, a provider holder, a published CDN edge range) | `shared_network` |
+| address nothing is known about (no ASN or holder) | `network_unknown` |
+| address that names of 3 or more registrable domains resolve to | `shared_hosting` |
+| name whose registrable domain is none of the organization's (its non-program scope entries and verified domains) | `foreign_domain` |
+| anything the classifier cannot place, and every asset when a lookup fails | `unplaceable`, `unavailable` |
+
+Neither the organization's name nor a network seed lifts the shared-network
+guardrail: both are the tenant's own assertions, and an organization renamed
+after a CDN must not reach its edges. Bug-bounty program entries never make
+a domain the organization's. Network data on an address (ASN, holder, CDN)
+comes from enrichment and scans; a tenant that forges it reaches only the
+low-impact profile, and the shared-network guardrail still holds edges.
+
+A guardrailed asset stays in the inventory, gets passive enrichment, and the
+asset page shows the reason. "Allow scanning" creates the asset's exact
+scope entry through the scope service (scope write, step-up, approvals in
+Strict, audit); that is the only way past a guardrail.
+
+### 16.3 The low-impact profile
+
+Defined once, `scopedom.LowImpact*` (`pkg/domain/scope/low_impact.go`):
+
+| Item | Value |
+|---|---|
+| Tools | naabu, httpx, nuclei, dnsx, tlsx, subfinder, rdap, asn; anything else is refused |
+| Ports | 21, 22, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 3306, 3389, 5432, 8080, 8443 (TCP connect); never top-N or full ranges |
+| HTTP | GET of `/` and `/.well-known/*` only |
+| nuclei | severity `info` only, tags `tech` or `exposure` only; no template ids, workflows, custom templates or out-of-band callbacks |
+| Rate | `rate_limit` (and naabu `rate`) at most 10 per second, set |
+| Concurrency | `concurrency` and `bulk_size` at most 2 |
+| Tier | T1; a T2 job is refused (`tier_exceeds`) |
+
+Enforcement: the claim-time re-check (the one point that knows the tool and
+its settings) refuses a job on an unclassified target that goes beyond the
+profile (code `low_impact`), whatever the sensor: signed scope limits carry
+ports, not template or rate caps. When every target of a job is refused only
+for such a cap, the job is **clamped** instead (ports cut, rates and
+concurrency lowered, nuclei narrowed to info/tech/exposure) and handed out; a
+job that mixes in-scope and unclassified targets keeps its in-scope targets.
+The tool settings are read from both `config` and `scanner_config`; a key set
+differently in the two is unreadable and refused.
+
+### 16.4 Port scans of names
+
+A name never authorizes its addresses (S4). A port scan (naabu) of a name
+reaches every port only when every address the name resolves to may be
+port-scanned on its own: an entry covers it, or it is unclassified, passes
+the guardrails and the mode is `full`. Otherwise it is limited to the web
+ports 80, 443, 8080 and 8443 (code `web_ports_only`), or to the low-impact
+ports when an address is only unclassified in `low_impact` mode. A name whose
+addresses are unknown gets the web ports (fail closed). Other tools are not
+narrowed by this rule.
+
+### 16.5 Setting
+
+Scope setting `unclassified_scans` (`PUT /scope/settings`, scope approve
+permission and step-up, audited at high severity, administrators notified;
+omitted keeps the stored value):
+
+| Value | Meaning |
+|---|---|
+| `low_impact` (default) | §16.1 to §16.4 |
+| `off` | the rule before §16: unclassified assets are passive until an entry covers them |
+| `full` | unclassified assets that pass the guardrails get the scan's tier; still guardrailed |
+
+The Strict scan approval mode forces `off` (`unclassified_scans_effective`).
+An unreadable setting is `off`.
+
+### 16.6 Job signer ledger
+
+The signer's ledger (RFC-040 §5.6) is unchanged: it signs only targets inside
+approved entries. An organization whose ledger enforces therefore keeps the
+rule before §16 for unclassified assets (the signer refuses the job). That is
+deliberate: the ledger is the organization's own approval record, which a
+platform default must not widen.
+
+### 16.7 Threat model
+
+| Threat | Control |
+|---|---|
+| a third party's host gets probed because a name points at it | guardrails (shared network, unknown network, shared hosting, foreign domain); low-impact profile; name port scans limited to web ports while an address is held |
+| a tenant uses unclassified scanning to scan arbitrary targets | typed text that names no asset still needs an entry; foreign-domain guardrail; unknown networks guardrailed; deny list; low-impact caps |
+| forged network data on an address | reaches only the low-impact profile; CDN edges held by range regardless |
+| a classifier lookup fails | the asset is guardrailed; a failed address lookup for a name's port scan fails the check (nothing dispatched) |
+| a job escapes the cap through settings | the re-check reads both config maps; conflicting values are refused; the clamp's output is checked against the profile before hand-out |
+| cross-tenant | every lookup (records, assets, relations, settings, entries) is pinned to the caller's tenant; another tenant's asset is never admitted |
+| Strict organizations | forced off |
