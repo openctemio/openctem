@@ -76,12 +76,12 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
     setBusy(true)
     try {
       await createAssetAccessGrant(assetId, userId)
-      toast.success('Access granted')
+      toast.success(t('assets.grants.granted', 'Access granted'))
       setSearch('')
       setAdding(false)
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to grant access'))
+      toast.error(getErrorMessage(err, t('assets.grants.grantFailed', 'Failed to grant access')))
     } finally {
       setBusy(false)
     }
@@ -92,11 +92,11 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
     setBusy(true)
     try {
       await deleteAssetAccessGrant(assetId, revokeTarget.id)
-      toast.success('Access revoked')
+      toast.success(t('assets.grants.revoked', 'Access revoked'))
       setRevokeTarget(null)
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to revoke access'))
+      toast.error(getErrorMessage(err, t('assets.grants.revokeFailed', 'Failed to revoke access')))
     } finally {
       setBusy(false)
     }
@@ -107,18 +107,24 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <KeyRound className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium">Direct access ({isLoading ? '…' : grants.length})</h3>
+          <h3 className="text-sm font-medium">
+            {t('assets.grants.heading', 'Direct access ({count})', {
+              count: isLoading ? '…' : grants.length,
+            })}
+          </h3>
         </div>
         {canWrite && !adding && (
           <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
             <UserPlus className="me-1.5 h-3.5 w-3.5" />
-            Grant access
+            {t('assets.grants.grantAccess', 'Grant access')}
           </Button>
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        Members who see this asset (and its findings) without a group that holds it. Restricted
-        members see only the assets of their groups and these grants.
+        {t(
+          'assets.grants.intro',
+          'Members who see this asset (and its findings) without a group that holds it. Restricted members see only the assets of their groups and these grants.'
+        )}
       </p>
 
       {adding && (
@@ -127,12 +133,14 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search members by name or email…"
+            placeholder={t('assets.grants.search', 'Search members by name or email…')}
             className="h-8 text-sm"
-            aria-label="Search members"
+            aria-label={t('assets.grants.searchAria', 'Search members')}
           />
           {debouncedSearch.trim() && options.length === 0 && (
-            <p className="text-xs text-muted-foreground">No member without access matches.</p>
+            <p className="text-xs text-muted-foreground">
+              {t('assets.grants.noMatch', 'No member without access matches.')}
+            </p>
           )}
           <ul className="space-y-1">
             {options.map((m) => (
@@ -149,7 +157,7 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                   disabled={busy}
                   onClick={() => grant(m.user_id)}
                 >
-                  Grant
+                  {t('assets.grants.grant', 'Grant')}
                 </Button>
               </li>
             ))}
@@ -163,14 +171,16 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                 setSearch('')
               }}
             >
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
           </div>
         </div>
       )}
 
       {!isLoading && grants.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No direct access grants.</p>
+        <p className="text-sm text-muted-foreground">
+          {t('assets.grants.none', 'No direct access grants.')}
+        </p>
       ) : (
         <ul className="space-y-2">
           {grants.map((g) => (
@@ -178,11 +188,17 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">
-                    {g.userName || g.userEmail || 'Unknown user'}
+                    {g.userName || g.userEmail || t('assets.grants.unknownUser', 'Unknown user')}
                   </span>
                   {g.source === 'migration' && (
-                    <Badge variant="outline" title="Created from this member's former owner access">
-                      From ownership
+                    <Badge
+                      variant="outline"
+                      title={t(
+                        'assets.grants.fromOwnershipHint',
+                        "Created from this member's former owner access"
+                      )}
+                    >
+                      {t('assets.grants.fromOwnership', 'From ownership')}
                     </Badge>
                   )}
                 </div>
@@ -190,7 +206,9 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                   <p className="truncate text-xs text-muted-foreground">{g.userEmail}</p>
                 )}
                 {g.grantedByName && (
-                  <p className="text-xs text-muted-foreground">Granted by {g.grantedByName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('assets.grants.grantedBy', 'Granted by {name}', { name: g.grantedByName })}
+                  </p>
                 )}
               </div>
               {canWrite && (
@@ -198,7 +216,9 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-destructive hover:text-destructive"
-                  aria-label={`Revoke access for ${g.userName || g.userEmail || 'user'}`}
+                  aria-label={t('assets.grants.revokeAria', 'Revoke access for {name}', {
+                    name: g.userName || g.userEmail || t('assets.grants.userFallback', 'user'),
+                  })}
                   onClick={() => setRevokeTarget(g)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
