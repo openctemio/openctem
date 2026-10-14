@@ -1622,5 +1622,9 @@
   "scans.liveness.switch": "Dùng tìm máy đang hoạt động trước",
   "scans.liveness.switched": "Lượt quét giờ tìm máy đang hoạt động trước",
   "scans.liveness.switchFailed": "Không thể chuyển chế độ của lượt quét",
-  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước"
+  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước",
+  "scans.sheet.edit": "Sửa",
+  "scans.sheet.clone": "Nhân bản",
+  "scans.page.edit": "Sửa",
+  "scans.page.clone": "Nhân bản"
 }
