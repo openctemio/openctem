@@ -13,5 +13,5 @@
   `settings_layers.sensor`, covered by the job signature. Settings that no
   longer validate after a sensor upgrade fail the job with
   `TOOL_SETTINGS_INVALID`; save or reset them to clear it.
-- Migration `002111_sensor_tool_settings` adds the `sensor_tool_settings`
+- Migration `002114_sensor_tool_settings` adds the `sensor_tool_settings`
   table (new and empty; no upgrade step).
