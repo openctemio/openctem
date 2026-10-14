@@ -7,6 +7,7 @@ import {
   outputsDeltaLabel,
   producedNothing,
   stepEgressRefused,
+  stepGuardRefused,
   stepTasks,
   zeroOutputWarnings,
 } from '../run-map'
@@ -169,6 +170,48 @@ describe('comparison with the previous run', () => {
     // Without the count (an older API), the step produced nothing.
     expect(zeroOutputWarnings({ nodes: [ports], edges: [] } as unknown as RunMap)).toEqual([
       { key: 'ports', text: 'Port scan produced nothing.' },
+    ])
+  })
+
+  it("says how many of a step's targets the sensor's target guard refused", () => {
+    // The live run of 2026-10-14: the HTTP probe was handed host:port
+    // targets; one refused target must not read as a failed step.
+    const probe = node({
+      step_key: 'probe',
+      name: 'HTTP probe',
+      state: 'succeeded',
+      outputs: { total: 4, by_type: {} },
+    })
+    const ports = node({ step_key: 'ports', name: 'Port scan', state: 'succeeded' })
+    const vulns = node({ step_key: 'vulns', name: 'Templates', state: 'running' })
+    const tasks = [
+      { step_key: 'probe', guard_refused_targets: 2 },
+      { step_key: 'probe', guard_refused_targets: 1 },
+      { step_key: 'probe', guard_refused_targets: -7 },
+      { step_key: 'ports', guard_refused_targets: 1, egress_refused_targets: 5 },
+      { step_key: 'vulns', guard_refused_targets: 9 },
+    ]
+    expect(stepGuardRefused(tasks, 'probe')).toBe(3)
+    expect(stepGuardRefused(undefined, 'probe')).toBe(0)
+    expect(
+      zeroOutputWarnings(
+        { nodes: [probe, ports, vulns], edges: [] } as unknown as RunMap,
+        undefined,
+        tasks
+      )
+    ).toEqual([
+      {
+        key: 'probe:guard',
+        text: "HTTP probe: 3 targets refused by the sensor's target guard (not run).",
+      },
+      {
+        key: 'ports:guard',
+        text: "Port scan: 1 target refused by the sensor's target guard (not run).",
+      },
+      {
+        key: 'ports',
+        text: "Port scan could not reach 5 targets (blocked by the sensor's network confinement).",
+      },
     ])
   })
 })
