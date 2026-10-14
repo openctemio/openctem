@@ -997,7 +997,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		// system; off for a tenant whose scan approval mode is Strict.
 		if svc.Scan != nil && svc.ScanPolicy != nil {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
-				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy},
+				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
 				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
