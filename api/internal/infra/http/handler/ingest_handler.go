@@ -384,10 +384,24 @@ func (h *IngestHandler) commandsToCancel(ctx context.Context, s *sensor.Sensor, 
 	return h.sensorService.CommandsToCancel(ctx, s, req.Running)
 }
 
-// HeartbeatProgress is one held command's progress on a heartbeat.
+// commandsToStop: the stalled commands among those the heartbeat lists as
+// running that the sensor is asked to stop and hand back.
+func (h *IngestHandler) commandsToStop(ctx context.Context, s *sensor.Sensor, req *HeartbeatRequest) []string {
+	if req == nil || req.Queue == nil || len(req.Running) == 0 {
+		return nil
+	}
+	return h.sensorService.CommandsToStop(ctx, s, req.Running)
+}
+
+// HeartbeatProgress is one held command's progress on a heartbeat: its
+// finished targets and liveness counters (records and output bytes the
+// tool delivered, CPU time of its processes), all untrusted hints.
 type HeartbeatProgress struct {
-	Done  int `json:"done"`
-	Total int `json:"total"`
+	Done        int   `json:"done"`
+	Total       int   `json:"total"`
+	Records     int64 `json:"records,omitempty"`
+	OutputBytes int64 `json:"output_bytes,omitempty"`
+	CPUMs       int64 `json:"cpu_ms,omitempty"`
 }
 
 // commandProgress is the heartbeat's progress for the sensor service, at
@@ -401,7 +415,7 @@ func (req *HeartbeatRequest) commandProgress() map[string]commanddom.Progress {
 		if len(out) == commanddom.MaxProgressEntries {
 			break
 		}
-		out[id] = commanddom.Progress{Done: p.Done, Total: p.Total}
+		out[id] = commanddom.Progress{Done: p.Done, Total: p.Total, Records: p.Records, OutputBytes: p.OutputBytes, CPUMs: p.CPUMs}
 	}
 	return out
 }

@@ -8,6 +8,7 @@
 
 'use client'
 
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
@@ -60,6 +61,39 @@ export function ScheduleStep({
   const frequency = schedule.frequency ?? 'weekly'
   const problem = scheduleError(data, { requireFuture: requireFutureRun }, t)
   const later = !schedule.runImmediately && !schedule.saveOnly
+
+  // A stored cron or RRULE schedule: shown as it is and kept, unless the
+  // user replaces it with one of the frequencies.
+  if (schedule.custom) {
+    return (
+      <div className="space-y-3 p-4" data-testid="custom-schedule">
+        <Label>{t('scans.schedule.whenToRun')}</Label>
+        <div className="space-y-2 rounded-lg border border-primary bg-primary/5 p-4">
+          <p className="font-medium">
+            {t(
+              schedule.custom.type === 'crontab'
+                ? 'scans.schedule.customCron'
+                : 'scans.schedule.customRRule'
+            )}
+          </p>
+          <code className="block break-all rounded bg-muted px-2 py-1 text-xs">
+            {schedule.custom.expression}
+          </code>
+          <p className="text-xs text-muted-foreground">
+            {t('scans.schedule.customKept', undefined, { timezone })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => set({ custom: undefined, frequency: 'weekly' })}
+          >
+            {t('scans.schedule.customReplace')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 p-4">

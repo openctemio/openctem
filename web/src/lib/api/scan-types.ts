@@ -278,6 +278,12 @@ export interface CreateScanConfigRequest {
 export interface UpdateScanConfigRequest {
   name?: string
   description?: string
+  /** Omitted = unchanged; given = the direct targets (with asset_ids) are replaced. */
+  targets?: string[]
+  /** Inventory assets to scan, named by the API; given = direct targets replaced. */
+  asset_ids?: string[]
+  /** Omitted = unchanged; given = the scan's asset groups ([] = none). */
+  asset_group_ids?: string[]
   /** Omitted = unchanged; `{}` resets every option to its default. */
   target_options?: ScanTargetOptions
   /** Omitted = unchanged. */
