@@ -342,11 +342,14 @@ payload comes from one builder, `scan.StepCommandPayload`.
   retest, a platform job. Keys the caller set (a scan run's stage-aware
   keys) win, then a payload's own `host_keys`, else the keys of the
   payload's `target` and `targets` in its `network_id`: exactly the keys a
-  sensor computes when none are sent. They are written into the payload
+  sensor computes when none are sent, less the keys of local filesystem
+  paths (a code scan of `.` or `/src` is on the running sensor's own disk
+  and never holds another sensor back). They are written into the payload
   too, so the two sides never disagree. A follow-up of unfinished targets
   holds only the keys of its remaining targets among its parent's. A
   startup pass (`BackfillPendingHostKeys`) keys pending commands queued
-  before this rule. Only `Create`, the follow-up and the window-hold copy
+  before this rule, in the column only: their payloads stay exactly as
+  queued. Only `Create`, the follow-up and the window-hold copy
   insert commands (a test fails on any other `INSERT INTO commands`).
   **One key function on both sides** (RFC-090): the keys are computed by
   `github.com/openctemio/ctis/politeness` (the CTIS contract), which the sensor runtime

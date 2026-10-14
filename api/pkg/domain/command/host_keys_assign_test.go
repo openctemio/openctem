@@ -151,3 +151,32 @@ func TestNewFollowUp_HoldsOnlyRemainingHosts(t *testing.T) {
 		t.Fatalf("passive follow-up payload keys = %v (%v)", sent, ok)
 	}
 }
+
+// A local filesystem path (a code scan of "." or "/src") is a place on the
+// running sensor's own disk: it never holds another sensor's work back.
+func TestAssignHostKeys_LocalPathsHoldNothing(t *testing.T) {
+	for _, target := range []string{".", "./repo", "../x", "/src/app", `C:\\code`} {
+		raw, _ := json.Marshal(map[string]any{"scanner": "semgrep", "target": target})
+		cmd := &Command{Payload: raw}
+		if err := AssignHostKeys(cmd); err != nil {
+			t.Fatal(err)
+		}
+		if cmd.HostKeys != nil {
+			t.Fatalf("%s: keys %v", target, cmd.HostKeys)
+		}
+		// The sensor admits it under the same (no) keys.
+		if sent, ok := payloadKeys(t, cmd.Payload); !ok || len(sent) != 0 {
+			t.Fatalf("%s: payload keys %v (%v)", target, sent, ok)
+		}
+		// politeness keys it as the path itself: the one thing dropped.
+		if keys := politeness.Keys([]string{target}, ""); len(keys) != 1 || !isLocalPathKey(keys[0]) {
+			t.Fatalf("%s: politeness keys %v", target, keys)
+		}
+	}
+	// A repository is a remote host: kept.
+	raw, _ := json.Marshal(map[string]any{"target": "https://github.com/acme/app.git", "targets": []string{"/src"}})
+	cmd := &Command{Payload: raw}
+	if err := AssignHostKeys(cmd); err != nil || len(cmd.HostKeys) != 1 {
+		t.Fatalf("repository keys %v (%v)", cmd.HostKeys, err)
+	}
+}
