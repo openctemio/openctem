@@ -205,3 +205,53 @@ func TestFollowUpChain_IncidentReplay(t *testing.T) {
 		t.Fatalf("exhausted chunk %v at %d attempts: only the bad host may exhaust", remaining, attempts)
 	}
 }
+
+func connectorWithResult(t *testing.T, typ CommandType, targets []string, outcomes any) *Command {
+	t.Helper()
+	payload, _ := json.Marshal(map[string]any{"scanner": "tenable_sc", "targets": targets, "scan_run_id": "r", "step_key": "s"})
+	cmd, err := NewCommand(shared.NewID(), typ, CommandPriorityNormal, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcomes != nil {
+		cmd.Result, _ = json.Marshal(map[string]any{"status": "completed", "target_outcomes": outcomes})
+	} else {
+		cmd.Result = json.RawMessage(`{"status":"completed"}`)
+	}
+	return cmd
+}
+
+func TestConnectorUnfinishedTargets(t *testing.T) {
+	targets := []string{"10.0.0.0/30", "10.0.0.9", "db.example", "10.0.0.10"}
+	cmd := connectorWithResult(t, CommandTypeConnectorScan, targets, []outcome.Target{
+		{Target: "10.0.0.0/30", State: outcome.Done},
+		{Target: "10.0.0.9", State: outcome.Failed, Class: outcome.Unreachable},
+		{Target: "db.example", State: outcome.Unfinished},
+		{Target: "203.0.113.5", State: outcome.Unfinished}, // not the command's: ignored
+		// 10.0.0.10 has no outcome: unfinished
+	})
+	got, ok := ConnectorUnfinishedTargets(cmd)
+	if !ok || !slices.Equal(got, []string{"db.example", "10.0.0.10"}) {
+		t.Fatalf("unfinished %v ok %v", got, ok)
+	}
+
+	all := connectorWithResult(t, CommandTypeConnectorScan, targets, []outcome.Target{
+		{Target: "10.0.0.0/30", State: outcome.Done}, {Target: "10.0.0.9", State: outcome.Done},
+		{Target: "db.example", State: outcome.Done}, {Target: "10.0.0.10", State: outcome.Failed, Class: outcome.Unreachable},
+	})
+	if got, ok := ConnectorUnfinishedTargets(all); !ok || len(got) != 0 {
+		t.Fatalf("settled result: %v %v", got, ok)
+	}
+	if _, ok := ConnectorUnfinishedTargets(connectorWithResult(t, CommandTypeConnectorScan, targets, nil)); ok {
+		t.Fatal("a result without outcomes (older sensor) must say nothing")
+	}
+	if _, ok := ConnectorUnfinishedTargets(connectorWithResult(t, CommandTypeScan, targets, []outcome.Target{})); ok {
+		t.Fatal("a scan command is settled by follow-ups, not here")
+	}
+	if _, ok := ConnectorUnfinishedTargets(connectorWithResult(t, CommandTypeConnectorScan, nil, []outcome.Target{})); ok {
+		t.Fatal("a command without targets has nothing to report")
+	}
+	if _, ok := ConnectorUnfinishedTargets(nil); ok {
+		t.Fatal("nil")
+	}
+}
