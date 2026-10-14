@@ -285,12 +285,19 @@ threshold).
   repository in the caller's data scope (404 otherwise). An organization or
   business unit policy governs repositories outside a restricted data scope,
   so changing one needs an unrestricted scope (403); reading them does not.
+- `fixable_only`: a dependency or image vulnerability (sca, container) fails
+  on severity or EPSS only when a fixed version exists
+  (`findings.remediation.fix_available`); one without a fix is listed as a
+  comment-mode reason marked "no fixed version yet". KEV still fails, fixed
+  or not, and code, secret and IaC findings are not affected. Off by
+  default; the strictest of several policies keeps it off.
 - A change that **loosens** what applies to the scope (the policy, or what the
   scope inherits when it has no enabled policy of its own) needs **step-up**,
   exactly like a break-glass, and fails closed when step-up is unavailable.
   Loosening is: `enforce` to `warn`, a higher `fail_on_severity`,
-  `new_findings_only` turned on, `fail_on_kev` turned off, a cleared or raised
-  EPSS threshold, or a weaker capability or rule mode. Disabling or deleting a
+  `new_findings_only` turned on, `fail_on_kev` turned off, `fixable_only`
+  turned on, a cleared or raised EPSS threshold, or a weaker capability or
+  rule mode. Disabling or deleting a
   policy is judged against what the scope inherits then. Such a change is
   audited at high severity (`ci_gate_policy.loosened`, with what loosened) and
   announced to every active owner and administrator in-app and on the

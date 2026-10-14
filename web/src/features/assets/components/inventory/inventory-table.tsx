@@ -272,7 +272,9 @@ export function InventoryTable({
         // Only known facts are shown; a row with none shows the muted dash.
         id: 'service',
         enableSorting: false,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Service facts" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.facts.title', 'Service facts')} />
+        ),
         cell: ({ row }) =>
           cellsForType(row.original.type, row.original.subType) ? (
             <SurfaceFacts asset={row.original} className="max-w-[380px]" />

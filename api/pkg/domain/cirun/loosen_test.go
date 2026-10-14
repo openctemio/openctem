@@ -18,6 +18,7 @@ func TestLoosens(t *testing.T) {
 		{"enforce to warn", base, func(p *GatePolicy) { p.Mode = ModeWarn }, []string{"mode"}},
 		{"higher threshold", base, func(p *GatePolicy) { p.FailOnSeverity = "critical" }, []string{"fail_on_severity"}},
 		{"threshold none", base, func(p *GatePolicy) { p.FailOnSeverity = SeverityNone }, []string{"fail_on_severity"}},
+		{"fixable only on", base, func(p *GatePolicy) { p.FixableOnly = true }, []string{"fixable_only"}},
 		{"lower threshold tightens", base, func(p *GatePolicy) { p.FailOnSeverity = "medium" }, nil},
 		{"new findings only", func() GatePolicy { p := base(); p.NewFindingsOnly = false; return p },
 			func(p *GatePolicy) { p.NewFindingsOnly = true }, []string{"new_findings_only"}},
