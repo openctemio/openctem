@@ -16,6 +16,7 @@ import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, usePermissions } from '@/lib/permissions'
+import { safeHref } from '@/lib/safe-href'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
@@ -355,7 +356,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
   const reasons = v?.reasons ?? []
   const blocking = reasons.filter((r) => r.mode !== 'comment')
   const commentOnly = reasons.filter((r) => r.mode === 'comment')
-  const findingsPath = consolePath(v?.links?.findings)
+  const findingsPath = safeHref(consolePath(v?.links?.findings))
   const override = run?.override
   // A break-glass covers a commit the provider signed, and only a failed one
   // needs it; the API is the authority (permission and step-up).
