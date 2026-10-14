@@ -6,7 +6,7 @@
   composite foreign key `(tenant_id, asset) → assets(tenant_id, id)`: a row of
   one organization can no longer point at another organization's asset,
   whatever writes it. Backstop for the application checks on `POST /findings`,
-  exposure create/ingest and pipeline runs (research doc 21b, C1/C3/C4).
+  exposure create/ingest and pipeline runs.
 - **Deploy note:** `000921` first counts existing cross-tenant references and
   refuses to run, changing nothing, if there are any. See
   `docs/deployment/safe-deploy-and-migrations.md` ("Asset tenant foreign keys")
