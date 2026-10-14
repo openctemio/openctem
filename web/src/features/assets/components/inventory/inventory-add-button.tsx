@@ -6,6 +6,7 @@
  * can be added by hand with no page of its own.
  */
 import { Plus } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -66,11 +67,12 @@ export function InventoryAddButton({
   view: TypeView | null
   onAdd: (view: TypeView) => void
 }) {
+  const { t } = useTranslation()
   if (view) {
     return (
       <Button size="sm" onClick={() => onAdd(view)}>
         <Plus className="me-2 h-4 w-4" />
-        Add {inSentence(view.label)}
+        {t('assets.addButton.addType', 'Add {type}', { type: inSentence(view.label) })}
       </Button>
     )
   }
@@ -80,7 +82,7 @@ export function InventoryAddButton({
       <DropdownMenuTrigger asChild>
         <Button size="sm">
           <Plus className="me-2 h-4 w-4" />
-          Add asset
+          {t('assets.addButton.addAsset', 'Add asset')}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-[60vh] w-56 overflow-y-auto">
@@ -88,7 +90,7 @@ export function InventoryAddButton({
           <DropdownMenuGroup key={lens || 'other'}>
             {i > 0 && <DropdownMenuSeparator />}
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              {lens ? lensLabel(registry, lens as AssetLens) : 'Other'}
+              {lens ? lensLabel(registry, lens as AssetLens) : t('assets.addButton.other', 'Other')}
             </DropdownMenuLabel>
             {choices.map((c) => (
               <DropdownMenuItem
