@@ -154,13 +154,19 @@ func TestRequeueStalledCommands(t *testing.T) {
 	// twice its budget (its lease and the run's cap bound it).
 	silent := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, budget)
 	set(silent, `started_at = NOW() - interval '3 hours'`)
+	// A batch tool (httpx, naabu) reports its total but finishes no target
+	// until it exits: no finished target yet is not a stall, only the
+	// overrun limit bounds it (live, 2026-10-14: httpx re-queued three
+	// times at the stall window and exhausted).
+	batch := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, budget)
+	set(batch, `progress_done = 0, progress_total = 10, last_progress_at = NOW() - interval '9 minutes', started_at = NOW() - interval '9 minutes'`)
 
 	rq, err := cmds.RequeueStalledCommands(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := requeuedIDs(rq)
-	for _, keep := range []shared.ID{slow, finished, noBudget, silent} {
+	for _, keep := range []shared.ID{slow, finished, noBudget, silent, batch} {
 		if _, ok := got[keep.String()]; ok {
 			t.Errorf("command %s re-queued, want it left running", keep)
 		}
