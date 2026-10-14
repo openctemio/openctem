@@ -195,6 +195,17 @@ export async function markExposureFalsePositive(
 }
 
 /**
+ * Reject a pending disposition request (the requester's own request is
+ * canceled instead)
+ */
+export async function rejectExposureDisposition(
+  exposureId: string,
+  input?: { reason?: string }
+): Promise<ExposureEvent> {
+  return post<ExposureEvent>(exposureEndpoints.rejectDisposition(exposureId), input || {})
+}
+
+/**
  * Reactivate a resolved/accepted exposure
  */
 export async function reactivateExposure(exposureId: string): Promise<ExposureEvent> {
