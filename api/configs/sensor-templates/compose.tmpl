@@ -60,9 +60,6 @@ services:
     environment:
       SENSOR_API_URL: {{yamlQuote .BaseURL}}
       SENSOR_API_KEY: ${OPENCTEM_API_KEY:?set OPENCTEM_API_KEY in .env}
-{{- with toolList .Sensor.EffectiveTools}}
-      SENSOR_TOOLS: {{yamlQuote .}}
-{{- end}}
 {{- if isDaemon .Sensor}}
       SENSOR_LOCAL_POLICY: /etc/openctem/policy/sensor-policy.yaml
       SENSOR_KILL_SWITCH_FILE: /etc/openctem/policy/STOP
