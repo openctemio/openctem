@@ -172,7 +172,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const { can } = usePermissions()
   const canDelete = can(Permission.AssetsDelete)
   // Type actions (repository Scan / Sync) for the selected assets they fit.
-  const typeActions = bulkActionsFor(selected).filter((a) => a.permissions.every((p) => can(p)))
+  const typeActions = bulkActionsFor(selected, t).filter((a) => a.permissions.every((p) => can(p)))
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState(false)
 
