@@ -87,6 +87,7 @@ easm_lookalike_watches
 easm_network_seeds
 easm_tombstones
 easm_weekly_digests
+exposure_disposition_requests
 exposure_events
 exposures
 finding_activities
