@@ -41,6 +41,9 @@ type resolvedTargets struct {
 	Targets       []string
 	Excluded      int
 	ExcludedNames []string // the targets scope exclusions removed, in order
+	// ExcludedDetail: the targets exclusions removed, whole or cut, with
+	// the matching rules (at most MaxListedExcluded).
+	ExcludedDetail []ExcludedTarget
 	// Unconfirmed counts group members skipped because their attribution is
 	// not confirmed (needs review, candidate, dependency, monitor only,
 	// rejected).
@@ -227,13 +230,14 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 		warnings = append(warnings, fmt.Sprintf("%d archived asset(s) in the group(s) were skipped", archived))
 	}
 	out := &resolvedTargets{
-		Targets:       append(make([]string, 0, len(gated.Allowed)), gated.Allowed...),
-		Excluded:      len(gated.Excluded),
-		ExcludedNames: gated.Excluded,
-		Archived:      archived,
-		Warnings:      warnings,
-		Expansion:     exp.Report,
-		SelectorRoots: exp.Roots,
+		Targets:        append(make([]string, 0, len(gated.Allowed)), gated.Allowed...),
+		Excluded:       len(gated.Excluded),
+		ExcludedNames:  gated.Excluded,
+		ExcludedDetail: s.ExplainExcluded(ctx, sc.TenantID, gated),
+		Archived:       archived,
+		Warnings:       warnings,
+		Expansion:      exp.Report,
+		SelectorRoots:  exp.Roots,
 	}
 	out.Warnings = append(out.Warnings, splitWarnings(gated.Split)...)
 	if n := gate.total(); n > 0 {
