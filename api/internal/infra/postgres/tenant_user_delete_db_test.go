@@ -233,6 +233,17 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return map[string]any{"parent_id": first["id"], "child_id": second, "asset_id": first["asset_id"]}
 	},
+	// A correlation joins two different findings of the tenant.
+	"finding_correlations": func(s *schemaSeeder) map[string]any {
+		first := s.rows["findings"]
+		var second string
+		if err := s.tx.QueryRowContext(s.ctx, `INSERT INTO findings (tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
+			SELECT tenant_id, asset_id, source, tool_name, message, severity, $2, status FROM findings WHERE id = $1
+			RETURNING id`, first["id"], s.uniq()).Scan(&second); err != nil {
+			s.t.Fatalf("insert second finding: %v", err)
+		}
+		return map[string]any{"primary_id": first["id"], "member_id": second}
+	},
 	"vex_statements": func(*schemaSeeder) map[string]any {
 		return map[string]any{"vuln_id": "CVE-2026-0001", "status": "affected", "origin": "manual",
 			"justification": nil, "versions": "{}", "version_range": nil}
