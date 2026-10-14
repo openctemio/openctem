@@ -37,6 +37,10 @@ var ErrRunEvaluated = fmt.Errorf("%w: the CI run already has a verdict", shared.
 
 var ErrRunReportCap = fmt.Errorf("%w: a CI run accepts at most %d reports", shared.ErrConflict, MaxRunReports)
 
+// ErrRunChanged: a report was recorded while the verdict was computed, so
+// the verdict did not see it; the caller judges the run again.
+var ErrRunChanged = fmt.Errorf("%w: the CI run recorded a report while it was judged", shared.ErrConflict)
+
 // Run statuses.
 const (
 	StatusRunning   = "running"

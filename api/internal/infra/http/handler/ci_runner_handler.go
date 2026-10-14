@@ -492,6 +492,13 @@ func (h *CIRunnerHandler) uploadExport(w http.ResponseWriter, r *http.Request, r
 			if h.vex == nil {
 				return
 			}
+			// Like findings, statements belong to a run that is still
+			// being judged; VEX never closes a finding, so the status of
+			// the authenticated run is enough here.
+			if run.Status == cirun.StatusEvaluated {
+				firstErr = cirun.ErrRunEvaluated
+				return
+			}
 			sum, err := h.vex.ApplyVEXStatements(r.Context(), findingimport.Request{
 				TenantID: run.TenantID, Actor: onlyAsset(run.RepositoryAssetID), SessionID: run.ID.String(),
 			}, c.Result.VEX)
