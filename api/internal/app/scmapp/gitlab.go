@@ -2,9 +2,10 @@ package scmapp
 
 // GitLab group access tokens for CI commit statuses and merge request notes
 // (docs/rfcs/RFC-077-ci-enforced-gate-and-pr-feedback.md). A token is
-// accepted only when GitLab says it is active, has the api scope and belongs
-// to a direct member of the group (a group access token's bot is one). It is
-// stored encrypted and never returned.
+// accepted only when GitLab says it is active, has the api scope, acts as a
+// bot user (a group or project access token, never a person's own token)
+// and that bot is a direct member of the group. It is stored encrypted and
+// never returned.
 
 import (
 	"context"
@@ -27,6 +28,7 @@ import (
 // use (gitlabapi.Client).
 type GitLabAPI interface {
 	Token(ctx context.Context) (*gitlabapi.TokenInfo, error)
+	CurrentUser(ctx context.Context) (*gitlabapi.User, error)
 	Group(ctx context.Context, pathOrID string) (*gitlabapi.Group, error)
 	GroupMember(ctx context.Context, groupID, userID int64) (bool, error)
 	MergeRequest(ctx context.Context, projectPath string, iid int) (*gitlabapi.MergeRequest, error)
@@ -48,7 +50,7 @@ func (s *Service) SetGitLab(repo scmapp.GitLabRepository, enc crypto.Encryptor, 
 }
 
 // ErrInvalidGitLabToken: GitLab did not confirm the token for the group.
-var ErrInvalidGitLabToken = fmt.Errorf("%w: GitLab did not accept the token for this group: it must be active, have the api scope and belong to the group (a group access token)", shared.ErrValidation)
+var ErrInvalidGitLabToken = fmt.Errorf("%w: GitLab did not accept the token for this group: it must be an active group access token with the api scope", shared.ErrValidation)
 
 var (
 	hostRE      = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:[0-9]{1,5})?$`)
@@ -84,6 +86,13 @@ func (s *Service) ConnectGitLab(ctx context.Context, tenantID shared.ID, in Conn
 	}
 	info, err := api.Token(ctx)
 	if err != nil || !info.Active || info.Revoked || !slices.Contains(info.Scopes, "api") || info.UserID <= 0 {
+		return nil, ErrInvalidGitLabToken
+	}
+	// A person's own token would post the gate as that person and keep
+	// working with all of their access after they leave the group: only a
+	// group or project access token's bot user is accepted.
+	user, err := api.CurrentUser(ctx)
+	if err != nil || !user.Bot || user.ID != info.UserID {
 		return nil, ErrInvalidGitLabToken
 	}
 	g, err := api.Group(ctx, group)
