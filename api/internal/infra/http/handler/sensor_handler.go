@@ -1399,7 +1399,7 @@ var sensorAPIKeyHeaderRegexp = regexp.MustCompile(`^[A-Za-z0-9_-]{8,256}$`)
 // DefaultSensorImage is the install snippets' image when none is configured.
 // Its tag is versions.yaml sensor.latest, copied by
 // .github/scripts/release/sync-versions.sh (RFC-037).
-const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.21.1"
+const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.22.1"
 
 // GetConfigTemplates handles GET /api/v1/sensors/{id}/config-templates
 // Returns rendered install and configuration snippets (docker run, Compose,
