@@ -135,6 +135,11 @@ func coveragePredicateSQL(p string) string {
 	return "false"
 }
 
+// rulePredicates are the reasons reconcile itself sets. Only those flip
+// back to due when the precondition holds again: a pair a capability found
+// not applicable (a DNS check on a name that is not registrable) stays so.
+var rulePredicates = []string{coverage.RequiresResolves, coverage.RequiresWebPort, coverage.RequiresScopeEntry}
+
 // coverageRuleSQL returns the applicability and reason expressions of a rule.
 func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {
 	if len(rule.Requires) == 0 {
@@ -193,7 +198,7 @@ func (r *AssetCoverageRepository) Reconcile(ctx context.Context, tenantID shared
 				    updated_at = now()
 				FROM cand c
 				WHERE s.tenant_id = $1 AND s.asset_id = c.id AND s.capability = $4 AND s.vantage = ''
-				  AND ((c.ok AND s.state = 'not_applicable') OR
+				  AND ((c.ok AND s.state = 'not_applicable' AND s.reason = ANY($6::text[])) OR
 				       (NOT c.ok AND s.state IN ('due', 'failed', 'covered')))
 				RETURNING 1
 			)
@@ -201,6 +206,7 @@ func (r *AssetCoverageRepository) Reconcile(ctx context.Context, tenantID shared
 		var a, c int
 		if err := r.db.QueryRowContext(ctx, q, //nolint:gosec // built from a closed set; values are parameters
 			tenantID.String(), string(rule.Type), rule.SubType, rule.Capability, pq.Array(excluded),
+			pq.Array(rulePredicates),
 		).Scan(&a, &c); err != nil {
 			return added, changed, fmt.Errorf("reconcile coverage %s/%s %s: %w", rule.Type, rule.SubType, rule.Capability, err)
 		}
