@@ -1099,6 +1099,34 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 	}.Normalized()
 }
 
+// ciRunnerVersionPolicy is the release line CI runners (openctemio/ci) are
+// judged against at the token exchange and in pipeline health. It is their
+// own line, never the sensor's: the two are versioned apart, and the sensor
+// minimum would refuse every CI runner release.
+func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusPolicy {
+	sc := cfg.SensorConfig
+	var pol cirun.StatusPolicy
+	for _, s := range []struct {
+		name, value string
+		dst         *string
+	}{
+		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &pol.LatestVersion},
+		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &pol.MinVersion},
+	} {
+		if s.value == "" {
+			continue
+		}
+		v := sensordom.NormalizeVersion(s.value)
+		if !sensordom.IsReleaseVersion(v) {
+			log.Warn("ignoring CI runner release setting that is not a version (want e.g. v0.3.0, or none)",
+				"setting", s.name, "value", s.value)
+			continue
+		}
+		*s.dst = v
+	}
+	return pol
+}
+
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
 func newAttachmentHandlerWithAccessCheck(attachSvc *integration.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
@@ -1381,10 +1409,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Units:    repos.CIRun,
 		Audit:    audit,
 		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
-		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
-		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
-	}}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
 		ds = svc.DataScope
