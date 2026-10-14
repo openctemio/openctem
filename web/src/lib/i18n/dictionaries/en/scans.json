@@ -1238,7 +1238,7 @@
   "scans.ci.breakGlass.noRevokePermission": "Only owners and administrators can revoke an override",
   "scans.ci.breakGlass.dialogDescription": "The commit passes the gate until the override expires or is revoked.",
   "scans.ci.breakGlass.commit": "Commit",
-  "scans.ci.breakGlass.commitHint": "Full or abbreviated (at least 7 characters).",
+  "scans.ci.breakGlass.commitHint": "The full commit id (40 characters). The override covers exactly this commit.",
   "scans.ci.breakGlass.reason": "Reason",
   "scans.ci.breakGlass.reasonHint": "At least 10 characters; recorded in the audit log.",
   "scans.ci.breakGlass.hours": "Hours (1 to 168)",

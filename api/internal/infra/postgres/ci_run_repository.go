@@ -797,14 +797,14 @@ func (r *CIRunRepository) RevokeOverride(ctx context.Context, tenantID, id, by s
 	return requireOneRow(res, cirun.ErrOverrideNotFound)
 }
 
-// ActiveOverride returns the newest active override covering the commit.
+// ActiveOverride returns the newest active override for exactly this commit.
 func (r *CIRunRepository) ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*cirun.GateOverride, error) {
 	if sha == "" {
 		return nil, nil
 	}
 	o, err := scanCIOverride(r.db.QueryRowContext(ctx, `SELECT `+ciOverrideColumns+` FROM ci_gate_overrides
 		WHERE tenant_id = $1 AND repository_asset_id = $2 AND revoked_at IS NULL AND expires_at > $3
-		  AND $4 LIKE commit_sha || '%'
+		  AND commit_sha = $4
 		ORDER BY created_at DESC LIMIT 1`, tenantID.String(), assetID.String(), now, strings.ToLower(sha)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
