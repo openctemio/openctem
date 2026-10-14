@@ -128,6 +128,61 @@ describe('ScopeSettingsForm', () => {
     )
   })
 
+  it('sets what unclassified assets get (RFC-054 §16)', async () => {
+    Element.prototype.scrollIntoView ??= () => {}
+    api.put.mockResolvedValue({ ...settings, unclassified_scans: 'full' })
+    const user = userEvent.setup()
+    wrap(
+      <ScopeSettingsForm
+        settings={
+          {
+            ...settings,
+            unclassified_scans: 'low_impact',
+            unclassified_scans_effective: 'low_impact',
+          } as typeof settings
+        }
+      />
+    )
+    const select = screen.getByRole('combobox', { name: 'Scan unclassified assets' })
+    expect(select).toHaveTextContent('Low-impact (default)')
+    expect(
+      screen.getByText(/get low-impact checks: common ports at a low rate/)
+    ).toBeInTheDocument()
+    await user.click(select)
+    await user.click(await screen.findByRole('option', { name: 'Full' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/api/v1/scope/settings',
+        expect.objectContaining({ unclassified_scans: 'full' })
+      )
+    )
+  })
+
+  it('says the setting is off while Strict scan approval is in force', () => {
+    wrap(
+      <ScopeSettingsForm
+        settings={
+          {
+            ...settings,
+            unclassified_scans: 'full',
+            unclassified_scans_effective: 'off',
+          } as typeof settings
+        }
+      />
+    )
+    expect(
+      screen.getByText(/Strict scan approval is in force, so this is Off for now/)
+    ).toBeInTheDocument()
+  })
+
+  it('shows no unclassified setting when the API does not report it', () => {
+    wrap(<ScopeSettingsForm settings={settings} />)
+    expect(
+      screen.queryByRole('combobox', { name: 'Scan unclassified assets' })
+    ).not.toBeInTheDocument()
+  })
+
   it('is read-only without scope:approve', () => {
     perms.approve = false
     wrap(<ScopeSettingsForm settings={settings} />)
