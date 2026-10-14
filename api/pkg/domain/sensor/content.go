@@ -381,6 +381,23 @@ func versionToken(s string) bool {
 	return true
 }
 
+// ForSensor is the policy a sensor receives. A platform-operated sensor gets
+// no registry rulesets: it would fetch registry rules for a tenant, which
+// the registry rules licence does not allow as a service; it runs the
+// OpenCTEM rules pack instead (research/132). A tenant's own sensor gets
+// the rulesets its tenant chose, under the tenant's licence.
+func (p ContentPolicy) ForSensor(platformSensor bool) ContentPolicy {
+	if !platformSensor {
+		return p
+	}
+	out := ContentPolicy{RefreshIntervalHours: p.RefreshIntervalHours, Content: make(map[string]ContentPin, len(p.Content))}
+	for name, pin := range p.Content {
+		pin.Rulesets = nil
+		out.Content[name] = pin
+	}
+	return out
+}
+
 // WithDefaults returns the policy with unset values taken from defaults:
 // the refresh interval when 0, and per content the max age when 0. A pinned
 // version or rulesets are never invented.
