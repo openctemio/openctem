@@ -24,6 +24,7 @@
  * open it too). See web/docs/ui/activity-panel.md.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useParams, useRouter } from 'next/navigation'
 import { useSWRConfig } from 'swr'
@@ -60,11 +61,16 @@ import '@/features/findings/config/register-layouts'
 
 const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
 
+/**
+ * Tab labels: English fallbacks of findings.detail.tab.<key>. The keys are the
+ * `?tab=` values; `attack-path` stays as the data-flow tab's key so existing
+ * links keep opening it.
+ */
 const TAB_LABEL: Record<string, string> = {
   overview: 'Overview',
   evidence: 'Evidence',
   remediation: 'Remediation',
-  'attack-path': 'Attack path',
+  'attack-path': 'Data flow',
   pentest: 'Pentest details',
   related: 'Related',
 }
@@ -116,6 +122,7 @@ function LoadingSkeleton() {
 }
 
 export default function FindingDetailPage() {
+  const { t } = useTranslation()
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
@@ -148,9 +155,9 @@ export default function FindingDetailPage() {
   // open the panel instead (useActivityPanel's legacy tab).
   const layout = finding ? getSourceLayout(finding) : {}
   const baseTabs = getOrderedTabs(layout).filter(
-    (t) => t !== 'attack-path' || (finding ? dataFlowCount(finding) > 0 : false)
+    (key) => key !== 'attack-path' || (finding ? dataFlowCount(finding) > 0 : false)
   )
-  const tabs = [...baseTabs.filter((t) => t !== 'related'), 'related']
+  const tabs = [...baseTabs.filter((key) => key !== 'related'), 'related']
   const [tab, setTab] = useDetailTab('tab', tabs)
 
   if (isLoading) {
@@ -166,12 +173,17 @@ export default function FindingDetailPage() {
       <Main>
         <div className="flex h-[50vh] items-center justify-center">
           <div className="text-center">
-            <h1 className="text-2xl font-semibold">Finding not found</h1>
+            <h1 className="text-2xl font-semibold">
+              {t('findings.detail.notFound.title', 'Finding not found')}
+            </h1>
             <p className="mt-2 text-muted-foreground">
-              It does not exist, or you do not have access to it.
+              {t(
+                'findings.detail.notFound.description',
+                'It does not exist, or you do not have access to it.'
+              )}
             </p>
             <Button className="mt-4" onClick={() => router.push('/findings')}>
-              Back to findings
+              {t('findings.detail.notFound.back', 'Back to findings')}
             </Button>
           </div>
         </div>
@@ -195,7 +207,7 @@ export default function FindingDetailPage() {
         </div>
 
         <aside
-          aria-label="Finding properties"
+          aria-label={t('findings.detail.propertiesAria', 'Finding properties')}
           className="min-w-0 lg:sticky lg:top-4 lg:col-start-2 lg:row-span-4 lg:row-start-1 lg:self-start"
         >
           <div className="rounded-lg border bg-card p-3 lg:p-4">
@@ -221,13 +233,24 @@ export default function FindingDetailPage() {
               icon={AlertTriangle}
               title={
                 slaDays !== null && slaDays < 0
-                  ? `SLA overdue by ${Math.abs(slaDays)} day${Math.abs(slaDays) === 1 ? '' : 's'}`
-                  : 'SLA breached'
+                  ? Math.abs(slaDays) === 1
+                    ? t('findings.detail.sla.overdueOne', 'SLA overdue by 1 day')
+                    : t('findings.detail.sla.overdueMany', 'SLA overdue by {n} days', {
+                        n: Math.abs(slaDays),
+                      })
+                  : t('findings.detail.sla.breached', 'SLA breached')
               }
             >
               {finding.priorityClass
-                ? `${finding.priorityClass} findings must be fixed within the SLA; this one is past its deadline.`
-                : 'This finding is past its remediation deadline.'}
+                ? t(
+                    'findings.detail.sla.classPastDeadline',
+                    '{class} findings must be fixed within the SLA; this one is past its deadline.',
+                    { class: finding.priorityClass }
+                  )
+                : t(
+                    'findings.detail.sla.pastDeadline',
+                    'This finding is past its remediation deadline.'
+                  )}
             </DetailCallout>
           )}
           <FindingWhyItMatters finding={finding} />
@@ -238,13 +261,13 @@ export default function FindingDetailPage() {
           <Tabs value={tab} onValueChange={(v) => setTab(v)}>
             <div className="-mx-1 overflow-x-auto px-1">
               <TabsList>
-                {tabs.map((t) => (
-                  <TabsTrigger key={t} value={t}>
-                    {TAB_LABEL[t] ?? t}
-                    {t === 'evidence' && evidenceCount(finding) > 0 && (
+                {tabs.map((key) => (
+                  <TabsTrigger key={key} value={key}>
+                    {TAB_LABEL[key] ? t(`findings.detail.tab.${key}`, TAB_LABEL[key]) : key}
+                    {key === 'evidence' && evidenceCount(finding) > 0 && (
                       <TabsCount value={evidenceCount(finding)} />
                     )}
-                    {t === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
+                    {key === 'attack-path' && <TabsCount value={dataFlowCount(finding)} />}
                   </TabsTrigger>
                 ))}
               </TabsList>
