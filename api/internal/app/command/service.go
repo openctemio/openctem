@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -65,6 +64,8 @@ type Service struct {
 	windows WindowSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
+	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
+	toolSettings ToolSettingsSource
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -321,7 +322,10 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	cmds, rates := s.windowHold(ctx, tenantID, cmds)
 	// Program rules: conflicts, headers and rate caps (program_rules.go).
 	cmds, rules := s.programHold(ctx, tenantID, sensorID, cmds)
-	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates))
+	// Tool settings of the sensor: checked against its current manifest
+	// (tool_settings.go).
+	cmds, layers := s.settingsHold(ctx, tenantID, sensorID, cmds)
+	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates), layers)
 }
 
 // ClaimInput is a claim-N poll: the sensor takes its work in one request.
@@ -401,6 +405,9 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	n = len(cands)
 	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
 	claimSkipped(skipProgramHold, n, len(cands))
+	n = len(cands)
+	cands, layers := s.settingsHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipToolSettings, n, len(cands))
 	rules = withWindowRates(rules, rates)
 	if len(cands) == 0 {
 		return nil, nil
@@ -436,7 +443,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	observeClaimed(claimModePoll, out, time.Now())
 	// The organization's HTTP policy and the template signatures go into the
 	// payload first, so the job signature covers them.
-	delivered, err := s.deliver(ctx, input.SensorID, out, rules)
+	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +469,9 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 // never changed. A tenant policy that cannot be read fails the delivery (the
 // claimed commands go back when their lease ends): a job never leaves
 // without the organization's layer.
-func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules) ([]*commanddom.Command, error) {
+func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
+	layers map[shared.ID]map[string]any,
+) ([]*commanddom.Command, error) {
 	if s.httpPolicy != nil {
 		for i, c := range cmds {
 			if c.Type != commanddom.CommandTypeScan {
@@ -484,6 +493,12 @@ func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commandd
 	// Bug-bounty program rules go over the organization's layer: a
 	// program's headers and User-Agent win (program_rules.go).
 	cmds = s.withProgramRules(cmds, rules)
+	// The sensor's tool settings (settings_layers): the field belongs to the
+	// platform, whatever a command's creator put there.
+	cmds, err := withToolSettings(cmds, layers)
+	if err != nil {
+		return nil, err
+	}
 	return s.signTemplates(sensorID, cmds), nil
 }
 
@@ -559,6 +574,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 
 	var rules *bp.JobRules
+	var layer map[string]any
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
@@ -584,6 +600,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		if rules, err = s.programHoldOne(ctx, sid, cmd); err != nil {
 			return nil, err
 		}
+		if layer, err = s.settingsHoldOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
 		if rate > 0 {
 			rules = withWindowRates(map[shared.ID]*bp.JobRules{cmd.ID: rules}, map[shared.ID]int{cmd.ID: rate})[cmd.ID]
 		}
@@ -603,10 +622,19 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 	observeClaimed(claimModeByID, []*commanddom.Command{cmd}, time.Now())
 
-	// Return the freshly-claimed state, with its programs' rules.
+	// Return the freshly-claimed state, with its programs' rules and the
+	// sensor's tool settings.
 	got, err := s.Get(ctx, tenantID, commandID)
-	if err != nil || rules == nil {
+	if err != nil {
 		return got, err
+	}
+	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]map[string]any{got.ID: layer})
+	if err != nil {
+		return nil, err
+	}
+	got = withLayer[0]
+	if rules == nil {
+		return got, nil
 	}
 	out := s.withProgramRules([]*commanddom.Command{got}, map[shared.ID]*bp.JobRules{got.ID: rules})
 	if len(out) != 1 {

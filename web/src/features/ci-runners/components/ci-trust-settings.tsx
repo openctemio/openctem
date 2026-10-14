@@ -1018,6 +1018,14 @@ function PolicySummary({ p }: { p: CIGatePolicy }) {
           ? t('scans.ci.gatePolicy.kevFails', 'Known exploited (KEV): fails')
           : t('scans.ci.gatePolicy.kevNoFail', 'Known exploited (KEV): does not fail')}
       </li>
+      {p.fixable_only && (
+        <li>
+          {t(
+            'scans.ci.gatePolicy.fixableOnly',
+            'Vulnerabilities without a fix: listed, not blocking (KEV still fails)'
+          )}
+        </li>
+      )}
       {p.epss_threshold !== undefined && p.epss_threshold !== null && (
         <li>
           {t('scans.ci.gatePolicy.epssAtLeast', 'EPSS at least {value}', {
@@ -1048,6 +1056,7 @@ function PolicyDialog({
   const [severity, setSeverity] = useState(policy?.fail_on_severity ?? 'high')
   const [newOnly, setNewOnly] = useState(policy?.new_findings_only ?? true)
   const [kev, setKev] = useState(policy?.fail_on_kev ?? true)
+  const [fixableOnly, setFixableOnly] = useState(policy?.fixable_only ?? false)
   const [epss, setEpss] = useState(
     policy?.epss_threshold !== undefined && policy?.epss_threshold !== null
       ? String(policy.epss_threshold)
@@ -1071,6 +1080,7 @@ function PolicyDialog({
           new_findings_only: newOnly,
           fail_on_kev: kev,
           epss_threshold: epssValue,
+          fixable_only: fixableOnly,
         },
       })
       toast.success(t('scans.ci.gatePolicy.saved', 'Gate policy saved'))
@@ -1187,6 +1197,15 @@ function PolicyDialog({
               label={t('scans.ci.gatePolicy.kevSwitch', 'Known exploited (KEV) fails')}
               checked={kev}
               onChange={setKev}
+            />
+            <SwitchRow
+              id="gp-fixable-only"
+              label={t(
+                'scans.ci.gatePolicy.fixableOnlySwitch',
+                'Dependency and image vulnerabilities block only when a fix exists'
+              )}
+              checked={fixableOnly}
+              onChange={setFixableOnly}
             />
           </div>
         </DialogBody>
