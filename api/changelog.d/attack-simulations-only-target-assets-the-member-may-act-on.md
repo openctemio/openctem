@@ -7,4 +7,4 @@
   404. A run is re-checked, so a saved simulation stops running for a member
   who lost the asset. Before, any member with `validation:write` could point
   a live safe-check probe at an out-of-scope or another tenant's asset
-  (research 21b H4, RFC-050 W3).
+  (RFC-050 W3).

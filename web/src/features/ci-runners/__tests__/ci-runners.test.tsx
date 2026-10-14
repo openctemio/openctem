@@ -170,10 +170,10 @@ describe('lib', () => {
     expect(githubSnippet({ ...input, defaultBranch: 'develop' })).toContain('branches: [develop]')
     // A branch name YAML would misread is quoted.
     expect(githubSnippet({ ...input, defaultBranch: 'x: y' })).toContain('branches: ["x: y"]')
-    // Releases before v0.3.0 refuse to start without security-events: write.
-    expect(githubSnippet(input).includes('security-events: write')).toBe(
-      releaseBefore(CI_RELEASE, 'v0.3.0')
-    )
+    // The reusable workflow's scan job asks for security-events: write, and
+    // GitHub refuses to start a called job that asks for more than its caller
+    // grants: the snippet always grants it.
+    expect(githubSnippet(input)).toContain('security-events: write')
     expect(releaseBefore('v0.2.0', 'v0.3.0')).toBe(true)
     expect(releaseBefore('v0.3.0', 'v0.3.0')).toBe(false)
     expect(releaseBefore('v0.10.0', 'v0.3.0')).toBe(false)

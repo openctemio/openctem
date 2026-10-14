@@ -1,6 +1,6 @@
 ### Added: the `not_observed` finding status
 
-- **`not_observed`: not seen lately, not fixed** (research 18, owner
+- **`not_observed`: not seen lately, not fixed** (owner
   decision O2). Recent scans no longer report the finding, but nothing
   proves the check ran against it. It is an open status: never counted as
   fixed, no `resolved_at`, and its SLA keeps running. Only the platform sets

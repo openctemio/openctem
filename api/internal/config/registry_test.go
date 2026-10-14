@@ -422,3 +422,28 @@ func TestEnvDocsRetiredNames(t *testing.T) {
 		}
 	}
 }
+
+// A default that is prose with its own code spans is not wrapped in another
+// code span: Markdown cannot nest them, and the cell rendered broken.
+func TestEnvReference_DefaultCodeSpansDoNotNest(t *testing.T) {
+	for in, want := range map[string]string{
+		"":    "empty",
+		"30s": "`30s`",
+		"a|b": "`a\\|b`",
+		"the minimum in `versions.yaml` (`v0.3.0`)": "the minimum in `versions.yaml` (`v0.3.0`)",
+	} {
+		if got := mdDefault(in); got != want {
+			t.Errorf("mdDefault(%q) = %q, want %q", in, got, want)
+		}
+	}
+	doc := RenderEnvReference(Registry())
+	for _, line := range strings.Split(doc, "\n") {
+		cells := strings.Split(line, " | ")
+		if len(cells) < 3 || !strings.HasPrefix(cells[0], "| `") {
+			continue
+		}
+		if def := cells[2]; strings.HasPrefix(def, "`") && strings.Count(def, "`") > 2 {
+			t.Errorf("nested code span in the default of %s: %s", cells[0], def)
+		}
+	}
+}
