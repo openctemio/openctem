@@ -46,6 +46,9 @@ type PreviewClaims struct {
 	Organization   string `json:"organization,omitempty"`
 	Fork           bool   `json:"fork"`
 	PipelineURL    string `json:"pipeline_url,omitempty"`
+	// WorkflowDefinition is the value the workflow_refs rule matches
+	// (GitHub job_workflow_ref, GitLab ci_config_ref_uri).
+	WorkflowDefinition string `json:"workflow_definition,omitempty"`
 }
 
 // PreviewRefusal is why the configuration would refuse the token.
@@ -124,7 +127,8 @@ func (s *Service) PreviewTrust(ctx context.Context, tenantID shared.ID, in Previ
 	out.Normalized = &PreviewClaims{Repository: c.Repository, RepositoryID: c.RepositoryID, Owner: c.Owner(), Ref: c.Ref,
 		Branch: c.Branch, PullRequest: c.PullRequest, CommitSHA: c.SHA, CommitVerified: c.CommitVerified, Event: c.Event,
 		Environment: c.Environment, RunID: c.RunID, RunAttempt: c.RunAttempt, JobID: c.JobID, Organization: c.OrgID,
-		Fork: c.IsForkEvent(), PipelineURL: cirun.PipelineURL(cfg.Provider, cfg.Issuer, c)}
+		Fork: c.IsForkEvent(), PipelineURL: cirun.PipelineURL(cfg.Provider, cfg.Issuer, c),
+		WorkflowDefinition: c.WorkflowDefinition()}
 	if c.Repository != "" {
 		out.Repository = asset.NormalizeName(c.CanonicalRepository(), asset.AssetTypeRepository, "")
 	}
