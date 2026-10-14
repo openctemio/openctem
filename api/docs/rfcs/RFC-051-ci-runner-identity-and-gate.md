@@ -345,6 +345,22 @@ override expires (default 24 hours, at most 7 days) or is revoked. A reason of
 high severity. Creating and every use also notify every active owner and
 administrator in-app and the `ci.break_glass` channel event.
 
+### 6.1 Who sees a run
+
+Runs, pipelines, coverage and break-glass follow the data scope of the
+repository asset. A developer sees the runs of a repository when it is in
+their scope, so the way to give a team its runs is to make the team (a group)
+an owner of the repository asset (asset ownership refreshes
+`user_accessible_assets`). Leaving the team takes the runs away. The pull
+request's check and comment are visible to everyone with access to the pull
+request, whatever their scope in the console. Someone outside the scope who
+follows the check's link sees "This run is not available to you".
+
+Later: a developer who pushed the commit (the token's `actor`, matched to a
+verified identity linked to their console account) could see that one run
+without owning the repository. This is not built. It needs the SCM identity
+linking, which does not exist yet.
+
 ## 7. Runner
 
 `openctem-ci` (openctemio/ci, `internal/platform`):

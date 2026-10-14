@@ -176,12 +176,18 @@ describe('Coverage view', () => {
     expect(lastCoverageFilters?.filter).toBe('uncovered')
   })
 
-  it('lets only CI writers mark a repository as expected', async () => {
+  it('lets only CI policy holders mark a repository as expected', async () => {
     const { unmount } = render(<CIPipelinesPanel />)
     expect(screen.queryByRole('button', { name: /expect coverage of/i })).not.toBeInTheDocument()
     unmount()
 
+    // Trust (scans:ci:write) alone does not edit the gate's expectations.
     perms = ['scans:ci:write']
+    const second = render(<CIPipelinesPanel />)
+    expect(screen.queryByRole('button', { name: /expect coverage of/i })).not.toBeInTheDocument()
+    second.unmount()
+
+    perms = ['scans:ci:policy']
     render(<CIPipelinesPanel />)
     await userEvent.click(
       screen.getByRole('button', { name: 'Expect coverage of github.com/acme/legacy' })
