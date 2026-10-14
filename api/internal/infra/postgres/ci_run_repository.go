@@ -230,7 +230,7 @@ const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provi
 	commit_sha, pull_request, default_branch, is_default_branch, event, environment, actor, external_run_id,
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
 	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at,
-	external_job_id, aggregate, commit_verified, base_ref`
+	external_job_id, aggregate, commit_verified, base_ref, decoration_state, decoration_detail`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
@@ -247,7 +247,7 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		&run.Actor, &run.ExternalRunID, &run.RunAttempt, &run.Workflow, &run.PipelineURL, &run.Fork, &tokenExp,
 		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
 		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt,
-		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef); err != nil {
+		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef, &run.DecorationState, &run.DecorationDetail); err != nil {
 		return run, err
 	}
 	run.ID, _ = shared.IDFromString(id)
