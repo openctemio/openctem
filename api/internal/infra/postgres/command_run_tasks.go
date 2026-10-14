@@ -124,7 +124,8 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		       CASE WHEN (commands.payload->'budget'->>'task_seconds') ~ '^[0-9]{1,9}$'
 		            THEN LEAST((commands.payload->'budget'->>'task_seconds')::bigint, 86400) END,
 		       CASE WHEN (commands.payload->'budget'->>'stall_seconds') ~ '^[0-9]{1,9}$'
-		            THEN LEAST((commands.payload->'budget'->>'stall_seconds')::bigint, 86400) END
+		            THEN LEAST((commands.payload->'budget'->>'stall_seconds')::bigint, 86400) END,
+		       (commands.status = 'pending' AND NOT `+hostFreePredicate+`)
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND NOT s.is_platform_sensor
@@ -154,7 +155,7 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		if err := rows.Scan(&id, &stepRunID, &t.StepKey, &t.Tool, &status, &sensorID, &t.SensorName,
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage,
 			&skipped, &skippedTotal, &hold, &gaps, &gapsTotal,
-			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs); err != nil {
+			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs, &t.WaitingOnHosts); err != nil {
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		// Sensor-supplied: parsed defensively, bounded and cleaned.

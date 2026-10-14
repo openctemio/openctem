@@ -1762,5 +1762,13 @@
   "scans.ci.policySourceName.repository": "repository",
   "scans.ci.policySourceName.business_unit": "business unit",
   "scans.ci.policySourceName.tenant": "organization",
-  "scans.ci.policySourceName.default": "built-in default"
+  "scans.ci.policySourceName.default": "built-in default",
+  "scans.placement.sensor_hosts_busy.text": "The sensor that took it is still scanning one of its hosts, so it handed the task back.",
+  "scans.placement.sensor_hosts_busy.fix": "It runs when that host is free on that sensor, or on another sensor.",
+  "scans.placement.hostWait": "Waiting: {held} of its {total} hosts are being scanned by another task. It starts when those hosts are free.",
+  "scans.placement.hostWaitTool": "Waiting: {held} of its {total} hosts are being scanned by {tool}. It starts when those hosts are free.",
+  "scans.placement.hostWaitBy": "Waiting: {held} of its {total} hosts are being scanned by {tool} (step {step}). It starts when those hosts are free.",
+  "scans.placement.holderRun": "Open the run scanning them",
+  "scans.tasks.waitingForHosts": "Waiting for its hosts: another task is scanning them",
+  "scans.tasks.handedBackHostsBusy": "Handed back: its sensor is still scanning one of its hosts"
 }

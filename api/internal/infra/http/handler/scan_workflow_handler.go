@@ -338,6 +338,9 @@ type RunTaskResponse struct {
 	// WindowHold: a queued task waits for a scan window (why, until when,
 	// or never).
 	WindowHold *scanwindow.Hold `json:"window_hold,omitempty"`
+	// WaitingOnHosts: a queued task waits while another task of the
+	// organization scans one of its hosts (the placement explains which).
+	WaitingOnHosts bool `json:"waiting_on_hosts,omitempty"`
 	// Progress is a running task's finished targets as its sensor last
 	// reported them, and when that count last grew (research/122).
 	Progress *RunTaskProgress `json:"progress,omitempty"`
@@ -391,6 +394,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
+			WaitingOnHosts: t.WaitingOnHosts,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))

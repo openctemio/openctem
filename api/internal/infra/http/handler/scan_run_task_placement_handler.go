@@ -47,6 +47,26 @@ type RunTaskPlacementSensor struct {
 	Reasons  []string `json:"reasons"`
 }
 
+// RunTaskHostHolder is a task of the organization that holds hosts the
+// waiting task needs. The task, run and step are named only when the
+// caller can read that run; the tool always.
+type RunTaskHostHolder struct {
+	TaskID  string `json:"task_id,omitempty"`
+	RunID   string `json:"run_id,omitempty"`
+	StepKey string `json:"step_key,omitempty"`
+	Tool    string `json:"tool"`
+}
+
+// RunTaskHostWait says why a task waits for its hosts: HostsHeld of its
+// HostsTotal hosts are being scanned by other tasks of the organization
+// (the ones holding the most first, at most 3). Counts only, never host
+// names.
+type RunTaskHostWait struct {
+	HostsHeld  int                 `json:"hosts_held"`
+	HostsTotal int                 `json:"hosts_total"`
+	Holders    []RunTaskHostHolder `json:"holders"`
+}
+
 // RunTaskPlacementResponse explains where a task can go. Queued is false
 // for a task that is no longer waiting (nothing else is filled). Sensors is
 // present only for a caller with sensors:read.
@@ -60,6 +80,8 @@ type RunTaskPlacementResponse struct {
 	Busy       int                      `json:"busy"`
 	Blocking   []RunTaskPlacementReason `json:"blocking"`
 	Sensors    []RunTaskPlacementSensor `json:"sensors,omitempty"`
+	// HostWait is set when the task waits for its hosts (host_busy).
+	HostWait *RunTaskHostWait `json:"host_wait,omitempty"`
 }
 
 // GetRunTaskPlacement handles GET /api/v1/scan-runs/{id}/tasks/{task_id}/placement
@@ -108,6 +130,9 @@ func (h *ScanWorkflowHandler) GetRunTaskPlacement(w http.ResponseWriter, r *http
 		return
 	}
 	resp := placementResponse(p, middleware.HasPermission(r.Context(), permission.SensorsRead.String()))
+	if resp.Queued && !resp.Platform && p.HostWait != nil {
+		resp.HostWait = h.hostWaitResponse(r.Context(), tenantID, p.HostWait)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -141,4 +166,25 @@ func placementResponse(p *commandapp.Placement, withSensors bool) RunTaskPlaceme
 		}
 	}
 	return resp
+}
+
+// hostWaitResponse maps hw, naming a holder's task, run and step only when
+// the caller can read that run (a run about a finding needs its finding
+// access; the holders are always of the caller's own organization).
+func (h *ScanWorkflowHandler) hostWaitResponse(ctx context.Context, tenantID shared.ID, hw *commandapp.HostWait) *RunTaskHostWait {
+	out := &RunTaskHostWait{HostsHeld: hw.Held, HostsTotal: hw.Total, Holders: []RunTaskHostHolder{}}
+	lookup := h.runLookup
+	if lookup == nil {
+		lookup = h.service
+	}
+	for _, hd := range hw.Holders {
+		holder := RunTaskHostHolder{Tool: hd.Tool}
+		if hd.RunID != "" && lookup != nil {
+			if run, err := lookup.GetRun(ctx, tenantID.String(), hd.RunID); err == nil && h.runVisible(ctx, tenantID, run) {
+				holder.TaskID, holder.RunID, holder.StepKey = hd.CommandID.String(), hd.RunID, hd.StepKey
+			}
+		}
+		out.Holders = append(out.Holders, holder)
+	}
+	return out
 }
