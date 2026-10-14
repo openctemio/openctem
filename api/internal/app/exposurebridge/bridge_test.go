@@ -89,14 +89,8 @@ func (r *fakeExposureRepo) Upsert(_ context.Context, _ *exposure.ExposureEvent) 
 func (r *fakeExposureRepo) BulkUpsert(_ context.Context, _ []*exposure.ExposureEvent) error {
 	return nil
 }
-func (r *fakeExposureRepo) CountByState(_ context.Context, _ shared.ID) (map[exposure.State]int64, error) {
-	return nil, nil
-}
-func (r *fakeExposureRepo) CountBySeverity(_ context.Context, _ shared.ID) (map[exposure.Severity]int64, error) {
-	return nil, nil
-}
-func (r *fakeExposureRepo) MeanTimeToResolveHours(_ context.Context, _ shared.ID) (float64, bool, error) {
-	return 0, false, nil
+func (r *fakeExposureRepo) Stats(_ context.Context, _ exposure.Filter) (exposure.Stats, error) {
+	return exposure.Stats{}, nil
 }
 
 // =============================================================================
