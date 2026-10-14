@@ -36,6 +36,7 @@ let lastRunFilters: unknown
 let gatePolicies: unknown[] = []
 let overrides: unknown[] = []
 const mockDeletePolicy = vi.fn()
+const mockSavePolicy = vi.fn()
 const mockRevokeOverride = vi.fn()
 
 vi.mock('../api/use-ci', async (importOriginal) => ({
@@ -65,7 +66,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
     isLoading: false,
     mutate: vi.fn(),
   }),
-  useSaveGatePolicy: () => ({ trigger: vi.fn(), isMutating: false }),
+  useSaveGatePolicy: () => ({ trigger: mockSavePolicy, isMutating: false }),
   useDeleteGatePolicy: () => ({ trigger: mockDeletePolicy, isMutating: false }),
   useGateOverrides: () => ({ data: { data: overrides }, isLoading: false, mutate: vi.fn() }),
   useCreateGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
@@ -284,6 +285,37 @@ describe('CITrustSettings', () => {
     mockSaveTrust.mockReset()
     mockDeletePolicy.mockReset()
     mockRevokeOverride.mockReset()
+  })
+
+  it('a policy can block dependency vulnerabilities only when a fix exists', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    gatePolicies = [
+      {
+        id: 'gp1',
+        scope_type: 'tenant',
+        mode: 'enforce',
+        fail_on_severity: 'high',
+        fixable_only: true,
+      },
+    ]
+    mockSavePolicy.mockReset()
+    mockSavePolicy.mockResolvedValue(undefined)
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('tab', { name: /gate policy/i }))
+    expect(
+      screen.getByText('Vulnerabilities without a fix: listed, not blocking (KEV still fails)')
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^edit/i }))
+    const dialog = await screen.findByRole('dialog')
+    const toggle = within(dialog).getByRole('switch', {
+      name: 'Dependency and image vulnerabilities block only when a fix exists',
+    })
+    expect(toggle).toBeChecked()
+    await userEvent.click(toggle)
+    await userEvent.click(within(dialog).getByRole('button', { name: /^save/i }))
+    expect(mockSavePolicy).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ fixable_only: false }) })
+    )
   })
 
   it('deleting a repository gate policy asks first', async () => {
