@@ -123,6 +123,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 		f(&d)
 	}
 	svc := cirunapp.NewService(d, cfg, log)
+	svc.SetStepUpGate(recentAuth{})
 
 	h := handler.NewCIRunnerHandler(svc, log)
 	router := infrahttp.NewChiRouter()
@@ -137,6 +138,12 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 	r.tenant, r.other = r.newTenant(), r.newTenant()
 	return r
 }
+
+// recentAuth is a step-up gate whose caller signed in recently (err nil) or
+// not (err set).
+type recentAuth struct{ err error }
+
+func (g recentAuth) RequireRecentAuth(context.Context, string) error { return g.err }
 
 func (r *ciRig) newTenant() shared.ID {
 	r.t.Helper()
@@ -451,7 +458,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 
 	// Break-glass for the commit passes the failing run, audited each use.
 	if _, err := r.svc.CreateOverride(ctx, r.tenant, cirunapp.OverrideInput{RepositoryAssetID: run.RepositoryAssetID,
-		CommitSHA: sha2[:12], Reason: "hotfix for the login outage"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
+		CommitSHA: sha2, Reason: "hotfix for the login outage"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
 		t.Fatal(err)
 	}
 	rejudge()

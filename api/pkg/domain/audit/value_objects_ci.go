@@ -40,6 +40,9 @@ const (
 	ActionCIGatePolicyCreated Action = "ci_gate_policy.created"
 	ActionCIGatePolicyUpdated Action = "ci_gate_policy.updated"
 	ActionCIGatePolicyDeleted Action = "ci_gate_policy.deleted"
+	// ActionCIGatePolicyLoosened: a policy change lets findings pass that
+	// failed before (logged with the created/updated/deleted event).
+	ActionCIGatePolicyLoosened Action = "ci_gate_policy.loosened"
 
 	// Break-glass: created, revoked, and each time it lets a failing run pass.
 	ActionCIGateOverrideCreated Action = "ci_gate_override.created"
@@ -96,6 +99,7 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCIGatePolicyCreated:         SeverityMedium,
 	ActionCIGatePolicyUpdated:         SeverityMedium,
 	ActionCIGatePolicyDeleted:         SeverityMedium,
+	ActionCIGatePolicyLoosened:        SeverityHigh,
 	ActionCIGateOverrideCreated:       SeverityHigh,
 	ActionCIGateOverrideRevoked:       SeverityMedium,
 	ActionCIGateOverrideUsed:          SeverityHigh,
