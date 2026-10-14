@@ -982,3 +982,7 @@ func (m *mockAttackSurfaceRepo) PurgeDeleted(_ context.Context, _ time.Time, _ i
 func (m *mockAttackSurfaceRepo) GetInventoryOverview(_ context.Context, _ shared.ID, _ asset.AccessScope) ([]asset.InventoryOverviewRow, error) {
 	return nil, nil
 }
+
+func (m *mockAttackSurfaceRelRepo) RelatedAssets(_ context.Context, _, _ shared.ID, _ asset.RelatedAssetsQuery) (*asset.RelatedAssets, error) {
+	return &asset.RelatedAssets{}, nil
+}

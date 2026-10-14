@@ -95,8 +95,8 @@ func TestInterop_IdentityUnchanged(t *testing.T) {
 	withInterop.Native = &ctis.NativeIdentity{VulnID: "999999"}
 	fillFromInterop(&withInterop)
 
-	k1, ok1 := identityV2(assetID, &legacy, nil, "", 0)
-	k2, ok2 := identityV2(assetID, &withInterop, nil, "", 0)
+	k1, ok1 := identityV2(assetID, &legacy, "", 0)
+	k2, ok2 := identityV2(assetID, &withInterop, "", 0)
 	require.True(t, ok1 && ok2)
 	assert.Equal(t, k1.Fingerprint(), k2.Fingerprint())
 	fp1, _ := generateFindingFingerprint(assetID, &legacy, nil)
@@ -107,7 +107,7 @@ func TestInterop_IdentityUnchanged(t *testing.T) {
 	onlyIDs.Native = nil
 	onlyIDs.RuleID = "201194"
 	fillFromInterop(&onlyIDs)
-	k3, ok3 := identityV2(assetID, &onlyIDs, nil, "", 0)
+	k3, ok3 := identityV2(assetID, &onlyIDs, "", 0)
 	require.True(t, ok3)
 	assert.Equal(t, k1.Fingerprint(), k3.Fingerprint(), "the CVE from ids keys the finding like cve_id")
 }

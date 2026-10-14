@@ -20,6 +20,7 @@ const FORMAT_LABELS: Record<string, string> = {
   trivy: 'trivy',
   grype: 'grype',
   semgrep: 'semgrep',
+  opengrep: 'opengrep',
   gitleaks: 'gitleaks',
   betterleaks: 'betterleaks',
   nuclei: 'nuclei',

@@ -13,9 +13,12 @@ import {
   organizationFromIssuer,
   parseList,
   snippetFor,
+  findCoveringTrust,
+  releaseBefore,
   CI_PROVIDERS,
   CI_RELEASE,
 } from '../lib/ci'
+import type { CITrustConfig } from '../types'
 
 // Radix Select uses pointer capture and scrollIntoView, which jsdom lacks.
 Element.prototype.hasPointerCapture ??= () => false
@@ -150,6 +153,66 @@ describe('lib', () => {
     ]) {
       expect(custom).toContain(`${job}: *openctem-audience`)
     }
+  })
+
+  it('the GitHub snippet scans the default branch and grants what the pinned release needs', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    }
+    expect(githubSnippet(input)).toContain('branches: [main]')
+    expect(githubSnippet({ ...input, defaultBranch: 'develop' })).toContain('branches: [develop]')
+    // A branch name YAML would misread is quoted.
+    expect(githubSnippet({ ...input, defaultBranch: 'x: y' })).toContain('branches: ["x: y"]')
+    // Releases before v0.3.0 refuse to start without security-events: write.
+    expect(githubSnippet(input).includes('security-events: write')).toBe(
+      releaseBefore(CI_RELEASE, 'v0.3.0')
+    )
+    expect(releaseBefore('v0.2.0', 'v0.3.0')).toBe(true)
+    expect(releaseBefore('v0.3.0', 'v0.3.0')).toBe(false)
+    expect(releaseBefore('v0.10.0', 'v0.3.0')).toBe(false)
+  })
+
+  it('other CI systems run the pinned release image, never the moving edge build', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    }
+    // Jenkins runs openctem-ci installed on its build node, not an image.
+    for (const p of ['azure_devops', 'bitbucket', 'circleci'] as const) {
+      const s = snippetFor(p, input)
+      expect(s).toContain(`ghcr.io/openctemio/ci:${CI_RELEASE}`)
+    }
+    for (const p of CI_PROVIDERS) expect(snippetFor(p, input)).not.toContain('ci:edge')
+  })
+
+  it('finds a trust configuration that already admits the owners', () => {
+    const gh = {
+      id: 'a',
+      name: 'GitHub acme',
+      provider: 'github',
+      issuer: 'https://token.actions.githubusercontent.com',
+      enabled: true,
+      rules: { owners: ['Acme', 'web'] },
+    } as CITrustConfig
+    const gl = {
+      id: 'b',
+      provider: 'gitlab',
+      issuer: 'https://gitlab.com',
+      enabled: true,
+      rules: { owners: ['platform'] },
+    } as CITrustConfig
+    const off = { ...gh, id: 'c', enabled: false } as CITrustConfig
+    expect(findCoveringTrust([off, gh], 'github', '', ['acme'])?.id).toBe('a')
+    expect(findCoveringTrust([gh], 'github', '', ['acme', 'other'])).toBeUndefined()
+    expect(findCoveringTrust([off], 'github', '', ['acme'])).toBeUndefined()
+    expect(findCoveringTrust([gh], 'gitlab', '', ['acme'])).toBeUndefined()
+    // An empty GitLab URL is gitlab.com; another host is another issuer.
+    expect(findCoveringTrust([gl], 'gitlab', '', ['platform'])?.id).toBe('b')
+    expect(findCoveringTrust([gl], 'gitlab', 'https://git.example', ['platform'])).toBeUndefined()
+    expect(findCoveringTrust([gh], 'github', '', [])).toBeUndefined()
   })
 
   it('no snippet runs the sensor image or its removed CI flags', () => {
