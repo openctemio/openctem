@@ -1298,7 +1298,7 @@ func (d connectorCoverageDispatcher) DispatchTenableScan(ctx context.Context, in
 	if session == "" {
 		session = shared.NewID().String()
 	}
-	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session)
+	id, err := d.svc.DispatchCoverageBatch(ctx, in.TenantID, *in.IntegrationID, in.Targets, session, in.NewAddresses)
 	return id, session, err
 }
 

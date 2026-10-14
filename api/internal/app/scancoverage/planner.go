@@ -72,6 +72,10 @@ type Candidate struct {
 	Criticality string
 	// LastScannedAt is nil for never-scanned assets (which sort first).
 	LastScannedAt *time.Time
+	// Assessed: the engine assessed the asset before (the ledger has a
+	// success for it), so its address is likely counted by the license
+	// already; a license-aware batch rescans it without using headroom.
+	Assessed bool
 }
 
 // SelectBatch picks the next batch from candidates, ordered by
@@ -114,6 +118,63 @@ func SelectBatch(candidates []Candidate, maxIPs int) (selected []Candidate, ips 
 		ips += n
 	}
 	return selected, ips
+}
+
+// LicensedBatch is SelectLicensedBatch's choice.
+type LicensedBatch struct {
+	Selected []Candidate
+	// IPs are the addresses the batch covers; NewIPs those it may add to the
+	// license count (every address when allNew, else those of candidates
+	// never attempted).
+	IPs, NewIPs int
+	// Blocked counts candidates left out because their new addresses did
+	// not fit the license headroom (a visible license gap, never silent).
+	Blocked int
+}
+
+// SelectLicensedBatch picks the next batch of a license-capped engine:
+// oldest attempt first (never attempted before anything), criticality only
+// breaking ties, so every asset gets one turn per cycle and a critical asset
+// is not re-picked by every batch; at most maxIPs addresses in all, and at most
+// newHeadroom addresses the license has not counted yet. An asset the
+// engine assessed before (Assessed) is already counted, so it is rescanned
+// without using headroom, unless allNew (rotation: the data was removed,
+// every address counts again). The sensor's license guard verifies it. Unlike SelectBatch, a candidate that does not fit
+// is never forced in: the license is a hard limit.
+func SelectLicensedBatch(candidates []Candidate, maxIPs, newHeadroom int, allNew bool) LicensedBatch {
+	var out LicensedBatch
+	if maxIPs <= 0 || len(candidates) == 0 {
+		return out
+	}
+	ordered := make([]Candidate, len(candidates))
+	copy(ordered, candidates)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		a, b := ordered[i].LastScannedAt, ordered[j].LastScannedAt
+		if lessLastScanned(a, b) {
+			return true
+		}
+		if lessLastScanned(b, a) {
+			return false
+		}
+		return criticalityWeight(ordered[i].Criticality) > criticalityWeight(ordered[j].Criticality)
+	})
+	for _, c := range ordered {
+		n := CountIPs(c.Target)
+		if out.IPs+n > maxIPs {
+			continue
+		}
+		isNew := allNew || !c.Assessed
+		if isNew && out.NewIPs+n > newHeadroom {
+			out.Blocked++
+			continue
+		}
+		out.Selected = append(out.Selected, c)
+		out.IPs += n
+		if isNew {
+			out.NewIPs += n
+		}
+	}
+	return out
 }
 
 // criticalityWeight maps a criticality label to a sortable weight.
