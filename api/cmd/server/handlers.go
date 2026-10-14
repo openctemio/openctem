@@ -34,6 +34,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	codescanapp "github.com/openctemio/openctem/api/internal/app/codescan"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -519,7 +520,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
-		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
+		SCMApps:      withSCMAppDeliveryGuard(newSCMAppHandler(cfg, repos, svc, deps.RedisClient, log), deps.RedisClient),
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.Command, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
@@ -995,6 +996,9 @@ func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
 	if svc.SensorGrant != nil {
 		svc.SensorGrant.SetStepUpGate(gate)
 	}
+	if handlers.CIAdmin != nil {
+		handlers.CIAdmin.SetStepUpGate(gate)
+	}
 }
 
 // newSensorHandlerWithTemplates creates a SensorHandler wired with the
@@ -1218,14 +1222,18 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
 	if svc.ActiveGate != nil {
-		h.SetSuggestions(easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+		suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
 			func(ctx context.Context, tenantID shared.ID) (string, error) {
 				t, err := repos.Tenant.GetByID(ctx, tenantID)
 				if err != nil {
 					return "", err
 				}
 				return t.Name(), nil
-			}, seededNetworks(repos)))
+			}, seededNetworks(repos))
+		// The organization's own prefixes are offered only when the platform
+		// guardrails accept them as entries.
+		suggestions.SetGuardrails(svc.ScopeGuardrails)
+		h.SetSuggestions(suggestions)
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1388,6 +1396,14 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
+	if repos.CodeScan != nil {
+		var csAudit codescanapp.Auditor
+		if svc.Audit != nil {
+			csAudit = svc.Audit
+		}
+		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
+	}
+	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
@@ -1466,10 +1482,19 @@ func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.Asse
 	return handler.NewAssetWebEvidenceHandler(svc.Asset, svc.WebEvidence, log)
 }
 
+// withSCMAppDeliveryGuard ignores replays of a verified GitHub App webhook
+// delivery for 24 hours (all replicas).
+func withSCMAppDeliveryGuard(h *handler.SCMAppHandler, rc *redis.Client) *handler.SCMAppHandler {
+	if h != nil && rc != nil {
+		h.SetDeliveryGuard(redis.NewWebhookDeliveryStore(rc))
+	}
+	return h
+}
+
 // newSCMAppHandler builds the code-host app installation routes (RFC-077).
 // Without a GitHub App configured the routes still list installations and
 // answer that the deployment has no app.
-func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SCMAppHandler {
+func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc *redis.Client, log *logger.Logger) *handler.SCMAppHandler {
 	if repos.SCMApp == nil {
 		return nil
 	}
@@ -1482,6 +1507,10 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, lo
 		audit = svc.Audit
 	}
 	s := scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log)
+	// An install state is usable once (all replicas).
+	if rc != nil {
+		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
+	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
 	}

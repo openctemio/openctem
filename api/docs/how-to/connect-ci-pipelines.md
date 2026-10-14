@@ -9,8 +9,9 @@ You need `scans:ci:write` (owners and administrators).
 
 ## 1. Add CI trust
 
-**Discovery > CI/CD > Trust and gate > Trust > Add trust** (also under
-**Settings > Scanning > CI/CD integration**):
+**Discovery > CI/CD > Trust and gate > Trust > Add trust**, or **Connect a
+pipeline** on the empty Pipelines tab (a four-step wizard: CI system,
+organization, pipeline snippet, first run):
 
 - **Provider**: GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket
   Pipelines, CircleCI or Jenkins. Each asks for what names your CI
@@ -157,13 +158,18 @@ and the findings. The job exits 1 when the verdict is `fail`.
 
 What fails is set under **Gate policy** (organization, business unit or
 repository): the severity threshold, KEV, an EPSS threshold, and whether only
-new findings count (the default: compared with the default branch). Committed
+new findings count (the default: compared with the pull request's base branch
+when it is a release line, otherwise the default branch). **Dependency and
+image vulnerabilities block only when a fix exists** (`fixable_only`, off by
+default; turning it on needs a fresh sign-in) lists unfixable ones without
+blocking; CISA KEV still fails. Committed
 secrets always fail; accepted risk, false positives and suppressions are always
 honored; a scanner that fails to run fails the job. **Warn** mode reports what
 would fail and passes.
 
 When a release cannot wait, **Break-glass** lets one commit pass for a limited
-time with a reason; it is audited, and so is each run it lets through. Every
+time (at most 7 days) with a reason. It needs the full commit id (40 or 64
+hex characters) and covers exactly that commit; it is audited, and so is each run it lets through. Every
 owner and administrator is notified in-app when it is created and each time
 it is used, and so are channels subscribed to **CI Break-glass**. A burst of
 refused token exchanges raises **CI Token Refusals**.
@@ -196,7 +202,7 @@ CI jobs authenticate only with their OIDC identity. The former `runner` sensor
 type (a sensor API key stored in CI) was removed: such sensors and their keys
 were deleted on upgrade (migration `001146`) and new ones cannot be created.
 Delete any `API_KEY` secret left in your CI settings. **Require OIDC for CI**
-(top of **Settings > Scanning > CI/CD integration**, on for organizations created
+(on the **Trust and gate** tab, on for organizations created
 since it exists) also refuses the key of any one-shot (standalone) sensor
 (`403 ci-oidc-required`, audited).
 
@@ -204,7 +210,7 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 
 | Symptom | Cause |
 |---|---|
-| `The CI token was not accepted` | No trust configuration admits the job, a wrong audience, or a token used twice. Owners and admins see the reason under Settings > Audit log (`ci_run.token_refused`), except for tokens that did not verify |
+| `The CI token was not accepted` | No trust configuration admits the job, a wrong audience, or a token used twice. **Recent refused pipelines** on the **Trust and gate** tab lists each refused pipeline with the rule that refused it and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than the job's repository |
 | Every finding counts as new | The default branch was never scanned: run the pipeline on the default branch once |
 | `The CI token was not accepted` and `pipeline_identity` in the audit log | The token carries no repository/project id or no usable workflow path |

@@ -59,6 +59,7 @@ ci_run_tokens
 ci_runs
 ci_trust_configs
 ci_trust_owner_pins
+code_scan_settings
 collector_assets
 command_events
 command_logs
@@ -180,6 +181,7 @@ sensor_manifests
 sensor_pairings
 sensor_result_policies
 sensor_result_quarantine
+sensor_tool_settings
 sensors
 settings
 sla_policies

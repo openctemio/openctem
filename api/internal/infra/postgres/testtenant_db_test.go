@@ -56,3 +56,9 @@ func seedTestAsset(ctx context.Context, t *testing.T, db *sql.DB, tenantID share
 	// the asset goes with it through the tenant_id cascade.
 	return id
 }
+
+// uniqueTestHost is a host name no other test command names: commands on
+// one host are held back while one of them runs (command.AssignHostKeys).
+func uniqueTestHost() string {
+	return "h-" + shared.NewID().String() + ".example.test"
+}

@@ -16,6 +16,15 @@ import (
 type fakeGitLab struct {
 	token  gitlabapi.TokenInfo
 	member bool
+	user   *gitlabapi.User
+}
+
+func (f *fakeGitLab) CurrentUser(context.Context) (*gitlabapi.User, error) {
+	if f.user != nil {
+		u := *f.user
+		return &u, nil
+	}
+	return &gitlabapi.User{ID: f.token.UserID, Username: "group_55_bot", Bot: true}, nil
 }
 
 func (f *fakeGitLab) Token(context.Context) (*gitlabapi.TokenInfo, error) {
@@ -92,9 +101,14 @@ func TestConnectGitLabChecksTheTokenAndSealsIt(t *testing.T) {
 		"inactive":   func() { gl.token.Active = false },
 		"no api":     func() { gl.token.Scopes = []string{"read_api"} },
 		"not member": func() { gl.member = false },
+		// A person's own token: active, api scope, a direct member, but a
+		// person, not a group access token's bot.
+		"personal token": func() { gl.user = &gitlabapi.User{ID: 9, Username: "alice", Bot: false} },
+		"other user":     func() { gl.user = &gitlabapi.User{ID: 10, Username: "group_55_bot", Bot: true} },
 	} {
 		gl.token = gitlabapi.TokenInfo{Active: true, Scopes: []string{"api"}, UserID: 9}
 		gl.member = true
+		gl.user = nil
 		mutate()
 		if _, err := svc.ConnectGitLab(ctx, tenant, in, Actor{}); !errors.Is(err, ErrInvalidGitLabToken) {
 			t.Fatalf("%s: %v", name, err)
@@ -105,6 +119,7 @@ func TestConnectGitLabChecksTheTokenAndSealsIt(t *testing.T) {
 	}
 	gl.token = gitlabapi.TokenInfo{Active: true, Scopes: []string{"api"}, UserID: 9, ExpiresAt: "2027-01-31"}
 	gl.member = true
+	gl.user = nil // the loop above ends on a random case (map order)
 	c, err := svc.ConnectGitLab(ctx, tenant, in, Actor{})
 	if err != nil {
 		t.Fatalf("connect: %v", err)

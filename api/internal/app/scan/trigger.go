@@ -781,6 +781,11 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 		return err
 	}
 	cmd.DispatchGate = scanDispatchGate(sc, run)
+	if stepRun != nil {
+		// The step settles with the last command carrying its id (a
+		// follow-up of unfinished targets included).
+		cmd.SetStepRunID(stepRun.ID)
+	}
 
 	// usePlatform was decided before the run was created (decideSensorRouting).
 	if usePlatform {
@@ -814,6 +819,15 @@ func (s *Service) scannerPayload(
 	scannerConfig map[string]any, runContext map[string]any,
 	targets []string, templates []EmbeddedTemplate,
 ) map[string]any {
+	// A "targets" list in the scan's settings (a quick scan mirrors its
+	// typed targets there) becomes the job's gated targets: as typed it
+	// would carry what the gate left out, excluded names and whole ranges
+	// included.
+	if len(targets) > 0 {
+		scannerConfig = batchScannerConfig(scannerConfig, targets)
+	} else {
+		scannerConfig = withoutTargetKeys(scannerConfig)
+	}
 	payloadMap := map[string]any{
 		"run_id":             run.ID.String(),
 		"scan_id":            sc.ID.String(),
@@ -848,6 +862,26 @@ func (s *Service) scannerPayload(
 		payloadMap["custom_templates"] = templates
 	}
 	return payloadMap
+}
+
+// withoutTargetKeys returns cfg without "target" and "targets" (a copy;
+// cfg is not changed). nil stays nil.
+func withoutTargetKeys(cfg map[string]any) map[string]any {
+	if cfg == nil {
+		return nil
+	}
+	_, a := cfg["targets"]
+	_, b := cfg["target"]
+	if !a && !b {
+		return cfg
+	}
+	out := make(map[string]any, len(cfg))
+	for k, v := range cfg {
+		if k != "targets" && k != "target" {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // customTemplatesForScan resolves the scan's custom templates once per run.
@@ -1364,6 +1398,9 @@ func recordResolvedTargets(sc *scan.Scan, r *resolvedTargets, runContext map[str
 	runContext["resolved_target_count"] = len(r.Targets)
 	if r.Excluded > 0 {
 		runContext["excluded_target_count"] = r.Excluded
+	}
+	if len(r.ExcludedDetail) > 0 {
+		runContext[RunContextKeyExcludedTargets] = r.ExcludedDetail
 	}
 	if r.Archived > 0 {
 		runContext["archived_target_count"] = r.Archived

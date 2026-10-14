@@ -87,6 +87,55 @@ describe('why a queued task waits', () => {
     )
     expect(placementSummary({ queued: true, evaluated: 0 }, t)).toMatch(/no sensor/)
   })
+
+  it('says which task holds its hosts instead of "should start shortly"', () => {
+    const t = enTranslate
+    const base = { queued: true, job_reasons: ['host_busy'], eligible: 1, busy: 0, evaluated: 1 }
+    expect(
+      placementSummary(
+        {
+          ...base,
+          host_wait: {
+            hosts_held: 10,
+            hosts_total: 10,
+            holders: [{ tool: 'httpx', step_key: 'http', run_id: 'r2', task_id: 'c9' }],
+          },
+        },
+        t
+      )
+    ).toBe(
+      'Waiting: 10 of its 10 hosts are being scanned by httpx (step http). It starts when those hosts are free.'
+    )
+    // A holder in a run the caller cannot read: the tool only.
+    expect(
+      placementSummary(
+        { ...base, host_wait: { hosts_held: 3, hosts_total: 8, holders: [{ tool: 'naabu' }] } },
+        t
+      )
+    ).toMatch(/3 of its 8 hosts are being scanned by naabu\./)
+    expect(
+      placementSummary({ ...base, host_wait: { hosts_held: 1, hosts_total: 2, holders: [] } }, t)
+    ).toMatch(/by another task/)
+    expect(placementSummary({ ...base, host_wait: undefined }, t)).not.toMatch(/shortly/)
+  })
+
+  it('links the run that holds its hosts', async () => {
+    getMock.mockResolvedValue({
+      queued: true,
+      job_reasons: ['host_busy'],
+      blocking: [],
+      host_wait: {
+        hosts_held: 2,
+        hosts_total: 2,
+        holders: [{ tool: 'httpx', step_key: 'http', run_id: 'r2', task_id: 'c9' }],
+      },
+    })
+    fresh(<TaskPlacementPanel runId="r1" taskId="t1" />)
+    expect(await screen.findByRole('link', { name: 'Open the run scanning them' })).toHaveAttribute(
+      'href',
+      '/scans/runs?run=r2'
+    )
+  })
 })
 
 describe('a failed step explains its code', () => {

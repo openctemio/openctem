@@ -52,4 +52,40 @@ func TestJobReasons(t *testing.T) {
 	if got := jobReasons(commanddom.PlacementJob{NotExpired: true, Due: true, HostFree: true}); len(got) != 0 {
 		t.Fatalf("ready job: %v", got)
 	}
+	// The sensor's own per-host limit, only while the platform sees the
+	// hosts free (else host_busy says it).
+	got = jobReasons(commanddom.PlacementJob{NotExpired: true, Due: true, HostFree: true, SensorHostsBusy: true})
+	if !slices.Equal(got, []string{commanddom.PlacementSensorHostsBusy}) {
+		t.Fatalf("sensor hosts busy: %v", got)
+	}
+	got = jobReasons(commanddom.PlacementJob{NotExpired: true, Due: true, HostFree: false, SensorHostsBusy: true})
+	if !slices.Equal(got, []string{commanddom.PlacementHostBusy}) {
+		t.Fatalf("both: %v", got)
+	}
+}
+
+func TestHostConflicts(t *testing.T) {
+	if got := hostConflicts("203.0.113.7"); !slices.Contains(got, "net:203.0.113.0/24") || !slices.Contains(got, "203.0.113.7") {
+		t.Fatalf("address: %v", got)
+	}
+	if got := hostConflicts("10.0.0.5#net-1"); !slices.Contains(got, "net:10.0.0.0/24#net-1") {
+		t.Fatalf("scoped address: %v", got)
+	}
+	if got := hostConflicts("a.example.com"); !slices.Equal(got, []string{"a.example.com"}) {
+		t.Fatalf("name: %v", got)
+	}
+	if got := hostConflicts("net:198.51.100.0/24"); !slices.Contains(got, "in:198.51.100.0/24") {
+		t.Fatalf("range: %v", got)
+	}
+}
+
+func TestIsHostsBusyRelease(t *testing.T) {
+	for _, r := range []string{"hosts_busy", "its hosts are busy on this sensor", " Its hosts are busy on this sensor "} {
+		if !commanddom.IsHostsBusyRelease(r) {
+			t.Fatalf("%q not recognized", r)
+		}
+	}
+	if commanddom.IsHostsBusyRelease("no free slot") {
+		t.Fatal("another reason taken for hosts busy")
+	}
 }

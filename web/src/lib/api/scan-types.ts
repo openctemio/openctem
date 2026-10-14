@@ -278,6 +278,12 @@ export interface CreateScanConfigRequest {
 export interface UpdateScanConfigRequest {
   name?: string
   description?: string
+  /** Omitted = unchanged; given = the direct targets (with asset_ids) are replaced. */
+  targets?: string[]
+  /** Inventory assets to scan, named by the API; given = direct targets replaced. */
+  asset_ids?: string[]
+  /** Omitted = unchanged; given = the scan's asset groups ([] = none). */
+  asset_group_ids?: string[]
   /** Omitted = unchanged; `{}` resets every option to its default. */
   target_options?: ScanTargetOptions
   /** Omitted = unchanged. */
@@ -437,6 +443,13 @@ export interface RunDispatch {
   sensor_routing?: 'tenant' | 'platform'
   /** What each `*.x` or inventory-mode CIDR target added when the run started (RFC-068). */
   target_expansion?: RunTargetExpansion[]
+  /** Targets the organization's exclusions left out, with the matching rules (first 50). */
+  excluded?: {
+    target?: string
+    rules?: { kind?: string; id?: string; pattern?: string }[]
+    cut?: boolean
+    removed_addresses?: number
+  }[]
 }
 
 /**
