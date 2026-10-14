@@ -34,6 +34,16 @@ describe('property schema', () => {
     expect(propertyLabel('favorite_color')).toBe('Favorite color')
   })
 
+  it('names the HTTP response facts for what they are, not the machine they run on', () => {
+    // `server` is the HTTP Server response header; "Server" alone read as
+    // the host's owner on a subdomain (research 129, A7).
+    expect(propertyLabel('server')).toBe('HTTP server header')
+    expect(propertyLabel('web_server')).toBe('Web server')
+    expect(propertyLabel(canonicalPropertyKey('web_server'))).toBe('HTTP server header')
+    expect(propertyLabel('server', 'vi')).toBe('Header Server (HTTP)')
+    expect(propertyLabel('title')).toBe('Page title')
+  })
+
   it('every attribute of every type has both labels', () => {
     for (const [type, keys] of Object.entries(ASSET_TYPE_PROPERTIES)) {
       for (const k of keys) {
