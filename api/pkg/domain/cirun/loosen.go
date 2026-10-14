@@ -28,6 +28,9 @@ func Loosens(before, after GatePolicy) []string {
 	if before.EPSSThreshold != nil && (after.EPSSThreshold == nil || *after.EPSSThreshold > *before.EPSSThreshold) {
 		out = append(out, "epss_threshold")
 	}
+	if !before.FixableOnly && after.FixableOnly {
+		out = append(out, "fixable_only")
+	}
 	if modesLoosen(before.Modes, after.Modes) {
 		out = append(out, "modes")
 	}
