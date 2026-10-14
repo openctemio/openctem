@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import en from '@/lib/i18n/dictionaries/en/scans.json'
 import vi from '@/lib/i18n/dictionaries/vi/scans.json'
-import { REASON_LABEL } from '../lib/ci'
+import { REASON_LABEL, REFUSAL_CODES } from '../lib/ci'
 import { CAPABILITIES, COVERAGE_STATE_META, SOURCE_KIND_LABEL } from '../lib/coverage'
 import {
   FRESHNESS_LABEL,
@@ -42,6 +42,8 @@ describe('CI/CD i18n keys', () => {
       ...Object.keys(GATE_LABEL).map((k) => `scans.ci.gate.${k}`),
       ...Object.keys(MODE_LABEL).map((k) => `scans.ci.mode.${k}`),
       ...Object.keys(REASON_LABEL).map((k) => `scans.ci.reason.${k}`),
+      ...REFUSAL_CODES.flatMap((c) => [`scans.ci.refusal.${c}`, `scans.ci.refusal.${c}Fix`]),
+      ...['provider', 'organization', 'snippet', 'waiting'].map((s) => `scans.ci.setup.step.${s}`),
       ...Object.keys(HEALTH_REASON_LABEL).map((k) => `scans.ci.health.${k}`),
       ...PIPELINE_STATUSES.flatMap((s) => [
         `scans.ci.status.${s}.label`,
