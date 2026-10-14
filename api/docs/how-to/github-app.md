@@ -41,12 +41,17 @@ document.getElementById("manifest").value = JSON.stringify({
   "setup_url": "CONSOLE/ci-cd/github-app/callback",
   "setup_on_update": true,
   "request_oauth_on_install": true,
-  "default_permissions": { "checks": "write", "pull_requests": "write", "metadata": "read" },
+  "default_permissions": { "checks": "write", "pull_requests": "write", "metadata": "read", "members": "read" },
   "default_events": []
 });
 </script>
 ```
 
+- `members: read` lets OpenCTEM check, during the install, that the person
+  binding the installation is an owner of the GitHub organization. An app
+  created without it binds no organization installation; add it under the
+  app's **Permissions & events > Organization permissions > Members: Read**,
+  and each organization accepts the new permission.
 - `public: true` lets other GitHub organizations install it (the hosted
   service). A deployment used by one GitHub organization can set `false`.
 - For a GitHub Enterprise Server, post to
@@ -97,8 +102,17 @@ which variables to set.
 An owner or administrator of the OpenCTEM organization opens **CI/CD > Trust
 and gate > Pull request feedback > Install on GitHub**, picks the GitHub
 organization and repositories, and authorizes. OpenCTEM binds the
-installation only when the person's own GitHub authorization reaches it and
-the install link was theirs (valid 15 minutes). An installation is bound to
+installation only when:
+
+- the person's own GitHub authorization shows they own the installation's
+  account: an owner (admin) of the GitHub organization, or the GitHub user
+  account itself. A member who can merely see the installation cannot bind
+  it;
+- the install link was theirs, is used once and is at most 15 minutes old;
+- they confirmed their identity again (second factor or password) within
+  the last 10 minutes.
+
+The GitHub user token obtained for the check is revoked right after it. An installation is bound to
 one OpenCTEM organization. Removing it on GitHub, or suspending it, stops
 OpenCTEM from using it at once (webhook).
 
