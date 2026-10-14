@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CIRunsView } from '../components/ci-runs-view'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { CITrustSettings } from '../components/ci-trust-settings'
 import { ciRunsURL } from '../api/use-ci'
 import {
@@ -30,6 +31,7 @@ const mockSaveSettings = vi.fn()
 let ciSettings: { require_oidc: boolean } | undefined = { require_oidc: true }
 let runs: unknown[] = []
 let runDetail: unknown
+let runError: unknown
 let trust: unknown[] = []
 let perms: string[] = []
 let lastRunFilters: unknown
@@ -45,7 +47,10 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
     lastRunFilters = f
     return { data: { data: runs, total_pages: 1 }, isLoading: false, mutate: vi.fn() }
   },
-  useCIRun: (id: string | null) => ({ data: id ? runDetail : undefined }),
+  useCIRun: (id: string | null) => ({
+    data: id ? runDetail : undefined,
+    error: id ? runError : undefined,
+  }),
   useTrustConfigs: () => ({ data: { data: trust }, isLoading: false, mutate: vi.fn() }),
   useCISettings: () => ({ data: ciSettings, mutate: vi.fn() }),
   useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
@@ -219,16 +224,38 @@ describe('CIRunsView', () => {
   beforeEach(() => {
     runs = []
     runDetail = undefined
+    runError = undefined
     window.history.replaceState({}, '', '/')
   })
 
+  it("a run out of the caller's access says so instead of a bare load error", () => {
+    runError = new ApiClientError('CI run not found', 'NOT_FOUND', 404)
+    window.history.replaceState({}, '', '/?run=r9')
+    render(<CIRunsView />)
+    expect(screen.getByText('This run is not available to you')).toBeInTheDocument()
+    expect(screen.queryByText(/failed to load/i)).not.toBeInTheDocument()
+  })
+
   it('explains how to start when there is no run', () => {
+    perms = ['scans:ci:write']
     render(<CIRunsView />)
     expect(screen.getByText('No CI runs yet')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /set up ci trust/i })).toHaveAttribute(
-      'href',
-      '/ci-cd?tab=setup'
-    )
+    expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
+    perms = []
+  })
+
+  it('tells a reader the runs they see follow their access, not that none exist', () => {
+    perms = []
+    render(<CIRunsView />)
+    expect(screen.getByText('No CI runs you can see')).toBeInTheDocument()
+    expect(screen.queryByText('No CI runs yet')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /connect a pipeline/i })).not.toBeInTheDocument()
+  })
+
+  it('says no run matches when a verdict filter hides them', () => {
+    window.history.replaceState({}, '', '/?verdict=fail')
+    render(<CIRunsView />)
+    expect(screen.getByText('No runs with this verdict')).toBeInTheDocument()
   })
 
   it('lists runs with their verdict and opens the reasons', async () => {
@@ -402,8 +429,23 @@ describe('CIRunsView', () => {
   })
 })
 
+describe('CITrustSettings sections', () => {
+  it('opens the section the URL names and keeps the chosen one in the URL', async () => {
+    window.history.replaceState({}, '', '/?section=gate')
+    render(<CITrustSettings />)
+    expect(screen.getByRole('tab', { name: 'Gate policy' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Pull request feedback' }))
+    expect(window.location.search).toContain('section=feedback')
+    window.history.replaceState({}, '', '/?section=bogus')
+  })
+})
+
 describe('CITrustSettings', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/')
     trust = []
     perms = []
     gatePolicies = []
