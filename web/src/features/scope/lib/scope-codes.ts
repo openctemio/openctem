@@ -55,6 +55,21 @@ export const SCOPE_REFUSAL_TEXT = {
     message:
       'This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.',
   },
+  guardrailed: {
+    label: 'Held by a platform guardrail',
+    message:
+      'No scope entry covers this asset and a platform guardrail keeps it passive (shared or unknown network, shared hosting, or a name outside your domains). Add its exact scope entry to scan it.',
+  },
+  low_impact: {
+    label: 'Low-impact checks only',
+    message:
+      'No scope entry covers this asset, so it gets low-impact checks only, and this job goes beyond them. Add it to scope for the full scan.',
+  },
+  web_ports_only: {
+    label: 'Web ports only',
+    message:
+      'An address this name resolves to is not in scope, so a port scan of the name reaches only the web ports. Add the address to scope for a full port scan.',
+  },
   no_entry: {
     label: 'Not in scope',
     message: 'No scope entry, seed or verified domain covers this target.',

@@ -281,5 +281,6 @@
   "assets.properties.allTitle": "All properties",
   "assets.properties.show": "Show",
   "assets.properties.hide": "Hide",
-  "assets.keyFacts.resolvesTo": "Resolves to"
+  "assets.keyFacts.resolvesTo": "Resolves to",
+  "assets.attribution.scan.guardrailed": "Scans keep this asset passive: a platform guardrail holds it (a shared, CDN or cloud network, an unknown network, shared hosting, or a name outside your domains). Add it to Scoping › Scope if it is yours."
 }
