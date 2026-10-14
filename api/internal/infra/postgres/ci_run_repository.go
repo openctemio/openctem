@@ -452,22 +452,57 @@ func (r *CIRunRepository) ListRuns(ctx context.Context, tenantID shared.ID, f ci
 	return out, total, rows.Err()
 }
 
+// ReserveRunReport takes a report slot of a running run in one statement,
+// so concurrent uploads (or the files of one ZIP) cannot pass the cap or
+// land after the verdict.
+func (r *CIRunRepository) ReserveRunReport(ctx context.Context, tenantID, runID shared.ID) error {
+	var n int
+	err := r.db.QueryRowContext(ctx, `UPDATE ci_runs SET reports_count = reports_count + 1, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND reports_count < $3
+		RETURNING reports_count`, tenantID.String(), runID.String(), cirun.MaxRunReports).Scan(&n)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var status string
+	if err := r.db.QueryRowContext(ctx, `SELECT status FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), runID.String()).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return cirun.ErrRunNotFound
+		}
+		return err
+	}
+	if status != string(cirun.StatusRunning) {
+		return cirun.ErrRunEvaluated
+	}
+	return cirun.ErrRunReportCap
+}
+
 // RecordRunReport adds a report's sighted fingerprints to the run, up to
-// MaxRunFindings, and counts the report.
+// MaxRunFindings. The report's slot was reserved (ReserveRunReport).
 func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID shared.ID, fingerprints []string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// Lock the run row so concurrent reports count and cap correctly.
-	var current int
-	if err := tx.QueryRowContext(ctx, `SELECT findings_count FROM ci_runs WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
-		tenantID.String(), runID.String()).Scan(&current); err != nil {
+	// Lock the run row so concurrent reports cap correctly and a verdict
+	// stored meanwhile is seen (SaveVerdict checks findings_count).
+	var (
+		current int
+		status  string
+	)
+	if err := tx.QueryRowContext(ctx, `SELECT findings_count, status FROM ci_runs WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+		tenantID.String(), runID.String()).Scan(&current, &status); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return cirun.ErrRunNotFound
 		}
 		return err
+	}
+	if status != string(cirun.StatusRunning) {
+		return cirun.ErrRunEvaluated
 	}
 	if room := cirun.MaxRunFindings - current; len(fingerprints) > room {
 		fingerprints = fingerprints[:max(room, 0)]
@@ -482,7 +517,7 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 		}
 		added, _ = res.RowsAffected()
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE ci_runs SET reports_count = reports_count + 1,
+	if _, err := tx.ExecContext(ctx, `UPDATE ci_runs SET
 		findings_count = findings_count + $3, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`,
 		tenantID.String(), runID.String(), added); err != nil {
 		return err
@@ -542,24 +577,27 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 
 // SaveVerdict stores the run's verdict. The first verdict is final: a run
 // that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
-func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error {
+func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
 		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
-		WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
-		tenantID.String(), runID.String(), verdict, detail, at)
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6`,
+		tenantID.String(), runID.String(), verdict, detail, at, expectFindings)
 	if err != nil {
 		return err
 	}
 	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		var exists bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ci_runs WHERE tenant_id = $1 AND id = $2)`,
-			tenantID.String(), runID.String()).Scan(&exists); err != nil {
+		var status string
+		if err := r.db.QueryRowContext(ctx, `SELECT status FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+			tenantID.String(), runID.String()).Scan(&status); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return cirun.ErrRunNotFound
+			}
 			return err
 		}
-		if exists {
+		if status != string(cirun.StatusRunning) {
 			return cirun.ErrRunEvaluated
 		}
-		return cirun.ErrRunNotFound
+		return cirun.ErrRunChanged
 	}
 	return nil
 }
