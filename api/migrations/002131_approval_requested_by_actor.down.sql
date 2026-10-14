@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS ux_finding_status_approvals_actor_pending;
+ALTER TABLE finding_status_approvals DROP CONSTRAINT IF EXISTS chk_finding_status_approvals_actor;
+ALTER TABLE finding_status_approvals DROP COLUMN IF EXISTS requested_by_actor;
