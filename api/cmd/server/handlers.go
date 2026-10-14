@@ -1414,6 +1414,13 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	if svc.DataScope != nil {
 		ds = svc.DataScope
 	}
+	if svc.Suppression != nil {
+		var mg cirunapp.ModuleGuard
+		if svc.Module != nil {
+			mg = svc.Module
+		}
+		ciSvc.SetSuppressionRules(svc.Suppression, mg)
+	}
 	if repos.RelationshipSuggestion != nil {
 		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
 	}

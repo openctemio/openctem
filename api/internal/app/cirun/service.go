@@ -135,6 +135,8 @@ type Service struct {
 	lastPurge time.Time
 	images    ImageLinker
 	stepUp    shared.RecentAuthGate
+	rules     SuppressionRules
+	modules   ModuleGuard
 }
 
 // Deps are the service's collaborators.

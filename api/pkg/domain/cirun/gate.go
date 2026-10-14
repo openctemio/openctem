@@ -308,20 +308,44 @@ type GateVerdict struct {
 	Override  *GateOverrideView `json:"override,omitempty"`
 }
 
-// honored reports whether a person accepted the finding's risk, marked it a
-// false positive or a duplicate, or a suppression rule covers it. Expired
-// acceptance is not honored.
-func honored(f RunFinding, now time.Time) bool {
-	if f.Suppressed {
-		return true
-	}
+// Decisions a finding can carry that the gate honors (KnownFinding.Decision).
+const (
+	DecisionFalsePositive = "false_positive"
+	DecisionDuplicate     = "duplicate"
+	DecisionAccepted      = "accepted"
+	DecisionSuppressed    = "suppressed"
+)
+
+// Decision is the decision the gate honors on f at now: a person marked it a
+// false positive or a duplicate, accepted its risk (until the acceptance
+// expires), or an approved, unexpired suppression rule covers it. "" when
+// none: the finding counts.
+func Decision(f RunFinding, now time.Time) string {
 	switch f.Status {
-	case "false_positive", "duplicate":
-		return true
-	case "accepted":
-		return f.AcceptanceExpiresAt == nil || f.AcceptanceExpiresAt.After(now)
+	case DecisionFalsePositive, DecisionDuplicate:
+		return f.Status
+	case DecisionAccepted:
+		if f.AcceptanceExpiresAt == nil || f.AcceptanceExpiresAt.After(now) {
+			return DecisionAccepted
+		}
 	}
-	return false
+	if f.Suppressed {
+		return DecisionSuppressed
+	}
+	return ""
+}
+
+func honored(f RunFinding, now time.Time) bool { return Decision(f, now) != "" }
+
+// KnownFinding tells a CI job that one of the results it uploaded carries a
+// decision, so the job leaves it out of its own output (console, SARIF,
+// merge request report). Index is the result's position in the uploaded
+// report. The job learns nothing about findings it did not report.
+type KnownFinding struct {
+	Index     int        `json:"index"`
+	Decision  string     `json:"decision"`
+	FindingID string     `json:"finding_id"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // Evaluate decides the verdict. Fail closed: scan failures fail; without a

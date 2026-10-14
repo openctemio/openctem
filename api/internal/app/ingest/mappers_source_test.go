@@ -50,6 +50,7 @@ func TestDetectFindingSource_ByToolName(t *testing.T) {
 
 		// Unchanged behavior, asserted so the additions cannot regress it.
 		{"semgrep", vulnerability.FindingSourceSAST},
+		{"opengrep", vulnerability.FindingSourceSAST},
 		{"codeql", vulnerability.FindingSourceSAST},
 		{"snyk", vulnerability.FindingSourceSCA},
 		{"nuclei", vulnerability.FindingSourceDAST},
