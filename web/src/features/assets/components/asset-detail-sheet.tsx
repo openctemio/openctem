@@ -32,6 +32,7 @@ import { AssetIdentitySections } from './asset-identity-sections'
 import { AssetAttributionSection } from './asset-attribution-section'
 import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
 import { AssetFreshnessSection } from './asset-freshness-section'
+import { AssetCoverageSection } from './asset-coverage-section'
 import { AssetTimeline } from './asset-timeline'
 import { useTranslation } from '@/context/i18n-provider'
 import { RELATED_PREVIEW_ROWS, RelatedAssetsList } from './relationships/related-assets-list'
@@ -566,6 +567,7 @@ export function AssetDetailSheet<T extends Asset>({
             />
             <AssetAttributeSourcesSection assetId={asset.id} />
             <AssetFreshnessSection assetId={asset.id} />
+            <AssetCoverageSection assetId={asset.id} />
             <TimelineSection
               firstSeen={asset.firstSeen}
               lastSeen={asset.lastSeen}

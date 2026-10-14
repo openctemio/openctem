@@ -27,6 +27,7 @@ import { DetailSections, PageHeader } from '@/features/shared'
 import {
   AssetAttributeSourcesSection,
   AssetFreshnessSection,
+  AssetCoverageSection,
   AssetAttributionSection,
   AssetIdentitySections,
   AssetTimeline,
@@ -216,6 +217,7 @@ export default function AssetDetailPage() {
             />
             <AssetAttributeSourcesSection assetId={asset.id} />
             <AssetFreshnessSection assetId={asset.id} />
+            <AssetCoverageSection assetId={asset.id} />
             <AssetIdentitySections
               assetId={asset.id}
               assetName={asset.name}

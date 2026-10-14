@@ -16,7 +16,7 @@ type Querier interface {
 	Query(ctx context.Context, name string, t dnsprobe.Type) (dnsprobe.Answer, error)
 }
 
-// Outcome of one name's dangling check, stored in easm_dns_check_state.
+// Outcome of one name's dangling check, stored as the outcome of its asset_coverage row.
 const (
 	OutcomeOK            = "ok"
 	OutcomeDanglingCNAME = "dangling_cname"

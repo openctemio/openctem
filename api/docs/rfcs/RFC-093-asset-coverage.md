@@ -101,12 +101,15 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 
 | Step | Change | Status |
 |---|---|---|
-| P0-1 | HTTP probe results create web origin assets | PR |
-| P0-2 | Seed targets of a stage plan name their asset | PR |
-| P0-3 | Coverage policy in the registry and this RFC | this PR |
-| P0-4 | `asset_coverage` ledger; replaces two half-ledgers | planned |
+| P0-1 | HTTP probe results create web origin assets | #2127 |
+| P0-2 | Seed targets of a stage plan name their asset | #2128 |
+| P0-3 | Coverage policy in the registry and this RFC | #2129 |
+| P0-4 | `asset_coverage` ledger; replaces two half-ledgers | #2130 |
+| P0-5a | The ledger follows the policy (reconcile loop, preconditions) and the explanation endpoint `GET /assets/{id}/coverage` | #2132 |
+| P0-5b | Planner: due pairs through the scope gate into one coverage run per capability, settlement from runs, daily budget, Strict off | #2134 |
+| P0-5c | Gap detection: gaps, output drops, repeated failures to administrators and integrations; operator aggregates | #2135 |
 | P0-5 | Due marking at ingest, planner, gap detectors, explanation endpoint | planned |
-| P0-6 | Tenant setting for automatic coverage (default on; Strict off), audited | planned |
+| P0-6 | Tenant setting for automatic coverage (default on; Strict off), audited | PR |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
 | P2 | Information-gathering sources, vantage rows, authenticated web coverage, targeted re-checks, ledger history | designed |
 | P3 | Planner emits work-pool items; workflows plan from the ledger | designed |
