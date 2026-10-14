@@ -971,6 +971,16 @@ function ConfigurationsTab() {
           setConfigToDelete(config)
           setDeleteConfirmOpen(true)
         }}
+        onEdit={(config) => {
+          setSelectedConfig(null)
+          setConfigToEdit(config)
+          setEditDialogOpen(true)
+        }}
+        onClone={(config) => {
+          setSelectedConfig(null)
+          setConfigToClone(config)
+          setCloneDialogOpen(true)
+        }}
       />
 
       {/* Bulk delete confirmation: deleting configurations cannot be undone. */}
