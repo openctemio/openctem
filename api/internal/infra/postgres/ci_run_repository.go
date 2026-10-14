@@ -543,7 +543,8 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 // that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
+		evaluated_at = $5, updated_at = NOW(),`+decorationQueued+`
+		WHERE tenant_id = $1 AND id = $2 AND status = 'running'`,
 		tenantID.String(), runID.String(), verdict, detail, at)
 	if err != nil {
 		return err
@@ -797,14 +798,14 @@ func (r *CIRunRepository) RevokeOverride(ctx context.Context, tenantID, id, by s
 	return requireOneRow(res, cirun.ErrOverrideNotFound)
 }
 
-// ActiveOverride returns the newest active override covering the commit.
+// ActiveOverride returns the newest active override for exactly this commit.
 func (r *CIRunRepository) ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*cirun.GateOverride, error) {
 	if sha == "" {
 		return nil, nil
 	}
 	o, err := scanCIOverride(r.db.QueryRowContext(ctx, `SELECT `+ciOverrideColumns+` FROM ci_gate_overrides
 		WHERE tenant_id = $1 AND repository_asset_id = $2 AND revoked_at IS NULL AND expires_at > $3
-		  AND $4 LIKE commit_sha || '%'
+		  AND commit_sha = $4
 		ORDER BY created_at DESC LIMIT 1`, tenantID.String(), assetID.String(), now, strings.ToLower(sha)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -874,26 +875,27 @@ func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, a
 
 // ------------------------------------------------------------ decoration ---
 
-// MarkDecorationPending queues a GitHub or GitLab run's verdict for posting
-// to the code host (RFC-077 phase C). Other providers have nothing to post.
-func (r *CIRunRepository) MarkDecorationPending(ctx context.Context, tenantID, runID shared.ID) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET decoration_state = 'pending', decoration_attempts = 0,
-			decoration_detail = '', decoration_updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2 AND provider IN ('github', 'gitlab') AND status = 'evaluated'`,
-		tenantID.String(), runID.String())
-	return err
-}
+// decorationQueued is the SET clause that queues a GitHub or GitLab run's
+// verdict for posting to the code host (RFC-077 phase C), in the same
+// statement that stores the verdict, so no later step can lose it. Other
+// providers have nothing to post.
+const decorationQueued = `
+		decoration_state = CASE WHEN provider IN ('github', 'gitlab') THEN 'pending' ELSE decoration_state END,
+		decoration_attempts = 0, decoration_detail = '', decoration_updated_at = NOW()`
 
 // ClaimDecorations takes up to limit runs waiting to be posted, across
-// tenants (a system job; each run carries its tenant). A claim older than
-// ten minutes (a crashed replica) is taken again; runs evaluated more than a
-// day ago are no longer posted.
+// tenants (a system job; each run carries its tenant). A run queued again
+// after a failed attempt waits 30 seconds doubling with each attempt, at
+// most 30 minutes (decoration_updated_at is when the last attempt
+// finished). A claim older than ten minutes (a crashed replica) is taken
+// again; runs evaluated more than a day ago are no longer posted.
 func (r *CIRunRepository) ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error) {
 	rows, err := r.db.QueryContext(ctx, `UPDATE ci_runs SET decoration_state = 'posting',
 			decoration_attempts = decoration_attempts + 1, decoration_updated_at = NOW()
 		WHERE id IN (
 			SELECT id FROM ci_runs
-			WHERE (decoration_state = 'pending'
+			WHERE ((decoration_state = 'pending' AND (decoration_attempts = 0 OR decoration_updated_at <= NOW()
+			        - LEAST(INTERVAL '30 seconds' * power(2, decoration_attempts - 1), INTERVAL '30 minutes')))
 			    OR (decoration_state = 'posting' AND decoration_updated_at < NOW() - INTERVAL '10 minutes'))
 			  AND evaluated_at > NOW() - INTERVAL '1 day'
 			ORDER BY decoration_updated_at
@@ -944,6 +946,44 @@ func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, asset
 		return false, err
 	}
 	return verdict.String == cirun.VerdictPass, nil
+}
+
+// CommitVerdicts returns the latest evaluated verdict of each pipeline on
+// any of the commits of the repository (tenant-scoped). A run without a
+// pipeline counts on its own.
+func (r *CIRunRepository) CommitVerdicts(ctx context.Context, tenantID, assetID shared.ID, shas []string) ([]cirun.CommitVerdict, error) {
+	clean := make([]string, 0, len(shas))
+	for _, s := range shas {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			clean = append(clean, s)
+		}
+	}
+	if len(clean) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT ON (COALESCE(pipeline_id::text, id::text))
+			id, verdict, COALESCE((verdict_detail->>'would_fail')::boolean, false)
+		FROM ci_runs
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND lower(commit_sha) = ANY($3)
+		  AND status = 'evaluated' AND verdict IS NOT NULL
+		ORDER BY COALESCE(pipeline_id::text, id::text), evaluated_at DESC`,
+		tenantID.String(), assetID.String(), pq.Array(clean))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []cirun.CommitVerdict
+	for rows.Next() {
+		var id, verdict string
+		var v cirun.CommitVerdict
+		if err := rows.Scan(&id, &verdict, &v.WouldFail); err != nil {
+			return nil, err
+		}
+		v.RunID, _ = shared.IDFromString(id)
+		v.Verdict = verdict
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 
 // AssetsWithImageDigest returns up to limit of the tenant's assets whose

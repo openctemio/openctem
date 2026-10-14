@@ -138,6 +138,34 @@ func (c Claims) IsForkEvent() bool {
 	return forkEvents[c.Event]
 }
 
+// IsDefaultBranchRun reports whether a job counts as a run of the
+// repository's default branch: a push-style run (no pull request) on that
+// branch, never a fork event. A fork event (pull_request_target,
+// workflow_run, ...) carries the base branch's ref but runs code the fork
+// chose, so its results must not become default-branch exposure, its verdict
+// must not stand for the default branch, and no check goes on the base commit.
+func IsDefaultBranchRun(c Claims, defaultBranch string) bool {
+	return c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch && !c.IsForkEvent()
+}
+
+// ReportBranchName is the branch a run's findings are recorded on. A fork
+// event's branch claim names the base branch (or a branch of the fork that
+// may share a name with one of the repository's), so its findings go to a
+// branch of their own that never counts as exposure: they stay branch-only
+// until a run of a real branch sees them.
+func ReportBranchName(branch, event, pullRequest string, fork bool) string {
+	if !fork {
+		return branch
+	}
+	if pullRequest != "" {
+		return "fork/pr-" + pullRequest
+	}
+	if event == "" {
+		event = "event"
+	}
+	return "fork/" + event
+}
+
 // Refusal is why a trust configuration did not admit a job. Code is stable
 // (audit metadata, tests); the caller never sees it.
 type Refusal struct {
@@ -163,6 +191,9 @@ const (
 	RefuseOrganization = "organization_mismatch"
 	// RefuseSSHRerun: a CircleCI job re-run with SSH access.
 	RefuseSSHRerun = "ssh_rerun"
+	// RefuseWorkflow: the job runs a pipeline definition the workflow_refs
+	// rule does not list (or the token names none).
+	RefuseWorkflow = "workflow_not_allowed"
 )
 
 func refuse(code, format string, a ...any) *Refusal {
@@ -205,7 +236,41 @@ func (r Rules) Admit(c Claims) *Refusal {
 	if r.RequireProtectedRef && !r.protectedRef(c) {
 		return refuse(RefuseRefNotProtected, "ref %q is not protected", c.Ref)
 	}
+	if len(r.WorkflowRefs) > 0 {
+		def := c.WorkflowDefinition()
+		if def == "" {
+			return refuse(RefuseWorkflow, "the token does not name the pipeline definition")
+		}
+		if !slices.ContainsFunc(r.WorkflowRefs, func(p string) bool { return workflowRefMatch(p, def) }) {
+			return refuse(RefuseWorkflow, "pipeline definition %q is not listed", def)
+		}
+	}
 	return nil
+}
+
+// WorkflowDefinition is the pipeline definition the job runs, as the
+// workflow_refs rule matches it: GitHub job_workflow_ref (the reusable
+// workflow the job calls, or the workflow itself), GitLab
+// ci_config_ref_uri. Empty for providers whose token does not name it.
+func (c Claims) WorkflowDefinition() string {
+	switch c.Provider {
+	case ProviderGitHub:
+		return strings.TrimSpace(c.JobWorkflowRef)
+	case ProviderGitLab:
+		return strings.TrimSpace(c.Workflow)
+	}
+	return ""
+}
+
+// workflowRefMatch matches a workflow_refs entry: the path exactly (case
+// does not matter, as for repository names), the ref as a pattern.
+func workflowRefMatch(pattern, def string) bool {
+	pf, pr, ok := cutWorkflowRef(pattern)
+	df, dr, ok2 := cutWorkflowRef(def)
+	if !ok || !ok2 || pr == "" || dr == "" {
+		return false
+	}
+	return strings.EqualFold(pf, df) && refMatch(pr, dr)
 }
 
 // protectedRef reports whether the job runs on a protected ref. GitLab says

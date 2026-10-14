@@ -66,6 +66,10 @@ const POLLING_BASELINE: Record<string, number> = {
   'features/admin-console/api/use-admin-sessions.ts': 1,
   'features/ai-triage/hooks/use-ai-triage.ts': 1,
   'features/ci-runners/api/use-ci.ts': 2,
+  // Runs and refused exchanges are polled only while the CI setup dialog
+  // waits for a first run (10 s, the dialog open): neither is pushed as an
+  // event.
+  'features/ci-runners/components/ci-setup-wizard.tsx': 2,
   'features/findings/api/use-finding-retests.ts': 1,
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,

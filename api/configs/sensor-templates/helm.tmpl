@@ -37,15 +37,13 @@ kubectl create secret generic {{$slug}}-key \
 #    off, and the sensor then runs unconfined), mounts the policy
 #    read-only, keeps the nuclei-templates baked into its image, and keeps
 #    its state, outbox and content cache on one data volume (a release that
-#    already has the sensor's per-directory volumes keeps them).
+#    already has the sensor's per-directory volumes keeps them). The sensor
+#    runs the tools its image ships; narrow them in the policy's tools.allow.
 helm upgrade openctem openctem/openctem --reuse-values \
   --set sensor.enabled=true \
   --set sensor.mode=daemon \
   --set sensor.image.tag={{imageTag .Image}} \
   --set sensor.existingSecret={{$slug}}-key \
-{{- with toolList .Sensor.EffectiveTools}}
-  --set-string 'sensor.tools={{replaceComma .}}' \
-{{- end}}
   --set sensor.sandbox.seccompProfile=openctem \
   --set sensor.data.persistence.enabled=true \
   --set sensor.localPolicy.enabled=true \
