@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -50,6 +51,18 @@ func withStepUpChecker(t *testing.T, c middleware.RecentAuthChecker) {
 	t.Cleanup(func() { stepUpChecker = saved })
 }
 
+// stubCISettings answers the CI settings routes so that reaching the handler
+// is not mistaken for an unregistered route.
+type stubCISettings struct{}
+
+func (stubCISettings) GetSettings(context.Context, shared.ID) (cirunapp.Settings, error) {
+	return cirunapp.Settings{}, nil
+}
+
+func (stubCISettings) UpdateSettings(_ context.Context, _ shared.ID, in cirunapp.Settings, _ cirunapp.Actor) (cirunapp.Settings, error) {
+	return in, nil
+}
+
 // stepUpRoutes is every route that requires step-up. Adding requireStepUp()
 // to a route means adding it here.
 var stepUpRoutes = []string{
@@ -57,6 +70,11 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/api-keys/{id}",
 	"POST /api/v1/scim-tokens",
 	"POST /api/v1/ci/gate-overrides",
+	// CI trust decides who may send results: creating or changing it, and
+	// accepting CI sensor keys again, grant upload rights.
+	"PUT /api/v1/ci/settings",
+	"POST /api/v1/ci/trust-configs",
+	"PUT /api/v1/ci/trust-configs/{id}",
 	// Binding a code-host app installation or a GitLab group token decides
 	// which organization posts the gate for the account's repositories.
 	"POST /api/v1/ci/scm-apps/github/installations",
@@ -153,7 +171,9 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerAPIKeyRoutes(router, &handler.APIKeyHandler{}, auth, nil)
 			registerSCIMRoutes(router, nil, &handler.SCIMTokenHandler{}, nil, auth, nil)
 			registerAuditRoutes(router, &handler.AuditHandler{}, auth, nil)
-			registerCIRoutes(router, &handler.CIAdminHandler{}, nil, auth, nil, chain(), nil, logger.NewNop())
+			ciAdmin := &handler.CIAdminHandler{}
+			ciAdmin.SetSettingsService(stubCISettings{})
+			registerCIRoutes(router, ciAdmin, nil, auth, nil, chain(), nil, logger.NewNop())
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
