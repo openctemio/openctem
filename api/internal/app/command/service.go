@@ -741,12 +741,46 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 
 	fence := fenceOf(cmd, input.SensorID)
 	cmd.Complete(input.Result)
-	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+	if err := s.completeWithFollowUp(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
 	s.learnDuration(ctx, cmd)
 
 	return cmd, nil
+}
+
+// completeWithFollowUp saves a sensor's completion. A scan whose result
+// leaves targets unfinished is followed, in the same transaction, by a new
+// command carrying only those targets (research/125): the settled targets
+// stay done and are never run again. Without a follow-up-capable
+// repository, or with nothing unfinished, it is saveSensorChange.
+func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Command, fence commanddom.Fence) error {
+	f, ok := s.repo.(commanddom.FollowUpCompleter)
+	if !ok || cmd.SensorID == nil {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	remaining, settled, ok := commanddom.UnfinishedTargets(cmd)
+	if !ok || len(remaining) == 0 {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	followUp, err := commanddom.NewFollowUp(cmd, remaining, settled)
+	if err != nil {
+		// The completion stands; the unfinished targets are reported
+		// partial by the run (the result says so).
+		s.logger.Error("failed to build the follow-up of a partial command", "command_id", cmd.ID.String(), "error", err)
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	applied, err := f.CompleteWithFollowUp(ctx, cmd, fence, followUp)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return ErrLeaseLost
+	}
+	s.logger.Info("command completed with unfinished targets; follow-up queued",
+		"command_id", cmd.ID.String(), "follow_up_id", followUp.ID.String(),
+		"settled", settled, "unfinished", len(remaining), "dispatch_attempts", followUp.DispatchAttempts)
+	return nil
 }
 
 // FailInput represents the input for failing a command.
