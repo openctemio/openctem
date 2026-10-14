@@ -5,21 +5,33 @@ Jenkins (with its OpenID Connect provider plugin) jobs can send scan results
 and fail on the platform's gate using the identity their CI provider gives
 them (OIDC). Nothing secret is stored in CI. Design: [RFC-051](../rfcs/RFC-051-ci-runner-identity-and-gate.md).
 
-You need `scans:ci:write` (owners and administrators).
+You need `scans:ci:write` (owners and administrators). Creating or changing a
+trust configuration, and changing the CI settings, also need a recent sign-in
+(step-up): the console asks for your second factor and retries, and the API
+answers `403 STEP_UP_REQUIRED`. Gate policies and expected scans need
+`scans:ci:policy`, which an AppSec custom role can carry (the **AppSec
+engineer** template has it, with `scans:ci:override` for break-glass).
 
 ## 1. Add CI trust
 
 **Discovery > CI/CD > Trust and gate > Trust > Add trust**, or **Connect a
 pipeline** on the empty Pipelines tab (a four-step wizard: CI system,
-organization, pipeline snippet, first run):
+organization and default branch, pipeline snippet, first run). When a trust
+configuration already admits the organization, the wizard reuses it and shows
+its snippet. The fields:
 
 - **Provider**: GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket
   Pipelines, CircleCI or Jenkins. Each asks for what names your CI
   organization (sections 3a to 3d); there is never an issuer that stands for
   every customer of a provider. For a self-managed GitLab or a Jenkins
-  controller, enter its issuer URL. The platform fetches the issuer's keys
-  over HTTPS through the outbound-request guard; an issuer on a private
-  address needs its subnet in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API.
+  controller, enter its issuer URL. For GitHub Enterprise Server enter
+  `https://<host>/_services/token`, and for an enterprise with a customized
+  issuer `https://token.actions.githubusercontent.com/<enterprise slug>`, in
+  **GitHub Enterprise issuer** (the wizard covers github.com only). The
+  platform fetches the issuer's keys over HTTPS through the outbound-request
+  guard; an issuer on a private address needs its subnet in
+  `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` on the API. When the issuer cannot be
+  reached, keys fetched earlier keep verifying for at most 6 hours.
 - **Check a sample token** (in the dialog): paste a token from a job of that
   pipeline. The platform verifies its signature against the issuer's keys and
   shows its claims, the repository, ref, commit and run it reads from them,
@@ -42,6 +54,17 @@ organization, pipeline snippet, first run):
   `pull_request_target` run fork code with your repository's identity.
 - **Default branch**: the baseline used until the platform learns the
   repository's default branch.
+- **Audience**: default `openctem:tenant:<organization id>`. Every provider
+  but Azure Pipelines (one fixed audience) must use an audience that contains
+  the organization id, so a token minted for one organization is refused by
+  every other. GitHub and GitLab configurations saved with another audience
+  were moved to the default on upgrade to v0.9.6 (migration
+  `002127_ci_tenant_bound_audience`). For 90 days a pipeline that existed
+  before may still request the old audience, until it requests the new one
+  once; a new pipeline must use the new one. Otherwise the exchange is
+  refused with `legacy_audience`. After the 90 days the old audience is
+  refused like any wrong audience. The trust card shows the old audience and
+  its end date.
 
 The page then shows the pipeline snippet for the configuration.
 
@@ -59,7 +82,7 @@ The CI scanner is [openctemio/ci](https://github.com/openctemio/ci): the
 `openctem-ci` binary, one signed image per tool (`ghcr.io/openctemio/ci-<tool>`)
 and a bundle image (`ghcr.io/openctemio/ci`), a GitHub Action, GitLab CI
 templates and examples for Azure Pipelines, Bitbucket Pipelines, CircleCI and
-Jenkins. Capabilities: `sast` (semgrep), `sca` (trivy), `secrets`
+Jenkins. Capabilities: `sast` (opengrep with the signed OpenCTEM rules pack), `sca` (trivy), `secrets`
 (betterleaks), `iac` (trivy), `container` (trivy). Pin a release tag (the
 examples use `v0.3.0`) or a commit, never a branch.
 
@@ -82,6 +105,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # lets the job request its OIDC token
+      security-events: write # the workflow's scan job asks for it, even without upload-sarif
 ```
 
 Each capability runs in its own job and reports into one OpenCTEM CI run; a
@@ -163,8 +187,8 @@ when it is a release line, otherwise the default branch). **Dependency and
 image vulnerabilities block only when a fix exists** (`fixable_only`, off by
 default; turning it on needs a fresh sign-in) lists unfixable ones without
 blocking; CISA KEV still fails. Committed
-secrets always fail; accepted risk, false positives and suppressions are always
-honored; a scanner that fails to run fails the job. **Warn** mode reports what
+secrets always fail; false positives and approved suppressions are always
+honored, accepted risks until their end date; a scanner that fails to run fails the job. **Warn** mode reports what
 would fail and passes.
 
 When a release cannot wait, **Break-glass** lets one commit pass for a limited
@@ -173,6 +197,26 @@ hex characters) and covers exactly that commit; it is audited, and so is each ru
 owner and administrator is notified in-app when it is created and each time
 it is used, and so are channels subscribed to **CI Break-glass**. A burst of
 refused token exchanges raises **CI Token Refusals**.
+
+The upload answers with `known`: the results of that report that already
+carry a decision (false positive, duplicate, accepted risk that has not
+ended, approved suppression rule), by index. `openctem-ci` leaves them out of
+its log, SARIF and merge request report; the platform still records them.
+Every accepted risk has an end date (90 days unless set, at most a year), and
+the gate counts the finding again once it passes.
+
+The CI runner does not let the scanned tree hide its own results: SAST runs
+with `--disable-nosem` and `--x-ignore-semgrepignore-files`, and scanner
+configuration and ignore files in the tree are not read. Inline ignore
+comments, `.semgrepignore` patterns and `.openctem.yml` exceptions become
+pending suppression requests from a default-branch run of a verified commit,
+and count until approved. A secret is sent as `HMAC-SHA256` of its raw value
+under a key the exchange hands the job (CTIS fingerprint `secretHMAC/v1`); the
+raw value never leaves the job.
+
+A repository with an expected-scan list (**Coverage**, **Expect**) fails a
+run that reports no tool for one of its expected capabilities
+(`missing_capability`, "Expected scan missing").
 
 When the platform cannot decide, `--fail-on <severity>` (`fail-on` input,
 `OPENCTEM_FAIL_ON` on GitLab) makes `openctem-ci` judge locally instead.
@@ -219,5 +263,7 @@ since it exists) also refuses the key of any one-shot (standalone) sensor
 | `repository_binding` in the audit log | Bitbucket: another repository of the workspace already reports under that name |
 | `ssh_rerun` in the audit log | CircleCI: a re-run with SSH access, never admitted |
 | `missing_claims` on CircleCI or Jenkins | No commit was reported (CircleCI), or the Jenkins claim templates `repository` and `branch` are missing |
-| `403 RUNNER_OUTDATED` on the exchange | The `openctem-ci` release is older than the platform's minimum CI runner release (`CI_RUNNER_MIN_VERSION`). The message names the release to pin and the exact `uses:` or `include` line |
+| `403 RUNNER_OUTDATED` on the exchange | The `openctem-ci` release is older than the platform's minimum CI runner release (`CI_RUNNER_MIN_VERSION`, v0.3.0 by default). The message names the release to pin and the exact `uses:` or `include` line |
+| `legacy_audience` in Recent refused pipelines | During the 90 days, a pipeline that is new, or that already used the new audience once, requested the old audience: update it to the current snippet. After the 90 days the old audience no longer verifies at all, so nothing is listed and the job sees only `401` |
+| GitHub: "The nested job 'scan' is requesting 'security-events: write'" | Grant `security-events: write` to the job that calls the reusable workflow |
 | `401` on upload after a long scan | The 15-minute run token expired; shorten the time between the token exchange and the verdict |

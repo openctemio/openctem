@@ -18,6 +18,8 @@ Released separately, in their own repositories:
 [sensor](https://github.com/openctemio/sensor) (runs scans in your networks),
 [sdk-go](https://github.com/openctemio/sdk-go),
 [ctis](https://github.com/openctemio/ctis) (shared contract),
+[ci](https://github.com/openctemio/ci) (CI/CD runner and pipeline integrations),
+[sast-rules](https://github.com/openctemio/sast-rules) (the signed SAST rules pack for opengrep),
 [helm-charts](https://github.com/openctemio/helm-charts),
 [docs](https://github.com/openctemio/docs) (public documentation, published at
 [docs.openctem.io](https://docs.openctem.io)).
