@@ -4,7 +4,10 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -161,59 +164,120 @@ func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {
 	return strings.Join(conds, " AND "), reasonCase.String()
 }
 
+// reconcileBatch is how many assets one reconcile statement reads. Short
+// statements hold the referenced assets' key-share locks (the ledger's
+// foreign key) only briefly.
+const reconcileBatch = 500
+
+// uuidBeforeAll sorts before every asset id (keyset start).
+const uuidBeforeAll = "00000000-0000-0000-0000-000000000000"
+
 // Reconcile adds the missing rows of every applicable rule for the tenant's
-// active assets and flips rows whose precondition changed. One statement per
-// rule; every statement is bound to the tenant.
+// active assets and flips rows whose precondition changed.
+//
+// Locking: inserting a ledger row takes a KEY SHARE lock on its asset (the
+// foreign key). A writer that locks assets FOR UPDATE in id order (the asset
+// business-context update) deadlocked with a reconcile that took those
+// locks in another order. Each statement therefore reads one batch of
+// assets in id order (keyset, no long transaction), inserts in id order,
+// and a deadlock that still happens is retried once after a short jitter.
 func (r *AssetCoverageRepository) Reconcile(ctx context.Context, tenantID shared.ID, rules []coverage.Rule) (added, changed int, err error) {
 	for _, rule := range rules {
 		if !coverage.ValidCapability(rule.Capability) {
 			continue
 		}
-		ok, reason := coverageRuleSQL(rule)
-		excluded := coverage.AliasSubTypes(rule.Type)
-		if rule.SubType != "" {
-			excluded = nil
+		after := uuidBeforeAll
+		for {
+			a, c, last, n, err := r.reconcileBatch(ctx, tenantID, rule, after)
+			if err != nil {
+				return added, changed, fmt.Errorf("reconcile coverage %s/%s %s: %w", rule.Type, rule.SubType, rule.Capability, err)
+			}
+			added += a
+			changed += c
+			if n < reconcileBatch || last == "" {
+				break
+			}
+			after = last
 		}
-		// ok and reason are built from the closed predicate set and quoted
-		// literals only; every value is a parameter.
-		q := `
-			WITH cand AS (
-				SELECT a.id, (` + ok + `) AS ok, (` + reason + `) AS why
-				FROM assets a
-				WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.status = 'active'
-				  AND a.asset_type = $2
-				  AND ($3 = '' OR a.sub_type = $3)
-				  AND NOT (COALESCE(a.sub_type, '') = ANY(COALESCE($5::text[], '{}')))
-			), ins AS (
-				INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state, reason, next_due_at)
-				SELECT $1, c.id, $4, '', CASE WHEN c.ok THEN 'due' ELSE 'not_applicable' END, c.why, now()
-				FROM cand c
-				ON CONFLICT (tenant_id, asset_id, capability, vantage) DO NOTHING
-				RETURNING 1
-			), upd AS (
-				UPDATE asset_coverage s
-				SET state = CASE WHEN c.ok THEN 'due' ELSE 'not_applicable' END,
-				    reason = c.why,
-				    next_due_at = CASE WHEN c.ok THEN now() ELSE s.next_due_at END,
-				    updated_at = now()
-				FROM cand c
-				WHERE s.tenant_id = $1 AND s.asset_id = c.id AND s.capability = $4 AND s.vantage = ''
-				  AND ((c.ok AND s.state = 'not_applicable' AND s.reason = ANY($6::text[])) OR
-				       (NOT c.ok AND s.state IN ('due', 'failed', 'covered')))
-				RETURNING 1
-			)
-			SELECT (SELECT count(*) FROM ins), (SELECT count(*) FROM upd)`
-		var a, c int
-		if err := r.db.QueryRowContext(ctx, q, //nolint:gosec // built from a closed set; values are parameters
-			tenantID.String(), string(rule.Type), rule.SubType, rule.Capability, pq.Array(excluded),
-			pq.Array(rulePredicates),
-		).Scan(&a, &c); err != nil {
-			return added, changed, fmt.Errorf("reconcile coverage %s/%s %s: %w", rule.Type, rule.SubType, rule.Capability, err)
-		}
-		added += a
-		changed += c
 	}
 	return added, changed, nil
+}
+
+// reconcileBatch reconciles one rule over the next batch of assets after
+// the id after, retrying once on a deadlock. It returns the rows added and
+// changed, the last asset id read and how many assets it read.
+func (r *AssetCoverageRepository) reconcileBatch(ctx context.Context, tenantID shared.ID, rule coverage.Rule, after string) (added, changed int, last string, n int, err error) {
+	ok, reason := coverageRuleSQL(rule)
+	excluded := coverage.AliasSubTypes(rule.Type)
+	if rule.SubType != "" {
+		excluded = nil
+	}
+	// ok and reason are built from the closed predicate set and quoted
+	// literals only; every value is a parameter.
+	q := `
+		WITH cand AS (
+			SELECT a.id, (` + ok + `) AS ok, (` + reason + `) AS why
+			FROM assets a
+			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.status = 'active'
+			  AND a.asset_type = $2
+			  AND ($3 = '' OR a.sub_type = $3)
+			  AND NOT (COALESCE(a.sub_type, '') = ANY(COALESCE($5::text[], '{}')))
+			  AND a.id > $7::uuid
+			ORDER BY a.id
+			LIMIT $8
+		), ins AS (
+			INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state, reason, next_due_at)
+			SELECT $1, c.id, $4::text, '', CASE WHEN c.ok THEN 'due' ELSE 'not_applicable' END, c.why, now()
+			FROM cand c
+			WHERE NOT EXISTS (SELECT 1 FROM asset_coverage x
+			                  WHERE x.tenant_id = $1 AND x.asset_id = c.id AND x.capability = $4::text AND x.vantage = '')
+			ORDER BY c.id
+			ON CONFLICT (tenant_id, asset_id, capability, vantage) DO NOTHING
+			RETURNING 1
+		), upd AS (
+			UPDATE asset_coverage s
+			SET state = CASE WHEN c.ok THEN 'due' ELSE 'not_applicable' END,
+			    reason = c.why,
+			    next_due_at = CASE WHEN c.ok THEN now() ELSE s.next_due_at END,
+			    updated_at = now()
+			FROM cand c
+			WHERE s.tenant_id = $1 AND s.asset_id = c.id AND s.capability = $4::text AND s.vantage = ''
+			  AND ((c.ok AND s.state = 'not_applicable' AND s.reason = ANY($6::text[])) OR
+			       (NOT c.ok AND s.state IN ('due', 'failed', 'covered')))
+			RETURNING 1
+		)
+		SELECT (SELECT count(*) FROM ins), (SELECT count(*) FROM upd),
+		       COALESCE((SELECT max(id::text) FROM cand), ''), (SELECT count(*) FROM cand)`
+	err = retryOnDeadlock(ctx, func() error {
+		return r.db.QueryRowContext(ctx, q, //nolint:gosec // built from a closed set; values are parameters
+			tenantID.String(), string(rule.Type), rule.SubType, rule.Capability, pq.Array(excluded),
+			pq.Array(rulePredicates), after, reconcileBatch,
+		).Scan(&added, &changed, &last, &n)
+	})
+	return added, changed, last, n, err
+}
+
+// deadlockDetected is PostgreSQL's SQLSTATE for a deadlock.
+const deadlockDetected = "40P01"
+
+// retryOnDeadlock runs fn and, when it fails with a deadlock, once more
+// after 50-250 ms of jitter (the other transaction has been rolled back or
+// committed by then).
+func retryOnDeadlock(ctx context.Context, fn func() error) error {
+	err := fn()
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || string(pqErr.Code) != deadlockDetected {
+		return err
+	}
+	var b [2]byte
+	_, _ = rand.Read(b[:]) // jitter only; a zero on error is fine
+	wait := 50*time.Millisecond + time.Duration(binary.LittleEndian.Uint16(b[:])%200)*time.Millisecond
+	select {
+	case <-ctx.Done():
+		return err
+	case <-time.After(wait):
+	}
+	return fn()
 }
 
 var _ coverage.Repository = (*AssetCoverageRepository)(nil)

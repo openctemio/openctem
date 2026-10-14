@@ -214,6 +214,7 @@ properties:
   management_ip: { label: Management IP, label_vi: IP quản trị, format: ip }
   gateway: { label: Gateway, label_vi: "Cổng mạng (gateway)", format: ip }
   discovery_source: { label: Discovery source, label_vi: Nguồn phát hiện }
+  discovery_method: { label: Discovery method, label_vi: Phương thức phát hiện }
   discovery_tool: { label: Discovery tool, label_vi: Công cụ phát hiện }
   aliases: { label: Former names, label_vi: Tên cũ }
   identity_hints: { label: Identity hints, label_vi: Gợi ý định danh }
@@ -229,6 +230,7 @@ properties:
   expires_at: { label: Expires, label_vi: Ngày hết hạn, format: expiry }
   nameservers: { label: Name servers, label_vi: Máy chủ tên miền, synonyms: [nameserver] }
   dns_records: { label: DNS records, label_vi: Bản ghi DNS }
+  dns_record_count: { label: DNS record count, label_vi: Số bản ghi DNS }
   dns_record_types: { label: DNS record types, label_vi: Loại bản ghi DNS }
   whois: { label: WHOIS, label_vi: WHOIS }
   root_domain: { label: Root domain, label_vi: Tên miền gốc }
@@ -245,6 +247,7 @@ properties:
   city: { label: City, label_vi: Thành phố }
   geolocation: { label: Geolocation, label_vi: Vị trí địa lý }
   ports: { label: Ports, label_vi: Các cổng }
+  open_port_count: { label: Open ports, label_vi: Số cổng mở }
   is_private: { label: Private address, label_vi: Địa chỉ nội bộ }
   is_reserved: { label: Reserved address, label_vi: Địa chỉ dành riêng }
   serial_number: { label: Serial number, label_vi: Số sê-ri, format: code }
@@ -258,6 +261,8 @@ properties:
   key_algorithm: { label: Key algorithm, label_vi: Thuật toán khóa }
   key_size: { label: Key size, label_vi: Độ dài khóa }
   fingerprint_sha256: { label: SHA-256 fingerprint, label_vi: Dấu vân tay SHA-256, format: code }
+  fingerprint: { label: Fingerprint, label_vi: Dấu vân tay, format: code }
+  is_host_mismatch: { label: Name mismatch, label_vi: Không khớp tên máy chủ, synonyms: [host_mismatch] }
   is_self_signed: { label: Self-signed, label_vi: Tự ký, synonyms: [self_signed] }
   is_expired: { label: Expired, label_vi: Đã hết hạn }
   port: { label: Port, label_vi: Cổng, classes: [service, data_store, application, web_endpoint] }
@@ -281,6 +286,9 @@ properties:
   server: { label: HTTP server header, label_vi: Header Server (HTTP), synonyms: [web_server] }
   technologies: { label: Technologies, label_vi: Công nghệ, synonyms: [technology] }
   cdn: { label: CDN, label_vi: CDN }
+  cdn_type: { label: Edge type, label_vi: Loại biên mạng }
+  favicon_mmh3: { label: Favicon hash, label_vi: Mã băm favicon, format: code }
+  tls_fingerprint: { label: Certificate fingerprint, label_vi: Dấu vân tay chứng chỉ, format: code }
   waf: { label: WAF, label_vi: WAF }
   redirect_url: { label: Redirects to, label_vi: Chuyển hướng tới, format: url }
   chain_status_codes: { label: Redirect chain, label_vi: Chuỗi chuyển hướng }
@@ -493,6 +501,7 @@ types:
       - { name: expires_at, type: time }
       - { name: nameservers, type: list }
       - { name: dns_records, type: object }
+      - { name: dns_record_count, type: int }
       - { name: whois, type: object }
     columns: [name, registrar, expires_at, findings.open, last_seen, owner]
     card: domain
@@ -520,7 +529,9 @@ types:
       - { name: cname_target, type: string }
       - { name: dns_record_types, type: string }
       - { name: dns_records, type: object }
+      - { name: dns_record_count, type: int }
       - { name: discovery_source, type: string, facet: true }
+      - { name: discovery_method, type: string, facet: true }
       - { name: is_wildcard, type: bool, facet: true }
     columns: [name, parent_domain, findings.open, last_seen, owner]
     card: domain
@@ -552,6 +563,7 @@ types:
       - { name: city, type: string }
       - { name: geolocation, type: object }
       - { name: ports, type: object }
+      - { name: open_port_count, type: int, facet: true }
       - { name: is_private, type: bool, facet: true }
       - { name: is_reserved, type: bool }
     columns: [name, asn_org, country, findings.open, last_seen, owner]
@@ -584,6 +596,8 @@ types:
       - { name: key_algorithm, type: string, facet: true }
       - { name: key_size, type: int, facet: true }
       - { name: fingerprint_sha256, type: string }
+      - { name: fingerprint, type: string }
+      - { name: is_host_mismatch, type: bool, facet: true }
       - { name: is_self_signed, type: bool, facet: true }
       - { name: is_expired, type: bool, facet: true }
       - { name: is_wildcard, type: bool, facet: true }
@@ -643,6 +657,9 @@ types:
       - { name: server, type: string, facet: true, group: true }
       - { name: technologies, type: list }
       - { name: cdn, type: string, facet: true, group: true }
+      - { name: cdn_type, type: enum, values: [cdn, waf, cloud], facet: true }
+      - { name: favicon_mmh3, type: string, group: true }
+      - { name: tls_fingerprint, type: string }
       - { name: waf, type: string, facet: true }
       - { name: tls_version, type: string, facet: true }
       - { name: response_time_ms, type: int }

@@ -190,6 +190,33 @@ a lease. An active stage's chunk holds per-host politeness keys while it
 runs; the keys come from `github.com/openctemio/ctis/politeness`, the
 function the sensor runtime admits work with, and travel with the chunk
 (`host_keys`), so a sensor never hands back what the platform just offered.
+Chunks are cut from whole hosts, so the chunks of one step never conflict
+with each other ([scan stages](scan-stages.md)).
+
+Partial admission at claim time (`internal/app/command/host_split.go`): when
+a sensor has free scan slots the queue cannot fill, the claim looks at the
+pending scan commands of run steps it may take whose hosts are busy. A
+command is split when at most half of its targets are on hosts other tasks
+of the organization hold:
+- the targets on free hosts stay in the command, which the same claim takes;
+- the others move to a new pending command of the same step and run. It keeps
+  the command's placement (pin, zone, gate, schedule, refusals, queue age),
+  is guarded and signed at claim like any other, and starts when its hosts
+  are free.
+
+Each part holds only its own targets' keys, in the row and in the payload's
+`host_keys`. A command whose keys cannot all be attributed to its targets is
+never split.
+
+The split is one transaction: an update guarded by the row's unchanged
+payload, its `pending` status and `host_splits` below 3 (a command and the
+parts split from it are split at most 3 times), and the insert. Concurrent
+claims split a command once; a repeated pass finds nothing to split, because
+the started part is free and the waiting part is all blocked. Accounting is
+unchanged:
+- the step counts both parts (it settles with the last one);
+- the targets are disjoint, so per-target outcomes and progress add up;
+- `command_host_splits_total` counts the splits.
 A step is runnable when every dependency finished.
 
 Shared platform sensors have no claim path today: the platform queue

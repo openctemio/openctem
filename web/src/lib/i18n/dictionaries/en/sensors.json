@@ -1263,5 +1263,7 @@
   "sensors.toolSettings.impactWarning": "A non-default value increases the load or reach of each scan.",
   "sensors.toolSettings.searchLabel": "Search tool settings",
   "sensors.toolSettings.searchPlaceholder": "Search tools or options",
-  "sensors.toolSettings.searchEmpty": "No tool or option matches \"{query}\"."
+  "sensors.toolSettings.searchEmpty": "No tool or option matches \"{query}\".",
+  "sensors.grantEdit.profile.scan-connector": "Scanner connector",
+  "sensors.pair.profileDesc.scan-connector": "Runs one connector to a scanner product your organization runs (the Tenable.sc connector): its syncs and its scans; no scanner of its own."
 }
