@@ -37,6 +37,12 @@ vi.mock('@/features/scans/components/run-detail-sheet', () => ({
     runId ? <div data-testid="run-sheet">{runId}</div> : null,
 }))
 const breadcrumbTitles = vi.hoisted(() => [] as (string | null | undefined)[])
+vi.mock('@/features/scans/components', () => ({
+  EditScanDialog: ({ open, scanConfig }: { open: boolean; scanConfig: { name: string } }) =>
+    open ? <div role="dialog">Editing {scanConfig.name}</div> : null,
+  CloneScanDialog: ({ open, scan }: { open: boolean; scan: { name: string } }) =>
+    open ? <div role="dialog">Cloning {scan.name}</div> : null,
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
   useBreadcrumbTitle: (title: string | null | undefined) => breadcrumbTitles.push(title),
@@ -205,5 +211,19 @@ describe('Scan page', () => {
       '/scans/workflows/wf-1'
     )
     expect(screen.queryByText('Workflow ID')).toBeNull()
+  })
+
+  // The scan page offered no way to edit or clone the scan: only the list's
+  // row menu did.
+  it('edits and clones the scan from its page', async () => {
+    render(<ScanDetailPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Editing Nightly recon')
+  })
+
+  it('clones the scan from its page', async () => {
+    render(<ScanDetailPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'Clone' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Cloning Nightly recon')
   })
 })
