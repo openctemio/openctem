@@ -74,7 +74,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
       <p className="max-w-3xl text-sm text-muted-foreground">
         {t(
           'scans.ci.feedback.description',
-          'OpenCTEM posts each verdict as the "OpenCTEM gate" check (GitHub) or commit status (GitLab) and keeps one comment on the pull or merge request. Make the check required in branch protection: a pull request cannot skip or forge it.'
+          'OpenCTEM posts each verdict as the "OpenCTEM gate" check (GitHub) or commit status (GitLab) and keeps one comment on the pull or merge request. The check of a commit takes the strictest verdict of every pipeline on it. Make the check required in branch protection and set its expected source to the OpenCTEM app: any other source, such as a workflow\'s own token, could post a check with the same name.'
         )}
       </p>
 
