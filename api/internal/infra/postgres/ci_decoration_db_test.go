@@ -29,7 +29,7 @@ func TestCIDecorationQueue(t *testing.T) {
 			t.Fatal(err)
 		}
 		if status == cirun.StatusEvaluated {
-			if err := repo.SaveVerdict(ctx, tenant, r.ID, cirun.VerdictPass, []byte(`{}`), now); err != nil {
+			if err := repo.SaveVerdict(ctx, tenant, r.ID, cirun.VerdictPass, []byte(`{}`), now, 0); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -124,7 +124,7 @@ func TestCIPullRequestPassed(t *testing.T) {
 		if err := repo.CreateRun(ctx, r); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.SaveVerdict(ctx, tenant, r.ID, verdict, []byte(`{}`), when); err != nil {
+		if err := repo.SaveVerdict(ctx, tenant, r.ID, verdict, []byte(`{}`), when, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
