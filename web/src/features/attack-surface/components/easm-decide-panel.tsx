@@ -8,7 +8,13 @@
  * (POST /scope/targets/bulk; scope write permission, step-up handled by the
  * shared client, approvals, audit). Addresses are never added because a name
  * points at them: a person decides, shared and CDN addresses are listed apart
- * with no button, and an address whose network is unknown says so.
+ * with no button, and an address whose network is unknown says so. Each
+ * address shows what was seen on it (open ports, other names); the
+ * organization's own prefix is offered as one rule; "Not ours" records a
+ * rejection (never suggested or scanned again); "Not now" hides the card on
+ * the overview for 30 days or until it shows something new. While
+ * unclassified assets get low-impact checks (RFC-054 §16), only addresses
+ * whose network is unknown wait for a decision.
  */
 
 import { useState } from 'react'
@@ -29,12 +35,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { EmptyState, ErrorState } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { EASMSuggestionAddress, EASMSuggestionCard } from '@/lib/api/generated'
-import { createScopeTargetsBulk, invalidateScopeCache } from '@/features/scope/api/use-scope-api'
+import {
+  createScopeTargetsBulk,
+  invalidateScopeCache,
+  useScopeSettingsApi,
+} from '@/features/scope/api/use-scope-api'
+import { decideAttribution } from '@/features/assets/api/triage-api'
+import { Permission, useHasPermission } from '@/lib/permissions'
 import { reportBulkResult } from '@/features/scope/components/add-to-scope-action'
 import { refreshEASMSuggestions, useEASMSuggestions } from '../hooks/use-easm-suggestions'
 import { EASMRuleSuggestions } from './easm-rule-suggestions'
@@ -44,8 +57,8 @@ type TFn = ReturnType<typeof useTranslation>['t']
 /** The Suggestions tab. */
 export const EASM_SUGGESTIONS_HREF = '/attack-surface/review'
 
-/** How long "Not now" hides a card for this viewer. */
-const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
+/** How long "Not now" hides a card for this viewer (unless what it shows changes). */
+const SNOOZE_MS = 30 * 24 * 60 * 60 * 1000
 const SHOWN = 8
 
 interface ScopeItem {
@@ -64,19 +77,38 @@ function snoozeKey(tenantId: string | undefined, kind: string) {
   return `easm-decide-snooze:${tenantId ?? ''}:${kind}`
 }
 
-function snoozed(tenantId: string | undefined, kind: string): boolean {
+/**
+ * What a card shows, as one string: a snoozed card comes back early when it
+ * changes (a new address, a new open port, a new name behind one).
+ */
+export function cardFingerprint(c: EASMSuggestionCard): string {
+  const addrs = (c.addresses ?? []).map(
+    (a) =>
+      `${a.address}|${(a.ports ?? []).join(',')}|${(a.resolved_from ?? []).join(',')}|${(a.other_names ?? []).join(',')}`
+  )
+  const assets = (c.assets ?? []).map((a) => a.name ?? '')
+  const prefixes = (c.prefix_rules ?? []).map((p) => p.prefix ?? '')
+  return [...addrs, ...assets, ...prefixes].sort().join(';')
+}
+
+function snoozed(tenantId: string | undefined, c: EASMSuggestionCard): boolean {
   try {
-    const until = Number(window.localStorage.getItem(snoozeKey(tenantId, kind)) ?? 0)
-    return until > Date.now()
+    const raw = window.localStorage.getItem(snoozeKey(tenantId, c.kind ?? ''))
+    if (!raw) return false
+    const s = JSON.parse(raw) as { until?: number; fp?: string }
+    return (s.until ?? 0) > Date.now() && s.fp === cardFingerprint(c)
   } catch {
     return false
   }
 }
 
-/** Hides a card from the overview for a week, for this viewer. */
-function snoozeCard(tenantId: string | undefined, kind: string) {
+/** Hides a card from the overview for 30 days, or until it shows something new. */
+function snoozeCard(tenantId: string | undefined, c: EASMSuggestionCard) {
   try {
-    window.localStorage.setItem(snoozeKey(tenantId, kind), String(Date.now() + SNOOZE_MS))
+    window.localStorage.setItem(
+      snoozeKey(tenantId, c.kind ?? ''),
+      JSON.stringify({ until: Date.now() + SNOOZE_MS, fp: cardFingerprint(c) })
+    )
   } catch {
     // Storage unavailable: the card stays.
   }
@@ -93,6 +125,20 @@ export function addressNetworkText(t: TFn, a: EASMSuggestionAddress): string {
   return [n.asn, n.org].filter(Boolean).join(' ')
 }
 
+/**
+ * The organization's unclassified-scans mode in force (RFC-054 §16): with
+ * low_impact or full, an address whose network is known and not shared
+ * already gets checks without an entry, so only unknown networks wait for a
+ * decision. Anything else (off, Strict, an older API) keeps every address
+ * waiting.
+ */
+function useUnclassifiedScanning(): boolean {
+  const { data } = useScopeSettingsApi()
+  const mode = (data as { unclassified_scans_effective?: string } | undefined)
+    ?.unclassified_scans_effective
+  return mode === 'low_impact' || mode === 'full'
+}
+
 export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
@@ -100,8 +146,8 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
   const { cards, error, isLoading, mutate } = useEASMSuggestions()
   const [, setTick] = useState(0)
 
-  const snooze = (kind: string) => {
-    snoozeCard(tenantId, kind)
+  const snooze = (c: EASMSuggestionCard) => {
+    snoozeCard(tenantId, c)
     setTick((n) => n + 1)
   }
 
@@ -118,9 +164,9 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
     return <Skeleton className="h-28 w-full rounded-xl" />
   }
 
-  // "Not now" hides a card from the overview for a week, for this viewer;
-  // the Suggestions tab always lists every card.
-  const shown = (cards?.cards ?? []).filter((c) => !compact || !snoozed(tenantId, c.kind ?? ''))
+  // "Not now" hides a card from the overview for 30 days (or until it shows
+  // something new), for this viewer; the Suggestions tab lists every card.
+  const shown = (cards?.cards ?? []).filter((c) => !compact || !snoozed(tenantId, c))
   if (compact && shown.length === 0) return null
 
   return (
@@ -141,14 +187,14 @@ export function EASMDecidePanel({ compact = false }: { compact?: boolean }) {
             key={c.kind}
             card={c}
             canAdd={!!cards?.can_add}
-            onSnooze={compact ? () => snooze(c.kind ?? '') : undefined}
+            onSnooze={compact ? () => snooze(c) : undefined}
           />
         ) : c.kind === 'confirmed_out_of_scope' ? (
           <ConfirmedCard
             key={c.kind}
             card={c}
             canAdd={!!cards?.can_add}
-            onSnooze={compact ? () => snooze(c.kind ?? '') : undefined}
+            onSnooze={compact ? () => snooze(c) : undefined}
           />
         ) : null
       )}
@@ -179,21 +225,50 @@ function AddressesCard({
   onSnooze?: () => void
 }) {
   const { t } = useTranslation()
+  const canDecide = useHasPermission(Permission.AssetsWrite)
+  const scanning = useUnclassifiedScanning()
   const [open, setOpen] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const addresses = card.addresses ?? []
+  const [confirming, setConfirming] = useState<ScopeItem[] | null>(null)
+  const [rejecting, setRejecting] = useState(false)
+  const offered = card.addresses ?? []
   const shared = card.shared_addresses ?? []
-  const count = card.count ?? 0
-  const unknown = card.unknown_network_count ?? 0
+  // Waiting for a decision: every offered address, or only the unknown
+  // networks while unclassified assets already get checks.
+  const waiting = scanning ? offered.filter((a) => !a.network?.known) : offered
+  const checked = scanning ? offered.filter((a) => a.network?.known) : []
+  const count = waiting.length
   const sharedCount = card.shared_count ?? 0
-  const items: ScopeItem[] = addresses.map((a) => ({
-    target_type: 'ip_address',
-    pattern: a.address ?? '',
-  }))
-  const reasonNames = Array.from(new Set(addresses.flatMap((a) => a.resolved_from ?? []))).slice(
-    0,
-    5
-  )
+  const prefixes = card.prefix_rules ?? []
+  const toItems = (as: EASMSuggestionAddress[]): ScopeItem[] =>
+    as.map((a) => ({ target_type: 'ip_address', pattern: a.address ?? '' }))
+  const reasonNames = Array.from(new Set(offered.flatMap((a) => a.resolved_from ?? []))).slice(0, 5)
+
+  const notOurs = async () => {
+    const ids = waiting.map((a) => a.asset_id ?? '').filter(Boolean)
+    try {
+      await decideAttribution(ids, 'rejected')
+      await refreshEASMSuggestions()
+      toast.success(
+        plural(
+          t,
+          'attackSurface.decide.notOursDone',
+          ids.length,
+          '1 address marked not yours',
+          '{count} addresses marked not yours'
+        ),
+        {
+          action: {
+            label: t('attackSurface.decide.undo', 'Undo'),
+            onClick: () =>
+              void decideAttribution(ids, 'automatic').then(() => refreshEASMSuggestions()),
+          },
+        }
+      )
+      setRejecting(false)
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('attackSurface.decide.notOursFailed', 'Not saved')))
+    }
+  }
 
   return (
     <Card data-testid="decide-card-addresses">
@@ -214,18 +289,19 @@ function AddressesCard({
               )}
         </CardTitle>
         <CardDescription>
-          {plural(
-            t,
-            'attackSurface.decide.addresses.description',
-            card.names_count ?? 0,
-            '1 of your names points at them. A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.',
-            '{count} of your names point at them. A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.'
+          {t(
+            'attackSurface.decide.addresses.value',
+            'Add them to scan every port of these addresses. Today only the names are scanned, so a service that answers on the address without a name is missed.'
+          )}{' '}
+          {t(
+            'attackSurface.decide.addresses.caution',
+            'A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.'
           )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2 text-xs">
-          {unknown > 0 && (
+          {waiting.some((a) => !a.network?.known) && (
             <Badge
               variant="outline"
               className="h-auto gap-1 whitespace-normal border-warning/40 text-start text-warning"
@@ -234,7 +310,7 @@ function AddressesCard({
               {plural(
                 t,
                 'attackSurface.decide.addresses.unknown',
-                unknown,
+                waiting.filter((a) => !a.network?.known).length,
                 'Network unknown for 1: check it is yours',
                 'Network unknown for {count}: check they are yours'
               )}
@@ -246,8 +322,8 @@ function AddressesCard({
                 t,
                 'attackSurface.decide.addresses.shared',
                 sharedCount,
-                '1 shared or CDN address left out',
-                '{count} shared or CDN addresses left out'
+                '1 shared or CDN address not offered',
+                '{count} shared or CDN addresses not offered'
               )}
             </Badge>
           )}
@@ -259,7 +335,7 @@ function AddressesCard({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canAdd && count > 0 && (
-            <Button size="sm" onClick={() => setConfirming(true)}>
+            <Button size="sm" onClick={() => setConfirming(toItems(waiting))}>
               {plural(
                 t,
                 'attackSurface.decide.add',
@@ -267,6 +343,11 @@ function AddressesCard({
                 'Add 1 to scope',
                 'Add {count} to scope'
               )}
+            </Button>
+          )}
+          {canDecide && count > 0 && (
+            <Button size="sm" variant="outline" onClick={() => setRejecting(true)}>
+              {t('attackSurface.decide.notOurs', 'Not ours')}
             </Button>
           )}
           {onSnooze && (
@@ -293,13 +374,63 @@ function AddressesCard({
             )}
           </p>
         )}
+        {prefixes.length > 0 && (
+          <div className="space-y-1" data-testid="decide-prefix-rules">
+            <p className="text-sm font-medium">
+              {t('attackSurface.decide.prefixHeading', 'Your own network')}
+            </p>
+            <ul className="divide-y rounded-md border text-sm">
+              {prefixes.map((p) => (
+                <li
+                  key={p.prefix}
+                  className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <code className="shrink-0 font-mono text-xs">{p.prefix}</code>
+                  <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    {plural(
+                      t,
+                      'attackSurface.decide.prefixHolds',
+                      p.addresses ?? 0,
+                      'Announced by your seeded network; holds 1 of these addresses',
+                      'Announced by your seeded network; holds {count} of these addresses'
+                    )}
+                  </span>
+                  {canAdd && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setConfirming([{ target_type: 'cidr', pattern: p.prefix ?? '' }])
+                      }
+                    >
+                      {t('attackSurface.decide.addPrefix', 'Add {prefix}', {
+                        prefix: p.prefix ?? '',
+                      })}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {open && (
           <div className="space-y-3">
-            <AddressList addresses={addresses} />
+            {waiting.length > 0 && <AddressList addresses={waiting} />}
+            {checked.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">
+                  {t(
+                    'attackSurface.decide.checkedHeading',
+                    'Already get low-impact checks (add to scope for a full scan)'
+                  )}
+                </p>
+                <AddressList addresses={checked} />
+              </div>
+            )}
             {shared.length > 0 && (
               <div className="space-y-1">
                 <p className="text-sm font-medium">
-                  {t('attackSurface.decide.sharedHeading', 'Left out: shared or not yours')}
+                  {t('attackSurface.decide.sharedHeading', 'Shared, not offered')}
                 </p>
                 <AddressList addresses={shared} />
               </div>
@@ -308,14 +439,31 @@ function AddressesCard({
         )}
       </CardContent>
       <AcceptDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        items={items}
+        open={confirming !== null}
+        onOpenChange={(o) => !o && setConfirming(null)}
+        items={confirming ?? []}
         reason={t(
           'attackSurface.decide.addresses.reason',
           'Addresses behind in-scope names: {names}',
           { names: reasonNames.join(', ') }
         )}
+      />
+      <ConfirmDialog
+        open={rejecting}
+        onOpenChange={setRejecting}
+        title={plural(
+          t,
+          'attackSurface.decide.notOursTitle',
+          count,
+          'Mark 1 address as not yours?',
+          'Mark {count} addresses as not yours?'
+        )}
+        desc={t(
+          'attackSurface.decide.notOursDesc',
+          'They are never scanned or suggested again, until someone undoes it on the asset.'
+        )}
+        confirmText={t('attackSurface.decide.notOurs', 'Not ours')}
+        handleConfirm={() => void notOurs()}
       />
     </Card>
   )
@@ -326,25 +474,37 @@ function AddressList({ addresses }: { addresses: EASMSuggestionAddress[] }) {
   return (
     <ul className="divide-y rounded-md border text-sm" data-testid="decide-address-list">
       {addresses.map((a) => (
-        <li
-          key={a.asset_id ?? a.address}
-          className="flex flex-col gap-0.5 px-3 py-2 sm:flex-row sm:items-baseline sm:gap-3"
-        >
-          <code className="shrink-0 font-mono text-xs sm:w-36">{a.address}</code>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            {t('attackSurface.decide.from', 'From {names}', {
-              names: (a.resolved_from ?? []).join(', '),
-            })}
-          </span>
-          <span
-            className={
-              a.network?.known || a.shared
-                ? 'text-xs text-muted-foreground'
-                : 'text-xs text-warning'
-            }
-          >
-            {addressNetworkText(t, a)}
-          </span>
+        <li key={a.asset_id ?? a.address} className="space-y-0.5 px-3 py-2">
+          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+            <code className="shrink-0 font-mono text-xs sm:w-36">{a.address}</code>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              {t('attackSurface.decide.from', 'From {names}', {
+                names: (a.resolved_from ?? []).join(', '),
+              })}
+            </span>
+            <span
+              className={
+                a.network?.known || a.shared
+                  ? 'text-xs text-muted-foreground'
+                  : 'text-xs text-warning'
+              }
+            >
+              {addressNetworkText(t, a)}
+            </span>
+          </div>
+          {((a.ports ?? []).length > 0 || (a.other_names ?? []).length > 0) && (
+            <p className="text-xs text-muted-foreground">
+              {(a.ports ?? []).length > 0 &&
+                t('attackSurface.decide.seenPorts', 'Open ports seen: {ports}', {
+                  ports: (a.ports ?? []).join(', '),
+                })}
+              {(a.ports ?? []).length > 0 && (a.other_names ?? []).length > 0 && ' · '}
+              {(a.other_names ?? []).length > 0 &&
+                t('attackSurface.decide.otherNames', 'Also named {names} (not in scope)', {
+                  names: (a.other_names ?? []).join(', '),
+                })}
+            </p>
+          )}
         </li>
       ))}
     </ul>

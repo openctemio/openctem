@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/lib/pq"
@@ -40,7 +41,8 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ip.id, ip.name, COALESCE(ip.properties, '{}'::jsonb),
 		       array_agg(DISTINCT lower(src.name)),
-		       COALESCE(array_agg(DISTINCT lower(src.name)) FILTER (WHERE `+visible+`), '{}')
+		       COALESCE(array_agg(DISTINCT lower(src.name)) FILTER (WHERE `+visible+`), '{}'),
+		       COALESCE(array_agg(DISTINCT src.id::text) FILTER (WHERE `+visible+`), '{}')
 		FROM assets ip
 		JOIN asset_relationships rel ON rel.tenant_id = ip.tenant_id AND rel.target_asset_id = ip.id
 			AND rel.relationship_type = 'resolves_to'
@@ -58,19 +60,77 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 	}
 	defer rows.Close()
 	var out []easm.AddressBehindNames
+	nameIDs := map[string][]string{} // address asset id -> its visible names' ids
 	for rows.Next() {
 		var (
 			a   easm.AddressBehindNames
 			raw []byte
+			ids []string
 		)
-		if err := rows.Scan(&a.AssetID, &a.Address, &raw, pq.Array(&a.AllNames), pq.Array(&a.VisibleNames)); err != nil {
+		if err := rows.Scan(&a.AssetID, &a.Address, &raw, pq.Array(&a.AllNames), pq.Array(&a.VisibleNames), pq.Array(&ids)); err != nil {
 			return nil, err
 		}
 		a.Props = map[string]any{}
 		_ = json.Unmarshal(raw, &a.Props)
+		nameIDs[a.AssetID] = ids
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.fillAddressPorts(ctx, tenantID, out, nameIDs); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// fillAddressPorts sets each row's Ports: the ports asset_services records
+// on the address asset or on its visible names, tenant-scoped.
+func (r *AttributionRepository) fillAddressPorts(ctx context.Context, tenantID shared.ID, rows []easm.AddressBehindNames, nameIDs map[string][]string) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(rows)*2)
+	for _, a := range rows {
+		ids = append(ids, a.AssetID)
+		ids = append(ids, nameIDs[a.AssetID]...)
+	}
+	q, err := r.db.QueryContext(ctx, `
+		SELECT asset_id::text, array_agg(DISTINCT port)
+		FROM asset_services
+		WHERE tenant_id = $1 AND asset_id::text = ANY($2)
+		GROUP BY asset_id`, tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("ports behind addresses: %w", err)
+	}
+	defer q.Close()
+	ports := map[string][]int64{}
+	for q.Next() {
+		var (
+			id string
+			ps []int64
+		)
+		if err := q.Scan(&id, pq.Array(&ps)); err != nil {
+			return err
+		}
+		ports[id] = ps
+	}
+	if err := q.Err(); err != nil {
+		return err
+	}
+	for i := range rows {
+		seen := map[int]bool{}
+		for _, id := range append([]string{rows[i].AssetID}, nameIDs[rows[i].AssetID]...) {
+			for _, p := range ports[id] {
+				if p > 0 && p <= 65535 && !seen[int(p)] {
+					seen[int(p)] = true
+					rows[i].Ports = append(rows[i].Ports, int(p))
+				}
+			}
+		}
+		slices.Sort(rows[i].Ports)
+	}
+	return nil
 }
 
 // ConfirmedByPerson lists the tenant's domain, subdomain and address assets
