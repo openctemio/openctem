@@ -180,7 +180,7 @@ describe('lib', () => {
       tenantId: 't1',
       audience: defaultAudience('t1'),
     }
-    // Jenkins runs openctem-ci installed on the agent, not an image.
+    // Jenkins runs openctem-ci installed on its build node, not an image.
     for (const p of ['azure_devops', 'bitbucket', 'circleci'] as const) {
       const s = snippetFor(p, input)
       expect(s).toContain(`ghcr.io/openctemio/ci:${CI_RELEASE}`)
