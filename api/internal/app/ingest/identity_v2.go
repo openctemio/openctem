@@ -18,10 +18,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
-// Partial fingerprint keys the SAST recipe reads.
+// Partial fingerprint keys ingest reads or writes.
 const (
-	partialPrimaryLocationLineHash = "primaryLocationLineHash"
-	partialMatchBasedID            = "matchBasedId/v1"
+	// partialSnippetHash carries the producer's hash of the flagged code
+	// (the CTIS key snippetHash/v1, ctis fingerprint.PartialSnippetHash).
+	partialSnippetHash = "snippetHash/v1"
 	// partialSensorFingerprint keeps the sensor's own fingerprint as a
 	// sighting key (D1).
 	partialSensorFingerprint = "sensor/fingerprint"
@@ -68,10 +69,10 @@ func locationPath(f *ctis.Finding) string {
 
 // identityV2 computes the version-2 identity of f on asset. ok is false when
 // no recipe applies or the recipe lacks its inputs (a SAST result with
-// neither a tool anchor nor a snippet, a secret without a keyed HMAC); the
+// neither code nor a line, a secret without a keyed HMAC); the
 // caller then keeps the version-1 key. secretHMAC is the server-keyed
 // per-tenant HMAC of the reported secret; it is never logged.
-func identityV2(assetID shared.ID, f *ctis.Finding, tool *ctis.Tool, secretHMAC string, occurrence int) (vulnerability.IdentityKey, bool) {
+func identityV2(assetID shared.ID, f *ctis.Finding, secretHMAC string, occurrence int) (vulnerability.IdentityKey, bool) {
 	asset := assetID.String()
 	switch identityKind(f) {
 	case vulnerability.IdentityKindSecret:
@@ -105,28 +106,23 @@ func identityV2(assetID shared.ID, f *ctis.Finding, tool *ctis.Tool, secretHMAC 
 		}
 		return vulnerability.DASTIdentity(asset, rule, dastMethod(f), locationPath(f), dastParams(f))
 	case vulnerability.IdentityKindSAST:
-		return vulnerability.SASTIdentity(sastInput(asset, f, tool, occurrence))
+		return vulnerability.SASTIdentity(sastInput(asset, f, occurrence))
 	}
 	return vulnerability.IdentityKey{}, false
 }
 
-func sastInput(asset string, f *ctis.Finding, tool *ctis.Tool, occurrence int) vulnerability.SASTIdentityInput {
+func sastInput(asset string, f *ctis.Finding, occurrence int) vulnerability.SASTIdentityInput {
 	in := vulnerability.SASTIdentityInput{
 		Asset:      asset,
 		Rule:       f.RuleID,
 		Path:       locationPath(f),
 		Occurrence: occurrence,
 	}
-	if tool != nil {
-		in.Tool = tool.Name
-	}
 	if f.PartialFingerprints != nil {
-		in.PrimaryLocationLineHash = f.PartialFingerprints[partialPrimaryLocationLineHash]
-		if v := f.PartialFingerprints[partialMatchBasedID]; v != vulnerability.SemgrepRequiresLogin {
-			in.MatchBasedID = v
-		}
+		in.SnippetHash = f.PartialFingerprints[partialSnippetHash]
 	}
 	if f.Location != nil {
+		in.StartLine = f.Location.StartLine
 		in.Snippet = f.Location.Snippet
 		if in.Snippet == vulnerability.SemgrepRequiresLogin {
 			in.Snippet = ""
@@ -141,34 +137,45 @@ func sastInput(asset string, f *ctis.Finding, tool *ctis.Tool, occurrence int) v
 	return in
 }
 
+// sastFormerLineKey is the line-anchored key of a SAST finding whose key is
+// anchored on its code: the key it was stored under while its reports
+// carried no code. "" when the finding is not SAST or has no such key.
+func sastFormerLineKey(assetID shared.ID, f *ctis.Finding, identity vulnerability.IdentityKey) string {
+	if identityKind(f) != vulnerability.IdentityKindSAST || identity.Field("snippet") == "" {
+		return ""
+	}
+	k, ok := vulnerability.SASTLineIdentity(sastInput(assetID.String(), f, 0))
+	if !ok {
+		return ""
+	}
+	return k.Fingerprint()
+}
+
 // sastSnippetGroup is the key under which identical SAST snippets of one file
 // are counted to give each its occurrence index.
-func sastSnippetGroup(assetID shared.ID, f *ctis.Finding, tool *ctis.Tool) (string, bool) {
+func sastSnippetGroup(assetID shared.ID, f *ctis.Finding) (string, bool) {
 	if identityKind(f) != vulnerability.IdentityKindSAST {
 		return "", false
 	}
-	in := sastInput(assetID.String(), f, tool, 0)
-	if in.PrimaryLocationLineHash != "" || in.MatchBasedID != "" {
-		return "", false
-	}
-	sh := vulnerability.SnippetHash(in.Snippet)
+	in := sastInput(assetID.String(), f, 0)
+	sh := vulnerability.SASTSnippetHash(in)
 	if sh == "" {
 		return "", false
 	}
-	return strings.Join([]string{in.Asset, strings.ToLower(in.Tool), in.Rule, vulnerability.NormalizeRepoPath(in.Path), sh, in.LogicalLocation}, "\x1f"), true
+	return strings.Join([]string{in.Asset, in.Rule, vulnerability.NormalizeRepoPath(in.Path), sh, in.LogicalLocation}, "\x1f"), true
 }
 
 // sastOccurrences returns, per finding index, the 0-based occurrence of its
 // (rule, path, snippet) in the report, in line order, so twin snippets keep
 // their index when unrelated code moves.
-func sastOccurrences(findings []ctis.Finding, assetOf func(i int) shared.ID, tool *ctis.Tool) map[int]int {
+func sastOccurrences(findings []ctis.Finding, assetOf func(i int) shared.ID) map[int]int {
 	groups := map[string][]int{}
 	for i := range findings {
 		a := assetOf(i)
 		if a.IsZero() {
 			continue
 		}
-		if g, ok := sastSnippetGroup(a, &findings[i], tool); ok {
+		if g, ok := sastSnippetGroup(a, &findings[i]); ok {
 			groups[g] = append(groups[g], i)
 		}
 	}
