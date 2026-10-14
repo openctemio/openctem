@@ -1594,6 +1594,13 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, shared.ErrUnauthorized):
 		apierror.Unauthorized("").WriteJSON(w)
 	case errors.Is(err, shared.ErrForbidden):
+		// A governed scan waiting for approval keeps its code and message
+		// (the console points to the approval panel); any other refusal
+		// stays a plain 403.
+		if code := scanZoneErrorCode(err, ""); code != "" {
+			apierror.New(http.StatusForbidden, code, cleanErrorMessage(err, "Forbidden")).WriteJSON(w)
+			return
+		}
 		apierror.Forbidden("").WriteJSON(w)
 	default:
 		h.logger.Error("service error", "error", err)
