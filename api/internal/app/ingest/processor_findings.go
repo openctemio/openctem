@@ -1666,8 +1666,9 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 
 	// Data flow (taint tracking)
 	if ctisFinding.DataFlow != nil {
-		domainFlow := mapCTISDataFlowToDomain(ctisFinding.DataFlow)
-		f.SetDataFlows([]vulnerability.DataFlow{domainFlow})
+		if domainFlow := mapCTISDataFlowToDomain(ctisFinding.DataFlow); len(domainFlow.Steps) > 0 {
+			f.SetDataFlows([]vulnerability.DataFlow{domainFlow})
+		}
 	}
 }
 
@@ -1956,7 +1957,21 @@ func (p *FindingProcessor) maybeSetDefaultBranch(ctx context.Context, repository
 // intermediates, sanitizers and sinks, each step with its index) to the
 // domain's single list of steps, in step order: a sanitizer between two
 // propagation steps stays where the producer put it.
-func mapCTISDataFlowToDomain(df *ctis.DataFlow) vulnerability.DataFlow {
+//
+// The trace is normalized again on receipt (ctis.NormalizeDataFlow, on a
+// copy): a report from any producer, an older one included, gets the same
+// bounds, repository-relative paths and masked credentials in snippets.
+func mapCTISDataFlowToDomain(in *ctis.DataFlow) vulnerability.DataFlow {
+	if in == nil {
+		return vulnerability.DataFlow{}
+	}
+	cp := *in
+	cp.Sources = append([]ctis.DataFlowLocation(nil), in.Sources...)
+	cp.Intermediates = append([]ctis.DataFlowLocation(nil), in.Intermediates...)
+	cp.Sanitizers = append([]ctis.DataFlowLocation(nil), in.Sanitizers...)
+	cp.Sinks = append([]ctis.DataFlowLocation(nil), in.Sinks...)
+	cp.CallPath = append([]string(nil), in.CallPath...)
+	df := ctis.NormalizeDataFlow(&cp)
 	if df == nil {
 		return vulnerability.DataFlow{}
 	}
