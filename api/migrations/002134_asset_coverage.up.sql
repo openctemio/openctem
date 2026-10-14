@@ -98,5 +98,7 @@ BEGIN
     END IF;
 END $$;
 
+-- expand-contract-ok: contract step in the same release (owner rule: minimal back-compat, no release wait); the API stops during deploy (upgrade note), and the rows were copied and counted above
 DROP TABLE IF EXISTS easm_dns_check_state;
+-- expand-contract-ok: same contract step; scan_coverage_state had 0 rows on live and its only reader moved to asset_coverage in this change
 DROP TABLE IF EXISTS scan_coverage_state;
