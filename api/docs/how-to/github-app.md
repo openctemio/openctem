@@ -12,8 +12,9 @@ The app asks for the least it needs:
 | Checks | Read and write | post the gate's check run on the commit |
 | Pull requests | Read and write | the summary comment and inline review comments; find the pull request of a commit |
 | Metadata | Read | required by GitHub for every app |
+| Contents | Read (optional) | read a merge commit's parents, so the check still lands on a pull request whose base moved before it was posted; a token with this permission is minted only for that read, for one repository. Without it such a check is skipped (the next run posts it) |
 
-It reads no code, no secrets and no workflows. Installation tokens live at
+It reads no secrets and no workflows, and no code unless Contents is granted. Installation tokens live at
 most one hour and cover only the repositories the installer selected.
 
 ## 1. Create the app from the manifest
@@ -146,8 +147,15 @@ When a default-branch commit comes from a merged pull request whose last
 gate verdict was not a pass, the notification `ci.ungated_merge` is sent
 (Settings > Notifications): the merge did not wait for the gate.
 
-Posting runs in the background (every 15 seconds, retried up to five times);
-it never changes a verdict.
+Posting runs in the background (every 15 seconds); it never changes a
+verdict. A failed post is retried up to eight times, 30 seconds apart and
+doubling up to 30 minutes (about an hour in all), and a GitHub rate limit is
+retried, never final. When GitHub recomputes a pull request's merge commit
+because its base branch moved, a run that judged the same head still posts
+its check on that head. The check is `action_required` when only a scanner
+failure failed the gate (nothing in the code was judged); findings the policy
+lists in comment mode are notice annotations and are marked as not blocking
+in the comment.
 
 ## Rotate
 
