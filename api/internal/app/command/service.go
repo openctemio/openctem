@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
