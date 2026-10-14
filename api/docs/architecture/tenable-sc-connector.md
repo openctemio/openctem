@@ -53,6 +53,13 @@ integration metadata.tenable_sync (cursor, counts, license), status connected
   the command names an instance label only.
 - The command is pinned to the integration's sensor; routing hands it only to
   that sensor, and only while it reports the `tenable_sc` tool.
+- The sensor's grant must allow the command (`connector_sync` for syncs;
+  `connector_scan`, tool `tenable_sc`, trust "trusted" and tier T1, and the
+  targets for scans). The default profile of a paired scanning sensor allows
+  neither type, and the collector profile allows syncs only. A sync request,
+  scan run or coverage batch the grant refuses is refused before a command is
+  queued (`CONNECTOR_GRANT_REFUSES`, `tenablesc.Service.admitGrant`); the
+  claim checks the grant again and fails closed.
 - The sensor must be one of the tenant's own sensors (tenant-scoped lookup);
   shared platform sensors are refused.
 - Another tenant's integration id is not found (sync, update, claim).
