@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -154,5 +155,64 @@ func TestNameRuleCards(t *testing.T) {
 	}
 	if n := NameRuleCards(&RuleSuggestions{Individual: []IndividualItem{{Name: "198.51.100.1:443"}}}); n != 0 {
 		t.Fatalf("address-only individuals = %d, want 0", n)
+	}
+}
+
+// The card says what was seen on each address (ports, the other names) and
+// offers the organization's own prefix as one rule, only when the platform
+// guardrails accept it; a shared address is never given a prefix.
+func TestSuggestionCards_EvidenceAndOwnPrefix(t *testing.T) {
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		func() AddressBehindNames {
+			a := addr("198.51.100.20", map[string]any{"asn": "AS64502", "asn_org": "Elsewhere",
+				"ports": []any{map[string]any{"port": float64(22), "state": "open"}, map[string]any{"port": float64(25), "state": "closed"}}},
+				"www.acme.example", "old.acme.example")
+			a.Ports = []int{443, 8443}
+			return a
+		}(),
+		addr("198.51.100.21", map[string]any{"asn": "AS64502", "asn_org": "Elsewhere"}, "api.acme.example"),
+		addr("203.0.113.50", map[string]any{"asn": "AS64502", "asn_org": "Elsewhere"}, "big.acme.example"),
+		addr("198.51.100.22", map[string]any{"cdn": "examplecdn"}, "cdn.acme.example"),
+	}}
+	cover := coverSet{"www.acme.example": true, "api.acme.example": true, "big.acme.example": true, "cdn.acme.example": true}
+	seeds := func(context.Context, shared.ID) (easmseed.Networks, error) {
+		return easmseed.Networks{ASNs: map[string]bool{"AS64502": true}, Prefixes: []string{"198.51.0.0/16", "198.51.100.0/24", "203.0.0.0/8"}}, nil
+	}
+	svc := NewSuggestionService(store, cover, nil, nil, seeds)
+	// Without guardrails no prefix is offered (fail closed).
+	out, err := svc.Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Cards[0].PrefixRules) != 0 {
+		t.Fatalf("prefixes without guardrails: %v", out.Cards[0].PrefixRules)
+	}
+	svc.SetGuardrails(scopedom.DefaultGuardrails())
+	out, err = svc.Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := out.Cards[0]
+	byAddr := map[string]SuggestionAddress{}
+	for _, a := range c.Addresses {
+		byAddr[a.Address] = a
+	}
+	first := byAddr["198.51.100.20"]
+	if len(first.Ports) != 3 || first.Ports[0] != 22 || first.Ports[2] != 8443 {
+		t.Fatalf("ports %v (open ports from the record and the services, closed left out)", first.Ports)
+	}
+	if len(first.OtherNames) != 1 || first.OtherNames[0] != "old.acme.example" {
+		t.Fatalf("other names %v", first.OtherNames)
+	}
+	if first.Prefix != "198.51.100.0/24" || byAddr["198.51.100.21"].Prefix != "198.51.100.0/24" {
+		t.Fatalf("most specific own prefix: %q %q", first.Prefix, byAddr["198.51.100.21"].Prefix)
+	}
+	if len(c.PrefixRules) != 1 || c.PrefixRules[0].Prefix != "198.51.100.0/24" || c.PrefixRules[0].Addresses != 2 {
+		t.Fatalf("prefix rules %v", c.PrefixRules)
+	}
+	for _, a := range c.SharedAddresses {
+		if a.Prefix != "" {
+			t.Fatalf("a shared address got a prefix: %+v", a)
+		}
 	}
 }
