@@ -24,6 +24,9 @@ const (
 	// partialSnippetHash carries the producer's hash of the flagged code
 	// (the CTIS key snippetHash/v1, ctis fingerprint.PartialSnippetHash).
 	partialSnippetHash = "snippetHash/v1"
+	// partialSecretHMAC carries a producer's keyed hash of a raw secret
+	// (HMAC-SHA256 under the tenant and asset's producer key).
+	partialSecretHMAC = "secretHMAC/v1"
 	// partialSensorFingerprint keeps the sensor's own fingerprint as a
 	// sighting key (D1).
 	partialSensorFingerprint = "sensor/fingerprint"
