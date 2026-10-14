@@ -38,6 +38,10 @@ const (
 	maxRuleEntries   = 100
 	maxRuleEntryLen  = 255
 	maxBranchNameLen = 255
+	// maxWorkflowRefs and maxWorkflowRefLen bound the workflow_refs rule (a
+	// GitLab configuration URI names the host, the project and the file).
+	maxWorkflowRefs   = 20
+	maxWorkflowRefLen = 512
 )
 
 // IsValid reports whether p is a supported provider.
@@ -77,6 +81,18 @@ type Rules struct {
 	// claim: the job must run in one of Environments (required with this
 	// switch), whose deployment branch rules admit only protected refs.
 	RequireProtectedRef bool `json:"require_protected_ref,omitempty"`
+	// WorkflowRefs, when set, admit only jobs that run one of these pipeline
+	// definitions: "<path>@<ref>", where the path names the file exactly
+	// and the ref is a pattern like Refs. GitHub: the job_workflow_ref
+	// claim ("acme/security/.github/workflows/scan.yml@refs/heads/main"),
+	// which names the reusable workflow a job calls, so an organization can
+	// trust only its central workflow; a pull request that edits or adds a
+	// workflow file in the repository runs another definition and is
+	// refused. GitLab: the ci_config_ref_uri claim
+	// ("gitlab.example.com/grp/ci//scan.yml@refs/heads/main"). Other
+	// providers' tokens do not name the definition, so the rule is refused
+	// for them when the configuration is saved.
+	WorkflowRefs []string `json:"workflow_refs,omitempty"`
 	// WorkspaceUUID is the Bitbucket workspace's immutable id (required for
 	// Bitbucket): the issuer names the workspace by its slug, which a
 	// renamed workspace gives up to whoever takes it next.
@@ -173,6 +189,13 @@ func (r Rules) normalized() Rules {
 	r.Refs = clean(r.Refs, false)
 	r.Environments = clean(r.Environments, false)
 	r.Events = clean(r.Events, true)
+	refs := make([]string, 0, len(r.WorkflowRefs))
+	for _, v := range r.WorkflowRefs {
+		if v = strings.TrimSpace(v); v != "" && !slices.Contains(refs, v) {
+			refs = append(refs, v)
+		}
+	}
+	r.WorkflowRefs = refs
 	return r
 }
 
@@ -223,6 +246,16 @@ func (c *TrustConfig) validateProviderRules() error {
 		return fmt.Errorf("events: this provider's token does not name the trigger event")
 	case len(c.Rules.Environments) > 0 && !hasEnvironmentClaim(p):
 		return fmt.Errorf("environments: this provider's token does not name a deployment environment")
+	case len(c.Rules.WorkflowRefs) > 0 && !hasWorkflowRefClaim(p):
+		return fmt.Errorf("workflow_refs: this provider's token does not name the pipeline definition")
+	}
+	if len(c.Rules.WorkflowRefs) > maxWorkflowRefs {
+		return fmt.Errorf("workflow_refs: at most %d entries", maxWorkflowRefs)
+	}
+	for _, w := range c.Rules.WorkflowRefs {
+		if err := validateWorkflowRef(p, w); err != nil {
+			return fmt.Errorf("workflow_refs: %q %v", w, err)
+		}
 	}
 	if repositoriesByID(p) {
 		for _, r := range c.Rules.Repositories {
@@ -304,6 +337,49 @@ func (r Rules) validate() error {
 		}
 	}
 	return nil
+}
+
+// validateWorkflowRef checks one workflow_refs entry: "<path>@<ref
+// pattern>". The path is exact (no wildcard): it names the one definition
+// the organization controls. GitHub: owner/repository/.github/workflows/
+// <file>. GitLab: <host>/<project path>//<file>.
+func validateWorkflowRef(p Provider, w string) error {
+	if len(w) > maxWorkflowRefLen || strings.ContainsAny(w, " \t\r\n") {
+		return fmt.Errorf("is not a valid entry (at most %d characters, no spaces)", maxWorkflowRefLen)
+	}
+	file, ref, ok := cutWorkflowRef(w)
+	if !ok || file == "" || ref == "" {
+		return fmt.Errorf("must be <path>@<ref>")
+	}
+	if strings.ContainsAny(file, "*?[") {
+		return fmt.Errorf("may use a wildcard only in the ref")
+	}
+	if _, err := path.Match(ref, ""); err != nil {
+		return fmt.Errorf("has an invalid ref pattern")
+	}
+	switch p {
+	case ProviderGitHub:
+		segs := strings.Split(file, "/")
+		if len(segs) < 5 || segs[0] == "" || segs[1] == "" || segs[2] != ".github" || segs[3] != "workflows" || segs[len(segs)-1] == "" {
+			return fmt.Errorf("must be owner/repository/.github/workflows/<file>@<ref>")
+		}
+	case ProviderGitLab:
+		project, cfg, ok := strings.Cut(file, "//")
+		if !ok || cfg == "" || strings.Count(project, "/") < 2 {
+			return fmt.Errorf("must be <host>/<project path>//<file>@<ref>")
+		}
+	}
+	return nil
+}
+
+// cutWorkflowRef splits "<path>@<ref>" at the last '@' (a path may not
+// contain one, a GitLab project path can).
+func cutWorkflowRef(w string) (file, ref string, ok bool) {
+	i := strings.LastIndexByte(w, '@')
+	if i < 0 {
+		return "", "", false
+	}
+	return w[:i], w[i+1:], true
 }
 
 // validateIssuerURL accepts https://host[:port][/path] without credentials,
