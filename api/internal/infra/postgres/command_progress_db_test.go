@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -20,8 +21,9 @@ import (
 func newBudgetTestCommand(ctx context.Context, t *testing.T, cmds *CommandRepository, tenant, sensor shared.ID, n int, budget *toolbudget.Task) shared.ID {
 	t.Helper()
 	targets := make([]string, n)
+	host := uniqueTestHost()
 	for i := range targets {
-		targets[i] = "10.9.1." + string(rune('1'+i%9))
+		targets[i] = fmt.Sprintf("t%d.%s", i%9, host)
 	}
 	p := map[string]any{"scanner": "nuclei", "targets": targets}
 	if budget != nil {

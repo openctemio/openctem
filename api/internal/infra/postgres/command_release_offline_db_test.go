@@ -39,7 +39,7 @@ func TestReleasePendingFromUnavailableSensors(t *testing.T) {
 	routed := func(sensor shared.ID, zoned bool, mutate func(*command.Command)) shared.ID {
 		t.Helper()
 		raw, _ := json.Marshal(map[string]any{
-			"scanner": "nuclei", "targets": []string{"10.1.0.1"},
+			"scanner": "nuclei", "targets": []string{uniqueTestHost()},
 			"scan_run_id": shared.NewID().String(), "step_key": "scan",
 		})
 		cmd, err := command.NewCommand(tenant, command.CommandTypeScan, command.CommandPriorityNormal, raw)

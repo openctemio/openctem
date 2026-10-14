@@ -57,6 +57,11 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	if err := r.guardCreate(ctx, cmd); err != nil {
 		return err
 	}
+	// ...and its host keys: the hosts it holds while it runs, sent to the
+	// sensor in its payload so both sides admit it under the same keys.
+	if err := command.AssignHostKeys(cmd); err != nil {
+		return err
+	}
 	query := `
 		INSERT INTO commands (
 			id, tenant_id, sensor_id, type, priority, payload,
