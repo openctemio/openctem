@@ -1082,6 +1082,21 @@ the fields the platform plans and binds output with.
 - **Shown** on the sensor drawer's Manifest tab (class, tier, network,
   consumes, produces, digest) and returned by
   `GET /api/v1/sensors/{id}/manifest[s]`.
+- **Tool options.** The stored descriptor carries the tool's configuration
+  schema (`config`, the closed JSON Schema subset of the CTIS settings
+  contract, `github.com/openctemio/ctis/settings`). The Manifest tab lists
+  each tool's options read-only under "Options (N)": common options first
+  (`x-octm-common`: `timeout`, `rate`, `concurrency`, `retries`, defined
+  once in `ctis/tooloption`), then the tool's own, each with its default,
+  range or values, who may set it (`x-octm-scope`: the sensor's
+  configuration only, or a scan too), its safety class (`x-octm-tier`: T0
+  safe, T1 impact, T2 dangerous) and the native flag it maps to
+  (`x-octm-flag`). The web reads the descriptor with a checking reader
+  (`web/src/features/sensors/lib/tool-options.ts`): malformed parts are
+  skipped, at most 64 options and 500 characters per text are shown, and
+  every string renders as text. Common option names and the built-in
+  tools' option titles are translated; a third-party tool's own text shows
+  as the sensor reported it.
 
 **Derived manifests.** For a heartbeat without `manifest_digest` that carries
 tools (protocol v1, older SDKs), the platform builds the manifest from the
