@@ -28,6 +28,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { CRITICALITY_BADGE_SOFT } from '@/lib/criticality-colors'
 import type { AssetScope, ExposureLevel, Criticality, ImpactRating } from '../types'
 import {
@@ -79,6 +80,8 @@ const CRITICALITY_ICONS: Record<Criticality, React.ElementType> = {
 }
 
 interface AssetScopeBadgeProps {
+  /** Prefix the value with what it is ("Zone: Internal"), for headers. */
+  labelled?: boolean
   scope: AssetScope
   showIcon?: boolean
   showTooltip?: boolean
@@ -92,14 +95,23 @@ export function AssetScopeBadge({
   showTooltip = true,
   size = 'md',
   className,
+  labelled = false,
 }: AssetScopeBadgeProps) {
+  const { t } = useTranslation()
   const Icon = SCOPE_ICONS[scope]
-  const label = ASSET_SCOPE_LABELS[scope]
-  const description = ASSET_SCOPE_DESCRIPTIONS[scope]
+  const label = t(`assets.zone.${scope}`, ASSET_SCOPE_LABELS[scope])
+  // The field is called `scope` in the API, but it is the network zone the
+  // asset sits in, not whether scans may reach it (research 129, A4).
+  const description = `${t(`assets.zone.${scope}.hint`, ASSET_SCOPE_DESCRIPTIONS[scope])} ${t(
+    'assets.zone.notScanScope',
+    'This is the network zone, not the scan scope.'
+  )}`
+  const prefix = labelled ? t('assets.badge.zone', 'Zone') : null
 
   const badge = (
     <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size), className)}>
       {showIcon && <Icon className={cn(NEUTRAL_ICON, size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5')} />}
+      {prefix && <span className="font-normal opacity-75">{prefix}:</span>}
       {label}
     </Badge>
   )
@@ -120,6 +132,8 @@ export function AssetScopeBadge({
 }
 
 interface ExposureBadgeProps {
+  /** Prefix the value with what it is ("Zone: Internal"), for headers. */
+  labelled?: boolean
   exposure: ExposureLevel
   showIcon?: boolean
   showTooltip?: boolean
@@ -133,14 +147,18 @@ export function ExposureBadge({
   showTooltip = true,
   size = 'md',
   className,
+  labelled = false,
 }: ExposureBadgeProps) {
+  const { t } = useTranslation()
   const Icon = EXPOSURE_ICONS[exposure]
-  const label = EXPOSURE_LEVEL_LABELS[exposure]
-  const description = EXPOSURE_LEVEL_DESCRIPTIONS[exposure]
+  const label = t(`assets.exposure.${exposure}`, EXPOSURE_LEVEL_LABELS[exposure])
+  const description = t(`assets.exposure.${exposure}.hint`, EXPOSURE_LEVEL_DESCRIPTIONS[exposure])
+  const prefix = labelled ? t('assets.badge.exposure', 'Exposure') : null
 
   const badge = (
     <Badge variant="outline" className={cn(NEUTRAL_BADGE, sizeClass(size), className)}>
       {showIcon && <Icon className={cn(NEUTRAL_ICON, size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5')} />}
+      {prefix && <span className="font-normal opacity-75">{prefix}:</span>}
       {label}
     </Badge>
   )
@@ -161,6 +179,8 @@ export function ExposureBadge({
 }
 
 interface CriticalityBadgeProps {
+  /** Prefix the value with what it is ("Zone: Internal"), for headers. */
+  labelled?: boolean
   criticality: Criticality
   showIcon?: boolean
   showTooltip?: boolean
@@ -174,10 +194,13 @@ export function CriticalityBadge({
   showTooltip = true,
   size = 'md',
   className,
+  labelled = false,
 }: CriticalityBadgeProps) {
+  const { t } = useTranslation()
   const Icon = CRITICALITY_ICONS[criticality]
-  const label = CRITICALITY_LABELS[criticality]
-  const description = CRITICALITY_DESCRIPTIONS[criticality]
+  const label = t(`criticality.${criticality}`, CRITICALITY_LABELS[criticality])
+  const description = t(`criticality.${criticality}.hint`, CRITICALITY_DESCRIPTIONS[criticality])
+  const prefix = labelled ? t('assets.badge.criticality', 'Criticality') : null
 
   const badge = (
     <Badge
@@ -190,6 +213,7 @@ export function CriticalityBadge({
       )}
     >
       {showIcon && <Icon className={size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5'} />}
+      {prefix && <span className="font-normal opacity-75">{prefix}:</span>}
       {label}
     </Badge>
   )
@@ -217,6 +241,8 @@ interface ClassificationBadgesProps {
   showTooltips?: boolean
   size?: 'sm' | 'md'
   className?: string
+  /** Header use: name each value ("Criticality: High", "Exposure: Public", "Zone: Internal"). */
+  labelled?: boolean
 }
 
 /**
@@ -235,8 +261,18 @@ export function ClassificationBadges({
   showTooltips = true,
   size = 'md',
   className,
+  labelled = false,
 }: ClassificationBadgesProps) {
   const showExposure = exposure && exposure !== 'unknown'
+  const zone = scope ? (
+    <AssetScopeBadge
+      scope={scope}
+      showIcon={showIcons}
+      showTooltip={showTooltips}
+      size={size}
+      labelled={labelled}
+    />
+  ) : null
   return (
     <div className={cn('flex items-center gap-1.5', className)}>
       {criticality && (
@@ -245,17 +281,21 @@ export function ClassificationBadges({
           showIcon={showIcons}
           showTooltip={showTooltips}
           size={size}
+          labelled={labelled}
         />
       )}
-      <AssetScopeBadge scope={scope} showIcon={showIcons} showTooltip={showTooltips} size={size} />
+      {/* A header reads what matters first: criticality, exposure, then the zone. */}
+      {!labelled && zone}
       {showExposure && (
         <ExposureBadge
           exposure={exposure}
           showIcon={showIcons}
           showTooltip={showTooltips}
           size={size}
+          labelled={labelled}
         />
       )}
+      {labelled && zone}
     </div>
   )
 }
