@@ -51,12 +51,20 @@ func (s *Service) ResolvePolicy(ctx context.Context, tenantID, assetID shared.ID
 	if err != nil {
 		return cirun.GatePolicy{}, "", fmt.Errorf("load gate policies: %w", err)
 	}
+	p, source := resolveFrom(ps)
+	return p, source, nil
+}
+
+// resolveFrom picks among enabled policies that may apply to one
+// repository: its own, else the strictest business unit's, else the
+// tenant's, else the built-in default.
+func resolveFrom(ps []cirun.GatePolicy) (cirun.GatePolicy, string) {
 	var units []cirun.GatePolicy
 	var tenant *cirun.GatePolicy
 	for i := range ps {
 		switch ps[i].ScopeType {
 		case cirun.ScopeRepository:
-			return ps[i], cirun.ScopeRepository, nil
+			return ps[i], cirun.ScopeRepository
 		case cirun.ScopeBusinessUnit:
 			units = append(units, ps[i])
 		case cirun.ScopeTenant:
@@ -65,11 +73,11 @@ func (s *Service) ResolvePolicy(ctx context.Context, tenantID, assetID shared.ID
 	}
 	switch {
 	case len(units) > 0:
-		return cirun.Strictest(units), cirun.ScopeBusinessUnit, nil
+		return cirun.Strictest(units), cirun.ScopeBusinessUnit
 	case tenant != nil:
-		return *tenant, cirun.ScopeTenant, nil
+		return *tenant, cirun.ScopeTenant
 	}
-	return cirun.DefaultGatePolicy(), cirun.ScopeDefault, nil
+	return cirun.DefaultGatePolicy(), cirun.ScopeDefault
 }
 
 // Evaluate judges the run against the policy and stores the verdict.
