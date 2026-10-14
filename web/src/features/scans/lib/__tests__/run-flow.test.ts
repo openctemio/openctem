@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { RunMap, RunMapNode } from '@/lib/api/generated'
 import {
-  PIPELINE_CARD_WIDTH,
-  PIPELINE_GAP_X,
-  PIPELINE_SIBLING_GAP,
+  FLOW_CARD_WIDTH,
+  FLOW_GAP_X,
+  FLOW_SIBLING_GAP,
   blockingUpstream,
   edgeHandOff,
   hasParallelBranches,
-  pipelineDirection,
-  pipelineLayers,
-  pipelineTone,
+  flowDirection,
+  flowLayers,
+  flowTone,
   skippedReasonText,
   stepDurationLabel,
   stepProgress,
-} from '../run-pipeline'
+} from '../run-flow'
 
 function node(key: string, deps: string[] = [], over: Partial<RunMapNode> = {}): RunMapNode {
   return {
@@ -39,7 +39,7 @@ function expectWellLayered(nodes: RunMapNode[], layers: string[][]) {
   }
 }
 
-describe('pipeline layout', () => {
+describe('flow layout', () => {
   it('draws a linear chain as one step per layer, and as a list', () => {
     const nodes = [
       node('subs'),
@@ -47,12 +47,12 @@ describe('pipeline layout', () => {
       node('ports', ['dns']),
       node('http', ['ports']),
     ]
-    const layers = pipelineLayers(nodes)
+    const layers = flowLayers(nodes)
     expect(layers).toEqual([['subs'], ['dns'], ['ports'], ['http']])
     expectWellLayered(nodes, layers)
     expect(hasParallelBranches(layers)).toBe(false)
     // A chain is a list at any width: no graph canvas around one column.
-    expect(pipelineDirection(layers, 4000)).toBeNull()
+    expect(flowDirection(layers, 4000)).toBeNull()
   })
 
   it('puts a fan-out side by side and picks the direction that fits', () => {
@@ -63,21 +63,21 @@ describe('pipeline layout', () => {
       node('http', ['dns']),
       node('tls', ['dns']),
     ]
-    const layers = pipelineLayers(nodes)
+    const layers = flowLayers(nodes)
     expect(layers).toEqual([['subs'], ['dns'], ['ports', 'http', 'tls']])
     expectWellLayered(nodes, layers)
     expect(hasParallelBranches(layers)).toBe(true)
-    const across = (n: number) => n * PIPELINE_CARD_WIDTH + (n - 1) * PIPELINE_GAP_X
-    const side = (n: number) => n * PIPELINE_CARD_WIDTH + (n - 1) * PIPELINE_SIBLING_GAP
-    expect(pipelineDirection(layers, across(3))).toBe('LR') // three layers fit across
-    expect(pipelineDirection(layers, across(3) - 1)).toBe('TB') // the widest layer fits
-    expect(pipelineDirection(layers, side(3) - 1)).toBeNull() // nothing fits: the list
-    expect(pipelineDirection(layers, 0)).toBeNull() // not measured yet: the list
+    const across = (n: number) => n * FLOW_CARD_WIDTH + (n - 1) * FLOW_GAP_X
+    const side = (n: number) => n * FLOW_CARD_WIDTH + (n - 1) * FLOW_SIBLING_GAP
+    expect(flowDirection(layers, across(3))).toBe('LR') // three layers fit across
+    expect(flowDirection(layers, across(3) - 1)).toBe('TB') // the widest layer fits
+    expect(flowDirection(layers, side(3) - 1)).toBeNull() // nothing fits: the list
+    expect(flowDirection(layers, 0)).toBeNull() // not measured yet: the list
   })
 
   it('lays a diamond out without crossing, the join after both branches', () => {
     const nodes = [node('a'), node('c', ['a']), node('b', ['a']), node('d', ['b', 'c'])]
-    const layers = pipelineLayers(nodes)
+    const layers = flowLayers(nodes)
     expectWellLayered(nodes, layers)
     expect(layers.map((l) => l.length)).toEqual([1, 2, 1])
     expect(layers[2]).toEqual(['d'])
@@ -86,7 +86,7 @@ describe('pipeline layout', () => {
   it('orders a layer by where its dependencies are, so edges do not cross', () => {
     // x1 feeds y2 and x2 feeds y1: the second layer follows the first.
     const nodes = [node('x1'), node('x2'), node('y1', ['x2']), node('y2', ['x1'])]
-    expect(pipelineLayers(nodes)).toEqual([
+    expect(flowLayers(nodes)).toEqual([
       ['x1', 'x2'],
       ['y2', 'y1'],
     ])
@@ -94,7 +94,7 @@ describe('pipeline layout', () => {
 
   it('draws every step once, whatever the dependencies say', () => {
     const nodes = [node('a', ['b']), node('b', ['a']), node('c', ['missing', 'c'])]
-    const layers = pipelineLayers(nodes)
+    const layers = flowLayers(nodes)
     expect(layers.flat().sort()).toEqual(['a', 'b', 'c'])
   })
 })
@@ -160,7 +160,7 @@ describe('step reasons and numbers', () => {
         'skipped',
         'canceled',
         'x',
-      ].map(pipelineTone)
+      ].map(flowTone)
     ).toEqual([
       'pending',
       'waiting',

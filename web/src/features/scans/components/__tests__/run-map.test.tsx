@@ -83,17 +83,17 @@ const renderMap = () =>
 /** A step card: a button named "<name>: <state>. Open the step". */
 const stepButton = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}: `) })
 
-const pipeline = () => screen.findByRole('region', { name: 'Run pipeline' })
+const runFlow = () => screen.findByRole('region', { name: 'Run flow' })
 
 describe('RunMap', () => {
   beforeEach(() => {
     get.mockReset()
   })
 
-  it('draws the run as a pipeline: state, chunks, outputs and what flowed on', async () => {
+  it('draws the run as a flow: state, chunks, outputs and what flowed on', async () => {
     get.mockResolvedValue(data)
     renderMap()
-    await pipeline()
+    await runFlow()
     expect(get).toHaveBeenCalledWith('/api/v1/scan-runs/r1/map')
     expect(screen.getByText('Workflow version 2, as the run started')).toBeInTheDocument()
     // A chain is a list, in dependency order, each step joined to the last.
@@ -116,7 +116,7 @@ describe('RunMap', () => {
   it('opens a step panel with its state, outputs and only its tasks', async () => {
     get.mockResolvedValue(data)
     renderMap()
-    await pipeline()
+    await runFlow()
     const select = (name: string) => fireEvent.click(stepButton(name))
     select('Probe')
     expect(stepButton('Probe')).toHaveAttribute('aria-pressed', 'true')
@@ -140,7 +140,7 @@ describe('RunMap', () => {
   it('refreshes when the run says it changed', async () => {
     get.mockResolvedValue(data)
     renderMap()
-    await pipeline()
+    await runFlow()
     const sub = channels[channels.length - 1]
     expect(sub.channelType).toBe('run')
     expect(sub.channelId).toBe('r1')
@@ -188,7 +188,7 @@ describe('RunMap', () => {
       )
     )
     renderMap()
-    await pipeline()
+    await runFlow()
     expect(
       screen.getByText('Ports produced nothing, while the previous run produced 40.')
     ).toBeInTheDocument()
@@ -262,7 +262,7 @@ describe('RunMap', () => {
         />
       </SWRConfig>
     )
-    await pipeline()
+    await runFlow()
     const blocked =
       "Port scan could not reach 68 targets (blocked by the sensor's network confinement)."
     expect(within(screen.getByRole('status')).getByText(blocked)).toBeInTheDocument()
@@ -313,7 +313,7 @@ describe('RunMap', () => {
     it('draws a graph when it fits, with a list one click away', async () => {
       get.mockResolvedValue(fan)
       renderMap()
-      await pipeline()
+      await runFlow()
       const view = await screen.findByRole('group', { name: 'View' })
       const graph = within(view).getByRole('button', { name: 'Graph' })
       expect(graph).toHaveAttribute('aria-pressed', 'true')
