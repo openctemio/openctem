@@ -102,6 +102,10 @@ func registerCIRoutes(
 		r.GET("/pipelines/{id}", admin.GetPipeline, middleware.Require(permission.CIRead))
 		r.POST("/pipelines/{id}/retire", admin.RetirePipeline, middleware.Require(permission.CIWrite))
 
+		// Refused pipelines name repositories that may not be assets yet:
+		// the people who set up CI trust (write) see them.
+		r.GET("/trust-refusals", admin.ListTokenRefusals, middleware.Require(permission.CIWrite))
+
 		r.GET("/coverage", admin.GetCoverage, middleware.Require(permission.CIRead))
 		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIWrite))
 		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIWrite))

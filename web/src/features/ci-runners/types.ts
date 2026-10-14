@@ -65,3 +65,6 @@ export type SCMAppInstallation = S['internal_infra_http_handler.SCMAppInstallati
 export type SCMGitLabConnection = S['internal_infra_http_handler.SCMGitLabConnectionResponse']
 export type SCMGitLabConnectRequest = S['internal_infra_http_handler.SCMGitLabConnectRequest']
 export type SCMCompleteGitHubRequest = S['internal_infra_http_handler.SCMAppCompleteGitHubRequest']
+
+/** A refused CI token exchange and the rule codes that refused it (RFC-051). */
+export type CITokenRefusal = S['internal_infra_http_handler.CITokenRefusalResponse']

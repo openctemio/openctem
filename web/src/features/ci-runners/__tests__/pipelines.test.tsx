@@ -39,6 +39,12 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useFleet: () => ({ data: fleet, isLoading: false, mutate: vi.fn() }),
 }))
 
+let perms: string[] = []
+vi.mock('@/lib/permissions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/permissions')>()),
+  usePermissions: () => ({ can: (p: string) => perms.includes(p), isLoading: false }),
+}))
+
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't-123', slug: 'acme', role: 'owner' } }),
 }))
@@ -146,13 +152,24 @@ describe('CIPipelinesPanel', () => {
     lastPipelineFilters = undefined
   })
 
-  it('explains how to connect a pipeline when there is none', () => {
+  it('offers to connect a pipeline when there is none', () => {
+    perms = ['scans:ci:write']
     render(<CIPipelinesPanel />)
     expect(screen.getByText('No CI pipelines yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /set up ci trust/i })).toHaveAttribute(
       'href',
       '/ci-cd?tab=setup'
     )
+    perms = []
+  })
+
+  it('tells readers to ask an administrator when there is no pipeline', () => {
+    perms = []
+    render(<CIPipelinesPanel />)
+    expect(screen.queryByRole('button', { name: /connect a pipeline/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /set up ci trust/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/ask an administrator/i)).toBeInTheDocument()
   })
 
   it('lists pipelines with their status and never shows offline', () => {
