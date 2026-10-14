@@ -111,6 +111,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"POST /api/v1/scope/targets/preview":          {classScoped, "names an entry would confirm, counted over the caller's data scope (RFC-054 §4.3)"},
 	"/api/v1/ci/settings":                         {classConfig, "CI settings: tenant configuration (RFC-051)"},
 	"/api/v1/ci/scm-apps":                         {classConfig, "code-host app installations the organization bound for CI checks and comments: tenant configuration (RFC-077)"},
+	"/api/v1/ci/trust-refusals":                   {classConfig, "refused CI token exchanges from the audit log: CI trust administration (scans:ci:write), RFC-051"},
 	"/api/v1/ci/trust-configs":                    {classConfig, "CI trust configurations: tenant configuration (RFC-051)"},
 	"/api/v1/ci/gate-policies":                    {classScoped, "CI gate policies: a repository policy is listed and managed only for a repository in the caller's data scope (404 otherwise); organization and business unit policies are changed only with an unrestricted scope (RFC-051)"},
 	"/api/v1/ci/gate-overrides":                   {classScoped, "break-glass overrides: listed and created only on repositories in the caller's data scope, 404 otherwise (RFC-051)"},
