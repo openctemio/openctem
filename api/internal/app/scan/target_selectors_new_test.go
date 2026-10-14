@@ -44,7 +44,7 @@ func TestExpandSelectors_NewSinceLastRun(t *testing.T) {
 		{TenantID: shared.NewID(), Status: scanrun.RunStatusCompleted, StartedAt: &foreign},
 	}}
 	sel := &recordingSelector{}
-	s := &Service{selectorAssets: sel, runRepo: runs}
+	s := &Service{tools: testTools, selectorAssets: sel, runRepo: runs}
 	sc, err := scan.NewScanWithTargets(tenant, "probe new", []string{"*.example.com"}, scan.ScanTypeSingle)
 	if err != nil {
 		t.Fatal(err)

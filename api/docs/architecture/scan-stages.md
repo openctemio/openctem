@@ -1,6 +1,6 @@
 # Scan stages: catalogue, planner and chaining
 
-> Last updated: 2026-10-07. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
+> Last updated: 2026-10-14. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
 > §5 (engines and the stage catalogue; scan modes and workflows, decisions
 > G1–G12). Run model: [scan-lifecycle.md](scan-lifecycle.md).
 > Target gate: [active-probe-gate.md](active-probe-gate.md).
@@ -93,22 +93,28 @@ tool runs it:
   the stored types equal: each type a stage takes or produces is carried by
   one of its ports, and each port carries a type the stage takes or produces.
   Technology is an attribute of `url`/`service`, not a port type.
+- **Implementations come from the tools' contracts.** Which tools implement
+  a stage is not in `pkg/domain/stage`: it is the organization's
+  `stage.Catalog`, built from the tool contracts its sensors and the
+  platform's sensors report ([tool-contract.md](tool-contract.md) §2.1). A
+  tool no reported contract names implements nothing; a step that pins it by
+  name still runs it, as a tenant tool that never chains.
 - **Standard params** have a type (`string`, `string_list`, `integer`, `boolean`,
   `port_list`), an optional enum and optional bounds. Each implementation maps
-  the params it accepts to its own config key, the key the sensor's settings
-  schema declares (naabu: `top_n` → `top_ports`). A tool with no mapping for
-  a param does not accept that param.
+  the params it accepts to its own config key, from its descriptor's
+  `implements[].params` (naabu: `top_n` → `top_ports`). A tool with no
+  mapping for a param does not accept that param.
 - **Required output fields** are what a report of the capability must carry.
-- **By capability only.** An implementation may run its stage only for a
-  step or job that names the capability (`Implementation.ByCapability`).
-  naabu implements `scan.ports` and `discover.hosts`; a step that pins naabu
-  without naming `discover.hosts` (every existing naabu step and quick scan)
-  is a port scan, and a report that names no capability is bound to
-  `scan.ports`.
+- **Primary capability.** The first capability a tool's contract implements
+  is its primary one; it runs any other only for a step or job that names
+  that capability (`Implementation.ByCapability`). naabu implements
+  `scan.ports` then `discover.hosts`; a step that pins naabu without naming
+  `discover.hosts` (every existing naabu step and quick scan) is a port scan,
+  and a report that names no capability is bound to `scan.ports`.
 - **Batch.** Each implementation states whether the tool takes a list of
-  targets per task (`stage.AcceptsTargetList`). This replaces the scan
-  package's hardcoded scanner map. The Tenable bridge names, which are not catalogue
-  tools, keep their entry.
+  targets per task (`Catalog.AcceptsTargetList`, the contract's
+  `input.batch`). The Tenable bridge names, which report no contract, keep
+  their entry in the scan package.
 - **Adapters.** One table says which capability turns one port type into another
   (`hostname → url`: `probe.http`; `hostname → ip`: `resolve.dns`;
   `ip → service`: `scan.ports`; `cidr → ip`: `discover.hosts`; …). The editor offers it when two incompatible
@@ -122,8 +128,9 @@ tool runs it:
   can run one and no tool's routing changes. `verify.finding` is
   cross-cutting (retests), never a workflow node.
 
-`GET /api/v1/scans/stages` serves every capability with its contract and
-implementations, plus `port_types` and `adapters`.
+`GET /api/v1/scans/stages` serves every capability with its contract and the
+caller's organization's implementations (the tenant comes from the
+authenticated principal), plus `port_types` and `adapters`.
 
 **Tool Contract v1** ([RFC-055](../rfcs/RFC-055-tool-contract-v1.md),
 [tool-contract.md](tool-contract.md)) moves the contracts to one shared
@@ -134,11 +141,11 @@ and the sensor read too. The taxonomy keeps every id above. It adds:
 - required output as CTIS path rules, in place of the abstract field names;
 - `discover.cloud`, `sbom.generate` and `import.file`.
 
-Tools then declare `implements: [{capability: scan.ports@1, params: …}]` in
-their descriptor. The per-tool maps in `contract.go` (`toolParams`,
-`batchTools`) and the per-step tool settings become descriptor lookups
-behind the same functions. A built-in name fallback stays for sensors
-without descriptors, for one release train.
+Tools declare `implements: [{capability: scan.ports@1, params: …}]` in
+their descriptor. The planner reads those declarations: the per-tool param,
+batch and capability-job maps are gone from `pkg/domain/stage`, which keeps
+only a default preference order per capability. A sensor that reports no
+contract contributes no implementation.
 
 ### 1.2 Capability nodes: tool selection and settings
 
@@ -257,13 +264,14 @@ payload comes from one builder, `scan.StepCommandPayload`.
   `preferred_tool`.
 - **Resolution (decision G10).** A pinned tool is strict. A capability
   that names one catalogue stage (`scan.ports`, or a word such as
-  `portscan`) runs the first active platform implementation of the stage,
-  the default first; a collector or connector is never picked; none active is
+  `portscan`) runs the first active implementation of the stage in the
+  organization's catalog, the default first; a collector or connector is never picked; none active is
   `NO_MATCHING_TOOL`. Capabilities naming several stages are refused
   (`STEP_CAPABILITY_AMBIGUOUS`), never guessed. Capabilities the catalogue
   does not know fall back to the tenant's tool lookup (tenant-scoped, platform
-  tools first). Platform implementations are read with
-  `GetPlatformToolByName`, never another tenant's tool of the same name.
+  tools first). Implementations are read with the tenant-aware
+  `GetByName` (the platform tool, else the organization's own declared
+  tool), never another tenant's tool of the same name.
 - **Target kinds (RFC-088).** After the type gate, every target of a step
   goes only to a stage that takes its kind (`stage.AcceptsKind`): a name, an
   address, a network range, a URL or a service. A typed-in target is

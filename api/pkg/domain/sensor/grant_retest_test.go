@@ -21,7 +21,7 @@ func retestPayload(t *testing.T, tool, target string) json.RawMessage {
 	})
 }
 
-var builtinT1 = &ToolContract{Origin: ToolOriginBuiltin, Class: "target-scan", Tier: "T1"}
+var builtinT1 = &ToolContract{Origin: ToolOriginBuiltin, Class: "target-scan", Tier: "T1", Implements: []string{"vuln.templates@1"}}
 
 // Every profile that may scan may also validate and retest, and no other
 // dimension changes with it.
@@ -121,7 +121,7 @@ func TestAdmit_NewSensorRefusesT1Retest(t *testing.T) {
 	if r == nil || r.Dimension != DimTier {
 		t.Fatalf("New sensor admitted a T1 retest: %v", r)
 	}
-	if r := g.Admit("retest", retestPayload(t, "subfinder", "example.com"), nil); r != nil {
+	if r := g.admitReleased("retest", retestPayload(t, "subfinder", "example.com"), nil); r != nil {
 		t.Fatalf("New sensor refused a T0 retest: %v", r)
 	}
 }
@@ -134,7 +134,7 @@ func TestAdmit_RetestNeedsTheJobType(t *testing.T) {
 	if r := g.AdmitContract("retest", retestPayload(t, "nuclei", "https://app.example.com"), nil, builtinT1); r == nil || r.Dimension != DimJobTypes {
 		t.Fatalf("grant without retest admitted it: %v", r)
 	}
-	if r := trusted(mustProfile(t, "collector:tenable-sc")).Admit("retest", retestPayload(t, "nuclei", "https://app.example.com"), nil); r == nil || r.Dimension != DimJobTypes {
+	if r := trusted(mustProfile(t, "collector:tenable-sc")).admitReleased("retest", retestPayload(t, "nuclei", "https://app.example.com"), nil); r == nil || r.Dimension != DimJobTypes {
 		t.Fatalf("collector admitted a retest: %v", r)
 	}
 }

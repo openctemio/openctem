@@ -71,8 +71,8 @@ func (s *Service) platformNeedsProof(ctx context.Context) bool {
 // isIntrusiveTool reports whether every stage the scanner implements is
 // intrusive (T2). An unknown tool is not judged here (the sensor grant's
 // tier ceiling and the stage catalog decide elsewhere).
-func isIntrusiveTool(tool string) bool {
-	stages := stage.ForTool(tool)
+func isIntrusiveTool(cat stage.Catalog, tool string) bool {
+	stages := cat.ForTool(tool)
 	if len(stages) == 0 {
 		return false
 	}
@@ -88,7 +88,14 @@ func isIntrusiveTool(tool string) bool {
 // requires proof and any target is not at or under a verified domain
 // (RFC-054 §8.1).
 func (s *Service) refuseUnprovenIntrusive(ctx context.Context, tenantID shared.ID, scanner string, targets []string) error {
-	if !isIntrusiveTool(scanner) || len(targets) == 0 || !s.platformNeedsProof(ctx) {
+	if len(targets) == 0 || !s.platformNeedsProof(ctx) {
+		return nil
+	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("proof check failed, nothing dispatched: %w", err)
+	}
+	if !isIntrusiveTool(cat, scanner) {
 		return nil
 	}
 	missing, err := s.unverified(ctx, tenantID, targets)

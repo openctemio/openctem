@@ -24,14 +24,16 @@ const tenantHasPathRuleSQL = `
 		WHERE tenant_id = $1 AND exclusion_type = 'path' AND status = 'active'
 	)`
 
-// guardCreate runs the create guard. Without one, a web job is refused
-// when its tenant has a path exclusion that may apply, or when that cannot
-// be read: its web scope cannot be built here (fail closed).
+// guardCreate runs the create guard. Without one, a job that may be a web
+// job (any job naming a tool: the organization's tool facts are not read
+// here) is refused when its tenant has a path exclusion that may apply, or
+// when that cannot be read: its web scope cannot be built here (fail
+// closed).
 func (r *CommandRepository) guardCreate(ctx context.Context, cmd *command.Command) error {
 	if r.guard != nil {
 		return r.guard.GuardCreate(ctx, cmd)
 	}
-	if _, ok := command.WebJobOf(cmd); !ok {
+	if _, ok := command.WebJobOf(cmd, command.AnyTool); !ok {
 		return nil
 	}
 	var has bool

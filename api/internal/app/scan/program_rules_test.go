@@ -18,7 +18,7 @@ func (f fixedProgramRules) JobRules(context.Context, shared.ID, []string, time.T
 
 func TestRefuseProgramRules(t *testing.T) {
 	ctx := context.Background()
-	s := &Service{}
+	s := &Service{tools: testTools}
 	if err := s.refuseProgramRules(ctx, shared.NewID(), []string{"a.example"}); err != nil {
 		t.Fatalf("not wired: %v", err)
 	}

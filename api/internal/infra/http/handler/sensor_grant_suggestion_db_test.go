@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/sensor/sensortest"
+
 	"github.com/go-chi/chi/v5"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
@@ -53,6 +55,12 @@ func TestSensorGrantSuggestion_Handler(t *testing.T) {
 		if _, err := h.db.Exec(q); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The sensor is a released one: it reports httpx's contract.
+	tid, _ := shared.IDFromString(h.tenantID)
+	sid, _ := shared.IDFromString(h.sensorID)
+	if err := sensortest.SaveReleased(context.Background(), postgres.NewSensorRepository(&postgres.DB{DB: h.db}), &tid, sid, []string{"httpx"}, nil); err != nil {
+		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		_, _ = h.db.Exec(`DELETE FROM commands WHERE tenant_id = $1`, h.tenantID)

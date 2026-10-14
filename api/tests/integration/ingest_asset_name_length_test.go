@@ -51,6 +51,7 @@ func TestIngestV1_OverlongAssetNameRefusedAlone(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 
 	report, long := longNameReport("nmap")
 	tid := tn.tenant

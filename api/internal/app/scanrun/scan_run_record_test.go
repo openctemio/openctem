@@ -31,7 +31,7 @@ func (f *fakeScanRunRecorder) RefreshRunSummary(_ context.Context, tenantID, sca
 }
 
 func newRecorderService(rec ScanRunRecorder) *Service {
-	return &Service{scanRunRecorder: rec, logger: logger.NewNop()}
+	return &Service{tools: testTools, scanRunRecorder: rec, logger: logger.NewNop()}
 }
 
 func TestRecordScanRun_WritesOutcomeBackToScan(t *testing.T) {
@@ -114,7 +114,7 @@ func (r *statusOnlyRunRepo) UpdateStatus(_ context.Context, _ shared.ID, _ scanr
 // record it on the scan; before, both did and the scan counted the run twice.
 func TestFinishRun_OnlyTheWinningTransitionRecordsTheRun(t *testing.T) {
 	rec := &fakeScanRunRecorder{}
-	s := &Service{scanRunRecorder: rec, runRepo: &statusOnlyRunRepo{}, logger: logger.NewNop()}
+	s := &Service{tools: testTools, scanRunRecorder: rec, runRepo: &statusOnlyRunRepo{}, logger: logger.NewNop()}
 	scanID := shared.NewID()
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), ScanID: &scanID}
 
@@ -135,7 +135,7 @@ func TestFinishRun_OnlyTheWinningTransitionRecordsTheRun(t *testing.T) {
 func TestFinishRun_SettledRunsReachTheCallback(t *testing.T) {
 	for _, st := range []scanrun.RunStatus{scanrun.RunStatusCompleted, scanrun.RunStatusPartial, scanrun.RunStatusFailed} {
 		var got []*scanrun.Run
-		s := &Service{runRepo: &statusOnlyRunRepo{}, logger: logger.NewNop()}
+		s := &Service{tools: testTools, runRepo: &statusOnlyRunRepo{}, logger: logger.NewNop()}
 		s.SetRunCompletedCallback(func(_ context.Context, r *scanrun.Run) { got = append(got, r) })
 		run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID()}
 		if !s.finishRun(context.Background(), run, st, "", 4) {

@@ -31,7 +31,7 @@ func stepCommandFixture(gate TargetGate) (*Service, *scanrun.Run, *scanworkflow.
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), Status: scanrun.RunStatusRunning, Context: map[string]any{}}
 	step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "ports", Tool: "naabu", StepOrder: 1, Condition: scanworkflow.AlwaysCondition()}
 	sr := scanrun.NewStepRun(run.ID, step.ID, step.StepKey, 1, 0)
-	return &Service{targetGate: gate, logger: logger.NewNop()}, run, step, sr
+	return &Service{tools: testTools, targetGate: gate, logger: logger.NewNop()}, run, step, sr
 }
 
 func payloadExclusions(t *testing.T, raw []byte) []string {
@@ -53,7 +53,7 @@ func TestStepCommand_CarriesJobExclusions(t *testing.T) {
 	gate.byTenant[run.TenantID] = []string{"198.51.100.7/32"}
 	gate.byTenant[shared.NewID()] = []string{"203.0.113.0/24"} // another tenant
 	chunk := &scanapp.StepTargets{Targets: []string{"198.51.100.0/30", "198.51.100.8/29"}}
-	cmd, err := s.stepCommand(context.Background(), run, step, sr, chunk)
+	cmd, err := s.stepCommand(context.Background(), testCat, run, step, sr, chunk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestStepCommand_CarriesJobExclusions(t *testing.T) {
 
 	// No exclusion near the chunk: no key at all.
 	gate.byTenant[run.TenantID] = nil
-	cmd, err = s.stepCommand(context.Background(), run, step, sr, chunk)
+	cmd, err = s.stepCommand(context.Background(), testCat, run, step, sr, chunk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestStepCommand_CarriesJobExclusions(t *testing.T) {
 // A failed exclusion lookup creates no command (fail closed).
 func TestStepCommand_ExclusionLookupFailsClosed(t *testing.T) {
 	s, run, step, sr := stepCommandFixture(&exclusionGate{err: errors.New("db down")})
-	if cmd, err := s.stepCommand(context.Background(), run, step, sr, &scanapp.StepTargets{Targets: []string{"198.51.100.0/24"}}); err == nil {
+	if cmd, err := s.stepCommand(context.Background(), testCat, run, step, sr, &scanapp.StepTargets{Targets: []string{"198.51.100.0/24"}}); err == nil {
 		t.Fatalf("a command was built without its exclusions: %s", cmd.Payload)
 	}
 }

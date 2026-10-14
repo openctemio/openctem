@@ -40,7 +40,7 @@ func refusedTargets(d *DispatchTargets) []string {
 }
 
 func TestResolveDispatchTargets_NoZones(t *testing.T) {
-	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}}, attributionGate: &stubGate{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}}, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{
 		TenantID: shared.NewID(),
 		Targets: []string{
@@ -71,10 +71,10 @@ func TestResolveDispatchTargets_NoZones(t *testing.T) {
 func TestResolveDispatchTargets_FailsClosed(t *testing.T) {
 	in := DispatchTargetsInput{TenantID: shared.NewID(), Targets: []string{"app.example.com"}}
 
-	if _, err := (&Service{logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrDispatchGateUnavailable) {
+	if _, err := (&Service{tools: testTools, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrDispatchGateUnavailable) {
 		t.Fatalf("no exclusion filter: err = %v, want ErrDispatchGateUnavailable", err)
 	}
-	svc := &Service{scopeExclusions: &stubExclusions{err: errors.New("db down")}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{err: errors.New("db down")}, logger: logger.NewNop()}
 	if got, err := svc.ResolveDispatchTargets(context.Background(), in); err == nil {
 		t.Fatalf("a failed exclusion lookup must refuse the dispatch, got %+v", got)
 	}
@@ -86,7 +86,7 @@ func TestResolveDispatchTargets_Zones(t *testing.T) {
 	dcA := mustGateZone(t, tenant, "dc-a", []shared.ID{inZone}, "10.1.0.0/16")
 	dcB := mustGateZone(t, tenant, "dc-b", []shared.ID{other}, "10.2.0.0/16")
 	empty := mustGateZone(t, tenant, "lab", nil, "10.3.0.0/16")
-	svc := &Service{
+	svc := &Service{tools: testTools,
 		scopeExclusions: &stubExclusions{values: map[string]bool{"10.1.0.9": true}},
 		zones:           listZones{zones: []*scanzone.Zone{dcA, dcB, empty}},
 		attributionGate: &stubGate{},
@@ -145,7 +145,7 @@ func sameSet(a, b []string) bool {
 func TestResolveDispatchTargets_Assets(t *testing.T) {
 	confirmed, review, shared2 := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
 	gate := &stubGate{blocked: map[string]attribution.State{review: attribution.StateNeedsReview, shared2: attribution.StateRejected}}
-	svc := &Service{
+	svc := &Service{tools: testTools,
 		scopeExclusions: &stubExclusions{values: map[string]bool{"legacy.example.com": true}},
 		attributionGate: gate,
 		logger:          logger.NewNop(),
@@ -191,27 +191,27 @@ func TestResolveDispatchTargets_AssetsFailClosed(t *testing.T) {
 		Assets: map[string]DispatchAsset{"app.example.com": {IDs: []string{shared.NewID().String()}}}}
 	excl := &stubExclusions{}
 
-	if _, err := (&Service{scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrAttributionGateUnavailable) {
+	if _, err := (&Service{tools: testTools, scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrAttributionGateUnavailable) {
 		t.Fatalf("no attribution gate: err = %v, want ErrAttributionGateUnavailable", err)
 	}
-	svc := &Service{scopeExclusions: excl, attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: excl, attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}
 	if got, err := svc.ResolveDispatchTargets(context.Background(), in); err == nil {
 		t.Fatalf("a failed attribution lookup must refuse the dispatch, got %+v", got)
 	}
 	in.Assets = map[string]DispatchAsset{"app.example.com": {}}
-	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); err == nil {
+	if _, err := (&Service{tools: testTools, scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); err == nil {
 		t.Fatal("an asset entry without an id must refuse the dispatch")
 	}
 	// A typed target is checked too (it may name an asset or sit under a
 	// rejected name): no gate refuses it, a gate allows it.
 	typed := DispatchTargetsInput{TenantID: in.TenantID, Targets: in.Targets}
-	if _, err := (&Service{scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); !errors.Is(err, ErrAttributionGateUnavailable) {
+	if _, err := (&Service{tools: testTools, scopeExclusions: excl, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); !errors.Is(err, ErrAttributionGateUnavailable) {
 		t.Fatalf("typed target, no gate: err = %v, want ErrAttributionGateUnavailable", err)
 	}
-	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); err == nil {
+	if _, err := (&Service{tools: testTools, scopeExclusions: excl, attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); err == nil {
 		t.Fatal("typed target: a failed ownership lookup must refuse the dispatch")
 	}
-	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); err != nil {
+	if _, err := (&Service{tools: testTools, scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), typed); err != nil {
 		t.Fatalf("typed target: %v", err)
 	}
 }

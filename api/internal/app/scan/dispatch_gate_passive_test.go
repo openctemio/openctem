@@ -22,7 +22,7 @@ func TestResolveDispatchTargets_PassiveOnly(t *testing.T) {
 	}, blockedTyped: map[string]attribution.State{
 		"old.example.com": attribution.StateRejected, // a tombstoned name, typed
 	}}
-	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}},
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}},
 		attributionGate: gate, logger: logger.NewNop()}
 	in := DispatchTargetsInput{
 		TenantID: shared.NewID(),
@@ -70,7 +70,7 @@ func TestResolveDispatchTargets_PassiveOnly(t *testing.T) {
 // Two assets behind one target: a rejection of either refuses it at T0.
 func TestResolveDispatchTargets_PassiveOnlyAnyRejectedAssetRefuses(t *testing.T) {
 	review, rejected := shared.NewID(), shared.NewID()
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{blocked: map[string]attribution.State{
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{blocked: map[string]attribution.State{
 		review.String(): attribution.StateNeedsReview, rejected.String(): attribution.StateRejected,
 	}}, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{

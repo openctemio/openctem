@@ -267,7 +267,11 @@ func (s *Service) previewPlan(ctx context.Context, sc *scan.Scan, zones []*scanz
 	if sc.ScanType == scan.ScanTypeWorkflow {
 		plan, _, err = planWorkflowZone(sc, routing)
 	} else {
-		out.TargetsPerJob = zoneBatchSize(sc)
+		cat, cerr := s.catalog(ctx, sc.TenantID)
+		if cerr != nil {
+			return nil, cerr
+		}
+		out.TargetsPerJob = zoneBatchSize(cat, sc)
 		plan, err = s.planZoneBatches(ctx, sc, routing)
 	}
 	if err != nil {

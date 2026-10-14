@@ -103,7 +103,7 @@ func gatingFixture(statuses map[string]scanrun.StepRunStatus, deps map[string][]
 	}
 	runs := &statusRuns{run: run}
 	cmds := &countingCommands{}
-	s := &Service{stepRunRepo: store, runRepo: runs, templateRepo: fixedTemplate{tpl: tpl},
+	s := &Service{tools: testTools, stepRunRepo: store, runRepo: runs, templateRepo: fixedTemplate{tpl: tpl},
 		commandRepo: cmds, logger: logger.NewNop()}
 	return s, run, store, runs, cmds
 }

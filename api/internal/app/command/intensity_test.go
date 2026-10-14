@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -12,7 +14,13 @@ import (
 // at claim: nuclei with custom templates is T2, so an active scan's job is
 // withheld from the sensor; without them it fits (RFC-071).
 func TestIntensityRefusal_ContractTier(t *testing.T) {
-	g := &dispatchGate{}
+	builtin := func(tier, ref string) *sensordom.ToolContract {
+		return &sensordom.ToolContract{Class: "target-scan", Tier: tier, Origin: sensordom.ToolOriginBuiltin, Implements: []string{ref}}
+	}
+	g := &dispatchGate{manifest: &sensordom.Manifest{Tools: []sensordom.ManifestTool{
+		{Name: "nuclei", Installed: true, Contract: builtin("T1", "vuln.templates@1")},
+		{Name: "subfinder", Installed: true, Contract: builtin("T0", "discover.subdomains@1")},
+	}}}
 	job := func(payload string, intensity string) *commanddom.Command {
 		return &commanddom.Command{ID: shared.NewID(), Type: commanddom.CommandTypeScan, Payload: json.RawMessage(payload),
 			DispatchGate: &commanddom.DispatchGate{Tier: 1, Intensity: intensity}}
@@ -35,6 +43,11 @@ func TestIntensityRefusal_ContractTier(t *testing.T) {
 	}
 	if r := g.intensityRefusal(job(`{"scanner":"subfinder","targets":["example.com"]}`, "bogus")); r != nil {
 		t.Fatalf("an unknown intensity allows passive: %+v", r)
+	}
+	// SECURITY: a sensor that reports no contract for the tool, on a job
+	// naming no capability, rates it T2 (fail closed).
+	if r := (&dispatchGate{}).intensityRefusal(job(plain, "active")); r == nil || r.Rule != RuleIntensity {
+		t.Fatalf("nuclei without a contract at active: %+v, want an intensity refusal", r)
 	}
 	if r := g.intensityRefusal(job(plain, "bogus")); r == nil {
 		t.Fatal("an unknown intensity must not allow an active job")

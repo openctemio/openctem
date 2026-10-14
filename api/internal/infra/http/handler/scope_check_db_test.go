@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/scopeauth"
@@ -177,6 +180,12 @@ type recordingDryRun struct {
 	results []scansvc.DryRunResult
 }
 
+// ProbeTierFor rates the scanner in a catalog of the built-in tools and zap
+// (dast.web), as the scan service does in the tenant's catalog.
+func (r *recordingDryRun) ProbeTierFor(_ context.Context, _ shared.ID, tool string) (scopedom.Tier, error) {
+	return scansvc.ProbeTier(stagetest.Catalog(stage.ToolFacts{Name: "zap", Implements: []stage.Key{stage.DASTWeb}}), tool), nil
+}
+
 func (f *recordingDryRun) DryRun(_ context.Context, in scansvc.DryRunInput) (*scansvc.DryRunOutcome, error) {
 	f.got = append(f.got, in)
 	return &scansvc.DryRunOutcome{Results: f.results}, nil
@@ -278,7 +287,7 @@ func TestScopeCheck_ScannerNameSetsTier_DB(t *testing.T) {
 		}
 		return got
 	}
-	want := int(scansvc.ProbeTier("zap"))
+	want := int(scansvc.ProbeTier(stagetest.Catalog(stage.ToolFacts{Name: "zap", Implements: []stage.Key{stage.DASTWeb}}), "zap"))
 	if want != 2 {
 		t.Fatalf("catalog: zap probes at %d, this test expects the intrusive tier", want)
 	}

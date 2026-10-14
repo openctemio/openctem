@@ -42,10 +42,10 @@ func (e *GraphInvalidError) Unwrap() error { return shared.ErrValidation }
 // capability node too, so the validator refuses it by name. Anything else
 // (a tenant tool with no contract, legacy words naming no stage) is opaque:
 // it runs on the scan's seeds and takes no data from its predecessors.
-func StepsGraph(steps []*scanworkflow.Step) stage.Graph {
+func StepsGraph(cat stage.Catalog, steps []*scanworkflow.Step) stage.Graph {
 	g := stage.Graph{Nodes: make([]stage.GraphNode, 0, len(steps))}
 	for _, s := range steps {
-		g.Nodes = append(g.Nodes, stepNode(s))
+		g.Nodes = append(g.Nodes, stepNode(cat, s))
 		for _, dep := range s.DependsOn {
 			g.Edges = append(g.Edges, stage.GraphEdge{From: dep, To: s.StepKey})
 		}
@@ -53,8 +53,8 @@ func StepsGraph(steps []*scanworkflow.Step) stage.Graph {
 	return g
 }
 
-func stepNode(s *scanworkflow.Step) stage.GraphNode {
-	if st, ok := stage.ForStep(s.Tool, s.Capabilities); ok {
+func stepNode(cat stage.Catalog, s *scanworkflow.Step) stage.GraphNode {
+	if st, ok := cat.ForStep(s.Tool, s.Capabilities); ok {
 		return stage.GraphNode{ID: s.StepKey, Kind: stage.NodeCapability, Capability: st.Key, Tool: s.Tool}
 	}
 	for _, c := range s.Capabilities {
@@ -67,8 +67,8 @@ func stepNode(s *scanworkflow.Step) stage.GraphNode {
 }
 
 // validateStepsGraph refuses steps whose graph has errors.
-func validateStepsGraph(steps []*scanworkflow.Step) error {
-	rep := stage.ValidateGraph(StepsGraph(steps))
+func validateStepsGraph(cat stage.Catalog, steps []*scanworkflow.Step) error {
+	rep := cat.ValidateGraph(StepsGraph(cat, steps))
 	if !rep.Valid() {
 		return &GraphInvalidError{Report: rep}
 	}

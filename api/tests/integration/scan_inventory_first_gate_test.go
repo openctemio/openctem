@@ -126,7 +126,7 @@ func TestScanGate_InventoryFirst(t *testing.T) {
 			postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 			postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 			postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg), nil, logger.New(logger.Config{Level: "error"}),
-			scanrun.WithTargetGate(svc),
+			scanrun.WithTargetGate(svc), scanrun.WithToolFacts(integrationTools),
 		)
 		// Typed targets an active step may not take refuse the request.
 		before := countCommands(t, db, tenantA)

@@ -40,7 +40,7 @@ func newDraftHarness(t *testing.T, name string) *scanWorkflowSaveHarness {
 		draftValidator{},
 		logger.New(logger.Config{Level: "error"}),
 		scanrun.WithDraftStore(postgres.NewScanWorkflowRepository(pg)),
-		scanrun.WithVersionStore(postgres.NewScanWorkflowRepository(pg)),
+		scanrun.WithVersionStore(postgres.NewScanWorkflowRepository(pg)), scanrun.WithToolFacts(integrationTools),
 	)
 	p.h = handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop())
 	return p

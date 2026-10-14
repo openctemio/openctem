@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -151,9 +152,13 @@ func (s *Service) planZoneDispatch(ctx context.Context, sc *scan.Scan, zones []*
 // planZoneBatches batches a routing plan and pins each batch to the least busy
 // healthy sensor of its zone. It reads sensor load and writes nothing.
 func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *scanzone.Plan) (*zonePlan, error) {
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	plan := &zonePlan{Uncovered: slices.Clone(routing.Uncovered), Routing: routing}
 
-	batchSize := zoneBatchSize(sc)
+	batchSize := zoneBatchSize(cat, sc)
 
 	sensors, err := s.zones.RoutableSensors(ctx, sc.TenantID, routing.ZoneOrder, sc.ScannerName)
 	if err != nil {
@@ -229,7 +234,7 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		plan.Batches = append(plan.Batches, zoneBatch{Targets: chunk})
 	}
 	if len(plan.Batches) > maxZoneJobsPerRun {
-		return nil, tooManyJobsError(sc, len(plan.Batches))
+		return nil, tooManyJobsError(cat, sc, len(plan.Batches))
 	}
 
 	plan.Warnings = append(plan.Warnings, uncoveredWarnings(plan.Uncovered)...)
@@ -249,9 +254,9 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 // tooManyJobsError refuses a run that would create more than
 // maxZoneJobsPerRun commands. A scanner that reads one target per job cannot
 // be batched, so the advice differs.
-func tooManyJobsError(sc *scan.Scan, jobs int) error {
+func tooManyJobsError(cat stage.Catalog, sc *scan.Scan, jobs int) error {
 	advice := "raise targets_per_job or split the scan"
-	if !scannerAcceptsTargetList(sc.ScannerName) {
+	if !scannerAcceptsTargetList(cat, sc.ScannerName) {
 		advice = fmt.Sprintf("%q scans one target per job; split the scan into runs of at most %d targets", sc.ScannerName, maxZoneJobsPerRun)
 	}
 	return shared.NewDomainError("TOO_MANY_JOBS", fmt.Sprintf(
@@ -267,12 +272,12 @@ func tooManyJobsError(sc *scan.Scan, jobs int) error {
 //
 // Before this, such a run sent every target in one command and the sensor
 // scanned only the first (RFC-030 B4).
-func perTargetPlan(sc *scan.Scan, targets []string) (*zonePlan, error) {
-	if len(targets) < 2 || scannerAcceptsTargetList(sc.ScannerName) {
+func perTargetPlan(cat stage.Catalog, sc *scan.Scan, targets []string) (*zonePlan, error) {
+	if len(targets) < 2 || scannerAcceptsTargetList(cat, sc.ScannerName) {
 		return nil, nil
 	}
 	if len(targets) > maxZoneJobsPerRun {
-		return nil, tooManyJobsError(sc, len(targets))
+		return nil, tooManyJobsError(cat, sc, len(targets))
 	}
 	plan := &zonePlan{Batches: make([]zoneBatch, 0, len(targets))}
 	for _, chunk := range chunkTargets(targets, 1) {
@@ -290,8 +295,8 @@ func recordPerTargetPlan(plan *zonePlan, runContext map[string]any) {
 }
 
 // zoneBatchSize is how many targets go in one command of a zoned run.
-func zoneBatchSize(sc *scan.Scan) int {
-	if sc.TargetsPerJob < 1 || !scannerAcceptsTargetList(sc.ScannerName) {
+func zoneBatchSize(cat stage.Catalog, sc *scan.Scan) int {
+	if sc.TargetsPerJob < 1 || !scannerAcceptsTargetList(cat, sc.ScannerName) {
 		return 1 // a scanner that reads one target gets one target per job
 	}
 	return sc.TargetsPerJob
@@ -352,13 +357,17 @@ func recordZonePlan(sc *scan.Scan, plan *zonePlan, runContext map[string]any) er
 // sensor; they are never platform jobs (RFC-023 D14). Unzoned public batches
 // follow the pre-zone platform/tenant rules.
 func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, plan *zonePlan, usePlatform bool) error {
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return err
+	}
 	templates := s.customTemplatesForScan(ctx, sc)
 	batchContext := batchRunContext(run.Context)
 
 	created := make([]*command.Command, 0, len(plan.Batches))
 	for _, b := range plan.Batches {
 		cfg := batchScannerConfig(sc.ScannerConfig, b.Targets)
-		payloadMap := s.scannerPayload(sc, run, stepRun, cfg, batchContext, b.Targets, templates)
+		payloadMap := s.scannerPayload(cat, sc, run, stepRun, cfg, batchContext, b.Targets, templates)
 		if err := s.attachJobExclusions(ctx, sc.TenantID, payloadMap, b.Targets); err != nil {
 			s.cancelCreated(ctx, created)
 			return err
@@ -376,7 +385,7 @@ func (s *Service) createZoneCommands(ctx context.Context, sc *scan.Scan, run *sc
 		if stepRun != nil {
 			cmd.SetStepRunID(stepRun.ID) // the step finishes with its last batch
 		}
-		cmd.DispatchGate = scanDispatchGate(sc, run)
+		cmd.DispatchGate = scanDispatchGate(cat, sc, run)
 		if b.Zone != nil {
 			cmd.SetScanZone(b.Zone.ID)
 			if b.SensorID != nil {

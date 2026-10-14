@@ -51,7 +51,7 @@ func issueCodes(issues []stage.GraphIssue) map[string]stage.GraphIssue {
 // Every problem of every step is reported, anchored to the step and field,
 // instead of stopping at the first one with an error.
 func TestCheckSteps_ReportsEveryIssue(t *testing.T) {
-	s := &Service{securityValidator: checkValidator(), logger: logger.NewNop(), runnableTools: runnableSet{"subfinder": true}}
+	s := &Service{tools: testTools, securityValidator: checkValidator(), logger: logger.NewNop(), runnableTools: runnableSet{"subfinder": true}}
 	tenant := shared.NewID().String()
 	rep, err := s.CheckSteps(context.Background(), ValidateGraphInput{TenantID: tenant, Steps: []AddStepInput{
 		{StepKey: "subdomains", Name: "Subdomains", Capabilities: []string{"discover.subdomains"}},
@@ -103,7 +103,7 @@ func TestCheckSteps_ReportsEveryIssue(t *testing.T) {
 // A cycle is reported as an issue; nothing panics, and unknown
 // availability (no source) gives no warnings.
 func TestCheckSteps_CycleAndUnknownAvailability(t *testing.T) {
-	s := &Service{securityValidator: checkValidator(), logger: logger.NewNop()}
+	s := &Service{tools: testTools, securityValidator: checkValidator(), logger: logger.NewNop()}
 	rep, err := s.CheckSteps(context.Background(), ValidateGraphInput{TenantID: shared.NewID().String(), Steps: []AddStepInput{
 		{StepKey: "a", Name: "A", Capabilities: []string{"probe.http"}, DependsOn: []string{"b"}},
 		{StepKey: "b", Name: "B", Capabilities: []string{"crawl.web"}, DependsOn: []string{"a"}},

@@ -5,10 +5,11 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // Every platform tool the migrations seed must read back through the
@@ -59,8 +60,9 @@ func TestToolCatalog_SeededToolsReadBack(t *testing.T) {
 }
 
 // The registry records what each platform tool produces (research/27 F3),
-// and the values are the stage catalog's: the migration that backfilled
-// them and pkg/domain/stage cannot drift apart.
+// and for a built-in tool the values are what its reported contract's
+// capabilities produce: the migration that backfilled them and the
+// contracts cannot drift apart.
 func TestToolCatalog_OutputTypesMatchTheStageCatalog(t *testing.T) {
 	db := catalogTestDB(t)
 	repo := NewToolRepository(&DB{DB: db})
@@ -74,7 +76,7 @@ func TestToolCatalog_OutputTypesMatchTheStageCatalog(t *testing.T) {
 		}
 		got := slices.Clone(tl.OutputTypes)
 		slices.Sort(got)
-		if want := stage.OutputTypes(name); !slices.Equal(got, want) {
+		if want := stagetest.Catalog().OutputTypes(name); !slices.Equal(got, want) {
 			t.Errorf("%s: output_types = %v, catalog says %v", name, got, want)
 		}
 	}
@@ -93,9 +95,9 @@ func TestToolCatalog_OutputTypesMatchTheStageCatalog(t *testing.T) {
 		}
 		got := []string(outs)
 		slices.Sort(got)
-		want := stage.OutputTypes(name)
-		if len(got) == 0 && len(want) == 0 {
-			continue
+		want := stagetest.Catalog().OutputTypes(name)
+		if len(want) == 0 {
+			continue // no built-in contract: its row is the seed's
 		}
 		if !slices.Equal(got, want) {
 			t.Errorf("%s: output_types = %v, catalog says %v", name, got, want)

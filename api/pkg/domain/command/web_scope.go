@@ -58,20 +58,23 @@ var verifyBindsWebScope = map[string]bool{"nuclei": true}
 // required capability word) names one, so a web tool used outside the
 // stage catalog (a quick scan, a step without a stage) is still one. A
 // retest job is one when its tool is; a validate job when it runs nuclei.
-func WebJobOf(cmd *Command) (WebJob, bool) {
+// Whether a tool implements a web stage is the organization's fact
+// (stage.Catalog.WebTool, from its sensors' tool contracts): webTool
+// answers it.
+func WebJobOf(cmd *Command, webTool func(tool string) bool) (WebJob, bool) {
 	if cmd == nil || len(cmd.Payload) == 0 {
 		return WebJob{}, false
 	}
 	switch cmd.Type {
 	case CommandTypeScan:
 		tool := strings.ToLower(strings.TrimSpace(PayloadTool(cmd.Payload)))
-		if !stage.WebTool(tool) && !webCapabilityPayload(cmd.Payload) {
+		if !webTool(tool) && !webCapabilityPayload(cmd.Payload) {
 			return WebJob{}, false
 		}
 		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: true}, true
 	case CommandTypeRetest:
 		tool := strings.ToLower(strings.TrimSpace(PayloadTool(cmd.Payload)))
-		if !stage.WebTool(tool) {
+		if !webTool(tool) {
 			return WebJob{}, false
 		}
 		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: verifyBindsWebScope[tool], Verify: true}, true
@@ -86,7 +89,7 @@ func WebJobOf(cmd *Command) (WebJob, bool) {
 			return WebJob{}, false
 		}
 		tool := strings.ToLower(strings.TrimSpace(p.ExecutorKind))
-		if !stage.WebTool(tool) {
+		if !webTool(tool) {
 			return WebJob{}, false
 		}
 		var targets []string
@@ -119,9 +122,16 @@ func webCapabilityPayload(payload json.RawMessage) bool {
 	return false
 }
 
-// GuardUnwired refuses a web job when no CreateGuard is wired.
+// AnyTool is a webTool for WebJobOf that counts every tool as a web tool:
+// where the organization's tool facts cannot be read, a job is treated as
+// a web job (fail closed).
+func AnyTool(string) bool { return true }
+
+// GuardUnwired refuses a web job when no CreateGuard is wired. Without the
+// guard the organization's tool facts are not at hand, so every job that
+// names a tool counts as a web job (fail closed).
 func GuardUnwired(cmd *Command) error {
-	if _, ok := WebJobOf(cmd); ok {
+	if _, ok := WebJobOf(cmd, AnyTool); ok {
 		return ErrWebScopeUnwired
 	}
 	return nil

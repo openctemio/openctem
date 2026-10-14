@@ -22,7 +22,7 @@ func TestRefuseUnownedTargets(t *testing.T) {
 		"dev.review.com":   attribution.StateNeedsReview,
 		"manual.net":       attribution.StateUnattributed,
 	}}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, attributionGate: gate, logger: logger.NewNop()}
 	tenant := shared.NewID()
 
 	err := svc.refuseUnownedTargets(context.Background(), tenant, "quick_scan",
@@ -56,7 +56,7 @@ func TestRefuseUnownedTargets(t *testing.T) {
 // asset id. A run left with nothing is refused.
 func TestResolveScanTargets_SkipsUnownedDirectTargets(t *testing.T) {
 	gate := &stubGate{blockedTyped: map[string]attribution.State{"www.rejected.com": attribution.StateRejected}}
-	svc := allowAllChecks(&Service{attributionGate: gate, logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, attributionGate: gate, logger: logger.NewNop()})
 	sc := testScan("nuclei", "www.rejected.com", "ok.example.com")
 	got, err := svc.resolveScanTargets(context.Background(), sc)
 	if err != nil {
@@ -87,7 +87,7 @@ func TestResolveScanTargets_SkipsUnownedDirectTargets(t *testing.T) {
 // connector scans) refuses typed targets the ownership gate refuses.
 func TestResolveDispatchTargets_TypedOwnership(t *testing.T) {
 	gate := &stubGate{blockedTyped: map[string]attribution.State{"www.rejected.com": attribution.StateRejected}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{
 		TenantID: shared.NewID(), Targets: []string{"www.rejected.com", "ok.example.com"},
 	})
@@ -106,7 +106,7 @@ func TestResolveDispatchTargets_TypedOwnership(t *testing.T) {
 // command as a whole.
 func TestGateCommandPayload_Ownership(t *testing.T) {
 	gate := &stubGate{blockedTyped: map[string]attribution.State{"dev.review.com": attribution.StateNeedsReview}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
 	payload, _ := json.Marshal(map[string]any{"scanner": "nuclei", "targets": []string{"ok.example.com", "dev.review.com"}})
 	if _, err := svc.GateCommandPayload(context.Background(), shared.NewID(), nil, payload); !errors.Is(err, ErrCommandTargetRefused) {
 		t.Fatalf("err = %v, want ErrCommandTargetRefused", err)
@@ -137,7 +137,7 @@ func TestRefuseUnownedTargets_Audited(t *testing.T) {
 		"dev.review.com":   attribution.StateNeedsReview,
 	}}
 	rec := &recordingAudit{}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop(), auditService: rec}
+	svc := &Service{tools: testTools, attributionGate: gate, logger: logger.NewNop(), auditService: rec}
 	tenant := shared.NewID()
 	ctx := WithAuditActor(context.Background(), "actor-1")
 
@@ -194,7 +194,7 @@ func TestRefuseUnownedTargets_AuditBounded(t *testing.T) {
 		targets = append(targets, name)
 	}
 	rec := &recordingAudit{}
-	svc := &Service{attributionGate: &stubGate{blockedTyped: blocked}, logger: logger.NewNop(), auditService: rec}
+	svc := &Service{tools: testTools, attributionGate: &stubGate{blockedTyped: blocked}, logger: logger.NewNop(), auditService: rec}
 	_ = svc.refuseUnownedTargets(context.Background(), shared.NewID(), "scan_create", targets, false)
 	e := rec.events[0]
 	if e.Metadata["refused_count"] != 120 {

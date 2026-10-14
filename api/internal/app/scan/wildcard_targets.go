@@ -76,12 +76,16 @@ func (s *Service) refuseWildcardTargets(_ context.Context, sc *scan.Scan) error 
 // (expandSelectors). A pattern in scanner_config "targets" of another tool
 // would reach the sensor as written, so it refuses the run. The stored scan
 // is never changed.
-func (s *Service) applyWildcardTargets(_ context.Context, sc *scan.Scan) (*scan.Scan, error) {
+func (s *Service) applyWildcardTargets(ctx context.Context, sc *scan.Scan) (*scan.Scan, error) {
 	if err := validateSelectorTargets(sc.Targets); err != nil {
 		return nil, err
 	}
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	cfgTargets, hasCfg := sc.ScannerConfig["targets"]
-	rootsOnly := sc.ScanType != scan.ScanTypeWorkflow && rootsOnlyTool(sc.ScannerName)
+	rootsOnly := sc.ScanType != scan.ScanTypeWorkflow && rootsOnlyTool(cat, sc.ScannerName)
 	if hasCfg && !rootsOnly {
 		if pattern := firstWildcard(anyStrings(cfgTargets)); pattern != "" {
 			return nil, shared.NewDomainError(CodeWildcardTarget, fmt.Sprintf(

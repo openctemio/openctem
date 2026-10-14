@@ -12,6 +12,8 @@ import (
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
 )
 
 // fakeWebScope answers with a fixed scope and records what it was asked.
@@ -86,7 +88,7 @@ func TestWebJobGuard_EveryWebScanJobCarriesTheScope(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeWebScope{ws: adminScope}
 			cmd := newCmd(t, commanddom.CommandTypeScan, payload)
-			if err := NewWebJobGuard(f, nil).GuardCreate(context.Background(), cmd); err != nil {
+			if err := wiredGuard(f, nil).GuardCreate(context.Background(), cmd); err != nil {
 				t.Fatal(err)
 			}
 			if got := denyPaths(payloadOf(t, cmd)); !slices.Equal(got, []string{"/admin"}) {
@@ -114,7 +116,7 @@ func TestWebJobGuard_NonWebJobsUntouched(t *testing.T) {
 		newCmd(t, commanddom.CommandTypeHealthCheck, map[string]any{"scanner": "nuclei"}),
 	} {
 		before := string(cmd.Payload)
-		if err := NewWebJobGuard(f, nil).GuardCreate(context.Background(), cmd); err != nil {
+		if err := wiredGuard(f, nil).GuardCreate(context.Background(), cmd); err != nil {
 			t.Fatalf("%s: %v", before, err)
 		}
 		if string(cmd.Payload) != before {
@@ -132,10 +134,10 @@ func TestWebJobGuard_FailsClosed(t *testing.T) {
 	job := func() *commanddom.Command {
 		return newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com"}})
 	}
-	if err := NewWebJobGuard(&fakeWebScope{err: errors.New("db down")}, nil).GuardCreate(context.Background(), job()); err == nil {
+	if err := wiredGuard(&fakeWebScope{err: errors.New("db down")}, nil).GuardCreate(context.Background(), job()); err == nil {
 		t.Fatal("a web job was let through although the exclusions could not be read")
 	}
-	if err := NewWebJobGuard(nil, nil).GuardCreate(context.Background(), job()); !errors.Is(err, commanddom.ErrWebScopeUnwired) {
+	if err := wiredGuard(nil, nil).GuardCreate(context.Background(), job()); !errors.Is(err, commanddom.ErrWebScopeUnwired) {
 		t.Fatalf("no builder: err = %v, want ErrWebScopeUnwired", err)
 	}
 	var g *WebJobGuard
@@ -145,8 +147,13 @@ func TestWebJobGuard_FailsClosed(t *testing.T) {
 	if err := commanddom.GuardUnwired(job()); !errors.Is(err, commanddom.ErrWebScopeUnwired) {
 		t.Fatalf("GuardUnwired: %v", err)
 	}
-	if err := commanddom.GuardUnwired(newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "httpx"})); err != nil {
-		t.Fatalf("GuardUnwired refused a job without web requests: %v", err)
+	// Unwired, the organization's tool facts are not at hand: any job that
+	// names a tool may be a web job and is refused; a job naming none is not.
+	if err := commanddom.GuardUnwired(newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "httpx"})); !errors.Is(err, commanddom.ErrWebScopeUnwired) {
+		t.Fatalf("GuardUnwired let a tool job through: %v", err)
+	}
+	if err := commanddom.GuardUnwired(newCmd(t, commanddom.CommandTypeHealthCheck, map[string]any{})); err != nil {
+		t.Fatalf("GuardUnwired refused a job without a tool: %v", err)
 	}
 }
 
@@ -156,14 +163,14 @@ func TestWebJobGuard_FailsClosed(t *testing.T) {
 func TestWebJobGuard_CallerScopeReplaced(t *testing.T) {
 	forged := map[string]any{"deny_paths": []string{"/nothing"}, "methods": []string{"GET", "POST", "DELETE"}}
 	cmd := newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "katana", "targets": []string{"https://app.example.com"}, "web_scope": forged})
-	if err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, nil).GuardCreate(context.Background(), cmd); err != nil {
+	if err := wiredGuard(&fakeWebScope{ws: adminScope}, nil).GuardCreate(context.Background(), cmd); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(cmd.Payload), "/nothing") || !slices.Equal(denyPaths(payloadOf(t, cmd)), []string{"/admin"}) {
 		t.Fatalf("payload %s, want the platform's scope only", cmd.Payload)
 	}
 	cmd = newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "katana", "targets": []string{"https://app.example.com"}, "web_scope": forged})
-	if err := NewWebJobGuard(&fakeWebScope{}, nil).GuardCreate(context.Background(), cmd); err != nil {
+	if err := wiredGuard(&fakeWebScope{}, nil).GuardCreate(context.Background(), cmd); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := payloadOf(t, cmd)[commanddom.PayloadKeyWebScope]; ok {
@@ -175,7 +182,7 @@ func TestWebJobGuard_CallerScopeReplaced(t *testing.T) {
 func TestWebJobGuard_KeepsPayload(t *testing.T) {
 	cmd := newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "katana", "targets": []string{"https://app.example.com"},
 		"timeout_seconds": 9007199254740993, "config": map[string]any{"depth": 3}})
-	if err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, nil).GuardCreate(context.Background(), cmd); err != nil {
+	if err := wiredGuard(&fakeWebScope{ws: adminScope}, nil).GuardCreate(context.Background(), cmd); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(cmd.Payload), `"timeout_seconds":9007199254740993`) || !strings.Contains(string(cmd.Payload), `"depth":3`) {
@@ -194,7 +201,7 @@ func TestWebJobGuard_NucleiNeedsConfinement(t *testing.T) {
 	}{{"nuclei", adminScope, true}, {"katana", adminScope, false}, {"nuclei", nil, false}} {
 		cmd := newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": tc.tool, "targets": []string{"https://app.example.com"},
 			commanddom.PayloadKeyRequiredFeatures: []string{"other@1"}})
-		if err := NewWebJobGuard(&fakeWebScope{ws: tc.scope}, fakeConfined{has: true}).GuardCreate(context.Background(), cmd); err != nil {
+		if err := wiredGuard(&fakeWebScope{ws: tc.scope}, fakeConfined{has: true}).GuardCreate(context.Background(), cmd); err != nil {
 			t.Fatal(err)
 		}
 		var got []string
@@ -213,7 +220,7 @@ func TestWebJobGuard_NoConfinedSensor(t *testing.T) {
 	job := func() *commanddom.Command {
 		return newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com"}})
 	}
-	err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, fakeConfined{}).GuardCreate(context.Background(), job())
+	err := wiredGuard(&fakeWebScope{ws: adminScope}, fakeConfined{}).GuardCreate(context.Background(), job())
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != scanrundom.FailureNoConfinedSensor {
 		t.Fatalf("no confined sensor: err %v, want %s", err, scanrundom.FailureNoConfinedSensor)
@@ -221,11 +228,11 @@ func TestWebJobGuard_NoConfinedSensor(t *testing.T) {
 	if scanrundom.ClassOf(de.Code).Retryable() {
 		t.Fatal("NO_CONFINED_SENSOR must not be retried")
 	}
-	err = NewWebJobGuard(&fakeWebScope{ws: adminScope}, fakeConfined{err: errors.New("db down")}).GuardCreate(context.Background(), job())
+	err = wiredGuard(&fakeWebScope{ws: adminScope}, fakeConfined{err: errors.New("db down")}).GuardCreate(context.Background(), job())
 	if err == nil || errors.As(err, &de) && de.Code == scanrundom.FailureNoConfinedSensor {
 		t.Fatalf("lookup error: %v, want a plain error", err)
 	}
-	if err := NewWebJobGuard(&fakeWebScope{}, fakeConfined{}).GuardCreate(context.Background(), job()); err != nil {
+	if err := wiredGuard(&fakeWebScope{}, fakeConfined{}).GuardCreate(context.Background(), job()); err != nil {
 		t.Fatalf("an unscoped nuclei job needs no confined sensor: %v", err)
 	}
 }
@@ -249,7 +256,7 @@ func TestWebJobGuard_ValidateAndRetest(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fakeWebScope{ws: adminScope}
 			cmd := mk()
-			if err := NewWebJobGuard(f, fakeConfined{has: true}).GuardCreate(context.Background(), cmd); err != nil {
+			if err := wiredGuard(f, fakeConfined{has: true}).GuardCreate(context.Background(), cmd); err != nil {
 				t.Fatalf("scoped %s with a confined sensor: %v", name, err)
 			}
 			if !slices.Equal(f.targets, []string{"https://app.example.com/login"}) {
@@ -266,7 +273,7 @@ func TestWebJobGuard_ValidateAndRetest(t *testing.T) {
 
 			// No sensor of the organization can keep the job to its scope:
 			// refused up front, never retried.
-			err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, fakeConfined{}).GuardCreate(context.Background(), mk())
+			err := wiredGuard(&fakeWebScope{ws: adminScope}, fakeConfined{}).GuardCreate(context.Background(), mk())
 			var de *shared.DomainError
 			if !errors.As(err, &de) || de.Code != scanrundom.FailureNoConfinedSensor || !errors.Is(err, shared.ErrValidation) {
 				t.Fatalf("no capable sensor: err = %v, want %s", err, scanrundom.FailureNoConfinedSensor)
@@ -278,10 +285,10 @@ func TestWebJobGuard_ValidateAndRetest(t *testing.T) {
 				cmd = newCmd(t, commanddom.CommandTypeRetest, map[string]any{"scanner": "nuclei", "targets": []string{"https://app.example.com/login"}})
 			}
 			before := string(cmd.Payload)
-			if err := NewWebJobGuard(&fakeWebScope{}, fakeConfined{}).GuardCreate(context.Background(), cmd); err != nil || string(cmd.Payload) != before {
+			if err := wiredGuard(&fakeWebScope{}, fakeConfined{}).GuardCreate(context.Background(), cmd); err != nil || string(cmd.Payload) != before {
 				t.Fatalf("no rule: err %v, payload %s", err, cmd.Payload)
 			}
-			if err := NewWebJobGuard(&fakeWebScope{err: errors.New("db down")}, nil).GuardCreate(context.Background(), mk()); err == nil {
+			if err := wiredGuard(&fakeWebScope{err: errors.New("db down")}, nil).GuardCreate(context.Background(), mk()); err == nil {
 				t.Fatal("lookup error let the job through")
 			}
 		})
@@ -292,12 +299,42 @@ func TestWebJobGuard_ValidateAndRetest(t *testing.T) {
 // not keep to a web scope is still refused when a path exclusion applies.
 func TestWebJobGuard_UnboundVerifyRefused(t *testing.T) {
 	cmd := newCmd(t, commanddom.CommandTypeRetest, map[string]any{"scanner": "katana", "targets": []string{"https://app.example.com/login"}})
-	if _, ok := commanddom.WebJobOf(cmd); !ok {
+	if _, ok := commanddom.WebJobOf(cmd, stagetest.Catalog().WebTool); !ok {
 		t.Skip("katana is not a web tool in the stage catalog")
 	}
-	err := NewWebJobGuard(&fakeWebScope{ws: adminScope}, fakeConfined{has: true}).GuardCreate(context.Background(), cmd)
+	err := wiredGuard(&fakeWebScope{ws: adminScope}, fakeConfined{has: true}).GuardCreate(context.Background(), cmd)
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != scanrundom.FailureWebScopeUnsupported {
 		t.Fatalf("err = %v, want %s", err, scanrundom.FailureWebScopeUnsupported)
+	}
+}
+
+// wiredGuard is the guard with the catalog of the built-in tools and zap
+// (dast.web) wired.
+func wiredGuard(scope WebScopeBuilder, confined ConfinedSensors) *WebJobGuard {
+	g := NewWebJobGuard(scope, confined)
+	g.SetToolFacts(stagetest.Source{Cat: stagetest.Catalog(stage.ToolFacts{Name: "zap", Implements: []stage.Key{stage.DASTWeb}})})
+	return g
+}
+
+// A tool only its organization's reported contract describes as a web tool
+// gets the web scope; in an organization whose sensors do not report it,
+// the same job is not a web job by its tool.
+func TestWebJobGuard_WebToolFromAReportedContract(t *testing.T) {
+	cmd := func() *commanddom.Command {
+		return newCmd(t, commanddom.CommandTypeScan, map[string]any{"scanner": "toyweb", "targets": []string{"https://app.example.com"}})
+	}
+	g := NewWebJobGuard(&fakeWebScope{ws: adminScope}, nil)
+	g.SetToolFacts(stagetest.Source{Cat: stagetest.Catalog(stage.ToolFacts{Name: "toyweb", Implements: []stage.Key{stage.DASTWeb}})})
+	c := cmd()
+	if err := g.GuardCreate(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(c.Payload), "web_scope") {
+		t.Fatalf("toyweb job without a web scope: %s", c.Payload)
+	}
+	c = cmd()
+	if err := wiredGuard(&fakeWebScope{ws: adminScope}, nil).GuardCreate(context.Background(), c); err != nil || strings.Contains(string(c.Payload), "web_scope") {
+		t.Fatalf("another organization: %v %s", err, c.Payload)
 	}
 }

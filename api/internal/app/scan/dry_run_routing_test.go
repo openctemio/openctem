@@ -37,7 +37,7 @@ func (s ownSelector) SelectSensor(context.Context, SelectSensorRequest) (*Select
 }
 
 func plannerService(proof bool, sel SensorSelector) *Service {
-	return &Service{scopeExclusions: &stubExclusions{}, attributionGate: proofGate{}, sensorSelector: sel, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(proof)}
+	return &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: proofGate{}, sensorSelector: sel, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(proof)}
 }
 
 // The preflight decides like the trigger (RFC-054 §6.4, §8.1): with the
@@ -147,7 +147,7 @@ func TestCreateTier(t *testing.T) {
 		{CreateScanInput{ScanType: "workflow", Intensity: "passive"}, 0},
 	}
 	for _, c := range cases {
-		if got := createTier(c.in); got != c.want {
+		if got := createTier(testCat, c.in); got != c.want {
 			t.Errorf("%+v: tier %d, want %d", c.in, got, c.want)
 		}
 	}

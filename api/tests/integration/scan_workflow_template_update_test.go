@@ -67,7 +67,7 @@ func TestScanWorkflowTemplateUpdate(t *testing.T) {
 	svc := scanrun.NewService(repo, postgres.NewScanWorkflowStepRepository(pg), postgres.NewScanRunRepository(pg),
 		postgres.NewStepRunRepository(pg), nil, postgres.NewCommandRepository(pg), acceptingStepValidator{},
 		logger.New(logger.Config{Level: "error"}),
-		scanrun.WithDraftStore(repo), scanrun.WithVersionStore(repo), scanrun.WithAuditService(audit))
+		scanrun.WithDraftStore(repo), scanrun.WithVersionStore(repo), scanrun.WithAuditService(audit), scanrun.WithToolFacts(integrationTools))
 	svc.SetTemplateLineage(repo)
 
 	clone := func(tenant shared.ID, name string) *scanworkflow.Workflow {

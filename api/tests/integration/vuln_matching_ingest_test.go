@@ -37,6 +37,7 @@ func TestVulnMatching_ThroughIngest(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	svc.SetSoftwareRepository(postgres.NewSoftwareRepository(db))
 	svc.SetSoftwareChangeSink(e.svc)
 	tid := tn.tenant

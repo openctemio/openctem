@@ -46,7 +46,7 @@ func splitGate(repo scopedom.ExclusionRepository, gate *stubGate) *Service {
 	if gate == nil {
 		gate = &stubGate{}
 	}
-	return &Service{
+	return &Service{tools: testTools,
 		scopeExclusions: scope.NewService(nil, repo, nil, logger.NewNop()),
 		attributionGate: gate,
 		logger:          logger.NewNop(),

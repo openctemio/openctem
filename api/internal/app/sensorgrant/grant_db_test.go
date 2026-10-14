@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/sensor/sensortest"
+
 	_ "github.com/lib/pq"
 
 	"github.com/openctemio/ctis"
@@ -96,6 +98,10 @@ func (f *fixture) sensor(tenantID shared.ID, tools []string, caps []string) shar
 		VALUES ($1, $2, $3, 'worker', 'active', 'online', $4, $5, $7, 'daemon', 5, 0, NOW(), $6, $7)`,
 		id.String(), tenantID.String(), "grant-sensor-"+id.String(), "hash-"+id.String(), id.String()[:8],
 		pqArray(tools), pqArray(caps))
+	// A released sensor reports its built-in tools' contracts.
+	if err := sensortest.SaveReleased(context.Background(), postgres.NewSensorRepository(f.pg), &tenantID, id, tools, caps); err != nil {
+		f.t.Fatal(err)
+	}
 	return id
 }
 
@@ -297,7 +303,7 @@ func TestGrant_EnforcedOnPollAndClaim_DB(t *testing.T) {
 	sid := f.sensor(tid, []string{"nuclei", "subfinder"}, []string{"recon", "vulnerability"})
 	obs := &refusals{}
 	cmds := command.NewService(postgres.NewCommandRepository(f.pg), logger.NewNop(),
-		command.WithSensorLookup(postgres.NewSensorRepository(f.pg)), command.WithGrants(f.grants, obs))
+		command.WithSensorLookup(postgres.NewSensorRepository(f.pg)), command.WithGrants(f.grants, obs), command.WithToolContracts(postgres.NewSensorRepository(f.pg)))
 	caps := []string{"recon", "vulnerability"}
 
 	passive := f.command(tid, commanddom.CommandTypeScan, map[string]any{"scanner": "subfinder", "targets": []string{"example.com"}}, nil)
@@ -475,7 +481,7 @@ func TestGrant_DefaultSensorRetests_DB(t *testing.T) {
 	sid := f.sensor(tid, []string{"nuclei"}, caps)
 	obs := &refusals{}
 	cmds := command.NewService(postgres.NewCommandRepository(f.pg), logger.NewNop(),
-		command.WithSensorLookup(postgres.NewSensorRepository(f.pg)), command.WithGrants(f.grants, obs))
+		command.WithSensorLookup(postgres.NewSensorRepository(f.pg)), command.WithGrants(f.grants, obs), command.WithToolContracts(postgres.NewSensorRepository(f.pg)))
 
 	g, err := f.svc.Get(ctx, tid, sid)
 	if err != nil {

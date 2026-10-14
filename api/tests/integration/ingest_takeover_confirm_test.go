@@ -34,6 +34,7 @@ func TestIngest_TakeoverConfirmation(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	svc.SetTakeoverConfirmer(easmdns.NewTakeoverConfirmer(postgres.NewEASMDNSRepository(db), exposures, logger.NewNop()))
 
 	sensorOf := func(v v2Tenant) *sensor.Sensor {

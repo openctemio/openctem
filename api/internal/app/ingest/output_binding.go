@@ -54,6 +54,9 @@ type ToolContractSource interface {
 	CurrentManifest(ctx context.Context, tenantID *shared.ID, sensorID shared.ID) (*sensor.ManifestVersion, error)
 }
 
+// SetToolFacts wires the organization's stage catalog.
+func (s *Service) SetToolFacts(src stage.Source) { s.tools = src }
+
 // SetToolContractSource wires the sensors' manifests, so a ported tool's
 // declared produces narrow its reports (nil: the catalog contract only).
 func (s *Service) SetToolContractSource(src ToolContractSource) {
@@ -83,9 +86,16 @@ func (s *Service) declaredContract(ctx context.Context, agt *sensor.Sensor, tool
 const maxContractTypesLogged = 10
 
 // outputContract returns the stages whose contract a report of tool must
-// keep, or nil when the catalog does not know the tool.
-func outputContract(tool string) []stage.Stage {
-	return stage.ForTool(tool)
+// keep, or nil when the organization's catalog does not know the tool (or
+// cannot be read: then only the submitting sensor's declared contract
+// applies).
+func (s *Service) outputContract(ctx context.Context, tenantID shared.ID, tool string) []stage.Stage {
+	cat, err := stage.CatalogOf(ctx, s.tools, tenantID)
+	if err != nil {
+		s.logger.Warn("ingest: could not read the organization's tool contracts", "tool", tool, "error", err)
+		return nil
+	}
+	return cat.ForTool(tool)
 }
 
 // inContract reports whether one of the stages may report an asset of the
@@ -274,7 +284,7 @@ func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenan
 	if tool == "" && report.Tool != nil {
 		tool = report.Tool.Name
 	}
-	rules := outputRules{stages: outputContract(tool), declared: s.declaredContract(ctx, agt, tool)}
+	rules := outputRules{stages: s.outputContract(ctx, tenantID, tool), declared: s.declaredContract(ctx, agt, tool)}
 	// The capability the report answers is the platform's, from the
 	// command's tool: the sensor's metadata.capability is only a hint.
 	report.Metadata.Capability = boundCapability(rules, report.Metadata.Capability, tool)

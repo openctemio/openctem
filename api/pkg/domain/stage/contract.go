@@ -248,45 +248,6 @@ func (s Stage) ToolParamKey(tool, param string) (string, bool) {
 	return "", false
 }
 
-// toolParams maps a tool's standard params to its own config keys: the keys
-// the sensor's settings schema for that tool declares. A tool listed with
-// no entry for a param does not accept it yet. Keep in step with
-// scan workflow.stepToolSettings.
-var toolParams = map[string]map[string]string{
-	"naabu":  {"ports": "ports", "top_n": "top_ports", "rate": "rate"},
-	"dnsx":   {"record_types": "record_types", "wildcard_filter": "wildcard_filter"},
-	"nuclei": {"severity": "severity", "tags": "tags", "exclude_tags": "exclude_tags"},
-	"rdap":   {"follow_registrar": "follow_registrar"},
-	"asn":    {"include_announced": "include_announced", "max_ranges": "max_ranges"},
-}
-
-// batchTools take a list of targets in one task (the sensor executor reads
-// the payload's `targets`); every other tool takes one target per task.
-var batchTools = map[string]bool{
-	"nuclei": true, "subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
-	"rdap": true, "asn": true,
-}
-
-// capabilityJobTools run capability jobs on the sensor (their embedded
-// descriptors implement the capability, sensor SN1): a step that runs one
-// names its capability in the command (TakesCapabilityJobs). Every other
-// tool gets the command as before. Kept with toolParams and batchTools as
-// the built-in fallback until the platform reads every tool's contract
-// from its sensors (RFC-055 TC12).
-var capabilityJobTools = map[string]bool{
-	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
-	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
-	"rdap": true, "asn": true,
-}
-
-// TakesCapabilityJobs reports whether a step running tool for the stage
-// should name the capability in its command: the tool implements the stage
-// and runs capability jobs on the sensor.
-func TakesCapabilityJobs(s Stage, tool string) bool {
-	tool = normalizeTool(tool)
-	return capabilityJobTools[tool] && s.Implements(tool)
-}
-
 // ContractVersion is the major version of every capability contract of
 // catalog v1.
 const ContractVersion = 1
@@ -299,11 +260,6 @@ func init() {
 			panic(fmt.Sprintf("stage %s: tier %s, the capability's floor is %s", catalog[i].Key, catalog[i].Tier, c.tier))
 		}
 		catalog[i].applyContract(c)
-		for j := range catalog[i].Implementations {
-			impl := &catalog[i].Implementations[j]
-			impl.Batch = batchTools[impl.Tool]
-			impl.Params = toolParamsFor(impl.Tool, c.params)
-		}
 	}
 	planned = plannedStages()
 }
@@ -340,18 +296,6 @@ func (s Stage) ChunkSizeFor(tool string) int {
 	return 0
 }
 
-// toolParamsFor is the tool's mapping restricted to the capability's params.
-func toolParamsFor(tool string, params []Param) map[string]string {
-	m := toolParams[tool]
-	out := map[string]string{}
-	for _, p := range params {
-		if k, ok := m[p.Name]; ok {
-			out[p.Name] = k
-		}
-	}
-	return out
-}
-
 // ID is the capability's versioned id ("scan.ports@1").
 func (s Stage) ID() string { return fmt.Sprintf("%s@%d", s.Key, s.Version) }
 
@@ -361,13 +305,9 @@ func (s Stage) TakesPort(t PortType) bool { return slices.Contains(s.InPorts, t)
 // EmitsPort reports whether the capability has an output port of type t.
 func (s Stage) EmitsPort(t PortType) bool { return slices.Contains(s.OutPorts, t) }
 
-// Available reports whether the platform can run the capability today: it
-// has at least one implementation the planner routes.
+// Available reports whether the organization can run the capability today:
+// a tool its sensors report implements it (a stage of its Catalog).
 func (s Stage) Available() bool { return len(s.Implementations) > 0 }
-
-// AcceptsTargetList reports whether a tool takes a list of targets in one
-// task. Unknown tools take one target per task.
-func AcceptsTargetList(tool string) bool { return batchTools[normalizeTool(tool)] }
 
 // planned are taxonomy v1 capabilities with a contract but no routed
 // implementation yet. They are listed (so the editor can show them as
@@ -397,10 +337,6 @@ var plannedFields = []struct {
 
 // Taxonomy returns every capability of taxonomy v1: the routed catalog
 // stages, then the planned ones, in display order.
-func Taxonomy() []Stage {
-	out := All()
-	for _, s := range planned {
-		out = append(out, s.clone())
-	}
-	return out
-}
+//
+// The stages have no implementations; Catalog.Taxonomy has them.
+func Taxonomy() []Stage { return Catalog{}.Taxonomy() }

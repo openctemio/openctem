@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -66,7 +68,8 @@ func newScanCommandFixture() *scanCommandFixture {
 	f.h = NewCommandHandler(command.NewService(f.repo, logger.NewNop()), validator.New(), logger.NewNop())
 	f.h.SetAuditService(auditapp.NewAuditService(f.audit, logger.NewNop()))
 	f.h.SetScanCommandGate(scanapp.NewService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		logger.NewNop(), scanapp.WithScopeExclusionFilter(excludeValues{"payroll.example.com": true})))
+		logger.NewNop(), scanapp.WithScopeExclusionFilter(excludeValues{"payroll.example.com": true}),
+		scanapp.WithToolFacts(stagetest.Source{Cat: stagetest.Catalog()})))
 	return f
 }
 

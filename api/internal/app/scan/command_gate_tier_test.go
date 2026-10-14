@@ -19,7 +19,7 @@ func TestGateCommandPayload_TierCeiling(t *testing.T) {
 		"passive-only.example.com": scopedom.TierPassive,
 		"safe.example.com":         scopedom.TierActive,
 	}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
 	gateCmd := func(payload string) (*GatedCommand, error) {
 		return svc.GateCommandPayload(context.Background(), shared.NewID(), nil, json.RawMessage(payload))
 	}

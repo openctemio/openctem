@@ -35,6 +35,7 @@ func TestIngest_ToolContractProduces(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensors, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	svc.SetResultQuarantine(results, sensorresult.DefaultLimits())
 	svc.SetToolContractSource(sensors)
 

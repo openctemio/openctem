@@ -67,7 +67,7 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 	tools := &stubTools{tools: map[string]*tool.Tool{
 		"tenable_sc": {Name: "tenable_sc", IsActive: true, Metadata: map[string]any{"kind": "connector"}},
 	}}
-	svc := &Service{toolRepo: tools, toolAvailability: avail, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, toolRepo: tools, toolAvailability: avail, logger: logger.NewNop()}
 
 	single := func(name string) *scan.Scan {
 		return &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeSingle, ScannerName: name}
@@ -122,7 +122,7 @@ func TestCheckScanToolsDispatchable(t *testing.T) {
 		t.Errorf("unreadable availability refused: %v", err)
 	}
 	// Not wired: no check.
-	if err := (&Service{logger: logger.NewNop()}).checkScanToolsDispatchable(ctx, single("checkov")); err != nil {
+	if err := (&Service{tools: testTools, logger: logger.NewNop()}).checkScanToolsDispatchable(ctx, single("checkov")); err != nil {
 		t.Errorf("without the source: %v", err)
 	}
 }
@@ -137,14 +137,14 @@ func TestPreviewStep_SameVerdictAsTrigger(t *testing.T) {
 		"checkov": {Name: "checkov", Enabled: true, Status: sensordom.ToolNoSensor},
 		"semgrep": {Name: "semgrep", Enabled: true, Status: sensordom.ToolOfflineOnly, SensorsTotal: 2},
 	}}
-	svc := &Service{toolRepo: &stubTools{tools: map[string]*tool.Tool{}}, toolAvailability: avail, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, toolRepo: &stubTools{tools: map[string]*tool.Tool{}}, toolAvailability: avail, logger: logger.NewNop()}
 	pid := shared.NewID()
 	for _, name := range []string{"nuclei", "checkov", "semgrep"} {
 		step := &scanworkflow.Step{StepKey: "s-" + name, Name: name, Tool: name}
 		svc.stepRepo = stubSteps{steps: []*scanworkflow.Step{step}}
 		wf := &scan.Scan{ID: shared.NewID(), TenantID: tenant, ScanType: scan.ScanTypeWorkflow, ScanWorkflowID: &pid}
 		triggerErr := svc.checkScanToolsDispatchable(ctx, wf)
-		node := svc.previewStep(ctx, tenant, nil, step)
+		node := svc.previewStep(ctx, testCat, tenant, nil, step)
 		if triggerErr == nil {
 			if node.Blocking != nil {
 				t.Errorf("%s: preview blocks (%s) where the trigger passes", name, node.Blocking.Message)

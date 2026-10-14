@@ -46,7 +46,7 @@ func TestDispatch_AllowedPathExclusionNeverWidensScope(t *testing.T) {
 		approvedPathRule(t, tenant, "*", "/admin", scopedom.TestingAllowed),
 	}}, nil, logger.NewNop())
 	gate := &stubGate{blockedTyped: map[string]attribution.State{"https://not-ours.example.net/admin": attribution.StateUnattributed}}
-	svc := &Service{scopeExclusions: excl, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: excl, attributionGate: gate, logger: logger.NewNop()}
 
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{TenantID: tenant,
 		Targets: []string{"https://app.example.com/admin", "https://not-ours.example.net/admin"}})
@@ -68,7 +68,7 @@ func TestDispatch_BlockedPathExclusionDropsURLTargets(t *testing.T) {
 	excl := scopeapp.NewService(nil, activeExclusions{active: []*scopedom.Exclusion{
 		approvedPathRule(t, tenant, "*", "/admin/debug", scopedom.TestingBlocked),
 	}}, nil, logger.NewNop())
-	svc := &Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{TenantID: tenant,
 		Targets: []string{"https://app.example.com/admin/debug/x", "https://app.example.com", "app.example.com"}})
 	if err != nil {

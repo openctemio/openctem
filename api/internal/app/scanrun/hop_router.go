@@ -116,7 +116,7 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		plan.Skipped["incompatible_type"] = seeds.Refused
 	}
 
-	feeding := feedingPredecessors(run, st, preds)
+	feeding := feedingPredecessors(resolved.Catalog, run, st, preds)
 	if len(feeding) == 0 {
 		return s.savePlan(ctx, plan, rows, seeds)
 	}
@@ -289,10 +289,10 @@ type feedingPred struct {
 // feedingPredecessors are the step's direct predecessors that produced
 // results (completed or partial: a partial predecessor still feeds) and
 // whose stage produces a type this stage takes.
-func feedingPredecessors(run *scanrun.Run, st stage.Stage, preds []*scanworkflow.Step) []feedingPred {
+func feedingPredecessors(cat stage.Catalog, run *scanrun.Run, st stage.Stage, preds []*scanworkflow.Step) []feedingPred {
 	out := make([]feedingPred, 0, len(preds))
 	for _, p := range preds {
-		ps, ok := stage.ForStep(p.Tool, p.Capabilities)
+		ps, ok := cat.ForStep(p.Tool, p.Capabilities)
 		if !ok || !stage.Feeds(ps, st) {
 			continue
 		}

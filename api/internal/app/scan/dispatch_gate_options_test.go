@@ -28,7 +28,7 @@ func refusalCodes(d *DispatchTargets) map[string]string {
 
 func TestResolveDispatchTargets_AllowNonNetworkTargets(t *testing.T) {
 	ctx, tenant := context.Background(), shared.NewID()
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: &gateZones{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: &gateZones{}, logger: logger.NewNop()}
 	targets := []string{"github.com/acme/app", "nginx:1.25", "10.0.0.5", "100.64.0.1", "app.example.com"}
 
 	// Off (default): the scan target validator refuses what is not a
@@ -82,7 +82,7 @@ func TestResolveDispatchTargets_AllowNonNetworkTargets(t *testing.T) {
 func TestResolveDispatchTargets_SkipZoneRouting(t *testing.T) {
 	ctx, tenant := context.Background(), shared.NewID()
 	zones := &gateZones{zones: []*scanzone.Zone{mustZone(t, tenant, "office", []string{"10.0.0.0/24"})}} // no sensor
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: zones, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: zones, logger: logger.NewNop()}
 	in := DispatchTargetsInput{TenantID: tenant, Targets: []string{"10.0.0.5", "203.0.113.9"}}
 
 	routed, err := svc.ResolveDispatchTargets(ctx, in)
@@ -113,7 +113,7 @@ func TestResolveDispatchTargets_TakeoverOnly(t *testing.T) {
 		},
 		admitted: map[string]bool{member: true, "saas.example.com": true},
 	}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
 	in := DispatchTargetsInput{TenantID: shared.NewID(), Targets: []string{"saas.example.com", "dangling.example.com"},
 		Assets: map[string]DispatchAsset{"dangling.example.com": {IDs: []string{member}}}}
 
@@ -136,7 +136,7 @@ func TestResolveDispatchTargets_ActScopeAssetsByID(t *testing.T) {
 	ctx := context.Background()
 	id := shared.NewID()
 	stub := &stubActScope{targets: map[string]string{"member.example.com": actscope.ReasonNoScopeTarget}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, actScope: stub, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, actScope: stub, logger: logger.NewNop()}
 	in := DispatchTargetsInput{TenantID: shared.NewID(), Targets: []string{"member.example.com", "typed.example.com"}, ActScope: true,
 		Assets: map[string]DispatchAsset{"member.example.com": {IDs: []string{id.String()}}}}
 
@@ -166,7 +166,7 @@ func TestResolveDispatchTargets_ActScopeAssetsByID(t *testing.T) {
 }
 
 func TestResolveDispatchTargets_MaxTargets(t *testing.T) {
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	many := make([]string, maxResolvedTargets+1)
 	for i := range many {
 		many[i] = fmt.Sprintf("h%05d.example.com", i)
@@ -186,7 +186,7 @@ func TestResolveDispatchTargets_MaxTargets(t *testing.T) {
 func TestResolveDispatchTargets_AliasOnlyAsset(t *testing.T) {
 	ctx := context.Background()
 	gate := &stubGate{}
-	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{"198.51.100.7": true}}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{values: map[string]bool{"198.51.100.7": true}}, attributionGate: gate, logger: logger.NewNop()}
 	in := DispatchTargetsInput{TenantID: shared.NewID(), Targets: []string{"db.example.com", "web.example.com"},
 		Assets: map[string]DispatchAsset{
 			"db.example.com":  {AlsoMatch: []string{"198.51.100.7"}},
@@ -213,7 +213,7 @@ func TestResolveDispatchTargets_AliasOnlyAsset(t *testing.T) {
 func TestResolveDispatchTargets_AssetKeysFoldCase(t *testing.T) {
 	a, b := shared.NewID().String(), shared.NewID().String()
 	gate := &stubGate{blocked: map[string]attribution.State{b: attribution.StateRejected}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{TenantID: shared.NewID(),
 		Targets: []string{"App.Example.com"},
 		Assets:  map[string]DispatchAsset{"app.example.com": {IDs: []string{a}}, "APP.EXAMPLE.COM": {IDs: []string{b}}}})
@@ -231,7 +231,7 @@ func TestResolveDispatchTargets_AssetKeysFoldCase(t *testing.T) {
 func TestResolveDispatchTargets_ActScopeBeforeTier(t *testing.T) {
 	stub := &stubActScope{targets: map[string]string{"both.example.com": actscope.ReasonOutOfDataScope}}
 	gate := &stubGate{ceiling: map[string]scopedom.Tier{"both.example.com": scopedom.TierPassive, "tier.example.com": scopedom.TierPassive}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, actScope: stub, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, actScope: stub, logger: logger.NewNop()}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{TenantID: shared.NewID(),
 		Targets: []string{"both.example.com", "tier.example.com", "ok.example.com"}, ActScope: true})
 	if err != nil {
@@ -252,13 +252,13 @@ func TestResolveScanTargets_UnwiredChecksFailClosed(t *testing.T) {
 		"ownership":  func(s *Service) { s.attributionGate = nil },
 		"act scope":  func(s *Service) { s.actScope = nil },
 	} {
-		svc := allowAllChecks(&Service{logger: logger.NewNop()})
+		svc := allowAllChecks(&Service{tools: testTools, logger: logger.NewNop()})
 		unwire(svc)
 		if got, err := svc.resolveScanTargets(context.Background(), testScan("nuclei", "app.example.com")); err == nil {
 			t.Fatalf("%s not wired: dispatched %v, want the run stopped", name, got.Targets)
 		}
 	}
-	svc := allowAllChecks(&Service{logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, logger: logger.NewNop()})
 	svc.scopeExclusions = nil
 	if _, err := svc.resolveScanTargets(context.Background(), testScan("nuclei", "app.example.com")); !errors.Is(err, ErrDispatchGateUnavailable) {
 		t.Fatalf("err = %v, want ErrDispatchGateUnavailable", err)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -22,15 +23,20 @@ import (
 // capability fallback's answer, recording what was asked.
 type fakeToolLookup struct {
 	platform map[string]*tool.Tool
+	// own are the tenants' own tools (tools their sensors declare).
+	own      map[shared.ID]map[string]*tool.Tool
 	byCaps   *tool.Tool
 	capsErr  error
 	asked    []string
 	capsWith shared.ID
 }
 
-func (f *fakeToolLookup) GetPlatformToolByName(_ context.Context, name string) (*tool.Tool, error) {
+func (f *fakeToolLookup) GetByName(_ context.Context, tenantID shared.ID, name string) (*tool.Tool, error) {
 	f.asked = append(f.asked, name)
 	if t, ok := f.platform[name]; ok {
+		return t, nil
+	}
+	if t, ok := f.own[tenantID][name]; ok {
 		return t, nil
 	}
 	return nil, shared.ErrNotFound
@@ -56,7 +62,7 @@ func domainCode(err error) string {
 func TestResolveStepTool_CapabilityOnlyStepGetsAScanner(t *testing.T) {
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{"naabu": activeTool("naabu")}}
 	step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "ports", Capabilities: []string{"recon", "portscan"}}
-	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	got, err := ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +70,7 @@ func TestResolveStepTool_CapabilityOnlyStepGetsAScanner(t *testing.T) {
 		t.Fatalf("resolved = %+v", got)
 	}
 	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{"targets": []string{"a.example.com"}}}
-	p, err := StepCommandPayload(run, got.WithTool(step), got.Name, "sr", nil)
+	p, err := StepCommandPayload(testCat, run, got.WithTool(step), got.Name, "sr", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +86,12 @@ func TestResolveStepTool_CapabilityOnlyStepGetsAScanner(t *testing.T) {
 // catalog default of its stage is another tool.
 func TestResolveStepTool_PinnedToolIsStrict(t *testing.T) {
 	tools := &fakeToolLookup{}
-	step := &scanworkflow.Step{StepKey: "secrets", Tool: "trufflehog", Capabilities: []string{"secrets"}}
-	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	step := &scanworkflow.Step{StepKey: "sast", Tool: "opengrep", Capabilities: []string{"sast"}}
+	got, err := ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "trufflehog" || !got.Pinned || got.Stage.Key != stage.SecretsCode {
+	if got.Name != "opengrep" || !got.Pinned || got.Stage.Key != stage.SASTCode {
 		t.Fatalf("resolved = %+v", got)
 	}
 	if len(tools.asked) != 0 {
@@ -96,21 +102,21 @@ func TestResolveStepTool_PinnedToolIsStrict(t *testing.T) {
 // G10: `auto` may substitute: the default is disabled, the next active
 // implementation runs. A collector or connector is never picked.
 func TestResolveStepTool_SubstitutesAnActiveImplementation(t *testing.T) {
-	collector := &tool.Tool{Name: "trufflehog", IsActive: true, Metadata: map[string]any{"kind": tool.KindCollector}}
+	collector := &tool.Tool{Name: "opengrep", IsActive: true, Metadata: map[string]any{"kind": tool.KindCollector}}
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{
-		"betterleaks": {Name: "betterleaks", IsActive: false},
-		"trufflehog":  collector,
-		"gitleaks":    activeTool("gitleaks"),
+		"semgrep":  {Name: "semgrep", IsActive: false},
+		"opengrep": collector,
+		"codeql":   activeTool("codeql"),
 	}}
-	step := &scanworkflow.Step{StepKey: "secrets", Capabilities: []string{"secrets"}}
-	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	step := &scanworkflow.Step{StepKey: "sast", Capabilities: []string{"sast"}}
+	got, err := ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "gitleaks" {
-		t.Fatalf("resolved %s, want gitleaks (betterleaks disabled, trufflehog a collector)", got.Name)
+	if got.Name != "codeql" {
+		t.Fatalf("resolved %s, want codeql (semgrep disabled, opengrep a collector)", got.Name)
 	}
-	if !reflect.DeepEqual(tools.asked, []string{"betterleaks", "trufflehog", "gitleaks"}) {
+	if !reflect.DeepEqual(tools.asked, []string{"semgrep", "opengrep", "codeql"}) {
 		t.Fatalf("asked %v: the default must be tried first", tools.asked)
 	}
 }
@@ -120,20 +126,20 @@ func TestResolveStepTool_SubstitutesAnActiveImplementation(t *testing.T) {
 func TestResolveStepTool_Refusals(t *testing.T) {
 	ctx := context.Background()
 	none := &fakeToolLookup{platform: map[string]*tool.Tool{}}
-	if _, err := ResolveStepTool(ctx, none, shared.NewID(), &scanworkflow.Step{StepKey: "p", Capabilities: []string{"portscan"}}); domainCode(err) != codeNoMatchingTool {
+	if _, err := ResolveStepTool(ctx, none, testCat, shared.NewID(), &scanworkflow.Step{StepKey: "p", Capabilities: []string{"portscan"}}); domainCode(err) != codeNoMatchingTool {
 		t.Errorf("no implementation: %v", err)
 	}
-	if _, err := ResolveStepTool(ctx, none, shared.NewID(), &scanworkflow.Step{StepKey: "x", Capabilities: []string{"portscan", "dns"}}); domainCode(err) != codeStepCapabilityUnsure {
+	if _, err := ResolveStepTool(ctx, none, testCat, shared.NewID(), &scanworkflow.Step{StepKey: "x", Capabilities: []string{"portscan", "dns"}}); domainCode(err) != codeStepCapabilityUnsure {
 		t.Errorf("ambiguous: %v", err)
 	}
-	if _, err := ResolveStepTool(ctx, none, shared.NewID(), &scanworkflow.Step{StepKey: "e"}); domainCode(err) != codeStepInvalid {
+	if _, err := ResolveStepTool(ctx, none, testCat, shared.NewID(), &scanworkflow.Step{StepKey: "e"}); domainCode(err) != codeStepInvalid {
 		t.Errorf("empty step: %v", err)
 	}
-	if _, err := ResolveStepTool(ctx, nil, shared.NewID(), &scanworkflow.Step{StepKey: "p", Capabilities: []string{"portscan"}}); err == nil {
+	if _, err := ResolveStepTool(ctx, nil, testCat, shared.NewID(), &scanworkflow.Step{StepKey: "p", Capabilities: []string{"portscan"}}); err == nil {
 		t.Error("no registry: resolved anyway (must fail closed)")
 	}
 	broken := &fakeToolLookup{platform: map[string]*tool.Tool{}, capsErr: errors.New("db down")}
-	if _, err := ResolveStepTool(ctx, broken, shared.NewID(), &scanworkflow.Step{StepKey: "c", Capabilities: []string{"custom-cap"}}); err == nil {
+	if _, err := ResolveStepTool(ctx, broken, testCat, shared.NewID(), &scanworkflow.Step{StepKey: "c", Capabilities: []string{"custom-cap"}}); err == nil {
 		t.Error("a failed lookup resolved a tool")
 	}
 }
@@ -143,7 +149,7 @@ func TestResolveStepTool_Refusals(t *testing.T) {
 func TestResolveStepTool_FallbackIsTenantScoped(t *testing.T) {
 	tenant := shared.NewID()
 	tools := &fakeToolLookup{byCaps: activeTool("acme-scanner")}
-	got, err := ResolveStepTool(context.Background(), tools, tenant, &scanworkflow.Step{StepKey: "c", Capabilities: []string{"acme-cap"}})
+	got, err := ResolveStepTool(context.Background(), tools, testCat, tenant, &scanworkflow.Step{StepKey: "c", Capabilities: []string{"acme-cap"}})
 	if err != nil || got.Name != "acme-scanner" || got.HasStage {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -151,7 +157,7 @@ func TestResolveStepTool_FallbackIsTenantScoped(t *testing.T) {
 		t.Fatal("the fallback lookup is not scoped to the caller's tenant")
 	}
 	tools.byCaps = &tool.Tool{Name: "acme-scanner", IsActive: false}
-	if _, err := ResolveStepTool(context.Background(), tools, tenant, &scanworkflow.Step{StepKey: "c", Capabilities: []string{"acme-cap"}}); domainCode(err) != codeNoMatchingTool {
+	if _, err := ResolveStepTool(context.Background(), tools, testCat, tenant, &scanworkflow.Step{StepKey: "c", Capabilities: []string{"acme-cap"}}); domainCode(err) != codeNoMatchingTool {
 		t.Fatalf("a disabled tool was picked: %v", err)
 	}
 }
@@ -168,7 +174,7 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 	}}
 	step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "subs", Tool: "subfinder",
 		Capabilities: []string{"recon", "subdomain"}, TimeoutSeconds: 600}
-	p, err := StepCommandPayload(run, step, "subfinder", "sr-1", nil)
+	p, err := StepCommandPayload(testCat, run, step, "subfinder", "sr-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +209,7 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 		}
 	}
 	// The selection mode stays on the platform: no sensor reads it.
-	p, _ = StepCommandPayload(&scanrun.Run{ID: shared.NewID()}, step, "subfinder", "sr", nil)
+	p, _ = StepCommandPayload(testCat, &scanrun.Run{ID: shared.NewID()}, step, "subfinder", "sr", nil)
 	if _, ok := p["agent_preference"]; ok {
 		t.Error("retired agent_preference key sent")
 	}
@@ -218,7 +224,7 @@ func TestStepCommandPayload_Golden(t *testing.T) {
 func TestStepCommandPayload_SettingsAndRefusals(t *testing.T) {
 	run := &scanrun.Run{ID: shared.NewID()}
 	step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "ports", Config: map[string]any{"top_ports": "1000", "rate": float64(500)}}
-	p, err := StepCommandPayload(run, step, "naabu", "sr", nil)
+	p, err := StepCommandPayload(testCat, run, step, "naabu", "sr", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,14 +233,14 @@ func TestStepCommandPayload_SettingsAndRefusals(t *testing.T) {
 		t.Fatalf("config = %#v", p[scanworkflow.PayloadKeyConfig])
 	}
 	step.Config = map[string]any{"ports": "80 -nmap-cli id"}
-	if _, err := StepCommandPayload(run, step, "naabu", "sr", nil); err == nil {
+	if _, err := StepCommandPayload(testCat, run, step, "naabu", "sr", nil); err == nil {
 		t.Fatal("flag injection in ports reached a command payload")
 	}
 	step.Config = map[string]any{"tags": []any{"cve", "-code"}}
-	if _, err := StepCommandPayload(run, step, "nuclei", "sr", nil); err == nil {
+	if _, err := StepCommandPayload(testCat, run, step, "nuclei", "sr", nil); err == nil {
 		t.Fatal("a flag as a nuclei tag reached a command payload")
 	}
-	if _, err := StepCommandPayload(run, &scanworkflow.Step{StepKey: "x"}, " ", "sr", nil); domainCode(err) != codeNoMatchingTool {
+	if _, err := StepCommandPayload(testCat, run, &scanworkflow.Step{StepKey: "x"}, " ", "sr", nil); domainCode(err) != codeNoMatchingTool {
 		t.Fatalf("tool-less payload: %v", err)
 	}
 }
@@ -257,7 +263,7 @@ func TestScheduleWorkflowSteps_DelegatesToTheOneDispatcher(t *testing.T) {
 	}
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), StartedAt: ptrTime(time.Now())}
 	q := &recordingQueuer{}
-	s := &Service{logger: logger.NewNop(), stepQueuer: q}
+	s := &Service{tools: testTools, logger: logger.NewNop(), stepQueuer: q}
 	if err := s.scheduleWorkflowSteps(context.Background(), run, steps, 3); err != nil {
 		t.Fatal(err)
 	}
@@ -276,18 +282,19 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // implementations, not the catalog order.
 func TestResolveStepTool_PreferOrder(t *testing.T) {
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{
-		"betterleaks": activeTool("betterleaks"),
-		"gitleaks":    activeTool("gitleaks"),
+		"semgrep": activeTool("semgrep"),
+		"codeql":  activeTool("codeql"),
 	}}
-	step := &scanworkflow.Step{StepKey: "secrets", Capabilities: []string{"secrets.code"}, PreferTools: []string{"gitleaks", "betterleaks"}}
-	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	step := &scanworkflow.Step{StepKey: "sast", Capabilities: []string{"sast.code"}, PreferTools: []string{"codeql", "semgrep", "gitleaks"}}
+	got, err := ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Name != "gitleaks" || got.Pinned || got.Capability() != "secrets.code@1" {
+	if got.Name != "codeql" || got.Pinned || got.Capability() != "sast.code@1" {
 		t.Fatalf("resolved = %+v", got)
 	}
-	if !reflect.DeepEqual(got.Candidates, []string{"gitleaks", "betterleaks"}) {
+	// gitleaks reports no contract: it implements nothing.
+	if !reflect.DeepEqual(got.Candidates, []string{"codeql", "semgrep"}) {
 		t.Fatalf("candidates = %v", got.Candidates)
 	}
 }
@@ -296,20 +303,26 @@ func TestResolveStepTool_PreferOrder(t *testing.T) {
 // the value would otherwise be dropped silently.
 func TestResolveStepTool_SkipsToolsThatDoNotTakeTheParams(t *testing.T) {
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{
-		"betterleaks": activeTool("betterleaks"),
-		"trufflehog":  activeTool("trufflehog"),
-		"gitleaks":    activeTool("gitleaks"),
+		"semgrep":  activeTool("semgrep"),
+		"opengrep": activeTool("opengrep"),
+		"codeql":   activeTool("codeql"),
 	}}
-	step := &scanworkflow.Step{StepKey: "secrets", Capabilities: []string{"secrets.code"}, Config: map[string]any{"history": true}}
-	_, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	step := &scanworkflow.Step{StepKey: "sast", Capabilities: []string{"sast.code"}, Config: map[string]any{"languages": []any{"go"}}}
+	got, err := ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
+	if err != nil || got.Name != "codeql" {
+		t.Fatalf("resolved %s, %v; want codeql, the one whose contract maps languages", got.Name, err)
+	}
+	if !reflect.DeepEqual(tools.asked, []string{"codeql"}) {
+		t.Fatalf("looked up %v; semgrep and opengrep do not take languages", tools.asked)
+	}
+	tools.platform["codeql"] = &tool.Tool{Name: "codeql", IsActive: false}
+	tools.asked = nil
+	_, err = ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
 	if domainCode(err) != codeNoMatchingTool {
 		t.Fatalf("err = %v, want NO_MATCHING_TOOL", err)
 	}
-	if de := err.Error(); !strings.Contains(de, "does not take history") {
+	if de := err.Error(); !strings.Contains(de, "semgrep does not take languages") {
 		t.Fatalf("the reason is missing: %v", err)
-	}
-	if len(tools.asked) != 0 {
-		t.Fatalf("looked up %v though none takes the params", tools.asked)
 	}
 }
 
@@ -319,12 +332,12 @@ func TestStepTool_WithToolMapsTheConfig(t *testing.T) {
 	tools := &fakeToolLookup{platform: map[string]*tool.Tool{"naabu": activeTool("naabu")}}
 	step := &scanworkflow.Step{StepKey: "ports", Capabilities: []string{"scan.ports"},
 		Config: map[string]any{"top_n": float64(100)}}
-	got, err := ResolveStepTool(context.Background(), tools, shared.NewID(), step)
+	got, err := ResolveStepTool(context.Background(), tools, testCat, shared.NewID(), step)
 	if err != nil {
 		t.Fatal(err)
 	}
 	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{}}
-	p, err := StepCommandPayload(run, got.WithTool(step), got.Name, "sr", nil)
+	p, err := StepCommandPayload(testCat, run, got.WithTool(step), got.Name, "sr", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,19 +363,97 @@ func TestStepCommandPayload_Capability(t *testing.T) {
 		{"naabu", nil, "scan.ports@1"},
 		{"nuclei", nil, "vuln.templates@1"},
 		{"trivy", []string{"sca"}, "sca.deps@1"},
-		{"zap", nil, ""},          // no capability jobs on the sensor
-		{"acme-scanner", nil, ""}, // not in the catalog
-		{"tenable_sc", nil, ""},   // a connector
+		{"zap", nil, "dast.web@1"}, // its reported contract implements dast.web
+		{"acme-scanner", nil, ""},  // not in the catalog
+		{"tenable_sc", nil, ""},    // a connector
 	}
 	for _, tc := range cases {
 		step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Tool: tc.tool, Capabilities: tc.caps}
-		p, err := StepCommandPayload(run, step, tc.tool, "sr", nil)
+		p, err := StepCommandPayload(testCat, run, step, tc.tool, "sr", nil)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.tool, err)
 		}
 		got, _ := p[PayloadKeyCapability].(string)
 		if got != tc.want {
 			t.Errorf("%s: capability %q, want %q", tc.tool, got, tc.want)
+		}
+	}
+}
+
+// A capability step runs a tool that only its organization's sensor
+// reports: the contract says it implements dast.web@1, maps the standard
+// max_duration_minutes to its own max_minutes and takes one target per
+// task. The tool row is the organization's own (a declared tool), read
+// with the tenant's id; another organization neither sees the tool in its
+// catalog nor reads the row.
+func TestResolveStepTool_ToolFromAReportedContract(t *testing.T) {
+	tenantA, tenantB := shared.NewID(), shared.NewID()
+	toyweb := stage.ToolFacts{Name: "toyweb", Implements: []stage.Key{stage.DASTWeb},
+		Params: map[stage.Key]map[string]string{stage.DASTWeb: {"max_duration_minutes": "max_minutes"}}}
+	catA, catB := stagetest.Catalog(toyweb), stagetest.Catalog()
+	tools := &fakeToolLookup{own: map[shared.ID]map[string]*tool.Tool{tenantA: {"toyweb": activeTool("toyweb")}}}
+	step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "web", Capabilities: []string{"dast.web"},
+		Config: map[string]any{"max_duration_minutes": 30}}
+
+	got, err := ResolveStepTool(context.Background(), tools, catA, tenantA, step)
+	if err != nil {
+		t.Fatalf("tenant A: %v", err)
+	}
+	if got.Name != "toyweb" || got.Capability() != "dast.web@1" || got.Stage.ChunkSizeFor("toyweb") != 0 {
+		t.Fatalf("resolved = %s %s", got.Name, got.Capability())
+	}
+	run := &scanrun.Run{ID: shared.NewID(), TenantID: tenantA, Context: map[string]any{"targets": []string{"https://app.example.com"}}}
+	p, err := StepCommandPayload(catA, run, got.WithTool(step), got.Name, "sr", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := p["config"].(map[string]any)
+	if p[PayloadKeyCapability] != "dast.web@1" || p["scanner"] != "toyweb" || cfg["max_minutes"] != 30 || cfg["max_duration_minutes"] != nil {
+		t.Fatalf("payload capability %v scanner %v config %v", p[PayloadKeyCapability], p["scanner"], cfg)
+	}
+
+	// SECURITY: tenant B's catalog has no dast.web tool, and its lookup
+	// never reaches tenant A's row.
+	if _, err := ResolveStepTool(context.Background(), tools, catB, tenantB, step); domainCode(err) != codeNoMatchingTool {
+		t.Fatalf("tenant B: err = %v, want NO_MATCHING_TOOL", err)
+	}
+	tools.asked = nil
+	if _, err := ResolveStepTool(context.Background(), tools, catA, tenantB, step); domainCode(err) != codeNoMatchingTool {
+		t.Fatalf("tenant B with A's facts: err = %v, want NO_MATCHING_TOOL (A's tool row is not B's)", err)
+	}
+}
+
+// A tool whose contract names only capabilities the platform does not
+// route is never picked for a capability; pinned, it runs as a tenant tool
+// that never chains.
+func TestResolveStepTool_UnknownCapabilityNotRouted(t *testing.T) {
+	cat := stagetest.Catalog(stage.ToolFacts{Name: "odd", Implements: []stage.Key{"made.up"}})
+	tools := &fakeToolLookup{platform: map[string]*tool.Tool{"odd": activeTool("odd")}}
+	if _, err := ResolveStepTool(context.Background(), tools, cat, shared.NewID(),
+		&scanworkflow.Step{StepKey: "x", Capabilities: []string{"made.up"}}); err == nil {
+		t.Fatal("a capability the platform does not route was resolved")
+	}
+	got, err := ResolveStepTool(context.Background(), tools, cat, shared.NewID(), &scanworkflow.Step{StepKey: "x", Tool: "odd"})
+	if err != nil || got.HasStage || got.Capability() != "" {
+		t.Fatalf("pinned odd = %+v %v", got.Name, err)
+	}
+}
+
+// naabu pinned without a capability runs its primary capability (port
+// scan); it runs host discovery only when the step names it.
+func TestStepCommandPayload_NaabuPrimaryCapability(t *testing.T) {
+	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{"targets": []string{"192.0.2.0/28"}}}
+	for _, tc := range []struct {
+		caps []string
+		want string
+	}{{nil, "scan.ports@1"}, {[]string{"recon"}, "scan.ports@1"}, {[]string{"discover.hosts"}, "discover.hosts@1"}} {
+		step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "n", Tool: "naabu", Capabilities: tc.caps}
+		p, err := StepCommandPayload(testCat, run, step, "naabu", "sr", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p[PayloadKeyCapability]; got != tc.want {
+			t.Errorf("naabu %v: capability %v, want %s", tc.caps, got, tc.want)
 		}
 	}
 }

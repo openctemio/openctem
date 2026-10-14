@@ -63,6 +63,10 @@ func (s *Service) CheckSteps(ctx context.Context, input ValidateGraphInput) (sta
 	if err != nil {
 		return stage.GraphReport{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return stage.GraphReport{}, err
+	}
 	rep := stage.GraphReport{Errors: []stage.GraphIssue{}, Warnings: []stage.GraphIssue{}}
 	steps := make([]*scanworkflow.Step, 0, len(input.Steps))
 	blockedTool := map[string]bool{}
@@ -70,7 +74,7 @@ func (s *Service) CheckSteps(ctx context.Context, input ValidateGraphInput) (sta
 		if in.Order == 0 {
 			in.Order = i + 1
 		}
-		st, issues := s.checkStep(ctx, tenantID, in)
+		st, issues := s.checkStep(ctx, cat, tenantID, in)
 		for _, is := range issues {
 			if is.Field == "tool" {
 				blockedTool[in.StepKey] = true
@@ -81,17 +85,17 @@ func (s *Service) CheckSteps(ctx context.Context, input ValidateGraphInput) (sta
 			steps = append(steps, st)
 		}
 	}
-	graph := stage.ValidateGraph(StepsGraph(steps))
+	graph := cat.ValidateGraph(StepsGraph(cat, steps))
 	rep.Errors = append(rep.Errors, graph.Errors...)
 	rep.Warnings = append(rep.Warnings, graph.Warnings...)
-	rep.Warnings = append(rep.Warnings, s.availabilityWarnings(ctx, input.TenantID, steps, blockedTool)...)
+	rep.Warnings = append(rep.Warnings, s.availabilityWarnings(ctx, cat, input.TenantID, steps, blockedTool)...)
 	return rep, nil
 }
 
 // checkStep reports every problem of one step and the step to place in the
 // graph (built leniently when the input has problems, so the graph check
 // still sees its key, tool and dependencies; nil without a key).
-func (s *Service) checkStep(ctx context.Context, tenantID shared.ID, in AddStepInput) (*scanworkflow.Step, []stage.GraphIssue) {
+func (s *Service) checkStep(ctx context.Context, cat stage.Catalog, tenantID shared.ID, in AddStepInput) (*scanworkflow.Step, []stage.GraphIssue) {
 	var issues []stage.GraphIssue
 	add := func(code, field, msg string) {
 		issues = append(issues, stage.GraphIssue{
@@ -110,7 +114,7 @@ func (s *Service) checkStep(ctx context.Context, tenantID shared.ID, in AddStepI
 			add(e.Code, e.Field, e.Message)
 		}
 	}
-	st, err := constructStep(shared.ID{}, in, caps)
+	st, err := constructStep(cat, shared.ID{}, in, caps)
 	if err == nil {
 		return st, issues
 	}
@@ -129,7 +133,7 @@ func (s *Service) checkStep(ctx context.Context, tenantID shared.ID, in AddStepI
 // pinned tool that is on no sensor, or a capability none of whose tools
 // (the preferred ones when listed) is. They do not block: sensors come and
 // go, and the run is refused at trigger time if it is still true then.
-func (s *Service) availabilityWarnings(ctx context.Context, tenantID string, steps []*scanworkflow.Step, skip map[string]bool) []stage.GraphIssue {
+func (s *Service) availabilityWarnings(ctx context.Context, cat stage.Catalog, tenantID string, steps []*scanworkflow.Step, skip map[string]bool) []stage.GraphIssue {
 	if s.runnableTools == nil {
 		return nil
 	}
@@ -156,7 +160,7 @@ func (s *Service) availabilityWarnings(ctx context.Context, tenantID string, ste
 			}
 			continue
 		}
-		cap, ok := stage.ForStep("", st.Capabilities)
+		cap, ok := cat.ForStep("", st.Capabilities)
 		if !ok {
 			continue
 		}

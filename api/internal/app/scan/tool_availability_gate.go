@@ -106,7 +106,11 @@ func (s *Service) stepToolName(ctx context.Context, tenantID shared.ID, step *sc
 	if len(step.Capabilities) == 0 {
 		return ""
 	}
-	resolved, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step)
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return ""
+	}
+	resolved, err := ResolveStepTool(ctx, s.toolRepo, cat, tenantID, step)
 	if err != nil {
 		return ""
 	}

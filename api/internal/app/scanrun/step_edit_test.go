@@ -113,7 +113,7 @@ func TestValidateSteps_RefusalNamesTheStep(t *testing.T) {
 			}}}
 		},
 	}
-	s := &Service{securityValidator: v, logger: logger.NewNop()}
+	s := &Service{tools: testTools, securityValidator: v, logger: logger.NewNop()}
 	err := s.ValidateSteps(context.Background(), []AddStepInput{{
 		TenantID: shared.NewID().String(), StepKey: "recon", Name: "Recon", Tool: "dnsx", Capabilities: []string{"scan"},
 	}})

@@ -96,13 +96,17 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 		return nil, shared.ErrNotFound
 	}
 
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	targets, err := s.PreviewZoneRouting(ctx, ZoneRoutingPreviewInput{
 		TenantID:      in.TenantID,
 		Targets:       in.Targets,
 		AssetGroupIDs: in.AssetGroupIDs,
 		ScanType:      "workflow",
 		ScanZoneID:    in.ScanZoneID,
-		Tier:          new(workflowTier(tpl.Steps)),
+		Tier:          new(workflowTier(cat, tpl.Steps)),
 	})
 	if err != nil {
 		return nil, err
@@ -119,7 +123,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 
 	out := &WorkflowPreview{Nodes: make([]WorkflowPreviewNode, 0, len(tpl.Steps)), Targets: targets}
 	for _, step := range tpl.Steps {
-		node := s.previewStep(ctx, tenantID, zoneID, step)
+		node := s.previewStep(ctx, cat, tenantID, zoneID, step)
 		if node.Blocking != nil {
 			out.Blocking = true
 		}
@@ -145,12 +149,12 @@ func maxParallelSensors(chunkSize, online int) int {
 }
 
 // previewStep resolves one step as the trigger would.
-func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *shared.ID, step *scanworkflow.Step) WorkflowPreviewNode {
+func (s *Service) previewStep(ctx context.Context, cat stage.Catalog, tenantID shared.ID, zoneID *shared.ID, step *scanworkflow.Step) WorkflowPreviewNode {
 	node := WorkflowPreviewNode{StepKey: step.StepKey, Name: step.Name, Candidates: []string{}}
-	resolved, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step)
+	resolved, err := ResolveStepTool(ctx, s.toolRepo, cat, tenantID, step)
 	if err != nil {
 		node.Blocking = previewError(err)
-		if st, ok := stage.ForStep(step.Tool, step.Capabilities); ok {
+		if st, ok := cat.ForStep(step.Tool, step.Capabilities); ok {
 			node.Capability, node.Tier = st.ID(), st.Tier.String()
 		}
 		return node

@@ -100,7 +100,11 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 	// The tier ceiling of a scan trigger (RFC-054 §4.2 step 6): a target
 	// whose scope entries allow less than the scanner probes at is refused.
 	// A command that names no known scanner probes at t1.
-	tier := ProbeTier(scanner)
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	tier := ProbeTier(cat, scanner)
 	if err := s.refuseTargetsOverTier(ctx, tenantID, tier, checked); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
@@ -112,7 +116,7 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 
 	delete(fields, "target")
 	delete(fields, "targets")
-	applyTargetsToPayload(fields, scanner, checked)
+	applyTargetsToPayload(cat, fields, scanner, checked)
 	out, err := json.Marshal(fields)
 	if err != nil {
 		return nil, fmt.Errorf("encode scan command payload: %w", err)

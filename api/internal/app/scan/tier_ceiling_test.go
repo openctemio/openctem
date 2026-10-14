@@ -53,7 +53,7 @@ func TestProbeTier(t *testing.T) {
 		"nuclei": scopedom.TierActive, "httpx": scopedom.TierActive,
 		"zap": scopedom.TierIntrusive, "some-tenant-tool": scopedom.TierActive,
 	} {
-		if got := ProbeTier(tool); got != want {
+		if got := ProbeTier(testCat, tool); got != want {
 			t.Errorf("%s: %s, want %s", tool, got, want)
 		}
 	}
@@ -64,7 +64,7 @@ func TestProbeTier(t *testing.T) {
 func TestRefuseTierExceeded(t *testing.T) {
 	ctx, tenant := context.Background(), shared.NewID()
 	gate := &stubGate{ceiling: map[string]scopedom.Tier{"passive-only.example.com": scopedom.TierPassive, "safe.example.com": scopedom.TierActive}}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, attributionGate: gate, logger: logger.NewNop()}
 
 	err := svc.refuseTierExceeded(ctx, tenant, "nuclei", []string{"ok.example.com", "passive-only.example.com"})
 	rs := refusalsOf(t, err)
@@ -103,7 +103,7 @@ func TestRefuseTierExceeded(t *testing.T) {
 // run left with nothing.
 func TestResolveScanTargets_TierCeiling(t *testing.T) {
 	gate := &stubGate{ceiling: map[string]scopedom.Tier{"passive-only.example.com": scopedom.TierPassive}}
-	svc := allowAllChecks(&Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()})
 
 	sc := testScan("nuclei", "ok.example.com", "passive-only.example.com")
 	got, err := svc.resolveScanTargets(context.Background(), sc)
@@ -147,7 +147,7 @@ func TestResolveScanTargets_TierCeiling(t *testing.T) {
 // dispatches are not tier-checked.
 func TestResolveDispatchTargets_TierCeiling(t *testing.T) {
 	gate := &stubGate{ceiling: map[string]scopedom.Tier{"passive-only.example.com": scopedom.TierPassive, "safe.example.com": scopedom.TierActive}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: gate, logger: logger.NewNop()}
 	targets := []string{"passive-only.example.com", "safe.example.com", "any.example.com"}
 	tier := func(t scopedom.Tier) *scopedom.Tier { return &t }
 
@@ -191,7 +191,7 @@ func TestFilterStepTargets_TierAndProof(t *testing.T) {
 		"passive-only.verified.example": scopedom.TierPassive,
 		"safe.verified.example":         scopedom.TierActive,
 	}}}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
+	svc := &Service{tools: testTools, attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
 	rc := map[string]any{"targets": []string{
 		"passive-only.verified.example", "safe.verified.example", "t2.verified.example", "unproven.example.com",
 	}}
@@ -227,17 +227,17 @@ func TestFilterStepTargets_TierAndProof(t *testing.T) {
 		t.Fatalf("err = %v, want %s", err, CodeStepTargetsRefused)
 	}
 	// Without a proof verifier an intrusive step proves nothing (fail closed).
-	plain := &Service{attributionGate: &stubGate{}, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
+	plain := &Service{tools: testTools, attributionGate: &stubGate{}, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true)}
 	if _, err := plain.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"t2.verified.example"}}); !errors.As(err, &de) || de.Code != CodeStepTargetsRefused {
 		t.Fatalf("no verifier: err = %v", err)
 	}
 	// Setting off: an intrusive step needs no proof.
-	off := &Service{attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false)}
+	off := &Service{tools: testTools, attributionGate: gate, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false)}
 	if st, err := off.FilterStepTargets(ctx, tenant, "zap", map[string]any{"targets": []string{"unproven.example.com"}}); err != nil || len(st.Targets) != 1 {
 		t.Fatalf("proof off: %+v %v", st, err)
 	}
 	// A failed tier check fails the step.
-	failing := &Service{attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}
+	failing := &Service{tools: testTools, attributionGate: &stubGate{err: errors.New("db down")}, logger: logger.NewNop()}
 	if _, err := failing.FilterStepTargets(ctx, tenant, "nuclei", rc); err == nil {
 		t.Fatal("a failed tier check must fail the step")
 	}

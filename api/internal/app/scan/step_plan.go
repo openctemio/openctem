@@ -49,6 +49,9 @@ type StepTool struct {
 	// Candidates are the tools the step could run, in the order tried
 	// (the pin alone for a pinned step).
 	Candidates []string
+	// Catalog is the organization's catalog the step was resolved in; the
+	// checks and the payload of the step read the same one.
+	Catalog stage.Catalog
 }
 
 // Capability is the versioned capability the step runs ("scan.ports@1"),
@@ -62,7 +65,10 @@ func (t StepTool) Capability() string {
 
 // StepToolLookup is the slice of the tool registry the planner reads.
 type StepToolLookup interface {
-	GetPlatformToolByName(ctx context.Context, name string) (*tool.Tool, error)
+	// GetByName resolves a tool name as the tenant sees it: the platform
+	// tool of that name, else the tenant's own tool (a tool its sensors
+	// declare); never another tenant's.
+	GetByName(ctx context.Context, tenantID shared.ID, name string) (*tool.Tool, error)
 	FindByCapabilities(ctx context.Context, tenantID shared.ID, capabilities []string) (*tool.Tool, error)
 }
 
@@ -72,9 +78,10 @@ type StepToolLookup interface {
 //     active is the caller's strict check, as before);
 //   - a step that names a catalog capability (a stage key such as
 //     "scan.ports", or a word that names one stage, such as "portscan") runs
-//     the first active platform implementation of that stage that accepts
-//     the step's standard params: in the step's prefer_tools order when it
-//     has one, else the catalog order, the default first. A tool that does
+//     the first active implementation of that stage in the organization's
+//     catalog (the tools whose reported contracts implement it) that
+//     accepts the step's standard params: in the step's prefer_tools order
+//     when it has one, else the catalog order, the default first. A tool that does
 //     not take a param the step sets is skipped, never handed the step with
 //     that value dropped. None left is NO_MATCHING_TOOL, with the reasons;
 //   - capabilities that name more than one stage are refused
@@ -83,15 +90,16 @@ type StepToolLookup interface {
 //     active tool with all of them (platform tools first), as before.
 //
 // A collector or connector is never picked for a capability. The tenant id
-// scopes the fallback lookup; a platform implementation is read by name
-// among platform tools only, never another tenant's tool of that name.
-func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.ID, step *scanworkflow.Step) (StepTool, error) {
+// scopes every lookup: cat is the tenant's catalog, and an implementation
+// is read by name among platform tools and the tenant's own, never another
+// tenant's tool of that name.
+func ResolveStepTool(ctx context.Context, tools StepToolLookup, cat stage.Catalog, tenantID shared.ID, step *scanworkflow.Step) (StepTool, error) {
 	if step == nil {
 		return StepTool{}, shared.NewDomainError(codeStepInvalid, "step is missing", shared.ErrValidation)
 	}
 	if name := strings.TrimSpace(step.Tool); name != "" {
-		st, ok := stage.ForStep(name, step.Capabilities)
-		return StepTool{Name: name, Pinned: true, Stage: st, HasStage: ok, Candidates: []string{name}}, nil
+		st, ok := cat.ForStep(name, step.Capabilities)
+		return StepTool{Name: name, Pinned: true, Stage: st, HasStage: ok, Candidates: []string{name}, Catalog: cat}, nil
 	}
 	if len(step.Capabilities) == 0 {
 		return StepTool{}, shared.NewDomainError(codeStepInvalid,
@@ -101,7 +109,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 	if tools == nil {
 		return StepTool{}, fmt.Errorf("step %s: tool registry is not configured; nothing dispatched", step.StepKey)
 	}
-	st, err := stage.ForCapabilities(step.Capabilities)
+	st, err := cat.ForCapabilities(step.Capabilities)
 	switch {
 	case err == nil:
 		candidates := stepCandidates(st, step)
@@ -111,7 +119,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 				skipped = append(skipped, fmt.Sprintf("%s does not take %s", name, strings.Join(missing, ", ")))
 				continue
 			}
-			t, lerr := tools.GetPlatformToolByName(ctx, name)
+			t, lerr := tools.GetByName(ctx, tenantID, name)
 			if lerr != nil {
 				if errors.Is(lerr, shared.ErrNotFound) {
 					continue
@@ -119,7 +127,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 				return StepTool{}, fmt.Errorf("step %s: look up tool %q: %w", step.StepKey, name, lerr)
 			}
 			if usableScanner(t) {
-				return StepTool{Name: t.Name, Stage: st, HasStage: true, Candidates: candidates}, nil
+				return StepTool{Name: t.Name, Stage: st, HasStage: true, Candidates: candidates, Catalog: cat}, nil
 			}
 		}
 		reason := ""
@@ -145,7 +153,7 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 			fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
 			shared.ErrValidation)
 	}
-	return StepTool{Name: t.Name}, nil
+	return StepTool{Name: t.Name, Catalog: cat}, nil
 }
 
 // stepCandidates are the tools a capability step may run, in the order
@@ -191,7 +199,7 @@ func (t StepTool) WithTool(step *scanworkflow.Step) *scanworkflow.Step {
 // targets (the type-gated run targets, or the hop router's plan) are at the
 // top level, where sensors read them; the run context goes along without
 // platform bookkeeping (StepRunContext).
-func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, stepRunID string, st *StepTargets) (map[string]any, error) {
+func StepCommandPayload(cat stage.Catalog, run *scanrun.Run, step *scanworkflow.Step, toolName, stepRunID string, st *StepTargets) (map[string]any, error) {
 	toolName = strings.TrimSpace(toolName)
 	if toolName == "" {
 		return nil, shared.NewDomainError(codeNoMatchingTool,
@@ -234,7 +242,9 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	// in the provenance; the platform's grant check applies the
 	// capability's tier floor. The settings stay in config, mapped to the
 	// tool's keys as before, so an older sensor runs the step unchanged.
-	if st, ok := stage.ForStep(toolName, step.Capabilities); ok && stage.TakesCapabilityJobs(st, toolName) {
+	// Every tool whose reported contract implements the stage takes
+	// capability jobs.
+	if st, ok := cat.ForStep(toolName, step.Capabilities); ok {
 		payload[PayloadKeyCapability] = st.ID()
 		// The platform decides how hosts are probed: a host discovery step
 		// that names no ports probes the platform's set, never a default

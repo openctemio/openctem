@@ -40,7 +40,7 @@ func TestArchiveStaleOneOffScans_AuditsEachInItsTenant(t *testing.T) {
 		{TenantID: b, ID: shared.NewID(), Name: "Quick Scan - 2"},
 	}}
 	rec := &archiveAuditRec{}
-	s := &Service{scanRepo: repo, auditService: rec, logger: logger.NewNop()}
+	s := &Service{tools: testTools, scanRepo: repo, auditService: rec, logger: logger.NewNop()}
 
 	n, err := s.ArchiveStaleOneOffScans(context.Background(), 0)
 	if err != nil || n != 2 {

@@ -13,7 +13,7 @@ import (
 )
 
 func readinessService(statuses map[string]sensordom.ToolStatus, pfOffered, pfOnline bool, pfTools []string) *Service {
-	s := &Service{logger: logger.NewNop()}
+	s := &Service{tools: testTools, logger: logger.NewNop()}
 	WithReadinessSources(
 		func(context.Context, shared.ID) (map[string]sensordom.ToolStatus, error) { return statuses, nil },
 		func(context.Context, shared.ID) (bool, bool, []string, error) {
@@ -118,7 +118,7 @@ func TestRequireWorkflowRunnable(t *testing.T) {
 		t.Fatalf("blocked workflow: %v", err)
 	}
 	// Without the sources nothing is refused (the trigger checks still apply).
-	if err := (&Service{logger: logger.NewNop()}).requireWorkflowRunnable(ctx, tenant, rwf("")); err != nil {
+	if err := (&Service{tools: testTools, logger: logger.NewNop()}).requireWorkflowRunnable(ctx, tenant, rwf("")); err != nil {
 		t.Fatalf("no sources: %v", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestRequireWorkflowRunnable(t *testing.T) {
 // answers one organization with another one's sensors.
 func TestWorkflowReadiness_TenantIsolatedCache(t *testing.T) {
 	a, b := shared.NewID(), shared.NewID()
-	s := &Service{logger: logger.NewNop()}
+	s := &Service{tools: testTools, logger: logger.NewNop()}
 	WithReadinessSources(
 		func(_ context.Context, tenant shared.ID) (map[string]sensordom.ToolStatus, error) {
 			if tenant == a {

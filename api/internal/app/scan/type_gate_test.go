@@ -62,7 +62,7 @@ func member(name string, t asset.AssetType, sub string) *assetgroup.ScanMember {
 // members whose stored type the scanner can scan. Before, ZAP was handed a
 // repository and a mobile app and the run only reported them "skipped".
 func TestResolveScanTargets_LeavesOutTypesTheScannerCannotScan(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 			member("https://app.example.com", asset.AssetTypeApplication, "website"),
 			member("https://api.example.com", asset.AssetTypeApplication, "api"),
@@ -112,7 +112,7 @@ func TestResolveScanTargets_LeavesOutTypesTheScannerCannotScan(t *testing.T) {
 // A run with nothing its scanner can scan is refused with a clear error
 // (400), not dispatched with an empty or wrong target list.
 func TestRecordResolvedTargets_NothingCompatibleIsRefused(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 			member("github.com/acme/app", asset.AssetTypeRepository, ""),
 		}},
@@ -139,7 +139,7 @@ func TestRecordResolvedTargets_NothingCompatibleIsRefused(t *testing.T) {
 // platform does not know, or a workflow run (no scanner): nothing is left out.
 func TestResolveScanTargets_UndecidableToolsKeepEveryMember(t *testing.T) {
 	for _, scanner := range []string{"freeform", "not-a-tool", ""} {
-		svc := allowAllChecks(&Service{
+		svc := allowAllChecks(&Service{tools: testTools,
 			assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 				member("github.com/acme/app", asset.AssetTypeRepository, ""),
 			}},
@@ -164,7 +164,7 @@ func TestResolveScanTargets_UndecidableToolsKeepEveryMember(t *testing.T) {
 // A failed tool lookup stops the dispatch (fail closed) rather than handing
 // the scanner unchecked targets.
 func TestResolveScanTargets_ToolLookupErrorFailsClosed(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &typedMembersRepo{},
 		toolRepo:       &stubTools{err: errors.New("db down")},
 		logger:         logger.NewNop(),
@@ -180,7 +180,7 @@ func TestResolveScanTargets_ToolLookupErrorFailsClosed(t *testing.T) {
 func TestFilterStepTargets(t *testing.T) {
 	// Every name proven: this test is about types (the per-step proof of
 	// intrusive tools is TestFilterStepTargets_IntrusiveNeedsProof).
-	svc := &Service{toolRepo: gateTools, attributionGate: allProven{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, toolRepo: gateTools, attributionGate: allProven{}, logger: logger.NewNop()}
 	rc := map[string]any{
 		"targets": []string{"https://app.example.com", "github.com/acme/app", "typed-by-hand.example.com"},
 		RunContextKeyTargetTypes: map[string]string{
@@ -258,7 +258,7 @@ func TestStepCommandPayload_StepTargets(t *testing.T) {
 		"targets":                []string{"a", "b"},
 		RunContextKeyTargetTypes: map[string]string{"a": "host", "b": "repository"},
 	}}
-	p, err := StepCommandPayload(run, &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", &StepTargets{Targets: []string{"a"}, Refused: 1})
+	p, err := StepCommandPayload(testCat, run, &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Tool: "nmap"}, "nmap", "sr", &StepTargets{Targets: []string{"a"}, Refused: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

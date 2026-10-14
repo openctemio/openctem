@@ -65,8 +65,8 @@ func (s Stage) NetworkOf() Network {
 // ToolNetwork is what a run of the tool may reach: NetworkTargets when any
 // stage it implements reaches its targets, or when the catalog does not know
 // the tool; else the network of its stages (the first, in catalog order).
-func ToolNetwork(tool string) Network {
-	stages := ForTool(tool)
+func (c Catalog) ToolNetwork(tool string) Network {
+	stages := c.ForTool(tool)
 	if len(stages) == 0 {
 		return NetworkTargets
 	}
@@ -88,12 +88,12 @@ var resolverConfigKeys = []string{"resolver", "resolvers", "r", "rl", "resolver_
 // tier among the stages it implements), the tier of the stage its
 // capabilities name, and T1 for a resolver tool told to use custom
 // resolvers. A step the catalog cannot place is T1, never passive.
-func IntensityTier(tool string, caps []string, config map[string]any) Tier {
+func (c Catalog) IntensityTier(tool string, caps []string, config map[string]any) Tier {
 	tool = strings.TrimSpace(tool)
 	var t Tier
 	known := false
 	if tool != "" {
-		t, known = ProbeTier(tool), true
+		t, known = c.ProbeTier(tool), true
 	}
 	if s, err := ForCapabilities(caps); err == nil {
 		if !known || s.Tier > t {
@@ -104,7 +104,7 @@ func IntensityTier(tool string, caps []string, config map[string]any) Tier {
 	if !known {
 		return TierActive
 	}
-	if t < TierActive && customResolvers(tool, caps, config) {
+	if t < TierActive && c.customResolvers(tool, caps, config) {
 		t = TierActive
 	}
 	return t
@@ -112,11 +112,11 @@ func IntensityTier(tool string, caps []string, config map[string]any) Tier {
 
 // customResolvers reports whether a DNS-resolution step's settings name its
 // own resolvers.
-func customResolvers(tool string, caps []string, config map[string]any) bool {
+func (c Catalog) customResolvers(tool string, caps []string, config map[string]any) bool {
 	if len(config) == 0 {
 		return false
 	}
-	resolver := tool != "" && ToolNetwork(tool) == NetworkResolver
+	resolver := tool != "" && c.ToolNetwork(tool) == NetworkResolver
 	if !resolver {
 		if s, err := ForCapabilities(caps); err == nil && s.NetworkOf() == NetworkResolver {
 			resolver = true

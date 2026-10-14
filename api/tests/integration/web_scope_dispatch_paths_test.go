@@ -46,7 +46,7 @@ func seedPathExclusion(t *testing.T, db *sql.DB, tenant shared.ID, host, prefix 
 // command passes the web job guard.
 func guardedCommands(db *sql.DB, b scopesvc.WebScopeBuilder) *postgres.CommandRepository {
 	repo := postgres.NewCommandRepository(&postgres.DB{DB: db})
-	repo.SetCreateGuard(scopesvc.NewWebJobGuard(b, nil))
+	repo.SetCreateGuard(integrationGuard(scopesvc.NewWebJobGuard(b, nil)))
 	return repo
 }
 
@@ -64,7 +64,7 @@ func scanServiceOver(db *sql.DB, cmds commanddom.Repository) *scansvc.Service {
 		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), cmds, nil, logger.New(logger.Config{Level: "error"}),
-		scanrun.WithTargetGate(svc),
+		scanrun.WithTargetGate(svc), scanrun.WithToolFacts(integrationTools),
 	))
 	return svc
 }
@@ -185,7 +185,7 @@ func TestWebScope_WorkflowStep(t *testing.T) {
 		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), cmds, nil, logger.New(logger.Config{Level: "error"}),
-		scanrun.WithTargetGate(newTriggerServiceWith(db, scansvc.WithActScope(actScopeChecker(db)))),
+		scanrun.WithTargetGate(newTriggerServiceWith(db, scansvc.WithActScope(actScopeChecker(db)))), scanrun.WithToolFacts(integrationTools),
 	)
 	if _, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{TenantID: tenant.String(), TemplateID: templateID.String(),
 		TriggerType: "api", Context: map[string]any{"targets": []any{"https://" + webHost}}}); err != nil {
@@ -249,7 +249,7 @@ func TestWebScope_ValidationAndRetest(t *testing.T) {
 	seedConfinedSensor(t, db, other)
 	pg := &postgres.DB{DB: db}
 	cmds := postgres.NewCommandRepository(pg)
-	cmds.SetCreateGuard(scopesvc.NewWebJobGuard(scopeService(db), postgres.NewSensorRepository(pg)))
+	cmds.SetCreateGuard(integrationGuard(scopesvc.NewWebJobGuard(scopeService(db), postgres.NewSensorRepository(pg))))
 	d := validation.NewCommandDispatcher(cmds, allowProbe{}, logger.New(logger.Config{Level: "error"}))
 
 	validate := func(address string) error {
@@ -338,7 +338,8 @@ func (failingScope) BuildWebScope(context.Context, shared.ID, []string) (*scopes
 
 // SECURITY: fail closed. When the exclusions cannot be read, or the guard is
 // not wired while the tenant has a path exclusion, a web job is refused and
-// nothing is queued; a job without web requests is not affected.
+// nothing is queued; a job without web requests is not affected while the
+// guard is wired (unwired, every tool job is refused).
 func TestWebScope_FailsClosed(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
@@ -357,8 +358,16 @@ func TestWebScope_FailsClosed(t *testing.T) {
 			if n := len(commandPayloads(t, db, tenant, "scan")); n != 0 {
 				t.Fatalf("%d command(s) queued", n)
 			}
-			if _, err := svc.QuickScan(ctx, scansvc.QuickScanInput{TenantID: tenant.String(), ScannerName: "httpx",
-				Targets: []string{webHost}}); err != nil {
+			// Wired, the organization's catalog says httpx requests no web
+			// paths. Unwired, the tool facts are not at hand and any tool
+			// job may be a web job: it is refused too (fail closed).
+			_, err := svc.QuickScan(ctx, scansvc.QuickScanInput{TenantID: tenant.String(), ScannerName: "httpx",
+				Targets: []string{webHost}})
+			if name == "unwired" {
+				if err == nil {
+					t.Fatal("an unguarded tool job was queued for a tenant with a path exclusion")
+				}
+			} else if err != nil {
 				t.Fatalf("a job without web requests was refused: %v", err)
 			}
 		})

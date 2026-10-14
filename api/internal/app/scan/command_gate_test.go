@@ -28,7 +28,7 @@ func (g *gateZones) RoutableSensors(context.Context, shared.ID, []shared.ID, str
 }
 
 func gateService(excl ScopeExclusionFilter, zones ZoneDirectory) *Service {
-	return &Service{scopeExclusions: excl, zones: zones, logger: logger.NewNop()}
+	return &Service{tools: testTools, scopeExclusions: excl, zones: zones, logger: logger.NewNop()}
 }
 
 func mustZone(t *testing.T, tenantID shared.ID, name string, ranges []string, sensors ...shared.ID) *scanzone.Zone {

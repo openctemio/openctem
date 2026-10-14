@@ -25,9 +25,23 @@ import (
 )
 
 // ProbeTier is the tier a run of the tool probes at (the highest tier of its
-// stages; an unknown tool is t1).
-func ProbeTier(tool string) scopedom.Tier {
-	return scopedom.Tier(stage.ProbeTier(tool))
+// stages in the organization's catalog cat; an unknown tool is t1).
+func ProbeTier(cat stage.Catalog, tool string) scopedom.Tier {
+	return scopedom.Tier(cat.ProbeTier(tool))
+}
+
+// ProbeTierFor is the tier the tool probes at in the tenant's catalog.
+func (s *Service) ProbeTierFor(ctx context.Context, tenantID shared.ID, tool string) (scopedom.Tier, error) {
+	return s.probeTier(ctx, tenantID, tool)
+}
+
+// probeTier is ProbeTier in the tenant's catalog.
+func (s *Service) probeTier(ctx context.Context, tenantID shared.ID, tool string) (scopedom.Tier, error) {
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	return ProbeTier(cat, tool), nil
 }
 
 // scanDispatchGate is the gate record of a single-scanner run's commands, for
@@ -35,8 +49,8 @@ func ProbeTier(tool string) scopedom.Tier {
 // person who triggered it, else the scan's owner), and the loose ownership
 // rule of a passive or takeover-only probe. It never asks more than the
 // trigger checked (resolveScanTargets).
-func scanDispatchGate(sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
-	tier := ProbeTier(sc.ScannerName)
+func scanDispatchGate(cat stage.Catalog, sc *scan.Scan, run *scanrun.Run) *command.DispatchGate {
+	tier := ProbeTier(cat, sc.ScannerName)
 	g := &command.DispatchGate{
 		Tier:     int(tier),
 		Passive:  tier <= scopedom.TierPassive || IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
@@ -76,7 +90,11 @@ func (s *Service) refuseTierExceeded(ctx context.Context, tenantID shared.ID, sc
 	if scanner == "" {
 		return nil // a workflow: each step is checked at its dispatch
 	}
-	return s.refuseTargetsOverTier(ctx, tenantID, ProbeTier(scanner), targets)
+	tier, err := s.probeTier(ctx, tenantID, scanner)
+	if err != nil {
+		return fmt.Errorf("tier check failed, nothing saved or dispatched: %w", err)
+	}
+	return s.refuseTargetsOverTier(ctx, tenantID, tier, targets)
 }
 
 // refuseTargetsOverTier refuses targets as a whole when one is covered only
@@ -105,7 +123,10 @@ func (s *Service) stepScopeFilter(ctx context.Context, tenantID shared.ID, tool 
 	if tool == "" || len(targets) == 0 {
 		return targets, 0, "", nil
 	}
-	tier := ProbeTier(tool)
+	tier, err := s.probeTier(ctx, tenantID, tool)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("tier check failed, step not dispatched: %w", err)
+	}
 	if tier <= scopedom.TierPassive {
 		return targets, 0, "", nil
 	}

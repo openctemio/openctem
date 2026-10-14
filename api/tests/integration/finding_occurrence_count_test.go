@@ -29,6 +29,7 @@ func newOccurrenceRig(t *testing.T) (*v2Rig, v2Tenant, *ingest.Service, *sensor.
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	tid := tn.tenant
 	return r, tn, svc, &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 }

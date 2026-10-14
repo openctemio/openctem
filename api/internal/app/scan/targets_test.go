@@ -90,7 +90,7 @@ func testScan(scanner string, targets ...string) *scan.Scan {
 }
 
 func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
 			{ID: shared.NewID(), Name: "198.51.100.5"},
 			{ID: shared.NewID(), Name: "app.example.com"},
@@ -115,7 +115,7 @@ func TestResolveScanTargets_GroupMembersAndDirectTargets(t *testing.T) {
 
 // Exclusions are enforced server-side for direct targets and group members.
 func TestResolveScanTargets_RemovesExcluded(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{
 			{ID: shared.NewID(), Name: "prod-db.internal.example.com"},
 		}},
@@ -136,7 +136,7 @@ func TestResolveScanTargets_RemovesExcluded(t *testing.T) {
 
 // A failed exclusion lookup must stop the dispatch, never scan everything.
 func TestResolveScanTargets_ExclusionErrorFailsClosed(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		scopeExclusions: &stubExclusions{err: errors.New("db down")},
 		logger:          logger.NewNop(),
 	})
@@ -160,7 +160,7 @@ func TestRecordResolvedTargets_AllExcludedRefused(t *testing.T) {
 // so the old "only the first target is scanned" warning is gone; the per-run
 // job cap is enforced here instead.
 func TestResolveScanTargets_SingleTargetScanner(t *testing.T) {
-	svc := allowAllChecks(&Service{logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, logger: logger.NewNop()})
 	got, err := svc.resolveScanTargets(context.Background(), testScan("semgrep", "a", "b", "c"))
 	if err != nil {
 		t.Fatal(err)
@@ -197,7 +197,7 @@ func TestApplyTargetsToPayload(t *testing.T) {
 		"tenable, many targets":                             {"tenable", []string{"a", "b"}, nil},
 	} {
 		p := map[string]any{}
-		applyTargetsToPayload(p, tc.scanner, tc.targets)
+		applyTargetsToPayload(testCat, p, tc.scanner, tc.targets)
 		if !reflect.DeepEqual(p["targets"], tc.targets) {
 			t.Errorf("%s: targets = %v", name, p["targets"])
 		}
@@ -206,7 +206,7 @@ func TestApplyTargetsToPayload(t *testing.T) {
 		}
 	}
 	p := map[string]any{}
-	applyTargetsToPayload(p, "nuclei", nil)
+	applyTargetsToPayload(testCat, p, "nuclei", nil)
 	if len(p) != 0 {
 		t.Errorf("no targets must leave the payload untouched: %v", p)
 	}
@@ -270,7 +270,7 @@ func TestShouldUsePlatformSensor(t *testing.T) {
 		{"explicit platform, allowed, public: platform", stubSelector{false, true}, scan.SensorPreferencePlatform, false, public, true, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop()}
+		svc := &Service{tools: testTools, sensorSelector: tc.sel, logger: logger.NewNop()}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		if tc.group {
@@ -315,7 +315,7 @@ func TestResolveScanTargets_AllAssetGroups(t *testing.T) {
 		g2: {groupAsset("b.example.com"), {ID: shared1.ID, Name: shared1.Name}, groupAsset("excluded.example.com")},
 		g3: {},
 	}}
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo:  repo,
 		scopeExclusions: &stubExclusions{values: map[string]bool{"excluded.example.com": true}},
 		logger:          logger.NewNop(),
@@ -355,7 +355,7 @@ func TestResolveScanTargets_CapAcrossGroups(t *testing.T) {
 		return out
 	}
 	half := maxResolvedTargets/2 + 1
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &stubGroupsRepo{byGroup: map[shared.ID][]*assetgroup.GroupAsset{g1: mk("a", half), g2: mk("b", half)}},
 		logger:         logger.NewNop(),
 	})
@@ -402,7 +402,7 @@ func TestDecideSensorRouting(t *testing.T) {
 		{"tenant", stubSelector{false, true}, scan.SensorPreferenceTenant, false, []string{"a.example.com"}, sensorRoutingTenant, false, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop()}
+		svc := &Service{tools: testTools, sensorSelector: tc.sel, logger: logger.NewNop()}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		if tc.group {
@@ -427,7 +427,7 @@ func TestDecideSensorRouting(t *testing.T) {
 // Only the multi-group field set (no legacy AssetGroupID) still counts as an
 // asset group for platform routing.
 func TestShouldUsePlatformSensor_AssetGroupIDsOnly(t *testing.T) {
-	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, sensorSelector: stubSelector{false, true}, logger: logger.NewNop()}
 	sc := testScan("nuclei")
 	sc.AssetGroupIDs = []shared.ID{shared.NewID()}
 	got, err := svc.shouldUsePlatformSensor(context.Background(), sc, []string{"a.example.com"})
@@ -461,7 +461,7 @@ func TestResolveScanTargets_GroupLargerThanOnePage(t *testing.T) {
 	for i := range members {
 		members[i] = &assetgroup.GroupAsset{ID: shared.NewID(), Name: fmt.Sprintf("h%03d.example.com", i)}
 	}
-	svc := allowAllChecks(&Service{assetGroupRepo: &pagedGroupAssetsRepo{assets: members}, logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, assetGroupRepo: &pagedGroupAssetsRepo{assets: members}, logger: logger.NewNop()})
 	sc := testScan("nuclei")
 	sc.AssetGroupID = shared.NewID()
 
@@ -540,7 +540,7 @@ func TestResolveScanTargets_SkipsUnconfirmedGroupMembers(t *testing.T) {
 		review.ID.String(): attribution.StateNeedsReview,
 		typed.ID.String():  attribution.StateNeedsReview,
 	}}
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{confirmed, review, typed}},
 		attributionGate: gate,
 		logger:          logger.NewNop(),
@@ -590,7 +590,7 @@ func TestResolveScanTargets_GroupMemberAddressesAndArchived(t *testing.T) {
 	groupAssetProps[db.ID] = map[string]any{"ip": "10.9.9.11"}
 	t.Cleanup(func() { delete(groupAssetProps, web.ID); delete(groupAssetProps, db.ID) })
 
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo:  &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{web, db, app, old}},
 		scopeExclusions: &stubExclusions{values: map[string]bool{"10.9.9.10": true, "10.9.9.11": true}},
 		logger:          logger.NewNop(),

@@ -98,6 +98,7 @@ func TestTenableSCConnector_Flow(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		sensorRepo, postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	ing.SetToolFacts(integrationTools)
 	ing.SetSourceResolveMode(ingest.SourceResolveEnforce)
 	tid := tenant
 	agt := &sensor.Sensor{ID: connSensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}

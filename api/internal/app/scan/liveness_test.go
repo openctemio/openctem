@@ -47,7 +47,7 @@ func workflowScan(t *testing.T, wf shared.ID, targets ...string) *scan.Scan {
 // that cannot run is refused.
 func TestApplyCIDRMode(t *testing.T) {
 	network, plain := shared.NewID(), shared.NewID()
-	s := &Service{stepRepo: workflowSteps{by: map[shared.ID][]*scanworkflow.Step{
+	s := &Service{tools: testTools, stepRepo: workflowSteps{by: map[shared.ID][]*scanworkflow.Step{
 		network: {{StepKey: "hosts", Capabilities: []string{"discover.hosts"}}, {StepKey: "ports", Capabilities: []string{"scan.ports"}}},
 		plain:   {{StepKey: "ports", Tool: "naabu"}},
 	}}}
@@ -101,7 +101,7 @@ func TestApplyCIDRMode(t *testing.T) {
 // inventory's addresses inside it, read for the scan's own tenant.
 func TestExpandSelectors_Liveness(t *testing.T) {
 	sel := &recordingSelector{}
-	s := &Service{selectorAssets: sel}
+	s := &Service{tools: testTools, selectorAssets: sel}
 	sc := rangeScan(t, "198.51.100.0/24", "app.example.com")
 	if err := sc.SetTargetOptions(scan.TargetOptions{CIDRMode: scan.CIDRModeLiveness}); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestLivenessSeeds(t *testing.T) {
 		{stage.ScanPorts, []string{"198.51.100.7", "app.example.com"}},
 		{stage.VulnTemplates, []string{"198.51.100.7", "app.example.com"}},
 	} {
-		got := LivenessSeeds(ctx, stepToolOf(t, c.key), nil)
+		got := LivenessSeeds(testCat, ctx, stepToolOf(t, c.key), nil)
 		var targets []string
 		if got != nil {
 			targets = got.Targets
@@ -162,12 +162,12 @@ func TestLivenessSeeds(t *testing.T) {
 		}
 	}
 	// A tool the catalog does not know is not trusted to be passive.
-	if got := LivenessSeeds(ctx, StepTool{Name: "acme-scanner"}, &StepTargets{Targets: all}); slices.Contains(got.Targets, "198.51.100.0/24") {
+	if got := LivenessSeeds(testCat, ctx, StepTool{Name: "acme-scanner"}, &StepTargets{Targets: all}); slices.Contains(got.Targets, "198.51.100.0/24") {
 		t.Errorf("an unknown tool got the range: %v", got.Targets)
 	}
 	// Another mode is unchanged.
 	sweep := map[string]any{"targets": all}
-	if got := LivenessSeeds(sweep, stepToolOf(t, stage.ScanPorts), nil); got != nil {
+	if got := LivenessSeeds(testCat, sweep, stepToolOf(t, stage.ScanPorts), nil); got != nil {
 		t.Errorf("sweep run changed: %+v", got)
 	}
 }
@@ -179,7 +179,7 @@ func TestStepCommandPayload_HostProbePorts(t *testing.T) {
 	payload := func(caps []string, cfg map[string]any) map[string]any {
 		t.Helper()
 		step := &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Capabilities: caps, Config: cfg}
-		p, err := StepCommandPayload(run, step, "naabu", shared.NewID().String(), nil)
+		p, err := StepCommandPayload(testCat, run, step, "naabu", shared.NewID().String(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

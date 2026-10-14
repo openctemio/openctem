@@ -42,7 +42,7 @@ func TestSuggestGrant_ProfilesByUsage(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			cur := legacy()
-			s := SuggestGrant(cur, c.kind, c.u, nil)
+			s := SuggestGrant(cur, c.kind, c.u, releasedContract)
 			if s.Profile != c.want {
 				t.Fatalf("profile %q (reason %q), want %q", s.Profile, s.Reason, c.want)
 			}
@@ -50,7 +50,7 @@ func TestSuggestGrant_ProfilesByUsage(t *testing.T) {
 				t.Fatalf("suggestion widens %v", w)
 			}
 			for _, j := range c.u.Jobs {
-				if r := s.Grant.Admit(j.Type, j.Payload, j.ZoneID); r != nil {
+				if r := s.Grant.admitReleased(j.Type, j.Payload, j.ZoneID); r != nil {
 					t.Fatalf("suggestion refuses a job of the window: %v", r)
 				}
 			}
@@ -65,7 +65,7 @@ func TestSuggestGrant_ZoneBound(t *testing.T) {
 	zone, assigned := shared.NewID(), shared.NewID()
 	j := scanJob("naabu", "10.0.0.5")
 	j.ZoneID = &zone
-	s := SuggestGrant(legacy(), SensorTypeWorker, GrantUsage{Complete: true, Jobs: []UsageJob{j}, AssignedZones: []shared.ID{assigned}}, nil)
+	s := SuggestGrant(legacy(), SensorTypeWorker, GrantUsage{Complete: true, Jobs: []UsageJob{j}, AssignedZones: []shared.ID{assigned}}, releasedContract)
 	if s.Profile != ProfileInternalScanner || len(s.Grant.ZoneIDs) != 2 {
 		t.Fatalf("zones: %+v", s.Grant)
 	}
@@ -77,11 +77,11 @@ func TestSuggestGrant_ZoneBound(t *testing.T) {
 func TestSuggestGrant_NoFitAndIncomplete(t *testing.T) {
 	// A T2 job (custom templates) fits no profile: nothing is suggested.
 	t2 := UsageJob{Type: "scan", Payload: json.RawMessage(`{"scanner":"nuclei","targets":["example.com"],"custom_templates":[{"name":"x"}]}`)}
-	if s := SuggestGrant(legacy(), SensorTypeWorker, GrantUsage{Complete: true, Jobs: []UsageJob{t2}}, nil); s.Profile != "" || s.Reason != SuggestReasonNoFit || s.Grant != nil {
+	if s := SuggestGrant(legacy(), SensorTypeWorker, GrantUsage{Complete: true, Jobs: []UsageJob{t2}}, releasedContract); s.Profile != "" || s.Reason != SuggestReasonNoFit || s.Grant != nil {
 		t.Fatalf("T2 job: %+v", s)
 	}
 	// A truncated window proves nothing.
-	if s := SuggestGrant(legacy(), SensorTypeWorker, GrantUsage{Complete: false}, nil); s.Profile != "" || s.Reason != SuggestReasonIncomplete {
+	if s := SuggestGrant(legacy(), SensorTypeWorker, GrantUsage{Complete: false}, releasedContract); s.Profile != "" || s.Reason != SuggestReasonIncomplete {
 		t.Fatalf("incomplete: %+v", s)
 	}
 }
@@ -103,7 +103,7 @@ func TestSuggestGrant_NeverWiderThanCurrent(t *testing.T) {
 		{Complete: true, Jobs: []UsageJob{scanJob("naabu", "10.0.0.1")}, AssignedZones: []shared.ID{zone}},
 	}
 	for i, u := range usages {
-		s := SuggestGrant(*cur, SensorTypeWorker, u, nil)
+		s := SuggestGrant(*cur, SensorTypeWorker, u, releasedContract)
 		if s.Grant == nil {
 			continue
 		}
@@ -114,7 +114,7 @@ func TestSuggestGrant_NeverWiderThanCurrent(t *testing.T) {
 	// The same profile as now: nothing to apply.
 	plain, _ := NewGrantFromProfile(shared.NewID(), shared.NewID(), ProfileEASMExternal, nil)
 	_ = plain.Normalize()
-	if s := SuggestGrant(*plain, SensorTypeEASM, GrantUsage{Complete: true}, nil); s.Grant != nil || s.Reason != SuggestReasonAlreadyNarrow {
+	if s := SuggestGrant(*plain, SensorTypeEASM, GrantUsage{Complete: true}, releasedContract); s.Grant != nil || s.Reason != SuggestReasonAlreadyNarrow {
 		t.Fatalf("already narrow: %+v", s)
 	}
 }

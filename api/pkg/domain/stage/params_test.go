@@ -1,14 +1,16 @@
-package stage
+package stage_test
 
 import (
 	"errors"
 	"reflect"
 	"testing"
+
+	. "github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 func TestValidateParams(t *testing.T) {
-	ports, _ := Lookup(ScanPorts)
-	vuln, _ := Lookup(VulnTemplates)
+	ports, _ := cat.Lookup(ScanPorts)
+	vuln, _ := cat.Lookup(VulnTemplates)
 
 	ok := []struct {
 		name   string
@@ -61,18 +63,18 @@ func TestValidateParams(t *testing.T) {
 }
 
 func TestUnsupportedParams(t *testing.T) {
-	secrets, _ := Lookup(SecretsCode)
-	if got := UnsupportedParams(secrets, "betterleaks", map[string]any{"history": true}); !reflect.DeepEqual(got, []string{"history"}) {
-		t.Fatalf("betterleaks maps no params: %v", got)
+	sast, _ := cat.Lookup(SASTCode)
+	if got := UnsupportedParams(sast, "semgrep", map[string]any{"languages": []any{"go"}}); !reflect.DeepEqual(got, []string{"languages"}) {
+		t.Fatalf("semgrep maps no params: %v", got)
 	}
-	ports, _ := Lookup(ScanPorts)
+	ports, _ := cat.Lookup(ScanPorts)
 	if got := UnsupportedParams(ports, "naabu", map[string]any{"top_n": 10, "rate": 5, "exclude": []any{"x"}, "own": 1}); len(got) != 0 {
 		t.Fatalf("naabu takes top_n and rate: %v", got)
 	}
 }
 
 func TestToolConfig(t *testing.T) {
-	ports, _ := Lookup(ScanPorts)
+	ports, _ := cat.Lookup(ScanPorts)
 	config := map[string]any{
 		"top_n":   100,
 		"rate":    500,
@@ -88,19 +90,20 @@ func TestToolConfig(t *testing.T) {
 		t.Fatalf("naabu config = %v, want %v", got, want)
 	}
 
+	sast, _ := cat.Lookup(SASTCode)
 	// A pinned step keeps a standard param the tool has no mapping for under
 	// its own name (the tool's own setting, as before capabilities), and its
 	// plain tool settings.
-	probe, _ := Lookup(ProbeHTTP)
-	got = ToolConfig(probe, "httpx", map[string]any{"follow_redirects": true, "threads": 50}, true)
-	want = map[string]any{"follow_redirects": true, "threads": 50}
+	probe, _ := cat.Lookup(ProbeHTTP)
+	got = ToolConfig(sast, "semgrep", map[string]any{"languages": []any{"go"}, "threads": 50}, true)
+	want = map[string]any{"languages": []any{"go"}, "threads": 50}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("pinned httpx config = %v, want %v", got, want)
 	}
 	// Resolved (not pinned): a param the tool does not take never goes out.
-	got = ToolConfig(probe, "httpx", map[string]any{"follow_redirects": true}, false)
+	got = ToolConfig(sast, "semgrep", map[string]any{"languages": []any{"go"}}, false)
 	if len(got) != 0 {
-		t.Fatalf("resolved httpx config = %v, want empty", got)
+		t.Fatalf("resolved semgrep config = %v, want empty", got)
 	}
 	if ToolConfig(probe, "httpx", nil, true) != nil {
 		t.Fatal("nil config must stay nil")

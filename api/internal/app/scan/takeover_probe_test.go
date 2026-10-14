@@ -81,7 +81,7 @@ func TestRefuseUnownedTargets_TakeoverException(t *testing.T) {
 		}},
 		admitted: map[string]bool{"saas.example.com": true, "review.example.com": true, "notours.example.com": true},
 	}
-	svc := &Service{attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, attributionGate: gate, logger: logger.NewNop()}
 	tenant := shared.NewID()
 	ctx := context.Background()
 
@@ -107,7 +107,7 @@ func TestRefuseUnownedTargets_TakeoverException(t *testing.T) {
 		t.Fatal("a failed takeover lookup must refuse")
 	}
 	// A gate without the exception admits nothing.
-	plain := &Service{attributionGate: &gate.stubGate, logger: logger.NewNop()}
+	plain := &Service{tools: testTools, attributionGate: &gate.stubGate, logger: logger.NewNop()}
 	if err := plain.refuseUnownedTargets(ctx, tenant, "quick_scan", []string{"saas.example.com"}, true); err == nil {
 		t.Fatal("a gate without the takeover exception admitted a dependency")
 	}
@@ -120,7 +120,7 @@ func TestResolveScanTargets_TakeoverException(t *testing.T) {
 		stubGate: stubGate{blockedTyped: map[string]attribution.State{"saas.example.com": attribution.StateDependency}},
 		admitted: map[string]bool{"saas.example.com": true},
 	}
-	svc := allowAllChecks(&Service{attributionGate: gate, logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, attributionGate: gate, logger: logger.NewNop()})
 
 	takeover := testScan("nuclei", "saas.example.com")
 	takeover.ScannerConfig = map[string]any{"tags": []any{"takeover"}}

@@ -1,8 +1,10 @@
-package stage
+package stage_test
 
 import (
 	"strings"
 	"testing"
+
+	. "github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 func capNode(id string, k Key) GraphNode {
@@ -47,7 +49,7 @@ func TestValidateGraph_ReconToVulnChain(t *testing.T) {
 			{From: "ports", To: "vulns", FromPort: PortService, ToPort: PortService},
 		},
 	}
-	rep := ValidateGraph(g)
+	rep := cat.ValidateGraph(g)
 	if !rep.Valid() || len(rep.Warnings) != 0 {
 		t.Fatalf("valid chain refused: errors %+v warnings %+v", rep.Errors, rep.Warnings)
 	}
@@ -56,7 +58,7 @@ func TestValidateGraph_ReconToVulnChain(t *testing.T) {
 // subfinder → katana: hostnames into a URL crawler. Refused at the edge, with
 // the adapter that fixes it.
 func TestValidateGraph_IncompatibleEdgeNamesTheAdapter(t *testing.T) {
-	rep := ValidateGraph(Graph{
+	rep := cat.ValidateGraph(Graph{
 		Nodes: []GraphNode{
 			{ID: "subs", Kind: NodeCapability, Capability: DiscoverSubdomains, Tool: "subfinder"},
 			{ID: "crawl", Kind: NodeCapability, Capability: CrawlWeb, Tool: "katana"},
@@ -107,7 +109,7 @@ func TestValidateGraph_Refusals(t *testing.T) {
 			Edges: []GraphEdge{{From: "h", To: "z"}}}, IssueIntrusiveFed},
 	}
 	for name, c := range cases {
-		rep := ValidateGraph(c.g)
+		rep := cat.ValidateGraph(c.g)
 		if rep.Valid() || !hasCode(rep.Errors, c.code) {
 			t.Errorf("%s: errors %v, want %s", name, codes(rep.Errors), c.code)
 		}
@@ -115,7 +117,7 @@ func TestValidateGraph_Refusals(t *testing.T) {
 }
 
 func TestValidateGraph_CycleIsNamed(t *testing.T) {
-	rep := ValidateGraph(Graph{
+	rep := cat.ValidateGraph(Graph{
 		Nodes: []GraphNode{capNode("a", ProbeHTTP), capNode("b", CrawlWeb), capNode("c", CrawlWeb)},
 		Edges: []GraphEdge{{From: "a", To: "b"}, {From: "b", To: "c"}, {From: "c", To: "b"}},
 	})
@@ -132,7 +134,7 @@ func TestValidateGraph_CycleIsNamed(t *testing.T) {
 
 // A T2 node on the scan's own targets is fine (it is never fed).
 func TestValidateGraph_IntrusiveRootAllowed(t *testing.T) {
-	if rep := ValidateGraph(Graph{Nodes: []GraphNode{capNode("z", DASTWeb)}}); !rep.Valid() {
+	if rep := cat.ValidateGraph(Graph{Nodes: []GraphNode{capNode("z", DASTWeb)}}); !rep.Valid() {
 		t.Fatalf("T2 root refused: %+v", rep.Errors)
 	}
 }
@@ -140,7 +142,7 @@ func TestValidateGraph_IntrusiveRootAllowed(t *testing.T) {
 // A tool the catalog does not know has no ports: an edge to or from it is
 // a warning (it orders, it passes nothing), never a silent "seeds only".
 func TestValidateGraph_OpaqueNodesWarn(t *testing.T) {
-	rep := ValidateGraph(Graph{
+	rep := cat.ValidateGraph(Graph{
 		Nodes: []GraphNode{capNode("http", ProbeHTTP), {ID: "custom", Kind: NodeOpaque, Tool: "dotenv-check"}},
 		Edges: []GraphEdge{{From: "http", To: "custom"}},
 	})
@@ -154,14 +156,14 @@ func TestValidateGraph_SizeLimits(t *testing.T) {
 	for i := range MaxGraphNodes + 1 {
 		g.Nodes = append(g.Nodes, capNode(strings.Repeat("n", i+1), ScanPorts))
 	}
-	if rep := ValidateGraph(g); !hasCode(rep.Errors, IssueTooLarge) {
+	if rep := cat.ValidateGraph(g); !hasCode(rep.Errors, IssueTooLarge) {
 		t.Fatalf("31 nodes: %v", codes(rep.Errors))
 	}
 	g = Graph{Nodes: []GraphNode{capNode("a", ResolveDNS), capNode("b", ScanPorts)}}
 	for range MaxGraphEdges + 1 {
 		g.Edges = append(g.Edges, GraphEdge{From: "a", To: "b"})
 	}
-	if rep := ValidateGraph(g); !hasCode(rep.Errors, IssueTooLarge) {
+	if rep := cat.ValidateGraph(g); !hasCode(rep.Errors, IssueTooLarge) {
 		t.Fatalf("121 edges: %v", codes(rep.Errors))
 	}
 }
@@ -169,7 +171,7 @@ func TestValidateGraph_SizeLimits(t *testing.T) {
 // Every issue is anchored to a node or an edge (or the whole graph for the
 // size limits), so the editor can point at it.
 func TestValidateGraph_IssuesAreAnchored(t *testing.T) {
-	rep := ValidateGraph(Graph{
+	rep := cat.ValidateGraph(Graph{
 		Nodes: []GraphNode{capNode("s", SASTCode), capNode("p", ScanPorts), capNode("x", "nope")},
 		Edges: []GraphEdge{{From: "s", To: "p"}},
 	})
