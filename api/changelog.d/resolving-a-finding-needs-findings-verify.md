@@ -1,7 +1,7 @@
 ### Behaviour change: resolving a finding needs findings:verify
 
-- **Members can no longer close findings as resolved** (research 18 F1,
-  owner decision O12). Moving a finding to `resolved` now needs
+- **Members can no longer close findings as resolved** (owner
+  decision O12). Moving a finding to `resolved` now needs
   `findings:verify` from every status, `fix_applied` included, on every path:
   `PATCH /findings/{id}/status`, `POST /findings/bulk/status`,
   `POST /findings/remediation-groups/{key}/resolve` and remediation campaign

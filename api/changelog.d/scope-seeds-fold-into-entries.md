@@ -1,7 +1,7 @@
 ### Behaviour change: seeds are scope entries; only scope entries authorize scans
 
-- Root-domain seeds are folded into scope entries (migration `001262`,
-  research/53 SC1). Each seed became the permanent entry `*.<domain>`
+- Root-domain seeds are folded into scope entries (migration `001262`).
+  Each seed became the permanent entry `*.<domain>`
   (`origin: seed_migration`, `t1`, in effect), unless an active permanent
   wildcard entry already covered it; nothing that was allowed before is
   refused after. `GET/POST/PATCH/DELETE /api/v1/easm/seeds` are removed: add
