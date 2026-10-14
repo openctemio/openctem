@@ -60,6 +60,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   expired: null,
   window_closed: 'windows',
   host_busy: null,
+  sensor_hosts_busy: null,
   inactive: 'sensors',
   offline: 'sensors',
   pinned_elsewhere: null,
