@@ -26,6 +26,7 @@ import {
   Ticket,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { BranchOnlyBadge } from '../branch-only-badge'
 import { Button } from '@/components/ui/button'
@@ -56,6 +57,7 @@ interface FindingHeaderProps {
 }
 
 export function FindingHeader({ finding, status, onTriageCompleted }: FindingHeaderProps) {
+  const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
   const { hasPermission } = usePermissions()
   const router = useRouter()
@@ -78,18 +80,28 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
   const reverify = async () => {
     try {
       await requestValidation()
-      toast.success('Re-verification queued', {
-        description:
-          'The result is recorded as evidence. A reachability check never changes the status; use Retest to confirm a fix.',
+      toast.success(t('findings.header.reverifyQueued', 'Re-verification queued'), {
+        description: t(
+          'findings.header.reverifyQueuedDesc',
+          'The result is recorded as evidence. A reachability check never changes the status; use Retest to confirm a fix.'
+        ),
       })
     } catch (error) {
       if (isNoValidationSensorError(error)) {
-        toast.error('No validation sensor is online', {
-          description: 'Deploy a validation sensor to run re-verification.',
+        toast.error(t('findings.header.noSensor', 'No validation sensor is online'), {
+          description: t(
+            'findings.header.noSensorDesc',
+            'Deploy a validation sensor to run re-verification.'
+          ),
         })
         return
       }
-      toast.error(getErrorMessage(error, 'Failed to queue re-verification'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('findings.header.reverifyFailed', 'Failed to queue re-verification')
+        )
+      )
     }
   }
 
@@ -117,7 +129,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(finding.cve)}`}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`${finding.cve} on NVD`}
+              aria-label={t('findings.header.cveOnNvd', '{cve} on NVD', { cve: finding.cve })}
             >
               {finding.cve}
               <ExternalLink className="h-3 w-3" aria-hidden />
@@ -128,7 +140,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
           <Badge variant="secondary" asChild className="text-xs">
             <Link href={duplicateOfHref} data-slot="duplicate-of">
               <Copy className="h-3 w-3" aria-hidden />
-              Duplicate of another finding
+              {t('findings.header.duplicateOf', 'Duplicate of another finding')}
             </Link>
           </Badge>
         )}
@@ -138,7 +150,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
               href={`https://cwe.mitre.org/data/definitions/${encodeURIComponent(cweNum)}.html`}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`${finding.cwe} on MITRE`}
+              aria-label={t('findings.header.cweOnMitre', '{cwe} on MITRE', { cwe: finding.cwe })}
             >
               {finding.cwe}
               <ExternalLink className="h-3 w-3" aria-hidden />
@@ -158,14 +170,17 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
             size="sm"
             onClick={() => void reverify()}
             disabled={reverifying}
-            title="Re-run a safe check to confirm the finding is still present"
+            title={t(
+              'findings.header.reverifyTitle',
+              'Re-run a safe check to confirm the finding is still present'
+            )}
           >
             {reverifying ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <ShieldCheck className="h-3.5 w-3.5" />
             )}
-            Re-verify
+            {t('findings.header.reverify', 'Re-verify')}
           </Button>
         )}
         <AITriageButton
@@ -176,7 +191,12 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8" aria-label="More actions">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label={t('findings.header.moreActions', 'More actions')}
+            >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -184,22 +204,22 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
             <DropdownMenuItem
               onClick={() => {
                 void copyToClipboard(`${window.location.origin}/findings/${finding.id}`)
-                toast.success('Link copied')
+                toast.success(t('findings.header.linkCopied', 'Link copied'))
               }}
             >
               <Link2 className="h-4 w-4" />
-              Copy link
+              {t('findings.header.copyLink', 'Copy link')}
             </DropdownMenuItem>
             {integrationsEnabled && canWrite && (
               <DropdownMenuItem onClick={() => setTicketOpen(true)}>
                 <Ticket className="h-4 w-4" />
-                Create ticket
+                {t('findings.header.createTicket', 'Create ticket')}
               </DropdownMenuItem>
             )}
             {canMarkDuplicate && (
               <DropdownMenuItem onClick={() => setDuplicateOpen(true)}>
                 <Copy className="h-4 w-4" />
-                Mark as duplicate
+                {t('findings.header.markDuplicate', 'Mark as duplicate')}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>

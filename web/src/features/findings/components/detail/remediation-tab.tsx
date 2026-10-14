@@ -57,6 +57,7 @@ const STATUS_ICONS: Record<RemediationStepStatus, React.ReactNode> = {
 }
 
 // Effort level badges
+// Effort ids; the label is translated at render (findings.remediationTab.effort.<id>).
 const EFFORT_CONFIG: Record<string, { label: string; color: string }> = {
   trivial: { label: 'Trivial', color: 'border-green-500/50 text-green-400' },
   low: { label: 'Low', color: 'border-green-500/50 text-green-400' },
@@ -90,7 +91,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
   const handleAddStep = useCallback(async () => {
     const trimmed = newStep.trim()
     if (!trimmed) {
-      toast.error('Step text is required')
+      toast.error(t('findings.remediationTab.stepRequired', 'Step text is required'))
       return
     }
     try {
@@ -98,15 +99,20 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
       setStepsOverride(res.steps)
       setNewStep('')
       setShowStepForm(false)
-      toast.success('Remediation step added')
+      toast.success(t('findings.remediationTab.stepAdded', 'Remediation step added'))
       // Refresh the finding so a reload/other consumers pick up the new step.
       if (findingId) {
         void globalMutate(`/api/v1/findings/${findingId}`)
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to add remediation step'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('findings.remediationTab.stepAddFailed', 'Failed to add remediation step')
+        )
+      )
     }
-  }, [newStep, addStep, findingId])
+  }, [newStep, addStep, findingId, t])
 
   // Get data from apiRemediation JSONB (primary) or fallback to direct fields
   const apiRemed = finding?.apiRemediation
@@ -176,11 +182,16 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
       <div className="rounded-lg border bg-muted/30 p-4">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h3 className="font-semibold">Remediation Progress</h3>
+            <h3 className="font-semibold">
+              {t('findings.remediationTab.progress', 'Remediation Progress')}
+            </h3>
             <p className="text-muted-foreground text-sm">
               {totalSteps > 0
-                ? `${completedSteps} of ${totalSteps} steps completed`
-                : 'No tracked remediation steps'}
+                ? t('findings.remediationTab.stepsDone', '{done} of {total} steps completed', {
+                    done: completedSteps,
+                    total: totalSteps,
+                  })
+                : t('findings.remediationTab.noTracked', 'No tracked remediation steps')}
             </p>
           </div>
           <div className="text-end">
@@ -193,9 +204,17 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
               >
                 {isOverdue ? <Clock className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
                 {isOverdue ? (
-                  <span>Overdue by {Math.abs(daysUntilDeadline!)} days</span>
+                  <span>
+                    {t('findings.remediationTab.overdue', 'Overdue by {days} days', {
+                      days: Math.abs(daysUntilDeadline!),
+                    })}
+                  </span>
                 ) : (
-                  <span>Due {formatDate(remediation.deadline)}</span>
+                  <span>
+                    {t('findings.remediationTab.due', 'Due {date}', {
+                      date: formatDate(remediation.deadline),
+                    })}
+                  </span>
                 )}
               </div>
             )}
@@ -216,17 +235,23 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Fix Available */}
           {isFixAvailable !== undefined && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Fix Available</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.fixAvailable', 'Fix Available')}
+              </p>
               <div className="flex items-center gap-1.5">
                 {isFixAvailable ? (
                   <>
                     <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
-                    <span className="font-medium text-green-400">Yes</span>
+                    <span className="font-medium text-success">
+                      {t('findings.remediationTab.yes', 'Yes')}
+                    </span>
                   </>
                 ) : (
                   <>
                     <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="font-medium text-muted-foreground">No</span>
+                    <span className="font-medium text-muted-foreground">
+                      {t('findings.remediationTab.no', 'No')}
+                    </span>
                   </>
                 )}
               </div>
@@ -236,17 +261,23 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Auto-fixable */}
           {isAutoFixable !== undefined && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Auto-fixable</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.autoFixableLabel', 'Auto-fixable')}
+              </p>
               <div className="flex items-center gap-1.5">
                 {isAutoFixable ? (
                   <>
                     <Sparkles className="h-3.5 w-3.5 text-green-400" />
-                    <span className="font-medium text-green-400">Yes</span>
+                    <span className="font-medium text-success">
+                      {t('findings.remediationTab.yes', 'Yes')}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="font-medium text-muted-foreground">Manual</span>
+                    <span className="font-medium text-muted-foreground">
+                      {t('findings.remediationTab.manual', 'Manual')}
+                    </span>
                   </>
                 )}
               </div>
@@ -256,12 +287,16 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Effort */}
           {effort && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Effort</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.effort', 'Effort')}
+              </p>
               <Badge
                 variant="outline"
                 className={`capitalize ${EFFORT_CONFIG[effort]?.color || ''}`}
               >
-                {EFFORT_CONFIG[effort]?.label || effort}
+                {EFFORT_CONFIG[effort]
+                  ? t(`findings.remediationTab.effort.${effort}`, EFFORT_CONFIG[effort].label)
+                  : effort}
               </Badge>
             </div>
           )}
@@ -269,7 +304,9 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Fix Complexity */}
           {finding?.fixComplexity && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Fix Complexity</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.fixComplexity', 'Fix Complexity')}
+              </p>
               <div className="flex items-center gap-1.5">
                 <Gauge className="h-3.5 w-3.5" />
                 <Badge
@@ -291,7 +328,9 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Remediation Type */}
           {finding?.remediationType && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Remediation Type</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.remType', 'Remediation Type')}
+              </p>
               <Badge variant="outline" className="capitalize">
                 {finding.remediationType}
               </Badge>
@@ -301,7 +340,9 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Estimated Fix Time */}
           {finding?.estimatedFixTime !== undefined && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Estimated Fix Time</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.estTime', 'Estimated Fix Time')}
+              </p>
               <div className="flex items-center gap-1.5">
                 <Timer className="h-3.5 w-3.5" />
                 <span className="font-medium">
@@ -316,17 +357,23 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {/* Remedy Available (legacy field) */}
           {finding?.remedyAvailable !== undefined && !isFixAvailable && (
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-muted-foreground text-xs mb-1">Remedy Available</p>
+              <p className="text-muted-foreground text-xs mb-1">
+                {t('findings.remediationTab.remedyAvail', 'Remedy Available')}
+              </p>
               <div className="flex items-center gap-1.5">
                 {finding.remedyAvailable ? (
                   <>
                     <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
-                    <span className="font-medium text-green-400">Yes</span>
+                    <span className="font-medium text-success">
+                      {t('findings.remediationTab.yes', 'Yes')}
+                    </span>
                   </>
                 ) : (
                   <>
                     <XCircle className="h-3.5 w-3.5 text-yellow-400" />
-                    <span className="font-medium text-yellow-400">No</span>
+                    <span className="font-medium text-warning">
+                      {t('findings.remediationTab.no', 'No')}
+                    </span>
                   </>
                 )}
               </div>
@@ -339,7 +386,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
       <div>
         <h3 className="mb-3 flex items-center gap-2 font-semibold">
           <Wrench className="h-4 w-4" />
-          Recommendation
+          {t('findings.remediationTab.recommendation', 'Recommendation')}
         </h3>
         {recommendation && recommendation !== 'No recommendation provided by scanner.' ? (
           <div className="rounded-lg border bg-muted/30 p-4">
@@ -371,11 +418,11 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
         <div>
           <h3 className="mb-3 flex items-center gap-2 font-semibold">
             <Code2 className="h-4 w-4" />
-            Auto-Fix Code
+            {t('findings.remediationTab.autoFixCode', 'Auto-Fix Code')}
             {isAutoFixable && (
               <Badge variant="outline" className="ms-2 border-green-500/50 text-green-400">
                 <Zap className="h-3 w-3 me-1" />
-                Auto-fixable
+                {t('findings.remediationTab.autoFixable', 'Auto-fixable')}
               </Badge>
             )}
           </h3>
@@ -385,11 +432,13 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
               <div className="bg-[#1e1e2e] rounded-lg overflow-hidden border border-slate-700/50">
                 {/* Header with copy button */}
                 <div className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-700/30">
-                  <span className="text-xs text-slate-400 font-mono">Fix Code</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {t('findings.remediationTab.fixCode', 'Fix Code')}
+                  </span>
                   <button
                     onClick={() => handleCopyCode(fixCode)}
                     className="text-slate-400 hover:text-slate-200 transition-colors p-1 rounded"
-                    title="Copy code"
+                    title={t('findings.remediationTab.copyCode', 'Copy code')}
                   >
                     {copiedCode ? (
                       <Check className="h-3 w-3 text-green-400" />
@@ -410,7 +459,10 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                 </ScrollArea>
               </div>
               <p className="text-muted-foreground text-xs mt-2">
-                This code fix was suggested by the scanner. Review carefully before applying.
+                {t(
+                  'findings.remediationTab.suggested',
+                  'This code fix was suggested by the scanner. Review carefully before applying.'
+                )}
               </p>
             </div>
           )}
@@ -418,24 +470,32 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {fixRegex && (
             <div className="mt-4 bg-[#1e1e2e] rounded-lg overflow-hidden border border-slate-700/50">
               <div className="px-3 py-2 bg-slate-800/50 border-b border-slate-700/30">
-                <span className="text-xs text-slate-400 font-mono">Regex-based fix pattern</span>
+                <span className="text-xs text-muted-foreground font-mono">
+                  {t('findings.remediationTab.regexPattern', 'Regex-based fix pattern')}
+                </span>
               </div>
               <div className="p-4 space-y-3 font-mono text-sm">
                 <div className="flex items-start gap-2">
-                  <span className="text-slate-500 shrink-0">Pattern:</span>
+                  <span className="text-muted-foreground shrink-0">
+                    {t('findings.remediationTab.pattern', 'Pattern:')}
+                  </span>
                   <code className="bg-slate-900/50 px-2 py-1 rounded text-amber-400 break-all">
                     {fixRegex.regex}
                   </code>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="text-slate-500 shrink-0">Replace:</span>
+                  <span className="text-muted-foreground shrink-0">
+                    {t('findings.remediationTab.replace', 'Replace:')}
+                  </span>
                   <code className="bg-slate-900/50 px-2 py-1 rounded text-green-400 break-all">
                     {fixRegex.replacement}
                   </code>
                 </div>
                 {fixRegex.count !== undefined && fixRegex.count > 0 && (
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-500">Occurrences:</span>
+                    <span className="text-muted-foreground">
+                      {t('findings.remediationTab.occurrences', 'Occurrences:')}
+                    </span>
                     <Badge variant="outline" className="border-slate-600 text-slate-300">
                       {fixRegex.count}
                     </Badge>
@@ -456,12 +516,12 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="flex items-center gap-2 font-semibold">
                 <ListChecks className="h-4 w-4" />
-                Remediation Steps
+                {t('findings.remediationTab.steps', 'Remediation Steps')}
               </h3>
               {canWrite && !showStepForm && (
                 <Button size="sm" variant="outline" onClick={() => setShowStepForm(true)}>
                   <Plus className="me-2 h-4 w-4" />
-                  Add Step
+                  {t('findings.remediationTab.addStep', 'Add Step')}
                 </Button>
               )}
             </div>
@@ -472,7 +532,10 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                 <Input
                   value={newStep}
                   onChange={(e) => setNewStep(e.target.value)}
-                  placeholder="Describe a remediation step…"
+                  placeholder={t(
+                    'findings.remediationTab.stepPlaceholder',
+                    'Describe a remediation step…'
+                  )}
                   disabled={addingStep}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -488,7 +551,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                   ) : (
                     <Plus className="me-1.5 h-3.5 w-3.5" />
                   )}
-                  Add
+                  {t('findings.remediationTab.add', 'Add')}
                 </Button>
                 <Button
                   size="sm"
@@ -500,6 +563,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                   disabled={addingStep}
                 >
                   <X className="h-3.5 w-3.5" />
+                  <span className="sr-only">{t('findings.remediationTab.cancel', 'Cancel')}</span>
                 </Button>
               </div>
             )}
@@ -523,7 +587,9 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
 
             {/* Empty hint when nothing tracked yet but the operator can add */}
             {displaySteps.length === 0 && remediation.steps.length === 0 && canWrite && (
-              <p className="text-muted-foreground text-sm">No remediation steps added yet.</p>
+              <p className="text-muted-foreground text-sm">
+                {t('findings.remediationTab.noStepsYet', 'No remediation steps added yet.')}
+              </p>
             )}
 
             {/* Legacy steps with status tracking (for manual tracking) */}
@@ -550,7 +616,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground text-xs font-medium">
-                          Step {index + 1}
+                          {t('findings.remediationTab.stepN', 'Step {n}', { n: index + 1 })}
                         </span>
                         {STATUS_ICONS[step.status]}
                         <Badge
@@ -564,8 +630,10 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                           }`}
                         >
                           {step.status === 'in_progress'
-                            ? 'In Progress'
-                            : step.status.charAt(0).toUpperCase() + step.status.slice(1)}
+                            ? t('findings.remediationTab.status.in_progress', 'In Progress')
+                            : step.status === 'completed'
+                              ? t('findings.remediationTab.status.completed', 'Completed')
+                              : t('findings.remediationTab.status.pending', 'Pending')}
                         </Badge>
                       </div>
                       <p
@@ -581,7 +649,14 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                             </AvatarFallback>
                           </Avatar>
                           <span>
-                            Completed by {step.completedBy.name} on {formatDate(step.completedAt)}
+                            {t(
+                              'findings.remediationTab.completedBy',
+                              'Completed by {name} on {date}',
+                              {
+                                name: step.completedBy.name,
+                                date: formatDate(step.completedAt),
+                              }
+                            )}
                           </span>
                         </div>
                       )}
@@ -601,7 +676,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           <div>
             <h3 className="mb-3 flex items-center gap-2 font-semibold">
               <Link className="h-4 w-4" />
-              References
+              {t('findings.remediationTab.references', 'References')}
             </h3>
             <ul className="space-y-2">
               {remediationReferences.map((ref, index) => (

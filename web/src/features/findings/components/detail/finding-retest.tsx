@@ -52,7 +52,15 @@ interface RetestMeta {
 
 const SUCCESS_SOFT = 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' // palette-ok: success accent — the theme has no semantic "success" token
 
-/** Why a retest was inconclusive, in words. */
+type Translate = ReturnType<typeof useTranslation>['t']
+
+/** Used when a caller passes no `t`: the English fallback with {vars} filled in. */
+const englishOnly: Translate = (_key, fallback, vars) =>
+  (fallback ?? _key).replace(/\{(\w+)\}/g, (m, name: string) =>
+    vars && name in vars ? String(vars[name]) : m
+  )
+
+/** Why a retest was inconclusive, in words (ids; translated at render). */
 const INCONCLUSIVE_TEXT: Record<string, string> = {
   unreachable: 'target unreachable',
   blocked: 'blocked',
@@ -69,35 +77,54 @@ const INCONCLUSIVE_TEXT: Record<string, string> = {
  * finding. A non-match is never shown as "Fixed" on its own (RFC-057): only a
  * confirmed fix (the endpoint answered and the check did not match) is.
  */
-export function retestMeta(rt: FindingRetest): RetestMeta {
+export function retestMeta(rt: FindingRetest, t: Translate = englishOnly): RetestMeta {
   if (rt.status === 'pending') {
-    return { label: 'Retest running', className: 'bg-muted text-muted-foreground' }
+    return {
+      label: t('findings.retestPanel.running', 'Retest running'),
+      className: 'bg-muted text-muted-foreground',
+    }
   }
   switch (rt.outcome) {
     case 'confirmed_fixed':
       return rt.result_status === 'resolved'
-        ? { label: 'Fixed — verified and resolved', className: SUCCESS_SOFT }
-        : { label: 'Verified fixed — awaiting confirmation', className: SUCCESS_SOFT }
+        ? {
+            label: t('findings.retestPanel.fixedResolved', 'Fixed — verified and resolved'),
+            className: SUCCESS_SOFT,
+          }
+        : {
+            label: t(
+              'findings.retestPanel.verifiedFixed',
+              'Verified fixed — awaiting confirmation'
+            ),
+            className: SUCCESS_SOFT,
+          }
     case 'still_vulnerable':
       return rt.prior_status === 'resolved' && rt.result_status !== 'resolved'
-        ? { label: 'Regression — reopened', className: SEVERITY_BADGE_SOFT.high }
-        : { label: 'Still vulnerable', className: SEVERITY_BADGE_SOFT.medium }
+        ? {
+            label: t('findings.retestPanel.regression', 'Regression — reopened'),
+            className: SEVERITY_BADGE_SOFT.high,
+          }
+        : {
+            label: t('findings.retestPanel.stillVulnerable', 'Still vulnerable'),
+            className: SEVERITY_BADGE_SOFT.medium,
+          }
     case 'not_reproduced':
       return {
-        label: 'Not reproduced — not confirmed',
+        label: t('findings.retestPanel.notReproduced', 'Not reproduced — not confirmed'),
         className: 'bg-muted text-muted-foreground',
       }
     default: {
-      const why = INCONCLUSIVE_TEXT[rt.reason_code ?? ''] ?? ''
+      const whyEn = INCONCLUSIVE_TEXT[rt.reason_code ?? ''] ?? ''
+      const why = whyEn ? t(`findings.retestPanel.inconclusiveWhy.${rt.reason_code}`, whyEn) : ''
       return {
-        label: why ? `Inconclusive: ${why}` : 'Inconclusive',
+        label: why
+          ? t('findings.retestPanel.inconclusiveWhy', 'Inconclusive: {why}', { why })
+          : t('findings.retestPanel.inconclusive', 'Inconclusive'),
         className: 'bg-muted text-muted-foreground',
       }
     }
   }
 }
-
-type Translate = ReturnType<typeof useTranslation>['t']
 
 /**
  * A retest a pentest tester recorded by hand (kind manual): passed, failed or
@@ -135,7 +162,7 @@ export function manualRetestMeta(rt: FindingRetest, t: Translate): RetestMeta {
 }
 
 function metaFor(rt: FindingRetest, t: Translate): RetestMeta {
-  return rt.kind === 'manual' ? manualRetestMeta(rt, t) : retestMeta(rt)
+  return rt.kind === 'manual' ? manualRetestMeta(rt, t) : retestMeta(rt, t)
 }
 
 interface FindingRetestSectionProps {
@@ -185,17 +212,22 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
   const retestNow = async () => {
     try {
       await trigger()
-      toast.success('Retest started', {
-        description: 'The template that found this issue is running again against its target.',
+      toast.success(t('findings.retestPanel.started', 'Retest started'), {
+        description: t(
+          'findings.retestPanel.startedDesc',
+          'The template that found this issue is running again against its target.'
+        ),
       })
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Could not start the retest'))
+      toast.error(
+        getErrorMessage(error, t('findings.retestPanel.startFailed', 'Could not start the retest'))
+      )
     }
   }
 
   return (
     <DetailSection
-      title="Retest"
+      title={t('findings.retestPanel.title', 'Retest')}
       icon={RefreshCw}
       className={className}
       actions={
@@ -206,14 +238,17 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
             className="h-7"
             onClick={() => void retestNow()}
             disabled={isMutating || running}
-            title="Re-run the check that found this issue against its target"
+            title={t(
+              'findings.retestPanel.rerunTitle',
+              'Re-run the check that found this issue against its target'
+            )}
           >
             {isMutating || running ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RefreshCw className="h-3.5 w-3.5" />
             )}
-            Retest now
+            {t('findings.retestPanel.now', 'Retest now')}
           </Button>
         ) : undefined
       }
@@ -222,14 +257,18 @@ export function FindingRetestSection({ finding, className }: FindingRetestSectio
         <RetestLine retest={latest} findingId={finding.id} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          Not retested yet. A retest re-runs template{' '}
-          <span className="font-medium text-foreground">{finding.ruleId}</span> against this
-          finding&apos;s target.
+          {t(
+            'findings.retestPanel.notYet',
+            "Not retested yet. A retest re-runs template {rule} against this finding's target.",
+            {
+              rule: finding.ruleId ?? '',
+            }
+          )}
         </p>
       )}
       {list.length > 1 && (
         <p className="text-xs text-muted-foreground">
-          Earlier:{' '}
+          {t('findings.retestPanel.earlier', 'Earlier:')}{' '}
           {list.slice(1, 4).map((rt, i) => (
             <span key={rt.id}>
               {i > 0 && ', '}
@@ -259,7 +298,11 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
           {meta.label}
         </Badge>
         <RelativeTime date={retest.completed_at ?? retest.created_at} className="text-xs" />
-        {retest.trigger === 'auto' && <span className="text-xs text-muted-foreground">· auto</span>}
+        {retest.trigger === 'auto' && (
+          <span className="text-xs text-muted-foreground">
+            · {t('findings.retestPanel.auto', 'auto')}
+          </span>
+        )}
         {retest.status === 'completed' && !manual && (
           <button
             type="button"
@@ -267,7 +310,9 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
           >
-            {open ? 'Hide evidence' : 'View evidence'}
+            {open
+              ? t('findings.retestPanel.hideEvidence', 'Hide evidence')
+              : t('findings.retestPanel.viewEvidence', 'View evidence')}
           </button>
         )}
         {runLink && (
@@ -275,7 +320,7 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
             href={runLink}
             className="text-xs text-muted-foreground underline-offset-2 hover:underline"
           >
-            View run
+            {t('findings.retestPanel.viewRun', 'View run')}
           </Link>
         )}
       </div>
@@ -294,13 +339,22 @@ function RetestLine({ retest, findingId }: { retest: FindingRetest; findingId: s
 
 /** The attempt's proof: what the re-run requested and what came back. */
 function RetestEvidence({ findingId, retestId }: { findingId: string; retestId: string }) {
+  const { t } = useTranslation()
   const { data, isLoading } = useFindingEvidenceItems(findingId, retestId)
   const items = data?.data ?? []
-  if (isLoading) return <p className="text-xs text-muted-foreground">Loading evidence…</p>
+  if (isLoading)
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t('findings.retestPanel.loadingEvidence', 'Loading evidence…')}
+      </p>
+    )
   if (items.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        The sensor reported no request evidence for this attempt.
+        {t(
+          'findings.retestPanel.noEvidence',
+          'The sensor reported no request evidence for this attempt.'
+        )}
       </p>
     )
   }

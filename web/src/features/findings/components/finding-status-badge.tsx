@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import {
@@ -66,10 +67,16 @@ export function FindingStatusBadge({
   className,
   variant = 'default',
 }: FindingStatusBadgeProps) {
+  const { t } = useTranslation()
   const config = (FINDING_STATUS_CONFIG as Record<string, StatusConfig | undefined>)[status] ?? {
     ...UNKNOWN_STATUS_CONFIG,
     label: String(status) || UNKNOWN_STATUS_CONFIG.label,
   }
+  const label = config.labelKey
+    ? t(config.labelKey, config.label)
+    : String(status)
+      ? config.label
+      : t('findings.statusBadge.unknown', 'Unknown')
   const Icon = STATUS_ICONS[config.icon] ?? Circle
   // Only the in-progress spinner should animate.
   const spin = config.icon === 'loader'
@@ -78,7 +85,7 @@ export function FindingStatusBadge({
     return (
       <Badge variant="outline" className={cn('gap-1.5', className)}>
         <Icon className={cn('h-3 w-3', config.textColor, spin && 'animate-spin')} />
-        {config.label}
+        {label}
       </Badge>
     )
   }
@@ -86,7 +93,7 @@ export function FindingStatusBadge({
   return (
     <Badge className={cn('gap-1 border-0', config.bgColor, config.textColor, className)}>
       <Icon className={cn('h-3 w-3', spin && 'animate-spin')} />
-      {config.label}
+      {label}
     </Badge>
   )
 }

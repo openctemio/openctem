@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { GitBranch } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -12,6 +13,7 @@ import { cn } from '@/lib/utils'
  * sees them (api docs/architecture/branch-only-findings.md).
  */
 export function BranchOnlyBadge({ className }: { className?: string }) {
+  const { t } = useTranslation()
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -21,12 +23,14 @@ export function BranchOnlyBadge({ className }: { className?: string }) {
           data-slot="branch-only"
         >
           <GitBranch className="h-2.5 w-2.5" aria-hidden />
-          Branch only
+          {t('findings.branchOnly.label', 'Branch only')}
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">
-        Seen only on a feature branch. Not counted as exposure (dashboards, SLA, notifications)
-        until the default, a protected or a release branch has it.
+        {t(
+          'findings.branchOnly.tooltip',
+          'Seen only on a feature branch. Not counted as exposure (dashboards, SLA, notifications) until the default, a protected or a release branch has it.'
+        )}
       </TooltipContent>
     </Tooltip>
   )

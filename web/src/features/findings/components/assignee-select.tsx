@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, useDeferredValue } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -63,8 +64,9 @@ export function AssigneeSelect({
   size = 'sm',
   variant = 'outline',
   showFullName = false,
-  placeholder = 'Assign',
+  placeholder,
 }: AssigneeSelectProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const { currentTenant } = useTenant()
@@ -103,7 +105,7 @@ export function AssigneeSelect({
   const handleSelect = (member: { user_id: string; name?: string; email?: string }) => {
     onChange({
       id: member.user_id,
-      name: member.name || 'Unknown',
+      name: member.name || t('findings.assigneeSelect.unknown', 'Unknown'),
       email: member.email,
     })
     setOpen(false)
@@ -147,13 +149,17 @@ export function AssigneeSelect({
               // Assigned but name not loaded yet - show placeholder
               <>
                 <User className="h-3 w-3" />
-                <span className="text-muted-foreground hidden sm:inline">Assigned</span>
+                <span className="text-muted-foreground hidden sm:inline">
+                  {t('findings.assigneeSelect.assigned', 'Assigned')}
+                </span>
               </>
             )
           ) : !loading ? (
             <>
               <UserPlus className="h-3 w-3" />
-              <span className="sr-only sm:not-sr-only">{placeholder}</span>
+              <span className="sr-only sm:not-sr-only">
+                {placeholder ?? t('findings.assigneeSelect.assign', 'Assign')}
+              </span>
             </>
           ) : null}
           {!disabled && <ChevronDown className="h-3 w-3" />}
@@ -161,7 +167,11 @@ export function AssigneeSelect({
       </PopoverTrigger>
       <PopoverContent className="w-56 p-0" align="start">
         <Command shouldFilter={false}>
-          <CommandInput placeholder="Search members..." value={search} onValueChange={setSearch} />
+          <CommandInput
+            placeholder={t('findings.assigneeSelect.search', 'Search members...')}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             {isLoadingMembers && (
               <div className="flex items-center justify-center py-4">
@@ -169,7 +179,9 @@ export function AssigneeSelect({
               </div>
             )}
             {!isLoadingMembers && displayMembers.length === 0 && (
-              <CommandEmpty>No members found.</CommandEmpty>
+              <CommandEmpty>
+                {t('findings.assigneeSelect.noMembers', 'No members found.')}
+              </CommandEmpty>
             )}
             {!isLoadingMembers && (
               <>
@@ -178,7 +190,7 @@ export function AssigneeSelect({
                     <CommandGroup>
                       <CommandItem onSelect={handleUnassign} className="text-muted-foreground">
                         <User className="me-2 h-4 w-4" />
-                        Unassign
+                        {t('findings.assigneeSelect.unassign', 'Unassign')}
                       </CommandItem>
                     </CommandGroup>
                     <CommandSeparator />
@@ -186,7 +198,17 @@ export function AssigneeSelect({
                 )}
                 {displayMembers.length > 0 && (
                   <CommandGroup
-                    heading={`Team Members${hasMoreMembers ? ` (${totalMembers} total)` : ''}`}
+                    heading={
+                      hasMoreMembers
+                        ? t(
+                            'findings.assigneeSelect.teamMembersTotal',
+                            'Team Members ({total} total)',
+                            {
+                              total: totalMembers,
+                            }
+                          )
+                        : t('findings.assigneeSelect.teamMembers', 'Team Members')
+                    }
                   >
                     {displayMembers.map((member) => (
                       <CommandItem
@@ -202,7 +224,9 @@ export function AssigneeSelect({
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate">{member.name || 'Unknown'}</span>
+                            <span className="truncate">
+                              {member.name || t('findings.assigneeSelect.unknown', 'Unknown')}
+                            </span>
                             {member.role && (
                               <span className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded capitalize shrink-0">
                                 {member.role}
@@ -224,7 +248,7 @@ export function AssigneeSelect({
                 )}
                 {hasMoreMembers && (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground text-center">
-                    Type to search for more members
+                    {t('findings.assigneeSelect.typeToSearch', 'Type to search for more members')}
                   </div>
                 )}
               </>
