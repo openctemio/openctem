@@ -13,6 +13,7 @@
  * omits the section.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { formatEpssScore } from '@/lib/epss'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +35,8 @@ interface PriorityExplanationCardProps {
   variant?: 'page' | 'drawer'
 }
 
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
 const PRIORITY_CLASSES: readonly string[] = ['P0', 'P1', 'P2', 'P3']
 
 function isPriorityClass(value: string): value is PriorityClass {
@@ -41,24 +44,55 @@ function isPriorityClass(value: string): value is PriorityClass {
 }
 
 /** Build the human-readable contributing-factor chips from the raw factors. */
-function factorChips(exp: PriorityExplanation): { key: string; label: string; strong: boolean }[] {
+function factorChips(
+  exp: PriorityExplanation,
+  t: Translate
+): { key: string; label: string; strong: boolean }[] {
   const f = exp.factors
   const chips: { key: string; label: string; strong: boolean }[] = []
 
-  if (f.is_in_kev) chips.push({ key: 'kev', label: 'Known exploited (KEV)', strong: true })
+  if (f.is_in_kev)
+    chips.push({
+      key: 'kev',
+      label: t('findings.priorityCard.kev', 'Known exploited (KEV)'),
+      strong: true,
+    })
   if (f.on_open_threat_path)
-    chips.push({ key: 'threat-path', label: 'On open attack path', strong: true })
+    chips.push({
+      key: 'threat-path',
+      label: t('findings.priorityCard.threatPath', 'On open attack path'),
+      strong: true,
+    })
   if (f.is_internet_accessible)
-    chips.push({ key: 'internet', label: 'Internet-accessible', strong: true })
+    chips.push({
+      key: 'internet',
+      label: t('findings.priorityCard.internet', 'Internet-accessible'),
+      strong: true,
+    })
   else if (f.is_reachable || f.reachable)
-    chips.push({ key: 'reachable', label: 'Reachable', strong: true })
+    chips.push({
+      key: 'reachable',
+      label: t('findings.priorityCard.reachable', 'Reachable'),
+      strong: true,
+    })
   else if (f.is_network_accessible)
-    chips.push({ key: 'network', label: 'Network-accessible', strong: false })
+    chips.push({
+      key: 'network',
+      label: t('findings.priorityCard.network', 'Network-accessible'),
+      strong: false,
+    })
 
   if (f.reachable_from_count > 0)
     chips.push({
       key: 'reach-count',
-      label: `Reachable from ${f.reachable_from_count} entry point${f.reachable_from_count === 1 ? '' : 's'}`,
+      label:
+        f.reachable_from_count === 1
+          ? t('findings.priorityCard.reachCount1', 'Reachable from {count} entry point', {
+              count: f.reachable_from_count,
+            })
+          : t('findings.priorityCard.reachCountN', 'Reachable from {count} entry points', {
+              count: f.reachable_from_count,
+            }),
       strong: false,
     })
 
@@ -72,17 +106,28 @@ function factorChips(exp: PriorityExplanation): { key: string; label: string; st
   if (f.asset_criticality)
     chips.push({
       key: 'asset-crit',
-      label: `${f.asset_criticality} asset`,
+      label: t('findings.priorityCard.assetCrit', '{level} asset', { level: f.asset_criticality }),
       strong: f.critical_asset,
     })
-  if (f.asset_is_crown_jewel) chips.push({ key: 'crown', label: 'Crown-jewel asset', strong: true })
+  if (f.asset_is_crown_jewel)
+    chips.push({
+      key: 'crown',
+      label: t('findings.priorityCard.crown', 'Crown-jewel asset'),
+      strong: true,
+    })
   if (f.asset_exposure)
-    chips.push({ key: 'exposure', label: `${f.asset_exposure} exposure`, strong: false })
+    chips.push({
+      key: 'exposure',
+      label: t('findings.priorityCard.exposure', '{level} exposure', { level: f.asset_exposure }),
+      strong: false,
+    })
 
   if (f.is_protected && f.control_reduction_pct > 0)
     chips.push({
       key: 'control',
-      label: `Compensating controls -${Math.round(f.control_reduction_pct)}%`,
+      label: t('findings.priorityCard.controls', 'Compensating controls -{pct}%', {
+        pct: Math.round(f.control_reduction_pct),
+      }),
       strong: false,
     })
 
@@ -107,25 +152,41 @@ function SubScoreRow({ label, value }: { label: string; value: number }) {
  * authoritative. Shown only when the backend supplies the breakdown.
  */
 export function ScoreBreakdown({ breakdown }: { breakdown: PriorityScoreBreakdown }) {
+  const { t } = useTranslation()
   const reductionPct = Math.round(breakdown.control_reduction * 100)
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-xs font-medium">Priority score</span>
+        <span className="text-xs font-medium">
+          {t('findings.priorityCard.score', 'Priority score')}
+        </span>
         <span className="text-sm font-semibold tabular-nums">
           {breakdown.score.toFixed(1)}
           <span className="text-muted-foreground ml-0.5 text-xs font-normal">/ 15</span>
         </span>
       </div>
       <div className="space-y-1.5">
-        <SubScoreRow label="Impact" value={breakdown.impact} />
-        <SubScoreRow label="Likelihood" value={breakdown.likelihood} />
-        <SubScoreRow label="Exposure" value={breakdown.exposure} />
+        <SubScoreRow label={t('findings.priorityCard.impact', 'Impact')} value={breakdown.impact} />
+        <SubScoreRow
+          label={t('findings.priorityCard.likelihood', 'Likelihood')}
+          value={breakdown.likelihood}
+        />
+        <SubScoreRow
+          label={t('findings.priorityCard.expo', 'Exposure')}
+          value={breakdown.exposure}
+        />
       </div>
       <p className="text-muted-foreground text-[11px] leading-relaxed">
-        (Impact + Likelihood + Exposure)
-        {reductionPct > 0 ? ` × (1 − ${reductionPct}% controls)` : ''} · sub-scores 0–5. Explains
-        the class, does not change it.
+        {t('findings.priorityCard.formula', '(Impact + Likelihood + Exposure)')}
+        {reductionPct > 0
+          ? t('findings.priorityCard.formulaControls', ' × (1 − {pct}% controls)', {
+              pct: reductionPct,
+            })
+          : ''}
+        {t(
+          'findings.priorityCard.formulaNote',
+          ' · sub-scores 0–5. Explains the class, does not change it.'
+        )}
       </p>
     </div>
   )
@@ -135,6 +196,7 @@ export function PriorityExplanationCard({
   findingId,
   variant = 'page',
 }: PriorityExplanationCardProps) {
+  const { t } = useTranslation()
   const { explanation, isLoading } = useFindingPriorityExplanation(findingId)
 
   const Heading = variant === 'page' ? 'h3' : 'h4'
@@ -150,7 +212,7 @@ export function PriorityExplanationCard({
         <div className={variant === 'drawer' ? 'space-y-3' : undefined}>
           <Heading className={headingCls}>
             <HelpCircle className="h-4 w-4" />
-            Why this priority
+            {t('findings.priorityCard.why', 'Why this priority')}
           </Heading>
           <div className="space-y-2">
             <Skeleton className="h-6 w-40" />
@@ -165,7 +227,7 @@ export function PriorityExplanationCard({
   // No explanation available — omit the section entirely (graceful degrade).
   if (!explanation) return null
 
-  const chips = factorChips(explanation)
+  const chips = factorChips(explanation, t)
   const cls = explanation.priority_class
 
   return (
@@ -174,7 +236,7 @@ export function PriorityExplanationCard({
       <div className={variant === 'drawer' ? 'space-y-3' : undefined}>
         <Heading className={headingCls}>
           <HelpCircle className="h-4 w-4" />
-          Why this priority
+          {t('findings.priorityCard.why', 'Why this priority')}
         </Heading>
 
         <div className="space-y-3">

@@ -17,6 +17,7 @@
  * link.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Database, Gauge, ShieldCheck } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -29,6 +30,9 @@ import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-
 import { SafeExternalLink } from '@/components/safe-external-link'
 import type { FindingSourceData, FindingSourceScore } from '../../types'
 
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+// Ids with a fixed English label; the label is translated at render.
 const SYSTEM_LABEL: Record<string, string> = {
   cvss: 'CVSS',
   epss: 'EPSS',
@@ -49,6 +53,17 @@ const DETECTION_LABEL: Record<string, string> = {
   confirmed: 'Confirmed',
   potential: 'Potential',
   info: 'Information gathered',
+}
+
+/** The translated label for a known id, or the humanized id when it is unknown. */
+function knownLabel(
+  t: Translate,
+  group: 'system' | 'vex' | 'detection',
+  labels: Record<string, string>,
+  id: string
+): string {
+  const en = labels[id]
+  return en === undefined ? humanize(id) : t(`findings.sourceData.${group}.${id}`, en)
 }
 
 function humanize(s: string): string {
@@ -76,7 +91,8 @@ export function formatScoreValue(s: FindingSourceScore): string | undefined {
 }
 
 function ScoreRow({ score }: { score: FindingSourceScore }) {
-  const name = `${SYSTEM_LABEL[score.system] ?? humanize(score.system)}${score.version ? ` ${score.version}` : ''}`
+  const { t } = useTranslation()
+  const name = `${knownLabel(t, 'system', SYSTEM_LABEL, score.system)}${score.version ? ` ${score.version}` : ''}`
   const value = formatScoreValue(score)
   const when = day(score.asOf)
   return (
@@ -87,7 +103,11 @@ function ScoreRow({ score }: { score: FindingSourceScore }) {
         {score.label && score.value !== undefined && (
           <span className="text-muted-foreground">· {score.label}</span>
         )}
-        {score.source && <span className="text-xs text-muted-foreground">from {score.source}</span>}
+        {score.source && (
+          <span className="text-xs text-muted-foreground">
+            {t('findings.sourceData.from', 'from {source}', { source: score.source })}
+          </span>
+        )}
         {when && <span className="text-xs text-muted-foreground">· {when}</span>}
       </div>
       {score.vector && (
@@ -100,6 +120,7 @@ function ScoreRow({ score }: { score: FindingSourceScore }) {
 }
 
 export function SourceDataSection({ data }: { data: FindingSourceData }) {
+  const { t } = useTranslation()
   const n = data.native
   const l = data.lifecycle
   const sol = data.solution
@@ -108,7 +129,11 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
   return (
     <>
       {data.scores.length > 0 && (
-        <DetailSection title="Scores by source" icon={Gauge} count={data.scores.length}>
+        <DetailSection
+          title={t('findings.sourceData.scoresBySource', 'Scores by source')}
+          icon={Gauge}
+          count={data.scores.length}
+        >
           <ul className="space-y-2">
             {data.scores.map((s, i) => (
               <ScoreRow key={`${s.system}-${s.version ?? ''}-${s.source ?? ''}-${i}`} score={s} />
@@ -118,31 +143,43 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
       )}
 
       {vex && (
-        <DetailSection title="VEX statement" icon={ShieldCheck}>
+        <DetailSection
+          title={t('findings.sourceData.vexStatement', 'VEX statement')}
+          icon={ShieldCheck}
+        >
           <DetailFieldGrid>
-            <DetailField label="Status">
+            <DetailField label={t('findings.sourceData.status', 'Status')}>
               <Badge variant={vex.status === 'not_affected' ? 'secondary' : 'outline'}>
-                {VEX_LABEL[vex.status] ?? humanize(vex.status)}
+                {knownLabel(t, 'vex', VEX_LABEL, vex.status)}
               </Badge>
             </DetailField>
-            <DetailField label="Justification">
+            <DetailField label={t('findings.sourceData.justification', 'Justification')}>
               {vex.justification ? humanize(vex.justification) : null}
             </DetailField>
-            <DetailField label="Stated by" full>
+            <DetailField label={t('findings.sourceData.statedBy', 'Stated by')} full>
               {vex.source ? <Mono>{vex.source}</Mono> : null}
             </DetailField>
-            <DetailField label="Stated on">{day(vex.asOf)}</DetailField>
+            <DetailField label={t('findings.sourceData.statedOn', 'Stated on')}>
+              {day(vex.asOf)}
+            </DetailField>
           </DetailFieldGrid>
           {vex.statement && (
-            <UntrustedTextBlock className="mt-2" text={vex.statement} label="VEX statement" />
+            <UntrustedTextBlock
+              className="mt-2"
+              text={vex.statement}
+              label={t('findings.sourceData.vexStatement', 'VEX statement')}
+            />
           )}
         </DetailSection>
       )}
 
       {(hasRecord || sol || data.sourceExtra.length > 0) && (
-        <DetailSection title="Source record" icon={Database}>
+        <DetailSection
+          title={t('findings.sourceData.sourceRecord', 'Source record')}
+          icon={Database}
+        >
           <DetailFieldGrid>
-            <DetailField label="Source check id">
+            <DetailField label={t('findings.sourceData.checkId', 'Source check id')}>
               {n?.vulnId ? (
                 <Mono>
                   {n.scheme ? `${n.scheme} ` : ''}
@@ -150,28 +187,44 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
                 </Mono>
               ) : null}
             </DetailField>
-            <DetailField label="Source severity">{n?.severity}</DetailField>
-            <DetailField label="Source status">{n?.status}</DetailField>
-            <DetailField label="Detection">
+            <DetailField label={t('findings.sourceData.srcSeverity', 'Source severity')}>
+              {n?.severity}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.srcStatus', 'Source status')}>
+              {n?.status}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.detection', 'Detection')}>
               {n?.detectionType
-                ? (DETECTION_LABEL[n.detectionType] ?? humanize(n.detectionType))
+                ? knownLabel(t, 'detection', DETECTION_LABEL, n.detectionType)
                 : null}
             </DetailField>
-            <DetailField label="Credentialed scan">
-              {n?.credentialed === undefined ? null : n.credentialed ? 'Yes' : 'No'}
+            <DetailField label={t('findings.sourceData.credentialed', 'Credentialed scan')}>
+              {n?.credentialed === undefined
+                ? null
+                : n.credentialed
+                  ? t('findings.sourceData.yes', 'Yes')
+                  : t('findings.sourceData.no', 'No')}
             </DetailField>
-            <DetailField label="Family">{n?.family}</DetailField>
-            <DetailField label="First found (source)">{day(l?.firstFound)}</DetailField>
-            <DetailField label="Last found (source)">{day(l?.lastFound)}</DetailField>
-            <DetailField label="Last fixed (source)">{day(l?.lastFixed)}</DetailField>
-            <DetailField label="Times found">
+            <DetailField label={t('findings.sourceData.family', 'Family')}>{n?.family}</DetailField>
+            <DetailField label={t('findings.sourceData.firstFound', 'First found (source)')}>
+              {day(l?.firstFound)}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.lastFound', 'Last found (source)')}>
+              {day(l?.lastFound)}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.lastFixed', 'Last fixed (source)')}>
+              {day(l?.lastFixed)}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.timesFound', 'Times found')}>
               {l?.timesFound ? <span className="tabular-nums">{l.timesFound}</span> : null}
             </DetailField>
-            <DetailField label="Source state">{l?.state ? humanize(l.state) : null}</DetailField>
-            <DetailField label="Location">
+            <DetailField label={t('findings.sourceData.srcState', 'Source state')}>
+              {l?.state ? humanize(l.state) : null}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.location', 'Location')}>
               {data.locationKey ? <Mono>{data.locationKey}</Mono> : null}
             </DetailField>
-            <DetailField label="Vulnerability ids" full>
+            <DetailField label={t('findings.sourceData.vulnIds', 'Vulnerability ids')} full>
               {data.vulnerabilityIds.length > 0 ? (
                 <span className="flex flex-wrap gap-1.5" data-testid="source-vuln-ids">
                   {data.vulnerabilityIds.map((v) => (
@@ -186,9 +239,13 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
                 </span>
               ) : null}
             </DetailField>
-            <DetailField label="Fix type">{sol?.type ? humanize(sol.type) : null}</DetailField>
-            <DetailField label="Patch published">{day(sol?.patchPublishedAt)}</DetailField>
-            <DetailField label="Advisories" full>
+            <DetailField label={t('findings.sourceData.fixType', 'Fix type')}>
+              {sol?.type ? humanize(sol.type) : null}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.patchPublished', 'Patch published')}>
+              {day(sol?.patchPublishedAt)}
+            </DetailField>
+            <DetailField label={t('findings.sourceData.advisories', 'Advisories')} full>
               {sol && sol.advisories.length > 0 ? (
                 <span className="flex flex-wrap gap-x-3 gap-y-1">
                   {sol.advisories.map((a, i) => {
@@ -208,12 +265,16 @@ export function SourceDataSection({ data }: { data: FindingSourceData }) {
                 </span>
               ) : null}
             </DetailField>
-            <DetailField label="Raw record" full>
+            <DetailField label={t('findings.sourceData.rawRecord', 'Raw record')} full>
               {n?.rawRef ? <Mono>{n.rawRef}</Mono> : null}
             </DetailField>
           </DetailFieldGrid>
           {data.sourceExtra.length > 0 && (
-            <DetailDisclosure summary={`Other source fields (${data.sourceExtra.length})`}>
+            <DetailDisclosure
+              summary={t('findings.sourceData.otherFields', 'Other source fields ({count})', {
+                count: data.sourceExtra.length,
+              })}
+            >
               <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                 {data.sourceExtra.map(([k, v]) => (
                   <div key={k} className="min-w-0">
