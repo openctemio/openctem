@@ -335,6 +335,10 @@ type RunTaskResponse struct {
 	// text). CoverageGapsTotal counts all of them.
 	CoverageGaps      []RunTaskCoverageGap `json:"coverage_gaps,omitempty"`
 	CoverageGapsTotal int                  `json:"coverage_gaps_total,omitempty"`
+	// EgressRefusedTargets counts the targets of a completed task the
+	// sensor's network confinement kept the tool from reaching: they were
+	// not scanned (show "could not reach", never "found nothing").
+	EgressRefusedTargets int `json:"egress_refused_targets,omitempty"`
 	// WindowHold: a queued task waits for a scan window (why, until when,
 	// or never).
 	WindowHold *scanwindow.Hold `json:"window_hold,omitempty"`
@@ -394,7 +398,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			SensorName: t.SensorName, Platform: t.Platform, Targets: t.Targets, Attempts: t.Attempts,
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
-			WaitingOnHosts: t.WaitingOnHosts,
+			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))

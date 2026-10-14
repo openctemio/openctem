@@ -19,6 +19,7 @@ const dsMarkerRegistrarB = "dsB-SECRET-registrar"
 type dsStats struct {
 	Total          int                       `json:"total"`
 	ByType         map[string]int            `json:"by_type"`
+	ByTypeSubType  map[string]int            `json:"by_type_sub_type"`
 	MetadataCounts map[string]map[string]int `json:"metadata_counts"`
 }
 
@@ -131,5 +132,22 @@ func TestDataScope_AssetStatsAndFacets_StrictTenantMemberWithoutGroupSeesNothing
 	}
 	if st := h.stats(h.owner, true); st.Total != 3 {
 		t.Errorf("strict tenant: owner stats total = %d, want 3", st.Total)
+	}
+}
+
+// The type/sub-type breakdown (the inventory's lens and type counts) is scoped
+// like every other count: an out-of-scope asset adds no key and no count.
+func TestDataScope_AssetStatsTypeSubType_CountOnlyInScope(t *testing.T) {
+	h := newDSHarness(t)
+	h.seedFacetAssets()
+	h.exec(`UPDATE assets SET asset_type = 'host', sub_type = 'serverless' WHERE id = $1`, h.assetB.String())
+
+	st := h.stats(h.memberA, false)
+	if len(st.ByTypeSubType) != 1 || st.ByTypeSubType["domain"] != 2 {
+		t.Errorf("memberA by_type_sub_type = %v, want only domain:2", st.ByTypeSubType)
+	}
+	own := h.stats(h.owner, true)
+	if own.ByTypeSubType["domain"] != 2 || own.ByTypeSubType["host/serverless"] != 1 {
+		t.Errorf("owner by_type_sub_type = %v, want domain:2 and host/serverless:1", own.ByTypeSubType)
 	}
 }
