@@ -53,7 +53,7 @@ describe('summarizeSensors', () => {
   it('splits platform and customer sensors and flags SDKs below the minimum', () => {
     const s = summarizeSensors(
       ops({
-        sdk_min_version: 'v0.9.0',
+        sdk_advisories: ['v0.8.4'],
         sensors: [
           { platform: true, health: 'online', sdk_version: 'v0.10.1', count: 2 },
           { platform: true, health: 'stale', sdk_version: 'v0.8.4', count: 1 },
@@ -65,9 +65,9 @@ describe('summarizeSensors', () => {
     expect(s.platform).toEqual({ total: 3, online: 2, unhealthy: 1 })
     expect(s.customer).toEqual({ total: 6, online: 5, unhealthy: 0 })
     expect(s.versions).toEqual([
-      { version: 'v0.10.1', count: 7, belowMin: false },
-      { version: 'v0.8.4', count: 1, belowMin: true },
-      { version: 'unknown', count: 1, belowMin: false },
+      { version: 'v0.10.1', count: 7, advisory: false },
+      { version: 'v0.8.4', count: 1, advisory: true },
+      { version: 'unknown', count: 1, advisory: false },
     ])
   })
 })

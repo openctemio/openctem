@@ -22,7 +22,7 @@ func TestAdminOperationsRoute(t *testing.T) {
 	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		hs.AdminOperations = handler.NewAdminOperationsHandler(db.DB,
 			func(ctx context.Context) (postgres.OpsSnapshot, error) { return postgres.ReadOpsSnapshot(ctx, db.DB) },
-			nil, nil, 0, "", logger.NewNop())
+			nil, nil, 0, nil, logger.NewNop())
 		hs.AdminOperations.SetSensorTransport(func() handler.SensorTransportStatus {
 			return handler.SensorTransportStatus{Mode: "auto", HTTPSPath: "/api/v3/sensor",
 				GRPC: handler.SensorTransportGRPC{State: "unavailable", Reason: "foreign_certificate"}}

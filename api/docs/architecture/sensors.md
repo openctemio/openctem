@@ -341,7 +341,7 @@ idle interval stays online: interval + grace) and `offline_after_seconds`
 whatever the state: `outbox_backlog` (results waiting over an hour),
 `outbox_dead_letters`, `outbox_evicted`, `key_expired`, `key_expiring` (within
 7 days), `identity_cloned` (two live processes use the key; see "Key use and
-cloned identities"), `version_unsupported`, `sdk_unsupported` (see "Build information"),
+cloned identities"), `version_unsupported`, `sdk_advisory` (see "Build information"),
 `no_tools` (a scanning daemon with no tools), `error_reported`,
 `heartbeat_late` (the sensor is late or stale, or its last delivered heartbeat
 came more than 1.5 intervals after the previous one, `control.gap_s`) and
@@ -349,13 +349,25 @@ came more than 1.5 intervals after the previous one, `control.gap_s`) and
 config report (below) `config_check_failed`, `config_check_warning` and
 `config_report_stale`. An online sensor with any reason is `degraded`.
 
-**Release channel**: `SENSOR_LATEST_VERSION` (default: the newest sensor release
-when the API was built, `none` turns it off) and `SENSOR_MIN_VERSION` (default
-none). `version` is normalized to one form (`0.4.2`, `v0.4.2` and `vv0.4.2` all
-read `v0.4.2`); `version_status` is `latest`, `update_available`, `unsupported`
-or `unknown` (no version, a dev build, or no channel). A git-describe build
-(`v0.4.2-3-gabc1234`) counts as its tag. Both settings are in the stats
-response (`latest_version`, `min_version`).
+**Sensor products and release lines** (RFC-037 §11): the platform knows
+several sensor products, listed in `versions.yaml` and built into the API
+(`internal/versions`): the scanning sensor (`openctemio-sensor`) and the
+Tenable.sc connector (`openctemio-connector-tenable`), each with its own
+`latest` and `min`. A sensor's product is what it reports (heartbeat
+`sensor.name`, else its User-Agent product token); one that reports none is
+the scanning sensor. `product` in the sensor response is that product,
+`product_known` whether the catalog lists it, and `product_latest_version` /
+`product_min_version` its release line. `version` is normalized to one form
+(`0.4.2`, `v0.4.2` and `vv0.4.2` all read `v0.4.2`); `version_status` compares
+it with the product's own line: `latest`, `update_available`, `unsupported`
+(below the product's minimum: health reason `version_unsupported`) or
+`unknown` (no version, a dev build, or a product the catalog does not list: a
+custom sensor gets no version verdict; its compatibility is the protocol and
+the capabilities it advertises). A git-describe build (`v0.4.2-3-gabc1234`)
+counts as its tag. The stats response lists the catalog (`products`: `id`,
+`latest_version`, `min_version`, `image`). A release bump changes
+`versions.yaml` only; there is no setting for it (`SENSOR_LATEST_VERSION` and
+`SENSOR_MIN_VERSION` are refused at startup).
 
 **Other fields**: `key_expires_at`, `last_offline_at`, `last_error_at`,
 `started_at` and `uptime_seconds` (from the heartbeat's `uptime_seconds`, stored
@@ -434,14 +446,14 @@ it is empty. Stored in `sensors.sdk_name`, `sdk_version`, `sensor_product`,
 `sensor_commit`, `sensor_build_time` (migration 000255); an empty part leaves
 the stored value.
 
-**SDK policy**: `SENSOR_SDK_MIN_VERSION` and `SENSOR_SDK_LATEST_VERSION`
-(default none; `none` turns one off). `sdk_status` per sensor is `unsupported`
-(below the minimum: health reason `sdk_unsupported`, so a heartbeating sensor
-is `degraded`), `outdated` (below the latest), `current`, or `unknown` (no SDK
-version known). The sensor responses carry `sdk_name`, `sdk_version`,
-`sdk_status`, `sensor_product`, `sensor_commit`, `sensor_build_time`; the stats
-add `sdk_min_version`, `sdk_latest_version`, `by_sdk_version` (`unknown` for
-none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
+**SDK**: informational, from `versions.yaml` (`sdk.latest`, `sdk.advisories`).
+`sdk_status` per sensor is `advisory` (an SDK release with a published
+security advisory: health reason `sdk_advisory`, so a heartbeating sensor is
+`degraded`), `outdated` (below the latest, no health effect), `current`, or
+`unknown` (no SDK version known). There is no SDK minimum. The sensor
+responses carry `sdk_name`, `sdk_version`, `sdk_status`, `sensor_product`,
+`sensor_commit`, `sensor_build_time`; the stats add `sdk_latest_version`,
+`sdk_advisories`, `by_sdk_version` (`unknown` for none) and `by_sdk_status`; `GET /sensors?sdk_version=v0.9.0` (or `unknown`)
 filters on it.
 
 ## Activity
@@ -533,8 +545,16 @@ Every snippet works as pasted for the release it pins (tests run `bash -n` on
 the shell ones and parse the YAML ones; `docker compose config` accepts the
 compose file):
 
-- **Image** `SENSOR_IMAGE` (default `ghcr.io/openctemio/sensor`) with the tag
-  `SENSOR_LATEST_VERSION`, never `latest`. The response's `image` says which.
+- **Product** `?product=<id>`: a catalog product (400 otherwise); default the
+  product the sensor reports when the catalog lists it, else the scanning
+  sensor. Each product has its own snippet set (`versions.yaml` `install`:
+  `sensor` is `<format>.tmpl`, another set is `<set>-<format>.tmpl` and may
+  ship only some formats; the others come back empty). A collector always gets
+  the collector's set. The response's `product` says which.
+- **Image** the product's `image` with its `latest` tag, never `latest`;
+  `SENSOR_IMAGE` replaces the scanning sensor's repository (a mirror). The
+  response's `image` says which. A product set with a `release_identity` shows
+  the `cosign verify` command for that release.
 - **URL** `SENSOR_PUBLIC_API_URL`, else `APP_URL` (`api_url` in the response).
 - **Key** only when the caller passes the freshly issued key in
   `X-Sensor-API-Key` (validated: key characters only, it lands in a shell

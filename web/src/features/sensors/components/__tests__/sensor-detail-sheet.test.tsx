@@ -151,7 +151,11 @@ function open(extra: Partial<React.ComponentProps<typeof SensorDetailSheet>> = {
     <SensorDetailSheet
       sensor={sensor}
       open
-      channel={{ latest: 'v0.4.2', min: 'v0.4.0' }}
+      channel={{
+        products: [
+          { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: 'v0.4.0', image: '' },
+        ],
+      }}
       {...handlers}
       {...extra}
     />
@@ -558,14 +562,14 @@ describe('SensorDetailSheet', () => {
         ...sensor,
         sdk_name: 'openctem-sdk-go',
         sdk_version: 'v0.8.0',
-        sdk_status: 'unsupported',
+        sdk_status: 'advisory',
         sensor_commit: 'abc1234',
       },
     })
     const cell = screen.getByTitle(/Commit: abc1234/)
     expect(cell.querySelector('[data-slot="sensor-version"]')?.textContent).toBe('v0.4.2')
     expect(cell.querySelector('[data-slot="sdk-version"]')?.textContent).toBe('SDK v0.8.0')
-    expect(screen.getByText('SDK unsupported')).toBeInTheDocument()
+    expect(screen.getByText('SDK advisory')).toBeInTheDocument()
     expect(screen.getByText('recent activity')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy sensor ID' })).toBeInTheDocument()
   })

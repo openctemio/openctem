@@ -31,9 +31,10 @@ type Config struct {
 	// ShippedSchemaVersion is the newest migration shipped with this build
 	// (0 when unknown): compared with the applied version.
 	ShippedSchemaVersion int64
-	// SDKLatest and SDKMin are the sensor SDK policy
-	// (SENSOR_SDK_LATEST_VERSION, SENSOR_SDK_MIN_VERSION).
-	SDKLatest, SDKMin string
+	// SDKLatest and SDKAdvisories are the sensor SDK entries of
+	// versions.yaml (sdk.latest, sdk.advisories).
+	SDKLatest     string
+	SDKAdvisories []string
 	// MaxAge is how long a snapshot is reused before the next scrape reads
 	// a new one (default 30s), and Timeout bounds one read (default 5s).
 	MaxAge, Timeout time.Duration
@@ -182,7 +183,7 @@ func (c *Collector) collectSensors(ch chan<- prometheus.Metric, rows []postgres.
 		if r.ConfigHealth != "" {
 			config[key{kind, configHealthLabel(r.ConfigHealth)}] += r.Count
 		}
-		sdk[key{kind, string(sensor.ClassifySDK(r.SDKVersion, c.cfg.SDKLatest, c.cfg.SDKMin))}] += r.Count
+		sdk[key{kind, string(sensor.ClassifySDK(r.SDKVersion, c.cfg.SDKLatest, c.cfg.SDKAdvisories))}] += r.Count
 	}
 	for k, n := range health {
 		ch <- prometheus.MustNewConstMetric(descSensors, prometheus.GaugeValue, float64(n), k.kind, k.value)

@@ -1,4 +1,10 @@
-import type { Sensor, SensorRole, SensorState, SensorVersionStatus } from '@/lib/api/sensor-types'
+import type {
+  Sensor,
+  SensorProduct,
+  SensorRole,
+  SensorState,
+  SensorVersionStatus,
+} from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
 
@@ -7,19 +13,35 @@ import { dispatchTools, sensorCapacity } from './capabilities'
 import { canTakeJobs, sensorState, SENSOR_STATES, type FleetThresholds } from './sensor-state'
 import {
   compareSensorVersions,
+  DEFAULT_SENSOR_PRODUCT,
   normalizeSensorVersion,
+  releaseLineOf,
   sensorSdkVersion,
   sensorSdkVersionKey,
   sensorVersionStatus,
 } from './sensor-version'
 
-/** The platform's release channel (GET /sensors/stats). */
+/**
+ * What the platform judges sensor versions against (GET /sensors/stats): the
+ * sensor products, each with its own release line, and the SDK entries.
+ */
 export interface ReleaseChannel {
-  latest?: string | null
-  min?: string | null
-  /** The supported SDK range ("" / null when not configured). */
+  products?: SensorProduct[]
+  /** The newest SDK release (informational; null when not set). */
   sdkLatest?: string | null
-  sdkMin?: string | null
+  /** SDK releases with a published security advisory. */
+  sdkAdvisories?: string[]
+}
+
+/** The version status of a sensor against its own product's release line. */
+export function versionStatusIn(sensor: Sensor, channel: ReleaseChannel): SensorVersionStatus {
+  const line = releaseLineOf(sensor, channel.products)
+  return sensorVersionStatus(sensor, line.latest, line.min)
+}
+
+/** The scanning sensor's release line, for the fleet summary. */
+export function scanningSensorLine(channel: ReleaseChannel) {
+  return releaseLineOf({ product: DEFAULT_SENSOR_PRODUCT }, channel.products)
 }
 
 /** What a health reason is about, for the "Needs attention" caption. */
@@ -35,7 +57,7 @@ function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKin
         ? 'key'
         : r.code === 'version_unsupported'
           ? 'version'
-          : r.code === 'sdk_unsupported'
+          : r.code === 'sdk_advisory'
             ? 'sdk'
             : r.code === 'heartbeat_late' || r.code === 'control_slow'
               ? 'heartbeat'
@@ -51,7 +73,7 @@ function attentionKindsOf(sensor: Sensor, channel: ReleaseChannel): AttentionKin
   // Older APIs send no reasons: derive what the page can see itself.
   if (!sensor.health_reasons) {
     if (sensor.outbox_warning) kinds.push('backlog')
-    if (sensorVersionStatus(sensor, channel.latest, channel.min) === 'unsupported') {
+    if (versionStatusIn(sensor, channel) === 'unsupported') {
       kinds.push('version')
     }
   }
@@ -142,7 +164,7 @@ export function summarizeFleet(
       if (kinds.length) attention++
       for (const k of kinds) if (!attentionKinds.includes(k)) attentionKinds.push(k)
     }
-    const vs = sensorVersionStatus(s, channel.latest, channel.min)
+    const vs = versionStatusIn(s, channel)
     if (vs === 'update_available' || vs === 'unsupported') updates++
     if (vs === 'unsupported') unsupported++
   }
@@ -271,10 +293,7 @@ export function filterSensors(
     if (q && !searchText(s).includes(q)) return false
     if (f.roles.length && !f.roles.includes(sensorRoleOf(s.type))) return false
     if (f.states.length && !f.states.includes(sensorState(s, now, thresholds))) return false
-    if (
-      f.versions.length &&
-      !f.versions.includes(sensorVersionStatus(s, channel.latest, channel.min))
-    ) {
+    if (f.versions.length && !f.versions.includes(versionStatusIn(s, channel))) {
       return false
     }
     if (f.modes.length) {

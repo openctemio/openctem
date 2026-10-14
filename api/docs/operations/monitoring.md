@@ -345,10 +345,11 @@ not on the warning schedule.
 The posture is what the sensor reports about itself: the platform shows it and
 alerts on it but never relaxes a check because of it.
 
-### SensorSdkUnsupported
+### SensorSdkAdvisory
 
-Sensors run an SDK older than `SENSOR_SDK_MIN_VERSION`. Upgrade them (install
-command on the Sensors page).
+Sensors run an SDK release with a published security advisory (`versions.yaml`
+`sdk.advisories`, built into the API). Upgrade them to a build with a fixed
+SDK (install command on the Sensors page).
 
 ### CommandQueueStuck
 
