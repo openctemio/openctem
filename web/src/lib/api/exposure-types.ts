@@ -48,8 +48,22 @@ export type ExposureState = 'active' | 'resolved' | 'accepted' | 'false_positive
 /**
  * Exposure Event entity from API
  */
+/**
+ * An accept or false-positive request on a high or critical exposure that
+ * waits for a second approver (four-eyes). `requested_by` is a user id.
+ */
+export interface PendingDisposition {
+  id: string
+  requested_state: 'accepted' | 'false_positive'
+  requested_by?: string
+  reason: string
+  created_at: string
+}
+
 export interface ExposureEvent {
   id: string
+  /** Present while a disposition waits for a second approver. */
+  pending_disposition?: PendingDisposition
   canonical_asset_id?: string
   native_asset_id?: string
   event_type: ExposureEventType

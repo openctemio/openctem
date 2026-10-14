@@ -80,6 +80,38 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Four-eyes on exposure dispositions
+
+Accepting the risk of, or marking a false positive, an exposure or a leaked
+credential (`/exposures/{id}/accept`, `/false-positive`, and the same routes
+under `/credentials`) is the same disposition a finding reaches only through an
+approval. For a **high or critical** item it takes two people:
+
+1. The first approver's call stores a pending request in
+   `exposure_disposition_requests` (one per exposure) and answers 202 with the
+   exposure unchanged and its `pending_disposition`.
+2. A different approver's call for the same disposition applies it (200). A
+   call for the other disposition is refused while one is pending.
+3. `POST /{id}/disposition/reject` drops the pending request; when the
+   requester calls it, the request is canceled.
+
+The requester never confirms their own request. The organization owner may,
+only when nobody else in the organization holds every permission the route
+requires (counted as active owners, admins and members whose roles grant
+them); that approval applies at once and is audited Critical
+(`exposure.disposition_self_approved`). Every request, approval and rejection
+is in the audit log (`exposure.disposition_*`) and the state change keeps both
+reasons in the exposure's state history. Low and medium items keep the
+one-step path. A request is created only for an exposure of the caller's
+tenant and data scope (the insert selects the exposure under the tenant).
+
+Key files: `pkg/domain/exposure/disposition.go`,
+`internal/app/exposure/disposition.go` (`DispositionGate`),
+`internal/infra/postgres/exposure_disposition_repository.go`, migration
+`002118`; web `features/exposures/components/pending-disposition.tsx`.
+The credentials page has no accept or false-positive control yet; its API
+responses carry `pending_disposition` the same way.
+
 ## Upgrade
 
 Migration `001378` maps stored values of the retired pentest statuses
