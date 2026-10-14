@@ -118,7 +118,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
           <TrustConfigsSection canWrite={canWrite} />
         </TabsContent>
         <TabsContent value="gate" className="mt-4">
-          <GatePolicySection canWrite={canWrite} />
+          <GatePolicySection canWrite={can(Permission.CIPolicy)} />
         </TabsContent>
         <TabsContent value="break-glass" className="mt-4">
           <OverridesSection canOverride={canOverride} />
