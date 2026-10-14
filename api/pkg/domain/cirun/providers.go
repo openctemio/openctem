@@ -150,8 +150,12 @@ func validateProviderIssuer(p Provider, issuer string) error {
 // token's audience, so a trust configuration must expect one that names the
 // tenant: a token minted for one organization is then useless to another,
 // and to any other service that trusts the same CI organization.
+//
+// Every provider but Azure Pipelines (one fixed audience) is bound. GitHub
+// and GitLab configurations saved before this rule keep their old audience
+// as LegacyAudience for a transition (TrustConfig.LegacyAccepted).
 func TenantBoundAudience(p Provider) bool {
-	return p == ProviderBitbucket || p == ProviderCircleCI || p == ProviderJenkins
+	return p != ProviderAzureDevOps
 }
 
 // JTIOptional reports whether the provider's tokens may come without a jti

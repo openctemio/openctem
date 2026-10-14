@@ -1815,5 +1815,8 @@
   "scans.toolOption.checkov": "Trình quét bảo mật hạ tầng dưới dạng mã (IaC)",
   "scans.toolOption.tfsec": "Trình quét bảo mật Terraform",
   "scans.toolOption.grype": "Phân tích thành phần phần mềm (SCA)",
-  "scans.toolOption.syft": "Tạo và phân tích SBOM"
+  "scans.toolOption.syft": "Tạo và phân tích SBOM",
+  "scans.ci.refusal.legacy_audience": "Pipeline đã dùng audience cũ của cấu hình tin cậy, audience này không còn được chấp nhận cho nó.",
+  "scans.ci.refusal.legacy_audienceFix": "Cập nhật pipeline theo đoạn mã hiện tại: audience của nó nêu tổ chức (openctem:tenant:<id>).",
+  "scans.ci.trust.legacyAudience": "Các pipeline có từ trước vẫn có thể dùng audience cũ {value} đến {until}, cho đến khi chúng dùng audience mới một lần. Hãy cập nhật pipeline theo đoạn mã hiện tại."
 }

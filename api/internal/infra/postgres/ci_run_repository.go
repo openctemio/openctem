@@ -56,7 +56,7 @@ func optTime(nt sql.NullTime) *time.Time {
 // ---------------------------------------------------------------- trust ---
 
 const ciTrustColumns = `id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled,
-	created_by, last_used_at, created_at, updated_at`
+	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until`
 
 func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 	var (
@@ -66,11 +66,13 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 		createdBy      sql.NullString
 		lastUsed       sql.NullTime
 		createdAt, upd time.Time
+		legacyUntil    sql.NullTime
 	)
 	if err := row.Scan(&id, &tid, &c.Name, &prov, &c.Issuer, &c.Audience, &rules, &c.DefaultBranch, &c.Enabled,
-		&createdBy, &lastUsed, &createdAt, &upd); err != nil {
+		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil); err != nil {
 		return c, err
 	}
+	c.LegacyAudienceUntil = optTime(legacyUntil)
 	c.ID, _ = shared.IDFromString(id)
 	c.TenantID, _ = shared.IDFromString(tid)
 	c.Provider = cirun.Provider(prov)
@@ -112,7 +114,10 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs
-		SET name = $3, issuer = $4, audience = $5, rules = $6, default_branch = $7, enabled = $8, updated_at = NOW()
+		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, updated_at = NOW(),
+			-- A changed audience withdraws the trust: no legacy audience survives it.
+			legacy_audience = CASE WHEN audience = $5::text THEN legacy_audience END,
+			legacy_audience_until = CASE WHEN audience = $5::text THEN legacy_audience_until END
 		WHERE tenant_id = $1 AND id = $2`,
 		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled)
 	if isUniqueViolation(err) {
@@ -174,6 +179,34 @@ func (r *CIRunRepository) queryTrust(ctx context.Context, q string, args ...any)
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// PipelineAudienceState reports whether the pipeline with the key exists and
+// whether it has exchanged a token with its configuration's current
+// audience (ci_pipelines.audience_upgraded_at).
+func (r *CIRunRepository) PipelineAudienceState(ctx context.Context, tenantID shared.ID, key cirun.PipelineKey) (exists, upgraded bool, err error) {
+	var at sql.NullTime
+	err = r.db.QueryRowContext(ctx, `SELECT audience_upgraded_at FROM ci_pipelines
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND external_repo_id = $4 AND workflow_path = $5`,
+		tenantID.String(), string(key.Provider), key.Issuer, key.ExternalRepoID, key.WorkflowPath).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, at.Valid, nil
+}
+
+// MarkPipelineAudienceUpgraded records that the pipeline exchanged a token
+// with its configuration's current audience: its legacy audience is refused
+// from now on.
+func (r *CIRunRepository) MarkPipelineAudienceUpgraded(ctx context.Context, tenantID shared.ID, key cirun.PipelineKey, at time.Time) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_pipelines SET audience_upgraded_at = $6
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND external_repo_id = $4 AND workflow_path = $5
+		  AND audience_upgraded_at IS NULL`,
+		tenantID.String(), string(key.Provider), key.Issuer, key.ExternalRepoID, key.WorkflowPath, at)
+	return err
 }
 
 // TouchTrustConfig records the configuration's last use.
