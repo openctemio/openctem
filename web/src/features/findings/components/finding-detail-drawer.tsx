@@ -52,6 +52,7 @@ import { FindingProperties } from './detail/finding-properties'
 import { FindingRetestSection } from './detail/finding-retest'
 import { FindingActivity } from './finding-activity'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
+import { AIProposalBadge } from './ai-proposal-badge'
 
 interface FindingDetailDrawerProps {
   finding: Finding | null
@@ -265,6 +266,7 @@ export function FindingDetailDrawer({
                               a.requested_status}
                           </span>
                         </p>
+                        <AIProposalBadge approval={a} />
                         {a.justification && (
                           <p className="line-clamp-2 text-muted-foreground">{a.justification}</p>
                         )}

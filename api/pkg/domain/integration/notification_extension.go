@@ -139,6 +139,11 @@ const (
 	// external attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md).
 	EventTypeAttackSurfaceDigest EventType = "attack_surface_digest"
 
+	// EventTypeCoverageGap fires when assets go without a capability their
+	// type needs: a coverage gap, a capability that stopped producing its
+	// output, or repeated failures (docs/rfcs/RFC-093-asset-coverage.md).
+	EventTypeCoverageGap EventType = "coverage_gap"
+
 	// EventTypeSensorOffline fires when the sensor-health controller sees a
 	// sensor stop heartbeating (online -> offline). The id keeps the dotted
 	// form of the event_types catalog row it has always had, which is also
@@ -228,6 +233,7 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
+		{Type: EventTypeCoverageGap, Category: EventCategoryAsset, Label: "Coverage Gap", Description: "Assets went without a capability their type needs (never or not recently scanned), a capability stopped producing its output, or it failed repeatedly", RequiredModule: ModuleAttackSurface},
 		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
 
 		// Sensor events - require 'sensors' module
@@ -258,6 +264,10 @@ func DefaultEnabledEventTypes() []EventType {
 		// One message a week, sent only when the organization keeps the
 		// digest on (the default) and something changed.
 		EventTypeAttackSurfaceDigest,
+
+		// A broken scanner or an asset class nobody scans must not be
+		// silent; at most one message per capability and kind a day.
+		EventTypeCoverageGap,
 
 		// A missed remediation deadline that notifies nobody defeats the point
 		// of having an SLA. Enqueued at severity "high", so it also clears the
@@ -353,6 +363,9 @@ func SeverityFilterApplies(eventType EventType) bool {
 		return false
 	// The weekly digest is a summary with a fixed "info" severity.
 	case EventTypeAttackSurfaceDigest:
+		return false
+	// A coverage gap carries a fixed severity chosen by the coverage loop.
+	case EventTypeCoverageGap:
 		return false
 	default:
 		return true

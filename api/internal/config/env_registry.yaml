@@ -860,6 +860,18 @@ vars:
     group: "Sensors"
     type: string
     description: "Private CA certificate (PEM) the install snippets install on the sensor host. Set it with the gateway in TLS mode `internal` (the Compose stack points it at the exported root CA)."
+  - name: CI_RUNNER_LATEST_VERSION
+    component: api
+    group: "Sensors"
+    type: string
+    default: "the CI runner release in `versions.yaml` when the API was built (`v0.3.0`)"
+    description: "Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off."
+  - name: CI_RUNNER_MIN_VERSION
+    component: api
+    group: "Sensors"
+    type: string
+    default: "the CI runner minimum in `versions.yaml` (`v0.3.0`)"
+    description: "Oldest accepted CI runner release. The token exchange refuses an older runner (`RUNNER_OUTDATED`) and its pipeline is shown as degraded. Empty, `none` or `off`: no minimum."
   - name: SENSOR_COMMAND_LEASE
     component: api
     group: "Sensors"
@@ -1254,6 +1266,24 @@ vars:
     type: bool
     default: "true"
     description: "Automatic passive enrichment of new assets, platform-wide. Each organization can still turn it off."
+  - name: ASSET_COVERAGE_ENABLED
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: bool
+    default: "true"
+    description: "The asset coverage loop, platform-wide: every asset gets the capabilities its type needs (RFC-093)."
+  - name: ASSET_COVERAGE_DAILY_BUDGET
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: int
+    default: "5000"
+    description: "Most asset and capability pairs one organization's automatic coverage attempts per 24 hours."
+  - name: ASSET_COVERAGE_INTERVAL
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: duration
+    default: "1m"
+    description: "How often the asset coverage loop runs."
   - name: FEED_CACHE_DIR
     component: api
     group: "Discovery feeds and background jobs"

@@ -157,22 +157,19 @@ func TestAssetSoftDelete_InvisibleToSearchGraphGroupsIngestAndExposures(t *testi
 	if list.Total != 1 {
 		t.Errorf("exposure list total = %d, want 1", list.Total)
 	}
-	byState, err := exposures.CountByState(ctx, tenant)
+	st, err := exposures.Stats(ctx, exposure.Filter{TenantID: &tid})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if byState[exposure.StateActive] != 1 {
-		t.Errorf("active exposures = %d, want 1 (the deleted asset's are history)", byState[exposure.StateActive])
+	if st.ByState[exposure.StateActive.String()] != 1 {
+		t.Errorf("active exposures = %d, want 1 (the deleted asset's are history)", st.ByState[exposure.StateActive.String()])
 	}
-	bySeverity, err := exposures.CountBySeverity(ctx, tenant)
-	if err != nil {
-		t.Fatal(err)
+	if st.BySeverity[exposure.SeverityCritical.String()] != 1 {
+		t.Errorf("critical exposures = %d, want 1", st.BySeverity[exposure.SeverityCritical.String()])
 	}
-	if bySeverity[exposure.SeverityCritical] != 1 {
-		t.Errorf("critical exposures = %d, want 1", bySeverity[exposure.SeverityCritical])
-	}
-	if os, err := exposures.CountByState(ctx, other); err != nil || os[exposure.StateActive] != 1 {
-		t.Errorf("other tenant active exposures = %v, %v; want 1", os, err)
+	otherID := other.String()
+	if os, err := exposures.Stats(ctx, exposure.Filter{TenantID: &otherID}); err != nil || os.ByState[exposure.StateActive.String()] != 1 {
+		t.Errorf("other tenant active exposures = %v, %v; want 1", os.ByState, err)
 	}
 
 	// EASM overview counts.

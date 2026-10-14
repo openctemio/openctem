@@ -24,6 +24,7 @@ import {
   SeverityStrip,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
+import type { TFn } from '../lib/default-t'
 import {
   groupProperties,
   propertyLabel,
@@ -74,35 +75,42 @@ interface RiskSummarySectionProps {
 
 /** Risk score plus the open-finding breakdown by severity. */
 export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySectionProps) {
+  const { t } = useTranslation()
   const counts = asset.findingSeverityCounts ?? {}
   const hasFindings = asset.findingCount > 0
 
   return (
     <DetailSection
-      title="Risk"
+      title={t('components.col.risk', 'Risk')}
       icon={Gauge}
       actions={
         hasFindings && onViewFindings ? (
           <Button variant="link" size="sm" className="h-auto p-0" onClick={onViewFindings}>
-            View findings
+            {t('assets.overview2.viewFindings', 'View findings')}
           </Button>
         ) : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">Risk score</p>
+          <p className="text-xs text-muted-foreground">
+            {t('assets.overview2.riskScore', 'Risk score')}
+          </p>
           <RiskScoreBadge score={asset.riskScore} size="md" />
         </div>
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">Open findings</p>
+          <p className="text-xs text-muted-foreground">
+            {t('assets.overview2.openFindings', 'Open findings')}
+          </p>
           <p className="text-lg leading-none font-semibold tabular-nums">{asset.findingCount}</p>
         </div>
       </div>
       {hasFindings ? (
         <SeverityStrip counts={counts} className="mt-4" />
       ) : (
-        <p className="mt-3 text-sm text-muted-foreground">No open findings on this asset.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t('assets.overview2.noOpen', 'No open findings on this asset.')}
+        </p>
       )}
     </DetailSection>
   )
@@ -123,17 +131,20 @@ interface OwnershipSectionProps {
  * out: CTEM mobilization depends on every exposure having someone to route to.
  */
 export function OwnershipSection({ asset, onManageOwners }: OwnershipSectionProps) {
+  const { t } = useTranslation()
   const owner = asset.primaryOwner
   const hasOwner = !!owner || !!asset.ownerRef
 
   return (
     <DetailSection
-      title="Ownership"
+      title={t('assets.overview2.ownership', 'Ownership')}
       icon={UserRound}
       actions={
         onManageOwners ? (
           <Button variant="link" size="sm" className="h-auto p-0" onClick={onManageOwners}>
-            {hasOwner ? 'Manage owners' : 'Assign owner'}
+            {hasOwner
+              ? t('assets.overview2.manageOwners', 'Manage owners')
+              : t('assets.overview2.assignOwner', 'Assign owner')}
           </Button>
         ) : undefined
       }
@@ -141,19 +152,30 @@ export function OwnershipSection({ asset, onManageOwners }: OwnershipSectionProp
       {hasOwner ? (
         <DetailFieldGrid>
           {owner && (
-            <DetailField label={owner.type === 'group' ? 'Owning team' : 'Primary owner'}>
+            <DetailField
+              label={
+                owner.type === 'group'
+                  ? t('assets.overview2.owningTeam', 'Owning team')
+                  : t('assets.overview2.primaryOwner', 'Primary owner')
+              }
+            >
               <span className="block">{owner.name}</span>
               {owner.email && (
                 <span className="block text-xs text-muted-foreground">{owner.email}</span>
               )}
             </DetailField>
           )}
-          <DetailField label="Owner reference">{asset.ownerRef}</DetailField>
+          <DetailField label={t('assets.overview2.ownerRef', 'Owner reference')}>
+            {asset.ownerRef}
+          </DetailField>
         </DetailFieldGrid>
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-          No owner assigned. Findings on this asset have no one to be routed to.
+          {t(
+            'assets.overview2.noOwner',
+            'No owner assigned. Findings on this asset have no one to be routed to.'
+          )}
         </p>
       )}
     </DetailSection>
@@ -170,9 +192,9 @@ interface ExposureSectionProps {
   isControlPlane?: boolean
 }
 
-function yesNo(value: boolean | undefined): string | undefined {
+function yesNo(value: boolean | undefined, t: TFn): string | undefined {
   if (value === undefined) return undefined
-  return value ? 'Yes' : 'No'
+  return value ? t('assets.overview2.yes', 'Yes') : t('assets.properties.no', 'No')
 }
 
 /** Reachability and data sensitivity: the context that weighs a finding's impact. */
@@ -184,32 +206,41 @@ export function ExposureSection({ asset, isControlPlane }: ExposureSectionProps)
   const sensitivityKnown = asset.piiDataExposed !== undefined || asset.phiDataExposed !== undefined
 
   return (
-    <DetailSection title="Exposure and data" icon={ShieldHalf}>
+    <DetailSection
+      title={t('assets.overview2.exposureData', 'Exposure and data')}
+      icon={ShieldHalf}
+    >
       <DetailFieldGrid>
-        <DetailField label="Internet-facing">{yesNo(asset.isInternetAccessible)}</DetailField>
-        <DetailField label="Network exposure">
+        <DetailField label={t('assets.overview2.internetFacing', 'Internet-facing')}>
+          {yesNo(asset.isInternetAccessible, t)}
+        </DetailField>
+        <DetailField label={t('assets.overview2.networkExposure', 'Network exposure')}>
           {asset.exposure ? humanize(asset.exposure) : undefined}
         </DetailField>
-        <DetailField label="Control plane">
-          {isControlPlane ? 'Yes, other assets depend on it for security' : undefined}
+        <DetailField label={t('assets.overview2.controlPlane', 'Control plane')}>
+          {isControlPlane
+            ? t('assets.overview2.controlPlaneYes', 'Yes, other assets depend on it for security')
+            : undefined}
         </DetailField>
-        <DetailField label="Crown jewel">{asset.isCrownJewel ? 'Yes' : undefined}</DetailField>
+        <DetailField label={t('assets.overview2.crownJewel', 'Crown jewel')}>
+          {asset.isCrownJewel ? t('assets.overview2.yes', 'Yes') : undefined}
+        </DetailField>
         <DetailField label={t('assets.programTarget.field', 'Bug-bounty program')}>
           {asset.systemTags?.includes('bug-bounty') ? (
             <ProgramTargetBadge systemTags={asset.systemTags} programOnly={asset.programOnly} />
           ) : undefined}
         </DetailField>
-        <DetailField label="Data classification">
+        <DetailField label={t('assets.overview2.dataClass', 'Data classification')}>
           {asset.dataClassification ? humanize(asset.dataClassification) : undefined}
         </DetailField>
-        <DetailField label="Sensitive data exposed">
+        <DetailField label={t('assets.overview2.sensitive', 'Sensitive data exposed')}>
           {sensitivityKnown
             ? sensitive.length
               ? sensitive.join(', ')
-              : 'None flagged'
+              : t('assets.overview2.noneFlagged', 'None flagged')
             : undefined}
         </DetailField>
-        <DetailField label="Compliance scope" full>
+        <DetailField label={t('assets.overview2.compliance', 'Compliance scope')} full>
           {asset.complianceScope?.length ? (
             <span className="flex flex-wrap gap-1">
               {asset.complianceScope.map((c) => (
@@ -231,33 +262,40 @@ export function ExposureSection({ asset, isControlPlane }: ExposureSectionProps)
 
 /** Where the asset came from and how fresh the observation is. */
 export function DiscoverySection({ asset }: { asset: Asset }) {
+  const { t } = useTranslation()
   const staleDays = daysSince(asset.lastSeen)
   const isStale = staleDays !== undefined && staleDays >= STALE_AFTER_DAYS
 
   return (
-    <DetailSection title="Discovery" icon={Radar}>
+    <DetailSection title={t('assets.overview2.discovery', 'Discovery')} icon={Radar}>
       <DetailFieldGrid>
-        <DetailField label="Source">
+        <DetailField label={t('assets.overview2.source', 'Source')}>
           {asset.discoverySource ? humanize(asset.discoverySource) : undefined}
         </DetailField>
-        <DetailField label="Discovered by">{asset.discoveryTool}</DetailField>
-        <DetailField label="First seen">
+        <DetailField label={t('assets.overview2.discoveredBy', 'Discovered by')}>
+          {asset.discoveryTool}
+        </DetailField>
+        <DetailField label={t('assets.overview2.firstSeen', 'First seen')}>
           <DateWithRelative iso={asset.firstSeen || asset.discoveredAt} />
         </DetailField>
-        <DetailField label="Last seen">
+        <DetailField label={t('components.col.lastSeen', 'Last seen')}>
           <DateWithRelative iso={asset.lastSeen} />
         </DetailField>
-        <DetailField label="Sync status">
+        <DetailField label={t('assets.overview2.syncStatus', 'Sync status')}>
           {asset.syncStatus ? humanize(asset.syncStatus) : undefined}
         </DetailField>
-        <DetailField label="Last synced">
+        <DetailField label={t('assets.overview2.lastSynced', 'Last synced')}>
           {asset.lastSyncedAt ? <DateWithRelative iso={asset.lastSyncedAt} /> : undefined}
         </DetailField>
       </DetailFieldGrid>
       {isStale && (
         <p className="mt-3 flex items-center gap-2 text-sm text-warning">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Not observed for {staleDays} days. Its findings may be out of date; rescan to confirm.
+          {t(
+            'assets.overview2.stale',
+            'Not observed for {days} days. Its findings may be out of date; rescan to confirm.',
+            { days: staleDays }
+          )}
         </p>
       )}
     </DetailSection>

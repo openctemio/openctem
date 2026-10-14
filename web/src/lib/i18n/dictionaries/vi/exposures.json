@@ -1,0 +1,19 @@
+{
+  "exposures.disposition.requestSent": "Đã gửi yêu cầu. Cần một người phê duyệt thứ hai xác nhận trước khi trạng thái thay đổi.",
+  "exposures.disposition.bulkPending": "{count} phơi nhiễm mức cao hoặc nghiêm trọng đang chờ người phê duyệt thứ hai.",
+  "exposures.disposition.title": "Đang chờ người phê duyệt thứ hai",
+  "exposures.disposition.requestedAccept": "Đã yêu cầu chấp nhận rủi ro",
+  "exposures.disposition.requestedFalsePositive": "Đã yêu cầu đánh dấu dương tính giả",
+  "exposures.disposition.byYou": "bởi bạn",
+  "exposures.disposition.byOther": "bởi một người phê duyệt khác",
+  "exposures.disposition.reason": "Lý do:",
+  "exposures.disposition.approve": "Phê duyệt",
+  "exposures.disposition.reject": "Từ chối",
+  "exposures.disposition.cancel": "Hủy yêu cầu",
+  "exposures.disposition.ownHint": "Một người phê duyệt khác phải xác nhận yêu cầu của bạn.",
+  "exposures.disposition.approved": "Đã phê duyệt",
+  "exposures.disposition.rejected": "Đã từ chối yêu cầu",
+  "exposures.disposition.canceled": "Đã hủy yêu cầu",
+  "exposures.disposition.failed": "Không thể cập nhật yêu cầu",
+  "exposures.disposition.badge": "Chờ phê duyệt"
+}

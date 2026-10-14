@@ -19,25 +19,32 @@
 # The newest released vX.Y.Z tag of this repository (API + web share it); on
 # release/vX.Y.Z, that vX.Y.Z.
 platform:
-  release: v0.9.5
+  release: v0.9.6
 
 # Sensor (openctemio/sensor). latest: the install snippets pin this image tag
 # and the Sensors page shows "update available" below it. min: a sensor below it
 # is degraded ("version unsupported"); "" = no minimum.
 sensor:
-  latest: v0.21.1
+  latest: v0.22.2
   min: v0.9.0
 
 # SDK (openctemio/sdk-go) a sensor is built with. latest: older is "outdated".
 # min: older is degraded ("SDK below minimum"); "" = no minimum.
 sdk:
-  latest: v0.31.0
+  latest: v0.32.0
   min: ""
+
+# CI runner (openctemio/ci: the openctem-ci action, image and templates). Its
+# own release line, separate from the sensor's. latest: the console's pipeline
+# snippets pin this release and older runners show "update available". min: the
+# token exchange refuses an older runner and its pipeline is degraded; "" = no
+# minimum.
+ci:
+  latest: v0.3.0
+  min: v0.3.0
 
 # Helm chart (openctemio/helm-charts): the newest published chart whose
 # appVersion is platform.release. The chart is published after the tag, so a
 # tag still names the previous chart; the develop follow-up sets this one.
-# Charts 0.5.0 to 0.10.0 target v0.9.0, which is not tagged yet; v0.8.0
-# deploys with chart 0.4.1.
 chart:
-  version: 0.4.1
+  version: 0.23.3

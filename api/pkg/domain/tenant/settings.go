@@ -47,6 +47,19 @@ type Settings struct {
 	ScanGovernance ScanGovernanceSettings `json:"scan_governance,omitempty"`
 	// Cycles is the CTEM cycle policy.
 	Cycles CycleSettings `json:"cycles,omitempty"`
+	// FindingCorrelation switches cross-rule finding correlation
+	// (research/134 section 12). Both tiers are on unless turned off.
+	FindingCorrelation FindingCorrelationSettings `json:"finding_correlation,omitempty"`
+}
+
+// FindingCorrelationSettings are the per-organization kill switches of
+// cross-rule finding correlation.
+type FindingCorrelationSettings struct {
+	// AutoDisabled stops automatic correlation (no finding becomes a
+	// correlated duplicate; existing ones are released on the next scan).
+	AutoDisabled bool `json:"auto_disabled,omitempty"`
+	// SuggestionsDisabled stops "possibly related" suggestions.
+	SuggestionsDisabled bool `json:"suggestions_disabled,omitempty"`
 }
 
 // AssetIdentitySettings controls asset dedup behavior per tenant.
@@ -1141,6 +1154,13 @@ func (t *Tenant) UpdatePentestSettings(ps PentestSettings) error {
 	}
 	settings := t.TypedSettings()
 	settings.Pentest = ps
+	return t.UpdateSettings(settings)
+}
+
+// UpdateFindingCorrelationSettings updates only the correlation switches.
+func (t *Tenant) UpdateFindingCorrelationSettings(fc FindingCorrelationSettings) error {
+	settings := t.TypedSettings()
+	settings.FindingCorrelation = fc
 	return t.UpdateSettings(settings)
 }
 

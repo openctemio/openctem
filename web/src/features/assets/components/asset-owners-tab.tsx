@@ -156,9 +156,10 @@ function OwnerCard({
   onEdit: (owner: AssetOwner) => void
   onRemove: (owner: AssetOwner) => void
 }) {
+  const { t } = useTranslation()
   const isUser = !!owner.userId
   const name = isUser ? owner.userName : owner.groupName
-  const subtitle = isUser ? owner.userEmail : 'Group'
+  const subtitle = isUser ? owner.userEmail : t('assets.ownersTab.group', 'Group')
 
   return (
     <div className="flex items-center justify-between rounded-lg border p-3">
@@ -173,17 +174,27 @@ function OwnerCard({
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{name || 'Unknown'}</span>
+            <span className="text-sm font-medium">
+              {name || t('assets.ownersTab.unknown', 'Unknown')}
+            </span>
             <OwnershipBadge type={owner.ownershipType} />
           </div>
           {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
           {owner.assignmentSource === 'owner_ref' ? (
-            <p className="text-xs text-muted-foreground">Matched from the owner reference</p>
+            <p className="text-xs text-muted-foreground">
+              {t('assets.ownersTab.fromRef', 'Matched from the owner reference')}
+            </p>
           ) : owner.assignmentSource === 'scope_rule' ? (
-            <p className="text-xs text-muted-foreground">Assigned by a scope rule</p>
+            <p className="text-xs text-muted-foreground">
+              {t('assets.ownersTab.byRule', 'Assigned by a scope rule')}
+            </p>
           ) : (
             owner.assignedByName && (
-              <p className="text-xs text-muted-foreground">Assigned by {owner.assignedByName}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('assets.ownersTab.assignedBy', 'Assigned by {name}', {
+                  name: owner.assignedByName,
+                })}
+              </p>
             )
           )}
         </div>
@@ -388,7 +399,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
 
   const handleAdd = async () => {
     if (!selectedOption) {
-      toast.error('Please select a user or group')
+      toast.error(t('assets.ownersTab.selectFirst', 'Please select a user or group'))
       return
     }
     setIsSubmitting(true)
@@ -399,7 +410,10 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
         ownershipType: addOwnershipType,
       })
       toast.success(
-        `${selectedOption.label} added as ${OWNERSHIP_TYPE_LABELS[addOwnershipType].toLowerCase()} owner`
+        t('assets.ownersTab.added', '{name} added as {role} owner', {
+          name: selectedOption.label,
+          role: OWNERSHIP_TYPE_LABELS[addOwnershipType].toLowerCase(),
+        })
       )
       setShowAddDialog(false)
       resetAddForm()
@@ -411,15 +425,23 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
       // 400 Bad Request for invalid IDs, 403 for permission, etc.
       // Special-case the duplicate to give the user an actionable hint
       // (suggest editing the existing owner instead).
-      const message = getErrorMessage(error, 'Failed to add owner')
+      const message = getErrorMessage(error, t('assets.ownersTab.addFailed', 'Failed to add owner'))
       const isDuplicate =
         message.toLowerCase().includes('already') ||
         message.toLowerCase().includes('duplicate') ||
         message.toLowerCase().includes('conflict')
       if (isDuplicate) {
-        toast.error(`${selectedOption.label} is already an owner of this asset`, {
-          description: 'To change their role, edit the existing owner instead.',
-        })
+        toast.error(
+          t('assets.ownersTab.duplicate', '{name} is already an owner of this asset', {
+            name: selectedOption.label,
+          }),
+          {
+            description: t(
+              'assets.ownersTab.duplicateHint',
+              'To change their role, edit the existing owner instead.'
+            ),
+          }
+        )
       } else {
         toast.error(message)
       }
@@ -435,11 +457,13 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
       await updateAssetOwner(assetId, editOwner.id, {
         ownershipType: editOwnershipType,
       })
-      toast.success('Owner updated successfully')
+      toast.success(t('assets.ownersTab.updated', 'Owner updated successfully'))
       setEditOwner(null)
       mutate()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update owner'))
+      toast.error(
+        getErrorMessage(error, t('assets.ownersTab.updateFailed', 'Failed to update owner'))
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -450,11 +474,13 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
     setIsSubmitting(true)
     try {
       await removeAssetOwner(assetId, removeOwnerTarget.id)
-      toast.success('Owner removed successfully')
+      toast.success(t('assets.ownersTab.removed', 'Owner removed successfully'))
       setRemoveOwnerTarget(null)
       mutate()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to remove owner'))
+      toast.error(
+        getErrorMessage(error, t('assets.ownersTab.removeFailed', 'Failed to remove owner'))
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -477,29 +503,37 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium">Owners ({isLoading ? '…' : owners.length})</h3>
+          <h3 className="text-sm font-medium">
+            {t('assets.ownersTab.heading', 'Owners ({count})', {
+              count: isLoading ? '…' : owners.length,
+            })}
+          </h3>
         </div>
         {canEdit && (
           <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
             <UserPlus className="me-1.5 h-3.5 w-3.5" />
-            Add Owner
+            {t('assets.ownersTab.addOwner', 'Add Owner')}
           </Button>
         )}
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Owners are accountable for the asset and are assigned its findings. Being an owner does not
-        let someone see the asset: access comes from groups and the direct access grants below.
+        {t(
+          'assets.ownersTab.intro',
+          'Owners are accountable for the asset and are assigned its findings. Being an owner does not let someone see the asset: access comes from groups and the direct access grants below.'
+        )}
       </p>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-          Loading owners...
+          {t('assets.ownersTab.loading', 'Loading owners...')}
         </div>
       ) : owners.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8">
           <Users className="h-8 w-8 text-muted-foreground/50" />
-          <p className="mt-2 text-sm text-muted-foreground">No owners assigned</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t('assets.ownersTab.none', 'No owners assigned')}
+          </p>
           {canEdit && (
             <Button
               variant="outline"
@@ -508,7 +542,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
               onClick={() => setShowAddDialog(true)}
             >
               <UserPlus className="me-1.5 h-3.5 w-3.5" />
-              Add First Owner
+              {t('assets.ownersTab.addFirst', 'Add First Owner')}
             </Button>
           )}
         </div>
@@ -526,7 +560,10 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 <Input
                   value={ownerSearch}
                   onChange={(e) => setOwnerSearch(e.target.value)}
-                  placeholder="Search owners by name, email, or group…"
+                  placeholder={t(
+                    'assets.ownersTab.search',
+                    'Search owners by name, email, or group…'
+                  )}
                   className="ps-8 h-8 text-sm"
                 />
                 {ownerSearch && (
@@ -534,7 +571,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                     type="button"
                     onClick={() => setOwnerSearch('')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label="Clear search"
+                    aria-label={t('assets.ownersTab.clearSearch', 'Clear search')}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -542,7 +579,10 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
               </div>
               {ownerSearch && (
                 <p className="text-xs text-muted-foreground">
-                  Showing {visibleOwners.length} of {owners.length}
+                  {t('assets.ownersTab.showing', 'Showing {shown} of {total}', {
+                    shown: visibleOwners.length,
+                    total: owners.length,
+                  })}
                 </p>
               )}
             </div>
@@ -558,7 +598,9 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           <div className="max-h-[480px] overflow-y-auto pe-1 space-y-2">
             {visibleOwners.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                No owners match &ldquo;{ownerSearch}&rdquo;.
+                {t('assets.ownersTab.noMatch', 'No owners match “{query}”.', {
+                  query: ownerSearch,
+                })}
               </p>
             ) : (
               visibleOwners.map((owner) => (
@@ -600,10 +642,12 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Add Owner</DialogTitle>
+            <DialogTitle>{t('assets.ownersTab.addOwner', 'Add Owner')}</DialogTitle>
             <DialogDescription>
-              Assign a user or group to be responsible for this asset. A group owner&rsquo;s members
-              can see the asset; a user owner gains no access.
+              {t(
+                'assets.ownersTab.addDesc',
+                'Assign a user or group to be responsible for this asset. A group owner’s members can see the asset; a user owner gains no access.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -614,7 +658,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 kept missing, leading them to believe only groups were
                 assignable. */}
               <div className="space-y-2">
-                <Label>Owner</Label>
+                <Label>{t('assets.ownersTab.owner', 'Owner')}</Label>
                 <Popover
                   open={pickerOpen}
                   onOpenChange={(open) => {
@@ -649,7 +693,9 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                             <span className="truncate">{selectedOption.label}</span>
                           </>
                         ) : (
-                          <span className="text-muted-foreground">Select a user or group…</span>
+                          <span className="text-muted-foreground">
+                            {t('assets.ownersTab.pick', 'Select a user or group…')}
+                          </span>
                         )}
                       </span>
                       <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
@@ -679,20 +725,30 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                       <CommandInput
                         value={searchValue}
                         onValueChange={setSearchValue}
-                        placeholder="Search by name, email, or group…"
+                        placeholder={t(
+                          'assets.ownersTab.pickerSearch',
+                          'Search by name, email, or group…'
+                        )}
                       />
                       <CommandList>
                         {pickerLoading ? (
                           <div className="py-6 text-center text-sm text-muted-foreground">
-                            Loading…
+                            {t('common.loading', 'Loading…')}
                           </div>
                         ) : totalOptions === 0 ? (
                           <CommandEmpty>
                             <div className="space-y-1">
                               <p>
                                 {debouncedSearch
-                                  ? `No users or groups match "${debouncedSearch}".`
-                                  : 'No users or groups available.'}
+                                  ? t(
+                                      'assets.ownersTab.pickerNoMatch',
+                                      'No users or groups match "{query}".',
+                                      { query: debouncedSearch }
+                                    )
+                                  : t(
+                                      'assets.ownersTab.pickerNone',
+                                      'No users or groups available.'
+                                    )}
                               </p>
                               {/* Tell the user *why* the picker may be empty
                                 when the only reason is "everything is
@@ -710,7 +766,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                         ) : (
                           <>
                             {userOptions.length > 0 && (
-                              <CommandGroup heading="Users">
+                              <CommandGroup heading={t('assets.ownersTab.users', 'Users')}>
                                 {userOptions.map((option) => (
                                   <PickerItemRow
                                     key={`user:${option.id}`}
@@ -729,7 +785,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                               </CommandGroup>
                             )}
                             {groupOptions.length > 0 && (
-                              <CommandGroup heading="Groups">
+                              <CommandGroup heading={t('assets.ownersTab.groups', 'Groups')}>
                                 {groupOptions.map((option) => (
                                   <PickerItemRow
                                     key={`group:${option.id}`}
@@ -752,7 +808,11 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                             {(userOptions.length >= PICKER_PAGE_SIZE ||
                               groupOptions.length >= PICKER_PAGE_SIZE) && (
                               <div className="border-t px-3 py-2 text-[11px] text-muted-foreground text-center">
-                                Showing first {PICKER_PAGE_SIZE} per section — type to refine
+                                {t(
+                                  'assets.ownersTab.capped',
+                                  'Showing first {count} per section — type to refine',
+                                  { count: PICKER_PAGE_SIZE }
+                                )}
                               </div>
                             )}
                           </>
@@ -778,7 +838,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 render it inside the trigger AS WELL, creating a 2-line
                 trigger and a duplicate of the helper text. */}
               <div className="space-y-2">
-                <Label>Ownership Role</Label>
+                <Label>{t('assets.ownersTab.role', 'Ownership Role')}</Label>
                 <Select
                   value={addOwnershipType}
                   onValueChange={(v) => setAddOwnershipType(v as OwnershipType)}
@@ -810,10 +870,12 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 resetAddForm()
               }}
             >
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleAdd} disabled={isSubmitting || !selectedOption}>
-              {isSubmitting ? 'Adding...' : 'Add Owner'}
+              {isSubmitting
+                ? t('assets.ownersTab.adding', 'Adding...')
+                : t('assets.ownersTab.addOwner', 'Add Owner')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -826,15 +888,19 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Edit Ownership Type</DialogTitle>
+            <DialogTitle>{t('assets.ownersTab.editTitle', 'Edit Ownership Type')}</DialogTitle>
             <DialogDescription>
-              Change the ownership type for{' '}
-              {editOwner?.userName || editOwner?.groupName || 'this owner'}.
+              {t('assets.ownersTab.editDesc', 'Change the ownership type for {name}.', {
+                name:
+                  editOwner?.userName ||
+                  editOwner?.groupName ||
+                  t('assets.ownersTab.thisOwner', 'this owner'),
+              })}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-2">
-              <Label>Ownership Type</Label>
+              <Label>{t('assets.ownersTab.type', 'Ownership Type')}</Label>
               <Select
                 value={editOwnershipType}
                 onValueChange={(v) => setEditOwnershipType(v as OwnershipType)}
@@ -854,10 +920,10 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOwner(null)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleEdit} disabled={isSubmitting}>
-              {isSubmitting ? 'Saving...' : 'Save'}
+              {isSubmitting ? t('assets.ownersTab.saving', 'Saving...') : t('common.save', 'Save')}
             </Button>
           </DialogFooter>
         </DialogContent>

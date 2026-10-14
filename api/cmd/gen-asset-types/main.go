@@ -36,7 +36,9 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -307,14 +309,34 @@ type typeCfg struct {
 	// ExposureDefault is the exposure an asset has by nature (domains and
 	// web applications are internet-facing); ingest applies it when the
 	// scanner sent none. "" = no default.
-	ExposureDefault string    `yaml:"exposure_default"`
-	LegacyCategory  string    `yaml:"legacy_category"`
-	Storage         string    `yaml:"storage"`
-	IdentityKeys    []string  `yaml:"identity_keys"`
-	Attributes      []attrCfg `yaml:"attributes"`
-	Columns         []string  `yaml:"columns"`
-	Card            string    `yaml:"card"`
-	Sections        []string  `yaml:"sections"`
+	ExposureDefault string `yaml:"exposure_default"`
+	// Coverage lists the capabilities an asset of the type needs and how
+	// often (the asset coverage ledger, RFC-093). On an alias it is the
+	// sub-type's own list; an alias without one inherits nothing.
+	Coverage       []coverageCfg `yaml:"coverage"`
+	LegacyCategory string        `yaml:"legacy_category"`
+	Storage        string        `yaml:"storage"`
+	IdentityKeys   []string      `yaml:"identity_keys"`
+	Attributes     []attrCfg     `yaml:"attributes"`
+	Columns        []string      `yaml:"columns"`
+	Card           string        `yaml:"card"`
+	Sections       []string      `yaml:"sections"`
+}
+
+// coverageCfg is one coverage rule as written in the YAML.
+type coverageCfg struct {
+	Capability string   `yaml:"capability"`
+	Every      string   `yaml:"every"`
+	Requires   []string `yaml:"requires"`
+	Expects    string   `yaml:"expects"`
+}
+
+// coverageOut is one resolved coverage rule.
+type coverageOut struct {
+	Capability   string   `json:"capability"`
+	EverySeconds int      `json:"every_seconds"`
+	Requires     []string `json:"requires,omitempty"`
+	Expects      string   `json:"expects,omitempty"`
 }
 
 type relConfig struct {
@@ -386,26 +408,27 @@ type inputOut struct {
 }
 
 type typeOut struct {
-	Type            string    `json:"type"`
-	Label           string    `json:"label"`
-	Plural          string    `json:"plural"`
-	Icon            string    `json:"icon"`
-	Class           string    `json:"class"`
-	Lens            string    `json:"lens,omitempty"`
-	AliasOf         *typeRef  `json:"alias_of,omitempty"`
-	SubTypes        []string  `json:"sub_types"`
-	LegacyCategory  string    `json:"legacy_category"`
-	Storage         string    `json:"storage"`
-	IdentityKeys    []string  `json:"identity_keys"`
-	Attributes      []attrCfg `json:"attributes"`
-	Facets          []string  `json:"facets"`
-	GroupBy         []string  `json:"group_by"`
-	Columns         []string  `json:"columns"`
-	Card            string    `json:"card"`
-	Sections        []string  `json:"sections"`
-	Relationships   typeRels  `json:"relationships"`
-	ScannableBy     []string  `json:"scannable_by"`
-	ExposureDefault string    `json:"exposure_default,omitempty"`
+	Type            string        `json:"type"`
+	Label           string        `json:"label"`
+	Plural          string        `json:"plural"`
+	Icon            string        `json:"icon"`
+	Class           string        `json:"class"`
+	Lens            string        `json:"lens,omitempty"`
+	AliasOf         *typeRef      `json:"alias_of,omitempty"`
+	SubTypes        []string      `json:"sub_types"`
+	LegacyCategory  string        `json:"legacy_category"`
+	Storage         string        `json:"storage"`
+	IdentityKeys    []string      `json:"identity_keys"`
+	Attributes      []attrCfg     `json:"attributes"`
+	Facets          []string      `json:"facets"`
+	GroupBy         []string      `json:"group_by"`
+	Columns         []string      `json:"columns"`
+	Card            string        `json:"card"`
+	Sections        []string      `json:"sections"`
+	Relationships   typeRels      `json:"relationships"`
+	ScannableBy     []string      `json:"scannable_by"`
+	ExposureDefault string        `json:"exposure_default,omitempty"`
+	Coverage        []coverageOut `json:"coverage,omitempty"`
 }
 
 // =============================================================================
@@ -686,6 +709,10 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 		if t.ExposureDefault != "" && !knownExposures[t.ExposureDefault] {
 			return nil, fmt.Errorf("%s: exposure_default %q is not an exposure", where, t.ExposureDefault)
 		}
+		coverage, err := resolveCoverage(where, t.Coverage, byType)
+		if err != nil {
+			return nil, err
+		}
 		storage := t.Storage
 		if storage == "" {
 			storage = "core"
@@ -698,6 +725,7 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 			Facets: nonNil(facets), GroupBy: nonNil(groupBy),
 			Columns: t.Columns, Card: t.Card, Sections: t.Sections,
 			ScannableBy: nonNil(t.ScannableBy), ExposureDefault: t.ExposureDefault,
+			Coverage: coverage,
 		}
 		m.Types = append(m.Types, out)
 		classTypes[t.Class] = append(classTypes[t.Class], t.Type)
@@ -742,6 +770,73 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 	sum := sha256.Sum256(raw)
 	m.Version = hex.EncodeToString(sum[:8])
 	return m, nil
+}
+
+// Coverage rule bounds and vocabulary. A capability is "<verb>.<object>"
+// (the stage catalog, plus the platform's own checks); the stage catalog
+// test in pkg/domain/coverage proves each rule names a capability that
+// takes the type. Requires is a closed set of predicates over stored facts.
+var (
+	capabilityRe      = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
+	coverageRequires  = map[string]bool{"resolves": true, "web_port": true, "scope_entry": true}
+	minCoverageEvery  = time.Hour
+	maxCoverageEvery  = 30 * 24 * time.Hour
+	coverageEveryUnit = regexp.MustCompile(`^([1-9][0-9]{0,3})([hd])$`)
+)
+
+// parseEvery reads a cadence written as "<n>h" or "<n>d".
+func parseEvery(s string) (time.Duration, error) {
+	m := coverageEveryUnit.FindStringSubmatch(s)
+	if m == nil {
+		return 0, fmt.Errorf("every %q is not <n>h or <n>d", s)
+	}
+	n, _ := strconv.Atoi(m[1])
+	d := time.Duration(n) * time.Hour
+	if m[2] == "d" {
+		d *= 24
+	}
+	if d < minCoverageEvery || d > maxCoverageEvery {
+		return 0, fmt.Errorf("every %q is outside [1h, 30d]", s)
+	}
+	return d, nil
+}
+
+// resolveCoverage validates a type's coverage rules.
+func resolveCoverage(where string, rules []coverageCfg, byType map[string]*typeCfg) ([]coverageOut, error) {
+	if len(rules) == 0 {
+		return nil, nil
+	}
+	out := make([]coverageOut, 0, len(rules))
+	seen := map[string]bool{}
+	for _, r := range rules {
+		if !capabilityRe.MatchString(r.Capability) {
+			return nil, fmt.Errorf("%s: coverage capability %q is not <verb>.<object>", where, r.Capability)
+		}
+		if seen[r.Capability] {
+			return nil, fmt.Errorf("%s: coverage capability %q is listed twice", where, r.Capability)
+		}
+		seen[r.Capability] = true
+		every, err := parseEvery(r.Every)
+		if err != nil {
+			return nil, fmt.Errorf("%s: coverage %s: %w", where, r.Capability, err)
+		}
+		if err := dup(where+" coverage "+r.Capability+" requires", r.Requires); err != nil {
+			return nil, err
+		}
+		for _, q := range r.Requires {
+			if !coverageRequires[q] {
+				return nil, fmt.Errorf("%s: coverage %s requires %q is not a known predicate", where, r.Capability, q)
+			}
+		}
+		if r.Expects != "" && byType[r.Expects] == nil {
+			return nil, fmt.Errorf("%s: coverage %s expects %q is not a type", where, r.Capability, r.Expects)
+		}
+		out = append(out, coverageOut{
+			Capability: r.Capability, EverySeconds: int(every / time.Second),
+			Requires: r.Requires, Expects: r.Expects,
+		})
+	}
+	return out, nil
 }
 
 // propertyFormats are the display formats a property may declare.
@@ -1311,6 +1406,20 @@ func renderGo(m *model) ([]byte, error) {
 		w("ScannableBy: %s,\n", goStrings(t.ScannableBy))
 		if t.ExposureDefault != "" {
 			w("ExposureDefault: %q,\n", t.ExposureDefault)
+		}
+		if len(t.Coverage) > 0 {
+			w("Coverage: []CoverageRule{\n")
+			for _, c := range t.Coverage {
+				w("{Capability: %q, EverySeconds: %d", c.Capability, c.EverySeconds)
+				if len(c.Requires) > 0 {
+					w(", Requires: %s", goStrings(c.Requires))
+				}
+				if c.Expects != "" {
+					w(", Expects: %q", c.Expects)
+				}
+				w("},\n")
+			}
+			w("},\n")
 		}
 		w("},\n")
 	}

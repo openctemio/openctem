@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 
@@ -35,11 +36,21 @@ type ExposureService struct {
 	// dataScope narrows reads and by-id writes to the caller's Layer 2 data
 	// scope (nil = unrestricted).
 	dataScope *datascope.Enforcer
-	logger    *logger.Logger
+	// dispositions is the four-eyes rule for accepting or dismissing a high
+	// or critical exposure. nil = one step (unwired tests only).
+	dispositions *DispositionGate
+	logger       *logger.Logger
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.
 func (s *ExposureService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+// SetDispositionGate wires the four-eyes rule for dispositions.
+func (s *ExposureService) SetDispositionGate(g *DispositionGate) { s.dispositions = g }
+
+// ExposureApproverPermissions are the permissions the exposure accept and
+// false-positive routes require; a second approver holds both.
+var ExposureApproverPermissions = []string{"findings:approve", "exposures:triage"}
 
 // ErrExposureAssetNotFound is the one answer for an asset id a caller asks to
 // write onto an exposure that is unknown, soft-deleted, of another tenant, or
@@ -645,14 +656,136 @@ func (s *ExposureService) ResolveExposure(ctx context.Context, tenantID, exposur
 	return s.changeState(ctx, tenantID, exposureID, userID, exposuredom.StateResolved, notes)
 }
 
-// AcceptExposure marks an exposure event as accepted risk.
+// AcceptExposure marks an exposure event as accepted risk (through the
+// four-eyes rule for high and critical exposures; see RequestDisposition).
 func (s *ExposureService) AcceptExposure(ctx context.Context, tenantID, exposureID, userID, notes string) (*exposuredom.ExposureEvent, error) {
-	return s.changeState(ctx, tenantID, exposureID, userID, exposuredom.StateAccepted, notes)
+	out, err := s.RequestDisposition(ctx, DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
+		State: exposuredom.StateAccepted, Reason: notes})
+	if err != nil {
+		return nil, err
+	}
+	return out.Event, nil
 }
 
-// MarkFalsePositive marks an exposure event as a false positive.
+// MarkFalsePositive marks an exposure event as a false positive (through the
+// four-eyes rule for high and critical exposures).
 func (s *ExposureService) MarkFalsePositive(ctx context.Context, tenantID, exposureID, userID, notes string) (*exposuredom.ExposureEvent, error) {
-	return s.changeState(ctx, tenantID, exposureID, userID, exposuredom.StateFalsePositive, notes)
+	out, err := s.RequestDisposition(ctx, DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
+		State: exposuredom.StateFalsePositive, Reason: notes})
+	if err != nil {
+		return nil, err
+	}
+	return out.Event, nil
+}
+
+// DispositionCall is one approver's accept or false-positive call.
+type DispositionCall struct {
+	TenantID   string
+	ExposureID string
+	UserID     string
+	State      exposuredom.State
+	Reason     string
+	Audit      auditapp.AuditContext
+}
+
+// DispositionOutcome is the exposure after the call and, for a high or
+// critical exposure, the request it created (pending) or approved.
+type DispositionOutcome struct {
+	Event        *exposuredom.ExposureEvent
+	Request      *exposuredom.DispositionRequest
+	Pending      bool
+	SelfApproved bool
+}
+
+// RequestDisposition accepts the risk of, or marks a false positive, an
+// exposure. A high or critical exposure needs two approvers: the first call
+// stores a pending request and leaves the exposure as it is; a different
+// approver's call for the same disposition applies it.
+func (s *ExposureService) RequestDisposition(ctx context.Context, in DispositionCall) (*DispositionOutcome, error) {
+	if !exposuredom.IsGatedState(in.State) {
+		return nil, fmt.Errorf("%w: invalid state transition", shared.ErrValidation)
+	}
+	return s.changeStateGated(ctx, in)
+}
+
+// RejectDisposition rejects (or, for the requester, cancels) the pending
+// disposition request of an exposure in the caller's tenant and data scope.
+func (s *ExposureService) RejectDisposition(ctx context.Context, in DispositionCall) (*DispositionOutcome, error) {
+	if s.dispositions == nil {
+		return nil, exposuredom.ErrNoPendingDisposition
+	}
+	tenantID, event, actor, err := s.loadForDisposition(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	req, err := s.dispositions.Reject(ctx, DispositionInput{TenantID: tenantID, Event: event, ActorID: actor,
+		Reason: in.Reason, Audit: in.Audit})
+	if err != nil {
+		return nil, err
+	}
+	return &DispositionOutcome{Event: event, Request: req}, nil
+}
+
+// PendingDispositions returns the pending requests of the given exposures
+// (all in tenantID). Empty when the gate is not wired.
+func (s *ExposureService) PendingDispositions(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]*exposuredom.DispositionRequest, error) {
+	if s.dispositions == nil || len(ids) == 0 {
+		return map[shared.ID]*exposuredom.DispositionRequest{}, nil
+	}
+	return s.dispositions.Pending(ctx, tenantID, ids)
+}
+
+// loadForDisposition loads an exposure in the caller's tenant and scope.
+func (s *ExposureService) loadForDisposition(ctx context.Context, in DispositionCall) (shared.ID, *exposuredom.ExposureEvent, shared.ID, error) {
+	tenantID, err := shared.IDFromString(in.TenantID)
+	if err != nil {
+		return shared.ID{}, nil, shared.ID{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	eventID, err := shared.IDFromString(in.ExposureID)
+	if err != nil {
+		return shared.ID{}, nil, shared.ID{}, shared.ErrNotFound
+	}
+	actor, err := shared.IDFromString(in.UserID)
+	if err != nil {
+		return shared.ID{}, nil, shared.ID{}, fmt.Errorf("%w: invalid user ID", shared.ErrValidation)
+	}
+	event, err := s.repo.GetByTenantAndID(ctx, tenantID, eventID)
+	if err != nil {
+		return shared.ID{}, nil, shared.ID{}, err
+	}
+	if err := s.assertExposureScope(ctx, tenantID, event); err != nil {
+		return shared.ID{}, nil, shared.ID{}, err
+	}
+	return tenantID, event, actor, nil
+}
+
+func (s *ExposureService) changeStateGated(ctx context.Context, in DispositionCall) (*DispositionOutcome, error) {
+	tenantID, event, actor, err := s.loadForDisposition(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	decision := DispositionDecision{Apply: true, Notes: in.Reason}
+	if s.dispositions != nil {
+		decision, err = s.dispositions.Decide(ctx, DispositionInput{TenantID: tenantID, Event: event, ActorID: actor,
+			State: in.State, Reason: in.Reason, ApproverPermissions: ExposureApproverPermissions, Audit: in.Audit})
+		if err != nil {
+			return nil, err
+		}
+	}
+	out := &DispositionOutcome{Event: event, Request: decision.Request, SelfApproved: decision.SelfApproved}
+	if !decision.Apply {
+		out.Pending = true
+		return out, nil
+	}
+	applied, err := s.applyState(ctx, event, actor, in.State, decision.Notes)
+	if err != nil {
+		if s.dispositions != nil {
+			s.dispositions.Undo(ctx, decision)
+		}
+		return nil, err
+	}
+	out.Event = applied
+	return out, nil
 }
 
 // ReactivateExposure marks an exposure event as active again. tenantID
@@ -730,6 +863,12 @@ func (s *ExposureService) changeState(ctx context.Context, tenantID, exposureID,
 		return nil, err
 	}
 
+	return s.applyState(ctx, event, parsedUserID, newState, notes)
+}
+
+// applyState sets the state on a loaded, tenant- and scope-checked exposure
+// and records the history.
+func (s *ExposureService) applyState(ctx context.Context, event *exposuredom.ExposureEvent, parsedUserID shared.ID, newState exposuredom.State, notes string) (*exposuredom.ExposureEvent, error) {
 	previousState := event.State()
 
 	switch newState {
@@ -785,53 +924,41 @@ func (s *ExposureService) GetStateHistory(ctx context.Context, tenantID, exposur
 	return s.historyRepo.ListByExposureEvent(ctx, parsedID)
 }
 
-// GetExposureStats returns statistics for a tenant.
+// GetExposureStats returns the stats card numbers for the exposures the caller
+// may list: the tenant's, narrowed to the caller's data scope. A restricted
+// member never learns how many exposures exist outside their scope.
 func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string) (map[string]any, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-
-	byState, err := s.repo.CountByState(ctx, parsedTenantID)
+	filter := exposuredom.NewFilter().WithTenantID(parsedTenantID.String())
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get state counts: %w", err)
+		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
+	filter.DataScope = scope
 
-	bySeverity, err := s.repo.CountBySeverity(ctx, parsedTenantID)
+	st, err := s.repo.Stats(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get severity counts: %w", err)
+		return nil, fmt.Errorf("failed to get exposure stats: %w", err)
 	}
-
-	stateMap := make(map[string]int64)
 	var total int64
-	for k, v := range byState {
-		stateMap[k.String()] = v
+	for _, v := range st.ByState {
 		total += v
 	}
-
-	severityMap := make(map[string]int64)
-	for k, v := range bySeverity {
-		severityMap[k.String()] = v
-	}
-
 	stats := map[string]any{
-		"by_state":       stateMap,
-		"by_severity":    severityMap,
+		"by_state":       st.ByState,
+		"by_severity":    st.BySeverity,
+		"by_event_type":  st.ByEventType,
 		"total":          total,
-		"active_count":   stateMap[exposuredom.StateActive.String()],
-		"resolved_count": stateMap[exposuredom.StateResolved.String()],
+		"active_count":   st.ByState[exposuredom.StateActive.String()],
+		"resolved_count": st.ByState[exposuredom.StateResolved.String()],
 	}
-
-	// MTTR is optional — only surface it when there is at least one resolved
-	// event with a resolution timestamp to average.
-	mttrHours, ok, err := s.repo.MeanTimeToResolveHours(ctx, parsedTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute MTTR: %w", err)
+	// MTTR only when at least one resolved event has a timestamp to average.
+	if st.HasMTTR {
+		stats["mttr_hours"] = st.MTTRHours
 	}
-	if ok {
-		stats["mttr_hours"] = mttrHours
-	}
-
 	return stats, nil
 }
 

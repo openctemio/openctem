@@ -35,8 +35,12 @@ const (
 	ReasonEPSS        = "epss"
 	ReasonSeverity    = "severity"
 	ReasonScanFailure = "scan_failure"
-	ReasonOverride    = "override"
-	ReasonNoBaseline  = "no_baseline"
+	// ReasonMissingCapability: the repository is expected to be scanned for
+	// a capability (its coverage expectation) and the run reported no tool
+	// with it, for example because the pipeline was edited to skip it.
+	ReasonMissingCapability = "missing_capability"
+	ReasonOverride          = "override"
+	ReasonNoBaseline        = "no_baseline"
 	// ReasonSecretPreExisting notes a secret already open on the baseline
 	// branch: it blocks default-branch runs, not pull requests.
 	ReasonSecretPreExisting = "secret_pre_existing"
@@ -236,8 +240,11 @@ type GateInput struct {
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
-	Override      *GateOverride
-	Now           time.Time
+	// MissingCapabilities are the capabilities the repository is expected
+	// to report (coverage expectation) that the run reported no tool for.
+	MissingCapabilities []string
+	Override            *GateOverride
+	Now                 time.Time
 	// FindingURL builds a link to a finding ("" for none).
 	FindingURL func(id shared.ID) string
 }
@@ -308,20 +315,44 @@ type GateVerdict struct {
 	Override  *GateOverrideView `json:"override,omitempty"`
 }
 
-// honored reports whether a person accepted the finding's risk, marked it a
-// false positive or a duplicate, or a suppression rule covers it. Expired
-// acceptance is not honored.
-func honored(f RunFinding, now time.Time) bool {
-	if f.Suppressed {
-		return true
-	}
+// Decisions a finding can carry that the gate honors (KnownFinding.Decision).
+const (
+	DecisionFalsePositive = "false_positive"
+	DecisionDuplicate     = "duplicate"
+	DecisionAccepted      = "accepted"
+	DecisionSuppressed    = "suppressed"
+)
+
+// Decision is the decision the gate honors on f at now: a person marked it a
+// false positive or a duplicate, accepted its risk (until the acceptance
+// expires), or an approved, unexpired suppression rule covers it. "" when
+// none: the finding counts.
+func Decision(f RunFinding, now time.Time) string {
 	switch f.Status {
-	case "false_positive", "duplicate":
-		return true
-	case "accepted":
-		return f.AcceptanceExpiresAt == nil || f.AcceptanceExpiresAt.After(now)
+	case DecisionFalsePositive, DecisionDuplicate:
+		return f.Status
+	case DecisionAccepted:
+		if f.AcceptanceExpiresAt == nil || f.AcceptanceExpiresAt.After(now) {
+			return DecisionAccepted
+		}
 	}
-	return false
+	if f.Suppressed {
+		return DecisionSuppressed
+	}
+	return ""
+}
+
+func honored(f RunFinding, now time.Time) bool { return Decision(f, now) != "" }
+
+// KnownFinding tells a CI job that one of the results it uploaded carries a
+// decision, so the job leaves it out of its own output (console, SARIF,
+// merge request report). Index is the result's position in the uploaded
+// report. The job learns nothing about findings it did not report.
+type KnownFinding struct {
+	Index     int        `json:"index"`
+	Decision  string     `json:"decision"`
+	FindingID string     `json:"finding_id"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // Evaluate decides the verdict. Fail closed: scan failures fail; without a
@@ -353,6 +384,10 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	for _, c := range in.MissingCapabilities {
+		add(GateReason{Code: ReasonMissingCapability,
+			Message: fmt.Sprintf("the repository is expected to be scanned for %s, and this run reported no %s scan: the run cannot be judged", c, c)})
 	}
 	threshold := rank(p.FailOnSeverity)
 	for _, f := range in.Findings {

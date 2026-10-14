@@ -40,7 +40,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
-		CIRead, CIWrite, CIOverride,
+		CIRead, CIWrite, CIPolicy, CIOverride,
 		ScanWindowsManage, ScanWindowsOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,
@@ -119,7 +119,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
-		CIRead, CIWrite, CIOverride,
+		CIRead, CIWrite, CIPolicy, CIOverride,
 		ScanWindowsManage, ScanWindowsOverride,
 		// Sensors
 		SensorsRead, SensorsWrite, SensorsDelete,

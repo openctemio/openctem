@@ -197,6 +197,39 @@ func TestEASMConfirmAddsScopeEntry_DB(t *testing.T) {
 		t.Fatalf("kept: %+v", u)
 	}
 	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"unclassified_scans":"everything"}`, http.StatusUnprocessableEntity)
+
+	// auto_coverage (RFC-093, owner decision D1): on by default, turned off
+	// and kept by a change that does not name it; under Strict the default
+	// is off and an explicit on wins.
+	type autoCov struct {
+		Setting   *bool `json:"auto_coverage"`
+		Effective bool  `json:"auto_coverage_effective"`
+	}
+	readAuto := func(body string) autoCov {
+		t.Helper()
+		var a autoCov
+		if err := json.Unmarshal([]byte(body), &a); err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	if a := readAuto(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); a.Setting != nil || !a.Effective {
+		t.Fatalf("auto coverage default: %+v", a)
+	}
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"auto_coverage":false}`, http.StatusOK)
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"one_off_max_days":6}`, http.StatusOK)
+	if a := readAuto(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); a.Setting == nil || *a.Setting || a.Effective {
+		t.Fatalf("auto coverage off, kept: %+v", a)
+	}
+	h.exec(`UPDATE tenants SET settings = settings #- '{scope,auto_coverage}' WHERE id = $1`, org)
+	h.exec(`UPDATE tenants SET scan_approval_policy = 'strict' WHERE id = $1`, org)
+	if a := readAuto(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); a.Effective {
+		t.Fatalf("auto coverage under Strict by default: %+v", a)
+	}
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"auto_coverage":true}`, http.StatusOK)
+	if a := readAuto(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); !a.Effective {
+		t.Fatalf("auto coverage turned on under Strict: %+v", a)
+	}
 	h.exec(`UPDATE tenants SET scan_approval_policy = 'strict' WHERE id = $1`, org)
 	if u := readUnclassified(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); u.Setting != "full" || u.Effective != "off" {
 		t.Fatalf("strict: %+v", u)

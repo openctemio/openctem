@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CIRunsView } from '../components/ci-runs-view'
+import { ApiClientError } from '@/lib/api/error-handler'
 import { CITrustSettings } from '../components/ci-trust-settings'
 import { ciRunsURL } from '../api/use-ci'
 import {
@@ -13,9 +14,12 @@ import {
   organizationFromIssuer,
   parseList,
   snippetFor,
+  findCoveringTrust,
+  releaseBefore,
   CI_PROVIDERS,
   CI_RELEASE,
 } from '../lib/ci'
+import type { CITrustConfig } from '../types'
 
 // Radix Select uses pointer capture and scrollIntoView, which jsdom lacks.
 Element.prototype.hasPointerCapture ??= () => false
@@ -30,6 +34,7 @@ const mockSaveSettings = vi.fn()
 let ciSettings: { require_oidc: boolean } | undefined = { require_oidc: true }
 let runs: unknown[] = []
 let runDetail: unknown
+let runError: unknown
 let trust: unknown[] = []
 let perms: string[] = []
 let lastRunFilters: unknown
@@ -45,7 +50,10 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
     lastRunFilters = f
     return { data: { data: runs, total_pages: 1 }, isLoading: false, mutate: vi.fn() }
   },
-  useCIRun: (id: string | null) => ({ data: id ? runDetail : undefined }),
+  useCIRun: (id: string | null) => ({
+    data: id ? runDetail : undefined,
+    error: id ? runError : undefined,
+  }),
   useTrustConfigs: () => ({ data: { data: trust }, isLoading: false, mutate: vi.fn() }),
   useCISettings: () => ({ data: ciSettings, mutate: vi.fn() }),
   useSaveCISettings: () => ({ trigger: mockSaveSettings, isMutating: false }),
@@ -152,6 +160,84 @@ describe('lib', () => {
     }
   })
 
+  it('the GitHub snippet scans the default branch and grants what the pinned release needs', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    }
+    expect(githubSnippet(input)).toContain('branches: [main]')
+    expect(githubSnippet({ ...input, defaultBranch: 'develop' })).toContain('branches: [develop]')
+    // A branch name YAML would misread is quoted.
+    expect(githubSnippet({ ...input, defaultBranch: 'x: y' })).toContain('branches: ["x: y"]')
+    // The reusable workflow's scan job asks for security-events: write, and
+    // GitHub refuses to start a called job that asks for more than its caller
+    // grants: the snippet always grants it.
+    expect(githubSnippet(input)).toContain('security-events: write')
+    expect(releaseBefore('v0.2.0', 'v0.3.0')).toBe(true)
+    expect(releaseBefore('v0.3.0', 'v0.3.0')).toBe(false)
+    expect(releaseBefore('v0.10.0', 'v0.3.0')).toBe(false)
+  })
+
+  it('other CI systems run the pinned release image, never the moving edge build', () => {
+    const input = {
+      apiUrl: 'https://ctem.example',
+      tenantId: 't1',
+      audience: defaultAudience('t1'),
+    }
+    // Jenkins runs openctem-ci installed on its build node, not an image.
+    for (const p of ['azure_devops', 'bitbucket', 'circleci'] as const) {
+      const s = snippetFor(p, input)
+      expect(s).toContain(`ghcr.io/openctemio/ci:${CI_RELEASE}`)
+    }
+    for (const p of CI_PROVIDERS) expect(snippetFor(p, input)).not.toContain('ci:edge')
+  })
+
+  it('reads a GitHub issuer back only when it is not github.com', () => {
+    expect(organizationFromIssuer('github', 'https://token.actions.githubusercontent.com')).toBe('')
+    expect(organizationFromIssuer('github', 'https://github.example.com/_services/token')).toBe(
+      'https://github.example.com/_services/token'
+    )
+  })
+
+  it('the wizard never reuses a GitHub Enterprise trust for github.com', () => {
+    const ghes = {
+      id: 'e',
+      provider: 'github',
+      issuer: 'https://github.example.com/_services/token',
+      enabled: true,
+      rules: { owners: ['acme'] },
+    } as CITrustConfig
+    expect(findCoveringTrust([ghes], 'github', '', ['acme'])).toBeUndefined()
+  })
+
+  it('finds a trust configuration that already admits the owners', () => {
+    const gh = {
+      id: 'a',
+      name: 'GitHub acme',
+      provider: 'github',
+      issuer: 'https://token.actions.githubusercontent.com',
+      enabled: true,
+      rules: { owners: ['Acme', 'web'] },
+    } as CITrustConfig
+    const gl = {
+      id: 'b',
+      provider: 'gitlab',
+      issuer: 'https://gitlab.com',
+      enabled: true,
+      rules: { owners: ['platform'] },
+    } as CITrustConfig
+    const off = { ...gh, id: 'c', enabled: false } as CITrustConfig
+    expect(findCoveringTrust([off, gh], 'github', '', ['acme'])?.id).toBe('a')
+    expect(findCoveringTrust([gh], 'github', '', ['acme', 'other'])).toBeUndefined()
+    expect(findCoveringTrust([off], 'github', '', ['acme'])).toBeUndefined()
+    expect(findCoveringTrust([gh], 'gitlab', '', ['acme'])).toBeUndefined()
+    // An empty GitLab URL is gitlab.com; another host is another issuer.
+    expect(findCoveringTrust([gl], 'gitlab', '', ['platform'])?.id).toBe('b')
+    expect(findCoveringTrust([gl], 'gitlab', 'https://git.example', ['platform'])).toBeUndefined()
+    expect(findCoveringTrust([gh], 'github', '', [])).toBeUndefined()
+  })
+
   it('no snippet runs the sensor image or its removed CI flags', () => {
     const input = {
       apiUrl: 'https://ctem.example',
@@ -219,16 +305,38 @@ describe('CIRunsView', () => {
   beforeEach(() => {
     runs = []
     runDetail = undefined
+    runError = undefined
     window.history.replaceState({}, '', '/')
   })
 
+  it("a run out of the caller's access says so instead of a bare load error", () => {
+    runError = new ApiClientError('CI run not found', 'NOT_FOUND', 404)
+    window.history.replaceState({}, '', '/?run=r9')
+    render(<CIRunsView />)
+    expect(screen.getByText('This run is not available to you')).toBeInTheDocument()
+    expect(screen.queryByText(/failed to load/i)).not.toBeInTheDocument()
+  })
+
   it('explains how to start when there is no run', () => {
+    perms = ['scans:ci:write']
     render(<CIRunsView />)
     expect(screen.getByText('No CI runs yet')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /set up ci trust/i })).toHaveAttribute(
-      'href',
-      '/ci-cd?tab=setup'
-    )
+    expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
+    perms = []
+  })
+
+  it('tells a reader the runs they see follow their access, not that none exist', () => {
+    perms = []
+    render(<CIRunsView />)
+    expect(screen.getByText('No CI runs you can see')).toBeInTheDocument()
+    expect(screen.queryByText('No CI runs yet')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /connect a pipeline/i })).not.toBeInTheDocument()
+  })
+
+  it('says no run matches when a verdict filter hides them', () => {
+    window.history.replaceState({}, '', '/?verdict=fail')
+    render(<CIRunsView />)
+    expect(screen.getByText('No runs with this verdict')).toBeInTheDocument()
   })
 
   it('lists runs with their verdict and opens the reasons', async () => {
@@ -402,8 +510,23 @@ describe('CIRunsView', () => {
   })
 })
 
+describe('CITrustSettings sections', () => {
+  it('opens the section the URL names and keeps the chosen one in the URL', async () => {
+    window.history.replaceState({}, '', '/?section=gate')
+    render(<CITrustSettings />)
+    expect(screen.getByRole('tab', { name: 'Gate policy' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Pull request feedback' }))
+    expect(window.location.search).toContain('section=feedback')
+    window.history.replaceState({}, '', '/?section=bogus')
+  })
+})
+
 describe('CITrustSettings', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/')
     trust = []
     perms = []
     gatePolicies = []
@@ -414,7 +537,7 @@ describe('CITrustSettings', () => {
   })
 
   it('a policy can block dependency vulnerabilities only when a fix exists', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [
       {
         id: 'gp1',
@@ -445,7 +568,7 @@ describe('CITrustSettings', () => {
   })
 
   it('deleting a repository gate policy asks first', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
     mockDeletePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
@@ -481,6 +604,26 @@ describe('CITrustSettings', () => {
     expect(dialog).toHaveTextContent(/Revoke the override for commit abcdef1/)
     await userEvent.click(within(dialog).getByRole('button', { name: 'Revoke' }))
     expect(mockRevokeOverride).toHaveBeenCalledWith('ov1')
+  })
+
+  it('says when pipelines may still use the old audience, and until when', () => {
+    trust = [
+      {
+        id: 'old',
+        name: 'GitHub acme',
+        provider: 'github',
+        issuer: 'https://token.actions.githubusercontent.com',
+        audience: 'openctem:tenant:t-123',
+        legacy_audience: 'https://openctem.example.com',
+        legacy_audience_until: '2027-01-12T00:00:00Z',
+        enabled: true,
+        rules: { owners: ['acme'] },
+      },
+    ]
+    render(<CITrustSettings />)
+    expect(screen.getByTestId('ci-legacy-audience')).toHaveTextContent(
+      'https://openctem.example.com'
+    )
   })
 
   it('a member cannot add trust or break-glass', async () => {
@@ -544,6 +687,29 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
+  })
+
+  it('saves a GitHub Enterprise Server issuer, and leaves github.com as the default', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.type(screen.getByLabelText('Name'), 'GHES')
+    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.type(
+      screen.getByLabelText(/github enterprise issuer/i),
+      'https://github.example.com/_services/token'
+    )
+    mockSaveTrust.mockResolvedValue({
+      id: 'c9',
+      name: 'GHES',
+      provider: 'github',
+      audience: 'openctem:tenant:t-123',
+    })
+    await userEvent.click(screen.getByRole('button', { name: /^add$/i }))
+    expect(mockSaveTrust).toHaveBeenCalledWith({
+      id: undefined,
+      body: expect.objectContaining({ issuer: 'https://github.example.com/_services/token' }),
+    })
   })
 
   it('admits only the central workflow when pipeline definitions are listed', async () => {
