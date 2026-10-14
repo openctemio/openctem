@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SensorManifestDocument, SensorManifestVersion } from '@/lib/api/sensor-types'
+import { getDictionary, translate, type TranslateVars } from '@/lib/i18n'
 
 import { describeSensorActivity } from '../activity'
 import {
   concurrencyText,
   diffManifests,
+  ignoredReasonLabel,
   isEmptyDiff,
   manifestDiffLines,
   manifestHistory,
+  manifestSourceLabel,
   resourcesText,
 } from '../manifest'
 
@@ -134,6 +137,18 @@ describe('manifest text', () => {
     expect(resourcesText(next)).toBeNull()
     expect(concurrencyText(next)).toBe('operator cap 4 · slots sized from CPU and memory')
     expect(concurrencyText(prev)).toBe('no operator cap · slots sized from CPU and memory')
+  })
+
+  it('translates through the catalog and keeps unknown values raw', () => {
+    const vi = getDictionary('vi')
+    const t = (key: string, fallback?: string, vars?: TranslateVars) =>
+      translate(vi, key, fallback, vars)
+    expect(concurrencyText(next, t)).toBe(
+      'giới hạn của người vận hành 4 · số slot tính theo CPU và bộ nhớ'
+    )
+    expect(manifestSourceLabel('heartbeat', t)).toBe('suy ra từ heartbeat')
+    expect(ignoredReasonLabel('limit', t)).toBe('vượt quá giới hạn')
+    expect(ignoredReasonLabel('something-new', t)).toBe('something-new')
   })
 })
 

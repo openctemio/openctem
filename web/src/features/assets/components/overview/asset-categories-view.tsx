@@ -57,7 +57,10 @@ const LENS_ICONS: Record<string, LucideIcon> = {
   network: Network,
 }
 
-/** How a lens's assets get into the inventory, for an empty lens. */
+/**
+ * How a lens's assets get into the inventory, for an empty lens. The text and
+ * action are the English fallbacks of assets.overview.hint.<lens>.{text,action}.
+ */
 const LENS_HINTS: Record<string, { text: string; action: string; href: string }> = {
   external_surface: {
     text: 'Add your domains to the scope, then run a discovery scan.',
@@ -90,6 +93,7 @@ const LENS_HINTS: Record<string, { text: string; action: string; href: string }>
     href: '/settings/integrations',
   },
 }
+const DEFAULT_HINT_ID = 'default'
 const DEFAULT_HINT = {
   text: 'Run a discovery scan, or add assets by hand.',
   action: 'Run a scan',
@@ -122,7 +126,9 @@ function AttentionChip({
 }
 
 function LensCard({ lens }: { lens: OverviewLens }) {
+  const { t } = useTranslation()
   const Icon = LENS_ICONS[lens.id] ?? Boxes
+  const hintId = LENS_HINTS[lens.id] ? lens.id : DEFAULT_HINT_ID
   const hint = LENS_HINTS[lens.id] ?? DEFAULT_HINT
   const empty = lens.total === 0 && lens.needsReview === 0
   return (
@@ -150,46 +156,54 @@ function LensCard({ lens }: { lens: OverviewLens }) {
       <CardContent className="space-y-3 pt-0">
         {empty ? (
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">{hint.text}</p>
+            <p className="text-sm text-muted-foreground">
+              {t(`assets.overview.hint.${hintId}.text`, hint.text)}
+            </p>
             <Button variant="outline" size="sm" asChild>
-              <Link href={hint.href}>{hint.action}</Link>
+              <Link href={hint.href}>
+                {t(`assets.overview.hint.${hintId}.action`, hint.action)}
+              </Link>
             </Button>
           </div>
         ) : (
           <>
             {(lens.new7d > 0 || lens.unowned > 0 || lens.highRisk > 0 || lens.needsReview > 0) && (
               <div className="flex flex-wrap gap-1.5">
-                <AttentionChip count={lens.new7d} label="new this week" href="/assets/changes" />
+                <AttentionChip
+                  count={lens.new7d}
+                  label={t('assets.overview.chip.new7d', 'new this week')}
+                  href="/assets/changes"
+                />
                 <AttentionChip
                   count={lens.unowned}
-                  label="unowned"
+                  label={t('assets.overview.chip.unowned', 'unowned')}
                   href={lens.unownedHref}
                   tone="danger"
                 />
                 <AttentionChip
                   count={lens.highRisk}
-                  label="high risk"
+                  label={t('assets.overview.chip.highRisk', 'high risk')}
                   href={lens.highRiskHref}
                   tone="danger"
                 />
                 <AttentionChip
                   count={lens.needsReview}
-                  label="awaiting review"
+                  label={t('assets.overview.chip.awaitingReview', 'awaiting review')}
                   href={lens.reviewHref}
                 />
               </div>
             )}
             <ul className="space-y-0.5">
-              {lens.types.map((t) => (
-                <li key={t.key}>
+              {lens.types.map((type) => (
+                <li key={type.key}>
                   <Link
-                    href={t.href}
+                    href={type.href}
                     className="group flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-accent/50"
                   >
-                    <span className="text-sm">{t.label}</span>
+                    <span className="text-sm">{type.label}</span>
                     <span className="flex items-center gap-2">
                       <span className="text-sm tabular-nums text-muted-foreground">
-                        {t.count.toLocaleString()}
+                        {type.count.toLocaleString()}
                       </span>
                       <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                     </span>
@@ -237,7 +251,11 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
         <Alert className="mt-5">
           <GitMerge className="h-4 w-4" />
           <AlertTitle>
-            {dedupCount} duplicate {dedupCount === 1 ? 'set' : 'sets'} to review
+            {dedupCount === 1
+              ? t('assets.overview.duplicatesOne', '1 duplicate set to review')
+              : t('assets.overview.duplicatesMany', '{n} duplicate sets to review', {
+                  n: dedupCount,
+                })}
           </AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
             <span>
@@ -248,7 +266,7 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
             </span>
             <Button variant="outline" size="sm" asChild>
               <Link href="/assets/duplicates">
-                Review
+                {t('assets.overview.review', 'Review')}
                 <ArrowRight className="ms-2 h-4 w-4" />
               </Link>
             </Button>
@@ -258,11 +276,11 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
 
       {error ? (
         <Alert variant="destructive" className="mt-5">
-          <AlertTitle>The overview did not load</AlertTitle>
+          <AlertTitle>{t('assets.overview.loadError', 'The overview did not load')}</AlertTitle>
           <AlertDescription>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('assets.overview.retry', 'Retry')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -278,15 +296,20 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
             <EmptyState
               className="mt-5 border-dashed"
               icon={Boxes}
-              title="No assets discovered yet"
-              description="Add your domains to the scope and run a discovery scan, connect an integration, or add assets by hand."
+              title={t('assets.overview.empty.title', 'No assets discovered yet')}
+              description={t(
+                'assets.overview.empty.description',
+                'Add your domains to the scope and run a discovery scan, connect an integration, or add assets by hand.'
+              )}
               action={
                 <div className="flex flex-wrap justify-center gap-2">
                   <Button size="sm" asChild>
-                    <Link href="/scans">Run a discovery scan</Link>
+                    <Link href="/scans">
+                      {t('assets.overview.empty.runScan', 'Run a discovery scan')}
+                    </Link>
                   </Button>
                   <Button variant="outline" size="sm" asChild>
-                    <Link href="/scope">Open scope</Link>
+                    <Link href="/scope">{t('assets.overview.empty.openScope', 'Open scope')}</Link>
                   </Button>
                 </div>
               }

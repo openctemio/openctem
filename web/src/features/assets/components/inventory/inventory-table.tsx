@@ -411,7 +411,7 @@ export function InventoryTable({
         header: () => <span className="sr-only">Actions</span>,
         cell: ({ row }) => {
           const asset = row.original
-          const actions = rowActionsFor(asset, typeView).filter((a) =>
+          const actions = rowActionsFor(asset, typeView, t).filter((a) =>
             a.permissions.every((p) => can(p))
           )
           const canEdit = canWriteAssets && !!onEditAsset

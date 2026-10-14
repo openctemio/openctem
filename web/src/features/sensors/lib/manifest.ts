@@ -153,32 +153,46 @@ export function manifestHistory(
 }
 
 /** "4 CPU cores · 23.5 GB memory", or null when none is known. */
-export function resourcesText(m: SensorManifestDocument): string | null {
+export function resourcesText(m: SensorManifestDocument, t: Translate = plain): string | null {
   const r = m.resources
   const parts: string[] = []
   if (r?.cpu_cores) {
     const cores = Number.isInteger(r.cpu_cores) ? String(r.cpu_cores) : r.cpu_cores.toFixed(1)
-    parts.push(`${cores} CPU ${r.cpu_cores === 1 ? 'core' : 'cores'}`)
+    parts.push(
+      r.cpu_cores === 1
+        ? t('sensors.manifest.cpuCore', '{cores} CPU core', { cores })
+        : t('sensors.manifest.cpuCores', '{cores} CPU cores', { cores })
+    )
   }
-  if (r?.mem_total_bytes) parts.push(`${formatBytes(r.mem_total_bytes)} memory`)
+  if (r?.mem_total_bytes) {
+    parts.push(
+      t('sensors.manifest.memory', '{size} memory', { size: formatBytes(r.mem_total_bytes) })
+    )
+  }
   return parts.length ? parts.join(' · ') : null
 }
 
 /** "operator cap 8 · slots sized from CPU and memory". */
-export function concurrencyText(m: SensorManifestDocument): string | null {
+export function concurrencyText(m: SensorManifestDocument, t: Translate = plain): string | null {
   const c = m.concurrency
   if (!c) return null
-  const cap = c.ceiling > 0 ? `operator cap ${c.ceiling}` : 'no operator cap'
-  if (c.model === 'dynamic') return `${cap} · slots sized from CPU and memory`
-  if (c.model === 'fixed') return `${cap} · fixed slots`
+  const cap =
+    c.ceiling > 0
+      ? t('sensors.manifest.operatorCap', 'operator cap {n}', { n: c.ceiling })
+      : t('sensors.manifest.noOperatorCap', 'no operator cap')
+  if (c.model === 'dynamic')
+    return `${cap} · ${t('sensors.manifest.slotsDynamic', 'slots sized from CPU and memory')}`
+  if (c.model === 'fixed') return `${cap} · ${t('sensors.manifest.slotsFixed', 'fixed slots')}`
   return cap
 }
 
+/** English fallbacks of the manifest sources (keys sensors.manifest.source.<source>). */
 export const MANIFEST_SOURCE_LABEL: Record<string, string> = {
   sensor: 'registered by the sensor',
   heartbeat: 'derived from its heartbeat',
 }
 
+/** English fallbacks of the ignored reasons (keys sensors.manifest.ignored.<reason>). */
 export const IGNORED_REASON_LABEL: Record<string, string> = {
   'unknown-member': 'not part of the manifest format',
   'unknown-tool': 'not in the tool catalog',
@@ -188,7 +202,25 @@ export const IGNORED_REASON_LABEL: Record<string, string> = {
   limit: 'over the limit',
 }
 
+/** How the platform got a manifest version, translated (the raw value when unknown). */
+export function manifestSourceLabel(source: string, t: Translate = plain): string {
+  const fallback = MANIFEST_SOURCE_LABEL[source]
+  return fallback ? t(`sensors.manifest.source.${source}`, fallback) : source
+}
+
+/** Why the platform ignored a manifest item, translated (the raw value when unknown). */
+export function ignoredReasonLabel(reason: string, t: Translate = plain): string {
+  const fallback = IGNORED_REASON_LABEL[reason]
+  return fallback ? t(`sensors.manifest.ignored.${reason}`, fallback) : reason
+}
+
 /** "target-scan · T1 · network: targets" for a tool contract. */
-export function contractSummary(c: SensorToolContract): string {
-  return [c.class, c.tier, c.network ? `network: ${c.network}` : null].filter(Boolean).join(' · ')
+export function contractSummary(c: SensorToolContract, t: Translate = plain): string {
+  return [
+    c.class,
+    c.tier,
+    c.network ? t('sensors.manifest.network', 'network: {network}', { network: c.network }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }

@@ -20,6 +20,7 @@
  * the assets where it is true, a click filtering to them.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import type { AssetStatsData } from '../../hooks/use-assets'
 import {
@@ -60,11 +61,12 @@ export function InventoryStatStrip({
   typeLabel,
   boolFacets = [],
 }: StatStripProps) {
+  const { t } = useTranslation()
   const typed = typeLabel !== undefined
   const defs: StatDef[] = [
     {
       id: 'total',
-      label: typeLabel ?? 'All assets',
+      label: typeLabel ?? t('assets.stats.all', 'All assets'),
       value: stats.total,
       active: isInventoryFilterEmpty(
         typed ? { ...filters, types: undefined, subType: undefined, lens: undefined } : filters
@@ -77,7 +79,7 @@ export function InventoryStatStrip({
     },
     {
       id: 'critical',
-      label: 'Critical',
+      label: t('assets.stats.critical', 'Critical'),
       value: stats.byCriticality['critical'] ?? 0,
       active: filters.criticalities?.includes('critical') ?? false,
       toggle: (f) =>
@@ -87,7 +89,7 @@ export function InventoryStatStrip({
     },
     {
       id: 'internet',
-      label: 'Internet-facing',
+      label: t('assets.stats.internetFacing', 'Internet-facing'),
       // One definition across the product (research/22 P0-12): exposure =
       // public, the population the Attack surface pages count.
       value: stats.byExposure['public'] ?? 0,
@@ -99,7 +101,7 @@ export function InventoryStatStrip({
     },
     {
       id: 'unowned',
-      label: 'Unowned',
+      label: t('assets.stats.unowned', 'Unowned'),
       value: stats.byHasOwner['false'] ?? 0,
       tone: 'danger',
       active: filters.hasOwner === false,
@@ -110,7 +112,7 @@ export function InventoryStatStrip({
     },
     {
       id: 'high-risk',
-      label: 'High risk',
+      label: t('assets.stats.highRisk', 'High risk'),
       value: stats.highRiskCount,
       active: filters.minRiskScore === HIGH_RISK_SCORE,
       toggle: (f) =>
@@ -120,7 +122,7 @@ export function InventoryStatStrip({
     },
     {
       id: 'with-findings',
-      label: 'With findings',
+      label: t('assets.stats.withFindings', 'With findings'),
       value: stats.withFindings,
       active: filters.hasFindings === true,
       toggle: (f) =>
