@@ -3,11 +3,12 @@
 // (docs/rfcs/RFC-077-ci-enforced-gate-and-pr-feedback.md, section 3.3).
 //
 // Binding needs two proofs from the person completing the install: a state
-// the console signed for them and their organization (so a setup redirect
-// cannot be replayed into another organization), and their own GitHub
-// authorization showing they can access the installation (so a guessed
-// installation id cannot be claimed). One installation belongs to at most one
-// organization.
+// the console signed for them and their organization, usable once (so a setup
+// redirect cannot be replayed into another organization or bound twice), and
+// their own GitHub authorization showing they own the installation's account
+// (an organization admin, or the user account itself; a member who merely
+// sees the installation cannot bind it). One installation belongs to at most
+// one organization.
 package scmapp
 
 import (
@@ -40,7 +41,7 @@ type GitHubApp interface {
 	Slug() string
 	InstallURL(state string) string
 	GetInstallation(ctx context.Context, id int64) (*githubapp.Installation, error)
-	UserCanAccessInstallation(ctx context.Context, code string, installationID int64) (bool, error)
+	UserMayBindInstallation(ctx context.Context, code string, inst *githubapp.Installation) (bool, error)
 	VerifySignature(body []byte, header string) bool
 	ForgetInstallation(id int64)
 }
@@ -48,6 +49,12 @@ type GitHubApp interface {
 // Auditor writes audit records.
 type Auditor interface {
 	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
+}
+
+// OnceStore records a key and reports whether it is new (shared by every
+// API replica; implemented by redis.WebhookDeliveryStore).
+type OnceStore interface {
+	FirstDelivery(ctx context.Context, key string, ttl time.Duration) (bool, error)
 }
 
 // Actor is who acts.
@@ -66,6 +73,9 @@ type Service struct {
 	audit    Auditor
 	log      *logger.Logger
 	now      func() time.Time
+	// once makes an install state single-use; nil (no Redis, tests) leaves
+	// the state usable until it expires.
+	once OnceStore
 
 	gitlabRepo    scmapp.GitLabRepository
 	enc           crypto.Encryptor
@@ -81,6 +91,9 @@ func NewService(repo scmapp.Repository, github GitHubApp, stateSecret string, au
 	k := sha256.Sum256([]byte("openctem-scm-app-install-state\x00" + stateSecret))
 	return &Service{repo: repo, github: github, stateKey: k[:], audit: audit, log: log.With("service", "scmapp"), now: time.Now}
 }
+
+// SetOnceStore makes install states single-use.
+func (s *Service) SetOnceStore(o OnceStore) { s.once = o }
 
 // SetClock replaces the clock (tests).
 func (s *Service) SetClock(now func() time.Time) { s.now = now }
@@ -128,7 +141,7 @@ func (s *Service) GitHubInstallURL(tenantID shared.ID, userID string) (string, e
 	return s.github.InstallURL(payload + "." + s.sign(payload)), nil
 }
 
-func (s *Service) checkState(state string, tenantID shared.ID, userID string) bool {
+func (s *Service) checkState(ctx context.Context, state string, tenantID shared.ID, userID string) bool {
 	payload, sig, ok := strings.Cut(state, ".")
 	if !ok || len(state) > 1024 || !hmac.Equal([]byte(sig), []byte(s.sign(payload))) {
 		return false
@@ -141,7 +154,19 @@ func (s *Service) checkState(state string, tenantID shared.ID, userID string) bo
 	if json.Unmarshal(raw, &st) != nil {
 		return false
 	}
-	return st.TenantID == tenantID.String() && st.UserID == userID && s.now().Unix() <= st.Expires
+	if st.TenantID != tenantID.String() || st.UserID != userID || s.now().Unix() > st.Expires || st.Nonce == "" {
+		return false
+	}
+	if s.once == nil {
+		return true
+	}
+	first, err := s.once.FirstDelivery(ctx, "scm-app-install-state:"+st.Nonce, StateTTL+time.Minute)
+	if err != nil {
+		// Fail closed: without the store a replay cannot be told apart.
+		s.log.Error("github app install state store unavailable", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return false
+	}
+	return first
 }
 
 // CompleteGitHubInput is the setup redirect's query, posted by the console.
@@ -157,20 +182,26 @@ func (s *Service) CompleteGitHubInstall(ctx context.Context, tenantID shared.ID,
 	if s.github == nil {
 		return nil, githubapp.ErrNotConfigured
 	}
-	if in.InstallationID <= 0 || !s.checkState(in.State, tenantID, a.UserID) {
+	if in.InstallationID <= 0 || !s.checkState(ctx, in.State, tenantID, a.UserID) {
 		return nil, scmapp.ErrNotAuthorized
 	}
-	ok, err := s.github.UserCanAccessInstallation(ctx, in.Code, in.InstallationID)
+	gh, err := s.github.GetInstallation(ctx, in.InstallationID)
+	if err != nil {
+		var se *githubapp.StatusError
+		if errors.As(err, &se) && se.Status == 404 {
+			return nil, scmapp.ErrNotAuthorized
+		}
+		return nil, fmt.Errorf("read installation: %w", err)
+	}
+	ok, err := s.github.UserMayBindInstallation(ctx, in.Code, gh)
 	if err != nil {
 		s.log.Warn("github app install not verified", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		return nil, scmapp.ErrNotAuthorized
 	}
 	if !ok {
+		s.log.Warn("github app install refused: the person does not own the installation's account",
+			"tenant_id", tenantID.String())
 		return nil, scmapp.ErrNotAuthorized
-	}
-	gh, err := s.github.GetInstallation(ctx, in.InstallationID)
-	if err != nil {
-		return nil, fmt.Errorf("read installation: %w", err)
 	}
 	var createdBy *shared.ID
 	if id, err := shared.IDFromString(a.UserID); err == nil {
@@ -223,6 +254,18 @@ var ErrBadSignature = errors.New("webhook signature does not verify")
 
 // MaxWebhookBody bounds a webhook delivery.
 const MaxWebhookBody = 1 << 20
+
+// VerifyGitHubWebhook checks a delivery's signature (ErrBadSignature, or
+// githubapp.ErrNotConfigured without an app) without applying it.
+func (s *Service) VerifyGitHubWebhook(body []byte, signature string) error {
+	if s.github == nil {
+		return githubapp.ErrNotConfigured
+	}
+	if !s.github.VerifySignature(body, signature) {
+		return ErrBadSignature
+	}
+	return nil
+}
 
 // HandleGitHubWebhook applies an installation event GitHub sent. The
 // signature is checked before the body is parsed; events about other things

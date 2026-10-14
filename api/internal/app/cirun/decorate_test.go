@@ -76,7 +76,7 @@ func TestDecorateGitHub(t *testing.T) {
 	base := cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "github.com/acme/api", PullRequest: "7",
 		CommitSHA: "merge1", CommitVerified: true, PipelineID: &pid, VerdictDetail: failingVerdict(t)}
 	newJob := func(p *fakePoster) *DecorationJob {
-		return NewDecorationJob(nil, fakeInstalls{tenant: tenant}, p, "https://console.example", nil)
+		return NewDecorationJob(fakeDecorationRepo{}, fakeInstalls{tenant: tenant}, p, "https://console.example", nil)
 	}
 	ctx := context.Background()
 
@@ -133,6 +133,14 @@ func TestDecorateGitHub(t *testing.T) {
 	if st, _ := newJob(p).decorate(ctx, &run); st != cirun.DecorationPosted || p.checks[0].HeadSHA != "merge1" || len(p.comments) != 0 {
 		t.Fatalf("push run: %s %+v", st, p.checks)
 	}
+	// A fork event without a pull request (pull_request_target,
+	// workflow_run) carries the base commit: no check goes on it.
+	p = &fakePoster{}
+	run = base
+	run.PullRequest, run.Fork, run.Event = "", true, "pull_request_target"
+	if st, _ := newJob(p).decorate(ctx, &run); st != cirun.DecorationSkipped || len(p.checks) != 0 {
+		t.Fatalf("fork event on the base commit: %s %+v", st, p.checks)
+	}
 	// GitHub refusing access is final; a server error is retried.
 	run = base
 	run.PullRequest = ""
@@ -175,6 +183,7 @@ type fakeGitLabAPI struct {
 }
 
 func (f *fakeGitLabAPI) Token(context.Context) (*gitlabapi.TokenInfo, error)     { return nil, nil }
+func (f *fakeGitLabAPI) CurrentUser(context.Context) (*gitlabapi.User, error)    { return nil, nil }
 func (f *fakeGitLabAPI) Group(context.Context, string) (*gitlabapi.Group, error) { return nil, nil }
 func (f *fakeGitLabAPI) GroupMember(context.Context, int64, int64) (bool, error) { return true, nil }
 func (f *fakeGitLabAPI) MergeRequest(context.Context, string, int) (*gitlabapi.MergeRequest, error) {
@@ -207,7 +216,7 @@ func TestDecorateGitLab(t *testing.T) {
 		PullRequest: "3", CommitSHA: "abc", CommitVerified: true, VerdictDetail: failingVerdict(t)}
 	ctx := context.Background()
 	api := &fakeGitLabAPI{mrSHA: "abc"}
-	job := NewDecorationJob(nil, fakeInstalls{}, nil, "https://c", nil)
+	job := NewDecorationJob(fakeDecorationRepo{}, fakeInstalls{}, nil, "https://c", nil)
 	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api})
 	if st, d := job.decorate(ctx, &run); st != cirun.DecorationPosted || len(api.statuses) != 1 ||
 		api.statuses[0] != "acme/api@abc:failed:"+CheckName || len(api.notes) != 1 {
@@ -238,7 +247,18 @@ func TestDecorateGitLab(t *testing.T) {
 	}
 }
 
-type fakeDecorationRepo struct{ passed map[string]bool }
+type fakeDecorationRepo struct {
+	passed   map[string]bool
+	verdicts []cirun.CommitVerdict
+	shas     *[]string
+}
+
+func (f fakeDecorationRepo) CommitVerdicts(_ context.Context, _, _ shared.ID, shas []string) ([]cirun.CommitVerdict, error) {
+	if f.shas != nil {
+		*f.shas = append(*f.shas, shas...)
+	}
+	return f.verdicts, nil
+}
 
 func (f fakeDecorationRepo) ClaimDecorations(context.Context, int) ([]cirun.Run, error) {
 	return nil, nil
@@ -288,5 +308,77 @@ func TestUngatedMergeAlert(t *testing.T) {
 	_, _ = job.decorate(context.Background(), &prRun)
 	if len(n.titles) != 0 {
 		t.Fatalf("pull request run alerted: %v", n.titles)
+	}
+}
+
+// The check of a commit takes the strictest verdict of every pipeline on it:
+// a second run (another workflow the pull request added, a later run) that
+// passes cannot replace a failing check, and the check of a passing run
+// fails while another pipeline on the same commit failed.
+func TestCheckJudgedOverEveryPipelineOnTheCommit(t *testing.T) {
+	tenant := shared.NewID()
+	failed := shared.NewID()
+	passing, _ := json.Marshal(Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictPass,
+		Policy: cirun.GatePolicyView{Mode: "enforce", Source: "default"}}})
+	run := cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "github.com/acme/api", PullRequest: "7",
+		CommitSHA: "merge1", CommitVerified: true, VerdictDetail: passing}
+	ctx := context.Background()
+	post := func(verdicts []cirun.CommitVerdict) (*fakePoster, []string) {
+		p := &fakePoster{}
+		p.pr.MergeCommitSHA, p.pr.Head.SHA = "merge1", "head1"
+		var shas []string
+		job := NewDecorationJob(fakeDecorationRepo{verdicts: verdicts, shas: &shas}, fakeInstalls{tenant: tenant}, p, "https://c", nil)
+		r := run
+		if st, d := job.decorate(ctx, &r); st != cirun.DecorationPosted {
+			t.Fatalf("posted: %s %s", st, d)
+		}
+		return p, shas
+	}
+
+	// Fail, then a passing run of another pipeline on the same commit: the
+	// check stays failed, and says why.
+	p, shas := post([]cirun.CommitVerdict{{RunID: failed, Verdict: cirun.VerdictFail}, {RunID: run.ID, Verdict: cirun.VerdictPass}})
+	c := p.checks[0]
+	if c.Conclusion != "failure" || !strings.Contains(c.Title, "other pipeline") ||
+		!strings.Contains(c.Summary, "run="+failed.String()) || !strings.Contains(p.comments[0], "Failed") {
+		t.Fatalf("check = %+v\ncomment = %s", c, p.comments[0])
+	}
+	// Both the judged merge commit and the check's head commit are read.
+	if strings.Join(shas, ",") != "merge1,head1" {
+		t.Fatalf("shas = %v", shas)
+	}
+	// Pass and pass: success.
+	p, _ = post([]cirun.CommitVerdict{{RunID: shared.NewID(), Verdict: cirun.VerdictPass}, {RunID: run.ID, Verdict: cirun.VerdictPass}})
+	if p.checks[0].Conclusion != "success" {
+		t.Fatalf("pass+pass = %s", p.checks[0].Conclusion)
+	}
+	// Another pipeline passed only in warn mode: neutral.
+	p, _ = post([]cirun.CommitVerdict{{RunID: shared.NewID(), Verdict: cirun.VerdictPass, WouldFail: true}})
+	if p.checks[0].Conclusion != "neutral" {
+		t.Fatalf("warn = %s", p.checks[0].Conclusion)
+	}
+	// The run's own stored row does not count twice, and a failing run stays
+	// failed whatever the others say.
+	fr := run
+	fr.VerdictDetail = failingVerdict(t)
+	pp := &fakePoster{}
+	pp.pr.MergeCommitSHA, pp.pr.Head.SHA = "merge1", "head1"
+	job := NewDecorationJob(fakeDecorationRepo{verdicts: []cirun.CommitVerdict{{RunID: run.ID, Verdict: cirun.VerdictFail}}},
+		fakeInstalls{tenant: tenant}, pp, "https://c", nil)
+	if st, _ := job.decorate(ctx, &fr); st != cirun.DecorationPosted || pp.checks[0].Conclusion != "failure" ||
+		strings.Contains(pp.checks[0].Title, "other pipeline") {
+		t.Fatalf("failing run = %+v", pp.checks)
+	}
+
+	// GitLab: a passing run's commit status fails while another pipeline
+	// on the commit failed.
+	api := &fakeGitLabAPI{mrSHA: "abc"}
+	gl := cirun.Run{ID: shared.NewID(), TenantID: tenant, Provider: cirun.ProviderGitLab, Repository: "gitlab.example.com/acme/api",
+		PullRequest: "3", CommitSHA: "abc", CommitVerified: true, VerdictDetail: passing}
+	gjob := NewDecorationJob(fakeDecorationRepo{verdicts: []cirun.CommitVerdict{{RunID: failed, Verdict: cirun.VerdictFail}}},
+		fakeInstalls{}, nil, "https://c", nil)
+	gjob.SetGitLab(fakeGitLabClients{tenant: tenant, api: api})
+	if st, _ := gjob.decorate(ctx, &gl); st != cirun.DecorationPosted || api.statuses[0] != "acme/api@abc:failed:"+CheckName {
+		t.Fatalf("gitlab = %s %v", st, api.statuses)
 	}
 }

@@ -284,6 +284,66 @@ describe('scanConfigToFormData + formDataToUpdateRequest (Edit)', () => {
   })
 })
 
+describe('Edit: a cron or RRULE schedule the wizard cannot show', () => {
+  const cron = () =>
+    config({
+      schedule_type: 'crontab',
+      schedule_cron: '0 4 * * 1-5',
+      schedule_day: undefined,
+      schedule_time: undefined,
+      schedule_timezone: 'UTC',
+    } as Partial<ScanConfig>)
+  const rrule = () =>
+    config({
+      schedule_type: 'rrule',
+      schedule_rrule: 'FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=5',
+      schedule_day: undefined,
+      schedule_time: undefined,
+    } as Partial<ScanConfig>)
+
+  it('saving another change leaves the stored schedule out (unchanged)', () => {
+    // It used to be sent as "weekly" without a day: the API refused every
+    // edit of such a scan, a rename included.
+    for (const c of [cron(), rrule()]) {
+      const f = { ...scanConfigToFormData(c), name: 'Renamed' }
+      expect(scheduleError(f)).toBeNull()
+      const req = formDataToUpdateRequest(f, c, { canSetZone: false })
+      expect(req.name).toBe('Renamed')
+      for (const key of [
+        'schedule_type',
+        'schedule_day',
+        'schedule_time',
+        'schedule_cron',
+        'schedule_rrule',
+        'run_at',
+        'timezone',
+      ]) {
+        expect(key in req).toBe(false)
+      }
+    }
+  })
+
+  it('shows the stored expression', () => {
+    expect(scanConfigToFormData(cron()).schedule.custom).toEqual({
+      type: 'crontab',
+      expression: '0 4 * * 1-5',
+    })
+    expect(scanConfigToFormData(rrule()).schedule.custom?.type).toBe('rrule')
+  })
+
+  it('replacing it sends the chosen frequency', () => {
+    const c = cron()
+    const f = scanConfigToFormData(c)
+    const replaced = {
+      ...f,
+      schedule: { ...f.schedule, custom: undefined, frequency: 'weekly' as const, dayOfWeek: 2 },
+    }
+    const req = formDataToUpdateRequest(replaced, c, { canSetZone: false })
+    expect(req.schedule_type).toBe('weekly')
+    expect(req.schedule_day).toBe(2)
+  })
+})
+
 describe('a Tenable.sc scan (scanner tenable_sc)', () => {
   const tenable = (cfg: Record<string, unknown> | undefined) =>
     form({ scannerName: 'tenable_sc', scannerConfig: cfg })
@@ -453,5 +513,46 @@ describe('scan intensity (RFC-071)', () => {
     expect(formDataToUpdateRequest(edited, config(), { canSetZone: false }).intensity).toBe(
       'intrusive'
     )
+  })
+})
+
+describe('Edit: targets and asset groups', () => {
+  const edit = (patch: Partial<NewScanFormData['targets']>) => {
+    const c = config()
+    const f = scanConfigToFormData(c)
+    return formDataToUpdateRequest({ ...f, targets: { ...f.targets, ...patch } }, c, {
+      canSetZone: false,
+    })
+  }
+
+  it('an unchanged edit sends neither (the API keeps them)', () => {
+    const req = edit({})
+    expect('targets' in req).toBe(false)
+    expect('asset_ids' in req).toBe(false)
+    expect('asset_group_ids' in req).toBe(false)
+  })
+
+  it('order and case alone are not a change', () => {
+    expect('targets' in edit({ customTargets: ['EXAMPLE.com'] })).toBe(false)
+  })
+
+  it('changed targets are sent whole', () => {
+    // They used to be dropped: the save said "updated" and nothing changed.
+    expect(edit({ customTargets: ['example.com', 'api.example.com'] }).targets).toEqual([
+      'example.com',
+      'api.example.com',
+    ])
+    expect(edit({ customTargets: [] }).targets).toEqual([])
+  })
+
+  it('picked assets go by id with the typed targets', () => {
+    const req = edit({ assetIds: ['a1'], assetNames: { a1: 'shop.example.com' } })
+    expect(req.asset_ids).toEqual(['a1'])
+    expect(req.targets).toEqual(['example.com'])
+  })
+
+  it('changed asset groups are sent whole', () => {
+    expect(edit({ assetGroupIds: ['g1', 'g2'] }).asset_group_ids).toEqual(['g1', 'g2'])
+    expect(edit({ assetGroupIds: [] }).asset_group_ids).toEqual([])
   })
 })
