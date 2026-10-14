@@ -331,13 +331,16 @@ function GroupPager({
   const [query, setQuery] = React.useState('')
   const [debounced, setDebounced] = React.useState('')
   const [page, setPage] = React.useState(0)
+  // A new search starts at its first page; the initial (empty) query does
+  // not reset a page the reader has already moved to.
   React.useEffect(() => {
+    if (query === debounced) return
     const id = setTimeout(() => {
       setDebounced(query)
       setPage(0)
     }, 250)
     return () => clearTimeout(id)
-  }, [query])
+  }, [query, debounced])
 
   const { groups, isLoading, error, mutate } = useRelatedAssets(assetId, {
     type: group.type,
