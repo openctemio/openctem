@@ -37,6 +37,7 @@ type CIAdminService interface {
 	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
 	CreateOverride(ctx context.Context, tenantID shared.ID, in cirunapp.OverrideInput, a cirunapp.Actor) (*cirun.GateOverride, error)
 	ListOverrides(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope) ([]cirun.GateOverride, error)
+	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*cirun.GatePolicy, error)
 	GetOverride(ctx context.Context, tenantID, id shared.ID) (*cirun.GateOverride, error)
 	RevokeOverride(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
 }
@@ -49,6 +50,14 @@ type CIAdminHandler struct {
 	settings  CISettingsService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
+}
+
+// SetStepUpGate passes the re-authentication gate to the service: a gate
+// policy change that loosens the gate needs step-up.
+func (h *CIAdminHandler) SetStepUpGate(g shared.RecentAuthGate) {
+	if svc, ok := h.svc.(interface{ SetStepUpGate(shared.RecentAuthGate) }); ok {
+		svc.SetStepUpGate(g)
+	}
 }
 
 // NewCIAdminHandler creates the handler. A nil data-scope enforcer leaves
@@ -304,6 +313,12 @@ func pathID(w http.ResponseWriter, r *http.Request, what string) (shared.ID, boo
 
 func (h *CIAdminHandler) writeErr(w http.ResponseWriter, err error, what, notFound string) {
 	if WritePlanLimitError(w, err) {
+		return
+	}
+	if errors.Is(err, cirunapp.ErrStepUpUnavailable) {
+		err = middleware.ErrStepUpUnavailable
+	}
+	if writeStepUpError(w, err) {
 		return
 	}
 	switch {
@@ -620,9 +635,50 @@ func (h *CIAdminHandler) ListGatePolicies(w http.ResponseWriter, r *http.Request
 	def := cirun.DefaultGatePolicy()
 	out := CIGatePolicyListResponse{Data: make([]CIGatePolicyResponse, 0, len(list)), Default: toCIPolicyResponse(&def)}
 	for i := range list {
+		// A repository policy names an asset: only callers who may see it.
+		if list[i].ScopeType == cirun.ScopeRepository && list[i].ScopeID != nil &&
+			!assetInDataScope(r.Context(), h.dataScope, tenantID, *list[i].ScopeID) {
+			continue
+		}
 		out.Data = append(out.Data, toCIPolicyResponse(&list[i]))
 	}
 	ciWriteJSON(w, http.StatusOK, out)
+}
+
+// policyScopeAllowed reports whether the caller may manage a policy of this
+// scope and writes the refusal: a repository policy only for a repository
+// in the caller's data scope (404 otherwise, as for any asset they cannot
+// see); an organization or business unit policy only for a caller whose
+// data scope is unrestricted (403), since it governs repositories outside
+// a restricted scope.
+func (h *CIAdminHandler) policyScopeAllowed(w http.ResponseWriter, r *http.Request, tenantID shared.ID, scopeType string, scopeID *shared.ID, notFound string) bool {
+	if scopeType == cirun.ScopeRepository {
+		if scopeID == nil || !assetInDataScope(r.Context(), h.dataScope, tenantID, *scopeID) {
+			apierror.NotFound(notFound).WriteJSON(w)
+			return false
+		}
+		return true
+	}
+	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
+	if err != nil {
+		h.writeErr(w, err, "resolve data scope", notFound)
+		return false
+	}
+	if scope.Restricted() {
+		apierror.Forbidden("An organization or business unit gate policy needs access to every repository").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// policyOfCaller loads a policy and checks the caller may manage it.
+func (h *CIAdminHandler) policyOfCaller(w http.ResponseWriter, r *http.Request, tenantID, id shared.ID) bool {
+	p, err := h.svc.GetGatePolicy(r.Context(), tenantID, id)
+	if err != nil {
+		h.writeErr(w, err, "load gate policy", "CI gate policy")
+		return false
+	}
+	return h.policyScopeAllowed(w, r, tenantID, p.ScopeType, p.ScopeID, "CI gate policy")
 }
 
 func (req CIGatePolicyRequest) input() (cirunapp.GatePolicyInput, error) {
@@ -668,6 +724,9 @@ func (h *CIAdminHandler) CreateGatePolicy(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
+	if !h.policyScopeAllowed(w, r, tenantID, in.ScopeType, in.ScopeID, "Scope") {
+		return
+	}
 	p, err := h.svc.CreateGatePolicy(r.Context(), tenantID, in, h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "create gate policy", "Scope")
@@ -709,6 +768,9 @@ func (h *CIAdminHandler) UpdateGatePolicy(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
+	if !h.policyOfCaller(w, r, tenantID, id) {
+		return
+	}
 	p, err := h.svc.UpdateGatePolicy(r.Context(), tenantID, id, in, h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "change gate policy", "CI gate policy")
@@ -732,6 +794,9 @@ func (h *CIAdminHandler) DeleteGatePolicy(w http.ResponseWriter, r *http.Request
 	}
 	id, ok := pathID(w, r, "CI gate policy")
 	if !ok {
+		return
+	}
+	if !h.policyOfCaller(w, r, tenantID, id) {
 		return
 	}
 	if err := h.svc.DeleteGatePolicy(r.Context(), tenantID, id, h.actor(r)); err != nil {
