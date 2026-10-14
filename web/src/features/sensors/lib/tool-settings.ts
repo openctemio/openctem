@@ -243,3 +243,65 @@ export function defaultText(f: ToolSettingField): string {
   if (d === undefined) return ''
   return Array.isArray(d) ? d.join(', ') : String(d)
 }
+
+function asList(v: DraftValue | SettingScalar | SettingScalar[]): string[] {
+  return Array.isArray(v) ? v.map(String) : [String(v)]
+}
+
+/**
+ * Whether a field's draft value differs from the field's default. Unset
+ * (undefined, empty text, an empty list) is the default; a value equal to the
+ * default (the same number, text or list) is not a change.
+ */
+export function isChangedValue(f: ToolSettingField, v: DraftValue): boolean {
+  if (v === undefined || v === '') return false
+  if (Array.isArray(v) && v.length === 0) return false
+  const d = f.defaultValue
+  if (d === undefined) return true
+  if (Array.isArray(v) || Array.isArray(d)) return asList(v).join('\n') !== asList(d).join('\n')
+  if ((f.kind === 'integer' || f.kind === 'number') && typeof v === 'string') {
+    const n = Number(v)
+    return v.trim() === '' || !Number.isFinite(n) || n !== Number(d)
+  }
+  return String(v) !== String(d)
+}
+
+/** The fields whose draft value differs from their default, in field order. */
+export function changedFields(fields: ToolSettingField[], draft: Draft): ToolSettingField[] {
+  return fields.filter((f) => isChangedValue(f, draft[f.key]))
+}
+
+/** A short name for a field in a summary: its native flag without dashes, or its key. */
+export function shortName(f: ToolSettingField): string {
+  return f.flag ? f.flag.replace(/^-+/, '') : f.key
+}
+
+/** A draft value as summary text. */
+export function valueText(v: DraftValue): string {
+  if (v === undefined) return ''
+  return Array.isArray(v) ? v.join(',') : String(v)
+}
+
+/** How many changed options a tool summary names before it ends with "…". */
+export const SUMMARY_ITEMS = 3
+
+/**
+ * The changed options of a summary ("rate-limit 300, timeout 20, …"):
+ * at most SUMMARY_ITEMS, then an ellipsis.
+ */
+export function changeSummaryList(changed: ToolSettingField[], draft: Draft): string {
+  const shown = changed
+    .slice(0, SUMMARY_ITEMS)
+    .map((f) => `${shortName(f)} ${valueText(draft[f.key])}`)
+  if (changed.length > SUMMARY_ITEMS) shown.push('…')
+  return shown.join(', ')
+}
+
+/**
+ * Whether a field matches a search query (lower-case, trimmed): by key,
+ * native flag or label.
+ */
+export function fieldMatches(f: ToolSettingField, label: string, q: string): boolean {
+  if (q === '') return false
+  return [f.key, f.flag ?? '', label].some((s) => s.toLowerCase().includes(q))
+}
