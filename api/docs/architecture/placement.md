@@ -48,8 +48,16 @@ of `hostFreePredicate` (`HostHolders`): tenant-scoped, and a key a holder
 released because its targets settled no longer counts. The run page shows
 "Waiting: 10 of its 10 hosts are being scanned by httpx (step http). It
 starts when those hosts are free." instead of "should start shortly", with a
-link to the run that holds them; the task list flags such a task
-(`waiting_on_hosts`). A sensor that hands a task back for its own per-host
+link to the run that holds them. `host_wait` also gives `targets` and
+`can_start`, how many of the task's targets are on hosts nobody holds (-1
+when its keys cannot all be attributed to its targets); a claim with a free
+slot splits those off when at most half of the targets wait
+([scan orchestration](scan-orchestration.md)). The task list flags such a
+task (`waiting_on_hosts`) and, for at most 25 waiting tasks of a page, gives
+the same `host_wait` (`RunTaskHostWait`: the task must be the run's and
+pending). The row reads in full, for example "Waiting for 2 of its hosts,
+held by nuclei (step templates, run 1a2b3c4d); 21 of its 23 targets are on
+free hosts". A sensor that hands a task back for its own per-host
 limit ("its hosts are busy on this sensor") is stored as the release code
 `hosts_busy`; while the platform sees the hosts free, the explainer names it
 `sensor_hosts_busy`.
