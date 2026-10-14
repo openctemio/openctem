@@ -1,8 +1,9 @@
 # Content packs: the pack store
 
 Design, use cases and threat model: [RFC-061](../rfcs/RFC-061-content-packs.md).
-This page describes what is built: the pack store for tenant uploads (phase K2).
-Delivery to sensors (K3), composition in steps (K4) and the other sources (K5) come later.
+This page describes what is built: the pack store for tenant uploads (phase K2)
+and delivery to sensors by digest (part of K3). Composition in steps and pin at
+run start (K4) and the other sources (K5) come later.
 
 ## Model
 
@@ -98,6 +99,27 @@ Routes:
 
   Each write records an admin audit row at high severity with the reason.
 - `/api/v1/platform-content-packs`: read-only for organizations, with `scans:content:read`.
+
+## Delivery to sensors
+
+Sensors get packs only from the platform, over the sensor channel (protocol v2 routes, also served in process for protocol v3), on the control read budget:
+
+| Route | What |
+|---|---|
+| `GET /api/v2/sensor/content/desired` | The organization's desired set: its active packs and the platform's packs on the `stable` channel, each with digest, scope, size and the DSSE signature; plus the revoked digests. It has an `ETag` (a hash of the document). `If-None-Match` with the current one answers `304` with no body. |
+| `GET /api/v2/sensor/content/packs/{digest}` | The canonical archive. Immutable: `ETag` is the digest, `Cache-Control: immutable`, and `Range` is supported. |
+| `GET /api/v2/sensor/content/packs/{digest}/index` | The pack's files: `path`, `sha256`, `size`. |
+| `GET /api/v2/sensor/content/packs/{digest}/files/{sha256}` | One file of the pack. |
+
+- **What a sensor may read.** It reads only digests in its organization's desired set. Anything else is `404 content-not-found`: another organization's pack, a revoked one, an unknown digest, or a file that is not in the pack.
+- **Revocation latency.** The set is cached for 10 seconds per organization, so a delta install's many file requests do not recompute it, and a revocation takes effect within that time.
+- **Archive cache.** Served archives are re-checked against their digest and kept in a 256 MiB in-process cache.
+- **The sensor side** (sdk-go `contentcache`):
+  - it never fetches a digest it holds;
+  - it builds a new version from the files it holds plus only the changed ones, and checks the rebuilt archive against the signed digest;
+  - it prefetches on a jittered schedule;
+  - it counts hits, misses and bytes saved.
+- **Measured** (integration test, 3 sensors × 2 runs, a 40-file pack with 2 files changed in the new version): the new version cost 30 KB instead of 372 KB of full downloads (92% less). Over both runs, traffic is 44% less than every sensor downloading every version in full, and upstream downloads drop from one per sensor to one per platform.
 
 ## API
 
