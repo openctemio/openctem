@@ -88,12 +88,23 @@ export interface UpdateSuppressionInput {
   expires_at?: string | null
 }
 
+/** The console's translator (useTranslation().t). */
+export type Translate = (
+  key: string,
+  fallback?: string,
+  vars?: Record<string, string | number>
+) => string
+
+const plain: Translate = (_key, fallback = '') => fallback
+
+/** English fallbacks of exceptions.type.<type>; render with suppressionTypeLabel. */
 export const SUPPRESSION_TYPE_LABELS: Record<SuppressionType, string> = {
   false_positive: 'False Positive',
   accepted_risk: 'Accepted Risk',
   wont_fix: "Won't Fix",
 }
 
+/** English fallbacks of exceptions.status.<status>; render with suppressionStatusLabel. */
 export const SUPPRESSION_STATUS_LABELS: Record<SuppressionStatus, string> = {
   pending: 'Pending',
   approved: 'Approved',
@@ -119,11 +130,21 @@ export const SUPPRESSION_TYPE_BADGE: Record<SuppressionType, string> = {
 }
 
 /** Short human summary of a rule's matching criteria for table/scope cells. */
-export function suppressionScopeSummary(rule: SuppressionRule): string {
+export function suppressionScopeSummary(rule: SuppressionRule, t: Translate = plain): string {
   const parts: string[] = []
   if (rule.tool_name) parts.push(rule.tool_name)
   if (rule.rule_id) parts.push(rule.rule_id)
   if (rule.path_pattern) parts.push(rule.path_pattern)
-  if (rule.asset_id) parts.push('asset-scoped')
-  return parts.length ? parts.join(' · ') : 'Any finding'
+  if (rule.asset_id) parts.push(t('exceptions.scope.assetScoped', 'asset-scoped'))
+  return parts.length ? parts.join(' · ') : t('exceptions.scope.any', 'Any finding')
+}
+
+export function suppressionTypeLabel(type: SuppressionType, t: Translate = plain): string {
+  const fallback = SUPPRESSION_TYPE_LABELS[type]
+  return fallback ? t(`exceptions.type.${type}`, fallback) : type
+}
+
+export function suppressionStatusLabel(status: SuppressionStatus, t: Translate = plain): string {
+  const fallback = SUPPRESSION_STATUS_LABELS[status]
+  return fallback ? t(`exceptions.status.${status}`, fallback) : status
 }
