@@ -1844,9 +1844,9 @@ inside it. Use one zone per segment (scan-zones.md).
 ## Tool settings (RFC-038)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **per-sensor tool settings and per-scan settings for naabu and nuclei
-> shipped** (below); tenant policy, dangerous-option enablement and the
-> scan-layer preview are planned.
+> **per-sensor tool settings, per-scan settings, the scan-layer preview and
+> the save-time check of scan and step options shipped** (below); tenant
+> policy and dangerous-option enablement are planned.
 
 **Per-sensor tool settings (shipped).** An owner or administrator configures
 each tool of one of the organization's own sensors from the sensor drawer's
@@ -1900,6 +1900,7 @@ each tool of one of the organization's own sensors from the sensor drawer's
 | `PUT /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | body `{"values": {...}}`; 422 with `details: [{path, message}]` |
 | `DELETE /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | back to defaults; works for a tool the manifest no longer lists |
 | `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`sensor`), `flag`, `common`, `scope`, `tier` |
+| `POST /api/v1/sensors/{id}/tool-settings/{tool}/preview` | `sensors:read` | read-only; body `{"config": {...}}` (a scan's or step's options); every key with its `source` (`default`/`sensor`/`scan`) and the `ignored` config keys; 422 by path when the sensor would refuse the config |
 
 Every route ends with the own-sensor check: another organization's sensor
 and a platform sensor answer 404. Key files:
@@ -1909,6 +1910,31 @@ and a platform sensor answer 404. Key files:
 `internal/app/command/tool_settings.go`; web
 `web/src/features/sensors/components/sensor-tool-settings.tsx` and
 `web/src/features/sensors/lib/tool-settings.ts`.
+
+**Scan-layer preview and save-time check (shipped).** A scan's or a
+workflow step's options are checked the way the sensor will resolve them
+(`pkg/domain/sensor/tool_settings.go`: `ScanSettingsLayer`,
+`ValidateScanSettings`). The scan layer is the config keys the tool's
+schema declares, minus the keys the sensor's executor reads itself
+(`rate_limit`, `concurrency`, `bulk_size` are the job's limits, which only
+ever lower the value in force; `allow_interactsh`, `exclude`); other keys
+are ignored, as on the sensor. Over the sensor's stored values, the scan
+layer may only set `scan`-scope keys within their bounds, may not raise
+rate, concurrency or retries above the value in force (the sensor's raise,
+or the default), and may not give a dangerous (T2) key a non-default value.
+
+- *Preview.* `POST .../tool-settings/{tool}/preview` answers what a job of
+  that config runs with on that sensor, before the job's own limits and the
+  sensor's local policy (both only lower values). It stores nothing.
+- *Save.* Saving a single-scanner scan (create, update) and adding or
+  editing a step pinned to a tool check its options against every one of
+  the organization's own active sensors that reports the tool and declares
+  settings for it (at most 50): the save is refused (400, naming the
+  sensor and the first problem) only when no such sensor accepts the
+  options, so one stale sensor does not block a scan the others run. With
+  no such sensor (platform sensors only, or a tool without settings) the
+  save is not checked here; the sensor still refuses what it cannot run. A
+  step that picks its tool at run time is not checked (no single schema).
 
 **Per-scan settings (shipped).** A scan command's settings travel in the
 payload key `config` (`pipeline.PayloadKeyConfig`), the key the SDK reads

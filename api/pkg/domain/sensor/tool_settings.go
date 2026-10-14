@@ -145,6 +145,12 @@ func ValidateToolSettings(schema *settings.Schema, values map[string]any) error 
 	if _, err := schema.Resolve(settings.Layer{Source: settings.SourceSensor, Values: values}); err != nil {
 		return err
 	}
+	return refuseDangerous(schema, values)
+}
+
+// refuseDangerous refuses a non-default value of a dangerous (T2) key: the
+// organization's enablement of dangerous options is not available yet.
+func refuseDangerous(schema *settings.Schema, values map[string]any) error {
 	var errs settings.Errors
 	for _, key := range flatKeys(values) {
 		p := schema.Property(key)
@@ -217,10 +223,76 @@ type EffectiveToolSetting struct {
 // its native flag, common option, scope and tier. A sensitive key never
 // shows its value.
 func EffectiveToolSettings(schema *settings.Schema, values map[string]any) ([]EffectiveToolSetting, error) {
+	return EffectiveToolSettingsWithScan(schema, values, nil)
+}
+
+// scanExecutorKeys are the scan-config keys the sensor's command executor
+// reads itself (sdk-go core: the job's limits rate_limit, bulk_size and
+// concurrency, which only ever lower the value in force, and the run
+// switches allow_interactsh and exclude); they never form the scan layer.
+var scanExecutorKeys = map[string]bool{
+	"allow_interactsh": true, "exclude": true,
+	"rate_limit": true, "bulk_size": true, "concurrency": true,
+}
+
+// ScanSettingsLayer returns the scan layer a sensor builds from a scan's
+// config, as the sensor builds it: the keys the tool's schema declares,
+// without the executor's own keys. ignored lists the other keys (the
+// sensor ignores them too), sorted; a key that is not a setting name is
+// not echoed.
+func ScanSettingsLayer(schema *settings.Schema, config map[string]any) (layer map[string]any, ignored []string) {
+	layer = map[string]any{}
+	for k, v := range config {
+		switch {
+		case scanExecutorKeys[k]:
+		case schema != nil && settings.ValidName(k) && schema.Property(k) != nil:
+			layer[k] = v
+		case settings.ValidName(k):
+			ignored = append(ignored, k)
+		default:
+			ignored = append(ignored, "<invalid key>")
+		}
+	}
+	sort.Strings(ignored)
+	return layer, ignored
+}
+
+// ValidateScanSettings checks a scan layer over the sensor's stored values
+// the way the sensor resolves a job: only scan-scope keys, within their
+// constraints, never raising a common option above the value in force
+// (the sensor's, or the default), and no non-default value of a dangerous
+// (T2) key. The error is settings.Errors, by JSON pointer.
+func ValidateScanSettings(schema *settings.Schema, sensorValues, scanLayer map[string]any) error {
+	if schema == nil || len(scanLayer) == 0 {
+		return nil
+	}
+	if _, err := schema.Resolve(scanLayers(sensorValues, scanLayer)...); err != nil {
+		return err
+	}
+	return refuseDangerous(schema, scanLayer)
+}
+
+// scanLayers is the sensor layer (when any) then the scan layer.
+func scanLayers(sensorValues, scanLayer map[string]any) []settings.Layer {
+	var layers []settings.Layer
+	if len(sensorValues) > 0 {
+		layers = append(layers, settings.Layer{Source: settings.SourceSensor, Values: sensorValues})
+	}
+	if len(scanLayer) > 0 {
+		layers = append(layers, settings.Layer{Source: settings.SourceScan, Values: scanLayer})
+	}
+	return layers
+}
+
+// EffectiveToolSettingsWithScan is EffectiveToolSettings with a scan layer
+// (ScanSettingsLayer) over the sensor's values: what a job of that scan
+// runs with on that sensor, before the job's own limits and the sensor's
+// local policy, which only lower values. Sources include "scan".
+func EffectiveToolSettingsWithScan(schema *settings.Schema, values, scanLayer map[string]any) ([]EffectiveToolSetting, error) {
 	if schema == nil {
 		return []EffectiveToolSetting{}, nil
 	}
-	resolved, err := schema.Resolve(settings.Layer{Source: settings.SourceSensor, Values: values})
+	resolved, err := schema.Resolve(scanLayers(values, scanLayer)...)
 	if err != nil {
 		return nil, err
 	}
