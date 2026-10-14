@@ -3,7 +3,9 @@ name: Release Tooling
 # The release train's scripts and the version manifest (api/docs/rfcs/RFC-037).
 #
 #   Release scripts       shellcheck + the shell tests of .github/scripts/release
-#   Version consistency   every versioned default agrees with versions.yaml,
+#   Version consistency   every versioned default agrees with versions.yaml
+#                         (the API embeds a copy of it: no Go file holds a
+#                         version),
 #                         web/package.json stays 0.0.0, and platform.release
 #                         names an existing tag; on release/vX.Y.Z (and on
 #                         main right after it merges, before the tag exists)
@@ -23,8 +25,8 @@ on:
       - api/deploy/.env.example
       - api/deploy/docker-compose.yml
       - api/deploy/docker-compose.job-signer.yml
-      - api/internal/config/config.go
-      - api/internal/infra/http/handler/sensor_handler.go
+      - api/internal/versions/**
+      - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   push:
     branches: [develop, main]
@@ -36,8 +38,8 @@ on:
       - api/deploy/.env.example
       - api/deploy/docker-compose.yml
       - api/deploy/docker-compose.job-signer.yml
-      - api/internal/config/config.go
-      - api/internal/infra/http/handler/sensor_handler.go
+      - api/internal/versions/**
+      - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   workflow_dispatch:
 

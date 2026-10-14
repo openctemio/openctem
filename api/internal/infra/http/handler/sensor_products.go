@@ -1,7 +1,7 @@
 package handler
 
 // The sensor product catalog as the Sensors page sees it (versions.yaml,
-// api/docs/rfcs/RFC-037 §9): the products whose install snippets the
+// api/docs/rfcs/RFC-037 §11): the products whose install snippets the
 // platform renders and whose release lines it judges sensors against.
 
 import (
