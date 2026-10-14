@@ -172,7 +172,20 @@ export function parseTechnology(raw: string): Technology {
 export function technologies(asset: Pick<Asset, 'metadata'>): Technology[] | null {
   const v = prop(asset, 'technologies')
   if (v === undefined) return null
-  return uniq(strList(v)).map(parseTechnology)
+  // Scanners write "name:version" strings; some integrations write
+  // { name, version } objects. Both are a technology, never "none found".
+  const list = Array.isArray(v)
+    ? v.map((x) => {
+        if (x && typeof x === 'object' && typeof (x as { name?: unknown }).name === 'string') {
+          const { name, version } = x as { name: string; version?: unknown }
+          return typeof version === 'string' && version.trim()
+            ? `${name.trim()}:${version.trim()}`
+            : name.trim()
+        }
+        return typeof x === 'string' ? x.trim() : ''
+      })
+    : strList(v)
+  return uniq(list.filter(Boolean)).map(parseTechnology)
 }
 
 export function formatTechnology(t: Technology): string {

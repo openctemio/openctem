@@ -48,6 +48,7 @@ type CIAdminHandler struct {
 	pipelines CIPipelineService
 	coverage  CICoverageService
 	settings  CISettingsService
+	codeScan  CICodeScanService
 	refusals  CIRefusalService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
@@ -163,9 +164,19 @@ type CIRunResponse struct {
 	// view only).
 	VerdictDetail *cirunapp.Verdict `json:"verdict_detail,omitempty"`
 	EvaluatedAt   *time.Time        `json:"evaluated_at,omitempty"`
-	ReportsCount  int               `json:"reports_count"`
-	FindingsCount int               `json:"findings_count"`
-	CreatedAt     time.Time         `json:"created_at"`
+	// WouldFail: the verdict passed only because the policy warns or a
+	// break-glass override covered the commit (list and detail).
+	WouldFail bool `json:"would_fail"`
+	// Override is the break-glass override that let the commit pass.
+	Override *cirun.GateOverrideView `json:"override,omitempty"`
+	// DecorationState is where posting the verdict to the code host stands
+	// (pending, posting, posted, skipped, failed; empty when nothing was
+	// queued) and DecorationDetail a short explanation.
+	DecorationState  string    `json:"decoration_state,omitempty"`
+	DecorationDetail string    `json:"decoration_detail,omitempty"`
+	ReportsCount     int       `json:"reports_count"`
+	FindingsCount    int       `json:"findings_count"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
@@ -183,6 +194,16 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 		out.PipelineID = r.PipelineID.String()
 	}
 	out.SensorVersion, out.ScanFailures, out.TemplateRef = r.SensorVersion, r.ScanFailures, r.TemplateRef
+	out.DecorationState, out.DecorationDetail = r.DecorationState, r.DecorationDetail
+	if len(r.VerdictDetail) > 0 {
+		var v struct {
+			WouldFail bool                    `json:"would_fail"`
+			Override  *cirun.GateOverrideView `json:"override"`
+		}
+		if json.Unmarshal(r.VerdictDetail, &v) == nil {
+			out.WouldFail, out.Override = v.WouldFail, v.Override
+		}
+	}
 	out.Tools = make([]CIToolLabel, 0, len(r.Tools))
 	for _, t := range r.Tools {
 		out.Tools = append(out.Tools, CIToolLabel{Name: t.Name, Version: t.Version})
