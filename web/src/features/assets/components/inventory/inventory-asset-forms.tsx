@@ -52,7 +52,7 @@ export function useInventoryAssetForms(
   dialogs: ReactNode
 } {
   const router = useRouter()
-  const { locale } = useTranslation()
+  const { locale, t } = useTranslation()
   const [createView, setCreateView] = useState<TypeView | null>(null)
   const [editing, setEditing] = useState<{ asset: Asset; view: TypeView } | null>(null)
   const [deleting, setDeleting] = useState<Asset | null>(null)
@@ -80,19 +80,26 @@ export function useInventoryAssetForms(
             asset_ids: [created.id],
           })
         }
-        toast.success(`${createView.label} added`)
+        toast.success(t('assets.formsHost.added', '{type} added', { type: createView.label }))
         onChanged()
         return true
       } catch (err) {
         if (!toastIfDuplicateAsset(err, router.push)) {
-          toast.error(getErrorMessage(err, `Failed to add the ${inSentence(createView.label)}`))
+          toast.error(
+            getErrorMessage(
+              err,
+              t('assets.formsHost.addFailed', 'Failed to add the {type}', {
+                type: inSentence(createView.label),
+              })
+            )
+          )
         }
         return false
       } finally {
         setSubmitting(false)
       }
     },
-    [createView, onChanged, router.push]
+    [createView, onChanged, router.push, t]
   )
 
   const submitEdit = useCallback(
@@ -104,17 +111,19 @@ export function useInventoryAssetForms(
           editing.asset.id,
           updateInputFromForm(editing.view, data, editing.asset.metadata)
         )
-        toast.success(`${editing.asset.name} updated`)
+        toast.success(t('assets.formsHost.updated', '{name} updated', { name: editing.asset.name }))
         onChanged()
         return true
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to update the asset'))
+        toast.error(
+          getErrorMessage(err, t('assets.formsHost.updateFailed', 'Failed to update the asset'))
+        )
         return false
       } finally {
         setSubmitting(false)
       }
     },
-    [editing, onChanged]
+    [editing, onChanged, t]
   )
 
   const confirmDelete = useCallback(async () => {
@@ -133,8 +142,13 @@ export function useInventoryAssetForms(
       <AssetFormDialogShared
         open={!!createView}
         onOpenChange={(o) => !o && setCreateView(null)}
-        title={`Add ${createView ? inSentence(createView.label) : 'asset'}`}
-        description="Fields left empty stay unknown; scans fill them in."
+        title={t('assets.formsHost.addTitle', 'Add {type}', {
+          type: createView ? inSentence(createView.label) : t('assets.formsHost.asset', 'asset'),
+        })}
+        description={t(
+          'assets.formsHost.addDesc',
+          'Fields left empty stay unknown; scans fill them in.'
+        )}
         fields={createFields}
         assetType={createView?.type}
         onSubmit={submitCreate}
@@ -144,7 +158,7 @@ export function useInventoryAssetForms(
       <AssetFormDialogShared
         open={!!editing}
         onOpenChange={(o) => !o && setEditing(null)}
-        title={`Edit ${editing?.asset.name ?? ''}`}
+        title={t('assets.formsHost.editTitle', 'Edit {name}', { name: editing?.asset.name ?? '' })}
         fields={editFields}
         asset={editing?.asset}
         assetType={editing?.asset.type}
