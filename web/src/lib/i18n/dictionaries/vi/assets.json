@@ -281,5 +281,6 @@
   "assets.properties.allTitle": "Tất cả thuộc tính",
   "assets.properties.show": "Hiện",
   "assets.properties.hide": "Ẩn",
-  "assets.keyFacts.resolvesTo": "Phân giải tới"
+  "assets.keyFacts.resolvesTo": "Phân giải tới",
+  "assets.attribution.scan.guardrailed": "Các lần quét giữ tài sản này ở chế độ thụ động: một rào chắn của nền tảng giữ nó (mạng dùng chung, CDN hoặc đám mây, mạng chưa rõ, hosting dùng chung, hoặc tên miền ngoài miền của bạn). Thêm vào Phạm vi › Phạm vi nếu đó là của bạn."
 }
