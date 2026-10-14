@@ -847,6 +847,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
 	s.suggestImageLinks(ctx, run, report)
+	s.requestInlineIgnores(ctx, run, report)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }
