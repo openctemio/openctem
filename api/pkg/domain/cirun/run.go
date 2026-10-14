@@ -165,7 +165,9 @@ type RunFinding struct {
 	Status      string
 	FindingType string
 	// Source is the finding's technique (sast, sca, secret, iac, container).
-	Source    string
+	Source string
+	// ToolName is the finding's tool, for suppression rules that name one.
+	ToolName  string
 	FilePath  string
 	StartLine int
 	IsInKEV   bool

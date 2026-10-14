@@ -35,6 +35,7 @@ type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
 	UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error)
+	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) []cirun.KnownFinding
 	UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
@@ -203,13 +204,13 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict.
+// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
 // @Param        id   path string true "Run ID"
 // @Param        body body CTISIngestRequest true "CTIS report"
-// @Success      201  {object}  IngestResponse
+// @Success      201  {object}  CIUploadResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -243,7 +244,16 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(newIngestResponse(out))
+	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: h.svc.KnownFindings(r.Context(), run, out)})
+}
+
+// CIUploadResponse is the result of a CI report upload: the ingest counts,
+// and the results of this report that carry a decision the gate honors (a
+// false positive, duplicate, accepted risk or approved suppression), by their
+// index in the report. The job leaves those out of its own output.
+type CIUploadResponse struct {
+	IngestResponse
+	Known []cirun.KnownFinding `json:"known"`
 }
 
 // decodeCTISReport accepts {"report": {...}} or a bare report, refusing

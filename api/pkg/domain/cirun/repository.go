@@ -70,6 +70,10 @@ type Repository interface {
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
+	// FindingsByFingerprints returns the findings on assetID that hold the
+	// given fingerprints (at most MaxRunFindings), with the fields
+	// RunFindings returns.
+	FindingsByFingerprints(ctx context.Context, tenantID, assetID shared.ID, fingerprints []string) ([]RunFinding, error)
 	// SaveVerdict stores the first verdict of a running run whose recorded
 	// findings count is still expectFindings (the count the verdict was
 	// computed from): ErrRunEvaluated when another verdict was stored first,

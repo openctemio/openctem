@@ -525,6 +525,18 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 	return tx.Commit()
 }
 
+// runFindingColumns are the columns scanRunFindings reads, from findings f.
+const runFindingColumns = `f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
+			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.tool_name, ''),
+			COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
+			COALESCE(f.is_in_kev, FALSE), f.epss_score,
+			COALESCE((f.remediation->>'fix_available')::boolean, FALSE),
+			EXISTS (SELECT 1 FROM finding_suppressions s
+				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
+				WHERE s.finding_id = f.id AND sr.status = 'approved'
+				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
+			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at`
+
 // RunFindings returns the findings on the run's asset that the run recorded.
 //
 // A finding counts as suppressed only through a rule that applies now:
@@ -532,15 +544,7 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 // and keeps its link row, and a link can name a rule that was never approved,
 // so the link alone must not let a finding pass the gate.
 func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]cirun.RunFinding, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
-			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
-			COALESCE(f.is_in_kev, FALSE), f.epss_score,
-			COALESCE((f.remediation->>'fix_available')::boolean, FALSE),
-			EXISTS (SELECT 1 FROM finding_suppressions s
-				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
-				WHERE s.finding_id = f.id AND sr.status = 'approved'
-				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
-			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at
+	rows, err := r.db.QueryContext(ctx, `SELECT `+runFindingColumns+`
 		FROM ci_run_findings rf
 		JOIN findings f ON f.tenant_id = rf.tenant_id AND f.fingerprint = rf.fingerprint
 		WHERE rf.tenant_id = $1 AND rf.run_id = $2 AND f.asset_id = $3
@@ -549,6 +553,29 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 	if err != nil {
 		return nil, err
 	}
+	return scanRunFindings(rows)
+}
+
+// FindingsByFingerprints returns the findings on assetID holding the given
+// fingerprints, tenant scoped.
+func (r *CIRunRepository) FindingsByFingerprints(ctx context.Context, tenantID, assetID shared.ID, fingerprints []string) ([]cirun.RunFinding, error) {
+	if len(fingerprints) == 0 {
+		return []cirun.RunFinding{}, nil
+	}
+	if len(fingerprints) > cirun.MaxRunFindings {
+		fingerprints = fingerprints[:cirun.MaxRunFindings]
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT `+runFindingColumns+`
+		FROM findings f
+		WHERE f.tenant_id = $1 AND f.asset_id = $2 AND f.fingerprint = ANY($3)`,
+		tenantID.String(), assetID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, err
+	}
+	return scanRunFindings(rows)
+}
+
+func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 	defer func() { _ = rows.Close() }()
 	out := []cirun.RunFinding{}
 	for rows.Next() {
@@ -558,7 +585,7 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 			epss                       sql.NullFloat64
 			accExp, firstDet, reopened sql.NullTime
 		)
-		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source,
+		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source, &f.ToolName,
 			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
 			return nil, err
 		}
