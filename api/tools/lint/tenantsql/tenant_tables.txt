@@ -92,6 +92,7 @@ exposures
 finding_activities
 finding_branch_occurrences
 finding_comments
+finding_decision_suspensions
 finding_definitions
 finding_evidence
 finding_evidence_secrets
