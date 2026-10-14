@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -186,6 +187,19 @@ type GatePolicyInput struct {
 	AllowRepoPolicy *bool
 }
 
+// ErrStepUpUnavailable: a change that loosens the gate needs step-up, and
+// none is wired (fail closed).
+var ErrStepUpUnavailable = errors.New("step-up re-authentication is not available")
+
+// SetStepUpGate sets the re-authentication a change that loosens the gate
+// needs.
+func (s *Service) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
+
+// GetGatePolicy returns one policy of the tenant.
+func (s *Service) GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*cirun.GatePolicy, error) {
+	return s.repo.GetGatePolicy(ctx, tenantID, id)
+}
+
 // ListGatePolicies returns the tenant's gate policies.
 func (s *Service) ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]cirun.GatePolicy, error) {
 	return s.repo.ListGatePolicies(ctx, tenantID)
@@ -208,6 +222,14 @@ func (s *Service) CreateGatePolicy(ctx context.Context, tenantID shared.ID, in G
 	if err := s.checkPolicyScope(ctx, tenantID, p); err != nil {
 		return nil, err
 	}
+	inherited, err := s.inheritedPolicy(ctx, tenantID, p)
+	if err != nil {
+		return nil, err
+	}
+	loosened := cirun.Loosens(inherited, effective(p, inherited))
+	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+		return nil, err
+	}
 	if err := s.repo.CreateGatePolicy(ctx, p); err != nil {
 		return nil, err
 	}
@@ -215,6 +237,7 @@ func (s *Service) CreateGatePolicy(ctx context.Context, tenantID shared.ID, in G
 		WithResourceName(policyName(p)).
 		WithMessage("CI gate policy created for "+policyName(p)).
 		WithChanges(auditdom.NewChanges().SetAfter("config", policySnapshot(p))))
+	s.announceLoosened(ctx, tenantID, a, p, loosened)
 	return p, nil
 }
 
@@ -234,6 +257,14 @@ func (s *Service) UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	if err := next.Validate(); err != nil {
 		return nil, err
 	}
+	inherited, err := s.inheritedPolicy(ctx, tenantID, cur)
+	if err != nil {
+		return nil, err
+	}
+	loosened := cirun.Loosens(effective(cur, inherited), effective(&next, inherited))
+	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+		return nil, err
+	}
 	if err := s.repo.UpdateGatePolicy(ctx, &next); err != nil {
 		return nil, err
 	}
@@ -241,6 +272,7 @@ func (s *Service) UpdateGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 		WithResourceName(policyName(&next)).
 		WithMessage("CI gate policy changed for "+policyName(&next)).
 		WithChanges(auditdom.NewChanges().Set("config", before, policySnapshot(&next))))
+	s.announceLoosened(ctx, tenantID, a, &next, loosened)
 	return &next, nil
 }
 
@@ -250,6 +282,14 @@ func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 	if err != nil {
 		return err
 	}
+	inherited, err := s.inheritedPolicy(ctx, tenantID, cur)
+	if err != nil {
+		return err
+	}
+	loosened := cirun.Loosens(effective(cur, inherited), inherited)
+	if err := s.requireStepUpToLoosen(ctx, a, loosened); err != nil {
+		return err
+	}
 	if err := s.repo.DeleteGatePolicy(ctx, tenantID, id); err != nil {
 		return err
 	}
@@ -257,6 +297,7 @@ func (s *Service) DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, 
 		WithResourceName(policyName(cur)).
 		WithMessage("CI gate policy deleted for "+policyName(cur)).
 		WithChanges(auditdom.NewChanges().SetBefore("config", policySnapshot(cur))))
+	s.announceLoosened(ctx, tenantID, a, cur, loosened)
 	return nil
 }
 
@@ -289,6 +330,80 @@ func applyPolicyInput(p *cirun.GatePolicy, in GatePolicyInput) {
 	if in.AllowRepoPolicy != nil {
 		p.AllowRepoPolicy = *in.AllowRepoPolicy
 	}
+}
+
+// effective is what applies to a policy's scope: the policy while it is
+// enabled, else what the scope inherits.
+func effective(p *cirun.GatePolicy, inherited cirun.GatePolicy) cirun.GatePolicy {
+	if p.Enabled {
+		return *p
+	}
+	return inherited
+}
+
+// inheritedPolicy is what applies to p's scope without p: for a repository,
+// its business units' (strictest) or the tenant's policy or the default;
+// for a business unit, the tenant's or the default; for the tenant, the
+// default.
+func (s *Service) inheritedPolicy(ctx context.Context, tenantID shared.ID, p *cirun.GatePolicy) (cirun.GatePolicy, error) {
+	var ps []cirun.GatePolicy
+	var err error
+	switch p.ScopeType {
+	case cirun.ScopeRepository:
+		ps, err = s.repo.GatePoliciesFor(ctx, tenantID, *p.ScopeID)
+	case cirun.ScopeBusinessUnit:
+		ps, err = s.repo.ListGatePolicies(ctx, tenantID)
+	default:
+		return cirun.DefaultGatePolicy(), nil
+	}
+	if err != nil {
+		return cirun.GatePolicy{}, fmt.Errorf("load gate policies: %w", err)
+	}
+	keep := ps[:0]
+	for _, q := range ps {
+		if !q.Enabled || q.ID == p.ID || q.ScopeType == cirun.ScopeRepository ||
+			(p.ScopeType == cirun.ScopeBusinessUnit && q.ScopeType != cirun.ScopeTenant) {
+			continue
+		}
+		keep = append(keep, q)
+	}
+	out, _ := resolveFrom(keep)
+	return out, nil
+}
+
+// requireStepUpToLoosen asks for a recent sign-in when a change weakens
+// the gate, like a break-glass does.
+func (s *Service) requireStepUpToLoosen(ctx context.Context, a Actor, loosened []string) error {
+	if len(loosened) == 0 {
+		return nil
+	}
+	if s.stepUp == nil {
+		return ErrStepUpUnavailable
+	}
+	return s.stepUp.RequireRecentAuth(ctx, a.UserID)
+}
+
+// announceLoosened records a change that weakened the gate at high severity
+// and tells every administrator, on the break-glass channel: it lets
+// findings pass that failed before, for every commit of the scope.
+func (s *Service) announceLoosened(ctx context.Context, tenantID shared.ID, a Actor, p *cirun.GatePolicy, loosened []string) {
+	if len(loosened) == 0 {
+		return
+	}
+	what := strings.Join(loosened, ", ")
+	s.logAudit(ctx, tenantID, a, auditapp.NewSuccessEvent(auditdom.ActionCIGatePolicyLoosened, auditdom.ResourceTypeCIGatePolicy, p.ID.String()).
+		WithResourceName(policyName(p)).
+		WithSeverity(auditdom.SeverityHigh).
+		WithMessage("CI gate policy for "+policyName(p)+" loosened: "+what).
+		WithMetadata("loosened", what))
+	pid := p.ID
+	s.alertAdmins(ctx, tenantID, breakGlassAlert(AdminAlert{
+		Title: "CI gate policy loosened: " + policyName(p),
+		Body: fmt.Sprintf("%s changed the CI gate policy for %s so that more findings pass (%s).",
+			nonEmpty(a.Email, "an administrator"), policyName(p), what),
+		URL: "/ci-cd?tab=setup", Aggregate: "ci_gate_policy", AggregateID: &pid,
+		Metadata: map[string]any{"action": "policy_loosened", "scope": policyName(p), "loosened": loosened},
+	}))
 }
 
 // checkPolicyScope makes sure a policy's repository or business unit is the
