@@ -101,6 +101,7 @@ func ready(licensed, active, batch int) tenablesc.CoverageStatus {
 		Policy:       scancoverage.LicensePolicy{Mode: scancoverage.LicenseActiveIPCap, Cap: licensed},
 		ActiveIPs:    active,
 		DefaultBatch: batch,
+		NewHeadroom:  licensed - active,
 	}
 }
 

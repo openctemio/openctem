@@ -100,6 +100,7 @@ type Service struct {
 	claimer      SyncClaimer
 	scope        ScopeAdder
 	grants       GrantReader
+	ledger       CoverageLedger
 	audit        *auditapp.AuditService
 	logger       *logger.Logger
 	now          func() time.Time
@@ -158,6 +159,22 @@ type SyncState struct {
 	// ScopeNoticeAt: when the administrators were told that this connector's
 	// assets are added to scope; the first sync after that adds them.
 	ScopeNoticeAt *time.Time `json:"scope_notice_at,omitempty"`
+
+	// License-aware coverage (research/143 §4), written by the coverage
+	// settlement: when the next batch may be tried and why it waits, whether
+	// the next batch recycles the rotation repository, why rotation is
+	// stalled (an administrator resumes it), and the current cycle.
+	NextBatchAt     *time.Time `json:"next_batch_at,omitempty"`
+	CoverageWait    string     `json:"coverage_wait,omitempty"`
+	RecycleNext     bool       `json:"recycle_next,omitempty"`
+	RotationStalled string     `json:"rotation_stalled,omitempty"`
+	LastBatchAt     *time.Time `json:"last_batch_at,omitempty"`
+	LastBatchAdded  int        `json:"last_batch_added,omitempty"`
+	Cycle           int        `json:"cycle,omitempty"`
+	CycleStartedAt  *time.Time `json:"cycle_started_at,omitempty"`
+	CycleAssessed   int        `json:"cycle_assessed,omitempty"`
+	CycleEligible   int        `json:"cycle_eligible,omitempty"`
+	CycleETA        *time.Time `json:"cycle_eta,omitempty"`
 }
 
 // ScopeAdder adds a connector's synced assets to scope (*easm.ConnectorScope).
