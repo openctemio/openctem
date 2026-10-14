@@ -131,10 +131,7 @@ import {
 } from '@/features/findings/components/finding-groups-table'
 import { AutoAssignDialog } from '@/features/findings/components/auto-assign-dialog'
 import type { GroupByDimension } from '@/features/findings/api/use-finding-groups'
-import {
-  FindingContextChips,
-  hasFindingContextFilters,
-} from '@/features/findings/components/finding-context-chips'
+import { FindingContextChips } from '@/features/findings/components/finding-context-chips'
 import { MarkFixedDialog } from '@/features/findings/components/mark-fixed-dialog'
 import { CreateTicketDialog } from '@/features/findings/components/create-ticket-dialog'
 import { LinkFindingsToRemediationDialog } from '@/features/remediation/components/link-findings-dialog'
@@ -1781,7 +1778,6 @@ function FindingsContent() {
     ownerId: ownerParam,
     ownerUnassigned,
   }
-  const contextFilterOn = hasFindingContextFilters(contextFilterValues)
   const contextChips = (
     <FindingContextChips {...contextFilterValues} onRemove={removeContextParam} />
   )
@@ -1820,15 +1816,6 @@ function FindingsContent() {
     </>
   )
 
-  // Grouped view: the groups API takes severity / status / source / "mine";
-  // say so when a filter it cannot apply is on, rather than silently ignore it.
-  const listOnlyFilterOn =
-    contextFilterOn ||
-    !!searchQuery.trim() ||
-    priorityClasses.length > 0 ||
-    kevActive ||
-    reachableActive ||
-    slaFilter.length > 0
   // Phone layout of a finding row (list and grouped views alike).
   const mobileRow = (f: Finding) => (
     <button
@@ -1874,13 +1861,6 @@ function FindingsContent() {
       </div>
       <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
     </button>
-  )
-
-  const listOnlyNote = listOnlyFilterOn && (
-    <span className="text-xs text-muted-foreground">
-      Search, priority, KEV, SLA and the asset, scan, CVE, rule, family, type, component and owner
-      filters apply to the ungrouped list.
-    </span>
   )
 
   // "View" on a group opens the list filtered to it, for every dimension
@@ -2052,15 +2032,7 @@ function FindingsContent() {
                 <FindingGroupsTable
                   {...groupedProps}
                   dimension={groupBy}
-                  filters={{
-                    severities: effectiveSeverities.join(',') || undefined,
-                    statuses: statuses.join(',') || undefined,
-                    sources: sourceFilter.join(',') || undefined,
-                    assignedToMe: mineActive,
-                    branchOnly: branchOnlyActive,
-                    view: savedId,
-                    state: !savedId || rawLens ? lens : undefined,
-                  }}
+                  query={apiFilters}
                   renderGroupActions={groupActions}
                   onViewGroup={viewableGroup ? viewGroup : undefined}
                   onGroupsLoaded={(groups) =>
@@ -2069,8 +2041,8 @@ function FindingsContent() {
                   toolbarStart={
                     <>
                       {filterButtons}
+                      {searchBox}
                       {contextChips}
-                      {listOnlyNote}
                     </>
                   }
                   toolbarEnd={
