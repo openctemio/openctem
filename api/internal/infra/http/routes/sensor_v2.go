@@ -174,6 +174,13 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 		if ctl.HasSuppressions() {
 			r.GET(protov2.SuppressionsPath, ctl.Suppressions, controlRead...)
 		}
+		if c := ctl.Content(); c != nil {
+			// Content delivery (research/139): reads on the control budget.
+			r.GET(protov2.ContentPath+"/desired", c.Desired, controlRead...)
+			r.GET(protov2.ContentPath+"/packs/{digest}", c.Pack, controlRead...)
+			r.GET(protov2.ContentPath+"/packs/{digest}/index", c.Index, controlRead...)
+			r.GET(protov2.ContentPath+"/packs/{digest}/files/{sha256}", c.File, controlRead...)
+		}
 	}, middleware.V2Observe(v2RouteName), authenticate)
 }
 
@@ -187,19 +194,23 @@ var v2RouteNames = map[string]string{
 	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}/segments/{seq}": "segment",
 	protov2.PathPrefix + "/commands/{command_id}/results/{report_id}/commit":         "commit",
 
-	protov2.PathPrefix + protov2.HeartbeatPath:             "heartbeat",
-	protov2.PathPrefix + protov2.CommandsPath:              "commands",
-	protov2.PathPrefix + "/commands/{command_id}/claim":    "claim",
-	protov2.PathPrefix + "/commands/{command_id}/start":    "start",
-	protov2.PathPrefix + "/commands/{command_id}/complete": "complete",
-	protov2.PathPrefix + "/commands/{command_id}/fail":     "fail",
-	protov2.PathPrefix + "/commands/{command_id}/logs":     "logs",
-	protov2.PathPrefix + protov2.SuppressionsPath:          "suppressions",
-	protov2.PathPrefix + protov2.FingerprintsCheckPath:     "fingerprints_check",
-	protov2.PathPrefix + protov2.BaselineDiffPath:          "baseline_diff",
-	protov2.PathPrefix + protov2.KeysPath:                  "keys",
-	protov2.PathPrefix + protov2.ManifestPath:              "manifest",
-	protov2.PathPrefix + protov2.ConfigReportPath:          "config_report",
+	protov2.PathPrefix + protov2.HeartbeatPath:                                  "heartbeat",
+	protov2.PathPrefix + protov2.CommandsPath:                                   "commands",
+	protov2.PathPrefix + "/commands/{command_id}/claim":                         "claim",
+	protov2.PathPrefix + "/commands/{command_id}/start":                         "start",
+	protov2.PathPrefix + "/commands/{command_id}/complete":                      "complete",
+	protov2.PathPrefix + "/commands/{command_id}/fail":                          "fail",
+	protov2.PathPrefix + "/commands/{command_id}/logs":                          "logs",
+	protov2.PathPrefix + protov2.SuppressionsPath:                               "suppressions",
+	protov2.PathPrefix + protov2.ContentPath + "/desired":                       "content_desired",
+	protov2.PathPrefix + protov2.ContentPath + "/packs/{digest}":                "content_pack",
+	protov2.PathPrefix + protov2.ContentPath + "/packs/{digest}/index":          "content_index",
+	protov2.PathPrefix + protov2.ContentPath + "/packs/{digest}/files/{sha256}": "content_file",
+	protov2.PathPrefix + protov2.FingerprintsCheckPath:                          "fingerprints_check",
+	protov2.PathPrefix + protov2.BaselineDiffPath:                               "baseline_diff",
+	protov2.PathPrefix + protov2.KeysPath:                                       "keys",
+	protov2.PathPrefix + protov2.ManifestPath:                                   "manifest",
+	protov2.PathPrefix + protov2.ConfigReportPath:                               "config_report",
 }
 
 // v2RouteName is the closed-set route label of a v2 request ("other" for no
