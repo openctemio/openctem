@@ -383,9 +383,9 @@ func versionToken(s string) bool {
 
 // ForSensor is the policy a sensor receives. A platform-operated sensor gets
 // no registry rulesets: it would fetch registry rules for a tenant, which
-// the registry rules licence does not allow as a service; it runs the
+// the registry rules license does not allow as a service; it runs the
 // OpenCTEM rules pack instead (research/132). A tenant's own sensor gets
-// the rulesets its tenant chose, under the tenant's licence.
+// the rulesets its tenant chose, under the tenant's license.
 func (p ContentPolicy) ForSensor(platformSensor bool) ContentPolicy {
 	if !platformSensor {
 		return p
