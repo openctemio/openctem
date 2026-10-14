@@ -131,12 +131,17 @@ func TestRevokeSensor_ReleasesLeasedCommands_DB(t *testing.T) {
 
 	// Routed scan work A is running, routed work it only claimed, a plain
 	// scan sent to A by id, A's config update, and B's own work.
-	routed := map[string]any{"scan_run_id": shared.NewID().String(), "step_key": "scan", "target": "10.9.0.1"}
-	running := h.command(command.CommandTypeScan, routed, nil)
-	claimed := h.command(command.CommandTypeScan, routed, nil)
+	runID := shared.NewID().String()
+	// Each on a host of its own: commands on one host are held back while
+	// one runs.
+	routed := func(host string) map[string]any {
+		return map[string]any{"scan_run_id": runID, "step_key": "scan", "target": host}
+	}
+	running := h.command(command.CommandTypeScan, routed("10.9.0.1"), nil)
+	claimed := h.command(command.CommandTypeScan, routed("10.9.0.3"), nil)
 	plain := h.command(command.CommandTypeScan, map[string]any{"target": "10.9.0.2"}, &a)
 	config := h.command(command.CommandTypeConfigUpdate, map[string]any{"interval": 30}, &a)
-	other := h.command(command.CommandTypeScan, routed, nil)
+	other := h.command(command.CommandTypeScan, routed("10.9.0.4"), nil)
 	before := map[shared.ID]*command.Command{
 		running: h.hold(a, running, true),
 		claimed: h.hold(a, claimed, false),

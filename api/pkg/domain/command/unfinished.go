@@ -76,8 +76,9 @@ func FollowUpAttempts(attempts, settled int) int {
 
 // NewFollowUp builds the command that runs parent's remaining targets: a
 // pending scan of the same tenant, type and priority whose payload is the
-// parent's with its targets replaced. The placement (zone, step, host
-// keys, gate, sensors that refused it) is copied by the repository from the
+// parent's with its targets replaced. Its host keys are those of the
+// remaining targets among the parent's; the rest of the placement (zone,
+// step, gate, sensors that refused it) is copied by the repository from the
 // parent row when it is inserted.
 func NewFollowUp(parent *Command, remaining []string, settled int) (*Command, error) {
 	payload, err := followUpPayload(parent.Payload, remaining)
@@ -89,6 +90,20 @@ func NewFollowUp(parent *Command, remaining []string, settled int) (*Command, er
 		return nil, err
 	}
 	fu.DispatchAttempts = FollowUpAttempts(parent.DispatchAttempts, settled)
+	// The hosts of the remaining targets only, among those the parent held
+	// (its payload carries the keys it was created with, AssignHostKeys).
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(payload, &fields) == nil {
+		if raw, ok := fields["host_keys"]; ok {
+			var held []string
+			if json.Unmarshal(raw, &held) == nil {
+				fu.HostKeys = followUpHostKeys(held, remaining, payloadHostMeta(fields).network)
+			}
+		}
+	}
+	if err := AssignHostKeys(fu); err != nil {
+		return nil, err
+	}
 	return fu, nil
 }
 

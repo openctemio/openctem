@@ -21,7 +21,9 @@ import (
 func (h *ctlHarness) scanCommand(tenantID, scanner string) string {
 	h.t.Helper()
 	c, err := h.cmds.Create(context.Background(), command.CreateInput{TenantID: tenantID, Type: "scan", Priority: "normal",
-		Payload: json.RawMessage(`{"scanner":"` + scanner + `","target":"https://example.com/repo"}`), ExpiresIn: 3600})
+		// A host of its own: commands on one host wait for each other
+		// (per-host politeness).
+		Payload: json.RawMessage(`{"scanner":"` + scanner + `","target":"https://h-` + shared.NewID().String() + `.example.com/repo"}`), ExpiresIn: 3600})
 	if err != nil {
 		h.t.Fatal(err)
 	}

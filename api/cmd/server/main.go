@@ -463,6 +463,20 @@ func run() int {
 		}
 	}()
 
+	// Host keys for commands queued before every command got them at
+	// create (research/130). Idempotent and SKIP LOCKED: safe on every
+	// start and across replicas.
+	go func() {
+		n, err := postgres.BackfillPendingHostKeys(ctx, db.DB)
+		if err != nil {
+			log.Error("pending command host key backfill failed", "error", err, "updated", n)
+			return
+		}
+		if n > 0 {
+			log.Info("pending commands given host keys", "count", n)
+		}
+	}()
+
 	// ==========================================================================
 	// Start Server
 	// ==========================================================================
