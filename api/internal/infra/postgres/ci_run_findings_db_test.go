@@ -81,6 +81,9 @@ func TestCIRunFindingsHonorActiveSuppressionsOnly(t *testing.T) {
 		link(finding(fp), rule(c.ruleTenant, c.status, c.expires))
 		fps = append(fps, fp)
 	}
+	if err := repo.ReserveRunReport(ctx, tenant, run.ID); err != nil {
+		t.Fatalf("reserve run report: %v", err)
+	}
 	if err := repo.RecordRunReport(ctx, tenant, run.ID, fps); err != nil {
 		t.Fatalf("record run report: %v", err)
 	}

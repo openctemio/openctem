@@ -118,6 +118,14 @@ func registerCIRoutes(
 		r.PATCH("/gate-policies/{id}", admin.UpdateGatePolicy, middleware.Require(permission.CIWrite))
 		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIWrite))
 
+		r.GET("/code-scanning/settings", admin.GetCodeScanTemplate, middleware.Require(permission.CIRead))
+		r.PUT("/code-scanning/settings", admin.UpdateCodeScanTemplate, middleware.Require(permission.CIWrite))
+		r.GET("/code-scanning/repositories", admin.ListCodeScanRepositories, middleware.Require(permission.CIRead))
+		r.GET("/code-scanning/repositories/{id}", admin.GetCodeScanRepository, middleware.Require(permission.CIRead))
+		r.PUT("/code-scanning/repositories/{id}/settings", admin.UpdateCodeScanRepository, middleware.Require(permission.CIWrite))
+		r.DELETE("/code-scanning/repositories/{id}/settings", admin.ResetCodeScanRepository, middleware.Require(permission.CIWrite))
+		r.POST("/code-scanning/repositories/{id}/baseline", admin.RebaselineCodeScanRepository, middleware.Require(permission.CIWrite))
+
 		r.GET("/gate-overrides", admin.ListOverrides, middleware.Require(permission.CIRead))
 		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUp())
 		r.POST("/gate-overrides/{id}/revoke", admin.RevokeOverride, middleware.Require(permission.CIOverride))
