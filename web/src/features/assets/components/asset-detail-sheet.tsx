@@ -48,6 +48,7 @@ import {
   PropertiesSection,
 } from './asset-overview-sections'
 import { getAssetTypeLabel } from '../lib/asset-type-icon'
+import { humanizePropertyKey } from '@/features/asset-types/lib/property-schema'
 import { ClassificationBadges, CIABadges, ControlPlaneBadge } from './classification-badges'
 import { useAssetRelationships } from '../hooks'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
@@ -247,7 +248,10 @@ export function AssetDetailSheet<T extends Asset>({
   const typeLine =
     subtitle ||
     asset.groupName ||
-    [assetTypeName, asset.subType && asset.subType !== asset.type && asset.subType]
+    [
+      assetTypeName,
+      asset.subType && asset.subType !== asset.type && humanizePropertyKey(asset.subType),
+    ]
       .filter(Boolean)
       .join(' · ')
 
