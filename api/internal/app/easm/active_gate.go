@@ -93,6 +93,11 @@ type ActiveGate struct {
 	// wildcard reports the names that resolve only through a wildcard
 	// record; nil checks none.
 	wildcard assetfreshness.WildcardDNSReader
+	// unclassified answers the tenant's unclassified-scans mode
+	// (guardrail.go); nil keeps every unclassified asset passive.
+	unclassified UnclassifiedPolicy
+	// resolving reads the names behind addresses (shared hosting).
+	resolving GuardrailNames
 }
 
 // SetWildcardDNS makes names that resolve only through a wildcard record
@@ -317,6 +322,8 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 		return nil, fmt.Errorf("%w: too many targets for one constraint check", shared.ErrValidation)
 	}
 	var auth *scopeauth.Authority
+	mode := ""
+	portChecked := make([]string, 0, len(targets)) // names whose port scan depends on their addresses
 	for _, t := range targets {
 		if !needsAuthority(t) {
 			continue
@@ -328,13 +335,133 @@ func (g *ActiveGate) ConstraintRefused(ctx context.Context, tenantID shared.ID, 
 			}
 		}
 		free, ports, path, covered := auth.Limits(t, tier)
-		if !covered || free || job.LimitsEnforced {
+		if !covered {
+			// No entry covers it: only an unclassified asset the ownership
+			// gate admitted gets here (RFC-054 §16). Its jobs stay inside the
+			// low-impact profile unless the organization chose full. This
+			// holds for every sensor, enforcing ones too: the signed limits
+			// carry ports, not the template and rate caps.
+			if mode == "" {
+				mode = g.unclassifiedMode(ctx, tenantID)
+			}
+			switch {
+			case mode == unclassifiedFull:
+			case mode != unclassifiedLowImpact:
+				out[t] = scopedom.RefusalLowImpact // the ownership gate refuses it first
+			case tier > scopedom.TierActive:
+				out[t] = scopedom.RefusalTierExceeds
+			case scopedom.LowImpactRefusal(job.LowImpactJob()) != "":
+				out[t] = scopedom.RefusalLowImpact
+			}
+			if _, no := out[t]; !no {
+				portChecked = append(portChecked, t)
+			}
+			continue
+		}
+		if free || job.LimitsEnforced {
 			// A sensor that enforces the limits gets them in the signed job
 			// (StatementLimits) and may run any tool inside them.
+			portChecked = append(portChecked, t)
 			continue
 		}
 		if reason := scopedom.ConstrainedJobRefusal(job.Tool, ports, path, job.Ports, job.TopPorts); reason != "" {
 			out[t] = reason
+			continue
+		}
+		portChecked = append(portChecked, t)
+	}
+	if !isPortScanner(job.Tool) || len(portChecked) == 0 {
+		return out, nil
+	}
+	if mode == "" {
+		mode = g.unclassifiedMode(ctx, tenantID)
+	}
+	caps, err := g.namePortCaps(ctx, tenantID, auth, portChecked, mode)
+	if err != nil {
+		return nil, err
+	}
+	for t, cap := range caps {
+		if job.TopPorts || strings.TrimSpace(job.Ports) == "" ||
+			!scopedom.PortsWithin(job.Ports, []scopedom.Constraint{{Ports: cap}}) {
+			out[t] = scopedom.RefusalWebPortsOnly
+		}
+	}
+	return out, nil
+}
+
+// isPortScanner reports whether tool scans ports (a port scan of a name
+// reaches every address it resolves to).
+func isPortScanner(tool string) bool {
+	return strings.EqualFold(strings.TrimSpace(tool), "naabu")
+}
+
+// namePortCaps answers, for each name among targets, the ports a port scan
+// of it may reach when that is not every port (RFC-054 §16.4): the web
+// ports while any address it resolves to may not be probed on its own (a
+// guardrail or a decision holds it) or nothing is known about its
+// addresses; the low-impact ports while one is only an unclassified address
+// in low_impact mode. An address a scope entry covers, or an unclassified
+// one in full mode, lends the name every port. Addresses are never
+// authorized by the name: this only narrows.
+func (g *ActiveGate) namePortCaps(ctx context.Context, tenantID shared.ID, auth *scopeauth.Authority, targets []string, mode string) (map[string]string, error) {
+	out := map[string]string{}
+	hostOf := map[string]string{}
+	hosts := make([]string, 0, len(targets))
+	for _, t := range targets {
+		h := scopeauth.Host(t)
+		if h == "" {
+			continue // an address or range: the gate judged it itself
+		}
+		hostOf[t] = h
+		hosts = append(hosts, h)
+	}
+	if len(hosts) == 0 {
+		return out, nil
+	}
+	addrsOf := map[string][]string{}
+	if g.resolving != nil {
+		var err error
+		if addrsOf, err = g.resolving.AddressesOf(ctx, tenantID, hosts); err != nil {
+			return nil, fmt.Errorf("load the addresses behind names: %w", err)
+		}
+	}
+	var all []string
+	seen := map[string]bool{}
+	for _, as := range addrsOf {
+		for _, a := range as {
+			if !seen[a] {
+				seen[a] = true
+				all = append(all, a)
+			}
+		}
+	}
+	blocked := map[string]attribution.State{}
+	if len(all) > 0 {
+		var err error
+		if blocked, err = g.BlockedTargets(ctx, tenantID, all); err != nil {
+			return nil, err
+		}
+	}
+	for t, h := range hostOf {
+		addrs := addrsOf[h]
+		cap := ""
+		if len(addrs) == 0 {
+			cap = scopedom.WebPorts
+		}
+		for _, a := range addrs {
+			if _, ok := auth.Covers(a); ok {
+				continue
+			}
+			if _, no := blocked[a]; no {
+				cap = scopedom.WebPorts
+				break
+			}
+			if mode == unclassifiedLowImpact {
+				cap = scopedom.LowImpactPorts
+			}
+		}
+		if cap != "" {
+			out[t] = cap
 		}
 	}
 	return out, nil
@@ -474,7 +601,23 @@ func (g *ActiveGate) UncoveredTargets(ctx context.Context, tenantID shared.ID, t
 			out = append(out, t)
 		}
 	}
-	return out, nil
+	if len(out) == 0 || g.unclassifiedMode(ctx, tenantID) == unclassifiedOff {
+		return out, nil
+	}
+	// An unclassified inventory asset that active checks may reach
+	// (RFC-054 §16) may be resolved too: only names the gate would refuse
+	// stay out of a passive step.
+	blocked, err := g.BlockedTargets(ctx, tenantID, out)
+	if err != nil {
+		return nil, err
+	}
+	kept := out[:0:0]
+	for _, t := range out {
+		if _, no := blocked[t]; no {
+			kept = append(kept, t)
+		}
+	}
+	return kept, nil
 }
 
 // NewActiveGate wires the gate. Every dependency is required; a nil one
@@ -663,6 +806,10 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 	}
 
 	var auth *scopeauth.Authority
+	// unclassified: assets no scope entry covers that nobody excluded,
+	// rejected or held, with the state they get while they stay passive.
+	unclassified := map[string]attribution.State{}
+	unclassifiedIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		a := assets[id]
 		if a == nil {
@@ -707,7 +854,8 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 				}
 			}
 			if _, ok := auth.Covers(a.Name()); !ok {
-				out[id] = rec.State
+				unclassified[id] = rec.State
+				unclassifiedIDs = append(unclassifiedIDs, id)
 			}
 			continue
 		}
@@ -725,9 +873,27 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 		if recorded {
 			// Confirmed (by a person or a rule) but no scope entry, seed or
 			// verified domain covers it any more, or never did.
-			out[id] = attribution.StateOutOfScope
+			unclassified[id] = attribution.StateOutOfScope
 		} else {
-			out[id] = attribution.StateUnattributed
+			unclassified[id] = attribution.StateUnattributed
+		}
+		unclassifiedIDs = append(unclassifiedIDs, id)
+	}
+	if len(unclassifiedIDs) == 0 {
+		return out, nil
+	}
+	// Unclassified assets (RFC-054 §16): passive only while the mode is off;
+	// otherwise active checks reach the ones no guardrail holds (the
+	// low-impact cap is applied per job, ConstraintRefused).
+	if g.unclassifiedMode(ctx, tenantID) == unclassifiedOff {
+		for _, id := range unclassifiedIDs {
+			out[id] = unclassified[id]
+		}
+		return out, nil
+	}
+	for id, reason := range g.guardrailReasons(ctx, tenantID, auth, unclassifiedIDs, assets) {
+		if reason != "" {
+			out[id] = attribution.StateGuardrailed
 		}
 	}
 	return out, nil

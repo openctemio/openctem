@@ -96,6 +96,13 @@ const StatePlatformDenied State = "platform_denied"
 // decision A4).
 const StateWildcardOnly State = "wildcard_only"
 
+// StateGuardrailed is not stored either: the active-scan gate's answer for
+// an asset no scope entry covers that a platform guardrail keeps passive
+// (RFC-054 §16): a shared, CDN or cloud network the organization does not
+// own, a network nothing is known about, shared hosting, or a name under
+// none of the organization's domains.
+const StateGuardrailed State = "guardrailed"
+
 // AllowsActiveChecks reports whether a recorded state lets a sensor touch an
 // asset (RFC-036 §6.3 active_allowed: confirmed only). The empty state (no
 // record) answers true here only as far as the record goes: the active-scan
