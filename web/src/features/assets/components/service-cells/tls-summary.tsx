@@ -1,11 +1,8 @@
 import type { ReactNode } from 'react'
 import { Lock, LockOpen } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import type { TlsCertificate, TlsFacts } from '../../lib/service-facts'
 import { FactChip } from './fact-chip'
-
-function days(n: number): string {
-  return `${n} ${n === 1 ? 'day' : 'days'}`
-}
 
 /**
  * The expiry chip of a recorded certificate. A certificate recorded without
@@ -19,24 +16,33 @@ export function CertExpiryChip({
   cert: TlsCertificate
   fallback?: ReactNode
 }) {
-  const title = cert.notAfter ? `Valid until ${cert.notAfter.toLocaleDateString()}` : undefined
+  const { t } = useTranslation()
+  const days = (n: number) =>
+    n === 1 ? t('assets.tls.dayOne', '1 day') : t('assets.tls.dayMany', '{n} days', { n })
+  const title = cert.notAfter
+    ? t('assets.tls.validUntil', 'Valid until {date}', { date: cert.notAfter.toLocaleDateString() })
+    : undefined
   switch (cert.status) {
     case 'expired':
       return (
         <FactChip tone="destructive" title={title}>
-          {cert.daysLeft === null ? 'Expired' : `Expired ${days(-cert.daysLeft)} ago`}
+          {cert.daysLeft === null
+            ? t('assets.tls.expired', 'Expired')
+            : t('assets.tls.expiredAgo', 'Expired {days} ago', { days: days(-cert.daysLeft) })}
         </FactChip>
       )
     case 'expiring':
       return (
         <FactChip tone="warning" title={title}>
-          {cert.daysLeft === 0 ? 'Expires today' : `Expires in ${days(cert.daysLeft ?? 0)}`}
+          {cert.daysLeft === 0
+            ? t('assets.tls.expiresToday', 'Expires today')
+            : t('assets.tls.expiresIn', 'Expires in {days}', { days: days(cert.daysLeft ?? 0) })}
         </FactChip>
       )
     case 'valid':
       return (
         <FactChip tone="success" title={title}>
-          Valid · {days(cert.daysLeft ?? 0)} left
+          {t('assets.tls.validLeft', 'Valid · {days} left', { days: days(cert.daysLeft ?? 0) })}
         </FactChip>
       )
     default:
@@ -66,10 +72,11 @@ export function tlsNotCollected(facts: TlsFacts): string | null {
 }
 
 function TlsChip({ title }: { title: string }) {
+  const { t } = useTranslation()
   return (
     <FactChip tone="muted" title={title}>
       <Lock aria-hidden="true" />
-      TLS
+      {t('assets.tls.chip', 'TLS')}
     </FactChip>
   )
 }
@@ -90,18 +97,26 @@ export interface TlsSummaryProps {
  * the gap with `tlsNotCollected`. None of them is shown as healthy.
  */
 export function TlsSummary({ facts, detail = true, fallback = null }: TlsSummaryProps) {
+  const { t } = useTranslation()
   switch (facts.kind) {
     case 'not_collected':
       return <>{fallback}</>
     case 'none':
       return (
-        <FactChip tone="muted" title="A probe reached this service over plain HTTP">
+        <FactChip
+          tone="muted"
+          title={t('assets.tls.plainHttp', 'A probe reached this service over plain HTTP')}
+        >
           <LockOpen aria-hidden="true" />
-          No TLS
+          {t('assets.tls.none', 'No TLS')}
         </FactChip>
       )
     case 'tls':
-      return <TlsChip title="Served over TLS; the certificate was not collected" />
+      return (
+        <TlsChip
+          title={t('assets.tls.noCert', 'Served over TLS; the certificate was not collected')}
+        />
+      )
     case 'cert': {
       const { cert } = facts
       const [firstSan, ...moreSans] = cert.sans
@@ -109,7 +124,14 @@ export function TlsSummary({ facts, detail = true, fallback = null }: TlsSummary
         <div className="min-w-0">
           <CertExpiryChip
             cert={cert}
-            fallback={<TlsChip title="The certificate was recorded without an expiry date" />}
+            fallback={
+              <TlsChip
+                title={t(
+                  'assets.tls.noExpiry',
+                  'The certificate was recorded without an expiry date'
+                )}
+              />
+            }
           />
           {detail && (cert.issuer || firstSan) && (
             <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
