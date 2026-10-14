@@ -97,7 +97,7 @@ scenario() {
 # version_fixture DIR: versions.yaml plus every consumer, all in agreement.
 version_fixture() {
   local d="$1"
-  mkdir -p "$d/api/deploy" "$d/api/internal/config" "$d/api/internal/infra/http/handler" "$d/web"
+  mkdir -p "$d/api/deploy" "$d/api/internal/config" "$d/api/internal/infra/http/handler" "$d/web/src/features/ci-runners/lib"
   cat >"$d/versions.yaml" <<'YAML'
 platform:
   release: v0.8.0
@@ -106,6 +106,9 @@ sensor:
   min: ""
 sdk:
   latest: v0.14.0
+  min: ""
+ci:
+  latest: v0.2.0
   min: ""
 chart:
   version: 0.4.1
@@ -126,7 +129,10 @@ const DefaultSensorLatestVersion = "v0.6.4"
 const DefaultSensorMinVersion = ""
 const DefaultSensorSDKLatestVersion = "v0.14.0"
 const DefaultSensorSDKMinVersion = ""
+const DefaultCIRunnerLatestVersion = "v0.2.0"
+const DefaultCIRunnerMinVersion = ""
 GO
+  echo "export const CI_RELEASE = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
   echo 'const DefaultSensorImage = "ghcr.io/openctemio/sensor:v0.6.4"' >"$d/api/internal/infra/http/handler/sensor_handler.go"
   printf '{\n  "name": "w",\n  "version": "0.0.0",\n  "private": true\n}\n' >"$d/web/package.json"
 }
