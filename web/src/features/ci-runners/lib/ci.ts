@@ -52,13 +52,10 @@ const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'
 export function githubSnippet({ apiUrl, tenantId, audience, defaultBranch }: SnippetInput): string {
   const audLine =
     audience && audience !== defaultAudience(tenantId) ? `\n      oidc-audience: ${audience}` : ''
-  // Before v0.3.0 the reusable workflow's scan job always asks for
-  // security-events: write, and GitHub refuses to start a called job that asks
-  // for more than its caller grants. From v0.3.0 it is needed only to upload
-  // SARIF, so the snippet stops granting it.
-  const sarifLine = releaseBefore(CI_RELEASE, 'v0.3.0')
-    ? `\n      security-events: write # required by openctemio/ci ${CI_RELEASE}`
-    : ''
+  // The reusable workflow's scan job asks for security-events: write (needed
+  // to upload SARIF), and GitHub refuses to start a called job that asks for
+  // more than its caller grants, so the caller always grants it.
+  const sarifLine = `\n      security-events: write # required by openctemio/ci ${CI_RELEASE}`
   return `name: OpenCTEM
 on:
   pull_request:
