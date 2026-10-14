@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
+	"strings"
 
 	"github.com/openctemio/ctis/politeness"
 )
@@ -89,7 +90,7 @@ func AssignHostKeys(cmd *Command) error {
 		if len(m.targets) == 0 {
 			return nil
 		}
-		cmd.HostKeys = politeness.Keys(m.targets, m.network)
+		cmd.HostKeys = remoteKeys(politeness.Keys(m.targets, m.network))
 	}
 	keys := cmd.HostKeys
 	if keys == nil {
@@ -106,6 +107,37 @@ func AssignHostKeys(cmd *Command) error {
 	}
 	cmd.Payload = payload
 	return nil
+}
+
+// remoteKeys drops the keys of local filesystem paths ("." or "/src" of a
+// code scan): such a path is a place on the running sensor's own disk, not
+// a host other sensors of the tenant could also hit, so it never holds
+// another sensor's work back. Nil when none is left.
+func remoteKeys(keys []string) []string {
+	out := keys[:0:0]
+	for _, k := range keys {
+		if !isLocalPathKey(k) {
+			out = append(out, k)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// isLocalPathKey reports a politeness key that is a local filesystem path
+// (the paths politeness.TargetKeys keys as given: absolute, "./", "../",
+// ".", or a Windows drive path).
+func isLocalPathKey(k string) bool {
+	switch {
+	case strings.HasPrefix(k, "/"), strings.HasPrefix(k, "./"), strings.HasPrefix(k, "../"), k == ".":
+		return true
+	case len(k) > 2 && k[1] == ':' && (k[2] == '\\' || k[2] == '/'):
+		c := k[0] | 0x20
+		return c >= 'a' && c <= 'z'
+	}
+	return false
 }
 
 // maxHostKeyLen bounds one politeness key (the sensor's bound).

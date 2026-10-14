@@ -114,13 +114,18 @@ func TestBackfillPendingHostKeys(t *testing.T) {
 	}
 	col, sent := storedHostKeys(ctx, t, cmds, pending)
 	want := politeness.Keys([]string{"https://a.example.com/", "b.example.com"}, "")
-	if !slices.Equal(col, want) || !slices.Equal(sent, want) {
-		t.Fatalf("backfilled column=%v payload=%v, want %v", col, sent, want)
+	if !slices.Equal(col, want) || sent != nil {
+		t.Fatalf("backfilled column=%v payload=%v, want column %v and the payload untouched", col, sent, want)
 	}
 	for _, id := range []shared.ID{noHost, running, passive} {
-		if col, _ := storedHostKeys(ctx, t, cmds, id); col != nil {
+		if col, _ := storedHostKeys(ctx, t, cmds, id); len(col) != 0 {
 			t.Fatalf("%s got keys %v", id, col)
 		}
+	}
+	var payload string
+	if err := sqlDB.QueryRowContext(ctx, `SELECT payload::text FROM commands WHERE id = $1`, pending.String()).Scan(&payload); err != nil ||
+		payload != `{"scanner": "nuclei", "targets": ["https://a.example.com/", "b.example.com"]}` {
+		t.Fatalf("the backfill rewrote the payload: %s (%v)", payload, err)
 	}
 	// Marked done: a second pass changes nothing.
 	if n, err := BackfillPendingHostKeys(ctx, sqlDB); err != nil || n != 0 {
