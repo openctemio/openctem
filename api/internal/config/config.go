@@ -452,11 +452,11 @@ const DefaultSensorMinVersion = "v0.9.0"
 
 // DefaultCIRunnerLatestVersion is the newest CI runner release
 // (openctemio/ci) when this API was built (CI_RUNNER_LATEST_VERSION).
-const DefaultCIRunnerLatestVersion = "v0.2.0"
+const DefaultCIRunnerLatestVersion = "v0.3.0"
 
 // DefaultCIRunnerMinVersion is the oldest accepted CI runner release
 // (CI_RUNNER_MIN_VERSION); empty means no minimum.
-const DefaultCIRunnerMinVersion = ""
+const DefaultCIRunnerMinVersion = "v0.3.0"
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.

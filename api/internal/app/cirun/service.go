@@ -33,10 +33,22 @@ import (
 var ErrExchangeRefused = errors.New("ci token exchange refused")
 
 // ErrRunnerOutdated refuses an exchange from a runner that reports a version
-// below the minimum supported one (SENSOR_MIN_VERSION). It is told to the
-// caller (only after its token verified and was admitted): the fix is on its
-// side.
+// below the minimum CI runner release (CI_RUNNER_MIN_VERSION). It is told to
+// the caller (only after its token verified and was admitted): the fix is on
+// its side. The error returned is a *RunnerOutdatedError.
 var ErrRunnerOutdated = errors.New("ci runner older than the minimum supported version")
+
+// RunnerOutdatedError names the runner's version, the minimum and the
+// release to pin, so the job can be told exactly what to change.
+type RunnerOutdatedError struct {
+	Version string
+	Min     string
+	// Pin is the release the console's snippets pin (the newest), else Min.
+	Pin string
+}
+
+func (e *RunnerOutdatedError) Error() string { return ErrRunnerOutdated.Error() }
+func (e *RunnerOutdatedError) Unwrap() error { return ErrRunnerOutdated }
 
 // errPipelineRate is a pipeline over MaxPipelineRunsPerHour (refused as
 // ErrExchangeRefused, audited).
@@ -299,9 +311,13 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 			return nil, ErrExchangeRefused
 		}
 	}
-	if r := runnerRefusal(s.runnerVersion(in.UserAgent), s.cfg.Versions); r != nil {
-		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{r})
-		return nil, ErrRunnerOutdated
+	if v := s.runnerVersion(in.UserAgent); runnerRefusal(v, s.cfg.Versions) != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{runnerRefusal(v, s.cfg.Versions)})
+		pin := s.cfg.Versions.LatestVersion
+		if pin == "" {
+			pin = s.cfg.Versions.MinVersion
+		}
+		return nil, &RunnerOutdatedError{Version: v, Min: s.cfg.Versions.MinVersion, Pin: pin}
 	}
 	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
 	if err != nil {

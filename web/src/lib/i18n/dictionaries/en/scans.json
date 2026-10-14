@@ -1760,7 +1760,7 @@
   "scans.ci.refusal.replay": "The same token was used twice.",
   "scans.ci.refusal.replayFix": "Each job must exchange its own fresh token; check for copied tokens.",
   "scans.ci.refusal.runner_outdated": "The CI scanner is older than the minimum version.",
-  "scans.ci.refusal.runner_outdatedFix": "Update the OpenCTEM CI action or template to the current release.",
+  "scans.ci.refusal.runner_outdatedFix": "Pin openctemio/ci v0.3.0 or later. The job log names the exact line to change (GitHub uses:, GitLab include, or the image tag).",
   "scans.ci.refusal.pipeline_cap": "The organization reached its number of pipelines.",
   "scans.ci.refusal.pipeline_capFix": "Retire unused pipelines.",
   "scans.ci.refusal.pipeline_rate": "This pipeline started too many runs in a short time.",
