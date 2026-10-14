@@ -53,7 +53,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-035](RFC-035-sensor-control-plane-under-load.md) | Sensor control plane under load: heartbeats that survive the scans they supervise | **Accepted** (decisions 2026-10-02, §6.1; proposed in api#727). |
 | [RFC-036](RFC-036-easm.md) | External Attack Surface Management (EASM) | **Accepted** (2026-10-02; decisions O1–O10 in §12.3). |
 | [RFC-037](RFC-037-versioning-and-release-train.md) | Versioning rule and release train | **Accepted** (decisions 2026-10-02, §8; design PR #787). |
-| [RFC-038](RFC-038-sensor-tool-settings.md) | Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back | **Proposed** (2026-10-02, #826). |
+| [RFC-038](RFC-038-sensor-tool-settings.md) | Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back | **Partially implemented** (2026-10-14). |
 | [RFC-039](RFC-039-continuous-retest.md) | Continuous retest with regression reopen | **Implemented**: P1 (#867), P2a (#881) and tool retest (§12: any tool with a retest handler on a tenant sensor); decisions approved 2026-10-03 (#866). |
 | [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) | Mutual distrust between the platform and sensors | **Accepted** (2026-10-03; every recommendation in §9 approved). |
 | [RFC-041](RFC-041-api-path-design.md) | API path design, plane separation and a route style guard | **Accepted** (decisions D1–D12 approved 2026-10-03 as recommended, §8). |
