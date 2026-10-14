@@ -38,14 +38,10 @@ func TestCIDecorationQueue(t *testing.T) {
 	gh := mk(cirun.ProviderGitHub, cirun.StatusEvaluated)
 	gl := mk(cirun.ProviderAzureDevOps, cirun.StatusEvaluated)
 	running := mk(cirun.ProviderGitHub, cirun.StatusRunning)
-	for _, r := range []*cirun.Run{gh, gl, running} {
-		if err := repo.MarkDecorationPending(ctx, tenant, r.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Another tenant cannot queue this tenant's run.
-	if err := repo.MarkDecorationPending(ctx, other, gh.ID); err != nil {
-		t.Fatal(err)
+	// Storing the verdict queues it (one statement: no later step can lose
+	// it); another tenant cannot store one on this tenant's run.
+	if err := repo.SaveVerdict(ctx, other, running.ID, cirun.VerdictPass, []byte(`{}`), now); err == nil {
+		t.Fatal("another tenant stored a verdict")
 	}
 	state := func(id shared.ID) (string, int) {
 		var s string
@@ -60,6 +56,9 @@ func TestCIDecorationQueue(t *testing.T) {
 	}
 	if s, _ := state(running.ID); s != "" {
 		t.Fatalf("running run queued: %q", s)
+	}
+	if s, n := state(gh.ID); s != cirun.DecorationPending || n != 0 {
+		t.Fatalf("github run not queued by its verdict: %q %d", s, n)
 	}
 	claimed, err := repo.ClaimDecorations(ctx, 50)
 	if err != nil {
@@ -80,7 +79,21 @@ func TestCIDecorationQueue(t *testing.T) {
 			t.Fatal("a claimed run was claimed again")
 		}
 	}
-	// Retry until the cap, then failed.
+	claims := func() int {
+		got, err := repo.ClaimDecorations(ctx, 50)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, r := range got {
+			if r.ID == gh.ID {
+				n++
+			}
+		}
+		return n
+	}
+	// Retry until the cap, then failed. A retried run waits its backoff
+	// (30 s doubling): not claimed at once, claimed once the wait passed.
 	for i := 1; i < cirun.MaxDecorationAttempts; i++ {
 		if err := repo.FinishDecoration(ctx, tenant, gh.ID, cirun.DecorationRetry, "502"); err != nil {
 			t.Fatal(err)
@@ -88,8 +101,27 @@ func TestCIDecorationQueue(t *testing.T) {
 		if s, _ := state(gh.ID); s != cirun.DecorationPending {
 			t.Fatalf("retry %d: %q", i, s)
 		}
-		if _, err := repo.ClaimDecorations(ctx, 50); err != nil {
+		if n := claims(); n != 0 {
+			t.Fatalf("retry %d claimed before its backoff", i)
+		}
+		wait := 30 * time.Second << (i - 1)
+		if wait > 30*time.Minute {
+			wait = 30 * time.Minute
+		}
+		// Just short of the wait: still waiting.
+		if _, err := db.ExecContext(ctx, `UPDATE ci_runs SET decoration_updated_at = NOW() - $2::interval WHERE id = $1`,
+			gh.ID.String(), (wait - 5*time.Second).String()); err != nil {
 			t.Fatal(err)
+		}
+		if n := claims(); n != 0 {
+			t.Fatalf("retry %d claimed %s early", i, 5*time.Second)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE ci_runs SET decoration_updated_at = NOW() - $2::interval WHERE id = $1`,
+			gh.ID.String(), (wait + time.Second).String()); err != nil {
+			t.Fatal(err)
+		}
+		if n := claims(); n != 1 {
+			t.Fatalf("retry %d not claimed after its backoff", i)
 		}
 	}
 	if err := repo.FinishDecoration(ctx, tenant, gh.ID, cirun.DecorationRetry, "502"); err != nil {
