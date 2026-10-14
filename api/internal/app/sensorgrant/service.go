@@ -461,7 +461,7 @@ func Profiles() []ProfileView {
 		out = append(out, ProfileView{
 			Name: p, JobTypes: g.JobTypes, TierCeiling: g.TierCeiling, TargetNetwork: string(g.TargetNetwork),
 			AllowCredentials: g.AllowCredentials, AllowPushIngest: g.AllowPushIngest,
-			Default: p == sensordom.DefaultProfile, Parameterised: p == sensordom.ProfileCollector,
+			Default: p == sensordom.DefaultProfile, Parameterised: sensordom.ParameterisedProfile(p),
 		})
 	}
 	return out
