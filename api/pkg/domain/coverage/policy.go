@@ -11,7 +11,8 @@ import (
 
 // Predicates a coverage rule may require (asset-types.yaml `requires`).
 const (
-	// RequiresResolves: the name has an address (a resolves_to relation).
+	// RequiresResolves: the name has an address: a resolves_to relation,
+	// an A/AAAA record its DNS resolution stored, or addresses a probe saw.
 	RequiresResolves = "resolves"
 	// RequiresWebPort: the open port is one of WebPorts.
 	RequiresWebPort = "web_port"
