@@ -52,7 +52,9 @@ echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 # there (XDG_*); the image's home directory stays as built, with the
 # nuclei-templates release the sensor scans with until its first update.
 # /etc/openctem is mounted read-only: the policy, and the kill switch the
-# host owner creates with sudo touch /etc/openctem/STOP.
+# host owner creates with sudo touch /etc/openctem/STOP. The image's default
+# command runs the sensor; it runs the tools the image ships (narrow them in
+# the policy's tools.allow).
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --security-opt seccomp=/etc/openctem/sensor-seccomp.json \
@@ -62,9 +64,6 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   -e SENSOR_API_KEY={{shellQuote .APIKey}} \
 {{- else}}
   -e SENSOR_API_KEY="${OPENCTEM_API_KEY:?export OPENCTEM_API_KEY first}" \
-{{- end}}
-{{- with toolList .Sensor.EffectiveTools}}
-  -e SENSOR_TOOLS={{.}} \
 {{- end}}
   -e SENSOR_LOCAL_POLICY=/etc/openctem/sensor-policy.yaml \
 {{- if .Policy.AllowPrivate}}

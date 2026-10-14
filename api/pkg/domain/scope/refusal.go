@@ -41,6 +41,20 @@ const (
 	// RefusalConstrained: only port- or path-limited entries cover the
 	// target and the job could reach other ports or paths (RFC-065 §16.8).
 	RefusalConstrained = "constrained"
+	// RefusalGuardrailed: no scope entry covers the asset and a platform
+	// guardrail keeps it passive (a shared, CDN or cloud network the
+	// organization does not own, a network nothing is known about, shared
+	// hosting, a name under none of the organization's domains; RFC-054
+	// §16). The exact scope entry makes it scannable.
+	RefusalGuardrailed = "guardrailed"
+	// RefusalLowImpact: no scope entry covers the asset, so active jobs on
+	// it stay inside the low-impact profile (LowImpactRefusal), and this one
+	// does not.
+	RefusalLowImpact = "low_impact"
+	// RefusalWebPortsOnly: a port scan of a name reaches only the web ports
+	// while an address it resolves to may not be probed on its own (or
+	// nothing is known about its addresses).
+	RefusalWebPortsOnly = "web_ports_only"
 )
 
 // Fix actions.
@@ -125,6 +139,9 @@ var RefusalMessages = map[string]string{
 	RefusalZoneNoSensor:       "The scan zone of this target has no sensors.",
 	RefusalZoneSensorMismatch: "The chosen sensor is not in this target's scan zone.",
 	RefusalConstrained:        "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
+	RefusalGuardrailed:        "No scope entry covers this asset and a platform guardrail keeps it passive (shared or unknown network, shared hosting, or a name outside your domains). Add its exact scope entry to scan it.",
+	RefusalLowImpact:          "No scope entry covers this asset, so it gets low-impact checks only, and this job goes beyond them. Add it to scope for the full scan.",
+	RefusalWebPortsOnly:       "An address this name resolves to is not in scope, so a port scan of the name reaches only the web ports. Add the address to scope for a full port scan.",
 }
 
 // Refusal is one refused target, as every API refusal and the dry run carry it.
@@ -165,7 +182,14 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 		id = rule.ID
 	}
 	switch code {
+	case RefusalGuardrailed, RefusalLowImpact, RefusalWebPortsOnly:
+		// The exact entry: never a wildcard for an asset a guardrail holds.
+		if host == "" {
+			return nil
+		}
+		return []Fix{{Action: FixAddEntry, Pattern: host, TargetType: typ, Requires: permScopeApprove}}
 	case RefusalNoEntry, RefusalNotAnAsset:
+
 		var out []Fix
 		if host != "" {
 			out = append(out,

@@ -25,6 +25,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import Link from '@/components/link'
+
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -75,6 +77,12 @@ import {
 
 export const SCOPE_PAGE_SIZES = [10, 20, 30, 50, 100]
 
+/** Where scan approval governance (Off, On, Strict) is set. */
+const SCAN_APPROVAL_HREF = '/settings/scanning/scan-approval'
+
+const PER_SCAN_HINT =
+  'Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.'
+
 /**
  * Statuses the In scope tab lists. Every live entry is listed, pending ones
  * too (with their pill), so an entry is never invisible; they are decided on
@@ -124,6 +132,9 @@ export function ScopeEntriesTable({
   const renewDays = settings?.one_off_max_days ?? 7
   // Unknown (still loading) counts as Strict.
   const needsApproval = settings?.approval_policy?.entries_need_approval ?? true
+  // Entry tier ceilings limit probes only under Strict scan approval;
+  // elsewhere each scan picks its intensity. Unknown counts as Strict.
+  const tierCeilings = settings?.approval_policy?.tier_ceilings ?? true
   const kind = scopeKindOf(query.kind)
 
   const { data, isLoading } = useScopeTargetsApi({
@@ -271,11 +282,25 @@ export function ScopeEntriesTable({
     },
     {
       accessorKey: 'max_tier',
-      header: 'Deepest probe',
-      cell: ({ row }) => (
-        <span className="text-sm">{TIER_LABEL[row.original.max_tier ?? 't1'] ?? '-'}</span>
-      ),
+      header: t('scope.entries.deepestProbe', 'Deepest probe'),
+      cell: ({ row }) =>
+        tierCeilings ? (
+          <span className="text-sm">
+            {t(
+              `scope.tier.label.${row.original.max_tier ?? 't1'}`,
+              TIER_LABEL[row.original.max_tier ?? 't1'] ?? '-'
+            )}
+          </span>
+        ) : (
+          <span
+            className="text-sm text-muted-foreground"
+            title={t('scope.entries.perScanHint', PER_SCAN_HINT)}
+          >
+            {t('scope.entries.perScan', 'Set per scan')}
+          </span>
+        ),
     },
+
     {
       accessorKey: 'reason',
       header: 'Reason',
@@ -355,24 +380,34 @@ export function ScopeEntriesTable({
       ) : !filtersActive && entries.length === 0 && emptyAction ? (
         emptyAction
       ) : (
-        <DataTable
-          columns={columns}
-          data={entries}
-          getRowId={(r) => r.id ?? r.pattern ?? ''}
-          showSearch={false}
-          toolbarStart={toolbarStart}
-          manualPagination
-          rowCount={data?.total ?? 0}
-          pagination={{ pageIndex: query.page - 1, pageSize: query.perPage }}
-          onPaginationChange={onPagination}
-          pageSizeOptions={SCOPE_PAGE_SIZES}
-          emptyMessage={filtersActive ? 'No entries match' : 'Nothing is in scope yet'}
-          emptyDescription={
-            filtersActive
-              ? 'Try another search, kind or status.'
-              : 'Scans refuse every internet target no entry covers.'
-          }
-        />
+        <div className="space-y-2">
+          {!tierCeilings && (
+            <p className="text-xs text-muted-foreground" data-testid="scope-tier-per-scan-note">
+              {t('scope.entries.perScanHint', PER_SCAN_HINT)}{' '}
+              <Link href={SCAN_APPROVAL_HREF} className="text-primary hover:underline">
+                {t('scope.entries.governanceLink', 'Scan approval settings')}
+              </Link>
+            </p>
+          )}
+          <DataTable
+            columns={columns}
+            data={entries}
+            getRowId={(r) => r.id ?? r.pattern ?? ''}
+            showSearch={false}
+            toolbarStart={toolbarStart}
+            manualPagination
+            rowCount={data?.total ?? 0}
+            pagination={{ pageIndex: query.page - 1, pageSize: query.perPage }}
+            onPaginationChange={onPagination}
+            pageSizeOptions={SCOPE_PAGE_SIZES}
+            emptyMessage={filtersActive ? 'No entries match' : 'Nothing is in scope yet'}
+            emptyDescription={
+              filtersActive
+                ? 'Try another search, kind or status.'
+                : 'Scans refuse every internet target no entry covers.'
+            }
+          />
+        </div>
       )}
 
       <ScopeEntryEditDialog entry={editEntry} onOpenChange={(o) => !o && setEditEntry(null)} />

@@ -12,6 +12,7 @@ import (
 	"crypto/hmac"
 	"crypto/rsa"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,7 +61,15 @@ type App struct {
 	now  func() time.Time
 
 	mu     sync.Mutex
-	tokens map[int64]cachedToken
+	tokens map[tokenKey]cachedToken
+}
+
+// tokenKey identifies a cached installation token by installation and
+// scope: a token minted for one repository is never handed out for another.
+type tokenKey struct {
+	installation int64
+	repository   string // "" = every repository the installation covers
+	permissions  string // canonical form of the requested permissions
 }
 
 type cachedToken struct {
@@ -89,7 +99,7 @@ func New(cfg Config, httpClient *http.Client) (*App, error) {
 	// Never follow a redirect with a bearer token.
 	c := *httpClient
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &App{cfg: cfg, key: key, http: &c, now: time.Now, tokens: map[int64]cachedToken{}}, nil
+	return &App{cfg: cfg, key: key, http: &c, now: time.Now, tokens: map[tokenKey]cachedToken{}}, nil
 }
 
 // SetClock replaces the clock (tests).
@@ -119,6 +129,9 @@ func (a *App) appJWT() (string, error) {
 type StatusError struct {
 	Status  int
 	Message string
+	// RateLimited is set when GitHub refused for a rate limit (429, or 403
+	// with Retry-After or no requests left): asking again later works.
+	RateLimited bool
 }
 
 func (e *StatusError) Error() string {
@@ -171,12 +184,24 @@ func (a *App) do(ctx context.Context, method, rawURL, auth string, body, out any
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
-		return &StatusError{Status: resp.StatusCode, Message: msg}
+		return &StatusError{Status: resp.StatusCode, Message: msg, RateLimited: rateLimited(resp)}
 	}
 	if out != nil && len(data) > 0 {
 		return json.Unmarshal(data, out)
 	}
 	return nil
+}
+
+// rateLimited reports whether an error answer is a rate limit (primary:
+// no requests left; secondary: Retry-After) rather than a refusal.
+func rateLimited(resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return true
+	case http.StatusForbidden:
+		return resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0"
+	}
+	return false
 }
 
 // Account is the owner of an installation.
@@ -207,11 +232,22 @@ func (a *App) GetInstallation(ctx context.Context, id int64) (*Installation, err
 	return &inst, nil
 }
 
-// InstallationToken returns a token for the installation (at most one hour;
-// cached until five minutes before it expires).
+// InstallationToken returns a token for the installation covering every
+// repository and permission it was granted (at most one hour; cached until
+// five minutes before it expires). Prefer RepositoryToken.
 func (a *App) InstallationToken(ctx context.Context, id int64) (string, error) {
+	return a.RepositoryToken(ctx, id, "", nil)
+}
+
+// RepositoryToken returns an installation token narrowed to one repository
+// (by name, without the owner) and to the given permissions, so a token used
+// for one repository's check cannot act on the installation's other
+// repositories or with permissions the call does not need. An empty
+// repository or nil permissions keep the installation's own.
+func (a *App) RepositoryToken(ctx context.Context, id int64, repository string, permissions map[string]string) (string, error) {
+	key := tokenKey{installation: id, repository: repository, permissions: canonicalPermissions(permissions)}
 	a.mu.Lock()
-	if t, ok := a.tokens[id]; ok && a.now().Before(t.expires.Add(-5*time.Minute)) {
+	if t, ok := a.tokens[key]; ok && a.now().Before(t.expires.Add(-5*time.Minute)) {
 		a.mu.Unlock()
 		return t.token, nil
 	}
@@ -220,35 +256,71 @@ func (a *App) InstallationToken(ctx context.Context, id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var body any
+	if repository != "" || len(permissions) > 0 {
+		req := map[string]any{}
+		if repository != "" {
+			req["repositories"] = []string{repository}
+		}
+		if len(permissions) > 0 {
+			req["permissions"] = permissions
+		}
+		body = req
+	}
 	var out struct {
 		Token     string    `json:"token"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
 	if err := a.do(ctx, http.MethodPost, a.cfg.APIURL+"/app/installations/"+strconv.FormatInt(id, 10)+"/access_tokens",
-		"Bearer "+jwt, nil, &out); err != nil {
+		"Bearer "+jwt, body, &out); err != nil {
 		return "", err
 	}
 	if out.Token == "" {
 		return "", errors.New("github: no installation token in the response")
 	}
 	a.mu.Lock()
-	a.tokens[id] = cachedToken{token: out.Token, expires: out.ExpiresAt}
+	a.tokens[key] = cachedToken{token: out.Token, expires: out.ExpiresAt}
 	a.mu.Unlock()
 	return out.Token, nil
 }
 
-// ForgetInstallation drops a cached token (installation removed).
+func canonicalPermissions(p map[string]string) string {
+	if len(p) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(p))
+	for k := range p {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k + "=" + p[k] + ";")
+	}
+	return b.String()
+}
+
+// ForgetInstallation drops the installation's cached tokens (installation
+// removed or suspended).
 func (a *App) ForgetInstallation(id int64) {
 	a.mu.Lock()
-	delete(a.tokens, id)
+	for k := range a.tokens {
+		if k.installation == id {
+			delete(a.tokens, k)
+		}
+	}
 	a.mu.Unlock()
 }
 
-// UserCanAccessInstallation exchanges the OAuth code GitHub sent with the
-// setup redirect for a user token and reports whether that user can access
-// the installation. The user token is used for this one call and dropped.
-func (a *App) UserCanAccessInstallation(ctx context.Context, code string, installationID int64) (bool, error) {
-	if code == "" || len(code) > 200 {
+// UserMayBindInstallation exchanges the OAuth code GitHub sent with the
+// setup redirect for a user token and reports whether that user owns the
+// installation's account: an active admin (owner) of the organization, or
+// the user account itself. Seeing the installation is not enough: any member
+// of the organization can, and binding decides which OpenCTEM organization
+// posts the gate check for every repository of the account. The user token
+// is used for this check only and revoked afterwards (best effort).
+func (a *App) UserMayBindInstallation(ctx context.Context, code string, inst *Installation) (bool, error) {
+	if code == "" || len(code) > 200 || inst == nil || inst.Account.ID <= 0 {
 		return false, nil
 	}
 	var tok struct {
@@ -262,24 +334,53 @@ func (a *App) UserCanAccessInstallation(ctx context.Context, code string, instal
 	if tok.AccessToken == "" {
 		return false, nil
 	}
-	for page := 1; page <= 10; page++ {
-		var list struct {
-			Installations []Installation `json:"installations"`
+	defer a.revokeUserToken(ctx, tok.AccessToken)
+	auth := "Bearer " + tok.AccessToken
+	switch inst.Account.Type {
+	case "Organization":
+		var m struct {
+			State        string `json:"state"`
+			Role         string `json:"role"`
+			Organization struct {
+				ID int64 `json:"id"`
+			} `json:"organization"`
 		}
-		u := fmt.Sprintf("%s/user/installations?per_page=100&page=%d", a.cfg.APIURL, page)
-		if err := a.do(ctx, http.MethodGet, u, "Bearer "+tok.AccessToken, nil, &list); err != nil {
+		err := a.do(ctx, http.MethodGet, a.cfg.APIURL+"/user/memberships/orgs/"+url.PathEscape(inst.Account.Login), auth, nil, &m)
+		if notAMember(err) {
+			return false, nil
+		}
+		if err != nil {
 			return false, err
 		}
-		for _, i := range list.Installations {
-			if i.ID == installationID {
-				return true, nil
-			}
+		return m.State == "active" && m.Role == "admin" && m.Organization.ID == inst.Account.ID, nil
+	case "User":
+		var u struct {
+			ID int64 `json:"id"`
 		}
-		if len(list.Installations) < 100 {
-			break
+		if err := a.do(ctx, http.MethodGet, a.cfg.APIURL+"/user", auth, nil, &u); err != nil {
+			return false, err
 		}
+		return u.ID == inst.Account.ID, nil
 	}
 	return false, nil
+}
+
+// notAMember: GitHub answers 403 or 404 when the user has no membership of
+// the organization (or cannot see it).
+func notAMember(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && (se.Status == http.StatusNotFound || se.Status == http.StatusForbidden)
+}
+
+// revokeUserToken deletes a user token the install check obtained, so it
+// cannot be used after the check even if it leaked. Failures are ignored:
+// the token expires on its own.
+func (a *App) revokeUserToken(ctx context.Context, token string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	basic := base64.StdEncoding.EncodeToString([]byte(a.cfg.ClientID + ":" + a.cfg.ClientSecret))
+	_ = a.do(ctx, http.MethodDelete, a.cfg.APIURL+"/applications/"+url.PathEscape(a.cfg.ClientID)+"/token",
+		"Basic "+basic, map[string]string{"access_token": token}, nil)
 }
 
 // VerifySignature checks GitHub's X-Hub-Signature-256 over the raw body in
