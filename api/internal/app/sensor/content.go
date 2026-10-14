@@ -178,7 +178,7 @@ func (s *ContentService) RefreshSensor(ctx context.Context, tenantID, sensorID s
 		}
 		return cid, true, nil
 	}
-	cmd, err := s.queue(ctx, tenantID, a.ID, names, force, s.EffectivePolicy(ctx, tenantID))
+	cmd, err := s.queue(ctx, tenantID, a, names, force, s.EffectivePolicy(ctx, tenantID))
 	if err != nil {
 		return shared.ID{}, false, err
 	}
@@ -228,7 +228,7 @@ func (s *ContentService) refreshFleet(ctx context.Context, tenantID shared.ID, n
 			res.Skipped++
 			continue
 		}
-		if _, err := s.queue(ctx, tenantID, a.ID, names, force, policy); err != nil {
+		if _, err := s.queue(ctx, tenantID, a, names, force, policy); err != nil {
 			return res, err
 		}
 		res.CommandsCreated++
@@ -244,8 +244,10 @@ type refreshContentPayload struct {
 	Policy  *sensordom.ContentPolicy `json:"policy,omitempty"`
 }
 
-func (s *ContentService) queue(ctx context.Context, tenantID, sensorID shared.ID, names []string, force bool,
+func (s *ContentService) queue(ctx context.Context, tenantID shared.ID, a *sensordom.Sensor, names []string, force bool,
 	policy sensordom.ContentPolicy) (*command.Command, error) {
+	sensorID := a.ID
+	policy = policy.ForSensor(a.IsPlatformSensor)
 	payload, err := json.Marshal(refreshContentPayload{Content: names, Force: force, Policy: &policy})
 	if err != nil {
 		return nil, fmt.Errorf("encode refresh_content payload: %w", err)

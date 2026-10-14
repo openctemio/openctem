@@ -42,6 +42,22 @@ var (
 	suppressionRelinkFromSQL = platformFromSQLEach(vulnerability.SuppressedStatuses(), vulnerability.SuppressedStatuses()...)
 )
 
+// suppressionApplyFrom is, per disposition, the from-state list of the bulk
+// update an approved suppression rule makes to the open findings it matches
+// (suppression_apply.go), checked against the lifecycle when the package
+// loads. It is a pq.Array parameter, not a spliced list.
+var suppressionApplyFrom = func() map[vulnerability.FindingStatus][]string {
+	out := map[vulnerability.FindingStatus][]string{}
+	for _, target := range vulnerability.SuppressedStatuses() {
+		from := vulnerability.SuppressionApplyFromStatuses(target)
+		if err := vulnerability.CheckPlatformTransitions(target, from...); err != nil {
+			panic(err)
+		}
+		out[target] = statusStrings(from)
+	}
+	return out
+}()
+
 // platformFromSQL renders from as a SQL list, ('a', 'b'), after checking that
 // the platform may move each of them to target. It panics otherwise: the lists
 // are package variables, so a wrong one stops the program at start.

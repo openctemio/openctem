@@ -47,8 +47,9 @@ a list filter; it never maps one to another.
   stale source or expired feature branch marks open work `not_observed`, a VEX
   `not_affected` statement marks it `false_positive`, a retest moves
   `fix_applied`/`not_observed` to `validated_fixed`, an approved suppression
-  rule gives a new finding its disposition and lifting the rule returns it to
-  `new`.
+  rule gives a new finding, and on approval the open findings it matches
+  (`SuppressionApplyFromStatuses`), its disposition, and lifting the rule
+  returns them to `new` (`suppression-rules.md`).
 - `PentestStatusTransitions`: a pentest finding's lifecycle over the same
   statuses plus `draft` and `in_review` (`confirmed -> in_progress ->
   fix_applied -> resolved`, regression `resolved -> in_progress`); campaign roles
@@ -61,7 +62,7 @@ a list filter; it never maps one to another.
   map. There is no unchecked status setter.
 - Bulk SQL writes (coverage and default-branch auto-resolve, source-mitigated
   resolve, VEX, stale-source and branch expiry, regression reopen, suppression
-  lift and re-link) take their from-states from
+  approval, lift and re-link) take their from-states from
   `internal/infra/postgres/finding_status_sql.go`, which renders them from the
   domain sets and checks them against the platform map when the package loads:
   a list that drifts stops the server at start and fails every test.

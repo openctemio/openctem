@@ -22,6 +22,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { hasHiddenCharacters, toDisplayText } from '@/lib/untrusted-text'
+import { middleEllipsis } from '@/lib/middle-ellipsis'
 
 export interface TruncatedTextProps {
   value: string | null | undefined
@@ -31,9 +32,20 @@ export interface TruncatedTextProps {
   className?: string
   /** What the value is, for screen readers ("Error message", "Target"). */
   label?: string
+  /**
+   * Cut from the middle to this many characters instead of at the end, so
+   * the end of a path or URL (where two values usually differ) stays visible.
+   */
+  middle?: number
 }
 
-export function TruncatedText({ value, fallback = '-', className, label }: TruncatedTextProps) {
+export function TruncatedText({
+  value,
+  fallback = '-',
+  className,
+  label,
+  middle,
+}: TruncatedTextProps) {
   const raw = value ?? ''
   if (raw.trim() === '') {
     return <span className={cn('text-muted-foreground', className)}>{fallback}</span>
@@ -59,7 +71,7 @@ export function TruncatedText({ value, fallback = '-', className, label }: Trunc
               aria-hidden="true"
             />
           )}
-          {shown}
+          {middle ? middleEllipsis(shown, middle) : shown}
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-[min(32rem,90vw)] whitespace-pre-wrap break-all text-start [unicode-bidi:isolate]">
