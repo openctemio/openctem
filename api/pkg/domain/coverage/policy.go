@@ -245,6 +245,13 @@ func Backoff(every time.Duration, failStreak int) time.Duration {
 	return min(d, 24*time.Hour)
 }
 
+// FailedPair is one pair settled as failed.
+type FailedPair struct {
+	AssetID shared.ID
+	Outcome string
+	Error   string
+}
+
 // Planner is the ledger as the planner needs it. Every method is scoped to
 // one tenant.
 type Planner interface {
@@ -258,9 +265,16 @@ type Planner interface {
 	MarkBlocked(ctx context.Context, tenantID shared.ID, capability string, reasons map[shared.ID]string, recheck time.Duration) error
 	// QueuedRuns returns the runs that hold queued pairs of the tenant.
 	QueuedRuns(ctx context.Context, tenantID shared.ID) ([]RunState, error)
-	// SettleRun settles the queued pairs of a finished run: success (with
-	// the output check of expects) or failure, then the next due time.
-	SettleRun(ctx context.Context, tenantID shared.ID, run RunState, rule Rule, success bool, unfinished []shared.ID) (int, error)
+	// RunTasks returns every task (command) of a run: the ones of its steps
+	// (claim-time splits and follow-ups included) and the ones that name the
+	// run in their payload.
+	RunTasks(ctx context.Context, tenantID, runID shared.ID) ([]TaskResult, error)
+	// SettleCovered settles queued pairs of a run as covered (with the
+	// output check when expectsOrigin), due again after every.
+	SettleCovered(ctx context.Context, tenantID, runID shared.ID, capability string, assetIDs []shared.ID, every time.Duration, expectsOrigin bool) (int, error)
+	// SettleFailed settles queued pairs of a run as failed, each with its
+	// outcome and error, due again after a back-off bounded by every.
+	SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []FailedPair, every time.Duration) (int, error)
 	// QueuedTargets returns the queued pairs a run holds.
 	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
 	// AttemptsSince counts the pairs of the tenant attempted since t (the
