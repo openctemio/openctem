@@ -8,7 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// SECURITY (licence): a platform job never runs semgrep, which fetches
+// SECURITY (license): a platform job never runs semgrep, which fetches
 // registry rules when the sensor has none (--config auto); opengrep and other
 // tools are enqueued as before.
 func TestSetPlatformJob_RefusesRegistryRuleTools(t *testing.T) {

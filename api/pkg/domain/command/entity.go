@@ -330,7 +330,7 @@ func (c *Command) CanBeAcknowledged() bool {
 
 // ErrRegistryRulesOnPlatform refuses a platform job that would make the
 // platform's sensor fetch rules from the semgrep registry for a tenant: the
-// registry rules licence does not allow providing them as a service.
+// registry rules license does not allow providing them as a service.
 // Platform scans run static analysis with opengrep and the OpenCTEM rules
 // pack (research/132).
 var ErrRegistryRulesOnPlatform = fmt.Errorf("%w: platform scans run static analysis with opengrep and the OpenCTEM rules pack; semgrep would fetch registry rules", shared.ErrValidation)

@@ -197,7 +197,7 @@ func TestContentService_FleetAndPolicy(t *testing.T) {
 	}
 }
 
-// SECURITY (licence): a platform-operated sensor never receives registry
+// SECURITY (license): a platform-operated sensor never receives registry
 // rulesets in its policy (it would fetch registry rules for a tenant); a
 // tenant's own sensor receives the rulesets its tenant chose.
 func TestContentService_NoRegistryRulesetsForPlatformSensors(t *testing.T) {
