@@ -77,6 +77,7 @@ or use OpenCTEM, see [docs.openctem.io](https://docs.openctem.io)
 - [Pair a sensor](how-to/pair-a-sensor.md), [fix a sensor's setup checklist](how-to/fix-sensor-setup-checklist.md)
 - [Connect CI pipelines](how-to/connect-ci-pipelines.md), [GitLab CI](how-to/gitlab-ci.md)
 - [Verify a domain for EASM](how-to/verify-a-domain-for-easm.md), [EASM monitoring settings](how-to/easm-monitoring-settings.md)
+- [Mark things out of scope, and how it reaches sensors](how-to/mark-out-of-scope.md)
 - [Configure Microsoft Entra ID](how-to/configure-entraid.md), [SCIM provisioning](how-to/configure-scim-provisioning.md)
 - [Configure Jira ticketing](how-to/configure-jira-ticketing.md), [SIEM forwarding](how-to/configure-siem.md)
 

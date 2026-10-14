@@ -175,6 +175,18 @@ const (
 	DecorationFailed  = "failed"
 	// DecorationRetry asks FinishDecoration to queue the run again.
 	DecorationRetry = "retry"
-	// MaxDecorationAttempts bounds the posting attempts of one run.
-	MaxDecorationAttempts = 5
+	// MaxDecorationAttempts bounds the posting attempts of one run. With the
+	// backoff of ClaimDecorations (30 s doubling, at most 30 min apart) the
+	// attempts span about an hour, past a GitHub rate-limit window.
+	MaxDecorationAttempts = 8
 )
+
+// CommitVerdict is the latest verdict of one pipeline on a commit of a
+// repository. The gate check of a commit is judged over all of them, so a
+// second run on the same commit (another workflow, a re-run) cannot replace
+// a failing verdict with a passing one.
+type CommitVerdict struct {
+	RunID     shared.ID
+	Verdict   string
+	WouldFail bool
+}

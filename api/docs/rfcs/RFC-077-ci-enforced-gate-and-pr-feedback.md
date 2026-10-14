@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (decisions G-1..G-10 adopted as recommended, 2026-10-11; owner may veto) |
+| Status | Implemented in part (decisions G-1..G-10 adopted 2026-10-11; open items in section 8) |
 | Related | RFC-051 (CI runner identity and the central gate), RFC-008 (superseded scanning path), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
 ## 1. Summary
@@ -45,7 +45,13 @@ CI job ── openctem-ci scan ──▶ POST /ci/runs/{id}/results ─┐
 - **G-2** Decoration uses an **SCM app installation** (GitHub App; GitLab
   group access token or OAuth application where no app model exists).
   Tokens are minted per call, live at most one hour and cover only the
-  installation's repositories. No personal access token is used.
+  installation's repositories. No personal access token is used: a GitLab
+  token is accepted only when it acts as a bot user (a group or project
+  access token). On GitLab any Developer of a project can also set a
+  commit status of the same name, so the status is feedback, not an
+  enforcement point; enforcement there is the pipeline itself
+  (`workflow_refs` on the central template) and merge request approval
+  rules that require the gate job.
 - **G-3** Decoration runs **after** the verdict is stored, from the
   notification outbox, never in the evaluate request. A decoration failure
   never changes a verdict; it is retried and shown on the run.
@@ -118,9 +124,11 @@ messages are truncated; secret values and previews never appear.
 `scm_app_installations` (tenant-scoped): provider, host, installation id,
 account (organization) id and login, repositories selection, created by,
 status. An installation is bound to a tenant by an administrator
-(`integrations:write` or `scans:ci:write`) whose identity on the code host is
-an owner of the installing account (verified through the code host during
-the install callback). A run is decorated only when its repository asset is
+(`integrations:write` or `scans:ci:write`, with step-up) whose identity on
+the code host is an owner of the installing account (verified through the
+code host during the install callback: an active admin membership of the
+organization, matched by organization id, or the user account itself; the
+user token is revoked after the check). The install state is single-use. A run is decorated only when its repository asset is
 in the same tenant and the installation covers that repository. Two tenants
 cannot bind the same installation.
 
@@ -163,7 +171,9 @@ when a lock file changed). The run records `scan_mode` (`full`, `diff`) and
 | A job claims a wider baseline | The base branch is a hint among the repository's scanned branches; no baseline fails closed |
 | Comment spam or injection | One upserted summary, capped inline comments, escaped platform text only |
 | Cross-tenant decoration | Installation bound to one tenant by a verified owner; repository asset must be in that tenant; installation must cover the repository |
-| Leaked app credential | App private key encrypted at rest; installation tokens minted per call, at most one hour, repository-scoped; every post audited (`ci_run.decorated`) |
+| Leaked app credential | App private key encrypted at rest; installation tokens at most one hour, narrowed to the one repository and to `checks: write`, `pull_requests: write`, `metadata: read`, cached per repository and permission set; every post audited (`ci_run.decorated`) |
+| Replayed app webhook (a captured suspend or unsuspend) | HMAC over the body, then each `X-GitHub-Delivery` accepted once for 24 hours across replicas (fails closed when the store is down) |
+| A fork event (`pull_request_target`, `workflow_run`) carries the base branch's ref and commit | Never a default-branch run: findings go to a `fork/...` branch that does not count as exposure, no check is posted on the base commit, no ungated-merge check |
 | Repository file loosening policy | Tighten-only; exceptions are pending suppression requests that need approval |
 | Name taken over on the code host | Repository name bound to repository id (RFC-051 section 8); owner pinned to owner id (G-10) |
 | SSRF through a code host URL | Hosts from the installation or integration only, SSRF-guarded client |
@@ -172,12 +182,12 @@ when a lock file changed). The run records `scan_mode` (`full`, `diff`) and
 
 | Phase | Content | State |
 |---|---|---|
-| A | First verdict wins; base-branch baseline; secrets on pull requests (G-4, G-5, G-9) | Open |
-| B | Owner id pins and `workflow_refs` rule (G-10) | Open |
-| C | SCM app installations, check, summary comment, inline comments (G-1..G-3) | Open |
-| D | Ungated-merge alert | Open (needs C) |
-| E | Diff-aware runs in `openctem-ci` (G-6) | Open |
-| F | Policy modes and `.openctem.yml` (G-7, G-8) | Open |
+| A | First verdict wins; base-branch baseline; secrets on pull requests (G-4, G-5, G-9) | Implemented |
+| B | Owner id pins and `workflow_refs` rule (G-10) | Implemented |
+| C | SCM app installations, check, summary comment (G-1..G-3) | Implemented; inline review comments open |
+| D | Ungated-merge alert | Implemented for GitHub; GitLab open |
+| E | Diff-aware runs in `openctem-ci` (G-6) | Implemented for sast; secrets and dependencies open |
+| F | Policy modes and `.openctem.yml` (G-7, G-8) | Implemented |
 
 Code to cloud, first step (implemented): a CI `container` report carries the
 image's content digest (`metadata.properties.image_digest`); the platform

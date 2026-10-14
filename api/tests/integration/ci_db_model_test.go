@@ -152,7 +152,7 @@ func TestCITrustReferencesAndOverrideCreator(t *testing.T) {
 		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, user.String())
 	})
 	assetID, _ := shared.IDFromString(ex["repository_asset_id"].(string))
-	o, err := r.svc.CreateOverride(ctx, r.tenant, cirunapp.OverrideInput{RepositoryAssetID: assetID, CommitSHA: sha[:12],
+	o, err := r.svc.CreateOverride(ctx, r.tenant, cirunapp.OverrideInput{RepositoryAssetID: assetID, CommitSHA: sha,
 		Reason: "release blocked by a known false positive"}, cirunapp.Actor{UserID: user.String(), Email: "ignored@example.test"})
 	if err != nil {
 		t.Fatal(err)

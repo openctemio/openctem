@@ -25,6 +25,8 @@ import (
 	"slices"
 	"strings"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 
@@ -413,3 +415,36 @@ func Host(s string) string {
 // MatchForms is the target as typed, lower-cased, and the host of a URL or
 // host:port (scopedom.AuthorityForms, which the job signer's ledger uses too).
 func MatchForms(target string) []string { return scopedom.AuthorityForms(target) }
+
+// RegistrableRoots are the registrable domains (public suffix plus one
+// label) of the tenant's own name authority: every active scope target
+// that names a host, and every verified domain. Bug-bounty program entries
+// are left out: a program's domain is another organization's, and a name
+// under it that the program does not list is not the tenant's. A name
+// whose registrable domain is not here is under none of the tenant's
+// domains (the foreign-domain guardrail, RFC-054 §16).
+func (a *Authority) RegistrableRoots() map[string]bool {
+	out := map[string]bool{}
+	if a == nil {
+		return out
+	}
+	add := func(s string) {
+		h := Host(s)
+		if h == "" {
+			return
+		}
+		if reg, err := publicsuffix.EffectiveTLDPlusOne(h); err == nil {
+			out[reg] = true
+		}
+	}
+	for _, t := range a.targets {
+		if t == nil || t.IsProgramEntry() {
+			continue
+		}
+		add(t.Pattern())
+	}
+	for _, v := range a.verified {
+		add(v)
+	}
+	return out
+}
