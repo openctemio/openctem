@@ -224,6 +224,18 @@ var ErrBadSignature = errors.New("webhook signature does not verify")
 // MaxWebhookBody bounds a webhook delivery.
 const MaxWebhookBody = 1 << 20
 
+// VerifyGitHubWebhook checks a delivery's signature (ErrBadSignature, or
+// githubapp.ErrNotConfigured without an app) without applying it.
+func (s *Service) VerifyGitHubWebhook(body []byte, signature string) error {
+	if s.github == nil {
+		return githubapp.ErrNotConfigured
+	}
+	if !s.github.VerifySignature(body, signature) {
+		return ErrBadSignature
+	}
+	return nil
+}
+
 // HandleGitHubWebhook applies an installation event GitHub sent. The
 // signature is checked before the body is parsed; events about other things
 // are ignored. Status changes are audited on the bound tenant.

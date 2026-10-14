@@ -6,7 +6,16 @@ package cirun
 //
 // The check is what branch protection can require: it is posted by the
 // platform with the organization's GitHub App installation, never by the job,
-// so a pull request cannot skip or forge it by editing its workflow.
+// so a pull request cannot skip or forge it by editing its workflow. Branch
+// protection must pin the check's source to the OpenCTEM app, or any token
+// that may write checks (a workflow's own) could post one with the same
+// name.
+//
+// The check of a commit is judged over every pipeline's latest verdict on
+// that commit (CommitVerdicts), not only the run being posted: the code host
+// keeps the latest check of a name, so judging one run at a time would let a
+// second workflow, added by the pull request, replace a failing check with
+// a passing one.
 
 import (
 	"context"
@@ -57,6 +66,9 @@ type InstallationFinder interface {
 type DecorationRepository interface {
 	ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error)
 	FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error
+	// CommitVerdicts returns the latest evaluated verdict of each pipeline
+	// on any of the commits of the repository.
+	CommitVerdicts(ctx context.Context, tenantID, assetID shared.ID, shas []string) ([]cirun.CommitVerdict, error)
 	// PullRequestPassed reports whether the last evaluated run of a pull
 	// request on the repository passed the gate.
 	PullRequestPassed(ctx context.Context, tenantID, assetID shared.ID, pullRequest string) (bool, error)
@@ -171,11 +183,21 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 		if !run.CommitVerified || run.CommitSHA == "" {
 			return cirun.DecorationSkipped, "no verified commit"
 		}
+		// A fork event (pull_request_target, workflow_run) carries the base
+		// branch's commit but judged code the fork chose: its verdict never
+		// goes on the base commit, where it would satisfy a required check.
+		if run.Fork {
+			return cirun.DecorationSkipped, "a fork event's verdict is not posted on the base commit"
+		}
 		sha = run.CommitSHA
 	}
 
+	others, err := j.otherFailures(ctx, run, sha)
+	if err != nil {
+		return cirun.DecorationRetry, "could not read the other verdicts on the commit"
+	}
 	runURL := j.webBase + RunPath(run.ID)
-	if err := j.github.CreateCheckRun(ctx, inst.InstallationID, owner, repo, buildCheckRun(run, &v, sha, runURL)); err != nil {
+	if err := j.github.CreateCheckRun(ctx, inst.InstallationID, owner, repo, buildCheckRun(run, &v, sha, runURL, others)); err != nil {
 		return outcome(err, "post the check run")
 	}
 	if prNumber == 0 && run.IsDefaultBranch && !run.Fork {
@@ -184,7 +206,7 @@ func (j *DecorationJob) decorate(ctx context.Context, run *cirun.Run) (string, s
 	if prNumber > 0 {
 		marker := commentMarker(run)
 		if err := j.github.UpsertIssueComment(ctx, inst.InstallationID, owner, repo, prNumber, marker,
-			buildComment(run, &v, runURL, marker)); err != nil {
+			buildComment(run, &v, runURL, marker, others)); err != nil {
 			return outcome(err, "post the pull request comment")
 		}
 	}
@@ -268,17 +290,21 @@ func (j *DecorationJob) decorateGitLab(ctx context.Context, run *cirun.Run) (str
 		}
 		mrIID = n
 	}
+	others, err := j.otherFailures(ctx, run, run.CommitSHA)
+	if err != nil {
+		return cirun.DecorationRetry, "could not read the other verdicts on the commit"
+	}
 	state := "success"
-	if conclusion(&v) == conclusionFailure {
+	if commitConclusion(&v, others) == conclusionFailure {
 		state = "failed"
 	}
 	runURL := j.webBase + RunPath(run.ID)
-	if err := api.SetCommitStatus(ctx, project, run.CommitSHA, state, CheckName, runURL, plain(checkTitle(&v), 250)); err != nil {
+	if err := api.SetCommitStatus(ctx, project, run.CommitSHA, state, CheckName, runURL, plain(commitTitle(&v, others), 250)); err != nil {
 		return gitlabOutcome(err, "set the commit status")
 	}
 	if mrIID > 0 {
 		marker := commentMarker(run)
-		if err := api.UpsertMergeRequestNote(ctx, project, mrIID, authorID, marker, buildComment(run, &v, runURL, marker)); err != nil {
+		if err := api.UpsertMergeRequestNote(ctx, project, mrIID, authorID, marker, buildComment(run, &v, runURL, marker, others)); err != nil {
 			return gitlabOutcome(err, "post the merge request note")
 		}
 	}
@@ -302,6 +328,76 @@ func outcome(err error, what string) (string, string) {
 		return cirun.DecorationFailed, fmt.Sprintf("could not %s: GitHub answered %d", what, se.Status)
 	}
 	return cirun.DecorationRetry, "could not " + what
+}
+
+// commitFailures says how the other pipelines on the commit went: how many
+// failed the gate and how many passed only in warn mode. The run being
+// posted is not counted.
+type commitFailures struct {
+	Failed, WouldFail int
+	// FailedURL opens one of the failing runs in the console.
+	FailedURL string
+}
+
+// otherFailures reads the latest verdict of every pipeline on the run's
+// commit (and on the check's commit when that differs: a pull request run
+// judges the merge commit, the check goes on the head).
+func (j *DecorationJob) otherFailures(ctx context.Context, run *cirun.Run, checkSHA string) (commitFailures, error) {
+	var f commitFailures
+	shas := []string{run.CommitSHA}
+	if checkSHA != "" && !strings.EqualFold(checkSHA, run.CommitSHA) {
+		shas = append(shas, checkSHA)
+	}
+	vs, err := j.repo.CommitVerdicts(ctx, run.TenantID, run.RepositoryAssetID, shas)
+	if err != nil {
+		return f, err
+	}
+	for _, v := range vs {
+		if v.RunID == run.ID {
+			continue
+		}
+		switch {
+		case v.Verdict == cirun.VerdictFail:
+			if f.Failed == 0 {
+				f.FailedURL = j.webBase + RunPath(v.RunID)
+			}
+			f.Failed++
+		case v.WouldFail:
+			f.WouldFail++
+		}
+	}
+	return f, nil
+}
+
+// commitConclusion is the strictest of the run's conclusion and the other
+// pipelines' verdicts on the commit.
+func commitConclusion(v *Verdict, others commitFailures) string {
+	c := conclusion(v)
+	switch {
+	case c == conclusionFailure || others.Failed > 0:
+		return conclusionFailure
+	case c == conclusionNeutral || others.WouldFail > 0:
+		return conclusionNeutral
+	}
+	return conclusionSuccess
+}
+
+// commitTitle is checkTitle, or why another pipeline decides the check.
+func commitTitle(v *Verdict, others commitFailures) string {
+	if conclusion(v) != conclusionFailure && others.Failed > 0 {
+		return fmt.Sprintf("Failed: %d other pipeline(s) on this commit failed the gate", others.Failed)
+	}
+	return checkTitle(v)
+}
+
+// othersMarkdown explains a check decided by another pipeline.
+func (f commitFailures) markdown() string {
+	if f.Failed == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d other pipeline(s) on this commit failed the gate, so the check fails: "+
+		"the gate takes the strictest verdict of every pipeline on a commit. [Open a failing run](%s)\n\n",
+		f.Failed, f.FailedURL)
 }
 
 func commentMarker(run *cirun.Run) string {
@@ -333,9 +429,10 @@ func checkTitle(v *Verdict) string {
 	return "Passed"
 }
 
-func buildCheckRun(run *cirun.Run, v *Verdict, sha, runURL string) githubapp.CheckRun {
-	c := githubapp.CheckRun{Name: CheckName, HeadSHA: sha, Conclusion: conclusion(v), DetailsURL: runURL,
-		ExternalID: run.ID.String(), Title: checkTitle(v), Summary: summaryMarkdown(v, runURL)}
+func buildCheckRun(run *cirun.Run, v *Verdict, sha, runURL string, others commitFailures) githubapp.CheckRun {
+	c := githubapp.CheckRun{Name: CheckName, HeadSHA: sha, Conclusion: commitConclusion(v, others), DetailsURL: runURL,
+		ExternalID: run.ID.String(), Title: commitTitle(v, others),
+		Summary: others.markdown() + summaryMarkdown(v, runURL)}
 	level := conclusionFailure
 	if c.Conclusion != conclusionFailure {
 		level = "warning"
@@ -419,13 +516,14 @@ func reasonLabel(code string) string {
 	return code
 }
 
-func buildComment(run *cirun.Run, v *Verdict, runURL, marker string) string {
+func buildComment(run *cirun.Run, v *Verdict, runURL, marker string, others commitFailures) string {
 	var b strings.Builder
 	b.WriteString(marker + "\n")
-	icon := map[string]string{conclusionFailure: "Failed", conclusionNeutral: "Passed (warn mode)", conclusionSuccess: "Passed"}[conclusion(v)]
+	icon := map[string]string{conclusionFailure: "Failed", conclusionNeutral: "Passed (warn mode)", conclusionSuccess: "Passed"}[commitConclusion(v, others)]
 	fmt.Fprintf(&b, "### %s: %s\n\n", CheckName, icon)
 	fmt.Fprintf(&b, "Commit `%s` compared with `%s`.\n\n", code(shortSHA(run.CommitSHA), 12),
 		code(nonEmpty(v.Baseline.Branch, "the default branch"), 100))
+	b.WriteString(others.markdown())
 	b.WriteString(summaryMarkdown(v, runURL))
 	return b.String()
 }

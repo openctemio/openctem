@@ -109,14 +109,27 @@ func TestClone_KeepsRRuleAndRunAt(t *testing.T) {
 	if err := sc.SetRRuleSchedule("FREQ=WEEKLY;BYDAY=MO;BYHOUR=2", "UTC"); err != nil {
 		t.Fatal(err)
 	}
-	if c := sc.Clone("copy"); c.ScheduleRRule != sc.ScheduleRRule || c.NextRunAt == nil {
+	if c := activeClone(t, sc, "copy"); c.ScheduleRRule != sc.ScheduleRRule || c.NextRunAt == nil {
 		t.Fatalf("rrule clone: rule %q next %v", c.ScheduleRRule, c.NextRunAt)
 	}
 	runAt := time.Now().Add(time.Hour).Truncate(time.Second)
 	if err := sc.SetOnceSchedule(&runAt, "UTC", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if c := sc.Clone("copy 2"); c.ScheduleRunAt == nil || !c.ScheduleRunAt.Equal(runAt) || c.NextRunAt == nil {
+	if c := activeClone(t, sc, "copy 2"); c.ScheduleRunAt == nil || !c.ScheduleRunAt.Equal(runAt) || c.NextRunAt == nil {
 		t.Fatalf("once clone: run_at %v next %v", c.ScheduleRunAt, c.NextRunAt)
 	}
+}
+
+// activeClone clones sc (a clone starts paused) and resumes the copy.
+func activeClone(t *testing.T, sc *Scan, name string) *Scan {
+	t.Helper()
+	c := sc.Clone(name)
+	if c.Status != StatusPaused || c.NextRunAt != nil {
+		t.Fatalf("a clone starts paused with no next run, got %s next %v", c.Status, c.NextRunAt)
+	}
+	if err := c.Activate(); err != nil {
+		t.Fatal(err)
+	}
+	return c
 }
