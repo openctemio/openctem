@@ -74,6 +74,26 @@ type SuggestionAddress struct {
 	Network SuggestionNetwork `json:"network"`
 	// Shared: why it is not offered (empty: offered).
 	Shared string `json:"shared,omitempty"`
+	// Ports: the open ports seen on the address or on the caller's names
+	// that resolve to it (up to 20, ascending): what a port scan of the
+	// address itself would look at again, and what scans of the names alone
+	// can miss.
+	Ports []int `json:"ports,omitempty"`
+	// OtherNames: the caller's names resolving to it that no entry covers
+	// (up to 10).
+	OtherNames []string `json:"other_names,omitempty"`
+	// Prefix: the organization's own announced prefix that holds the
+	// address (from its network seeds), when the platform guardrails accept
+	// it as a scope entry; offered as one rule in PrefixRules.
+	Prefix string `json:"prefix,omitempty"`
+}
+
+// SuggestionPrefix is a network prefix of the organization's own (an
+// announced prefix of a seeded AS) that holds offered addresses: adding it
+// is one CIDR rule instead of an entry per address.
+type SuggestionPrefix struct {
+	Prefix    string `json:"prefix"`
+	Addresses int    `json:"addresses"`
 }
 
 // SuggestionNetwork is what we hold about an address's network.
@@ -105,6 +125,9 @@ type SuggestionCard struct {
 	SharedCount         int                 `json:"shared_count,omitempty"`
 	Addresses           []SuggestionAddress `json:"addresses,omitempty"`
 	SharedAddresses     []SuggestionAddress `json:"shared_addresses,omitempty"`
+	// PrefixRules: the organization's own prefixes holding offered
+	// addresses (Prefix), most addresses first.
+	PrefixRules []SuggestionPrefix `json:"prefix_rules,omitempty"`
 	// confirmed_out_of_scope only.
 	Assets []SuggestionAsset `json:"assets,omitempty"`
 }
@@ -128,6 +151,9 @@ type AddressBehindNames struct {
 	// never returned); VisibleNames: those in the caller's data scope.
 	AllNames     []string
 	VisibleNames []string
+	// Ports: open ports recorded on the address asset or on its visible
+	// names (asset_services), ascending.
+	Ports []int
 }
 
 // SuggestionStore reads the cards' rows (*postgres.AttributionRepository).
@@ -148,7 +174,14 @@ type SuggestionService struct {
 	dataScope *datascope.Enforcer
 	orgName   OrgNamer
 	seeded    SeededNetworks
+	// guardrails decide which seeded prefixes may be offered as rules; nil
+	// offers none.
+	guardrails *scopedom.Guardrails
 }
+
+// SetGuardrails lets the card offer the organization's own prefixes as
+// rules, each only when the platform guardrails accept it as an entry.
+func (s *SuggestionService) SetGuardrails(g scopedom.Guardrails) { s.guardrails = &g }
 
 // NewSuggestionService creates it. coverage is required (without it nothing
 // can be told in or out of scope, so no card is built).
@@ -241,6 +274,16 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		item := SuggestionAddress{AssetID: r.AssetID, Address: r.Address, ResolvedFrom: from}
 		item.Network, item.Shared = classifyAddress(r, org, seeds)
+		item.Ports = addressPorts(r)
+		for _, n := range r.VisibleNames {
+			if _, ok := cover[n]; !ok && len(item.OtherNames) < maxResolvedFrom {
+				item.OtherNames = append(item.OtherNames, n)
+			}
+		}
+		sort.Strings(item.OtherNames)
+		if item.Shared == "" && seeds != nil {
+			item.Prefix = s.ownPrefix(*seeds, r.Address)
+		}
 		if item.Shared == "" {
 			for _, n := range all {
 				names[n] = true // names_count: the names behind the offered addresses
@@ -264,6 +307,8 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 	}
 	card.Count = len(card.Addresses)
 	card.NamesCount = len(names)
+	card.PrefixRules = prefixRules(card.Addresses)
+
 	if card.Count == 0 && card.SharedCount == 0 {
 		return nil, nil
 	}
@@ -443,4 +488,93 @@ func NameRuleCards(rs *RuleSuggestions) int {
 		}
 	}
 	return n
+}
+
+// maxCardPorts bounds the ports listed for one address.
+const maxCardPorts = 20
+
+// addressPorts merges the ports recorded in asset_services with the
+// address's own "ports" property (open ones), ascending, at most
+// maxCardPorts.
+func addressPorts(r AddressBehindNames) []int {
+	seen := map[int]bool{}
+	for _, p := range r.Ports {
+		if p > 0 && p <= 65535 {
+			seen[p] = true
+		}
+	}
+	if list, ok := r.Props["ports"].([]any); ok {
+		for _, e := range list {
+			m, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			if st, _ := m["state"].(string); st != "" && st != "open" {
+				continue
+			}
+			if f, ok := m["port"].(float64); ok && f > 0 && f <= 65535 {
+				seen[int(f)] = true
+			}
+		}
+	}
+	out := make([]int, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	if len(out) > maxCardPorts {
+		out = out[:maxCardPorts]
+	}
+	return out
+}
+
+// ownPrefix is the most specific announced prefix of the organization's
+// seeded networks that holds addr and that the platform guardrails accept
+// as a scope entry ("" when none does, or without guardrails).
+func (s *SuggestionService) ownPrefix(n easmseed.Networks, addr string) string {
+	if s.guardrails == nil {
+		return ""
+	}
+	a, err := netip.ParseAddr(addr)
+	if err != nil {
+		return ""
+	}
+	a = a.Unmap()
+	best := netip.Prefix{}
+	for _, raw := range n.Prefixes {
+		p, err := netip.ParsePrefix(raw)
+		if err != nil || !p.Contains(a) || (best.IsValid() && p.Bits() <= best.Bits()) {
+			continue
+		}
+		if s.guardrails.CheckPattern(scopedom.TargetTypeCIDR, p.Masked().String()) != nil {
+			continue
+		}
+		best = p.Masked()
+	}
+	if !best.IsValid() {
+		return ""
+	}
+	return best.String()
+}
+
+// prefixRules groups offered addresses by their own prefix, most addresses
+// first.
+func prefixRules(addrs []SuggestionAddress) []SuggestionPrefix {
+	count := map[string]int{}
+	for _, a := range addrs {
+		if a.Prefix != "" {
+			count[a.Prefix]++
+		}
+	}
+	out := make([]SuggestionPrefix, 0, len(count))
+	for p, n := range count {
+		out = append(out, SuggestionPrefix{Prefix: p, Addresses: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Addresses != out[j].Addresses {
+			return out[i].Addresses > out[j].Addresses
+		}
+		return out[i].Prefix < out[j].Prefix
+	})
+	return out
 }
