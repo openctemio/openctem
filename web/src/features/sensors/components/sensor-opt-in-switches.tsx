@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 
@@ -14,14 +15,14 @@ const ITEMS: { key: keyof SensorOptInValue; id: string; label: string; help: str
   {
     key: 'allow_sensor_interactsh',
     id: 'tenant-sensor-interactsh',
-    label: 'Allow out-of-band callbacks (interactsh) in sensor jobs',
-    help: 'Off: the platform sends no job that turns interactsh on and removes allow_interactsh from scans when they start. On: such jobs go only to sensors whose own local policy allows them; the callbacks reach an external server.',
+    label: 'sensors.optIns.interactsh.label',
+    help: 'sensors.optIns.interactsh.help',
   },
   {
     key: 'allow_sensor_custom_templates',
     id: 'tenant-sensor-custom-templates',
-    label: 'Allow custom templates in sensor jobs',
-    help: 'Off: scans with custom templates are refused when they start and none are sent. On: they go only to sensors whose local policy allows custom templates and that pin your template signing key.',
+    label: 'sensors.optIns.customTemplates.label',
+    help: 'sensors.optIns.customTemplates.help',
   },
 ]
 
@@ -40,15 +41,16 @@ export function SensorOptInSwitches({
   onChange: (next: SensorOptInValue) => void
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4" data-testid="sensor-opt-in-switches">
       <SensorOptInBanner showSettingsLink={false} />
       {ITEMS.map((item) => (
         <div key={item.key} className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
-            <Label htmlFor={item.id}>{item.label}</Label>
+            <Label htmlFor={item.id}>{t(item.label)}</Label>
             <p className="text-sm text-muted-foreground" id={`${item.id}-desc`}>
-              {item.help} Turning it on is audited and alerted.
+              {t(item.help)} {t('sensors.optIns.audited')}
             </p>
           </div>
           <Switch

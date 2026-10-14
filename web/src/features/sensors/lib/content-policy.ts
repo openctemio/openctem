@@ -1,6 +1,7 @@
 import type { ContentPin, ContentPolicy, SensorContentName } from '@/lib/api/sensor-types'
 
 import { POLICY_CONTENT } from './content'
+import type { Tr } from './format'
 
 /**
  * The content policy form (Settings → Scanning → Scanner content): string
@@ -47,14 +48,21 @@ export function policyToForm(policy: ContentPolicy | null | undefined): ContentP
   return { refreshIntervalHours: str(policy?.refresh_interval_hours), content }
 }
 
-function parseHours(v: string, field: string, errors: Record<string, string>): number | undefined {
-  const t = v.trim()
-  if (!t) return undefined
-  if (!/^\d+$/.test(t) || Number(t) < 1 || Number(t) > MAX_HOURS) {
-    errors[field] = `Whole hours from 1 to ${MAX_HOURS}`
+function parseHours(
+  v: string,
+  field: string,
+  errors: Record<string, string>,
+  tr?: Tr
+): number | undefined {
+  const text = v.trim()
+  if (!text) return undefined
+  if (!/^\d+$/.test(text) || Number(text) < 1 || Number(text) > MAX_HOURS) {
+    errors[field] = tr
+      ? tr('sensors.contentPolicy.err.hours', undefined, { max: MAX_HOURS })
+      : `Whole hours from 1 to ${MAX_HOURS}`
     return undefined
   }
-  return Number(t)
+  return Number(text)
 }
 
 /**
@@ -62,35 +70,50 @@ function parseHours(v: string, field: string, errors: Record<string, string>): n
  * default applies). `errors` is keyed by field ("refreshIntervalHours",
  * "<content>.maxAgeHours", "<content>.version", "<content>.rulesets").
  */
-export function formToPolicy(form: ContentPolicyForm): {
+export function formToPolicy(
+  form: ContentPolicyForm,
+  tr?: Tr
+): {
   policy: ContentPolicy
   errors: Record<string, string>
 } {
   const errors: Record<string, string> = {}
   const policy: ContentPolicy = { content: {} }
-  const interval = parseHours(form.refreshIntervalHours, 'refreshIntervalHours', errors)
+  const interval = parseHours(form.refreshIntervalHours, 'refreshIntervalHours', errors, tr)
   if (interval) policy.refresh_interval_hours = interval
 
   for (const [name, f] of Object.entries(form.content)) {
     const pin: ContentPin = {}
-    const maxAge = parseHours(f.maxAgeHours, `${name}.maxAgeHours`, errors)
+    const maxAge = parseHours(f.maxAgeHours, `${name}.maxAgeHours`, errors, tr)
     if (maxAge) pin.max_age_hours = maxAge
 
     const kind = PIN_KIND[name]
     const version = f.version.trim()
     if (version && kind === 'digest') {
       if (DIGEST_RE.test(version)) pin.version = version
-      else errors[`${name}.version`] = 'A digest: sha256: and 64 lower-case hex digits'
+      else
+        errors[`${name}.version`] = tr
+          ? tr('sensors.contentPolicy.err.digest')
+          : 'A digest: sha256: and 64 lower-case hex digits'
     } else if (version && kind === 'tag') {
       if (TAG_RE.test(version)) pin.version = version
-      else errors[`${name}.version`] = 'A release tag such as v10.4.9'
+      else
+        errors[`${name}.version`] = tr
+          ? tr('sensors.contentPolicy.err.tag')
+          : 'A release tag such as v10.4.9'
     }
 
     if (kind === 'rulesets') {
       const rulesets = f.rulesets.map((r) => r.trim()).filter(Boolean)
       const bad = rulesets.find((r) => !RULESET_RE.test(r))
-      if (bad) errors[`${name}.rulesets`] = `Not a ruleset name: ${bad}`
-      else if (rulesets.length > 32) errors[`${name}.rulesets`] = 'At most 32 rulesets'
+      if (bad)
+        errors[`${name}.rulesets`] = tr
+          ? tr('sensors.contentPolicy.err.ruleset', undefined, { name: bad })
+          : `Not a ruleset name: ${bad}`
+      else if (rulesets.length > 32)
+        errors[`${name}.rulesets`] = tr
+          ? tr('sensors.contentPolicy.err.rulesetMax')
+          : 'At most 32 rulesets'
       else if (rulesets.length) pin.rulesets = rulesets
     }
 
@@ -100,9 +123,14 @@ export function formToPolicy(form: ContentPolicyForm): {
 }
 
 /** "48 hours (2 days)" style placeholder from a default. */
-export function hoursPlaceholder(hours: number | null | undefined): string {
-  if (!hours || hours <= 0) return 'No limit'
-  return hours % 24 === 0 && hours >= 24
-    ? `${hours} (${hours / 24} ${hours === 24 ? 'day' : 'days'})`
-    : String(hours)
+export function hoursPlaceholder(hours: number | null | undefined, tr?: Tr): string {
+  if (!hours || hours <= 0) return tr ? tr('sensors.contentPolicy.noLimit') : 'No limit'
+  if (hours % 24 === 0 && hours >= 24) {
+    const days = hours / 24
+    if (tr) {
+      return `${hours} (${tr(days === 1 ? 'sensors.contentPolicy.day' : 'sensors.contentPolicy.days', undefined, { count: days })})`
+    }
+    return `${hours} (${days} ${hours === 24 ? 'day' : 'days'})`
+  }
+  return String(hours)
 }

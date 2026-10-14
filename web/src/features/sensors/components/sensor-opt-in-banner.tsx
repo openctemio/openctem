@@ -3,6 +3,7 @@
 import Link from '@/components/link'
 import { ShieldOff } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { affectedScans, useSensorOptInImpact } from '@/lib/api/sensor-opt-in-hooks'
 
@@ -17,6 +18,7 @@ const LISTED = 5
  * or the switches are managed; hidden when nothing is affected.
  */
 export function SensorOptInBanner({ showSettingsLink = true }: { showSettingsLink?: boolean }) {
+  const { t } = useTranslation()
   const { data } = useSensorOptInImpact()
   const scans = affectedScans(data)
   if (!data || scans.length === 0) return null
@@ -25,12 +27,9 @@ export function SensorOptInBanner({ showSettingsLink = true }: { showSettingsLin
   return (
     <Alert data-testid="sensor-opt-in-banner">
       <ShieldOff className="h-4 w-4" aria-hidden />
-      <AlertTitle>Some scans ask for sensor features your organization has turned off</AlertTitle>
+      <AlertTitle>{t('sensors.optInBanner.title')}</AlertTitle>
       <AlertDescription>
-        <p>
-          Out-of-band callbacks (interactsh) and custom templates are off by default. Scans that ask
-          for interactsh run without it; scans with custom templates are refused when they start.
-        </p>
+        <p>{t('sensors.optInBanner.body')}</p>
         <ul className="mt-2 list-disc space-y-0.5 pl-5">
           {listed.map((s) => (
             <li key={s.id}>
@@ -43,7 +42,7 @@ export function SensorOptInBanner({ showSettingsLink = true }: { showSettingsLin
                 {[
                   s.uses_interactsh && !data.opt_ins.allow_interactsh ? 'interactsh' : null,
                   s.uses_custom_templates && !data.opt_ins.allow_custom_templates
-                    ? 'custom templates'
+                    ? t('sensors.optInBanner.customTemplates')
                     : null,
                 ]
                   .filter(Boolean)
@@ -55,17 +54,18 @@ export function SensorOptInBanner({ showSettingsLink = true }: { showSettingsLin
         </ul>
         {more > 0 && (
           <p className="mt-1 text-muted-foreground">
-            {data.truncated ? 'and more' : `and ${more} more`}
+            {data.truncated
+              ? t('sensors.optInBanner.andMore')
+              : t('sensors.optInBanner.andNMore', undefined, { count: more })}
           </p>
         )}
         {showSettingsLink && (
           <p className="mt-2">
-            An owner can turn them on in{' '}
+            {t('sensors.optInBanner.ownerBefore')}{' '}
             <Link href="/settings/authentication" className="underline underline-offset-2">
-              Settings, Authentication and security
+              {t('sensors.optInBanner.settingsLink')}
             </Link>
-            . Turning one on is audited and alerted, and a sensor still refuses what its own local
-            policy does not allow.
+            {t('sensors.optInBanner.ownerAfter')}
           </p>
         )}
       </AlertDescription>

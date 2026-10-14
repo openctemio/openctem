@@ -115,9 +115,10 @@ export function distinctHostname(sensor: Pick<Sensor, 'name' | 'hostname'>): str
  * one long one); badges for a platform sensor and the deprecated protocol.
  */
 export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: SensorGrantSummary }) {
+  const { t } = useTranslation()
   const host = distinctHostname(sensor)
   const ip = sensor.ip_address || null
-  const fallback = isOneShotSensor(sensor) ? 'CI/CD runner · one-shot' : 'No host reported yet'
+  const fallback = isOneShotSensor(sensor) ? t('sensors.cells.oneShot') : t('sensors.cells.noHost')
   return (
     <div className="flex min-w-0 flex-col">
       <span className="flex min-w-0 items-center gap-1.5">
@@ -132,7 +133,7 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
       {host && (
         <span
           className={cn('truncate text-xs', muted)}
-          title="Host name the sensor reports"
+          title={t('sensors.cells.hostTitle')}
           data-slot="sensor-host"
         >
           {host}
@@ -141,7 +142,7 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
       {ip && (
         <span
           className={cn('truncate text-xs tabular-nums', muted)}
-          title="Address the platform sees the sensor connect from"
+          title={t('sensors.cells.ipTitle')}
           data-slot="sensor-ip"
         >
           {ip}
@@ -158,23 +159,18 @@ export function SensorNameCell({ sensor, grant }: { sensor: Sensor; grant?: Sens
  * only, no credentials, no results without a job).
  */
 export function SensorGrantTags({ grant }: { grant?: SensorGrantSummary }) {
+  const { t } = useTranslation()
   if (!grant) return null
   return (
     <>
       {grant.legacy_broad && (
-        <SensorTag
-          tone="warning"
-          title="Legacy broad grant: this sensor may do anything a sensor can. Narrow it to the profile that matches what it does."
-        >
-          Legacy broad grant
+        <SensorTag tone="warning" title={t('sensors.cells.legacyBroadTitle')}>
+          {t('sensors.grantEdit.profile.legacy-broad')}
         </SensorTag>
       )}
       {grant.trust_level === 'new' && (
-        <SensorTag
-          tone="info"
-          title="New: passive work only, no credentials and no results without a job until an administrator promotes it."
-        >
-          New
+        <SensorTag tone="info" title={t('sensors.cells.newTitle')}>
+          {t('sensors.grantSection.new')}
         </SensorTag>
       )}
     </>
@@ -190,24 +186,33 @@ export const PROTOCOL_V1_SUNSET = '2027-04-01'
 
 /** "v1 · deprecated" when the API reports the sensor still speaks protocol v1 (RFC-029). */
 export function ProtocolTag({ sensor }: { sensor: Pick<Sensor, 'protocol'> }) {
+  const { t } = useTranslation()
   if (!sensor.protocol || (!sensor.protocol.deprecated && sensor.protocol.version >= 2)) return null
   return (
     <SensorTag
       tone="warning"
-      title={`Protocol v${sensor.protocol.version} is deprecated. Upgrade the sensor to ${PROTOCOL_V2_SENSOR_VERSION} or later before ${PROTOCOL_V1_SUNSET}.`}
+      title={t('sensors.cells.protocolDeprecatedTitle', undefined, {
+        version: sensor.protocol.version,
+        minVersion: PROTOCOL_V2_SENSOR_VERSION,
+        date: PROTOCOL_V1_SUNSET,
+      })}
     >
-      v{sensor.protocol.version} · deprecated
+      v{sensor.protocol.version} · {t('sensors.edit.about.deprecated')}
     </SensorTag>
   )
 }
 
 const VERSION_TAG: Record<
   SensorVersionStatus,
-  { label: string; tone: 'success' | 'info' | 'destructive' } | null
+  { key: string; label: string; tone: 'success' | 'info' | 'destructive' } | null
 > = {
-  latest: { label: 'latest', tone: 'success' },
-  update_available: { label: 'update', tone: 'info' },
-  unsupported: { label: 'unsupported', tone: 'destructive' },
+  latest: { key: 'sensors.cells.versionTag.latest', label: 'latest', tone: 'success' },
+  update_available: { key: 'sensors.cells.versionTag.update', label: 'update', tone: 'info' },
+  unsupported: {
+    key: 'sensors.cells.versionTag.unsupported',
+    label: 'unsupported',
+    tone: 'destructive',
+  },
   unknown: null,
 }
 
@@ -304,9 +309,9 @@ export function SensorVersionCell({
   const tag = v && showChannelTag ? VERSION_TAG[status] : null
   const title =
     status === 'update_available' && latest
-      ? `${latest} is available`
+      ? t('sensors.cells.versionAvailable', undefined, { latest })
       : status === 'unsupported' && min
-        ? `Older than the minimum supported ${min}`
+        ? t('sensors.cells.versionTooOld', undefined, { min })
         : undefined
   const sdkStatus = sensorSdkStatus(sensor)
   const sdkTag = SDK_TAG[sdkStatus]
@@ -336,7 +341,7 @@ export function SensorVersionCell({
           </span>
           {tag && (
             <SensorTag tone={tag.tone} title={title}>
-              {tag.label}
+              {t(tag.key, tag.label)}
             </SensorTag>
           )}
         </span>
@@ -362,6 +367,7 @@ export function SensorVersionCell({
 
 /** Running jobs over slots, with a small bar. One-shot sensors have none. */
 export function SensorJobsCell({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
   if (isOneShotSensor(sensor) || sensor.status !== 'active') {
     return <span className={muted}>—</span>
   }
@@ -371,7 +377,7 @@ export function SensorJobsCell({ sensor }: { sensor: Sensor }) {
   const max = sensorCapacity(sensor).effective || 0
   const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0
   return (
-    <span className="inline-flex items-center gap-2 tabular-nums" title={capacityLabel(sensor)}>
+    <span className="inline-flex items-center gap-2 tabular-nums" title={capacityLabel(sensor, t)}>
       <span className="h-1.5 w-11 overflow-hidden rounded-full bg-muted" aria-hidden>
         <span className="block h-full bg-info" style={{ width: `${pct}%` }} />
       </span>
@@ -384,12 +390,13 @@ export function SensorJobsCell({ sensor }: { sensor: Sensor }) {
 
 /** Results waiting on the sensor (its outbox), as it last reported. */
 export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
+  const { t } = useTranslation()
   const ob = sensor.outbox
   if (!ob && sensor.status !== 'active') return <span className={muted}>—</span>
   if (!ob) {
     return (
-      <span className={cn('text-sm', muted)} title="The sensor's SDK does not report an outbox">
-        {isOneShotSensor(sensor) ? '—' : 'not reported'}
+      <span className={cn('text-sm', muted)} title={t('sensors.cells.outboxUnreported')}>
+        {isOneShotSensor(sensor) ? '—' : t('sensors.cells.notReported')}
       </span>
     )
   }
@@ -406,15 +413,19 @@ export function SensorOutboxCell({ sensor }: { sensor: Sensor }) {
             sensor.outbox_warning ? 'text-warning' : 'text-foreground'
           )}
         >
-          {ob.pending_count.toLocaleString()} queued
+          {t('sensors.cells.queued', undefined, { count: ob.pending_count.toLocaleString() })}
         </span>
       )}
       {lost > 0 && (
-        <span className="text-sm tabular-nums text-destructive">{lost.toLocaleString()} lost</span>
+        <span className="text-sm tabular-nums text-destructive">
+          {t('sensors.cells.lost', undefined, { count: lost.toLocaleString() })}
+        </span>
       )}
       {ob.pending_count > 0 && ob.oldest_age_seconds > 0 && (
         <span className={cn('text-xs', muted)}>
-          oldest {formatDurationShort(ob.oldest_age_seconds)}
+          {t('sensors.cells.oldest', undefined, {
+            age: formatDurationShort(ob.oldest_age_seconds),
+          })}
         </span>
       )}
     </span>
@@ -427,9 +438,10 @@ export const LEGACY_KEY_EXPLANATION =
 
 /** Tag for a sensor whose current API key is a legacy `rda_` key. */
 export function LegacyKeyTag() {
+  const { t } = useTranslation()
   return (
-    <SensorTag tone="muted" title={LEGACY_KEY_EXPLANATION}>
-      legacy key
+    <SensorTag tone="muted" title={t('sensors.cells.legacyKeyHelp', LEGACY_KEY_EXPLANATION)}>
+      {t('sensors.cells.legacyKey')}
     </SensorTag>
   )
 }
@@ -459,22 +471,41 @@ function SensorKeyExpiry({
   expiresAt: string | null | undefined
   now: number
 }) {
+  const { t } = useTranslation()
   const k = keyExpiry(expiresAt, now)
   switch (k.kind) {
     case 'unknown':
       return <span className={muted}>—</span>
     case 'never':
-      return <span className={cn('whitespace-nowrap text-sm', muted)}>never expires</span>
+      return (
+        <span className={cn('whitespace-nowrap text-sm', muted)}>
+          {t('sensors.cells.keyNever')}
+        </span>
+      )
     case 'expired':
-      return <span className="whitespace-nowrap text-sm text-destructive">expired</span>
+      return (
+        <span className="whitespace-nowrap text-sm text-destructive">
+          {t('sensors.cells.keyExpired')}
+        </span>
+      )
     case 'soon':
       return (
         <span className="whitespace-nowrap text-sm text-warning">
-          expires in {k.days} {k.days === 1 ? 'day' : 'days'}
+          {t(
+            k.days === 1 ? 'sensors.cells.keyExpiresIn.one' : 'sensors.cells.keyExpiresIn.other',
+            undefined,
+            { count: k.days }
+          )}
         </span>
       )
     default:
-      return <span className={cn('whitespace-nowrap text-sm', muted)}>in {k.days} days</span>
+      return (
+        <span className={cn('whitespace-nowrap text-sm', muted)}>
+          {t(k.days === 1 ? 'sensors.cells.keyIn.one' : 'sensors.cells.keyIn.other', undefined, {
+            count: k.days,
+          })}
+        </span>
+      )
   }
 }
 
@@ -486,9 +517,10 @@ export function SensorToolsCell({
   tools: string[] | null | undefined
   max?: number
 }) {
+  const { t } = useTranslation()
   const list = tools ?? []
   if (list.length === 0) {
-    return <span className={cn('text-sm', muted)}>none</span>
+    return <span className={cn('text-sm', muted)}>{t('sensors.cells.toolsNone')}</span>
   }
   const shown = list.slice(0, max).join(', ')
   const more = list.length - max
@@ -502,10 +534,20 @@ export function SensorToolsCell({
 
 const TOOL_STATUS: Record<
   SensorToolRow['status'],
-  { icon: typeof CheckCircle2; className: string; label: string }
+  { icon: typeof CheckCircle2; className: string; key: string; label: string }
 > = {
-  ready: { icon: CheckCircle2, className: 'text-success', label: 'installed' },
-  not_installed: { icon: AlertTriangle, className: 'text-warning', label: 'not installed' },
+  ready: {
+    icon: CheckCircle2,
+    className: 'text-success',
+    key: 'sensors.cells.toolInstalled',
+    label: 'installed',
+  },
+  not_installed: {
+    icon: AlertTriangle,
+    className: 'text-warning',
+    key: 'sensors.cells.toolNotInstalled',
+    label: 'not installed',
+  },
 }
 
 /**
@@ -513,9 +555,10 @@ const TOOL_STATUS: Record<
  * whether it is installed (an icon, and a tag when it is not usable).
  */
 export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
+  const { t } = useTranslation()
   return (
     <DetailChipList
-      label="Tools"
+      label={t('sensors.cells.tools')}
       chips={rows.map((r) => {
         const st = TOOL_STATUS[r.status]
         return {
@@ -523,7 +566,7 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
           data: { tool: r.name, status: r.status },
           icon: st.icon,
           iconClassName: st.className,
-          iconLabel: st.label,
+          iconLabel: t(st.key, st.label),
           label: r.name,
           muted: r.status !== 'ready' || !!r.excluded,
           meta: (
@@ -532,8 +575,10 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
               {r.capabilities && r.capabilities.length > 0 && (
                 <span
                   className={cn('max-w-48 truncate text-xs', muted)}
-                  title={`Serves ${r.capabilities.join(', ')}`}
-                  aria-label={`Serves ${r.capabilities.join(', ')}`}
+                  title={t('sensors.cells.serves', undefined, { list: r.capabilities.join(', ') })}
+                  aria-label={t('sensors.cells.serves', undefined, {
+                    list: r.capabilities.join(', '),
+                  })}
                 >
                   {r.capabilities.join(' · ')}
                 </span>
@@ -542,11 +587,13 @@ export function SensorToolList({ rows }: { rows: SensorToolRow[] }) {
           ),
           tag:
             r.status === 'not_installed' ? (
-              <SensorTag tone="warning">not installed</SensorTag>
+              <SensorTag tone="warning">{t('sensors.cells.toolNotInstalled')}</SensorTag>
             ) : r.excluded ? (
               <span title={r.excluded.detail}>
                 <SensorTag tone="warning">
-                  {r.excluded.reason === 'grant' ? 'not in grant' : 'local policy refuses'}
+                  {r.excluded.reason === 'grant'
+                    ? t('sensors.cells.notInGrant')
+                    : t('sensors.cells.policyRefuses')}
                 </SensorTag>
               </span>
             ) : undefined,

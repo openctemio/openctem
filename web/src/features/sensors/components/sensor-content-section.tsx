@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailSection } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { refreshSensorContent } from '@/lib/api/sensor-content-hooks'
@@ -17,17 +18,17 @@ import { cn } from '@/lib/utils'
 import { SensorTag } from './sensor-cells'
 import {
   CONTENT_STATE_META,
-  UNMANAGED_TEXT,
   contentAgeSeconds,
   contentAgeText,
   contentCheckedText,
   contentLabel,
   contentState,
+  contentStateLabel,
   contentVersionDate,
   formatHours,
   shortDigest,
 } from '../lib/content'
-import { formatDurationShort } from '../lib/format'
+import { formatDurationShort, type Tr } from '../lib/format'
 
 function statusCodeOf(err: unknown): number | undefined {
   const code = (err as { statusCode?: unknown } | null)?.statusCode
@@ -38,34 +39,35 @@ function statusCodeOf(err: unknown): number | undefined {
  * Ask one sensor to refresh its scanner content (POST
  * /sensors/{id}/content/refresh) and say what happened.
  */
-export async function requestSensorContentRefresh(sensor: Pick<Sensor, 'id' | 'name'>) {
+export async function requestSensorContentRefresh(sensor: Pick<Sensor, 'id' | 'name'>, t: Tr) {
   try {
     const res = await refreshSensorContent(sensor.id)
     if (res.already_pending) {
-      toast.info(`A content refresh is already queued for ${sensor.name}.`)
+      toast.info(t('sensors.contentSection.alreadyQueued', undefined, { name: sensor.name }))
     } else {
-      toast.success(`Refresh requested. ${sensor.name} picks it up on its next poll.`)
+      toast.success(t('sensors.contentSection.requested', undefined, { name: sensor.name }))
     }
     return true
   } catch (err) {
     if (statusCodeOf(err) === 409) {
-      toast.error(`${sensor.name} cannot refresh its content: it does not manage any.`)
+      toast.error(t('sensors.contentSection.unmanaged', undefined, { name: sensor.name }))
     } else {
-      toast.error(getErrorMessage(err, 'Could not request a content refresh'))
+      toast.error(getErrorMessage(err, t('sensors.contentCells.error')))
     }
     return false
   }
 }
 
 function DigestButton({ digest }: { digest: string }) {
+  const { t } = useTranslation()
   return (
     <button
       type="button"
       className="inline-flex max-w-full items-center gap-1 rounded-sm font-mono hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      aria-label={`Copy digest ${digest}`}
+      aria-label={t('sensors.contentSection.copyDigest', undefined, { digest })}
       onClick={() => {
         copyToClipboard(digest)
-        toast.success('Digest copied')
+        toast.success(t('sensors.contentSection.digestCopied'))
       }}
     >
       <span className="truncate">{shortDigest(digest)}</span>
@@ -79,6 +81,7 @@ function DigestButton({ digest }: { digest: string }) {
  * calls the item stale (it may measure from another time than the age).
  */
 function AgeMeter({ c, now }: { c: SensorContent; now: number }) {
+  const { t } = useTranslation()
   const age = contentAgeSeconds(c, now)
   const limitH = c.max_age_hours ?? 0
   if (age == null || limitH <= 0) return null
@@ -87,7 +90,9 @@ function AgeMeter({ c, now }: { c: SensorContent; now: number }) {
   return (
     <span
       role="meter"
-      aria-label={`Age ${Math.round(ratio * 100)}% of the limit`}
+      aria-label={t('sensors.contentSection.ageMeter', undefined, {
+        percent: Math.round(ratio * 100),
+      })}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.min(100, Math.round(ratio * 100))}
@@ -102,12 +107,15 @@ function AgeMeter({ c, now }: { c: SensorContent; now: number }) {
 }
 
 function ContentVersion({ c, now }: { c: SensorContent; now: number }) {
-  if (!c.version) return <span>none installed</span>
+  const { t } = useTranslation()
+  if (!c.version) return <span>{t('sensors.contentSection.noneInstalled')}</span>
   const built = contentVersionDate(c.version)
   if (built) {
     return (
       <span className="text-foreground" title={c.version}>
-        built {formatDurationShort(Math.max(0, (now - built.getTime()) / 1000))} ago
+        {t('sensors.contentSection.built', undefined, {
+          age: formatDurationShort(Math.max(0, (now - built.getTime()) / 1000)),
+        })}
       </span>
     )
   }
@@ -115,17 +123,18 @@ function ContentVersion({ c, now }: { c: SensorContent; now: number }) {
 }
 
 function ContentRow({ c, now }: { c: SensorContent; now: number }) {
+  const { t } = useTranslation()
   const state = contentState(c)
   const meta = CONTENT_STATE_META[state]
-  const age = contentAgeText(c, now)
+  const age = contentAgeText(c, now, t)
   const limit = formatHours(c.max_age_hours)
-  const checked = contentCheckedText(c, now)
+  const checked = contentCheckedText(c, now, t)
   const hasDetails = !!(c.digest || c.source || c.error || c.version)
   return (
     <li className="px-3 py-2.5 text-sm" data-content={c.name} data-state={state}>
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate font-medium">{contentLabel(c.name)}</span>
-        <SensorTag tone={meta.tone}>{meta.label}</SensorTag>
+        <SensorTag tone={meta.tone}>{contentStateLabel(state, t)}</SensorTag>
       </div>
       {c.managed ? (
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground tabular-nums">
@@ -140,7 +149,7 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
                 )}
               >
                 {age}
-                {limit ? ` · limit ${limit}` : ''}
+                {limit ? ` · ${t('sensors.contentSection.limit', undefined, { limit })}` : ''}
                 <AgeMeter c={c} now={now} />
               </span>
             </>
@@ -155,17 +164,22 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
             <>
               <span aria-hidden>·</span>
               <span className={cn(c.pin_mismatch && 'text-warning')}>
-                pinned <span className="text-foreground">{c.pinned_version}</span>
+                {t('sensors.contentSection.pinned')}{' '}
+                <span className="text-foreground">{c.pinned_version}</span>
               </span>
             </>
           )}
         </div>
       ) : (
-        <p className="mt-1 text-xs text-muted-foreground">Content {UNMANAGED_TEXT}.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t('sensors.contentSection.unmanagedLine')}
+        </p>
       )}
       {/* A plain line on the row; the error itself is under Details. The
           API reports no time for the failure, so none is shown. */}
-      {c.error && <p className="mt-1 text-xs text-destructive">Last refresh failed</p>}
+      {c.error && (
+        <p className="mt-1 text-xs text-destructive">{t('sensors.contentSection.lastFailed')}</p>
+      )}
       {hasDetails && (
         <details className="group mt-1 text-xs text-muted-foreground">
           <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
@@ -173,18 +187,18 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
               className="h-3 w-3 transition-transform group-open:rotate-90"
               aria-hidden
             />
-            Details
+            {t('sensors.contentSection.details')}
           </summary>
           <dl className="mt-1.5 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 ps-4">
             {c.version && (
               <>
-                <dt>Version</dt>
+                <dt>{t('sensors.contentSection.version')}</dt>
                 <dd className="font-mono break-all text-foreground">{c.version}</dd>
               </>
             )}
             {c.digest && (
               <>
-                <dt>Digest</dt>
+                <dt>{t('sensors.contentSection.digest')}</dt>
                 <dd className="min-w-0">
                   <DigestButton digest={c.digest} />
                 </dd>
@@ -192,13 +206,13 @@ function ContentRow({ c, now }: { c: SensorContent; now: number }) {
             )}
             {c.source && (
               <>
-                <dt>Source</dt>
+                <dt>{t('sensors.contentSection.source')}</dt>
                 <dd className="font-mono break-all">{c.source}</dd>
               </>
             )}
             {c.error && (
               <>
-                <dt>Error</dt>
+                <dt>{t('sensors.contentSection.error')}</dt>
                 <dd className="font-mono break-all text-destructive">
                   {redactUrlQueries(c.error)}
                 </dd>
@@ -227,6 +241,7 @@ export function SensorContentSection({
   now: number
   canManage: boolean
 }) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const items = sensor.content ?? []
   if (items.length === 0) return null
@@ -235,7 +250,7 @@ export function SensorContentSection({
   const refresh = async () => {
     setBusy(true)
     try {
-      await requestSensorContentRefresh(sensor)
+      await requestSensorContentRefresh(sensor, t)
     } finally {
       setBusy(false)
     }
@@ -255,13 +270,13 @@ export function SensorContentSection({
       ) : (
         <RefreshCw className="h-3.5 w-3.5" />
       )}
-      Refresh content
+      {t('sensors.contentCells.refresh')}
     </Button>
   )
 
   return (
     <DetailSection
-      title="Scanner content"
+      title={t('sensors.contentCells.sectionTitle')}
       actions={
         canManage &&
         (supported ? (
@@ -272,9 +287,7 @@ export function SensorContentSection({
               {/* A disabled button gets no pointer events: the span carries the tooltip. */}
               <span tabIndex={0}>{button}</span>
             </TooltipTrigger>
-            <TooltipContent>
-              This sensor does not manage its content, so it cannot refresh it. Upgrade the sensor.
-            </TooltipContent>
+            <TooltipContent>{t('sensors.contentSection.cannotRefresh')}</TooltipContent>
           </Tooltip>
         ))
       }

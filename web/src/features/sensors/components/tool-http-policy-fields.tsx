@@ -1,8 +1,11 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+
+import type { Tr } from '../lib/format'
 
 export interface ToolHTTPPolicyValue {
   tool_http_user_agent: string
@@ -10,9 +13,10 @@ export interface ToolHTTPPolicyValue {
 }
 
 /** Printable ASCII, at most 256 characters (the API refuses anything else). */
-export function toolUserAgentError(ua: string): string | null {
-  if (ua.length > 256) return 'At most 256 characters.'
-  if (/[^\x20-\x7e]/.test(ua)) return 'Use printable ASCII characters only.'
+export function toolUserAgentError(ua: string, tr?: Tr): string | null {
+  if (ua.length > 256) return tr ? tr('sensors.httpPolicy.uaTooLong') : 'At most 256 characters.'
+  if (/[^\x20-\x7e]/.test(ua))
+    return tr ? tr('sensors.httpPolicy.uaNotAscii') : 'Use printable ASCII characters only.'
   return null
 }
 
@@ -30,15 +34,14 @@ export function ToolHTTPPolicyFields({
   onChange: (next: ToolHTTPPolicyValue) => void
   disabled?: boolean
 }) {
-  const uaError = toolUserAgentError(value.tool_http_user_agent)
+  const { t } = useTranslation()
+  const uaError = toolUserAgentError(value.tool_http_user_agent, t)
   return (
     <div className="space-y-4" data-testid="tool-http-policy-fields">
       <div className="space-y-2">
-        <Label htmlFor="tenant-tool-user-agent">User-Agent of scan tools</Label>
+        <Label htmlFor="tenant-tool-user-agent">{t('sensors.httpPolicy.ua.label')}</Label>
         <p className="text-sm text-muted-foreground" id="tenant-tool-user-agent-desc">
-          Sent by your scan tools instead of their own, so the owners of the scanned systems
-          recognize your scans in their logs. A sensor whose local policy sets its own User-Agent
-          keeps it. Empty: each tool sends its own.
+          {t('sensors.httpPolicy.ua.help')}
         </p>
         <Input
           id="tenant-tool-user-agent"
@@ -54,12 +57,9 @@ export function ToolHTTPPolicyFields({
       </div>
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
-          <Label htmlFor="tenant-tool-insecure-tls">
-            Refuse tools that skip TLS certificate verification
-          </Label>
+          <Label htmlFor="tenant-tool-insecure-tls">{t('sensors.httpPolicy.tls.label')}</Label>
           <p className="text-sm text-muted-foreground" id="tenant-tool-insecure-tls-desc">
-            On: a scan tool configured to skip certificate verification toward its targets is
-            refused on every sensor. Turning it off again is audited.
+            {t('sensors.httpPolicy.tls.help')}
           </p>
         </div>
         <Switch

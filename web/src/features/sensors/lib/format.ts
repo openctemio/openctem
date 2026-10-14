@@ -1,3 +1,6 @@
+/** The translate function of useTranslation(), for helpers that build display text. */
+export type Tr = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
 /** "40s", "5m", "2h 14m", "3d 4h": a short duration for table cells. */
 export function formatDurationShort(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -46,11 +49,12 @@ export function formatBytes(bytes: number): string {
 }
 
 /** "5m ago", "just now"; "—" for an unreadable time. */
-export function agoShort(iso: string, now: number): string {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return '—'
-  if (t >= now - 1000) return 'just now'
-  return `${formatDurationShort((now - t) / 1000)} ago`
+export function agoShort(iso: string, now: number, tr?: Tr): string {
+  const at = new Date(iso).getTime()
+  if (Number.isNaN(at)) return '—'
+  if (at >= now - 1000) return tr ? tr('sensors.time.justNow') : 'just now'
+  const duration = formatDurationShort((now - at) / 1000)
+  return tr ? tr('sensors.time.ago', undefined, { duration }) : `${duration} ago`
 }
 
 /** The local date and time of an RFC 3339 time, for a tooltip. */
