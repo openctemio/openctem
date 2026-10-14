@@ -232,9 +232,11 @@ function Body({ o }: { o: AdminOperations }) {
             <div className="space-y-2">
               <h3 className="text-sm font-medium">
                 {t('admin.ops.fleet.versions', 'SDK versions in the field')}
-                {o.sdk_min_version && (
+                {(o.sdk_advisories?.length ?? 0) > 0 && (
                   <span className="ms-2 font-normal text-muted-foreground">
-                    {t('admin.ops.fleet.min', 'minimum {v}', { v: o.sdk_min_version })}
+                    {t('admin.ops.fleet.advisories', 'security advisory: {v}', {
+                      v: (o.sdk_advisories ?? []).join(', '),
+                    })}
                   </span>
                 )}
               </h3>
@@ -245,7 +247,7 @@ function Body({ o }: { o: AdminOperations }) {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {fleet.versions.map((v) => (
-                    <Badge key={v.version} variant={v.belowMin ? 'destructive' : 'secondary'}>
+                    <Badge key={v.version} variant={v.advisory ? 'destructive' : 'secondary'}>
                       {v.version} · {v.count}
                     </Badge>
                   ))}

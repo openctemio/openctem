@@ -33,7 +33,11 @@ const summary: FleetSummary = {
 function renderStrip(over: Partial<React.ComponentProps<typeof FleetHealthStrip>> = {}) {
   const props = {
     summary,
-    channel: { latest: 'v0.4.2', min: 'v0.4.0' },
+    channel: {
+      products: [
+        { id: 'openctemio-sensor', latest_version: 'v0.4.2', min_version: 'v0.4.0', image: '' },
+      ],
+    },
     attentionActive: false,
     onToggleAttention: vi.fn(),
     updatesActive: false,
@@ -67,10 +71,10 @@ describe('FleetHealthStrip', () => {
     expect(p.onToggleAttention).toHaveBeenCalledTimes(1)
   })
 
-  it('updates show the latest release and the ones below the minimum', () => {
+  it('updates show the scanning sensor release and the ones below their product minimum', () => {
     const p = renderStrip({ updatesActive: true })
-    expect(screen.getByText('latest v0.4.2')).toBeInTheDocument()
-    expect(screen.getByText('1 below minimum v0.4.0')).toBeInTheDocument()
+    expect(screen.getByText('scanning sensor v0.4.2')).toBeInTheDocument()
+    expect(screen.getByText("1 below their product's minimum")).toBeInTheDocument()
     const btn = screen.getByRole('button', { name: /Update available/ })
     expect(btn).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(btn)
