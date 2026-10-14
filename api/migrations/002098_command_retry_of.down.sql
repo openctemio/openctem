@@ -1,0 +1,1 @@
+ALTER TABLE commands DROP COLUMN IF EXISTS retry_of;
