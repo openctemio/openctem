@@ -402,6 +402,9 @@ type HeartbeatProgress struct {
 	Records     int64 `json:"records,omitempty"`
 	OutputBytes int64 `json:"output_bytes,omitempty"`
 	CPUMs       int64 `json:"cpu_ms,omitempty"`
+	// ReleasedKeys are the host keys the sensor freed because the targets
+	// that needed them settled (bounded by the repository).
+	ReleasedKeys []string `json:"released_keys,omitempty"`
 }
 
 // commandProgress is the heartbeat's progress for the sensor service, at
@@ -415,7 +418,8 @@ func (req *HeartbeatRequest) commandProgress() map[string]commanddom.Progress {
 		if len(out) == commanddom.MaxProgressEntries {
 			break
 		}
-		out[id] = commanddom.Progress{Done: p.Done, Total: p.Total, Records: p.Records, OutputBytes: p.OutputBytes, CPUMs: p.CPUMs}
+		out[id] = commanddom.Progress{Done: p.Done, Total: p.Total, Records: p.Records, OutputBytes: p.OutputBytes, CPUMs: p.CPUMs,
+			ReleasedKeys: p.ReleasedKeys}
 	}
 	return out
 }
