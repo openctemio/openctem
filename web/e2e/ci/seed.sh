@@ -107,9 +107,11 @@ KEY=$(jq -r .api_key <<<"$BODY")
 SENSOR_ID=$(jq -r .sensor.id <<<"$BODY")
 # A new sensor starts at trust level New (RFC-052 §5: passive work only, no
 # results without a job). The seed pushes its report without a job, so it
-# promotes the sensor and allows push ingest, as an administrator would.
+# promotes the sensor and allows push ingest, as an administrator would, and
+# raises its tier ceiling so workflow scans of active steps can be saved
+# (19-scan-lifecycle).
 call GET "/api/v1/sensors/$SENSOR_ID/grant"
-GRANT=$(jq -c '.trust_level = "trusted" | .allow_push_ingest = true
+GRANT=$(jq -c '.trust_level = "trusted" | .allow_push_ingest = true | .tier_ceiling = 2
   | del(.sensor_id, .legacy_broad, .updated_at, .effective, .profile)' <<<"$BODY")
 call PUT "/api/v1/sensors/$SENSOR_ID/grant" "$GRANT"
 call POST /api/v1/sensors '{"name":"e2e-sensor-b","type":"worker","execution_mode":"daemon","tools":["nuclei"],"capabilities":["vulnerability"]}'
