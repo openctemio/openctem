@@ -173,5 +173,6 @@
   "assets.views.outOfScope": "Out of scope",
   "assets.views.newSinceVisit": "New since last visit",
   "assets.triage.defaultHint": "Showing your inventory, including what discovery found (passive only until a scope entry covers it). Names awaiting review and names marked not yours are hidden.",
-  "assets.triage.showAll": "Show all"
+  "assets.triage.showAll": "Show all",
+  "assets.attribution.scan.guardrailed": "Scans keep this asset passive: a platform guardrail holds it (a shared, CDN or cloud network, an unknown network, shared hosting, or a name outside your domains). Add it to Scoping › Scope if it is yours."
 }
