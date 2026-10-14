@@ -62,7 +62,7 @@ describe('KeyFactsSection', () => {
   })
 
   it('a certificate: subject, every SAN, issuer, validity and key', () => {
-    render(
+    const { container } = render(
       <KeyFactsSection
         asset={asset('certificate', {
           subject_cn: 'portal.example.com',
@@ -76,7 +76,7 @@ describe('KeyFactsSection', () => {
       />
     )
     expect(screen.getByText('Subject CN')).toBeInTheDocument()
-    expect(screen.getByText(/m\.portal\.example\.com/)).toBeInTheDocument()
+    expect(container.textContent).toContain('m.portal.example.com')
     expect(screen.getByText('Example CA · Example Trust')).toBeInTheDocument()
     expect(screen.getByText('Valid until')).toBeInTheDocument()
     expect(screen.getByText('RSA 2048')).toBeInTheDocument()
