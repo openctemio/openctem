@@ -1864,6 +1864,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
 	s.TenableSC.SetSyncClaimer(repos.Integration)
 	s.TenableSC.SetGrantReader(repos.SensorGrant)
+	s.TenableSC.SetCoverageLedger(repos.ScanCoverage)
 	// Tenable integrations can be created only once the connector ships
 	// (integrationdom.TenableConnectorEnabled, owner decision D-14): without
 	// the validator the integration service refuses them.
