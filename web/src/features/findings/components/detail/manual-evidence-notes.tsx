@@ -201,7 +201,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
           <div className="space-y-1.5">
             <Label htmlFor="evidence-description">
               {t('findings.manualEvidence.description', 'Description')}{' '}
-              <span className="text-red-400">*</span>
+              <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="evidence-description"
