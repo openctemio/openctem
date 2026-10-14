@@ -505,7 +505,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		toolID           string
 		toolTenantID     sql.NullString // Tool's tenant_id (NULL for platform tools)
 		categoryID       sql.NullString
-		installMethod    string
+		installMethod    sql.NullString
 		configSchema     []byte
 		defaultConfig    []byte
 		capabilities     pq.StringArray // PostgreSQL text[] array
@@ -575,7 +575,7 @@ func (r *TenantToolConfigRepository) scanToolWithConfig(rows *sql.Rows) (*tool.T
 		catID, _ := shared.IDFromString(categoryID.String)
 		t.CategoryID = &catID
 	}
-	t.InstallMethod = tool.InstallMethod(installMethod)
+	t.InstallMethod = tool.InstallMethod(installMethod.String)
 	t.Description = description.String
 	t.LogoURL = logoURL.String
 	t.InstallCmd = installCmd.String

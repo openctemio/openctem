@@ -1711,6 +1711,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize sensor & command services
 	s.Sensor = sensorapp.NewSensorService(repos.Sensor, s.Audit, log)
+	// A tool a sensor declares in its manifest joins its organization's
+	// tool catalog (RFC-092).
+	s.Sensor.SetDeclaredTools(repos.Tool)
 	// Pepper the sensor API-key hash: HMAC-SHA256(pepper, key) stops a
 	// DB-only leak from being brute-forced offline. The pepper is
 	// SENSOR_KEY_PEPPER, else derived from APP_ENCRYPTION_KEY with HKDF (no
