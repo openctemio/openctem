@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailField, DetailFieldGrid, DetailSection, DetailSections } from '@/features/shared'
 import { useSensorManifests } from '@/lib/api/sensor-hooks'
 import type { Sensor, SensorManifestVersion, SensorToolContract } from '@/lib/api/sensor-types'
@@ -17,29 +18,37 @@ import { SensorToolOptions } from './sensor-tool-options'
 import { shortDigest } from '../lib/content'
 import { agoShort, exactTime } from '../lib/format'
 import {
-  IGNORED_REASON_LABEL,
-  MANIFEST_SOURCE_LABEL,
   concurrencyText,
   contractSummary,
+  ignoredReasonLabel,
   isEmptyDiff,
   manifestDiffLines,
   manifestHistory,
+  manifestSourceLabel,
   resourcesText,
 } from '../lib/manifest'
 
 /** Versions shown before "Show all". */
 const HISTORY_PREVIEW = 5
 
-function Digest({ digest, what = 'Manifest' }: { digest: string; what?: string }) {
+function Digest({ digest, kind = 'manifest' }: { digest: string; kind?: 'manifest' | 'contract' }) {
+  const { t } = useTranslation()
+  const what =
+    kind === 'contract'
+      ? t('sensors.manifest.digestWhat.contract', 'Tool contract')
+      : t('sensors.manifest.digestWhat.manifest', 'Manifest')
   return (
     <button
       type="button"
       className="inline-flex max-w-full items-center gap-1 rounded-sm font-mono text-xs hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      aria-label={`Copy ${what.toLowerCase()} digest ${digest}`}
+      aria-label={t('sensors.manifest.copyDigestAria', 'Copy {what} digest {digest}', {
+        what: what.toLowerCase(),
+        digest,
+      })}
       title={digest}
       onClick={() => {
         copyToClipboard(digest)
-        toast.success(`${what} digest copied`)
+        toast.success(t('sensors.manifest.digestCopied', '{what} digest copied', { what }))
       }}
     >
       <span className="truncate">{shortDigest(digest)}</span>
@@ -50,29 +59,36 @@ function Digest({ digest, what = 'Manifest' }: { digest: string; what?: string }
 
 /** A ported tool's contract: what it is and the output types it may produce. */
 function ToolContract({ tool, c }: { tool: string; c: SensorToolContract }) {
+  const { t } = useTranslation()
   return (
     <div
       className="space-y-1 rounded-md bg-muted/40 px-2 py-1.5 text-xs"
-      aria-label={`${tool} tool contract`}
+      aria-label={t('sensors.manifest.toolContractAria', '{tool} tool contract', { tool })}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-medium">Tool contract</span>
-        <span className="text-muted-foreground">{contractSummary(c)}</span>
+        <span className="font-medium">
+          {t('sensors.manifest.toolContractTitle', 'Tool contract')}
+        </span>
+        <span className="text-muted-foreground">{contractSummary(c, t)}</span>
         <span className="text-muted-foreground tabular-nums">v{c.version}</span>
-        <Digest digest={c.digest} what="Tool contract" />
+        <Digest digest={c.digest} kind="contract" />
       </div>
       {(c.consumes?.length ?? 0) > 0 && (
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-muted-foreground">Consumes</span>
+          <span className="text-muted-foreground">
+            {t('sensors.manifest.consumes', 'Consumes')}
+          </span>
           {c.consumes!.map((v) => (
             <SensorTag key={v}>{v}</SensorTag>
           ))}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-1">
-        <span className="text-muted-foreground">Produces</span>
+        <span className="text-muted-foreground">{t('sensors.manifest.produces', 'Produces')}</span>
         {c.produces.length === 0 ? (
-          <span className="text-muted-foreground">nothing</span>
+          <span className="text-muted-foreground">
+            {t('sensors.manifest.producesNothing', 'nothing')}
+          </span>
         ) : (
           c.produces.map((v) => (
             <SensorTag key={v} tone="info">
@@ -86,23 +102,27 @@ function ToolContract({ tool, c }: { tool: string; c: SensorToolContract }) {
 }
 
 function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) {
+  const { t } = useTranslation()
   const m = v.manifest
+  const resources = resourcesText(m, t)
   const build = [m.sensor?.name, m.sensor?.version].filter(Boolean).join(' ')
   const sdk = [m.sdk?.name, m.sdk?.version].filter(Boolean).join(' ')
   const platform = [m.platform?.os, m.platform?.arch].filter(Boolean).join('/')
   return (
-    <DetailSection title="Current manifest">
+    <DetailSection title={t('sensors.manifest.current', 'Current manifest')}>
       <DetailFieldGrid>
-        <DetailField label="Digest">
+        <DetailField label={t('sensors.manifest.digest', 'Digest')}>
           <span className="flex flex-col gap-0.5">
             <Digest digest={v.digest} />
             <span className="text-xs text-muted-foreground" title={exactTime(v.current_since)}>
-              {MANIFEST_SOURCE_LABEL[v.source] ?? v.source} · current since{' '}
-              {agoShort(v.current_since, now)}
+              {t('sensors.manifest.currentSince', '{source} · current since {ago}', {
+                source: manifestSourceLabel(v.source, t),
+                ago: agoShort(v.current_since, now),
+              })}
             </span>
           </span>
         </DetailField>
-        <DetailField label="Build">
+        <DetailField label={t('sensors.manifest.build', 'Build')}>
           {build || sdk ? (
             <span className="flex flex-col gap-0.5">
               {build && <span>{build}</span>}
@@ -110,17 +130,22 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Resources">
-          {resourcesText(m) || platform ? (
+        <DetailField label={t('sensors.manifest.resources', 'Resources')}>
+          {resources || platform ? (
             <span className="flex flex-col gap-0.5 tabular-nums">
-              {resourcesText(m) && <span>{resourcesText(m)}</span>}
+              {resources && <span>{resources}</span>}
               {platform && <span className="text-xs text-muted-foreground">{platform}</span>}
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Concurrency">{concurrencyText(m)}</DetailField>
+        <DetailField label={t('sensors.manifest.concurrency', 'Concurrency')}>
+          {concurrencyText(m, t)}
+        </DetailField>
         {(m.capabilities?.length ?? 0) > 0 && (
-          <DetailField label="Sensor-wide capabilities" full>
+          <DetailField
+            label={t('sensors.manifest.sensorWideCapabilities', 'Sensor-wide capabilities')}
+            full
+          >
             <span className="flex flex-wrap gap-1">
               {m.capabilities!.map((c) => (
                 <SensorTag key={c}>{c}</SensorTag>
@@ -130,41 +155,55 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
         )}
       </DetailFieldGrid>
 
-      <ul className="divide-y rounded-lg border" aria-label="Manifest tools">
+      <ul
+        className="divide-y rounded-lg border"
+        aria-label={t('sensors.manifest.toolsAria', 'Manifest tools')}
+      >
         {m.tools.length === 0 && (
           <li className="px-3 py-2 text-sm text-muted-foreground">
-            The sensor registered no tools.
+            {t('sensors.manifest.noTools', 'The sensor registered no tools.')}
           </li>
         )}
-        {m.tools.map((t) => (
-          <li key={t.name} data-tool={t.name} className="space-y-1 px-3 py-2 text-sm">
+        {m.tools.map((tool) => (
+          <li key={tool.name} data-tool={tool.name} className="space-y-1 px-3 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className={cn('font-medium', !t.installed && 'text-muted-foreground')}>
-                {t.name}
+              <span className={cn('font-medium', !tool.installed && 'text-muted-foreground')}>
+                {tool.name}
               </span>
-              {t.version && (
-                <span className="text-xs text-muted-foreground tabular-nums">{t.version}</span>
+              {tool.version && (
+                <span className="text-xs text-muted-foreground tabular-nums">{tool.version}</span>
               )}
-              {t.kind && <SensorTag>{t.kind}</SensorTag>}
-              {!t.installed && <SensorTag tone="warning">not installed</SensorTag>}
+              {tool.kind && <SensorTag>{tool.kind}</SensorTag>}
+              {!tool.installed && (
+                <SensorTag tone="warning">
+                  {t('sensors.manifest.notInstalled', 'not installed')}
+                </SensorTag>
+              )}
             </div>
-            {(t.capabilities?.length ?? 0) > 0 && (
-              <div className="flex flex-wrap gap-1" aria-label={`${t.name} capabilities`}>
-                {t.capabilities!.map((c) => (
+            {(tool.capabilities?.length ?? 0) > 0 && (
+              <div
+                className="flex flex-wrap gap-1"
+                aria-label={t('sensors.manifest.toolCapabilitiesAria', '{tool} capabilities', {
+                  tool: tool.name,
+                })}
+              >
+                {tool.capabilities!.map((c) => (
                   <SensorTag key={c} tone="info">
                     {c}
                   </SensorTag>
                 ))}
               </div>
             )}
-            {(t.content?.length ?? 0) > 0 && (
+            {(tool.content?.length ?? 0) > 0 && (
               <div className="text-xs text-muted-foreground">
-                {t.content!.map((c) => [c.name, c.version].filter(Boolean).join(' ')).join(' · ')}
+                {tool
+                  .content!.map((c) => [c.name, c.version].filter(Boolean).join(' '))
+                  .join(' · ')}
               </div>
             )}
-            {t.contract && <ToolContract tool={t.name} c={t.contract} />}
-            {t.contract?.descriptor != null && (
-              <SensorToolOptions tool={t.name} descriptor={t.contract.descriptor} />
+            {tool.contract && <ToolContract tool={tool.name} c={tool.contract} />}
+            {tool.contract?.descriptor != null && (
+              <SensorToolOptions tool={tool.name} descriptor={tool.contract.descriptor} />
             )}
           </li>
         ))}
@@ -177,13 +216,17 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
         >
           <p className="flex items-center gap-1.5 font-medium">
             <AlertTriangle className="h-3.5 w-3.5 text-warning" aria-hidden />
-            The platform ignored {v.ignored.length} {v.ignored.length === 1 ? 'item' : 'items'}
+            {v.ignored.length === 1
+              ? t('sensors.manifest.ignoredOne', 'The platform ignored 1 item')
+              : t('sensors.manifest.ignoredMany', 'The platform ignored {n} items', {
+                  n: v.ignored.length,
+                })}
           </p>
           <ul className="text-xs text-muted-foreground">
             {v.ignored.map((i) => (
               <li key={`${i.path}:${i.value ?? ''}`}>
                 <span className="font-mono">{i.path}</span>
-                {i.value ? ` "${i.value}"` : ''}: {IGNORED_REASON_LABEL[i.reason] ?? i.reason}
+                {i.value ? ` "${i.value}"` : ''}: {ignoredReasonLabel(i.reason, t)}
               </li>
             ))}
           </ul>
@@ -194,24 +237,38 @@ function CurrentManifest({ v, now }: { v: SensorManifestVersion; now: number }) 
 }
 
 function History({ versions, now }: { versions: SensorManifestVersion[]; now: number }) {
+  const { t } = useTranslation()
   const [all, setAll] = useState(false)
   const rows = manifestHistory(versions)
   const shown = all ? rows : rows.slice(0, HISTORY_PREVIEW)
   return (
-    <DetailSection title="History" count={versions.length}>
-      <ol className="space-y-3" aria-label="Manifest versions">
+    <DetailSection title={t('sensors.manifest.history', 'History')} count={versions.length}>
+      <ol
+        className="space-y-3"
+        aria-label={t('sensors.manifest.versionsAria', 'Manifest versions')}
+      >
         {shown.map(({ version: v, diff }) => {
-          const lines = diff && !isEmptyDiff(diff) ? manifestDiffLines(diff) : []
+          const lines = diff && !isEmptyDiff(diff) ? manifestDiffLines(diff, t) : []
           return (
             <li key={v.digest} className="space-y-1 border-s-2 ps-3 text-sm">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span title={exactTime(v.current_since)}>{agoShort(v.current_since, now)}</span>
                 <Digest digest={v.digest} />
-                <SensorTag>{v.source === 'sensor' ? 'registered' : 'derived'}</SensorTag>
-                {v.current && <SensorTag tone="success">current</SensorTag>}
+                <SensorTag>
+                  {v.source === 'sensor'
+                    ? t('sensors.manifest.registered', 'registered')
+                    : t('sensors.manifest.derived', 'derived')}
+                </SensorTag>
+                {v.current && (
+                  <SensorTag tone="success">
+                    {t('sensors.manifest.currentTag', 'current')}
+                  </SensorTag>
+                )}
               </div>
               {diff === null ? (
-                <p className="text-xs text-muted-foreground">First version kept.</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('sensors.manifest.firstVersion', 'First version kept.')}
+                </p>
               ) : lines.length > 0 ? (
                 <ul className="text-xs text-muted-foreground">
                   {lines.map((l) => (
@@ -219,7 +276,9 @@ function History({ versions, now }: { versions: SensorManifestVersion[]; now: nu
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-muted-foreground">Content versions only.</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('sensors.manifest.contentOnly', 'Content versions only.')}
+                </p>
               )}
             </li>
           )
@@ -227,7 +286,9 @@ function History({ versions, now }: { versions: SensorManifestVersion[]; now: nu
       </ol>
       {rows.length > HISTORY_PREVIEW && (
         <Button variant="ghost" size="sm" onClick={() => setAll((a) => !a)}>
-          {all ? 'Show fewer' : `Show all ${rows.length}`}
+          {all
+            ? t('sensors.manifest.showFewer', 'Show fewer')
+            : t('sensors.manifest.showAll', 'Show all {n}', { n: rows.length })}
         </Button>
       )}
     </DetailSection>
@@ -240,6 +301,7 @@ function History({ versions, now }: { versions: SensorManifestVersion[]; now: nu
  * history of versions with what changed between them.
  */
 export function SensorManifestTab({ sensor, now }: { sensor: Sensor; now: number }) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSensorManifests(sensor.id)
   const versions = data?.items ?? []
   const current = versions.find((v) => v.current) ?? null
@@ -255,9 +317,9 @@ export function SensorManifestTab({ sensor, now }: { sensor: Sensor; now: number
   if (error) {
     return (
       <div className="space-y-2 text-sm" role="alert">
-        <p>The manifest could not be loaded.</p>
+        <p>{t('sensors.manifest.loadError', 'The manifest could not be loaded.')}</p>
         <Button variant="outline" size="sm" onClick={() => mutate()}>
-          Retry
+          {t('sensors.manifest.retry', 'Retry')}
         </Button>
       </div>
     )
@@ -265,8 +327,10 @@ export function SensorManifestTab({ sensor, now }: { sensor: Sensor; now: number
   if (!current) {
     return (
       <p className="text-sm text-muted-foreground">
-        No manifest yet. A sensor registers one when it connects, and the platform derives one from
-        the first heartbeat that reports its tools.
+        {t(
+          'sensors.manifest.empty',
+          'No manifest yet. A sensor registers one when it connects, and the platform derives one from the first heartbeat that reports its tools.'
+        )}
       </p>
     )
   }
