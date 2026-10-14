@@ -13,6 +13,14 @@ const (
 	OneOffDisabled          = "disabled"
 )
 
+// What active scans may do to unclassified assets (RFC-054 §16): assets no
+// scope entry covers and nobody excluded or rejected.
+const (
+	UnclassifiedOff       = "off"
+	UnclassifiedLowImpact = "low_impact"
+	UnclassifiedFull      = "full"
+)
+
 // Scope settings bounds.
 const (
 	MaxScopeOneOffDays     = 30
@@ -55,6 +63,12 @@ type ScopeSettings struct {
 	// only; RFC-054 §15). Default off. Meant for organizations that run scan
 	// approval Strict; it never changes what may be scanned.
 	ReviewBeforeInventory bool `json:"review_before_inventory,omitempty"`
+	// UnclassifiedScans is what active scans may do to an asset no scope
+	// entry covers and nobody excluded or rejected: off (passive only),
+	// low_impact (default: the low-impact profile, scopedom.LowImpact) or
+	// full (the scan's own tier). The platform guardrails apply in every
+	// mode; under the Strict scan approval mode it is off whatever is set.
+	UnclassifiedScans string `json:"unclassified_scans,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).
@@ -142,6 +156,11 @@ func (s ScopeSettings) Validate() error {
 	if s.WideningApprovals != nil && (*s.WideningApprovals < 0 || *s.WideningApprovals > MaxScopeApprovals) {
 		return fmt.Errorf("%w: widening_approvals must be 0, 1 or 2", shared.ErrValidation)
 	}
+	switch s.UnclassifiedScans {
+	case "", UnclassifiedOff, UnclassifiedLowImpact, UnclassifiedFull:
+	default:
+		return fmt.Errorf("%w: unclassified_scans must be off, low_impact or full", shared.ErrValidation)
+	}
 	switch s.DefaultMaxTier {
 	case "", "t0", "t1":
 	default:
@@ -176,6 +195,16 @@ func (s ScopeSettings) MaxDays() int {
 // 7 days, or less when the bound is lower.
 func (s ScopeSettings) DefaultDays() int {
 	return min(DefaultScopeOneOffDays, s.MaxDays())
+}
+
+// Unclassified returns the unclassified-scans setting with its default
+// (low_impact). The Strict scan approval mode turns it off; the caller
+// applies that (scangov).
+func (s ScopeSettings) Unclassified() string {
+	if s.UnclassifiedScans == "" {
+		return UnclassifiedLowImpact
+	}
+	return s.UnclassifiedScans
 }
 
 // Tier returns the default tier with its default (t1).

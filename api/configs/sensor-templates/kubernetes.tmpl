@@ -118,10 +118,6 @@ spec:
                 secretKeyRef:
                   name: {{$slug}}
                   key: api-key
-{{- with toolList .Sensor.EffectiveTools}}
-            - name: SENSOR_TOOLS
-              value: {{yamlQuote .}}
-{{- end}}
             - name: SENSOR_LOCAL_POLICY
               value: /etc/openctem/policy/sensor-policy.yaml
             # The tools keep their settings under /tmp; the image's home

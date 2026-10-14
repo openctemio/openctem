@@ -284,5 +284,9 @@
   "scope.settings.reviewBeforeInventory": "Review discovered assets first",
   "scope.settings.reviewBeforeInventoryHint": "Off (default): what discovery finds joins the inventory at once and gets passive checks only until a scope entry covers it. On: names outside every permanent entry wait in Suggestions for a person before they join the inventory. It never changes what may be scanned.",
   "scope.connector.assetsInScope": "Assets are in scope",
-  "scope.connector.assetsInScopeHint": "After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added."
+  "scope.connector.assetsInScopeHint": "After each sync, the public names and addresses this connector syncs get their exact scope entries, so scans may reach them. Turning this off keeps the entries already added.",
+  "scope.entries.deepestProbe": "Deepest probe",
+  "scope.entries.perScan": "Set per scan",
+  "scope.entries.perScanHint": "Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.",
+  "scope.entries.governanceLink": "Scan approval settings"
 }

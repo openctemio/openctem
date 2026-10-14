@@ -124,7 +124,6 @@ func TestTemplates_DockerRunWorksAsPasted(t *testing.T) {
 			"ghcr.io/openctemio/sensor:v0.4.2",
 			"-e SENSOR_API_URL='https://192.0.2.204'",
 			"-e SENSOR_API_KEY='rda_4b1e0123456789abcdef'",
-			"-e SENSOR_TOOLS=nuclei,trivy",
 			"-e SSL_CERT_DIR=/etc/openctem/certs",
 			// The CA and the sensor-local policy both live under /etc/openctem,
 			// mounted read-only; the policy is required (fail closed).
@@ -230,7 +229,7 @@ func TestTemplates_ComposeIsValid(t *testing.T) {
 		if s.Image != "ghcr.io/openctemio/sensor:v0.4.2" || s.Restart != "unless-stopped" {
 			t.Errorf("[%s] image=%q restart=%q", dir, s.Image, s.Restart)
 		}
-		if s.Environment["SENSOR_API_URL"] != "https://192.0.2.204" || s.Environment["SENSOR_TOOLS"] != "nuclei,trivy" ||
+		if s.Environment["SENSOR_API_URL"] != "https://192.0.2.204" ||
 			s.Environment["SSL_CERT_DIR"] != "/etc/openctem/certs" {
 			t.Errorf("[%s] environment = %v", dir, s.Environment)
 		}
@@ -319,9 +318,7 @@ func TestTemplates_HelmUsesTheChartsSensorValues(t *testing.T) {
 		continuationLinesOK(t, dir+" helm", h)
 		for _, want := range []string{
 			"--set sensor.enabled=true", "--set sensor.image.tag=v0.4.2", "--set sensor.existingSecret=",
-			// Helm splits --set values on commas; the escaped comma survives
-			// the shell inside single quotes.
-			`--set-string 'sensor.tools=nuclei\,trivy'`, "--set sensor.data.persistence.enabled=true",
+			"--set sensor.data.persistence.enabled=true",
 			"--from-literal=api-key='rda_4b1e0123456789abcdef'",
 		} {
 			if !strings.Contains(h, want) {
@@ -365,6 +362,31 @@ func TestTemplates_YAMLEnvCLIUseTheCurrentSensorSettings(t *testing.T) {
 	}
 }
 
+func TestTemplates_SensorInstallsListNoTools(t *testing.T) {
+	// The sensor offers the tools it finds (its image defines the set) and
+	// the local policy's tools.allow narrows them. A snippet that re-emits
+	// the tools the sensor last reported pins a reinstalled sensor to its
+	// old set, so no install snippet may carry a tool list. The one-shot
+	// run (-tool <name>) is a different mode and keeps its single tool.
+	for _, dir := range templateSources {
+		out := render(t, dir, fullData(t))
+		for label, s := range map[string]string{
+			"yaml": out.YAML, "env": out.Env, "docker": out.Docker, "cli": out.CLI,
+			"compose": out.Compose, "kubernetes": out.Kubernetes, "helm": out.Helm,
+		} {
+			for _, bad := range []string{"SENSOR_TOOLS", "-tools", "sensor.tools", "\nscanners:"} {
+				if strings.Contains(s, bad) {
+					t.Errorf("[%s] %s emits %q:\n%s", dir, label, bad, s)
+				}
+			}
+		}
+		// Released sensors still need both flags outside the image's CMD.
+		if !strings.Contains(out.CLI, "./openctemio-sensor -daemon -enable-commands\n") {
+			t.Errorf("[%s] cli daemon command changed:\n%s", dir, out.CLI)
+		}
+	}
+}
+
 // Values that end up in a shell snippet are not trusted blindly: tool names are
 // set by tenant admins, the name is slugified, and quoting covers the rest.
 func TestTemplates_HostileValuesStayInert(t *testing.T) {
@@ -381,8 +403,8 @@ func TestTemplates_HostileValuesStayInert(t *testing.T) {
 				}
 			}
 		}
-		if !strings.Contains(out.Docker, "SENSOR_TOOLS=trivy") {
-			t.Errorf("[%s] the valid tool was dropped:\n%s", dir, out.Docker)
+		if !strings.Contains(out.Policy, `- "trivy"`) {
+			t.Errorf("[%s] the valid tool was dropped from the policy:\n%s", dir, out.Policy)
 		}
 	}
 }

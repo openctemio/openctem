@@ -300,7 +300,11 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
             <Row
               label="Default deepest probe"
               htmlFor={`${id}-tier`}
-              hint={`New entries allow this unless the person adding them picks otherwise. ${TIER_HINT[form.default_max_tier]} Intrusive (T2) is never a default.`}
+              hint={`New entries allow this unless the person adding them picks otherwise. ${TIER_HINT[form.default_max_tier]} Intrusive (T2) is never a default.${
+                (saved.approval_policy?.tier_ceilings ?? true)
+                  ? ''
+                  : ` ${t('scope.entries.perScanHint', 'Scan intensity is chosen on each scan. Entry ceilings apply only in Strict governance.')}`
+              }`}
             >
               <Select
                 value={form.default_max_tier}
