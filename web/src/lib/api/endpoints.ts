@@ -1829,6 +1829,12 @@ export const exposureEndpoints = {
   reactivate: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/reactivate`,
 
   /**
+   * Reject (or, for the requester, cancel) a pending disposition request
+   */
+  rejectDisposition: (exposureId: string) =>
+    `${API_BASE.EXPOSURES}/${exposureId}/disposition/reject`,
+
+  /**
    * Get exposure state change history
    */
   history: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/history`,

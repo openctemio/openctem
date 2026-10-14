@@ -1147,6 +1147,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
+	// Four-eyes on accepting or dismissing a high or critical exposure or
+	// leaked credential (one gate for both routes).
+	exposureDispositions := exposure.NewDispositionGate(
+		postgres.NewExposureDispositionRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
+	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	// EASM producers write exposures through one writer that announces new
@@ -1213,6 +1218,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.CredentialImport.SetDataScope(s.DataScope)
+	s.CredentialImport.SetDispositionGate(exposureDispositions)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))

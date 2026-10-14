@@ -1,0 +1,19 @@
+{
+  "exposures.disposition.requestSent": "Request sent. A second approver must confirm before the exposure changes.",
+  "exposures.disposition.bulkPending": "{count} high or critical exposures wait for a second approver.",
+  "exposures.disposition.title": "Waiting for a second approver",
+  "exposures.disposition.requestedAccept": "Accept risk was requested",
+  "exposures.disposition.requestedFalsePositive": "False positive was requested",
+  "exposures.disposition.byYou": "by you",
+  "exposures.disposition.byOther": "by another approver",
+  "exposures.disposition.reason": "Reason:",
+  "exposures.disposition.approve": "Approve",
+  "exposures.disposition.reject": "Reject",
+  "exposures.disposition.cancel": "Cancel request",
+  "exposures.disposition.ownHint": "A different approver must confirm your request.",
+  "exposures.disposition.approved": "Approved",
+  "exposures.disposition.rejected": "Request rejected",
+  "exposures.disposition.canceled": "Request canceled",
+  "exposures.disposition.failed": "Could not update the request",
+  "exposures.disposition.badge": "Awaiting approval"
+}
