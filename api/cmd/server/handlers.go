@@ -519,7 +519,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
-		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
+		SCMApps:      newSCMAppHandler(cfg, repos, svc, deps.RedisClient, log),
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.Command, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
@@ -1469,7 +1469,7 @@ func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.Asse
 // newSCMAppHandler builds the code-host app installation routes (RFC-077).
 // Without a GitHub App configured the routes still list installations and
 // answer that the deployment has no app.
-func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, log *logger.Logger) *handler.SCMAppHandler {
+func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, rc *redis.Client, log *logger.Logger) *handler.SCMAppHandler {
 	if repos.SCMApp == nil {
 		return nil
 	}
@@ -1482,6 +1482,10 @@ func newSCMAppHandler(cfg *config.Config, repos *Repositories, svc *Services, lo
 		audit = svc.Audit
 	}
 	s := scmappsvc.NewService(repos.SCMApp, gh, cfg.Auth.JWTSecret, audit, log)
+	// An install state is usable once (all replicas).
+	if rc != nil {
+		s.SetOnceStore(redis.NewWebhookDeliveryStore(rc))
+	}
 	if svc.Encryptor != nil {
 		s.SetGitLab(repos.SCMApp, svc.Encryptor, scmappsvc.DefaultGitLabFactory)
 	}

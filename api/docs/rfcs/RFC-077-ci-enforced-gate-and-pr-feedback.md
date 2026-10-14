@@ -118,9 +118,11 @@ messages are truncated; secret values and previews never appear.
 `scm_app_installations` (tenant-scoped): provider, host, installation id,
 account (organization) id and login, repositories selection, created by,
 status. An installation is bound to a tenant by an administrator
-(`integrations:write` or `scans:ci:write`) whose identity on the code host is
-an owner of the installing account (verified through the code host during
-the install callback). A run is decorated only when its repository asset is
+(`integrations:write` or `scans:ci:write`, with step-up) whose identity on
+the code host is an owner of the installing account (verified through the
+code host during the install callback: an active admin membership of the
+organization, matched by organization id, or the user account itself; the
+user token is revoked after the check). The install state is single-use. A run is decorated only when its repository asset is
 in the same tenant and the installation covers that repository. Two tenants
 cannot bind the same installation.
 
