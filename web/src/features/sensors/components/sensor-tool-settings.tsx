@@ -41,9 +41,11 @@ type T = ReturnType<typeof useTranslation>['t']
 const SELECT_CLASS =
   'h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50'
 
-function fieldLabel(f: ToolSettingField, t: T): string {
-  if (f.common) return t(`sensors.toolSettings.common.${f.common}`)
-  return f.title ?? f.key
+function fieldLabel(f: ToolSettingField, tool: string, t: T): string {
+  // Built-in tools and the common options have translated titles; a
+  // third-party tool's title shows as reported (text).
+  if (f.common) return t(`sensors.toolOptions.common.${f.common}`, f.title ?? f.key)
+  return t(`sensors.toolOptions.tool.${tool}.${f.key}`, f.title ?? f.key)
 }
 
 function FieldTags({ f, t }: { f: ToolSettingField; t: T }) {
@@ -56,12 +58,12 @@ function FieldTags({ f, t }: { f: ToolSettingField; t: T }) {
       )}
       {f.tier === 'T1' && (
         <Badge variant="secondary" className="text-[10px]">
-          {t('sensors.toolSettings.tier.impact')}
+          {t('sensors.toolOptions.safety.impact')}
         </Badge>
       )}
       {f.tier === 'T2' && (
         <Badge variant="destructive" className="text-[10px]">
-          {t('sensors.toolSettings.tier.dangerous')}
+          {t('sensors.toolOptions.safety.dangerous')}
         </Badge>
       )}
       {f.scope === 'scan' && (
@@ -359,7 +361,7 @@ export function ToolSettingsForm({
             return (
               <div key={f.key} className="space-y-1" data-testid={`tool-setting-${f.key}`}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Label htmlFor={id}>{fieldLabel(f, t)}</Label>
+                  <Label htmlFor={id}>{fieldLabel(f, item.tool, t)}</Label>
                   <FieldTags f={f} t={t} />
                 </div>
                 <FieldInput
