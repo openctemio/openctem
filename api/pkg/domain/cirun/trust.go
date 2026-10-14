@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -24,8 +25,24 @@ const (
 	ProviderGitLab Provider = "gitlab"
 )
 
-// GitHubIssuer is the only issuer accepted for GitHub Actions.
+// GitHubIssuer is the GitHub Actions issuer on github.com. An enterprise
+// with a customized issuer uses GitHubIssuer + "/<enterprise slug>", and
+// GitHub Enterprise Server https://<host>/_services/token (GitHubHost).
 const GitHubIssuer = "https://token.actions.githubusercontent.com"
+
+// gitHubServerIssuerPath is the path of a GitHub Enterprise Server issuer.
+const gitHubServerIssuerPath = "/_services/token"
+
+var gitHubEnterpriseSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,99}$`)
+
+// GitHubHost is the code host of a GitHub Actions issuer: the server's host
+// for GitHub Enterprise Server, github.com otherwise.
+func GitHubHost(issuer string) string {
+	if u, err := url.Parse(issuer); err == nil && u.Path == gitHubServerIssuerPath && u.Host != "" {
+		return strings.ToLower(u.Host)
+	}
+	return "github.com"
+}
 
 // GitLabDefaultIssuer is the issuer of gitlab.com; a self-managed GitLab
 // instance is its own issuer (its external URL).
@@ -117,6 +134,20 @@ type TrustConfig struct {
 	LastUsedAt    *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// LegacyAudience is the audience a GitHub or GitLab configuration had
+	// before audiences had to name the tenant (migration
+	// ci_tenant_bound_audience). Until LegacyAudienceUntil, a pipeline that
+	// existed then and has not yet exchanged a token with Audience may still
+	// use it; its first exchange with Audience ends that for it.
+	LegacyAudience      string
+	LegacyAudienceUntil *time.Time
+}
+
+// LegacyAccepted reports whether a token with the audience may still be
+// admitted as the configuration's legacy audience at the time.
+func (c *TrustConfig) LegacyAccepted(audience string, now time.Time) bool {
+	return c.LegacyAudience != "" && audience == c.LegacyAudience && audience != c.Audience &&
+		c.LegacyAudienceUntil != nil && now.Before(*c.LegacyAudienceUntil)
 }
 
 // DefaultAudience is the audience a new trust configuration expects when the

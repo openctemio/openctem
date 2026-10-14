@@ -2374,6 +2374,7 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	stats := &asset.AggregateStats{
 		ByType:               make(map[string]int),
 		BySubType:            make(map[string]int),
+		ByTypeSubType:        make(map[string]int),
 		ByStatus:             make(map[string]int),
 		ByCriticality:        make(map[string]int),
 		ByScope:              make(map[string]int),
@@ -2426,6 +2427,8 @@ SELECT category, key, value FROM (
   SELECT 'asset_type',            asset_type,                          COUNT(*)::float8 FROM filtered GROUP BY asset_type
   UNION ALL
   SELECT 'sub_type',              sub_type,                            COUNT(*)::float8 FROM filtered WHERE sub_type IS NOT NULL AND sub_type != '' GROUP BY sub_type
+  UNION ALL
+  SELECT 'type_sub_type',         asset_type || COALESCE('/' || NULLIF(sub_type, ''), ''), COUNT(*)::float8 FROM filtered GROUP BY 2
   UNION ALL
   SELECT 'status',                status,                              COUNT(*)::float8 FROM filtered GROUP BY status
   UNION ALL
@@ -2527,6 +2530,8 @@ SELECT category, key, value FROM (
 			stats.ByType[key] = int(value)
 		case "sub_type":
 			stats.BySubType[key] = int(value)
+		case "type_sub_type":
+			stats.ByTypeSubType[key] = int(value)
 		case "status":
 			stats.ByStatus[key] = int(value)
 		case "criticality":

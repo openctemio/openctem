@@ -261,7 +261,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, ErrExchangeRefused
 	}
 
-	cfg, refusals := admit(configs, tok, claims)
+	cfg, refusals := admit(configs, tok, claims, s.now())
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		return nil, ErrExchangeRefused
@@ -289,6 +289,15 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 	if refusal != nil {
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
+	}
+	legacy := claims.Audience != cfg.Audience
+	if legacy {
+		if refusal, err := s.checkLegacyAudience(ctx, tenantID, cfg, key); err != nil {
+			return nil, err
+		} else if refusal != nil {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+			return nil, ErrExchangeRefused
+		}
 	}
 	if r := runnerRefusal(s.runnerVersion(in.UserAgent), s.cfg.Versions); r != nil {
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{r})
@@ -332,7 +341,14 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, err
 	}
 	_ = s.repo.TouchTrustConfig(ctx, tenantID, cfg.ID, s.now())
-	s.auditIssued(ctx, tenantID, in, cfg, out)
+	if !legacy && cfg.LegacyAudience != "" {
+		// The pipeline uses the new audience: its legacy one is refused from
+		// now on.
+		if err := s.repo.MarkPipelineAudienceUpgraded(ctx, tenantID, key, s.now()); err != nil {
+			s.log.Warn("ci pipeline audience upgrade not recorded", "error", logger.SanitizeError(err))
+		}
+	}
+	s.auditIssued(ctx, tenantID, in, cfg, out, legacy)
 	return out, nil
 }
 
@@ -422,25 +438,35 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 	}
 	tried := map[string]bool{}
 	var lastErr error
+	now := s.now()
 	for _, c := range configs {
-		key := string(c.Provider) + "\x00" + c.Audience
-		if tried[key] {
-			continue
+		auds := []string{c.Audience}
+		if c.LegacyAccepted(c.LegacyAudience, now) {
+			// The audience the configuration had before audiences named the
+			// tenant: admitted only for a pipeline not yet moved to the new
+			// one (checked in Exchange once the pipeline is known).
+			auds = append(auds, c.LegacyAudience)
 		}
-		tried[key] = true
-		tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: c.Audience,
-			JTIOptional: cirun.JTIOptional(c.Provider)})
-		if err != nil {
-			lastErr = err
-			continue
+		for _, aud := range auds {
+			key := string(c.Provider) + "\x00" + aud
+			if tried[key] {
+				continue
+			}
+			tried[key] = true
+			tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: aud,
+				JTIOptional: cirun.JTIOptional(c.Provider)})
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			claims := cirun.ParseClaims(c.Provider, tok.Claims)
+			// The replay key the verifier chose (the token's jti, or a hash of
+			// the token for a provider that sends none).
+			claims.JTI = tok.JTI
+			claims.ApplyHints(hints)
+			claims.Audience = aud
+			return tok, claims, nil
 		}
-		claims := cirun.ParseClaims(c.Provider, tok.Claims)
-		// The replay key the verifier chose (the token's jti, or a hash of
-		// the token for a provider that sends none).
-		claims.JTI = tok.JTI
-		claims.ApplyHints(hints)
-		claims.Audience = c.Audience
-		return tok, claims, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no audience to verify against")
@@ -450,11 +476,12 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 
 // admit returns the first configuration (with the token's audience) whose
 // rules admit the claims, or the refusals of each.
-func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Claims) (*cirun.TrustConfig, []*cirun.Refusal) {
+func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Claims, now time.Time) (*cirun.TrustConfig, []*cirun.Refusal) {
 	var refusals []*cirun.Refusal
 	for i := range configs {
 		c := &configs[i]
-		if c.Audience != claims.Audience || c.Issuer != tok.Issuer || c.Provider != claims.Provider {
+		if (c.Audience != claims.Audience && !c.LegacyAccepted(claims.Audience, now)) ||
+			c.Issuer != tok.Issuer || c.Provider != claims.Provider {
 			continue
 		}
 		if r := c.Rules.Admit(claims); r != nil {
@@ -747,13 +774,29 @@ func (s *Service) auditRefusal(ctx context.Context, tenantID shared.ID, in Excha
 	s.logAudit(ctx, tenantID, Actor{Email: ciActor(c), IP: in.ClientIP, UserAgent: in.UserAgent}, ev)
 }
 
-func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in ExchangeInput, cfg *cirun.TrustConfig, out *ExchangeOutput) {
+// checkLegacyAudience admits a token with the configuration's legacy
+// audience only for a pipeline that existed before audiences named the
+// tenant and has not exchanged a token with the new audience since.
+func (s *Service) checkLegacyAudience(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, key cirun.PipelineKey) (*cirun.Refusal, error) {
+	exists, upgraded, err := s.repo.PipelineAudienceState(ctx, tenantID, key)
+	if err != nil {
+		return nil, fmt.Errorf("load pipeline audience: %w", err)
+	}
+	if exists && !upgraded {
+		return nil, nil
+	}
+	return &cirun.Refusal{Code: "legacy_audience", Detail: fmt.Sprintf(
+		"the token's audience is the configuration's old one; this pipeline must request %s", cfg.Audience)}, nil
+}
+
+func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in ExchangeInput, cfg *cirun.TrustConfig, out *ExchangeOutput, legacy bool) {
 	r := out.Run
 	ev := auditapp.NewSuccessEvent(auditdom.ActionCIRunTokenIssued, auditdom.ResourceTypeCIRun, r.ID.String()).
 		WithResourceName(r.Repository).
 		WithMessage(fmt.Sprintf("CI run on %s (%s) admitted by %q", r.Repository, nonEmpty(r.Branch, r.Ref), cfg.Name)).
 		WithMetadata("trust_config_id", cfg.ID.String()).
 		WithMetadata("trust_config", cfg.Name).
+		WithMetadata("legacy_audience", legacy).
 		WithMetadata("repository", r.Repository).
 		WithMetadata("repository_asset_id", r.RepositoryAssetID.String()).
 		WithMetadata("ref", r.Ref).
@@ -847,6 +890,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
 	s.suggestImageLinks(ctx, run, report)
+	s.requestInlineIgnores(ctx, run, report)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }
