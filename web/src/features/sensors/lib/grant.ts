@@ -4,6 +4,8 @@
 
 import type { SensorGrant, UpdateSensorGrantRequest } from '@/lib/api/sensor-grant-hooks'
 
+import type { Tr } from './format'
+
 /** Command types a grant's job types govern (control commands are always allowed). */
 export const GRANT_JOB_TYPES = [
   'scan',
@@ -41,9 +43,11 @@ export const PROFILE_LABELS: Record<string, string> = {
   custom: 'Custom',
 }
 
-export function profileLabel(profile: string): string {
+export function profileLabel(profile: string, tr?: Tr): string {
   const [base, param] = profile.split(':', 2)
-  const label = PROFILE_LABELS[base] ?? profile
+  const english = PROFILE_LABELS[base] ?? profile
+  const label =
+    tr && PROFILE_LABELS[base] ? tr(`sensors.grantEdit.profile.${base}`, english) : english
   return param ? `${label} (${param})` : label
 }
 
@@ -51,14 +55,26 @@ export function profileLabel(profile: string): string {
  * A list dimension as people read it: null is no limit ("Any"), [] is
  * nothing ("None"), otherwise the entries.
  */
-export function formatGrantList(list: string[] | null | undefined, names?: (v: string) => string) {
-  if (list === null || list === undefined) return 'Any'
-  if (list.length === 0) return 'None'
+export function formatGrantList(
+  list: string[] | null | undefined,
+  names?: (v: string) => string,
+  tr?: Tr
+) {
+  if (list === null || list === undefined) return tr ? tr('sensors.grantEdit.any') : 'Any'
+  if (list.length === 0) return tr ? tr('sensors.grantEdit.none') : 'None'
   return list.map((v) => (names ? names(v) : v)).join(', ')
 }
 
-export function tierLabel(tier: number): string {
-  return TIER_LABELS[tier] ?? `T${tier}`
+export function tierLabel(tier: number, tr?: Tr): string {
+  const english = TIER_LABELS[tier] ?? `T${tier}`
+  return tr && TIER_LABELS[tier] ? tr(`sensors.grantEdit.tier.${tier}`, english) : english
+}
+
+export function targetNetworkLabel(network: string, tr?: Tr): string {
+  const english = TARGET_NETWORK_LABELS[network] ?? network
+  return tr && TARGET_NETWORK_LABELS[network]
+    ? tr(`sensors.grantEdit.network.${network}`, english)
+    : english
 }
 
 /** "a, b\nc" → ["a","b","c"] (trimmed, de-duplicated, sorted). */

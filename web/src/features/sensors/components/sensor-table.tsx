@@ -7,6 +7,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { Eye, Settings, KeyRound, Trash2, Power, PowerOff } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Permission } from '@/lib/permissions'
 import {
   DataTable,
@@ -100,14 +101,15 @@ export function SensorTable({
   toolbarStart,
   toolbarEnd,
   filterToggle,
-  emptyMessage = 'No sensors match these filters',
-  emptyDescription = 'Clear a filter or search for something else',
+  emptyMessage,
+  emptyDescription,
   thresholds,
   now,
   channel,
   rowGroups,
   grants,
 }: SensorTableProps) {
+  const { t } = useTranslation()
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
       {
@@ -119,14 +121,14 @@ export function SensorTable({
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
+            aria-label={t('sensors.table.selectAll')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label="Select row"
+            aria-label={t('sensors.table.selectRow')}
             onClick={(e) => e.stopPropagation()}
           />
         ),
@@ -135,20 +137,24 @@ export function SensorTable({
       },
       {
         id: 'name',
-        meta: { label: 'Sensor' },
+        meta: { label: t('sensors.table.col.sensor') },
         accessorFn: (a) => a.name,
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Sensor" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.sensor')} />
+        ),
         cell: ({ row }) => (
           <SensorNameCell sensor={row.original} grant={grants?.get(row.original.id)} />
         ),
       },
       {
         id: 'status',
-        meta: { label: 'Status' },
+        meta: { label: t('sensors.table.col.status') },
         // Sort by the ladder (online first), not alphabetically.
         accessorFn: (a) => STATE_RANK.get(sensorState(a, now, thresholds)) ?? 0,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.status')} />
+        ),
         cell: ({ row }) => {
           const reasons = row.original.health_reasons ?? []
           return (
@@ -165,9 +171,11 @@ export function SensorTable({
       },
       {
         id: 'version',
-        meta: { label: 'Version' },
+        meta: { label: t('sensors.table.col.version') },
         accessorFn: (a) => normalizeSensorVersion(a.version) ?? '',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Version" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.version')} />
+        ),
         cell: ({ row }) => (
           <SensorVersionCell
             sensor={row.original}
@@ -180,85 +188,106 @@ export function SensorTable({
       },
       {
         id: 'jobs',
-        meta: { label: 'Jobs' },
+        meta: { label: t('sensors.table.col.jobs') },
         // current_jobs is what the API reports; it never sent active_jobs.
         accessorFn: (a) => a.current_jobs ?? 0,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Jobs" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.jobs')} />
+        ),
         cell: ({ row }) => <SensorJobsCell sensor={row.original} />,
       },
       {
         id: 'outbox',
-        meta: { label: 'Outbox' },
+        meta: { label: t('sensors.table.col.outbox') },
         accessorFn: (a) => a.outbox?.pending_count ?? -1,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Outbox" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.outbox')} />
+        ),
         cell: ({ row }) => <SensorOutboxCell sensor={row.original} />,
       },
       {
         id: 'key',
-        meta: { label: 'Key' },
+        meta: { label: t('sensors.table.col.key') },
         accessorFn: (a) =>
           a.key_expires_at ? new Date(a.key_expires_at).getTime() : Number.MAX_SAFE_INTEGER,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Key" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.key')} />
+        ),
         cell: ({ row }) => <SensorKeyCell sensor={row.original} now={now} />,
       },
       {
         id: 'tools',
-        meta: { label: 'Tools' },
+        meta: { label: t('sensors.table.col.tools') },
         accessorFn: (a) => dispatchTools(a).join(', '),
         enableSorting: false,
-        header: 'Tools',
+        header: t('sensors.table.col.tools'),
         cell: ({ row }) => <SensorToolsCell tools={dispatchTools(row.original)} />,
       },
       {
         id: 'policy',
-        meta: { label: 'Local policy' },
+        meta: { label: t('sensors.table.col.localPolicy') },
         accessorFn: (a) => sensorPolicyOf(a),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Policy" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.policy')} />
+        ),
         cell: ({ row }) => <SensorLocalPolicyBadge sensor={row.original} />,
       },
       {
         id: 'content',
-        meta: { label: 'Content' },
+        meta: { label: t('sensors.table.col.content') },
         accessorFn: (a) => worstContentState(a.content) ?? '',
         enableSorting: false,
-        header: 'Content',
+        header: t('sensors.table.col.content'),
         cell: ({ row }) => <SensorContentCell sensor={row.original} now={now} />,
       },
       {
         id: 'type',
-        meta: { label: 'Role' },
+        meta: { label: t('sensors.table.col.role') },
         accessorFn: (a) => SENSOR_TYPE_LABELS[a.type] ?? a.type,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Role" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.role')} />
+        ),
         cell: ({ row }) => (
           <span className="text-sm">
-            {sensorRoleOf(row.original.type) === 'collector' ? 'Collector' : 'Scanner'}
+            {sensorRoleOf(row.original.type) === 'collector'
+              ? t('sensors.table.roleCollector')
+              : t('sensors.table.roleScanner')}
             <span className="text-muted-foreground">
               {' · '}
-              {SENSOR_TYPE_LABELS[row.original.type] ?? row.original.type}
+              {t(
+                `sensors.table.type.${row.original.type}`,
+                SENSOR_TYPE_LABELS[row.original.type] ?? row.original.type
+              )}
             </span>
           </span>
         ),
       },
       {
         id: 'cpuUsage',
-        meta: { label: 'CPU' },
+        meta: { label: t('sensors.table.col.cpu') },
         accessorFn: (a) => a.cpu_percent || 0,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="CPU" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.cpu')} />
+        ),
         cell: ({ getValue }) => <UsageCell percent={getValue<number>()} />,
       },
       {
         id: 'memoryUsage',
-        meta: { label: 'Memory' },
+        meta: { label: t('sensors.table.col.memory') },
         accessorFn: (a) => a.memory_percent || 0,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Memory" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.memory')} />
+        ),
         cell: ({ getValue }) => <UsageCell percent={getValue<number>()} />,
       },
       {
         id: 'region',
-        meta: { label: 'Region' },
+        meta: { label: t('sensors.table.col.region') },
         // Only what the sensor reported; nothing invented.
         accessorFn: (a) => a.region || '',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Region" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.region')} />
+        ),
         cell: ({ getValue }) =>
           getValue<string>() ? (
             <span className="text-sm">{getValue<string>()}</span>
@@ -275,15 +304,19 @@ export function SensorTable({
           // Editing, keys and lifecycle are admin actions (sensors:write /
           // sensors:delete, admins and owners only since api#669).
           const actions: RowAction[] = [
-            { label: 'View details', icon: Eye, onClick: () => onViewSensor(sensor) },
             {
-              label: 'Edit',
+              label: t('sensors.table.action.viewDetails'),
+              icon: Eye,
+              onClick: () => onViewSensor(sensor),
+            },
+            {
+              label: t('sensors.table.action.edit'),
               icon: Settings,
               onClick: () => onEditSensor(sensor),
               permission: Permission.SensorsWrite,
             },
             {
-              label: 'Rotate key',
+              label: t('sensors.table.action.rotateKey'),
               icon: KeyRound,
               onClick: () => onRegenerateKey(sensor),
               permission: Permission.SensorsWrite,
@@ -291,7 +324,7 @@ export function SensorTable({
           ]
           if (sensor.status === 'disabled' || sensor.status === 'revoked') {
             actions.push({
-              label: 'Enable',
+              label: t('sensors.table.action.enable'),
               icon: Power,
               onClick: () => onActivateSensor(sensor),
               separatorBefore: true,
@@ -299,7 +332,7 @@ export function SensorTable({
             })
           } else if (sensor.status === 'active') {
             actions.push({
-              label: 'Disable',
+              label: t('sensors.table.action.disable'),
               icon: PowerOff,
               onClick: () => onDeactivateSensor(sensor),
               separatorBefore: true,
@@ -307,7 +340,7 @@ export function SensorTable({
             })
           }
           actions.push({
-            label: 'Delete',
+            label: t('sensors.table.action.delete'),
             icon: Trash2,
             onClick: () => onDeleteSensor(sensor),
             destructive: true,
@@ -332,6 +365,7 @@ export function SensorTable({
       channel.sdkLatest,
       channel.sdkMin,
       grants,
+      t,
     ]
   )
 
@@ -348,8 +382,8 @@ export function SensorTable({
       filterToggle={filterToggle}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
-      emptyMessage={emptyMessage}
-      emptyDescription={emptyDescription}
+      emptyMessage={emptyMessage ?? t('sensors.table.emptyMessage')}
+      emptyDescription={emptyDescription ?? t('sensors.table.emptyDescription')}
       initialColumnVisibility={HIDDEN_BY_DEFAULT}
       // A fleet is small; grouping reads best on one page.
       pageSize={50}

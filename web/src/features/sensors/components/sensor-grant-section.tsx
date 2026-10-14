@@ -29,19 +29,22 @@ import {
 } from '@/lib/api/sensor-grant-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
-import { TARGET_NETWORK_LABELS, formatGrantList, profileLabel, tierLabel } from '../lib/grant'
+import type { Tr } from '../lib/format'
+import { formatGrantList, profileLabel, targetNetworkLabel, tierLabel } from '../lib/grant'
 import { SensorGrantEditDialog } from './sensor-grant-edit-dialog'
 import { SensorGrantSuggestionCard } from './sensor-grant-suggestion-card'
 
 /** The message to show for a failed grant change; a 409 also reloads. */
-export function grantErrorMessage(err: unknown): string {
+export function grantErrorMessage(err: unknown, tr?: Tr): string {
   if (err instanceof ApiClientError || (err && typeof err === 'object' && 'statusCode' in err)) {
     const e = err as { statusCode?: number; message?: string }
     if (e.statusCode === 409)
-      return 'The grant changed since you opened it. It was reloaded; review it and try again.'
+      return tr
+        ? tr('sensors.grant.err.changed')
+        : 'The grant changed since you opened it. It was reloaded; review it and try again.'
     if ((e.statusCode === 403 || e.statusCode === 400) && e.message) return e.message
   }
-  return 'Could not change the grant'
+  return tr ? tr('sensors.grant.err.generic') : 'Could not change the grant'
 }
 
 export function isVersionConflict(err: unknown): boolean {
@@ -59,17 +62,19 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /** "Allowed" / "Not allowed", with what applies now when the trust level caps it. */
 function Flag({ granted, effective }: { granted: boolean; effective?: boolean }) {
-  if (!granted) return <>Not allowed</>
-  if (effective === false) return <>Allowed by the grant · off while the sensor is New</>
-  return <>Allowed</>
+  const { t } = useTranslation()
+  if (!granted) return <>{t('sensors.grantSection.notAllowed')}</>
+  if (effective === false) return <>{t('sensors.grantSection.allowedOffWhileNew')}</>
+  return <>{t('sensors.grantSection.allowed')}</>
 }
 
 export function TrustBadge({ level }: { level: string }) {
+  const { t } = useTranslation()
   return level === 'trusted' ? (
-    <Badge variant="secondary">Trusted</Badge>
+    <Badge variant="secondary">{t('sensors.grantSection.trusted')}</Badge>
   ) : (
     <Badge variant="outline" className="border-warning text-warning">
-      New
+      {t('sensors.grantSection.new')}
     </Badge>
   )
 }
@@ -112,8 +117,8 @@ export function SensorGrantSection({
   if (!canRead) return null
   if (error) {
     return (
-      <DetailSection title="Grant" icon={ShieldCheck}>
-        <p className="text-sm text-muted-foreground">The grant could not be loaded.</p>
+      <DetailSection title={t('sensors.grantSection.title')} icon={ShieldCheck}>
+        <p className="text-sm text-muted-foreground">{t('sensors.grantSection.loadError')}</p>
       </DetailSection>
     )
   }
@@ -128,10 +133,14 @@ export function SensorGrantSection({
     try {
       const next = await updateSensorGrant(sensorId, grantUpdateRequest(grant, { trust_level: to }))
       await mutate(next, { revalidate: false })
-      toast.success(to === 'trusted' ? 'Sensor promoted to Trusted' : 'Sensor set back to New')
+      toast.success(
+        to === 'trusted'
+          ? t('sensors.grantSection.promoted')
+          : t('sensors.grantSection.setBackToNew')
+      )
       setTrustTarget(null)
     } catch (err) {
-      toast.error(grantErrorMessage(err))
+      toast.error(grantErrorMessage(err, t))
       if (isVersionConflict(err)) await mutate()
     } finally {
       setSaving(false)
@@ -140,12 +149,13 @@ export function SensorGrantSection({
 
   const scope =
     grant.target_cidrs === null && grant.target_domains === null
-      ? 'Any'
-      : [...(grant.target_cidrs ?? []), ...(grant.target_domains ?? [])].join(', ') || 'None'
+      ? t('sensors.grantEdit.any')
+      : [...(grant.target_cidrs ?? []), ...(grant.target_domains ?? [])].join(', ') ||
+        t('sensors.grantEdit.none')
 
   return (
     <DetailSection
-      title="Grant"
+      title={t('sensors.grantSection.title')}
       icon={ShieldCheck}
       actions={
         (canNarrow || canWiden) && (
@@ -160,10 +170,12 @@ export function SensorGrantSection({
     >
       {grant.legacy_broad && (
         <div data-testid="legacy-broad-warning">
-          <DetailCallout tone="warning" icon={AlertTriangle} title="Legacy broad grant: narrow it">
-            This sensor existed before per-sensor grants and may still do anything a sensor can: any
-            job, intrusive tiers, credentials and results without a job. Pick the profile that
-            matches what it does.
+          <DetailCallout
+            tone="warning"
+            icon={AlertTriangle}
+            title={t('sensors.grantSection.legacyTitle')}
+          >
+            {t('sensors.grantSection.legacyBody')}
           </DetailCallout>
         </div>
       )}
@@ -230,46 +242,57 @@ export function SensorGrantSection({
       )}
 
       <dl className="space-y-1.5" data-testid="sensor-grant">
-        <Row label="Profile">{profileLabel(grant.profile)}</Row>
-        <Row label="Trust level">
+        <Row label={t('sensors.grantEdit.profile')}>{profileLabel(grant.profile, t)}</Row>
+        <Row label={t('sensors.grantSection.trustLevel')}>
           <span className="inline-flex flex-wrap items-center gap-2">
             <TrustBadge level={grant.trust_level} />
             {isNew && canWiden && (
               <Button size="sm" variant="outline" onClick={() => setTrustTarget('trusted')}>
-                Promote to Trusted
+                {t('sensors.grantSection.promote')}
               </Button>
             )}
             {!isNew && canNarrow && (
               <Button size="sm" variant="ghost" onClick={() => setTrustTarget('new')}>
-                Set back to New
+                {t('sensors.grantSection.setBack')}
               </Button>
             )}
           </span>
         </Row>
-        <Row label="Job types">{formatGrantList(grant.job_types)}</Row>
-        <Row label="Zones">{formatGrantList(grant.zone_ids, zoneName)}</Row>
-        <Row label="Tools">{formatGrantList(grant.tools)}</Row>
-        <Row label="Capabilities">{formatGrantList(grant.capabilities)}</Row>
-        <Row label="Tier ceiling">
-          {tierLabel(grant.tier_ceiling)}
+        <Row label={t('sensors.grantEdit.dim.jobTypes')}>
+          {formatGrantList(grant.job_types, undefined, t)}
+        </Row>
+        <Row label={t('sensors.grantEdit.dim.zones')}>
+          {formatGrantList(grant.zone_ids, zoneName, t)}
+        </Row>
+        <Row label={t('sensors.grantEdit.dim.tools')}>
+          {formatGrantList(grant.tools, undefined, t)}
+        </Row>
+        <Row label={t('sensors.grantEdit.dim.capabilities')}>
+          {formatGrantList(grant.capabilities, undefined, t)}
+        </Row>
+        <Row label={t('sensors.grantEdit.dim.tierCeiling')}>
+          {tierLabel(grant.tier_ceiling, t)}
           {eff && eff.tier_ceiling < grant.tier_ceiling && (
             <span className="text-muted-foreground">
               {' '}
-              · {tierLabel(eff.tier_ceiling)} while New
+              ·{' '}
+              {t('sensors.grantSection.tierWhileNew', undefined, {
+                tier: tierLabel(eff.tier_ceiling, t),
+              })}
             </span>
           )}
         </Row>
-        <Row label="Target network">
-          {TARGET_NETWORK_LABELS[grant.target_network] ?? grant.target_network}
+        <Row label={t('sensors.grantEdit.dim.targetNetwork')}>
+          {targetNetworkLabel(grant.target_network, t)}
         </Row>
-        <Row label="Target scope">{scope}</Row>
-        <Row label="Credentials">
+        <Row label={t('sensors.grantSection.targetScope')}>{scope}</Row>
+        <Row label={t('sensors.grantSection.credentials')}>
           <Flag granted={grant.allow_credentials} effective={eff?.allow_credentials} />
         </Row>
-        <Row label="Results without a job">
+        <Row label={t('sensors.grantSection.pushIngest')}>
           <Flag granted={grant.allow_push_ingest} effective={eff?.allow_push_ingest} />
         </Row>
-        <Row label="Remote actions">
+        <Row label={t('sensors.grantEdit.dim.remoteActions')}>
           pause, drain{grant.remote_actions?.length ? `, ${grant.remote_actions.join(', ')}` : ''}
         </Row>
       </dl>

@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogBody,
 } from '@/components/ui/dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import type { Sensor } from '@/lib/api/sensor-types'
 
 import { SensorInstallFlow, installStepLabel, type InstallStep } from './sensor-install-flow'
@@ -29,17 +30,16 @@ export function InstallSensorDialog({
   /** "Open sensor" once it sent its first heartbeat. */
   onOpen?: (sensor: Sensor) => void
 }) {
+  const { t } = useTranslation()
   const [step, setStep] = useState<InstallStep>('name')
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl">
         <DialogHeader>
-          <DialogTitle>Install a sensor</DialogTitle>
+          <DialogTitle>{t('sensors.installDialog.title')}</DialogTitle>
           <DialogDescription>
-            <span className="sr-only">
-              Name the sensor, run the command on the host, then review the tools it reports.{' '}
-            </span>
-            <span aria-live="polite">{installStepLabel(step)}</span>
+            <span className="sr-only">{t('sensors.installDialog.srDescription')} </span>
+            <span aria-live="polite">{installStepLabel(step, t)}</span>
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="p-0">

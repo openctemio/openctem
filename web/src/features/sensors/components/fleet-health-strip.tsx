@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { cn } from '@/lib/utils'
 
@@ -7,35 +8,41 @@ import type { AttentionKind, FleetSummary, ReleaseChannel } from '../lib/fleet'
 import { PROTOCOL_V1_SUNSET, PROTOCOL_V2_SENSOR_VERSION } from './sensor-cells'
 
 const ATTENTION_WORDS: Record<AttentionKind, string> = {
-  backlog: 'backlog',
-  key: 'key',
-  version: 'version',
-  sdk: 'SDK',
-  heartbeat: 'heartbeat',
-  tools: 'tools',
-  content: 'scanner content',
-  error: 'errors',
+  backlog: 'sensors.health.attention.backlog',
+  key: 'sensors.health.attention.key',
+  version: 'sensors.health.attention.version',
+  sdk: 'sensors.health.attention.sdk',
+  heartbeat: 'sensors.health.attention.heartbeat',
+  tools: 'sensors.health.attention.tools',
+  content: 'sensors.health.attention.content',
+  error: 'sensors.health.attention.error',
 }
 
 /** The fleet's state mix as one small bar, with a legend (no colour-only meaning). */
 function FleetBar({ summary }: { summary: FleetSummary }) {
+  const { t } = useTranslation()
   const s = summary.byState
   const parts = [
-    { key: 'online', label: 'Online', n: s.online, className: 'bg-success' },
+    { key: 'online', label: t('sensors.health.bar.online'), n: s.online, className: 'bg-success' },
     {
       key: 'warn',
-      label: 'Degraded, late or stale',
+      label: t('sensors.health.bar.warn'),
       n: s.degraded + s.late + s.stale,
       className: 'bg-warning',
     },
     {
       key: 'offline',
-      label: 'Offline',
+      label: t('sensors.health.bar.offline'),
       n: s.offline + s.never_connected,
       className: 'bg-destructive',
     },
-    { key: 'idle', label: 'Idle (CI)', n: s.idle, className: 'bg-info' },
-    { key: 'off', label: 'Disabled', n: s.disabled + s.revoked, className: 'bg-border' },
+    { key: 'idle', label: t('sensors.health.bar.idle'), n: s.idle, className: 'bg-info' },
+    {
+      key: 'off',
+      label: t('sensors.health.bar.off'),
+      n: s.disabled + s.revoked,
+      className: 'bg-border',
+    },
   ].filter((p) => p.n > 0)
   if (parts.length === 0) return null
   const label = parts.map((p) => `${p.n} ${p.label.toLowerCase()}`).join(', ')
@@ -96,44 +103,50 @@ export function FleetHealthStrip({
   onToggleProtocolV1,
   className,
 }: FleetHealthStripProps) {
+  const { t } = useTranslation()
   const items: MetricStripItem[] = [
     {
       key: 'health',
-      label: 'Fleet health',
+      label: t('sensors.health.fleet'),
       value: summary.canTakeJobs,
-      hint: `of ${summary.enabled} can take jobs`,
+      hint: t('sensors.health.canTakeJobs', undefined, { count: summary.enabled }),
       detail: <FleetBar summary={summary} />,
     },
     {
       key: 'attention',
-      label: 'Needs attention',
+      label: t('sensors.health.attention'),
       value: summary.needsAttention,
       tone: 'warning',
       detail:
         summary.needsAttention > 0
-          ? summary.attentionKinds.map((k) => ATTENTION_WORDS[k]).join(', ')
-          : 'nothing to fix',
+          ? summary.attentionKinds.map((k) => t(ATTENTION_WORDS[k])).join(', ')
+          : t('sensors.health.nothingToFix'),
       onClick: onToggleAttention,
       active: attentionActive,
     },
     {
       key: 'updates',
-      label: 'Update available',
+      label: t('sensors.health.updates'),
       value: summary.updates,
-      hint: channel.latest ? `latest ${channel.latest}` : undefined,
+      hint: channel.latest
+        ? t('sensors.health.latest', undefined, { version: channel.latest })
+        : undefined,
       detail:
         summary.unsupported > 0 && channel.min ? (
           <span className="text-destructive">
-            {summary.unsupported} below minimum {channel.min}
+            {t('sensors.health.belowMin', undefined, {
+              count: summary.unsupported,
+              min: channel.min,
+            })}
           </span>
         ) : channel.latest ? (
           summary.updates === 0 ? (
-            'all on the latest release'
+            t('sensors.health.allLatest')
           ) : (
-            'older releases still run'
+            t('sensors.health.olderRun')
           )
         ) : (
-          'no release channel set'
+          t('sensors.health.noChannel')
         ),
       onClick: onToggleUpdates,
       active: updatesActive,
@@ -143,18 +156,18 @@ export function FleetHealthStrip({
     const z = summary.zones
     items.push({
       key: 'zones',
-      label: 'Zone coverage',
+      label: t('sensors.health.zones'),
       value: z.covered,
-      hint: `of ${z.total} zones`,
+      hint: t('sensors.health.ofZones', undefined, { count: z.total }),
       detail:
         z.uncovered.length > 0 ? (
           <span className="text-destructive">
             {z.uncovered.length === 1
-              ? `${z.uncovered[0]} has no online sensor`
-              : `${z.uncovered.length} zones have no online sensor`}
+              ? t('sensors.health.zoneUncovered.one', undefined, { zone: z.uncovered[0] })
+              : t('sensors.health.zoneUncovered.other', undefined, { count: z.uncovered.length })}
           </span>
         ) : (
-          'every zone has an online sensor'
+          t('sensors.health.zonesCovered')
         ),
       onClick: onToggleZoneGrouping,
       active: zoneGroupingActive,
@@ -164,20 +177,27 @@ export function FleetHealthStrip({
   if (summary.protocolV1 > 0) {
     items.push({
       key: 'protocol',
-      label: 'Still on protocol v1',
+      label: t('sensors.health.protocolV1'),
       value: summary.protocolV1,
       tone: 'warning',
-      detail: `upgrade to ${PROTOCOL_V2_SENSOR_VERSION} before ${PROTOCOL_V1_SUNSET}`,
+      detail: t('sensors.health.upgrade', undefined, {
+        version: PROTOCOL_V2_SENSOR_VERSION,
+        date: PROTOCOL_V1_SUNSET,
+      }),
       onClick: onToggleProtocolV1,
       active: protocolV1Active,
     })
   }
   items.push({
     key: 'jobs',
-    label: 'Jobs running',
+    label: t('sensors.health.jobs'),
     value: summary.jobsRunning,
-    hint: `/ ${summary.jobSlots} slots`,
-    detail: `on ${summary.canTakeJobs} ${summary.canTakeJobs === 1 ? 'sensor' : 'sensors'}`,
+    hint: t('sensors.health.slots', undefined, { count: summary.jobSlots }),
+    detail: t(
+      summary.canTakeJobs === 1 ? 'sensors.health.onSensors.one' : 'sensors.health.onSensors.other',
+      undefined,
+      { count: summary.canTakeJobs }
+    ),
   })
   return <MetricStrip className={className} loading={loading} items={items} />
 }

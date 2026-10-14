@@ -12,32 +12,35 @@ import {
   SENSOR_POLICY_FILTERS,
   type SensorPolicyFilter,
 } from '../lib/fleet'
-import { SENSOR_STATE_META, SENSOR_STATES } from '../lib/sensor-state'
+import { SENSOR_STATES, stateLabel } from '../lib/sensor-state'
 import { compareSensorVersions } from '../lib/sensor-version'
 
-const ROLE_LABELS: Record<SensorRole, string> = { scanner: 'Scanner', collector: 'Collector' }
+const ROLE_LABELS: Record<SensorRole, string> = {
+  scanner: 'sensors.facets.role.scanner',
+  collector: 'sensors.facets.role.collector',
+}
 const VERSION_LABELS: Record<SensorVersionStatus, string> = {
-  latest: 'Latest',
-  update_available: 'Update available',
-  unsupported: 'Below the minimum',
-  unknown: 'Unknown',
+  latest: 'sensors.facets.version.latest',
+  update_available: 'sensors.facets.version.updateAvailable',
+  unsupported: 'sensors.facets.version.unsupported',
+  unknown: 'sensors.facets.version.unknown',
 }
 const PROTOCOL_LABELS: Record<SensorProtocolFilter, string> = {
-  v2: 'v2',
-  v1: 'v1 (deprecated)',
-  unknown: 'Not reported yet',
+  v2: 'sensors.facets.protocol.v2',
+  v1: 'sensors.facets.protocol.v1',
+  unknown: 'sensors.facets.protocol.unknown',
 }
 const POLICY_LABELS: Record<SensorPolicyFilter, string> = {
-  enforced: 'Enforced',
-  absent: 'No local policy',
-  paused: 'Paused (kill switch)',
-  unknown: 'Not reported',
+  enforced: 'sensors.facets.policy.enforced',
+  absent: 'sensors.facets.policy.absent',
+  paused: 'sensors.facets.policy.paused',
+  unknown: 'sensors.facets.policy.unknown',
 }
 // How a sensor row runs. Not the page's Mode (daemon or runner): a one-shot
 // sensor here is a legacy CI sensor with an API key, still a sensor row.
 const MODE_LABELS: Record<SensorModeFilter, string> = {
-  daemon: 'Long-running',
-  ci: 'One-shot (legacy CI key)',
+  daemon: 'sensors.facets.mode.daemon',
+  ci: 'sensors.facets.mode.ci',
 }
 
 /**
@@ -96,17 +99,17 @@ export function SensorFacetPanel({
     >
       <div>
         <FacetToggle
-          label="Needs attention"
-          description="Results piling up, a key expiring, a version below the minimum"
+          label={t('sensors.facets.attention')}
+          description={t('sensors.facets.attentionHint')}
           checked={filters.attention}
           onCheckedChange={(on) => onChange({ ...filters, attention: on })}
         />
       </div>
-      <FacetSection title="Status" selectedCount={filters.states.length}>
+      <FacetSection title={t('sensors.facets.status')} selectedCount={filters.states.length}>
         {SENSOR_STATES.map((s: SensorState) => (
           <FacetOption
             key={s}
-            label={SENSOR_STATE_META[s].label}
+            label={stateLabel(s, t)}
             checked={filters.states.includes(s)}
             onCheckedChange={(on) =>
               onChange({ ...filters, states: toggle(filters.states, s, on) })
@@ -114,22 +117,25 @@ export function SensorFacetPanel({
           />
         ))}
       </FacetSection>
-      <FacetSection title="Role" selectedCount={filters.roles.length}>
+      <FacetSection title={t('sensors.facets.roleTitle')} selectedCount={filters.roles.length}>
         {(Object.keys(ROLE_LABELS) as SensorRole[]).map((r) => (
           <FacetOption
             key={r}
-            label={ROLE_LABELS[r]}
+            label={t(ROLE_LABELS[r])}
             checked={filters.roles.includes(r)}
             onCheckedChange={(on) => onChange({ ...filters, roles: toggle(filters.roles, r, on) })}
           />
         ))}
       </FacetSection>
       {hasChannel && (
-        <FacetSection title="Version" selectedCount={filters.versions.length}>
+        <FacetSection
+          title={t('sensors.facets.versionTitle')}
+          selectedCount={filters.versions.length}
+        >
           {(Object.keys(VERSION_LABELS) as SensorVersionStatus[]).map((v) => (
             <FacetOption
               key={v}
-              label={VERSION_LABELS[v]}
+              label={t(VERSION_LABELS[v])}
               checked={filters.versions.includes(v)}
               onCheckedChange={(on) =>
                 onChange({ ...filters, versions: toggle(filters.versions, v, on) })
@@ -139,11 +145,14 @@ export function SensorFacetPanel({
         </FacetSection>
       )}
       {hasProtocolInfo && (
-        <FacetSection title="Protocol" selectedCount={filters.protocols.length}>
+        <FacetSection
+          title={t('sensors.facets.protocolTitle')}
+          selectedCount={filters.protocols.length}
+        >
           {(Object.keys(PROTOCOL_LABELS) as SensorProtocolFilter[]).map((p) => (
             <FacetOption
               key={p}
-              label={PROTOCOL_LABELS[p]}
+              label={t(PROTOCOL_LABELS[p])}
               checked={filters.protocols.includes(p)}
               onCheckedChange={(on) =>
                 onChange({ ...filters, protocols: toggle(filters.protocols, p, on) })
@@ -180,11 +189,11 @@ export function SensorFacetPanel({
           ))}
         </FacetSection>
       )}
-      <FacetSection title="Local policy" selectedCount={filters.policies.length}>
+      <FacetSection title={t('sensors.facets.policyTitle')} selectedCount={filters.policies.length}>
         {SENSOR_POLICY_FILTERS.map((p) => (
           <FacetOption
             key={p}
-            label={POLICY_LABELS[p]}
+            label={t(POLICY_LABELS[p])}
             checked={filters.policies.includes(p)}
             onCheckedChange={(on) =>
               onChange({ ...filters, policies: toggle(filters.policies, p, on) })
@@ -192,11 +201,15 @@ export function SensorFacetPanel({
           />
         ))}
       </FacetSection>
-      <FacetSection title="Run style" selectedCount={filters.modes.length} defaultOpen={false}>
+      <FacetSection
+        title={t('sensors.facets.modeTitle')}
+        selectedCount={filters.modes.length}
+        defaultOpen={false}
+      >
         {(Object.keys(MODE_LABELS) as SensorModeFilter[]).map((m) => (
           <FacetOption
             key={m}
-            label={MODE_LABELS[m]}
+            label={t(MODE_LABELS[m])}
             checked={filters.modes.includes(m)}
             onCheckedChange={(on) => onChange({ ...filters, modes: toggle(filters.modes, m, on) })}
           />
