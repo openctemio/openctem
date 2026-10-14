@@ -285,6 +285,9 @@ func (p *FindingProcessor) processBatch(
 		// identity is the version-2 identity (RFC-043 §4.2), nil when no
 		// recipe applies and the finding keeps its version-1 key.
 		identity *vulnerability.IdentityKey
+		// former is the version-2 key the finding may still be stored under
+		// (sastFormerLineKey), "" when none.
+		former string
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -401,11 +404,12 @@ func (p *FindingProcessor) processBatch(
 	}
 
 	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
-	applyIdentityV2Of(p, tenantID, report.Tool, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
-		func(fm *findingMeta, k vulnerability.IdentityKey) {
+	applyIdentityV2Of(p, tenantID, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, k vulnerability.IdentityKey, former string) {
 			fm.identity = &k
 			fm.fingerprint = k.Fingerprint()
 			fm.base = ""
+			fm.former = former
 		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
@@ -421,6 +425,10 @@ func (p *FindingProcessor) processBatch(
 	// Step 1b': a finding still keyed by its version-1 key takes its
 	// version-2 key on this sighting; the old key stays its alias (RFC-043 §6).
 	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.v1, fm.identity })
+	// A SAST finding stored under its line-anchored key takes its
+	// code-anchored key once a report carries the code (a producer that
+	// started sending the snippet or its hash), keeping its triage.
+	adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.former, fm.identity })
 
 	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
 	// into another finding, an older recipe) is an alias of the finding that
@@ -434,6 +442,10 @@ func (p *FindingProcessor) processBatch(
 		if current, ok := aliases[fm.fingerprint]; ok {
 			fm.fingerprint = current
 		}
+		if output.FingerprintsByIndex == nil {
+			output.FingerprintsByIndex = make(map[int][]string, len(candidates))
+		}
+		output.FingerprintsByIndex[fm.index] = append(output.FingerprintsByIndex[fm.index], fm.fingerprint)
 		// The source says it is mitigated (RFC-047 §7.6): not a sighting.
 		if isSourceMitigated(report, &fm.finding) {
 			mitigations = append(mitigations, vulnerability.SourceMitigation{
@@ -2069,11 +2081,31 @@ func (p *FindingProcessor) enrichAndClassify(ctx context.Context, tenantID share
 	// Apply SLA deadline now that priority class is set. Non-fatal — findings
 	// persist without a deadline and the SLA escalation controller surfaces
 	// them as NULL.
+	// A finding an approved suppression rule already decided (false positive,
+	// accepted) has nothing to remediate: no deadline.
 	if p.slaApplier != nil {
-		if err := p.slaApplier.ApplyBatch(ctx, tenantID, findings); err != nil {
-			p.logger.Warn("sla deadline apply failed", "error", err)
+		if open := withoutDecided(findings); len(open) > 0 {
+			if err := p.slaApplier.ApplyBatch(ctx, tenantID, open); err != nil {
+				p.logger.Warn("sla deadline apply failed", "error", err)
+			}
 		}
 	}
+}
+
+// withoutDecided leaves out the findings that are born decided: an approved
+// suppression rule set them to false positive or accepted before insert.
+// They raise no created event (notifications, tickets), get no SLA deadline
+// and are not promoted into the exposure store.
+func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding {
+	out := make([]*vulnerability.Finding, 0, len(findings))
+	for _, f := range findings {
+		switch f.Status() {
+		case vulnerability.FindingStatusFalsePositive, vulnerability.FindingStatusAccepted:
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // persistDataFlows stores each trace on the tenant's finding with its
@@ -2394,7 +2426,7 @@ func (p *FindingProcessor) afterCreate(
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
 	if p.findingCreatedCallback != nil {
-		if counting := p.withoutBranchOnly(ctx, tenantID, created); len(counting) > 0 {
+		if counting := p.withoutBranchOnly(ctx, tenantID, withoutDecided(created)); len(counting) > 0 {
 			p.findingCreatedCallback(ctx, tenantID, counting)
 		}
 	}
@@ -2412,9 +2444,9 @@ func (p *FindingProcessor) afterCreate(
 	// Promote secret-scan findings into the exposure/credential store so
 	// hardcoded secrets show up in the Credentials/Exposures view
 	// (discovery_source=secret_scan). Best-effort.
-	if p.exposureBridge != nil {
-		if err := p.exposureBridge.ApplyBatch(ctx, tenantID, created); err != nil {
-			p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(created))
+	if open := withoutDecided(created); p.exposureBridge != nil && len(open) > 0 {
+		if err := p.exposureBridge.ApplyBatch(ctx, tenantID, open); err != nil {
+			p.logger.Warn("failed to bridge secret findings into exposure store", "error", err, "count", len(open))
 		}
 	}
 }

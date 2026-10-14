@@ -63,7 +63,13 @@ function capabilityTitle(c: CICapabilityCoverage, t: TFn): string {
       }) + (c.last_at ? `, ${new Date(c.last_at).toLocaleString()}` : '')
     )
   }
-  if (c.expected) parts.push(t('scans.ci.coverage.expectedHere', 'Expected for this repository.'))
+  if (c.expected)
+    parts.push(
+      t(
+        'scans.ci.coverage.expectedHere',
+        'Expected for this repository. Every CI run of it must report these capabilities, or the gate fails it.'
+      )
+    )
   return parts.filter(Boolean).join(' ')
 }
 

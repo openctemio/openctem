@@ -275,7 +275,7 @@ var batchTools = map[string]bool{
 // from its sensors (RFC-055 TC12).
 var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
-	"nuclei": true, "trivy": true, "semgrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
+	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
 	"rdap": true, "asn": true,
 }
 

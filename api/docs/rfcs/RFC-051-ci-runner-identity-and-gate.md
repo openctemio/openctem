@@ -86,6 +86,11 @@ job wins. A configuration is only ever read for the tenant the exchange names,
 by its exact issuer: two tenants may trust the same CI organization, each
 with its own configuration, and nothing matches across them.
 
+Creating or changing a trust configuration, and changing the CI settings
+(`require_oidc`, which can let CI sensor keys back in), need **step-up**, like
+a break-glass: they decide who may send results that the gate judges.
+Deleting a configuration only withdraws trust and needs no step-up.
+
 ### 3.1 Providers
 
 Decisions (2026-10-07): **P-1** every issuer names one CI organization,
@@ -273,6 +278,15 @@ branch sees it. See `docs/architecture/branch-only-findings.md`.
   "reasons": [{"code": "severity", "message": "severity high is at or above high", "finding_id": "…", "title": "…", "file": "db.go", "line": 42, "url": "https://…/findings/…"}],
   "links": {"run": "https://…/ci-cd?view=runs&run=…", "findings": "https://…/findings?asset_id=…"} }
 ```
+
+**Expected capabilities.** A repository with a coverage expectation
+(section 10.6; an empty list means sast, sca, secrets and iac) must report
+each expected capability in every run. A run with no tool for one, per the
+tool catalog, gets a blocking `missing_capability` reason, like a scanner
+that failed. Without it, a pull request that edits its pipeline to drop a
+scanner passes on silence. The tool labels are self-declared, so this does
+not prove that a scan ran. It closes the "report nothing" path, and the
+platform's own code scans (RFC-091) are the independent check.
 
 Policy resolution (`ci_gate_policies`): the repository's own policy, else the
 strictest of its business units' policies, else the tenant's, else the built-in

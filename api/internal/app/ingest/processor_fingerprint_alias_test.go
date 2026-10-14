@@ -53,7 +53,7 @@ func TestProcessBatch_FormerKeysFoldIntoTheirFinding(t *testing.T) {
 	tenantID, assetID := shared.NewID(), shared.NewID()
 	report := twoNetFindingsReport()
 	key := func(i int) string {
-		k, ok := identityV2(assetID, &report.Findings[i], report.Tool, "", 0)
+		k, ok := identityV2(assetID, &report.Findings[i], "", 0)
 		require.True(t, ok)
 		return k.Fingerprint()
 	}
