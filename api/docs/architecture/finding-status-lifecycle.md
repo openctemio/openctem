@@ -109,7 +109,7 @@ instead).
   (`cirun.honored`), even before the hourly approval-expiration controller
   reopens it. Threat models read it as the acceptance horizon.
 
-Migration `002117` adds the trigger and fills the column for findings already
+Migration `002119` adds the trigger and fills the column for findings already
 accepted, from their latest approved acceptance request or their suppression
 rule. Findings accepted with no end anywhere stay empty.
 
@@ -143,8 +143,7 @@ AI triage may **propose** a false positive; it never decides one.
 Key files: `internal/app/finding/vulnerability_service.go`
 (`ProposeFalsePositiveFromAI`), `internal/app/aitriage/service.go`
 (`proposeFalsePositive`), `pkg/domain/vulnerability/approval.go`
-(`NewActorApproval`), migration `002126`.
-||||||| a2193be20
+(`NewActorApproval`), migration `002127`.
 
 ## Upgrade
 
