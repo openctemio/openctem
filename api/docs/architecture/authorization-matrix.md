@@ -1506,6 +1506,13 @@ that aggregates follow the viewer's scope, with org-wide totals only through
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
 
+**Organization-wide on purpose:** `GET /suppressions/{id}/preview` counts the
+organization's open findings a suppression rule would close. Approving the rule
+closes them organization-wide, so the approver must see that number whatever
+their own data scope; the route is gated by `findings:suppressions:approve`
+(not the read permission) so only people who can approve see it, and it returns
+a count only, never a finding (see `suppression-rules.md`).
+
 **Not covered by data scope** (separate access models): pentest findings and
 attachments (campaign membership), remediation campaigns,
 scans, audit logs, report schedules, and access-control administration

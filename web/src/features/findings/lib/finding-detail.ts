@@ -4,13 +4,21 @@
  * different facts about the same finding.
  */
 
-import type { ApiFinding, ApiFindingSourceData } from '../api/finding-api.types'
+import type {
+  ApiDataFlow,
+  ApiDataFlowLocation,
+  ApiFinding,
+  ApiFindingSourceData,
+} from '../api/finding-api.types'
 import type {
   Activity,
   AffectedAsset,
   AssetType,
   ComplianceFramework,
   ComplianceResult,
+  DataFlow,
+  DataFlowLocation,
+  DataFlowLocationType,
   FindingDetail,
   FindingSourceData,
   FindingStatus,
@@ -90,16 +98,51 @@ function mapActivities(api: ApiFinding): Activity[] {
   return activities
 }
 
-function mapLocations(locs?: NonNullable<ApiFinding['data_flow']>['sources']) {
-  return locs?.map((loc) => ({
-    path: loc.path,
-    line: loc.line,
-    column: loc.column,
-    content: loc.content,
-    label: loc.label,
-    index: loc.index,
-    type: loc.location_type,
-  }))
+function mapDataFlowLocation(
+  loc: ApiDataFlowLocation | undefined,
+  type: DataFlowLocationType,
+  index: number,
+  label?: string
+): DataFlowLocation {
+  return {
+    path: loc?.path,
+    line: loc?.line,
+    endLine: loc?.end_line,
+    column: loc?.column,
+    content: loc?.snippet,
+    label: label || loc?.label,
+    index,
+    type,
+    functionName: loc?.function_name || loc?.fully_qualified_name,
+    className: loc?.class_name,
+  }
+}
+
+/**
+ * The primary trace in step order: the first trace's steps when the API
+ * sends them, else the grouped locations ordered by their step index.
+ */
+export function mapDataFlow(df: ApiDataFlow | undefined): DataFlow | undefined {
+  if (!df) return undefined
+  const trace = df.traces?.find((tr) => (tr.steps?.length ?? 0) > 0)
+  let steps: DataFlowLocation[]
+  if (trace) {
+    steps = [...trace.steps]
+      .sort((a, b) => a.index - b.index)
+      .map((st, i) => mapDataFlowLocation(st.location, st.location_type, i, st.label))
+  } else {
+    const grouped: Array<[ApiDataFlowLocation[] | undefined, DataFlowLocationType]> = [
+      [df.sources, 'source'],
+      [df.intermediates, 'intermediate'],
+      [df.sanitizers, 'sanitizer'],
+      [df.sinks, 'sink'],
+    ]
+    steps = grouped
+      .flatMap(([locs, type]) => (locs ?? []).map((loc) => ({ loc, type })))
+      .sort((a, b) => (a.loc.index ?? 0) - (b.loc.index ?? 0))
+      .map(({ loc, type }, i) => mapDataFlowLocation(loc, type, i))
+  }
+  return steps.length > 0 ? { steps, commitSha: trace?.commit_sha || undefined } : undefined
 }
 
 export function toFindingDetail(api: ApiFinding): FindingDetail {
@@ -226,13 +269,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     relatedLocations: api.related_locations,
     attachments: api.attachments,
 
-    dataFlow: api.data_flow
-      ? {
-          sources: mapLocations(api.data_flow.sources),
-          intermediates: mapLocations(api.data_flow.intermediates),
-          sinks: mapLocations(api.data_flow.sinks),
-        }
-      : undefined,
+    dataFlow: mapDataFlow(api.data_flow),
 
     findingType: api.finding_type as FindingType | undefined,
 

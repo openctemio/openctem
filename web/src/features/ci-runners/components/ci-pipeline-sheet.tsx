@@ -310,7 +310,7 @@ function Runs({ pipelineId }: { pipelineId: string }) {
         showSearch={false}
         showColumnToggle={false}
         pageSizeOptions={[10, 25, 50]}
-        paginationNoun="runs"
+        paginationNoun={t('scans.ci.noun.runs', 'runs')}
         emptyMessage={t('scans.ci.sheet.noRuns', 'No runs yet')}
       />
       <CIRunSheet id={run} onClose={() => setRun(null)} />

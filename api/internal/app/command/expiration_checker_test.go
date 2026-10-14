@@ -82,7 +82,7 @@ func newScanRunPlatformJob(t *testing.T, runID, stepKey string) *commanddom.Comm
 	if err != nil {
 		t.Fatalf("NewCommand: %v", err)
 	}
-	cmd.SetPlatformJob(0)
+	_ = cmd.SetPlatformJob(0)
 	return cmd
 }
 
@@ -146,7 +146,7 @@ func TestCheckAndExpireQueuedPlatformJobs_NonPipelineJobIsStillExpired(t *testin
 	if err != nil {
 		t.Fatalf("NewCommand: %v", err)
 	}
-	cmd.SetPlatformJob(0)
+	_ = cmd.SetPlatformJob(0)
 
 	repo := &stubCommandRepo{queueExpired: []*commanddom.Command{cmd}}
 	failer := &stubStepFailer{}

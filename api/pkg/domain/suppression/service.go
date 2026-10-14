@@ -138,12 +138,57 @@ type ApproveRuleInput struct {
 	ReviewedUpdatedAt *time.Time
 }
 
-// ApproveResult tells the caller how the approval was granted.
+// MaxFindingsAppliedOnApprove caps the existing findings one approval
+// changes, so a broad rule cannot hold a transaction over a whole tenant's
+// findings. Findings beyond the cap stay open; the CI gate and ingest still
+// honor the rule for them.
+const MaxFindingsAppliedOnApprove = 10000
+
+// ApproveResult tells the caller how the approval was granted and what it did
+// to existing findings.
 type ApproveResult struct {
 	Rule *Rule
 	// SelfApproved: the owner approved their own rule because nobody else
 	// could (B16). Callers audit this at Critical severity.
 	SelfApproved bool
+	// AppliedFindings is the number of open findings the approval gave the
+	// rule's disposition; Capped says more matched than
+	// MaxFindingsAppliedOnApprove.
+	AppliedFindings int
+	Capped          bool
+}
+
+// Preview is what approving a rule would do to existing findings now.
+type Preview struct {
+	// MatchingOpenFindings is the number of the tenant's open findings the
+	// rule matches and an approval would close, at most Limit.
+	MatchingOpenFindings int
+	// Capped: more than Limit match; an approval closes Limit of them.
+	Capped bool
+	Limit  int
+}
+
+// PreviewRule counts the open findings an approval of the rule would close,
+// with the same matcher and status set the approval uses. The count is
+// tenant-wide because the approval is.
+func (s *Service) PreviewRule(ctx context.Context, tenantID, ruleID shared.ID) (*Preview, error) {
+	rule, err := s.repo.FindByID(ctx, tenantID, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	if rule == nil {
+		return nil, ErrRuleNotFound
+	}
+	n, err := s.repo.CountMatchingOpenFindings(ctx, rule, MaxFindingsAppliedOnApprove)
+	if err != nil {
+		return nil, err
+	}
+	p := &Preview{MatchingOpenFindings: n, Limit: MaxFindingsAppliedOnApprove}
+	if n > MaxFindingsAppliedOnApprove {
+		p.MatchingOpenFindings = MaxFindingsAppliedOnApprove
+		p.Capped = true
+	}
+	return p, nil
 }
 
 // ApproveRule approves a pending suppression rule.
@@ -185,16 +230,24 @@ func (s *Service) ApproveRule(ctx context.Context, input ApproveRuleInput) (*App
 		return nil, err
 	}
 
-	var details map[string]any
+	details := map[string]any{}
 	if selfApproved {
-		details = map[string]any{"self_approved": true, "reason": "only eligible approver (owner)"}
+		details["self_approved"] = true
+		details["reason"] = "only eligible approver (owner)"
 	}
-	// Save the rule and its audit entry atomically.
-	if err := s.repo.SaveWithAudit(ctx, rule, "approved", &input.ApprovedBy, details); err != nil {
+	// Save the rule, give the open findings it matches its disposition and
+	// record the audit entry (with the count) in one transaction.
+	applied, err := s.repo.Approve(ctx, rule, *input.ReviewedUpdatedAt, input.ApprovedBy, details, MaxFindingsAppliedOnApprove)
+	if err != nil {
 		return nil, err
 	}
 
-	return &ApproveResult{Rule: rule, SelfApproved: selfApproved}, nil
+	return &ApproveResult{
+		Rule:            rule,
+		SelfApproved:    selfApproved,
+		AppliedFindings: applied.Applied,
+		Capped:          applied.Capped,
+	}, nil
 }
 
 // mayApproveOwnRule: only when the requester is the owner and nobody else in

@@ -2,6 +2,7 @@ package suppression
 
 import (
 	"context"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -19,6 +20,18 @@ type Repository interface {
 	// the suppression gave it) is re-linked to another active rule of the
 	// tenant that matches it, or reopened.
 	Delete(ctx context.Context, tenantID, id shared.ID) error
+
+	// Approve persists the approved rule, records its "approved" audit entry
+	// (details plus the number of findings changed) and gives every open
+	// finding of the tenant the rule matches the rule's disposition, all in
+	// one transaction. At most limit findings change. It refuses with
+	// ErrRuleNotPending or ErrRuleChangedSinceReview when the stored rule is
+	// no longer the pending version the approver reviewed.
+	Approve(ctx context.Context, rule *Rule, reviewedUpdatedAt time.Time, actorID shared.ID, details map[string]any, limit int) (ApplyResult, error)
+	// CountMatchingOpenFindings counts the tenant's open findings that the
+	// rule's criteria match and an approval would change, counting at most
+	// limit+1 so the caller can tell the count was capped.
+	CountMatchingOpenFindings(ctx context.Context, rule *Rule, limit int) (int, error)
 
 	// Query operations
 	FindByTenant(ctx context.Context, tenantID shared.ID, filter RuleFilter) ([]*Rule, error)
@@ -62,4 +75,13 @@ type FindingSuppression struct {
 	SuppressionRuleID shared.ID
 	AppliedAt         string
 	AppliedBy         string
+}
+
+// ApplyResult is what approving a rule did to existing findings.
+type ApplyResult struct {
+	// Applied is the number of findings given the rule's disposition.
+	Applied int
+	// Capped: more findings matched than the per-approval limit; the rest
+	// stay open (the CI gate and ingest still honor the rule).
+	Capped bool
 }
