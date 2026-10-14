@@ -8,12 +8,12 @@ import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { RunMap as RunMapData, RunTask } from '@/lib/api/generated'
 import { useChannel } from '@/hooks/use-websocket'
 import { zeroOutputWarnings, type EgressCountedTask } from '../lib/run-map'
-import { RunPipeline } from './run-pipeline'
+import { RunFlow } from './run-flow'
 import { RunStepPanel } from './run-step-panel'
 
 /**
  * The live run map: the run drawn on the workflow version it executes as
- * one pipeline (RunPipeline), each step with its state, chunks, outputs,
+ * one flow (RunFlow), each step with its state, chunks, outputs,
  * findings and duration, each dependency labelled with what flowed along it
  * (GET /scan-runs/{id}/map). Clicking a step opens its panel: state, error,
  * outputs and its tasks.
@@ -86,7 +86,7 @@ export function RunMap({
         </ul>
       ) : null}
       {data ? (
-        <RunPipeline
+        <RunFlow
           map={data}
           tasks={tasks as EgressCountedTask[] | undefined}
           selected={selected}

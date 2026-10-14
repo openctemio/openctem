@@ -27,23 +27,23 @@ import {
   type EgressCountedTask,
 } from '../lib/run-map'
 import {
-  PIPELINE_CARD_WIDTH,
-  PIPELINE_GAP_X,
-  PIPELINE_GAP_Y,
-  PIPELINE_SIBLING_GAP,
+  FLOW_CARD_WIDTH,
+  FLOW_GAP_X,
+  FLOW_GAP_Y,
+  FLOW_SIBLING_GAP,
   edgeHandOff,
-  pipelineDirection,
-  pipelineLayers,
-  pipelineTone,
+  flowDirection,
+  flowLayers,
+  flowTone,
   skippedReasonText,
   stepDurationLabel,
   stepProgress,
   hasParallelBranches,
-  type PipelineTone,
-} from '../lib/run-pipeline'
+  type FlowTone,
+} from '../lib/run-flow'
 
 const TONE: Record<
-  PipelineTone,
+  FlowTone,
   { card: string; icon: string; badge: string; bar: string; edge: string; Icon: typeof Circle }
 > = {
   pending: {
@@ -132,7 +132,7 @@ function useNow(live: boolean): number {
 }
 
 /**
- * A run's steps as one pipeline: each step a card with its state (colour,
+ * A run's steps as one flow: each step a card with its state (colour,
  * icon, badge), tool, chunk progress, outputs, findings, duration, how it
  * compares with the last run and why it failed or did not run. Steps that
  * run side by side are drawn as a graph (left to right, or top to bottom
@@ -140,7 +140,7 @@ function useNow(live: boolean): number {
  * flowed along it; a chain, and any screen too narrow for the graph, gets
  * the list. Every card is a button that opens the step.
  */
-export function RunPipeline({
+export function RunFlow({
   map,
   tasks,
   selected,
@@ -154,10 +154,10 @@ export function RunPipeline({
   const { t } = useTranslation()
   const nodes = useMemo(() => map.nodes ?? [], [map])
   const byKey = useMemo(() => new Map(nodes.map((n) => [n.step_key ?? '', n])), [nodes])
-  const layers = useMemo(() => pipelineLayers(nodes), [nodes])
+  const layers = useMemo(() => flowLayers(nodes), [nodes])
   const parallel = hasParallelBranches(layers)
   const [boxRef, width] = useWidth<HTMLDivElement>()
-  const direction = pipelineDirection(layers, width)
+  const direction = flowDirection(layers, width)
   const [choice, setChoice] = useState<'graph' | 'list'>('graph')
   const view = direction && choice === 'graph' ? 'graph' : 'list'
   const now = useNow(nodes.some((n) => n.state === 'running'))
@@ -176,10 +176,10 @@ export function RunPipeline({
   )
 
   return (
-    <div ref={boxRef} className="space-y-2" role="region" aria-label={t('scans.pipeline.label')}>
+    <div ref={boxRef} className="space-y-2" role="region" aria-label={t('scans.flow.label')}>
       {parallel && direction ? (
         <div className="flex justify-end">
-          <div role="group" aria-label={t('scans.pipeline.view')} className="flex">
+          <div role="group" aria-label={t('scans.flow.view')} className="flex">
             <Button
               type="button"
               size="sm"
@@ -189,7 +189,7 @@ export function RunPipeline({
               onClick={() => setChoice('graph')}
             >
               <GitBranch className="me-1 h-3.5 w-3.5" />
-              {t('scans.pipeline.viewGraph')}
+              {t('scans.flow.viewGraph')}
             </Button>
             <Button
               type="button"
@@ -200,26 +200,26 @@ export function RunPipeline({
               onClick={() => setChoice('list')}
             >
               <ListOrdered className="me-1 h-3.5 w-3.5" />
-              {t('scans.pipeline.viewList')}
+              {t('scans.flow.viewList')}
             </Button>
           </div>
         </div>
       ) : null}
       {view === 'graph' && direction ? (
-        <PipelineGraph map={map} layers={layers} byKey={byKey} direction={direction}>
+        <FlowGraph map={map} layers={layers} byKey={byKey} direction={direction}>
           {(n) => card(n, true)}
-        </PipelineGraph>
+        </FlowGraph>
       ) : (
-        <PipelineList map={map} layers={layers} byKey={byKey}>
+        <FlowList map={map} layers={layers} byKey={byKey}>
           {(n) => card(n, false)}
-        </PipelineList>
+        </FlowList>
       )}
     </div>
   )
 }
 
 /** The steps in dependency order, one per row, each joined to the one before. */
-function PipelineList({
+function FlowList({
   map,
   layers,
   byKey,
@@ -243,9 +243,9 @@ function PipelineList({
         let link: string | null = null
         if (deps.length === 1 && deps[0] === order[i - 1]) {
           const what = edgeHandOff(map, deps[0], key, t)
-          link = what ? t('scans.pipeline.handOff', undefined, { what, step: name }) : ''
+          link = what ? t('scans.flow.handOff', undefined, { what, step: name }) : ''
         } else if (deps.length > 0) {
-          link = t('scans.pipeline.waitsFor', undefined, { steps: deps.map(nameOf).join(', ') })
+          link = t('scans.flow.waitsFor', undefined, { steps: deps.map(nameOf).join(', ') })
         }
         return (
           <li key={key}>
@@ -267,7 +267,7 @@ type EdgePath = {
   id: string
   from: string
   d: string
-  tone: PipelineTone
+  tone: FlowTone
   label?: string
   lx: number
   ly: number
@@ -278,7 +278,7 @@ type EdgePath = {
  * overlap or clip, and the dependencies drawn over it as arrows measured
  * from the cards themselves.
  */
-function PipelineGraph({
+function FlowGraph({
   map,
   layers,
   byKey,
@@ -331,7 +331,7 @@ function PipelineGraph({
             id: `${from}->${to}`,
             from,
             d,
-            tone: pipelineTone(byKey.get(from)?.state),
+            tone: flowTone(byKey.get(from)?.state),
             label: edgeHandOff(map, from, to, t) ?? undefined,
             lx: (x1 + x2) / 2,
             ly: (y1 + y2) / 2,
@@ -349,8 +349,8 @@ function PipelineGraph({
         group.forEach((p, i) => {
           if (i > 0) p.label = undefined
         })
-        group[0].lx = lr ? a.x + a.w + PIPELINE_GAP_X / 2 : a.x + a.w / 2
-        group[0].ly = lr ? a.y + a.h / 2 : a.y + a.h + PIPELINE_GAP_Y / 3
+        group[0].lx = lr ? a.x + a.w + FLOW_GAP_X / 2 : a.x + a.w / 2
+        group[0].ly = lr ? a.y + a.h / 2 : a.y + a.h + FLOW_GAP_Y / 3
       }
       // Only a real change re-renders (a resize, a step that changed).
       const next = JSON.stringify(out)
@@ -379,10 +379,10 @@ function PipelineGraph({
           height={size.h}
         >
           <defs>
-            {(Object.keys(TONE) as PipelineTone[]).map((tone) => (
+            {(Object.keys(TONE) as FlowTone[]).map((tone) => (
               <marker
                 key={tone}
-                id={`run-pipeline-arrow-${tone}`}
+                id={`run-flow-arrow-${tone}`}
                 viewBox="0 0 10 10"
                 refX="9"
                 refY="5"
@@ -403,7 +403,7 @@ function PipelineGraph({
               stroke="currentColor"
               strokeWidth={1.5}
               strokeDasharray={p.tone === 'pending' || p.tone === 'skipped' ? '4 4' : undefined}
-              markerEnd={`url(#run-pipeline-arrow-${p.tone})`}
+              markerEnd={`url(#run-flow-arrow-${p.tone})`}
               className={TONE[p.tone].edge}
             />
           ))}
@@ -422,7 +422,7 @@ function PipelineGraph({
           ))}
         <ol
           className={cn('relative flex', lr ? 'flex-row items-center' : 'flex-col items-center')}
-          style={{ gap: lr ? PIPELINE_GAP_X : PIPELINE_GAP_Y }}
+          style={{ gap: lr ? FLOW_GAP_X : FLOW_GAP_Y }}
         >
           {layers.map((layer, i) => (
             <li key={i}>
@@ -431,7 +431,7 @@ function PipelineGraph({
                   'flex',
                   lr ? 'flex-col justify-center' : 'flex-row items-start justify-center'
                 )}
-                style={{ gap: PIPELINE_SIBLING_GAP }}
+                style={{ gap: FLOW_SIBLING_GAP }}
               >
                 {layer.map((k) => {
                   const n = byKey.get(k)
@@ -471,7 +471,7 @@ function StepCard({
   const blocked = egressRefusedText(node, egress, t)
   // A finished step whose targets the sensor's egress refused is not a
   // clean "done": it is drawn as a warning (its state label stays).
-  const tone = blocked && pipelineTone(node.state) === 'done' ? 'partial' : pipelineTone(node.state)
+  const tone = blocked && flowTone(node.state) === 'done' ? 'partial' : flowTone(node.state)
   const style = blocked ? { ...TONE[tone], Icon: ShieldAlert } : TONE[tone]
   const name = node.name || node.step_key || ''
   const state = mapStateLabel(node.state ?? 'pending', t)
@@ -498,7 +498,7 @@ function StepCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      aria-label={t('scans.pipeline.open', undefined, { name, state })}
+      aria-label={t('scans.flow.open', undefined, { name, state })}
       className={cn(
         'block rounded-md border border-l-4 bg-card p-2.5 text-start text-xs shadow-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         style.card,
@@ -506,7 +506,7 @@ function StepCard({
         fixedWidth ? 'w-[var(--card-w)]' : 'w-full'
       )}
       style={
-        fixedWidth ? ({ '--card-w': `${PIPELINE_CARD_WIDTH}px` } as React.CSSProperties) : undefined
+        fixedWidth ? ({ '--card-w': `${FLOW_CARD_WIDTH}px` } as React.CSSProperties) : undefined
       }
     >
       <span className="flex items-start gap-2">
@@ -523,8 +523,8 @@ function StepCard({
         {duration ? (
           <span className="whitespace-nowrap tabular-nums">
             {node.completed_at
-              ? t('scans.pipeline.took', undefined, { duration })
-              : t('scans.pipeline.runningFor', undefined, { duration })}
+              ? t('scans.flow.took', undefined, { duration })
+              : t('scans.flow.runningFor', undefined, { duration })}
           </span>
         ) : null}
       </span>
@@ -535,7 +535,7 @@ function StepCard({
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={progress}
-            aria-valuetext={t('scans.pipeline.progress', undefined, { percent: progress })}
+            aria-valuetext={t('scans.flow.progress', undefined, { percent: progress })}
             className="block h-1.5 overflow-hidden rounded-full bg-muted"
           >
             <span className={cn('block h-full', style.bar)} style={{ width: `${progress}%` }} />

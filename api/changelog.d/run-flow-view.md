@@ -1,6 +1,6 @@
-### Changed: one pipeline view for a scan run
+### Changed: one flow view for a scan run
 
-- The run drawer draws the run's steps as one pipeline. Each step is a card
+- The run drawer draws the run's steps as one flow. Each step is a card
   with its state (colour, icon and label), tool, chunk progress bar, outputs,
   findings, duration and the comparison with the last run; text wraps instead
   of being cut. Steps that run side by side are drawn as a laid-out graph
