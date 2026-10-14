@@ -326,12 +326,16 @@ type FindingMatch struct {
 	AssetID  shared.ID
 }
 
-// Matches checks if this suppression rule matches the given finding.
+// Matches checks if this suppression rule is active and matches the given
+// finding.
 func (r *Rule) Matches(f FindingMatch) bool {
-	if !r.IsActive() {
-		return false
-	}
+	return r.IsActive() && r.MatchesCriteria(f)
+}
 
+// MatchesCriteria checks the rule's criteria (tool, rule id, asset, path)
+// against the finding, whatever the rule's status. Matches adds the active
+// check; the approval preview uses this on a rule that is still pending.
+func (r *Rule) MatchesCriteria(f FindingMatch) bool {
 	// Check tool name
 	if r.toolName != "" && !strings.EqualFold(r.toolName, f.ToolName) {
 		return false

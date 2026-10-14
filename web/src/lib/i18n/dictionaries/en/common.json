@@ -84,5 +84,7 @@
   "common.cvss.value.S.C": "Changed",
   "common.cvss.value.CIA.H": "High",
   "common.cvss.value.CIA.L": "Low",
-  "common.cvss.value.CIA.N": "None"
+  "common.cvss.value.CIA.N": "None",
+  "common.failedToLoad": "Failed to load {title}",
+  "common.unexpectedError": "An unexpected error occurred"
 }

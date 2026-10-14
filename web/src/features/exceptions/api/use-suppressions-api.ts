@@ -15,6 +15,8 @@ import { get, post, put, del } from '@/lib/api/client'
 import { handleApiError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import type {
+  ApproveSuppressionResponse,
+  SuppressionPreview,
   SuppressionRule,
   SuppressionListResponse,
   SuppressionStatus,
@@ -120,7 +122,22 @@ export function useApproveSuppression(id: string) {
   return useSWRMutation(
     currentTenant && id ? `${SUPPRESSIONS_URL}/${id}/approve` : null,
     (url: string, { arg }: { arg: { reviewed_updated_at: string } }) =>
-      post<SuppressionRule>(url, arg)
+      post<ApproveSuppressionResponse>(url, arg)
+  )
+}
+
+/**
+ * How many open findings approving the rule would close now.
+ * `GET /api/v1/suppressions/{id}/preview` (needs the approve permission).
+ * Pass an id only while the approve dialog is open: the count is computed on
+ * each request. Errors are shown in the dialog, not as a toast.
+ */
+export function useSuppressionPreview(id: string | undefined) {
+  const { currentTenant } = useTenant()
+  return useSWR<SuppressionPreview>(
+    currentTenant && id ? `${SUPPRESSIONS_URL}/${id}/preview` : null,
+    get,
+    { ...defaultConfig, onError: undefined, errorRetryCount: 1, dedupingInterval: 0 }
   )
 }
 
