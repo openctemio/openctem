@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { post } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
+import type { TranslateVars } from '@/lib/i18n'
 import { safeHref } from '@/lib/safe-href'
 import { Permission, type PermissionString } from '@/lib/permissions'
 import { ASSET_PROPERTIES } from '@/features/asset-types/registry.generated'
@@ -62,90 +63,115 @@ function canSync(asset: Asset): boolean {
   return !!asset.repository?.fullName && asset.provider !== 'local'
 }
 
-async function scanRepository(asset: Asset) {
+/** The web console's translator (useTranslation().t). */
+export type Translate = (key: string, fallback?: string, vars?: TranslateVars) => string
+
+async function scanRepository(asset: Asset, t: Translate) {
   try {
     await post(`/api/v1/assets/${encodeURIComponent(asset.id)}/scan`, {})
-    toast.success(`Scan started for ${asset.name}`)
+    toast.success(t('assets.actions.scanStarted', 'Scan started for {name}', { name: asset.name }))
   } catch (err) {
-    toast.error(getErrorMessage(err, 'Failed to start the scan'))
+    toast.error(getErrorMessage(err, t('assets.actions.scanFailed', 'Failed to start the scan')))
   }
 }
 
-async function syncRepository(asset: Asset) {
+async function syncRepository(asset: Asset, t: Translate) {
   if (!canSync(asset)) {
-    toast.warning(`${asset.name} was added by hand: connect a source-code integration to sync it`)
+    toast.warning(
+      t(
+        'assets.actions.syncManual',
+        '{name} was added by hand: connect a source-code integration to sync it',
+        { name: asset.name }
+      )
+    )
     return
   }
   try {
     await post(`/api/v1/assets/${encodeURIComponent(asset.id)}/sync`, {})
-    toast.success(`${asset.name} synced`)
+    toast.success(t('assets.actions.synced', '{name} synced', { name: asset.name }))
   } catch (err) {
-    toast.error(getErrorMessage(err, 'Failed to sync'))
+    toast.error(getErrorMessage(err, t('assets.actions.syncFailed', 'Failed to sync')))
   }
 }
 
 /** Actions only one type supports, keyed by stored type. */
-const TYPE_ACTIONS: Record<string, AssetAction[]> = {
-  repository: [
+function typeActions(type: string, t: Translate): AssetAction[] {
+  if (type !== 'repository') return []
+  return [
     {
       id: 'scan',
-      label: 'Scan',
+      label: t('assets.actions.scan', 'Scan'),
       icon: Play,
       permissions: [Permission.AssetsWrite, Permission.ScansExecute],
-      run: scanRepository,
+      run: (a) => scanRepository(a, t),
     },
     {
       id: 'sync',
-      label: 'Sync from source',
+      label: t('assets.actions.sync', 'Sync from source'),
       icon: RefreshCw,
       permissions: [Permission.AssetsWrite],
-      run: syncRepository,
+      run: (a) => syncRepository(a, t),
     },
-  ],
+  ]
 }
 
 /** The bulk form of the type actions. */
-const TYPE_BULK_ACTIONS: BulkAssetAction[] = [
-  {
-    id: 'scan',
-    label: 'Scan',
-    icon: Play,
-    permissions: [Permission.AssetsWrite, Permission.ScansExecute],
-    applies: (a) => a.type === 'repository',
-    run: async (assets) => {
-      const results = await Promise.allSettled(
-        assets.map((a) => post(`/api/v1/assets/${encodeURIComponent(a.id)}/scan`, {}))
-      )
-      const failed = results.filter((r) => r.status === 'rejected').length
-      if (failed > 0) toast.warning(`Started ${assets.length - failed} scans, ${failed} failed`)
-      else toast.success(`Started ${assets.length} scans`)
+function typeBulkActions(t: Translate): BulkAssetAction[] {
+  return [
+    {
+      id: 'scan',
+      label: t('assets.actions.scan', 'Scan'),
+      icon: Play,
+      permissions: [Permission.AssetsWrite, Permission.ScansExecute],
+      applies: (a) => a.type === 'repository',
+      run: async (assets) => {
+        const results = await Promise.allSettled(
+          assets.map((a) => post(`/api/v1/assets/${encodeURIComponent(a.id)}/scan`, {}))
+        )
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0)
+          toast.warning(
+            t('assets.actions.bulkScanPartial', 'Started {ok} scans, {failed} failed', {
+              ok: assets.length - failed,
+              failed,
+            })
+          )
+        else
+          toast.success(t('assets.actions.bulkScanDone', 'Started {n} scans', { n: assets.length }))
+      },
     },
-  },
-  {
-    id: 'sync',
-    label: 'Sync from source',
-    icon: RefreshCw,
-    permissions: [Permission.AssetsWrite],
-    applies: (a) => a.type === 'repository' && canSync(a),
-    run: async (assets) => {
-      const results = await Promise.allSettled(
-        assets.map((a) => post(`/api/v1/assets/${encodeURIComponent(a.id)}/sync`, {}))
-      )
-      const failed = results.filter((r) => r.status === 'rejected').length
-      if (failed > 0) toast.warning(`Synced ${assets.length - failed}, ${failed} failed`)
-      else toast.success(`Synced ${assets.length}`)
+    {
+      id: 'sync',
+      label: t('assets.actions.sync', 'Sync from source'),
+      icon: RefreshCw,
+      permissions: [Permission.AssetsWrite],
+      applies: (a) => a.type === 'repository' && canSync(a),
+      run: async (assets) => {
+        const results = await Promise.allSettled(
+          assets.map((a) => post(`/api/v1/assets/${encodeURIComponent(a.id)}/sync`, {}))
+        )
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0)
+          toast.warning(
+            t('assets.actions.bulkSyncPartial', 'Synced {ok}, {failed} failed', {
+              ok: assets.length - failed,
+              failed,
+            })
+          )
+        else toast.success(t('assets.actions.bulkSyncDone', 'Synced {n}', { n: assets.length }))
+      },
     },
-  },
-]
+  ]
+}
 
 /** The row menu's actions for an asset (before Edit and Delete). */
-export function rowActionsFor(asset: Asset, view: TypeView | null): AssetAction[] {
+export function rowActionsFor(asset: Asset, view: TypeView | null, t: Translate): AssetAction[] {
   const out: AssetAction[] = []
   const link = assetLink(asset, view)
   if (link) {
     out.push({
       id: 'open',
-      label: 'Open link',
+      label: t('assets.actions.openLink', 'Open link'),
       icon: ExternalLink,
       permissions: [],
       run: () => {
@@ -157,27 +183,31 @@ export function rowActionsFor(asset: Asset, view: TypeView | null): AssetAction[
   if (ips.length > 0) {
     out.push({
       id: 'copy-ips',
-      label: ips.length === 1 ? 'Copy IP' : 'Copy IPs',
+      label:
+        ips.length === 1
+          ? t('assets.actions.copyIp', 'Copy IP')
+          : t('assets.actions.copyIps', 'Copy IPs'),
       icon: Copy,
       permissions: [],
       run: async () => {
-        if (await copyToClipboard(ips.join(', '))) toast.success('Copied')
+        if (await copyToClipboard(ips.join(', ')))
+          toast.success(t('assets.actions.copied', 'Copied'))
       },
     })
   }
   out.push({
     id: 'copy-name',
-    label: 'Copy name',
+    label: t('assets.actions.copyName', 'Copy name'),
     icon: Copy,
     permissions: [],
     run: async () => {
-      if (await copyToClipboard(asset.name)) toast.success('Copied')
+      if (await copyToClipboard(asset.name)) toast.success(t('assets.actions.copied', 'Copied'))
     },
   })
-  return [...out, ...(TYPE_ACTIONS[asset.type] ?? [])]
+  return [...out, ...typeActions(asset.type, t)]
 }
 
 /** The bulk actions that apply to at least one selected asset. */
-export function bulkActionsFor(selected: Asset[]): BulkAssetAction[] {
-  return TYPE_BULK_ACTIONS.filter((a) => selected.some(a.applies))
+export function bulkActionsFor(selected: Asset[], t: Translate): BulkAssetAction[] {
+  return typeBulkActions(t).filter((a) => selected.some(a.applies))
 }
