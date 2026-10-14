@@ -8,6 +8,7 @@ const mockSave = vi.fn()
 let runs: unknown[] = []
 let refusals: unknown[] = []
 let apps: unknown = { data: [{ provider: 'github', account_login: 'acme' }] }
+let trusts: unknown[] = []
 type RunsCall = [{ provider?: string }, { enabled?: boolean; refreshInterval?: number }]
 const runsCalls: RunsCall[] = []
 
@@ -15,6 +16,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/use-ci')>()),
   useSaveTrustConfig: () => ({ trigger: mockSave, isMutating: false }),
   useSCMApps: () => ({ data: apps }),
+  useTrustConfigs: () => ({ data: { data: trusts } }),
   useCIRuns: (f: RunsCall[0], o: RunsCall[1]) => {
     runsCalls.push([f, o])
     return { data: { data: runs } }
@@ -64,6 +66,7 @@ describe('Connect a pipeline', () => {
     refusals = []
     runsCalls.length = 0
     apps = { data: [{ provider: 'github', account_login: 'acme' }] }
+    trusts = []
     mockSave.mockResolvedValue({
       id: 'trust-1',
       provider: 'github',
@@ -175,5 +178,67 @@ describe('Recent refused pipelines', () => {
     refusals = [{ repository: 'x', reasons: ['replay'] }]
     const { container } = render(<CITrustRefusals canWrite={false} />)
     expect(container).toBeEmptyDOMElement()
+  })
+})
+
+describe('Connect a pipeline, organization already trusted', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    runs = []
+    refusals = []
+    apps = { data: [{ provider: 'github', account_login: 'acme' }] }
+    trusts = [
+      {
+        id: 'trust-old',
+        name: 'GitHub acme',
+        provider: 'github',
+        issuer: 'https://token.actions.githubusercontent.com',
+        audience: 'openctem:tenant:t-123',
+        default_branch: 'develop',
+        enabled: true,
+        rules: { owners: ['acme'] },
+      },
+    ]
+  })
+
+  it('reuses the trust that admits the organization instead of creating a duplicate', async () => {
+    render(<CISetupEntry canWrite />)
+    await userEvent.click(screen.getByRole('button', { name: /connect a pipeline/i }))
+    const dialog = screen.getByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: /next/i }))
+    await userEvent.type(within(dialog).getByLabelText(/organizations or owners/i), 'ACME')
+    await userEvent.click(within(dialog).getByRole('button', { name: /create trust/i }))
+    expect(mockSave).not.toHaveBeenCalled()
+    expect(await within(dialog).findByTestId('ci-setup-reused')).toHaveTextContent('GitHub acme')
+    // The snippet follows the reused configuration's default branch.
+    expect(within(dialog).getByTestId('ci-setup-snippet')).toHaveTextContent('branches: [develop]')
+    // A run of the reused configuration from before does not count as the first run.
+    runs = [{ id: 'old', trust_config_id: 'trust-old', created_at: '2020-01-01T00:00:00Z' }]
+    await userEvent.click(within(dialog).getByRole('button', { name: /wait for the first run/i }))
+    expect(within(dialog).getByText(/waiting for the first run/i)).toBeInTheDocument()
+  })
+
+  it('creates a trust with the default branch given', async () => {
+    trusts = []
+    mockSave.mockResolvedValue({
+      id: 'trust-2',
+      provider: 'github',
+      audience: 'openctem:tenant:t-123',
+      default_branch: 'trunk',
+    })
+    render(<CISetupEntry canWrite />)
+    await userEvent.click(screen.getByRole('button', { name: /connect a pipeline/i }))
+    const dialog = screen.getByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: /next/i }))
+    await userEvent.type(within(dialog).getByLabelText(/organizations or owners/i), 'acme')
+    const branch = within(dialog).getByLabelText(/default branch/i)
+    await userEvent.clear(branch)
+    await userEvent.type(branch, 'trunk')
+    await userEvent.click(within(dialog).getByRole('button', { name: /create trust/i }))
+    await waitFor(() => expect(mockSave).toHaveBeenCalled())
+    expect(mockSave.mock.calls[0][0].body.default_branch).toBe('trunk')
+    expect(await within(dialog).findByTestId('ci-setup-snippet')).toHaveTextContent(
+      'branches: [trunk]'
+    )
   })
 })
