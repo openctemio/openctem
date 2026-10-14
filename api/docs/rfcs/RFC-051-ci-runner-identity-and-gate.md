@@ -86,6 +86,11 @@ job wins. A configuration is only ever read for the tenant the exchange names,
 by its exact issuer: two tenants may trust the same CI organization, each
 with its own configuration, and nothing matches across them.
 
+Creating or changing a trust configuration, and changing the CI settings
+(`require_oidc`, which can let CI sensor keys back in), need **step-up**, like
+a break-glass: they decide who may send results that the gate judges.
+Deleting a configuration only withdraws trust and needs no step-up.
+
 ### 3.1 Providers
 
 Decisions (2026-10-07): **P-1** every issuer names one CI organization,
