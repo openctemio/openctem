@@ -62,6 +62,7 @@ import (
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -555,6 +556,7 @@ type Services struct {
 
 	// Assets
 	Asset                  *asset.AssetService
+	AssetCoverage          *coverageapp.Service
 	AssetGroup             *asset.AssetGroupService
 	AssetType              *asset.AssetTypeService
 	AssetRelationship      *asset.AssetRelationshipService
@@ -977,6 +979,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetFreshness(repos.AssetFreshness)
+	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
 	// A precedence change re-resolves the organization's assets (RFC-069).
