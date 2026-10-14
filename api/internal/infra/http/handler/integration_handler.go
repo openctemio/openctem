@@ -1915,7 +1915,7 @@ func integrationAuditView(v any) any {
 	return m
 }
 
-// ResumeCoverageRotation handles POST /api/v1/integrations/{id}/coverage/resume
+// ResumeCoverageRotation handles POST /api/v1/integrations/{id}/coverage/reactivate
 // @Summary      Resume a stalled license rotation
 // @Description  A Tenable.sc connector whose recycle rotation stalled (a batch failed after it launched, so its results may not be ingested) resumes: the next batch recycles the rotation repository. Audited.
 // @Tags         Integrations
@@ -1925,7 +1925,7 @@ func integrationAuditView(v any) any {
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /integrations/{id}/coverage/resume [post]
+// @Router       /integrations/{id}/coverage/reactivate [post]
 func (h *IntegrationHandler) ResumeCoverageRotation(w http.ResponseWriter, r *http.Request) {
 	if h.connector == nil {
 		apierror.NotFound("Integration").WriteJSON(w)

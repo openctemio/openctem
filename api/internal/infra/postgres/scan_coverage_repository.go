@@ -307,8 +307,19 @@ var (
 // counted); failed → failed with the batch's error. Targets are the batch
 // command's own (asset names); only this tenant's connector rows change.
 func (r *ScanCoverageRepository) SettleConnectorBatch(ctx context.Context, tenantID shared.ID, b scancoverage.BatchSettlement) error {
-	targets := make([]string, 0, len(b.Done)+len(b.Unreachable)+len(b.Unfinished)+len(b.Failed))
-	kinds := make([]string, 0, cap(targets))
+	// A batch is one command's targets (at most MaxUnfinishedTargets);
+	// anything larger is refused rather than allocated.
+	for _, list := range [][]string{b.Done, b.Unreachable, b.Unfinished, b.Failed} {
+		if len(list) > MaxUnfinishedTargets {
+			return fmt.Errorf("%w: a coverage batch settles at most %d targets", shared.ErrValidation, MaxUnfinishedTargets)
+		}
+	}
+	size := len(b.Done) + len(b.Unreachable) + len(b.Unfinished) + len(b.Failed)
+	if size > MaxUnfinishedTargets {
+		return fmt.Errorf("%w: a coverage batch settles at most %d targets", shared.ErrValidation, MaxUnfinishedTargets)
+	}
+	targets := make([]string, 0, size)
+	kinds := make([]string, 0, size)
 	add := func(list []string, kind string) {
 		for _, t := range list {
 			targets = append(targets, t)
