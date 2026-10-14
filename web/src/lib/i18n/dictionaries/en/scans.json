@@ -676,6 +676,8 @@
   "scans.map.noOutputSteps": "Steps without output",
   "scans.map.egressRefused": "{name} could not reach {count} targets (blocked by the sensor's network confinement).",
   "scans.map.egressRefusedOne": "{name} could not reach 1 target (blocked by the sensor's network confinement).",
+  "scans.map.guardRefused": "{name}: {count} targets refused by the sensor's target guard (not run).",
+  "scans.map.guardRefusedOne": "{name}: 1 target refused by the sensor's target guard (not run).",
   "scans.flow.label": "Run flow",
   "scans.flow.view": "View",
   "scans.flow.viewGraph": "Graph",
