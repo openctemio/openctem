@@ -12,10 +12,10 @@ import (
 var _ command.FollowUpCompleter = (*CommandRepository)(nil)
 
 // insertFollowUpSQL inserts a follow-up of the parent command $2 (same
-// tenant, $3): its placement is the parent's (step, zone, schedule, host
-// keys, dispatch gate, window policies, the sensors that refused it and its
-// place in the fair queue); id, payload, attempts and expiry are the
-// follow-up's own. It is pending and held by no sensor, like a re-queued
+// tenant, $3): its placement is the parent's (step, zone, schedule, dispatch
+// gate, window policies, the sensors that refused it and its place in the
+// fair queue); id, payload, attempts, expiry and host keys ($7: those of its
+// remaining targets; NULL keeps the parent's) are the follow-up's own. It is pending and held by no sensor, like a re-queued
 // command.
 const insertFollowUpSQL = `
 	INSERT INTO commands (
@@ -27,7 +27,7 @@ const insertFollowUpSQL = `
 	SELECT $1, p.tenant_id, p.type, p.priority, $4, 'pending', NOW(), LEAST($6::timestamptz, p.expires_at),
 	       p.scheduled_at, p.schedule_id, p.scan_run_step_id, FALSE,
 	       p.queue_priority, COALESCE(p.queued_at, p.created_at), $5, p.scan_zone_id,
-	       p.host_keys, p.dispatch_gate, p.window_policy_ids, p.refused_by, p.refusals, p.id
+	       COALESCE($7::text[], p.host_keys), p.dispatch_gate, p.window_policy_ids, p.refused_by, p.refusals, p.id
 	FROM commands p
 	WHERE p.id = $2 AND p.tenant_id = $3 AND p.is_platform_job = FALSE`
 
@@ -59,7 +59,7 @@ func (r *CommandRepository) CompleteWithFollowUp(ctx context.Context, cmd *comma
 		return false, err
 	}
 	res, err = tx.ExecContext(ctx, insertFollowUpSQL, followUp.ID.String(), cmd.ID.String(), cmd.TenantID.String(),
-		followUp.Payload, followUp.DispatchAttempts, nullTime(followUp.ExpiresAt))
+		followUp.Payload, followUp.DispatchAttempts, nullTime(followUp.ExpiresAt), hostKeysArg(followUp.HostKeys))
 	if err != nil {
 		return false, fmt.Errorf("failed to create follow-up command: %w", err)
 	}

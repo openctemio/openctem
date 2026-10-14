@@ -141,11 +141,12 @@ type Command struct {
 	// the reaper unpins it. Never sent on the protocol-v1 wire.
 	ScanZoneID *shared.ID
 
-	// HostKeys are the hosts an active workflow chunk sends traffic to.
-	// While the command is acknowledged or running, no other command of
-	// the tenant with one of these keys is claimed (platform-side per-host
-	// politeness, research/49 §3.12.3). Nil: no per-host limit. Written on
-	// create only; never sent to a sensor.
+	// HostKeys are the hosts the command sends traffic to (AssignHostKeys
+	// sets them on create, for every command). While the command is
+	// acknowledged or running, no other command of the tenant with one of
+	// these keys is claimed (platform-side per-host politeness, research/49
+	// §3.12.3). Nil: no per-host limit. Written on create only; the sensor
+	// gets them as the payload's "host_keys".
 	HostKeys []string
 
 	// DispatchGate is what the dispatch gate checked the targets with; the
