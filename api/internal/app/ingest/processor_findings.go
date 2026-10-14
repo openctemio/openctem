@@ -776,6 +776,18 @@ func (p *FindingProcessor) processBatch(
 	}
 	p.storeScannerEvidence(ctx, tenantID, evidence)
 
+	// Step 7a: data flows (taint traces), matched by fingerprint like step 7,
+	// so a new finding gets its trace and a re-sighted one has its trace
+	// replaced when the report's trace differs from the stored one. A report
+	// without a trace leaves the stored one alone. Best-effort.
+	traces := make([]vulnerability.FindingTrace, 0)
+	for i := range validFindings {
+		if t, ok := findingTrace(validFindings[i].fingerprint, traceCommit(report, &validFindings[i].finding), validFindings[i].finding.DataFlow); ok {
+			traces = append(traces, t)
+		}
+	}
+	p.persistDataFlows(ctx, tenantID, traces)
+
 	// Step 7b: source interoperability data (CTIS 1.4: native identity,
 	// scores, vulnerability ids, source lifecycle, solution, VEX, source
 	// extras, location key), matched by fingerprint like step 7, then the
@@ -1678,8 +1690,9 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 
 	// Data flow (taint tracking)
 	if ctisFinding.DataFlow != nil {
-		domainFlow := mapCTISDataFlowToDomain(ctisFinding.DataFlow)
-		f.SetDataFlows([]vulnerability.DataFlow{domainFlow})
+		if domainFlow := mapCTISDataFlowToDomain(ctisFinding.DataFlow); len(domainFlow.Steps) > 0 {
+			f.SetDataFlows([]vulnerability.DataFlow{domainFlow})
+		}
 	}
 }
 
@@ -1964,46 +1977,67 @@ func (p *FindingProcessor) maybeSetDefaultBranch(ctx context.Context, repository
 	}
 }
 
-// mapCTISDataFlowToDomain converts a CTIS DataFlow to a domain DataFlow value object.
-// CTIS format: sources/intermediates/sinks arrays with DataFlowLocation
-// Domain format: single Steps array with DataFlowStep (each step has LocationType)
-func mapCTISDataFlowToDomain(df *ctis.DataFlow) vulnerability.DataFlow {
+// mapCTISDataFlowToDomain converts a CTIS data flow (sources,
+// intermediates, sanitizers and sinks, each step with its index) to the
+// domain's single list of steps, in step order: a sanitizer between two
+// propagation steps stays where the producer put it.
+//
+// The trace is normalized again on receipt (ctis.NormalizeDataFlow, on a
+// copy): a report from any producer, an older one included, gets the same
+// bounds, repository-relative paths and masked credentials in snippets.
+func mapCTISDataFlowToDomain(in *ctis.DataFlow) vulnerability.DataFlow {
+	if in == nil {
+		return vulnerability.DataFlow{}
+	}
+	cp := *in
+	cp.Sources = append([]ctis.DataFlowLocation(nil), in.Sources...)
+	cp.Intermediates = append([]ctis.DataFlowLocation(nil), in.Intermediates...)
+	cp.Sanitizers = append([]ctis.DataFlowLocation(nil), in.Sanitizers...)
+	cp.Sinks = append([]ctis.DataFlowLocation(nil), in.Sinks...)
+	cp.CallPath = append([]string(nil), in.CallPath...)
+	df := ctis.NormalizeDataFlow(&cp)
 	if df == nil {
 		return vulnerability.DataFlow{}
 	}
-
-	// Pre-allocate steps slice with known capacity
-	totalSteps := len(df.Sources) + len(df.Intermediates) + len(df.Sinks)
-	steps := make([]vulnerability.DataFlowStep, 0, totalSteps)
-	stepIndex := 0
-
-	// Add sources
-	for _, loc := range df.Sources {
-		steps = append(steps, mapCTISDataFlowLocationToStep(loc, vulnerability.LocationTypeSource, stepIndex))
-		stepIndex++
+	type located struct {
+		loc ctis.DataFlowLocation
+		typ string
 	}
-
-	// Add intermediates
-	for _, loc := range df.Intermediates {
-		steps = append(steps, mapCTISDataFlowLocationToStep(loc, vulnerability.LocationTypeIntermediate, stepIndex))
-		stepIndex++
+	all := make([]located, 0, len(df.Sources)+len(df.Intermediates)+len(df.Sanitizers)+len(df.Sinks))
+	for _, l := range df.Sources {
+		all = append(all, located{l, vulnerability.LocationTypeSource})
 	}
-
-	// Add sinks
-	for _, loc := range df.Sinks {
-		steps = append(steps, mapCTISDataFlowLocationToStep(loc, vulnerability.LocationTypeSink, stepIndex))
-		stepIndex++
+	for _, l := range df.Intermediates {
+		all = append(all, located{l, vulnerability.LocationTypeIntermediate})
 	}
+	for _, l := range df.Sanitizers {
+		all = append(all, located{l, vulnerability.LocationTypeSanitizer})
+	}
+	for _, l := range df.Sinks {
+		all = append(all, located{l, vulnerability.LocationTypeSink})
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].loc.Index < all[j].loc.Index })
 
+	steps := make([]vulnerability.DataFlowStep, 0, len(all))
+	for i, a := range all {
+		steps = append(steps, mapCTISDataFlowLocationToStep(a.loc, a.typ, i))
+	}
 	return vulnerability.DataFlow{
-		Index:      0,
-		Importance: "essential",
-		Steps:      steps,
+		Index:             0,
+		Message:           df.Summary,
+		Importance:        "essential",
+		Steps:             steps,
+		Tainted:           df.Tainted,
+		TaintType:         df.TaintType,
+		VulnerabilityType: df.VulnerabilityType,
+		Confidence:        df.Confidence,
+		Interprocedural:   df.Interprocedural,
+		CrossFile:         df.CrossFile,
+		CallPath:          df.CallPath,
 	}
 }
 
 // mapCTISDataFlowLocationToStep converts a CTIS DataFlowLocation to a domain DataFlowStep.
-// Note: Uses only fields available in the SDK (Path, Line, Column, Content, Label, Index).
 func mapCTISDataFlowLocationToStep(loc ctis.DataFlowLocation, locationType string, stepIndex int) vulnerability.DataFlowStep {
 	return vulnerability.DataFlowStep{
 		Index:        stepIndex,
@@ -2011,20 +2045,25 @@ func mapCTISDataFlowLocationToStep(loc ctis.DataFlowLocation, locationType strin
 		Location: &vulnerability.FindingLocation{
 			Path:        loc.Path,
 			StartLine:   loc.Line,
+			EndLine:     loc.EndLine,
 			StartColumn: loc.Column,
+			EndColumn:   loc.EndColumn,
 			Snippet:     loc.Content,
 		},
-		Label:      loc.Label,
-		Importance: "essential",
+		Label:          loc.Label,
+		Message:        loc.Notes,
+		Importance:     "essential",
+		FunctionName:   loc.Function,
+		ClassName:      loc.Class,
+		ModuleName:     loc.Module,
+		Operation:      loc.Operation,
+		CalledFunction: loc.CalledFunction,
+		ParameterIndex: loc.ParameterIndex,
+		TaintState:     loc.TaintState,
+		Transformation: loc.Transformation,
 	}
 }
 
-// persistDataFlows persists data flows for newly created findings.
-// The data flows are stored in the value object format on Finding entities,
-// but need to be converted to normalized entity format for database storage.
-//
-// SECURITY: Enforces limits on number of data flows and locations per finding
-// to prevent DoS attacks via excessive data.
 // enrichAndClassify enriches findings in-memory with EPSS/KEV, classifies
 // their priority (RFC-004), and applies SLA deadlines, so the values are
 // written by the subsequent batch INSERT instead of a per-finding UPDATE pass.
@@ -2081,112 +2120,43 @@ func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding 
 	return out
 }
 
-func (p *FindingProcessor) persistDataFlows(ctx context.Context, findings []*vulnerability.Finding) {
-	for _, f := range findings {
-		dataFlows := f.DataFlows()
-		if len(dataFlows) == 0 {
-			continue
-		}
-
-		// SECURITY: Limit number of data flows per finding (DoS protection)
-		if len(dataFlows) > vulnerability.MaxDataFlowsPerFinding {
-			p.logger.Warn("truncating data flows due to limit exceeded",
-				"finding_id", f.ID().String(),
-				"count", len(dataFlows),
-				"max", vulnerability.MaxDataFlowsPerFinding,
-			)
-			dataFlows = dataFlows[:vulnerability.MaxDataFlowsPerFinding]
-		}
-
-		for _, df := range dataFlows {
-			// Create the data flow entity
-			flowEntity, err := vulnerability.NewFindingDataFlow(
-				f.ID(),
-				df.Index,
-				df.Message,
-				df.Importance,
-			)
-			if err != nil {
-				p.logger.Warn("failed to create data flow entity",
-					"finding_id", f.ID().String(),
-					"error", err,
-				)
-				continue
-			}
-
-			// Persist the data flow
-			if err := p.dataFlowRepo.CreateDataFlow(ctx, flowEntity); err != nil {
-				p.logger.Warn("failed to persist data flow",
-					"finding_id", f.ID().String(),
-					"error", err,
-				)
-				continue
-			}
-
-			// Create and persist flow locations
-			// SECURITY: Limit number of locations per data flow (DoS protection)
-			steps := df.Steps
-			if len(steps) > vulnerability.MaxLocationsPerDataFlow {
-				p.logger.Warn("truncating flow locations due to limit exceeded",
-					"data_flow_id", flowEntity.ID().String(),
-					"count", len(steps),
-					"max", vulnerability.MaxLocationsPerDataFlow,
-				)
-				steps = steps[:vulnerability.MaxLocationsPerDataFlow]
-			}
-
-			for _, step := range steps {
-				locEntity, err := vulnerability.NewFindingFlowLocation(
-					flowEntity.ID(),
-					step.Index,
-					step.LocationType,
-				)
-				if err != nil {
-					p.logger.Warn("failed to create flow location entity",
-						"data_flow_id", flowEntity.ID().String(),
-						"error", err,
-					)
-					continue
-				}
-
-				// Set physical location
-				if step.Location != nil {
-					locEntity.SetPhysicalLocation(
-						step.Location.Path,
-						step.Location.StartLine,
-						step.Location.EndLine,
-						step.Location.StartColumn,
-						step.Location.EndColumn,
-						step.Location.Snippet,
-					)
-				}
-
-				// Set logical location
-				locEntity.SetLogicalLocation(
-					step.FunctionName,
-					step.ClassName,
-					step.FullyQualifiedName,
-					step.ModuleName,
-				)
-
-				// Set context
-				locEntity.SetContext(
-					step.Label,
-					step.Message,
-					step.NestingLevel,
-					step.Importance,
-				)
-
-				// Persist the flow location
-				if err := p.dataFlowRepo.CreateFlowLocation(ctx, locEntity); err != nil {
-					p.logger.Warn("failed to persist flow location",
-						"data_flow_id", flowEntity.ID().String(),
-						"error", err,
-					)
-				}
-			}
-		}
+// persistDataFlows stores each trace on the tenant's finding with its
+// fingerprint. The repository
+// replaces a finding's stored flows in one transaction, only when the trace
+// hash differs, within the per-finding caps (vulnerability.NormalizeDataFlows).
+func (p *FindingProcessor) persistDataFlows(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) {
+	if p.dataFlowRepo == nil || len(traces) == 0 {
+		return
 	}
+	n, err := p.dataFlowRepo.ReplaceDataFlows(ctx, tenantID, traces)
+	if err != nil {
+		p.logger.Warn("failed to store data flows", "error", err, "count", len(traces))
+		return
+	}
+	if n > 0 {
+		p.logger.Debug("stored data flows", "findings", n)
+	}
+}
+
+// findingTrace is the stored form of a report finding's data flow; ok is
+// false when it has none.
+func findingTrace(fingerprint, commit string, df *ctis.DataFlow) (vulnerability.FindingTrace, bool) {
+	if df == nil {
+		return vulnerability.FindingTrace{}, false
+	}
+	return vulnerability.NewFindingTrace(fingerprint, commit, []vulnerability.DataFlow{mapCTISDataFlowToDomain(df)})
+}
+
+// traceCommit is the commit a finding's trace was reported for: the
+// finding's own location commit, else the report's branch commit.
+func traceCommit(report *ctis.Report, f *ctis.Finding) string {
+	if f.Location != nil && f.Location.CommitSHA != "" {
+		return f.Location.CommitSHA
+	}
+	if report != nil && report.Metadata.Branch != nil {
+		return report.Metadata.Branch.CommitSHA
+	}
+	return ""
 }
 
 // isValidFingerprint checks if a fingerprint is a valid hash-like string.
@@ -2435,11 +2405,6 @@ func (p *FindingProcessor) afterCreate(
 	createdIndex map[int]struct{},
 	suppressionDecisions map[int]shared.ID,
 ) {
-	// Persist data flows for newly created findings.
-	if p.dataFlowRepo != nil {
-		p.persistDataFlows(ctx, created)
-	}
-
 	// Record which approved rule suppressed each newly-created finding
 	// (finding_suppressions) so the ingest suppression is traceable and can be
 	// un-suppressed if the rule is later removed. The disposition
