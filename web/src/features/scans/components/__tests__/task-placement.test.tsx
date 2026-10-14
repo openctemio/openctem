@@ -117,6 +117,24 @@ describe('why a queued task waits', () => {
       placementSummary({ ...base, host_wait: { hosts_held: 1, hosts_total: 2, holders: [] } }, t)
     ).toMatch(/by another task/)
     expect(placementSummary({ ...base, host_wait: undefined }, t)).not.toMatch(/shortly/)
+    // How many of its targets can start, when known.
+    expect(
+      placementSummary(
+        {
+          ...base,
+          host_wait: {
+            hosts_held: 1,
+            hosts_total: 20,
+            targets: 23,
+            can_start: 21,
+            holders: [{ tool: 'nuclei' }],
+          },
+        },
+        t
+      )
+    ).toBe(
+      'Waiting: 1 of its 20 hosts are being scanned by nuclei. It starts when those hosts are free. 21 of its 23 targets are on free hosts.'
+    )
   })
 
   it('links the run that holds its hosts', async () => {

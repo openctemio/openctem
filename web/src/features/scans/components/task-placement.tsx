@@ -48,17 +48,61 @@ export function hostWaitSummary(p: RunTaskPlacement, t: Translate): string | nul
   if (!hw || !(p.job_reasons ?? []).includes('host_busy')) return null
   const vars = { held: hw.hosts_held ?? 0, total: hw.hosts_total ?? 0 }
   const top = (hw.holders ?? [])[0]
+  let base: string
   if (top?.tool && top.step_key) {
-    return t('scans.placement.hostWaitBy', undefined, {
+    base = t('scans.placement.hostWaitBy', undefined, {
       ...vars,
       tool: toDisplayText(top.tool),
       step: toDisplayText(top.step_key),
     })
+  } else if (top?.tool) {
+    base = t('scans.placement.hostWaitTool', undefined, { ...vars, tool: toDisplayText(top.tool) })
+  } else {
+    base = t('scans.placement.hostWait', undefined, vars)
   }
-  if (top?.tool) {
-    return t('scans.placement.hostWaitTool', undefined, { ...vars, tool: toDisplayText(top.tool) })
+  return withCanStart(base, hw, t, 'scans.placement.hostWaitFree')
+}
+
+type HostWait = NonNullable<RunTaskPlacement['host_wait']>
+
+/**
+ * Adds how many of the task's targets are on free hosts, when known, with
+ * the dictionary entry key (base, canStart, targets).
+ */
+function withCanStart(base: string, hw: HostWait, t: Translate, key: string): string {
+  const canStart = hw.can_start ?? -1
+  const targets = hw.targets ?? 0
+  if (canStart < 0 || targets <= 0) return base
+  return t(key, undefined, { base, canStart, targets })
+}
+
+/**
+ * The task list's line for a task waiting for its hosts: how many of its
+ * hosts are held, by which tool, step and run (this run, or another run's
+ * short id, only when the caller can read that run), and how many of its
+ * targets are on free hosts. Counts only, never host names.
+ */
+export function hostWaitLine(hw: HostWait, runId: string, t: Translate): string {
+  const held = hw.hosts_held ?? 0
+  const top = (hw.holders ?? [])[0]
+  let base: string
+  if (top?.tool && top.step_key && top.run_id) {
+    const where =
+      top.run_id === runId
+        ? t('scans.tasks.hostWaitThisRun')
+        : t('scans.tasks.hostWaitRun', undefined, { run: top.run_id.slice(0, 8) })
+    base = t('scans.tasks.hostWaitBy', undefined, {
+      held,
+      tool: toDisplayText(top.tool),
+      step: toDisplayText(top.step_key),
+      where,
+    })
+  } else if (top?.tool) {
+    base = t('scans.tasks.hostWaitTool', undefined, { held, tool: toDisplayText(top.tool) })
+  } else {
+    base = t('scans.tasks.hostWaitAny', undefined, { held })
   }
-  return t('scans.placement.hostWait', undefined, vars)
+  return withCanStart(base, hw, t, 'scans.tasks.hostWaitWithFree')
 }
 
 /** The "Why waiting?" toggle of a queued task. */
