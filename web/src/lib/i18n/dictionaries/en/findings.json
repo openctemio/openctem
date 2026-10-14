@@ -89,5 +89,7 @@
   "findings.approvalDialog.submitted": "Approval request submitted for \"{status}\"",
   "findings.approvalDialog.submitFailed": "Failed to submit approval request",
   "findings.list.location": "Location",
-  "findings.list.asset": "Asset"
+  "findings.list.asset": "Asset",
+  "findings.aiProposal.badge": "Proposed by AI triage",
+  "findings.aiProposal.hint": "An AI suggestion, not a decision. Check the finding before you approve it."
 }
