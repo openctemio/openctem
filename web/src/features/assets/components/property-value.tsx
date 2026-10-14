@@ -220,7 +220,7 @@ export function RecordTable({
             {shown.map((row, i) => (
               <tr key={i} className="border-t align-top">
                 {columns.map((c) => (
-                  <td key={c} className="px-2 py-1.5 font-mono break-all">
+                  <td key={c} className="px-2 py-1.5 font-mono break-words">
                     {cellText(row[c])}
                   </td>
                 ))}
