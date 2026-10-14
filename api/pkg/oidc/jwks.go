@@ -27,8 +27,9 @@ const (
 	// jwksMaxStale is how long a fetched JWKS still verifies known kids when
 	// the provider cannot be reached: an outage of the provider does not end
 	// every session at once, and a key the provider removed stops working
-	// at the first successful fetch.
-	jwksMaxStale = 24 * time.Hour
+	// at the first successful fetch. Six hours bounds how long a key the
+	// provider withdrew keeps verifying while the platform cannot refetch.
+	jwksMaxStale = 6 * time.Hour
 	// jwksMinRefresh is the shortest interval between two fetch attempts of
 	// one JWKS: a token naming an unknown kid, or a provider that is down,
 	// cannot make every request fetch the keys again.
