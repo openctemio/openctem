@@ -114,6 +114,7 @@ export function ExposureActionDialog({
   onOpenChange,
   onSuccess,
 }: ExposureActionDialogProps) {
+  const { t } = useTranslation()
   const [reason, setReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -132,22 +133,33 @@ export function ExposureActionDialog({
     try {
       const input = reason.trim() ? { reason: reason.trim() } : undefined
 
+      let result: ExposureEvent | undefined
       switch (actionType) {
         case 'resolve':
           await resolveExposure(exposure.id, input)
           break
         case 'accept':
-          await acceptExposure(exposure.id, input)
+          result = await acceptExposure(exposure.id, input)
           break
         case 'false_positive':
-          await markExposureFalsePositive(exposure.id, input)
+          result = await markExposureFalsePositive(exposure.id, input)
           break
         case 'reactivate':
           await reactivateExposure(exposure.id)
           break
       }
 
-      toast.success(config.successMessage)
+      if (result?.pending_disposition) {
+        // High or critical: a second approver must confirm.
+        toast.info(
+          t(
+            'exposures.disposition.requestSent',
+            'Request sent. A second approver must confirm before the exposure changes.'
+          )
+        )
+      } else {
+        toast.success(config.successMessage)
+      }
       onOpenChange(false)
       setReason('')
       onSuccess?.()

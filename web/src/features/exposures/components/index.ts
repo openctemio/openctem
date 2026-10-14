@@ -20,6 +20,11 @@ export {
   APPROVE_REQUIRED_REASON,
   useCanApproveExposures,
 } from './exposure-state-actions'
+export {
+  PendingDispositionBadge,
+  PendingDispositionPanel,
+  notifyPendingDispositions,
+} from './pending-disposition'
 
 export {
   ChartCard,

@@ -42,6 +42,10 @@ func NewExposureHandler(svc *exposuresvc.ExposureService, userSvc *tenant.UserSe
 type ExposureResponse struct {
 	ID string `json:"id"`
 
+	// PendingDisposition is an accept or false-positive request on a high or
+	// critical exposure that waits for a second approver.
+	PendingDisposition *exposuresvc.PendingDispositionView `json:"pending_disposition,omitempty"`
+
 	AssetID         string         `json:"asset_id,omitempty"`
 	EventType       string         `json:"event_type"`
 	Severity        string         `json:"severity"`
@@ -319,6 +323,10 @@ func (h *ExposureHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if enr, ok := enrichMap[event.ID()]; ok {
 		applyEnrichment(&resp, enr)
 	}
+	if err := h.attachPending(r, tenantID, []*ExposureResponse{&resp}, []*exposure.ExposureEvent{event}); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -418,6 +426,14 @@ func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
 			applyEnrichment(&resp, enr)
 		}
 		items = append(items, resp)
+	}
+	ptrs := make([]*ExposureResponse, len(items))
+	for i := range items {
+		ptrs[i] = &items[i]
+	}
+	if err := h.attachPending(r, tenantID, ptrs, result.Data); err != nil {
+		h.handleServiceError(w, err)
+		return
 	}
 
 	response := ListResponse[ExposureResponse]{
@@ -595,15 +611,8 @@ func (h *ExposureHandler) Accept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := h.service.AcceptExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+	h.writeDisposition(w, r, exposuresvc.DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
+		State: exposure.StateAccepted, Reason: req.Reason, Audit: configAuditContext(r)})
 }
 
 // MarkFalsePositive handles POST /api/v1/exposures/{id}/false-positive
@@ -632,15 +641,8 @@ func (h *ExposureHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	event, err := h.service.MarkFalsePositive(r.Context(), tenantID, exposureID, userID, req.Reason)
-	if err != nil {
-		h.handleServiceError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+	h.writeDisposition(w, r, exposuresvc.DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
+		State: exposure.StateFalsePositive, Reason: req.Reason, Audit: configAuditContext(r)})
 }
 
 // Reactivate handles POST /api/v1/exposures/{id}/reactivate
@@ -770,4 +772,83 @@ func (h *ExposureHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(stats)
+}
+
+// writeDisposition runs an accept or false-positive call through the
+// four-eyes rule: 202 with the pending request when a second approver must
+// confirm, 200 with the changed exposure otherwise.
+func (h *ExposureHandler) writeDisposition(w http.ResponseWriter, r *http.Request, call exposuresvc.DispositionCall) {
+	out, err := h.service.RequestDisposition(r.Context(), call)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := toExposureResponse(out.Event)
+	status := http.StatusOK
+	if out.Pending {
+		resp.PendingDisposition = exposuresvc.PendingView(out.Request)
+		status = http.StatusAccepted
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// DispositionRejectRequest is the body of a disposition rejection.
+type DispositionRejectRequest struct {
+	Reason string `json:"reason" validate:"max=1000"`
+}
+
+// RejectDisposition handles POST /api/v1/exposures/{id}/disposition/reject
+// @Summary      Reject a pending disposition
+// @Description  Reject the pending accept or false-positive request of a high or critical exposure. The requester rejecting their own request cancels it.
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                    true   "Exposure ID"
+// @Param        request  body      DispositionRejectRequest  false  "Reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/disposition/reject [post]
+func (h *ExposureHandler) RejectDisposition(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	var req DispositionRejectRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	out, err := h.service.RejectDisposition(r.Context(), exposuresvc.DispositionCall{TenantID: tenantID,
+		ExposureID: chi.URLParam(r, "id"), UserID: middleware.GetUserID(r.Context()), Reason: req.Reason,
+		Audit: configAuditContext(r)})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toExposureResponse(out.Event))
+}
+
+// attachPending fills the pending disposition of each response
+// (resps[i] is events[i]).
+func (h *ExposureHandler) attachPending(r *http.Request, tenantID string, resps []*ExposureResponse, events []*exposure.ExposureEvent) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil || len(events) == 0 {
+		return nil //nolint:nilerr // the tenant id came from the auth context; nothing to attach
+	}
+	ids := make([]shared.ID, 0, len(events))
+	for _, e := range events {
+		ids = append(ids, e.ID())
+	}
+	pending, err := h.service.PendingDispositions(r.Context(), tid, ids)
+	if err != nil {
+		return err
+	}
+	for i, e := range events {
+		resps[i].PendingDisposition = exposuresvc.PendingView(pending[e.ID()])
+	}
+	return nil
 }
