@@ -259,6 +259,9 @@ func TestCITrustConfigRepository(t *testing.T) {
 // computed before a report was recorded is refused (ErrRunChanged).
 func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
 	db := openSensorDB(t)
+	// Many goroutines, few connections: the race is on the row, not on
+	// the pool (and the test must not exhaust the server's connections).
+	db.SetMaxOpenConns(8)
 	ctx := context.Background()
 	repo := NewCIRunRepository(&DB{DB: db})
 	tenant := seedTestTenant(ctx, t, db)
