@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { SEVERITY_BADGE_SOFT } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions } from '@/context/permission-provider'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   useRequestValidationApi,
   useFindingValidationEvidenceApi,
@@ -27,12 +28,23 @@ const OUTCOME_STYLES: Record<string, string> = {
   skipped: 'bg-muted text-muted-foreground',
 }
 
-const OUTCOME_LABELS: Record<string, string> = {
-  not_detected: 'Not detected',
-  detected: 'Detected (still exploitable)',
-  inconclusive: 'Inconclusive',
-  error: 'Error',
-  skipped: 'Skipped',
+type TFn = ReturnType<typeof useTranslation>['t']
+
+function outcomeText(outcome: string, t: TFn): string | undefined {
+  switch (outcome) {
+    case 'not_detected':
+      return t('findings.validationEvidence.outNotDetected', 'Not detected')
+    case 'detected':
+      return t('findings.validationEvidence.outDetected', 'Detected (still exploitable)')
+    case 'inconclusive':
+      return t('findings.validationEvidence.outInconclusive', 'Inconclusive')
+    case 'error':
+      return t('findings.validationEvidence.outError', 'Error')
+    case 'skipped':
+      return t('findings.validationEvidence.outSkipped', 'Skipped')
+    default:
+      return undefined
+  }
 }
 
 /**
@@ -40,16 +52,26 @@ const OUTCOME_LABELS: Record<string, string> = {
  * whether the vulnerability is there, and it never changes the finding's status
  * (RFC-039 D3). Label it as what it is.
  */
-const REACHABILITY_LABELS: Record<string, string> = {
-  detected: 'Reachable',
-  not_detected: 'Not reachable',
+function reachabilityText(outcome: string, t: TFn): string | undefined {
+  switch (outcome) {
+    case 'detected':
+      return t('findings.validationEvidence.reachable', 'Reachable')
+    case 'not_detected':
+      return t('findings.validationEvidence.notReachable', 'Not reachable')
+    default:
+      return undefined
+  }
 }
 
-export function outcomeLabel(item: Pick<ValidationEvidenceItem, 'executor_kind' | 'outcome'>) {
-  if (item.executor_kind === 'safe-check' && REACHABILITY_LABELS[item.outcome]) {
-    return REACHABILITY_LABELS[item.outcome]
+export function outcomeLabel(
+  item: Pick<ValidationEvidenceItem, 'executor_kind' | 'outcome'>,
+  t: TFn
+) {
+  if (item.executor_kind === 'safe-check') {
+    const reach = reachabilityText(item.outcome, t)
+    if (reach) return reach
   }
-  return OUTCOME_LABELS[item.outcome] ?? item.outcome
+  return outcomeText(item.outcome, t) ?? item.outcome
 }
 
 /**
@@ -63,22 +85,35 @@ export function outcomeLabel(item: Pick<ValidationEvidenceItem, 'executor_kind' 
  */
 const DETECTION_META: Record<
   string,
-  { label: string; title: string; className: string; Icon: LucideIcon }
+  {
+    labelKey: string
+    label: string
+    titleKey: string
+    title: string
+    className: string
+    Icon: LucideIcon
+  }
 > = {
   observed: {
+    labelKey: 'findings.validationEvidence.obsLabel',
     label: 'Observed by controls',
+    titleKey: 'findings.validationEvidence.obsTitle',
     title: 'A security control observed this validation activity.',
     className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', // palette-ok: success accent — the theme has no semantic "success" token
     Icon: Eye,
   },
   not_observed: {
+    labelKey: 'findings.validationEvidence.gapLabel',
     label: 'Detection gap',
+    titleKey: 'findings.validationEvidence.gapTitle',
     title: 'No control observed this validation — a detection gap worth closing.',
     className: SEVERITY_BADGE_SOFT.medium,
     Icon: EyeOff,
   },
   no_telemetry_source: {
+    labelKey: 'findings.validationEvidence.noTelLabel',
     label: 'No telemetry connected',
+    titleKey: 'findings.validationEvidence.noTelTitle',
     title:
       'No telemetry source is connected for this asset, so detection is unknown — not a control failure.',
     className: 'bg-muted text-muted-foreground',
@@ -87,14 +122,19 @@ const DETECTION_META: Record<
 }
 
 function DetectionBadge({ item }: { item: ValidationEvidenceItem }) {
+  const { t } = useTranslation()
   if (!item.detection_status) return null
   const meta = DETECTION_META[item.detection_status]
   if (!meta) return null
-  const { label, title, className, Icon } = meta
+  const { className, Icon } = meta
   return (
-    <Badge variant="secondary" className={cn('gap-1 font-medium', className)} title={title}>
+    <Badge
+      variant="secondary"
+      className={cn('gap-1 font-medium', className)}
+      title={t(meta.titleKey, meta.title)}
+    >
       <Icon className="h-3 w-3" />
-      {label}
+      {t(meta.labelKey, meta.label)}
     </Badge>
   )
 }
@@ -106,6 +146,7 @@ function formatTimestamp(value?: string): string {
 }
 
 function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
+  const { t } = useTranslation()
   return (
     <li className="flex flex-col gap-1 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -118,7 +159,7 @@ function EvidenceRow({ item }: { item: ValidationEvidenceItem }) {
               : (OUTCOME_STYLES[item.outcome] ?? OUTCOME_STYLES.skipped)
           )}
         >
-          {outcomeLabel(item)}
+          {outcomeLabel(item, t)}
         </Badge>
         <DetectionBadge item={item} />
         <span className="text-muted-foreground text-xs">{item.executor_kind}</span>
@@ -142,22 +183,30 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
   const { data, isLoading, mutate } = useFindingValidationEvidenceApi(findingId)
   const { trigger: requestValidation, isMutating } = useRequestValidationApi(findingId)
   const { hasPermission } = usePermissions()
+  const { t } = useTranslation()
 
   const handleValidate = useCallback(async () => {
     try {
       await requestValidation()
-      toast.success('Validation requested', {
-        description:
-          'A safe-check job was dispatched. Evidence appears here once a sensor reports back.',
+      toast.success(t('findings.validationEvidence.requested', 'Validation requested'), {
+        description: t(
+          'findings.validationEvidence.requestedDesc',
+          'A safe-check job was dispatched. Evidence appears here once a sensor reports back.'
+        ),
       })
       // Give the async completion a moment, then refresh the evidence list.
       setTimeout(() => {
         void mutate()
       }, 1500)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to request validation'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('findings.validationEvidence.requestFailed', 'Failed to request validation')
+        )
+      )
     }
-  }, [requestValidation, mutate])
+  }, [requestValidation, mutate, t])
 
   const evidence = data?.evidence ?? []
 
@@ -166,7 +215,9 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShieldCheck className="text-muted-foreground h-4 w-4" />
-          <h3 className="text-sm font-semibold">Validation</h3>
+          <h3 className="text-sm font-semibold">
+            {t('findings.validationEvidence.heading', 'Validation')}
+          </h3>
           {evidence.length > 0 ? <Badge variant="secondary">{evidence.length}</Badge> : null}
         </div>
         {hasPermission('findings:write') ? (
@@ -176,17 +227,21 @@ export function ValidationEvidencePanel({ findingId }: ValidationEvidencePanelPr
             ) : (
               <RefreshCw className="me-1.5 h-3.5 w-3.5" />
             )}
-            Validate now
+            {t('findings.validationEvidence.validateNow', 'Validate now')}
           </Button>
         ) : null}
       </div>
 
       {isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading validation evidence…</p>
+        <p className="text-muted-foreground text-sm">
+          {t('findings.validationEvidence.loading', 'Loading validation evidence…')}
+        </p>
       ) : evidence.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No validation evidence yet. Run a safe-check to confirm whether this exposure is still
-          reachable.
+          {t(
+            'findings.validationEvidence.empty',
+            'No validation evidence yet. Run a safe-check to confirm whether this exposure is still reachable.'
+          )}
         </p>
       ) : (
         <ul className="space-y-2">
