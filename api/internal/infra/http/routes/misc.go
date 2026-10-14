@@ -298,7 +298,7 @@ func registerIntegrationRoutes(
 		// Integration actions
 		r.POST("/{id}/test", h.Test, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.IntegrationsManage))
-		r.POST("/{id}/coverage/resume", h.ResumeCoverageRotation, middleware.Require(permission.IntegrationsManage))
+		r.POST("/{id}/coverage/reactivate", h.ResumeCoverageRotation, middleware.Require(permission.IntegrationsManage))
 		// Scan chosen assets now with a Tenable.sc connector: a scan run, so
 		// scans:write and the scans module, like starting any scan.
 		if scanNow != nil {
@@ -306,7 +306,7 @@ func registerIntegrationRoutes(
 			if scansModule != nil {
 				mws = append(mws, scansModule)
 			}
-			r.POST("/{id}/scan-now", scanNow.ConnectorScanNow, mws...)
+			r.POST("/{id}/scans/run", scanNow.ConnectorScanNow, mws...)
 		}
 		r.POST("/{id}/enable", h.Enable, middleware.Require(permission.IntegrationsManage))
 		r.POST("/{id}/disable", h.Disable, middleware.Require(permission.IntegrationsManage))

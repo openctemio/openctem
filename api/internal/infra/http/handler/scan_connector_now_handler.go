@@ -1,6 +1,6 @@
 package handler
 
-// POST /api/v1/integrations/{id}/scan-now: scan chosen assets now with a
+// POST /api/v1/integrations/{id}/scans/run: scan chosen assets now with a
 // Tenable.sc connector (architecture: docs/architecture/tenable-sc-connector.md,
 // "Scan now and rescan after a fix").
 
@@ -23,7 +23,7 @@ type ConnectorScanNowRequest struct {
 	AssetIDs []string `json:"asset_ids"`
 }
 
-// ConnectorScanNow handles POST /api/v1/integrations/{id}/scan-now
+// ConnectorScanNow handles POST /api/v1/integrations/{id}/scans/run
 // @Summary      Scan assets now with a Tenable.sc connector
 // @Description  Scans the assets now through the Tenable.sc connector integration, with the connector's coverage scan policy, repository and zone, as a manual run by the caller. Every gate of a scan run applies (act scope, active-probe gate, scan windows, scan approval). An asset that is not the organization's or not in the caller's data scope, and another organization's integration, answer 404.
 // @Tags         Integrations
@@ -37,7 +37,7 @@ type ConnectorScanNowRequest struct {
 // @Failure      404  {object}  apierror.Error  "integration or asset not found"
 // @Failure      409  {object}  apierror.Error  "the connector cannot run the scan now (sensor, disabled, grant)"
 // @Security     BearerAuth
-// @Router       /integrations/{id}/scan-now [post]
+// @Router       /integrations/{id}/scans/run [post]
 func (h *ScanHandler) ConnectorScanNow(w http.ResponseWriter, r *http.Request) {
 	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {

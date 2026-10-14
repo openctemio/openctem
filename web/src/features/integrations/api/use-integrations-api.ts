@@ -308,14 +308,14 @@ export function useDisableIntegrationApi(integrationId: string) {
 
 /**
  * Resume a Tenable.sc connector's stalled license rotation
- * (POST /integrations/{id}/coverage/resume, integrations:manage). Returns the
+ * (POST /integrations/{id}/coverage/reactivate, integrations:manage). Returns the
  * integration.
  */
 export function useResumeCoverageRotationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/coverage/resume` : null,
+    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/coverage/reactivate` : null,
     async (url: string) => {
       return post<Integration>(url, {})
     }
@@ -348,17 +348,17 @@ export interface ConnectorScanNowRun {
 
 /**
  * Scan inventory assets now through a Tenable.sc connector
- * (POST /integrations/{id}/scan-now, scans:write). The API reads the assets
+ * (POST /integrations/{id}/scans/run, scans:write). The API reads the assets
  * within the caller's data scope and runs every scan gate.
  */
 export function useConnectorScanNowApi() {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant ? `${BASE_URL}/scan-now` : null,
+    currentTenant ? `${BASE_URL}/scans/run` : null,
     async (_key: string, { arg }: { arg: { integrationId: string; assetIds: string[] } }) => {
       return post<ConnectorScanNowRun>(
-        `${BASE_URL}/${encodeURIComponent(arg.integrationId)}/scan-now`,
+        `${BASE_URL}/${encodeURIComponent(arg.integrationId)}/scans/run`,
         { asset_ids: arg.assetIds }
       )
     }

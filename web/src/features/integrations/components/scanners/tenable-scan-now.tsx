@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Scan assets now with a Tenable.sc connector (POST /integrations/{id}/scan-now):
+ * Scan assets now with a Tenable.sc connector (POST /integrations/{id}/scans/run):
  * "Scan with Tenable.sc" on an asset and "Rescan with Tenable.sc" on a
  * finding. Shown only to callers with scans:write who can list the
  * connectors (integrations:read) when the organization has one; with several
