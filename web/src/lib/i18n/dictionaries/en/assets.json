@@ -210,5 +210,11 @@
   "assets.sheet.idCopied": "Asset ID copied",
   "assets.sheet.delete": "Delete {type}",
   "assets.sheet.edit": "Edit",
-  "assets.sheet.description": "Description"
+  "assets.sheet.description": "Description",
+  "assets.scanning.title": "Scope and scanning",
+  "assets.scanning.details": "Why",
+  "assets.scanning.allowed": "Scans can reach this asset.",
+  "assets.scanning.scanNow": "Scan now",
+  "assets.scanning.allowWildcard": "Confirm and allow scanning",
+  "assets.scanning.confirmed": "Confirmed as yours; scans may reach it now"
 }

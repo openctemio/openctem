@@ -180,6 +180,7 @@ sensor_manifests
 sensor_pairings
 sensor_result_policies
 sensor_result_quarantine
+sensor_tool_settings
 sensors
 settings
 sla_policies
