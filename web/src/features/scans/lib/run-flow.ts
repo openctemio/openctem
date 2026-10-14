@@ -1,5 +1,5 @@
 /**
- * The run pipeline's pure parts: the layers of the run map's steps (a
+ * The run flow's pure parts: the layers of the run map's steps (a
  * layered layout: longest path from a root, then a barycenter ordering so
  * edges cross as little as possible), which way to draw them, why a
  * skipped step did not run, how long a step took, and what flowed along an
@@ -15,10 +15,10 @@ import { formatScanDuration } from './format'
  * left to right (room for an edge label), between layers top to bottom,
  * and between the steps of one layer.
  */
-export const PIPELINE_CARD_WIDTH = 200
-export const PIPELINE_GAP_X = 80
-export const PIPELINE_GAP_Y = 48
-export const PIPELINE_SIBLING_GAP = 12
+export const FLOW_CARD_WIDTH = 200
+export const FLOW_GAP_X = 80
+export const FLOW_GAP_Y = 48
+export const FLOW_SIBLING_GAP = 12
 
 /**
  * The steps as layers: layer i holds the steps whose longest chain of
@@ -27,7 +27,7 @@ export const PIPELINE_SIBLING_GAP = 12
  * every step is drawn once. Within a layer, steps are ordered by the mean
  * position of their dependencies (two sweeps), ties in map order.
  */
-export function pipelineLayers(nodes: RunMapNode[]): string[][] {
+export function flowLayers(nodes: RunMapNode[]): string[][] {
   const keys = nodes.map((n) => n.step_key ?? '')
   const known = new Set(keys)
   const deps = new Map<string, string[]>()
@@ -85,15 +85,15 @@ export function hasParallelBranches(layers: string[][]): boolean {
 /**
  * The direction that fits the width: left to right when every layer fits
  * side by side, else top to bottom when the widest layer fits, else none
- * (the list is shown instead). A pipeline without parallel branches is a
+ * (the list is shown instead). A flow without parallel branches is a
  * list: a chain reads best as one column.
  */
-export function pipelineDirection(layers: string[][], width: number): 'LR' | 'TB' | null {
+export function flowDirection(layers: string[][], width: number): 'LR' | 'TB' | null {
   if (!hasParallelBranches(layers) || width <= 0) return null
-  const span = (n: number, gap: number) => n * PIPELINE_CARD_WIDTH + Math.max(0, n - 1) * gap
-  if (span(layers.length, PIPELINE_GAP_X) <= width) return 'LR'
+  const span = (n: number, gap: number) => n * FLOW_CARD_WIDTH + Math.max(0, n - 1) * gap
+  if (span(layers.length, FLOW_GAP_X) <= width) return 'LR'
   const widest = Math.max(...layers.map((l) => l.length))
-  if (span(widest, PIPELINE_SIBLING_GAP) <= width) return 'TB'
+  if (span(widest, FLOW_SIBLING_GAP) <= width) return 'TB'
   return null
 }
 
@@ -138,8 +138,8 @@ export function skippedReasonText(
   if (!up) return null
   const step = up.node.name || up.node.step_key || ''
   return up.failed
-    ? t('scans.pipeline.skippedFailed', undefined, { step })
-    : t('scans.pipeline.skippedNotRun', undefined, { step })
+    ? t('scans.flow.skippedFailed', undefined, { step })
+    : t('scans.flow.skippedNotRun', undefined, { step })
 }
 
 /** How long a step ran (ms): to its end, or to now while it runs. */
@@ -179,10 +179,9 @@ export function edgeHandOff(
 }
 
 /** The status family a map state is drawn in. */
-export type PipelineTone =
-  'pending' | 'waiting' | 'running' | 'done' | 'partial' | 'failed' | 'skipped'
+export type FlowTone = 'pending' | 'waiting' | 'running' | 'done' | 'partial' | 'failed' | 'skipped'
 
-export function pipelineTone(state?: string): PipelineTone {
+export function flowTone(state?: string): FlowTone {
   switch (state) {
     case 'running':
       return 'running'

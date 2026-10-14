@@ -49,7 +49,7 @@ import { WindowWaits } from '@/features/scan-windows'
 import { RunStageLanes } from './run-stage-lanes'
 import { RunTimeline } from './run-timeline'
 
-// Lazy: the run pipeline loads only when a workflow run is opened.
+// Lazy: the run flow loads only when a workflow run is opened.
 const RunMap = dynamic(() => import('./run-map').then((m) => m.RunMap), {
   ssr: false,
 })
@@ -160,7 +160,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
       <DetailSheet
         open={!!runId}
         onOpenChange={onOpenChange}
-        // Room for the run pipeline: three steps side by side.
+        // Room for the run flow: three steps side by side.
         width="2xl"
         header={
           <DetailHeader
