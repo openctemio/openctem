@@ -102,7 +102,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/api-keys":                            {classConfig, "API keys"},
 	"/api/v1/audit-logs":                          {classConfig, "audit log (admin)"},
 	"/api/v1/integrations":                        {classConfig, "integrations; delivery history is channel-manager only (L-03)"},
-	"/api/v1/integrations/{id}/scan-now":          {classScoped, "scans assets by id through a connector: an asset outside the caller's data scope answers 404 (act scope)"},
+	"/api/v1/integrations/{id}/scans/run":         {classScoped, "scans assets by id through a connector: an asset outside the caller's data scope answers 404 (act scope)"},
 	"/api/v1/notification-outbox":                 {classConfig, "delivery queue, channel-manager only (L-03)"},
 	"/api/v1/webhooks":                            {classConfig, "inbound Jira/GitHub webhooks (HMAC); the outbound webhook API is removed"},
 	"/api/v1/scope":                               {classConfig, "scope targets, exclusions (two-person, L-07) and schedules"},

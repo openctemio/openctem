@@ -189,7 +189,7 @@ opt-in, administrator key only on the connector).
     were ingested. A batch that failed after it launched may have imported
     results that were never ingested: rotation stalls (`rotation_stalled`)
     until an administrator resumes it (`POST
-    /api/v1/integrations/{id}/coverage/resume`, `integrations:manage`,
+    /api/v1/integrations/{id}/coverage/reactivate`, `integrations:manage`,
     audited).
 - **Sizing and verification**: every batch carries the license guard
   (`licence_guard {new_addresses, headroom}`, the connector's wire key): the
@@ -218,7 +218,7 @@ A member scans chosen inventory assets through a connector now: "Scan with
 Tenable.sc" on an IP address or host, and "Rescan with Tenable.sc" on a
 finding the connector reported (its asset), for example after a fix.
 
-- **Route**: `POST /api/v1/integrations/{id}/scan-now` with
+- **Route**: `POST /api/v1/integrations/{id}/scans/run` with
   `{"asset_ids": [...]}` (1-50), `scans:write` and the scans module
   (`scan.Service.StartConnectorScan`, `tenablesc.Service.OnDemandScanConfig`).
 - **Assets**: read tenant-scoped and through the caller's act scope; an asset

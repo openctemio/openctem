@@ -3,7 +3,7 @@
 /**
  * "Rescan with Tenable.sc" on a finding the Tenable.sc connector reported: its
  * asset is scanned now through the connector (POST
- * /integrations/{id}/scan-now). Nothing closes the finding directly: a full
+ * /integrations/{id}/scans/run). Nothing closes the finding directly: a full
  * rescan that no longer reports it closes it through coverage auto-resolve,
  * when the organization enforces it. Shown next to the retest section, only
  * with scans:write and a connector to scan with.

@@ -33,7 +33,7 @@ func TestConnectorScanNow_RequestValidation(t *testing.T) {
 		"asset not a uuid":   {shared.NewID().String(), `{"asset_ids":["x"]}`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations/"+tc.id+"/scan-now", strings.NewReader(tc.body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/integrations/"+tc.id+"/scans/run", strings.NewReader(tc.body))
 			req.SetPathValue("id", tc.id)
 			ctx := context.WithValue(req.Context(), middleware.TenantIDKey, shared.NewID().String())
 			ctx = context.WithValue(ctx, middleware.UserIDKey, shared.NewID().String())
