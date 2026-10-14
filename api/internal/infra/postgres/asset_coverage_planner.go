@@ -273,3 +273,49 @@ func (r *AssetCoverageRepository) AttemptsSince(ctx context.Context, tenantID sh
 }
 
 var _ coverage.Planner = (*AssetCoverageRepository)(nil)
+
+// Health returns one entry per capability of the tenant's ledger.
+func (r *AssetCoverageRepository) Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]coverage.CapabilityHealth, error) {
+	caps := make([]string, 0, len(cadence))
+	secs := make([]float64, 0, len(cadence))
+	for c, d := range cadence {
+		caps = append(caps, c)
+		secs = append(secs, d.Seconds())
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.capability,
+		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'paused', 'not_applicable')),
+		       count(*) FILTER (WHERE c.state NOT IN ('blocked', 'paused', 'not_applicable')
+		                          AND COALESCE(c.last_success_at, c.created_at) < now() - make_interval(secs => 2 * COALESCE(p.every, 86400))),
+		       count(*) FILTER (WHERE c.fail_streak >= $4),
+		       count(*) FILTER (WHERE c.last_outcome = 'ok' AND c.last_success_at > now() - interval '24 hours'),
+		       count(*) FILTER (WHERE c.last_outcome = 'no_output' AND c.last_success_at > now() - interval '24 hours')
+		FROM asset_coverage c
+		LEFT JOIN unnest($2::text[], $3::float8[]) AS p(cap, every) ON p.cap = c.capability
+		WHERE c.tenant_id = $1 AND c.vantage = ''
+		GROUP BY c.capability
+		ORDER BY c.capability`,
+		tenantID.String(), pq.Array(caps), pq.Array(secs), coverage.FailingStreak)
+	if err != nil {
+		return nil, fmt.Errorf("coverage health: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []coverage.CapabilityHealth
+	for rows.Next() {
+		var h coverage.CapabilityHealth
+		if err := rows.Scan(&h.Capability, &h.Applicable, &h.Gaps, &h.Failing, &h.OK, &h.NoOutput); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// ClaimAlert claims an alert key for ttl through the controller lease
+// table: a second claim before it expires fails, on any replica.
+func (r *AssetCoverageRepository) ClaimAlert(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	_, ok, err := NewControllerLeaseRepository(r.db).TryAcquire(ctx, "coverage-alert:"+key, LeaseHolderID(), ttl)
+	return ok, err
+}
+
+var _ coverage.HealthReader = (*AssetCoverageRepository)(nil)

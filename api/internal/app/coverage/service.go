@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/metrics"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -22,6 +23,7 @@ type Service struct {
 	starter      RunStarter
 	tenantSwitch TenantSwitch
 	cfg          Config
+	alerts       *alerting
 	now          func() time.Time
 	logger       *logger.Logger
 }
@@ -38,6 +40,9 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if s.alerts != nil {
+		s.alerts.gaps = map[string]int{}
+	}
 	total := 0
 	for _, t := range tenants {
 		if ctx.Err() != nil {
@@ -47,6 +52,13 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 		total += n
 		if err != nil {
 			s.logger.Warn("coverage of a tenant failed", "tenant_id", t.String(), "error", logger.SanitizeError(err))
+		}
+	}
+	if s.alerts != nil {
+		// Fleet-wide aggregates for the operator: no tenant label (D4).
+		metrics.AssetCoverageGapPairs.Reset()
+		for c, n := range s.alerts.gaps {
+			metrics.AssetCoverageGapPairs.WithLabelValues(c).Set(float64(n))
 		}
 	}
 	return total, nil
@@ -77,5 +89,12 @@ func (s *Service) RunTenant(ctx context.Context, tenantID shared.ID) (int, error
 		}
 	}
 	planned, err := s.plan(ctx, tenantID)
-	return n + planned, err
+	n += planned
+	if err != nil {
+		return n, err
+	}
+	if _, err := s.detect(ctx, tenantID); err != nil {
+		return n, fmt.Errorf("detect coverage gaps: %w", err)
+	}
+	return n, nil
 }

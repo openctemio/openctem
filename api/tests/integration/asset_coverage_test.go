@@ -58,6 +58,18 @@ func (g *covRig) asset(tn v2Tenant, name, typ, sub, props string) shared.ID {
 	return id
 }
 
+func (g *covRig) exec(q string, args ...any) {
+	g.t.Helper()
+	for i, a := range args {
+		if id, ok := a.(shared.ID); ok {
+			args[i] = id.String()
+		}
+	}
+	if _, err := g.r.db.Exec(q, args...); err != nil {
+		g.t.Fatalf("%v\n%s", err, q)
+	}
+}
+
 func (g *covRig) rel(tn v2Tenant, src, dst shared.ID, typ string) {
 	g.t.Helper()
 	if _, err := g.r.db.Exec(`INSERT INTO asset_relationships (tenant_id, source_asset_id, target_asset_id, relationship_type) VALUES ($1, $2, $3, $4)`,

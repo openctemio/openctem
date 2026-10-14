@@ -266,3 +266,58 @@ type Planner interface {
 	// daily budget).
 	AttemptsSince(ctx context.Context, tenantID shared.ID, t time.Time) (int, error)
 }
+
+// CapabilityHealth is one tenant's coverage of one capability.
+type CapabilityHealth struct {
+	Capability string
+	// Applicable pairs (not blocked, paused or not applicable).
+	Applicable int
+	// Gaps: applicable pairs without a success for more than twice the
+	// cadence.
+	Gaps int
+	// Failing: pairs whose last 3 or more attempts failed.
+	Failing int
+	// OK and NoOutput: pairs settled in the last 24 h with and without the
+	// expected output.
+	OK, NoOutput int
+}
+
+// Alert kinds.
+const (
+	AlertGap        = "gap"
+	AlertOutputDrop = "output_drop"
+	AlertFailing    = "failing"
+)
+
+// Output-drop and failing thresholds (owner decision D4).
+const (
+	OutputDropMinInputs = 20
+	FailingStreak       = 3
+)
+
+// Alerts returns the alert kinds a capability's health raises: a gap; an
+// output drop (no expected output over at least 20 settled inputs in a
+// day); repeated failures (a pair failed 3 times in a row).
+func (h CapabilityHealth) Alerts() []string {
+	var out []string
+	if h.Gaps > 0 {
+		out = append(out, AlertGap)
+	}
+	if h.OK == 0 && h.NoOutput >= OutputDropMinInputs {
+		out = append(out, AlertOutputDrop)
+	}
+	if h.Failing > 0 {
+		out = append(out, AlertFailing)
+	}
+	return out
+}
+
+// HealthReader reads a tenant's coverage health.
+type HealthReader interface {
+	// Health returns one entry per capability of the tenant's ledger;
+	// cadence gives the cadence of each capability (a missing one is a day).
+	Health(ctx context.Context, tenantID shared.ID, cadence map[string]time.Duration) ([]CapabilityHealth, error)
+	// ClaimAlert claims the right to send one alert key for ttl (at most
+	// once per ttl across replicas and restarts).
+	ClaimAlert(ctx context.Context, key string, ttl time.Duration) (bool, error)
+}

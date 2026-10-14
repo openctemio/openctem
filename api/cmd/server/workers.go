@@ -999,6 +999,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
 				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy},
 				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+			// Gaps, output drops and repeated failures alert the tenant's
+			// administrators (in-app and integrations) at most once a day.
+			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
 		}
 		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
 	}

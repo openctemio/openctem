@@ -106,7 +106,8 @@ each of 1 000 tenants 12 ms, one asset's explanation 0.05 ms.
 | P0-3 | Coverage policy in the registry and this RFC | #2129 |
 | P0-4 | `asset_coverage` ledger; replaces two half-ledgers | #2130 |
 | P0-5a | The ledger follows the policy (reconcile loop, preconditions) and the explanation endpoint `GET /assets/{id}/coverage` | #2132 |
-| P0-5b | Planner: due pairs through the scope gate into one coverage run per capability, settlement from runs, daily budget, Strict off | PR |
+| P0-5b | Planner: due pairs through the scope gate into one coverage run per capability, settlement from runs, daily budget, Strict off | #2134 |
+| P0-5c | Gap detection: gaps, output drops, repeated failures to administrators and integrations; operator aggregates | PR |
 | P0-5 | Due marking at ingest, planner, gap detectors, explanation endpoint | planned |
 | P0-6 | Tenant setting for automatic coverage (default on; Strict off), audited | planned |
 | P1 | Tenant and plan policy, priority, budgets, windows, outcome classes for throttling, coverage KPI | designed |
