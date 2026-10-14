@@ -141,7 +141,6 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   const [viewParam, setView] = useUrlFilter('view', 'pipelines')
   const view: RunnerView =
     viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
-  const [runParam] = useUrlFilter('run', '')
   const [q, setQ] = useUrlFilter('q', '')
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
@@ -273,7 +272,6 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
       <div className="mt-5">
         <CIRunsView
           embedded
-          initialRunId={runParam || null}
           toolbarStart={
             <>
               {toolbarStart}

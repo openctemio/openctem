@@ -925,7 +925,9 @@ func (r *ScanRunRepository) CloseCanceledRun(ctx context.Context, tenantID, runI
 // AbortUnclaimedRuns ends runs no sensor ever picked up (D8): every command of
 // the run is still 'pending' and was never acknowledged or started, and the
 // run is older than its threshold (4h scheduled / 1h interactive by default,
-// or the scan's own timeout when shorter). Such a run used to wait for the
+// or the scan's own timeout when shorter). A run whose command waits for its
+// scan window, or while another task of the tenant scans its hosts, is not
+// unclaimed: no sensor may take that work yet. Such a run used to wait for the
 // generic run timeout and end as "timeout" with no hint that nobody claimed
 // the work; it was then even retried. Here the run fails with the reason, its
 // open steps fail with NO_SENSOR (a code the retry controller never retries),
@@ -960,7 +962,11 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			               OR c.dispatch_attempts > 0
 			               -- waiting for its scan window is not "no sensor picked it up";
 			               -- the run's deadline moved with the wait (RFC-067)
-			               OR c.window_hold IS NOT NULL))
+			               OR c.window_hold IS NOT NULL
+			               -- nor is waiting while another task of the tenant scans
+			               -- its hosts (research/130): no sensor may take it yet
+			               OR (c.host_keys IS NOT NULL AND EXISTS (
+			                     SELECT 1 FROM commands WHERE commands.id = c.id AND NOT ` + hostFreePredicate + `))))
 		), unclaimed AS (
 			UPDATE scan_runs pr
 			SET status = 'failed',

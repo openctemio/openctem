@@ -48,6 +48,7 @@ type CIAdminHandler struct {
 	pipelines CIPipelineService
 	coverage  CICoverageService
 	settings  CISettingsService
+	codeScan  CICodeScanService
 	refusals  CIRefusalService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
@@ -163,9 +164,19 @@ type CIRunResponse struct {
 	// view only).
 	VerdictDetail *cirunapp.Verdict `json:"verdict_detail,omitempty"`
 	EvaluatedAt   *time.Time        `json:"evaluated_at,omitempty"`
-	ReportsCount  int               `json:"reports_count"`
-	FindingsCount int               `json:"findings_count"`
-	CreatedAt     time.Time         `json:"created_at"`
+	// WouldFail: the verdict passed only because the policy warns or a
+	// break-glass override covered the commit (list and detail).
+	WouldFail bool `json:"would_fail"`
+	// Override is the break-glass override that let the commit pass.
+	Override *cirun.GateOverrideView `json:"override,omitempty"`
+	// DecorationState is where posting the verdict to the code host stands
+	// (pending, posting, posted, skipped, failed; empty when nothing was
+	// queued) and DecorationDetail a short explanation.
+	DecorationState  string    `json:"decoration_state,omitempty"`
+	DecorationDetail string    `json:"decoration_detail,omitempty"`
+	ReportsCount     int       `json:"reports_count"`
+	FindingsCount    int       `json:"findings_count"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
@@ -183,6 +194,16 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 		out.PipelineID = r.PipelineID.String()
 	}
 	out.SensorVersion, out.ScanFailures, out.TemplateRef = r.SensorVersion, r.ScanFailures, r.TemplateRef
+	out.DecorationState, out.DecorationDetail = r.DecorationState, r.DecorationDetail
+	if len(r.VerdictDetail) > 0 {
+		var v struct {
+			WouldFail bool                    `json:"would_fail"`
+			Override  *cirun.GateOverrideView `json:"override"`
+		}
+		if json.Unmarshal(r.VerdictDetail, &v) == nil {
+			out.WouldFail, out.Override = v.WouldFail, v.Override
+		}
+	}
 	out.Tools = make([]CIToolLabel, 0, len(r.Tools))
 	for _, t := range r.Tools {
 		out.Tools = append(out.Tools, CIToolLabel{Name: t.Name, Version: t.Version})
@@ -211,15 +232,18 @@ type CIGatePolicyResponse struct {
 	Modes cirun.PolicyModes `json:"modes"`
 	// AllowRepoPolicy: repositories' .openctem.yml may tighten the gate and
 	// request exceptions.
-	AllowRepoPolicy bool      `json:"allow_repo_policy"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	AllowRepoPolicy bool `json:"allow_repo_policy"`
+	// FixableOnly: a dependency or image vulnerability blocks on severity
+	// or EPSS only when a fixed version exists (KEV still blocks).
+	FixableOnly bool      `json:"fixable_only"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func toCIPolicyResponse(p *cirun.GatePolicy) CIGatePolicyResponse {
 	out := CIGatePolicyResponse{ID: p.ID.String(), ScopeType: p.ScopeType, Enabled: p.Enabled, Mode: p.Mode,
 		FailOnSeverity: p.FailOnSeverity, NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV,
-		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, FixableOnly: p.FixableOnly, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 	if p.ScopeID != nil {
 		out.ScopeID = p.ScopeID.String()
 	}
@@ -250,6 +274,9 @@ type CIGatePolicyRequest struct {
 	// AllowRepoPolicy allows (default) or forbids repositories'
 	// .openctem.yml; any applicable policy forbidding it wins.
 	AllowRepoPolicy *bool `json:"allow_repo_policy,omitempty"`
+	// FixableOnly: vulnerabilities with no fixed version are listed, not
+	// blocking (KEV still blocks). Turning it on loosens the gate.
+	FixableOnly *bool `json:"fixable_only,omitempty"`
 }
 
 // CIGateOverrideResponse is a break-glass override.
@@ -687,7 +714,7 @@ func (h *CIAdminHandler) policyOfCaller(w http.ResponseWriter, r *http.Request, 
 func (req CIGatePolicyRequest) input() (cirunapp.GatePolicyInput, error) {
 	in := cirunapp.GatePolicyInput{ScopeType: req.ScopeType, Enabled: req.Enabled, Mode: req.Mode,
 		FailOnSeverity: req.FailOnSeverity, NewFindingsOnly: req.NewFindingsOnly, FailOnKEV: req.FailOnKEV,
-		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy}
+		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy, FixableOnly: req.FixableOnly}
 	if req.ScopeID != "" {
 		id, err := shared.IDFromString(req.ScopeID)
 		if err != nil {
