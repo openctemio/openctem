@@ -123,6 +123,40 @@ func (r *CIRunRepository) CoverageObservations(ctx context.Context, tenantID sha
 	return out, rows.Err()
 }
 
+// MissingExpectedCapabilities returns the capabilities the run's repository
+// is expected to report (an empty expectation means every capability) that
+// none of the run's reported tools has in the tool catalog (platform tools
+// and the tenant's own). Tenant-scoped on the run, the expectation and the
+// tenant's tools.
+func (r *CIRunRepository) MissingExpectedCapabilities(ctx context.Context, tenantID, runID shared.ID) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT e.cap
+		FROM ci_runs r
+		JOIN ci_coverage_expectations x ON x.tenant_id = r.tenant_id AND x.repository_asset_id = r.repository_asset_id
+		CROSS JOIN LATERAL unnest(CASE WHEN cardinality(x.capabilities) = 0
+			THEN ARRAY['sast', 'sca', 'secrets', 'iac']::text[] ELSE x.capabilities::text[] END) AS e(cap)
+		WHERE r.tenant_id = $1 AND r.id = $2
+		  AND NOT EXISTS (
+			SELECT 1 FROM jsonb_array_elements(r.tools) AS tl(t)
+			JOIN tools tt ON lower(tt.name) = lower(tl.t->>'name') AND (tt.tenant_id IS NULL OR tt.tenant_id = r.tenant_id)
+			WHERE e.cap = ANY(tt.capabilities))
+		ORDER BY array_position(ARRAY['sast', 'sca', 'secrets', 'iac']::text[], e.cap)`,
+		tenantID.String(), runID.String())
+	if err != nil {
+		return nil, fmt.Errorf("missing expected capabilities: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // ListExpectations returns the tenant's expected repositories.
 func (r *CIRunRepository) ListExpectations(ctx context.Context, tenantID shared.ID) (map[shared.ID]cirun.Expectation, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT repository_asset_id, capabilities, created_by, created_at, updated_at
