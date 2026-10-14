@@ -220,3 +220,83 @@ func TestSensorToolSettings_ClaimLayer_DB(t *testing.T) {
 		t.Fatalf("after reset = %v, %v", l, err)
 	}
 }
+
+// previewToolConfig: a scan-scope common option (retries) and a
+// sensor-only key (workers).
+const previewToolConfig = `{"x-octm-schema-version":1,"type":"object","additionalProperties":false,"properties":{` +
+	`"retries":{"type":"integer","minimum":0,"maximum":5,"default":1,"x-octm-common":"retries","x-octm-flag":"-retries","x-octm-scope":"scan"},` +
+	`"workers":{"type":"integer","minimum":1,"maximum":200,"default":25,"x-octm-flag":"-w","x-octm-scope":"sensor"}}}`
+
+// The preview resolves a scan's config over the sensor's settings as the
+// sensor will; every member reads it, a config the sensor would refuse is
+// 422 by path, and another organization's sensor answers 404.
+func TestSensorToolSettings_Preview_DB(t *testing.T) {
+	h := newActivityRouteHarness(t)
+	tid, other := h.tenant(), h.tenant()
+	admin, viewer := h.member(tid, "admin"), h.member(tid, "viewer")
+	outsider := h.member(other, "admin")
+	sid := h.sensor(tid)
+	installToolManifestWith(t, h, tid, sid, previewToolConfig)
+	base := "/api/v1/sensors/" + sid + "/tool-settings/nuclei"
+	h.expect(admin, http.MethodPut, base, `{"values":{"retries":3}}`, http.StatusOK)
+
+	var p handler.SensorToolSettingsPreviewResponse
+	mustJSON(t, h.expect(viewer, http.MethodPost, base+"/preview", `{"config":{"retries":2,"rate_limit":10,"template_id":"x"}}`, http.StatusOK), &p)
+	got := map[string]handler.EffectiveToolSettingResponse{}
+	for _, e := range p.Items {
+		got[e.Key] = e
+	}
+	if r := got["retries"]; r.Value != float64(2) || r.Source != "scan" {
+		t.Fatalf("retries = %+v", r)
+	}
+	if b := got["workers"]; b.Value != float64(25) || b.Source != "default" {
+		t.Fatalf("workers = %+v", b)
+	}
+	if len(p.Ignored) != 1 || p.Ignored[0] != "template_id" {
+		t.Fatalf("ignored = %v", p.Ignored)
+	}
+
+	for in, path := range map[string]string{
+		`{"config":{"retries":4}}`:  "/retries", // above the sensor's raise
+		`{"config":{"workers":10}}`: "/workers", // sensor-only
+	} {
+		if raw := h.expect(viewer, http.MethodPost, base+"/preview", in, http.StatusUnprocessableEntity); !strings.Contains(raw, `"path":"`+path+`"`) {
+			t.Fatalf("%s: %s", in, raw)
+		}
+	}
+	h.expect(viewer, http.MethodPost, base+"/preview", `{"config":{},"extra":1}`, http.StatusBadRequest)
+	h.expect(outsider, http.MethodPost, base+"/preview", `{"config":{}}`, http.StatusNotFound)
+}
+
+// Saving a scan's tool options is checked against the tenant's sensors for
+// that tool: refused only when no sensor would accept them.
+func TestSensorToolSettings_CheckScanToolConfig_DB(t *testing.T) {
+	h := newActivityRouteHarness(t)
+	tid := h.tenant()
+	admin := h.member(tid, "admin")
+	strict, lax := h.sensor(tid), h.sensor(tid)
+	installToolManifestWith(t, h, tid, strict, previewToolConfig)
+	installToolManifestWith(t, h, tid, lax, previewToolConfig)
+	h.expect(admin, http.MethodPut, "/api/v1/sensors/"+lax+"/tool-settings/nuclei", `{"values":{"retries":4}}`, http.StatusOK)
+	h.exec(`UPDATE sensors SET reported_tool_names = ARRAY['nuclei'] WHERE id = ANY($1::uuid[])`, "{"+strict+","+lax+"}")
+
+	svc := sensorapp.NewSensorService(postgres.NewSensorRepository(&postgres.DB{DB: h.db}), nil, logger.NewNop())
+	tenant := shared.MustIDFromString(tid)
+	ctx := context.Background()
+	if err := svc.CheckScanToolConfig(ctx, tenant, "nuclei", map[string]any{"retries": float64(4)}); err != nil {
+		t.Fatalf("accepted by the lax sensor, refused: %v", err)
+	}
+	err := svc.CheckScanToolConfig(ctx, tenant, "nuclei", map[string]any{"retries": float64(5)})
+	if !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("no sensor accepts retries 5: err = %v", err)
+	}
+	if err := svc.CheckScanToolConfig(ctx, tenant, "nuclei", map[string]any{"workers": float64(10)}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("a sensor-only option: err = %v", err)
+	}
+	if err := svc.CheckScanToolConfig(ctx, tenant, "naabu", map[string]any{"retries": float64(9)}); err != nil {
+		t.Fatalf("no sensor declares naabu settings: %v", err)
+	}
+	if err := svc.CheckScanToolConfig(ctx, shared.MustIDFromString(h.tenant()), "nuclei", map[string]any{"retries": float64(5)}); err != nil {
+		t.Fatalf("another tenant has no such sensor: %v", err)
+	}
+}

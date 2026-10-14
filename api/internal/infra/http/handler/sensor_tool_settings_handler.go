@@ -61,11 +61,31 @@ type EffectiveToolSettingResponse struct {
 	Key string `json:"key"`
 	// Value is null when the key has neither a default nor a stored value.
 	Value  any    `json:"value"`
-	Source string `json:"source" enums:"default,sensor,"`
+	Source string `json:"source" enums:"default,sensor,scan,"`
 	Flag   string `json:"flag,omitempty"`
 	Common string `json:"common,omitempty"`
 	Scope  string `json:"scope" enums:"sensor,scan"`
 	Tier   string `json:"tier,omitempty"`
+}
+
+// PreviewSensorToolSettingsRequest is a scan's (or a workflow step's) tool
+// options: its config, as the scan stores it.
+type PreviewSensorToolSettingsRequest struct {
+	Config map[string]any `json:"config" swaggertype:"object"`
+}
+
+// SensorToolSettingsPreviewResponse is every key of a tool's schema with the
+// value a job of a scan with the given config runs with on this sensor
+// (source default, sensor or scan), before the job's own limits and the
+// sensor's local policy, which only lower values. Ignored lists the config
+// keys the sensor ignores (not options of this tool, or read by the
+// sensor's executor itself: rate_limit, concurrency, bulk_size,
+// allow_interactsh, exclude).
+type SensorToolSettingsPreviewResponse struct {
+	Tool         string                         `json:"tool"`
+	SchemaDigest string                         `json:"schema_digest"`
+	Items        []EffectiveToolSettingResponse `json:"items"`
+	Ignored      []string                       `json:"ignored"`
 }
 
 // SensorEffectiveToolSettingsResponse is every key of a tool's schema with
@@ -233,6 +253,60 @@ func (h *SensorHandler) EffectiveToolSettings(w http.ResponseWriter, r *http.Req
 	out := SensorEffectiveToolSettingsResponse{Tool: view.Tool, SchemaDigest: view.SchemaDigest,
 		Items: make([]EffectiveToolSettingResponse, 0, len(eff))}
 	for _, e := range eff {
+		out.Items = append(out.Items, EffectiveToolSettingResponse{Key: e.Key, Value: e.Value, Source: string(e.Source),
+			Flag: e.Flag, Common: e.Common, Scope: string(e.Scope), Tier: e.Tier})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// PreviewToolSettings handles POST /api/v1/sensors/{id}/tool-settings/{tool}/preview
+// @Summary      Preview a scan's tool options on a sensor
+// @Description  Resolves a scan's (or a workflow step's) config over the sensor's stored settings for the tool, as the sensor will when it runs a job of that scan: every key with its value and source (default, sensor or scan). Read-only. 422 with every problem by path when the sensor would refuse the config: a sensor-only option, a value out of bounds, a raise of rate, concurrency or retries above the value in force, or a dangerous option.
+// @Tags         Sensors
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                            true  "Sensor ID"
+// @Param        tool  path      string                            true  "Tool name"
+// @Param        body  body      PreviewSensorToolSettingsRequest  true  "Scan config"
+// @Success      200   {object}  SensorToolSettingsPreviewResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      422   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/{id}/tool-settings/{tool}/preview [post]
+func (h *SensorHandler) PreviewToolSettings(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, sensor.MaxToolSettingsBytes+1024))
+	if err != nil {
+		apierror.BadRequest("Request body too large").WriteJSON(w)
+		return
+	}
+	var req struct {
+		Config json.RawMessage `json:"config"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	config, err := sensor.DecodeToolSettingsValues(req.Config)
+	if err != nil {
+		h.handleToolSettingsError(w, err)
+		return
+	}
+	p, err := h.service.PreviewToolSettings(r.Context(), middleware.GetTenantID(r.Context()), chi.URLParam(r, "id"), chi.URLParam(r, "tool"), config)
+	if err != nil {
+		h.handleToolSettingsError(w, err)
+		return
+	}
+	out := SensorToolSettingsPreviewResponse{Tool: p.View.Tool, SchemaDigest: p.View.SchemaDigest,
+		Items: make([]EffectiveToolSettingResponse, 0, len(p.Effective)), Ignored: p.Ignored}
+	if out.Ignored == nil {
+		out.Ignored = []string{}
+	}
+	for _, e := range p.Effective {
 		out.Items = append(out.Items, EffectiveToolSettingResponse{Key: e.Key, Value: e.Value, Source: string(e.Source),
 			Flag: e.Flag, Common: e.Common, Scope: string(e.Scope), Tier: e.Tier})
 	}
