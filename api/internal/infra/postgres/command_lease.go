@@ -250,13 +250,10 @@ func (r *CommandRepository) ReleaseHeldBySensor(ctx context.Context, tenantID, s
 	return out, nil
 }
 
-// FencedUpdate is Update for a sensor-side state change: it applies only if
-// the command is still held by sensorID in the state and lease epoch the
-// caller read (expect). A command that was re-queued, re-claimed or finished
-// meanwhile is left untouched and false is returned. A started command's
-// lease is renewed.
-func (r *CommandRepository) FencedUpdate(ctx context.Context, cmd *command.Command, expect command.Fence) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `
+// fencedUpdateSQL applies a sensor-side state change only while the
+// command is held by the sensor in the state and lease epoch the caller
+// read (fencedUpdateArgs).
+const fencedUpdateSQL = `
 		UPDATE commands
 		SET status = $4::text, error_message = $5, started_at = $6, completed_at = $7,
 		    result = $8,
@@ -265,11 +262,22 @@ func (r *CommandRepository) FencedUpdate(ctx context.Context, cmd *command.Comma
 		        WHEN $4::text IN ('completed', 'failed') THEN NULL
 		        ELSE lease_expires_at END
 		WHERE id = $1 AND tenant_id = $2 AND sensor_id = $3
-		  AND status = $10::text AND lease_epoch = $11`,
-		cmd.ID.String(), cmd.TenantID.String(), expect.SensorID,
+		  AND status = $10::text AND lease_epoch = $11`
+
+func (r *CommandRepository) fencedUpdateArgs(cmd *command.Command, expect command.Fence) []any {
+	return []any{cmd.ID.String(), cmd.TenantID.String(), expect.SensorID,
 		string(cmd.Status), cmd.ErrorMessage, nullTime(cmd.StartedAt), nullTime(cmd.CompletedAt),
 		nullJSON(cmd.Result), r.leaseSeconds(),
-		string(expect.Status), expect.Epoch)
+		string(expect.Status), expect.Epoch}
+}
+
+// FencedUpdate is Update for a sensor-side state change: it applies only if
+// the command is still held by sensorID in the state and lease epoch the
+// caller read (expect). A command that was re-queued, re-claimed or finished
+// meanwhile is left untouched and false is returned. A started command's
+// lease is renewed.
+func (r *CommandRepository) FencedUpdate(ctx context.Context, cmd *command.Command, expect command.Fence) (bool, error) {
+	res, err := r.db.ExecContext(ctx, fencedUpdateSQL, r.fencedUpdateArgs(cmd, expect)...)
 	if err != nil {
 		return false, fmt.Errorf("failed to update command: %w", err)
 	}

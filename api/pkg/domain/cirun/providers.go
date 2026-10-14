@@ -171,6 +171,10 @@ func hasEventClaim(p Provider) bool {
 	return p == ProviderGitHub || p == ProviderGitLab || p == ProviderJenkins
 }
 
+// hasWorkflowRefClaim reports whether a provider's token names the pipeline
+// definition the job runs (workflow_refs).
+func hasWorkflowRefClaim(p Provider) bool { return p == ProviderGitHub || p == ProviderGitLab }
+
 func hasEnvironmentClaim(p Provider) bool {
 	return p != ProviderAzureDevOps && p != ProviderCircleCI
 }
