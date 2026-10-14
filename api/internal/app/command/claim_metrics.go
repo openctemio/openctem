@@ -35,6 +35,9 @@ func claimSkipped(reason string, before, after int) {
 	}
 }
 
+// observeHostSplit counts one command split for busy hosts.
+func observeHostSplit() { metrics.CommandHostSplitsTotal.Inc() }
+
 // observeClaimDuration records how long a claim took since start.
 func observeClaimDuration(mode string, start time.Time) {
 	metrics.CommandClaimDuration.WithLabelValues(mode).Observe(time.Since(start).Seconds())
