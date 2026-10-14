@@ -1,22 +1,12 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RunMap as RunMapData, RunTask } from '@/lib/api/generated'
 
 const get = vi.fn()
 vi.mock('@/lib/api/client', () => ({ get: (url: string) => get(url) }))
-
-// The shared component is tested on its own; here only what the run map
-// hands it matters.
-const seen: Record<string, unknown>[] = []
-vi.mock('@/features/scan-workflows/components/workflow-stages', () => ({
-  WorkflowStagesView: (props: Record<string, unknown>) => {
-    seen.push(props)
-    const badge = props.badge as Record<string, React.ReactNode>
-    return <div data-testid="stages">{Object.values(badge)}</div>
-  },
-}))
 
 // The run's change notices: the test drives them by hand.
 const channels: { channelType: string; channelId: string | null; onData?: (d: unknown) => void }[] =
@@ -90,47 +80,58 @@ const renderMap = () =>
     </SWRConfig>
   )
 
+/** A step card: a button named "<name>: <state>. Open the step". */
+const stepButton = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}: `) })
+
+const runFlow = () => screen.findByRole('region', { name: 'Run flow' })
+
 describe('RunMap', () => {
   beforeEach(() => {
     get.mockReset()
-    seen.length = 0
   })
 
-  it('draws the run map on the shared stages component', async () => {
+  it('draws the run as a flow: state, chunks, outputs and what flowed on', async () => {
     get.mockResolvedValue(data)
     renderMap()
-    await screen.findByTestId('stages')
+    await runFlow()
     expect(get).toHaveBeenCalledWith('/api/v1/scan-runs/r1/map')
     expect(screen.getByText('Workflow version 2, as the run started')).toBeInTheDocument()
-    expect(screen.getByText('312 outputs')).toBeInTheDocument()
-    expect(screen.getByText('Waiting for a sensor')).toBeInTheDocument()
-
-    const props = seen[seen.length - 1]
-    expect((props.steps as { step_key: string }[]).map((s) => s.step_key)).toEqual([
-      'subdomains',
-      'probe',
+    // A chain is a list, in dependency order, each step joined to the last.
+    const cards = screen.getAllByRole('button', { name: /Open the step$/ })
+    expect(cards.map((c) => c.getAttribute('aria-label'))).toEqual([
+      'Subdomains: Done. Open the step',
+      'Probe: Waiting for a sensor. Open the step',
     ])
-    expect(props.status).toEqual({ subdomains: 'completed', probe: 'pending' })
-    const edgeLabel = props.edgeLabel as (a: string, b: string) => string | undefined
-    expect(edgeLabel('subdomains', 'probe')).toBe('312')
+    expect(within(stepButton('Subdomains')).getByText('312 outputs')).toBeInTheDocument()
+    expect(within(stepButton('Probe')).getByText('0/2 chunks')).toBeInTheDocument()
+    expect(within(stepButton('Probe')).getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '0'
+    )
+    expect(screen.getByText('312 outputs → Probe')).toBeInTheDocument()
+    // No graph toggle for a chain.
+    expect(screen.queryByRole('group', { name: 'View' })).not.toBeInTheDocument()
   })
 
   it('opens a step panel with its state, outputs and only its tasks', async () => {
     get.mockResolvedValue(data)
     renderMap()
-    await screen.findByTestId('stages')
-    const select = seen[seen.length - 1].onSelectStep as (key: string) => void
-    act(() => select('probe'))
+    await runFlow()
+    const select = (name: string) => fireEvent.click(stepButton(name))
+    select('Probe')
+    expect(stepButton('Probe')).toHaveAttribute('aria-pressed', 'true')
     const panel = await screen.findByRole('region', { name: 'Step Probe' })
     expect(within(panel).getAllByText('Waiting for a sensor').length).toBeGreaterThan(0)
     expect(within(panel).getByText('Nothing produced yet.')).toBeInTheDocument()
     expect(within(panel).getAllByText('httpx').length).toBeGreaterThan(0)
     expect(within(panel).queryAllByText('subfinder')).toHaveLength(0)
 
-    act(() => select('probe')) // the same step again closes it
+    select('Probe') // the same step again closes it
     expect(screen.queryByRole('region', { name: 'Step Probe' })).not.toBeInTheDocument()
 
-    act(() => select('subdomains'))
+    // The keyboard opens a step too.
+    stepButton('Subdomains').focus()
+    await userEvent.keyboard('{Enter}')
     const sub = await screen.findByRole('region', { name: 'Step Subdomains' })
     expect(within(sub).getByText('domain')).toBeInTheDocument()
     expect(within(sub).getByText('312')).toBeInTheDocument()
@@ -139,7 +140,7 @@ describe('RunMap', () => {
   it('refreshes when the run says it changed', async () => {
     get.mockResolvedValue(data)
     renderMap()
-    await screen.findByTestId('stages')
+    await runFlow()
     const sub = channels[channels.length - 1]
     expect(sub.channelType).toBe('run')
     expect(sub.channelId).toBe('r1')
@@ -187,14 +188,13 @@ describe('RunMap', () => {
       )
     )
     renderMap()
-    await screen.findByTestId('stages')
+    await runFlow()
     expect(
       screen.getByText('Ports produced nothing, while the previous run produced 40.')
     ).toBeInTheDocument()
     expect(screen.getAllByText('+14 new, 2 gone').length).toBeGreaterThan(0)
 
-    const select = seen[seen.length - 1].onSelectStep as (key: string) => void
-    act(() => select('subdomains'))
+    fireEvent.click(stepButton('Subdomains'))
     const panel = await screen.findByRole('region', { name: 'Step Subdomains' })
     const list = await within(panel).findByRole('list', { name: 'Outputs' })
     expect(get).toHaveBeenCalledWith('/api/v1/scan-runs/r1/outputs?step_key=subdomains&limit=20')
@@ -204,6 +204,134 @@ describe('RunMap', () => {
     expect(
       within(panel).getByText('Compared with the last run: +14 new, 2 gone')
     ).toBeInTheDocument()
+  })
+
+  it('says why a step was skipped and that a step could not reach its targets', async () => {
+    // The live run of 2026-10-14: the port scan was refused by the
+    // confined egress, the HTTP probe failed, the templates were skipped.
+    const run: RunMapData = {
+      run_id: 'r1',
+      status: 'failed',
+      nodes: [
+        {
+          step_key: 'ports',
+          name: 'Port scan',
+          tool: 'naabu',
+          depends_on: [],
+          state: 'succeeded',
+          findings: 0,
+          started_at: '2026-10-14T05:30:00Z',
+          completed_at: '2026-10-14T05:30:48Z',
+          chunks: { total: 2, queued: 0, running: 0, completed: 2, failed: 0 },
+          outputs: { total: 0, by_type: {} },
+        },
+        {
+          step_key: 'probe',
+          name: 'HTTP probe',
+          tool: 'httpx',
+          depends_on: ['ports'],
+          state: 'failed',
+          reason: 'COMMAND_EXHAUSTED',
+          findings: 0,
+          chunks: { total: 1, queued: 0, running: 0, completed: 0, failed: 1 },
+          outputs: { total: 0, by_type: {} },
+        },
+        {
+          step_key: 'vulns',
+          name: 'Vulnerability templates',
+          depends_on: ['probe'],
+          state: 'skipped',
+          findings: 0,
+          chunks: { total: 0, queued: 0, running: 0, completed: 0, failed: 0 },
+          outputs: { total: 0, by_type: {} },
+        },
+      ],
+      edges: [],
+    }
+    get.mockResolvedValue(run)
+    render(
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        <RunMap
+          runId="r1"
+          tasks={
+            [
+              { id: 'p1', step_key: 'ports', egress_refused_targets: 21 },
+              { id: 'p2', step_key: 'ports', egress_refused_targets: 47 },
+            ] as unknown as RunTask[]
+          }
+        />
+      </SWRConfig>
+    )
+    await runFlow()
+    const blocked =
+      "Port scan could not reach 68 targets (blocked by the sensor's network confinement)."
+    expect(within(screen.getByRole('status')).getByText(blocked)).toBeInTheDocument()
+    expect(screen.queryByText('Port scan produced nothing.')).not.toBeInTheDocument()
+    expect(within(stepButton('Port scan')).getByText(blocked)).toBeInTheDocument()
+    expect(within(stepButton('Port scan')).getByText('Took 48s')).toBeInTheDocument()
+    expect(
+      within(stepButton('Vulnerability templates')).getByText('Skipped: HTTP probe failed')
+    ).toBeInTheDocument()
+    expect(within(stepButton('HTTP probe')).getByText('command exhausted')).toBeInTheDocument()
+  })
+
+  describe('with steps side by side', () => {
+    const fan: RunMapData = {
+      run_id: 'r1',
+      status: 'running',
+      nodes: [
+        { ...data.nodes![0] },
+        { ...data.nodes![1] },
+        {
+          step_key: 'ports',
+          name: 'Ports',
+          depends_on: ['subdomains'],
+          state: 'running',
+          started_at: '2026-10-14T05:30:00Z',
+          findings: 0,
+          chunks: { total: 4, queued: 1, running: 1, completed: 2, failed: 0 },
+          outputs: { total: 0, by_type: {} },
+        },
+      ],
+      edges: [
+        { from: 'subdomains', to: 'probe', count: 312 },
+        { from: 'subdomains', to: 'ports', count: 312 },
+      ],
+    }
+    let width: PropertyDescriptor | undefined
+    beforeEach(() => {
+      width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get: () => 1200,
+      })
+    })
+    afterEach(() => {
+      if (width) Object.defineProperty(HTMLElement.prototype, 'clientWidth', width)
+    })
+
+    it('draws a graph when it fits, with a list one click away', async () => {
+      get.mockResolvedValue(fan)
+      renderMap()
+      await runFlow()
+      const view = await screen.findByRole('group', { name: 'View' })
+      const graph = within(view).getByRole('button', { name: 'Graph' })
+      expect(graph).toHaveAttribute('aria-pressed', 'true')
+      // The parallel steps share a layer, after the step they wait for.
+      const layer = stepButton('Probe').closest('ul')!
+      expect(within(layer).getByRole('button', { name: /^Ports: / })).toBeInTheDocument()
+      expect(stepButton('Subdomains').closest('ul')).not.toBe(layer)
+
+      fireEvent.click(within(view).getByRole('button', { name: 'List' }))
+      expect(within(view).getByRole('button', { name: 'List' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+      // In the list, a step right after the one it waits for is joined to
+      // it; one further down names what it waits for.
+      expect(screen.getByText('312 outputs → Probe')).toBeInTheDocument()
+      expect(screen.getByText('Waits for Subdomains')).toBeInTheDocument()
+    })
   })
 
   it('says when the map cannot be loaded', async () => {
