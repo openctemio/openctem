@@ -206,4 +206,49 @@ describe('FindingGroupsTable', () => {
     // The rows stay on screen while they reload.
     expect(screen.getByText('finding f1')).toBeInTheDocument()
   })
+
+  it('runs the list filter for groups and their rows when given one', async () => {
+    groupsState.data = { data: [group('a1', 'asset', 2)], pagination: { total: 1 } }
+    fetchFindings.mockResolvedValue({ data: [finding('f1', { asset_id: 'a1' })], total: 1 })
+    renderTable({
+      dimension: 'asset_id',
+      query: {
+        search: 'sqli',
+        is_in_kev: true,
+        state: 'open',
+        page: 4,
+        per_page: 50,
+        sort: 'title',
+      },
+    })
+    expect(groupsArgs.at(-1)).toMatchObject({
+      group_by: 'asset_id',
+      query: { search: 'sqli', is_in_kev: true, state: 'open' },
+    })
+    expect((groupsArgs.at(-1) as { query: Record<string, unknown> }).query).not.toHaveProperty(
+      'sort'
+    )
+    await waitFor(() => expect(fetchFindings).toHaveBeenCalled())
+    // The rows of a group: the list filter, narrowed to the group, own paging.
+    expect(fetchFindings.mock.calls[0][0]).toMatchObject({
+      search: 'sqli',
+      is_in_kev: true,
+      state: 'open',
+      asset_id: 'a1',
+      page: 1,
+    })
+  })
+
+  it('lets a fixed status scope replace the lens of the list filter', () => {
+    groupsState.data = { data: [], pagination: { total: 0 } }
+    renderTable({
+      dimension: 'cve_id',
+      statuses: 'fix_applied',
+      query: { state: 'open', exclude_statuses: ['draft'], search: 'x' },
+    })
+    const q = (groupsArgs.at(-1) as { query: Record<string, unknown> }).query
+    expect(q).toMatchObject({ statuses: ['fix_applied'], search: 'x' })
+    expect(q).not.toHaveProperty('state')
+    expect(q).not.toHaveProperty('exclude_statuses')
+  })
 })

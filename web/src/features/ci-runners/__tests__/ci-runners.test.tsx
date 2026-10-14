@@ -193,6 +193,24 @@ describe('lib', () => {
     for (const p of CI_PROVIDERS) expect(snippetFor(p, input)).not.toContain('ci:edge')
   })
 
+  it('reads a GitHub issuer back only when it is not github.com', () => {
+    expect(organizationFromIssuer('github', 'https://token.actions.githubusercontent.com')).toBe('')
+    expect(organizationFromIssuer('github', 'https://github.example.com/_services/token')).toBe(
+      'https://github.example.com/_services/token'
+    )
+  })
+
+  it('the wizard never reuses a GitHub Enterprise trust for github.com', () => {
+    const ghes = {
+      id: 'e',
+      provider: 'github',
+      issuer: 'https://github.example.com/_services/token',
+      enabled: true,
+      rules: { owners: ['acme'] },
+    } as CITrustConfig
+    expect(findCoveringTrust([ghes], 'github', '', ['acme'])).toBeUndefined()
+  })
+
   it('finds a trust configuration that already admits the owners', () => {
     const gh = {
       id: 'a',
@@ -519,7 +537,7 @@ describe('CITrustSettings', () => {
   })
 
   it('a policy can block dependency vulnerabilities only when a fix exists', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [
       {
         id: 'gp1',
@@ -550,7 +568,7 @@ describe('CITrustSettings', () => {
   })
 
   it('deleting a repository gate policy asks first', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
     mockDeletePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
@@ -649,6 +667,29 @@ describe('CITrustSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
+  })
+
+  it('saves a GitHub Enterprise Server issuer, and leaves github.com as the default', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await userEvent.type(screen.getByLabelText('Name'), 'GHES')
+    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.type(
+      screen.getByLabelText(/github enterprise issuer/i),
+      'https://github.example.com/_services/token'
+    )
+    mockSaveTrust.mockResolvedValue({
+      id: 'c9',
+      name: 'GHES',
+      provider: 'github',
+      audience: 'openctem:tenant:t-123',
+    })
+    await userEvent.click(screen.getByRole('button', { name: /^add$/i }))
+    expect(mockSaveTrust).toHaveBeenCalledWith({
+      id: undefined,
+      body: expect.objectContaining({ issuer: 'https://github.example.com/_services/token' }),
+    })
   })
 
   it('admits only the central workflow when pipeline definitions are listed', async () => {
