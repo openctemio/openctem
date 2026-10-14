@@ -57,6 +57,10 @@ var stepUpRoutes = []string{
 	"DELETE /api/v1/api-keys/{id}",
 	"POST /api/v1/scim-tokens",
 	"POST /api/v1/ci/gate-overrides",
+	// Binding a code-host app installation or a GitLab group token decides
+	// which organization posts the gate for the account's repositories.
+	"POST /api/v1/ci/scm-apps/github/installations",
+	"POST /api/v1/ci/scm-apps/gitlab-connections",
 	"PATCH /api/v1/tenants/acme/settings/security",
 	"POST /api/v1/tenants/acme/settings/sso/changes/{id}/approve",
 	"DELETE /api/v1/tenants/acme",
@@ -150,6 +154,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCIMRoutes(router, nil, &handler.SCIMTokenHandler{}, nil, auth, nil)
 			registerAuditRoutes(router, &handler.AuditHandler{}, auth, nil)
 			registerCIRoutes(router, &handler.CIAdminHandler{}, nil, auth, nil, chain(), nil, logger.NewNop())
+			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
 			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())

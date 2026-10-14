@@ -28,8 +28,18 @@ func (f *fakeGitHub) GetInstallation(_ context.Context, id int64) (*githubapp.In
 	return &githubapp.Installation{ID: id, Account: githubapp.Account{Login: f.accounts[id], ID: id * 10, Type: "Organization"},
 		RepositorySelection: "selected"}, nil
 }
-func (f *fakeGitHub) UserCanAccessInstallation(_ context.Context, code string, id int64) (bool, error) {
-	return f.access[code] == id, nil
+func (f *fakeGitHub) UserMayBindInstallation(_ context.Context, code string, inst *githubapp.Installation) (bool, error) {
+	return f.access[code] == inst.ID, nil
+}
+
+type memOnce struct{ seen map[string]bool }
+
+func (m *memOnce) FirstDelivery(_ context.Context, key string, _ time.Duration) (bool, error) {
+	if m.seen[key] {
+		return false, nil
+	}
+	m.seen[key] = true
+	return true, nil
 }
 func (f *fakeGitHub) VerifySignature(_ []byte, sig string) bool { return f.sigOK && sig == "good" }
 func (f *fakeGitHub) ForgetInstallation(id int64)               { f.forgot = append(f.forgot, id) }
@@ -144,7 +154,7 @@ func TestCompleteGitHubInstallNeedsTheCallersStateAndAccess(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	// A guessed installation id the person cannot access: refused.
+	// A guessed installation id whose account the person does not own: refused.
 	if _, err := svc.CompleteGitHubInstall(ctx, tenantA, CompleteGitHubInput{InstallationID: 22, Code: "alice-code", State: state},
 		Actor{UserID: alice}); !errors.Is(err, scmapp.ErrNotAuthorized) {
 		t.Fatalf("someone else's installation: %v", err)
@@ -211,5 +221,54 @@ func TestGitHubWebhook(t *testing.T) {
 	// Without a GitHub App nothing is accepted.
 	if err := NewService(repo, nil, "s", audit, nil).HandleGitHubWebhook(ctx, "installation", "good", nil); !errors.Is(err, githubapp.ErrNotConfigured) {
 		t.Fatalf("not configured: %v", err)
+	}
+}
+
+func TestInstallStateIsSingleUse(t *testing.T) {
+	gh := &fakeGitHub{access: map[string]int64{"alice-code": 11}, accounts: map[int64]string{11: "acme"}}
+	svc := NewService(&memRepo{}, gh, "jwt-secret-at-least-32-characters-long", &memAudit{}, nil)
+	svc.SetOnceStore(&memOnce{seen: map[string]bool{}})
+	ctx := context.Background()
+	tenant, alice := shared.NewID(), shared.NewID().String()
+
+	link, err := svc.GitHubInstallURL(tenant, alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := stateOf(t, link)
+	in := CompleteGitHubInput{InstallationID: 11, Code: "alice-code", State: state}
+	if _, err := svc.CompleteGitHubInstall(ctx, tenant, in, Actor{UserID: alice}); err != nil {
+		t.Fatalf("first use: %v", err)
+	}
+	if _, err := svc.CompleteGitHubInstall(ctx, tenant, in, Actor{UserID: alice}); !errors.Is(err, scmapp.ErrNotAuthorized) {
+		t.Fatalf("replayed state: %v", err)
+	}
+	// A failed attempt also spends the state: the person starts again.
+	link2, _ := svc.GitHubInstallURL(tenant, alice)
+	bad := CompleteGitHubInput{InstallationID: 11, Code: "mallory-code", State: stateOf(t, link2)}
+	if _, err := svc.CompleteGitHubInstall(ctx, tenant, bad, Actor{UserID: alice}); !errors.Is(err, scmapp.ErrNotAuthorized) {
+		t.Fatalf("not the account owner: %v", err)
+	}
+	bad.Code = "alice-code"
+	if _, err := svc.CompleteGitHubInstall(ctx, tenant, bad, Actor{UserID: alice}); !errors.Is(err, scmapp.ErrNotAuthorized) {
+		t.Fatalf("state reused after a refusal: %v", err)
+	}
+}
+
+type failingOnce struct{}
+
+func (failingOnce) FirstDelivery(context.Context, string, time.Duration) (bool, error) {
+	return false, errors.New("redis down")
+}
+
+func TestInstallStateStoreDownFailsClosed(t *testing.T) {
+	gh := &fakeGitHub{access: map[string]int64{"alice-code": 11}, accounts: map[int64]string{11: "acme"}}
+	svc := NewService(&memRepo{}, gh, "jwt-secret-at-least-32-characters-long", &memAudit{}, nil)
+	svc.SetOnceStore(failingOnce{})
+	tenant, alice := shared.NewID(), shared.NewID().String()
+	link, _ := svc.GitHubInstallURL(tenant, alice)
+	if _, err := svc.CompleteGitHubInstall(context.Background(), tenant,
+		CompleteGitHubInput{InstallationID: 11, Code: "alice-code", State: stateOf(t, link)}, Actor{UserID: alice}); !errors.Is(err, scmapp.ErrNotAuthorized) {
+		t.Fatalf("store down: %v", err)
 	}
 }
