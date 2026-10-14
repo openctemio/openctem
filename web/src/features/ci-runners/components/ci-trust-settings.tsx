@@ -1176,7 +1176,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
   const hoursValue = Number(hours)
   const invalid =
     !assetId.trim() ||
-    !/^[0-9a-fA-F]{7,64}$/.test(sha.trim()) ||
+    !/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(sha.trim()) ||
     reason.trim().length < 10 ||
     !(hoursValue >= 1 && hoursValue <= 168)
 
