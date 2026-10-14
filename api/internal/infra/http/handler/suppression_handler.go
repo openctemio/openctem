@@ -390,26 +390,84 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rule := result.Rule
-	h.auditApproval(r, rule, result.SelfApproved)
+	h.auditApproval(r, result)
 
 	h.logger.Info("suppression rule approved",
 		"rule_id", ruleID,
 		"approved_by", userID,
 		"tenant_id", tenantID,
+		"applied_findings", result.AppliedFindings,
+		"capped", result.Capped,
 	)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSuppressionRuleResponse(rule))
+	json.NewEncoder(w).Encode(ApproveSuppressionRuleResponse{
+		SuppressionRuleResponse: toSuppressionRuleResponse(rule),
+		AppliedFindings:         result.AppliedFindings,
+		Capped:                  result.Capped,
+	})
+}
+
+// ApproveSuppressionRuleResponse is the approved rule plus what the approval
+// did to existing findings.
+type ApproveSuppressionRuleResponse struct {
+	SuppressionRuleResponse
+	// AppliedFindings is the number of open findings the approval gave the
+	// rule's disposition (false_positive or accepted).
+	AppliedFindings int `json:"applied_findings"`
+	// Capped: more open findings matched than one approval changes; the rest
+	// stay open.
+	Capped bool `json:"capped"`
+}
+
+// SuppressionRulePreviewResponse is what approving a rule would do now.
+type SuppressionRulePreviewResponse struct {
+	// MatchingOpenFindings is the number of the organization's open findings
+	// the rule matches and an approval would close, at most Limit.
+	MatchingOpenFindings int `json:"matching_open_findings"`
+	// Capped: more than Limit match; an approval closes Limit of them.
+	Capped bool `json:"capped"`
+	Limit  int  `json:"limit"`
+}
+
+// PreviewRule handles GET /api/v1/suppressions/{id}/preview: the number of
+// open findings an approval would close. The count is organization-wide, as
+// the approval is, so the route is gated like the approval itself.
+func (h *SuppressionHandler) PreviewRule(w http.ResponseWriter, r *http.Request) {
+	tenantUUID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	ruleUUID, err := shared.IDFromString(r.PathValue("id"))
+	if err != nil {
+		apierror.BadRequest("Invalid rule ID").WriteJSON(w)
+		return
+	}
+
+	preview, err := h.service.PreviewRule(r.Context(), tenantUUID, ruleUUID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(SuppressionRulePreviewResponse{
+		MatchingOpenFindings: preview.MatchingOpenFindings,
+		Capped:               preview.Capped,
+		Limit:                preview.Limit,
+	})
 }
 
 // auditApproval records the approval in the tenant audit log. A self-approval
 // (B16) is Critical.
-func (h *SuppressionHandler) auditApproval(r *http.Request, rule *suppression.Rule, selfApproved bool) {
+func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.ApproveResult) {
 	if h.auditService == nil {
 		return
 	}
+	rule := result.Rule
 	action, msg := auditdom.ActionSuppressionRuleApproved, "Suppression rule approved"
-	if selfApproved {
+	if result.SelfApproved {
 		action = auditdom.ActionSuppressionRuleSelfApproved
 		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver)"
 	}
@@ -426,6 +484,8 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, rule *suppression.Ru
 		WithMessage(msg).
 		WithMetadata("suppression_type", string(rule.SuppressionType())).
 		WithMetadata("requested_by", rule.RequestedBy().StringOrEmpty()).
+		WithMetadata("applied_findings", result.AppliedFindings).
+		WithMetadata("capped", result.Capped).
 		WithSeverity(auditdom.SeverityForAction(action))
 	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
 		h.logger.Warn("failed to audit suppression approval", "error", err)
