@@ -129,6 +129,9 @@ func (a *App) appJWT() (string, error) {
 type StatusError struct {
 	Status  int
 	Message string
+	// RateLimited is set when GitHub refused for a rate limit (429, or 403
+	// with Retry-After or no requests left): asking again later works.
+	RateLimited bool
 }
 
 func (e *StatusError) Error() string {
@@ -181,12 +184,24 @@ func (a *App) do(ctx context.Context, method, rawURL, auth string, body, out any
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
-		return &StatusError{Status: resp.StatusCode, Message: msg}
+		return &StatusError{Status: resp.StatusCode, Message: msg, RateLimited: rateLimited(resp)}
 	}
 	if out != nil && len(data) > 0 {
 		return json.Unmarshal(data, out)
 	}
 	return nil
+}
+
+// rateLimited reports whether an error answer is a rate limit (primary:
+// no requests left; secondary: Retry-After) rather than a refusal.
+func rateLimited(resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return true
+	case http.StatusForbidden:
+		return resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0"
+	}
+	return false
 }
 
 // Account is the owner of an installation.
