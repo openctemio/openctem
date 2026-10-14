@@ -112,19 +112,41 @@ type recheckKey struct {
 // "top N" port list.
 func jobShapeOf(c *commanddom.Command) scopedom.JobShape {
 	j := sensordom.JobOf(string(c.Type), c.Payload)
-	shape := scopedom.JobShape{Tool: j.Tool, Ports: j.Ports}
+	shape := scopedom.JobShape{Tool: j.Tool, Ports: j.Ports, CustomTemplates: j.CustomTemplates > 0, Interactsh: j.Interactsh}
 	var p struct {
-		Config map[string]any `json:"config"`
+		Config        map[string]any `json:"config"`
+		ScannerConfig map[string]any `json:"scanner_config"`
 	}
-	if json.Unmarshal(c.Payload, &p) == nil {
-		switch v := p.Config["top_ports"].(type) {
+	if json.Unmarshal(c.Payload, &p) != nil {
+		shape.Settings = scopedom.SettingsUnreadable
+		return shape
+	}
+	// Either map may carry the port settings (commanddom.PayloadPortSettings
+	// reads both); a list in scanner_config alone still limits the job.
+	if shape.Ports == "" {
+		shape.Ports, _ = commanddom.PayloadPortSettings(c.Payload)
+	}
+	for _, cfg := range []map[string]any{p.Config, p.ScannerConfig} {
+		switch v := cfg["top_ports"].(type) {
 		case nil:
 		case string:
-			shape.TopPorts = strings.TrimSpace(v) != ""
+			shape.TopPorts = shape.TopPorts || strings.TrimSpace(v) != ""
 		case float64:
-			shape.TopPorts = v != 0
+			shape.TopPorts = shape.TopPorts || v != 0
 		default:
 			shape.TopPorts = true
+		}
+	}
+	merged, ok := scopedom.LowImpactConfig(p.Config, p.ScannerConfig)
+	switch {
+	case !ok:
+		shape.Settings = scopedom.SettingsUnreadable
+	case len(merged) > 0:
+		b, err := json.Marshal(merged) // map keys are sorted: canonical
+		if err != nil {
+			shape.Settings = scopedom.SettingsUnreadable
+		} else {
+			shape.Settings = string(b)
 		}
 	}
 	return shape
@@ -369,7 +391,11 @@ func (s *Service) settle(ctx context.Context, j recheckJob, v targetVerdict,
 		outcomes[j.cmd.ID] = recheckKeep
 		return
 	}
+	if len(kept) == 0 && clampable(refused) && s.clampAtClaim(ctx, j, refused, outcomes, replaced) {
+		return
+	}
 	if !j.job.LimitsEnforced && s.jobs != nil && s.limits != nil && hasCode(refused, scopedom.RefusalConstrained) {
+
 		// A sensor that enforces scope limits may run this job inside them:
 		// it stays pending for one rather than being narrowed or failed.
 		outcomes[j.cmd.ID] = recheckWithheld
