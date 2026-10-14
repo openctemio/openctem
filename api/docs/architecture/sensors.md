@@ -1820,10 +1820,74 @@ inside it. Use one zone per segment (scan-zones.md).
     are never shown in the audit.
   - Permissions: `sensors:egress:read|write|delete`, admin and owner only.
 
-## Tool settings (RFC-038, proposed)
+## Tool settings (RFC-038)
 
 > Design: [RFC-038](../rfcs/RFC-038-sensor-tool-settings.md). Status:
-> **proposed; per-scan settings for naabu and nuclei shipped** (below).
+> **per-sensor tool settings and per-scan settings for naabu and nuclei
+> shipped** (below); tenant policy, dangerous-option enablement and the
+> scan-layer preview are planned.
+
+**Per-sensor tool settings (shipped).** An owner or administrator configures
+each tool of one of the organization's own sensors from the sensor drawer's
+"Tool settings" tab.
+
+- *Schema.* The settings schema is the `config` object of the tool's
+  descriptor (Tool Contract v1), which the sensor already reports in its
+  manifest and the platform stores in the sensor's current manifest version
+  (tenant-scoped). It is parsed with the CTIS settings contract
+  (`github.com/openctemio/ctis/settings`, `ParseSchema`): a closed JSON Schema
+  subset with `x-octm-*` annotations (scope, tier, common option, native
+  flag, sensitive, group). A descriptor without `config` means the tool has
+  no settings; a schema the contract refuses is ignored (logged). There is
+  no upload route: the schema always comes from the sensor's own manifest.
+- *Storage.* Table `sensor_tool_settings` (migration `002099`): `tenant_id`,
+  `sensor_id`, `tool`, `values` (jsonb), `schema_digest` (the digest of the
+  schema the values were validated against), `updated_by`, `updated_at`;
+  primary key (`sensor_id`, `tool`); foreign key (`tenant_id`, `sensor_id`) →
+  `sensors` with `ON DELETE CASCADE`, so a row always belongs to a sensor of
+  the same organization and a platform sensor (no tenant) can hold none.
+  Every query carries the tenant.
+- *Validation.* A save is validated with `Schema.Validate` and
+  `Schema.Resolve(Layer{Source: SourceSensor})`: unknown keys, wrong types,
+  values outside bounds or enums and sensitive keys are refused, with every
+  problem by JSON pointer (422). A non-default value of an `x-octm-tier: T2`
+  (dangerous) key is refused until the organization's enablement of
+  dangerous options exists.
+- *Audit.* Saving and resetting log `sensor.updated` with one change per
+  key (`tool_settings.<tool>.<key>`, before and after). The value of a
+  sensitive or write-only key, or of a key the schema no longer knows, is
+  written as `[redacted]`.
+- *Delivery.* When a sensor claims a scan job (claim-N, poll, claim by id;
+  `internal/app/command/tool_settings.go`), the platform looks up that
+  sensor's stored values for the job's tool and puts them into the payload
+  as `settings_layers: {"sensor": {...}}` before the job is signed, so the
+  job signature (payload SHA-256) covers them. The stored command is never
+  changed, and a `settings_layers` that a command's creator put in the
+  payload is replaced or removed. If the sensor's current schema digest
+  differs from the stored one (a sensor upgrade), the values are validated
+  again; values that no longer validate fail the job with
+  `TOOL_SETTINGS_INVALID` instead of running it without them (the tool
+  settings list shows the problems; save or reset fixes them). A settings
+  lookup that fails withholds the job (it stays pending). The sensor
+  validates the layer again with its own copy of the contract, resolves it
+  with the scan's own options (a scan may only lower a common option the
+  sensor layer set) and clamps by its local policy.
+
+| Route | Gate | |
+|---|---|---|
+| `GET /api/v1/sensors/{id}/tool-settings` | `sensors:read` | per tool with a schema: `schema`, `schema_digest`, `values`, `stored`, `problems` |
+| `PUT /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | body `{"values": {...}}`; 422 with `details: [{path, message}]` |
+| `DELETE /api/v1/sensors/{id}/tool-settings/{tool}` | `sensors:write` | back to defaults; works for a tool the manifest no longer lists |
+| `GET /api/v1/sensors/{id}/tool-settings/{tool}/effective` | `sensors:read` | every key with `value`, `source` (`default`/`sensor`), `flag`, `common`, `scope`, `tier` |
+
+Every route ends with the own-sensor check: another organization's sensor
+and a platform sensor answer 404. Key files:
+`pkg/domain/sensor/tool_settings.go`, `internal/app/sensor/tool_settings.go`,
+`internal/infra/postgres/sensor_tool_settings.go`,
+`internal/infra/http/handler/sensor_tool_settings_handler.go`,
+`internal/app/command/tool_settings.go`; web
+`web/src/features/sensors/components/sensor-tool-settings.tsx` and
+`web/src/features/sensors/lib/tool-settings.ts`.
 
 **Per-scan settings (shipped).** A scan command's settings travel in the
 payload key `config` (`pipeline.PayloadKeyConfig`), the key the SDK reads
@@ -1847,12 +1911,8 @@ lowercased). `allow_interactsh` is refused on a pipeline step. The sensor
 stays the authority: `pipeline.NormalizeStepConfig` mirrors its schemas until
 the platform stores the schemas sensors report (RFC-038 P2).
 
-Otherwise a tool's options are not managed by the platform: the sensor's
-wrappers take them from host env vars or code. The design: each tool declares a typed settings schema,
-registered by digest in the manifest; admins edit a generated form on the
-sensor's page; the api validates and audits, then pushes a signed,
-versioned settings document that the sensor re-validates, stores and
-applies from the next job, reporting the applied version.
+Options a tool does not declare in its schema stay with the sensor's
+wrappers (host env vars or code).
 
 The SDK also reads `rate_limit`, `concurrency` and `bulk_size` from a
 command's `config` (whole numbers; anything else fails the command); the

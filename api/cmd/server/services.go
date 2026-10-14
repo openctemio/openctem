@@ -1805,6 +1805,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		command.WithOptInPolicy(s.Tenant),
 		// RFC-060 §4.1: the organization tool HTTP layer rides on every scan job.
 		command.WithHTTPPolicy(s.Tenant),
+		// Per-sensor tool settings ride on every scan job, inside the signed
+		// payload (settings_layers.sensor).
+		command.WithToolSettings(s.Sensor),
 		// RFC-052 §5: each sensor's grant, before every other gate.
 		command.WithGrants(repos.SensorGrant, s.Sensor),
 		// RFC-055 §6.3: the tier is assigned from the tool contract.
