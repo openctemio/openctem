@@ -24,6 +24,7 @@ const (
 	skipScopeChanged = "scope_changed"
 	skipWindowHold   = "window_hold"
 	skipProgramHold  = "program_hold"
+	skipToolSettings = "tool_settings"
 	skipTaken        = "taken"
 )
 

@@ -69,6 +69,7 @@ import { SensorLocalPolicySection } from './sensor-local-policy-section'
 import { SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
 import { SensorManifestTab } from './sensor-manifest-tab'
+import { SensorToolSettingsSection } from './sensor-tool-settings'
 import { SensorSetupTab } from './config-check-list'
 import { SensorStateBadge } from './sensor-state-badge'
 import {
@@ -134,7 +135,7 @@ interface SensorDetailSheetProps {
 
 // Activity is not a tab: the Overview's activity summary opens the shared
 // ActivityPanel (web/docs/ui/activity-panel.md).
-type DrawerTab = 'setup' | 'overview' | 'jobs' | 'manifest' | 'config'
+type DrawerTab = 'setup' | 'overview' | 'jobs' | 'manifest' | 'tools' | 'config'
 
 const DRAWER_TABS: DetailTab<DrawerTab>[] = [
   { value: 'overview', label: 'Overview' },
@@ -873,6 +874,7 @@ export function SensorDetailSheet({
   )
   const now = useNow()
   const router = useRouter()
+  const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.SensorsWrite)
   const canDelete = useHasPermission(Permission.SensorsDelete)
   const [tab, setTab] = useState<DrawerTab>('overview')
@@ -885,6 +887,10 @@ export function SensorDetailSheet({
   }
   if (!sensorProp) return null
   const sensor = live && live.id === sensorProp.id ? live : sensorProp
+  // Tool settings: owners and administrators only (the API enforces it too).
+  const tabs = canWrite
+    ? [...drawerTabs(sensor), { value: 'tools' as const, label: t('sensors.toolSettings.tab') }]
+    : drawerTabs(sensor)
 
   const checks = sensorHealthChecks(sensor, {
     now,
@@ -989,7 +995,7 @@ export function SensorDetailSheet({
           }
         />
       }
-      tabs={<DetailTabs tabs={drawerTabs(sensor)} value={tab} onValueChange={setTab} />}
+      tabs={<DetailTabs tabs={tabs} value={tab} onValueChange={setTab} />}
     >
       {tab === 'overview' && (
         <div className="space-y-5">
@@ -1033,6 +1039,8 @@ export function SensorDetailSheet({
       {tab === 'jobs' && <SensorJobs sensor={sensor} />}
 
       {tab === 'manifest' && <SensorManifestTab sensor={sensor} now={now} />}
+
+      {tab === 'tools' && canWrite && <SensorToolSettingsSection sensorId={sensor.id} />}
 
       {tab === 'config' && (
         <div className="space-y-3">
