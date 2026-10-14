@@ -462,6 +462,13 @@ type_inputs:
 #   - `exposure_default` is the exposure a type has by nature (public for
 #     domains, certificates and web applications); ingest applies it when the
 #     scanner sent no exposure.
+#   - `coverage` lists the capabilities an asset of the type needs and how
+#     often (RFC-093, the asset coverage ledger): `capability` is a stage
+#     catalog key or a platform check, `every` is <n>h or <n>d within
+#     [1h, 30d], `requires` names predicates over stored facts (resolves,
+#     web_port, scope_entry) and `expects` the type a successful run must
+#     produce. An alias has its own list or none. Coverage never widens
+#     scope: every dispatch still passes the scope gate.
 types:
   # ---------------------------------------------------------------------------
   # External surface
@@ -490,6 +497,11 @@ types:
     columns: [name, registrar, expires_at, findings.open, last_seen, owner]
     card: domain
     scannable_by: [domain]
+    coverage:
+      - { capability: discover.subdomains, every: 1d, requires: [scope_entry] }
+      - { capability: resolve.dns, every: 1d }
+      - { capability: lookup.rdap, every: 7d }
+      - { capability: dns.email, every: 1d }
     exposure_default: public
     sections: [overview, attributes, dns, findings, relationships, owners, sources, history]
 
@@ -513,6 +525,11 @@ types:
     columns: [name, parent_domain, findings.open, last_seen, owner]
     card: domain
     scannable_by: [domain]
+    coverage:
+      - { capability: resolve.dns, every: 1d }
+      - { capability: dns.dangling, every: 1d }
+      - { capability: scan.ports, every: 7d, requires: [resolves] }
+      - { capability: probe.http, every: 3d, requires: [resolves], expects: http_service }
     exposure_default: public
     sections: [overview, attributes, dns, services, findings, relationships, owners, sources, history]
 
@@ -540,6 +557,9 @@ types:
     columns: [name, asn_org, country, findings.open, last_seen, owner]
     card: ip_address
     scannable_by: [ip, host]
+    coverage:
+      - { capability: lookup.asn, every: 7d }
+      - { capability: scan.ports, every: 7d }
     sections: [overview, attributes, services, findings, relationships, owners, sources, history]
 
   - type: certificate
@@ -631,6 +651,8 @@ types:
     columns: [name, status_code, title, server, findings.open, last_seen]
     card: service
     scannable_by: [url, service, port]
+    coverage:
+      - { capability: vuln.templates, every: 7d }
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]
 
   - type: open_port
@@ -655,6 +677,8 @@ types:
     columns: [name, port, protocol, service, findings.open, last_seen]
     card: service
     scannable_by: [port, service]
+    coverage:
+      - { capability: probe.http, every: 3d, requires: [web_port], expects: http_service }
     sections: [overview, attributes, findings, relationships, owners, sources, history]
 
   - type: discovered_url

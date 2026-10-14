@@ -108,6 +108,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-090](RFC-090-work-pool.md) | Work pool | Accepted (2026-10-13); W0–W2 in progress, the rest designed |
 | [RFC-091](RFC-091-code-scanning-baseline.md) | Code scanning — baseline first, then diff-aware CI, with periodic re-review | Accepted (2026-10-14). |
 | [RFC-092](RFC-092-tool-agnostic-platform.md) | Tool-agnostic platform — sensors declare tools, the platform orchestrates capabilities | Proposed (2026-10-14). |
+| [RFC-093](RFC-093-asset-coverage.md) | Asset coverage — every asset gets every capability its type needs, and a gap is never silent | Accepted (2026-10-14). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
