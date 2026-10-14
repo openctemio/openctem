@@ -323,7 +323,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
           onPaginationChange={setPagination}
           getRowId={(r) => r.repository_asset_id ?? ''}
           showSearch={false}
-          paginationNoun="repositories"
+          paginationNoun={t('scans.ci.noun.repositories', 'repositories')}
           emptyMessage={t('scans.ci.coverage.noMatch', 'No repository matches')}
           toolbarStart={
             <>
