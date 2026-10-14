@@ -112,8 +112,13 @@ func (r *AssetCoverageRepository) TenantsWithAssets(ctx context.Context) ([]shar
 func coveragePredicateSQL(p string) string {
 	switch p {
 	case coverage.RequiresResolves:
-		return `EXISTS (SELECT 1 FROM asset_relationships rr
-			WHERE rr.tenant_id = a.tenant_id AND rr.source_asset_id = a.id AND rr.relationship_type = 'resolves_to')`
+		// A resolves_to relation (a port scan of the name), an A/AAAA record
+		// a DNS resolution stored, or addresses a probe saw.
+		return `(EXISTS (SELECT 1 FROM asset_relationships rr
+			WHERE rr.tenant_id = a.tenant_id AND rr.source_asset_id = a.id AND rr.relationship_type = 'resolves_to')
+			OR jsonb_path_exists(COALESCE(a.properties, '{}'::jsonb), '$.dns_records[*] ? (@.type == "A" || @.type == "AAAA")')
+			OR COALESCE(jsonb_typeof(a.properties->'ip_addresses') = 'array'
+			            AND jsonb_array_length(a.properties->'ip_addresses') > 0, false))`
 	case coverage.RequiresWebPort:
 		ports := make([]string, len(coverage.WebPorts))
 		for i, n := range coverage.WebPorts {
@@ -139,7 +144,9 @@ func coverageRuleSQL(rule coverage.Rule) (ok, reason string) {
 	var reasonCase strings.Builder
 	reasonCase.WriteString("CASE")
 	for _, p := range rule.Requires {
-		c := "(" + coveragePredicateSQL(p) + ")"
+		// COALESCE: a predicate that is unknown (NULL) is false, so a rule
+		// never applies by accident and the reason is always set.
+		c := "COALESCE((" + coveragePredicateSQL(p) + "), false)"
 		conds = append(conds, c)
 		// p is from the closed predicate set (validated by the registry
 		// generator); quote it anyway.
