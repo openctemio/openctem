@@ -69,3 +69,18 @@ func TestRulesCoverTheNetworkChain(t *testing.T) {
 		t.Error("web port set is wrong")
 	}
 }
+
+func TestDueTargetAndBackoff(t *testing.T) {
+	if got := (DueTarget{Name: "203.0.113.7:8443:tcp", Type: "service", SubType: "open_port"}).Target(); got != "203.0.113.7:8443" {
+		t.Errorf("open port target = %q", got)
+	}
+	if got := (DueTarget{Name: "www.example.com", Type: "subdomain"}).Target(); got != "www.example.com" {
+		t.Errorf("name target = %q", got)
+	}
+	if got := (DueTarget{Name: "https://www.example.com", Type: "service", SubType: "http"}).Target(); got != "https://www.example.com" {
+		t.Errorf("origin target = %q", got)
+	}
+	if Backoff(72*time.Hour, 1) != time.Hour || Backoff(72*time.Hour, 3) != 4*time.Hour || Backoff(2*time.Hour, 5) != 2*time.Hour || Backoff(30*24*time.Hour, 20) != 24*time.Hour {
+		t.Error("backoff is wrong")
+	}
+}

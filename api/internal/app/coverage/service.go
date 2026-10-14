@@ -6,6 +6,7 @@ package coverage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
@@ -15,10 +16,14 @@ import (
 
 // Service runs the coverage loop.
 type Service struct {
-	repo   covdom.Repository
-	rules  []covdom.Rule
-	now    func() time.Time
-	logger *logger.Logger
+	repo         covdom.Repository
+	rules        []covdom.Rule
+	planner      covdom.Planner
+	starter      RunStarter
+	tenantSwitch TenantSwitch
+	cfg          Config
+	now          func() time.Time
+	logger       *logger.Logger
 }
 
 // NewService creates the service with the registry's policy.
@@ -47,8 +52,30 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// RunTenant reconciles one tenant.
+// RunTenant runs one pass for one tenant: reconcile the ledger with the
+// policy, settle finished runs, then (when planning is wired and the tenant
+// has automatic coverage on) start the due pairs.
 func (s *Service) RunTenant(ctx context.Context, tenantID shared.ID) (int, error) {
 	added, changed, err := s.repo.Reconcile(ctx, tenantID, s.rules)
-	return added + changed, err
+	n := added + changed
+	if err != nil || s.planner == nil {
+		return n, err
+	}
+	settled, err := s.settle(ctx, tenantID)
+	n += settled
+	if err != nil {
+		return n, fmt.Errorf("settle: %w", err)
+	}
+	if s.tenantSwitch != nil {
+		on, err := s.tenantSwitch.CoverageEnabled(ctx, tenantID)
+		if err != nil {
+			// Fail closed: without the tenant's switch nothing is started.
+			return n, fmt.Errorf("read coverage setting: %w", err)
+		}
+		if !on {
+			return n, nil
+		}
+	}
+	planned, err := s.plan(ctx, tenantID)
+	return n + planned, err
 }

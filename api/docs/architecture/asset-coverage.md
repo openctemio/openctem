@@ -34,6 +34,34 @@ scope is 404): one entry per rule of the asset's type (a rule with no row is
 `due` / `not_planned`), then any other ledger row of the asset (platform
 checks such as `dns.dangling`, connectors).
 
+## Planning and settlement
+
+Each pass, per tenant, after reconciling:
+
+1. **Settle** every run that holds `queued` pairs: `completed`/`partial` →
+   `covered` (outcome `ok`, or `no_output` when the rule expects a web origin
+   and none of the asset was observed since it was queued); targets the run
+   did not finish, and runs that `failed`, were `canceled`, `timeout` or
+   `blocked` → `failed` with the run's error, failure streak + 1, due again
+   after 1 h doubled per failure (at most the cadence, at most a day). A run
+   not finished after a day fails its pairs as stalled.
+2. **Plan**, unless the tenant's scan approval mode in force is Strict: for
+   each stage capability of the policy (never an intrusive one; platform
+   checks run on their own schedule), take up to 200 due pairs (priority,
+   then oldest), within the tenant's daily budget
+   (`ASSET_COVERAGE_DAILY_BUDGET`, default 5000 attempts per 24 h), and call
+   `scan.Service.StartCoverage`: the targets pass the one dispatch gate as
+   the system (scope entries only) at the capability's tier; refused targets
+   become `blocked` with the gate's code (rechecked after 6 h); the rest run
+   on the tenant's reused ad-hoc scan "Continuous coverage: <capability>"
+   (tag `auto-coverage`) with the stage's default tool, and become `queued`.
+   While that scan still has an active run the batch waits (one run per
+   capability and tenant at a time: back-pressure).
+
+An open port is addressed as `host:port`; names and origins by name.
+With the loop on, automatic enrichment of new assets is off: the loop
+resolves and looks up every asset its policy names.
+
 ## Other writers
 
 - DNS checks (`internal/app/easmdns`): rows `dns.dangling` and `dns.email`.
