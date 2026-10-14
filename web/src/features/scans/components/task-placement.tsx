@@ -4,7 +4,7 @@ import useSWR from 'swr'
 import { ChevronDown, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import Link from 'next/link'
+import Link from '@/components/link'
 
 import { useTranslation } from '@/context/i18n-provider'
 import { get } from '@/lib/api/client'
@@ -13,7 +13,6 @@ import type { RunTaskPlacement } from '@/lib/api/generated'
 import { toDisplayText } from '@/lib/untrusted-text'
 
 import { placementHelp } from '../lib/placement-help'
-import { runHref } from '../lib/run-display'
 import type { Translate } from '../lib/translate'
 import { CodeHelpLine } from './code-help'
 
@@ -120,7 +119,7 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
             .map((h) => (
               <Link
                 key={h.task_id ?? h.run_id}
-                href={runHref(h.run_id ?? '')}
+                href={`/scans/runs?run=${encodeURIComponent(h.run_id ?? '')}`}
                 className="text-primary underline-offset-2 hover:underline"
               >
                 {t('scans.placement.holderRun')}
