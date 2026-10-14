@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState, useDeferredValue, useMemo } from 'react'
 import {
   Dialog,
@@ -78,6 +79,7 @@ interface CreateFindingDialogProps {
 }
 
 export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFindingDialogProps) {
+  const { t } = useTranslation()
   const [assetId, setAssetId] = useState('')
   const [assetSearch, setAssetSearch] = useState('')
   const [assetPopoverOpen, setAssetPopoverOpen] = useState(false)
@@ -173,17 +175,17 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     e.preventDefault()
 
     if (!assetId) {
-      toast.error('Please select an asset')
+      toast.error(t('findings.createFinding.assetRequired', 'Please select an asset'))
       return
     }
 
     if (!title.trim()) {
-      toast.error('Please enter a title')
+      toast.error(t('findings.createFinding.titleRequired', 'Please enter a title'))
       return
     }
 
     if (!description.trim()) {
-      toast.error('Please enter a description')
+      toast.error(t('findings.createFinding.descriptionRequired', 'Please enter a description'))
       return
     }
 
@@ -218,13 +220,15 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
         snippet: snippet || undefined,
       })
 
-      toast.success('Finding created successfully')
+      toast.success(t('findings.createFinding.created', 'Finding created successfully'))
       await invalidateFindingsCache()
       resetForm()
       onOpenChange(false)
       onSuccess?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to create finding'))
+      toast.error(
+        getErrorMessage(error, t('findings.createFinding.failed', 'Failed to create finding'))
+      )
     }
   }
 
@@ -232,9 +236,12 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Finding</DialogTitle>
+          <DialogTitle>{t('findings.createFinding.title', 'Add Finding')}</DialogTitle>
           <DialogDescription>
-            Manually create a security finding. Required fields are marked with *.
+            {t(
+              'findings.createFinding.description',
+              'Manually create a security finding. Required fields are marked with *.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -242,7 +249,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
           <DialogBody className="space-y-4">
             {/* Asset Selection */}
             <div className="space-y-2">
-              <Label htmlFor="asset">Asset *</Label>
+              <Label htmlFor="asset">{t('findings.createFinding.asset', 'Asset')} *</Label>
               <Popover open={assetPopoverOpen} onOpenChange={setAssetPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -254,7 +261,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                     {selectedAsset ? (
                       <span className="truncate">{selectedAsset.name}</span>
                     ) : (
-                      <span className="text-muted-foreground">Select an asset...</span>
+                      <span className="text-muted-foreground">
+                        {t('findings.createFinding.selectAsset', 'Select an asset...')}
+                      </span>
                     )}
                     <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -265,7 +274,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 >
                   <Command shouldFilter={false}>
                     <CommandInput
-                      placeholder="Search assets..."
+                      placeholder={t('findings.createFinding.searchAssets', 'Search assets...')}
                       value={assetSearch}
                       onValueChange={setAssetSearch}
                     />
@@ -276,7 +285,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                         </div>
                       )}
                       {!assetsLoading && assets.length === 0 && (
-                        <CommandEmpty>No assets found.</CommandEmpty>
+                        <CommandEmpty>
+                          {t('findings.createFinding.noAssets', 'No assets found.')}
+                        </CommandEmpty>
                       )}
                       {!assetsLoading && assets.length > 0 && (
                         <CommandGroup>
@@ -314,7 +325,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             {/* Source & Severity Row */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="source">Source *</Label>
+                <Label htmlFor="source">{t('findings.createFinding.source', 'Source')} *</Label>
                 <Select
                   value={source}
                   onValueChange={(v) => setSource(v as FindingSource)}
@@ -324,7 +335,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                     {sourcesLoading ? (
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-3 w-3 animate-spin" />
-                        <span className="text-muted-foreground">Loading...</span>
+                        <span className="text-muted-foreground">
+                          {t('findings.createFinding.loading', 'Loading...')}
+                        </span>
                       </div>
                     ) : (
                       <SelectValue />
@@ -348,7 +361,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="severity">Severity *</Label>
+                <Label htmlFor="severity">
+                  {t('findings.createFinding.severity', 'Severity')} *
+                </Label>
                 <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -360,7 +375,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                           <div
                             className={cn('h-2 w-2 rounded-full', opt.bgColor.replace('/20', ''))}
                           />
-                          {opt.label}
+                          {t(`severity.${opt.value}`, opt.label)}
                         </div>
                       </SelectItem>
                     ))}
@@ -371,10 +386,13 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
 
             {/* Title */}
             <div className="space-y-2">
-              <Label htmlFor="title">Title *</Label>
+              <Label htmlFor="title">{t('findings.createFinding.titleLabel', 'Title')} *</Label>
               <Input
                 id="title"
-                placeholder="e.g., SQL Injection in login form"
+                placeholder={t(
+                  'findings.createFinding.titlePlaceholder',
+                  'e.g., SQL Injection in login form'
+                )}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -382,10 +400,15 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
 
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="description">Description *</Label>
+              <Label htmlFor="description">
+                {t('findings.createFinding.descriptionLabel', 'Description')} *
+              </Label>
               <Textarea
                 id="description"
-                placeholder="Describe the security finding..."
+                placeholder={t(
+                  'findings.createFinding.descriptionPlaceholder',
+                  'Describe the security finding...'
+                )}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
@@ -401,11 +424,16 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   {assetCategory === 'container' && <Box className="h-4 w-4" />}
                   {assetCategory === 'cloud' && <Cloud className="h-4 w-4" />}
                   <span>
-                    {assetCategory === 'code' && 'Code Location'}
-                    {assetCategory === 'network' && 'Network Details'}
-                    {assetCategory === 'container' && 'Container Details'}
-                    {assetCategory === 'cloud' && 'Cloud Resource'}
-                    {assetCategory === 'other' && 'Location Details'}
+                    {assetCategory === 'code' &&
+                      t('findings.createFinding.codeLocation', 'Code Location')}
+                    {assetCategory === 'network' &&
+                      t('findings.createFinding.networkDetails', 'Network Details')}
+                    {assetCategory === 'container' &&
+                      t('findings.createFinding.containerDetails', 'Container Details')}
+                    {assetCategory === 'cloud' &&
+                      t('findings.createFinding.cloudResource', 'Cloud Resource')}
+                    {assetCategory === 'other' &&
+                      t('findings.createFinding.locationDetails', 'Location Details')}
                   </span>
                 </div>
 
@@ -413,17 +441,24 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {assetCategory === 'code' && (
                   <>
                     <div className="space-y-2">
-                      <Label htmlFor="filePath">File Path</Label>
+                      <Label htmlFor="filePath">
+                        {t('findings.createFinding.filePath', 'File Path')}
+                      </Label>
                       <Input
                         id="filePath"
-                        placeholder="e.g., src/auth/login.ts"
+                        placeholder={t(
+                          'findings.createFinding.filePathPlaceholder',
+                          'e.g., src/auth/login.ts'
+                        )}
                         value={filePath}
                         onChange={(e) => setFilePath(e.target.value)}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="startLine">Start Line</Label>
+                        <Label htmlFor="startLine">
+                          {t('findings.createFinding.startLine', 'Start Line')}
+                        </Label>
                         <Input
                           id="startLine"
                           type="number"
@@ -433,7 +468,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="endLine">End Line</Label>
+                        <Label htmlFor="endLine">
+                          {t('findings.createFinding.endLine', 'End Line')}
+                        </Label>
                         <Input
                           id="endLine"
                           type="number"
@@ -444,10 +481,15 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="snippet">Code Snippet</Label>
+                      <Label htmlFor="snippet">
+                        {t('findings.createFinding.snippet', 'Code Snippet')}
+                      </Label>
                       <Textarea
                         id="snippet"
-                        placeholder="Paste the vulnerable code snippet..."
+                        placeholder={t(
+                          'findings.createFinding.snippetPlaceholder',
+                          'Paste the vulnerable code snippet...'
+                        )}
                         value={snippet}
                         onChange={(e) => setSnippet(e.target.value)}
                         rows={3}
@@ -460,10 +502,15 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {/* Network asset fields */}
                 {assetCategory === 'network' && (
                   <div className="space-y-2">
-                    <Label htmlFor="affectedUrl">Affected URL/Endpoint</Label>
+                    <Label htmlFor="affectedUrl">
+                      {t('findings.createFinding.affectedUrl', 'Affected URL/Endpoint')}
+                    </Label>
                     <Input
                       id="affectedUrl"
-                      placeholder="e.g., /api/v1/users/login or https://example.com/page"
+                      placeholder={t(
+                        'findings.createFinding.affectedUrlPlaceholder',
+                        'e.g., /api/v1/users/login or https://example.com/page'
+                      )}
                       value={affectedUrl}
                       onChange={(e) => setAffectedUrl(e.target.value)}
                     />
@@ -473,10 +520,15 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {/* Container asset fields */}
                 {assetCategory === 'container' && (
                   <div className="space-y-2">
-                    <Label htmlFor="imageName">Container Image</Label>
+                    <Label htmlFor="imageName">
+                      {t('findings.createFinding.containerImage', 'Container Image')}
+                    </Label>
                     <Input
                       id="imageName"
-                      placeholder="e.g., nginx:1.21-alpine"
+                      placeholder={t(
+                        'findings.createFinding.containerImagePlaceholder',
+                        'e.g., nginx:1.21-alpine'
+                      )}
                       value={imageName}
                       onChange={(e) => setImageName(e.target.value)}
                     />
@@ -486,10 +538,15 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {/* Cloud asset fields */}
                 {assetCategory === 'cloud' && (
                   <div className="space-y-2">
-                    <Label htmlFor="resourceArn">Resource ARN/ID</Label>
+                    <Label htmlFor="resourceArn">
+                      {t('findings.createFinding.resourceArn', 'Resource ARN/ID')}
+                    </Label>
                     <Input
                       id="resourceArn"
-                      placeholder="e.g., arn:aws:s3:::my-bucket"
+                      placeholder={t(
+                        'findings.createFinding.resourceArnPlaceholder',
+                        'e.g., arn:aws:s3:::my-bucket'
+                      )}
                       value={resourceArn}
                       onChange={(e) => setResourceArn(e.target.value)}
                     />
@@ -500,16 +557,21 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {assetCategory === 'other' && (
                   <div className="grid grid-cols-3 gap-4">
                     <div className="col-span-2 space-y-2">
-                      <Label htmlFor="filePath">File/Resource Path</Label>
+                      <Label htmlFor="filePath">
+                        {t('findings.createFinding.resourcePath', 'File/Resource Path')}
+                      </Label>
                       <Input
                         id="filePath"
-                        placeholder="e.g., /etc/config.yaml"
+                        placeholder={t(
+                          'findings.createFinding.resourcePathPlaceholder',
+                          'e.g., /etc/config.yaml'
+                        )}
                         value={filePath}
                         onChange={(e) => setFilePath(e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="startLine">Line</Label>
+                      <Label htmlFor="startLine">{t('findings.createFinding.line', 'Line')}</Label>
                       <Input
                         id="startLine"
                         type="number"
@@ -525,10 +587,12 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
 
             {/* Tool Name */}
             <div className="space-y-2">
-              <Label htmlFor="toolName">Tool/Scanner Name</Label>
+              <Label htmlFor="toolName">
+                {t('findings.createFinding.toolName', 'Tool/Scanner Name')}
+              </Label>
               <Input
                 id="toolName"
-                placeholder="e.g., Manual Review"
+                placeholder={t('findings.createFinding.toolNamePlaceholder', 'e.g., Manual Review')}
                 value={toolName}
                 onChange={(e) => setToolName(e.target.value)}
               />
@@ -538,8 +602,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             <div className="flex items-start gap-2 rounded-lg border bg-muted/50 p-3 text-sm">
               <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
               <p className="text-muted-foreground">
-                The finding will be created with status <strong>New</strong> and can be triaged
-                later.
+                {t('findings.createFinding.bannerPre', 'The finding will be created with status')}{' '}
+                <strong>{t('findings.status.new', 'New')}</strong>{' '}
+                {t('findings.createFinding.bannerPost', 'and can be triaged later.')}
               </p>
             </div>
           </DialogBody>
@@ -551,11 +616,11 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
               onClick={() => onOpenChange(false)}
               disabled={isCreating}
             >
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={isCreating || !assetId || !title.trim()}>
               {isCreating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Create Finding
+              {t('findings.createFinding.submit', 'Create Finding')}
             </Button>
           </DialogFooter>
         </DialogForm>
