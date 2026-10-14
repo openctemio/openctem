@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/opsmetrics"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -25,8 +26,8 @@ func registerOpsMetrics(db *sql.DB, cfg *config.Config, log *logger.Logger) {
 		return postgres.ReadOpsSnapshot(ctx, db)
 	}, opsmetrics.Config{
 		ShippedSchemaVersion: shipped,
-		SDKLatest:            cfg.SensorConfig.SDKLatestVersion,
-		SDKMin:               cfg.SensorConfig.SDKMinVersion,
+		SDKLatest:            versions.SDKLatest(),
+		SDKAdvisories:        versions.SDKAdvisories(),
 	}, log)
 	// go_sql_* (db_name="openctem"): the API's connection pool, for the
 	// pool-exhaustion alert.
