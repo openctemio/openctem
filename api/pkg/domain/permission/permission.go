@@ -186,11 +186,13 @@ const (
 	SecretStoreDelete Permission = "scans:secret_store:delete"
 
 	// CI runs, CI trust configurations and the CI gate (scans:ci:*,
-	// RFC-051). Write (trust configurations issue upload credentials, gate
-	// policies decide what blocks a scan workflow) and override (break-glass) are
-	// admin-only.
+	// RFC-051). Write (trust configurations, CI settings and code host
+	// connections, which issue or admit upload credentials) is admin-only.
+	// Policy (gate policies and coverage expectations) and override
+	// (break-glass, with step-up) can be delegated to a custom role.
 	CIRead     Permission = "scans:ci:read"
 	CIWrite    Permission = "scans:ci:write"
+	CIPolicy   Permission = "scans:ci:policy"
 	CIOverride Permission = "scans:ci:override"
 
 	// ScanWindowsManage creates, edits and deletes scan window policies
@@ -470,7 +472,7 @@ func AllPermissions() []Permission {
 		ScannerTemplatesRead, ScannerTemplatesWrite, ScannerTemplatesDelete,
 		ContentPacksRead, ContentPacksWrite,
 		SecretStoreRead, SecretStoreWrite, SecretStoreDelete,
-		CIRead, CIWrite, CIOverride,
+		CIRead, CIWrite, CIPolicy, CIOverride,
 		ScanWindowsManage, ScanWindowsOverride,
 
 		// Sensors module
