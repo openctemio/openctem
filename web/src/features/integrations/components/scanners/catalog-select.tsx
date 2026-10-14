@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { CatalogItem } from '@/features/integrations/lib/tenable-sc'
+import { useTranslation } from '@/context/i18n-provider'
 
 const NONE = '__none__'
 
@@ -41,6 +42,7 @@ export function CatalogSelect({
   optional = false,
   required = false,
 }: CatalogSelectProps) {
+  const { t } = useTranslation()
   const list = items ?? []
   const known = list.some((i) => i.id === value)
 
@@ -54,7 +56,11 @@ export function CatalogSelect({
           <Input
             id={id}
             inputMode="numeric"
-            placeholder={optional ? 'None' : 'Tenable.sc id'}
+            placeholder={
+              optional
+                ? t('tenableSc.catalog.none', 'None')
+                : t('tenableSc.catalog.idPlaceholder', 'Tenable.sc id')
+            }
             value={value > 0 ? String(value) : ''}
             onChange={(e) => {
               const n = Number(e.target.value.trim())
@@ -62,8 +68,10 @@ export function CatalogSelect({
             }}
           />
           <p className="text-muted-foreground text-xs">
-            The sensor has not reported its allow-list yet (it does after the first sync). It
-            refuses any id its owner did not allow.
+            {t(
+              'tenableSc.catalog.notReported',
+              'The sensor has not reported its allow-list yet (it does after the first sync). It refuses any id its owner did not allow.'
+            )}
           </p>
         </>
       ) : (
@@ -72,13 +80,21 @@ export function CatalogSelect({
           onValueChange={(v) => onChange(v === NONE ? 0 : Number(v))}
         >
           <SelectTrigger id={id} aria-label={label}>
-            <SelectValue placeholder={`Choose a ${label.toLowerCase()}`} />
+            <SelectValue
+              placeholder={t('tenableSc.catalog.choose', 'Choose a {label}', {
+                label: label.toLowerCase(),
+              })}
+            />
           </SelectTrigger>
           <SelectContent>
-            {optional && <SelectItem value={NONE}>None</SelectItem>}
+            {optional && (
+              <SelectItem value={NONE}>{t('tenableSc.catalog.none', 'None')}</SelectItem>
+            )}
             {value > 0 && !known && (
               <SelectItem value={String(value)}>
-                #{value} (no longer allowed by the sensor)
+                {t('tenableSc.catalog.noLongerAllowed', '#{id} (no longer allowed by the sensor)', {
+                  id: value,
+                })}
               </SelectItem>
             )}
             {list.map((i) => (
