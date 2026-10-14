@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
-import { draftFromValues, problemKey, toolSettingFields, valuesFromDraft } from '../tool-settings'
+import {
+  changeSummaryList,
+  changedFields,
+  draftFromValues,
+  fieldMatches,
+  isChangedValue,
+  problemKey,
+  toolSettingFields,
+  valuesFromDraft,
+  type ToolSettingField,
+} from '../tool-settings'
 
 const schema = {
   type: 'object',
@@ -94,5 +104,52 @@ describe('draft and values', () => {
     expect(problemKey('/dns/resolvers')).toBe('dns.resolvers')
     expect(problemKey('/rate_limit')).toBe('rate_limit')
     expect(problemKey('')).toBe('')
+  })
+})
+
+describe('changes from defaults', () => {
+  const int: ToolSettingField = {
+    key: 'rate_limit',
+    kind: 'integer',
+    flag: '-rate-limit',
+    defaultValue: 150,
+    scope: 'sensor',
+    tier: 'T0',
+    order: 0,
+  }
+  const list: ToolSettingField = {
+    key: 'severity',
+    kind: 'multi',
+    defaultValue: ['high', 'critical'],
+    scope: 'sensor',
+    tier: 'T0',
+    order: 0,
+  }
+
+  it('treats unset and default-equal values as unchanged', () => {
+    expect(isChangedValue(int, undefined)).toBe(false)
+    expect(isChangedValue(int, '')).toBe(false)
+    expect(isChangedValue(int, '150')).toBe(false)
+    expect(isChangedValue(int, '300')).toBe(true)
+    expect(isChangedValue(int, 'abc')).toBe(true)
+    expect(isChangedValue(list, ['high', 'critical'])).toBe(false)
+    expect(isChangedValue(list, ['high'])).toBe(true)
+    expect(isChangedValue(list, [])).toBe(false)
+  })
+
+  it('summarises at most three changes by native flag, then an ellipsis', () => {
+    const fields = ['a', 'b', 'c', 'd'].map((k) => ({ ...int, key: k, flag: undefined }))
+    const draft = { a: '1', b: '2', c: '3', d: '4' }
+    const changed = changedFields(fields, draft)
+    expect(changed).toHaveLength(4)
+    expect(changeSummaryList(changed, draft)).toBe('a 1, b 2, c 3, …')
+    expect(changeSummaryList([int], { rate_limit: '300' })).toBe('rate-limit 300')
+  })
+
+  it('matches a search by key, flag or label', () => {
+    expect(fieldMatches(int, 'Rate limit', 'rate-l')).toBe(true)
+    expect(fieldMatches(int, 'Rate limit', 'rate l')).toBe(true)
+    expect(fieldMatches(int, 'Rate limit', 'timeout')).toBe(false)
+    expect(fieldMatches(int, 'Rate limit', '')).toBe(false)
   })
 })
