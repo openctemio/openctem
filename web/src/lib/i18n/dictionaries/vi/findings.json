@@ -44,5 +44,7 @@
   "findings.activity.loadFailed": "Không tải được hoạt động. Mở để thử lại.",
   "findings.activity.loadFailedTitle": "Không tải được hoạt động",
   "findings.activity.loadFailedBody": "Lịch sử của phát hiện này không hiển thị vì yêu cầu bị lỗi. Hãy thử lại sau.",
-  "findings.activity.startDiscussion": "Bắt đầu thảo luận bên dưới."
+  "findings.activity.startDiscussion": "Bắt đầu thảo luận bên dưới.",
+  "findings.list.location": "Vị trí",
+  "findings.list.asset": "Tài sản"
 }
