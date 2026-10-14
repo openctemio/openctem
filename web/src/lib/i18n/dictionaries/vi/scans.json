@@ -1760,7 +1760,7 @@
   "scans.ci.refusal.replay": "Cùng một token được dùng hai lần.",
   "scans.ci.refusal.replayFix": "Mỗi job phải đổi token mới của riêng nó; kiểm tra token bị sao chép.",
   "scans.ci.refusal.runner_outdated": "Trình quét CI cũ hơn phiên bản tối thiểu.",
-  "scans.ci.refusal.runner_outdatedFix": "Cập nhật action hoặc template OpenCTEM CI lên bản phát hành hiện tại.",
+  "scans.ci.refusal.runner_outdatedFix": "Ghim openctemio/ci v0.3.0 hoặc mới hơn. Log của job nêu chính xác dòng cần đổi (uses: của GitHub, include của GitLab, hoặc tag image).",
   "scans.ci.refusal.pipeline_cap": "Tổ chức đã đạt giới hạn số pipeline.",
   "scans.ci.refusal.pipeline_capFix": "Cho các pipeline không dùng ngừng hoạt động.",
   "scans.ci.refusal.pipeline_rate": "Pipeline này bắt đầu quá nhiều lần chạy trong thời gian ngắn.",
