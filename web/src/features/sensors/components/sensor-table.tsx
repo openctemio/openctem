@@ -176,15 +176,7 @@ export function SensorTable({
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.version')} />
         ),
-        cell: ({ row }) => (
-          <SensorVersionCell
-            sensor={row.original}
-            latest={channel.latest}
-            min={channel.min}
-            sdkLatest={channel.sdkLatest}
-            sdkMin={channel.sdkMin}
-          />
-        ),
+        cell: ({ row }) => <SensorVersionCell sensor={row.original} channel={channel} />,
       },
       {
         id: 'jobs',
@@ -360,10 +352,7 @@ export function SensorTable({
       onRegenerateKey,
       thresholds,
       now,
-      channel.latest,
-      channel.min,
-      channel.sdkLatest,
-      channel.sdkMin,
+      channel,
       grants,
       t,
     ]

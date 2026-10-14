@@ -213,7 +213,6 @@
   "admin.ops.down": "Không kết nối được",
   "admin.ops.fleet": "Đội sensor",
   "admin.ops.fleet.customer": "Sensor của khách hàng (trực tuyến / tổng)",
-  "admin.ops.fleet.min": "tối thiểu {v}",
   "admin.ops.fleet.none": "Không có sensor đang hoạt động.",
   "admin.ops.fleet.platform": "Sensor nền tảng (trực tuyến / tổng)",
   "admin.ops.fleet.versions": "Phiên bản SDK đang chạy",
@@ -552,5 +551,6 @@
   "admin.legal.termsUrl": "Liên kết điều khoản dịch vụ (https)",
   "admin.legal.title": "Thông tin pháp lý",
   "admin.legal.websiteUrl": "Trang web (https)",
-  "admin.nav.legal": "Pháp lý"
+  "admin.nav.legal": "Pháp lý",
+  "admin.ops.fleet.advisories": "cảnh báo bảo mật: {v}"
 }
