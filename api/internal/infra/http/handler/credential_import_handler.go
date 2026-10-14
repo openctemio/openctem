@@ -931,7 +931,7 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	item, err := h.service.SetCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateAccepted, req.Notes, configAuditContext(r))
+	item, err := h.service.ApplyCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateAccepted, req.Notes, configAuditContext(r))
 	if err != nil {
 		h.writeStateChangeError(w, "accept", id, err)
 		return
@@ -967,7 +967,7 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 		return
 	}
 
-	item, err := h.service.SetCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateFalsePositive, req.Notes, configAuditContext(r))
+	item, err := h.service.ApplyCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateFalsePositive, req.Notes, configAuditContext(r))
 	if err != nil {
 		h.writeStateChangeError(w, "mark as false positive", id, err)
 		return
