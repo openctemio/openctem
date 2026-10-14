@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = 'ec30118e43df2aca'
+export const ASSET_REGISTRY_VERSION = 'b37a916bad5f5647'
 
 export type AssetLens =
   | 'external_surface'
@@ -398,6 +398,7 @@ export type AssetPropertyKey =
   | 'business_impact_score'
   | 'canonical_url'
   | 'cdn'
+  | 'cdn_type'
   | 'certificate'
   | 'chain_status_codes'
   | 'cidr'
@@ -417,10 +418,12 @@ export type AssetPropertyKey =
   | 'depth'
   | 'device_type'
   | 'direction'
+  | 'discovery_method'
   | 'discovery_source'
   | 'discovery_tool'
   | 'display_name'
   | 'dns_name'
+  | 'dns_record_count'
   | 'dns_record_types'
   | 'dns_records'
   | 'dns_servers'
@@ -433,6 +436,8 @@ export type AssetPropertyKey =
   | 'endpoints_count'
   | 'engine'
   | 'expires_at'
+  | 'favicon_mmh3'
+  | 'fingerprint'
   | 'fingerprint_sha256'
   | 'firewall_id'
   | 'firmware_version'
@@ -476,6 +481,7 @@ export type AssetPropertyKey =
   | 'is_default'
   | 'is_encrypted'
   | 'is_expired'
+  | 'is_host_mismatch'
   | 'is_private'
   | 'is_privileged'
   | 'is_public'
@@ -514,6 +520,7 @@ export type AssetPropertyKey =
   | 'node_count'
   | 'not_after'
   | 'not_before'
+  | 'open_port_count'
   | 'organization_id'
   | 'os_family'
   | 'os_name'
@@ -568,6 +575,7 @@ export type AssetPropertyKey =
   | 'technologies'
   | 'timeout_seconds'
   | 'title'
+  | 'tls_fingerprint'
   | 'tls_version'
   | 'transport'
   | 'trust_policy'
@@ -617,6 +625,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   },
   canonical_url: { label: 'Repository URL', labelVi: 'URL kho mã', format: 'url' },
   cdn: { label: 'CDN', labelVi: 'CDN' },
+  cdn_type: { label: 'Edge type', labelVi: 'Loại biên mạng' },
   certificate: { label: 'Certificate details', labelVi: 'Chi tiết chứng chỉ' },
   chain_status_codes: { label: 'Redirect chain', labelVi: 'Chuỗi chuyển hướng', list: true },
   cidr: { label: 'CIDR', labelVi: 'CIDR' },
@@ -644,10 +653,12 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   depth: { label: 'Crawl depth', labelVi: 'Độ sâu thu thập' },
   device_type: { label: 'Device type', labelVi: 'Loại thiết bị' },
   direction: { label: 'Direction', labelVi: 'Chiều' },
+  discovery_method: { label: 'Discovery method', labelVi: 'Phương thức phát hiện' },
   discovery_source: { label: 'Discovery source', labelVi: 'Nguồn phát hiện' },
   discovery_tool: { label: 'Discovery tool', labelVi: 'Công cụ phát hiện' },
   display_name: { label: 'Display name', labelVi: 'Tên hiển thị' },
   dns_name: { label: 'DNS name', labelVi: 'Tên DNS' },
+  dns_record_count: { label: 'DNS record count', labelVi: 'Số bản ghi DNS' },
   dns_record_types: { label: 'DNS record types', labelVi: 'Loại bản ghi DNS' },
   dns_records: { label: 'DNS records', labelVi: 'Bản ghi DNS' },
   dns_servers: { label: 'DNS servers', labelVi: 'Máy chủ DNS', format: 'ip', list: true },
@@ -660,6 +671,8 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   endpoints_count: { label: 'Endpoints', labelVi: 'Số endpoint' },
   engine: { label: 'Engine', labelVi: 'Engine' },
   expires_at: { label: 'Expires', labelVi: 'Ngày hết hạn', format: 'expiry' },
+  favicon_mmh3: { label: 'Favicon hash', labelVi: 'Mã băm favicon', format: 'code' },
+  fingerprint: { label: 'Fingerprint', labelVi: 'Dấu vân tay', format: 'code' },
   fingerprint_sha256: {
     label: 'SHA-256 fingerprint',
     labelVi: 'Dấu vân tay SHA-256',
@@ -745,6 +758,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
     synonyms: ['encrypted', 'encryption_enabled', 'encryption'],
   },
   is_expired: { label: 'Expired', labelVi: 'Đã hết hạn' },
+  is_host_mismatch: {
+    label: 'Name mismatch',
+    labelVi: 'Không khớp tên máy chủ',
+    synonyms: ['host_mismatch'],
+  },
   is_private: { label: 'Private address', labelVi: 'Địa chỉ nội bộ' },
   is_privileged: { label: 'Privileged', labelVi: 'Đặc quyền', synonyms: ['privileged'] },
   is_public: {
@@ -813,6 +831,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   node_count: { label: 'Nodes', labelVi: 'Số node' },
   not_after: { label: 'Valid until', labelVi: 'Hiệu lực đến', format: 'expiry' },
   not_before: { label: 'Valid from', labelVi: 'Hiệu lực từ' },
+  open_port_count: { label: 'Open ports', labelVi: 'Số cổng mở' },
   organization_id: { label: 'Organization ID', labelVi: 'ID tổ chức', format: 'code' },
   os_family: { label: 'OS family', labelVi: 'Họ hệ điều hành' },
   os_name: { label: 'Operating system', labelVi: 'Hệ điều hành', synonyms: ['os'] },
@@ -893,6 +912,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   },
   timeout_seconds: { label: 'Timeout (s)', labelVi: 'Thời gian chờ (giây)' },
   title: { label: 'Page title', labelVi: 'Tiêu đề trang' },
+  tls_fingerprint: {
+    label: 'Certificate fingerprint',
+    labelVi: 'Dấu vân tay chứng chỉ',
+    format: 'code',
+  },
   tls_version: { label: 'TLS version', labelVi: 'Phiên bản TLS' },
   transport: { label: 'Transport', labelVi: 'Giao thức truyền tải' },
   trust_policy: { label: 'Trust policy', labelVi: 'Chính sách tin cậy' },
@@ -943,6 +967,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'expires_at',
     'nameservers',
     'dns_records',
+    'dns_record_count',
     'whois',
   ],
   subdomain: [
@@ -953,7 +978,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'cname_target',
     'dns_record_types',
     'dns_records',
+    'dns_record_count',
     'discovery_source',
+    'discovery_method',
     'is_wildcard',
   ],
   ip_address: [
@@ -966,6 +993,7 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'city',
     'geolocation',
     'ports',
+    'open_port_count',
     'is_private',
     'is_reserved',
   ],
@@ -981,6 +1009,8 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'key_algorithm',
     'key_size',
     'fingerprint_sha256',
+    'fingerprint',
+    'is_host_mismatch',
     'is_self_signed',
     'is_expired',
     'is_wildcard',
@@ -1013,6 +1043,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'server',
     'technologies',
     'cdn',
+    'cdn_type',
+    'favicon_mmh3',
+    'tls_fingerprint',
     'waf',
     'tls_version',
     'response_time_ms',
