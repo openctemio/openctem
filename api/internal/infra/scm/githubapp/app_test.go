@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -151,5 +152,52 @@ func TestErrorsCarryNoToken(t *testing.T) {
 	_, err := app.InstallationToken(context.Background(), 1)
 	if err == nil || strings.Contains(err.Error(), "Bearer") || !strings.Contains(err.Error(), "401") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// A rate limit (429, or 403 with Retry-After or no requests left) is marked
+// so the caller retries; a plain 403 is a refusal.
+func TestRateLimitedErrors(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		header map[string]string
+		want   bool
+	}{
+		{http.StatusTooManyRequests, nil, true},
+		{http.StatusForbidden, map[string]string{"Retry-After": "60"}, true},
+		{http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "0"}, true},
+		{http.StatusForbidden, map[string]string{"X-RateLimit-Remaining": "12"}, false},
+		{http.StatusNotFound, map[string]string{"Retry-After": "60"}, false},
+	} {
+		app, _ := testApp(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			for k, v := range tc.header {
+				w.Header().Set(k, v)
+			}
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(`{"message":"limited"}`))
+		}))
+		_, err := app.InstallationToken(context.Background(), 1)
+		var se *StatusError
+		if !errors.As(err, &se) || se.Status != tc.status || se.RateLimited != tc.want {
+			t.Fatalf("%d %v: %#v", tc.status, tc.header, err)
+		}
+	}
+}
+
+// CommitParents reads the parents of a commit with the installation token.
+func TestCommitParents(t *testing.T) {
+	app, _ := testApp(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/access_tokens"):
+			_, _ = w.Write([]byte(`{"token":"ghs_x","expires_at":"` + time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+		case r.URL.Path == "/repos/acme/api/commits/merge2" && r.Header.Get("Authorization") == "Bearer ghs_x":
+			_, _ = w.Write([]byte(`{"sha":"merge2","parents":[{"sha":"base2"},{"sha":"head1"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	got, err := app.CommitParents(context.Background(), 7, "acme", "api", "merge2")
+	if err != nil || strings.Join(got, ",") != "base2,head1" {
+		t.Fatalf("parents = %v %v", got, err)
 	}
 }
