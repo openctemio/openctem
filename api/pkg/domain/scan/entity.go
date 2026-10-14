@@ -853,12 +853,15 @@ func (s *Scan) Clone(newName string) *Scan {
 		TimeoutSeconds:      s.TimeoutSeconds,
 		MaxRetries:          s.MaxRetries,
 		RetryBackoffSeconds: s.RetryBackoffSeconds,
-		Status:              StatusActive,
-		TotalRuns:           0,
-		SuccessfulRuns:      0,
-		FailedRuns:          0,
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		Intensity:           s.Intensity,
+		// A copy starts paused: it runs on its schedule only once someone
+		// resumes it, never as a side effect of cloning.
+		Status:         StatusPaused,
+		TotalRuns:      0,
+		SuccessfulRuns: 0,
+		FailedRuns:     0,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	// Deep copy maps and slices
