@@ -1247,7 +1247,7 @@
   "scans.ci.breakGlass.noRevokePermission": "Chỉ chủ sở hữu và quản trị viên mới thu hồi được ngoại lệ",
   "scans.ci.breakGlass.dialogDescription": "Commit vượt cổng cho đến khi ngoại lệ hết hạn hoặc bị thu hồi.",
   "scans.ci.breakGlass.commit": "Commit",
-  "scans.ci.breakGlass.commitHint": "Đầy đủ hoặc rút gọn (ít nhất 7 ký tự).",
+  "scans.ci.breakGlass.commitHint": "Mã commit đầy đủ (40 ký tự). Ngoại lệ chỉ áp dụng cho đúng commit này.",
   "scans.ci.breakGlass.reason": "Lý do",
   "scans.ci.breakGlass.reasonHint": "Ít nhất 10 ký tự; được ghi vào nhật ký kiểm toán.",
   "scans.ci.breakGlass.hours": "Số giờ (1 đến 168)",
