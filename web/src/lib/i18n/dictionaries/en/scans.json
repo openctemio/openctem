@@ -1412,7 +1412,7 @@
   "scans.ci.feedback.selectedRepos": "selected repositories",
   "scans.ci.feedback.unbind": "Unbind {name}",
   "scans.ci.feedback.gitlab": "GitLab groups",
-  "scans.ci.feedback.gitlabDescription": "A group access token (Developer role, api scope) lets OpenCTEM set the commit status and comment on merge requests of the group. The token is stored encrypted and never shown again.",
+  "scans.ci.feedback.gitlabDescription": "A group access token (Developer role, api scope) lets OpenCTEM set the commit status and comment on merge requests of the group. A personal access token is refused. The token is stored encrypted and never shown again.",
   "scans.ci.feedback.connectGitlab": "Connect GitLab group",
   "scans.ci.feedback.noGitlab": "No GitLab group connected.",
   "scans.ci.feedback.expires": "token expires {date}",

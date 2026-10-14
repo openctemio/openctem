@@ -45,7 +45,13 @@ CI job ── openctem-ci scan ──▶ POST /ci/runs/{id}/results ─┐
 - **G-2** Decoration uses an **SCM app installation** (GitHub App; GitLab
   group access token or OAuth application where no app model exists).
   Tokens are minted per call, live at most one hour and cover only the
-  installation's repositories. No personal access token is used.
+  installation's repositories. No personal access token is used: a GitLab
+  token is accepted only when it acts as a bot user (a group or project
+  access token). On GitLab any Developer of a project can also set a
+  commit status of the same name, so the status is feedback, not an
+  enforcement point; enforcement there is the pipeline itself
+  (`workflow_refs` on the central template) and merge request approval
+  rules that require the gate job.
 - **G-3** Decoration runs **after** the verdict is stored, from the
   notification outbox, never in the evaluate request. A decoration failure
   never changes a verdict; it is retried and shown on the run.
