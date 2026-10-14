@@ -228,30 +228,8 @@ func (m *credImportMockExposureRepo) BulkUpsert(_ context.Context, events []*exp
 	return nil
 }
 
-func (m *credImportMockExposureRepo) CountByState(_ context.Context, _ shared.ID) (map[exposure.State]int64, error) {
-	m.countStateCalls++
-	if m.countStateErr != nil {
-		return nil, m.countStateErr
-	}
-	if m.countByStateResult != nil {
-		return m.countByStateResult, nil
-	}
-	return map[exposure.State]int64{}, nil
-}
-
-func (m *credImportMockExposureRepo) CountBySeverity(_ context.Context, _ shared.ID) (map[exposure.Severity]int64, error) {
-	m.countSevCalls++
-	if m.countSevErr != nil {
-		return nil, m.countSevErr
-	}
-	if m.countBySeverityResult != nil {
-		return m.countBySeverityResult, nil
-	}
-	return map[exposure.Severity]int64{}, nil
-}
-
-func (m *credImportMockExposureRepo) MeanTimeToResolveHours(_ context.Context, _ shared.ID) (float64, bool, error) {
-	return 0, false, nil
+func (m *credImportMockExposureRepo) Stats(_ context.Context, _ exposure.Filter) (exposure.Stats, error) {
+	return exposure.Stats{}, nil
 }
 
 // addExistingEvent is a helper to pre-populate the repo with an event.
