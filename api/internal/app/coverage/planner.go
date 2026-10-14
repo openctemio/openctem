@@ -204,6 +204,23 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			continue // the previous batch is still running: back-pressure
 		}
 		if err != nil {
+			// A refusal of the whole batch (zone coverage, approval, a scan
+			// that may not be triggered) blocks its pairs with the code and
+			// rechecks later; retrying it every pass changes nothing. Any
+			// other error (the database) leaves them due.
+			var de *shared.DomainError
+			if errors.As(err, &de) && de.Code != "" {
+				blocked := make(map[shared.ID]string, len(due))
+				for _, d := range due {
+					blocked[d.AssetID] = strings.ToLower(de.Code)
+				}
+				if err := s.planner.MarkBlocked(ctx, tenantID, capability, blocked, BlockedRecheck); err != nil {
+					return total, err
+				}
+				s.logger.Info("coverage batch refused, pairs blocked", "tenant_id", tenantID.String(),
+					"capability", capability, "targets", len(targets), "code", de.Code)
+				continue
+			}
 			s.logger.Warn("coverage run not started", "tenant_id", tenantID.String(), "capability", capability,
 				"targets", len(targets), "error", logger.SanitizeError(err))
 			continue

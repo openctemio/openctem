@@ -9,10 +9,13 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -27,6 +30,7 @@ type fakeStarter struct {
 	runs    map[string]shared.ID
 	refuse  map[string]string // target -> code
 	busy    map[string]bool
+	fail    map[string]error // capability -> refusal of the whole batch
 	execRun func(id shared.ID)
 	// execTask records the run's one task (command) with its targets.
 	execTask func(id shared.ID, targets []string)
@@ -39,6 +43,9 @@ func (f *fakeStarter) StartCoverage(_ context.Context, in scanapp.CoverageInput)
 		return nil, scanapp.ErrCoverageBusy
 	}
 	f.calls[in.Capability] = append(f.calls[in.Capability], in.Targets...)
+	if err, ok := f.fail[in.Capability]; ok {
+		return nil, err
+	}
 	res := &scanapp.CoverageResult{Tool: "tool-" + in.Capability}
 	for _, t := range in.Targets {
 		if code, ok := f.refuse[t]; ok {
@@ -166,6 +173,50 @@ func TestAssetCoverage_PlannerDispatchesAndSettles(t *testing.T) {
 	}
 	if len(f.calls["resolve.dns"]) != n {
 		t.Error("a Strict tenant got coverage runs")
+	}
+}
+
+// A refusal of the whole batch (here the trigger's zone coverage refusal)
+// blocks the batch's pairs with the code instead of leaving them due to be
+// retried every pass; any other error leaves them due.
+func TestAssetCoverage_WholeBatchRefusalBlocks(t *testing.T) {
+	g := newCovRig(t)
+	ctx := context.Background()
+	a := g.r.newTenant()
+	name := g.asset(a, "nozone.batch.test", "subdomain", "", "")
+	addr := g.asset(a, "203.0.113.77", "ip_address", "", "")
+	f := &fakeStarter{t: t, calls: map[string][]string{}, runs: map[string]shared.ID{}, busy: map[string]bool{},
+		fail: map[string]error{
+			"resolve.dns": fmt.Errorf("failed to trigger coverage: %w", shared.NewDomainError("NO_ZONE_COVERAGE", "outside every zone", shared.ErrValidation)),
+			"lookup.asn":  errors.New("connection reset"),
+		}}
+	f.execRun = func(shared.ID) {}
+	g.svc.EnablePlanning(g.repo, f, coverageapp.GovernanceSwitch{Modes: fixedMode{m: scangov.ModeOff}}, coverageapp.Config{})
+	if _, err := g.svc.RunTenant(ctx, a.tenant); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := g.repo.ListForAsset(ctx, a.tenant, name)
+	for _, r := range rows {
+		if r.Capability == "resolve.dns" && (r.State != "blocked" || r.Reason != "no_zone_coverage" || r.NextDueAt == nil || !r.NextDueAt.After(time.Now().Add(time.Hour))) {
+			t.Errorf("refused batch pair = %+v, want blocked no_zone_coverage, rechecked later", r)
+		}
+	}
+	rows, _ = g.repo.ListForAsset(ctx, a.tenant, addr)
+	for _, r := range rows {
+		if r.Capability == "lookup.asn" && r.State != "due" {
+			t.Errorf("a database-style error must leave the pair due: %+v", r)
+		}
+	}
+	// The blocked pair is not offered again on the next pass.
+	n := len(f.calls["resolve.dns"])
+	if n != 1 {
+		t.Fatalf("resolve.dns attempts = %d, want 1", n)
+	}
+	if _, err := g.svc.RunTenant(ctx, a.tenant); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls["resolve.dns"]) != n {
+		t.Error("a blocked pair was retried on the next pass")
 	}
 }
 
