@@ -18,13 +18,14 @@ import {
   DetailSheet,
   type DetailMenuItem,
 } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
 import {
   SUPPRESSION_STATUS_BADGE,
-  SUPPRESSION_STATUS_LABELS,
   SUPPRESSION_TYPE_BADGE,
-  SUPPRESSION_TYPE_LABELS,
+  suppressionStatusLabel,
+  suppressionTypeLabel,
   type SuppressionRule,
 } from '../types'
 
@@ -46,10 +47,11 @@ function relative(iso?: string | null): string {
 }
 
 function Criterion({ value }: { value?: string | null }) {
+  const { t } = useTranslation()
   return value ? (
     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">{value}</code>
   ) : (
-    <span className="text-muted-foreground">Any</span>
+    <span className="text-muted-foreground">{t('exceptions.detail.any', 'Any')}</span>
   )
 }
 
@@ -66,6 +68,7 @@ export function SuppressionDetailSheet({
   onReject,
   onDelete,
 }: SuppressionDetailSheetProps) {
+  const { t } = useTranslation()
   const canApprove = useHasPermission(Permission.SuppressionsApprove)
   const canWrite = useHasPermission(Permission.SuppressionsWrite)
   const canDelete = useHasPermission(Permission.SuppressionsDelete)
@@ -76,19 +79,23 @@ export function SuppressionDetailSheet({
 
   const menu: DetailMenuItem[] = []
   if (reviewing && canWrite && onEdit) {
-    menu.push({ label: 'Edit', icon: Pencil, onSelect: () => onEdit(rule) })
+    menu.push({
+      label: t('exceptions.detail.edit', 'Edit'),
+      icon: Pencil,
+      onSelect: () => onEdit(rule),
+    })
   }
   menu.push({
-    label: 'Copy ID',
+    label: t('exceptions.detail.copyId', 'Copy ID'),
     icon: Hash,
     onSelect: () => {
       copyToClipboard(rule.id)
-      toast.success('Rule ID copied to clipboard')
+      toast.success(t('exceptions.detail.idCopied', 'Rule ID copied to clipboard'))
     },
   })
   if (canDelete && onDelete) {
     menu.push({
-      label: 'Delete rule',
+      label: t('exceptions.detail.delete', 'Delete rule'),
       icon: Trash2,
       destructive: true,
       separatorBefore: true,
@@ -109,36 +116,42 @@ export function SuppressionDetailSheet({
                 variant="outline"
                 className={cn('text-xs', SUPPRESSION_STATUS_BADGE[rule.status])}
               >
-                {SUPPRESSION_STATUS_LABELS[rule.status]}
+                {suppressionStatusLabel(rule.status, t)}
               </Badge>
               <Badge
                 variant="outline"
                 className={cn('text-xs', SUPPRESSION_TYPE_BADGE[rule.suppression_type])}
               >
-                {SUPPRESSION_TYPE_LABELS[rule.suppression_type]}
+                {suppressionTypeLabel(rule.suppression_type, t)}
               </Badge>
             </>
           }
           meta={[
-            `Requested ${relative(rule.requested_at)}`,
-            rule.expires_at ? `Expires ${relative(rule.expires_at)}` : 'Never expires',
+            t('exceptions.detail.requestedAgo', 'Requested {when}', {
+              when: relative(rule.requested_at),
+            }),
+            rule.expires_at
+              ? t('exceptions.detail.expiresAgo', 'Expires {when}', {
+                  when: relative(rule.expires_at),
+                })
+              : t('exceptions.detail.neverExpires', 'Never expires'),
           ]}
           actions={
             reviewing ? (
               <>
                 <Button size="sm" onClick={() => onApprove?.(rule)}>
                   <Check className="h-4 w-4" />
-                  Approve
+                  {t('exceptions.detail.approve', 'Approve')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => onReject?.(rule)}>
                   <X className="h-4 w-4" />
-                  Reject
+                  {t('exceptions.detail.reject', 'Reject')}
                 </Button>
               </>
             ) : canWrite && onEdit ? (
               <Button size="sm" variant="outline" onClick={() => onEdit(rule)}>
                 <Pencil className="h-4 w-4" />
-                Edit
+                {t('exceptions.detail.edit', 'Edit')}
               </Button>
             ) : undefined
           }
@@ -149,61 +162,85 @@ export function SuppressionDetailSheet({
     >
       <div className="space-y-5">
         {isPending && !canApprove && (
-          <DetailCallout tone="info" icon={Clock} title="Waiting for approval">
-            The rule suppresses nothing until someone with the approve permission accepts it.
+          <DetailCallout
+            tone="info"
+            icon={Clock}
+            title={t('exceptions.detail.waitingTitle', 'Waiting for approval')}
+          >
+            {t(
+              'exceptions.detail.waitingBody',
+              'The rule suppresses nothing until someone with the approve permission accepts it.'
+            )}
           </DetailCallout>
         )}
         {rule.status === 'rejected' && rule.rejection_reason && (
-          <DetailCallout tone="destructive" icon={X} title="Rejected">
+          <DetailCallout
+            tone="destructive"
+            icon={X}
+            title={t('exceptions.detail.rejectedTitle', 'Rejected')}
+          >
             {rule.rejection_reason}
           </DetailCallout>
         )}
 
         <DetailSections>
           {rule.description && (
-            <DetailSection title="Description">
+            <DetailSection title={t('exceptions.detail.description', 'Description')}>
               <p className="text-sm whitespace-pre-wrap text-muted-foreground">
                 {rule.description}
               </p>
             </DetailSection>
           )}
 
-          <DetailSection title="Matching criteria" icon={ShieldQuestion}>
+          <DetailSection
+            title={t('exceptions.detail.criteria', 'Matching criteria')}
+            icon={ShieldQuestion}
+          >
             <DetailFieldGrid>
-              <DetailField label="Tool">
+              <DetailField label={t('exceptions.detail.tool', 'Tool')}>
                 <Criterion value={rule.tool_name} />
               </DetailField>
-              <DetailField label="Rule ID">
+              <DetailField label={t('exceptions.detail.ruleId', 'Rule ID')}>
                 <Criterion value={rule.rule_id} />
               </DetailField>
-              <DetailField label="Path pattern" full>
+              <DetailField label={t('exceptions.detail.pathPattern', 'Path pattern')} full>
                 <Criterion value={rule.path_pattern} />
               </DetailField>
-              <DetailField label="Asset" full>
+              <DetailField label={t('exceptions.detail.asset', 'Asset')} full>
                 <Criterion value={rule.asset_id} />
               </DetailField>
             </DetailFieldGrid>
           </DetailSection>
 
-          <DetailSection title="Approval workflow" icon={Clock}>
+          <DetailSection title={t('exceptions.detail.workflow', 'Approval workflow')} icon={Clock}>
             <DetailFieldGrid>
-              <DetailField label="Requested">{relative(rule.requested_at)}</DetailField>
-              <DetailField label="Requested by">
+              <DetailField label={t('exceptions.detail.requested', 'Requested')}>
+                {relative(rule.requested_at)}
+              </DetailField>
+              <DetailField label={t('exceptions.detail.requestedBy', 'Requested by')}>
                 {/* A request no user made (a CI job) names its requester. */}
                 <span className="font-mono">
                   {rule.requested_by_actor || rule.requested_by.slice(0, 8)}
                 </span>
               </DetailField>
               {rule.approved_at && (
-                <DetailField label="Approved">{relative(rule.approved_at)}</DetailField>
+                <DetailField label={t('exceptions.detail.approved', 'Approved')}>
+                  {relative(rule.approved_at)}
+                </DetailField>
               )}
               {rule.rejected_at && (
-                <DetailField label="Rejected">{relative(rule.rejected_at)}</DetailField>
+                <DetailField label={t('exceptions.detail.rejected', 'Rejected')}>
+                  {relative(rule.rejected_at)}
+                </DetailField>
               )}
-              <DetailField label="Expires">
-                {rule.expires_at ? relative(rule.expires_at) : 'Never'}
+              <DetailField label={t('exceptions.detail.expires', 'Expires')}>
+                {rule.expires_at
+                  ? relative(rule.expires_at)
+                  : t('exceptions.detail.never', 'Never')}
               </DetailField>
-              <DetailField label="Created">{relative(rule.created_at)}</DetailField>
+              <DetailField label={t('exceptions.detail.created', 'Created')}>
+                {relative(rule.created_at)}
+              </DetailField>
             </DetailFieldGrid>
           </DetailSection>
         </DetailSections>
