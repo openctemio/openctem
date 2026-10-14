@@ -12,9 +12,9 @@
  * grouped by `x-octm-group` (or their object group).
  */
 
-/** The common tool options, in display order (CTIS tooloption). */
-export const COMMON_OPTIONS = ['timeout', 'rate', 'concurrency', 'retries'] as const
-export type CommonOption = (typeof COMMON_OPTIONS)[number]
+import { COMMON_OPTIONS, type CommonOption } from './tool-options'
+
+export { COMMON_OPTIONS, type CommonOption }
 
 /** Safety class of a non-default value (x-octm-tier). */
 export type SettingTier = 'T0' | 'T1' | 'T2'

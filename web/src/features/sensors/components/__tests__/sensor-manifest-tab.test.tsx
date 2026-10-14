@@ -123,6 +123,66 @@ describe('SensorManifestTab', () => {
     ).toBeInTheDocument()
   })
 
+  it("lists a tool's declared options, read-only, common options first", async () => {
+    const descriptor = {
+      name: 'nuclei',
+      config: {
+        type: 'object',
+        properties: {
+          severity: { type: 'array', title: 'Severities', 'x-octm-scope': 'scan' },
+          rate_limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 5000,
+            default: 150,
+            'x-octm-common': 'rate',
+            'x-octm-flag': '-rate-limit',
+            'x-octm-scope': 'scan',
+          },
+          code: { type: 'boolean', title: 'Code templates', 'x-octm-tier': 'T2' },
+        },
+      },
+    }
+    const v = version(`sha256:${'b'.repeat(64)}`, 'v3.12.0', true)
+    const items = [
+      {
+        ...v,
+        manifest: {
+          ...v.manifest,
+          tools: v.manifest.tools.map((t) => ({
+            ...t,
+            contract: {
+              api_version: 'openctem.io/tool/v1',
+              digest: `sha256:${'d'.repeat(64)}`,
+              version: '1.0.0',
+              class: 'target-scan',
+              tier: 'T1',
+              produces: [],
+              descriptor,
+            },
+          })),
+        },
+      },
+    ]
+    manifests.value = { data: { items }, error: undefined, isLoading: false }
+    render(<SensorManifestTab sensor={sensor} now={Date.now()} />)
+    await userEvent.click(screen.getByText('Options (3)'))
+    const list = screen.getByLabelText('nuclei options')
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows.map((r) => r.getAttribute('data-option'))).toEqual([
+      'rate_limit',
+      'code',
+      'severity',
+    ])
+    expect(within(rows[0]).getByText('Rate limit')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('-rate-limit')).toBeInTheDocument()
+    expect(within(rows[0]).getByText('1–5000')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Dangerous')).toBeInTheDocument()
+    // Read-only: nothing to edit.
+    expect(within(list).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(list).queryByRole('button')).not.toBeInTheDocument()
+  })
+
   it('names an ignored invalid tool contract', () => {
     const v = version(`sha256:${'b'.repeat(64)}`, 'v3.12.0', true)
     v.ignored = [
