@@ -124,10 +124,6 @@ func registerTenantRoutes(
 		r.PUT("/settings/asset-lifecycle", h.UpdateAssetLifecycleSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.POST("/settings/asset-lifecycle/dry-run", h.DryRunAssetLifecycle, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 
-		// Finding correlation switches (admin+), research/134 section 12.
-		r.GET("/settings/finding-correlation", h.GetFindingCorrelationSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PATCH("/settings/finding-correlation", h.UpdateFindingCorrelationSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
-
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))

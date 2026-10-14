@@ -71,6 +71,9 @@ var assetMergeRefs = []mergeRef{
 	// Web evidence captures (RFC-081) follow the asset; the newest per asset
 	// are what the asset page shows, so the kept asset gains the history.
 	{table: "asset_web_evidence", column: "asset_id", tenantCol: "tenant_id"},
+	// A finding's injection point follows its finding's asset (correlation
+	// is re-derived on the kept asset's next scan).
+	{table: "finding_injection_points", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
