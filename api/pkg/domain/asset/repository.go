@@ -217,9 +217,12 @@ type InventoryOverviewRow struct {
 
 // AggregateStats holds all statistics computed via SQL aggregation.
 type AggregateStats struct {
-	Total         int
-	ByType        map[string]int
-	BySubType     map[string]int
+	Total     int
+	ByType    map[string]int
+	BySubType map[string]int
+	// ByTypeSubType counts by stored type and sub-type, keyed "type" or
+	// "type/sub_type": enough to place every row in its registry class.
+	ByTypeSubType map[string]int
 	ByStatus      map[string]int
 	ByCriticality map[string]int
 	ByScope       map[string]int
