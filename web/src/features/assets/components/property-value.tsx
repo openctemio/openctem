@@ -102,8 +102,9 @@ export function hasPropertyValue(value: unknown): boolean {
   return true
 }
 
-function ipAssetHref(ip: string): string {
-  return `/assets?${serializeInventoryFilters({ types: ['ip_address'], search: ip }).toString()}`
+/** The inventory query that finds the IP address asset with this address. */
+function ipAssetQuery(ip: string): string {
+  return serializeInventoryFilters({ types: ['ip_address'], search: ip }).toString()
 }
 
 export function CopyValueButton({ text, className }: { text: string; className?: string }) {
@@ -149,7 +150,10 @@ function ScalarValue({ value, format }: { value: Scalar; format?: AssetPropertyF
   switch (format) {
     case 'ip':
       return (
-        <Link href={ipAssetHref(text)} className="font-mono text-xs text-primary hover:underline">
+        <Link
+          href={`/assets?${ipAssetQuery(text)}`}
+          className="font-mono text-xs text-primary hover:underline"
+        >
           {text}
         </Link>
       )
