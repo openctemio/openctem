@@ -35,8 +35,12 @@ const (
 	ReasonEPSS        = "epss"
 	ReasonSeverity    = "severity"
 	ReasonScanFailure = "scan_failure"
-	ReasonOverride    = "override"
-	ReasonNoBaseline  = "no_baseline"
+	// ReasonMissingCapability: the repository is expected to be scanned for
+	// a capability (its coverage expectation) and the run reported no tool
+	// with it, for example because the pipeline was edited to skip it.
+	ReasonMissingCapability = "missing_capability"
+	ReasonOverride          = "override"
+	ReasonNoBaseline        = "no_baseline"
 	// ReasonSecretPreExisting notes a secret already open on the baseline
 	// branch: it blocks default-branch runs, not pull requests.
 	ReasonSecretPreExisting = "secret_pre_existing"
@@ -236,8 +240,11 @@ type GateInput struct {
 	// every open secret blocks.
 	DefaultBranch bool
 	ScanFailures  int
-	Override      *GateOverride
-	Now           time.Time
+	// MissingCapabilities are the capabilities the repository is expected
+	// to report (coverage expectation) that the run reported no tool for.
+	MissingCapabilities []string
+	Override            *GateOverride
+	Now                 time.Time
 	// FindingURL builds a link to a finding ("" for none).
 	FindingURL func(id shared.ID) string
 }
@@ -353,6 +360,10 @@ func Evaluate(in GateInput) GateVerdict {
 	if in.ScanFailures > 0 {
 		add(GateReason{Code: ReasonScanFailure,
 			Message: fmt.Sprintf("%d scanner(s) failed to run or to report: the run cannot be judged", in.ScanFailures)})
+	}
+	for _, c := range in.MissingCapabilities {
+		add(GateReason{Code: ReasonMissingCapability,
+			Message: fmt.Sprintf("the repository is expected to be scanned for %s, and this run reported no %s scan: the run cannot be judged", c, c)})
 	}
 	threshold := rank(p.FailOnSeverity)
 	for _, f := range in.Findings {
