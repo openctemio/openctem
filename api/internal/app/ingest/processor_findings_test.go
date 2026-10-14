@@ -979,9 +979,23 @@ func TestMapCTISDataFlowToDomain_EmptyDataFlow(t *testing.T) {
 
 	result := mapCTISDataFlowToDomain(df)
 
-	assert.Empty(t, result.Steps)
-	assert.Equal(t, 0, result.Index)
-	assert.Equal(t, "essential", result.Importance)
+	assert.Equal(t, vulnerability.DataFlow{}, result, "a flow without a step is no flow")
+}
+
+// The receiver normalizes the trace again: an absolute path of the
+// scanning machine is dropped and a credential in a snippet masked, the
+// producer's report is not changed.
+func TestMapCTISDataFlowToDomain_NormalizedOnReceipt(t *testing.T) {
+	df := &ctis.DataFlow{
+		Sources: []ctis.DataFlowLocation{{Path: "/home/runner/work/app/app/src/a.py", Line: 3, Content: `password = "hunter2hunter2"`}},
+		Sinks:   []ctis.DataFlowLocation{{Path: "../../etc/passwd", Line: 9, Index: 1}},
+	}
+	result := mapCTISDataFlowToDomain(df)
+	require.Len(t, result.Steps, 2)
+	assert.Equal(t, "", result.Steps[0].Location.Path)
+	assert.NotContains(t, result.Steps[0].Location.Snippet, "hunter2")
+	assert.Equal(t, "", result.Steps[1].Location.Path)
+	assert.Equal(t, "/home/runner/work/app/app/src/a.py", df.Sources[0].Path, "the report is not changed")
 }
 
 // =============================================================================
