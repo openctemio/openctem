@@ -141,7 +141,7 @@ tenant and data scope (the insert selects the exposure under the tenant).
 Key files: `pkg/domain/exposure/disposition.go`,
 `internal/app/exposure/disposition.go` (`DispositionGate`),
 `internal/infra/postgres/exposure_disposition_repository.go`, migration
-`002118`; web `features/exposures/components/pending-disposition.tsx`.
+`002126`; web `features/exposures/components/pending-disposition.tsx`.
 The credentials page has no accept or false-positive control yet; its API
 responses carry `pending_disposition` the same way.
 ||||||| a2193be20
