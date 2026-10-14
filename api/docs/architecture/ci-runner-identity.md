@@ -185,7 +185,6 @@ rule. Requests name the CI identity in `suppression_rules.requested_by_actor`
 `ci_run.exceptions_requested` audit event. At most 20 of each per upload; an
 open request for the same rule and path is not duplicated. Branch runs
 request nothing.
-||||||| a3dc36070
 ### Known decisions
 
 A decision made on the platform holds on the next run of the same repository:
