@@ -113,6 +113,38 @@ Migration `002119` adds the trigger and fills the column for findings already
 accepted, from their latest approved acceptance request or their suppression
 rule. Findings accepted with no end anywhere stay empty.
 
+## AI false-positive proposals
+
+AI triage may **propose** a false positive; it never decides one.
+
+- When a triage completes with a false-positive likelihood of at least 0.9
+  on a **medium or low** finding, the finding service creates a **pending**
+  `finding_status_approvals` request for `false_positive`. The model's
+  rationale is the justification, prefixed with the likelihood, with control
+  characters dropped and capped at 1000 characters. The finding does not
+  change.
+- The request has no person as requester: `requested_by` is NULL and
+  `requested_by_actor` is `ai_triage` (a CHECK allows only that value, and
+  only with `requested_by` NULL). For the four-eyes rule it was requested by
+  nobody: any approver may approve or reject it, and an approval always needs
+  a person (`Approval.Approve` refuses a zero approver).
+- It is never made for critical or high findings, and never auto-approved.
+  It is not repeated while any request is pending for the finding (a partial
+  unique index also stops two workers racing), nor after a person rejected an
+  AI proposal for that finding.
+- Finding text and code are hostile input for the model. A triage whose
+  output needed review (coerced fields, or prompt-injection markers in the
+  finding, which also cap the likelihood below 0.8) proposes nothing. The web
+  shows the proposal as "Proposed by AI triage" and renders the justification
+  as plain text.
+- It runs only where AI triage runs: the `ai_triage` module enabled and an AI
+  mode configured for the organization.
+
+Key files: `internal/app/finding/vulnerability_service.go`
+(`ProposeFalsePositiveFromAI`), `internal/app/aitriage/service.go`
+(`proposeFalsePositive`), `pkg/domain/vulnerability/approval.go`
+(`NewActorApproval`), migration `002131`.
+
 ## Four-eyes on exposure dispositions
 
 Accepting the risk of, or marking a false positive, an exposure or a leaked
