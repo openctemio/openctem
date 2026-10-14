@@ -127,22 +127,34 @@ func TestCIRunRepository(t *testing.T) {
 		t.Fatalf("cross-tenant report slot: %v", err)
 	}
 
-	// Overrides: commit prefix, expiry, revocation, tenant.
-	o := &cirun.GateOverride{ID: shared.NewID(), TenantID: tenant, RepositoryAssetID: repoA, CommitSHA: "abcdef1",
+	// Overrides: exact commit, expiry, revocation, tenant.
+	fullSHA := strings.Repeat("abcdef12", 5)
+	o := &cirun.GateOverride{ID: shared.NewID(), TenantID: tenant, RepositoryAssetID: repoA, CommitSHA: fullSHA,
 		Reason: "release hotfix", ExpiresAt: now.Add(time.Hour), CreatedAt: now}
 	if err := repo.CreateOverride(ctx, o); err != nil {
 		t.Fatal(err)
 	}
-	if a, err := repo.ActiveOverride(ctx, tenant, repoA, "abcdef1234567", now); err != nil || a == nil || a.ID != o.ID {
+	if a, err := repo.ActiveOverride(ctx, tenant, repoA, strings.ToUpper(fullSHA), now); err != nil || a == nil || a.ID != o.ID {
 		t.Fatalf("active override: %v %v", a, err)
 	}
 	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, "ffffff1234567", now); a != nil {
 		t.Fatal("override matched another commit")
 	}
-	if a, _ := repo.ActiveOverride(ctx, other, repoA, "abcdef1234567", now); a != nil {
+	// A row stored before full ids were required: its prefix no longer covers
+	// a commit that shares it.
+	if _, err := db.ExecContext(ctx, `UPDATE ci_gate_overrides SET commit_sha = 'abcdef1' WHERE id = $1`, o.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, fullSHA, now); a != nil {
+		t.Fatal("an abbreviated override covered a commit by prefix")
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE ci_gate_overrides SET commit_sha = $2 WHERE id = $1`, o.ID.String(), fullSHA); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := repo.ActiveOverride(ctx, other, repoA, fullSHA, now); a != nil {
 		t.Fatal("override visible to another tenant")
 	}
-	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, "abcdef1234567", now.Add(2*time.Hour)); a != nil {
+	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, fullSHA, now.Add(2*time.Hour)); a != nil {
 		t.Fatal("expired override active")
 	}
 	if err := repo.RevokeOverride(ctx, other, o.ID, shared.NewID(), now); !errors.Is(err, shared.ErrNotFound) {
@@ -151,7 +163,7 @@ func TestCIRunRepository(t *testing.T) {
 	if err := repo.RevokeOverride(ctx, tenant, o.ID, shared.ID{}, now); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, "abcdef1234567", now); a != nil {
+	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, fullSHA, now); a != nil {
 		t.Fatal("revoked override active")
 	}
 	if list, _ := repo.ListOverrides(ctx, tenant, nil, &shared.DataScope{TenantID: tenant, UserID: user}); len(list) != 0 {
