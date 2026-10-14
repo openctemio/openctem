@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { ScanRoutingSection, toZonePreviewRequest } from '@/features/scan-zones'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
+import { useAssetGroups } from '@/features/asset-groups'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   Dialog,
@@ -90,6 +91,27 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       setCurrentStep('basic')
     }
   }, [scanConfig, open])
+
+  // The stored groups' names, for their chips on the Targets step.
+  const hasGroups = (scanConfig?.asset_group_ids?.length ?? 0) > 0 || !!scanConfig?.asset_group_id
+  const { data: groups } = useAssetGroups({
+    filters: { per_page: 100, sort_by: 'name', sort_order: 'asc' },
+    enabled: open && hasGroups,
+  })
+  useEffect(() => {
+    if (groups.length === 0) return
+    setFormData((prev) => {
+      const names = { ...(prev.targets.assetGroupNames ?? {}) }
+      let changed = false
+      for (const g of groups) {
+        if (prev.targets.assetGroupIds.includes(g.id) && !names[g.id]) {
+          names[g.id] = g.name
+          changed = true
+        }
+      }
+      return changed ? { ...prev, targets: { ...prev.targets, assetGroupNames: names } } : prev
+    })
+  }, [groups])
 
   const currentStepIndex = STEPS.indexOf(currentStep)
   const isFirstStep = currentStepIndex === 0
@@ -194,9 +216,6 @@ export function EditScanDialog({ scanConfig, open, onOpenChange, onSuccess }: Ed
       case 'targets':
         return (
           <div>
-            <div className="mx-6 mt-4 rounded-md border border-muted bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              {t('scans.edit.targetsReadOnly')}
-            </div>
             {refused.length > 0 && <ScopeRefusalPanel refused={refused} className="mx-6 mt-4" />}
             <TargetsStep
               data={formData}

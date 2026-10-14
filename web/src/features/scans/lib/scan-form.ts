@@ -300,6 +300,14 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
   }
 }
 
+/** The same targets (or ids), ignoring order, case and repeats. */
+function sameTargets(a: string[], b: string[]): boolean {
+  const norm = (l: string[]) => new Set(l.map((x) => x.trim().toLowerCase()).filter(Boolean))
+  const x = norm(a)
+  const y = norm(b)
+  return x.size === y.size && [...x].every((v) => y.has(v))
+}
+
 /**
  * Edit: form -> PUT /scans/{id}.
  *
@@ -337,6 +345,19 @@ export function formDataToUpdateRequest(
   if (opts.canSetZone) request.scan_zone_id = form.scanZoneId ?? ''
   // Sent whole: {} resets every option to its default (RFC-068).
   request.target_options = apiTargetOptions(form.targets.targetOptions) ?? {}
+
+  // Targets and groups go only when the user changed them: the API runs
+  // the new-scan target checks on what it is sent, as the editor.
+  const typed = typedAndExpanded(form)
+  if (form.targets.assetIds.length > 0 || !sameTargets(typed, config.targets ?? [])) {
+    request.targets = typed
+    if (form.targets.assetIds.length > 0) request.asset_ids = [...form.targets.assetIds]
+  }
+  const storedGroups =
+    config.asset_group_ids ?? (config.asset_group_id ? [config.asset_group_id] : [])
+  if (!sameTargets(form.targets.assetGroupIds, storedGroups)) {
+    request.asset_group_ids = [...form.targets.assetGroupIds]
+  }
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName
