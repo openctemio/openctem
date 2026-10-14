@@ -791,7 +791,9 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	if usePlatform {
 		// Calculate initial queue priority based on command priority
 		initialPriority := s.calculateInitialPriority(cmd.Priority)
-		cmd.SetPlatformJob(initialPriority)
+		if err := cmd.SetPlatformJob(initialPriority); err != nil {
+			return err
+		}
 	}
 
 	if err := s.commandRepo.Create(ctx, cmd); err != nil {

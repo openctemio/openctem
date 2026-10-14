@@ -3,6 +3,7 @@
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ErrorStateProps {
   /** What failed to load, e.g. "SAML configuration". Phrased into "Failed to load {title}". */
@@ -23,16 +24,21 @@ interface ErrorStateProps {
  * Rendered as the destructive Alert, the one error surface in the style contract.
  */
 export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
+  const { t } = useTranslation()
   return (
     <Alert variant="destructive">
       <AlertCircle />
-      <AlertTitle>Failed to load {title}</AlertTitle>
+      <AlertTitle>{t('common.failedToLoad', 'Failed to load {title}', { title })}</AlertTitle>
       <AlertDescription>
-        <p>{error instanceof Error ? error.message : 'An unexpected error occurred'}</p>
+        <p>
+          {error instanceof Error
+            ? error.message
+            : t('common.unexpectedError', 'An unexpected error occurred')}
+        </p>
         {onRetry && (
           <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
             <RefreshCw className="me-2 h-4 w-4" />
-            Retry
+            {t('common.retry', 'Retry')}
           </Button>
         )}
       </AlertDescription>
