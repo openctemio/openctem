@@ -87,5 +87,7 @@
   "findings.approvalDialog.submitting": "Submitting...",
   "findings.approvalDialog.submit": "Submit for Approval",
   "findings.approvalDialog.submitted": "Approval request submitted for \"{status}\"",
-  "findings.approvalDialog.submitFailed": "Failed to submit approval request"
+  "findings.approvalDialog.submitFailed": "Failed to submit approval request",
+  "findings.list.location": "Location",
+  "findings.list.asset": "Asset"
 }

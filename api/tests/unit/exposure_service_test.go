@@ -30,15 +30,11 @@ type mockExposureRepo struct {
 	countErr      error
 	upsertErr     error
 	bulkUpsertErr error
-	countStateErr error
-	countSevErr   error
-	mttrErr       error
+	statsErr      error
 
 	// Configurable results
-	countByStateResult    map[exposure.State]int64
-	countBySeverityResult map[exposure.Severity]int64
-	mttrHours             float64
-	mttrOK                bool
+	statsResult     exposure.Stats
+	lastStatsFilter exposure.Filter
 
 	// Call tracking
 	createCalls     int
@@ -48,8 +44,7 @@ type mockExposureRepo struct {
 	listCalls       int
 	upsertCalls     int
 	bulkUpsertCalls int
-	countStateCalls int
-	countSevCalls   int
+	statsCalls      int
 }
 
 func newMockExposureRepo() *mockExposureRepo {
@@ -190,33 +185,17 @@ func (m *mockExposureRepo) BulkUpsert(_ context.Context, events []*exposure.Expo
 	return nil
 }
 
-func (m *mockExposureRepo) CountByState(_ context.Context, _ shared.ID) (map[exposure.State]int64, error) {
-	m.countStateCalls++
-	if m.countStateErr != nil {
-		return nil, m.countStateErr
+func (m *mockExposureRepo) Stats(_ context.Context, f exposure.Filter) (exposure.Stats, error) {
+	m.statsCalls++
+	m.lastStatsFilter = f
+	if m.statsErr != nil {
+		return exposure.Stats{}, m.statsErr
 	}
-	if m.countByStateResult != nil {
-		return m.countByStateResult, nil
+	st := m.statsResult
+	if st.ByState == nil {
+		st.ByState = map[string]int64{}
 	}
-	return map[exposure.State]int64{}, nil
-}
-
-func (m *mockExposureRepo) CountBySeverity(_ context.Context, _ shared.ID) (map[exposure.Severity]int64, error) {
-	m.countSevCalls++
-	if m.countSevErr != nil {
-		return nil, m.countSevErr
-	}
-	if m.countBySeverityResult != nil {
-		return m.countBySeverityResult, nil
-	}
-	return map[exposure.Severity]int64{}, nil
-}
-
-func (m *mockExposureRepo) MeanTimeToResolveHours(_ context.Context, _ shared.ID) (float64, bool, error) {
-	if m.mttrErr != nil {
-		return 0, false, m.mttrErr
-	}
-	return m.mttrHours, m.mttrOK, nil
+	return st, nil
 }
 
 // =============================================================================
@@ -1719,81 +1698,56 @@ func TestExposureService_GetExposureStats_Success(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
 	tenantID := shared.NewID()
 
-	repo.countByStateResult = map[exposure.State]int64{
-		exposure.StateActive:   10,
-		exposure.StateResolved: 5,
-		exposure.StateAccepted: 2,
+	repo.statsResult = exposure.Stats{
+		ByState:     map[string]int64{"active": 10, "resolved": 5, "accepted": 2},
+		BySeverity:  map[string]int64{"critical": 3, "high": 7, "medium": 5, "low": 2},
+		ByEventType: map[string]int64{"port_open": 12, "credential_leaked": 5},
+		MTTRHours:   12.5,
+		HasMTTR:     true,
 	}
-	repo.countBySeverityResult = map[exposure.Severity]int64{
-		exposure.SeverityCritical: 3,
-		exposure.SeverityHigh:     7,
-		exposure.SeverityMedium:   5,
-		exposure.SeverityLow:      2,
-	}
-	repo.mttrHours = 12.5
-	repo.mttrOK = true
 
 	stats, err := svc.GetExposureStats(context.Background(), tenantID.String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	byState, ok := stats["by_state"].(map[string]int64)
-	if !ok {
-		t.Fatal("expected by_state to be map[string]int64")
+	// The counts come from one filter carrying the caller's tenant.
+	if repo.statsCalls != 1 {
+		t.Fatalf("expected 1 Stats call, got %d", repo.statsCalls)
 	}
-	if byState["active"] != 10 {
-		t.Errorf("expected active count 10, got %d", byState["active"])
-	}
-	if byState["resolved"] != 5 {
-		t.Errorf("expected resolved count 5, got %d", byState["resolved"])
+	if repo.lastStatsFilter.TenantID == nil || *repo.lastStatsFilter.TenantID != tenantID.String() {
+		t.Errorf("stats filter tenant = %v, want %s", repo.lastStatsFilter.TenantID, tenantID)
 	}
 
-	// Derived summary fields the UI stat cards consume.
-	if stats["total"] != int64(17) {
-		t.Errorf("expected total 17, got %v", stats["total"])
+	byState, ok := stats["by_state"].(map[string]int64)
+	if !ok || byState["active"] != 10 || byState["resolved"] != 5 {
+		t.Errorf("by_state = %v", stats["by_state"])
 	}
-	if stats["active_count"] != int64(10) {
-		t.Errorf("expected active_count 10, got %v", stats["active_count"])
+	bySeverity, ok := stats["by_severity"].(map[string]int64)
+	if !ok || bySeverity["critical"] != 3 || bySeverity["high"] != 7 {
+		t.Errorf("by_severity = %v", stats["by_severity"])
 	}
-	if stats["resolved_count"] != int64(5) {
-		t.Errorf("expected resolved_count 5, got %v", stats["resolved_count"])
+	// The analytics "by event type" card reads this field.
+	byType, ok := stats["by_event_type"].(map[string]int64)
+	if !ok || byType["port_open"] != 12 {
+		t.Errorf("by_event_type = %v", stats["by_event_type"])
+	}
+	if stats["total"] != int64(17) || stats["active_count"] != int64(10) || stats["resolved_count"] != int64(5) {
+		t.Errorf("summary = total %v active %v resolved %v", stats["total"], stats["active_count"], stats["resolved_count"])
 	}
 	if stats["mttr_hours"] != 12.5 {
 		t.Errorf("expected mttr_hours 12.5, got %v", stats["mttr_hours"])
-	}
-
-	bySeverity, ok := stats["by_severity"].(map[string]int64)
-	if !ok {
-		t.Fatal("expected by_severity to be map[string]int64")
-	}
-	if bySeverity["critical"] != 3 {
-		t.Errorf("expected critical count 3, got %d", bySeverity["critical"])
-	}
-	if bySeverity["high"] != 7 {
-		t.Errorf("expected high count 7, got %d", bySeverity["high"])
-	}
-
-	if repo.countStateCalls != 1 {
-		t.Errorf("expected 1 CountByState call, got %d", repo.countStateCalls)
-	}
-	if repo.countSevCalls != 1 {
-		t.Errorf("expected 1 CountBySeverity call, got %d", repo.countSevCalls)
 	}
 }
 
 func TestExposureService_GetExposureStats_OmitsMTTRWhenNoResolved(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
-	tenantID := shared.NewID()
+	repo.statsResult = exposure.Stats{ByState: map[string]int64{"active": 3}}
 
-	repo.countByStateResult = map[exposure.State]int64{exposure.StateActive: 3}
-	repo.mttrOK = false // no resolved events to average
-
-	stats, err := svc.GetExposureStats(context.Background(), tenantID.String())
+	stats, err := svc.GetExposureStats(context.Background(), shared.NewID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-
 	if _, present := stats["mttr_hours"]; present {
 		t.Errorf("expected mttr_hours to be omitted when no resolved events, got %v", stats["mttr_hours"])
 	}
@@ -1803,56 +1757,23 @@ func TestExposureService_GetExposureStats_OmitsMTTRWhenNoResolved(t *testing.T) 
 }
 
 func TestExposureService_GetExposureStats_InvalidTenantID(t *testing.T) {
-	svc, _, _ := newExposureTestService()
+	svc, repo, _ := newExposureTestService()
 
 	_, err := svc.GetExposureStats(context.Background(), "not-a-uuid")
-	if err == nil {
-		t.Fatal("expected error for invalid tenant ID")
-	}
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Errorf("expected validation error, got %v", err)
 	}
+	if repo.statsCalls != 0 {
+		t.Errorf("an invalid tenant must not reach the repository")
+	}
 }
 
-func TestExposureService_GetExposureStats_StateCountError(t *testing.T) {
+func TestExposureService_GetExposureStats_RepositoryError(t *testing.T) {
 	svc, repo, _ := newExposureTestService()
-	tenantID := shared.NewID()
+	repo.statsErr = fmt.Errorf("database error")
 
-	repo.countStateErr = fmt.Errorf("database error")
-
-	_, err := svc.GetExposureStats(context.Background(), tenantID.String())
-	if err == nil {
-		t.Fatal("expected error from state count")
-	}
-}
-
-func TestExposureService_GetExposureStats_SeverityCountError(t *testing.T) {
-	svc, repo, _ := newExposureTestService()
-	tenantID := shared.NewID()
-
-	repo.countSevErr = fmt.Errorf("database error")
-
-	_, err := svc.GetExposureStats(context.Background(), tenantID.String())
-	if err == nil {
-		t.Fatal("expected error from severity count")
-	}
-}
-
-func TestExposureService_GetExposureStats_EmptyResults(t *testing.T) {
-	svc, _, _ := newExposureTestService()
-	tenantID := shared.NewID()
-
-	stats, err := svc.GetExposureStats(context.Background(), tenantID.String())
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	byState, ok := stats["by_state"].(map[string]int64)
-	if !ok {
-		t.Fatal("expected by_state to be map[string]int64")
-	}
-	if len(byState) != 0 {
-		t.Errorf("expected empty state map, got %d entries", len(byState))
+	if _, err := svc.GetExposureStats(context.Background(), shared.NewID().String()); err == nil {
+		t.Fatal("expected the repository error")
 	}
 }
 
