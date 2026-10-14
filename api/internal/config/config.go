@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
@@ -377,30 +378,15 @@ type SensorConfigConfig struct {
 	HealthSlowHeartbeat time.Duration
 	HealthStartupGrace  time.Duration
 
-	// LatestVersion is the newest sensor release (SENSOR_LATEST_VERSION,
-	// default DefaultSensorLatestVersion). The Sensors page compares each
-	// sensor's version with it ("update available"), and the install
-	// snippets pin the image to it. Empty turns the comparison off.
-	LatestVersion string
-	// MinVersion is the oldest sensor release still supported
-	// (SENSOR_MIN_VERSION, default DefaultSensorMinVersion; empty = no
-	// minimum). A heartbeating sensor below it shows as degraded with
-	// "version unsupported".
-	MinVersion string
-	// SDKMinVersion is the oldest SDK release still supported
-	// (SENSOR_SDK_MIN_VERSION, default DefaultSensorSDKMinVersion; empty = no
-	// minimum). A heartbeating sensor built with an older SDK shows as
-	// degraded with "sdk_unsupported".
-	SDKMinVersion string
-	// SDKLatestVersion is the newest SDK release (SENSOR_SDK_LATEST_VERSION,
-	// default DefaultSensorSDKLatestVersion). A sensor built with an older SDK
-	// has sdk_status "outdated"; empty turns that comparison off.
-	SDKLatestVersion string
+	// The sensor products' release lines and the SDK entries are not
+	// settings: they come from the version manifest built into the API
+	// (internal/versions, versions.yaml), so a release bump changes YAML
+	// only.
 
-	// Image is the sensor image repository the install snippets run
-	// (SENSOR_IMAGE, default ghcr.io/openctemio/sensor). The tag is
-	// LatestVersion (DefaultSensorLatestVersion when that is off), never
-	// "latest", so a snippet installs the release the page compares against.
+	// Image is the scanning sensor's image repository the install snippets
+	// run (SENSOR_IMAGE, default the image in versions.yaml), for a mirror.
+	// The tag is the product's latest release, never "latest", so a snippet
+	// installs the release the page compares against.
 	Image string
 	// CollectorImage is the image, with its tag, the install snippets of a
 	// collector sensor run (SENSOR_COLLECTOR_IMAGE, default
@@ -415,12 +401,12 @@ type SensorConfigConfig struct {
 
 	// CIRunnerLatestVersion is the newest CI runner release (openctemio/ci,
 	// the openctem-ci action and image; CI_RUNNER_LATEST_VERSION, default
-	// DefaultCIRunnerLatestVersion). CI runners have their own release line,
+	// versions.yaml ci.latest). CI runners have their own release line,
 	// so a pipeline's runner is compared with this, never with the sensor's.
 	// Empty turns the "update available" comparison off.
 	CIRunnerLatestVersion string
 	// CIRunnerMinVersion is the oldest CI runner release still accepted
-	// (CI_RUNNER_MIN_VERSION, default DefaultCIRunnerMinVersion; empty = no
+	// (CI_RUNNER_MIN_VERSION, default versions.yaml ci.min; empty = no
 	// minimum). An older runner is refused at the token exchange and its
 	// pipeline shows as degraded.
 	CIRunnerMinVersion string
@@ -437,43 +423,11 @@ const DefaultSensorKeyTTL = 90 * 24 * time.Hour
 // working when SENSOR_KEY_RENEW_GRACE is not set.
 const DefaultSensorKeyRenewGrace = 15 * time.Minute
 
-// Sensor and SDK release defaults. They are copied from versions.yaml at the
-// repository root by .github/scripts/release/sync-versions.sh, and CI fails
-// when they drift (RFC-037): change versions.yaml, never these lines.
-//
-// DefaultSensorLatestVersion is the newest sensor release when this API was
-// built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
-// the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.22.2"
-
-// DefaultSensorMinVersion is the oldest supported sensor release
-// (SENSOR_MIN_VERSION); empty means no minimum.
-const DefaultSensorMinVersion = "v0.9.0"
-
-// DefaultCIRunnerLatestVersion is the newest CI runner release
-// (openctemio/ci) when this API was built (CI_RUNNER_LATEST_VERSION).
-const DefaultCIRunnerLatestVersion = "v0.3.0"
-
-// DefaultCIRunnerMinVersion is the oldest accepted CI runner release
-// (CI_RUNNER_MIN_VERSION); empty means no minimum.
-const DefaultCIRunnerMinVersion = "v0.3.0"
-
-// DefaultSensorSDKLatestVersion is the newest SDK release
-// (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
-const DefaultSensorSDKLatestVersion = "v0.32.0"
-
-// DefaultSensorSDKMinVersion is the oldest supported SDK release
-// (SENSOR_SDK_MIN_VERSION); empty means no minimum.
-const DefaultSensorSDKMinVersion = ""
-
 // DefaultCollectorImage is the asset collector image the install snippets of
 // a collector run. The collector has no release tag after the SENSOR_*
 // settings rename (v0.1.1 predates it), so the default follows its latest
 // build; pin a release with SENSOR_COLLECTOR_IMAGE once one is tagged.
 const DefaultCollectorImage = "ghcr.io/openctemio/asset-collector:latest"
-
-// DefaultSensorImageRepository is the published sensor image.
-const DefaultSensorImageRepository = "ghcr.io/openctemio/sensor"
 
 // ServerConfig holds HTTP server configuration.
 type ServerConfig struct {
@@ -1276,15 +1230,11 @@ func Load() (*Config, error) {
 			CommandLease:          getEnvDuration("SENSOR_COMMAND_LEASE", 3*time.Minute),
 			HealthSlowHeartbeat:   getEnvDuration("SENSOR_HEALTH_SLOW_HEARTBEAT", 2*time.Second),
 			HealthStartupGrace:    getEnvDuration("SENSOR_HEALTH_STARTUP_GRACE", 0),
-			LatestVersion:         sensorVersionSetting(getEnv("SENSOR_LATEST_VERSION", DefaultSensorLatestVersion)),
-			MinVersion:            sensorVersionSetting(getEnv("SENSOR_MIN_VERSION", DefaultSensorMinVersion)),
-			SDKMinVersion:         sensorVersionSetting(getEnv("SENSOR_SDK_MIN_VERSION", DefaultSensorSDKMinVersion)),
-			SDKLatestVersion:      sensorVersionSetting(getEnv("SENSOR_SDK_LATEST_VERSION", DefaultSensorSDKLatestVersion)),
-			Image:                 getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
+			Image:                 getEnv("SENSOR_IMAGE", versions.SensorImage()),
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
 			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
-			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", DefaultCIRunnerLatestVersion)),
-			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", DefaultCIRunnerMinVersion)),
+			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
+			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
@@ -2316,7 +2266,18 @@ var removedEnv = []struct{ Name, Instead string }{
 	// ?tenant=: whoever held it could forge Jira events for every
 	// organization. Each organization's Jira integration has its own secret.
 	{"JIRA_WEBHOOK_SECRET", "unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate"},
+	// Each sensor product has its own release line, built into the API
+	// from versions.yaml (RFC-037 §9): one sensor-wide channel compared
+	// every product with the scanning sensor's.
+	{"SENSOR_LATEST_VERSION", sensorLineMoved},
+	{"SENSOR_MIN_VERSION", sensorLineMoved},
+	{"SENSOR_SDK_LATEST_VERSION", sensorLineMoved},
+	{"SENSOR_SDK_MIN_VERSION", "unset it; the SDK release is informational, sensor compatibility is the protocol and capabilities; SDK releases with a security advisory are listed in versions.yaml sdk.advisories"},
 }
+
+// sensorLineMoved is the hint for the retired sensor release-channel
+// variables.
+const sensorLineMoved = "unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade"
 
 // rejectRetiredEnv fails when any retired or removed name is set, naming
 // its replacement or what to do instead.
