@@ -285,6 +285,9 @@ func (p *FindingProcessor) processBatch(
 		// identity is the version-2 identity (RFC-043 §4.2), nil when no
 		// recipe applies and the finding keeps its version-1 key.
 		identity *vulnerability.IdentityKey
+		// former is the version-2 key the finding may still be stored under
+		// (sastFormerLineKey), "" when none.
+		former string
 	}
 
 	// Helper to create FailedFinding from findingMeta
@@ -401,11 +404,12 @@ func (p *FindingProcessor) processBatch(
 	}
 
 	// Step 1a: the version-2 identity, computed on the server (RFC-043 §4.2).
-	applyIdentityV2Of(p, tenantID, report.Tool, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
-		func(fm *findingMeta, k vulnerability.IdentityKey) {
+	applyIdentityV2Of(p, tenantID, candidates, func(fm *findingMeta) (shared.ID, *ctis.Finding) { return fm.assetID, &fm.finding },
+		func(fm *findingMeta, k vulnerability.IdentityKey, former string) {
 			fm.identity = &k
 			fm.fingerprint = k.Fingerprint()
 			fm.base = ""
+			fm.former = former
 		})
 
 	// Step 1b: a network finding without a CVE used to be keyed without its
@@ -421,6 +425,10 @@ func (p *FindingProcessor) processBatch(
 	// Step 1b': a finding still keyed by its version-1 key takes its
 	// version-2 key on this sighting; the old key stays its alias (RFC-043 §6).
 	adoptV1KeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.v1, fm.identity })
+	// A SAST finding stored under its line-anchored key takes its
+	// code-anchored key once a report carries the code (a producer that
+	// started sending the snippet or its hash), keeping its triage.
+	adoptFormerKeysOf(ctx, p, tenantID, candidates, func(fm findingMeta) (string, *vulnerability.IdentityKey) { return fm.former, fm.identity })
 
 	// Step 1c: a key a finding gave up (an asset merge, a duplicate folded
 	// into another finding, an older recipe) is an alias of the finding that
