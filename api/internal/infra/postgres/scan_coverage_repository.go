@@ -10,15 +10,17 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ScanCoverageRepository persists the license-aware coverage rotation cursor
 // (RFC-007 Phase 3) and reads scannable candidate assets for a tenant.
 //
-// All queries are tenant-scoped. The cursor lives in scan_coverage_state
-// (migration 000176); candidate assets are read from `assets` with a LEFT JOIN
-// so never-dispatched assets (no cursor row) sort first.
+// All queries are tenant-scoped. The cursor is the asset coverage ledger row
+// of capability network_va.connector (docs/rfcs/RFC-093-asset-coverage.md);
+// candidate assets are read from `assets` with a LEFT JOIN so
+// never-dispatched assets (no ledger row) sort first.
 type ScanCoverageRepository struct {
 	db *DB
 }
@@ -42,6 +44,9 @@ var coverageAssetTypes = func() []string {
 	return out
 }()
 
+// connectorCapability is the ledger capability of a connector dispatch.
+const connectorCapability = coverage.CapabilityNetworkVAConnector
+
 // ListCandidates returns active, scannable assets for a tenant ordered
 // oldest-dispatched first (never-dispatched first), with their criticality and
 // last-dispatch timestamp. The planner re-sorts, so ordering here is only a
@@ -51,14 +56,15 @@ func (r *ScanCoverageRepository) ListCandidates(ctx context.Context, tenantID sh
 		limit = 1000
 	}
 	const query = `
-		SELECT a.id, a.name, a.criticality, c.last_dispatched_at
+		SELECT a.id, a.name, a.criticality, c.last_attempt_at
 		FROM assets a
-		LEFT JOIN scan_coverage_state c
-		       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
+		LEFT JOIN asset_coverage c
+		       ON c.tenant_id = a.tenant_id AND c.asset_id = a.id
+		      AND c.capability = '` + connectorCapability + `' AND c.vantage = ''
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.status = 'active'
 		  AND a.asset_type = ANY($2)
-		ORDER BY c.last_dispatched_at ASC NULLS FIRST, a.criticality DESC
+		ORDER BY c.last_attempt_at ASC NULLS FIRST, a.criticality DESC
 		LIMIT $3`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(coverageAssetTypes), limit)
@@ -115,10 +121,11 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 	}
 	const query = `
 		WITH scannable AS (
-			SELECT a.criticality, c.last_dispatched_at
+			SELECT a.criticality, c.last_attempt_at AS last_dispatched_at
 			FROM assets a
-			LEFT JOIN scan_coverage_state c
-			       ON c.asset_id = a.id AND c.tenant_id = a.tenant_id
+			LEFT JOIN asset_coverage c
+			       ON c.tenant_id = a.tenant_id AND c.asset_id = a.id
+			      AND c.capability = '` + connectorCapability + `' AND c.vantage = ''
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 			  AND a.status = 'active'
 			  AND a.asset_type = ANY($2)
@@ -160,8 +167,8 @@ func (r *ScanCoverageRepository) CoverageStats(ctx context.Context, tenantID sha
 }
 
 // MarkDispatched advances the rotation cursor for every asset in a dispatched
-// batch: it upserts scan_coverage_state with the dispatch time, session, and
-// command so those assets sort last next cycle. Idempotent per (asset).
+// batch: it upserts the ledger row of each asset with the dispatch time
+// so those assets sort last next cycle. Idempotent per (asset).
 func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancoverage.DispatchRecord) error {
 	if len(rec.AssetIDs) == 0 {
 		return nil
@@ -170,27 +177,18 @@ func (r *ScanCoverageRepository) MarkDispatched(ctx context.Context, rec scancov
 	// twice used to fail and leave the whole rotation cursor where it was.
 	assetIDs := dedupeLastWins(rec.AssetIDs, func(id string) string { return id })
 	const query = `
-		INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at, last_session_id, last_command_id)
-		SELECT unnest($1::uuid[]), $2, now(), $3, $4
-		ON CONFLICT (asset_id) DO UPDATE SET
-			last_dispatched_at = EXCLUDED.last_dispatched_at,
-			last_session_id    = EXCLUDED.last_session_id,
-			last_command_id    = EXCLUDED.last_command_id,
-			tenant_id          = EXCLUDED.tenant_id,
-			updated_at         = now()`
+		INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state,
+		                            last_attempt_at, last_success_at, last_outcome, updated_at)
+		SELECT a.tenant_id, a.id, '` + connectorCapability + `', '', 'covered', now(), now(), 'dispatched', now()
+		FROM assets a WHERE a.tenant_id = $2 AND a.id = ANY($1::uuid[])
+		ON CONFLICT (tenant_id, asset_id, capability, vantage) DO UPDATE SET
+			state           = 'covered',
+			last_attempt_at = EXCLUDED.last_attempt_at,
+			last_success_at = EXCLUDED.last_success_at,
+			last_outcome    = EXCLUDED.last_outcome,
+			updated_at      = now()`
 
-	var cmdID any
-	if !rec.CommandID.IsZero() {
-		cmdID = rec.CommandID.String()
-	}
-	var sessionID any
-	if rec.SessionID != "" {
-		sessionID = rec.SessionID
-	}
-
-	if _, err := r.db.ExecContext(ctx, query,
-		pq.Array(assetIDs), rec.TenantID.String(), sessionID, cmdID,
-	); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, pq.Array(assetIDs), rec.TenantID.String()); err != nil {
 		return fmt.Errorf("mark dispatched: %w", err)
 	}
 	return nil
@@ -225,16 +223,19 @@ func (r *ScanCoverageRepository) ClaimBatch(ctx context.Context, tenantID shared
 			SELECT w.asset_id, w.seen
 			FROM unnest($2::uuid[], $3::timestamptz[]) AS w(asset_id, seen)
 		), ins AS (
-			INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at)
-			SELECT w.asset_id, $1, $4 FROM want w WHERE w.seen IS NULL
-			ON CONFLICT (asset_id) DO NOTHING
+			INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state, last_attempt_at)
+			SELECT a.tenant_id, a.id, '` + connectorCapability + `', '', 'queued', $4
+			FROM want w JOIN assets a ON a.tenant_id = $1 AND a.id = w.asset_id
+			WHERE w.seen IS NULL
+			ON CONFLICT (tenant_id, asset_id, capability, vantage) DO NOTHING
 			RETURNING asset_id
 		), upd AS (
-			UPDATE scan_coverage_state s
-			SET last_dispatched_at = $4, updated_at = now()
+			UPDATE asset_coverage s
+			SET last_attempt_at = $4, state = 'queued', updated_at = now()
 			FROM want w
-			WHERE s.asset_id = w.asset_id AND s.tenant_id = $1
-			  AND w.seen IS NOT NULL AND s.last_dispatched_at = w.seen
+			WHERE s.tenant_id = $1 AND s.asset_id = w.asset_id
+			  AND s.capability = '` + connectorCapability + `' AND s.vantage = ''
+			  AND w.seen IS NOT NULL AND s.last_attempt_at = w.seen
 			RETURNING s.asset_id
 		)
 		SELECT asset_id::text FROM ins
@@ -272,17 +273,19 @@ func (r *ScanCoverageRepository) ReleaseBatch(ctx context.Context, tenantID shar
 			SELECT w.asset_id, w.seen
 			FROM unnest($2::uuid[], $3::timestamptz[]) AS w(asset_id, seen)
 		), del AS (
-			DELETE FROM scan_coverage_state s
+			DELETE FROM asset_coverage s
 			USING want w
-			WHERE s.asset_id = w.asset_id AND s.tenant_id = $1
-			  AND w.seen IS NULL AND s.last_dispatched_at = $4
+			WHERE s.tenant_id = $1 AND s.asset_id = w.asset_id
+			  AND s.capability = '` + connectorCapability + `' AND s.vantage = ''
+			  AND w.seen IS NULL AND s.last_attempt_at = $4
 			RETURNING s.asset_id
 		)
-		UPDATE scan_coverage_state s
-		SET last_dispatched_at = w.seen, updated_at = now()
+		UPDATE asset_coverage s
+		SET last_attempt_at = w.seen, state = 'covered', updated_at = now()
 		FROM want w
-		WHERE s.asset_id = w.asset_id AND s.tenant_id = $1
-		  AND w.seen IS NOT NULL AND s.last_dispatched_at = $4`
+		WHERE s.tenant_id = $1 AND s.asset_id = w.asset_id
+		  AND s.capability = '` + connectorCapability + `' AND s.vantage = ''
+		  AND w.seen IS NOT NULL AND s.last_attempt_at = $4`
 	if _, err := r.db.ExecContext(ctx, query, tenantID.String(), pq.Array(ids), pq.Array(seen), at); err != nil {
 		return fmt.Errorf("release coverage claim: %w", err)
 	}

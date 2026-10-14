@@ -96,8 +96,8 @@ func TestCoverageScheduler_TwoReplicasNeverDispatchAnAssetTwice(t *testing.T) {
 			t.Fatalf("insert asset: %v", err)
 		}
 		if i > 3 {
-			mustExec(t, db, `INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at)
-				VALUES ($1, $2, now() - interval '30 days')`, id, tenantID.String())
+			mustExec(t, db, `INSERT INTO asset_coverage (asset_id, tenant_id, capability, last_attempt_at)
+				VALUES ($1, $2, 'network_va.connector', now() - interval '30 days')`, id, tenantID.String())
 		}
 	}
 
@@ -140,7 +140,7 @@ func TestCoverageScheduler_TwoReplicasNeverDispatchAnAssetTwice(t *testing.T) {
 
 	var withCommand int
 	if err := db.QueryRowContext(ctx,
-		`SELECT count(*) FROM scan_coverage_state WHERE tenant_id=$1 AND last_command_id IS NOT NULL`,
+		`SELECT count(*) FROM asset_coverage WHERE tenant_id=$1 AND capability='network_va.connector' AND last_outcome = 'dispatched'`,
 		tenantID.String()).Scan(&withCommand); err != nil {
 		t.Fatalf("read back: %v", err)
 	}
@@ -187,11 +187,11 @@ func TestScanCoverageRepository_ClaimAndRelease(t *testing.T) {
 	moved := insertHost("10.8.0.3")
 	oldAt := time.Now().Add(-30 * 24 * time.Hour).UTC().Truncate(time.Microsecond)
 	for _, id := range []string{old, moved} {
-		mustExec(t, db, `INSERT INTO scan_coverage_state (asset_id, tenant_id, last_dispatched_at) VALUES ($1,$2,$3)`,
+		mustExec(t, db, `INSERT INTO asset_coverage (asset_id, tenant_id, capability, last_attempt_at) VALUES ($1,$2,'network_va.connector',$3)`,
 			id, tenantID.String(), oldAt)
 	}
 	// `moved` was dispatched by someone else after this caller planned.
-	mustExec(t, db, `UPDATE scan_coverage_state SET last_dispatched_at = now() WHERE asset_id=$1`, moved)
+	mustExec(t, db, `UPDATE asset_coverage SET last_attempt_at = now() WHERE asset_id=$1 AND capability='network_va.connector'`, moved)
 
 	repo := NewScanCoverageRepository(&DB{DB: db})
 	batch := []scancoverage.Candidate{
@@ -219,11 +219,11 @@ func TestScanCoverageRepository_ClaimAndRelease(t *testing.T) {
 		t.Fatalf("release: %v", err)
 	}
 	var n int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM scan_coverage_state WHERE asset_id=$1`, fresh).Scan(&n); err != nil || n != 0 {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM asset_coverage WHERE asset_id=$1 AND capability='network_va.connector'`, fresh).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("fresh asset cursor rows after release = %d (err %v), want 0", n, err)
 	}
 	var back time.Time
-	if err := db.QueryRowContext(ctx, `SELECT last_dispatched_at FROM scan_coverage_state WHERE asset_id=$1`, old).Scan(&back); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT last_attempt_at FROM asset_coverage WHERE asset_id=$1 AND capability='network_va.connector'`, old).Scan(&back); err != nil {
 		t.Fatalf("read old cursor: %v", err)
 	}
 	if !back.Equal(oldAt) {

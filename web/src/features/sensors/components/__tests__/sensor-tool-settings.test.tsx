@@ -18,6 +18,18 @@ vi.mock('@/lib/permissions', () => ({
   Permission: { SensorsWrite: 'sensors:write' },
   useHasPermission: () => perms.write,
 }))
+vi.mock('@/lib/api/sensor-hooks', () => ({
+  useSensorManifests: () => ({
+    data: {
+      items: [
+        {
+          current: true,
+          manifest: { tools: [{ name: 'nuclei', version: 'v3.4.2', installed: true }] },
+        },
+      ],
+    },
+  }),
+}))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/api/sensor-tool-settings-hooks', async (orig) => {
   const actual = await orig<typeof import('@/lib/api/sensor-tool-settings-hooks')>()
@@ -53,7 +65,12 @@ const item: SensorToolSettings = {
   schema: {
     type: 'object',
     properties: {
-      scan_strategy: { type: 'string', enum: ['auto', 'host-spray'], default: 'auto' },
+      scan_strategy: {
+        type: 'string',
+        enum: ['auto', 'host-spray'],
+        default: 'auto',
+        'x-octm-group': 'Performance',
+      },
       rate_limit: {
         type: 'integer',
         minimum: 1,
@@ -62,13 +79,66 @@ const item: SensorToolSettings = {
         'x-octm-common': 'rate',
         'x-octm-flag': '-rate-limit',
       },
-      headless: { type: 'boolean', default: false, 'x-octm-tier': 'T2' },
+      timeout: {
+        type: 'integer',
+        default: 10,
+        'x-octm-common': 'timeout',
+        'x-octm-flag': '-timeout',
+      },
+      retries: {
+        type: 'integer',
+        default: 1,
+        'x-octm-common': 'retries',
+        'x-octm-flag': '-retries',
+      },
+      concurrency: {
+        type: 'integer',
+        default: 25,
+        'x-octm-common': 'concurrency',
+        'x-octm-flag': '-c',
+      },
+      headless: {
+        type: 'boolean',
+        default: false,
+        'x-octm-tier': 'T2',
+        'x-octm-group': 'Advanced',
+      },
+      follow_redirects: {
+        type: 'boolean',
+        default: false,
+        'x-octm-tier': 'T1',
+        'x-octm-group': 'Advanced',
+      },
     },
   },
   values: { rate_limit: 300 },
   stored: true,
   problems: [],
 }
+
+const plain = (tool: string): SensorToolSettings => ({
+  tool,
+  schema_digest: `sha256:${tool}`,
+  schema: {
+    type: 'object',
+    properties: {
+      depth: { type: 'integer', default: 3, 'x-octm-flag': '-depth', 'x-octm-group': 'Crawl' },
+    },
+  },
+  values: {},
+  stored: false,
+  problems: [],
+})
+
+const toolNames = () =>
+  screen
+    .getAllByTestId(/^tool-settings-(?!summary|savebar|group|effective)[a-z]+$/)
+    .map((n) => n.getAttribute('data-tool'))
+
+const openTool = (tool: string) =>
+  fireEvent.click(within(screen.getByTestId(`tool-settings-${tool}`)).getAllByRole('button')[0])
+
+const saveName = (tool: string) => en['sensors.toolSettings.saveTool'].replace('{tool}', tool)
 
 describe('SensorToolSettingsSection', () => {
   beforeEach(() => {
@@ -77,6 +147,7 @@ describe('SensorToolSettingsSection', () => {
     api.save.mockReset()
     api.reset.mockReset()
     api.mutate.mockReset()
+    window.localStorage.clear()
   })
 
   it('renders nothing without sensors:write', () => {
@@ -85,18 +156,138 @@ describe('SensorToolSettingsSection', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('shows each tool collapsed with its version and a summary', () => {
+    api.items = [plain('katana'), item]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(screen.queryByTestId('tool-setting-rate_limit')).not.toBeInTheDocument()
+    expect(screen.getByText('v3.4.2')).toBeInTheDocument()
+    expect(screen.getByTestId('tool-settings-summary-katana')).toHaveTextContent(
+      en['sensors.toolSettings.allDefaults']
+    )
+    expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
+      '1 changed: rate-limit 300'
+    )
+  })
+
+  it('caps the changed options listed in the summary', () => {
+    api.items = [{ ...item, values: { rate_limit: 300, timeout: 20, retries: 3, concurrency: 50 } }]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
+      '4 changed: timeout 20, rate-limit 300, c 50, …'
+    )
+  })
+
+  it('lists tools with changes first, then by name', () => {
+    api.items = [plain('subfinder'), plain('httpx'), item, plain('katana')]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(toolNames()).toEqual(['nuclei', 'httpx', 'katana', 'subfinder'])
+  })
+
+  it('opens the common options; other groups are collapsed with their changed count', () => {
+    api.items = [{ ...item, values: { rate_limit: 300, scan_strategy: 'host-spray' } }]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
+    expect(screen.getByTestId('tool-setting-rate_limit')).toBeInTheDocument()
+    expect(screen.queryByTestId('tool-setting-scan_strategy')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tool-settings-group-group:Performance')).toHaveTextContent(
+      en['sensors.toolSettings.groupChanged'].replace('{count}', '1')
+    )
+  })
+
   it('renders the common options first, bounded, with defaults as placeholders', () => {
     render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
     const form = screen.getByTestId('tool-settings-nuclei')
-    const rows = within(form).getAllByTestId(/^tool-setting-/)
-    expect(rows[0]).toHaveAttribute('data-testid', 'tool-setting-rate_limit')
+    const rows = within(form).getAllByTestId(/^tool-setting-(?!changed)/)
+    expect(rows[0]).toHaveAttribute('data-testid', 'tool-setting-timeout')
     const rate = within(form).getByLabelText(en['sensors.toolOptions.common.rate'])
     expect(rate).toHaveAttribute('min', '1')
     expect(rate).toHaveAttribute('max', '5000')
     expect(rate).toHaveAttribute('placeholder', '150')
     expect(rate).toHaveValue(300)
-    // A dangerous option is locked at its default.
+    // Impact options keep their badge and a warning; a dangerous one is locked.
+    fireEvent.click(
+      within(screen.getByTestId('tool-settings-group-group:Advanced')).getByRole('button')
+    )
     expect(within(form).getByLabelText('headless')).toBeDisabled()
+    expect(within(form).getByText(en['sensors.toolSettings.impactWarning'])).toBeInTheDocument()
+    expect(within(form).getByText(en['sensors.toolSettings.t2Locked'])).toBeInTheDocument()
+  })
+
+  it('remembers the open tools per sensor and works without storage', () => {
+    const { unmount } = render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
+    unmount()
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    expect(screen.getByTestId('tool-setting-rate_limit')).toBeInTheDocument()
+
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    try {
+      const other = render(<SensorToolSettingsSection sensorId="s2" />)
+      expect(
+        within(other.container).queryByTestId('tool-setting-rate_limit')
+      ).not.toBeInTheDocument()
+    } finally {
+      get.mockRestore()
+      set.mockRestore()
+    }
+  })
+
+  it('search filters by tool or option name and opens the matching tool', () => {
+    api.items = [plain('katana'), item]
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    const search = screen.getByLabelText(en['sensors.toolSettings.searchLabel'])
+    fireEvent.change(search, { target: { value: 'strategy' } })
+    expect(screen.getByTestId('tool-settings-katana')).not.toBeVisible()
+    // The tool and the group holding the option are open, the option marked.
+    expect(screen.getByTestId('tool-setting-scan_strategy')).toHaveAttribute(
+      'data-search-match',
+      'true'
+    )
+    fireEvent.change(search, { target: { value: 'katana' } })
+    expect(screen.getByTestId('tool-settings-katana')).toBeVisible()
+    expect(screen.getByTestId('tool-setting-depth')).toBeInTheDocument()
+    fireEvent.change(search, { target: { value: 'zzz' } })
+    expect(
+      screen.getByText(en['sensors.toolSettings.searchEmpty'].replace('{query}', 'zzz'))
+    ).toBeInTheDocument()
+  })
+
+  it('shows the save bar only with unsaved changes; resets one option', () => {
+    render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
+    expect(screen.queryByTestId('tool-settings-savebar-nuclei')).not.toBeInTheDocument()
+    expect(screen.getByTestId('tool-setting-changed-rate_limit')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(en['sensors.toolOptions.common.timeout']), {
+      target: { value: '20' },
+    })
+    expect(screen.getByTestId('tool-settings-savebar-nuclei')).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: en['sensors.toolSettings.resetOptionLabel'].replace(
+          '{option}',
+          en['sensors.toolOptions.common.timeout']
+        ),
+      })
+    )
+    expect(screen.queryByTestId('tool-settings-savebar-nuclei')).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: en['sensors.toolSettings.resetOptionLabel'].replace(
+          '{option}',
+          en['sensors.toolOptions.common.rate']
+        ),
+      })
+    )
+    expect(screen.getByLabelText(en['sensors.toolOptions.common.rate'])).toHaveValue(null)
+    expect(screen.getByTestId('tool-settings-savebar-nuclei')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.discard'] }))
+    expect(screen.getByLabelText(en['sensors.toolOptions.common.rate'])).toHaveValue(300)
   })
 
   it('saves the draft and shows server problems by path', async () => {
@@ -106,28 +297,37 @@ describe('SensorToolSettingsSection', () => {
       ] as unknown as Record<string, unknown>)
     )
     render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
     const rate = screen.getByLabelText(en['sensors.toolOptions.common.rate'])
     fireEvent.change(rate, { target: { value: '9000' } })
-    fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.save'] }))
+    fireEvent.click(screen.getByRole('button', { name: saveName('nuclei') }))
     await waitFor(() => expect(api.save).toHaveBeenCalledWith('s1', 'nuclei', { rate_limit: 9000 }))
     expect(await screen.findByText('above the maximum')).toBeInTheDocument()
 
     api.save.mockResolvedValueOnce(item)
     fireEvent.change(rate, { target: { value: '200' } })
-    fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.save'] }))
+    fireEvent.click(screen.getByRole('button', { name: saveName('nuclei') }))
     await waitFor(() => expect(api.mutate).toHaveBeenCalled())
   })
 
-  it('resets to defaults', async () => {
+  it('reset tool clears every option; saving it drops the stored settings', async () => {
     api.reset.mockResolvedValueOnce(undefined)
     render(<SensorToolSettingsSection sensorId="s1" />)
-    fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.reset'] }))
+    openTool('nuclei')
+    fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.resetTool'] }))
+    expect(screen.getByTestId('tool-settings-summary-nuclei')).toHaveTextContent(
+      en['sensors.toolSettings.allDefaults']
+    )
+    expect(api.reset).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: saveName('nuclei') }))
     await waitFor(() => expect(api.reset).toHaveBeenCalledWith('s1', 'nuclei'))
+    expect(api.save).not.toHaveBeenCalled()
     expect(api.mutate).toHaveBeenCalled()
   })
 
   it('shows the effective values with their source and native flag', () => {
     render(<SensorToolSettingsSection sensorId="s1" />)
+    openTool('nuclei')
     fireEvent.click(screen.getByRole('button', { name: en['sensors.toolSettings.showEffective'] }))
     const table = screen.getByTestId('tool-settings-effective-nuclei')
     expect(within(table).getByText('-rate-limit')).toBeInTheDocument()
