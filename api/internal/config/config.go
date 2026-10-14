@@ -444,7 +444,7 @@ const DefaultSensorKeyRenewGrace = 15 * time.Minute
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.17.0"
+const DefaultSensorLatestVersion = "v0.21.1"
 
 // DefaultSensorMinVersion is the oldest supported sensor release
 // (SENSOR_MIN_VERSION); empty means no minimum.
@@ -460,7 +460,7 @@ const DefaultCIRunnerMinVersion = ""
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
-const DefaultSensorSDKLatestVersion = "v0.23.0"
+const DefaultSensorSDKLatestVersion = "v0.31.0"
 
 // DefaultSensorSDKMinVersion is the oldest supported SDK release
 // (SENSOR_SDK_MIN_VERSION); empty means no minimum.

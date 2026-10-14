@@ -24,6 +24,7 @@ const PASSIVE_TOOLS = new Set([
   'trufflehog',
   'gitleaks',
   'semgrep',
+  'opengrep',
   'codeql',
   'trivy',
   'osv-scanner',
