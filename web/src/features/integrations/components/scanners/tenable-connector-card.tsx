@@ -30,10 +30,6 @@ import { Can, Permission } from '@/lib/permissions'
 import { StatusBadge } from './shared'
 import { useTranslation } from '@/context/i18n-provider'
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : 'Request failed'
-}
-
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
@@ -44,11 +40,14 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function CatalogList({ label, items }: { label: string; items: CatalogItem[] }) {
+  const { t } = useTranslation()
   return (
     <div className="min-w-0">
       <p className="text-muted-foreground mb-1 text-xs">{label}</p>
       {items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">None allowed</p>
+        <p className="text-muted-foreground text-sm">
+          {t('tenableSc.card.noneAllowed', 'None allowed')}
+        </p>
       ) : (
         <div className="flex flex-wrap gap-1">
           {items.map((i) => (
@@ -82,11 +81,14 @@ export function TenableConnectorCard({
   const { trigger: syncNow, isMutating: syncing } = useSyncIntegrationApi(integration.id)
   const { trigger: remove, isMutating: removing } = useDeleteIntegrationApi(integration.id)
   const running = Boolean(sync.openCommandId)
+  const errorMessage = (err: unknown) =>
+    err instanceof Error ? err.message : t('tenableSc.card.requestFailed', 'Request failed')
+  const notEnough = t('tenableSc.card.notEnoughData', 'Not enough data')
 
   async function handleSync() {
     try {
       await syncNow()
-      toast.success('Sync queued for the sensor')
+      toast.success(t('tenableSc.card.syncQueued', 'Sync queued for the sensor'))
       onChanged()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -96,7 +98,7 @@ export function TenableConnectorCard({
   async function handleRemove() {
     try {
       await remove()
-      toast.success('Connector removed')
+      toast.success(t('tenableSc.card.removed', 'Connector removed'))
       onChanged()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -112,32 +114,48 @@ export function TenableConnectorCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="truncate font-semibold">{integration.name}</h3>
+              <Badge variant="outline">{t('tenableSc.beta', 'Beta')}</Badge>
               <StatusBadge status={integration.status} />
               {running && (
                 <Badge variant="outline" className="border-primary/30 text-primary">
-                  {sync.openMode === 'full' ? 'Full sync running' : 'Sync running'}
+                  {sync.openMode === 'full'
+                    ? t('tenableSc.card.fullSyncRunning', 'Full sync running')
+                    : t('tenableSc.card.syncRunning', 'Sync running')}
                 </Badge>
               )}
             </div>
             <p className="text-muted-foreground text-sm">
-              Sensor {sensor?.name ?? settings.sensorId ?? 'unknown'} · instance {settings.instance}
-              {sync.tenableVersion ? ` · Tenable.sc ${sync.tenableVersion}` : ''}
+              {t('tenableSc.card.sensorInstance', 'Sensor {sensor} · instance {instance}', {
+                sensor:
+                  sensor?.name || settings.sensorId || t('tenableSc.card.unknownSensor', 'unknown'),
+                instance: settings.instance,
+              })}
+              {sync.tenableVersion
+                ? t('tenableSc.card.tenableVersion', ' · Tenable.sc {version}', {
+                    version: sync.tenableVersion,
+                  })
+                : ''}
             </p>
           </div>
           <Can permission={Permission.IntegrationsManage} mode="hide">
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={handleSync} disabled={syncing || running}>
                 <RefreshCw className="me-2 h-4 w-4" />
-                Sync now
+                {t('tenableSc.card.syncNow', 'Sync now')}
               </Button>
-              <Button size="sm" variant="outline" onClick={onEdit} aria-label="Edit connector">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onEdit}
+                aria-label={t('tenableSc.card.edit', 'Edit connector')}
+              >
                 <Pencil className="h-4 w-4" />
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => setConfirmRemove(true)}
-                aria-label="Remove connector"
+                aria-label={t('tenableSc.card.remove', 'Remove connector')}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -153,43 +171,61 @@ export function TenableConnectorCard({
         )}
 
         <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Fact label="Last outcome">
+          <Fact label={t('tenableSc.card.lastOutcome', 'Last outcome')}>
             {sync.lastOutcome === 'completed'
-              ? 'Completed'
+              ? t('tenableSc.card.completed', 'Completed')
               : sync.lastOutcome === 'failed'
-                ? 'Failed'
-                : 'No sync yet'}
+                ? t('tenableSc.card.failed', 'Failed')
+                : t('tenableSc.card.noSyncYet', 'No sync yet')}
           </Fact>
-          <Fact label="Synced up to">
+          <Fact label={t('tenableSc.card.syncedUpTo', 'Synced up to')}>
             <RelativeTime date={sync.lastSuccessfulSync} />
           </Fact>
-          <Fact label="Last full sync">
+          <Fact label={t('tenableSc.card.lastFullSync', 'Last full sync')}>
             <RelativeTime date={sync.lastFullSync} />
           </Fact>
-          <Fact label="Next sync">
+          <Fact label={t('tenableSc.card.nextSync', 'Next sync')}>
             <RelativeTime date={integration.next_sync_at} />
           </Fact>
-          <Fact label="Hosts">{sync.lastSuccessfulSync ? sync.hosts : 'Not enough data'}</Fact>
-          <Fact label="Open vulnerabilities">
-            {sync.lastSuccessfulSync ? sync.open : 'Not enough data'}
+          <Fact label={t('tenableSc.card.hosts', 'Hosts')}>
+            {sync.lastSuccessfulSync ? sync.hosts : notEnough}
           </Fact>
-          <Fact label="Mitigated (last window)">
-            {sync.lastSuccessfulSync ? sync.mitigated : 'Not enough data'}
+          <Fact label={t('tenableSc.card.openVulnerabilities', 'Open vulnerabilities')}>
+            {sync.lastSuccessfulSync ? sync.open : notEnough}
           </Fact>
-          <Fact label="Plugins">{sync.lastSuccessfulSync ? sync.plugins : 'Not enough data'}</Fact>
+          <Fact label={t('tenableSc.card.mitigated', 'Mitigated (last window)')}>
+            {sync.lastSuccessfulSync ? sync.mitigated : notEnough}
+          </Fact>
+          <Fact label={t('tenableSc.card.plugins', 'Plugins')}>
+            {sync.lastSuccessfulSync ? sync.plugins : notEnough}
+          </Fact>
         </dl>
 
         <div className="border-t pt-3">
-          <p className="mb-2 text-sm font-medium">Allowed by the sensor&apos;s owner</p>
+          <p className="mb-2 text-sm font-medium">
+            {t('tenableSc.card.allowedByOwner', "Allowed by the sensor's owner")}
+          </p>
           {sync.catalog ? (
             <div className="grid gap-3 md:grid-cols-3">
-              <CatalogList label="Repositories read" items={sync.catalog.repositories} />
-              <CatalogList label="Scan policies" items={sync.catalog.policies} />
-              <CatalogList label="Scan repositories" items={sync.catalog.scanRepositories} />
+              <CatalogList
+                label={t('tenableSc.card.repositoriesRead', 'Repositories read')}
+                items={sync.catalog.repositories}
+              />
+              <CatalogList
+                label={t('tenableSc.card.scanPolicies', 'Scan policies')}
+                items={sync.catalog.policies}
+              />
+              <CatalogList
+                label={t('tenableSc.card.scanRepositories', 'Scan repositories')}
+                items={sync.catalog.scanRepositories}
+              />
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">
-              Reported by the sensor after its first successful sync.
+              {t(
+                'tenableSc.card.catalogPending',
+                'Reported by the sensor after its first successful sync.'
+              )}
             </p>
           )}
         </div>

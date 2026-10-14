@@ -1,13 +1,13 @@
 # RFC-047 — Tenable.sc two-way sensor connector
 
-> Status: **Implemented in the API, switched off** (design 2026-10-04, #995).
+> Status: **Implemented, Beta** (design 2026-10-04, #995; switched on 2026-10-14).
 > The platform side of P0 (pull), P1 (scan launch) and P2 (coverage) is built
 > (`internal/app/tenablesc`). The connector side was built in the sensor
 > (openctemio/sensor#129, #131) and moved on 2026-10-14 into its own image,
 > `ghcr.io/openctemio/connector-tenable` (openctemio/connector-tenable): a
 > sensor that runs nothing but the connector, so the Tenable keys never share
-> a process or a container with scanners. Everything stays behind
-> `integration.TenableConnectorEnabled` (false) until it is switched on. Current build:
+> a process or a container with scanners. `integration.TenableConnectorEnabled`
+> is on (Beta) until a real-instance run (§12.6) confirms it. Current build:
 > [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Decision D-14 (2026-10-04, final):
 > rebuild the Tenable integration as a **two-way Tenable Security Center
 > (Tenable.sc) connector that runs inside the sensor**. Pull assets,
