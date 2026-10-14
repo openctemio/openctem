@@ -61,9 +61,28 @@ func TestEASMSuggestionReads(t *testing.T) {
 	bIP := asset(other, "198.51.100.30", "ip_address")
 	resolves(other, bName, bIP)
 
+	// Ports: services on the address and on its names; tenant B's service
+	// on its own address of the same text never shows.
+	service := func(tid shared.ID, assetID string, port int) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, `INSERT INTO asset_services (tenant_id, asset_id, port) VALUES ($1, $2, $3)`,
+			tid.String(), assetID, port); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service(tenant, ipPending, 22)
+	service(tenant, api, 8443)
+	service(tenant, www, 443)
+	service(other, bIP, 3389)
+
 	rows, err := repo.AddressesBehindNames(ctx, tenant, nil, 100)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.AssetID == ipPending && !slices.Equal(r.Ports, []int{22, 443, 8443}) {
+			t.Fatalf("ports %v", r.Ports)
+		}
 	}
 	got := map[string][]string{}
 	for _, r := range rows {
@@ -90,6 +109,10 @@ func TestEASMSuggestionReads(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].AssetID != ipPending || !slices.Equal(rows[0].VisibleNames, []string{"www.sugg.example"}) || len(rows[0].AllNames) != 2 {
 		t.Fatalf("restricted rows %+v", rows)
+	}
+	// A restricted caller sees the ports of its own names only.
+	if !slices.Equal(rows[0].Ports, []int{22, 443}) {
+		t.Fatalf("restricted ports %v", rows[0].Ports)
 	}
 
 	// Another tenant: only its own address and name.

@@ -80,10 +80,14 @@ type GatePolicy struct {
 	// AllowRepoPolicy lets a repository's .openctem.yml tighten the gate and
 	// request exceptions (default true; any policy saying no wins).
 	AllowRepoPolicy bool
-	CreatedBy       *shared.ID
-	UpdatedBy       *shared.ID
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// FixableOnly fails a dependency or image vulnerability on its severity
+	// or EPSS score only when a fixed version exists; one with no fix is
+	// listed, not blocking. KEV still fails, fixable or not.
+	FixableOnly bool
+	CreatedBy   *shared.ID
+	UpdatedBy   *shared.ID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // DefaultGatePolicy is the built-in policy: new findings of high severity
@@ -138,6 +142,9 @@ func Strictest(ps []GatePolicy) GatePolicy {
 		}
 		if !p.NewFindingsOnly {
 			out.NewFindingsOnly = false
+		}
+		if !p.FixableOnly {
+			out.FixableOnly = false
 		}
 		if p.FailOnKEV {
 			out.FailOnKEV = true
@@ -271,6 +278,7 @@ type GatePolicyView struct {
 	NewFindingsOnly bool     `json:"new_findings_only"`
 	FailOnKEV       bool     `json:"fail_on_kev"`
 	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
+	FixableOnly     bool     `json:"fixable_only,omitempty"`
 	// Modes are the policy's per-capability and per-rule modes, when set.
 	Modes *PolicyModes `json:"modes,omitempty"`
 }
@@ -323,7 +331,7 @@ func Evaluate(in GateInput) GateVerdict {
 	v := GateVerdict{
 		Reasons: []GateReason{},
 		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity, Modes: modesView(p.Modes),
-			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold},
+			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold, FixableOnly: p.FixableOnly},
 		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown},
 	}
 	blocking := 0
@@ -395,6 +403,14 @@ func Evaluate(in GateInput) GateVerdict {
 		if mode == FindingModeComment {
 			emit = func(r GateReason) {
 				r.Mode = FindingModeComment
+				note(r)
+			}
+		}
+		// No fixed version to move to: listed, not blocking (KEV aside).
+		if p.FixableOnly && f.IsVulnerability() && !f.FixAvailable && !(p.FailOnKEV && f.IsInKEV) {
+			emit = func(r GateReason) {
+				r.Mode = FindingModeComment
+				r.Message += " (no fixed version yet)"
 				note(r)
 			}
 		}

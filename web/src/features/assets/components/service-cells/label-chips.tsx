@@ -5,9 +5,9 @@ import { Loader2, Plus, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { MoreChip } from './more-chip'
 import { FactChip, factChipBase } from './fact-chip'
 
 /**
@@ -98,31 +98,7 @@ export function LabelChips({
           </button>
         )
       })}
-      {rest.length > 0 && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`${rest.length} more labels: ${rest.join(', ')}`}
-              className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <FactChip tone="muted" className="tabular-nums">
-                +{rest.length}
-              </FactChip>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[280px]">
-            <ul className="space-y-0.5">
-              {rest.map((l) => (
-                <li key={l} className="break-words">
-                  {l}
-                </li>
-              ))}
-            </ul>
-          </TooltipContent>
-        </Tooltip>
-      )}
+      <MoreChip label={t('assets.facts.labels', 'labels')} values={rest} mono={false} />
       {onSave && <AddLabelButton labels={labels} onSave={onSave} />}
       {!onSave && labels.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
     </div>

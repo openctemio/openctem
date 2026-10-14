@@ -10,9 +10,14 @@
 
 import { useState } from 'react'
 import Link from '@/components/link'
-import { ExternalLink, GitBranch, GitPullRequest, Workflow } from 'lucide-react'
-import { PageHeader, EmptyState, ErrorState } from '@/features/shared'
+import { ExternalLink, GitBranch, GitPullRequest, ShieldAlert, Workflow } from 'lucide-react'
+import { PageHeader, EmptyState, ErrorState, RelativeTime } from '@/features/shared'
+import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import { useListParams } from '@/hooks/use-list-params'
+import { useUrlFilter } from '@/hooks/use-url-param'
+import { Permission, usePermissions } from '@/lib/permissions'
+import { safeHref } from '@/lib/safe-href'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,10 +48,19 @@ import {
 } from '@/components/ui/table'
 import { useCIRun, useCIRuns } from '../api/use-ci'
 import { PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
-import type { CIRun, CIVerdictFilter } from '../types'
+import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
+import { CIOverrideDialog } from './ci-override-dialog'
 
-export function VerdictBadge({ verdict, wouldFail }: { verdict?: string; wouldFail?: boolean }) {
+export function VerdictBadge({
+  verdict,
+  wouldFail,
+  status,
+}: {
+  verdict?: string
+  wouldFail?: boolean
+  status?: string
+}) {
   const { t } = useTranslation()
   if (verdict === 'fail')
     return <Badge variant="destructive">{t('scans.ci.verdict.fail', 'Fail')}</Badge>
@@ -58,7 +72,26 @@ export function VerdictBadge({ verdict, wouldFail }: { verdict?: string; wouldFa
     )
   if (verdict === 'pass')
     return <Badge variant="default">{t('scans.ci.verdict.pass', 'Pass')}</Badge>
+  if (status === 'running')
+    return <Badge variant="secondary">{t('scans.ci.verdict.running', 'Running')}</Badge>
   return <Badge variant="secondary">{t('scans.ci.verdict.none', 'No verdict')}</Badge>
+}
+
+/**
+ * The run's findings link from the verdict, as a console path: the API
+ * builds it on the console's base URL; only a path on this console is
+ * followed.
+ */
+export function consolePath(url?: string): string | null {
+  if (!url) return null
+  if (url.startsWith('/') && !url.startsWith('//')) return url
+  try {
+    const u = new URL(url)
+    if (typeof window !== 'undefined' && u.origin !== window.location.origin) return null
+    return u.pathname + u.search
+  } catch {
+    return null
+  }
 }
 
 function RefCell({ run }: { run: CIRun }) {
@@ -81,8 +114,6 @@ function RefCell({ run }: { run: CIRun }) {
 export interface CIRunsViewProps {
   /** Inside another page (the Sensors page): no page header of its own. */
   embedded?: boolean
-  /** A run to open on mount (links from a verdict: /ci-runners/{id}). */
-  initialRunId?: string | null
   /** Controls placed before the verdict filter (the page's own switches). */
   toolbarStart?: React.ReactNode
 }
@@ -94,16 +125,16 @@ function asVerdict(raw: string): CIVerdictFilter {
   return VERDICTS.includes(raw as CIVerdictFilter) ? (raw as CIVerdictFilter) : ''
 }
 
-export function CIRunsView({
-  embedded = false,
-  initialRunId = null,
-  toolbarStart,
-}: CIRunsViewProps) {
-  const { t } = useTranslation()
+export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) {
+  const { t, locale } = useTranslation()
   const list = useListParams({ filters: { verdict: '' } })
   const { page, setPage } = list
   const verdict = asVerdict(list.filters.verdict)
-  const [selected, setSelected] = useState<string | null>(initialRunId)
+  // The open run lives in the URL (?run=), so a run can be linked and shared
+  // (verdict links from the API land here).
+  const [runParam, setRunParam] = useUrlFilter('run', '')
+  const selected = runParam || null
+  const setSelected = (id: string | null) => setRunParam(id ?? '')
   const { data, error, isLoading, mutate } = useCIRuns({ verdict, page })
   const runs = data?.data ?? []
   const totalPages = data?.total_pages ?? 1
@@ -209,12 +240,16 @@ export function CIRunsView({
                       <RefCell run={run} />
                     </TableCell>
                     <TableCell>
-                      <VerdictBadge verdict={run.verdict} />
+                      <VerdictBadge
+                        verdict={run.verdict}
+                        wouldFail={run.would_fail}
+                        status={run.status}
+                      />
                     </TableCell>
                     <TableCell>{run.findings_count ?? 0}</TableCell>
                     <TableCell className="text-sm">{run.actor}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {run.created_at ? new Date(run.created_at).toLocaleString() : ''}
+                      <RelativeTime date={run.created_at} locale={dateFnsLocaleFor(locale)} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -253,15 +288,90 @@ export function CIRunsView({
   )
 }
 
-export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+const DECORATION_LABEL: Record<string, string> = {
+  pending: 'Waiting to post',
+  posting: 'Posting',
+  posted: 'Posted',
+  skipped: 'Not posted',
+  failed: 'Failed',
+}
+
+function ReasonList({ reasons, label }: { reasons: CIGateReason[]; label: string }) {
   const { t } = useTranslation()
-  const { data: run, error } = useCIRun(id)
+  return (
+    <ul className="space-y-2" aria-label={label}>
+      {reasons.map((r, i) => (
+        <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">
+              {REASON_LABEL[r.code ?? '']
+                ? t(`scans.ci.reason.${r.code}`, REASON_LABEL[r.code ?? ''])
+                : r.code}
+            </Badge>
+            {r.severity && (
+              <span className="text-muted-foreground">
+                {t(`severity.${r.severity}`, r.severity)}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 break-words">{r.title || r.message}</p>
+          {r.title && <p className="break-words text-muted-foreground">{r.message}</p>}
+          {r.file && (
+            <p className="break-all font-mono text-xs text-muted-foreground">
+              {r.file}
+              {r.line ? `:${r.line}` : ''}
+            </p>
+          )}
+          {r.finding_id && (
+            <Link
+              href={`/findings/${r.finding_id}`}
+              className="text-xs text-primary hover:underline"
+            >
+              {t('scans.ci.openFinding', 'Open finding')}
+            </Link>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </>
+  )
+}
+
+export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { t, locale } = useTranslation()
+  const { can } = usePermissions()
+  const canOverride = can(Permission.CIOverride)
+  const [overrideOpen, setOverrideOpen] = useState(false)
+  const { data: run, error, mutate } = useCIRun(id)
   const v = run?.verdict_detail
+  const dfLocale = dateFnsLocaleFor(locale)
+  const reasons = v?.reasons ?? []
+  const blocking = reasons.filter((r) => r.mode !== 'comment')
+  const commentOnly = reasons.filter((r) => r.mode === 'comment')
+  const findingsPath = safeHref(consolePath(v?.links?.findings))
+  const override = run?.override
+  // A break-glass covers a commit the provider signed, and only a failed one
+  // needs it; the API is the authority (permission and step-up).
+  const offerOverride = run?.verdict === 'fail' && run.commit_verified && !!run.repository_asset_id
+  const tools = (run?.tools ?? [])
+    .map((tl) => (tl.version ? `${tl.name} ${tl.version}` : tl.name))
+    .filter(Boolean)
+    .join(', ')
   return (
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>{run?.repository ?? t('scans.ci.run', 'CI run')}</SheetTitle>
+          <SheetTitle className="break-words">
+            {run?.repository ?? t('scans.ci.run', 'CI run')}
+          </SheetTitle>
           <SheetDescription>
             {run
               ? t('scans.ci.refAtCommit', '{ref} at {commit}', {
@@ -284,10 +394,16 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
           ) : (
             <div className="space-y-5 p-4 text-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <VerdictBadge verdict={run.verdict} wouldFail={v?.would_fail} />
+                <VerdictBadge
+                  verdict={run.verdict}
+                  wouldFail={run.would_fail ?? v?.would_fail}
+                  status={run.status}
+                />
                 {v?.policy?.source && (
                   <span className="text-muted-foreground">
-                    {t('scans.ci.policySource', 'policy: {source}', { source: v.policy.source })}
+                    {t('scans.ci.policySource', 'policy: {source}', {
+                      source: t(`scans.ci.policySourceName.${v.policy.source}`, v.policy.source),
+                    })}
                   </span>
                 )}
                 {run.pipeline_url && (
@@ -300,29 +416,98 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                     <ExternalLink className="size-3.5" aria-hidden />
                   </SafeExternalLink>
                 )}
-              </div>
-              <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1">
-                <dt className="text-muted-foreground">{t('scans.ci.col.provider', 'Provider')}</dt>
-                <dd>{PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}</dd>
-                <dt className="text-muted-foreground">{t('scans.ci.col.event', 'Event')}</dt>
-                <dd>{run.event}</dd>
-                <dt className="text-muted-foreground">{t('scans.ci.col.actor', 'Actor')}</dt>
-                <dd>{run.actor}</dd>
-                <dt className="text-muted-foreground">
-                  {t('scans.ci.col.defaultBranch', 'Default branch')}
-                </dt>
-                <dd>{run.default_branch}</dd>
-                {run.environment && (
-                  <>
-                    <dt className="text-muted-foreground">
-                      {t('scans.ci.col.environment', 'Environment')}
-                    </dt>
-                    <dd>{run.environment}</dd>
-                  </>
+                {findingsPath && (
+                  <Link href={findingsPath} className="text-primary hover:underline">
+                    {t('scans.ci.runFindings', "View the run's findings")}
+                  </Link>
                 )}
-                <dt className="text-muted-foreground">{t('scans.ci.col.reports', 'Reports')}</dt>
-                <dd>{run.reports_count ?? 0}</dd>
+              </div>
+
+              {override && (
+                <Alert data-testid="ci-run-override">
+                  <ShieldAlert className="size-4" aria-hidden />
+                  <AlertTitle>
+                    {t('scans.ci.runDetail.overrideTitle', 'Passed through a break-glass override')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    <p className="break-words">
+                      {t('scans.ci.runDetail.overrideBody', '{who}: {reason}', {
+                        who:
+                          override.created_by ||
+                          t('scans.ci.breakGlass.anAdmin', 'an administrator'),
+                        reason: override.reason ?? '',
+                      })}
+                    </p>
+                    {override.expires_at && (
+                      <p className="text-xs">
+                        {t('scans.ci.runDetail.overrideExpires', 'Expires')}{' '}
+                        <RelativeTime date={override.expires_at} locale={dfLocale} />
+                      </p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <dl className="grid grid-cols-[minmax(6rem,8rem)_1fr] gap-x-3 gap-y-1">
+                <Row label={t('scans.ci.col.provider', 'Provider')}>
+                  {PROVIDER_LABEL[run.provider ?? ''] ?? run.provider}
+                </Row>
+                <Row label={t('scans.ci.col.event', 'Event')}>{run.event}</Row>
+                <Row label={t('scans.ci.col.actor', 'Actor')}>{run.actor}</Row>
+                <Row label={t('scans.ci.col.defaultBranch', 'Default branch')}>
+                  {run.default_branch}
+                </Row>
+                {run.environment && (
+                  <Row label={t('scans.ci.col.environment', 'Environment')}>{run.environment}</Row>
+                )}
+                <Row label={t('scans.ci.runDetail.commit', 'Commit')}>
+                  <span className="font-mono">{shortSHA(run.commit_sha)}</span>{' '}
+                  <span className="text-muted-foreground">
+                    {run.commit_verified
+                      ? t('scans.ci.runDetail.commitVerified', '(signed by the CI provider)')
+                      : t('scans.ci.runDetail.commitReported', '(reported by the job)')}
+                  </span>
+                </Row>
+                <Row label={t('scans.ci.col.reports', 'Reports')}>{run.reports_count ?? 0}</Row>
+                {tools && <Row label={t('scans.ci.runDetail.tools', 'Tools')}>{tools}</Row>}
+                {run.scan_failures != null && (
+                  <Row label={t('scans.ci.runDetail.scanFailures', 'Scan failures')}>
+                    <span className={run.scan_failures > 0 ? 'text-destructive' : undefined}>
+                      {run.scan_failures}
+                    </span>
+                  </Row>
+                )}
+                {v?.repo_file && (
+                  <Row label={t('scans.ci.runDetail.repoFile', '.openctem.yml')}>
+                    {v.repo_file === 'applied'
+                      ? t('scans.ci.runDetail.repoFileApplied', 'Applied (tightened the policy)')
+                      : t('scans.ci.runDetail.repoFileIgnored', 'Ignored (not allowed by policy)')}
+                  </Row>
+                )}
+                {run.evaluated_at && (
+                  <Row label={t('scans.ci.runDetail.evaluated', 'Judged')}>
+                    <RelativeTime date={run.evaluated_at} locale={dfLocale} />
+                  </Row>
+                )}
+                {run.decoration_state && (
+                  <Row label={t('scans.ci.runDetail.decoration', 'Check and comment')}>
+                    <span data-testid="ci-run-decoration">
+                      <Badge
+                        variant={run.decoration_state === 'failed' ? 'destructive' : 'outline'}
+                      >
+                        {t(
+                          `scans.ci.decoration.${run.decoration_state}`,
+                          DECORATION_LABEL[run.decoration_state] ?? run.decoration_state
+                        )}
+                      </Badge>
+                      {run.decoration_detail && (
+                        <span className="ml-2 text-muted-foreground">{run.decoration_detail}</span>
+                      )}
+                    </span>
+                  </Row>
+                )}
               </dl>
+
               {v?.summary && (
                 <p className="text-muted-foreground">
                   {t(
@@ -338,44 +523,61 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                       blocking: v.summary.blocking ?? 0,
                     }
                   )}
+                  {(v.summary.monitored ?? 0) > 0 &&
+                    ' ' +
+                      t(
+                        'scans.ci.runDetail.monitored',
+                        '{count} more in monitor mode (recorded, not listed).',
+                        { count: v.summary.monitored ?? 0 }
+                      )}
                 </p>
               )}
-              {v?.reasons && v.reasons.length > 0 && (
-                <ul className="space-y-2" aria-label={t('scans.ci.reasons', 'Reasons')}>
-                  {v.reasons.map((r, i) => (
-                    <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">
-                          {REASON_LABEL[r.code ?? '']
-                            ? t(`scans.ci.reason.${r.code}`, REASON_LABEL[r.code ?? ''])
-                            : r.code}
-                        </Badge>
-                        {r.severity && <span className="text-muted-foreground">{r.severity}</span>}
-                      </div>
-                      <p className="mt-1">{r.title || r.message}</p>
-                      {r.title && <p className="text-muted-foreground">{r.message}</p>}
-                      {r.file && (
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {r.file}
-                          {r.line ? `:${r.line}` : ''}
-                        </p>
-                      )}
-                      {r.finding_id && (
-                        <Link
-                          href={`/findings/${r.finding_id}`}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          {t('scans.ci.openFinding', 'Open finding')}
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+
+              {blocking.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="font-medium">{t('scans.ci.runDetail.blocking', 'Blocking')}</h3>
+                  <ReasonList
+                    reasons={blocking}
+                    label={t('scans.ci.runDetail.blocking', 'Blocking')}
+                  />
+                </section>
+              )}
+              {commentOnly.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="font-medium">
+                    {t('scans.ci.runDetail.commentOnly', 'Comment only (does not block)')}
+                  </h3>
+                  <ReasonList
+                    reasons={commentOnly}
+                    label={t('scans.ci.runDetail.commentOnly', 'Comment only (does not block)')}
+                  />
+                </section>
+              )}
+
+              {offerOverride && canOverride && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOverrideOpen(true)}
+                  data-testid="ci-run-break-glass"
+                >
+                  <ShieldAlert className="size-4" aria-hidden />{' '}
+                  {t('scans.ci.runDetail.breakGlass', 'Break-glass this commit')}
+                </Button>
               )}
             </div>
           )}
         </SheetBody>
       </SheetContent>
+      {run && offerOverride && canOverride && (
+        <CIOverrideDialog
+          open={overrideOpen}
+          onOpenChange={setOverrideOpen}
+          initialAssetId={run.repository_asset_id ?? ''}
+          initialSha={run.commit_sha ?? ''}
+          onCreated={() => void mutate?.()}
+        />
+      )}
     </Sheet>
   )
 }
