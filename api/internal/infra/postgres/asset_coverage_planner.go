@@ -14,6 +14,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -180,55 +181,93 @@ const settleCoveredSQL = `
 	       next_due_at = now() + make_interval(secs => $4), updated_at = now()
 	FROM assets a
 	WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
+	  AND c.asset_id = ANY($6::uuid[])
 	  AND a.tenant_id = c.tenant_id AND a.id = c.asset_id`
 
-// SettleRun settles the queued pairs of a finished run.
-func (r *AssetCoverageRepository) SettleRun(ctx context.Context, tenantID shared.ID, run coverage.RunState, rule coverage.Rule, success bool, unfinished []shared.ID) (int, error) {
-	every := rule.Every
+// SettleCovered settles queued pairs of a run as covered.
+func (r *AssetCoverageRepository) SettleCovered(ctx context.Context, tenantID, runID shared.ID, capability string, assetIDs []shared.ID, every time.Duration, expectsOrigin bool) (int, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
 	if every <= 0 {
 		every = 24 * time.Hour
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
+	// $5: the rule expects a web origin of the asset; without one the pair
+	// is covered with no output (the yield check counts them).
+	res, err := r.db.ExecContext(ctx, settleCoveredSQL, tenantID.String(), runID.String(), capability,
+		every.Seconds(), expectsOrigin, pq.Array(coverageIDStrings(assetIDs)))
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("settle covered coverage: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
 
-	n := 0
-	if len(unfinished) > 0 || !success {
-		// Failed pairs: the whole run, or the targets it did not finish.
-		q := `
-			UPDATE asset_coverage c SET state = 'failed', reason = '',
-			       last_outcome = $4, last_error = $5, fail_streak = c.fail_streak + 1,
-			       next_due_at = now() + least(make_interval(secs => $6), make_interval(secs => 3600 * power(2, least(c.fail_streak, 5)))),
-			       updated_at = now()
-			WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'`
-		args := []any{tenantID.String(), run.RunID.String(), run.Capability, coverage.OutcomeFailed,
-			coverage.Clip(run.Error, coverage.MaxErrorLen), min(every, 24*time.Hour).Seconds()}
-		if success {
-			q += ` AND c.asset_id = ANY($7::uuid[])`
-			args = append(args, pq.Array(coverageIDStrings(unfinished)))
-			args[4] = "the run did not finish this target"
-		}
-		res, err := tx.ExecContext(ctx, q, args...)
-		if err != nil {
-			return 0, fmt.Errorf("settle failed coverage: %w", err)
-		}
-		k, _ := res.RowsAffected()
-		n += int(k)
+// SettleFailed settles queued pairs of a run as failed, each with its own
+// outcome and error.
+func (r *AssetCoverageRepository) SettleFailed(ctx context.Context, tenantID, runID shared.ID, capability string, failed []coverage.FailedPair, every time.Duration) (int, error) {
+	if len(failed) == 0 {
+		return 0, nil
 	}
-	if success {
-		// $5: the rule expects a web origin of the asset; without one the
-		// pair is covered with no output (the yield check counts them).
-		res, err := tx.ExecContext(ctx, settleCoveredSQL,
-			tenantID.String(), run.RunID.String(), run.Capability, every.Seconds(), rule.Expects == "http_service")
-		if err != nil {
-			return 0, fmt.Errorf("settle covered coverage: %w", err)
-		}
-		k, _ := res.RowsAffected()
-		n += int(k)
+	if every <= 0 || every > 24*time.Hour {
+		every = 24 * time.Hour
 	}
-	return n, tx.Commit()
+	ids := make([]string, len(failed))
+	outcomes := make([]string, len(failed))
+	errs := make([]string, len(failed))
+	for i, f := range failed {
+		ids[i] = f.AssetID.String()
+		outcomes[i] = coverage.Clip(f.Outcome, coverage.MaxCodeLen)
+		errs[i] = coverage.Clip(f.Error, coverage.MaxErrorLen)
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE asset_coverage c SET state = 'failed', reason = '',
+		       last_outcome = w.outcome, last_error = w.err, fail_streak = c.fail_streak + 1,
+		       next_due_at = now() + least(make_interval(secs => $7), make_interval(secs => 3600 * power(2, least(c.fail_streak, 5)))),
+		       updated_at = now()
+		FROM unnest($4::uuid[], $5::text[], $6::text[]) AS w(asset_id, outcome, err)
+		WHERE c.tenant_id = $1 AND c.last_run_id = $2 AND c.capability = $3 AND c.vantage = '' AND c.state = 'queued'
+		  AND c.asset_id = w.asset_id`,
+		tenantID.String(), runID.String(), capability, pq.Array(ids), pq.Array(outcomes), pq.Array(errs), every.Seconds())
+	if err != nil {
+		return 0, fmt.Errorf("settle failed coverage: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// RunTasks returns every task of a run: the commands of its steps (splits
+// and follow-ups carry the same step) and the commands that name the run.
+func (r *AssetCoverageRepository) RunTasks(ctx context.Context, tenantID, runID shared.ID) ([]coverage.TaskResult, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.status, COALESCE(c.error_message, ''), c.payload, COALESCE(c.result, 'null'::jsonb)
+		FROM commands c
+		WHERE c.tenant_id = $1
+		  AND (c.scan_run_step_id IN (SELECT s.id FROM scan_run_steps s
+		                              JOIN scan_runs r ON r.id = s.scan_run_id AND r.tenant_id = $1
+		                              WHERE s.scan_run_id = $2)
+		       OR c.payload->>'scan_run_id' = $2::text)
+		ORDER BY c.created_at, c.id`, tenantID.String(), runID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list run tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []coverage.TaskResult
+	for rows.Next() {
+		var (
+			t               coverage.TaskResult
+			payload, result []byte
+		)
+		if err := rows.Scan(&t.Status, &t.Error, &payload, &result); err != nil {
+			return nil, err
+		}
+		t.Targets = command.PayloadTargets(payload)
+		if string(result) != "null" {
+			t.Result = result
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // QueuedTargets returns the queued pairs a run holds.
