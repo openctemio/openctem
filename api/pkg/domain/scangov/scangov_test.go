@@ -270,3 +270,26 @@ func TestEmergency(t *testing.T) {
 		t.Fatal("an emergency approval is time-boxed")
 	}
 }
+
+// SECURITY (RFC-054 §16): Strict and unknown modes never let unclassified
+// assets be probed; Off and On follow the setting.
+func TestUnclassifiedMode(t *testing.T) {
+	cases := []struct {
+		mode    Mode
+		setting string
+		want    string
+	}{
+		{ModeStrict, "full", "off"},
+		{ModeStrict, "low_impact", "off"},
+		{Mode("bogus"), "full", "off"},
+		{ModeOff, "low_impact", "low_impact"},
+		{ModeOn, "full", "full"},
+		{ModeOn, "off", "off"},
+		{ModeOn, "weird", "off"},
+	}
+	for _, tc := range cases {
+		if got := UnclassifiedMode(tc.mode, tc.setting); got != tc.want {
+			t.Fatalf("%s/%s = %s, want %s", tc.mode, tc.setting, got, tc.want)
+		}
+	}
+}

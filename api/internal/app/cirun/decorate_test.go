@@ -183,6 +183,7 @@ type fakeGitLabAPI struct {
 }
 
 func (f *fakeGitLabAPI) Token(context.Context) (*gitlabapi.TokenInfo, error)     { return nil, nil }
+func (f *fakeGitLabAPI) CurrentUser(context.Context) (*gitlabapi.User, error)    { return nil, nil }
 func (f *fakeGitLabAPI) Group(context.Context, string) (*gitlabapi.Group, error) { return nil, nil }
 func (f *fakeGitLabAPI) GroupMember(context.Context, int64, int64) (bool, error) { return true, nil }
 func (f *fakeGitLabAPI) MergeRequest(context.Context, string, int) (*gitlabapi.MergeRequest, error) {
