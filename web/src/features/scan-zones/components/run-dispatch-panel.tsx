@@ -7,6 +7,8 @@ import type { RunDispatch } from '@/lib/api/scan-types'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
+import { ExcludedTargetsList } from '@/features/scans/components/excluded-targets-list'
+
 import { useZoneSensors } from '../hooks/use-zone-sensors'
 import { SensorHealthChip } from './sensor-health-dot'
 
@@ -60,6 +62,10 @@ export function RunDispatchPanel({ dispatch }: { dispatch: RunDispatch }) {
         <Stat label="Not scanned" value={uncoveredCount} danger />
         <Stat label="Jobs" value={routing?.jobs ?? 0} />
       </div>
+
+      {(dispatch.excluded?.length ?? 0) > 0 && (
+        <ExcludedTargetsList items={dispatch.excluded ?? []} total={dispatch.excluded_targets} />
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {dispatch.sensor_routing && (

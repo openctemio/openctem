@@ -437,6 +437,13 @@ export interface RunDispatch {
   sensor_routing?: 'tenant' | 'platform'
   /** What each `*.x` or inventory-mode CIDR target added when the run started (RFC-068). */
   target_expansion?: RunTargetExpansion[]
+  /** Targets the organization's exclusions left out, with the matching rules (first 50). */
+  excluded?: {
+    target?: string
+    rules?: { kind?: string; id?: string; pattern?: string }[]
+    cut?: boolean
+    removed_addresses?: number
+  }[]
 }
 
 /**
