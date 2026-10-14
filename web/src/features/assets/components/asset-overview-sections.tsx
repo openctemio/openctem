@@ -279,14 +279,21 @@ export function PropertiesSection({
   properties,
   type,
   subType,
+  all = false,
 }: {
   properties?: Record<string, unknown>
   /** The asset's stored type and sub-type; without them every key is "Other". */
   type?: string
   subType?: string | null
+  /**
+   * Shown under the key facts: titled "All properties" and folded until the
+   * reader opens it (the key facts already answer the first questions).
+   */
+  all?: boolean
 }) {
   const { locale, t } = useTranslation()
   const [query, setQuery] = React.useState('')
+  const [open, setOpen] = React.useState(!all)
   const { known, other } = React.useMemo(
     () => groupProperties(properties, type ?? '', subType),
     [properties, type, subType]
@@ -321,8 +328,29 @@ export function PropertiesSection({
   )
 
   return (
-    <DetailSection title={t('assets.properties.title', 'Properties')} icon={ListTree} count={count}>
-      {count > SEARCH_FROM && (
+    <DetailSection
+      title={
+        all
+          ? t('assets.properties.allTitle', 'All properties')
+          : t('assets.properties.title', 'Properties')
+      }
+      icon={ListTree}
+      count={count}
+      actions={
+        all ? (
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? t('assets.properties.hide', 'Hide') : t('assets.properties.show', 'Show')}
+          </Button>
+        ) : undefined
+      }
+    >
+      {open && count > SEARCH_FROM && (
         <div className="relative">
           <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -334,8 +362,8 @@ export function PropertiesSection({
           />
         </div>
       )}
-      {knownShown.length > 0 && grid(knownShown)}
-      {otherShown.length > 0 && (
+      {open && knownShown.length > 0 && grid(knownShown)}
+      {open && otherShown.length > 0 && (
         <div className="space-y-2">
           {knownShown.length > 0 && (
             <p className="text-xs font-medium text-muted-foreground">
@@ -345,7 +373,7 @@ export function PropertiesSection({
           {grid(otherShown)}
         </div>
       )}
-      {knownShown.length + otherShown.length === 0 && (
+      {open && knownShown.length + otherShown.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {t('assets.properties.noMatch', 'No property matches "{query}".', { query })}
         </p>
