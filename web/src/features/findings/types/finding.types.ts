@@ -4,6 +4,8 @@
  * Type definitions for security findings/vulnerabilities
  */
 
+import type { FindingLocation } from '@/features/findings/lib/finding-location'
+
 import type { Severity } from '@/features/shared/types'
 import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import type { CriticalityLevel } from '@/lib/criticality'
@@ -683,6 +685,9 @@ export interface Finding {
   cwe?: string
   owasp?: string
   tags?: string[]
+
+  // Where: the asset and the place on it (see findingLocation)
+  location?: FindingLocation
 
   // Location Info (file path, line numbers)
   filePath?: string
