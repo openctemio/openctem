@@ -1785,5 +1785,14 @@
   "scans.tasks.waitingForHosts": "Đang chờ máy chủ: một tác vụ khác đang quét chúng",
   "scans.tasks.handedBackHostsBusy": "Sensor trả lại: sensor vẫn đang quét một máy chủ của nó",
   "scans.ci.fleet.runner": "Runner",
-  "scans.ci.fleet.runnerDescription": "Các pipeline CI/CD chạy bước quét OpenCTEM CI"
+  "scans.ci.fleet.runnerDescription": "Các pipeline CI/CD chạy bước quét OpenCTEM CI",
+  "scans.toolOption.opengrep": "Kiểm thử bảo mật mã nguồn tĩnh (SAST), chỉ dùng bộ quy tắc cục bộ",
+  "scans.toolOption.semgrep": "Kiểm thử bảo mật mã nguồn tĩnh (SAST)",
+  "scans.toolOption.trivy": "Quét lỗ hổng container và thư viện phụ thuộc",
+  "scans.toolOption.nuclei": "Trình quét lỗ hổng ứng dụng web",
+  "scans.toolOption.betterleaks": "Phát hiện bí mật trong mã nguồn, lịch sử git và tệp nén (thay thế Gitleaks)",
+  "scans.toolOption.checkov": "Trình quét bảo mật hạ tầng dưới dạng mã (IaC)",
+  "scans.toolOption.tfsec": "Trình quét bảo mật Terraform",
+  "scans.toolOption.grype": "Phân tích thành phần phần mềm (SCA)",
+  "scans.toolOption.syft": "Tạo và phân tích SBOM"
 }
