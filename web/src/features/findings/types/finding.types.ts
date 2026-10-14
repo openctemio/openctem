@@ -1210,7 +1210,13 @@ export interface ApiApproval {
   /** The finding's title (approval lists); absent when it no longer exists. */
   finding_title?: string
   requested_status: string
+  /** Empty when a platform actor made the request (see requested_by_actor). */
   requested_by: string
+  /**
+   * Set (`ai_triage`) when AI triage proposed the change instead of a person.
+   * Its justification is model output: show it as plain text only.
+   */
+  requested_by_actor?: string
   justification: string
   approved_by?: string
   approved_at?: string

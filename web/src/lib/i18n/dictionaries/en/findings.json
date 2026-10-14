@@ -44,5 +44,7 @@
   "findings.activity.loadFailed": "Activity could not be loaded. Open to retry.",
   "findings.activity.loadFailedTitle": "Activity could not be loaded",
   "findings.activity.loadFailedBody": "The history of this finding is not shown because the request failed. Try again later.",
-  "findings.activity.startDiscussion": "Start the discussion below."
+  "findings.activity.startDiscussion": "Start the discussion below.",
+  "findings.aiProposal.badge": "Proposed by AI triage",
+  "findings.aiProposal.hint": "An AI suggestion, not a decision. Check the finding before you approve it."
 }

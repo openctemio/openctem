@@ -1583,6 +1583,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// priority. Reuses the same MemoryQueue → Reclassifier → ClassifyFinding
 		// scan workflow the control/rule producers use (wired above).
 		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
+		// A confident false-positive verdict on a medium or low finding is
+		// recorded as a pending approval for a person; never applied.
+		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
 
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
