@@ -212,6 +212,39 @@ opt-in, administrator key only on the connector).
 - **Results** auto-resolve by coverage only for the batch's covered assets,
   only from a completed, `full` scan.
 
+## Scan now and rescan after a fix
+
+A member scans chosen inventory assets through a connector now: "Scan with
+Tenable.sc" on an IP address or host, and "Rescan with Tenable.sc" on a
+finding the connector reported (its asset), for example after a fix.
+
+- **Route**: `POST /api/v1/integrations/{id}/scan-now` with
+  `{"asset_ids": [...]}` (1-50), `scans:write` and the scans module
+  (`scan.Service.StartConnectorScan`, `tenablesc.Service.OnDemandScanConfig`).
+- **Assets**: read tenant-scoped and through the caller's act scope; an asset
+  of another organization, a deleted one or one outside the caller's data
+  scope answers 404 (one answer for all, so nothing is confirmed). Each asset
+  is scanned by its inventory name.
+- **Scan settings**: the connector's coverage policy, repository and zone
+  (`coverage_policy_id`, `coverage_repository_id`, optional
+  `coverage_zone_id`, `coverage_max_scan_seconds`); without the policy and
+  repository the request is refused (400) and asks to set them. Another
+  organization's integration, or one that is not a connector, is 404.
+- **Run**: one hidden ad-hoc scan per connector, `Tenable.sc on demand:
+  <integration name>` (tag `tenable-on-demand`, reused by every request),
+  run as a manual run by the caller, so the act scope, the active-probe gate,
+  scan windows and scan approval apply exactly as for any scan. The targets
+  go to that run only (the stored scan keeps none): two members scanning at
+  once never trade targets. The connector's own refusals (sensor not running
+  the connector, integration disabled, grant) answer 409 with their codes.
+- **Closing the finding**: nothing closes a finding directly. A completed,
+  `full` rescan closes the findings it no longer reports through coverage
+  auto-resolve, governed by `INGEST_COVERAGE_AUTO_RESOLVE` (default
+  `dry_run`: it only logs and audits what it would close; `enforce` closes
+  them). Its candidate rules apply (same tool, covered assets, findings last
+  seen by a scan run of the same scan profile), so a finding only an import
+  or a `connector_sync` reported is not closed by a rescan.
+
 ## Web
 
 Behind `TENABLE_CONNECTOR_ENABLED` (`web/src/features/integrations/config/feature-gates.ts`):
@@ -226,8 +259,19 @@ Behind `TENABLE_CONNECTOR_ENABLED` (`web/src/features/integrations/config/featur
   reported, the sync error, and Sync now / Edit / Remove for
   `integrations:manage` only. Older Tenable rows are listed as paused.
 - **Coverage panel**: license used / limit (`Meter`), the current batch, the
-  next batch's headroom computed as the API does, scan freshness; numbers
-  that need a sync say "Not enough data".
+  next batch's headroom computed as the API does (with rotation, the last
+  batch's addresses leave the count), the coverage cycle (number, assessed /
+  eligible, ETA), the rotation mode and when and why the next batch waits,
+  scan freshness; numbers that need a sync say "Not enough data". A stalled
+  rotation shows its reason and Resume rotation (`integrations:manage`, after
+  a confirmation).
+- **Connector dialog**: license rotation (off, aging, recycle, each
+  explained), the acknowledgement it requires, and the aging wait (1-72 h).
+- **Scan now**: "Scan with Tenable.sc" in the asset's Scope and scanning
+  section (IP address and host assets) and "Rescan with Tenable.sc" next to
+  the retest section of a finding whose tool is `tenable_sc`
+  (`TenableScanNowButton`): shown with `scans:write` and `integrations:read`
+  when an enabled connector exists; with several the user picks one.
 - **Scan wizard**: `tenable_sc` is offered as a scanner only in New/Edit scan
   while the flag is on (`scannerOptions(..., allowConnectors)`), with the
   connector, policy, repository and zone pickers (`TenableScanFields`,

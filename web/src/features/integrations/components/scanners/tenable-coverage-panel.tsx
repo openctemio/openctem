@@ -3,19 +3,74 @@
 /**
  * Rolling coverage through the Tenable.sc connector (api RFC-047 §9): the
  * license Tenable.sc reports (used / limit), whether a batch is running, what
- * the next batch may use, and how fresh the inventory's scans are. A number
- * that cannot be computed yet says so instead of showing 0.
+ * the next batch may use, the coverage cycle (license rotation, research/143
+ * §4) and how fresh the inventory's scans are. A number that cannot be
+ * computed yet says so instead of showing 0. A stalled recycle rotation shows
+ * its reason and, for integrations:manage, Resume rotation.
  */
 
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { AlertTriangle, RotateCcw } from 'lucide-react'
+
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Button } from '@/components/ui/button'
 import { Meter, MetricStrip, type MetricStripItem } from '@/features/shared'
-import { coverageNumbers } from '@/features/integrations/lib/tenable-sc'
+import { useResumeCoverageRotationApi } from '@/features/integrations/api/use-integrations-api'
+import {
+  coverageNumbers,
+  rotationProgress,
+  type CoverageRotation,
+} from '@/features/integrations/lib/tenable-sc'
 import type { Integration } from '@/features/integrations/types/integration.types'
 import { useScanCoverage } from '@/lib/api/scan-coverage-hooks'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import { formatDateSafe } from '@/lib/format-date'
+import { Can, Permission } from '@/lib/permissions'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { useTranslation } from '@/context/i18n-provider'
 
-export function TenableCoveragePanel({ integration }: { integration: Integration }) {
+type Translate = ReturnType<typeof useTranslation>['t']
+
+const ROTATION_LABEL: Record<CoverageRotation, string> = {
+  off: 'Off',
+  aging: 'Aging',
+  recycle: 'Recycle',
+}
+
+/** The API's wait reasons (tenablesc afterBatch), translated; another text is shown as sent. */
+const WAIT_REASONS: Record<string, { key: string; fallback: string }> = {
+  "the rotation repository's license is freed by Tenable.sc's nightly cleanup": {
+    key: 'tenableSc.coverage.wait.aging',
+    fallback: "Tenable.sc's nightly cleanup frees the license of the last batch",
+  },
+  'the Tenable.sc license capacity the batch needs is not free yet': {
+    key: 'tenableSc.coverage.wait.capacity',
+    fallback: 'the license capacity the batch needs is not free yet',
+  },
+  'the previous batch failed': {
+    key: 'tenableSc.coverage.wait.failed',
+    fallback: 'the previous batch failed',
+  },
+}
+
+export function waitReasonText(t: Translate, reason: string | undefined): string {
+  if (!reason) return ''
+  const known = WAIT_REASONS[reason]
+  return known ? t(known.key, known.fallback) : toDisplayText(reason, 300)
+}
+
+export function TenableCoveragePanel({
+  integration,
+  onChanged,
+}: {
+  integration: Integration
+  /** Called after the integration changed here (rotation resumed). */
+  onChanged?: () => void
+}) {
   const { t } = useTranslation()
   const n = coverageNumbers(integration)
+  const r = rotationProgress(integration)
   const { data: freshness, isLoading } = useScanCoverage(30)
   const notEnough = t('tenableSc.coverage.notEnoughData', 'Not enough data')
 
@@ -103,6 +158,38 @@ export function TenableCoveragePanel({ integration }: { integration: Integration
       tone: n.headroom === 0 ? 'warning' : 'default',
     },
     {
+      key: 'cycle',
+      label: t('tenableSc.coverage.cycle', 'Coverage cycle'),
+      value:
+        r.cycle > 0
+          ? t('tenableSc.coverage.cycleValue', 'Cycle {cycle}: {assessed} / {eligible}', {
+              cycle: r.cycle,
+              assessed: r.assessed,
+              eligible: r.eligible,
+            })
+          : notEnough,
+      hint:
+        r.cycle > 0
+          ? r.eta
+            ? t('tenableSc.coverage.cycleEta', 'assets assessed; done about {eta}', {
+                eta: formatDateSafe(r.eta, 'PPp'),
+              })
+            : t('tenableSc.coverage.cycleAssessed', 'assets assessed in this cycle')
+          : t('tenableSc.coverage.cycleFirstBatch', 'starts with the first batch'),
+      detail:
+        r.cycle > 0 && r.eligible > 0 ? (
+          <Meter
+            value={r.assessed}
+            max={r.eligible}
+            label={t(
+              'tenableSc.coverage.cycleMeterLabel',
+              '{assessed} of {eligible} assets assessed in this cycle',
+              { assessed: r.assessed, eligible: r.eligible }
+            )}
+          />
+        ) : undefined,
+    },
+    {
       key: 'fresh',
       label: t('tenableSc.coverage.scannedIn30Days', 'Scanned in 30 days'),
       value: isLoading
@@ -125,5 +212,86 @@ export function TenableCoveragePanel({ integration }: { integration: Integration
     },
   ]
 
-  return <MetricStrip items={items} loading={false} />
+  return (
+    <div className="space-y-3">
+      <MetricStrip items={items} loading={false} />
+      <p className="text-muted-foreground text-sm" data-testid="tsc-rotation-line">
+        {t('tenableSc.coverage.rotation', 'License rotation: {mode}', {
+          mode: t(`tenableSc.dialog.rotationMode.${r.rotation}`, ROTATION_LABEL[r.rotation]),
+        })}
+        {r.nextBatchAt &&
+          ` · ${t('tenableSc.coverage.nextBatchAt', 'next batch from {at}', {
+            at: formatDateSafe(r.nextBatchAt, 'PPp'),
+          })}`}
+        {r.waitReason && `: ${waitReasonText(t, r.waitReason)}`}
+      </p>
+      {r.stalled && (
+        <RotationStalled integration={integration} message={r.stalled} onChanged={onChanged} />
+      )}
+    </div>
+  )
+}
+
+const STALLED_MESSAGE =
+  'rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation to recycle the rotation repository'
+
+/** A stalled recycle rotation: why, and Resume rotation for integrations:manage. */
+function RotationStalled({
+  integration,
+  message,
+  onChanged,
+}: {
+  integration: Integration
+  message: string
+  onChanged?: () => void
+}) {
+  const { t } = useTranslation()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const { trigger, isMutating } = useResumeCoverageRotationApi(integration.id)
+  const text =
+    message === STALLED_MESSAGE
+      ? t(
+          'tenableSc.coverage.stalled',
+          'Rotation stalled: the previous batch failed after it launched, so its results may not be ingested. Resuming recycles the rotation repository before the next batch.'
+        )
+      : toDisplayText(message, 500)
+
+  const resume = async () => {
+    try {
+      await trigger()
+      toast.success(t('tenableSc.coverage.resumed', 'Rotation resumed'))
+      setConfirmOpen(false)
+      onChanged?.()
+    } catch (err) {
+      toast.error(getErrorMessage(err, t('tenableSc.coverage.resumeFailed', 'Could not resume')))
+    }
+  }
+
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3 sm:flex-row sm:items-center"
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+      <p className="flex-1 text-sm">{text}</p>
+      <Can permission={Permission.IntegrationsManage}>
+        <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
+          <RotateCcw className="me-1.5 h-3.5 w-3.5" aria-hidden />
+          {t('tenableSc.coverage.resume', 'Resume rotation')}
+        </Button>
+        <ConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={t('tenableSc.coverage.resumeTitle', 'Resume license rotation?')}
+          desc={t(
+            'tenableSc.coverage.resumeDesc',
+            'The next batch deletes and recreates the rotation repository in Tenable.sc. Results of the failed batch that were not ingested are lost; its assets are due again and are scanned anew.'
+          )}
+          confirmText={t('tenableSc.coverage.resume', 'Resume rotation')}
+          handleConfirm={resume}
+          isLoading={isMutating}
+        />
+      </Can>
+    </div>
+  )
 }
