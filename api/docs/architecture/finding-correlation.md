@@ -49,13 +49,13 @@ that merely looks like a payload host is kept.
   not at all, so the group counts once at its worst severity.
 - A person un-duplicates in one action (`POST /api/v1/findings/{id}/correlation/release`,
   findings:triage): the member's status from before is restored and the pair
-  is never linked automatically again. `POST /api/v1/findings/{id}/correlation/confirm`
+  is never linked automatically again. `POST /api/v1/findings/{id}/correlation/approve`
   (findings:triage) confirms a suggestion. Every link and release is audited.
 - `GET /api/v1/findings/{id}/detections` (findings:read) returns
   `detections: [{finding_id, rule_id, title, matched_url, first_seen, primary}]`
   and `possibly_related` (same shape). The finding is checked against the
   caller's tenant and data scope; correlations never cross assets.
-- Kill switch per organization: `PATCH /api/v1/tenants/{tenant}/settings/finding-correlation`
+- Kill switch per organization: `PATCH /api/v1/organization/settings/finding-correlation`
   `{auto_disabled, suggestions_disabled}` (admin, settings:write); both tiers on by default.
 - Existing findings: `refingerprint -correlate` (dry run: "link N, suggest N")
   then `-apply`; idempotent.
