@@ -274,6 +274,15 @@ branch sees it. See `docs/architecture/branch-only-findings.md`.
   "links": {"run": "https://…/ci-cd?view=runs&run=…", "findings": "https://…/findings?asset_id=…"} }
 ```
 
+**Expected capabilities.** A repository with a coverage expectation
+(section 10.6; an empty list means sast, sca, secrets and iac) must report
+each expected capability in every run. A run with no tool for one, per the
+tool catalog, gets a blocking `missing_capability` reason, like a scanner
+that failed. Without it, a pull request that edits its pipeline to drop a
+scanner passes on silence. The tool labels are self-declared, so this does
+not prove that a scan ran. It closes the "report nothing" path, and the
+platform's own code scans (RFC-091) are the independent check.
+
 Policy resolution (`ci_gate_policies`): the repository's own policy, else the
 strictest of its business units' policies, else the tenant's, else the built-in
 default (enforce, high and above, new findings only, KEV fails, no EPSS
