@@ -1172,6 +1172,8 @@
   "scans.ci.trust.addTitle": "Thêm tin cậy CI",
   "scans.ci.trust.dialogDescription": "Một pipeline được chấp nhận khi mọi quy tắc bạn điền đều khớp với token của nó. Danh sách phân tách bằng dấu phẩy; mẫu dùng * cho một đoạn đường dẫn và ** cho mọi độ sâu.",
   "scans.ci.trust.name": "Tên",
+  "scans.ci.trust.githubIssuer": "Issuer của GitHub Enterprise (tùy chọn)",
+  "scans.ci.trust.githubIssuerHint": "Để trống cho github.com. GitHub Enterprise Server: https://<host>/_services/token. Doanh nghiệp có issuer tùy biến: https://token.actions.githubusercontent.com/<enterprise>.",
   "scans.ci.trust.gitlabIssuer": "URL GitLab (bên phát hành)",
   "scans.ci.trust.gitlabIssuerHint": "Để trống nếu dùng gitlab.com.",
   "scans.ci.trust.issuer": "Bên phát hành",
