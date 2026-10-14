@@ -97,20 +97,40 @@ export function producedNothing(n: RunMapNode): boolean {
 }
 
 /**
- * A run task's count of targets its sensor's network confinement refused
- * every connection to (egress_refused_targets; absent from older APIs).
+ * A run task's counts of targets its sensor refused: those its network
+ * confinement refused every connection to (egress_refused_targets), and
+ * those its target guard refused to run (guard_refused_targets: a blocked
+ * or unresolvable address, an unsafe target). Both absent from older APIs.
  */
-export type EgressCountedTask = { step_key?: string; egress_refused_targets?: number }
+export type EgressCountedTask = {
+  step_key?: string
+  egress_refused_targets?: number
+  guard_refused_targets?: number
+}
 
-/** How many of a step's targets the sensor's egress refused, over its tasks. */
-export function stepEgressRefused(tasks: EgressCountedTask[] | undefined, stepKey: string): number {
+/** The sum of one count over a step's tasks (bad values count none). */
+function stepCount(
+  tasks: EgressCountedTask[] | undefined,
+  stepKey: string,
+  field: 'egress_refused_targets' | 'guard_refused_targets'
+): number {
   let n = 0
   for (const task of tasks ?? []) {
     if (task.step_key !== stepKey) continue
-    const c = task.egress_refused_targets
+    const c = task[field]
     if (typeof c === 'number' && Number.isFinite(c) && c > 0) n += Math.floor(c)
   }
   return n
+}
+
+/** How many of a step's targets the sensor's egress refused, over its tasks. */
+export function stepEgressRefused(tasks: EgressCountedTask[] | undefined, stepKey: string): number {
+  return stepCount(tasks, stepKey, 'egress_refused_targets')
+}
+
+/** How many of a step's targets the sensor's target guard refused. */
+export function stepGuardRefused(tasks: EgressCountedTask[] | undefined, stepKey: string): number {
+  return stepCount(tasks, stepKey, 'guard_refused_targets')
 }
 
 const FINISHED = new Set(['succeeded', 'partial', 'failed'])
@@ -128,8 +148,22 @@ export function egressRefusedText(
     : t('scans.map.egressRefused', undefined, { name, count: compactCount(count) })
 }
 
+/** "HTTP probe: 3 targets refused by the sensor's target guard.", or null. */
+export function guardRefusedText(
+  n: RunMapNode,
+  count: number,
+  t: Translate = enTranslate
+): string | null {
+  if (count <= 0 || !FINISHED.has(n.state ?? '')) return null
+  const name = n.name || n.step_key || ''
+  return count === 1
+    ? t('scans.map.guardRefusedOne', undefined, { name })
+    : t('scans.map.guardRefused', undefined, { name, count: compactCount(count) })
+}
+
 /**
  * The warnings over the map: a finished step whose targets the sensor's
+ * target guard refused says how many; one whose targets the sensor's
  * network confinement refused says so (it did not "produce nothing": it
  * could not reach them); otherwise a finished step that produced nothing.
  */
@@ -141,6 +175,10 @@ export function zeroOutputWarnings(
   const out: { key: string; text: string }[] = []
   for (const n of map?.nodes ?? []) {
     const key = n.step_key ?? ''
+    // Targets the sensor's target guard refused were never run: said
+    // whatever else the step did.
+    const guarded = guardRefusedText(n, stepGuardRefused(tasks, key), t)
+    if (guarded) out.push({ key: `${key}:guard`, text: guarded })
     const blocked = egressRefusedText(n, stepEgressRefused(tasks, key), t)
     if (blocked) {
       out.push({ key, text: blocked })
