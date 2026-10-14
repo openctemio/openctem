@@ -174,6 +174,10 @@ export type AuditAction =
   | 'scope_exclusion.rejected'
   | 'suppression_rule.approved'
   | 'suppression_rule.self_approved'
+  | 'exposure.disposition_requested'
+  | 'exposure.disposition_approved'
+  | 'exposure.disposition_self_approved'
+  | 'exposure.disposition_rejected'
   | 'easm_seed.created'
   | 'easm_seed.updated'
   | 'easm_seed.deleted'
@@ -246,6 +250,7 @@ export type AuditResourceType =
   | 'scope_target'
   | 'scope_exclusion'
   | 'suppression_rule'
+  | 'exposure'
   | 'easm_seed'
   | 'report_schedule'
   | 'tool'
@@ -330,6 +335,10 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'scan_zone.sensor_unassigned': 'Sensor unassigned from scan zone',
   'scope_exclusion.created': 'Scope exclusion requested',
   'suppression_rule.self_approved': 'Suppression rule self-approved by owner',
+  'exposure.disposition_requested': 'Exposure disposition requested',
+  'exposure.disposition_approved': 'Exposure disposition approved by a second approver',
+  'exposure.disposition_self_approved': 'Exposure disposition self-approved by owner',
+  'exposure.disposition_rejected': 'Exposure disposition rejected',
   'easm_seed.created': 'EASM seed added',
   'easm_seed.updated': 'EASM seed changed',
   'easm_seed.deleted': 'EASM seed removed',

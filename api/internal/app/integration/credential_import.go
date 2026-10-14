@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	exposureapp "github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -27,11 +29,24 @@ type CredentialImportService struct {
 	// the caller's data scope (Layer 2). A leak with no asset is in nobody's
 	// asset scope, so only unrestricted callers see it. Nil: unrestricted.
 	dataScope *datascope.Enforcer
-	logger    *logger.Logger
+	// dispositions is the four-eyes rule for high and critical dispositions
+	// (nil = one step, unwired tests only).
+	dispositions *exposureapp.DispositionGate
+	logger       *logger.Logger
 }
 
 // SetDataScope wires the Layer 2 data-scope enforcer.
 func (s *CredentialImportService) SetDataScope(e *datascope.Enforcer) { s.dataScope = e }
+
+// SetDispositionGate wires the four-eyes rule for accepting or dismissing a
+// high or critical leaked credential.
+func (s *CredentialImportService) SetDispositionGate(g *exposureapp.DispositionGate) {
+	s.dispositions = g
+}
+
+// CredentialApproverPermissions are the permissions the credential accept and
+// false-positive routes require; a second approver holds both.
+var CredentialApproverPermissions = []string{"credentials:write", "findings:approve"}
 
 // scoped applies the caller's data scope to a credential filter.
 func (s *CredentialImportService) scoped(ctx context.Context, tenantID string, filter exposure.Filter) (exposure.Filter, error) {
@@ -741,6 +756,8 @@ type CredentialItem struct {
 	IsVerified        bool           `json:"is_verified"`
 	IsRevoked         bool           `json:"is_revoked"`
 	Details           map[string]any `json:"details,omitempty"`
+	// PendingDisposition is a disposition waiting for a second approver.
+	PendingDisposition *exposureapp.PendingDispositionView `json:"pending_disposition,omitempty"`
 }
 
 // List retrieves credential leaks with filtering and pagination.
@@ -814,8 +831,13 @@ func (s *CredentialImportService) List(
 
 	// Convert to credential items
 	items := make([]CredentialItem, 0, len(result.Data))
+	ids := make([]shared.ID, 0, len(result.Data))
 	for _, event := range result.Data {
 		items = append(items, s.toCredentialItem(event))
+		ids = append(ids, event.ID())
+	}
+	if err := s.attachPending(ctx, tenantID, items, ids); err != nil {
+		return nil, err
 	}
 
 	totalPages := int(result.Total) / pageSize
@@ -861,8 +883,30 @@ func (s *CredentialImportService) GetByID(ctx context.Context, tenantID, id stri
 		return nil, exposure.NewExposureEventNotFoundError(id)
 	}
 
-	item := s.toCredentialItem(event)
-	return &item, nil
+	items := []CredentialItem{s.toCredentialItem(event)}
+	if err := s.attachPending(ctx, tenantID, items, []shared.ID{event.ID()}); err != nil {
+		return nil, err
+	}
+	return &items[0], nil
+}
+
+// attachPending fills each item's pending disposition (items[i] is ids[i]).
+func (s *CredentialImportService) attachPending(ctx context.Context, tenantID string, items []CredentialItem, ids []shared.ID) error {
+	if s.dispositions == nil || len(ids) == 0 {
+		return nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return shared.ErrNotFound
+	}
+	pending, err := s.dispositions.Pending(ctx, tid, ids)
+	if err != nil {
+		return fmt.Errorf("failed to load pending dispositions: %w", err)
+	}
+	for i, id := range ids {
+		items[i].PendingDisposition = exposureapp.PendingView(pending[id])
+	}
+	return nil
 }
 
 // toCredentialItem converts an exposure event to a credential item.
@@ -1345,14 +1389,71 @@ func (s *CredentialImportService) ResolveCredential(ctx context.Context, tenantI
 	return s.changeCredentialState(ctx, tenantID, credentialID, userID, exposure.StateResolved, notes)
 }
 
-// AcceptCredential marks a credential as accepted risk.
+// AcceptCredential marks a credential as accepted risk. A high or critical
+// leak needs a second approver: the first call leaves it as it is and
+// returns the item with its PendingDisposition.
 func (s *CredentialImportService) AcceptCredential(ctx context.Context, tenantID, credentialID, userID, notes string) (*CredentialItem, error) {
-	return s.changeCredentialState(ctx, tenantID, credentialID, userID, exposure.StateAccepted, notes)
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateAccepted, notes, auditapp.AuditContext{})
 }
 
-// MarkCredentialFalsePositive marks a credential as a false positive.
+// MarkCredentialFalsePositive marks a credential as a false positive, under
+// the same four-eyes rule as AcceptCredential.
 func (s *CredentialImportService) MarkCredentialFalsePositive(ctx context.Context, tenantID, credentialID, userID, notes string) (*CredentialItem, error) {
-	return s.changeCredentialState(ctx, tenantID, credentialID, userID, exposure.StateFalsePositive, notes)
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateFalsePositive, notes, auditapp.AuditContext{})
+}
+
+// SetCredentialDisposition is AcceptCredential / MarkCredentialFalsePositive
+// with the request's audit context.
+func (s *CredentialImportService) SetCredentialDisposition(ctx context.Context, tenantID, credentialID, userID string, state exposure.State, notes string, actx auditapp.AuditContext) (*CredentialItem, error) {
+	if !exposure.IsGatedState(state) {
+		return nil, fmt.Errorf("%w: unsupported state transition", shared.ErrValidation)
+	}
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, state, notes, actx)
+}
+
+// RejectCredentialDisposition rejects (or, for the requester, cancels) the
+// pending disposition of a credential in the caller's tenant and scope.
+func (s *CredentialImportService) RejectCredentialDisposition(ctx context.Context, tenantID, credentialID, userID, reason string, actx auditapp.AuditContext) (*CredentialItem, error) {
+	if s.dispositions == nil {
+		return nil, exposure.ErrNoPendingDisposition
+	}
+	event, err := s.loadCredential(ctx, tenantID, credentialID)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := shared.IDFromString(userID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+	}
+	if _, err := s.dispositions.Reject(ctx, exposureapp.DispositionInput{TenantID: event.TenantID(), Event: event,
+		ActorID: actor, Reason: reason, Audit: actx}); err != nil {
+		return nil, err
+	}
+	item := s.toCredentialItem(event)
+	return &item, nil
+}
+
+// loadCredential loads a leaked credential in the caller's tenant and scope.
+func (s *CredentialImportService) loadCredential(ctx context.Context, tenantID, credentialID string) (*exposure.ExposureEvent, error) {
+	parsedID, err := shared.IDFromString(credentialID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
+	}
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, shared.ErrNotFound
+	}
+	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	if event.TenantID().String() != tenantID || event.EventType() != exposure.EventTypeCredentialLeaked {
+		return nil, shared.ErrNotFound
+	}
+	if err := s.assertInScope(ctx, event); err != nil {
+		return nil, shared.ErrNotFound
+	}
+	return event, nil
 }
 
 // ReactivateCredential marks a credential as active again.
@@ -1412,26 +1513,13 @@ func (s *CredentialImportService) ReactivateCredential(ctx context.Context, tena
 
 // changeCredentialState changes the state of a credential.
 func (s *CredentialImportService) changeCredentialState(ctx context.Context, tenantID, credentialID, userID string, newState exposure.State, notes string) (*CredentialItem, error) {
-	parsedID, err := shared.IDFromString(credentialID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid credential id", shared.ErrValidation)
-	}
+	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, newState, notes, auditapp.AuditContext{})
+}
 
-	parsedTenantID, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return nil, shared.ErrNotFound
-	}
-	event, err := s.exposureRepo.GetByTenantAndID(ctx, parsedTenantID, parsedID)
+func (s *CredentialImportService) changeCredentialStateAudited(ctx context.Context, tenantID, credentialID, userID string, newState exposure.State, notes string, actx auditapp.AuditContext) (*CredentialItem, error) {
+	event, err := s.loadCredential(ctx, tenantID, credentialID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant ownership, type and the caller's data scope
-	if event.TenantID().String() != tenantID || event.EventType() != exposure.EventTypeCredentialLeaked {
-		return nil, shared.ErrNotFound
-	}
-	if err := s.assertInScope(ctx, event); err != nil {
-		return nil, shared.ErrNotFound
 	}
 
 	previousState := event.State()
@@ -1442,6 +1530,28 @@ func (s *CredentialImportService) changeCredentialState(ctx context.Context, ten
 		parsedUserID, _ = shared.IDFromString(userID)
 	}
 
+	// A high or critical disposition takes two approvers.
+	decision := exposureapp.DispositionDecision{Apply: true, Notes: notes}
+	if s.dispositions != nil && exposure.IsGatedState(newState) {
+		decision, err = s.dispositions.Decide(ctx, exposureapp.DispositionInput{TenantID: event.TenantID(), Event: event,
+			ActorID: parsedUserID, State: newState, Reason: notes,
+			ApproverPermissions: CredentialApproverPermissions, Audit: actx})
+		if err != nil {
+			return nil, err
+		}
+		if !decision.Apply {
+			item := s.toCredentialItem(event)
+			item.PendingDisposition = exposureapp.PendingView(decision.Request)
+			return &item, nil
+		}
+		notes = decision.Notes
+	}
+	undo := func() {
+		if s.dispositions != nil {
+			s.dispositions.Undo(ctx, decision)
+		}
+	}
+
 	// Apply state change
 	switch newState {
 	case exposure.StateResolved:
@@ -1450,10 +1560,12 @@ func (s *CredentialImportService) changeCredentialState(ctx context.Context, ten
 		}
 	case exposure.StateAccepted:
 		if err := event.Accept(parsedUserID, notes); err != nil {
+			undo()
 			return nil, err
 		}
 	case exposure.StateFalsePositive:
 		if err := event.MarkFalsePositive(parsedUserID, notes); err != nil {
+			undo()
 			return nil, err
 		}
 	default:
@@ -1461,6 +1573,7 @@ func (s *CredentialImportService) changeCredentialState(ctx context.Context, ten
 	}
 
 	if err := s.exposureRepo.Update(ctx, event); err != nil {
+		undo()
 		return nil, fmt.Errorf("failed to update credential: %w", err)
 	}
 

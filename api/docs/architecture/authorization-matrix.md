@@ -223,7 +223,7 @@ and SBOM import write it.
 |----------|---------------------|
 | `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
 | `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `PUT /{id}/ctem-id` | `findings:write` |
-| `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` | `findings:approve` |
+| `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:approve` |
 | `DELETE /api/v1/exposures/{id}` | `findings:delete` |
 
 > Accepted and false-positive are the dispositions a finding reaches only
@@ -232,9 +232,14 @@ and SBOM import write it.
 > Exposures have no request/approve records, so these two transitions are
 > gated on the approver permission itself: a `findings:write` holder (member)
 > gets 403 and must ask an approver. The reason is kept in the exposure's state
-> history. Unlike findings, an approver sets the state directly (no second
-> person); a full request/approve flow for exposures would need its own
-> records.
+> history. For a **high or critical** exposure the two transitions take two
+> people: the first approver's call stores a pending request
+> (`exposure_disposition_requests`, answer 202), a different approver's call
+> for the same disposition applies it, and `/{id}/disposition/reject` drops it
+> (the requester's own reject cancels). The requester never confirms their own
+> request; the owner may, only when nobody else holds the route's permissions
+> (audited Critical). Low and medium exposures keep the one-step path. See
+> [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
@@ -476,7 +481,7 @@ the billing page in the UI.
 |----------|---------------------|
 | `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
 | `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/reactivate` | `findings:credentials:write` |
-| `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` | `findings:credentials:write` **and** `findings:approve` (same dispositions as the exposure routes) |
+| `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:credentials:write` **and** `findings:approve` (same dispositions and the same four-eyes rule as the exposure routes) |
 | `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` + **step-up**; audited |
 
 > **The leaked secret is reveal-only.** Read endpoints (here and under

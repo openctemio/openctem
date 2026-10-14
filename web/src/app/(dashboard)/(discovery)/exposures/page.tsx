@@ -1,5 +1,7 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
+
 import { useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -93,6 +95,9 @@ import {
   ExposuresTabs,
   APPROVE_REQUIRED_REASON,
   useCanApproveExposures,
+  PendingDispositionBadge,
+  PendingDispositionPanel,
+  notifyPendingDispositions,
 } from '@/features/exposures/components'
 import type {
   ExposureEvent,
@@ -198,6 +203,7 @@ export default function ExposuresPage() {
   }, [])
 
   // Action dialog state
+  const { t } = useTranslation()
   const [selectedExposure, setSelectedExposure] = useState<ExposureEvent | null>(null)
   const [actionType, setActionType] = useState<ActionType | null>(null)
 
@@ -309,18 +315,20 @@ export default function ExposuresPage() {
 
   const handleBulkAccept = useCallback(
     async (ids: string[], reason: string) => {
-      await Promise.all(ids.map((id) => acceptExposure(id, { reason })))
+      const results = await Promise.all(ids.map((id) => acceptExposure(id, { reason })))
+      notifyPendingDispositions(results, t)
       handleRefresh()
     },
-    [handleRefresh]
+    [handleRefresh, t]
   )
 
   const handleBulkFalsePositive = useCallback(
     async (ids: string[], reason: string) => {
-      await Promise.all(ids.map((id) => markExposureFalsePositive(id, { reason })))
+      const results = await Promise.all(ids.map((id) => markExposureFalsePositive(id, { reason })))
+      notifyPendingDispositions(results, t)
       handleRefresh()
     },
-    [handleRefresh]
+    [handleRefresh, t]
   )
 
   const clearFilters = useCallback(() => {
@@ -601,6 +609,10 @@ export default function ExposuresPage() {
           if (detailExposure) {
             handleAction(detailExposure, action)
           }
+        }}
+        onChanged={() => {
+          setDetailExposure(null)
+          handleRefresh()
         }}
       />
     </Main>
@@ -975,9 +987,16 @@ interface ExposureDetailSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onAction: (action: ActionType) => void
+  onChanged?: () => void
 }
 
-function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: ExposureDetailSheetProps) {
+function ExposureDetailSheet({
+  exposure,
+  open,
+  onOpenChange,
+  onAction,
+  onChanged,
+}: ExposureDetailSheetProps) {
   const canApprove = useCanApproveExposures()
   const { currentTenant } = useTenant()
   const [secretsRevealed, setSecretsRevealed] = useState(false)
@@ -1003,6 +1022,7 @@ function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: Exposur
             <>
               <SeverityBadge severity={exposure.severity} />
               {state && <Badge variant={state.variant}>{state.label}</Badge>}
+              <PendingDispositionBadge exposure={exposure} />
             </>
           }
           meta={[`${exposure.event_type.replace(/_/g, ' ')} from ${exposure.source}`]}
@@ -1049,6 +1069,7 @@ function ExposureDetailSheet({ exposure, open, onOpenChange, onAction }: Exposur
       }
     >
       <DetailSections>
+        <PendingDispositionPanel exposure={exposure} onChanged={onChanged} />
         {exposure.description && (
           <DetailSection title="Description">
             <p className="text-sm text-muted-foreground">{exposure.description}</p>

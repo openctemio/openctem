@@ -928,15 +928,12 @@ func (h *CredentialImportHandler) Accept(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	item, err := h.service.AcceptCredential(r.Context(), tenantID, id, userID, req.Notes)
+	item, err := h.service.SetCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateAccepted, req.Notes, configAuditContext(r))
 	if err != nil {
 		h.writeStateChangeError(w, "accept", id, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(item)
+	writeCredentialDisposition(w, item)
 }
 
 // MarkFalsePositive handles POST /api/v1/credentials/{id}/false-positive
@@ -967,15 +964,12 @@ func (h *CredentialImportHandler) MarkFalsePositive(w http.ResponseWriter, r *ht
 		return
 	}
 
-	item, err := h.service.MarkCredentialFalsePositive(r.Context(), tenantID, id, userID, req.Notes)
+	item, err := h.service.SetCredentialDisposition(r.Context(), tenantID, id, userID, exposure.StateFalsePositive, req.Notes, configAuditContext(r))
 	if err != nil {
 		h.writeStateChangeError(w, "mark as false positive", id, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(item)
+	writeCredentialDisposition(w, item)
 }
 
 // Reactivate handles POST /api/v1/credentials/{id}/reactivate
@@ -1002,6 +996,53 @@ func (h *CredentialImportHandler) Reactivate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(item)
+}
+
+// writeCredentialDisposition answers 202 when the disposition waits for a
+// second approver, 200 when it was applied.
+func writeCredentialDisposition(w http.ResponseWriter, item *integration.CredentialItem) {
+	status := http.StatusOK
+	if item.PendingDisposition != nil {
+		status = http.StatusAccepted
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(item)
+}
+
+// RejectDisposition handles POST /api/v1/credentials/{id}/disposition/reject
+// @Summary Reject a pending credential disposition
+// @Description Reject the pending accept or false-positive request of a high or critical credential leak. The requester rejecting their own request cancels it.
+// @Tags Credentials
+// @Accept json
+// @Produce json
+// @Param id path string true "Credential ID"
+// @Param request body DispositionRejectRequest false "Reason"
+// @Success 200 {object} integration.CredentialItem
+// @Failure 400 {object} apierror.Error
+// @Failure 404 {object} apierror.Error
+// @Router /credentials/{id}/disposition/reject [post]
+func (h *CredentialImportHandler) RejectDisposition(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := r.PathValue("id")
+	if id == "" {
+		apierror.BadRequest("missing credential id").WriteJSON(w)
+		return
+	}
+	var req DispositionRejectRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	item, err := h.service.RejectCredentialDisposition(r.Context(), tenantID, id, middleware.GetUserID(r.Context()), req.Reason, configAuditContext(r))
+	if err != nil {
+		h.writeStateChangeError(w, "reject the disposition of", id, err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(item)
