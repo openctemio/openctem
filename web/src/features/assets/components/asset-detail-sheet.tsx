@@ -37,6 +37,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { RelationshipPreview } from './relationships'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
+import { AssetScanningSection } from './asset-scanning-section'
 import { SurfaceFactsDetail, cellsForType } from './service-cells'
 import {
   RiskSummarySection,
@@ -373,6 +374,12 @@ export function AssetDetailSheet<T extends Asset>({
             <RiskSummarySection
               asset={asset}
               onViewFindings={showFindingsTab ? () => setActiveTab('findings') : undefined}
+            />
+
+            {/* May scans reach it, why, and what changes that. */}
+            <AssetScanningSection
+              asset={asset}
+              onShowDetails={showDetailsTab ? () => setActiveTab('details') : undefined}
             />
 
             {statsContent}
