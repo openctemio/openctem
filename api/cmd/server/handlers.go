@@ -34,6 +34,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	codescanapp "github.com/openctemio/openctem/api/internal/app/codescan"
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
@@ -1395,6 +1396,13 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	admin.SetPipelineService(ciSvc)
 	admin.SetCoverageService(ciSvc)
 	admin.SetSettingsService(ciSvc)
+	if repos.CodeScan != nil {
+		var csAudit codescanapp.Auditor
+		if svc.Audit != nil {
+			csAudit = svc.Audit
+		}
+		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
+	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	// VEX documents a run uploads: stored on the run repository's findings,
