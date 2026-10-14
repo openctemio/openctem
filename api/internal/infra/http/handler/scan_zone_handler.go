@@ -456,6 +456,19 @@ var scanZoneErrorCodes = map[string]bool{
 	"SCAN_OWNER_REQUIRED": true,
 	"SCAN_OWNER_ACTIVE":   true,
 	"SCAN_OWNER_CHANGED":  true,
+	// Target refusals at trigger time (docs/architecture/scan-targets.md):
+	// without their code the console cannot say what to fix.
+	"ALL_TARGETS_UNCONFIRMED":       true,
+	"NO_COMPATIBLE_TARGETS":         true,
+	"TIER_EXCEEDS":                  true,
+	"INTERNAL_TARGET_OUTSIDE_ZONES": true,
+	"NO_RESOLVING_TARGETS":          true,
+	"INTENSITY_EXCEEDED":            true,
+	"LIVENESS_NEEDS_HOST_DISCOVERY": true,
+	// Scan approval (docs/architecture/scan-approval.md): a
+	// governed scan's run is refused until it is approved.
+	"SCAN_APPROVAL_REQUIRED": true,
+	"SCAN_APPROVAL_PENDING":  true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.
