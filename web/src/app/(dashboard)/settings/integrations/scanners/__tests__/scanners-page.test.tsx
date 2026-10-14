@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import SecurityScannersPage from '../page'
-import { TenableConnectorView } from '@/features/integrations/components/scanners/tenable-connector-view'
+import { ScannerImportsView } from '@/features/integrations/components/scanners/scanner-imports-view'
 import { TENABLE_CONNECTOR_ENABLED } from '@/features/integrations/config/feature-gates'
 
 /**
- * Owner decision D-14: the live Tenable connector and rolling coverage are
- * paused (sensor v0.8.0 removed the Tenable runner; the API refuses new
- * Tenable integrations and does not run the coverage scheduler). The page may
- * offer only what works: the .nessus import, plus removable paused rows.
+ * The Tenable.sc connector is on, as Beta (TENABLE_CONNECTOR_ENABLED, equal to
+ * the API's integration.TenableConnectorEnabled): the page renders the
+ * connector view. With the gate off, ScannerImportsView offers only what
+ * works without the connector: the .nessus import, plus removable paused rows.
  */
 
 const mockUseIntegrations = vi.fn()
@@ -59,10 +59,10 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('SecurityScannersPage while the Tenable connector is paused', () => {
+describe('ScannerImportsView (Tenable connector gate off)', () => {
   it('offers no way to connect, edit or set up a Tenable runner, and no coverage panel', () => {
     withRows([row('t1', 'tenable', 'Legacy Tenable')])
-    render(<SecurityScannersPage />)
+    render(<ScannerImportsView />)
 
     expect(screen.queryByText(/Connect (Scanner|Tenable)/i)).toBeNull()
     expect(screen.queryByTitle('Edit')).toBeNull()
@@ -73,13 +73,13 @@ describe('SecurityScannersPage while the Tenable connector is paused', () => {
 
   it('keeps the working .nessus import', () => {
     withRows([])
-    render(<SecurityScannersPage />)
+    render(<ScannerImportsView />)
     expect(screen.getAllByRole('button', { name: /Import \.nessus/i }).length).toBeGreaterThan(0)
   })
 
   it('lists Tenable rows created before the pause as paused and removable', () => {
     withRows([row('t1', 'tenable', 'Legacy Tenable'), row('d1', 'defectdojo', 'DD')])
-    render(<SecurityScannersPage />)
+    render(<ScannerImportsView />)
 
     expect(screen.getByText('Legacy Tenable')).toBeTruthy()
     expect(screen.getByText('Paused')).toBeTruthy()
@@ -89,14 +89,24 @@ describe('SecurityScannersPage while the Tenable connector is paused', () => {
   })
 })
 
-describe('Tenable connector gate', () => {
-  it('is off until the RFC-047 runner ships', () => {
-    expect(TENABLE_CONNECTOR_ENABLED).toBe(false)
+describe('SecurityScannersPage with the Tenable connector on (Beta)', () => {
+  it('is on', () => {
+    expect(TENABLE_CONNECTOR_ENABLED).toBe(true)
   })
 
-  it('keeps the connector view, ready to flip back on', () => {
+  it('renders the connector view: Connect Tenable.sc, the Beta badge, no paused-only notice', () => {
     withRows([])
-    render(<TenableConnectorView />)
-    expect(screen.getAllByText(/Connect (Scanner|Tenable)/i).length).toBeGreaterThan(0)
+    render(<SecurityScannersPage />)
+    expect(screen.getAllByRole('button', { name: /Connect Tenable\.sc/ }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Beta')).toBeTruthy()
+    expect(screen.queryByText(/live Tenable connector is paused/i)).toBeNull()
+  })
+
+  it('still offers the .nessus import and lists older Tenable rows as paused', () => {
+    withRows([row('t1', 'tenable', 'Legacy Tenable')])
+    render(<SecurityScannersPage />)
+    expect(screen.getAllByRole('button', { name: /Import \.nessus/i }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Paused Tenable integrations')).toBeTruthy()
+    expect(screen.getByText('Legacy Tenable')).toBeTruthy()
   })
 })

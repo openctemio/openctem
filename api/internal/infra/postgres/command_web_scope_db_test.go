@@ -111,10 +111,12 @@ var insertCommandsRe = regexp.MustCompile(`(?i)insert\s+into\s+commands\b`)
 
 // SECURITY: a guard against a new dispatch path that skips the choke
 // point. Commands are inserted only by Create (guarded), by the window
-// hold's split, which copies a stored command's guarded payload, and by the
-// follow-up of unfinished targets, which passes the guard itself.
+// hold's split, which copies a stored command's guarded payload, by the
+// follow-up of unfinished targets and by the claim-time split for busy
+// hosts, which pass the guard themselves.
 func TestCommandInserts_OnlyThroughTheGuard(t *testing.T) {
-	allowed := map[string]bool{"command_repository.go": true, "command_window_hold.go": true, "command_follow_up.go": true}
+	allowed := map[string]bool{"command_repository.go": true, "command_window_hold.go": true, "command_follow_up.go": true,
+		"command_host_split.go": true}
 	root := filepath.Join("..", "..", "..")
 	found := 0
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {

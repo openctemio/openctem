@@ -163,15 +163,29 @@ export function readConnectorSettings(integration: Integration | undefined): Con
 
 export const INSTANCE_NAME_RE = /^[a-z0-9][a-z0-9_.-]{0,62}$/
 
+/** A user-facing message: the caller translates it with t(key, fallback). */
+export interface TenableMessage {
+  key: string
+  fallback: string
+}
+
+const msg = (key: string, fallback: string): TenableMessage => ({
+  key: `tenableSc.error.${key}`,
+  fallback,
+})
+
 /** First problem with the settings, or null (the API checks the same rules). */
-export function connectorSettingsError(s: ConnectorSettings): string | null {
-  if (!s.sensorId) return 'Choose the sensor that runs the Tenable.sc connector'
+export function connectorSettingsError(s: ConnectorSettings): TenableMessage | null {
+  if (!s.sensorId)
+    return msg('chooseSensor', 'Choose the sensor that runs the Tenable.sc connector')
   if (!INSTANCE_NAME_RE.test(s.instance))
-    return "Instance: 1-63 lowercase letters, digits, '.', '_' or '-'"
-  if (s.minSeverity < 0 || s.minSeverity > 4) return 'Minimum severity must be 0 to 4'
-  if (s.fullSyncDays < 1 || s.fullSyncDays > 90) return 'Full sync every 1 to 90 days'
+    return msg('instance', "Instance: 1-63 lowercase letters, digits, '.', '_' or '-'")
+  if (s.minSeverity < 0 || s.minSeverity > 4)
+    return msg('minSeverity', 'Minimum severity must be 0 to 4')
+  if (s.fullSyncDays < 1 || s.fullSyncDays > 90)
+    return msg('fullSyncDays', 'Full sync every 1 to 90 days')
   if (s.coverageEnabled && (s.coveragePolicyId <= 0 || s.coverageRepositoryId <= 0))
-    return 'Coverage needs a scan policy and a scan repository'
+    return msg('coverageNeedsPolicy', 'Coverage needs a scan policy and a scan repository')
   return null
 }
 
@@ -285,10 +299,10 @@ export function readTenableScanConfig(cfg: Record<string, unknown> | undefined):
   }
 }
 
-export function tenableScanConfigError(c: TenableScanConfig): string | null {
-  if (!c.integrationId) return 'Choose the Tenable.sc connector'
-  if (c.policyId <= 0) return 'Choose a Tenable.sc scan policy'
-  if (c.repositoryId <= 0) return 'Choose a Tenable.sc repository'
+export function tenableScanConfigError(c: TenableScanConfig): TenableMessage | null {
+  if (!c.integrationId) return msg('chooseConnector', 'Choose the Tenable.sc connector')
+  if (c.policyId <= 0) return msg('choosePolicy', 'Choose a Tenable.sc scan policy')
+  if (c.repositoryId <= 0) return msg('chooseRepository', 'Choose a Tenable.sc repository')
   return null
 }
 

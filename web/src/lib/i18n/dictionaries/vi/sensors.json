@@ -1263,5 +1263,7 @@
   "sensors.toolSettings.impactWarning": "Giá trị khác mặc định làm tăng tải hoặc phạm vi của mỗi lần quét.",
   "sensors.toolSettings.searchLabel": "Tìm trong cài đặt công cụ",
   "sensors.toolSettings.searchPlaceholder": "Tìm công cụ hoặc tùy chọn",
-  "sensors.toolSettings.searchEmpty": "Không có công cụ hoặc tùy chọn nào khớp với \"{query}\"."
+  "sensors.toolSettings.searchEmpty": "Không có công cụ hoặc tùy chọn nào khớp với \"{query}\".",
+  "sensors.grantEdit.profile.scan-connector": "Bộ kết nối máy quét",
+  "sensors.pair.profileDesc.scan-connector": "Chạy một bộ kết nối tới sản phẩm máy quét mà tổ chức của bạn vận hành (bộ kết nối Tenable.sc): đồng bộ và quét của sản phẩm đó; không tự chạy máy quét nào."
 }
