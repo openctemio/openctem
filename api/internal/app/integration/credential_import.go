@@ -1402,9 +1402,9 @@ func (s *CredentialImportService) MarkCredentialFalsePositive(ctx context.Contex
 	return s.changeCredentialStateAudited(ctx, tenantID, credentialID, userID, exposure.StateFalsePositive, notes, auditapp.AuditContext{})
 }
 
-// SetCredentialDisposition is AcceptCredential / MarkCredentialFalsePositive
+// ApplyCredentialDisposition is AcceptCredential / MarkCredentialFalsePositive
 // with the request's audit context.
-func (s *CredentialImportService) SetCredentialDisposition(ctx context.Context, tenantID, credentialID, userID string, state exposure.State, notes string, actx auditapp.AuditContext) (*CredentialItem, error) {
+func (s *CredentialImportService) ApplyCredentialDisposition(ctx context.Context, tenantID, credentialID, userID string, state exposure.State, notes string, actx auditapp.AuditContext) (*CredentialItem, error) {
 	if !exposure.IsGatedState(state) {
 		return nil, fmt.Errorf("%w: unsupported state transition", shared.ErrValidation)
 	}
