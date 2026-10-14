@@ -1,7 +1,7 @@
 ### Behaviour change: only a proven scan run closes repository findings
 
-- **Default-branch auto-resolve needs a clean, bound run** (research 18 F3,
-  owner decision O11). A scan closes a repository finding only when a
+- **Default-branch auto-resolve needs a clean, bound run** (owner
+  decision O11). A scan closes a repository finding only when a
   protocol v2 run **bound to a command** completed with exit code 0, every
   report of the run completed with nothing rejected, quarantined or in error,
   the reports are an explicitly `full` scan of the default branch, and the
