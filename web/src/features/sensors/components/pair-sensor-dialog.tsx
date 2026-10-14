@@ -59,6 +59,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   DEFAULT_GRANT_PROFILE,
   GRANT_PROFILES,
+  PARAMETERISED_PROFILES,
   formatCountdown,
   formatPairingCode,
   grantProfileValue,
@@ -621,7 +622,7 @@ function ApprovalForm({
         )}
       </div>
 
-      {profile === 'collector' && (
+      {PARAMETERISED_PROFILES.includes(profile) && (
         <div className="space-y-1.5">
           <Label htmlFor={ids.integration}>
             {t('sensors.grantEdit.integration')}{' '}
