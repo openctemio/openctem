@@ -62,6 +62,28 @@ An open port is addressed as `host:port`; names and origins by name.
 With the loop on, automatic enrichment of new assets is off: the loop
 resolves and looks up every asset its policy names.
 
+## Gap detection
+
+After planning (tenants with automatic coverage on), at most every 15
+minutes per tenant, the loop reads one health line per capability:
+applicable pairs, gaps (no success for more than twice the cadence), pairs
+failing 3 or more times in a row, and pairs settled in the last 24 h with
+and without the expected output. It raises:
+
+| Kind | When |
+|---|---|
+| `gap` | any gap |
+| `output_drop` | no expected output over at least 20 settled inputs in 24 h (a broken or blocked tool) |
+| `failing` | a pair failed 3 or more times in a row |
+
+Each alert goes to the tenant's active administrators in-app
+(`coverage_gap`) and to its integrations (event `coverage_gap`, default-on
+for new integrations, not severity-filtered), at most once per tenant,
+capability and kind every 20 h (claimed in `controller_leases`, so restarts
+and replicas do not repeat it). The operator sees fleet-wide aggregates with
+no tenant label: `openctem_asset_coverage_gap_pairs{capability}` and
+`openctem_asset_coverage_alerts_total{kind,capability}`.
+
 ## Other writers
 
 - DNS checks (`internal/app/easmdns`): rows `dns.dangling` and `dns.email`.

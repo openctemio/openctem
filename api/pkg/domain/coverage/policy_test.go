@@ -84,3 +84,25 @@ func TestDueTargetAndBackoff(t *testing.T) {
 		t.Error("backoff is wrong")
 	}
 }
+
+func TestHealthAlerts(t *testing.T) {
+	for name, c := range map[string]struct {
+		h    CapabilityHealth
+		want string
+	}{
+		"healthy":            {CapabilityHealth{Applicable: 10, OK: 5}, ""},
+		"gap":                {CapabilityHealth{Applicable: 10, Gaps: 2, OK: 5}, AlertGap},
+		"output drop":        {CapabilityHealth{Applicable: 30, NoOutput: 20}, AlertOutputDrop},
+		"few without output": {CapabilityHealth{Applicable: 30, NoOutput: 19}, ""},
+		"some output":        {CapabilityHealth{Applicable: 30, NoOutput: 25, OK: 1}, ""},
+		"failing":            {CapabilityHealth{Applicable: 3, Failing: 1, OK: 2}, AlertFailing},
+	} {
+		got := ""
+		if a := c.h.Alerts(); len(a) > 0 {
+			got = a[0]
+		}
+		if got != c.want {
+			t.Errorf("%s: alerts = %v, want %q", name, c.h.Alerts(), c.want)
+		}
+	}
+}
