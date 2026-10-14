@@ -533,12 +533,22 @@ func (r *SuppressionRepository) IsTenantOwner(ctx context.Context, tenantID, use
 	return ok, nil
 }
 
-// RecordSuppression records that a finding was suppressed by a rule.
+// RecordSuppression records that a finding was suppressed by a rule. A
+// finding the rule made accepted takes the rule's expiry as the end of its
+// acceptance (findings.acceptance_expires_at, read by the CI gate); the rule
+// and the finding must belong to the same tenant.
 func (r *SuppressionRepository) RecordSuppression(ctx context.Context, findingID, ruleID shared.ID, appliedBy string) error {
 	query := `
-		INSERT INTO finding_suppressions (finding_id, suppression_rule_id, applied_by)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING
+		WITH rec AS (
+			INSERT INTO finding_suppressions (finding_id, suppression_rule_id, applied_by)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (finding_id, suppression_rule_id) DO NOTHING
+		)
+		UPDATE findings f
+		SET acceptance_expires_at = sr.expires_at
+		FROM suppression_rules sr
+		WHERE f.id = $1 AND sr.id = $2 AND sr.tenant_id = f.tenant_id
+		  AND f.status = 'accepted' AND sr.expires_at IS NOT NULL
 	`
 
 	_, err := r.db.ExecContext(ctx, query, findingID.String(), ruleID.String(), appliedBy)
