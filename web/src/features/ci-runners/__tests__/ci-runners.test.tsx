@@ -477,7 +477,7 @@ describe('CITrustSettings', () => {
   })
 
   it('a policy can block dependency vulnerabilities only when a fix exists', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [
       {
         id: 'gp1',
@@ -508,7 +508,7 @@ describe('CITrustSettings', () => {
   })
 
   it('deleting a repository gate policy asks first', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
     mockDeletePolicy.mockResolvedValue(undefined)
     render(<CITrustSettings />)
