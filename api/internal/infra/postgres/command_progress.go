@@ -5,9 +5,12 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/lib/pq"
+
+	"github.com/openctemio/ctis/politeness"
 
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -34,11 +37,12 @@ func budgetSecondsSQL(key string, lo, hi int) string {
 		THEN LEAST(GREATEST((c.payload->'budget'->>'%[1]s')::bigint, %[2]d), %[3]d) END`, key, lo, hi)
 }
 
-// clearProgressSQL resets a command's progress, liveness and stop request
-// (a claim or a re-queue starts them afresh).
+// clearProgressSQL resets a command's progress, liveness, stop request and
+// released hosts (a claim or a re-queue starts them afresh: the command
+// holds all its hosts again).
 const clearProgressSQL = `progress_done = NULL, progress_total = NULL, last_progress_at = NULL,
 		    progress_records = NULL, progress_output_bytes = NULL, progress_cpu_ms = NULL,
-		    progress_cpu_mark = NULL, stop_requested_at = NULL`
+		    progress_cpu_mark = NULL, stop_requested_at = NULL, settled_host_keys = NULL`
 
 // livenessReportedSQL: the holder reports per-target progress or liveness
 // counters for c, so its stall can be judged (a sensor that reports
@@ -52,8 +56,25 @@ func clampCounter(v int64) int64 {
 	return min(max(v, 0), command.MaxLivenessCounter)
 }
 
+// boundReleasedKeys is the released keys of one heartbeat entry: without
+// empty or over-long keys, at most politeness.MaxKeys.
+func boundReleasedKeys(keys []string) []string {
+	out := make([]string, 0, min(len(keys), politeness.MaxKeys))
+	for _, k := range keys {
+		if len(out) == politeness.MaxKeys {
+			break
+		}
+		if k != "" && len(k) <= command.MaxReleasedKeyLen {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // RecordProgress records the progress a heartbeat reports for the commands
-// sensorID holds in tenantID. Done is clamped to [0, total] and total to the
+// sensorID holds in tenantID. Host keys the holder released (its settled
+// targets no longer need them) stop holding other work back: only keys of
+// the command itself, added to those released before within the claim. Done is clamped to [0, total] and total to the
 // command's target count; done and the liveness counters never go down
 // within a claim. last_progress_at moves only when a signal moves: done,
 // records or output bytes grow, or the CPU time grows by command.CPUMoveMs
@@ -71,6 +92,7 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 	records := make([]int64, 0, n)
 	outBytes := make([]int64, 0, n)
 	cpu := make([]int64, 0, n)
+	released := map[string][]string{}
 	for id, p := range progress {
 		if len(ids) == command.MaxProgressEntries {
 			break
@@ -84,6 +106,13 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 		records = append(records, clampCounter(p.Records))
 		outBytes = append(outBytes, clampCounter(p.OutputBytes))
 		cpu = append(cpu, clampCounter(p.CPUMs))
+		if keys := boundReleasedKeys(p.ReleasedKeys); len(keys) > 0 {
+			released[id] = keys
+		}
+	}
+	releasedJSON, err := json.Marshal(released)
+	if err != nil {
+		return 0, fmt.Errorf("failed to encode released hosts: %w", err)
 	}
 	if len(ids) == 0 {
 		return 0, nil
@@ -97,7 +126,16 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 		    progress_cpu_ms = GREATEST(COALESCE(c.progress_cpu_ms, 0), n.cpu),
 		    progress_cpu_mark = CASE WHEN c.progress_cpu_mark IS NULL OR n.cpu_moved THEN n.cpu ELSE c.progress_cpu_mark END,
 		    last_progress_at = CASE WHEN c.last_progress_at IS NULL OR n.moved THEN NOW() ELSE c.last_progress_at END,
-		    stop_requested_at = CASE WHEN n.moved THEN NULL ELSE c.stop_requested_at END
+		    stop_requested_at = CASE WHEN n.moved THEN NULL ELSE c.stop_requested_at END,
+		    -- Released hosts only grow within a claim, and only keys of the
+		    -- command itself count (a sensor frees nothing it does not hold).
+		    settled_host_keys = CASE WHEN c.host_keys IS NULL OR NOT ($10::jsonb ? c.id::text)
+		        THEN c.settled_host_keys
+		        ELSE NULLIF(ARRAY(
+		            SELECT DISTINCT k FROM unnest(COALESCE(c.settled_host_keys, '{}'::text[])
+		                || ARRAY(SELECT jsonb_array_elements_text($10::jsonb -> c.id::text))) AS k
+		            WHERE k = ANY(c.host_keys)
+		            ORDER BY k), '{}'::text[]) END
 		FROM (
 			SELECT m.*,
 			       (m.done > COALESCE(m.old_done, 0) OR m.records > COALESCE(m.old_records, 0)
@@ -119,7 +157,7 @@ func (r *CommandRepository) RecordProgress(ctx context.Context, tenantID, sensor
 		) n
 		WHERE c.id = n.id`,
 		tenantID.String(), sensorID.String(), pq.Array(ids), pq.Array(done), pq.Array(total),
-		pq.Array(records), pq.Array(outBytes), pq.Array(cpu), command.CPUMoveMs)
+		pq.Array(records), pq.Array(outBytes), pq.Array(cpu), command.CPUMoveMs, string(releasedJSON))
 	if err != nil {
 		return 0, fmt.Errorf("failed to record command progress: %w", err)
 	}
