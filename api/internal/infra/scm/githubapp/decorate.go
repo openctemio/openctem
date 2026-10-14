@@ -64,9 +64,23 @@ func repoPath(owner, repo string) string {
 	return "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 }
 
-// installationDo sends a request with the installation's token.
-func (a *App) installationDo(ctx context.Context, installationID int64, method, path string, body, out any) error {
-	tok, err := a.InstallationToken(ctx, installationID)
+// decorationPermissions are what posting a check and a pull request comment
+// needs; the token carries nothing more.
+var decorationPermissions = map[string]string{"checks": "write", "pull_requests": "write", "metadata": "read"}
+
+// installationDo sends a request about one repository with an installation
+// token narrowed to that repository and to decorationPermissions.
+func (a *App) installationDo(ctx context.Context, installationID int64, repo, method, path string, body, out any) error {
+	return a.installationDoWith(ctx, installationID, repo, decorationPermissions, method, path, body, out)
+}
+
+// commitReadPermissions read a commit (its parents). An installation that
+// was not granted contents read gets 422 from the token request, which the
+// caller treats as "cannot tell".
+var commitReadPermissions = map[string]string{"contents": "read", "metadata": "read"}
+
+func (a *App) installationDoWith(ctx context.Context, installationID int64, repo string, perms map[string]string, method, path string, body, out any) error {
+	tok, err := a.RepositoryToken(ctx, installationID, repo, perms)
 	if err != nil {
 		return err
 	}
@@ -80,7 +94,8 @@ func (a *App) CommitParents(ctx context.Context, installationID int64, owner, re
 			SHA string `json:"sha"`
 		} `json:"parents"`
 	}
-	if err := a.installationDo(ctx, installationID, http.MethodGet, repoPath(owner, repo)+"/commits/"+url.PathEscape(sha), nil, &c); err != nil {
+	if err := a.installationDoWith(ctx, installationID, repo, commitReadPermissions, http.MethodGet,
+		repoPath(owner, repo)+"/commits/"+url.PathEscape(sha), nil, &c); err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(c.Parents))
@@ -101,13 +116,13 @@ func (a *App) CreateCheckRun(ctx context.Context, installationID int64, owner, r
 		"details_url": c.DetailsURL, "external_id": c.ExternalID,
 		"output": map[string]any{"title": c.Title, "summary": c.Summary, "annotations": c.Annotations},
 	}
-	return a.installationDo(ctx, installationID, http.MethodPost, repoPath(owner, repo)+"/check-runs", body, nil)
+	return a.installationDo(ctx, installationID, repo, http.MethodPost, repoPath(owner, repo)+"/check-runs", body, nil)
 }
 
 // GetPullRequest reads a pull request.
 func (a *App) GetPullRequest(ctx context.Context, installationID int64, owner, repo string, number int) (*PullRequest, error) {
 	var pr PullRequest
-	if err := a.installationDo(ctx, installationID, http.MethodGet,
+	if err := a.installationDo(ctx, installationID, repo, http.MethodGet,
 		repoPath(owner, repo)+"/pulls/"+strconv.Itoa(number), nil, &pr); err != nil {
 		return nil, err
 	}
@@ -117,7 +132,7 @@ func (a *App) GetPullRequest(ctx context.Context, installationID int64, owner, r
 // PullRequestsForCommit lists the pull requests a commit belongs to.
 func (a *App) PullRequestsForCommit(ctx context.Context, installationID int64, owner, repo, sha string) ([]PullRequest, error) {
 	var prs []PullRequest
-	if err := a.installationDo(ctx, installationID, http.MethodGet,
+	if err := a.installationDo(ctx, installationID, repo, http.MethodGet,
 		repoPath(owner, repo)+"/commits/"+url.PathEscape(sha)+"/pulls?per_page=10", nil, &prs); err != nil {
 		return nil, err
 	}
@@ -131,7 +146,7 @@ func (a *App) FindIssueComment(ctx context.Context, installationID int64, owner,
 	for page := 1; page <= 5; page++ {
 		var list []IssueComment
 		path := fmt.Sprintf("%s/issues/%d/comments?per_page=100&page=%d", repoPath(owner, repo), number, page)
-		if err := a.installationDo(ctx, installationID, http.MethodGet, path, nil, &list); err != nil {
+		if err := a.installationDo(ctx, installationID, repo, http.MethodGet, path, nil, &list); err != nil {
 			return nil, err
 		}
 		for i := range list {
@@ -158,9 +173,9 @@ func (a *App) UpsertIssueComment(ctx context.Context, installationID int64, owne
 		return err
 	}
 	if existing != nil {
-		return a.installationDo(ctx, installationID, http.MethodPatch,
+		return a.installationDo(ctx, installationID, repo, http.MethodPatch,
 			fmt.Sprintf("%s/issues/comments/%d", repoPath(owner, repo), existing.ID), map[string]string{"body": body}, nil)
 	}
-	return a.installationDo(ctx, installationID, http.MethodPost,
+	return a.installationDo(ctx, installationID, repo, http.MethodPost,
 		fmt.Sprintf("%s/issues/%d/comments", repoPath(owner, repo), number), map[string]string{"body": body}, nil)
 }

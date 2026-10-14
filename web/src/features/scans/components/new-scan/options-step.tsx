@@ -12,7 +12,6 @@ import { useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { ChevronDown, Cloud, Server, Sparkles } from 'lucide-react'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -25,6 +24,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { maxDurationInput } from '@/features/scans/lib/scan-form'
+import { CommittedNumberInput } from '@/components/ui/committed-number-input'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { useScanProfiles } from '@/lib/api/scan-profile-hooks'
 import type { NewScanFormData, SensorPreference } from '../../types'
@@ -165,13 +165,14 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
               <Label htmlFor="timeout-seconds" className="text-xs">
                 {t('scans.options.timeout')}
               </Label>
-              <Input
+              <CommittedNumberInput
                 id="timeout-seconds"
-                type="number"
                 min={30}
                 max={86400}
-                value={data.timeoutSeconds > 0 ? data.timeoutSeconds : ''}
-                onChange={(e) => onChange({ timeoutSeconds: maxDurationInput(e.target.value) })}
+                value={data.timeoutSeconds}
+                display={(v) => (v > 0 ? String(v) : '')}
+                parse={maxDurationInput}
+                onCommit={(timeoutSeconds) => onChange({ timeoutSeconds })}
               />
               <p className="text-muted-foreground text-[11px]">{t('scans.options.timeoutRange')}</p>
             </div>
@@ -179,17 +180,13 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
               <Label htmlFor="max-retries" className="text-xs">
                 {t('scans.options.maxRetries')}
               </Label>
-              <Input
+              <CommittedNumberInput
                 id="max-retries"
-                type="number"
                 min={0}
                 max={10}
                 value={data.maxRetries}
-                onChange={(e) =>
-                  onChange({
-                    maxRetries: Math.max(0, Math.min(10, parseInt(e.target.value || '0', 10) || 0)),
-                  })
-                }
+                parse={(text) => Math.max(0, Math.min(10, parseInt(text || '0', 10) || 0))}
+                onCommit={(maxRetries) => onChange({ maxRetries })}
               />
               <p className="text-muted-foreground text-[11px]">{t('scans.options.noRetries')}</p>
             </div>
@@ -197,20 +194,13 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
               <Label htmlFor="retry-backoff" className="text-xs">
                 {t('scans.options.backoff')}
               </Label>
-              <Input
+              <CommittedNumberInput
                 id="retry-backoff"
-                type="number"
                 min={10}
                 max={86400}
                 value={data.retryBackoffSeconds}
-                onChange={(e) =>
-                  onChange({
-                    retryBackoffSeconds: Math.max(
-                      10,
-                      Math.min(86400, parseInt(e.target.value || '0', 10) || 60)
-                    ),
-                  })
-                }
+                parse={(text) => Math.max(10, Math.min(86400, parseInt(text || '0', 10) || 60))}
+                onCommit={(retryBackoffSeconds) => onChange({ retryBackoffSeconds })}
                 disabled={data.maxRetries === 0}
               />
               <p className="text-muted-foreground text-[11px]">{t('scans.options.backoffHelp')}</p>

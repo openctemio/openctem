@@ -9,7 +9,7 @@
 import { IntensityBadge } from './intensity-badge'
 import { useMemo, useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Hash, Tag, Trash2 } from 'lucide-react'
+import { Copy, Hash, Pencil, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -52,12 +52,18 @@ export interface ScanConfigDetailSheetProps {
   onOpenChange: (open: boolean) => void
   /** Opens the page's delete confirmation. */
   onDelete: (config: ScanConfig) => void
+  /** Opens the page's Edit scan dialog. */
+  onEdit?: (config: ScanConfig) => void
+  /** Opens the page's Clone scan dialog. */
+  onClone?: (config: ScanConfig) => void
 }
 
 export function ScanConfigDetailSheet({
   config,
   onOpenChange,
   onDelete,
+  onEdit,
+  onClone,
 }: ScanConfigDetailSheetProps) {
   const { t } = useTranslation()
   const tabs: DetailTab<Tab>[] = TAB_KEYS.map((x) => ({ value: x.value, label: t(x.key) }))
@@ -68,18 +74,25 @@ export function ScanConfigDetailSheet({
     setTab('overview')
   }
   const canDelete = useHasPermission(Permission.ScansDelete)
+  const canWrite = useHasPermission(Permission.ScansWrite)
   if (!config) return null
 
-  const menu: DetailMenuItem[] = [
-    {
-      label: t('scans.sheet.copyId'),
-      icon: Hash,
-      onSelect: () => {
-        copyToClipboard(config.id)
-        toast.success(t('scans.sheet.idCopied'))
-      },
+  const menu: DetailMenuItem[] = []
+  if (canWrite && onEdit) {
+    menu.push({ label: t('scans.sheet.edit'), icon: Pencil, onSelect: () => onEdit(config) })
+  }
+  if (canWrite && onClone) {
+    menu.push({ label: t('scans.sheet.clone'), icon: Copy, onSelect: () => onClone(config) })
+  }
+  menu.push({
+    label: t('scans.sheet.copyId'),
+    icon: Hash,
+    separatorBefore: menu.length > 0,
+    onSelect: () => {
+      copyToClipboard(config.id)
+      toast.success(t('scans.sheet.idCopied'))
     },
-  ]
+  })
   if (canDelete) {
     menu.push({
       label: t('scans.sheet.deleteConfig'),
