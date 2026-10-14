@@ -36,6 +36,7 @@ let lastRunFilters: unknown
 let gatePolicies: unknown[] = []
 let overrides: unknown[] = []
 const mockDeletePolicy = vi.fn()
+const mockSavePolicy = vi.fn()
 const mockRevokeOverride = vi.fn()
 
 vi.mock('../api/use-ci', async (importOriginal) => ({
@@ -65,7 +66,7 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
     isLoading: false,
     mutate: vi.fn(),
   }),
-  useSaveGatePolicy: () => ({ trigger: vi.fn(), isMutating: false }),
+  useSaveGatePolicy: () => ({ trigger: mockSavePolicy, isMutating: false }),
   useDeleteGatePolicy: () => ({ trigger: mockDeletePolicy, isMutating: false }),
   useGateOverrides: () => ({ data: { data: overrides }, isLoading: false, mutate: vi.fn() }),
   useCreateGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
@@ -218,6 +219,7 @@ describe('CIRunsView', () => {
   beforeEach(() => {
     runs = []
     runDetail = undefined
+    window.history.replaceState({}, '', '/')
   })
 
   it('explains how to start when there is no run', () => {
@@ -273,6 +275,131 @@ describe('CIRunsView', () => {
     render(<CIRunsView />)
     expect(lastRunFilters).toEqual({ verdict: '', page: 1 })
   })
+
+  const judgedRun = {
+    ...failingRun,
+    id: 'r2',
+    repository_asset_id: 'asset-1',
+    commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+    commit_verified: true,
+    status: 'evaluated',
+    scan_failures: 0,
+    tools: [{ name: 'semgrep', version: '1.179.0' }],
+    decoration_state: 'failed',
+    decoration_detail: 'could not post the check: GitHub answered 403',
+    verdict_detail: {
+      verdict: 'fail',
+      repo_file: 'applied',
+      links: { findings: '/findings?asset_id=asset-1' },
+      summary: { evaluated: 2, new: 2, pre_existing: 0, accepted: 0, blocking: 1, monitored: 3 },
+      reasons: [
+        { code: 'severity', title: 'SQL injection', message: 'high', mode: 'block' },
+        { code: 'severity', title: 'Weak hash', message: 'medium', mode: 'comment' },
+      ],
+    },
+  }
+
+  it('separates blocking from comment-only reasons and shows how the check was posted', async () => {
+    runDetail = judgedRun
+    window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
+    render(<CIRunsView />)
+    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    expect(within(blocking).getByText('SQL injection')).toBeInTheDocument()
+    expect(within(blocking).queryByText('Weak hash')).not.toBeInTheDocument()
+    const comment = screen.getByRole('list', { name: /comment only/i })
+    expect(within(comment).getByText('Weak hash')).toBeInTheDocument()
+    expect(screen.getByText(/3 more in monitor mode/)).toBeInTheDocument()
+    const deco = screen.getByTestId('ci-run-decoration')
+    expect(within(deco).getByText('Failed')).toBeInTheDocument()
+    expect(within(deco).getByText(/GitHub answered 403/)).toBeInTheDocument()
+    expect(screen.getByText('semgrep 1.179.0')).toBeInTheDocument()
+    expect(screen.getByText('Applied (tightened the policy)')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /view the run's findings/i })).toHaveAttribute(
+      'href',
+      '/findings?asset_id=asset-1'
+    )
+  })
+
+  it('offers break-glass on a failed run to administrators only', async () => {
+    runDetail = judgedRun
+    window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
+    perms = []
+    const { unmount } = render(<CIRunsView />)
+    await screen.findByRole('list', { name: 'Blocking' })
+    expect(screen.queryByTestId('ci-run-break-glass')).not.toBeInTheDocument()
+    unmount()
+    perms = ['scans:ci:override']
+    render(<CIRunsView />)
+    await userEvent.click(await screen.findByTestId('ci-run-break-glass'))
+    expect(await screen.findByLabelText('Commit')).toHaveValue(judgedRun.commit_sha)
+    expect(screen.getByLabelText('Repository asset ID')).toHaveValue('asset-1')
+    perms = []
+  })
+
+  it('says when a pass came through a break-glass override', async () => {
+    runDetail = {
+      ...judgedRun,
+      verdict: 'pass',
+      would_fail: true,
+      override: {
+        id: 'o1',
+        reason: 'release hotfix',
+        created_by: 'admin@acme.test',
+        expires_at: '2099-01-01T00:00:00Z',
+      },
+      verdict_detail: {
+        ...judgedRun.verdict_detail,
+        verdict: 'pass',
+        would_fail: true,
+        reasons: [],
+      },
+    }
+    window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
+    render(<CIRunsView />)
+    const callout = await screen.findByTestId('ci-run-override')
+    expect(within(callout).getByText(/admin@acme.test: release hotfix/)).toBeInTheDocument()
+    expect(screen.getByText('Pass (override or warn)')).toBeInTheDocument()
+    expect(screen.queryByTestId('ci-run-break-glass')).not.toBeInTheDocument()
+  })
+
+  it('marks a running run and a pass that would have failed in the list', () => {
+    runs = [
+      { ...failingRun, id: 'a', verdict: undefined, status: 'running' },
+      { ...failingRun, id: 'b', verdict: 'pass', would_fail: true, status: 'evaluated' },
+    ]
+    render(<CIRunsView />)
+    const rows = screen.getAllByTestId('ci-run-row')
+    expect(within(rows[0]).getByText('Running')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('Pass (override or warn)')).toBeInTheDocument()
+  })
+
+  it.each([390, 1280])('renders the run detail at %ipx without fixed-width rows', async (width) => {
+    window.innerWidth = width
+    window.dispatchEvent(new Event('resize'))
+    runDetail = {
+      ...judgedRun,
+      repository: 'github.com/acme/' + 'a-very-long-repository-name'.repeat(4),
+    }
+    window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
+    render(<CIRunsView />)
+    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    // Labels shrink on a phone (minmax), long values wrap instead of
+    // widening the sheet.
+    const grid = document.querySelector('dl')
+    expect(grid?.className).toContain('minmax(6rem,8rem)')
+    expect(within(blocking).getByText('SQL injection').className).toContain('break-words')
+    expect(
+      screen.getByRole('heading', { name: /a-very-long-repository-name/ }).className
+    ).toContain('break-words')
+  })
+
+  it('keeps the open run in the URL', async () => {
+    runs = [failingRun]
+    runDetail = { ...failingRun }
+    render(<CIRunsView />)
+    await userEvent.click(screen.getByTestId('ci-run-row'))
+    expect(window.location.search).toContain('run=r1')
+  })
 })
 
 describe('CITrustSettings', () => {
@@ -284,6 +411,37 @@ describe('CITrustSettings', () => {
     mockSaveTrust.mockReset()
     mockDeletePolicy.mockReset()
     mockRevokeOverride.mockReset()
+  })
+
+  it('a policy can block dependency vulnerabilities only when a fix exists', async () => {
+    perms = ['scans:ci:read', 'scans:ci:write']
+    gatePolicies = [
+      {
+        id: 'gp1',
+        scope_type: 'tenant',
+        mode: 'enforce',
+        fail_on_severity: 'high',
+        fixable_only: true,
+      },
+    ]
+    mockSavePolicy.mockReset()
+    mockSavePolicy.mockResolvedValue(undefined)
+    render(<CITrustSettings />)
+    await userEvent.click(screen.getByRole('tab', { name: /gate policy/i }))
+    expect(
+      screen.getByText('Vulnerabilities without a fix: listed, not blocking (KEV still fails)')
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^edit/i }))
+    const dialog = await screen.findByRole('dialog')
+    const toggle = within(dialog).getByRole('switch', {
+      name: 'Dependency and image vulnerabilities block only when a fix exists',
+    })
+    expect(toggle).toBeChecked()
+    await userEvent.click(toggle)
+    await userEvent.click(within(dialog).getByRole('button', { name: /^save/i }))
+    expect(mockSavePolicy).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ fixable_only: false }) })
+    )
   })
 
   it('deleting a repository gate policy asks first', async () => {

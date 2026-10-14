@@ -37,6 +37,10 @@ var ErrRunEvaluated = fmt.Errorf("%w: the CI run already has a verdict", shared.
 
 var ErrRunReportCap = fmt.Errorf("%w: a CI run accepts at most %d reports", shared.ErrConflict, MaxRunReports)
 
+// ErrRunChanged: a report was recorded while the verdict was computed, so
+// the verdict did not see it; the caller judges the run again.
+var ErrRunChanged = fmt.Errorf("%w: the CI run recorded a report while it was judged", shared.ErrConflict)
+
 // Run statuses.
 const (
 	StatusRunning   = "running"
@@ -107,8 +111,13 @@ type Run struct {
 	ScanFailures  *int
 	Tools         []ToolLabel
 	TemplateRef   string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// DecorationState is where posting the verdict to the code host stands
+	// (Decoration* constants, "" when nothing was queued); DecorationDetail
+	// a short fixed explanation (never raw code-host text).
+	DecorationState  string
+	DecorationDetail string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // NewToken returns a fresh upload token and its hash. Only the hash is
@@ -156,15 +165,27 @@ type RunFinding struct {
 	Status      string
 	FindingType string
 	// Source is the finding's technique (sast, sca, secret, iac, container).
-	Source              string
-	FilePath            string
-	StartLine           int
-	IsInKEV             bool
-	EPSSScore           *float64
+	Source    string
+	FilePath  string
+	StartLine int
+	IsInKEV   bool
+	EPSSScore *float64
+	// FixAvailable: a fixed version of the vulnerable component exists.
+	FixAvailable        bool
 	Suppressed          bool
 	AcceptanceExpiresAt *time.Time
 	FirstDetectedAt     *time.Time
 	LastReopenedAt      *time.Time
+}
+
+// IsVulnerability reports whether the finding is a vulnerability of a
+// dependency or an image (sca, container), the kind a fixed version solves.
+func (f RunFinding) IsVulnerability() bool {
+	switch strings.ToLower(f.Source) {
+	case "sca", "container":
+		return true
+	}
+	return strings.EqualFold(f.FindingType, "vulnerability")
 }
 
 // Decoration states: posting a run's verdict to the code host (RFC-077).
