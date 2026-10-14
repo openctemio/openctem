@@ -275,10 +275,10 @@ properties:
   host: { label: Host, label_vi: Máy chủ }
   scheme: { label: Scheme, label_vi: Lược đồ }
   status_code: { label: Status code, label_vi: Mã trạng thái, classes: [service, web_endpoint, application] }
-  title: { label: Title, label_vi: Tiêu đề }
+  title: { label: Page title, label_vi: Tiêu đề trang }
   content_length: { label: Content length, label_vi: Độ dài nội dung, classes: [service, web_endpoint, application] }
   content_type: { label: Content type, label_vi: Kiểu nội dung, classes: [service, web_endpoint, application] }
-  server: { label: Server, label_vi: Máy chủ web, synonyms: [web_server] }
+  server: { label: HTTP server header, label_vi: Header Server (HTTP), synonyms: [web_server] }
   technologies: { label: Technologies, label_vi: Công nghệ, synonyms: [technology] }
   cdn: { label: CDN, label_vi: CDN }
   waf: { label: WAF, label_vi: WAF }
