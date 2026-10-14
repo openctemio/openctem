@@ -106,6 +106,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-088](RFC-088-scope-aware-target-allocation.md) | Scope-aware target allocation | Accepted (2026-10-13); steps 1–8 implemented, steps 9–14 planned |
 | [RFC-089](RFC-089-reachability-aware-routing.md) | Reachability-aware routing | Draft (2026-10-13); steps 1–4 and 6 in progress, the rest designed |
 | [RFC-090](RFC-090-work-pool.md) | Work pool | Accepted (2026-10-13); W0–W2 in progress, the rest designed |
+| [RFC-091](RFC-091-code-scanning-baseline.md) | Code scanning — baseline first, then diff-aware CI, with periodic re-review | Accepted (2026-10-14). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
