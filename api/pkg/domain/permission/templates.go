@@ -121,7 +121,7 @@ var roleTemplates = []RoleTemplate{
 		ID:   "appsec-engineer",
 		Name: "AppSec engineer",
 		Description: "Runs code and dependency scanning for their repositories, triages application " +
-			"findings and works the CI gate with developers.",
+			"findings, and runs the CI gate: gate policies, expected scans and break-glass.",
 		Personas: []string{"Application security engineer", "DevSecOps engineer"},
 		Permissions: join(readCore, []Permission{
 			ComponentsWrite, AssetsWrite,
@@ -129,7 +129,12 @@ var roleTemplates = []RoleTemplate{
 			SuppressionsRead, SuppressionsWrite,
 			ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScanProfilesWrite,
 			ScanWorkflowsRead, ToolsRead, ScannerTemplatesRead,
-			SCMConnectionsRead, CIRead, SLARead, ReportsRead,
+			SCMConnectionsRead, SLARead, ReportsRead,
+			// Runs the CI gate: gate policies and coverage expectations
+			// (policy), and break-glass for one commit (override, with
+			// step-up). Trust and code host connections issue upload
+			// credentials and stay with administrators (scans:ci:write).
+			CIRead, CIPolicy, CIOverride,
 		}),
 	},
 	{
