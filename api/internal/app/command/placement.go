@@ -75,12 +75,15 @@ type Placement struct {
 }
 
 // HostWait is why a command waits for its hosts: Held of its Total hosts
-// are held by the Holders (the tasks holding the most of them first). Only
+// are held by the Holders (the tasks holding the most of them first), and
+// CanStart of its Targets are on hosts nobody holds (-1: cannot tell). Only
 // counts and the organization's own tasks; never host names.
 type HostWait struct {
-	Held    int
-	Total   int
-	Holders []commanddom.HostHolder
+	Held     int
+	Total    int
+	Targets  int
+	CanStart int
+	Holders  []commanddom.HostHolder
 }
 
 // ExplainPlacement explains why the command waits. Only a pending command
@@ -100,8 +103,12 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 		return out, nil
 	}
 	out.JobReasons = jobReasons(job)
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, fmt.Errorf("read command: %w", err)
+	}
 	if !job.HostFree {
-		hw, err := s.hostWait(ctx, tenantID, commandID)
+		hw, err := s.hostWait(ctx, cmd)
 		if err != nil {
 			return nil, err
 		}
@@ -109,10 +116,6 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 	}
 	if len(claims) > MaxPlacementSensors {
 		claims, out.Truncated = claims[:MaxPlacementSensors], true
-	}
-	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
-	if err != nil {
-		return nil, fmt.Errorf("read command: %w", err)
 	}
 	now := time.Now()
 	if s.now != nil {
@@ -138,10 +141,7 @@ func (s *Service) ExplainRunTaskPlacement(ctx context.Context, tenantID, runID, 
 	if err != nil {
 		return nil, err
 	}
-	var p struct {
-		RunID string `json:"scan_run_id"`
-	}
-	if json.Unmarshal(cmd.Payload, &p) != nil || p.RunID != runID.String() {
+	if payloadRunID(cmd.Payload) != runID.String() {
 		return nil, fmt.Errorf("%w: task not found", shared.ErrNotFound)
 	}
 	return s.ExplainPlacement(ctx, tenantID, commandID)
@@ -167,24 +167,64 @@ func jobReasons(j commanddom.PlacementJob) []string {
 // maxHostHoldersRead bounds the holders read to count the held hosts.
 const maxHostHoldersRead = 50
 
-// hostWait counts the command's hosts that tasks of its tenant hold and
-// names the tasks holding the most; nil when the repository cannot tell.
-func (s *Service) hostWait(ctx context.Context, tenantID, commandID shared.ID) (*HostWait, error) {
+// RunTaskHostWait is why a pending task of a run waits for its hosts; nil
+// when it does not (it is not pending, or nothing holds its hosts). A
+// command that is not of that run (or not of the tenant) is
+// shared.ErrNotFound.
+func (s *Service) RunTaskHostWait(ctx context.Context, tenantID, runID, commandID shared.ID) (*HostWait, error) {
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if payloadRunID(cmd.Payload) != runID.String() {
+		return nil, fmt.Errorf("%w: task not found", shared.ErrNotFound)
+	}
+	if cmd.Status != commanddom.CommandStatusPending {
+		return nil, nil
+	}
+	hw, err := s.hostWait(ctx, cmd)
+	if err != nil || hw == nil || hw.Held == 0 {
+		return nil, err
+	}
+	return hw, nil
+}
+
+// payloadRunID is the scan run a command payload names ("" when none).
+func payloadRunID(payload json.RawMessage) string {
+	var p struct {
+		RunID string `json:"scan_run_id"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	return p.RunID
+}
+
+// hostWait counts the command's hosts that tasks of its tenant hold, how
+// many of its targets are on free hosts, and names the tasks holding the
+// most; nil when the repository cannot tell.
+func (s *Service) hostWait(ctx context.Context, cmd *commanddom.Command) (*HostWait, error) {
 	reader, ok := s.repo.(commanddom.HostHoldersReader)
 	if !ok {
 		return nil, nil
 	}
-	keys, holders, err := reader.HostHolders(ctx, tenantID, commandID, maxHostHoldersRead)
+	keys, holders, err := reader.HostHolders(ctx, cmd.TenantID, cmd.ID, maxHostHoldersRead)
 	if err != nil {
 		return nil, fmt.Errorf("read host holders: %w", err)
 	}
 	held := map[string]bool{}
+	var heldKeys []string
 	for _, h := range holders {
 		for _, k := range h.Keys {
 			held[k] = true
+			heldKeys = append(heldKeys, k)
 		}
 	}
-	hw := &HostWait{}
+	targets := commanddom.PayloadTargets(cmd.Payload)
+	hw := &HostWait{Targets: len(targets), CanStart: -1}
+	if p, ok := commanddom.PartitionHeld(targets, payloadNetwork(cmd.Payload), keys, heldKeys); ok {
+		hw.CanStart = len(p.Free)
+	}
 	for _, k := range keys {
 		if strings.HasPrefix(k, commanddom.HostKeyAddrInBucket) {
 			continue // the bucket marker of an address: not a host of its own
