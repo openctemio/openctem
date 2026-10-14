@@ -1,0 +1,311 @@
+{
+  "_comment": "CTIS findings ctis importer wrote for one small tree scanned with the same rules by semgrep 1.179 without a login (format semgrep) and by opengrep 1.30.2 (format opengrep).",
+  "semgrep": [
+    {
+      "type": "vulnerability",
+      "title": "User input reaches a shell command.",
+      "message": "User input reaches a shell command.",
+      "severity": "high",
+      "confidence": 90,
+      "impact": "high",
+      "likelihood": "medium",
+      "category": "security",
+      "vulnerability_class": [
+        "Command Injection"
+      ],
+      "subcategory": [
+        "vuln"
+      ],
+      "rule_id": "example.python.command-injection",
+      "rule_name": "Command Injection",
+      "location": {
+        "path": "app.py",
+        "start_line": 8,
+        "end_line": 8,
+        "start_column": 5,
+        "end_column": 23
+      },
+      "vulnerability": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "cwe_id": "CWE-78",
+        "owasp_ids": [
+          "A03:2021 - Injection"
+        ]
+      },
+      "references": [
+        "https://cwe.mitre.org/data/definitions/78.html"
+      ],
+      "tags": [
+        "python",
+        "semgrep"
+      ],
+      "fingerprint": "82ff551a6a8cd4d8b829f46fd12fb6675d11b9c22b198a2fa1097efb08612dfa",
+      "native": {
+        "scheme": "other",
+        "vuln_id": "example.python.command-injection",
+        "severity": "ERROR",
+        "raw_ref": "/results/0"
+      },
+      "source_extra": {
+        "engine_kind": "OSS",
+        "rule_license": "MIT",
+        "validation_state": "NO_VALIDATOR"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "title": "MD5 is a weak hash.",
+      "message": "MD5 is a weak hash.",
+      "severity": "medium",
+      "confidence": 70,
+      "category": "security",
+      "rule_id": "example.python.weak-hash",
+      "rule_name": "Weak Hash",
+      "location": {
+        "path": "app.py",
+        "start_line": 12,
+        "end_line": 12,
+        "start_column": 12,
+        "end_column": 29
+      },
+      "vulnerability": {
+        "cwe_ids": [
+          "CWE-328"
+        ],
+        "cwe_id": "CWE-328"
+      },
+      "remediation": {
+        "recommendation": "Apply the suggested fix code.",
+        "fix_available": true,
+        "fix_code": "hashlib.sha256($...ARGS)"
+      },
+      "tags": [
+        "semgrep"
+      ],
+      "fingerprint": "0f069b45b56fa89f349d921941968ac51606dab3304d0da7c161ee1b5e9f40c8",
+      "native": {
+        "scheme": "other",
+        "vuln_id": "example.python.weak-hash",
+        "severity": "WARNING",
+        "raw_ref": "/results/1"
+      },
+      "source_extra": {
+        "engine_kind": "OSS",
+        "validation_state": "NO_VALIDATOR"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "title": "A script is loaded over plain HTTP.",
+      "message": "A script is loaded over plain HTTP.",
+      "severity": "low",
+      "confidence": 70,
+      "category": "security",
+      "rule_id": "example.html.plain-http-script",
+      "rule_name": "Plain Http Script",
+      "location": {
+        "path": "page.html",
+        "start_line": 3,
+        "end_line": 3,
+        "start_column": 1,
+        "end_column": 43
+      },
+      "tags": [
+        "semgrep"
+      ],
+      "fingerprint": "454f12cf0a3c1c6332126e7183baa4dd14077b8dcbd884f22036e475cb99ffbe",
+      "native": {
+        "scheme": "other",
+        "vuln_id": "example.html.plain-http-script",
+        "severity": "INFO",
+        "raw_ref": "/results/2"
+      },
+      "source_extra": {
+        "engine_kind": "OSS",
+        "validation_state": "NO_VALIDATOR"
+      }
+    }
+  ],
+  "opengrep": [
+    {
+      "type": "vulnerability",
+      "title": "User input reaches a shell command.",
+      "message": "User input reaches a shell command.",
+      "severity": "high",
+      "confidence": 90,
+      "impact": "high",
+      "likelihood": "medium",
+      "category": "security",
+      "vulnerability_class": [
+        "Command Injection"
+      ],
+      "subcategory": [
+        "vuln"
+      ],
+      "rule_id": "example.python.command-injection",
+      "rule_name": "Command Injection",
+      "location": {
+        "path": "app.py",
+        "start_line": 8,
+        "end_line": 8,
+        "start_column": 5,
+        "end_column": 23,
+        "snippet": "os.system(wrapped)"
+      },
+      "vulnerability": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "cwe_id": "CWE-78",
+        "owasp_ids": [
+          "A03:2021 - Injection"
+        ]
+      },
+      "references": [
+        "https://cwe.mitre.org/data/definitions/78.html"
+      ],
+      "tags": [
+        "python",
+        "opengrep"
+      ],
+      "fingerprint": "82ff551a6a8cd4d8b829f46fd12fb6675d11b9c22b198a2fa1097efb08612dfa",
+      "partial_fingerprints": {
+        "matchBasedId/v1": "a9853132551d74e3b2b749e33763ec950c6e7d1bec5b5cd04bf7a6414c935a88102a7c9d6dff7893e2cae2de826455fbf37b2d672893e51257bbe7ec67df308d_0"
+      },
+      "data_flow": {
+        "sources": [
+          {
+            "path": "app.py",
+            "line": 6,
+            "column": 11,
+            "content": "input(\"command: \")",
+            "type": "source"
+          }
+        ],
+        "intermediates": [
+          {
+            "path": "app.py",
+            "line": 6,
+            "column": 5,
+            "content": "cmd",
+            "index": 1,
+            "type": "propagator"
+          },
+          {
+            "path": "app.py",
+            "line": 7,
+            "column": 5,
+            "content": "wrapped",
+            "index": 2,
+            "type": "propagator"
+          }
+        ],
+        "sinks": [
+          {
+            "path": "app.py",
+            "line": 8,
+            "column": 5,
+            "content": "os.system(wrapped)",
+            "index": 3,
+            "type": "sink"
+          }
+        ],
+        "tainted": true
+      },
+      "native": {
+        "scheme": "other",
+        "vuln_id": "example.python.command-injection",
+        "severity": "ERROR",
+        "raw_ref": "/results/0"
+      },
+      "source_extra": {
+        "engine_kind": "OSS",
+        "rule_license": "MIT",
+        "validation_state": "NO_VALIDATOR"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "title": "MD5 is a weak hash.",
+      "message": "MD5 is a weak hash.",
+      "severity": "medium",
+      "confidence": 70,
+      "category": "security",
+      "rule_id": "example.python.weak-hash",
+      "rule_name": "Weak Hash",
+      "location": {
+        "path": "app.py",
+        "start_line": 12,
+        "end_line": 12,
+        "start_column": 12,
+        "end_column": 29,
+        "snippet": "return hashlib.md5(data).hexdigest()"
+      },
+      "vulnerability": {
+        "cwe_ids": [
+          "CWE-328"
+        ],
+        "cwe_id": "CWE-328"
+      },
+      "remediation": {
+        "recommendation": "Apply the suggested fix code.",
+        "fix_available": true,
+        "fix_code": "hashlib.sha256($...ARGS)"
+      },
+      "tags": [
+        "opengrep"
+      ],
+      "fingerprint": "0f069b45b56fa89f349d921941968ac51606dab3304d0da7c161ee1b5e9f40c8",
+      "partial_fingerprints": {
+        "matchBasedId/v1": "8c77dd9e299774b1ac641f3a5c47be9a995a6f8bccc97740f0994849bb42156d10bc66e6bf21ff43dfe9ce41974fbc2e0ac2de8c3d1ea75aad33f8a83959d28c_0"
+      },
+      "native": {
+        "scheme": "other",
+        "vuln_id": "example.python.weak-hash",
+        "severity": "WARNING",
+        "raw_ref": "/results/1"
+      },
+      "source_extra": {
+        "engine_kind": "OSS",
+        "validation_state": "NO_VALIDATOR"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "title": "A script is loaded over plain HTTP.",
+      "message": "A script is loaded over plain HTTP.",
+      "severity": "low",
+      "confidence": 70,
+      "category": "security",
+      "rule_id": "example.html.plain-http-script",
+      "rule_name": "Plain Http Script",
+      "location": {
+        "path": "page.html",
+        "start_line": 3,
+        "end_line": 3,
+        "start_column": 1,
+        "end_column": 43,
+        "snippet": "<script src=\"http://cdn.example.com/a.js\"></script>"
+      },
+      "tags": [
+        "opengrep"
+      ],
+      "fingerprint": "454f12cf0a3c1c6332126e7183baa4dd14077b8dcbd884f22036e475cb99ffbe",
+      "partial_fingerprints": {
+        "matchBasedId/v1": "68976b71a25f5c508e28b769371917e412ba8dbce51f976d735967f5e769849b10395650dc800d60d655c7abbff475e01057524b702b16cf079daf32f56fb800_0"
+      },
+      "native": {
+        "scheme": "other",
+        "vuln_id": "example.html.plain-http-script",
+        "severity": "INFO",
+        "raw_ref": "/results/2"
+      },
+      "source_extra": {
+        "engine_kind": "OSS",
+        "validation_state": "NO_VALIDATOR"
+      }
+    }
+  ]
+}

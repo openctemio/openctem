@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -57,6 +58,7 @@ interface AddScanProfileDialogProps {
 }
 
 export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanProfileDialogProps) {
+  const { t } = useTranslation()
   const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>({})
 
   const form = useForm<CreateScanProfileFormData>({
@@ -275,7 +277,7 @@ export function AddScanProfileDialog({ open, onOpenChange, onSuccess }: AddScanP
                         <Label htmlFor={tool.value} className="cursor-pointer text-sm font-medium">
                           {tool.label}
                         </Label>
-                        <p className="text-xs text-muted-foreground">{tool.description}</p>
+                        <p className="text-xs text-muted-foreground">{t(tool.descriptionKey)}</p>
                       </div>
                     </div>
                   ))}
