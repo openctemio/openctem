@@ -11,6 +11,7 @@
  * positive or a risk acceptance also needs findings:approve; the API decides.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { mutate } from 'swr'
@@ -57,6 +58,7 @@ export function MarkDuplicateDialog({
   onOpenChange,
   onMarked,
 }: MarkDuplicateDialogProps) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState('')
 
@@ -88,14 +90,22 @@ export function MarkDuplicateDialog({
     if (!selected) return
     try {
       await trigger({ duplicate_of_id: selected })
-      toast.success('Marked as duplicate', {
-        description: 'Its comments, retests, evidence and tickets moved to the original finding.',
+      toast.success(t('findings.markDuplicate.success', 'Marked as duplicate'), {
+        description: t(
+          'findings.markDuplicate.successDesc',
+          'Its comments, retests, evidence and tickets moved to the original finding.'
+        ),
       })
       await mutate((key) => typeof key === 'string' && key.startsWith('/api/v1/findings'))
       close(false)
       onMarked?.(selected)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to mark the finding as a duplicate'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('findings.markDuplicate.failed', 'Failed to mark the finding as a duplicate')
+        )
+      )
     }
   }
 
@@ -103,11 +113,12 @@ export function MarkDuplicateDialog({
     <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Mark as duplicate</DialogTitle>
+          <DialogTitle>{t('findings.markDuplicate.title', 'Mark as duplicate')}</DialogTitle>
           <DialogDescription>
-            Pick the original finding on the same asset. This finding is closed as a duplicate of
-            it; its comments, retests, evidence and tickets move to the original, which keeps the
-            stronger status.
+            {t(
+              'findings.markDuplicate.description',
+              'Pick the original finding on the same asset. This finding is closed as a duplicate of it; its comments, retests, evidence and tickets move to the original, which keeps the stronger status.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -121,8 +132,8 @@ export function MarkDuplicateDialog({
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search findings on this asset"
-                aria-label="Search findings on this asset"
+                placeholder={t('findings.markDuplicate.search', 'Search findings on this asset')}
+                aria-label={t('findings.markDuplicate.search', 'Search findings on this asset')}
                 className="pl-8"
               />
             </div>
@@ -131,17 +142,17 @@ export function MarkDuplicateDialog({
               {isLoading ? (
                 <div className="text-muted-foreground flex items-center gap-2 p-4 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Loading findings
+                  {t('findings.markDuplicate.loading', 'Loading findings')}
                 </div>
               ) : candidates.length === 0 ? (
                 <p className="text-muted-foreground p-4 text-sm">
-                  No other finding on this asset matches.
+                  {t('findings.markDuplicate.noMatch', 'No other finding on this asset matches.')}
                 </p>
               ) : (
                 <RadioGroup
                   value={selected}
                   onValueChange={setSelected}
-                  aria-label="Original finding"
+                  aria-label={t('findings.markDuplicate.original', 'Original finding')}
                   className="gap-0"
                 >
                   {candidates.map((f) => (
@@ -171,11 +182,11 @@ export function MarkDuplicateDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)} disabled={isMutating}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={() => void handleConfirm()} disabled={!selected || isMutating}>
             {isMutating && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-            Mark as duplicate
+            {t('findings.markDuplicate.title', 'Mark as duplicate')}
           </Button>
         </DialogFooter>
       </DialogContent>

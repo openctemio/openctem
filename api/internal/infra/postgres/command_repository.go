@@ -170,7 +170,13 @@ func (r *CommandRepository) GetPendingForSensor(ctx context.Context, tenantID sh
 // scan window is not due (scheduled_at, window_hold.go). Arguments: $1 tenant,
 // $2 sensor (when given), then the capabilities.
 func pendingForSensorWhere(tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
-	where := `commands.tenant_id = $1 AND ` + pendingReadyPredicate
+	return sensorWhere(pendingReadyPredicate, tenantID, sensorID, capabilities)
+}
+
+// sensorWhere is ready (a predicate over commands) for sensorID in
+// tenantID with the poll's sensor gates (pendingForSensorWhere).
+func sensorWhere(ready string, tenantID shared.ID, sensorID *shared.ID, capabilities []string) (string, []any) {
+	where := `commands.tenant_id = $1 AND ` + ready
 	args := []any{tenantID.String()}
 	if sensorID != nil {
 		where += " AND (commands.sensor_id = $2 OR commands.sensor_id IS NULL) AND " + zoneClaimPredicate("$2") +

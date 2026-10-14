@@ -70,7 +70,7 @@ func TestCoverageBatchLifecycle(t *testing.T) {
 	ctx := context.Background()
 	e := coverageEnv(t, nil)
 
-	id, err := e.svc.DispatchCoverageBatch(ctx, e.tenant, e.intg.ID(), []string{"10.0.0.1", "10.0.0.2"}, "sess-1")
+	id, err := e.svc.DispatchCoverageBatch(ctx, e.tenant, e.intg.ID(), []string{"10.0.0.1", "10.0.0.2"}, "sess-1", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestCoverageBatchLifecycle(t *testing.T) {
 	}
 
 	// While it is open: no second batch, and not ready.
-	if _, err := e.svc.DispatchCoverageBatch(ctx, e.tenant, e.intg.ID(), []string{"10.0.0.3"}, "sess-2"); !errors.Is(err, ErrCoverageBusy) {
+	if _, err := e.svc.DispatchCoverageBatch(ctx, e.tenant, e.intg.ID(), []string{"10.0.0.3"}, "sess-2", 0); !errors.Is(err, ErrCoverageBusy) {
 		t.Fatalf("second batch: %v", err)
 	}
 	if st, _ := e.svc.CoverageStatus(ctx, e.intg); st.Ready {
@@ -114,7 +114,7 @@ func TestCoverageBatchLifecycle(t *testing.T) {
 	}
 
 	// Another tenant cannot dispatch on it.
-	if _, err := e.svc.DispatchCoverageBatch(ctx, shared.NewID(), e.intg.ID(), []string{"10.0.0.1"}, "x"); err == nil {
+	if _, err := e.svc.DispatchCoverageBatch(ctx, shared.NewID(), e.intg.ID(), []string{"10.0.0.1"}, "x", 0); err == nil {
 		t.Fatal("cross-tenant dispatch")
 	}
 }

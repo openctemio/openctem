@@ -3,6 +3,7 @@
 import { Lock, OctagonPause, ShieldAlert } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailCallout, DetailField, DetailFieldGrid, DetailSection } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { cn } from '@/lib/utils'
@@ -24,7 +25,8 @@ const TONE_CLASS = {
 
 /** The state of a sensor's local policy as a small badge (api RFC-040 §5.7). */
 export function SensorLocalPolicyBadge({ sensor }: { sensor: Pick<Sensor, 'local_policy'> }) {
-  const view = localPolicyView(sensor.local_policy)
+  const { t } = useTranslation()
+  const view = localPolicyView(sensor.local_policy, t)
   return (
     <Badge variant="outline" className={cn(TONE_CLASS[view.tone])} title={view.description}>
       {view.label}
@@ -38,71 +40,75 @@ export function SensorLocalPolicyBadge({ sensor }: { sensor: Pick<Sensor, 'local
  * summary, never the ranges). The platform cannot change it.
  */
 export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'local_policy'> }) {
+  const { t } = useTranslation()
   const p = sensor.local_policy
   if (!p) return null
-  const view = localPolicyView(p)
-  const lines = localPolicySummaryLines(p)
+  const view = localPolicyView(p, t)
+  const lines = localPolicySummaryLines(p, t)
   return (
-    <DetailSection title="Local policy">
+    <DetailSection title={t('sensors.localPolicy.title')}>
       {p.state === 'paused' && (
         <DetailCallout
           tone="destructive"
           icon={OctagonPause}
-          title="Paused by the local kill switch"
+          title={t('sensors.localPolicy.pausedTitle')}
         >
-          The owner of this sensor host stopped every job. Jobs wait on the platform until the kill
-          switch is released on the host.
+          {t('sensors.localPolicy.pausedBody')}
         </DetailCallout>
       )}
       {p.state === 'absent' && p.required && (
         <DetailCallout
           tone="destructive"
           icon={ShieldAlert}
-          title="Local policy required but missing"
+          title={t('sensors.localPolicy.requiredTitle')}
         >
-          This sensor refuses every job with a network target, custom templates and callbacks until
-          the network owner installs a policy (the Local policy tab of the install commands).
+          {t('sensors.localPolicy.requiredBody')}
         </DetailCallout>
       )}
       {p.state === 'absent' && !p.required && (
-        <DetailCallout tone="warning" icon={ShieldAlert} title="No local policy">
-          This sensor accepts any target outside its built-in deny list. Install the policy from the
-          Install tab so the network owner decides what it may scan.
+        <DetailCallout tone="warning" icon={ShieldAlert} title={t('sensors.localPolicy.noneTitle')}>
+          {t('sensors.localPolicy.noneBody')}
         </DetailCallout>
       )}
       {(p.state === 'absent' || hasNoLocalPolicyWarning(p)) && (
         <ul className="space-y-0.5 text-sm text-muted-foreground" data-testid="no-policy-guidance">
-          {noLocalPolicyGuidance().map((g) => (
+          {noLocalPolicyGuidance(t).map((g) => (
             <li key={g}>{g}</li>
           ))}
         </ul>
       )}
       <DetailFieldGrid>
-        <DetailField label="State">
+        <DetailField label={t('sensors.localPolicy.state')}>
           <span className="flex items-center gap-1.5">
             <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
             <SensorLocalPolicyBadge sensor={sensor} />
           </span>
         </DetailField>
         {p.digest && (
-          <DetailField label="Digest (sha256)" full>
+          <DetailField label={t('sensors.localPolicy.digest')} full>
             <code
               className="font-mono text-xs break-all select-all"
               data-testid="local-policy-digest"
-              title="The digest the sensor reports for its local policy"
+              title={t('sensors.localPolicy.digestHint')}
             >
               {p.digest}
             </code>
           </DetailField>
         )}
         {p.source && (
-          <DetailField label="Source">
-            {p.source === 'env' ? 'Environment' : 'Policy file'}
+          <DetailField label={t('sensors.localPolicy.source')}>
+            {p.source === 'env'
+              ? t('sensors.localPolicy.sourceEnv')
+              : t('sensors.localPolicy.sourceFile')}
           </DetailField>
         )}
-        {p.reported_at && <DetailField label="Reported">{exactTime(p.reported_at)}</DetailField>}
+        {p.reported_at && (
+          <DetailField label={t('sensors.localPolicy.reported')}>
+            {exactTime(p.reported_at)}
+          </DetailField>
+        )}
         {lines.length > 0 && (
-          <DetailField label="Summary" full>
+          <DetailField label={t('sensors.localPolicy.summary')} full>
             <ul className="space-y-0.5 text-sm">
               {lines.map((l) => (
                 <li key={l}>{l}</li>
@@ -111,7 +117,7 @@ export function SensorLocalPolicySection({ sensor }: { sensor: Pick<Sensor, 'loc
           </DetailField>
         )}
         {(p.warnings?.length ?? 0) > 0 && (
-          <DetailField label="Sensor warnings" full>
+          <DetailField label={t('sensors.localPolicy.warnings')} full>
             <ul className="space-y-0.5 text-sm text-muted-foreground">
               {p.warnings?.map((w) => (
                 <li key={w}>{w}</li>

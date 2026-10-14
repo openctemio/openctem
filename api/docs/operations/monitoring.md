@@ -147,6 +147,7 @@ Besides the Go runtime and process metrics:
 | `command_claim_wait_seconds` | class | How long a claimed command waited from due to claimed. |
 | `command_claims_total` | mode (`claim`, `claim_n`) | Commands claimed, one per command (the poll's `claim_n` included). |
 | `command_claim_skipped_total` | reason (`local_policy`, `no_slot`, `scope_changed`, `window_hold`, `program_hold`, `taken`) | Poll candidates not handed out, by why they wait. |
+| `command_host_splits_total` | none | Pending commands split at claim time because some of their hosts were busy: the targets on free hosts started, the others waited in a new command of the same step (at most 3 splits per command). |
 | `openctem_scan_runs_open`, `openctem_scan_runs_past_deadline` | | Open scan runs and those the reaper should have ended. |
 | `openctem_outbox_entries`, `openctem_outbox_oldest_pending_seconds` | status | Notification outbox. |
 | `openctem_schema_version`, `openctem_schema_dirty` | source (applied, shipped) | Database migration state. |

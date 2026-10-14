@@ -172,7 +172,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const { can } = usePermissions()
   const canDelete = can(Permission.AssetsDelete)
   // Type actions (repository Scan / Sync) for the selected assets they fit.
-  const typeActions = bulkActionsFor(selected).filter((a) => a.permissions.every((p) => can(p)))
+  const typeActions = bulkActionsFor(selected, t).filter((a) => a.permissions.every((p) => can(p)))
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -194,7 +194,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       setConfirmDelete(false)
       onDone()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete'))
+      toast.error(getErrorMessage(err, t('assets.bulk.deleteFailed', 'Failed to delete')))
     } finally {
       setBusy(false)
     }
@@ -226,11 +226,11 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
         .map((m): PickerOption => ({
           kind: 'user',
           id: m.user_id,
-          label: m.name?.trim() || m.email || '(unnamed user)',
+          label: m.name?.trim() || m.email || t('assets.bulk.unnamedUser', '(unnamed user)'),
           sublabel: m.name?.trim() ? m.email : undefined,
         }))
         .filter((o) => o.id),
-    [membersData]
+    [membersData, t]
   )
   const groupOptions: PickerOption[] = useMemo(
     () =>
@@ -257,11 +257,26 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
 
   const reportResult = (label: string, failed: number) => {
     if (failed === 0) {
-      toast.success(`${label} for ${count} asset${count === 1 ? '' : 's'}`)
+      toast.success(
+        count === 1
+          ? t('assets.bulk.resultOkOne', '{label} for 1 asset', { label })
+          : t('assets.bulk.resultOkMany', '{label} for {count} assets', { label, count })
+      )
     } else if (failed < count) {
-      toast.warning(`${label} for ${count - failed} of ${count}; ${failed} failed`)
+      toast.warning(
+        t('assets.bulk.resultPartial', '{label} for {done} of {count}; {failed} failed', {
+          label,
+          done: count - failed,
+          count,
+          failed,
+        })
+      )
     } else {
-      toast.error(`Failed to update ${count} asset${count === 1 ? '' : 's'}`)
+      toast.error(
+        count === 1
+          ? t('assets.bulk.resultFailOne', 'Failed to update 1 asset')
+          : t('assets.bulk.resultFailMany', 'Failed to update {count} assets', { count })
+      )
     }
   }
 
@@ -271,13 +286,20 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       const failed = await runBulk(selected, (a) =>
         updateAsset(a.id, fullUpdate(a, { criticality }))
       )
-      reportResult(`Set criticality to ${CRITICALITY_LABELS[criticality]}`, failed)
+      reportResult(
+        t('assets.bulk.criticalitySet', 'Set criticality to {value}', {
+          value: CRITICALITY_LABELS[criticality],
+        }),
+        failed
+      )
       if (failed < count) {
         closeDialog()
         onDone()
       }
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to set criticality'))
+      toast.error(
+        getErrorMessage(err, t('assets.bulk.criticalityFailed', 'Failed to set criticality'))
+      )
     } finally {
       setSubmitting(false)
     }
@@ -286,7 +308,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const handleAddTag = async () => {
     const value = tag.trim()
     if (!value) {
-      toast.error('Enter a tag')
+      toast.error(t('assets.bulk.enterTag', 'Enter a tag'))
       return
     }
     setSubmitting(true)
@@ -295,13 +317,13 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
         const nextTags = Array.from(new Set([...(a.tags ?? []), value]))
         return updateAsset(a.id, fullUpdate(a, { tags: nextTags }))
       })
-      reportResult(`Added tag "${value}"`, failed)
+      reportResult(t('assets.bulk.tagAdded', 'Added tag "{value}"', { value }), failed)
       if (failed < count) {
         closeDialog()
         onDone()
       }
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to add tag'))
+      toast.error(getErrorMessage(err, t('assets.bulk.tagFailed', 'Failed to add tag')))
     } finally {
       setSubmitting(false)
     }
@@ -346,7 +368,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
 
   const handleAssignOwner = async () => {
     if (!selectedOption) {
-      toast.error('Select a user or group')
+      toast.error(t('assets.bulk.selectOwner', 'Select a user or group'))
       return
     }
     setSubmitting(true)
@@ -361,7 +383,10 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       // A duplicate owner comes back as a rejection; treat "all failed" as a
       // hint rather than a hard error since some may already be owners.
       reportResult(
-        `Assigned ${selectedOption.label} as ${OWNERSHIP_TYPE_LABELS[ownershipType].toLowerCase()} owner`,
+        t('assets.bulk.ownerAssigned', 'Assigned {name} as {role} owner', {
+          name: selectedOption.label,
+          role: OWNERSHIP_TYPE_LABELS[ownershipType].toLowerCase(),
+        }),
         failed
       )
       if (failed < count) {
@@ -369,7 +394,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
         onDone()
       }
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to assign owner'))
+      toast.error(getErrorMessage(err, t('assets.bulk.ownerFailed', 'Failed to assign owner')))
     } finally {
       setSubmitting(false)
     }
@@ -387,15 +412,15 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           <>
             <Button variant="ghost" size="sm" onClick={() => setDialog('owner')}>
               <UserPlus className="me-2 h-4 w-4" />
-              Assign owner
+              {t('assets.bulk.assignOwner', 'Assign owner')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setDialog('criticality')}>
               <ShieldAlert className="me-2 h-4 w-4" />
-              Set criticality
+              {t('assets.bulk.setCriticality', 'Set criticality')}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setDialog('tag')}>
               <TagIcon className="me-2 h-4 w-4" />
-              Add tag
+              {t('assets.bulk.addTag', 'Add tag')}
             </Button>
             {selectionTags.length > 0 && (
               <Button variant="ghost" size="sm" onClick={() => setDialog('removeTags')}>
@@ -425,13 +450,13 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="me-2 h-4 w-4" />
-                Delete
+                {t('assets.inv.delete', 'Delete')}
               </Button>
             )}
           </>
         ) : (
           <span className="whitespace-nowrap px-2 text-xs text-muted-foreground">
-            Read-only: assets:write is needed to change assets
+            {t('assets.bulk.readOnly', 'Read-only: assets:write is needed to change assets')}
           </span>
         )}
       </BulkActionBar>
@@ -459,14 +484,22 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       <Dialog open={dialog === 'criticality'} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Set criticality</DialogTitle>
+            <DialogTitle>{t('assets.bulk.setCriticality', 'Set criticality')}</DialogTitle>
             <DialogDescription>
-              Apply a criticality to {count} selected asset{count === 1 ? '' : 's'}.
+              {count === 1
+                ? t('assets.bulk.criticalityDescOne', 'Apply a criticality to 1 selected asset.')
+                : t(
+                    'assets.bulk.criticalityDescMany',
+                    'Apply a criticality to {count} selected assets.',
+                    {
+                      count,
+                    }
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-2">
-              <Label>Criticality</Label>
+              <Label>{t('assets.badge.criticality', 'Criticality')}</Label>
               <Select value={criticality} onValueChange={(v) => setCriticality(v as Criticality)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -483,10 +516,12 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleSetCriticality} disabled={submitting}>
-              {submitting ? 'Applying…' : 'Apply'}
+              {submitting
+                ? t('assets.bulk.applying', 'Applying…')
+                : t('assets.bulk.apply', 'Apply')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -496,19 +531,30 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       <Dialog open={dialog === 'tag'} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add tag</DialogTitle>
+            <DialogTitle>{t('assets.bulk.addTag', 'Add tag')}</DialogTitle>
             <DialogDescription>
-              Add a tag to {count} selected asset{count === 1 ? '' : 's'}. Existing tags are kept.
+              {count === 1
+                ? t(
+                    'assets.bulk.tagDescOne',
+                    'Add a tag to 1 selected asset. Existing tags are kept.'
+                  )
+                : t(
+                    'assets.bulk.tagDescMany',
+                    'Add a tag to {count} selected assets. Existing tags are kept.',
+                    {
+                      count,
+                    }
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-2">
-              <Label htmlFor="bulk-tag">Tag</Label>
+              <Label htmlFor="bulk-tag">{t('assets.bulk.tag', 'Tag')}</Label>
               <Input
                 id="bulk-tag"
                 value={tag}
                 onChange={(e) => setTag(e.target.value)}
-                placeholder="e.g. pci, external, team-payments"
+                placeholder={t('assets.bulk.tagPlaceholder', 'e.g. pci, external, team-payments')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !submitting) handleAddTag()
                 }}
@@ -517,10 +563,10 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleAddTag} disabled={submitting || !tag.trim()}>
-              {submitting ? 'Adding…' : 'Add tag'}
+              {submitting ? t('assets.bulk.adding', 'Adding…') : t('assets.bulk.addTag', 'Add tag')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -592,15 +638,23 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       <Dialog open={dialog === 'owner'} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign owner</DialogTitle>
+            <DialogTitle>{t('assets.bulk.assignOwner', 'Assign owner')}</DialogTitle>
             <DialogDescription>
-              Assign a user or group to {count} selected asset{count === 1 ? '' : 's'}.
+              {count === 1
+                ? t('assets.bulk.ownerDescOne', 'Assign a user or group to 1 selected asset.')
+                : t(
+                    'assets.bulk.ownerDescMany',
+                    'Assign a user or group to {count} selected assets.',
+                    {
+                      count,
+                    }
+                  )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Owner</Label>
+                <Label>{t('assets.inv.col.owner', 'Owner')}</Label>
                 <Popover
                   open={pickerOpen}
                   onOpenChange={(open) => {
@@ -628,7 +682,9 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                             <span className="truncate">{selectedOption.label}</span>
                           </>
                         ) : (
-                          <span className="text-muted-foreground">Select a user or group…</span>
+                          <span className="text-muted-foreground">
+                            {t('assets.bulk.selectOwnerPlaceholder', 'Select a user or group…')}
+                          </span>
                         )}
                       </span>
                       <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
@@ -642,23 +698,32 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                       <CommandInput
                         value={pickerSearch}
                         onValueChange={setPickerSearch}
-                        placeholder="Search by name, email, or group…"
+                        placeholder={t(
+                          'assets.bulk.ownerSearch',
+                          'Search by name, email, or group…'
+                        )}
                       />
                       <CommandList>
                         {pickerLoading ? (
                           <div className="py-6 text-center text-sm text-muted-foreground">
-                            Loading…
+                            {t('common.loading', 'Loading…')}
                           </div>
                         ) : totalOptions === 0 ? (
                           <CommandEmpty>
                             {debouncedSearch
-                              ? `No users or groups match "${debouncedSearch}".`
-                              : 'No users or groups available.'}
+                              ? t(
+                                  'assets.bulk.ownerNoMatch',
+                                  'No users or groups match "{query}".',
+                                  {
+                                    query: debouncedSearch,
+                                  }
+                                )
+                              : t('assets.bulk.ownerNone', 'No users or groups available.')}
                           </CommandEmpty>
                         ) : (
                           <>
                             {userOptions.length > 0 && (
-                              <CommandGroup heading="Users">
+                              <CommandGroup heading={t('assets.bulk.users', 'Users')}>
                                 {userOptions.map((option) => (
                                   <CommandItem
                                     key={`user:${option.id}`}
@@ -693,7 +758,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                               </CommandGroup>
                             )}
                             {groupOptions.length > 0 && (
-                              <CommandGroup heading="Groups">
+                              <CommandGroup heading={t('assets.bulk.groups', 'Groups')}>
                                 {groupOptions.map((option) => (
                                   <CommandItem
                                     key={`group:${option.id}`}
@@ -736,7 +801,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
               </div>
 
               <div className="space-y-2">
-                <Label>Ownership role</Label>
+                <Label>{t('assets.bulk.ownershipRole', 'Ownership role')}</Label>
                 <Select
                   value={ownershipType}
                   onValueChange={(v) => setOwnershipType(v as OwnershipType)}
@@ -759,10 +824,12 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleAssignOwner} disabled={submitting || !selectedOption}>
-              {submitting ? 'Assigning…' : 'Assign owner'}
+              {submitting
+                ? t('assets.bulk.assigning', 'Assigning…')
+                : t('assets.bulk.assignOwner', 'Assign owner')}
             </Button>
           </DialogFooter>
         </DialogContent>

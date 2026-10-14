@@ -3,6 +3,7 @@
  */
 
 import { ApiClientError } from '@/lib/api/error-handler'
+import type { Tr } from './format'
 import type { StepUpMethod } from '@/lib/api/sensor-pairing-hooks'
 
 /** Crockford base32 alphabet of pairing codes (no I, L, O, U). */
@@ -79,6 +80,12 @@ export const GRANT_PROFILES: GrantProfileOption[] = [
     description: 'Runs one connector; no target scanning.',
   },
   {
+    value: 'scan-connector',
+    label: 'Scanner connector',
+    description:
+      'Runs one connector to a scanner product your organization runs (the Tenable.sc connector): its syncs and its scans; no scanner of its own.',
+  },
+  {
     value: 'ci-runner',
     label: 'CI runner',
     description: 'Code scanning only; no network targets.',
@@ -92,14 +99,18 @@ export const GRANT_PROFILES: GrantProfileOption[] = [
 
 export const DEFAULT_GRANT_PROFILE = 'internal-network-scanner'
 
+/** Profiles that take the one connector or tool the sensor runs. */
+export const PARAMETERISED_PROFILES = ['collector', 'scan-connector']
+
 /**
- * The profile value sent to the API: `collector:<integration>` when an
- * integration is named. Integration names are lower-case tokens.
+ * The profile value sent to the API: `<profile>:<integration>` when an
+ * integration is named for a parameterised profile. Names are lower-case
+ * tokens.
  */
 export function grantProfileValue(profile: string, integration: string): string {
-  if (profile !== 'collector') return profile
+  if (!PARAMETERISED_PROFILES.includes(profile)) return profile
   const name = integration.trim().toLowerCase()
-  return name ? `collector:${name}` : profile
+  return name ? `${profile}:${name}` : profile
 }
 
 export function validIntegrationName(name: string): boolean {
@@ -109,18 +120,35 @@ export function validIntegrationName(name: string): boolean {
 export const PAIRING_NOT_FOUND_MESSAGE = 'Code not found or expired'
 
 /** A message for a failed pairing call, without leaking which case it was. */
-export function pairingErrorMessage(err: unknown, fallback: string): string {
+export function pairingErrorMessage(err: unknown, fallback: string, tr?: Tr): string {
+  const pick = (key: string, english: string) => (tr ? tr(key) : english)
   if (err instanceof ApiClientError || (err && typeof err === 'object' && 'statusCode' in err)) {
     const e = err as { statusCode?: number; code?: string; message?: string }
-    if (e.statusCode === 404) return PAIRING_NOT_FOUND_MESSAGE
-    if (e.statusCode === 429) return 'Too many attempts. Wait a few minutes and try again.'
-    if (e.code === 'STEP_UP_FAILED') return 'Re-authentication failed. Check the code or password.'
+    if (e.statusCode === 404) return pick('sensors.pair.notFound', PAIRING_NOT_FOUND_MESSAGE)
+    if (e.statusCode === 429)
+      return pick(
+        'sensors.pair.err.rateLimited',
+        'Too many attempts. Wait a few minutes and try again.'
+      )
+    if (e.code === 'STEP_UP_FAILED')
+      return pick(
+        'sensors.pair.err.stepUpFailed',
+        'Re-authentication failed. Check the code or password.'
+      )
     if (e.code === 'STEP_UP_REQUIRED')
-      return 'Re-authenticate to approve: enter your authenticator code or password.'
+      return pick(
+        'sensors.pair.err.stepUpRequired',
+        'Re-authenticate to approve: enter your authenticator code or password.'
+      )
     if (e.code === 'FINGERPRINT_NOT_CONFIRMED')
-      return 'Confirm that the fingerprint shown on the sensor matches before approving.'
-    if (e.statusCode === 503) return 'Too many open pairing requests. Try again shortly.'
-    if (e.statusCode === 403) return 'You do not have permission to do this.'
+      return pick(
+        'sensors.pair.err.fingerprint',
+        'Confirm that the fingerprint shown on the sensor matches before approving.'
+      )
+    if (e.statusCode === 503)
+      return pick('sensors.pair.err.busy', 'Too many open pairing requests. Try again shortly.')
+    if (e.statusCode === 403)
+      return pick('sensors.pair.err.forbidden', 'You do not have permission to do this.')
   }
   return fallback
 }

@@ -9,6 +9,7 @@
 
 import { ArrowRight, Check, Copy, Wrench } from 'lucide-react'
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
@@ -16,6 +17,7 @@ import type { FindingDetail } from '../../types'
 import { fixGuidance, type FixCommand } from '../../lib/fix-guidance'
 
 function CodeBlock({ cmd }: { cmd: FixCommand }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   return (
     <div className="min-w-0">
@@ -29,7 +31,9 @@ function CodeBlock({ cmd }: { cmd: FixCommand }) {
           variant="ghost"
           size="icon"
           className="absolute end-1 top-1 size-7"
-          aria-label={`Copy ${cmd.label} snippet`}
+          aria-label={t('findings.fixCard.copySnippet', 'Copy {label} snippet', {
+            label: cmd.label,
+          })}
           onClick={async () => {
             if (await copyToClipboard(cmd.code)) {
               setCopied(true)
@@ -68,6 +72,7 @@ export interface FindingFixCardProps {
 }
 
 export function FindingFixCard({ finding, onOpenPlan, compact, className }: FindingFixCardProps) {
+  const { t } = useTranslation()
   const g = fixGuidance(finding)
   if (!g) return null
 
@@ -76,19 +81,23 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
     case 'upgrade': {
       const how = [
         g.dependencyType === 'direct'
-          ? 'Direct dependency'
+          ? t('findings.fixCard.directDep', 'Direct dependency')
           : g.dependencyType === 'transitive'
-            ? 'Transitive dependency'
+            ? t('findings.fixCard.transitiveDep', 'Transitive dependency')
             : null,
-        g.manifestFile ? `in ${g.manifestFile}` : null,
+        g.manifestFile ? t('findings.fixCard.inFile', 'in {file}', { file: g.manifestFile }) : null,
         g.ecosystem || null,
       ].filter(Boolean)
       body = (
         <>
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-base font-medium">
-            Upgrade <span className="font-semibold">{g.packageName}</span>
+            {t('findings.fixCard.upgrade', 'Upgrade')}{' '}
+            <span className="font-semibold">{g.packageName}</span>
             <Version tone="from">{g.from}</Version>
-            <ArrowRight className="h-4 w-4 text-muted-foreground" aria-label="to" />
+            <ArrowRight
+              className="h-4 w-4 text-muted-foreground"
+              aria-label={t('findings.fixCard.to', 'to')}
+            />
             <Version tone="to">{g.to}</Version>
           </p>
           {how.length > 0 && (
@@ -103,14 +112,14 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
           )}
           {g.otherFixedVersions.length > 0 && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Also fixed in{' '}
+              {t('findings.fixCard.alsoFixedIn', 'Also fixed in')}{' '}
               {g.otherFixedVersions.map((v, i) => (
                 <span key={v}>
                   {i > 0 && ', '}
                   <code className="font-mono">{v}</code>
                 </span>
               ))}{' '}
-              (other release lines).
+              {t('findings.fixCard.otherLines', '(other release lines).')}
             </p>
           )}
         </>
@@ -121,11 +130,16 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
       body = (
         <>
           <p className="text-base font-medium">
-            No fixed version of <span className="font-semibold">{g.packageName}</span> yet
+            {t('findings.fixCard.noFixTitle', 'No fixed version of {package} yet', {
+              package: g.packageName,
+            })}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            {g.from} is affected and the advisory lists no patched release. Replace the package,
-            remove the vulnerable code path, or accept the risk with a compensating control.
+            {t(
+              'findings.fixCard.noFixBody',
+              '{from} is affected and the advisory lists no patched release. Replace the package, remove the vulnerable code path, or accept the risk with a compensating control.',
+              { from: g.from }
+            )}
           </p>
         </>
       )
@@ -134,7 +148,11 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
       body = (
         <>
           <p className="text-base font-medium">
-            Revoke and rotate {g.service ? `the ${g.service} credential` : 'the credential'}
+            {g.service
+              ? t('findings.fixCard.rotateService', 'Revoke and rotate the {service} credential', {
+                  service: g.service,
+                })
+              : t('findings.fixCard.rotateGeneric', 'Revoke and rotate the credential')}
           </p>
           {!compact && (
             <ol className="mt-2 list-decimal space-y-1 ps-5 text-sm text-muted-foreground">
@@ -152,25 +170,34 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
           <p className="text-base font-medium">
             {g.resource ? (
               <>
-                Reconfigure <span className="font-mono text-sm">{g.resource}</span>
+                {t('findings.fixCard.reconfigure', 'Reconfigure')}{' '}
+                <span className="font-mono text-sm">{g.resource}</span>
               </>
             ) : (
-              'Reconfigure the resource'
+              t('findings.fixCard.reconfigureResource', 'Reconfigure the resource')
             )}
           </p>
-          {g.policy && <p className="mt-1 text-sm text-muted-foreground">Policy: {g.policy}</p>}
+          {g.policy && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('findings.fixCard.policy', 'Policy: {policy}', { policy: g.policy })}
+            </p>
+          )}
           {!compact && (g.expected || g.actual) && (
             <dl className="mt-3 grid gap-2 sm:grid-cols-2">
               <div className="min-w-0 rounded-md border border-success/30 bg-success/5 p-2.5">
-                <dt className="text-xs font-medium text-success">Expected</dt>
+                <dt className="text-xs font-medium text-success">
+                  {t('findings.fixCard.expected', 'Expected')}
+                </dt>
                 <dd className="mt-1 font-mono text-xs break-words whitespace-pre-wrap">
-                  {g.expected || 'Not configured'}
+                  {g.expected || t('findings.fixCard.notConfigured', 'Not configured')}
                 </dd>
               </div>
               <div className="min-w-0 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
-                <dt className="text-xs font-medium text-destructive">Actual</dt>
+                <dt className="text-xs font-medium text-destructive">
+                  {t('findings.fixCard.actual', 'Actual')}
+                </dt>
                 <dd className="mt-1 font-mono text-xs break-words whitespace-pre-wrap">
-                  {g.actual || 'Not configured'}
+                  {g.actual || t('findings.fixCard.notConfigured', 'Not configured')}
                 </dd>
               </div>
             </dl>
@@ -193,7 +220,12 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
           )}
           {!compact && g.fixCode && (
             <div className="mt-3">
-              <CodeBlock cmd={{ label: 'Suggested fix', code: g.fixCode }} />
+              <CodeBlock
+                cmd={{
+                  label: t('findings.fixCard.suggestedFix', 'Suggested fix'),
+                  code: g.fixCode,
+                }}
+              />
             </div>
           )}
         </>
@@ -203,7 +235,7 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
 
   return (
     <section
-      aria-label="Fix"
+      aria-label={t('findings.fixCard.fix', 'Fix')}
       data-slot="finding-fix"
       data-kind={g.kind}
       className={cn('rounded-lg border bg-card p-4', className)}
@@ -211,11 +243,11 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold">
           <Wrench className="h-4 w-4" aria-hidden />
-          Fix
+          {t('findings.fixCard.fix', 'Fix')}
         </h2>
         {onOpenPlan && (
           <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onOpenPlan}>
-            Remediation plan
+            {t('findings.fixCard.remediationPlan', 'Remediation plan')}
           </Button>
         )}
       </div>

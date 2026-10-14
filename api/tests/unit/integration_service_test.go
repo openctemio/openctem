@@ -1299,42 +1299,6 @@ func TestListIntegrations_SearchFilter(t *testing.T) {
 	}
 }
 
-// TestCreateIntegration_Tenable_RefusedWhilePaused: sensor v0.8.0 removed the
-// Tenable runner, so a new Tenable integration would never run (owner decision
-// D-14). Creating one is refused in every execution mode, and nothing is stored.
-func TestCreateIntegration_Tenable_RefusedWhilePaused(t *testing.T) {
-	if integration.TenableConnectorEnabled {
-		t.Skip("Tenable connector is enabled")
-	}
-	repo := newMockIntegrationRepo()
-	scmRepo := newMockSCMExtRepo()
-	svc := newTestIntegrationService(repo, scmRepo, nil)
-	tenantID := shared.NewID().String()
-
-	for _, mode := range []string{"sensor", "direct"} {
-		input := validCreateInput(tenantID)
-		input.Name = "Tenable " + mode
-		input.Provider = "tenable"
-		input.Config = map[string]any{"execution_mode": mode}
-		if mode == "sensor" {
-			input.Credentials = ""
-		}
-		_, err := svc.CreateIntegration(context.Background(), input)
-		if !errors.Is(err, integration.ErrProviderNotSupported) {
-			t.Fatalf("%s-mode Tenable create: want ErrProviderNotSupported, got %v", mode, err)
-		}
-	}
-	result, err := svc.ListIntegrations(context.Background(), integrationapp.ListIntegrationsInput{TenantID: tenantID, Page: 1, PerPage: 10})
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if result.Total != 0 {
-		t.Fatalf("refused Tenable integrations were stored: %d", result.Total)
-	}
-}
-
-// seedTenableIntegration stores a Tenable integration the way one created
-// before the pause looks, bypassing CreateIntegration (which now refuses it).
 func seedTenableIntegration(t *testing.T, repo *mockIntegrationRepo, tenantID, name string, cfg map[string]any, creds string) *integration.Integration {
 	t.Helper()
 	tid, err := shared.IDFromString(tenantID)

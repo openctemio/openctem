@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { useNow } from '@/hooks/use-now'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { invalidateSensorsCache } from '@/lib/api/sensor-hooks'
@@ -58,7 +59,7 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   DEFAULT_GRANT_PROFILE,
   GRANT_PROFILES,
-  PAIRING_NOT_FOUND_MESSAGE,
+  PARAMETERISED_PROFILES,
   formatCountdown,
   formatPairingCode,
   grantProfileValue,
@@ -72,22 +73,23 @@ import {
 import { Snippet } from './sensor-install-snippets'
 import { ToggleChip } from './toggle-chip'
 
-const SENSOR_TYPES: { value: SensorType; label: string }[] = [
-  { value: 'worker', label: 'Worker (scans)' },
-  { value: 'collector', label: 'Collector' },
-  { value: 'sensor', label: 'Endpoint' },
+const SENSOR_TYPES: { value: SensorType; labelKey: string }[] = [
+  { value: 'worker', labelKey: 'sensors.pair.type.worker' },
+  { value: 'collector', labelKey: 'sensors.pair.type.collector' },
+  { value: 'sensor', labelKey: 'sensors.pair.type.sensor' },
 ]
 
 type Mode = 'code' | 'expect'
 
 /** The page-header entry point; hidden without sensors:pair. */
 export function PairSensorButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation()
   const canPair = useHasPermission(Permission.SensorsPair)
   if (!canPair) return null
   return (
     <Button variant="outline" size="sm" onClick={onClick}>
       <Link2 className="h-4 w-4" />
-      Pair a sensor
+      {t('sensors.pair.title')}
     </Button>
   )
 }
@@ -99,6 +101,7 @@ export function PairSensorDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation()
   const [mode, setMode] = useState<Mode>('code')
   const [approved, setApproved] = useState<SensorPairingView | null>(null)
 
@@ -106,10 +109,8 @@ export function PairSensorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Pair a sensor</DialogTitle>
-          <DialogDescription>
-            The sensor makes its own key. You compare a fingerprint; no key is copied.
-          </DialogDescription>
+          <DialogTitle>{t('sensors.pair.title')}</DialogTitle>
+          <DialogDescription>{t('sensors.pair.description')}</DialogDescription>
         </DialogHeader>
         <DialogBody className="py-4">
           {approved ? (
@@ -117,8 +118,8 @@ export function PairSensorDialog({
           ) : (
             <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
               <TabsList>
-                <TabsTrigger value="code">Enter code</TabsTrigger>
-                <TabsTrigger value="expect">Expect a sensor</TabsTrigger>
+                <TabsTrigger value="code">{t('sensors.pair.tabCode')}</TabsTrigger>
+                <TabsTrigger value="expect">{t('sensors.pair.tabExpect')}</TabsTrigger>
               </TabsList>
               <TabsContent value="code" className="mt-4">
                 <EnterCodePanel onApproved={setApproved} onClose={() => onOpenChange(false)} />
@@ -135,19 +136,20 @@ export function PairSensorDialog({
 }
 
 function ApprovedNotice({ view, onClose }: { view: SensorPairingView; onClose: () => void }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4">
       <Alert>
         <ShieldCheck className="h-4 w-4" />
-        <AlertTitle>Sensor approved</AlertTitle>
+        <AlertTitle>{t('sensors.pair.approvedTitle')}</AlertTitle>
         <AlertDescription>
-          {view.host_facts?.hostname ? `${view.host_facts.hostname} ` : 'The sensor '}
-          finishes pairing on its own within 10 minutes and then appears in the list. It starts at
-          trust level New: passive work only, no credentials, until an administrator promotes it.
+          {t('sensors.pair.approvedBody', undefined, {
+            who: view.host_facts?.hostname || t('sensors.pair.theSensor'),
+          })}
         </AlertDescription>
       </Alert>
       <div className="flex justify-end">
-        <Button onClick={onClose}>Done</Button>
+        <Button onClick={onClose}>{t('sensors.pair.done')}</Button>
       </div>
     </div>
   )
@@ -164,6 +166,7 @@ function EnterCodePanel({
   onApproved: (v: SensorPairingView) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const inputId = useId()
   const [input, setInput] = useState('')
   const [code, setCode] = useState<string | null>(null)
@@ -177,7 +180,7 @@ function EnterCodePanel({
     if (!norm) {
       // Same answer as an unknown code: the shape of a code is no secret,
       // but one message for every miss keeps the UI honest about it.
-      setError(PAIRING_NOT_FOUND_MESSAGE)
+      setError(t('sensors.pair.notFound'))
       return
     }
     setBusy(true)
@@ -187,7 +190,7 @@ function EnterCodePanel({
       setView(v)
     } catch (err) {
       setView(null)
-      setError(pairingErrorMessage(err, 'Could not look up the code'))
+      setError(pairingErrorMessage(err, t('sensors.pair.err.lookup'), t))
     } finally {
       setBusy(false)
     }
@@ -205,7 +208,7 @@ function EnterCodePanel({
             setView(await lookupPairing(code))
           } catch (err) {
             setView(null)
-            setError(pairingErrorMessage(err, 'Could not look up the code'))
+            setError(pairingErrorMessage(err, t('sensors.pair.err.lookup'), t))
           }
         }}
       />
@@ -222,12 +225,11 @@ function EnterCodePanel({
       }}
     >
       <p className="text-sm text-muted-foreground">
-        Start the sensor on the host (or run{' '}
-        <code className="font-mono">openctemio-sensor pair</code>
-        ). It prints a code and a fingerprint. Enter the code here.
+        {t('sensors.pair.codeHelpBefore')} <code className="font-mono">openctemio-sensor pair</code>
+        {t('sensors.pair.codeHelpAfter')}
       </p>
       <div className="space-y-1.5">
-        <Label htmlFor={inputId}>Pairing code</Label>
+        <Label htmlFor={inputId}>{t('sensors.pair.codeLabel')}</Label>
         <Input
           id={inputId}
           value={input}
@@ -249,7 +251,7 @@ function EnterCodePanel({
       <div className="flex justify-end">
         <Button type="submit" disabled={busy || input.trim() === ''}>
           {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          Find sensor
+          {t('sensors.pair.find')}
         </Button>
       </div>
     </form>
@@ -267,6 +269,7 @@ function ExpectPanel({
   onApproved: (v: SensorPairingView) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [created, setCreated] = useState<SensorPairingView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -280,7 +283,7 @@ function ExpectPanel({
     try {
       setCreated(await createPairingExpectation({}))
     } catch (err) {
-      setError(pairingErrorMessage(err, 'Could not create a pairing code'))
+      setError(pairingErrorMessage(err, t('sensors.pair.err.create'), t))
     } finally {
       setBusy(false)
     }
@@ -289,10 +292,7 @@ function ExpectPanel({
   if (!view) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Get a single-use code (valid 10 minutes), run the command on the host, then compare the
-          fingerprint the sensor prints with the one shown here.
-        </p>
+        <p className="text-sm text-muted-foreground">{t('sensors.pair.expectHelp')}</p>
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}
@@ -301,7 +301,7 @@ function ExpectPanel({
         <div className="flex justify-end">
           <Button onClick={() => void create()} disabled={busy}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Get a code
+            {t('sensors.pair.getCode')}
           </Button>
         </div>
       </div>
@@ -311,7 +311,7 @@ function ExpectPanel({
   if (pollError && !polled) {
     return (
       <p role="alert" className="text-sm text-destructive">
-        {pairingErrorMessage(pollError, PAIRING_NOT_FOUND_MESSAGE)}
+        {pairingErrorMessage(pollError, t('sensors.pair.notFound'), t)}
       </p>
     )
   }
@@ -326,18 +326,18 @@ function ExpectPanel({
   const code = view.code ? formatPairingCode(view.code) : (created?.code ?? '')
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Run this on the sensor host:</p>
-      <Snippet text={`openctemio-sensor pair ${code}`} label="Pair command" />
+      <p className="text-sm text-muted-foreground">{t('sensors.pair.runOnHost')}</p>
+      <Snippet text={`openctemio-sensor pair ${code}`} label={t('sensors.pair.pairCommand')} />
       {expired ? (
         <p role="alert" className="text-sm text-destructive">
-          The code expired. Get a new one.
+          {t('sensors.pair.expired')}
         </p>
       ) : view.status === 'denied' ? (
-        <p className="text-sm text-muted-foreground">This pairing request was rejected.</p>
+        <p className="text-sm text-muted-foreground">{t('sensors.pair.rejected')}</p>
       ) : (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Waiting for the sensor to connect · expires in {formatCountdown(left)}
+          {t('sensors.pair.waiting', undefined, { time: formatCountdown(left) })}
         </p>
       )}
       {expired && (
@@ -349,7 +349,7 @@ function ExpectPanel({
               void create()
             }}
           >
-            Get a new code
+            {t('sensors.pair.getNewCode')}
           </Button>
         </div>
       )}
@@ -372,6 +372,7 @@ function FactRow({ label, value }: { label: string; value?: string }) {
 }
 
 export function PairingFingerprint({ sas }: { sas?: string }) {
+  const { t } = useTranslation()
   const parts = splitSas(sas)
   if (!parts) return null
   return (
@@ -379,7 +380,9 @@ export function PairingFingerprint({ sas }: { sas?: string }) {
       className="rounded-lg border bg-muted/40 p-4 text-center"
       data-testid="pairing-fingerprint"
     >
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">Fingerprint</div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">
+        {t('sensors.pair.fingerprint')}
+      </div>
       <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">
         {parts.number}
         {parts.words.map((w) => (
@@ -403,6 +406,7 @@ function PairingReview({
   onDone: () => void
   onRefresh?: () => Promise<void>
 }) {
+  const { t } = useTranslation()
   const now = useNow(1000)
   const left = secondsUntil(view.expires_at, now)
   const facts = view.host_facts ?? {}
@@ -413,11 +417,10 @@ function PairingReview({
       {view.repair_sensor_name && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Re-pairing {view.repair_sensor_name}</AlertTitle>
-          <AlertDescription>
-            Approving replaces this sensor&apos;s key: its current keys are revoked and it returns
-            to trust level New. Its history is kept.
-          </AlertDescription>
+          <AlertTitle>
+            {t('sensors.pair.repairTitle', undefined, { name: view.repair_sensor_name })}
+          </AlertTitle>
+          <AlertDescription>{t('sensors.pair.repairBody')}</AlertDescription>
         </Alert>
       )}
 
@@ -425,39 +428,37 @@ function PairingReview({
         <PairingFingerprint sas={view.sas} />
       ) : (
         <div className="flex items-center justify-between gap-2 rounded-lg border p-4 text-sm">
-          <span className="text-muted-foreground">
-            The sensor has not finished its handshake yet; the fingerprint appears when it does.
-          </span>
+          <span className="text-muted-foreground">{t('sensors.pair.noHandshake')}</span>
           {onRefresh && (
             <Button variant="outline" size="sm" onClick={() => void onRefresh()}>
-              Refresh
+              {t('sensors.pair.refresh')}
             </Button>
           )}
         </div>
       )}
 
       <dl className="space-y-1.5">
-        <FactRow label="Hostname" value={facts.hostname} />
+        <FactRow label={t('sensors.pair.fact.hostname')} value={facts.hostname} />
         <FactRow
-          label="System"
+          label={t('sensors.pair.fact.system')}
           value={[facts.os, facts.arch].filter(Boolean).join(' / ') || undefined}
         />
-        <FactRow label="Sensor version" value={facts.sensor_version} />
-        <FactRow label="Requested from" value={view.source_ip} />
-        <FactRow label="Key fingerprint" value={view.key_fingerprint} />
-        <FactRow label="Expires in" value={left > 0 ? formatCountdown(left) : 'expired'} />
+        <FactRow label={t('sensors.pair.fact.version')} value={facts.sensor_version} />
+        <FactRow label={t('sensors.pair.fact.requestedFrom')} value={view.source_ip} />
+        <FactRow label={t('sensors.pair.fact.keyFingerprint')} value={view.key_fingerprint} />
+        <FactRow
+          label={t('sensors.pair.fact.expiresIn')}
+          value={left > 0 ? formatCountdown(left) : t('sensors.pair.fact.expired')}
+        />
       </dl>
-      <p className="text-xs text-muted-foreground">
-        Hostname, system and version are what the sensor says about itself. The address is where the
-        request reached the platform from; make sure it is a network you expect.
-      </p>
+      <p className="text-xs text-muted-foreground">{t('sensors.pair.factsNote')}</p>
 
       {ready ? (
         <ApprovalForm view={view} code={code} onApproved={onApproved} onRejected={onDone} />
       ) : (
         left === 0 && (
           <p role="alert" className="text-sm text-destructive">
-            {PAIRING_NOT_FOUND_MESSAGE}
+            {t('sensors.pair.notFound')}
           </p>
         )
       )}
@@ -476,6 +477,7 @@ function ApprovalForm({
   onApproved: (v: SensorPairingView) => void
   onRejected: () => void
 }) {
+  const { t } = useTranslation()
   const ids = {
     name: useId(),
     type: useId(),
@@ -534,12 +536,12 @@ function ApprovalForm({
         grant_profile: grantProfileValue(profile, integration),
       })
       setSecret('')
-      toast.success('Sensor approved')
+      toast.success(t('sensors.pair.approvedTitle'))
       await invalidateSensorsCache()
       onApproved({ ...view, ...res })
     } catch (err) {
       setSecret('')
-      setError(pairingErrorMessage(err, 'Could not approve the sensor'))
+      setError(pairingErrorMessage(err, t('sensors.pair.err.approve'), t))
       secretRef.current?.focus()
     } finally {
       setBusy(null)
@@ -552,10 +554,10 @@ function ApprovalForm({
     setBusy('reject')
     try {
       await rejectPairing(view.id)
-      toast.success('Pairing request rejected')
+      toast.success(t('sensors.pair.rejectedToast'))
       onRejected()
     } catch (err) {
-      setError(pairingErrorMessage(err, 'Could not reject the request'))
+      setError(pairingErrorMessage(err, t('sensors.pair.err.reject'), t))
     } finally {
       setBusy(null)
     }
@@ -574,7 +576,7 @@ function ApprovalForm({
     >
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor={ids.name}>Name</Label>
+          <Label htmlFor={ids.name}>{t('sensors.pair.name')}</Label>
           <Input
             id={ids.name}
             value={name}
@@ -583,15 +585,15 @@ function ApprovalForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor={ids.type}>Type</Label>
+          <Label htmlFor={ids.type}>{t('sensors.pair.type')}</Label>
           <Select value={type} onValueChange={(v) => setType(v as SensorType)}>
             <SelectTrigger id={ids.type}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SENSOR_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
+              {SENSOR_TYPES.map((st) => (
+                <SelectItem key={st.value} value={st.value}>
+                  {t(st.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -600,7 +602,7 @@ function ApprovalForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor={ids.profile}>What it may do</Label>
+        <Label htmlFor={ids.profile}>{t('sensors.pair.whatItMayDo')}</Label>
         <Select value={profile} onValueChange={setProfile}>
           <SelectTrigger id={ids.profile} data-testid="grant-profile">
             <SelectValue />
@@ -608,24 +610,31 @@ function ApprovalForm({
           <SelectContent>
             {GRANT_PROFILES.map((p) => (
               <SelectItem key={p.value} value={p.value}>
-                {p.label}
+                {t(`sensors.grantEdit.profile.${p.value}`, p.label)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {selected && <p className="text-xs text-muted-foreground">{selected.description}</p>}
+        {selected && (
+          <p className="text-xs text-muted-foreground">
+            {t(`sensors.pair.profileDesc.${selected.value}`, selected.description)}
+          </p>
+        )}
       </div>
 
-      {profile === 'collector' && (
+      {PARAMETERISED_PROFILES.includes(profile) && (
         <div className="space-y-1.5">
           <Label htmlFor={ids.integration}>
-            Integration <span className="font-normal text-muted-foreground">(optional)</span>
+            {t('sensors.grantEdit.integration')}{' '}
+            <span className="font-normal text-muted-foreground">
+              ({t('sensors.pair.optional')})
+            </span>
           </Label>
           <Input
             id={ids.integration}
             value={integration}
             maxLength={64}
-            placeholder="e.g. github"
+            placeholder={t('sensors.grantEdit.integrationPlaceholder')}
             onChange={(e) => setIntegration(e.target.value)}
             aria-invalid={!integrationOk}
           />
@@ -634,7 +643,7 @@ function ApprovalForm({
 
       {canReadZones && zones.length > 0 && (
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Scan zones</legend>
+          <legend className="text-sm font-medium">{t('sensors.pair.scanZones')}</legend>
           <div className="flex flex-wrap gap-2">
             {zones.map((z) => {
               const on = zoneIds.includes(z.id)
@@ -662,14 +671,14 @@ function ApprovalForm({
           className="mt-0.5"
         />
         <Label htmlFor={ids.match} className="font-normal leading-snug">
-          The fingerprint shown on the sensor console matches the one above
+          {t('sensors.pair.fingerprintMatches')}
         </Label>
       </div>
 
       {needsSecret ? (
         <div className="space-y-1.5">
           <Label htmlFor={ids.stepUp}>
-            {stepUp === 'totp' ? 'Authenticator code' : 'Your password'}
+            {stepUp === 'totp' ? t('sensors.pair.authCode') : t('sensors.pair.password')}
           </Label>
           <Input
             id={ids.stepUp}
@@ -681,20 +690,14 @@ function ApprovalForm({
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            Approving a sensor needs you to confirm it is you.
-          </p>
+          <p className="text-xs text-muted-foreground">{t('sensors.pair.stepUpHint')}</p>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">
-          You signed in recently, so no code is needed. If approval is refused, sign in again.
-        </p>
+        <p className="text-xs text-muted-foreground">{t('sensors.pair.recentSignIn')}</p>
       )}
 
       {!canApprove && (
-        <p className="text-sm text-muted-foreground">
-          Approving needs the permission to approve sensors. Ask an administrator.
-        </p>
+        <p className="text-sm text-muted-foreground">{t('sensors.pair.needsPermission')}</p>
       )}
 
       {error && (
@@ -711,7 +714,7 @@ function ApprovalForm({
           disabled={busy !== null}
         >
           {busy === 'reject' && <Loader2 className="h-4 w-4 animate-spin" />}
-          Reject
+          {t('sensors.pair.reject')}
         </Button>
         <Button type="submit" disabled={!canSubmit}>
           {busy === 'approve' ? (
@@ -719,7 +722,7 @@ function ApprovalForm({
           ) : (
             <Check className="h-4 w-4" />
           )}
-          Approve
+          {t('sensors.pair.approve')}
         </Button>
       </div>
     </form>

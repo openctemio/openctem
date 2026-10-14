@@ -38,11 +38,14 @@ function formatDate(dateString: string): string {
 }
 
 /** Uploader display: prefer the resolved name, fall back to the UUID, then "Unknown". */
-function uploaderLabel(note: FindingEvidenceNote): string {
+function uploaderLabel(
+  note: FindingEvidenceNote,
+  t: ReturnType<typeof useTranslation>['t']
+): string {
   const name = note.uploaded_by_name?.trim()
   if (name) return name
   const id = note.uploaded_by?.trim()
-  return id || 'Unknown'
+  return id || t('findings.manualEvidence.unknown', 'Unknown')
 }
 
 function NoteCard({
@@ -56,6 +59,7 @@ function NoteCard({
   onDelete: (note: FindingEvidenceNote) => void
   isDeleting: boolean
 }) {
+  const { t } = useTranslation()
   const hasUrl = !!note.url
   return (
     <div className="rounded-lg border p-4">
@@ -86,7 +90,7 @@ function NoteCard({
             </span>
             <span className="flex items-center gap-1">
               <User className="h-3 w-3" />
-              {uploaderLabel(note)}
+              {uploaderLabel(note, t)}
             </span>
           </div>
         </div>
@@ -95,7 +99,7 @@ function NoteCard({
             size="icon"
             variant="ghost"
             className="text-muted-foreground hover:text-red-500 h-8 w-8 shrink-0"
-            aria-label="Delete evidence note"
+            aria-label={t('findings.manualEvidence.deleteAria', 'Delete evidence note')}
             disabled={isDeleting}
             onClick={() => onDelete(note)}
           >
@@ -139,7 +143,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
   const handleSubmit = useCallback(async () => {
     const trimmed = description.trim()
     if (!trimmed) {
-      toast.error('Description is required')
+      toast.error(t('findings.manualEvidence.descRequired', 'Description is required'))
       return
     }
     try {
@@ -148,37 +152,46 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
         type: type.trim() || undefined,
         url: url.trim() || undefined,
       })
-      toast.success('Evidence added')
+      toast.success(t('findings.manualEvidence.added', 'Evidence added'))
       resetForm()
       void mutate()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to add evidence'))
+      toast.error(
+        getErrorMessage(error, t('findings.manualEvidence.addFailed', 'Failed to add evidence'))
+      )
     }
-  }, [description, type, url, addEvidence, resetForm, mutate])
+  }, [description, type, url, addEvidence, resetForm, mutate, t])
 
   const handleConfirmDelete = useCallback(async () => {
     if (!noteToDelete) return
     try {
       await deleteEvidence(noteToDelete.id)
-      toast.success('Evidence deleted')
+      toast.success(t('findings.manualEvidence.deleted', 'Evidence deleted'))
       setNoteToDelete(null)
       void mutate()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete evidence'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('findings.manualEvidence.deleteFailed', 'Failed to delete evidence')
+        )
+      )
     }
-  }, [noteToDelete, deleteEvidence, mutate])
+  }, [noteToDelete, deleteEvidence, mutate, t])
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-semibold">
           <FileText className="h-4 w-4" />
-          Notes{notes.length > 0 ? ` (${notes.length})` : ''}
+          {notes.length > 0
+            ? t('findings.manualEvidence.notesCount', 'Notes ({count})', { count: notes.length })
+            : t('findings.manualEvidence.notes', 'Notes')}
         </h3>
         {canWrite && !showForm && (
           <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
             <Plus className="me-2 h-4 w-4" />
-            Add Evidence
+            {t('findings.manualEvidence.addEvidence', 'Add Evidence')}
           </Button>
         )}
       </div>
@@ -187,30 +200,37 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
         <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
           <div className="space-y-1.5">
             <Label htmlFor="evidence-description">
-              Description <span className="text-red-400">*</span>
+              {t('findings.manualEvidence.description', 'Description')}{' '}
+              <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="evidence-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the evidence (e.g. steps to reproduce, observed behaviour)…"
+              placeholder={t(
+                'findings.manualEvidence.descPlaceholder',
+                'Describe the evidence (e.g. steps to reproduce, observed behaviour)…'
+              )}
               rows={3}
               disabled={isMutating}
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="evidence-type">Type</Label>
+              <Label htmlFor="evidence-type">{t('findings.manualEvidence.type', 'Type')}</Label>
               <Input
                 id="evidence-type"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                placeholder="e.g. log, screenshot, note"
+                placeholder={t(
+                  'findings.manualEvidence.typePlaceholder',
+                  'e.g. log, screenshot, note'
+                )}
                 disabled={isMutating}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="evidence-url">URL</Label>
+              <Label htmlFor="evidence-url">{t('findings.manualEvidence.url', 'URL')}</Label>
               <Input
                 id="evidence-url"
                 value={url}
@@ -223,7 +243,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
           <div className="flex items-center justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={resetForm} disabled={isMutating}>
               <X className="me-1.5 h-3.5 w-3.5" />
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={isMutating || !description.trim()}>
               {isMutating ? (
@@ -231,7 +251,7 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
               ) : (
                 <Plus className="me-1.5 h-3.5 w-3.5" />
               )}
-              Add Evidence
+              {t('findings.manualEvidence.addEvidence', 'Add Evidence')}
             </Button>
           </div>
         </div>
@@ -252,8 +272,9 @@ export function ManualEvidenceNotesSection({ findingId }: ManualEvidenceNotesSec
       ) : (
         !showForm && (
           <p className="text-muted-foreground text-sm">
-            No notes added yet.
-            {!canWrite && ' You do not have permission to add evidence.'}
+            {t('findings.manualEvidence.empty', 'No notes added yet.')}
+            {!canWrite &&
+              ` ${t('findings.manualEvidence.noPermission', 'You do not have permission to add evidence.')}`}
           </p>
         )
       )}

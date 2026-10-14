@@ -10,6 +10,8 @@
 
 import type { Sensor, UpdateSensorRequest } from '@/lib/api/sensor-types'
 
+import type { Tr } from './format'
+
 export interface SensorEditDraft {
   name: string
   description: string
@@ -53,16 +55,24 @@ export interface SensorEditErrors {
   maxJobs?: string
 }
 
-export function validateSensorEdit(draft: SensorEditDraft, initial: SensorEditDraft) {
+export function validateSensorEdit(draft: SensorEditDraft, initial: SensorEditDraft, tr?: Tr) {
   const errors: SensorEditErrors = {}
   const name = draft.name.trim()
-  if (!name) errors.name = 'Enter a name.'
-  else if (name.length > 255) errors.name = 'Use 255 characters or fewer.'
-  if (draft.description.length > 1000) errors.description = 'Use 1000 characters or fewer.'
+  if (!name) errors.name = tr ? tr('sensors.edit.err.nameRequired') : 'Enter a name.'
+  else if (name.length > 255)
+    errors.name = tr
+      ? tr('sensors.edit.err.maxChars', undefined, { max: 255 })
+      : 'Use 255 characters or fewer.'
+  if (draft.description.length > 1000)
+    errors.description = tr
+      ? tr('sensors.edit.err.maxChars', undefined, { max: 1000 })
+      : 'Use 1000 characters or fewer.'
   if (draft.maxJobs !== initial.maxJobs) {
     const n = Number(draft.maxJobs)
     if (!/^\d+$/.test(draft.maxJobs.trim()) || n < 1 || n > MAX_JOBS_LIMIT) {
-      errors.maxJobs = `Enter a whole number from 1 to ${MAX_JOBS_LIMIT}.`
+      errors.maxJobs = tr
+        ? tr('sensors.edit.err.maxJobs', undefined, { max: MAX_JOBS_LIMIT })
+        : `Enter a whole number from 1 to ${MAX_JOBS_LIMIT}.`
     }
   }
   return errors

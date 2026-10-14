@@ -12,6 +12,7 @@
  */
 
 import { Globe, KeyRound, Package, ScrollText, Settings2, Wallet } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import {
   DetailDisclosure,
@@ -45,6 +46,7 @@ function formatDate(iso?: string) {
 // ---------------------------------------------------------------------------
 
 function PackageSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const c = finding.component
   const name = c?.name || meta(finding, 'package_name', 'component_name')
   if (!name) return null
@@ -52,32 +54,45 @@ function PackageSection({ finding }: { finding: FindingDetail }) {
   const fixed = finding.advisory?.fixedVersions ?? []
   const dep =
     c?.dependencyType === 'direct'
-      ? 'Direct'
+      ? t('findings.typeDetails.direct', 'Direct')
       : c?.dependencyType === 'transitive'
-        ? 'Transitive'
+        ? t('findings.typeDetails.transitive', 'Transitive')
         : c?.dependencyType
   return (
-    <DetailSection title="Affected package" icon={Package}>
+    <DetailSection
+      title={t('findings.typeDetails.affectedPackage', 'Affected package')}
+      icon={Package}
+    >
       <DetailFieldGrid>
-        <DetailField label="Package">
+        <DetailField label={t('findings.typeDetails.package', 'Package')}>
           <Mono>
             {name}
             {version && `@${version}`}
           </Mono>
         </DetailField>
-        <DetailField label="Fixed in">
+        <DetailField label={t('findings.typeDetails.fixedIn', 'Fixed in')}>
           {fixed.length > 0 ? (
             <Mono>{fixed.join(', ')}</Mono>
           ) : c?.fixedIn ? (
             <Mono>{c.fixedIn}</Mono>
           ) : null}
         </DetailField>
-        <DetailField label="Ecosystem">{c?.ecosystem || meta(finding, 'ecosystem')}</DetailField>
-        <DetailField label="Dependency">
-          {dep ? [dep, c?.manifestFile && `via ${c.manifestFile}`].filter(Boolean).join(' ') : null}
+        <DetailField label={t('findings.typeDetails.ecosystem', 'Ecosystem')}>
+          {c?.ecosystem || meta(finding, 'ecosystem')}
         </DetailField>
-        <DetailField label="License">{c?.license}</DetailField>
-        <DetailField label="Package URL" full>
+        <DetailField label={t('findings.typeDetails.dependency', 'Dependency')}>
+          {dep
+            ? [
+                dep,
+                c?.manifestFile &&
+                  t('findings.typeDetails.via', 'via {file}', { file: c.manifestFile }),
+              ]
+                .filter(Boolean)
+                .join(' ')
+            : null}
+        </DetailField>
+        <DetailField label={t('findings.typeDetails.license', 'License')}>{c?.license}</DetailField>
+        <DetailField label={t('findings.typeDetails.purl', 'Package URL')} full>
           {c?.purl || meta(finding, 'purl') ? (
             <Mono>{c?.purl || meta(finding, 'purl')}</Mono>
           ) : null}
@@ -88,45 +103,72 @@ function PackageSection({ finding }: { finding: FindingDetail }) {
 }
 
 function SecretSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const s = finding.secretDetails
   if (!s) return null
   const active = s.valid === true && s.revoked !== true
   const state = s.revoked
-    ? 'Revoked'
+    ? t('findings.typeDetails.revoked', 'Revoked')
     : s.valid === true
-      ? 'Active'
+      ? t('findings.typeDetails.active', 'Active')
       : s.valid === false
-        ? 'Invalid'
-        : 'Not verified'
+        ? t('findings.typeDetails.invalid', 'Invalid')
+        : t('findings.typeDetails.notVerified', 'Not verified')
   return (
-    <DetailSection title="Exposed credential" icon={KeyRound}>
+    <DetailSection
+      title={t('findings.typeDetails.exposedCredential', 'Exposed credential')}
+      icon={KeyRound}
+    >
       <DetailFieldGrid>
-        <DetailField label="Type">{s.secretType?.replace(/_/g, ' ')}</DetailField>
-        <DetailField label="Service">{s.service}</DetailField>
-        <DetailField label="Validity">
+        <DetailField label={t('findings.typeDetails.type', 'Type')}>
+          {s.secretType?.replace(/_/g, ' ')}
+        </DetailField>
+        <DetailField label={t('findings.typeDetails.service', 'Service')}>{s.service}</DetailField>
+        <DetailField label={t('findings.typeDetails.validity', 'Validity')}>
           <span
             className={cn(active && 'font-medium text-destructive', s.revoked && 'text-success')}
           >
             {state}
           </span>
           {s.verifiedAt && (
-            <span className="text-muted-foreground"> · checked {formatDate(s.verifiedAt)}</span>
+            <span className="text-muted-foreground">
+              {' · '}
+              {t('findings.typeDetails.checked', 'checked {date}', {
+                date: formatDate(s.verifiedAt) ?? '',
+              })}
+            </span>
           )}
         </DetailField>
-        <DetailField label="Value">
+        <DetailField label={t('findings.typeDetails.value', 'Value')}>
           {s.maskedValue ? <Mono>{s.maskedValue}</Mono> : null}
         </DetailField>
-        <DetailField label="Age">{s.ageInDays != null ? `${s.ageInDays} days` : null}</DetailField>
-        <DetailField label="In history">
+        <DetailField label={t('findings.typeDetails.age', 'Age')}>
+          {s.ageInDays != null
+            ? t('findings.typeDetails.days', '{count} days', { count: s.ageInDays })
+            : null}
+        </DetailField>
+        <DetailField label={t('findings.typeDetails.inHistory', 'In history')}>
           {s.commitCount
-            ? `${s.commitCount} commit${s.commitCount === 1 ? '' : 's'}${s.inHistoryOnly ? ' (history only)' : ''}`
+            ? (() => {
+                const text =
+                  s.commitCount === 1
+                    ? t('findings.typeDetails.commit1', '{count} commit', { count: s.commitCount })
+                    : t('findings.typeDetails.commitN', '{count} commits', { count: s.commitCount })
+                return s.inHistoryOnly
+                  ? t('findings.typeDetails.historyOnlyParen', '{text} (history only)', { text })
+                  : text
+              })()
             : s.inHistoryOnly
-              ? 'History only'
+              ? t('findings.typeDetails.historyOnly', 'History only')
               : null}
         </DetailField>
-        <DetailField label="Expires">{formatDate(s.expiresAt)}</DetailField>
-        <DetailField label="Rotation due">{formatDate(s.rotationDueAt)}</DetailField>
-        <DetailField label="Scopes" full>
+        <DetailField label={t('findings.typeDetails.expires', 'Expires')}>
+          {formatDate(s.expiresAt)}
+        </DetailField>
+        <DetailField label={t('findings.typeDetails.rotationDue', 'Rotation due')}>
+          {formatDate(s.rotationDueAt)}
+        </DetailField>
+        <DetailField label={t('findings.typeDetails.scopes', 'Scopes')} full>
           {s.scopes && s.scopes.length > 0 ? (
             <span className="flex flex-wrap gap-1">
               {s.scopes.map((x) => (
@@ -143,17 +185,21 @@ function SecretSection({ finding }: { finding: FindingDetail }) {
 }
 
 function MisconfigSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const m = finding.misconfigDetails
   if (!m) return null
   return (
-    <DetailSection title="Misconfigured resource" icon={Settings2}>
+    <DetailSection
+      title={t('findings.typeDetails.misconfigured', 'Misconfigured resource')}
+      icon={Settings2}
+    >
       <DetailFieldGrid>
-        <DetailField label="Resource">
+        <DetailField label={t('findings.typeDetails.resource', 'Resource')}>
           {m.resourceType || m.resourceName ? (
             <Mono>{[m.resourceType, m.resourceName].filter(Boolean).join('.')}</Mono>
           ) : null}
         </DetailField>
-        <DetailField label="Policy">
+        <DetailField label={t('findings.typeDetails.policy', 'Policy')}>
           {m.policyId || m.policyName ? (
             <span>
               {m.policyId && <Mono>{m.policyId}</Mono>}
@@ -162,10 +208,10 @@ function MisconfigSection({ finding }: { finding: FindingDetail }) {
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="File" full>
+        <DetailField label={t('findings.typeDetails.file', 'File')} full>
           {m.resourcePath ? <Mono>{m.resourcePath}</Mono> : null}
         </DetailField>
-        <DetailField label="Cause" full>
+        <DetailField label={t('findings.typeDetails.cause', 'Cause')} full>
           {m.cause}
         </DetailField>
       </DetailFieldGrid>
@@ -174,6 +220,7 @@ function MisconfigSection({ finding }: { finding: FindingDetail }) {
 }
 
 function WebRequestSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const endpoint = meta(finding, 'endpoint', 'url', 'matched_at')
   const method = meta(finding, 'method', 'http_method').toUpperCase()
   const param = meta(finding, 'parameter', 'param')
@@ -181,9 +228,12 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
   const response = meta(finding, 'response', 'http_response')
   if (!endpoint && !request && !response) return null
   return (
-    <DetailSection title="Affected endpoint" icon={Globe}>
+    <DetailSection
+      title={t('findings.typeDetails.affectedEndpoint', 'Affected endpoint')}
+      icon={Globe}
+    >
       <DetailFieldGrid>
-        <DetailField label="Endpoint" full>
+        <DetailField label={t('findings.typeDetails.endpoint', 'Endpoint')} full>
           {endpoint ? (
             <Mono>
               {method && <span className="me-1.5 font-semibold">{method}</span>}
@@ -191,14 +241,16 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
             </Mono>
           ) : null}
         </DetailField>
-        <DetailField label="Parameter">{param ? <Mono>{param}</Mono> : null}</DetailField>
+        <DetailField label={t('findings.typeDetails.parameter', 'Parameter')}>
+          {param ? <Mono>{param}</Mono> : null}
+        </DetailField>
       </DetailFieldGrid>
       {(request || response) && (
-        <DetailDisclosure summary="Request and response">
+        <DetailDisclosure summary={t('findings.typeDetails.reqResp', 'Request and response')}>
           <div className="mt-2 grid gap-2 lg:grid-cols-2">
             {[
-              ['Request', request],
-              ['Response', response],
+              [t('findings.typeDetails.request', 'Request'), request],
+              [t('findings.typeDetails.response', 'Response'), response],
             ]
               .filter(([, v]) => v)
               .map(([label, v]) => (
@@ -217,17 +269,21 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
 }
 
 function ComplianceSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const c = finding.complianceDetails
   if (!c) return null
   return (
-    <DetailSection title="Compliance control" icon={ScrollText}>
+    <DetailSection
+      title={t('findings.typeDetails.complianceControl', 'Compliance control')}
+      icon={ScrollText}
+    >
       <DetailFieldGrid>
-        <DetailField label="Framework">
+        <DetailField label={t('findings.typeDetails.framework', 'Framework')}>
           {c.framework
             ? `${c.framework.toUpperCase()}${c.frameworkVersion ? ` v${c.frameworkVersion}` : ''}`
             : null}
         </DetailField>
-        <DetailField label="Result">
+        <DetailField label={t('findings.typeDetails.result', 'Result')}>
           {c.result ? (
             <span
               className={cn(
@@ -239,7 +295,7 @@ function ComplianceSection({ finding }: { finding: FindingDetail }) {
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Control">
+        <DetailField label={t('findings.typeDetails.control', 'Control')}>
           {c.controlId || c.controlName ? (
             <span>
               {c.controlId && <Mono>{c.controlId}</Mono>}
@@ -248,8 +304,8 @@ function ComplianceSection({ finding }: { finding: FindingDetail }) {
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Section">{c.section}</DetailField>
-        <DetailField label="Requirement" full>
+        <DetailField label={t('findings.typeDetails.section', 'Section')}>{c.section}</DetailField>
+        <DetailField label={t('findings.typeDetails.requirement', 'Requirement')} full>
           {c.controlDescription}
         </DetailField>
       </DetailFieldGrid>
@@ -258,25 +314,33 @@ function ComplianceSection({ finding }: { finding: FindingDetail }) {
 }
 
 function Web3Section({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const w = finding.web3Details
   if (!w) return null
   return (
-    <DetailSection title="Smart contract" icon={Wallet}>
+    <DetailSection title={t('findings.typeDetails.smartContract', 'Smart contract')} icon={Wallet}>
       <DetailFieldGrid>
-        <DetailField label="Chain">
-          {w.chain ? `${w.chain}${w.chainId != null ? ` (ID ${w.chainId})` : ''}` : null}
+        <DetailField label={t('findings.typeDetails.chain', 'Chain')}>
+          {w.chain
+            ? w.chainId != null
+              ? t('findings.typeDetails.chainId', '{chain} (ID {id})', {
+                  chain: w.chain,
+                  id: w.chainId,
+                })
+              : w.chain
+            : null}
         </DetailField>
         <DetailField label="SWC">{w.swcId ? <Mono>{w.swcId}</Mono> : null}</DetailField>
-        <DetailField label="Contract" full>
+        <DetailField label={t('findings.typeDetails.contract', 'Contract')} full>
           {w.contractAddress ? <Mono>{w.contractAddress}</Mono> : null}
         </DetailField>
-        <DetailField label="Function">
+        <DetailField label={t('findings.typeDetails.function', 'Function')}>
           {w.functionSignature ? <Mono>{w.functionSignature}</Mono> : null}
         </DetailField>
-        <DetailField label="Selector">
+        <DetailField label={t('findings.typeDetails.selector', 'Selector')}>
           {w.functionSelector ? <Mono>{w.functionSelector}</Mono> : null}
         </DetailField>
-        <DetailField label="Transaction" full>
+        <DetailField label={t('findings.typeDetails.transaction', 'Transaction')} full>
           {w.txHash ? <Mono>{w.txHash}</Mono> : null}
         </DetailField>
       </DetailFieldGrid>

@@ -1864,6 +1864,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
 	s.TenableSC.SetSyncClaimer(repos.Integration)
 	s.TenableSC.SetGrantReader(repos.SensorGrant)
+	s.TenableSC.SetCoverageLedger(repos.ScanCoverage)
 	// Tenable integrations can be created only once the connector ships
 	// (integrationdom.TenableConnectorEnabled, owner decision D-14): without
 	// the validator the integration service refuses them.
@@ -2241,6 +2242,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithVersionStore(repos.ScanWorkflow),
 		// Incremental web scanning: new or changed endpoints only (RFC-056).
 		scanrun.WithEndpointSelector(repos.WebEndpoint),
+		// A step's chunks keep a name with the addresses it resolves to.
+		scanrun.WithNameAddresses(repos.Attribution),
 	)
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps

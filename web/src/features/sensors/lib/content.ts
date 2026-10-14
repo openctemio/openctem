@@ -1,6 +1,6 @@
 import type { Sensor, SensorContent, SensorContentName } from '@/lib/api/sensor-types'
 
-import { formatDurationShort } from './format'
+import { formatDurationShort, type Tr } from './format'
 
 /**
  * Scanner content (api RFC-031) as the drawer, the list, the phone cards and
@@ -86,17 +86,31 @@ export function contentAgeSeconds(c: SensorContent, now: number): number | null 
 }
 
 /** "3d 4h old"; null when the age is unknown. */
-export function contentAgeText(c: SensorContent, now: number): string | null {
+export function contentAgeText(c: SensorContent, now: number, tr?: Tr): string | null {
   const s = contentAgeSeconds(c, now)
-  return s == null ? null : `${formatDurationShort(s)} old`
+  if (s == null) return null
+  const age = formatDurationShort(s)
+  return tr ? tr('sensors.content.ageOld', undefined, { age }) : `${age} old`
+}
+
+/** The label of a content state, in the catalog when a translate function is given. */
+export function contentStateLabel(state: ContentState, tr?: Tr): string {
+  return tr
+    ? tr(`sensors.content.state.${state}`, CONTENT_STATE_META[state].label)
+    : CONTENT_STATE_META[state].label
 }
 
 /** "checked 2h ago" from checked_at; null when the sensor did not report it. */
-export function contentCheckedText(c: SensorContent, now: number): string | null {
+export function contentCheckedText(c: SensorContent, now: number, tr?: Tr): string | null {
   if (!c.checked_at) return null
   const t = new Date(c.checked_at).getTime()
   if (Number.isNaN(t)) return null
   const s = (now - t) / 1000
+  if (tr) {
+    return s < 1
+      ? tr('sensors.content.checkedJustNow')
+      : tr('sensors.content.checkedAgo', undefined, { duration: formatDurationShort(s) })
+  }
   return s < 1 ? 'checked just now' : `checked ${formatDurationShort(s)} ago`
 }
 
@@ -156,23 +170,61 @@ export function contentVersionDate(version: string | null | undefined): Date | n
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/** English with {var} placeholders filled, for the helpers' no-translator path. */
+export function fillVars(text: string, vars?: Record<string, string | number>): string {
+  return vars ? text.replace(/\{(\w+)\}/g, (m, k: string) => String(vars[k] ?? m)) : text
+}
+
+/** One message: from the catalog when a translate function is given, else the English. */
+export function msg(
+  tr: Tr | undefined,
+  key: string,
+  en: string,
+  vars?: Record<string, string | number>
+): string {
+  return tr ? tr(key, en, vars) : fillVars(en, vars)
+}
+
 /** One line about a content item's problem, or null when it has none. */
-export function contentProblemText(c: SensorContent, now: number): string | null {
+export function contentProblemText(c: SensorContent, now: number, tr?: Tr): string | null {
   const label = contentLabel(c.name)
   switch (contentState(c)) {
-    case 'failed':
+    case 'failed': {
+      const error = shortContentError(c.error)
       return c.version
-        ? `${label}: the last refresh failed (${shortContentError(c.error)}). Scans keep using ${c.version}.`
-        : `${label}: the last refresh failed (${shortContentError(c.error)}) and none is installed yet.`
+        ? msg(
+            tr,
+            'sensors.checks.content.failedKeep',
+            '{label}: the last refresh failed ({error}). Scans keep using {version}.',
+            { label, error, version: c.version }
+          )
+        : msg(
+            tr,
+            'sensors.checks.content.failedNone',
+            '{label}: the last refresh failed ({error}) and none is installed yet.',
+            { label, error }
+          )
+    }
     case 'stale': {
-      const age = contentAgeText(c, now)
+      const age = contentAgeText(c, now, tr) ?? msg(tr, 'sensors.checks.content.old', 'old')
       const limit = formatHours(c.max_age_hours)
-      return `${label} is ${age ?? 'old'}${limit ? ` (limit ${limit})` : ''}.`
+      return limit
+        ? msg(tr, 'sensors.checks.content.staleLimit', '{label} is {age} (limit {limit}).', {
+            label,
+            age,
+            limit,
+          })
+        : msg(tr, 'sensors.checks.content.stale', '{label} is {age}.', { label, age })
     }
     case 'mismatch':
-      return `${label} runs ${c.version}, not the pinned ${c.pinned_version}.`
+      return msg(
+        tr,
+        'sensors.checks.content.mismatch',
+        '{label} runs {version}, not the pinned {pinned}.',
+        { label, version: c.version ?? '', pinned: c.pinned_version ?? '' }
+      )
     case 'missing':
-      return `${label} is not installed yet.`
+      return msg(tr, 'sensors.checks.content.missing', '{label} is not installed yet.', { label })
     default:
       return null
   }
@@ -184,12 +236,15 @@ export function contentProblemText(c: SensorContent, now: number): string | null
  */
 export function contentCheckSummary(
   sensor: Pick<Sensor, 'content'>,
-  now: number
+  now: number,
+  tr?: Tr
 ): { status: 'ok' | 'warning' | 'critical' | 'info'; text: string } | null {
   const content = sensor.content ?? []
   const worst = worstContentState(content)
   if (!worst) return null
-  const problems = content.map((c) => contentProblemText(c, now)).filter((t): t is string => !!t)
+  const problems = content
+    .map((c) => contentProblemText(c, now, tr))
+    .filter((t): t is string => !!t)
   if (problems.length > 0) {
     return {
       status: worst === 'failed' ? 'critical' : 'warning',
@@ -201,8 +256,17 @@ export function contentCheckSummary(
     return {
       status: 'info',
       text: managed
-        ? `${managed} managed and up to date; the rest is ${UNMANAGED_TEXT}.`
-        : `All ${UNMANAGED_TEXT}.`,
+        ? msg(
+            tr,
+            'sensors.checks.content.someManaged',
+            '{count} managed and up to date; the rest is fetched by the tool on each scan (not controlled).',
+            { count: managed }
+          )
+        : msg(
+            tr,
+            'sensors.checks.content.allUnmanaged',
+            'All fetched by the tool on each scan (not controlled).'
+          ),
     }
   }
   return {
