@@ -3,6 +3,7 @@ package finding
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -26,6 +27,11 @@ func (r *bulkStubRepo) GetByIDs(_ context.Context, _ shared.ID, ids []shared.ID)
 		}
 	}
 	return out, nil
+}
+
+// AcceptUntil records an accept like UpdateStatusBatch does.
+func (r *bulkStubRepo) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
+	return r.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
 }
 
 func (r *bulkStubRepo) UpdateStatusBatch(_ context.Context, _ shared.ID, ids []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
