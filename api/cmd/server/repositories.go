@@ -247,6 +247,7 @@ type Repositories struct {
 	VerifiedNames  *postgres.VerifiedDomainNameRepository
 	// CI runs, trust configurations and the gate (RFC-051)
 	CIRun       *postgres.CIRunRepository
+	CodeScan    *postgres.CodeScanRepository
 	SCMApp      *postgres.SCMAppInstallationRepository
 	EASMSummary *postgres.EASMSummaryRepository
 	// EASMLookalike stores lookalike watches and candidates (RFC-083).
@@ -528,6 +529,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		EASMDNS:          postgres.NewEASMDNSRepository(db),
 		VerifiedNames:    postgres.NewVerifiedDomainNameRepository(db),
 		CIRun:            postgres.NewCIRunRepository(db),
+		CodeScan:         postgres.NewCodeScanRepository(db),
 		SCMApp:           postgres.NewSCMAppInstallationRepository(db),
 		EASMSummary:      postgres.NewEASMSummaryRepository(db),
 		EASMLookalike:    postgres.NewEASMLookalikeRepository(db),
