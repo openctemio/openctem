@@ -273,7 +273,7 @@ export function CISetupWizard({ open, onClose }: { open: boolean; onClose: () =>
             <div className="space-y-4" aria-live="polite">
               {firstRun ? (
                 <div className="flex items-start gap-2 text-sm">
-                  <CircleCheck className="mt-0.5 size-4 text-green-600" aria-hidden />
+                  <CircleCheck className="mt-0.5 size-4 text-success" aria-hidden />
                   <div className="space-y-1">
                     <p className="font-medium">
                       {t('scans.ci.setup.received', 'First run received from {repository}', {
