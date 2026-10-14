@@ -66,6 +66,7 @@ import {
   type ApprovalTab,
 } from '@/features/findings/lib/approvals'
 import { useTranslation } from '@/context/i18n-provider'
+import { AIProposalBadge } from '@/features/findings/components/ai-proposal-badge'
 
 // ============================================
 // CONSTANTS
@@ -321,9 +322,12 @@ export default function ApprovalsPage() {
         cell: ({ row }) => {
           const text = row.getValue('justification') as string
           return (
-            <span className="text-sm text-muted-foreground line-clamp-2 max-w-[300px]" title={text}>
-              {text}
-            </span>
+            <div className="flex max-w-[300px] flex-col gap-1">
+              <AIProposalBadge approval={row.original} />
+              <span className="text-sm text-muted-foreground line-clamp-2" title={text}>
+                {text}
+              </span>
+            </div>
           )
         },
         enableSorting: false,
@@ -608,6 +612,9 @@ export default function ApprovalsPage() {
             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
               {selectedApproval.justification}
             </p>
+            <div className="mt-2">
+              <AIProposalBadge approval={selectedApproval} withHint />
+            </div>
           </div>
         )}
       </ConfirmDialog>

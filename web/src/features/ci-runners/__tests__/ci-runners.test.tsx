@@ -606,6 +606,26 @@ describe('CITrustSettings', () => {
     expect(mockRevokeOverride).toHaveBeenCalledWith('ov1')
   })
 
+  it('says when pipelines may still use the old audience, and until when', () => {
+    trust = [
+      {
+        id: 'old',
+        name: 'GitHub acme',
+        provider: 'github',
+        issuer: 'https://token.actions.githubusercontent.com',
+        audience: 'openctem:tenant:t-123',
+        legacy_audience: 'https://openctem.example.com',
+        legacy_audience_until: '2027-01-12T00:00:00Z',
+        enabled: true,
+        rules: { owners: ['acme'] },
+      },
+    ]
+    render(<CITrustSettings />)
+    expect(screen.getByTestId('ci-legacy-audience')).toHaveTextContent(
+      'https://openctem.example.com'
+    )
+  })
+
   it('a member cannot add trust or break-glass', async () => {
     perms = ['scans:ci:read']
     render(<CITrustSettings />)

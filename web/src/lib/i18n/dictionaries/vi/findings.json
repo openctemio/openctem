@@ -89,5 +89,7 @@
   "findings.approvalDialog.submitted": "Đã gửi yêu cầu phê duyệt cho \"{status}\"",
   "findings.approvalDialog.submitFailed": "Gửi yêu cầu phê duyệt thất bại",
   "findings.list.location": "Vị trí",
-  "findings.list.asset": "Tài sản"
+  "findings.list.asset": "Tài sản",
+  "findings.aiProposal.badge": "Đề xuất bởi AI phân loại",
+  "findings.aiProposal.hint": "Đây là gợi ý của AI, không phải quyết định. Hãy kiểm tra phát hiện trước khi phê duyệt."
 }

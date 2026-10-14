@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -27,16 +30,25 @@ func (r *FindingApprovalRepository) Create(ctx context.Context, a *vulnerability
 	query := `
 		INSERT INTO finding_status_approvals (
 			id, tenant_id, finding_id, requested_status, requested_by,
-			justification, status, expires_at, version, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			justification, status, expires_at, version, created_at, requested_by_actor
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
+	var requestedBy any
+	if !a.RequestedBy.IsZero() {
+		requestedBy = a.RequestedBy.String()
+	}
 	_, err := r.db.ExecContext(ctx, query,
 		a.ID.String(), a.TenantID.String(), a.FindingID.String(),
-		a.RequestedStatus, a.RequestedBy.String(),
+		a.RequestedStatus, requestedBy,
 		a.Justification, string(a.Status), a.ExpiresAt, a.Version, a.CreatedAt,
+		nullString(a.RequestedByActor),
 	)
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return fmt.Errorf("%w: a pending request by %s already exists for this finding", shared.ErrConflict, a.RequestedByActor)
+		}
 		return fmt.Errorf("failed to create approval: %w", err)
 	}
 
@@ -235,7 +247,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 	return `
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
-			rejection_reason, status, expires_at, created_at, version
+			rejection_reason, status, expires_at, created_at, version, requested_by_actor
 		FROM finding_status_approvals
 	`
 }
@@ -258,12 +270,13 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		rejectionReason *string
 		status          string
 		expiresAt       *time.Time
+		actor           sql.NullString
 	)
 
 	err := scanner.Scan(
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
-		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version,
+		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -275,7 +288,10 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 	a.ID, _ = shared.IDFromString(id)
 	a.TenantID, _ = shared.IDFromString(tenantID)
 	a.FindingID, _ = shared.IDFromString(findingID)
-	a.RequestedBy, _ = shared.IDFromString(requestedBy.String)
+	if requestedBy.Valid {
+		a.RequestedBy, _ = shared.IDFromString(requestedBy.String)
+	}
+	a.RequestedByActor = actor.String
 	a.Status = vulnerability.ApprovalStatus(status)
 	a.ApprovedAt = approvedAt
 	a.RejectedAt = rejectedAt

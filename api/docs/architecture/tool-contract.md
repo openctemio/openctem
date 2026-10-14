@@ -167,6 +167,17 @@ classification: built-in → catalogue; certified → signed attestation; otherw
 - Built-in descriptors are public.
 - Descriptor strings are rendered as text only, icons come from a closed
   set, and `docs_url` is never fetched.
+- **Declared tools** (RFC-092 §3.1): a tool a sensor of an organization
+  declares with a valid contract and descriptor joins that organization's
+  tool catalog as a projected row (`tools`, tenant row,
+  `metadata.origin = sensor_manifest`, `metadata.descriptor_digest`): name,
+  sanitized display name and description, capability keys, target types,
+  settings schema, version. A newer version refreshes it; it never takes a
+  platform tool's name, never overwrites a member's own tool, is bounded to
+  128 per organization, cannot be edited or deleted through the API (only
+  deactivated), and is never created by a platform sensor. So a new tool
+  needs no catalog migration: `internal/app/sensor/declared_tools.go`,
+  `pkg/domain/tool/declared.go`.
 
 ## 7. Zero-code tools
 

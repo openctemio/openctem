@@ -2120,6 +2120,12 @@ func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding 
 	return out
 }
 
+// taintSourceSuspender suspends decisions whose taint source changed (the
+// postgres data flow repository).
+type taintSourceSuspender interface {
+	SuspendOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
+}
+
 // persistDataFlows stores each trace on the tenant's finding with its
 // fingerprint. The repository
 // replaces a finding's stored flows in one transaction, only when the trace
@@ -2127,6 +2133,15 @@ func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding 
 func (p *FindingProcessor) persistDataFlows(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) {
 	if p.dataFlowRepo == nil || len(traces) == 0 {
 		return
+	}
+	// A decision on a taint finding is suspended for review when its source
+	// changed (checked against the stored trace before it is replaced).
+	if sus, ok := p.dataFlowRepo.(taintSourceSuspender); ok {
+		if ids, err := sus.SuspendOnTaintSourceChange(ctx, tenantID, traces); err != nil {
+			p.logger.Warn("taint source check failed", "error", err)
+		} else if len(ids) > 0 {
+			p.logger.Info("decisions suspended: taint source changed", "count", len(ids))
+		}
 	}
 	n, err := p.dataFlowRepo.ReplaceDataFlows(ctx, tenantID, traces)
 	if err != nil {
