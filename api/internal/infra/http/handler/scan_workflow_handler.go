@@ -339,6 +339,10 @@ type RunTaskResponse struct {
 	// sensor's network confinement kept the tool from reaching: they were
 	// not scanned (show "could not reach", never "found nothing").
 	EgressRefusedTargets int `json:"egress_refused_targets,omitempty"`
+	// GuardRefusedTargets counts the targets of the task the sensor's
+	// target guard refused (blocked or unresolvable addresses, unsafe
+	// targets): never run. Sensor-supplied, bounded by targets.
+	GuardRefusedTargets int `json:"guard_refused_targets,omitempty"`
 	// WindowHold: a queued task waits for a scan window (why, until when,
 	// or never).
 	WindowHold *scanwindow.Hold `json:"window_hold,omitempty"`
@@ -399,6 +403,7 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 			CreatedAt: t.CreatedAt.Format(time.RFC3339), ErrorMessage: platformText(t.Platform, t.ErrorMessage),
 			SkippedTargetsTotal: t.SkippedTotal, WindowHold: t.WindowHold, CoverageGapsTotal: t.CoverageGapsTotal,
 			WaitingOnHosts: t.WaitingOnHosts, EgressRefusedTargets: t.EgressRefusedTargets,
+			GuardRefusedTargets: t.GuardRefusedTargets,
 		}
 		for _, sk := range t.Skipped {
 			r.SkippedTargets = append(r.SkippedTargets, RunTaskSkippedTarget(sk))
