@@ -114,6 +114,27 @@ type TypeDefinition struct {
 	ScannableBy []string `json:"scannable_by"`
 	// ExposureDefault is the exposure the type has by nature ("" = none).
 	ExposureDefault string `json:"exposure_default,omitempty"`
+	// Coverage lists the capabilities an asset of the type needs and how
+	// often (RFC-093). An alias has its own list or none.
+	Coverage []CoverageRule `json:"coverage,omitempty"`
+}
+
+// CoverageRule is one capability an asset of a type needs.
+type CoverageRule struct {
+	// Capability is the stage catalog key ("probe.http") or a platform
+	// check ("dns.dangling").
+	Capability string `json:"capability"`
+	// EverySeconds is how often it is due again after a success.
+	EverySeconds int `json:"every_seconds"`
+	// Requires are predicates over stored facts that must hold for the
+	// rule to apply: "resolves" (the name has an address), "web_port" (an
+	// open port in the web port set), "scope_entry" (an active scope entry
+	// covers the asset).
+	Requires []string `json:"requires,omitempty"`
+	// Expects names the type a successful run must produce for the asset
+	// ("" = no output is expected): the output check of the coverage gap
+	// detector.
+	Expects string `json:"expects,omitempty"`
 }
 
 // SectionDefinition is one detail section from the closed set the web

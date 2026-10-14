@@ -21,9 +21,11 @@ import { cn } from '@/lib/utils'
 import {
   compactCount,
   egressRefusedText,
+  guardRefusedText,
   mapStateLabel,
   outputsDeltaLabel,
   stepEgressRefused,
+  stepGuardRefused,
   type EgressCountedTask,
 } from '../lib/run-map'
 import {
@@ -168,6 +170,7 @@ export function RunFlow({
       node={n}
       byKey={byKey}
       egress={stepEgressRefused(tasks, n.step_key ?? '')}
+      guard={stepGuardRefused(tasks, n.step_key ?? '')}
       now={now}
       selected={selected === n.step_key}
       fixedWidth={fixed}
@@ -454,6 +457,7 @@ function StepCard({
   node,
   byKey,
   egress,
+  guard,
   now,
   selected,
   fixedWidth,
@@ -462,6 +466,7 @@ function StepCard({
   node: RunMapNode
   byKey: Map<string, RunMapNode>
   egress: number
+  guard: number
   now: number
   selected: boolean
   fixedWidth: boolean
@@ -469,10 +474,13 @@ function StepCard({
 }) {
   const { t } = useTranslation()
   const blocked = egressRefusedText(node, egress, t)
-  // A finished step whose targets the sensor's egress refused is not a
-  // clean "done": it is drawn as a warning (its state label stays).
-  const tone = blocked && flowTone(node.state) === 'done' ? 'partial' : flowTone(node.state)
-  const style = blocked ? { ...TONE[tone], Icon: ShieldAlert } : TONE[tone]
+  const guarded = guardRefusedText(node, guard, t)
+  // A finished step whose targets the sensor's egress or target guard
+  // refused is not a clean "done": it is drawn as a warning (its state
+  // label stays).
+  const warned = blocked || guarded
+  const tone = warned && flowTone(node.state) === 'done' ? 'partial' : flowTone(node.state)
+  const style = warned ? { ...TONE[tone], Icon: ShieldAlert } : TONE[tone]
   const name = node.name || node.step_key || ''
   const state = mapStateLabel(node.state ?? 'pending', t)
   const progress = stepProgress(node)
@@ -552,6 +560,12 @@ function StepCard({
         <span className="mt-1 flex items-start gap-1 text-warning">
           <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
           {blocked}
+        </span>
+      ) : null}
+      {guarded ? (
+        <span className="mt-1 flex items-start gap-1 text-warning">
+          <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+          {guarded}
         </span>
       ) : null}
       {skipped ? <span className="mt-1 block text-muted-foreground">{skipped}</span> : null}
