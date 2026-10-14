@@ -71,6 +71,9 @@ var assetMergeRefs = []mergeRef{
 	// Web evidence captures (RFC-081) follow the asset; the newest per asset
 	// are what the asset page shows, so the kept asset gains the history.
 	{table: "asset_web_evidence", column: "asset_id", tenantCol: "tenant_id"},
+	// A finding's injection point follows its finding's asset (correlation
+	// is re-derived on the kept asset's next scan).
+	{table: "finding_injection_points", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
@@ -132,8 +135,6 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"service_id", "dependency_type"}}}},
 	{table: "compensating_control_assets", column: "asset_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"control_id"}}}},
-	{table: "scan_coverage_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
-		keys: []mergeKey{{}}},
 	// One gate policy per repository: the kept repository keeps its own,
 	// else it takes a merged one's.
 	{table: "ci_gate_policies", column: "repository_asset_id", tenantCol: "tenant_id", idCol: "id",
@@ -155,10 +156,11 @@ var assetMergeRefs = []mergeRef{
 	// evidence, and the kept row keeps the earliest first sighting.
 	{table: "easm_evidence", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"rule", "source"}}}},
-	// DNS-check rotation state (RFC-036): the kept asset's own state wins;
-	// a merged asset's state for a check the kept one never ran moves.
-	{table: "easm_dns_check_state", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
-		keys: []mergeKey{{cols: []string{"check_kind"}}}},
+	// Coverage ledger (RFC-093): the kept asset's own row of a capability
+	// and vantage wins; a merged asset's row for a pair the kept one lacks
+	// moves.
+	{table: "asset_coverage", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"capability", "vantage"}}}},
 	// Scan stage chaining (research/27 P0-3): what a step produced follows
 	// the asset (one row per step run and asset), and a run's target
 	// provenance names the kept asset.

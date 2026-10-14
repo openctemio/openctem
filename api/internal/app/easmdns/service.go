@@ -11,7 +11,7 @@
 // domain is worth knowing before anyone has confirmed the host.
 //
 // Each run picks the names checked longest ago first, up to a per-run cap
-// (easm_dns_check_state), so a large inventory is covered over several runs
+// (the asset coverage ledger), so a large inventory is covered over several runs
 // and a restart does not re-check everything. Findings become exposure events
 // (dangling_cname, dangling_ns, email_security_weak); a later check that finds
 // the problem gone resolves the exposure, and one that finds it back reopens
@@ -37,7 +37,7 @@ const Source = "easm_dns"
 // reopens its own resolutions.
 const AutoResolveNote = "Resolved automatically: the DNS check no longer finds the problem."
 
-// Check kinds, as stored in easm_dns_check_state.check_kind.
+// Check kinds; the ledger capability of a kind is "dns.<kind>".
 const (
 	KindDangling = "dangling"
 	KindEmail    = "email"

@@ -33,10 +33,22 @@ import (
 var ErrExchangeRefused = errors.New("ci token exchange refused")
 
 // ErrRunnerOutdated refuses an exchange from a runner that reports a version
-// below the minimum supported one (SENSOR_MIN_VERSION). It is told to the
-// caller (only after its token verified and was admitted): the fix is on its
-// side.
+// below the minimum CI runner release (CI_RUNNER_MIN_VERSION). It is told to
+// the caller (only after its token verified and was admitted): the fix is on
+// its side. The error returned is a *RunnerOutdatedError.
 var ErrRunnerOutdated = errors.New("ci runner older than the minimum supported version")
+
+// RunnerOutdatedError names the runner's version, the minimum and the
+// release to pin, so the job can be told exactly what to change.
+type RunnerOutdatedError struct {
+	Version string
+	Min     string
+	// Pin is the release the console's snippets pin (the newest), else Min.
+	Pin string
+}
+
+func (e *RunnerOutdatedError) Error() string { return ErrRunnerOutdated.Error() }
+func (e *RunnerOutdatedError) Unwrap() error { return ErrRunnerOutdated }
 
 // errPipelineRate is a pipeline over MaxPipelineRunsPerHour (refused as
 // ErrExchangeRefused, audited).
@@ -99,8 +111,10 @@ type Config struct {
 	// PipelineCaps bound the pipelines per tenant and per trust
 	// configuration (zero values take the defaults).
 	PipelineCaps cirun.PipelineCaps
-	// Versions is the sensor release channel a runner's version is judged
-	// against (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION).
+	// Versions is the CI runner release line a runner's version is judged
+	// against (CI_RUNNER_LATEST_VERSION, CI_RUNNER_MIN_VERSION). CI runners
+	// (openctemio/ci) are versioned apart from sensors, so the sensor's
+	// release settings never apply to them.
 	Versions cirun.StatusPolicy
 }
 
@@ -133,6 +147,8 @@ type Service struct {
 	lastPurge time.Time
 	images    ImageLinker
 	stepUp    shared.RecentAuthGate
+	rules     SuppressionRules
+	modules   ModuleGuard
 }
 
 // Deps are the service's collaborators.
@@ -257,7 +273,7 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, ErrExchangeRefused
 	}
 
-	cfg, refusals := admit(configs, tok, claims)
+	cfg, refusals := admit(configs, tok, claims, s.now())
 	if cfg == nil {
 		s.auditRefusal(ctx, tenantID, in, claims, refusals)
 		return nil, ErrExchangeRefused
@@ -286,15 +302,22 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
 	}
-	// A runner below the minimum supported version is refused. The version
-	// is the one the runner reports (User-Agent): this keeps known-bad
-	// releases out, it does not authenticate the binary. A client that
-	// reports no sensor version is admitted and shown as unknown.
-	if v := s.runnerVersion(in.UserAgent); s.cfg.Versions.MinVersion != "" &&
-		sensor.ClassifyVersion(v, "", s.cfg.Versions.MinVersion) == sensor.VersionUnsupported {
-		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "runner_outdated",
-			Detail: fmt.Sprintf("runner %s is older than the minimum supported version %s", v, s.cfg.Versions.MinVersion)}})
-		return nil, ErrRunnerOutdated
+	legacy := claims.Audience != cfg.Audience
+	if legacy {
+		if refusal, err := s.checkLegacyAudience(ctx, tenantID, cfg, key); err != nil {
+			return nil, err
+		} else if refusal != nil {
+			s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
+			return nil, ErrExchangeRefused
+		}
+	}
+	if v := s.runnerVersion(in.UserAgent); runnerRefusal(v, s.cfg.Versions) != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{runnerRefusal(v, s.cfg.Versions)})
+		pin := s.cfg.Versions.LatestVersion
+		if pin == "" {
+			pin = s.cfg.Versions.MinVersion
+		}
+		return nil, &RunnerOutdatedError{Version: v, Min: s.cfg.Versions.MinVersion, Pin: pin}
 	}
 	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
 	if err != nil {
@@ -334,7 +357,14 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		return nil, err
 	}
 	_ = s.repo.TouchTrustConfig(ctx, tenantID, cfg.ID, s.now())
-	s.auditIssued(ctx, tenantID, in, cfg, out)
+	if !legacy && cfg.LegacyAudience != "" {
+		// The pipeline uses the new audience: its legacy one is refused from
+		// now on.
+		if err := s.repo.MarkPipelineAudienceUpgraded(ctx, tenantID, key, s.now()); err != nil {
+			s.log.Warn("ci pipeline audience upgrade not recorded", "error", logger.SanitizeError(err))
+		}
+	}
+	s.auditIssued(ctx, tenantID, in, cfg, out, legacy)
 	return out, nil
 }
 
@@ -424,25 +454,35 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 	}
 	tried := map[string]bool{}
 	var lastErr error
+	now := s.now()
 	for _, c := range configs {
-		key := string(c.Provider) + "\x00" + c.Audience
-		if tried[key] {
-			continue
+		auds := []string{c.Audience}
+		if c.LegacyAccepted(c.LegacyAudience, now) {
+			// The audience the configuration had before audiences named the
+			// tenant: admitted only for a pipeline not yet moved to the new
+			// one (checked in Exchange once the pipeline is known).
+			auds = append(auds, c.LegacyAudience)
 		}
-		tried[key] = true
-		tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: c.Audience,
-			JTIOptional: cirun.JTIOptional(c.Provider)})
-		if err != nil {
-			lastErr = err
-			continue
+		for _, aud := range auds {
+			key := string(c.Provider) + "\x00" + aud
+			if tried[key] {
+				continue
+			}
+			tried[key] = true
+			tok, err := s.verifier.VerifyWorkloadToken(ctx, raw, oidc.WorkloadExpectations{Issuer: c.Issuer, Audience: aud,
+				JTIOptional: cirun.JTIOptional(c.Provider)})
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			claims := cirun.ParseClaims(c.Provider, tok.Claims)
+			// The replay key the verifier chose (the token's jti, or a hash of
+			// the token for a provider that sends none).
+			claims.JTI = tok.JTI
+			claims.ApplyHints(hints)
+			claims.Audience = aud
+			return tok, claims, nil
 		}
-		claims := cirun.ParseClaims(c.Provider, tok.Claims)
-		// The replay key the verifier chose (the token's jti, or a hash of
-		// the token for a provider that sends none).
-		claims.JTI = tok.JTI
-		claims.ApplyHints(hints)
-		claims.Audience = c.Audience
-		return tok, claims, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no audience to verify against")
@@ -452,11 +492,12 @@ func (s *Service) verify(ctx context.Context, raw string, configs []cirun.TrustC
 
 // admit returns the first configuration (with the token's audience) whose
 // rules admit the claims, or the refusals of each.
-func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Claims) (*cirun.TrustConfig, []*cirun.Refusal) {
+func admit(configs []cirun.TrustConfig, tok *oidc.WorkloadToken, claims cirun.Claims, now time.Time) (*cirun.TrustConfig, []*cirun.Refusal) {
 	var refusals []*cirun.Refusal
 	for i := range configs {
 		c := &configs[i]
-		if c.Audience != claims.Audience || c.Issuer != tok.Issuer || c.Provider != claims.Provider {
+		if (c.Audience != claims.Audience && !c.LegacyAccepted(claims.Audience, now)) ||
+			c.Issuer != tok.Issuer || c.Provider != claims.Provider {
 			continue
 		}
 		if r := c.Rules.Admit(claims); r != nil {
@@ -585,6 +626,18 @@ func (s *Service) joinAggregate(ctx context.Context, run *cirun.Run, token strin
 
 // runnerVersion is the sensor version the runner's User-Agent reports
 // (normalized; "" when it reports none).
+// runnerRefusal refuses a runner below the minimum CI runner release. The
+// version is the one the runner reports (User-Agent): this keeps known-bad
+// releases out, it does not authenticate the binary. A client that reports
+// no version is admitted and shown as unknown.
+func runnerRefusal(version string, pol cirun.StatusPolicy) *cirun.Refusal {
+	if pol.MinVersion == "" || sensor.ClassifyVersion(version, "", pol.MinVersion) != sensor.VersionUnsupported {
+		return nil
+	}
+	return &cirun.Refusal{Code: "runner_outdated",
+		Detail: fmt.Sprintf("CI runner %s is older than the minimum supported CI runner release %s", version, pol.MinVersion)}
+}
+
 func (s *Service) runnerVersion(userAgent string) string {
 	_, v := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, s.now())
 	return sensor.NormalizeVersion(v)
@@ -737,13 +790,29 @@ func (s *Service) auditRefusal(ctx context.Context, tenantID shared.ID, in Excha
 	s.logAudit(ctx, tenantID, Actor{Email: ciActor(c), IP: in.ClientIP, UserAgent: in.UserAgent}, ev)
 }
 
-func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in ExchangeInput, cfg *cirun.TrustConfig, out *ExchangeOutput) {
+// checkLegacyAudience admits a token with the configuration's legacy
+// audience only for a pipeline that existed before audiences named the
+// tenant and has not exchanged a token with the new audience since.
+func (s *Service) checkLegacyAudience(ctx context.Context, tenantID shared.ID, cfg *cirun.TrustConfig, key cirun.PipelineKey) (*cirun.Refusal, error) {
+	exists, upgraded, err := s.repo.PipelineAudienceState(ctx, tenantID, key)
+	if err != nil {
+		return nil, fmt.Errorf("load pipeline audience: %w", err)
+	}
+	if exists && !upgraded {
+		return nil, nil
+	}
+	return &cirun.Refusal{Code: "legacy_audience", Detail: fmt.Sprintf(
+		"the token's audience is the configuration's old one; this pipeline must request %s", cfg.Audience)}, nil
+}
+
+func (s *Service) auditIssued(ctx context.Context, tenantID shared.ID, in ExchangeInput, cfg *cirun.TrustConfig, out *ExchangeOutput, legacy bool) {
 	r := out.Run
 	ev := auditapp.NewSuccessEvent(auditdom.ActionCIRunTokenIssued, auditdom.ResourceTypeCIRun, r.ID.String()).
 		WithResourceName(r.Repository).
 		WithMessage(fmt.Sprintf("CI run on %s (%s) admitted by %q", r.Repository, nonEmpty(r.Branch, r.Ref), cfg.Name)).
 		WithMetadata("trust_config_id", cfg.ID.String()).
 		WithMetadata("trust_config", cfg.Name).
+		WithMetadata("legacy_audience", legacy).
 		WithMetadata("repository", r.Repository).
 		WithMetadata("repository_asset_id", r.RepositoryAssetID.String()).
 		WithMetadata("ref", r.Ref).
@@ -837,6 +906,7 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
 	}
 	s.suggestImageLinks(ctx, run, report)
+	s.requestInlineIgnores(ctx, run, report)
 	s.auditUpload(ctx, run, report, out)
 	return out, nil
 }

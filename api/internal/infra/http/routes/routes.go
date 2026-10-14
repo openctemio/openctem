@@ -142,6 +142,7 @@ type Handlers struct {
 	TemplateSource      *handler.TemplateSourceHandler      // nil if not initialized (no database)
 	ContentPack         *handler.ContentPackHandler         // nil if not initialized (no database)
 	PlatformContentPack *handler.PlatformContentPackHandler // nil if not initialized (no database)
+	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	AdminProgramFeed    *handler.AdminProgramFeedHandler    // program feed sources (RFC-065 §16.6)
 	SecretStore         *handler.SecretStoreHandler         // nil if not initialized (no database)
 
@@ -616,6 +617,7 @@ func Register(
 	registerFindingEvidenceItemRoutes(router, h.FindingEvidenceItems, authMiddleware, userSync, log)
 	registerEvidenceSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerCycleSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
+	registerFindingCorrelationSettingsRoutes(router, h.Tenant, authMiddleware, userSync)
 	registerOrganizationMemberRoutes(router, h.LocalAuth, h.Tenant, authMiddleware, userSync)
 	registerOrganizationTrustRoutes(router, h.OrgTrust, authMiddleware, userSync)
 
@@ -885,6 +887,9 @@ func Register(
 	// authenticator, only when enabled.
 	if h.SensorResultsV2 != nil {
 		ctl := sensorControlV2Handler(h, log)
+		if ctl != nil && h.SensorContentV2 != nil {
+			ctl.SetContent(h.SensorContentV2)
+		}
 		budgets := newSensorV2Budgets(ingestRateLimiter, log)
 		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)
 		if h.SensorV3 != nil && ctl != nil {

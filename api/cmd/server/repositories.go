@@ -29,6 +29,7 @@ type Repositories struct {
 	SoftwareMatch           *postgres.SoftwareMatchRepository          // Inventory vulnerability matcher (RFC-066)
 	AssetAttributeSources   *postgres.AssetAttributeSourceRepository   // Per-source asset attribute values (RFC-069)
 	AssetFreshness          *postgres.AssetFreshnessRepository         // Last observation per attribute class (RFC-075)
+	AssetCoverage           *postgres.AssetCoverageRepository          // Coverage ledger (RFC-093)
 	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository       // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository       // Asset change timeline (RFC-069)
@@ -185,6 +186,8 @@ type Repositories struct {
 
 	// Suppressions
 	Suppression *postgres.SuppressionRepository
+	// FindingCorrelation stores cross-rule finding correlations.
+	FindingCorrelation *postgres.FindingCorrelationRepository
 
 	// Access Control
 	Group *postgres.GroupRepository
@@ -341,6 +344,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		SoftwareMatch:           postgres.NewSoftwareMatchRepository(db),
 		AssetAttributeSources:   postgres.NewAssetAttributeSourceRepository(db),
 		AssetFreshness:          postgres.NewAssetFreshnessRepository(db),
+		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),
@@ -477,7 +481,8 @@ func newRepositories(db *postgres.DB) *Repositories {
 		WorkflowNodeRun: postgres.NewAutomationRunStepRepository(db),
 
 		// Suppressions
-		Suppression: postgres.NewSuppressionRepository(db),
+		Suppression:        postgres.NewSuppressionRepository(db),
+		FindingCorrelation: postgres.NewFindingCorrelationRepository(db),
 
 		// Access Control
 		Group:            postgres.NewGroupRepository(db),

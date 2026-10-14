@@ -123,6 +123,11 @@ type ScopeSettingsResponse struct {
 	// UnclassifiedScansEffective is the mode in force: off under the
 	// Strict scan approval mode, else the setting (read-only).
 	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
+	// AutoCoverage is the organization's choice for automatic coverage
+	// (RFC-093): true, false, or null for the default (on unless Strict).
+	AutoCoverage *bool `json:"auto_coverage"`
+	// AutoCoverageEffective: automatic coverage runs now (read-only).
+	AutoCoverageEffective bool `json:"auto_coverage_effective"`
 	// OneOffTargets: admins, admins_and_requests or disabled.
 	OneOffTargets string `json:"one_off_targets"`
 	OneOffMaxDays int    `json:"one_off_max_days"`
@@ -178,6 +183,8 @@ type ScopeSettingsRequest struct {
 	// UnclassifiedScans: off, low_impact or full; omitted keeps the stored
 	// value.
 	UnclassifiedScans string `json:"unclassified_scans" validate:"omitempty,oneof=off low_impact full"`
+	// AutoCoverage: true or false; omitted keeps the stored choice.
+	AutoCoverage      *bool  `json:"auto_coverage"`
 	OneOffTargets     string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
 	OneOffMaxDays     int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
 	WideningApprovals *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
@@ -194,7 +201,8 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 	return ScopeSettingsResponse{
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
 		ReviewBeforeInventory: ss.ReviewBeforeInventory,
-		UnclassifiedScans:     ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
+		AutoCoverage:          ss.AutoCoverage, AutoCoverageEffective: ss.AutoCoverageOn(mode == scangov.ModeStrict),
+		UnclassifiedScans: ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
@@ -279,7 +287,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		ConfirmAddsToScopeDisabled: req.ConfirmAddsToScope != nil && !*req.ConfirmAddsToScope,
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
-		UnclassifiedScans: req.UnclassifiedScans,
+		UnclassifiedScans: req.UnclassifiedScans, AutoCoverage: req.AutoCoverage,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
@@ -287,7 +295,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// A client that does not know confirm_adds_to_scope,
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
-	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" {
+	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -302,6 +310,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.UnclassifiedScans == "" {
 			ss.UnclassifiedScans = before.UnclassifiedScans
+		}
+		if req.AutoCoverage == nil {
+			ss.AutoCoverage = before.AutoCoverage
 		}
 
 	}

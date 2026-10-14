@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"unicode"
 )
 
@@ -102,4 +103,41 @@ func (m Manifest) ToolDescriptor(name string) json.RawMessage {
 		return c.Descriptor
 	}
 	return nil
+}
+
+// DeclaredTool is a tool a manifest declares with a valid contract whose
+// descriptor hashes to the contract's digest: what the organization's tool
+// catalog may take in from the manifest (RFC-092).
+type DeclaredTool struct {
+	Name     string
+	Contract *ToolContract
+}
+
+// DeclaredTools lists the manifest's tools that carry a valid contract and
+// descriptor, at most MaxReportedTools, each name once. A tool without
+// either is left out: only the catalog can vouch for it.
+func (m Manifest) DeclaredTools() []DeclaredTool {
+	out := make([]DeclaredTool, 0, min(len(m.Tools), MaxReportedTools))
+	seen := map[string]bool{}
+	for i, t := range m.Tools {
+		if i >= MaxReportedTools {
+			break
+		}
+		name := strings.ToLower(strings.TrimSpace(t.Name))
+		if !validToolName(name) || seen[name] || t.Contract == nil {
+			continue
+		}
+		c, _ := SanitizeToolContract(t.Contract)
+		if c == nil {
+			continue
+		}
+		d, _ := SanitizeToolDescriptor(c, t.Contract.Descriptor)
+		if d == nil {
+			continue
+		}
+		c.Descriptor = d
+		seen[name] = true
+		out = append(out, DeclaredTool{Name: name, Contract: c})
+	}
+	return out
 }

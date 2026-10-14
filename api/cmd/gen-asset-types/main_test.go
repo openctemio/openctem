@@ -230,6 +230,14 @@ func TestResolve_RejectsInvalidRegistries(t *testing.T) {
 		{"class restriction a type breaks", "provider: { label: Provider, label_vi: Nhà cung cấp }", "provider: { label: Provider, label_vi: Nhà cung cấp, classes: [other] }", "", "restricted to classes"},
 		{"common property restricted to classes", "synonyms: [tool]", "synonyms: [tool], classes: [other]", "", "common property cannot be restricted"},
 		{"common property missing from properties", "common_properties: [discovery_tool]", "common_properties: [discovery_tool, aliases]", "", "not in properties"},
+		// RFC-093: coverage rules.
+		{"coverage capability not verb.object", "card: repository", "card: repository\n    coverage: [{ capability: sast, every: 7d }]", "", "not <verb>.<object>"},
+		{"coverage capability twice", "card: repository", "card: repository\n    coverage: [{ capability: sast.code, every: 7d }, { capability: sast.code, every: 1d }]", "", "listed twice"},
+		{"coverage cadence unit", "card: repository", "card: repository\n    coverage: [{ capability: sast.code, every: 7w }]", "", "not <n>h or <n>d"},
+		{"coverage cadence too short", "card: repository", "card: repository\n    coverage: [{ capability: sast.code, every: 0h }]", "", "not <n>h or <n>d"},
+		{"coverage cadence too long", "card: repository", "card: repository\n    coverage: [{ capability: sast.code, every: 31d }]", "", "outside [1h, 30d]"},
+		{"coverage unknown predicate", "card: repository", "card: repository\n    coverage: [{ capability: sast.code, every: 7d, requires: [is_prod] }]", "", "not a known predicate"},
+		{"coverage expects an unknown type", "card: repository", "card: repository\n    coverage: [{ capability: sast.code, every: 7d, expects: binary }]", "", "is not a type"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

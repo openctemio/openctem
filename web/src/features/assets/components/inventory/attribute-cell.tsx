@@ -22,6 +22,7 @@ import { RelativeTime } from '@/features/shared'
 import { ASSET_PROPERTIES } from '@/features/asset-types/registry.generated'
 import type { TypeAttribute } from '@/features/asset-types/lib/type-view'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { Asset } from '../../types'
 import { attributeStrings, attributeValue } from '../../lib/attribute-value'
 import { OverflowChips } from '../service-cells/overflow-chips'
@@ -49,6 +50,7 @@ function ExpiryCell({ value }: { value: string }) {
 }
 
 export function AttributeCell({ asset, attribute }: { asset: Asset; attribute: TypeAttribute }) {
+  const { t } = useTranslation()
   const { key, kind } = attribute
   const format = ASSET_PROPERTIES[key]?.format
 
@@ -74,10 +76,10 @@ export function AttributeCell({ asset, attribute }: { asset: Asset; attribute: T
     if (typeof v !== 'boolean') return <Dash />
     return v ? (
       <Badge variant="outline" className="font-normal">
-        Yes
+        {t('assets.attributeCell.yes', 'Yes')}
       </Badge>
     ) : (
-      <span className="text-sm text-muted-foreground">No</span>
+      <span className="text-sm text-muted-foreground">{t('assets.properties.no', 'No')}</span>
     )
   }
 

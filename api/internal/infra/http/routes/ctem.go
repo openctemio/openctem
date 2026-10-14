@@ -181,3 +181,16 @@ func registerCycleSettingsRoutes(router Router, h *handler.TenantHandler, authMi
 		r.PUT("/", h.UpdateCycleSettings, middleware.RequireAdmin())
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
 }
+
+// registerFindingCorrelationSettingsRoutes wires the organization's
+// cross-rule correlation switches (research/134 section 12) under the token
+// singleton /api/v1/organization. Owner/admin only; audited.
+func registerFindingCorrelationSettingsRoutes(router Router, h *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/settings/finding-correlation", func(r Router) {
+		r.GET("/", h.GetFindingCorrelationSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.PATCH("/", h.UpdateFindingCorrelationSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}

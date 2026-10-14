@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { RunMap, RunMapNode } from '@/lib/api/generated'
 import {
   compactCount,
-  mapEdgeLabel,
-  mapStateTone,
-  mapStatus,
-  mapSteps,
   nodeBadgeLines,
   outputsByType,
   outputsDeltaLabel,
   producedNothing,
+  stepEgressRefused,
+  stepGuardRefused,
   stepTasks,
   zeroOutputWarnings,
 } from '../run-map'
@@ -65,55 +63,11 @@ const map = {
 } as RunMap
 
 describe('run map', () => {
-  it('maps every state onto the five WorkflowStages tones', () => {
-    expect(
-      [
-        'pending',
-        'waiting',
-        'running',
-        'succeeded',
-        'partial',
-        'failed',
-        'skipped',
-        'canceled',
-      ].map(mapStateTone)
-    ).toEqual([
-      'pending',
-      'pending',
-      'running',
-      'completed',
-      'failed',
-      'failed',
-      'skipped',
-      'skipped',
-    ])
-  })
-
-  it('draws the nodes as workflow steps with their dependencies', () => {
-    const steps = mapSteps(map)
-    expect(steps.map((s) => s.step_key)).toEqual(['subdomains', 'probe', 'vulns', 'report'])
-    expect(steps[1].depends_on).toEqual(['subdomains'])
-    expect(steps[2].name).toBe('vulns') // no name: the key
-    expect(mapStatus(map)).toMatchObject({
-      subdomains: 'completed',
-      probe: 'running',
-      vulns: 'pending',
-    })
-    expect(mapSteps(undefined)).toEqual([])
-  })
-
   it('says why a step waits or failed, its chunks and what it produced', () => {
     expect(nodeBadgeLines(map.nodes![0])).toEqual(['Done', '1.2k outputs'])
     expect(nodeBadgeLines(map.nodes![1])).toEqual(['Running', '3/5 chunks, 1 failed'])
     expect(nodeBadgeLines(map.nodes![2])).toEqual(['Waiting for a sensor'])
     expect(nodeBadgeLines(map.nodes![3])).toEqual(['Failed (no sensor available)'])
-  })
-
-  it('labels an edge only when the upstream step produced something', () => {
-    const label = mapEdgeLabel(map)
-    expect(label('subdomains', 'probe')).toBe('1.2k')
-    expect(label('probe', 'vulns')).toBeUndefined()
-    expect(label('x', 'y')).toBeUndefined()
   })
 
   it('shortens large counts', () => {
@@ -179,5 +133,85 @@ describe('comparison with the previous run', () => {
       { key: 'dns', text: 'DNS produced nothing.' },
     ])
     expect(zeroOutputWarnings(undefined)).toEqual([])
+  })
+
+  it('says a step could not reach its targets when the sensor egress refused them', () => {
+    // The live run of 2026-10-14: the port scan finished with nothing
+    // because the confined egress refused every connection.
+    const ports = node({ step_key: 'ports', name: 'Port scan', state: 'succeeded' })
+    const dns = node({ step_key: 'dns', name: 'DNS', state: 'succeeded' })
+    const probe = node({ step_key: 'probe', name: 'Probe', state: 'running' })
+    const tasks = [
+      { step_key: 'ports', egress_refused_targets: 21 },
+      { step_key: 'ports', egress_refused_targets: 47 },
+      { step_key: 'dns', egress_refused_targets: 1 },
+      { step_key: 'probe', egress_refused_targets: 3 },
+      { step_key: 'ports' },
+      { step_key: 'ports', egress_refused_targets: -4 },
+    ]
+    expect(stepEgressRefused(tasks, 'ports')).toBe(68)
+    expect(stepEgressRefused(undefined, 'ports')).toBe(0)
+    expect(
+      zeroOutputWarnings(
+        { nodes: [ports, dns, probe], edges: [] } as unknown as RunMap,
+        undefined,
+        tasks
+      )
+    ).toEqual([
+      {
+        key: 'ports',
+        text: "Port scan could not reach 68 targets (blocked by the sensor's network confinement).",
+      },
+      {
+        key: 'dns',
+        text: "DNS could not reach 1 target (blocked by the sensor's network confinement).",
+      },
+    ])
+    // Without the count (an older API), the step produced nothing.
+    expect(zeroOutputWarnings({ nodes: [ports], edges: [] } as unknown as RunMap)).toEqual([
+      { key: 'ports', text: 'Port scan produced nothing.' },
+    ])
+  })
+
+  it("says how many of a step's targets the sensor's target guard refused", () => {
+    // The live run of 2026-10-14: the HTTP probe was handed host:port
+    // targets; one refused target must not read as a failed step.
+    const probe = node({
+      step_key: 'probe',
+      name: 'HTTP probe',
+      state: 'succeeded',
+      outputs: { total: 4, by_type: {} },
+    })
+    const ports = node({ step_key: 'ports', name: 'Port scan', state: 'succeeded' })
+    const vulns = node({ step_key: 'vulns', name: 'Templates', state: 'running' })
+    const tasks = [
+      { step_key: 'probe', guard_refused_targets: 2 },
+      { step_key: 'probe', guard_refused_targets: 1 },
+      { step_key: 'probe', guard_refused_targets: -7 },
+      { step_key: 'ports', guard_refused_targets: 1, egress_refused_targets: 5 },
+      { step_key: 'vulns', guard_refused_targets: 9 },
+    ]
+    expect(stepGuardRefused(tasks, 'probe')).toBe(3)
+    expect(stepGuardRefused(undefined, 'probe')).toBe(0)
+    expect(
+      zeroOutputWarnings(
+        { nodes: [probe, ports, vulns], edges: [] } as unknown as RunMap,
+        undefined,
+        tasks
+      )
+    ).toEqual([
+      {
+        key: 'probe:guard',
+        text: "HTTP probe: 3 targets refused by the sensor's target guard (not run).",
+      },
+      {
+        key: 'ports:guard',
+        text: "Port scan: 1 target refused by the sensor's target guard (not run).",
+      },
+      {
+        key: 'ports',
+        text: "Port scan could not reach 5 targets (blocked by the sensor's network confinement).",
+      },
+    ])
   })
 })

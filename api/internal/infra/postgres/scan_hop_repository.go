@@ -327,6 +327,9 @@ func (r *ScanHopRepository) SaveStagePlan(ctx context.Context, plan *scanrun.Sta
 			return false, err
 		}
 	}
+	if err := linkSeedAssets(ctx, tx, plan); err != nil {
+		return false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -345,6 +348,26 @@ func hopNullText(s string) any {
 		return nil
 	}
 	return s
+}
+
+// linkSeedAssets names the inventory asset of each seed target of the plan:
+// the asset of the tenant whose name is the target (an open port seed
+// "host:port" is stored as "host:port:tcp"). A seed nothing in the inventory
+// names (a wildcard, a range, a literal never seen) keeps no asset. Without
+// the link a run cannot say which assets it covered.
+func linkSeedAssets(ctx context.Context, tx *sql.Tx, plan *scanrun.StagePlan) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE scan_run_targets t SET asset_id = a.id
+		FROM assets a
+		WHERE t.tenant_id = $1 AND t.run_id = $2 AND t.stage_key = $3
+		  AND t.origin = 'seed' AND t.asset_id IS NULL
+		  AND a.tenant_id = t.tenant_id AND a.deleted_at IS NULL
+		  AND (a.name = t.target_key OR (a.asset_type = 'service' AND a.name = t.target_key || ':tcp'))`,
+		plan.TenantID.String(), plan.RunID.String(), plan.StageKey)
+	if err != nil {
+		return fmt.Errorf("link seed targets to assets: %w", err)
+	}
+	return nil
 }
 
 func insertRunTargets(ctx context.Context, tx *sql.Tx, plan *scanrun.StagePlan, targets []scanrun.RunTarget) error {

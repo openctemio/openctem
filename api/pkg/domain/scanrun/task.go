@@ -74,6 +74,16 @@ type Task struct {
 	// CoverageGapsTotal counts all of them.
 	CoverageGaps      []CoverageGap
 	CoverageGapsTotal int
+	// EgressRefusedTargets counts the targets of a completed task that its
+	// sensor's network confinement kept the tool from reaching (ctis
+	// outcome failed/egress_refused): not reached, never "nothing found".
+	// Sensor-supplied; bounded by the task's target count.
+	EgressRefusedTargets int
+	// GuardRefusedTargets counts the targets of a task its sensor's target
+	// guard refused (refused_targets with rule SkipRuleTargetGuard: a
+	// blocked or unresolvable address, an unsafe target): never run.
+	// Sensor-supplied; bounded by the task's target count.
+	GuardRefusedTargets int
 	// WindowHold says why a queued task waits for a scan window and until
 	// when (nil: it does not).
 	WindowHold *scanwindow.Hold

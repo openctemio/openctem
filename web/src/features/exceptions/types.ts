@@ -29,6 +29,8 @@ export interface SuppressionRule {
   asset_id?: string | null
   status: SuppressionStatus
   requested_by: string
+  /** A requester that is not a user, e.g. "ci:gitlab:alice". */
+  requested_by_actor?: string
   requested_at: string
   approved_by?: string | null
   approved_at?: string | null
@@ -38,6 +40,23 @@ export interface SuppressionRule {
   expires_at?: string | null
   created_at: string
   updated_at: string
+}
+
+/** `POST /api/v1/suppressions/{id}/approve`: the rule plus what the approval closed. */
+export interface ApproveSuppressionResponse extends SuppressionRule {
+  /** Open findings the approval gave the rule's disposition. */
+  applied_findings: number
+  /** More matched than one approval closes; the rest stay open. */
+  capped: boolean
+}
+
+/** `GET /api/v1/suppressions/{id}/preview`: what an approval would close now. */
+export interface SuppressionPreview {
+  /** Open findings of the organization the rule matches, at most `limit`. */
+  matching_open_findings: number
+  /** More than `limit` match; an approval closes `limit` of them. */
+  capped: boolean
+  limit: number
 }
 
 /** `GET /api/v1/suppressions` list envelope. */
@@ -69,12 +88,23 @@ export interface UpdateSuppressionInput {
   expires_at?: string | null
 }
 
+/** The console's translator (useTranslation().t). */
+export type Translate = (
+  key: string,
+  fallback?: string,
+  vars?: Record<string, string | number>
+) => string
+
+const plain: Translate = (_key, fallback = '') => fallback
+
+/** English fallbacks of exceptions.type.<type>; render with suppressionTypeLabel. */
 export const SUPPRESSION_TYPE_LABELS: Record<SuppressionType, string> = {
   false_positive: 'False Positive',
   accepted_risk: 'Accepted Risk',
   wont_fix: "Won't Fix",
 }
 
+/** English fallbacks of exceptions.status.<status>; render with suppressionStatusLabel. */
 export const SUPPRESSION_STATUS_LABELS: Record<SuppressionStatus, string> = {
   pending: 'Pending',
   approved: 'Approved',
@@ -100,11 +130,21 @@ export const SUPPRESSION_TYPE_BADGE: Record<SuppressionType, string> = {
 }
 
 /** Short human summary of a rule's matching criteria for table/scope cells. */
-export function suppressionScopeSummary(rule: SuppressionRule): string {
+export function suppressionScopeSummary(rule: SuppressionRule, t: Translate = plain): string {
   const parts: string[] = []
   if (rule.tool_name) parts.push(rule.tool_name)
   if (rule.rule_id) parts.push(rule.rule_id)
   if (rule.path_pattern) parts.push(rule.path_pattern)
-  if (rule.asset_id) parts.push('asset-scoped')
-  return parts.length ? parts.join(' · ') : 'Any finding'
+  if (rule.asset_id) parts.push(t('exceptions.scope.assetScoped', 'asset-scoped'))
+  return parts.length ? parts.join(' · ') : t('exceptions.scope.any', 'Any finding')
+}
+
+export function suppressionTypeLabel(type: SuppressionType, t: Translate = plain): string {
+  const fallback = SUPPRESSION_TYPE_LABELS[type]
+  return fallback ? t(`exceptions.type.${type}`, fallback) : type
+}
+
+export function suppressionStatusLabel(status: SuppressionStatus, t: Translate = plain): string {
+  const fallback = SUPPRESSION_STATUS_LABELS[status]
+  return fallback ? t(`exceptions.status.${status}`, fallback) : status
 }

@@ -10,6 +10,7 @@ asset_attribute_set_elements
 asset_attribute_sources
 asset_attributions
 asset_change_events
+asset_coverage
 asset_dedup_review
 asset_enrichment_requests
 asset_groups
@@ -79,7 +80,6 @@ definition_identifiers
 definition_relations
 definition_taxonomy
 easm_alert_throttle
-easm_dns_check_state
 easm_dns_name_state
 easm_evidence
 easm_lookalike_candidates
@@ -87,17 +87,21 @@ easm_lookalike_watches
 easm_network_seeds
 easm_tombstones
 easm_weekly_digests
+exposure_disposition_requests
 exposure_events
 exposures
 finding_activities
 finding_branch_occurrences
 finding_comments
+finding_correlations
+finding_decision_suspensions
 finding_definitions
 finding_evidence
 finding_evidence_secrets
 finding_fingerprints
 finding_group_assignments
 finding_imports
+finding_injection_points
 finding_rekey_runs
 finding_remediation_keys
 finding_retest_cursors
@@ -146,7 +150,6 @@ runtime_telemetry_events
 saml_providers
 saved_views
 scan_approval_requests
-scan_coverage_state
 scan_profiles
 scan_run_scope_snapshots
 scan_run_stage_plans

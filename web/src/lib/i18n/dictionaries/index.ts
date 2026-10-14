@@ -12,6 +12,7 @@ import en_actor from './en/actor.json'
 import en_admin from './en/admin.json'
 import en_announcements from './en/announcements.json'
 import en_assetFreshness from './en/assetFreshness.json'
+import en_assetCoverage from './en/assetCoverage.json'
 import en_assetSources from './en/assetSources.json'
 import en_assets from './en/assets.json'
 import en_assetTimeline from './en/assetTimeline.json'
@@ -24,6 +25,8 @@ import en_components from './en/components.json'
 import en_confirm from './en/confirm.json'
 import en_criticality from './en/criticality.json'
 import en_findings from './en/findings.json'
+import en_exceptions from './en/exceptions.json'
+import en_exposures from './en/exposures.json'
 import en_help from './en/help.json'
 import en_insights from './en/insights.json'
 import en_licensePolicy from './en/licensePolicy.json'
@@ -53,6 +56,7 @@ import vi_actor from './vi/actor.json'
 import vi_admin from './vi/admin.json'
 import vi_announcements from './vi/announcements.json'
 import vi_assetFreshness from './vi/assetFreshness.json'
+import vi_assetCoverage from './vi/assetCoverage.json'
 import vi_assetSources from './vi/assetSources.json'
 import vi_assets from './vi/assets.json'
 import vi_assetTimeline from './vi/assetTimeline.json'
@@ -65,6 +69,8 @@ import vi_components from './vi/components.json'
 import vi_confirm from './vi/confirm.json'
 import vi_criticality from './vi/criticality.json'
 import vi_findings from './vi/findings.json'
+import vi_exceptions from './vi/exceptions.json'
+import vi_exposures from './vi/exposures.json'
 import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
 import vi_licensePolicy from './vi/licensePolicy.json'
@@ -99,6 +105,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   admin: en_admin,
   announcements: en_announcements,
   assetFreshness: en_assetFreshness,
+  assetCoverage: en_assetCoverage,
   assetSources: en_assetSources,
   assets: en_assets,
   assetTimeline: en_assetTimeline,
@@ -111,6 +118,8 @@ export const enNamespaces: Record<string, Dictionary> = {
   confirm: en_confirm,
   criticality: en_criticality,
   findings: en_findings,
+  exceptions: en_exceptions,
+  exposures: en_exposures,
   help: en_help,
   insights: en_insights,
   licensePolicy: en_licensePolicy,
@@ -143,6 +152,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   admin: vi_admin,
   announcements: vi_announcements,
   assetFreshness: vi_assetFreshness,
+  assetCoverage: vi_assetCoverage,
   assetSources: vi_assetSources,
   assets: vi_assets,
   assetTimeline: vi_assetTimeline,
@@ -155,6 +165,8 @@ export const viNamespaces: Record<string, Dictionary> = {
   confirm: vi_confirm,
   criticality: vi_criticality,
   findings: vi_findings,
+  exceptions: vi_exceptions,
+  exposures: vi_exposures,
   help: vi_help,
   insights: vi_insights,
   licensePolicy: vi_licensePolicy,

@@ -168,6 +168,48 @@ sequenceDiagram
   S-->>J: run + octci_ token
 ```
 
+### Inline ignore comments and scanner ignore files
+
+An inline ignore comment (`nosemgrep`, `noopengrep`, `nosem`) or a scanner
+ignore file (`.semgrepignore`) in the repository is the author's claim, not a
+decision. The CI job runs the scanner with `--disable-nosem` and
+`--x-ignore-semgrepignore-files`, so such results are still reported (CTIS
+`suppression.kind = in_source`), and the gate counts them like any other.
+From a verified default-branch run, with repository files allowed by the gate
+policy, each claim becomes a pending suppression request on the repository
+asset (`accepted_risk`, 90 days): the inline rule and path, or each
+ignore-file pattern (`metadata.properties.ignore_file_paths`) as a path-only
+rule. Requests name the CI identity in `suppression_rules.requested_by_actor`
+(`ci:<provider>:<login>`; `.openctem.yml` exceptions do too), write a
+`created` row in `suppression_rule_audit` and one
+`ci_run.exceptions_requested` audit event. At most 20 of each per upload; an
+open request for the same rule and path is not duplicated. Branch runs
+request nothing.
+### Known decisions
+
+A decision made on the platform holds on the next run of the same repository:
+
+- **Gate.** `cirun.Decision` leaves out of the verdict (counted as
+  `accepted`) a finding marked false positive or duplicate, accepted until
+  its acceptance expires, or covered by an approved, unexpired suppression
+  rule. Rules are matched at evaluation time (`applyActiveRules`), so an
+  exception approved after the finding was first seen (an `.openctem.yml`
+  request) covers it; ingest only stamps findings created after approval. A
+  pending request never counts. With the suppressions module off, rules do
+  not apply.
+- **Job output.** The response to `POST /ci/runs/{id}/results` (CTIS report)
+  carries `known`: the indexes, in that report, of the results that carry such
+  a decision, with the decision and the finding id. The job leaves them out of
+  its console summary, SARIF and merge request report and says how many it
+  hid. It learns nothing about findings it did not report, and nothing about
+  another repository or tenant; a lookup failure returns an empty list, so
+  the job shows everything.
+- **Identity.** The finding is the same when its key is (RFC-043 §4.2): a SAST
+  key is the rule, the path and the flagged code, so a line shift keeps the
+  decision and a material change to the code is a new finding that is judged
+  again. The job's claims (`suppressed` flags, inline ignore comments) are
+  never decisions; only the platform's are.
+
 ## Invariants
 
 - A run never creates a sensor row and has no heartbeat; offline alerts never

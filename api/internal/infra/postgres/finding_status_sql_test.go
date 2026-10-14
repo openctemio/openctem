@@ -58,6 +58,8 @@ var findingStatusWriters = map[string]int{
 	"asset_merge_findings.go":              2, // identity merge: survivor inherits, tombstone -> duplicate
 	"ci_coverage_repository.go":            2, // staleFromSQL, sourceRetiredFromSQL
 	"finding_branch_only.go":               1, // branchOnlyExpiryFromSQL
+	"finding_correlation_repository.go":    2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status
+	"finding_taint_source.go":              1, // false_positive/accepted -> confirmed when the taint source changed (status checked under lock)
 	"finding_coverage_autoresolve.go":      2, // autoResolveFromSQL
 	"finding_group_repository.go":          1, // UserFromStatuses($6)
 	"finding_pentest_duplicate.go":         2, // pentest duplicate: draft/in_review -> duplicate, duplicate -> draft (guarded by status)
@@ -68,6 +70,7 @@ var findingStatusWriters = map[string]int{
 	"finding_template_provenance.go":       1, // staleFromSQL
 	"finding_vex_document.go":              1, // vexFalsePositiveFromSQL
 	"softwarematch_repository.go":          1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, staleFromSQL, vexFalsePositiveFromSQL
+	"suppression_apply.go":                 1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
 	"suppression_repository.go":            2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
 	"license_policy_repository.go":         2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
 	"vex_statement_repository.go":          1, // per-row move decided by vex.Decide (lifecycle edges, TestDecideFollowsLifecycle), guarded by the old status

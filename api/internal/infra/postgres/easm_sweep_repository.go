@@ -58,7 +58,8 @@ func (r *EASMSweepRepository) Freshness(ctx context.Context, tenantID shared.ID)
 	var ct, dns sql.NullTime
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT (SELECT max(last_checked_at) FROM ct_monitor_state WHERE tenant_id = $1),
-		       (SELECT max(last_checked_at) FROM easm_dns_check_state WHERE tenant_id = $1)`,
+		       (SELECT max(last_attempt_at) FROM asset_coverage
+		         WHERE tenant_id = $1 AND capability IN ('dns.dangling', 'dns.email'))`,
 		tenantID.String()).Scan(&ct, &dns); err != nil {
 		return nil, nil, fmt.Errorf("read easm freshness: %w", err)
 	}

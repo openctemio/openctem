@@ -124,6 +124,32 @@ type PriorityReclassifyEnqueuer interface {
 	EnqueueForAsset(ctx context.Context, tenantID, assetID shared.ID)
 }
 
+// FalsePositiveProposer records an AI false-positive proposal as a pending
+// approval a person must decide (implemented by the finding service, which
+// refuses critical and high findings and never duplicates a request).
+type FalsePositiveProposer interface {
+	ProposeFalsePositiveFromAI(ctx context.Context, tenantID, findingID shared.ID, likelihood float64, rationale string) (bool, error)
+}
+
+// SetFalsePositiveProposer wires AI false-positive proposals. nil = none.
+func (s *AITriageService) SetFalsePositiveProposer(p FalsePositiveProposer) { s.fpProposer = p }
+
+// proposeFalsePositive hands a completed analysis to the proposer unless it
+// needed review (coerced output, or prompt-injection markers in the finding,
+// which also cap the likelihood below the threshold).
+func (s *AITriageService) proposeFalsePositive(ctx context.Context, tenantID, findingID shared.ID, analysis *aitriagedom.TriageAnalysis) {
+	if s.fpProposer == nil || analysis == nil || len(analysis.ValidationWarnings) > 0 {
+		return
+	}
+	rationale := analysis.FalsePositiveReason
+	if rationale == "" {
+		rationale = analysis.Summary
+	}
+	if _, err := s.fpProposer.ProposeFalsePositiveFromAI(ctx, tenantID, findingID, analysis.FalsePositiveLikelihood, rationale); err != nil {
+		s.logger.Warn("failed to record AI false-positive proposal", "finding_id", findingID.String(), "error", err)
+	}
+}
+
 // TriageBroadcaster broadcasts triage events for real-time WebSocket updates.
 type TriageBroadcaster interface {
 	// BroadcastTriage sends a triage event to subscribers.
@@ -146,6 +172,7 @@ type AITriageService struct {
 	workflowDispatcher WorkflowEventDispatcherInterface
 	triageBroadcaster  TriageBroadcaster          // For real-time WebSocket updates
 	reclassifyEnqueuer PriorityReclassifyEnqueuer // enqueues priority reclassify on triage completion
+	fpProposer         FalsePositiveProposer      // records confident false-positive verdicts as pending approvals
 	platformCfg        config.AITriageConfig
 	logger             *logger.Logger
 	outputValidator    *TriageOutputValidator
@@ -696,6 +723,12 @@ func (s *AITriageService) ProcessTriage(ctx context.Context, resultID, tenantID,
 		!finding.AssetID().IsZero() {
 		s.reclassifyEnqueuer.EnqueueForAsset(ctx, tenantID, finding.AssetID())
 	}
+
+	// A confident verdict on a medium or low finding becomes a PENDING
+	// false-positive request for a person (the proposer enforces severity and
+	// idempotency). A result that needed review (coerced output or prompt
+	// injection markers in the finding) proposes nothing.
+	s.proposeFalsePositive(ctx, tenantID, findingID, analysis)
 
 	s.logger.Info("triage completed",
 		"result_id", resultID.String(),

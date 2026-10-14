@@ -7,8 +7,10 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -35,6 +37,7 @@ type CIRunService interface {
 	Exchange(ctx context.Context, in cirunapp.ExchangeInput) (*cirunapp.ExchangeOutput, error)
 	Authenticate(ctx context.Context, token string) (*cirun.Run, error)
 	UploadReport(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, error)
+	KnownFindings(ctx context.Context, run *cirun.Run, out *ingest.Output) []cirun.KnownFinding
 	UploadImported(ctx context.Context, run *cirun.Run, report *ctis.Report) (*ingest.Output, int, error)
 	BaselineDiff(ctx context.Context, run *cirun.Run, fingerprints []string) (*cirunapp.BaselineDiffOutput, error)
 	Evaluate(ctx context.Context, run *cirun.Run, in cirunapp.EvaluateInput) (*cirunapp.Verdict, error)
@@ -47,6 +50,8 @@ type CIRunnerHandler struct {
 	// vex applies the VEX statements of an uploaded VEX document; nil
 	// refuses VEX documents.
 	vex CIVEXApplier
+	// secretKeys derives the job's secret hashing key (nil: none).
+	secretKeys SecretKeys
 }
 
 // CIVEXApplier applies converted VEX statements (findingimport.Service).
@@ -117,7 +122,20 @@ type CIExchangeResponse struct {
 	IsDefaultBranch   bool      `json:"is_default_branch"`
 	// Aggregate: the token belongs to the aggregate run of the pipeline run.
 	Aggregate bool `json:"aggregate"`
+	// SecretKey (base64) is the key the job hashes each raw secret it finds
+	// with (HMAC-SHA256), sent as the CTIS partial fingerprint secretHMAC/v1,
+	// so a secret finding keeps its identity without the raw value leaving
+	// the job. Derived per organization and repository.
+	SecretKey string `json:"secret_key,omitempty"`
 }
+
+// SecretKeys derives the per-repository key a CI job hashes secrets with.
+type SecretKeys interface {
+	ProducerKey(tenantID, assetID shared.ID) []byte
+}
+
+// SetSecretKeys makes the exchange hand out a secret hashing key (nil: none).
+func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 
 // Exchange handles POST /api/v1/ci/oidc/exchange
 // @Summary      Exchange a CI OIDC token for a run upload token
@@ -132,6 +150,23 @@ type CIExchangeResponse struct {
 // @Failure      403  {object}  apierror.Error "RUNNER_OUTDATED: the runner reports a version below the minimum supported one"
 // @Failure      429  {object}  apierror.Error
 // @Router       /ci/oidc/exchange [post]
+// runnerOutdatedMessage tells the job exactly which line to change: the
+// openctemio/ci release to pin, in each form a pipeline uses it.
+func runnerOutdatedMessage(err error) string {
+	var oe *cirunapp.RunnerOutdatedError
+	if !errors.As(err, &oe) || oe.Pin == "" {
+		return "This CI runner is older than the oldest openctemio/ci release this platform accepts; pin the current openctemio/ci release"
+	}
+	have := oe.Version
+	if have == "" {
+		have = "an older release"
+	}
+	return fmt.Sprintf("This CI runner (openctem-ci %s) is older than %s, the oldest openctemio/ci release this platform accepts. "+
+		"Change the pin to %[3]s: GitHub `uses: openctemio/ci/.github/workflows/scan.yml@%[3]s` (or `openctemio/ci@%[3]s`); "+
+		"GitLab `- remote: https://raw.githubusercontent.com/openctemio/ci/%[3]s/gitlab/templates/all.yml`; "+
+		"other CI systems `ghcr.io/openctemio/ci:%[3]s`.", have, oe.Min, oe.Pin)
+}
+
 func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, maxExchangeBody)
@@ -151,8 +186,7 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, cirunapp.ErrRunnerOutdated) {
-			apierror.New(http.StatusForbidden, "RUNNER_OUTDATED",
-				"This CI runner is older than the minimum supported version; update the sensor image").WriteJSON(w)
+			apierror.New(http.StatusForbidden, "RUNNER_OUTDATED", runnerOutdatedMessage(err)).WriteJSON(w)
 			return
 		}
 		h.logger.Error("ci token exchange failed", "error", logger.SanitizeError(err))
@@ -165,6 +199,11 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		RepositoryAssetID: run.RepositoryAssetID.String(), Branch: run.Branch, CommitSHA: run.CommitSHA,
 		PullRequest: run.PullRequest, DefaultBranch: run.DefaultBranch, IsDefaultBranch: run.IsDefaultBranch,
 		Aggregate: run.Aggregate}
+	if h.secretKeys != nil {
+		if k := h.secretKeys.ProducerKey(run.TenantID, run.RepositoryAssetID); len(k) > 0 {
+			resp.SecretKey = base64.StdEncoding.EncodeToString(k)
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
@@ -203,13 +242,13 @@ func (h *CIRunnerHandler) AuthenticateRun(next http.Handler) http.Handler {
 
 // UploadResults handles POST /api/v1/ci/runs/{id}/results
 // @Summary      Upload a CI run's results
-// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict.
+// @Description  A CTIS report from the run, or a file a tool wrote in a format the importers read (SARIF, an SBOM, OSV results, ...; detected from the content, a ZIP of them too). It may name only the run's repository (an exported file's findings on any other asset are dropped and counted); the branch, commit and pull request come from the verified OIDC token, not from the report. Findings are recorded for the run's gate verdict. For a CTIS report, known lists the report's results that carry a decision the gate honors (false positive, duplicate, accepted risk, approved suppression), by index, so the job can leave them out of its own output.
 // @Tags         CI
 // @Accept       json
 // @Produce      json
 // @Param        id   path string true "Run ID"
 // @Param        body body CTISIngestRequest true "CTIS report"
-// @Success      201  {object}  IngestResponse
+// @Success      201  {object}  CIUploadResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
@@ -243,7 +282,16 @@ func (h *CIRunnerHandler) UploadResults(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(newIngestResponse(out))
+	_ = json.NewEncoder(w).Encode(CIUploadResponse{IngestResponse: newIngestResponse(out), Known: h.svc.KnownFindings(r.Context(), run, out)})
+}
+
+// CIUploadResponse is the result of a CI report upload: the ingest counts,
+// and the results of this report that carry a decision the gate honors (a
+// false positive, duplicate, accepted risk or approved suppression), by their
+// index in the report. The job leaves those out of its own output.
+type CIUploadResponse struct {
+	IngestResponse
+	Known []cirun.KnownFinding `json:"known"`
 }
 
 // decodeCTISReport accepts {"report": {...}} or a bare report, refusing

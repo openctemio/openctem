@@ -142,6 +142,11 @@ export interface UpdateScopeSettingsInput {
    * only when the API reports it.
    */
   unclassified_scans?: UnclassifiedScans
+  /**
+   * Automatic coverage (RFC-093): the organization's explicit choice; omitted
+   * keeps the stored one (the default is on, except under Strict approval).
+   */
+  auto_coverage?: boolean
 }
 
 /** The unclassified-scans setting (RFC-054 §16). */

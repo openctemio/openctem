@@ -69,6 +69,11 @@ type ScopeSettings struct {
 	// full (the scan's own tier). The platform guardrails apply in every
 	// mode; under the Strict scan approval mode it is off whatever is set.
 	UnclassifiedScans string `json:"unclassified_scans,omitempty"`
+	// AutoCoverage turns automatic coverage (RFC-093) on or off: the
+	// coverage loop starts the capabilities each in-scope asset needs. Nil is
+	// the default: on, except while the Strict scan approval mode is in force
+	// (owner decision D1).
+	AutoCoverage *bool `json:"auto_coverage,omitempty"`
 	// OneOffTargets: admins, admins_and_requests (default) or disabled.
 	OneOffTargets string `json:"one_off_targets,omitempty"`
 	// OneOffMaxDays bounds an expiring entry, 1..30 (0: 7).
@@ -205,6 +210,15 @@ func (s ScopeSettings) Unclassified() string {
 		return UnclassifiedLowImpact
 	}
 	return s.UnclassifiedScans
+}
+
+// AutoCoverageOn reports whether automatic coverage runs: the explicit
+// choice, else on unless the Strict scan approval mode is in force.
+func (s ScopeSettings) AutoCoverageOn(strict bool) bool {
+	if s.AutoCoverage != nil {
+		return *s.AutoCoverage
+	}
+	return !strict
 }
 
 // Tier returns the default tier with its default (t1).

@@ -89,7 +89,7 @@ export function CIOverrideDialog({
               id="ov-sha"
               hint={t(
                 'scans.ci.breakGlass.commitHint',
-                'The full commit id (40 characters). The override covers exactly this commit.'
+                'The full commit id (40 or 64 characters). The override covers exactly this commit.'
               )}
             >
               <Input
@@ -134,7 +134,12 @@ export function CIOverrideDialog({
                   reason: reason.trim(),
                   expires_in_hours: hoursValue,
                 })
-                toast.success(t('scans.ci.breakGlass.created', 'Override created'))
+                toast.success(t('scans.ci.breakGlass.created', 'Override created'), {
+                  description: t(
+                    'scans.ci.breakGlass.rerun',
+                    'Re-run the pipeline on this commit: its next run passes the gate and the check turns green.'
+                  ),
+                })
                 onOpenChange(false)
                 onCreated?.()
               } catch (e) {

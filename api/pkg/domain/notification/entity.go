@@ -80,6 +80,9 @@ const (
 	// TypeAttackSurfaceDigest is the weekly "what changed" digest of the
 	// attack surface, sent to administrators (RFC-080).
 	TypeAttackSurfaceDigest = "attack_surface_digest"
+	// TypeCoverageGap tells administrators that assets went without a
+	// capability their type needs (RFC-093).
+	TypeCoverageGap = "coverage_gap"
 )
 
 // Notification represents an in-app notification.
@@ -285,7 +288,9 @@ func IsValidType(t string) bool {
 		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
 		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
 		TypeCampaignStatusChange,
-		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending:
+		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending,
+		TypeMemberLifecycle, TypeCISecurity, TypeSensorSecurity, TypeScopeChange,
+		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest, TypeCoverageGap:
 		return true
 	}
 	return false

@@ -73,7 +73,7 @@ func TestEASMDNSRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	_ = sqlDB.QueryRowContext(ctx, `SELECT count(*) FROM easm_dns_check_state WHERE asset_id = $1`, theirs[0].AssetID.String()).Scan(&n)
+	_ = sqlDB.QueryRowContext(ctx, `SELECT count(*) FROM asset_coverage WHERE asset_id = $1 AND capability LIKE 'dns.%'`, theirs[0].AssetID.String()).Scan(&n)
 	if n != 0 {
 		t.Fatal("state written for another tenant's asset")
 	}

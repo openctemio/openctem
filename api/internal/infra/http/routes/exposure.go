@@ -48,8 +48,13 @@ func registerExposureRoutes(
 		// needs the approver permission, not findings:write. Exposures have no
 		// request/approve records of their own; the approver sets the state
 		// directly, with the reason recorded in the state history.
+		//
+		// A high or critical exposure takes two approvers: the first call
+		// stores a pending request (202), a different approver's call for the
+		// same disposition applies it; reject drops the request.
 		r.POST("/{id}/accept", h.Accept, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
 		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
+		r.POST("/{id}/disposition/reject", h.RejectDisposition, middleware.RequireAll(permission.FindingsApprove, permission.ExposuresTriage))
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.RequireAll(permission.FindingsWrite, permission.ExposuresTriage))
 
 		// CTEM-ID tag: associate a standardized exposure-catalog id with this
@@ -154,8 +159,10 @@ func registerCredentialRoutes(
 		// Accept and false-positive set the same exposure dispositions that
 		// /exposures/{id}/accept and /false-positive gate on the approver
 		// permission, so they need findings:approve as well as credentials:write.
+		// A high or critical leak takes two approvers, as for exposures.
 		r.POST("/{id}/accept", h.Accept, middleware.RequireAll(permission.CredentialsWrite, permission.FindingsApprove))
 		r.POST("/{id}/false-positive", h.MarkFalsePositive, middleware.RequireAll(permission.CredentialsWrite, permission.FindingsApprove))
+		r.POST("/{id}/disposition/reject", h.RejectDisposition, middleware.RequireAll(permission.CredentialsWrite, permission.FindingsApprove))
 		r.POST("/{id}/reactivate", h.Reactivate, middleware.Require(permission.CredentialsWrite))
 	}, tenantMiddlewares...)
 
@@ -273,6 +280,12 @@ func registerVulnerabilityRoutes(
 		// in the body into this one; merging with an approval disposition
 		// also needs findings:approve (checked in the service).
 		r.POST("/{id}/duplicates", h.AddFindingDuplicate, middleware.Require(permission.FindingsTriage))
+		// Cross-rule correlation (research/134 section 12): the detections of
+		// one issue; un-duplicating a correlated detection and confirming a
+		// suggestion are triage decisions.
+		r.GET("/{id}/detections", h.GetFindingDetections, middleware.Require(permission.FindingsRead))
+		r.POST("/{id}/correlation/release", h.ReleaseFindingCorrelation, middleware.Require(permission.FindingsTriage))
+		r.POST("/{id}/correlation/approve", h.ConfirmFindingCorrelation, middleware.Require(permission.FindingsTriage))
 		// Verification is a segregation-of-duties control: moving a finding to
 		// resolved must require FindingsVerify (security/scanner), NOT the
 		// broader FindingsWrite that a developer role holds — otherwise a member

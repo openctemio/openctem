@@ -444,6 +444,12 @@ const (
 	ActionSuppressionRuleApproved     Action = "suppression_rule.approved"
 	ActionSuppressionRuleSelfApproved Action = "suppression_rule.self_approved"
 
+	// Four-eyes dispositions of high and critical exposures.
+	ActionExposureDispositionRequested    Action = "exposure.disposition_requested"
+	ActionExposureDispositionApproved     Action = "exposure.disposition_approved"
+	ActionExposureDispositionSelfApproved Action = "exposure.disposition_self_approved"
+	ActionExposureDispositionRejected     Action = "exposure.disposition_rejected"
+
 	// Report schedule actions: a schedule mails organization posture to its
 	// recipients (members or the allowed domains, D12).
 	ActionReportScheduleCreated   Action = "report_schedule.created"
@@ -717,6 +723,7 @@ func (a Action) IsValid() bool {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
+		ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected,
 		ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedCreated, ActionEASMSeedUpdated, ActionEASMSeedDeleted,
@@ -844,6 +851,8 @@ func (a Action) Category() string {
 		return "scope"
 	case ActionSuppressionRuleApproved, ActionSuppressionRuleSelfApproved:
 		return "suppression"
+	case ActionExposureDispositionRequested, ActionExposureDispositionApproved, ActionExposureDispositionSelfApproved, ActionExposureDispositionRejected:
+		return "exposure"
 	case ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted:
 		return "report_schedule"
 	case ActionScannerTemplateCreated, ActionScannerTemplateUpdated,
@@ -903,6 +912,7 @@ const (
 	ResourceTypeBranch         ResourceType = "branch"
 	ResourceTypeComponent      ResourceType = "component"
 	ResourceTypeCredential     ResourceType = "credential"
+	ResourceTypeExposure       ResourceType = "exposure"
 	ResourceTypeVulnerability  ResourceType = "vulnerability"
 	ResourceTypeFinding        ResourceType = "finding"
 	ResourceTypeFindingComment ResourceType = "finding_comment"
@@ -987,7 +997,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeCampaign, ResourceTypeMCPTool, ResourceTypeMCPPrompt, ResourceTypeAPIKey,
 		ResourceTypeSAMLConfig, ResourceTypeIdentityProvider, ResourceTypeVerifiedDomain, ResourceTypeEASMNetworkSeed, ResourceTypeEASMLookalikeWatch, ResourceTypeSSOChange,
 		ResourceTypeSCIMGroupMapping, ResourceTypeOrgTrust,
-		ResourceTypeCredential, ResourceTypeAuditChain, ResourceTypeTemplateSource,
+		ResourceTypeCredential, ResourceTypeExposure, ResourceTypeAuditChain, ResourceTypeTemplateSource,
 		ResourceTypeScopeTarget, ResourceTypeScopeExclusion, ResourceTypeBountyProgram, ResourceTypeAuthorizationLetter, ResourceTypeSuppressionRule, ResourceTypeScannerTemplate, ResourceTypeIntegration,
 		ResourceTypeRemediationCampaign, ResourceTypeReportSchedule, ResourceTypeEASMSeed:
 		return true
@@ -1050,7 +1060,8 @@ func SeverityForAction(a Action) Severity {
 		ActionAuthFailed, ActionPermissionDenied,
 		ActionSensorRevoked, ActionSensorDeleted,
 		ActionSecurityValidationFailed, ActionSecurityCrossTenantAccess,
-		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved:
+		ActionAuditChainRebaselined, ActionMemberDataErased, ActionSuppressionRuleSelfApproved,
+		ActionExposureDispositionSelfApproved:
 		return SeverityCritical
 
 	// High - privilege changes and scan workflow failures
@@ -1112,6 +1123,7 @@ func SeverityForAction(a Action) Severity {
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionActivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
 		ActionSuppressionRuleApproved,
+		ActionExposureDispositionApproved, ActionExposureDispositionRejected,
 		ActionReportScheduleCreated, ActionReportScheduleActivated, ActionReportScheduleDeleted,
 		ActionEASMSeedUpdated, ActionEASMSeedDeleted,
 		ActionScannerTemplateDeprecated, ActionScannerTemplateDeleted,

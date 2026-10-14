@@ -2030,6 +2030,51 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 	return &result, nil
 }
 
+// UpdateFindingCorrelationSettingsInput: nil = unchanged.
+type UpdateFindingCorrelationSettingsInput struct {
+	AutoDisabled        *bool
+	SuggestionsDisabled *bool
+}
+
+// UpdateFindingCorrelationSettings changes the correlation switches.
+func (s *TenantService) UpdateFindingCorrelationSettings(ctx context.Context, tenantID string, input UpdateFindingCorrelationSettingsInput, actx auditapp.AuditContext) (*tenantdom.FindingCorrelationSettings, error) {
+	var before tenantdom.FindingCorrelationSettings
+	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionFindingCorrelation, func(t *tenantdom.Tenant) error {
+		before = t.TypedSettings().FindingCorrelation
+		fc := before
+		if input.AutoDisabled != nil {
+			fc.AutoDisabled = *input.AutoDisabled
+		}
+		if input.SuggestionsDisabled != nil {
+			fc.SuggestionsDisabled = *input.SuggestionsDisabled
+		}
+		return t.UpdateFindingCorrelationSettings(fc)
+	})
+	if err != nil {
+		return nil, err
+	}
+	actx.TenantID = tenantID
+	after := t.TypedSettings().FindingCorrelation
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionTenantSettingsUpdated, audit.ResourceTypeTenant, tenantID).
+		WithChanges(auditapp.DiffChanges(before, after)).
+		WithMessage("Finding correlation settings updated"))
+	return &after, nil
+}
+
+// GetFindingCorrelationSettings returns the correlation switches.
+func (s *TenantService) GetFindingCorrelationSettings(ctx context.Context, tenantID string) (*tenantdom.FindingCorrelationSettings, error) {
+	parsedID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
+	}
+	t, err := s.repo.GetByID(ctx, parsedID)
+	if err != nil {
+		return nil, err
+	}
+	fc := t.TypedSettings().FindingCorrelation
+	return &fc, nil
+}
+
 // GetPentestSettings returns the current pentest settings for a tenant.
 // Returns system defaults if the tenant has not customized pentest settings.
 func (s *TenantService) GetPentestSettings(ctx context.Context, tenantID string) (*tenantdom.PentestSettings, error) {

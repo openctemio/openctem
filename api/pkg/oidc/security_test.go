@@ -366,6 +366,14 @@ func TestJWKSStaleGraceOnOutage(t *testing.T) {
 	}
 }
 
+// The stale grace is at most six hours: a key the provider withdrew must not
+// keep verifying for a day while the platform cannot refetch.
+func TestJWKSStaleGraceIsBounded(t *testing.T) {
+	if jwksMaxStale > 6*time.Hour || jwksMaxStale <= jwksTTL {
+		t.Fatalf("jwksMaxStale = %s, want above the %s refresh and at most 6h", jwksMaxStale, jwksTTL)
+	}
+}
+
 func TestVerifyJWTRefusesIncompletePolicy(t *testing.T) {
 	p := newTestIdP(t)
 	raw := p.sign(t, p.baseClaims())

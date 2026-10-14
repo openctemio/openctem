@@ -24,10 +24,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { useCreateSuppression, useUpdateSuppression } from '../api/use-suppressions-api'
-import { SUPPRESSION_TYPE_LABELS, type SuppressionRule, type SuppressionType } from '../types'
+import { suppressionTypeLabel, type SuppressionRule, type SuppressionType } from '../types'
 
 interface SuppressionFormDialogProps {
   open: boolean
@@ -62,6 +63,7 @@ export function SuppressionFormDialog({
   rule,
   onSuccess,
 }: SuppressionFormDialogProps) {
+  const { t } = useTranslation()
   const isEdit = Boolean(rule)
 
   const [name, setName] = useState('')
@@ -106,7 +108,7 @@ export function SuppressionFormDialog({
           path_pattern: pathPattern.trim(),
           expires_at: expires ?? '',
         })
-        toast.success('Suppression rule updated')
+        toast.success(t('exceptions.form.updated', 'Suppression rule updated'))
       } else {
         await triggerCreate({
           name: name.trim(),
@@ -117,13 +119,18 @@ export function SuppressionFormDialog({
           path_pattern: pathPattern.trim() || undefined,
           expires_at: expires,
         })
-        toast.success('Suppression rule submitted for approval')
+        toast.success(t('exceptions.form.submitted', 'Suppression rule submitted for approval'))
       }
       onSuccess?.()
       onOpenChange(false)
     } catch (err) {
       toast.error(
-        getErrorMessage(err, `Failed to ${isEdit ? 'update' : 'create'} suppression rule`)
+        getErrorMessage(
+          err,
+          isEdit
+            ? t('exceptions.form.updateFailed', 'Failed to update suppression rule')
+            : t('exceptions.form.createFailed', 'Failed to create suppression rule')
+        )
       )
     }
   }
@@ -132,11 +139,21 @@ export function SuppressionFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit Suppression Rule' : 'New Suppression Rule'}</DialogTitle>
+          <DialogTitle>
+            {isEdit
+              ? t('exceptions.form.editTitle', 'Edit Suppression Rule')
+              : t('exceptions.form.newTitle', 'New Suppression Rule')}
+          </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? 'Update the matching criteria or expiry for this suppression rule.'
-              : 'Suppress false positives or accepted risks. New rules require approval before they take effect.'}
+              ? t(
+                  'exceptions.form.editDescription',
+                  'Update the matching criteria or expiry for this suppression rule.'
+                )
+              : t(
+                  'exceptions.form.newDescription',
+                  'Suppress false positives or accepted risks. New rules require approval before they take effect.'
+                )}
           </DialogDescription>
         </DialogHeader>
 
@@ -144,11 +161,14 @@ export function SuppressionFormDialog({
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
               <Label htmlFor="suppression-name">
-                Name <span className="text-destructive">*</span>
+                {t('exceptions.form.name', 'Name')} <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="suppression-name"
-                placeholder="e.g. Ignore test-fixture secrets"
+                placeholder={t(
+                  'exceptions.form.namePlaceholder',
+                  'e.g. Ignore test-fixture secrets'
+                )}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={200}
@@ -158,7 +178,7 @@ export function SuppressionFormDialog({
             {!isEdit && (
               <div className="grid gap-2">
                 <Label htmlFor="suppression-type">
-                  Type <span className="text-destructive">*</span>
+                  {t('exceptions.form.type', 'Type')} <span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={suppressionType}
@@ -168,9 +188,9 @@ export function SuppressionFormDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TYPE_OPTIONS.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {SUPPRESSION_TYPE_LABELS[t]}
+                    {TYPE_OPTIONS.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {suppressionTypeLabel(type, t)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -179,10 +199,15 @@ export function SuppressionFormDialog({
             )}
 
             <div className="grid gap-2">
-              <Label htmlFor="suppression-desc">Description</Label>
+              <Label htmlFor="suppression-desc">
+                {t('exceptions.form.description', 'Description')}
+              </Label>
               <Textarea
                 id="suppression-desc"
-                placeholder="Why is this finding being suppressed?"
+                placeholder={t(
+                  'exceptions.form.descriptionPlaceholder',
+                  'Why is this finding being suppressed?'
+                )}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
@@ -192,12 +217,16 @@ export function SuppressionFormDialog({
 
             <div className="rounded-lg border p-3 space-y-3">
               <p className="text-xs text-muted-foreground">
-                Matching criteria — provide a rule ID or a path pattern (at least one is required).
-                Tool name further narrows the match.
+                {t(
+                  'exceptions.form.criteriaHint',
+                  'Matching criteria — provide a rule ID or a path pattern (at least one is required). Tool name further narrows the match.'
+                )}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="suppression-tool">Tool name</Label>
+                  <Label htmlFor="suppression-tool">
+                    {t('exceptions.form.toolName', 'Tool name')}
+                  </Label>
                   <Input
                     id="suppression-tool"
                     placeholder="semgrep"
@@ -207,7 +236,9 @@ export function SuppressionFormDialog({
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="suppression-rule-id">Rule ID</Label>
+                  <Label htmlFor="suppression-rule-id">
+                    {t('exceptions.form.ruleId', 'Rule ID')}
+                  </Label>
                   <Input
                     id="suppression-rule-id"
                     placeholder="semgrep.sql-injection"
@@ -218,7 +249,9 @@ export function SuppressionFormDialog({
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="suppression-path">Path pattern</Label>
+                <Label htmlFor="suppression-path">
+                  {t('exceptions.form.pathPattern', 'Path pattern')}
+                </Label>
                 <Input
                   id="suppression-path"
                   placeholder="tests/**"
@@ -229,13 +262,18 @@ export function SuppressionFormDialog({
               </div>
               {!hasCriteria && (name.trim() !== '' || toolName.trim() !== '') && (
                 <p className="text-xs text-destructive">
-                  Provide a rule ID or a path pattern so the rule can match findings.
+                  {t(
+                    'exceptions.form.criteriaRequired',
+                    'Provide a rule ID or a path pattern so the rule can match findings.'
+                  )}
                 </p>
               )}
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="suppression-expires">Expires (optional)</Label>
+              <Label htmlFor="suppression-expires">
+                {t('exceptions.form.expires', 'Expires (optional)')}
+              </Label>
               <Input
                 id="suppression-expires"
                 type="datetime-local"
@@ -243,7 +281,7 @@ export function SuppressionFormDialog({
                 onChange={(e) => setExpiresAt(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Leave blank for a rule that never expires.
+                {t('exceptions.form.expiresHint', 'Leave blank for a rule that never expires.')}
               </p>
             </div>
           </div>
@@ -251,18 +289,20 @@ export function SuppressionFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('exceptions.form.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {isSubmitting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {isEdit ? 'Saving...' : 'Creating...'}
+                {isEdit
+                  ? t('exceptions.form.saving', 'Saving...')
+                  : t('exceptions.form.creating', 'Creating...')}
               </>
             ) : isEdit ? (
-              'Save Changes'
+              t('exceptions.form.save', 'Save Changes')
             ) : (
-              'Create Rule'
+              t('exceptions.form.create', 'Create Rule')
             )}
           </Button>
         </DialogFooter>

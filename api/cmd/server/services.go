@@ -62,6 +62,7 @@ import (
 	bountyprogramapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	ctemidapp "github.com/openctemio/openctem/api/internal/app/ctemid"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
@@ -555,6 +556,7 @@ type Services struct {
 
 	// Assets
 	Asset                  *asset.AssetService
+	AssetCoverage          *coverageapp.Service
 	AssetGroup             *asset.AssetGroupService
 	AssetType              *asset.AssetTypeService
 	AssetRelationship      *asset.AssetRelationshipService
@@ -977,6 +979,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Which source decides an asset attribute (RFC-069).
 	s.Asset.SetAttributeSources(repos.AssetAttributeSources, repos.Tenant)
 	s.Asset.SetFreshness(repos.AssetFreshness)
+	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.AssetCoverage = coverageapp.NewService(repos.AssetCoverage, log)
 	s.Asset.SetChangeTimeline(repos.AssetChangeEvents)
 	s.Asset.SetAttributeSourceLister(repos.AssetChangeEvents)
 	// A precedence change re-resolves the organization's assets (RFC-069).
@@ -1147,6 +1151,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.Exposure = exposure.NewExposureService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.Exposure.SetDataScope(s.DataScope)
+	// Four-eyes on accepting or dismissing a high or critical exposure or
+	// leaked credential (one gate for both routes).
+	exposureDispositions := exposure.NewDispositionGate(
+		postgres.NewExposureDispositionRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
+	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
 	s.CTEMID = ctemidapp.NewService(repos.CTEMID, cfg.Worker.CTEMIDFeedURL, log)
 	// EASM producers write exposures through one writer that announces new
@@ -1213,6 +1222,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.EASMSweep = easmapp.NewSweepService(sweepCT, sweepDNS, postgres.NewEASMSweepRepository(&postgres.DB{DB: deps.DB}), log)
 	s.CredentialImport = integration.NewCredentialImportService(repos.Exposure, repos.ExposureStateHistory, log)
 	s.CredentialImport.SetDataScope(s.DataScope)
+	s.CredentialImport.SetDispositionGate(exposureDispositions)
 	// Leaked-credential secrets are sealed with the platform credential key
 	// on every write path, and the fingerprint HMAC is keyed from it.
 	s.CredentialSecrets = credential.NewSecretProtector(s.Encryptor, []byte(cfg.Encryption.Key))
@@ -1583,6 +1593,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// priority. Reuses the same MemoryQueue → Reclassifier → ClassifyFinding
 		// scan workflow the control/rule producers use (wired above).
 		s.AITriage.SetReclassifyEnqueuer(aiTriageReclassifyEnqueuer{pub: s.ControlChangePub})
+		// A confident false-positive verdict on a medium or low finding is
+		// recorded as a pending approval for a person; never applied.
+		s.AITriage.SetFalsePositiveProposer(s.Vulnerability)
 
 		// RFC-008: per-tenant LLM token budget. Always constructed so
 		// Status() works for dashboards even before enforcement.
@@ -1708,6 +1721,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize sensor & command services
 	s.Sensor = sensorapp.NewSensorService(repos.Sensor, s.Audit, log)
+	// A tool a sensor declares in its manifest joins its organization's
+	// tool catalog (RFC-092).
+	s.Sensor.SetDeclaredTools(repos.Tool)
 	// Pepper the sensor API-key hash: HMAC-SHA256(pepper, key) stops a
 	// DB-only leak from being brute-forced offline. The pepper is
 	// SENSOR_KEY_PEPPER, else derived from APP_ENCRYPTION_KEY with HKDF (no
@@ -1847,6 +1863,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// the integration's sensor, followed to keep the sync cursor.
 	s.TenableSC = tenablesc.NewService(repos.Integration, repos.Sensor, repos.Command, repos.Finding, s.Audit, log)
 	s.TenableSC.SetSyncClaimer(repos.Integration)
+	s.TenableSC.SetGrantReader(repos.SensorGrant)
 	// Tenable integrations can be created only once the connector ships
 	// (integrationdom.TenableConnectorEnabled, owner decision D-14): without
 	// the validator the integration service refuses them.
@@ -2359,6 +2376,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// batch (tenant-scoped). Without this wire the suppression engine + CRUD +
 	// approve/reject UI exist but suppress nothing on the ingest path. Nil-safe.
 	s.Ingest.SetSuppressionChecker(s.Suppression)
+	// Cross-rule correlation of DAST findings (research/134 section 12).
+	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
@@ -2591,8 +2610,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
 	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,
 		assetfreshnessapp.EnricherConfig{DailyBudget: cfg.Worker.AssetEnrichmentDailyBudget}, log)
+	// The asset coverage loop (RFC-093) supersedes it: it resolves and looks
+	// up every asset its policy names, new or not.
+	enrichNew := cfg.Worker.AssetEnrichmentEnabled && !cfg.Worker.AssetCoverageEnabled
 	requestNew := func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
-		if cfg.Worker.AssetEnrichmentEnabled {
+		if enrichNew {
 			s.AssetEnricher.RequestAssets(ctx, tenantID, assets, freshdom.ReasonNewAsset)
 		}
 	}
@@ -2600,7 +2622,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Resolve before active (RFC-088): active stages skip names without
 	// recent resolution evidence; their enrichment is asked for again.
 	var staleRefresher scan.StaleRefresher
-	if cfg.Worker.AssetEnrichmentEnabled {
+	if enrichNew {
 		staleRefresher = s.AssetEnricher
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)

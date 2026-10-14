@@ -103,6 +103,7 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeNewAsset: true,
 		// Fixed "info" set by the weekly attack-surface digest.
 		EventTypeAttackSurfaceDigest: true,
+		EventTypeCoverageGap:         true,
 		// Fixed label set by the sensor-health controller.
 		EventTypeSensorOffline: true,
 		// Fixed "medium" set by the SLA warning adapter (urgency of an

@@ -30,6 +30,11 @@ type Repository interface {
 	// an issuer.
 	EnabledTrustConfigs(ctx context.Context, tenantID shared.ID, issuer string) ([]TrustConfig, error)
 	TouchTrustConfig(ctx context.Context, tenantID, id shared.ID, at time.Time) error
+	// PipelineAudienceState: whether the pipeline exists and has exchanged a
+	// token with its configuration's current audience.
+	PipelineAudienceState(ctx context.Context, tenantID shared.ID, key PipelineKey) (exists, upgraded bool, err error)
+	// MarkPipelineAudienceUpgraded ends the legacy audience for the pipeline.
+	MarkPipelineAudienceUpgraded(ctx context.Context, tenantID shared.ID, key PipelineKey, at time.Time) error
 
 	// CIRequireOIDC reads whether the tenant refuses CI results sent with a
 	// sensor key; SetCIRequireOIDC writes it.
@@ -70,6 +75,10 @@ type Repository interface {
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
+	// FindingsByFingerprints returns the findings on assetID that hold the
+	// given fingerprints (at most MaxRunFindings), with the fields
+	// RunFindings returns.
+	FindingsByFingerprints(ctx context.Context, tenantID, assetID shared.ID, fingerprints []string) ([]RunFinding, error)
 	// SaveVerdict stores the first verdict of a running run whose recorded
 	// findings count is still expectFindings (the count the verdict was
 	// computed from): ErrRunEvaluated when another verdict was stored first,
@@ -92,6 +101,11 @@ type Repository interface {
 	// ActiveOverride returns the newest unrevoked, unexpired override that
 	// covers the commit, or nil.
 	ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*GateOverride, error)
+	// MissingExpectedCapabilities returns the capabilities the run's
+	// repository is expected to report (its coverage expectation; an empty
+	// list means every capability) that no tool the run reported has, per
+	// the tool catalog. None when the repository has no expectation.
+	MissingExpectedCapabilities(ctx context.Context, tenantID, runID shared.ID) ([]string, error)
 
 	PipelineRepository
 	CoverageRepository
@@ -142,10 +156,12 @@ type PipelineRepository interface {
 	// on the repository asset of that name: a name the token does not sign
 	// stays with the first repository id that used it.
 	RepositoryBoundElsewhere(ctx context.Context, tenantID shared.ID, provider Provider, issuer, repositoryName, externalRepoID string) (bool, error)
-	// RequestRepoExceptions stores a repository file's exceptions as pending
-	// suppression rules on the repository asset, skipping any already open,
+	// RequestRepoExceptions stores exceptions a repository asks for (its
+	// .openctem.yml, inline ignore comments, an ignore file) as pending
+	// suppression rules on the repository asset, requested by actor (the CI
+	// identity), skipping any already open, with a "created" audit row each,
 	// and returns how many it created.
-	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []RepoException) (int, error)
+	RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository, actor string, exceptions []RepoException) (int, error)
 	// PinOwner records ownerID for the configuration's owner name unless one
 	// is pinned already, and returns the pinned id and whether this call
 	// pinned it.

@@ -51,7 +51,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useLastVisit } from '../../hooks/use-last-visit'
 import { useAssets, useAssetStats, type AssetSearchFilters } from '../../hooks/use-assets'
-import type { Asset } from '../../types/asset.types'
+import type { Asset, AssetType } from '../../types/asset.types'
 import { useBusinessUnits } from '@/features/business-units/api/use-business-units'
 import {
   buildFacetGroups,
@@ -77,6 +77,7 @@ import { InventoryBulkBar } from './inventory-bulk-bar'
 import { InventoryFacetPanel } from './inventory-facet-panel'
 import { InventoryTable } from './inventory-table'
 import { InventoryLensBar, inventoryLenses } from './inventory-lens-bar'
+import { lensCounts, lensOfType } from '../../lib/inventory-lenses'
 
 const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
 
@@ -291,6 +292,11 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     countBy: facetKeys.length > 0 ? facetKeys : undefined,
   })
   const scopeLabel = typeView?.plural ?? lensLabel
+  // Lens and type pill counts: the caller's scoped, unfiltered stats.
+  const lensCountsData = useMemo(
+    () => lensCounts(registry, stats.byTypeSubType),
+    [registry, stats.byTypeSubType]
+  )
   const attributeFacets = useMemo(
     () =>
       (typeView?.facets ?? []).map((attribute) => ({
@@ -374,21 +380,24 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     try {
       await exportInventory(searchFilters, typeView)
     } catch {
-      toast.error('Failed to export assets')
+      toast.error(t('assets.inventoryPage.exportFailed', 'Failed to export assets'))
     } finally {
       setExporting(false)
     }
-  }, [exporting, searchFilters, typeView])
+  }, [exporting, searchFilters, typeView, t])
 
   if (!canRead) {
     return (
       <Main>
-        <PageHeader title="Assets" />
+        <PageHeader title={t('assets.overview.title', 'Assets')} />
         <EmptyState
           className="mt-8 border-dashed"
           icon={Lock}
-          title="You don't have access to assets"
-          description="Ask an administrator for the assets:read permission to view the inventory."
+          title={t('assets.inventoryPage.noAccess', "You don't have access to assets")}
+          description={t(
+            'assets.inventoryPage.noAccessHint',
+            'Ask an administrator for the assets:read permission to view the inventory.'
+          )}
         />
       </Main>
     )
@@ -423,8 +432,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       <Input
         value={searchInput}
         onChange={(e) => setSearchInput(e.target.value)}
-        placeholder="Search name, description or alias…"
-        aria-label="Search assets"
+        placeholder={t('assets.inventoryPage.search', 'Search name, description or alias…')}
+        aria-label={t('assets.inventoryPage.searchAria', 'Search assets')}
         className="h-9 ps-9"
       />
     </div>
@@ -439,12 +448,12 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           className="h-9 w-9"
           onClick={refresh}
           disabled={isLoading || statsLoading}
-          aria-label="Refresh"
+          aria-label={t('assets.inventoryPage.refresh', 'Refresh')}
         >
           <RefreshCw className={cn('h-4 w-4', (isLoading || statsLoading) && 'animate-spin')} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Refresh</TooltipContent>
+      <TooltipContent>{t('assets.inventoryPage.refresh', 'Refresh')}</TooltipContent>
     </Tooltip>
   )
 
@@ -453,7 +462,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
 
   return (
     <Main>
-      <PageHeader title={scopeLabel ?? 'Assets'}>
+      <PageHeader title={scopeLabel ?? t('assets.overview.title', 'Assets')}>
         <Button
           variant="outline"
           size="sm"
@@ -461,7 +470,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           disabled={exporting}
         >
           <Download className="me-2 h-4 w-4" />
-          {exporting ? 'Exporting…' : 'Export'}
+          {exporting
+            ? t('assets.inventoryPage.exporting', 'Exporting…')
+            : t('assets.inventoryPage.export', 'Export')}
         </Button>
         {canWrite && (
           <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
@@ -470,20 +481,27 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       </PageHeader>
       <AssetsSectionTabs />
 
-      {!typeView && (
-        <InventoryLensBar
-          className="mt-5"
-          registry={registry}
-          value={filters.lens}
-          onChange={(lens) =>
-            // A lens replaces the type picks: a type outside it would match nothing.
-            setFilters({ ...filters, lens, types: undefined, subType: undefined, page: 1 })
-          }
-        />
-      )}
+      <InventoryLensBar
+        className="mt-5"
+        registry={registry}
+        // One type picked from a lens's chips (or a ?types= link) keeps its lens lit.
+        value={filters.lens ?? (typeView ? lensOfType(registry, filters.types?.[0]) : undefined)}
+        types={filters.types}
+        counts={statsLoading ? undefined : lensCountsData}
+        total={statsLoading ? undefined : stats.total}
+        onChange={({ lens, types }) =>
+          setFilters({
+            ...filters,
+            lens,
+            types: types as AssetType[] | undefined,
+            subType: undefined,
+            page: 1,
+          })
+        }
+      />
 
       <InventoryStatStrip
-        className={typeView ? 'mt-5' : 'mt-4'}
+        className="mt-4"
         stats={scopeLabel ? typeStats : stats}
         filters={filters}
         isLoading={scopeLabel ? typeStatsLoading : statsLoading}
@@ -506,7 +524,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         >
           <aside
             id="asset-filters"
-            aria-label="Asset filters"
+            aria-label={t('assets.inventoryPage.filters', 'Asset filters')}
             // A self-contained floating card, as tall as the viewport and pinned
             // while the page scrolls; long filter lists scroll inside it.
             className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-xl border bg-card p-4 shadow-sm"
@@ -535,12 +553,17 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           )}
           {isError ? (
             <Alert variant="destructive">
-              <AlertTitle>Failed to load assets</AlertTitle>
+              <AlertTitle>
+                {t('assets.inventoryPage.loadFailed', 'Failed to load assets')}
+              </AlertTitle>
               <AlertDescription>
-                <p>{error?.message || 'An unexpected error occurred.'}</p>
+                <p>
+                  {error?.message ||
+                    t('assets.inventoryPage.unexpected', 'An unexpected error occurred.')}
+                </p>
                 <Button variant="outline" size="sm" className="mt-2" onClick={refresh}>
                   <RefreshCw className="me-2 h-4 w-4" />
-                  Retry
+                  {t('assets.inventoryPage.retry', 'Retry')}
                 </Button>
               </AlertDescription>
             </Alert>
@@ -590,7 +613,9 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               {...(typeView &&
               isInventoryFilterEmpty({ ...filters, types: undefined, subType: undefined })
                 ? {
-                    emptyMessage: `No ${inSentence(typeView.plural)} yet`,
+                    emptyMessage: t('assets.inventoryPage.emptyType', 'No {type} yet', {
+                      type: inSentence(typeView.plural),
+                    }),
                     emptyDescription: emptyHint(typeView),
                   }
                 : {})}
@@ -614,8 +639,14 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
       <FilterSheet
         open={filterSheetOpen}
         onOpenChange={setFilterSheetOpen}
-        title="Asset filters"
-        resultLabel={`Show ${total.toLocaleString()} ${total === 1 ? 'asset' : 'assets'}`}
+        title={t('assets.inventoryPage.filters', 'Asset filters')}
+        resultLabel={
+          total === 1
+            ? t('assets.inventoryPage.showOne', 'Show 1 asset')
+            : t('assets.inventoryPage.showMany', 'Show {count} assets', {
+                count: total.toLocaleString(),
+              })
+        }
       >
         {facetPanel}
       </FilterSheet>

@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { DataTableRowActions, RelativeTime, SeverityBadge } from '@/features/shared'
 import { ExposureThreatPills } from './exposure-enrichment'
 import { APPROVE_REQUIRED_REASON } from './exposure-state-actions'
+import { PendingDispositionBadge } from './pending-disposition'
 import {
   Check,
   X,
@@ -180,7 +181,12 @@ export function getExposureColumns(handlers: ExposureColumnHandlers): ColumnDef<
       enableSorting: false,
       cell: ({ row }) => {
         const state = EXPOSURE_STATE_BADGE[row.original.state]
-        return state ? <Badge variant={state.variant}>{state.label}</Badge> : null
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            {state && <Badge variant={state.variant}>{state.label}</Badge>}
+            <PendingDispositionBadge exposure={row.original} />
+          </div>
+        )
       },
     },
     {

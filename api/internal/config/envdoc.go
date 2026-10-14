@@ -94,6 +94,20 @@ func mdCell(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "|", `\|`), "\n", " ")
 }
 
+// mdDefault is the Default cell: a literal value as a code span, and prose
+// that carries its own code spans (a backtick in it) as written, since a code
+// span cannot hold another one.
+func mdDefault(s string) string {
+	switch {
+	case s == "":
+		return "empty"
+	case strings.Contains(s, "`"):
+		return mdCell(s)
+	default:
+		return "`" + mdCell(s) + "`"
+	}
+}
+
 // RenderEnvReference renders the environment variable reference page.
 func RenderEnvReference(r *EnvRegistry) string {
 	var b strings.Builder
@@ -133,10 +147,7 @@ admin console and the organization settings.
 			if v.Type == envTypeEnum {
 				typ = strings.Join(v.Values, " \\| ")
 			}
-			def := "empty"
-			if v.Default != "" {
-				def = "`" + mdCell(v.Default) + "`"
-			}
+			def := mdDefault(v.Default)
 			secret := ""
 			if v.Secret {
 				secret = "yes"

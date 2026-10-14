@@ -18,6 +18,16 @@
 //	                                   auto-resolve is paused per tenant while
 //	                                   its run is open
 //	refingerprint -json                print the reports as JSON
+//	refingerprint -dast-repair [-fold-dast-rules r1,r2] [-apply]
+//	                                   one-time repair of DAST findings that
+//	                                   are one issue under the current recipe
+//	                                   (a method the producer stopped sending;
+//	                                   the listed fixed-path templates per
+//	                                   origin); dry run unless -apply
+//	refingerprint -correlate [-apply]  one-time cross-rule correlation of
+//	                                   existing DAST findings (injection points
+//	                                   from stored evidence); dry run reports
+//	                                   "would link N" unless -apply
 //
 // Merges always go through the finding merge (earliest-created survives, the
 // other is kept as a tombstone); nothing is deleted.
@@ -52,6 +62,9 @@ func main() {
 	maxBatches := flag.Int("max-batches", 0, "stop after this many batches per tenant (0 = until done; an applying run resumes later)")
 	asJSON := flag.Bool("json", false, "print reports as JSON")
 	timeout := flag.Duration("timeout", 2*time.Hour, "overall time limit")
+	dastRepair := flag.Bool("dast-repair", false, "repair forked DAST findings instead of re-keying older versions")
+	correlate := flag.Bool("correlate", false, "correlate existing DAST findings across rules (research/134 section 12)")
+	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
 
 	if *batch <= 0 || *batch > 10000 {
@@ -77,6 +90,13 @@ func main() {
 	}
 	store := postgres.NewFindingRekeyRepository(&postgres.DB{DB: sqlDB})
 	svc := refingerprint.NewService(store)
+
+	if *correlate {
+		os.Exit(runCorrelate(ctx, sqlDB, *tenantFlag, *apply, *asJSON))
+	}
+	if *dastRepair {
+		os.Exit(runDASTRepair(ctx, sqlDB, store, *tenantFlag, vulnerability.ParseFoldRules(*foldRules), *apply, *asJSON))
+	}
 
 	var tenants []shared.ID
 	if *tenantFlag != "" {
@@ -160,4 +180,113 @@ func readOnlyURL(dsn string) string {
 func fail(code int, msg string) {
 	fmt.Fprintln(os.Stderr, "refingerprint: "+msg)
 	os.Exit(code)
+}
+
+// runDASTRepair runs the DAST repair for one tenant or every tenant that has
+// DAST findings.
+func runDASTRepair(ctx context.Context, db *sql.DB, store *postgres.FindingRekeyRepository, tenantFlag string, fold map[string]bool, apply, asJSON bool) int {
+	var tenants []shared.ID
+	if tenantFlag != "" {
+		id, err := shared.IDFromString(tenantFlag)
+		if err != nil {
+			fail(2, "-tenant: not an id")
+		}
+		tenants = []shared.ID{id}
+	} else {
+		var err error
+		if tenants, err = dastTenants(ctx, db); err != nil {
+			fail(2, err.Error())
+		}
+	}
+	code := 0
+	reports := make([]*postgres.DASTRepairReport, 0, len(tenants))
+	for _, t := range tenants {
+		rep, err := store.RepairDAST(ctx, t, fold, apply)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dast repair: tenant %s: %v\n", t, err)
+			code = 1
+			continue
+		}
+		reports = append(reports, rep)
+		if !asJSON {
+			mode := "dry run"
+			if rep.Applied {
+				mode = "applied"
+			}
+			fmt.Printf("tenant %s (%s): scanned %d, merges %d, re-keyed %d\n", rep.TenantID, mode, rep.Scanned, len(rep.Merges), rep.Rekeyed)
+			for _, m := range rep.Merges {
+				fmt.Printf("  merge %s into %s\n", m.LoserID, m.SurvivorID)
+			}
+		}
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(reports)
+	}
+	return code
+}
+
+// dastTenants lists the tenants that have live DAST findings.
+func dastTenants(ctx context.Context, db *sql.DB) ([]shared.ID, error) {
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT tenant_id FROM findings WHERE identity_key->>'kind' = 'dast' AND status <> 'duplicate'`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []shared.ID
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if id, err := shared.IDFromString(s); err == nil {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
+}
+
+// runCorrelate backfills cross-rule correlation for one tenant or every
+// tenant that has DAST findings.
+func runCorrelate(ctx context.Context, db *sql.DB, tenantFlag string, apply, asJSON bool) int {
+	var tenants []shared.ID
+	if tenantFlag != "" {
+		id, err := shared.IDFromString(tenantFlag)
+		if err != nil {
+			fail(2, "-tenant: not an id")
+		}
+		tenants = []shared.ID{id}
+	} else {
+		var err error
+		if tenants, err = dastTenants(ctx, db); err != nil {
+			fail(2, err.Error())
+		}
+	}
+	repo := postgres.NewFindingCorrelationRepository(&postgres.DB{DB: db})
+	code := 0
+	reports := make([]*postgres.CorrelationBackfill, 0, len(tenants))
+	for _, t := range tenants {
+		rep, err := repo.Backfill(ctx, t, apply)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "correlate: tenant %s: %v\n", t, err)
+			code = 1
+			continue
+		}
+		reports = append(reports, rep)
+		if !asJSON {
+			mode := "dry run"
+			if rep.Applied {
+				mode = "applied"
+			}
+			fmt.Printf("tenant %s (%s): injection points %d on %d asset(s); link %d, suggest %d, release %d\n",
+				rep.TenantID, mode, rep.Points, rep.Assets, rep.Linked, rep.Suggested, rep.Released)
+		}
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(reports)
+	}
+	return code
 }

@@ -56,7 +56,7 @@ func optTime(nt sql.NullTime) *time.Time {
 // ---------------------------------------------------------------- trust ---
 
 const ciTrustColumns = `id, tenant_id, name, provider, issuer, audience, rules, default_branch, enabled,
-	created_by, last_used_at, created_at, updated_at`
+	created_by, last_used_at, created_at, updated_at, COALESCE(legacy_audience, ''), legacy_audience_until`
 
 func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 	var (
@@ -66,11 +66,13 @@ func scanCITrust(row ciScanner) (cirun.TrustConfig, error) {
 		createdBy      sql.NullString
 		lastUsed       sql.NullTime
 		createdAt, upd time.Time
+		legacyUntil    sql.NullTime
 	)
 	if err := row.Scan(&id, &tid, &c.Name, &prov, &c.Issuer, &c.Audience, &rules, &c.DefaultBranch, &c.Enabled,
-		&createdBy, &lastUsed, &createdAt, &upd); err != nil {
+		&createdBy, &lastUsed, &createdAt, &upd, &c.LegacyAudience, &legacyUntil); err != nil {
 		return c, err
 	}
+	c.LegacyAudienceUntil = optTime(legacyUntil)
 	c.ID, _ = shared.IDFromString(id)
 	c.TenantID, _ = shared.IDFromString(tid)
 	c.Provider = cirun.Provider(prov)
@@ -112,7 +114,10 @@ func (r *CIRunRepository) UpdateTrustConfig(ctx context.Context, c *cirun.TrustC
 		return err
 	}
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_trust_configs
-		SET name = $3, issuer = $4, audience = $5, rules = $6, default_branch = $7, enabled = $8, updated_at = NOW()
+		SET name = $3, issuer = $4, audience = $5::text, rules = $6, default_branch = $7, enabled = $8, updated_at = NOW(),
+			-- A changed audience withdraws the trust: no legacy audience survives it.
+			legacy_audience = CASE WHEN audience = $5::text THEN legacy_audience END,
+			legacy_audience_until = CASE WHEN audience = $5::text THEN legacy_audience_until END
 		WHERE tenant_id = $1 AND id = $2`,
 		c.TenantID.String(), c.ID.String(), c.Name, c.Issuer, c.Audience, rules, c.DefaultBranch, c.Enabled)
 	if isUniqueViolation(err) {
@@ -174,6 +179,34 @@ func (r *CIRunRepository) queryTrust(ctx context.Context, q string, args ...any)
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// PipelineAudienceState reports whether the pipeline with the key exists and
+// whether it has exchanged a token with its configuration's current
+// audience (ci_pipelines.audience_upgraded_at).
+func (r *CIRunRepository) PipelineAudienceState(ctx context.Context, tenantID shared.ID, key cirun.PipelineKey) (exists, upgraded bool, err error) {
+	var at sql.NullTime
+	err = r.db.QueryRowContext(ctx, `SELECT audience_upgraded_at FROM ci_pipelines
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND external_repo_id = $4 AND workflow_path = $5`,
+		tenantID.String(), string(key.Provider), key.Issuer, key.ExternalRepoID, key.WorkflowPath).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, at.Valid, nil
+}
+
+// MarkPipelineAudienceUpgraded records that the pipeline exchanged a token
+// with its configuration's current audience: its legacy audience is refused
+// from now on.
+func (r *CIRunRepository) MarkPipelineAudienceUpgraded(ctx context.Context, tenantID shared.ID, key cirun.PipelineKey, at time.Time) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE ci_pipelines SET audience_upgraded_at = $6
+		WHERE tenant_id = $1 AND provider = $2 AND issuer = $3 AND external_repo_id = $4 AND workflow_path = $5
+		  AND audience_upgraded_at IS NULL`,
+		tenantID.String(), string(key.Provider), key.Issuer, key.ExternalRepoID, key.WorkflowPath, at)
+	return err
 }
 
 // TouchTrustConfig records the configuration's last use.
@@ -525,6 +558,18 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 	return tx.Commit()
 }
 
+// runFindingColumns are the columns scanRunFindings reads, from findings f.
+const runFindingColumns = `f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
+			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.tool_name, ''),
+			COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
+			COALESCE(f.is_in_kev, FALSE), f.epss_score,
+			COALESCE((f.remediation->>'fix_available')::boolean, FALSE),
+			EXISTS (SELECT 1 FROM finding_suppressions s
+				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
+				WHERE s.finding_id = f.id AND sr.status = 'approved'
+				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
+			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at`
+
 // RunFindings returns the findings on the run's asset that the run recorded.
 //
 // A finding counts as suppressed only through a rule that applies now:
@@ -532,15 +577,7 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 // and keeps its link row, and a link can name a rule that was never approved,
 // so the link alone must not let a finding pass the gate.
 func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]cirun.RunFinding, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
-			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
-			COALESCE(f.is_in_kev, FALSE), f.epss_score,
-			COALESCE((f.remediation->>'fix_available')::boolean, FALSE),
-			EXISTS (SELECT 1 FROM finding_suppressions s
-				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
-				WHERE s.finding_id = f.id AND sr.status = 'approved'
-				  AND (sr.expires_at IS NULL OR sr.expires_at > NOW())),
-			f.acceptance_expires_at, f.first_detected_at, f.last_reopened_at
+	rows, err := r.db.QueryContext(ctx, `SELECT `+runFindingColumns+`
 		FROM ci_run_findings rf
 		JOIN findings f ON f.tenant_id = rf.tenant_id AND f.fingerprint = rf.fingerprint
 		WHERE rf.tenant_id = $1 AND rf.run_id = $2 AND f.asset_id = $3
@@ -549,6 +586,29 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 	if err != nil {
 		return nil, err
 	}
+	return scanRunFindings(rows)
+}
+
+// FindingsByFingerprints returns the findings on assetID holding the given
+// fingerprints, tenant scoped.
+func (r *CIRunRepository) FindingsByFingerprints(ctx context.Context, tenantID, assetID shared.ID, fingerprints []string) ([]cirun.RunFinding, error) {
+	if len(fingerprints) == 0 {
+		return []cirun.RunFinding{}, nil
+	}
+	if len(fingerprints) > cirun.MaxRunFindings {
+		fingerprints = fingerprints[:cirun.MaxRunFindings]
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT `+runFindingColumns+`
+		FROM findings f
+		WHERE f.tenant_id = $1 AND f.asset_id = $2 AND f.fingerprint = ANY($3)`,
+		tenantID.String(), assetID.String(), pq.Array(fingerprints))
+	if err != nil {
+		return nil, err
+	}
+	return scanRunFindings(rows)
+}
+
+func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 	defer func() { _ = rows.Close() }()
 	out := []cirun.RunFinding{}
 	for rows.Next() {
@@ -558,7 +618,7 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 			epss                       sql.NullFloat64
 			accExp, firstDet, reopened sql.NullTime
 		)
-		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source,
+		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source, &f.ToolName,
 			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
 			return nil, err
 		}
@@ -880,37 +940,74 @@ func (r *CIRunRepository) BusinessUnitExists(ctx context.Context, tenantID, id s
 // suppression rules on the repository asset (tenant-scoped). An exception
 // with the same rule and path already pending or approved on the asset is
 // skipped, so a file seen on every run asks once.
-func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository string, exceptions []cirun.RepoException) (int, error) {
+func (r *CIRunRepository) RequestRepoExceptions(ctx context.Context, tenantID, assetID shared.ID, repository, actor string, exceptions []cirun.RepoException) (int, error) {
 	created := 0
+	if len(actor) > 255 {
+		actor = actor[:255]
+	}
+	var requester sql.NullString
+	if actor != "" {
+		requester = sql.NullString{String: actor, Valid: true}
+	}
 	for _, e := range exceptions {
 		expires, err := time.Parse("2006-01-02", e.Expires)
 		if err != nil {
 			continue
 		}
-		var path sql.NullString
+		var rule, path sql.NullString
+		if e.RuleID != "" {
+			rule = sql.NullString{String: e.RuleID, Valid: true}
+		}
 		if e.Path != "" {
 			path = sql.NullString{String: e.Path, Valid: true}
 		}
-		name := e.RuleID + " in " + repository
+		if !rule.Valid && !path.Valid {
+			continue
+		}
+		subject := e.RuleID
+		if subject == "" {
+			subject = "all rules on " + e.Path
+		}
+		name := subject + " in " + repository
 		if len(name) > 255 {
 			name = name[:255]
 		}
+		desc := "Requested by the repository's .openctem.yml: " + e.Reason
+		switch e.Source {
+		case cirun.ExceptionSourceInline:
+			desc = "Requested by an inline ignore comment in the repository: " + e.Reason
+		case cirun.ExceptionSourceIgnoreFile:
+			desc = "Requested by the repository's scanner ignore file: " + e.Reason
+		}
+		id := shared.NewID().String()
 		res, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rules (id, tenant_id, rule_id, path_pattern, asset_id,
-				name, description, suppression_type, status, expires_at)
-			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz
+				name, description, suppression_type, status, expires_at, requested_by_actor)
+			SELECT $1::uuid, $2::uuid, $3::varchar, $4::varchar, $5::uuid, $6::varchar, $7::text, 'accepted_risk', 'pending', $8::timestamptz, $9::varchar
 			WHERE NOT EXISTS (SELECT 1 FROM suppression_rules
-				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id = $3::varchar
+				WHERE tenant_id = $2::uuid AND asset_id = $5::uuid AND rule_id IS NOT DISTINCT FROM $3::varchar
 				  AND path_pattern IS NOT DISTINCT FROM $4::varchar AND status IN ('pending', 'approved'))`,
-			shared.NewID().String(), tenantID.String(), e.RuleID, path, assetID.String(), name,
-			"Requested by the repository's .openctem.yml: "+e.Reason, expires.Add(24*time.Hour-time.Second))
+			id, tenantID.String(), rule, path, assetID.String(), name, desc, expires.Add(24*time.Hour-time.Second), requester)
 		if err != nil {
 			return created, err
 		}
-		if n, _ := res.RowsAffected(); n == 1 {
-			created++
+		if n, _ := res.RowsAffected(); n != 1 {
+			continue
+		}
+		created++
+		details, _ := json.Marshal(map[string]string{"requested_by_actor": actor, "source": nonEmptyOr(e.Source, "repo_file"), "repository": repository})
+		if _, err := r.db.ExecContext(ctx, `INSERT INTO suppression_rule_audit (suppression_rule_id, action, details)
+			VALUES ($1, 'created', $2::jsonb)`, id, string(details)); err != nil {
+			return created, fmt.Errorf("audit exception request: %w", err)
 		}
 	}
 	return created, nil
+}
+
+func nonEmptyOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // ------------------------------------------------------------ decoration ---

@@ -140,6 +140,9 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load run findings: %w", err)
 	}
+	// An approved rule covers findings that existed before it was approved
+	// (an exception a repository asked for), not only new ones.
+	s.applyActiveRules(ctx, run.TenantID, findings, run.RepositoryAssetID)
 	newSet, baselineBranch, known, err := s.newFindings(ctx, run, findings)
 	if err != nil {
 		return nil, err
@@ -153,11 +156,19 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 			return nil, fmt.Errorf("load gate override: %w", err)
 		}
 	}
+	// The tools a run reports are self-declared, so this does not prove a
+	// scan ran; it stops a pipeline edited to drop a capability the
+	// repository is expected to have from passing on silence.
+	missing, err := s.repo.MissingExpectedCapabilities(ctx, run.TenantID, run.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load expected capabilities: %w", err)
+	}
 	gv := cirun.Evaluate(cirun.GateInput{
 		Policy: policy, PolicySource: source, Findings: findings, NewFingerprints: newSet,
 		BaselineBranch: baselineBranch, BaselineKnown: known, ScanFailures: in.ScanFailures,
-		DefaultBranch: run.IsDefaultBranch,
-		Override:      override, Now: now, FindingURL: s.findingURL,
+		MissingCapabilities: missing,
+		DefaultBranch:       run.IsDefaultBranch,
+		Override:            override, Now: now, FindingURL: s.findingURL,
 	})
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, RepoFile: repoFile, Links: VerdictLinks{
 		Run:      s.webURL(RunPath(run.ID)),
@@ -394,7 +405,8 @@ func (s *Service) requestRepoExceptions(ctx context.Context, run *cirun.Run, exc
 	if len(exceptions) == 0 || !run.IsDefaultBranch || run.Fork || !run.CommitVerified {
 		return
 	}
-	created, err := s.repo.RequestRepoExceptions(ctx, run.TenantID, run.RepositoryAssetID, run.Repository, exceptions)
+	actor := Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})}
+	created, err := s.repo.RequestRepoExceptions(ctx, run.TenantID, run.RepositoryAssetID, run.Repository, actor.Email, exceptions)
 	if err != nil {
 		s.log.Warn("repository exceptions not requested", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
 		return
@@ -402,10 +414,17 @@ func (s *Service) requestRepoExceptions(ctx context.Context, run *cirun.Run, exc
 	if created == 0 {
 		return
 	}
-	actor := Actor{Email: ciActor(cirun.Claims{Provider: run.Provider, Actor: run.Actor})}
+	from := ".openctem.yml"
+	switch exceptions[0].Source {
+	case cirun.ExceptionSourceInline:
+		from = "inline ignore comments"
+	case cirun.ExceptionSourceIgnoreFile:
+		from = "a scanner ignore file"
+	}
 	s.logAudit(ctx, run.TenantID, actor, auditapp.NewSuccessEvent(auditdom.ActionCIRepoExceptionsRequested, auditdom.ResourceTypeCIRun, run.ID.String()).
 		WithResourceName(run.Repository).
-		WithMessage(fmt.Sprintf("%s requested %d suppression(s) from .openctem.yml at %s (pending approval)", run.Repository, created, shortSHA(run.CommitSHA))).
+		WithMessage(fmt.Sprintf("%s requested %d suppression(s) from %s at %s (pending approval)", run.Repository, created, from, shortSHA(run.CommitSHA))).
 		WithMetadata("requested", created).
+		WithMetadata("source", nonEmptyPrefix("", exceptions[0].Source)).
 		WithMetadata("commit_sha", run.CommitSHA))
 }

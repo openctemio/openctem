@@ -223,7 +223,7 @@ and SBOM import write it.
 |----------|---------------------|
 | `GET /api/v1/exposures` · `/{id}` · `/stats` · `/{id}/history` | `findings:read` |
 | `POST /api/v1/exposures` · `/ingest` · `/{id}/resolve` · `/{id}/reactivate` · `PUT /{id}/ctem-id` | `findings:write` |
-| `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` | `findings:approve` |
+| `POST /api/v1/exposures/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:approve` |
 | `DELETE /api/v1/exposures/{id}` | `findings:delete` |
 
 > Accepted and false-positive are the dispositions a finding reaches only
@@ -232,9 +232,14 @@ and SBOM import write it.
 > Exposures have no request/approve records, so these two transitions are
 > gated on the approver permission itself: a `findings:write` holder (member)
 > gets 403 and must ask an approver. The reason is kept in the exposure's state
-> history. Unlike findings, an approver sets the state directly (no second
-> person); a full request/approve flow for exposures would need its own
-> records.
+> history. For a **high or critical** exposure the two transitions take two
+> people: the first approver's call stores a pending request
+> (`exposure_disposition_requests`, answer 202), a different approver's call
+> for the same disposition applies it, and `/{id}/disposition/reject` drops it
+> (the requester's own reject cancels). The requester never confirms their own
+> request; the owner may, only when nobody else holds the route's permissions
+> (audited Critical). Low and medium exposures keep the one-step path. See
+> [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
@@ -476,7 +481,7 @@ the billing page in the UI.
 |----------|---------------------|
 | `GET /api/v1/credentials` · `/{id}` · `/{id}/related` · `/identities` · `/identities/{identity}/exposures` · `/stats` | `findings:credentials:read` |
 | `POST /api/v1/credentials/import` · `/import/csv` · `/{id}/resolve` · `/reactivate` | `findings:credentials:write` |
-| `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` | `findings:credentials:write` **and** `findings:approve` (same dispositions as the exposure routes) |
+| `POST /api/v1/credentials/{id}/accept` · `/{id}/false-positive` · `/{id}/disposition/reject` | `findings:credentials:write` **and** `findings:approve` (same dispositions and the same four-eyes rule as the exposure routes) |
 | `POST /api/v1/credentials/{id}/reveal` | `findings:credentials:reveal` + **step-up**; audited |
 
 > **The leaked secret is reveal-only.** Read endpoints (here and under
@@ -494,13 +499,17 @@ the billing page in the UI.
 | Endpoint | Permission Required |
 |----------|---------------------|
 | `GET /api/v1/ci/runs` · `/runs/{id}` · `/pipelines` · `/pipelines/{id}` · `/trust-configs` · `/trust-configs/{id}` · `/gate-policies` · `/gate-overrides` | `scans:ci:read` |
-| `POST /api/v1/ci/trust-configs` · `PUT /{id}` · `DELETE /{id}` · `POST /api/v1/ci/gate-policies` · `PATCH /{id}` · `DELETE /{id}` | `scans:ci:write` |
+| `POST /api/v1/ci/trust-configs` · `PUT /{id}` · `DELETE /{id}` · `PUT /api/v1/ci/settings` · `/api/v1/ci/scm-apps/*` writes · `POST /api/v1/ci/pipelines/{id}/retire` | `scans:ci:write` |
+| `POST /api/v1/ci/gate-policies` · `PATCH /{id}` · `DELETE /{id}` · `PUT`/`DELETE /api/v1/ci/coverage/expectations/{id}` | `scans:ci:policy` |
 | `POST /api/v1/ci/gate-overrides` · `POST /{id}/revoke` | `scans:ci:override` |
 
-> `scans:ci:write` (trust configurations issue upload credentials) and
-> `scans:ci:override` (break-glass) are admin-only, like the sensor key
-> permissions: owner and admin carry them, no custom role may (the migration
-> `001077` extends the `000945` trigger). Members and viewers have
+> `scans:ci:write` (trust configurations, CI settings and code host
+> connections issue or admit upload credentials) is admin-only, like the sensor
+> key permissions: owner and admin carry it, no custom role may (the
+> `role_permissions` trigger, last replaced by `002120`). `scans:ci:policy`
+> (gate policies, coverage expectations; loosening needs step-up) and
+> `scans:ci:override` (break-glass, step-up, every administrator alerted) can
+> be delegated: the AppSec engineer role template carries both. Members and viewers have
 > `scans:ci:read`. Runs and overrides follow the data scope of the repository
 > asset (list: SQL condition; by id, and break-glass on a repository: 404 out of
 > scope). Every change, every token exchange (issued or refused after
@@ -1501,6 +1510,13 @@ that aggregates follow the viewer's scope, with org-wide totals only through
 | `summary` blocks of attack paths / exposure chains | graph-wide counts (reachability needs the whole graph) |
 | `GET /assets/stats`, `/assets/facets`, `/assets/tags` | aggregate counts / tag vocabulary |
 | `GET /exposures/stats` | counts by state/severity, MTTR |
+
+**Organization-wide on purpose:** `GET /suppressions/{id}/preview` counts the
+organization's open findings a suppression rule would close. Approving the rule
+closes them organization-wide, so the approver must see that number whatever
+their own data scope; the route is gated by `findings:suppressions:approve`
+(not the read permission) so only people who can approve see it, and it returns
+a count only, never a finding (see `suppression-rules.md`).
 
 **Not covered by data scope** (separate access models): pentest findings and
 attachments (campaign membership), remediation campaigns,
