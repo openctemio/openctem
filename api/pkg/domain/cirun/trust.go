@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -24,8 +25,24 @@ const (
 	ProviderGitLab Provider = "gitlab"
 )
 
-// GitHubIssuer is the only issuer accepted for GitHub Actions.
+// GitHubIssuer is the GitHub Actions issuer on github.com. An enterprise
+// with a customized issuer uses GitHubIssuer + "/<enterprise slug>", and
+// GitHub Enterprise Server https://<host>/_services/token (GitHubHost).
 const GitHubIssuer = "https://token.actions.githubusercontent.com"
+
+// gitHubServerIssuerPath is the path of a GitHub Enterprise Server issuer.
+const gitHubServerIssuerPath = "/_services/token"
+
+var gitHubEnterpriseSlugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,99}$`)
+
+// GitHubHost is the code host of a GitHub Actions issuer: the server's host
+// for GitHub Enterprise Server, github.com otherwise.
+func GitHubHost(issuer string) string {
+	if u, err := url.Parse(issuer); err == nil && u.Path == gitHubServerIssuerPath && u.Host != "" {
+		return strings.ToLower(u.Host)
+	}
+	return "github.com"
+}
 
 // GitLabDefaultIssuer is the issuer of gitlab.com; a self-managed GitLab
 // instance is its own issuer (its external URL).
