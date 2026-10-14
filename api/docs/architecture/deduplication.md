@@ -55,7 +55,7 @@ boundary can be moved to forge a collision. Recipes:
 
 | Kind | Tuple | Not in it |
 |---|---|---|
-| SAST | asset, tool, rule, repo-relative path, then one anchor: SARIF `primaryLocationLineHash` (with its `:N`), Semgrep `matchBasedId/v1`, else `hash(normalized snippet)` + logical location + occurrence index of that snippet in the file | line numbers, message |
+| SAST | asset, rule, repo-relative path, then `hash(normalized snippet)` (the snippet, else the producer's `snippetHash/v1` hash of the flagged lines) + logical location + occurrence index of that snippet in the file; without the code, the start line (re-keyed to the code key when a report carries the code) | tool name, engine fingerprints (`primaryLocationLineHash`, `matchBasedId/v1`: hints only), message; line numbers once the code is known |
 | SCA | asset, canonical PURL without version (`distro` qualifier only for deb/rpm/apk, D13), canonical vuln id | installed version, manifest path |
 | Secret | asset, per-tenant keyed HMAC of the reported (masked) value, repo-relative path | line, the value or its mask |
 | DAST | asset, rule (the CVE for a CVE template), method, URL template (lower-case IDNA host, default port dropped, numeric/UUID segments `{id}`, D4), sorted parameter names | query values |
@@ -365,6 +365,7 @@ coverage.
 | E27 | Reopen respects deliberate dispositions (FP, accepted) | Covered: `internal/infra/postgres/finding_reopen_human_resolved_db_test.go` |
 | E28 | Fingerprint algorithm change keeps triage state | Not covered — no version is stored |
 | E29 | Sensor fingerprint scheme change (e.g. semgrep login on/off) | Not covered |
+| E29a | SAST engine change, semgrep to opengrep (same rules) | Covered: the ctis `opengrep` format keeps the semgrep fingerprint (path, rule, line) as the finding's fingerprint and puts opengrep's match-based id in `matchBasedId/v1`, so the first opengrep sighting adopts the stored version-1 finding and re-keys it to version 2 with its triage (`tests/integration/sast_engine_change_test.go`). SARIF imports are not carried over: the version-2 key holds the tool name, so semgrep and opengrep SARIF key differently |
 | E30 | Tool version renames a rule id | Not covered |
 | E31 | Pentest: two findings with one title in a campaign | Not covered — **fails** (**code**) |
 | E32 | Manual fingerprint field-boundary collision | Not covered — **fails** (P13) |

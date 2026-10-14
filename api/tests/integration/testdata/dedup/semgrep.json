@@ -29,14 +29,55 @@
         "location": {"path": "src/app/db.py", "start_line": 12, "snippet": "cursor.execute(q2 % name)"}}
     },
     {
-      "name": "matchBasedId/v1 is the anchor when present",
-      "expect": "same",
+      "name": "an engine matchBasedId/v1 is not identity: edited code under a reused id is another finding",
+      "expect": "different",
       "before": {"type": "vulnerability", "title": "XSS", "severity": "medium", "rule_id": "javascript.browser.security.insecure-document-method",
         "partial_fingerprints": {"matchBasedId/v1": "4f0a1d1c2b3e"},
         "location": {"path": "web/app.js", "start_line": 5, "snippet": "el.innerHTML = x"}},
       "after": {"type": "vulnerability", "title": "XSS", "severity": "medium", "rule_id": "javascript.browser.security.insecure-document-method",
         "partial_fingerprints": {"matchBasedId/v1": "4f0a1d1c2b3e"},
         "location": {"path": "web/app.js", "start_line": 90, "snippet": "el.innerHTML = y"}}
+    },
+    {
+      "name": "a forged matchBasedId/v1 does not take over a triaged finding at another place",
+      "expect": "different",
+      "before": {"type": "vulnerability", "title": "XSS", "severity": "medium", "rule_id": "javascript.browser.security.insecure-document-method",
+        "partial_fingerprints": {"matchBasedId/v1": "9e9e9e9e9e9e"},
+        "location": {"path": "web/safe.js", "start_line": 5, "snippet": "el.textContent = x"}},
+      "after": {"type": "vulnerability", "title": "XSS", "severity": "medium", "rule_id": "javascript.browser.security.insecure-document-method",
+        "partial_fingerprints": {"matchBasedId/v1": "9e9e9e9e9e9e"},
+        "location": {"path": "web/safe.js", "start_line": 7, "snippet": "el.innerHTML = location.hash"}}
+    },
+    {
+      "name": "the producer's snippetHash/v1 of unchanged lines survives a line shift",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Command injection", "severity": "high", "rule_id": "python.lang.security.audit.subprocess-shell-true",
+        "fingerprint": "1111aaaa2222bbbb", "partial_fingerprints": {"snippetHash/v1": "3983deb711f566537fe2c1c9aa678e6a"},
+        "location": {"path": "src/run.py", "start_line": 8, "snippet": "requires login"}},
+      "after": {"type": "vulnerability", "title": "Command injection", "severity": "high", "rule_id": "python.lang.security.audit.subprocess-shell-true",
+        "fingerprint": "3333cccc4444dddd", "partial_fingerprints": {"snippetHash/v1": "3983deb711f566537fe2c1c9aa678e6a"},
+        "location": {"path": "src/run.py", "start_line": 20, "snippet": "requires login"}}
+    },
+    {
+      "name": "the engine switch keeps the finding: semgrep's hash of the lines, then opengrep's lines and its own id",
+      "expect": "same",
+      "after_tool": "opengrep",
+      "before": {"type": "vulnerability", "title": "Command injection", "severity": "high", "rule_id": "python.lang.security.audit.subprocess-shell-true",
+        "fingerprint": "5555aaaa6666bbbb", "partial_fingerprints": {"snippetHash/v1": "3983deb711f566537fe2c1c9aa678e6a"},
+        "location": {"path": "src/run.py", "start_line": 8, "snippet": "requires login"}},
+      "after": {"type": "vulnerability", "title": "Command injection", "severity": "high", "rule_id": "python.lang.security.audit.subprocess-shell-true",
+        "fingerprint": "5555aaaa6666bbbb", "partial_fingerprints": {"matchBasedId/v1": "a9853132551d74e3_0"},
+        "location": {"path": "src/run.py", "start_line": 11, "snippet": "    os.system(cmd)"}}
+    },
+    {
+      "name": "a finding first reported without its code keeps its row when the code arrives",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Weak hash", "severity": "low", "rule_id": "python.lang.security.audit.md5-used",
+        "fingerprint": "7777aaaa8888bbbb",
+        "location": {"path": "src/h.py", "start_line": 12, "snippet": "requires login"}},
+      "after": {"type": "vulnerability", "title": "Weak hash", "severity": "low", "rule_id": "python.lang.security.audit.md5-used",
+        "fingerprint": "7777aaaa8888bbbb", "partial_fingerprints": {"snippetHash/v1": "0123456789abcdef0123456789abcdef"},
+        "location": {"path": "src/h.py", "start_line": 12, "snippet": "requires login"}}
     }
   ]
 }
