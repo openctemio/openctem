@@ -803,6 +803,17 @@ type UpdateScanInput struct {
 	// Retry config: nil = leave unchanged
 	MaxRetries          *int `json:"max_retries" validate:"omitempty,min=0,max=10"`
 	RetryBackoffSeconds *int `json:"retry_backoff_seconds" validate:"omitempty,min=10,max=86400"`
+	// Targets: nil = unchanged; otherwise the scan's direct targets become
+	// these plus the assets of AssetIDs (edit_targets.go).
+	Targets *[]string `json:"targets"`
+	// AssetIDs are inventory assets to scan, named by the server (with
+	// Targets: given = the direct targets are replaced).
+	AssetIDs []string `json:"asset_ids"`
+	// AssetGroupIDs: nil = unchanged; otherwise the scan's asset groups.
+	AssetGroupIDs *[]string `json:"asset_group_ids"`
+	// ActorID is the editing user: the new targets are checked against
+	// their act scope and assets are named for them.
+	ActorID string `json:"-"`
 }
 
 // UpdateScan updates a scan.
@@ -864,6 +875,13 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 			}
 		}
 		if err := sc.SetSingleScanner(input.ScannerName, cfg, targetsPerJob); err != nil {
+			return nil, err
+		}
+	}
+	// New targets or asset groups pass the gates a new scan's pass, as the
+	// editor, against the scan's (possibly new) scanner.
+	if input.targetsChanged() {
+		if err := s.applyTargetEdit(ctx, sc, input); err != nil {
 			return nil, err
 		}
 	}

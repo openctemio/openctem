@@ -693,7 +693,57 @@ func TestScopeRecheck_PassesTheJobToThePortLimitCheck(t *testing.T) {
 		}
 		seen[*in.Job] = true
 	}
-	if !seen[scopedom.JobShape{Tool: "naabu", Ports: "1-65535"}] || !seen[scopedom.JobShape{Tool: "naabu", TopPorts: true}] {
+	if !seen[scopedom.JobShape{Tool: "naabu", Ports: "1-65535", Settings: `{"ports":"1-65535"}`}] ||
+		!seen[scopedom.JobShape{Tool: "naabu", TopPorts: true, Settings: `{"top_ports":"100"}`}] {
 		t.Fatalf("job shapes = %v", seen)
+	}
+}
+
+// SECURITY (RFC-054 §16): a job whose every target is refused only for the
+// low-impact or web-port caps is clamped to them and handed out, on every
+// path; one with another refusal, or a tool outside the profile, is not.
+func TestScopeRecheck_ClampsALowImpactJob(t *testing.T) {
+	for _, path := range handOutPaths {
+		t.Run(path.name, func(t *testing.T) {
+			f := newRecheckFixture()
+			f.gate.refused["a.example.com"] = scopedom.RefusalLowImpact
+			f.gate.refused["b.example.com"] = scopedom.RefusalWebPortsOnly
+			c := f.repo.add(f.tenant, commanddom.CommandTypeScan,
+				`{"scanner":"naabu","targets":["a.example.com","b.example.com"],"config":{"ports":"1-65535","rate":1000}}`,
+				&commanddom.DispatchGate{Tier: 1, Validated: true})
+			got, err := path.run(f, c)
+			if err != nil || got == nil {
+				t.Fatalf("hand-out: %v %v", got, err)
+			}
+			var p struct {
+				Targets []string       `json:"targets"`
+				Config  map[string]any `json:"config"`
+			}
+			if err := json.Unmarshal(got.Payload, &p); err != nil {
+				t.Fatal(err)
+			}
+			if len(p.Targets) != 2 || p.Config["ports"] != scopedom.WebPorts || p.Config["rate"] != float64(scopedom.LowImpactMaxRate) {
+				t.Fatalf("clamped job: %s", got.Payload)
+			}
+			if string(f.repo.commands[c.ID.String()].Payload) != string(got.Payload) {
+				t.Fatal("the stored payload must carry the clamp")
+			}
+		})
+	}
+	f := newRecheckFixture()
+	f.gate.refused["a.example.com"] = scopedom.RefusalLowImpact
+	f.gate.excluded["b.example.com"] = true
+	c := f.repo.add(f.tenant, commanddom.CommandTypeScan,
+		`{"scanner":"naabu","targets":["a.example.com","b.example.com"],"config":{"ports":"1-65535"}}`,
+		&commanddom.DispatchGate{Tier: 1, Validated: true})
+	if got, _ := f.svc.Acknowledge(context.Background(), f.tenant.String(), f.sensor.String(), c.ID.String()); got != nil {
+		t.Fatalf("a job with an excluded target is not clamped: %s", got.Payload)
+	}
+	katana := newRecheckFixture()
+	katana.gate.refused["a.example.com"] = scopedom.RefusalLowImpact
+	k := katana.repo.add(katana.tenant, commanddom.CommandTypeScan, `{"scanner":"katana","targets":["a.example.com"]}`,
+		&commanddom.DispatchGate{Tier: 1, Validated: true})
+	if got, _ := katana.svc.Acknowledge(context.Background(), katana.tenant.String(), katana.sensor.String(), k.ID.String()); got != nil {
+		t.Fatalf("a crawler is never clamped into the profile: %s", got.Payload)
 	}
 }
