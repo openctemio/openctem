@@ -62,7 +62,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-044](RFC-044-issue-definitions-and-findings.md) | Issue definitions and findings | **Accepted** (2026-10-03; decisions D1–D9 approved as recommended, §12; #895). |
 | [RFC-045](RFC-045-websocket-auth.md) | Real-time WebSocket authentication and session binding | **Implemented** (decisions 2026-10-03, §7; implemented by #934 and #950). |
 | [RFC-046](RFC-046-scans-redesign.md) | Scans redesign: Scan → Run → Task, engines, schedules and automations | **Accepted.** Product decisions D1–D13 accepted on 2026-10-02; backend decisions B1–B12 on 2026-10-03. |
-| [RFC-047](RFC-047-tenable-sc-sensor-connector.md) | Tenable.sc two-way sensor connector | **Implemented in the API, switched off** (design 2026-10-04, #995). |
+| [RFC-047](RFC-047-tenable-sc-sensor-connector.md) | Tenable.sc two-way sensor connector | **Implemented, Beta** (design 2026-10-04, #995; switched on 2026-10-14). |
 | [RFC-048](RFC-048-list-query-contract.md) | List query contract (one filter model, two encodings, one compiler) | **Accepted** (decisions 2026-10-04, §9). |
 | [RFC-049](RFC-049-unified-connector-framework.md) | Unified connector framework (platform-direct and sensor-relayed) | **Proposed** (2026-10-04). |
 | [RFC-050](RFC-050-asset-access-model.md) | Asset access model | Accepted (decisions A1–A13, 2026-10-04); P0 largely implemented (W1–W4, W6, W6a, W7, W8); P1–P3 not built |

@@ -122,16 +122,15 @@ func (p Provider) IsValid() bool {
 	}
 }
 
-// TenableConnectorEnabled is the one switch for the Tenable connector and the
-// RFC-007 coverage scheduler. It is false while no sensor runs Tenable
-// commands: sensor v0.8.0 removed the old runner (owner decision D-14), and
-// the two-way Tenable.sc connector is being rebuilt in the sensor (RFC-047).
-// While false, creating a Tenable integration is refused (HasClient), the
-// coverage scheduler is not registered (cmd/server/workers.go) and the web
-// hides the connector (TENABLE_CONNECTOR_ENABLED). Stored rows, their config
-// and the scancoverage code are kept. Flip this (and the web flag) when the
-// RFC-047 runner ships.
-const TenableConnectorEnabled = false
+// TenableConnectorEnabled is the one switch for the Tenable.sc connector
+// (RFC-047), its sync controller and the license-aware coverage scheduler. It
+// is on, as Beta: the connector runs as its own image,
+// ghcr.io/openctemio/connector-tenable (openctemio/connector-tenable), paired
+// like a sensor. Turning it off refuses new Tenable integrations
+// (HasClient), stops registering the controllers (cmd/server/workers.go) and,
+// with the web flag TENABLE_CONNECTOR_ENABLED, hides the connector; stored
+// rows are kept.
+const TenableConnectorEnabled = true
 
 // HasClient reports whether the platform has a working client for this
 // provider — i.e. whether an integration of this provider can actually do

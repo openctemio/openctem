@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ServerCog } from 'lucide-react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -107,9 +108,10 @@ export function TenableConnectorDialog({
   const selected = options.find((o) => o.sensor.id === settings.sensorId)
 
   async function save() {
+    const settingsProblem = connectorSettingsError(settings)
     const problem = !name.trim()
       ? t('tenableSc.dialog.enterName', 'Enter a name')
-      : connectorSettingsError(settings)
+      : settingsProblem && t(settingsProblem.key, settingsProblem.fallback)
     if (problem) {
       toast.error(problem)
       return
@@ -147,10 +149,11 @@ export function TenableConnectorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
             {editing
               ? t('tenableSc.dialog.editTitle', 'Edit Tenable.sc connector')
               : t('tenableSc.dialog.title', 'Connect Tenable.sc')}
+            <Badge variant="outline">{t('tenableSc.beta', 'Beta')}</Badge>
           </DialogTitle>
           <DialogDescription>
             {t(

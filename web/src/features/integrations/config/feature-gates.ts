@@ -1,12 +1,13 @@
 /**
- * Web feature gates for half-built integrations.
+ * Web feature gates for integrations.
  *
- * TENABLE_CONNECTOR_ENABLED mirrors the API's integration.TenableConnectorEnabled.
- * It is false while no sensor runs Tenable commands: sensor v0.8.0 removed the
- * old runner (owner decision D-14), and the two-way Tenable.sc connector is
- * being rebuilt in the sensor (RFC-047). While false, Settings > Integrations >
- * Vulnerability scanners shows only the .nessus import and paused rows; the
- * connect/edit/runner dialogs and the coverage panel are kept in
- * TenableConnectorView. Flip both flags together when the RFC-047 runner ships.
+ * TENABLE_CONNECTOR_ENABLED: the Tenable.sc connector (api RFC-047) runs as
+ * its own image, ghcr.io/openctemio/connector-tenable (source:
+ * openctemio/connector-tenable), paired with the platform like a sensor. It is
+ * on, as Beta: Settings > Integrations > Vulnerability scanners shows the
+ * connectors, the coverage panel and the connect/edit dialog, and the scan
+ * wizard offers Tenable.sc scans. Keep it equal to the API's
+ * integration.TenableConnectorEnabled; while false, the page shows only the
+ * .nessus import and paused rows.
  */
-export const TENABLE_CONNECTOR_ENABLED = false
+export const TENABLE_CONNECTOR_ENABLED = true
