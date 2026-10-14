@@ -80,6 +80,38 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Risk acceptance end
+
+An accepted risk always ends; a false positive does not (it is re-reviewed
+instead).
+
+- **One value, one meaning.** `finding_status_approvals.expires_at` is the end
+  of the decision the request asks for. A request for `accepted` gets 90 days
+  when it names no end and is refused with an end in the past or more than a
+  year ahead; a request for `false_positive` is refused when it names an end.
+  A pending request has no separate approve-by deadline: once the requested
+  end has passed it can no longer be approved (it would accept nothing) and is
+  submitted again with a new end. Approving an older `accepted` request that
+  has no end gives it the 90-day default from the approval.
+- **On the finding.** Approving `accepted` stores the end in
+  `findings.acceptance_expires_at` in the same statement as the status
+  (`FindingRepository.AcceptUntil`). A finding that an approved accepted-risk
+  or won't-fix suppression rule closes takes the rule's `expires_at` when the
+  finding-rule link is recorded (`SuppressionRepository.RecordSuppression`,
+  same tenant only); a rule without an expiry leaves it empty, and the rule's
+  own expiry lifts the suppression.
+- **Cleared on leaving accepted.** The trigger
+  `trg_findings_clear_acceptance_expiry` empties the column on any row that is
+  not `accepted`, whatever path wrote the status, so a later accept starts
+  clean.
+- **Who reads it.** The CI gate honors an accepted finding only until its end
+  (`cirun.honored`), even before the hourly approval-expiration controller
+  reopens it. Threat models read it as the acceptance horizon.
+
+Migration `002117` adds the trigger and fills the column for findings already
+accepted, from their latest approved acceptance request or their suppression
+rule. Findings accepted with no end anywhere stay empty.
+
 ## Upgrade
 
 Migration `001378` maps stored values of the retired pentest statuses
