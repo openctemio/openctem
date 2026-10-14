@@ -57,10 +57,10 @@ import {
   SuppressionFormDialog,
   SuppressionDetailSheet,
   SUPPRESSION_STATUS_BADGE,
-  SUPPRESSION_STATUS_LABELS,
   SUPPRESSION_TYPE_BADGE,
-  SUPPRESSION_TYPE_LABELS,
   suppressionScopeSummary,
+  suppressionStatusLabel,
+  suppressionTypeLabel,
   type SuppressionRule,
   type SuppressionStatus,
 } from '@/features/exceptions'
@@ -211,11 +211,11 @@ export default function ExceptionsPage() {
     if (!selectedRule || !rejectionReason.trim()) return
     try {
       await triggerReject({ reason: rejectionReason.trim() })
-      toast.success('Suppression rule rejected')
+      toast.success(t('exceptions.page.rejected', 'Suppression rule rejected'))
       setDetailOpen(false)
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to reject rule'))
+      toast.error(getErrorMessage(err, t('exceptions.page.rejectFailed', 'Failed to reject rule')))
     } finally {
       setRejectOpen(false)
     }
@@ -225,11 +225,11 @@ export default function ExceptionsPage() {
     if (!selectedRule) return
     try {
       await triggerDelete()
-      toast.success('Suppression rule deleted')
+      toast.success(t('exceptions.page.deleted', 'Suppression rule deleted'))
       setDetailOpen(false)
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete rule'))
+      toast.error(getErrorMessage(err, t('exceptions.page.deleteFailed', 'Failed to delete rule')))
     } finally {
       setDeleteOpen(false)
     }
@@ -237,7 +237,7 @@ export default function ExceptionsPage() {
 
   const handleRefresh = async () => {
     await mutate()
-    toast.success('Suppressions refreshed')
+    toast.success(t('exceptions.page.refreshed', 'Suppressions refreshed'))
   }
 
   // ── Columns ───────────────────────────────────────────────────────
@@ -245,12 +245,14 @@ export default function ExceptionsPage() {
     () => [
       {
         accessorKey: 'name',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('exceptions.page.colName', 'Name')} />
+        ),
         cell: ({ row }) => (
           <div className="max-w-[240px]">
             <p className="font-medium text-sm truncate">{row.original.name}</p>
             <p className="text-xs text-muted-foreground font-mono truncate">
-              {suppressionScopeSummary(row.original)}
+              {suppressionScopeSummary(row.original, t)}
             </p>
           </div>
         ),
@@ -258,12 +260,14 @@ export default function ExceptionsPage() {
       },
       {
         accessorKey: 'suppression_type',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('exceptions.page.colType', 'Type')} />
+        ),
         cell: ({ row }) => {
-          const t = row.original.suppression_type
+          const type = row.original.suppression_type
           return (
-            <Badge variant="outline" className={cn('text-xs', SUPPRESSION_TYPE_BADGE[t])}>
-              {SUPPRESSION_TYPE_LABELS[t]}
+            <Badge variant="outline" className={cn('text-xs', SUPPRESSION_TYPE_BADGE[type])}>
+              {suppressionTypeLabel(type, t)}
             </Badge>
           )
         },
@@ -271,12 +275,14 @@ export default function ExceptionsPage() {
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('exceptions.page.colStatus', 'Status')} />
+        ),
         cell: ({ row }) => {
           const s = row.original.status
           return (
             <Badge variant="outline" className={cn('text-xs', SUPPRESSION_STATUS_BADGE[s])}>
-              {SUPPRESSION_STATUS_LABELS[s]}
+              {suppressionStatusLabel(s, t)}
             </Badge>
           )
         },
@@ -284,7 +290,11 @@ export default function ExceptionsPage() {
       },
       {
         accessorKey: 'requested_by',
-        header: () => <span className="whitespace-nowrap">Requested by</span>,
+        header: () => (
+          <span className="whitespace-nowrap">
+            {t('exceptions.page.colRequestedBy', 'Requested by')}
+          </span>
+        ),
         cell: ({ row }) => (
           <span className="text-xs font-mono text-muted-foreground">
             {row.original.requested_by.slice(0, 8)}
@@ -294,17 +304,29 @@ export default function ExceptionsPage() {
       },
       {
         accessorKey: 'expires_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Expires" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('exceptions.page.colExpires', 'Expires')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
-            {row.original.expires_at ? relative(row.original.expires_at) : 'Never'}
+            {row.original.expires_at
+              ? relative(row.original.expires_at)
+              : t('exceptions.page.never', 'Never')}
           </span>
         ),
         enableSorting: true,
       },
       {
         accessorKey: 'created_at',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('exceptions.page.colCreated', 'Created')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {relative(row.original.created_at)}
@@ -333,11 +355,11 @@ export default function ExceptionsPage() {
                   <Can permission={Permission.SuppressionsApprove}>
                     <DropdownMenuItem onClick={() => openApprove(rule)}>
                       <Check className={cn('me-2 h-4 w-4', MENU_APPROVE_ICON)} />
-                      Approve
+                      {t('exceptions.page.approve', 'Approve')}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openReject(rule)}>
                       <X className="me-2 h-4 w-4 text-destructive" />
-                      Reject
+                      {t('exceptions.page.reject', 'Reject')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </Can>
@@ -345,13 +367,13 @@ export default function ExceptionsPage() {
                 <Can permission={Permission.SuppressionsWrite}>
                   <DropdownMenuItem onClick={() => openEdit(rule)}>
                     <Pencil className="me-2 h-4 w-4" />
-                    Edit
+                    {t('exceptions.page.edit', 'Edit')}
                   </DropdownMenuItem>
                 </Can>
                 <Can permission={Permission.SuppressionsDelete}>
                   <DropdownMenuItem className="text-destructive" onClick={() => openDelete(rule)}>
                     <Trash2 className="me-2 h-4 w-4" />
-                    Delete
+                    {t('exceptions.page.delete', 'Delete')}
                   </DropdownMenuItem>
                 </Can>
               </DropdownMenuContent>
@@ -360,41 +382,41 @@ export default function ExceptionsPage() {
         },
       },
     ],
-    [openApprove, openReject, openEdit, openDelete]
+    [openApprove, openReject, openEdit, openDelete, t]
   )
 
   const metrics: MetricStripItem[] = [
     {
       key: 'pending',
-      label: 'Pending approval',
+      label: t('exceptions.page.metricPending', 'Pending approval'),
       value: counts.pending,
       onClick: () => toggleStatus('pending'),
       active: activeTab === 'pending',
     },
     {
       key: 'approved',
-      label: 'Approved',
+      label: t('exceptions.page.metricApproved', 'Approved'),
       value: counts.approved,
       onClick: () => toggleStatus('approved'),
       active: activeTab === 'approved',
     },
     {
       key: 'rejected',
-      label: 'Rejected',
+      label: t('exceptions.page.metricRejected', 'Rejected'),
       value: counts.rejected,
       onClick: () => toggleStatus('rejected'),
       active: activeTab === 'rejected',
     },
     {
       key: 'expired',
-      label: 'Expired',
+      label: t('exceptions.page.metricExpired', 'Expired'),
       value: counts.expired,
       onClick: () => toggleStatus('expired'),
       active: activeTab === 'expired',
     },
     {
       key: 'all',
-      label: 'All rules',
+      label: t('exceptions.page.metricAll', 'All rules'),
       value: counts.all,
       onClick: () => toggleStatus('all'),
       active: activeTab === 'all',
@@ -405,13 +427,18 @@ export default function ExceptionsPage() {
     <>
       <Main>
         <PageHeader
-          title="Exceptions"
-          description="Suppression rules that hide false positives and accepted risks, with an approval step."
+          title={t('exceptions.page.title', 'Exceptions')}
+          description={t(
+            'exceptions.page.description',
+            'Suppression rules that hide false positives and accepted risks, with an approval step.'
+          )}
         >
           <Can permission={Permission.SuppressionsWrite}>
             <Button size="sm" onClick={openCreate}>
               <Plus className="h-4 w-4 sm:me-2" />
-              <span className="sr-only sm:not-sr-only">New rule</span>
+              <span className="sr-only sm:not-sr-only">
+                {t('exceptions.page.newRule', 'New rule')}
+              </span>
             </Button>
           </Can>
         </PageHeader>
@@ -422,12 +449,17 @@ export default function ExceptionsPage() {
           {error && !isLoading ? (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Failed to load suppression rules</AlertTitle>
+              <AlertTitle>
+                {t('exceptions.page.loadError', 'Failed to load suppression rules')}
+              </AlertTitle>
               <AlertDescription className="flex flex-wrap items-center gap-3">
-                <span>{error?.message || 'An unexpected error occurred'}</span>
+                <span>
+                  {error?.message ||
+                    t('exceptions.page.unexpectedError', 'An unexpected error occurred')}
+                </span>
                 <Button variant="outline" size="sm" onClick={() => mutate()}>
                   <RefreshCw className="me-2 h-4 w-4" />
-                  Retry
+                  {t('exceptions.page.retry', 'Retry')}
                 </Button>
               </AlertDescription>
             </Alert>
@@ -437,7 +469,7 @@ export default function ExceptionsPage() {
             <DataTable
               columns={columns}
               data={filteredRules}
-              searchPlaceholder="Search by name..."
+              searchPlaceholder={t('exceptions.page.search', 'Search by name...')}
               searchKey="name"
               showColumnToggle={false}
               onRowClick={openDetail}
@@ -448,17 +480,20 @@ export default function ExceptionsPage() {
                   className="h-9 w-9"
                   onClick={handleRefresh}
                   disabled={isLoading}
-                  aria-label="Refresh"
-                  title="Refresh"
+                  aria-label={t('exceptions.page.refresh', 'Refresh')}
+                  title={t('exceptions.page.refresh', 'Refresh')}
                 >
                   <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
                 </Button>
               }
-              emptyMessage="No suppression rules"
+              emptyMessage={t('exceptions.page.empty', 'No suppression rules')}
               emptyDescription={
                 activeTab === 'all'
-                  ? 'Create a rule to suppress false positives or accepted risks.'
-                  : `No ${activeTab} suppression rules.`
+                  ? t(
+                      'exceptions.page.emptyAll',
+                      'Create a rule to suppress false positives or accepted risks.'
+                    )
+                  : t(`exceptions.page.empty.${activeTab}`, `No ${activeTab} suppression rules.`)
               }
             />
           )}
@@ -515,21 +550,23 @@ export default function ExceptionsPage() {
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Reject suppression rule</DialogTitle>
-            <DialogDescription>Provide a reason for rejecting this rule.</DialogDescription>
+            <DialogTitle>{t('exceptions.page.rejectTitle', 'Reject suppression rule')}</DialogTitle>
+            <DialogDescription>
+              {t('exceptions.page.rejectDescription', 'Provide a reason for rejecting this rule.')}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody className="grid gap-4">
             {selectedRule && (
               <div className="rounded-lg border bg-muted/50 p-3">
                 <p className="text-sm font-medium">{selectedRule.name}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {suppressionScopeSummary(selectedRule)}
+                  {suppressionScopeSummary(selectedRule, t)}
                 </p>
               </div>
             )}
             <div className="grid gap-2">
               <Textarea
-                placeholder="Reason for rejection..."
+                placeholder={t('exceptions.page.rejectPlaceholder', 'Reason for rejection...')}
                 value={rejectionReason}
                 onChange={(e) => setRejectionReason(e.target.value)}
                 rows={3}
@@ -542,7 +579,7 @@ export default function ExceptionsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectOpen(false)} disabled={isRejecting}>
-              Cancel
+              {t('exceptions.page.cancel', 'Cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -552,10 +589,10 @@ export default function ExceptionsPage() {
               {isRejecting ? (
                 <>
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  Rejecting...
+                  {t('exceptions.page.rejecting', 'Rejecting...')}
                 </>
               ) : (
-                'Reject'
+                t('exceptions.page.reject', 'Reject')
               )}
             </Button>
           </DialogFooter>
