@@ -110,7 +110,8 @@ func charCases() []charCase {
 			wantTypes:      map[string]string{"api.example.com": "domain"},
 			wantActMembers: []string{"api.example.com"},
 			wantRunContext: map[string]any{"resolved_target_count": 1, "excluded_target_count": 2,
-				RunContextKeyTargetTypes: map[string]string{"api.example.com": "domain"}},
+				RunContextKeyExcludedTargets: []ExcludedTarget{{Target: "db.example.com"}, {Target: "web.example.com"}},
+				RunContextKeyTargetTypes:     map[string]string{"api.example.com": "domain"}},
 		},
 		{
 			name: "typed target whose ownership is not confirmed", scanner: "nuclei", noGroup: true,
