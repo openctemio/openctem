@@ -1,6 +1,6 @@
 # RFC-038 — Sensor tool settings: typed schemas from the sensor, forms on the platform, signed config back
 
-> Status: **Proposed** (2026-10-02, #826). §6.12 custom template trust is implemented; the settings schema design (§6.1–§6.10, phases P0–P4) is not built.
+> Status: **Partially implemented** (2026-10-14). Per-sensor tool settings are stored, validated with the CTIS settings contract (`ctis/settings`, the same code the sensor validates with), audited and delivered inside the signed job's payload (`settings_layers.sensor`), with a generated form on the sensor's page (api/docs/architecture/sensors.md, "Tool settings"). §6.6 (a separate signed, versioned settings document pushed to each sensor) is superseded: the layers travel inside each signed job instead, and the schema comes from the tool descriptor already stored with the manifest. Tenant policy, dangerous-option enablement and the scan layer preview are not built yet. §6.12 custom template trust is implemented.
 > Scope: sdk-go (schema types, registration, delivery and verification) +
 > sensor (`openctemio/sensor`: one schema per tool, typed option → flag
 > mapping) + api (storage, validation, policy, audit, push) + web (forms).

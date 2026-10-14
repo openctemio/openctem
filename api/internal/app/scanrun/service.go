@@ -173,6 +173,9 @@ type SelectSensorResult struct {
 
 // Service handles scan workflow-related business operations.
 type Service struct {
+	// toolConfig checks a pinned step's tool options against the sensors'
+	// tool settings (WithToolConfigChecker).
+	toolConfig ToolConfigChecker
 	// runnableTools: which tools an online sensor may run now (CheckSteps warnings).
 	runnableTools RunnableTools
 	// draftRepo stores the builder drafts (draft.go).
@@ -222,6 +225,32 @@ func (s *Service) runWorkflow(ctx context.Context, run *scanrun.Run) (*scanworkf
 		return nil, err
 	}
 	return scanrun.PinnedWorkflow(ctx, s.versions, run, live)
+}
+
+// ToolConfigChecker checks a step's tool options against the tenant's own
+// sensors for that tool, as they will resolve them
+// (sensor.SensorService.CheckScanToolConfig): an error wrapping
+// shared.ErrValidation refuses the config.
+type ToolConfigChecker interface {
+	CheckScanToolConfig(ctx context.Context, tenantID shared.ID, tool string, config map[string]any) error
+}
+
+// WithToolConfigChecker makes adding or editing a step pinned to a tool
+// check its options against the sensors' tool settings.
+func WithToolConfigChecker(c ToolConfigChecker) Option {
+	return func(s *Service) { s.toolConfig = c }
+}
+
+// checkStepToolConfig checks a step pinned to a tool (a step that picks its
+// tool at run time has no one schema to check against).
+func (s *Service) checkStepToolConfig(ctx context.Context, tenantID shared.ID, input AddStepInput) error {
+	if s.toolConfig == nil || input.Tool == "" || len(input.Config) == 0 {
+		return nil
+	}
+	if err := s.toolConfig.CheckScanToolConfig(ctx, tenantID, input.Tool, input.Config); err != nil {
+		return fmt.Errorf("%s: %w", stepMessage(input, "tool options"), err)
+	}
+	return nil
 }
 
 // WithAuditService sets the audit service for Service.
