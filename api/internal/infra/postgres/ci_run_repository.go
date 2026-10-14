@@ -946,6 +946,44 @@ func (r *CIRunRepository) PullRequestPassed(ctx context.Context, tenantID, asset
 	return verdict.String == cirun.VerdictPass, nil
 }
 
+// CommitVerdicts returns the latest evaluated verdict of each pipeline on
+// any of the commits of the repository (tenant-scoped). A run without a
+// pipeline counts on its own.
+func (r *CIRunRepository) CommitVerdicts(ctx context.Context, tenantID, assetID shared.ID, shas []string) ([]cirun.CommitVerdict, error) {
+	clean := make([]string, 0, len(shas))
+	for _, s := range shas {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			clean = append(clean, s)
+		}
+	}
+	if len(clean) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT ON (COALESCE(pipeline_id::text, id::text))
+			id, verdict, COALESCE((verdict_detail->>'would_fail')::boolean, false)
+		FROM ci_runs
+		WHERE tenant_id = $1 AND repository_asset_id = $2 AND lower(commit_sha) = ANY($3)
+		  AND status = 'evaluated' AND verdict IS NOT NULL
+		ORDER BY COALESCE(pipeline_id::text, id::text), evaluated_at DESC`,
+		tenantID.String(), assetID.String(), pq.Array(clean))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []cirun.CommitVerdict
+	for rows.Next() {
+		var id, verdict string
+		var v cirun.CommitVerdict
+		if err := rows.Scan(&id, &verdict, &v.WouldFail); err != nil {
+			return nil, err
+		}
+		v.RunID, _ = shared.IDFromString(id)
+		v.Verdict = verdict
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 // AssetsWithImageDigest returns up to limit of the tenant's assets whose
 // properties mention the image digest (an image asset's own digest, a
 // workload's or host's list of running images), excluding one asset (the

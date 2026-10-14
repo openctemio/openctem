@@ -519,7 +519,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Scan:         handler.NewScanHandler(svc.Scan, repos.User, repos.ScanCoverage, v, log),
 		CIAdmin:      ciAdmin,
 		CIRunner:     ciRunner,
-		SCMApps:      newSCMAppHandler(cfg, repos, svc, log),
+		SCMApps:      withSCMAppDeliveryGuard(newSCMAppHandler(cfg, repos, svc, log), deps.RedisClient),
 		ScanWorkflow: withScopeSnapshots(withReadiness(newScanWorkflowHandler(svc.ScanRun, commandLogs, svc.Command, repos.CommandEvent, svc.DataScope, repos.User, v, log), svc.Scan), svc.ScopeSnapshots),
 
 		// Workflows
@@ -1465,6 +1465,15 @@ func newAssetWebEvidenceHandler(svc *Services, log *logger.Logger) *handler.Asse
 		return nil
 	}
 	return handler.NewAssetWebEvidenceHandler(svc.Asset, svc.WebEvidence, log)
+}
+
+// withSCMAppDeliveryGuard ignores replays of a verified GitHub App webhook
+// delivery for 24 hours (all replicas).
+func withSCMAppDeliveryGuard(h *handler.SCMAppHandler, rc *redis.Client) *handler.SCMAppHandler {
+	if h != nil && rc != nil {
+		h.SetDeliveryGuard(redis.NewWebhookDeliveryStore(rc))
+	}
+	return h
 }
 
 // newSCMAppHandler builds the code-host app installation routes (RFC-077).
