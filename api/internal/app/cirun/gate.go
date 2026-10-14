@@ -140,6 +140,9 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load run findings: %w", err)
 	}
+	// An approved rule covers findings that existed before it was approved
+	// (an exception a repository asked for), not only new ones.
+	s.applyActiveRules(ctx, run.TenantID, findings, run.RepositoryAssetID)
 	newSet, baselineBranch, known, err := s.newFindings(ctx, run, findings)
 	if err != nil {
 		return nil, err

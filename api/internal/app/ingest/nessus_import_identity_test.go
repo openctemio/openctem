@@ -44,7 +44,7 @@ func TestNessusImport_NetworkIdentity(t *testing.T) {
 	}
 	for i, w := range want {
 		f := &res.Report.Findings[i]
-		got, ok := identityV2(asset, f, res.Report.Tool, "", 0)
+		got, ok := identityV2(asset, f, "", 0)
 		if !ok {
 			t.Fatalf("finding %d (%s): no identity", i, f.RuleID)
 		}
