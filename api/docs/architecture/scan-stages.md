@@ -336,6 +336,18 @@ payload comes from one builder, `scan.StepCommandPayload`.
   a release or an expired lease frees the hosts with nothing to clean up.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
   work never holds a tenant back.
+  **Every command, one choke point** (research/130). `CommandRepository.Create`
+  gives every command its keys (`command.AssignHostKeys`), whatever path
+  built it: a single-scanner or quick scan, a zone fan-out, validate,
+  retest, a platform job. Keys the caller set (a scan run's stage-aware
+  keys) win, then a payload's own `host_keys`, else the keys of the
+  payload's `target` and `targets` in its `network_id`: exactly the keys a
+  sensor computes when none are sent. They are written into the payload
+  too, so the two sides never disagree. A follow-up of unfinished targets
+  holds only the keys of its remaining targets among its parent's. A
+  startup pass (`BackfillPendingHostKeys`) keys pending commands queued
+  before this rule. Only `Create`, the follow-up and the window-hold copy
+  insert commands (a test fails on any other `INSERT INTO commands`).
   **One key function on both sides** (RFC-090): the keys are computed by
   `github.com/openctemio/ctis/politeness` (the CTIS contract), which the sensor runtime
   uses too, and every catalog-stage chunk carries the keys the platform
@@ -349,18 +361,6 @@ payload comes from one builder, `scan.StepCommandPayload`.
   (RFC-089) the keys of private addresses and names carry the network, so
   overlapping private ranges at two sites never hold each other back;
   public addresses never do.
-  **Every command, one choke point** (research/130). `CommandRepository.Create`
-  gives every command its keys (`command.AssignHostKeys`), whatever path
-  built it: a single-scanner or quick scan, a zone fan-out, validate,
-  retest, a platform job. Keys the caller set (a scan run's stage-aware
-  keys) win, then a payload's own `host_keys`, else the keys of the
-  payload's `target` and `targets` in its `network_id`: exactly the keys a
-  sensor computes when none are sent. They are written into the payload
-  too, so the two sides never disagree. A follow-up of unfinished targets
-  holds only the keys of its remaining targets among its parent's. A
-  startup pass (`BackfillPendingHostKeys`) keys pending commands queued
-  before this rule. Only `Create`, the follow-up and the window-hold copy
-  insert commands (a test fails on any other `INSERT INTO commands`).
   Not yet: the candidate tool list per chunk (claim by any candidate),
   placement modes and a spread cap.
 
