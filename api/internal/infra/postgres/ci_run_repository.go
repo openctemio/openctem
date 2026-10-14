@@ -500,6 +500,7 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 	rows, err := r.db.QueryContext(ctx, `SELECT f.id, f.fingerprint, COALESCE(f.title, ''), COALESCE(f.rule_id, ''),
 			f.severity, f.status, COALESCE(f.finding_type, ''), COALESCE(f.source, ''), COALESCE(f.file_path, ''), COALESCE(f.start_line, 0),
 			COALESCE(f.is_in_kev, FALSE), f.epss_score,
+			COALESCE((f.remediation->>'fix_available')::boolean, FALSE),
 			EXISTS (SELECT 1 FROM finding_suppressions s
 				JOIN suppression_rules sr ON sr.id = s.suppression_rule_id AND sr.tenant_id = f.tenant_id
 				WHERE s.finding_id = f.id AND sr.status = 'approved'
@@ -523,7 +524,7 @@ func (r *CIRunRepository) RunFindings(ctx context.Context, tenantID, runID, asse
 			accExp, firstDet, reopened sql.NullTime
 		)
 		if err := rows.Scan(&id, &f.Fingerprint, &f.Title, &f.RuleID, &f.Severity, &f.Status, &f.FindingType, &f.Source,
-			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
+			&f.FilePath, &f.StartLine, &f.IsInKEV, &epss, &f.FixAvailable, &f.Suppressed, &accExp, &firstDet, &reopened); err != nil {
 			return nil, err
 		}
 		f.ID, _ = shared.IDFromString(id)
@@ -567,7 +568,8 @@ func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID share
 // The scope id is the repository or the business unit, each its own column
 // with a foreign key (migration 001144).
 const ciPolicyColumns = `id, tenant_id, scope_type, COALESCE(repository_asset_id, business_unit_id), enabled, mode,
-	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes, allow_repo_policy`
+	fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by, updated_by, created_at, updated_at, modes, allow_repo_policy,
+	fixable_only`
 
 func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 	var (
@@ -579,7 +581,7 @@ func scanCIPolicy(row ciScanner) (cirun.GatePolicy, error) {
 		modes                []byte
 	)
 	if err := row.Scan(&id, &tid, &p.ScopeType, &scopeID, &p.Enabled, &p.Mode, &p.FailOnSeverity,
-		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy); err != nil {
+		&p.NewFindingsOnly, &p.FailOnKEV, &epss, &cby, &uby, &createdAt, &updatedAt, &modes, &p.AllowRepoPolicy, &p.FixableOnly); err != nil {
 		return p, err
 	}
 	if len(modes) > 0 {
@@ -673,11 +675,11 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO ci_gate_policies (id, tenant_id, scope_type, repository_asset_id,
 		business_unit_id, enabled, mode, fail_on_severity, new_findings_only, fail_on_kev, epss_threshold, created_by,
-		updated_by, created_at, updated_at, modes, allow_repo_policy)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15)`,
+		updated_by, created_at, updated_at, modes, allow_repo_policy, fixable_only)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13, $13, $14, $15, $16)`,
 		p.ID.String(), p.TenantID.String(), p.ScopeType, nullID(repoID), nullID(unitID), p.Enabled, p.Mode,
 		p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV, nullFloat(p.EPSSThreshold), nullID(p.CreatedBy), p.CreatedAt,
-		modesJSON(p.Modes), p.AllowRepoPolicy)
+		modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly)
 	if isUniqueViolation(err) {
 		return cirun.ErrPolicyExists
 	}
@@ -688,10 +690,10 @@ func (r *CIRunRepository) CreateGatePolicy(ctx context.Context, p *cirun.GatePol
 func (r *CIRunRepository) UpdateGatePolicy(ctx context.Context, p *cirun.GatePolicy) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE ci_gate_policies SET enabled = $3, mode = $4, fail_on_severity = $5,
 		new_findings_only = $6, fail_on_kev = $7, epss_threshold = $8, updated_by = $9, modes = $10,
-		allow_repo_policy = $11, updated_at = NOW()
+		allow_repo_policy = $11, fixable_only = $12, updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`,
 		p.TenantID.String(), p.ID.String(), p.Enabled, p.Mode, p.FailOnSeverity, p.NewFindingsOnly, p.FailOnKEV,
-		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy)
+		nullFloat(p.EPSSThreshold), nullID(p.UpdatedBy), modesJSON(p.Modes), p.AllowRepoPolicy, p.FixableOnly)
 	if err != nil {
 		return err
 	}

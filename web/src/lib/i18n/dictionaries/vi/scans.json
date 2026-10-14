@@ -1218,6 +1218,8 @@
   "scans.ci.gatePolicy.failsOn": "Thất bại khi: {severity} trở lên",
   "scans.ci.gatePolicy.newOnly": "Chỉ phát hiện mới (so với nhánh mặc định)",
   "scans.ci.gatePolicy.every": "Mọi phát hiện",
+  "scans.ci.gatePolicy.fixableOnlySwitch": "Lỗ hổng của thư viện và image chỉ chặn khi đã có bản sửa",
+  "scans.ci.gatePolicy.fixableOnly": "Lỗ hổng chưa có bản sửa: được liệt kê, không chặn (KEV vẫn chặn)",
   "scans.ci.gatePolicy.kevFails": "Đã bị khai thác (KEV): thất bại",
   "scans.ci.gatePolicy.kevNoFail": "Đã bị khai thác (KEV): không thất bại",
   "scans.ci.gatePolicy.epssAtLeast": "EPSS từ {value}",

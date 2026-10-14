@@ -156,15 +156,27 @@ type RunFinding struct {
 	Status      string
 	FindingType string
 	// Source is the finding's technique (sast, sca, secret, iac, container).
-	Source              string
-	FilePath            string
-	StartLine           int
-	IsInKEV             bool
-	EPSSScore           *float64
+	Source    string
+	FilePath  string
+	StartLine int
+	IsInKEV   bool
+	EPSSScore *float64
+	// FixAvailable: a fixed version of the vulnerable component exists.
+	FixAvailable        bool
 	Suppressed          bool
 	AcceptanceExpiresAt *time.Time
 	FirstDetectedAt     *time.Time
 	LastReopenedAt      *time.Time
+}
+
+// IsVulnerability reports whether the finding is a vulnerability of a
+// dependency or an image (sca, container), the kind a fixed version solves.
+func (f RunFinding) IsVulnerability() bool {
+	switch strings.ToLower(f.Source) {
+	case "sca", "container":
+		return true
+	}
+	return strings.EqualFold(f.FindingType, "vulnerability")
 }
 
 // Decoration states: posting a run's verdict to the code host (RFC-077).

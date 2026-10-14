@@ -1218,6 +1218,8 @@
   "scans.ci.gatePolicy.failsOn": "Fails on: {severity} and above",
   "scans.ci.gatePolicy.newOnly": "New findings only (compared with the default branch)",
   "scans.ci.gatePolicy.every": "Every finding",
+  "scans.ci.gatePolicy.fixableOnlySwitch": "Dependency and image vulnerabilities block only when a fix exists",
+  "scans.ci.gatePolicy.fixableOnly": "Vulnerabilities without a fix: listed, not blocking (KEV still fails)",
   "scans.ci.gatePolicy.kevFails": "Known exploited (KEV): fails",
   "scans.ci.gatePolicy.kevNoFail": "Known exploited (KEV): does not fail",
   "scans.ci.gatePolicy.epssAtLeast": "EPSS at least {value}",
