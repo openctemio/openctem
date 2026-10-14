@@ -48,6 +48,7 @@ import {
   isMalwareFlagged,
 } from '@/features/pentest/components/flagged-attachment'
 import Image from 'next/image'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface EvidenceTabProps {
   evidence: Evidence[]
@@ -82,6 +83,7 @@ function RepositoryLink({
   branch,
   commitSha,
 }: RepositoryLinkProps) {
+  const { t } = useTranslation()
   const link = buildRepositoryCodeUrl({
     repositoryUrl,
     filePath,
@@ -101,7 +103,7 @@ function RepositoryLink({
     <SafeExternalLink
       href={link}
       className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0"
-      title="View in repository"
+      title={t('findings.evidenceTab.viewInRepo', 'View in repository')}
     >
       {isGitHub ? (
         <Github className="h-3 w-3" />
@@ -110,13 +112,16 @@ function RepositoryLink({
       ) : (
         <GitBranch className="h-3 w-3" />
       )}
-      <span className="sr-only sm:not-sr-only">View source</span>
+      <span className="sr-only sm:not-sr-only">
+        {t('findings.evidenceTab.viewSource', 'View source')}
+      </span>
       <ExternalLink className="h-2.5 w-2.5" />
     </SafeExternalLink>
   )
 }
 
 export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
+  const { t } = useTranslation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   // The tool's own proof (request, response, match), masked server-side.
   const { data: evidenceItems } = useFindingEvidenceItems(finding?.id ?? null)
@@ -220,7 +225,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           <div className="bg-muted/30 rounded-lg border p-4">
             <div className="flex aspect-video items-center justify-center rounded bg-neutral-800/50">
               <ImageIcon className="text-muted-foreground h-12 w-12" />
-              <span className="text-muted-foreground ms-2 text-sm">[Screenshot Preview]</span>
+              <span className="text-muted-foreground ms-2 text-sm">
+                {t('findings.evidenceTab.screenshotPreview', '[Screenshot Preview]')}
+              </span>
             </div>
           </div>
         )
@@ -230,7 +237,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           <div className="bg-muted/30 rounded-lg border p-4">
             <div className="flex aspect-video items-center justify-center rounded bg-neutral-800/50">
               <Video className="text-muted-foreground h-12 w-12" />
-              <span className="text-muted-foreground ms-2 text-sm">[Video Preview]</span>
+              <span className="text-muted-foreground ms-2 text-sm">
+                {t('findings.evidenceTab.videoPreview', '[Video Preview]')}
+              </span>
             </div>
           </div>
         )
@@ -254,7 +263,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                     copyToClipboard(item.content)
                   }}
                   className="text-slate-400 hover:text-slate-200 transition-colors p-1 rounded"
-                  title="Copy code"
+                  title={t('findings.evidenceTab.copyCode', 'Copy code')}
                 >
                   <Copy className="h-3 w-3" />
                 </button>
@@ -269,7 +278,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                   />
                   {!isExpanded && hasMore && (
                     <p className="text-muted-foreground text-xs mt-2">
-                      ... ({lines.length - 8} more lines)
+                      {t('findings.evidenceTab.moreLines', '... ({count} more lines)', {
+                        count: lines.length - 8,
+                      })}
                     </p>
                   )}
                 </div>
@@ -284,11 +295,15 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
               >
                 {isExpanded ? (
                   <>
-                    <ChevronUp className="me-1 h-3 w-3" /> Show Less
+                    <ChevronUp className="me-1 h-3 w-3" />{' '}
+                    {t('findings.evidenceTab.showLess', 'Show Less')}
                   </>
                 ) : (
                   <>
-                    <ChevronDown className="me-1 h-3 w-3" /> Show All {lines.length} Lines
+                    <ChevronDown className="me-1 h-3 w-3" />{' '}
+                    {t('findings.evidenceTab.showAllLines', 'Show All {count} Lines', {
+                      count: lines.length,
+                    })}
                   </>
                 )}
               </Button>
@@ -351,8 +366,11 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
       <div className="space-y-6">
         <EmptyState
           icon={Paperclip}
-          title="No Evidence"
-          description="No evidence has been attached to this finding yet."
+          title={t('findings.evidenceTab.emptyTitle', 'No Evidence')}
+          description={t(
+            'findings.evidenceTab.emptyDesc',
+            'No evidence has been attached to this finding yet.'
+          )}
           card={false}
         />
         {finding?.id && (
@@ -375,7 +393,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
         <div>
           <h3 className="mb-3 flex items-center gap-2 font-semibold">
             <ArrowUpRight className="h-4 w-4" />
-            Tool evidence
+            {t('findings.evidenceTab.toolEvidence', 'Tool evidence')}
             <Badge variant="secondary" className="text-xs">
               {toolEvidence.length}
             </Badge>
@@ -398,7 +416,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
         <div>
           <h3 className="mb-3 flex items-center gap-2 font-semibold">
             <Code className="h-4 w-4" />
-            Affected Code
+            {t('findings.evidenceTab.affectedCode', 'Affected Code')}
           </h3>
           <div className="rounded-lg border bg-muted/30 p-4">
             <div className="flex items-center justify-between gap-4">
@@ -433,7 +451,11 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                   </p>
                 )}
                 {finding.assets?.[0]?.name && (
-                  <p className="text-muted-foreground text-xs mt-1">in {finding.assets[0].name}</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    {t('findings.evidenceTab.inAsset', 'in {name}', {
+                      name: finding.assets[0].name,
+                    })}
+                  </p>
                 )}
               </div>
             </div>
@@ -446,20 +468,25 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
         <div className="space-y-4">
           <h3 className="flex items-center gap-2 font-semibold">
             <Code className="h-4 w-4" />
-            Code Context
+            {t('findings.evidenceTab.codeContext', 'Code Context')}
           </h3>
 
           {/* Context Snippet - Surrounding code (±3 lines) */}
           {hasContextSnippet && finding?.contextSnippet && (
             <div>
-              <p className="text-muted-foreground text-xs mb-2">Context (surrounding code)</p>
+              <p className="text-muted-foreground text-xs mb-2">
+                {t('findings.evidenceTab.contextLabel', 'Context (surrounding code)')}
+              </p>
               <div className="bg-[#1e1e2e] rounded-lg overflow-hidden border border-slate-700/50">
                 <div className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-700/30">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className="text-xs text-slate-400 font-mono truncate">
-                      {finding?.filePath || 'code'}
+                      {finding?.filePath || t('findings.evidenceTab.codeFallback', 'code')}
                       {contextStartLine &&
-                        ` (lines ${contextStartLine}-${contextStartLine + (finding.contextSnippet.split('\n').length - 1)})`}
+                        t('findings.evidenceTab.lines', ' (lines {start}-{end})', {
+                          start: contextStartLine,
+                          end: contextStartLine + (finding.contextSnippet.split('\n').length - 1),
+                        })}
                     </span>
                     {/* Repository Link */}
                     {finding?.repositoryUrl && finding?.filePath && (
@@ -498,7 +525,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-2 font-semibold">
                 <Paperclip className="h-4 w-4" />
-                Evidence ({evidence.length})
+                {t('findings.evidenceTab.evidenceN', 'Evidence ({count})', {
+                  count: evidence.length,
+                })}
               </h3>
             </div>
 
@@ -551,7 +580,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           <div className="space-y-4">
             <h3 className="flex items-center gap-2 font-semibold">
               <Layers className="h-4 w-4" />
-              Stack Traces ({stacks.length})
+              {t('findings.evidenceTab.stackTraces', 'Stack Traces ({count})', {
+                count: stacks.length,
+              })}
             </h3>
 
             <div className="space-y-3">
@@ -607,12 +638,15 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                         >
                           {isExpanded ? (
                             <>
-                              <ChevronUp className="me-1 h-3 w-3" /> Show Less
+                              <ChevronUp className="me-1 h-3 w-3" />{' '}
+                              {t('findings.evidenceTab.showLess', 'Show Less')}
                             </>
                           ) : (
                             <>
-                              <ChevronDown className="me-1 h-3 w-3" /> Show All {frames.length}{' '}
-                              Frames
+                              <ChevronDown className="me-1 h-3 w-3" />{' '}
+                              {t('findings.evidenceTab.showAllFrames', 'Show All {count} Frames', {
+                                count: frames.length,
+                              })}
                             </>
                           )}
                         </Button>
@@ -633,7 +667,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           <div className="space-y-4">
             <h3 className="flex items-center gap-2 font-semibold">
               <MapPin className="h-4 w-4" />
-              Related Locations ({relatedLocations.length})
+              {t('findings.evidenceTab.relatedLocations', 'Related Locations ({count})', {
+                count: relatedLocations.length,
+              })}
             </h3>
 
             <div className="space-y-3">
@@ -658,7 +694,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                           </p>
                         ) : (
                           <p className="text-sm font-mono text-muted-foreground">
-                            Location {index + 1}
+                            {t('findings.evidenceTab.locationN', 'Location {n}', { n: index + 1 })}
                           </p>
                         )}
                         {loc.message && (
@@ -692,7 +728,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           <div className="space-y-4">
             <h3 className="flex items-center gap-2 font-semibold">
               <Link2 className="h-4 w-4" />
-              Attachments ({attachments.length})
+              {t('findings.evidenceTab.attachments', 'Attachments ({count})', {
+                count: attachments.length,
+              })}
             </h3>
 
             <div className="space-y-2">
@@ -721,17 +759,17 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                 const getTypeLabel = () => {
                   switch (attachment.type) {
                     case 'evidence':
-                      return 'Evidence'
+                      return t('findings.evidenceTab.typeEvidence', 'Evidence')
                     case 'screenshot':
-                      return 'Screenshot'
+                      return t('findings.evidenceTab.typeScreenshot', 'Screenshot')
                     case 'document':
-                      return 'Document'
+                      return t('findings.evidenceTab.typeDocument', 'Document')
                     case 'reference':
-                      return 'Reference'
+                      return t('findings.evidenceTab.typeReference', 'Reference')
                     case 'code':
-                      return 'Code'
+                      return t('findings.evidenceTab.typeCode', 'Code')
                     default:
-                      return 'Attachment'
+                      return t('findings.evidenceTab.typeAttachment', 'Attachment')
                   }
                 }
 
@@ -784,7 +822,9 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
           <div>
             <h3 className="mb-3 flex items-center gap-2 font-semibold">
               <Paperclip className="h-4 w-4" />
-              Uploaded Evidence ({apiAttachments.length})
+              {t('findings.evidenceTab.uploaded', 'Uploaded Evidence ({count})', {
+                count: apiAttachments.length,
+              })}
             </h3>
             <div className="space-y-3">
               {/* A file the malware scanner flagged is never shown inline. */}

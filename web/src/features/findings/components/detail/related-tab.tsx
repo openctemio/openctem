@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import type { FindingDetail, RelatedFinding } from '../../types'
 import { EmptyState, SeverityBadge, DataTable, DataTableColumnHeader } from '@/features/shared'
 import { FindingStatusBadge } from '../finding-status-badge'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface RelatedTabProps {
   finding: FindingDetail
@@ -30,12 +31,18 @@ function RelatedFindingsTable({
   showSimilarity = false,
 }: RelatedFindingsTableProps) {
   const router = useRouter()
+  const { t } = useTranslation()
 
   const columns = useMemo<ColumnDef<RelatedFinding>[]>(
     () => [
       {
         accessorKey: 'title',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Finding" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.relatedTab.colFinding', 'Finding')}
+          />
+        ),
         cell: ({ row }) => (
           <div>
             <p className="font-medium">{row.original.title}</p>
@@ -45,26 +52,46 @@ function RelatedFindingsTable({
       },
       {
         accessorKey: 'severity',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Severity" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.relatedTab.colSeverity', 'Severity')}
+          />
+        ),
         sortingFn: (a, b) =>
           (SEVERITY_RANK[a.original.severity] ?? 0) - (SEVERITY_RANK[b.original.severity] ?? 0),
         cell: ({ row }) => <SeverityBadge severity={row.original.severity} />,
       },
       {
         accessorKey: 'status',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.relatedTab.colStatus', 'Status')}
+          />
+        ),
         cell: ({ row }) => <FindingStatusBadge status={row.original.status} />,
       },
       {
         accessorKey: 'assetName',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Asset" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.relatedTab.colAsset', 'Asset')}
+          />
+        ),
         cell: ({ row }) => <span className="text-sm">{row.original.assetName}</span>,
       },
       ...(showSimilarity
         ? ([
             {
               accessorKey: 'similarity',
-              header: ({ column }) => <DataTableColumnHeader column={column} title="Match" />,
+              header: ({ column }) => (
+                <DataTableColumnHeader
+                  column={column}
+                  title={t('findings.relatedTab.colMatch', 'Match')}
+                />
+              ),
               cell: ({ row }) => {
                 const similarity = row.original.similarity
                 if (!similarity) return <span className="text-muted-foreground">-</span>
@@ -94,7 +121,9 @@ function RelatedFindingsTable({
             variant="ghost"
             size="sm"
             className="h-7 w-7 p-0"
-            aria-label={`Open ${row.original.title}`}
+            aria-label={t('findings.relatedTab.open', 'Open {title}', {
+              title: row.original.title,
+            })}
             onClick={() => router.push(`/findings/${row.original.id}`)}
           >
             <ExternalLink className="h-3 w-3" />
@@ -102,7 +131,7 @@ function RelatedFindingsTable({
         ),
       },
     ],
-    [router, showSimilarity]
+    [router, showSimilarity, t]
   )
 
   return (
@@ -120,6 +149,7 @@ function RelatedFindingsTable({
 }
 
 export function RelatedTab({ finding }: RelatedTabProps) {
+  const { t } = useTranslation()
   const similarFindings = finding.similarFindings || []
   const linkedFindings = finding.linkedFindings || []
   const sameCveFindings = finding.sameCveFindings || []
@@ -137,8 +167,11 @@ export function RelatedTab({ finding }: RelatedTabProps) {
     return (
       <EmptyState
         icon={Link2}
-        title="No Related Findings"
-        description="No similar or linked findings have been identified yet."
+        title={t('findings.relatedTab.emptyTitle', 'No Related Findings')}
+        description={t(
+          'findings.relatedTab.emptyDesc',
+          'No similar or linked findings have been identified yet.'
+        )}
         card={false}
       />
     )
@@ -149,7 +182,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
       {/* Tracking Info - occurrence, duplicates, correlation */}
       {hasTrackingInfo && (
         <div className="rounded-lg border bg-muted/30 p-4">
-          <h3 className="text-sm font-semibold mb-3">Tracking Info</h3>
+          <h3 className="text-sm font-semibold mb-3">
+            {t('findings.relatedTab.trackingInfo', 'Tracking Info')}
+          </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {finding.occurrenceCount !== undefined && (
               <div className="flex items-center gap-3">
@@ -158,7 +193,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
                 </div>
                 <div>
                   <p className="text-lg font-bold">{finding.occurrenceCount}</p>
-                  <p className="text-muted-foreground text-xs">Occurrences</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('findings.relatedTab.occurrences', 'Occurrences')}
+                  </p>
                 </div>
               </div>
             )}
@@ -169,7 +206,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
                 </div>
                 <div>
                   <p className="text-lg font-bold">{finding.duplicateCount}</p>
-                  <p className="text-muted-foreground text-xs">Duplicates</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('findings.relatedTab.duplicates', 'Duplicates')}
+                  </p>
                 </div>
               </div>
             )}
@@ -185,7 +224,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
                   >
                     {finding.correlationId}
                   </p>
-                  <p className="text-muted-foreground text-xs">Correlation ID</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('findings.relatedTab.correlationId', 'Correlation ID')}
+                  </p>
                 </div>
               </div>
             )}
@@ -202,7 +243,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             </div>
             <div>
               <p className="text-2xl font-bold">{similarFindings.length}</p>
-              <p className="text-muted-foreground text-xs">Similar</p>
+              <p className="text-muted-foreground text-xs">
+                {t('findings.relatedTab.similar', 'Similar')}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-lg border p-4">
@@ -211,7 +254,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             </div>
             <div>
               <p className="text-2xl font-bold">{linkedFindings.length}</p>
-              <p className="text-muted-foreground text-xs">Linked</p>
+              <p className="text-muted-foreground text-xs">
+                {t('findings.relatedTab.linked', 'Linked')}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-lg border p-4">
@@ -220,7 +265,9 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             </div>
             <div>
               <p className="text-2xl font-bold">{sameCveFindings.length}</p>
-              <p className="text-muted-foreground text-xs">Same CVE</p>
+              <p className="text-muted-foreground text-xs">
+                {t('findings.relatedTab.sameCve', 'Same CVE')}
+              </p>
             </div>
           </div>
         </div>
@@ -232,15 +279,18 @@ export function RelatedTab({ finding }: RelatedTabProps) {
           <div className="mb-3">
             <h3 className="flex items-center gap-2 font-semibold">
               <Eye className="h-4 w-4 text-blue-400" />
-              Similar Findings
+              {t('findings.relatedTab.similarTitle', 'Similar Findings')}
             </h3>
             <p className="text-muted-foreground text-sm">
-              Findings with similar characteristics detected by AI
+              {t(
+                'findings.relatedTab.similarDesc',
+                'Findings with similar characteristics detected by AI'
+              )}
             </p>
           </div>
           <RelatedFindingsTable
             findings={similarFindings}
-            emptyMessage="No similar findings detected"
+            emptyMessage={t('findings.relatedTab.similarEmpty', 'No similar findings detected')}
             showSimilarity
           />
         </div>
@@ -254,11 +304,16 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             <div className="mb-3">
               <h3 className="flex items-center gap-2 font-semibold">
                 <Link2 className="h-4 w-4 text-purple-400" />
-                Linked Findings
+                {t('findings.relatedTab.linkedTitle', 'Linked Findings')}
               </h3>
-              <p className="text-muted-foreground text-sm">Manually linked related findings</p>
+              <p className="text-muted-foreground text-sm">
+                {t('findings.relatedTab.linkedDesc', 'Manually linked related findings')}
+              </p>
             </div>
-            <RelatedFindingsTable findings={linkedFindings} emptyMessage="No linked findings" />
+            <RelatedFindingsTable
+              findings={linkedFindings}
+              emptyMessage={t('findings.relatedTab.linkedEmpty', 'No linked findings')}
+            />
           </div>
         </>
       )}
@@ -271,15 +326,21 @@ export function RelatedTab({ finding }: RelatedTabProps) {
             <div className="mb-3">
               <h3 className="flex items-center gap-2 font-semibold">
                 <Copy className="h-4 w-4 text-orange-400" />
-                Same CVE ({finding.cve})
+                {t('findings.relatedTab.sameCveTitle', 'Same CVE ({cve})', { cve: finding.cve })}
               </h3>
               <p className="text-muted-foreground text-sm">
-                Other findings with the same CVE identifier
+                {t(
+                  'findings.relatedTab.sameCveDesc',
+                  'Other findings with the same CVE identifier'
+                )}
               </p>
             </div>
             <RelatedFindingsTable
               findings={sameCveFindings}
-              emptyMessage="No other findings with this CVE"
+              emptyMessage={t(
+                'findings.relatedTab.sameCveEmpty',
+                'No other findings with this CVE'
+              )}
             />
           </div>
         </>

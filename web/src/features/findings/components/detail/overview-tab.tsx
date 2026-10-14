@@ -35,6 +35,7 @@ import {
   Server,
   ShieldAlert,
 } from 'lucide-react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { MarkdownPreview } from '@/components/ui/markdown-editor'
 import {
@@ -81,6 +82,7 @@ function Mono({ children }: { children: React.ReactNode }) {
 }
 
 export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
+  const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   const triage: AITriageActivityData | null = useMemo(() => {
@@ -121,7 +123,7 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
     <DetailSections>
       {triage && <AITriageSummary data={triage} />}
 
-      <DetailSection title="Description" icon={FileText}>
+      <DetailSection title={t('findings.overviewTab.description', 'Description')} icon={FileText}>
         {desc.text ? (
           isHuman ? (
             <MarkdownPreview content={desc.text} />
@@ -129,10 +131,14 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{desc.text}</p>
           )
         ) : (
-          <p className="text-sm text-muted-foreground">The scanner sent no description.</p>
+          <p className="text-sm text-muted-foreground">
+            {t('findings.overviewTab.noDescription', 'The scanner sent no description.')}
+          </p>
         )}
         {desc.fromAdvisory && adv?.cveId && (
-          <p className="text-xs text-muted-foreground">From the {adv.cveId} advisory.</p>
+          <p className="text-xs text-muted-foreground">
+            {t('findings.overviewTab.fromAdvisory', 'From the {cve} advisory.', { cve: adv.cveId })}
+          </p>
         )}
       </DetailSection>
 
@@ -149,7 +155,11 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
       {finding.sourceData && <SourceDataSection data={finding.sourceData} />}
 
       {extraAssets.length > 0 && (
-        <DetailSection title="Targets" icon={Server} count={extraAssets.length}>
+        <DetailSection
+          title={t('findings.overviewTab.targets', 'Targets')}
+          icon={Server}
+          count={extraAssets.length}
+        >
           <ul className="space-y-1.5">
             {extraAssets.map((a) => (
               <li key={a.id} className="flex items-center gap-2 text-sm">
@@ -174,34 +184,39 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
       )}
 
       {hasContext && (
-        <DetailSection title="Context" icon={ShieldAlert}>
+        <DetailSection title={t('findings.overviewTab.context', 'Context')} icon={ShieldAlert}>
           <DetailFieldGrid>
-            <DetailField label="Attack vector">
+            <DetailField label={t('findings.overviewTab.attackVector', 'Attack vector')}>
               {finding.exposureVector && finding.exposureVector !== 'unknown' ? (
                 <span className="capitalize">{finding.exposureVector}</span>
               ) : null}
             </DetailField>
-            <DetailField label="Impact">
+            <DetailField label={t('findings.overviewTab.impact', 'Impact')}>
               {finding.impact ? <span className="capitalize">{finding.impact}</span> : null}
             </DetailField>
-            <DetailField label="Likelihood">
+            <DetailField label={t('findings.overviewTab.likelihood', 'Likelihood')}>
               {finding.likelihood ? <span className="capitalize">{finding.likelihood}</span> : null}
             </DetailField>
-            <DetailField label="Scanner confidence">
+            <DetailField label={t('findings.overviewTab.scannerConfidence', 'Scanner confidence')}>
               {finding.confidence !== undefined ? `${finding.confidence}%` : null}
             </DetailField>
-            <DetailField label="Data exposure">
+            <DetailField label={t('findings.overviewTab.dataExposure', 'Data exposure')}>
               {finding.dataExposureRisk && finding.dataExposureRisk !== 'none' ? (
                 <span className="capitalize">{finding.dataExposureRisk}</span>
               ) : null}
             </DetailField>
-            <DetailField label="Reputational impact">
-              {finding.reputationalImpact ? 'Yes' : null}
+            <DetailField
+              label={t('findings.overviewTab.reputationalImpact', 'Reputational impact')}
+            >
+              {finding.reputationalImpact ? t('findings.overviewTab.yes', 'Yes') : null}
             </DetailField>
-            <DetailField label="Prerequisites" full>
+            <DetailField label={t('findings.overviewTab.prerequisites', 'Prerequisites')} full>
               {finding.attackPrerequisites}
             </DetailField>
-            <DetailField label="Compliance impact" full>
+            <DetailField
+              label={t('findings.overviewTab.complianceImpact', 'Compliance impact')}
+              full
+            >
               {finding.complianceImpact && finding.complianceImpact.length > 0 ? (
                 <span className="flex flex-wrap gap-1">
                   {finding.complianceImpact.map((c) => (
@@ -219,10 +234,10 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
       <IdentifiersSection finding={finding} />
 
       {!isHuman && (
-        <DetailDisclosure summary="More details">
+        <DetailDisclosure summary={t('findings.overviewTab.moreDetails', 'More details')}>
           <div className="mt-3 space-y-4">
             <DetailFieldGrid>
-              <DetailField label="Rule">
+              <DetailField label={t('findings.overviewTab.rule', 'Rule')}>
                 {finding.ruleId ? (
                   <span>
                     <Mono>{finding.ruleId}</Mono>
@@ -232,27 +247,29 @@ export function OverviewTab({ finding, activities = [] }: OverviewTabProps) {
                   </span>
                 ) : null}
               </DetailField>
-              <DetailField label="Tool">
+              <DetailField label={t('findings.overviewTab.tool', 'Tool')}>
                 {[finding.toolName, finding.toolVersion].filter(Boolean).join(' ') || null}
               </DetailField>
-              <DetailField label="Finding type">{typeCfg?.label}</DetailField>
-              <DetailField label="Classification">
+              <DetailField label={t('findings.overviewTab.findingType', 'Finding type')}>
+                {typeCfg?.label}
+              </DetailField>
+              <DetailField label={t('findings.overviewTab.classification', 'Classification')}>
                 {finding.vulnerabilityClass?.length ? finding.vulnerabilityClass.join(', ') : null}
               </DetailField>
-              <DetailField label="Remediation type">
+              <DetailField label={t('findings.overviewTab.remediationType', 'Remediation type')}>
                 {finding.remediationType ? (
                   <span className="capitalize">{finding.remediationType}</span>
                 ) : null}
               </DetailField>
-              <DetailField label="Fix complexity">
+              <DetailField label={t('findings.overviewTab.fixComplexity', 'Fix complexity')}>
                 {finding.fixComplexity ? (
                   <span className="capitalize">{finding.fixComplexity}</span>
                 ) : null}
               </DetailField>
-              <DetailField label="Scan">
+              <DetailField label={t('findings.overviewTab.scan', 'Scan')}>
                 {finding.scanId ? <Mono>{finding.scanId}</Mono> : null}
               </DetailField>
-              <DetailField label="Recorded">
+              <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
                 {new Date(finding.createdAt).toLocaleString('en-US', {
                   dateStyle: 'medium',
                   timeStyle: 'short',
@@ -301,21 +318,39 @@ function formatDay(iso: string): string {
  * when the latest sighting wrote it. Collapsed by default.
  */
 function ScannerOutputSection({ output }: { output: NonNullable<FindingDetail['scannerOutput']> }) {
+  const { t } = useTranslation()
   return (
-    <DetailSection title="Scanner output" icon={Terminal}>
+    <DetailSection
+      title={t('findings.overviewTab.scannerOutput', 'Scanner output')}
+      icon={Terminal}
+    >
       <p className="text-xs text-muted-foreground">
-        What the scanner printed as its proof
-        {output.updatedAt && <> · from the sighting of {formatDay(output.updatedAt)}</>}
-        {output.truncated && <> · cut at 64 KiB</>}. Shown as plain text.
+        {t('findings.overviewTab.printedProof', 'What the scanner printed as its proof')}
+        {output.updatedAt && (
+          <>
+            {' '}
+            ·{' '}
+            {t('findings.overviewTab.fromSighting', 'from the sighting of {date}', {
+              date: formatDay(output.updatedAt),
+            })}
+          </>
+        )}
+        {output.truncated && <> · {t('findings.overviewTab.cutAt', 'cut at 64 KiB')}</>}.{' '}
+        {t('findings.overviewTab.shownPlain', 'Shown as plain text.')}
       </p>
-      <DetailDisclosure summary="Show output">
-        <UntrustedTextBlock className="mt-2" text={output.text} label="Scanner output" />
+      <DetailDisclosure summary={t('findings.overviewTab.showOutput', 'Show output')}>
+        <UntrustedTextBlock
+          className="mt-2"
+          text={output.text}
+          label={t('findings.overviewTab.scannerOutput', 'Scanner output')}
+        />
       </DetailDisclosure>
     </DetailSection>
   )
 }
 
 function IdentifiersSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const adv = finding.advisory
   const sf = finding.scannerFacts
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
@@ -348,7 +383,10 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
     !!port
   if (!show) return null
   return (
-    <DetailSection title="Identifiers and scores" icon={Fingerprint}>
+    <DetailSection
+      title={t('findings.overviewTab.identifiers', 'Identifiers and scores')}
+      icon={Fingerprint}
+    >
       <DetailFieldGrid>
         <DetailField label="CVSS">
           {finding.cvss !== undefined ? (
@@ -367,39 +405,54 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               {finding.epssPercentile !== undefined && (
                 <span className="text-muted-foreground">
                   {' '}
-                  · {formatEpssPercentile(finding.epssPercentile, 0)} percentile
+                  ·{' '}
+                  {t('findings.overviewTab.percentile', '{value} percentile', {
+                    value: formatEpssPercentile(finding.epssPercentile, 0),
+                  })}
                 </span>
               )}
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Tenable VPR (input)">
+        <DetailField label={t('findings.overviewTab.vpr', 'Tenable VPR (input)')}>
           {sf?.vprScore !== undefined ? (
             <span
               className="tabular-nums"
-              title="Shown for reference; not used for the P0–P3 priority"
+              title={t(
+                'findings.overviewTab.vprRefTitle',
+                'Shown for reference; not used for the P0–P3 priority'
+              )}
             >
               {sf.vprScore.toFixed(1)}
-              <span className="text-muted-foreground"> · not used for priority</span>
+              <span className="text-muted-foreground">
+                {' '}
+                · {t('findings.overviewTab.notUsedForPriority', 'not used for priority')}
+              </span>
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Family">{sf?.family}</DetailField>
-        <DetailField label="CVSS v3 vector" full>
+        <DetailField label={t('findings.overviewTab.family', 'Family')}>{sf?.family}</DetailField>
+        <DetailField label={t('findings.overviewTab.cvssV3', 'CVSS v3 vector')} full>
           {v3 ? <Mono>{v3}</Mono> : null}
         </DetailField>
-        <DetailField label="CVSS v2 vector" full>
+        <DetailField label={t('findings.overviewTab.cvssV2', 'CVSS v2 vector')} full>
           {v2 ? <Mono>{v2}</Mono> : null}
         </DetailField>
-        <DetailField label="CVSS vector" full>
+        <DetailField label={t('findings.overviewTab.cvssVec', 'CVSS vector')} full>
           {otherVector ? <Mono>{finding.cvssVector}</Mono> : null}
         </DetailField>
-        <DetailField label="Port">{port ? <Mono>{port}</Mono> : null}</DetailField>
-        <DetailField label="Patch published">
+        <DetailField label={t('findings.overviewTab.port', 'Port')}>
+          {port ? <Mono>{port}</Mono> : null}
+        </DetailField>
+        <DetailField label={t('findings.overviewTab.patchPublished', 'Patch published')}>
           {sf?.patchPublishedAt ? formatDay(sf.patchPublishedAt) : null}
         </DetailField>
         <DetailField
-          label={allCves.length > 1 ? `CVEs (${allCves.length})` : 'CVE'}
+          label={
+            allCves.length > 1
+              ? t('findings.overviewTab.cvesCount', 'CVEs ({count})', { count: allCves.length })
+              : 'CVE'
+          }
           full={allCves.length > 1}
         >
           {allCves.length > 0 ? (
@@ -410,7 +463,10 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Related CVEs (same assets)" full>
+        <DetailField
+          label={t('findings.overviewTab.relatedCves', 'Related CVEs (same assets)')}
+          full
+        >
           {relatedCves.length > 0 ? (
             <span className="flex flex-wrap gap-x-3 gap-y-1" data-testid="finding-related-cves">
               {relatedCves.slice(0, 12).map((r) => (
@@ -418,7 +474,9 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               ))}
               {relatedCves.length > 12 && (
                 <span className="text-xs text-muted-foreground">
-                  +{relatedCves.length - 12} more
+                  {t('findings.overviewTab.moreCount', '+{count} more', {
+                    count: relatedCves.length - 12,
+                  })}
                 </span>
               )}
             </span>
@@ -438,7 +496,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
           ) : null}
         </DetailField>
         <DetailField label="OWASP">{finding.owasp}</DetailField>
-        <DetailField label="Published">
+        <DetailField label={t('findings.overviewTab.published', 'Published')}>
           {adv?.publishedAt
             ? new Date(adv.publishedAt).toLocaleDateString('en-US', {
                 month: 'short',
@@ -447,17 +505,21 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
               })
             : null}
         </DetailField>
-        <DetailField label="CISA KEV">
+        <DetailField label={t('findings.overviewTab.kev', 'CISA KEV')}>
           {adv?.kev ? (
             <span className="font-medium text-destructive">
-              Added {adv.kev.dateAdded.slice(0, 10)} · due {adv.kev.dueDate.slice(0, 10)}
-              {adv.kev.ransomwareUse === 'Known' && ' · used by ransomware'}
+              {t('findings.overviewTab.kevListed', 'Added {added} · due {due}', {
+                added: adv.kev.dateAdded.slice(0, 10),
+                due: adv.kev.dueDate.slice(0, 10),
+              })}
+              {adv.kev.ransomwareUse === 'Known' &&
+                ` · ${t('findings.overviewTab.kevRansomware', 'used by ransomware')}`}
             </span>
           ) : adv ? (
-            'Not listed'
+            t('findings.overviewTab.notListed', 'Not listed')
           ) : null}
         </DetailField>
-        <DetailField label="References" full>
+        <DetailField label={t('findings.overviewTab.references', 'References')} full>
           {adv && adv.references.length > 0 ? (
             <ul className="space-y-0.5">
               {adv.references.slice(0, 6).map((r) => (
@@ -483,6 +545,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
 
 /** File, lines and the code around them. */
 function CodeLocationSection({ finding }: { finding: FindingDetail }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const code = finding.contextSnippet || finding.snippet
   const startLine = finding.contextSnippet ? finding.contextStartLine || 1 : finding.startLine || 1
@@ -508,7 +571,7 @@ function CodeLocationSection({ finding }: { finding: FindingDetail }) {
 
   return (
     <DetailSection
-      title="Code location"
+      title={t('findings.overviewTab.codeLocation', 'Code location')}
       icon={FileCode2}
       actions={
         repoUrl ? (
@@ -518,7 +581,7 @@ function CodeLocationSection({ finding }: { finding: FindingDetail }) {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
-            View in repository
+            {t('findings.overviewTab.viewInRepo', 'View in repository')}
             <ExternalLink className="h-3 w-3" aria-hidden />
           </a>
         ) : undefined
@@ -534,13 +597,15 @@ function CodeLocationSection({ finding }: { finding: FindingDetail }) {
         <p className="text-xs text-muted-foreground">
           {finding.branch && (
             <>
-              Branch <span className="font-mono">{finding.branch}</span>
+              {t('findings.overviewTab.branch', 'Branch')}{' '}
+              <span className="font-mono">{finding.branch}</span>
             </>
           )}
           {finding.branch && finding.commitSha && ' · '}
           {finding.commitSha && (
             <>
-              Commit <span className="font-mono">{finding.commitSha.slice(0, 10)}</span>
+              {t('findings.overviewTab.commit', 'Commit')}{' '}
+              <span className="font-mono">{finding.commitSha.slice(0, 10)}</span>
             </>
           )}
         </p>
@@ -549,13 +614,15 @@ function CodeLocationSection({ finding }: { finding: FindingDetail }) {
         <div className="overflow-hidden rounded-lg border bg-muted/30">
           <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-1.5">
             <span className="text-xs text-muted-foreground">
-              {finding.contextSnippet ? 'Snippet with context' : 'Snippet'}
+              {finding.contextSnippet
+                ? t('findings.overviewTab.snippetCtx', 'Snippet with context')
+                : t('findings.overviewTab.snippet', 'Snippet')}
             </span>
             <button
               type="button"
               onClick={() => void copy()}
               className="rounded-sm p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              aria-label="Copy code"
+              aria-label={t('findings.overviewTab.copyCode', 'Copy code')}
             >
               {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
@@ -578,9 +645,10 @@ function CodeLocationSection({ finding }: { finding: FindingDetail }) {
 
 /** The latest AI triage, read from the activity feed (no extra request). */
 function AITriageSummary({ data }: { data: AITriageActivityData }) {
+  const { t } = useTranslation()
   return (
     <DetailSection
-      title="AI analysis"
+      title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
       icon={Bot}
       actions={
         <span className="text-xs text-muted-foreground">
@@ -595,7 +663,7 @@ function AITriageSummary({ data }: { data: AITriageActivityData }) {
     >
       {data.recommendation && <p className="text-sm leading-relaxed">{data.recommendation}</p>}
       <DetailFieldGrid className="sm:grid-cols-3">
-        <DetailField label="Risk score">
+        <DetailField label={t('findings.overviewTab.riskScore', 'Risk score')}>
           {data.riskScore !== undefined ? (
             <span
               className={cn('tabular-nums', data.riskScore >= 70 && 'font-medium text-destructive')}
@@ -604,10 +672,10 @@ function AITriageSummary({ data }: { data: AITriageActivityData }) {
             </span>
           ) : null}
         </DetailField>
-        <DetailField label="Risk level">
+        <DetailField label={t('findings.overviewTab.riskLevel', 'Risk level')}>
           {data.riskLevel ? <span className="capitalize">{data.riskLevel}</span> : null}
         </DetailField>
-        <DetailField label="Confidence">
+        <DetailField label={t('findings.overviewTab.confidence', 'Confidence')}>
           {data.confidence ? <span className="capitalize">{data.confidence}</span> : null}
         </DetailField>
       </DetailFieldGrid>
