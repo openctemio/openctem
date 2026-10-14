@@ -28,6 +28,7 @@ type SCMAppService interface {
 	CompleteGitHubInstall(ctx context.Context, tenantID shared.ID, in scmappsvc.CompleteGitHubInput, a scmappsvc.Actor) (*scmapp.Installation, error)
 	List(ctx context.Context, tenantID shared.ID) ([]scmapp.Installation, error)
 	Remove(ctx context.Context, tenantID, id shared.ID, a scmappsvc.Actor) error
+	VerifyGitHubWebhook(body []byte, signature string) error
 	HandleGitHubWebhook(ctx context.Context, event, signature string, body []byte) error
 	ConnectGitLab(ctx context.Context, tenantID shared.ID, in scmappsvc.ConnectGitLabInput, a scmappsvc.Actor) (*scmapp.GitLabConnection, error)
 	ListGitLab(ctx context.Context, tenantID shared.ID) ([]scmapp.GitLabConnection, error)
@@ -36,9 +37,16 @@ type SCMAppService interface {
 
 // SCMAppHandler serves the installation routes and the GitHub App webhook.
 type SCMAppHandler struct {
-	svc    SCMAppService
-	logger *logger.Logger
+	svc SCMAppService
+	// deliveries refuses replays of a verified webhook delivery; nil (no
+	// Redis, tests) turns replay protection off.
+	deliveries WebhookDeliveryGuard
+	logger     *logger.Logger
 }
+
+// SetDeliveryGuard wires delivery-id replay protection for the GitHub App
+// webhook.
+func (h *SCMAppHandler) SetDeliveryGuard(g WebhookDeliveryGuard) { h.deliveries = g }
 
 // NewSCMAppHandler creates the handler.
 func NewSCMAppHandler(svc SCMAppService, log *logger.Logger) *SCMAppHandler {
@@ -311,7 +319,36 @@ func (h *SCMAppHandler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	err = h.svc.HandleGitHubWebhook(r.Context(), r.Header.Get("X-GitHub-Event"), r.Header.Get("X-Hub-Signature-256"), body)
+	sig := r.Header.Get("X-Hub-Signature-256")
+	if err := h.svc.VerifyGitHubWebhook(body, sig); err != nil {
+		h.logger.Warn("github app webhook rejected", "error", logger.SanitizeError(err))
+		apierror.Unauthorized("Invalid webhook signature").WriteJSON(w)
+		return
+	}
+	// Replay protection: the signature covers the body only, so a captured
+	// delivery (a suspend, an unsuspend) verifies forever. Each delivery id
+	// is accepted once inside the window; a replay is acknowledged and
+	// ignored.
+	if h.deliveries != nil {
+		delivery := r.Header.Get("X-GitHub-Delivery")
+		if !githubDeliveryID.MatchString(delivery) {
+			apierror.BadRequest("missing or invalid X-GitHub-Delivery header").WriteJSON(w)
+			return
+		}
+		first, derr := h.deliveries.FirstDelivery(r.Context(), "ghapp:"+delivery, GitHubDeliveryWindow)
+		if derr != nil {
+			// Fail closed: without the store a replay cannot be told apart.
+			h.logger.Error("github app webhook: delivery store unavailable", "error", logger.SanitizeError(derr))
+			apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
+			return
+		}
+		if !first {
+			h.logger.Warn("SECURITY: github app webhook replay ignored", "delivery", sanitizeLogField(delivery))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+	err = h.svc.HandleGitHubWebhook(r.Context(), r.Header.Get("X-GitHub-Event"), sig, body)
 	switch {
 	case errors.Is(err, scmappsvc.ErrBadSignature), errors.Is(err, githubapp.ErrNotConfigured):
 		apierror.Unauthorized("Invalid webhook signature").WriteJSON(w)

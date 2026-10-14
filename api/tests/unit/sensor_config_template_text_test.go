@@ -58,8 +58,11 @@ func TestSensorConfigTemplates_RenderTheReleasedSensorSettings(t *testing.T) {
 				t.Errorf("[%s] yaml lacks %q", dir, want)
 			}
 		}
-		if !strings.Contains(out.Env, "SENSOR_TOOLS=") {
-			t.Errorf("[%s] env lacks SENSOR_TOOLS", dir)
+		// The sensor finds its tools; no snippet pins a tool list.
+		for name, s := range map[string]string{"yaml": out.YAML, "env": out.Env, "docker": out.Docker, "cli": out.CLI} {
+			if strings.Contains(s, "SENSOR_TOOLS") || strings.Contains(s, "-tools") {
+				t.Errorf("[%s] %s emits a tool list:\n%s", dir, name, s)
+			}
 		}
 		if !strings.Contains(out.Docker, "ghcr.io/openctemio/sensor:v0.4.2") {
 			t.Errorf("[%s] docker does not run the pinned sensor image", dir)
