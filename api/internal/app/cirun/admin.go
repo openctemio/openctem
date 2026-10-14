@@ -185,6 +185,9 @@ type GatePolicyInput struct {
 	Modes *cirun.PolicyModes
 	// AllowRepoPolicy, when set, allows or forbids repository files.
 	AllowRepoPolicy *bool
+	// FixableOnly, when set: vulnerabilities without a fixed version do not
+	// block on severity or EPSS.
+	FixableOnly *bool
 }
 
 // ErrStepUpUnavailable: a change that loosens the gate needs step-up, and
@@ -330,6 +333,9 @@ func applyPolicyInput(p *cirun.GatePolicy, in GatePolicyInput) {
 	if in.AllowRepoPolicy != nil {
 		p.AllowRepoPolicy = *in.AllowRepoPolicy
 	}
+	if in.FixableOnly != nil {
+		p.FixableOnly = *in.FixableOnly
+	}
 }
 
 // effective is what applies to a policy's scope: the policy while it is
@@ -443,7 +449,8 @@ func policyName(p *cirun.GatePolicy) string {
 func policySnapshot(p *cirun.GatePolicy) map[string]any {
 	return map[string]any{"scope_type": p.ScopeType, "enabled": p.Enabled, "mode": p.Mode,
 		"fail_on_severity": p.FailOnSeverity, "new_findings_only": p.NewFindingsOnly, "fail_on_kev": p.FailOnKEV,
-		"epss_threshold": p.EPSSThreshold, "modes": p.Modes, "allow_repo_policy": p.AllowRepoPolicy}
+		"epss_threshold": p.EPSSThreshold, "modes": p.Modes, "allow_repo_policy": p.AllowRepoPolicy,
+		"fixable_only": p.FixableOnly}
 }
 
 // ---------------------------------------------------------------- overrides --

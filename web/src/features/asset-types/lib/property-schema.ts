@@ -62,10 +62,85 @@ export function propertyDefinition(key: string): AssetPropertyDefinition | undef
   return isPropertyKey(key) ? ASSET_PROPERTIES[key] : undefined
 }
 
-/** Humanized fallback label for a key outside the schema. */
+/** Words a humanized key keeps in their usual spelling ("DNS", "vCenter"). */
+const WORD_SPELLING: Readonly<Record<string, string>> = {
+  api: 'API',
+  arn: 'ARN',
+  asn: 'ASN',
+  aws: 'AWS',
+  cdn: 'CDN',
+  cidr: 'CIDR',
+  cn: 'CN',
+  cpe: 'CPE',
+  cpu: 'CPU',
+  cve: 'CVE',
+  dns: 'DNS',
+  dnssec: 'DNSSEC',
+  edr: 'EDR',
+  fqdn: 'FQDN',
+  gb: 'GB',
+  http: 'HTTP',
+  https: 'HTTPS',
+  iam: 'IAM',
+  id: 'ID',
+  ip: 'IP',
+  ips: 'IPs',
+  ipv4: 'IPv4',
+  ipv6: 'IPv6',
+  isp: 'ISP',
+  kms: 'KMS',
+  mac: 'MAC',
+  mb: 'MB',
+  mfa: 'MFA',
+  ms: 'ms',
+  mx: 'MX',
+  os: 'OS',
+  ptr: 'PTR',
+  rbac: 'RBAC',
+  rdap: 'RDAP',
+  sdk: 'SDK',
+  san: 'SAN',
+  sans: 'SANs',
+  sha256: 'SHA-256',
+  smtp: 'SMTP',
+  spf: 'SPF',
+  ssh: 'SSH',
+  ssl: 'SSL',
+  tcp: 'TCP',
+  tls: 'TLS',
+  ttl: 'TTL',
+  txt: 'TXT',
+  udp: 'UDP',
+  uri: 'URI',
+  url: 'URL',
+  uuid: 'UUID',
+  vcenter: 'vCenter',
+  vlan: 'VLAN',
+  vm: 'VM',
+  vpc: 'VPC',
+  waf: 'WAF',
+  whois: 'WHOIS',
+}
+
+/**
+ * Humanized fallback label for a key outside the schema: words split on
+ * `_`, `-` and camelCase, sentence case, acronyms kept ("dns_record_count"
+ * → "DNS record count", "vcenterMoref" → "vCenter moref").
+ */
 export function humanizePropertyKey(key: string): string {
-  const words = key.replace(/[-_]+/g, ' ').trim()
-  return words.charAt(0).toUpperCase() + words.slice(1)
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[\s_\-.]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase())
+  if (words.length === 0) return key
+  return words
+    .map((w, i) => {
+      const spelled = WORD_SPELLING[w]
+      if (spelled) return spelled
+      return i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w
+    })
+    .join(' ')
 }
 
 /** The label of a key in the viewer's language (English when there is none). */
