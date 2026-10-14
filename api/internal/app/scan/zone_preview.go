@@ -109,21 +109,24 @@ type PreviewError struct {
 // ZoneRoutingPreview is what a trigger would do with a scan's targets, computed
 // by the same code as the trigger, without creating anything.
 type ZoneRoutingPreview struct {
-	ZonesEnabled     bool            `json:"zones_enabled"`
-	Routed           bool            `json:"routed"`
-	NotRoutedReason  string          `json:"not_routed_reason,omitempty"`
-	ResolvedTargets  int             `json:"resolved_targets"`
-	ExcludedTargets  int             `json:"excluded_targets"`
-	Excluded         []string        `json:"excluded"`
-	Targets          []PreviewTarget `json:"targets"`
-	Zones            []PreviewZone   `json:"zones"`
-	UnzonedTargets   int             `json:"unzoned_targets"`
-	UncoveredTargets int             `json:"uncovered_targets"`
-	Jobs             int             `json:"jobs"`
-	TargetsPerJob    int             `json:"targets_per_job"`
-	SelectedZoneID   string          `json:"selected_zone_id,omitempty"`
-	Warnings         []string        `json:"warnings"`
-	Error            *PreviewError   `json:"error,omitempty"`
+	ZonesEnabled    bool     `json:"zones_enabled"`
+	Routed          bool     `json:"routed"`
+	NotRoutedReason string   `json:"not_routed_reason,omitempty"`
+	ResolvedTargets int      `json:"resolved_targets"`
+	ExcludedTargets int      `json:"excluded_targets"`
+	Excluded        []string `json:"excluded"`
+	// ExcludedDetail: the targets exclusions leave out, whole or cut (a
+	// range split around excluded addresses), with the matching rules.
+	ExcludedDetail   []ExcludedTarget `json:"excluded_detail,omitempty"`
+	Targets          []PreviewTarget  `json:"targets"`
+	Zones            []PreviewZone    `json:"zones"`
+	UnzonedTargets   int              `json:"unzoned_targets"`
+	UncoveredTargets int              `json:"uncovered_targets"`
+	Jobs             int              `json:"jobs"`
+	TargetsPerJob    int              `json:"targets_per_job"`
+	SelectedZoneID   string           `json:"selected_zone_id,omitempty"`
+	Warnings         []string         `json:"warnings"`
+	Error            *PreviewError    `json:"error,omitempty"`
 	// Windows: what the scan windows mean for the targets now (nil: none
 	// applies).
 	Windows *WindowPreview `json:"windows,omitempty"`
@@ -207,6 +210,7 @@ func (s *Service) PreviewZoneRouting(ctx context.Context, in ZoneRoutingPreviewI
 	out.ResolvedTargets = len(resolved.Targets)
 	out.ExcludedTargets = resolved.Excluded
 	out.Excluded = append(out.Excluded, resolved.ExcludedNames[:min(len(resolved.ExcludedNames), maxListedUncovered)]...)
+	out.ExcludedDetail = resolved.ExcludedDetail
 	out.Warnings = append(out.Warnings, resolved.Warnings...)
 	if len(rejected) > 0 {
 		out.Error = &PreviewError{Code: errCodeInvalidTarget, Message: fmt.Sprintf(
