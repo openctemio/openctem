@@ -36,6 +36,7 @@ func TestIngest_PropertySchemaNormalised(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	svc.SetRelationshipRepository(postgres.NewAssetRelationshipRepository(db))
 	tid, oid := tn.tenant, other.tenant
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}

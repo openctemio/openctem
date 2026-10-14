@@ -65,7 +65,7 @@ func TestDryRunTargets_AssetIDs(t *testing.T) {
 		},
 	}
 	act := &stubActScope{assets: map[shared.ID]bool{hidden: true}}
-	svc := &Service{
+	svc := &Service{tools: testTools,
 		scopeExclusions: &stubExclusions{values: map[string]bool{"203.0.113.9": true}},
 		attributionGate: gate,
 		actScope:        act,
@@ -141,7 +141,7 @@ func TestDryRunTargets_AssetIDsFailClosed(t *testing.T) {
 	in := DryRunInput{TenantID: tenant, AssetIDs: []shared.ID{id}}
 
 	// A gate that cannot name assets answers nothing.
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	if _, err := svc.DryRunTargets(context.Background(), in); !errors.Is(err, ErrAttributionGateUnavailable) {
 		t.Fatalf("err = %v, want ErrAttributionGateUnavailable", err)
 	}

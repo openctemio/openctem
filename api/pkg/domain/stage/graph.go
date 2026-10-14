@@ -115,7 +115,7 @@ func (r *GraphReport) warnf(code string, anchor GraphIssue, format string, args 
 // capability, edges between existing nodes, no cycle, typed compatibility
 // of every edge (with the adapter that would fix an incompatible one), no
 // derived targets into an intrusive (T2) node, and the size limits.
-func ValidateGraph(g Graph) GraphReport {
+func (c Catalog) ValidateGraph(g Graph) GraphReport {
 	rep := GraphReport{Errors: []GraphIssue{}, Warnings: []GraphIssue{}}
 	if len(g.Nodes) > MaxGraphNodes {
 		rep.errorf(IssueTooLarge, GraphIssue{}, "a workflow has at most %d nodes (this one has %d)", MaxGraphNodes, len(g.Nodes))
@@ -140,7 +140,7 @@ func ValidateGraph(g Graph) GraphReport {
 		if n.Kind == NodeOpaque {
 			continue
 		}
-		st, ok := checkNodeCapability(&rep, id, n)
+		st, ok := c.checkNodeCapability(&rep, id, n)
 		if ok {
 			stages[id] = st
 		}
@@ -184,9 +184,9 @@ func ValidateGraph(g Graph) GraphReport {
 	return rep
 }
 
-func checkNodeCapability(rep *GraphReport, id string, n GraphNode) (Stage, bool) {
+func (c Catalog) checkNodeCapability(rep *GraphReport, id string, n GraphNode) (Stage, bool) {
 	anchor := GraphIssue{Node: id}
-	st, ok := Lookup(n.Capability)
+	st, ok := c.Lookup(n.Capability)
 	if !ok {
 		if p, planned := lookupPlanned(n.Capability); planned {
 			if p.CrossCutting {

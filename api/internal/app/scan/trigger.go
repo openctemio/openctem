@@ -212,7 +212,11 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 	}
 
 	// A scanner above the scan's intensity never runs (RFC-071).
-	if err := refuseRunAboveIntensity(sc); err != nil {
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if err := refuseRunAboveIntensity(cat, sc); err != nil {
 		return nil, err
 	}
 
@@ -371,7 +375,11 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	// Scan windows (windows.go): never-opening targets refuse the run, a
 	// scheduled run with nothing open is deferred.
-	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, targets, oneZone(runZone), workflowTier(steps), runContext); err != nil {
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, targets, oneZone(runZone), workflowTier(cat, steps), runContext); err != nil {
 		return nil, err
 	}
 
@@ -494,9 +502,13 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	if err != nil {
 		return nil, err
 	}
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	// Resolve before active: an active scanner skips the names without
 	// recent resolution evidence (resolve_evidence.go).
-	if stage.ProbeTier(sc.ScannerName) > stage.TierPassive {
+	if cat.ProbeTier(sc.ScannerName) > stage.TierPassive {
 		if err := s.dropStaleRunNames(ctx, sc, resolved, runContext); err != nil {
 			return nil, err
 		}
@@ -562,7 +574,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	// Outside zones too, a scanner that reads one target per job gets one
 	// command per target, not one command that scans only the first.
 	if plan == nil {
-		if plan, err = perTargetPlan(sc, resolved.Targets); err != nil {
+		if plan, err = perTargetPlan(cat, sc, resolved.Targets); err != nil {
 			return nil, err
 		}
 		if plan != nil {
@@ -570,7 +582,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 		}
 	}
 
-	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, resolved.Targets, planZoneOf(plan), singleScanTier(sc), runContext); err != nil {
+	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, resolved.Targets, planZoneOf(plan), singleScanTier(cat, sc), runContext); err != nil {
 		return nil, err
 	}
 
@@ -660,6 +672,10 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 	if maxParallel <= 0 {
 		maxParallel = 3
 	}
+	cat, err := s.catalog(ctx, run.TenantID)
+	if err != nil {
+		return err
+	}
 	queued, roots, aboveIntensity := 0, 0, 0
 	// A first step that cannot be queued (no tool, incompatible targets, no
 	// sensor for the tool...) is failed with its reason by the queuer; the
@@ -677,7 +693,7 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			s.skipWorkflowStep(ctx, run, step, step.ConditionSkipReason())
 			continue
 		}
-		if reason := IntensitySkipReason(run, step); reason != "" {
+		if reason := IntensitySkipReason(cat, run, step); reason != "" {
 			s.skipWorkflowStep(ctx, run, step, reason)
 			aboveIntensity++
 			continue
@@ -770,7 +786,11 @@ type EmbeddedTemplate struct {
 // sensor SDK reads it.
 func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun, targets []string, usePlatform bool) error {
 	templates := s.customTemplatesForScan(ctx, sc)
-	payloadMap := s.scannerPayload(sc, run, stepRun, sc.ScannerConfig, run.Context, targets, templates)
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return err
+	}
+	payloadMap := s.scannerPayload(cat, sc, run, stepRun, sc.ScannerConfig, run.Context, targets, templates)
 	if err := s.attachJobExclusions(ctx, sc.TenantID, payloadMap, targets); err != nil {
 		return err
 	}
@@ -780,7 +800,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 	if err != nil {
 		return err
 	}
-	cmd.DispatchGate = scanDispatchGate(sc, run)
+	cmd.DispatchGate = scanDispatchGate(cat, sc, run)
 	if stepRun != nil {
 		// The step settles with the last command carrying its id (a
 		// follow-up of unfinished targets included).
@@ -816,7 +836,7 @@ func (s *Service) createScannerCommand(ctx context.Context, sc *scan.Scan, run *
 }
 
 // scannerPayload builds the payload of a single-scanner command.
-func (s *Service) scannerPayload(
+func (s *Service) scannerPayload(cat stage.Catalog,
 	sc *scan.Scan, run *scanrun.Run, stepRun *scanrun.StepRun,
 	scannerConfig map[string]any, runContext map[string]any,
 	targets []string, templates []EmbeddedTemplate,
@@ -859,7 +879,7 @@ func (s *Service) scannerPayload(
 		payloadMap[scanrun.PayloadKeyStepKey] = stepRun.StepKey
 		payloadMap[scanrun.PayloadKeyStepRunID] = stepRun.ID.String()
 	}
-	applyTargetsToPayload(payloadMap, sc.ScannerName, targets)
+	applyTargetsToPayload(cat, payloadMap, sc.ScannerName, targets)
 	if len(templates) > 0 {
 		payloadMap["custom_templates"] = templates
 	}
@@ -1370,7 +1390,11 @@ func (s *Service) validateStepTool(ctx context.Context, tenantID shared.ID, step
 	case len(step.Capabilities) > 0:
 		// The planner's own rule (step_plan.go), so a step that validates
 		// is a step the dispatcher can name a scanner for (F1).
-		resolved, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step)
+		cat, err := s.catalog(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		resolved, err := ResolveStepTool(ctx, s.toolRepo, cat, tenantID, step)
 		if err != nil {
 			return err
 		}

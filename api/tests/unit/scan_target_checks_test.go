@@ -3,6 +3,9 @@ package unit
 import (
 	"context"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scope"
@@ -45,6 +48,7 @@ func (actOnAll) Check(context.Context, actscope.Input) (*actscope.Decision, erro
 // passes for one of these checks replaces it.
 func allowAllTargetChecks(opts ...scanservice.ServiceOption) []scanservice.ServiceOption {
 	return append([]scanservice.ServiceOption{
+		scanservice.WithToolFacts(unitToolFacts),
 		scanservice.WithScopeExclusionFilter(noExclusions{}),
 		scanservice.WithAttributionGate(allOwned{}),
 		scanservice.WithActScope(actOnAll{}),
@@ -54,3 +58,7 @@ func allowAllTargetChecks(opts ...scanservice.ServiceOption) []scanservice.Servi
 func (allOwned) UncoveredTargets(context.Context, shared.ID, []string) ([]string, error) {
 	return nil, nil
 }
+
+// unitToolFacts is the catalog of an organization whose sensors report the
+// built-in tools' contracts and one for zap (dast.web, T2).
+var unitToolFacts = stagetest.Source{Cat: stagetest.Catalog(stage.ToolFacts{Name: "zap", Implements: []stage.Key{stage.DASTWeb}})}

@@ -27,7 +27,7 @@ func (r *recordedOutputs) RecordStepOutputs(_ context.Context, tenantID, stepRun
 // record nothing.
 func TestRecordStepOutputs(t *testing.T) {
 	rec := &recordedOutputs{}
-	s := &Service{logger: logger.NewNop(), stepOutputs: rec}
+	s := &Service{tools: testTools, logger: logger.NewNop(), stepOutputs: rec}
 	tenant, stepRun := shared.NewID(), shared.NewID()
 	scope := &alterScope{seen: map[shared.ID]seenAsset{}}
 	a, b := shared.NewID(), shared.NewID()

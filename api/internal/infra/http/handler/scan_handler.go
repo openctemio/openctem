@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
+
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -36,6 +38,9 @@ type ScanHandler struct {
 	logger        *logger.Logger
 	// approvals: scan approval (RFC-073); nil when not wired.
 	approvals *ScanApprovalHandler
+	// stages is the organization's stage catalog source (the scan
+	// service); tests may set another.
+	stages stage.Source
 }
 
 // SetApprovals wires scan approval: the list badge and the approval routes
@@ -64,6 +69,7 @@ func NewScanHandler(service *scansvc.Service, userRepo user.Repository, coverage
 		coverageStats: coverageStats,
 		validator:     v,
 		logger:        log.With("handler", "scan"),
+		stages:        service,
 	}
 }
 

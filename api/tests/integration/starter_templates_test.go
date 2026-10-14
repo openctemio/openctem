@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
@@ -41,7 +43,8 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		if !tpl.IsSystemTemplate || !tpl.IsActive || len(tpl.Steps) != steps {
 			t.Fatalf("%s (%s): system=%v active=%v steps=%d", idStr, tpl.Name, tpl.IsSystemTemplate, tpl.IsActive, len(tpl.Steps))
 		}
-		rep := stage.ValidateGraph(scanrun.StepsGraph(tpl.Steps))
+		cat := stagetest.Catalog()
+		rep := cat.ValidateGraph(scanrun.StepsGraph(cat, tpl.Steps))
 		if !rep.Valid() || len(rep.Warnings) != 0 {
 			t.Fatalf("%s: graph errors %+v warnings %+v", tpl.Name, rep.Errors, rep.Warnings)
 		}
@@ -49,7 +52,7 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 			if st.Tool != "" || len(st.Capabilities) != 1 {
 				t.Fatalf("%s/%s: not a capability node (tool %q caps %v)", tpl.Name, st.StepKey, st.Tool, st.Capabilities)
 			}
-			got, err := scanapp.ResolveStepTool(ctx, tools, shared.NewID(), st)
+			got, err := scanapp.ResolveStepTool(ctx, tools, cat, shared.NewID(), st)
 			if err != nil {
 				t.Fatalf("%s/%s: no tool resolves: %v", tpl.Name, st.StepKey, err)
 			}
@@ -76,8 +79,8 @@ func TestStarterTemplates_ValidAndRunnable(t *testing.T) {
 		if sg.NetworkOf().TouchesTargets() {
 			t.Fatalf("Passive discovery/%s: stage %s reaches the targets", st.StepKey, sg.Key)
 		}
-		got, err := scanapp.ResolveStepTool(ctx, tools, shared.NewID(), st)
-		if err != nil || stage.ToolNetwork(got.Name).TouchesTargets() || stage.IntensityTier(got.Name, st.Capabilities, st.Config) != stage.TierPassive {
+		got, err := scanapp.ResolveStepTool(ctx, tools, stagetest.Catalog(), shared.NewID(), st)
+		if err != nil || stagetest.Catalog().ToolNetwork(got.Name).TouchesTargets() || stagetest.Catalog().IntensityTier(got.Name, st.Capabilities, st.Config) != stage.TierPassive {
 			t.Fatalf("Passive discovery/%s: tool %q (%v) is not passive", st.StepKey, got.Name, err)
 		}
 		caps[st.StepKey] = st.Capabilities[0]

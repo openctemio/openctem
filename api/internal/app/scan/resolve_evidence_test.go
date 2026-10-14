@@ -52,7 +52,7 @@ func evidenceFixture(tenant shared.ID) (*evidence, *refreshes, *Service) {
 		"dead.example.com":  time.Now().Add(-10 * 24 * time.Hour),
 	}}, ids: map[string]shared.ID{"dead.example.com": shared.NewID(), "fresh.example.com": shared.NewID()}}
 	rf := &refreshes{}
-	s := &Service{}
+	s := &Service{tools: testTools}
 	s.SetResolveEvidence(ev, rf)
 	return ev, rf, s
 }
@@ -103,7 +103,7 @@ func TestDropStaleNames_FailClosedAndUnwired(t *testing.T) {
 	if _, _, err := s.DropStaleNames(context.Background(), tenant, []string{"dead.example.com"}); err == nil {
 		t.Fatal("a failed evidence read was ignored")
 	}
-	kept, stale, err := (&Service{}).DropStaleNames(context.Background(), tenant, []string{"dead.example.com"})
+	kept, stale, err := (&Service{tools: testTools}).DropStaleNames(context.Background(), tenant, []string{"dead.example.com"})
 	if err != nil || len(stale) != 0 || len(kept) != 1 {
 		t.Fatalf("unwired: %v %v %v", kept, stale, err)
 	}
@@ -138,7 +138,7 @@ func TestWildcardFilterDefault(t *testing.T) {
 	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{}}
 	cfg := func(tool string, caps []string, c map[string]any) map[string]any {
 		t.Helper()
-		p, err := StepCommandPayload(run, &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Capabilities: caps, Config: c},
+		p, err := StepCommandPayload(testCat, run, &scanworkflow.Step{ID: shared.NewID(), StepKey: "s", Capabilities: caps, Config: c},
 			tool, shared.NewID().String(), nil)
 		if err != nil {
 			t.Fatal(err)

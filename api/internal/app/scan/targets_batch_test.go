@@ -7,15 +7,15 @@ import "testing"
 func TestScannerAcceptsTargetList_SameAsTheOldMap(t *testing.T) {
 	oldMap := []string{"nuclei", "tenable", "nessus", "subfinder", "dnsx", "naabu", "httpx", "katana"}
 	for _, s := range oldMap {
-		if !scannerAcceptsTargetList(s) {
+		if !scannerAcceptsTargetList(testCat, s) {
 			t.Errorf("%s took a target list before and must still", s)
 		}
 	}
-	if !scannerAcceptsTargetList("  Nuclei ") {
+	if !scannerAcceptsTargetList(testCat, "  Nuclei ") {
 		t.Error("scanner names are normalized")
 	}
 	for _, s := range []string{"zap", "semgrep", "trivy", "betterleaks", "tenable_sc", "codeql", "custom-tool", ""} {
-		if scannerAcceptsTargetList(s) {
+		if scannerAcceptsTargetList(testCat, s) {
 			t.Errorf("%s took one target per task before and must still", s)
 		}
 	}

@@ -58,7 +58,7 @@ func newScanWorkflowSaveHarness(t *testing.T, name string) *scanWorkflowSaveHarn
 		nil,
 		postgres.NewCommandRepository(pg),
 		acceptingStepValidator{},
-		logger.New(logger.Config{Level: "error"}),
+		logger.New(logger.Config{Level: "error"}), scanrun.WithToolFacts(integrationTools),
 	)
 	return &scanWorkflowSaveHarness{t: t, db: db, h: handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop()), tenant: tenant}
 }

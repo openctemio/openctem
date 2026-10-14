@@ -1,11 +1,15 @@
-package stage
+package stage_test
 
-import "testing"
+import (
+	"testing"
+
+	. "github.com/openctemio/openctem/api/pkg/domain/stage"
+)
 
 func TestWebTool(t *testing.T) {
-	for tool, want := range map[string]bool{"nuclei": true, " Katana ": true, "zap": true, "httpx": false, "naabu": false, "my-tool": false, "": false} {
-		if got := WebTool(tool); got != want {
-			t.Errorf("WebTool(%q) = %v, want %v", tool, got, want)
+	for tool, want := range map[string]bool{"nuclei": true, " Katana ": true, "toyweb": true, "zap": false, "httpx": false, "naabu": false, "my-tool": false, "": false} {
+		if got := cat.WebTool(tool); got != want {
+			t.Errorf("cat.WebTool(%q) = %v, want %v", tool, got, want)
 		}
 	}
 }

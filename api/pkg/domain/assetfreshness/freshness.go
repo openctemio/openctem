@@ -89,14 +89,15 @@ func (s ClassSpec) Applies(t asset.AssetType) bool { return slices.Contains(s.Ty
 
 // ClassesForTool returns the classes a report of the tool observes on an
 // asset of the type: the classes of every stage the tool implements that
-// apply to the type. A tool the catalog does not know observes nothing.
-func ClassesForTool(tool string, t asset.AssetType) []Class {
+// apply to the type, in the organization's catalog cat. A tool the catalog
+// does not know observes nothing.
+func ClassesForTool(cat stage.Catalog, tool string, t asset.AssetType) []Class {
 	tool = strings.TrimSpace(tool)
 	if tool == "" {
 		return nil
 	}
 	var out []Class
-	for _, st := range stage.ForTool(tool) {
+	for _, st := range cat.ForTool(tool) {
 		for _, s := range specs {
 			if s.Stage == st.Key && s.Applies(t) && !slices.Contains(out, s.Class) {
 				out = append(out, s.Class)

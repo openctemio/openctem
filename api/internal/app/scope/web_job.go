@@ -19,6 +19,7 @@ import (
 	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // WebScopeBuilder builds a web job's scope (*Service).
@@ -36,6 +37,26 @@ type ConfinedSensors interface {
 type WebJobGuard struct {
 	scope    WebScopeBuilder
 	confined ConfinedSensors
+	// tools is the organization's catalog (which tools implement a web
+	// stage); nil: every tool counts as a web tool (fail closed).
+	tools stage.Source
+}
+
+// SetToolFacts wires the organization's tool catalog.
+func (g *WebJobGuard) SetToolFacts(src stage.Source) { g.tools = src }
+
+// webTool is the predicate WebJobOf reads for the command's organization:
+// its catalog's web tools, or every tool when the catalog cannot be read
+// (fail closed: the job gets the web scope or is refused).
+func (g *WebJobGuard) webTool(ctx context.Context, cmd *commanddom.Command) func(string) bool {
+	if g == nil || g.tools == nil {
+		return commanddom.AnyTool
+	}
+	cat, err := g.tools.Catalog(ctx, cmd.TenantID)
+	if err != nil {
+		return commanddom.AnyTool
+	}
+	return cat.WebTool
 }
 
 // NewWebJobGuard returns the guard. confined may be nil: a web-scoped job
@@ -68,7 +89,7 @@ var webScopeNeedsConfinement = map[string]bool{"nuclei": true}
 // would drop the scope, so it is never offered the job. Without such a
 // sensor in the organization the job is refused (NO_CONFINED_SENSOR).
 func (g *WebJobGuard) GuardCreate(ctx context.Context, cmd *commanddom.Command) error {
-	job, ok := commanddom.WebJobOf(cmd)
+	job, ok := commanddom.WebJobOf(cmd, g.webTool(ctx, cmd))
 	if !ok {
 		return nil
 	}

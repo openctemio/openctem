@@ -20,7 +20,7 @@ const maxResolvedTargets = 10000
 
 // legacyListScanners are scanner names outside the stage catalog whose
 // sensor executors read the full `targets` list (the Tenable bridge). The
-// catalog's tools say it themselves (stage.AcceptsTargetList); every other
+// tool contracts say it themselves (stage.Catalog.AcceptsTargetList); every other
 // scanner reads only the single `target` field, so a run of such a scanner
 // gets one command per target, zoned or not (RFC-030 B4).
 var legacyListScanners = map[string]bool{
@@ -28,8 +28,8 @@ var legacyListScanners = map[string]bool{
 	"nessus":  true,
 }
 
-func scannerAcceptsTargetList(scanner string) bool {
-	return stage.AcceptsTargetList(scanner) || legacyListScanners[strings.ToLower(strings.TrimSpace(scanner))]
+func scannerAcceptsTargetList(cat stage.Catalog, scanner string) bool {
+	return cat.AcceptsTargetList(scanner) || legacyListScanners[strings.ToLower(strings.TrimSpace(scanner))]
 }
 
 // singleTargetWarningPrefix starts the warning for a single-target scanner in
@@ -91,6 +91,10 @@ type resolvedTargets struct {
 // Archived members are not scanned. Zone routing is planned by the trigger
 // itself (planZoneDispatch).
 func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resolvedTargets, error) {
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	seen := make(map[string]int) // lower-cased target -> index in names
 	var names []string
 	assets := make(map[string]DispatchAsset)
@@ -205,7 +209,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// A workflow (no scanner) is tier-checked per step, at its dispatch.
 	tier := scopedom.TierPassive
 	if sc.ScannerName != "" {
-		tier = ProbeTier(sc.ScannerName)
+		tier = ProbeTier(cat, sc.ScannerName)
 	}
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
 		TenantID:               sc.TenantID,
@@ -248,7 +252,7 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if err := countRefusals(out, gated.Refused); err != nil {
 		return nil, err
 	}
-	gateScannerKinds(sc.ScannerName, out, func(t string) bool { _, ok := types[t]; return ok })
+	gateScannerKinds(cat, sc.ScannerName, out, func(t string) bool { _, ok := types[t]; return ok })
 	for _, t := range out.Targets {
 		if ref, typed := types[t]; typed && ref.Type != "" {
 			if out.TargetTypes == nil {
@@ -283,8 +287,8 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	// would exceed the per-run job cap. A workflow (no scanner name) plans
 	// its targets per step and never had the one-target caveat: it used to
 	// be warned that only the first target would be scanned.
-	if sc.ScannerName != "" && !scannerAcceptsTargetList(sc.ScannerName) && len(out.Targets) > maxZoneJobsPerRun {
-		return nil, tooManyJobsError(sc, len(out.Targets))
+	if sc.ScannerName != "" && !scannerAcceptsTargetList(cat, sc.ScannerName) && len(out.Targets) > maxZoneJobsPerRun {
+		return nil, tooManyJobsError(cat, sc, len(out.Targets))
 	}
 	return out, nil
 }
@@ -318,12 +322,12 @@ func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
 // list; `target` is set only when it is the whole job (one target, or a
 // scanner that reads nothing else). Sending `target` alongside a list would
 // make nuclei scan just that one, because it prefers `target`.
-func applyTargetsToPayload(payload map[string]any, scanner string, targets []string) {
+func applyTargetsToPayload(cat stage.Catalog, payload map[string]any, scanner string, targets []string) {
 	if len(targets) == 0 {
 		return
 	}
 	payload["targets"] = targets
-	if len(targets) == 1 || !scannerAcceptsTargetList(scanner) {
+	if len(targets) == 1 || !scannerAcceptsTargetList(cat, scanner) {
 		payload["target"] = targets[0]
 	}
 }
@@ -372,11 +376,11 @@ func isInternalAddr(a netip.Addr) bool {
 // reaches an HTTP prober or a template scanner. Inventory targets are
 // otherwise decided by their stored type (scannerTypeGate). They are
 // counted as incompatible, with the reason.
-func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) bool) {
+func gateScannerKinds(cat stage.Catalog, scanner string, out *resolvedTargets, typed func(string) bool) {
 	if scanner == "" {
 		return
 	}
-	st, ok := stage.ForStep(scanner, nil)
+	st, ok := cat.ForStep(scanner, nil)
 	if !ok {
 		return
 	}

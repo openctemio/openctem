@@ -66,17 +66,17 @@ func TestProfiles_NarrowestDefaults(t *testing.T) {
 // gets no active work and no credentials.
 func TestAdmit_NewSensorPassiveOnly(t *testing.T) {
 	g := mustProfile(t, ProfileInternalScanner)
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"example.com"}}), nil); r == nil || r.Dimension != DimTier {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"example.com"}}), nil); r == nil || r.Dimension != DimTier {
 		t.Fatalf("New sensor admitted a T1 nuclei scan: %v", r)
 	}
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "subfinder", "targets": []string{"example.com"}}), nil); r != nil {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "subfinder", "targets": []string{"example.com"}}), nil); r != nil {
 		t.Fatalf("New sensor refused a T0 subfinder scan: %v", r)
 	}
-	if r := trusted(g).Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"example.com"}}), nil); r != nil {
+	if r := trusted(g).admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"example.com"}}), nil); r != nil {
 		t.Fatalf("trusted sensor refused a T1 scan: %v", r)
 	}
 	// Control commands always pass.
-	if r := g.Admit("health_check", nil, nil); r != nil {
+	if r := g.admitReleased("health_check", nil, nil); r != nil {
 		t.Fatalf("health_check refused: %v", r)
 	}
 }
@@ -87,34 +87,34 @@ func TestAdmit_Dimensions(t *testing.T) {
 	zA, zB := shared.NewID(), shared.NewID()
 	g := trusted(mustProfile(t, ProfileInternalScanner, zA))
 	scan := payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"10.0.0.5"}})
-	if r := g.Admit("scan", scan, &zB); r == nil || r.Dimension != DimZones {
+	if r := g.admitReleased("scan", scan, &zB); r == nil || r.Dimension != DimZones {
 		t.Errorf("other zone: %v", r)
 	}
-	if r := g.Admit("scan", scan, &zA); r != nil {
+	if r := g.admitReleased("scan", scan, &zA); r != nil {
 		t.Errorf("own zone: %v", r)
 	}
-	if r := g.Admit("collect", payload(t, map[string]any{"collector": "x"}), nil); r == nil || r.Dimension != DimJobTypes {
+	if r := g.admitReleased("collect", payload(t, map[string]any{"collector": "x"}), nil); r == nil || r.Dimension != DimJobTypes {
 		t.Errorf("job type: %v", r)
 	}
 	g.Tools = []string{"subfinder"}
-	if r := g.Admit("scan", scan, nil); r == nil || r.Dimension != DimTools {
+	if r := g.admitReleased("scan", scan, nil); r == nil || r.Dimension != DimTools {
 		t.Errorf("tool: %v", r)
 	}
 	g.Tools = nil
 	g.Capabilities = []string{"recon"}
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "required_capabilities": []string{"vulnerability"}}), nil); r == nil || r.Dimension != DimCapabilities {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "required_capabilities": []string{"vulnerability"}}), nil); r == nil || r.Dimension != DimCapabilities {
 		t.Errorf("capability: %v", r)
 	}
 	g.Capabilities = nil
 	// Custom templates or out-of-band callbacks make a job T2; an unknown
 	// tool is T2 (fail closed).
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "config": map[string]any{"allow_interactsh": true}}), nil); r == nil || r.Dimension != DimTier {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "config": map[string]any{"allow_interactsh": true}}), nil); r == nil || r.Dimension != DimTier {
 		t.Errorf("interactsh T2: %v", r)
 	}
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "made-up-tool"}), nil); r == nil || r.Dimension != DimTier {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "made-up-tool"}), nil); r == nil || r.Dimension != DimTier {
 		t.Errorf("unknown tool: %v", r)
 	}
-	if lb := LegacyBroadGrant(shared.NewID(), shared.NewID()); lb.Admit("scan", payload(t, map[string]any{"scanner": "made-up-tool"}), nil) != nil {
+	if lb := LegacyBroadGrant(shared.NewID(), shared.NewID()); lb.admitReleased("scan", payload(t, map[string]any{"scanner": "made-up-tool"}), nil) != nil {
 		t.Error("legacy-broad refused a T2 job")
 	}
 }
@@ -124,13 +124,13 @@ func TestAdmit_Credentials(t *testing.T) {
 	cred := payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"example.com"},
 		"scanner_config": map[string]any{"api_key": "sk-live-abcdefghijklmnop"}})
 	auth := mustProfile(t, ProfileAuthenticatedScanner)
-	if r := auth.Admit("scan", cred, nil); r == nil {
+	if r := auth.admitReleased("scan", cred, nil); r == nil {
 		t.Fatal("New authenticated-scanner admitted a credential job")
 	}
-	if r := trusted(auth).Admit("scan", cred, nil); r != nil {
+	if r := trusted(auth).admitReleased("scan", cred, nil); r != nil {
 		t.Fatalf("trusted authenticated-scanner refused a credential job: %v", r)
 	}
-	if r := trusted(mustProfile(t, ProfileInternalScanner)).Admit("scan", cred, nil); r == nil || r.Dimension != DimCredentials {
+	if r := trusted(mustProfile(t, ProfileInternalScanner)).admitReleased("scan", cred, nil); r == nil || r.Dimension != DimCredentials {
 		t.Fatalf("internal-network-scanner admitted a credential job: %v", r)
 	}
 	if !CarriesCredentials(json.RawMessage(`{"scanner_config":`)) {
@@ -142,11 +142,11 @@ func TestAdmit_Credentials(t *testing.T) {
 func TestAdmit_Targets(t *testing.T) {
 	easm := trusted(mustProfile(t, ProfileEASMExternal))
 	for _, target := range []string{"10.1.2.3", "192.168.0.0/24", "db.internal", "http://127.0.0.1:8080/x"} {
-		if r := easm.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{target}}), nil); r == nil || r.Dimension != DimTargetNetwork {
+		if r := easm.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{target}}), nil); r == nil || r.Dimension != DimTargetNetwork {
 			t.Errorf("easm-external admitted private target %s: %v", target, r)
 		}
 	}
-	if r := easm.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "target": "www.example.com"}), nil); r != nil {
+	if r := easm.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "target": "www.example.com"}), nil); r != nil {
 		t.Errorf("easm-external refused a public target: %v", r)
 	}
 
@@ -158,24 +158,24 @@ func TestAdmit_Targets(t *testing.T) {
 	in := []string{"10.0.4.5", "10.0.1.0/24", "app.corp.example.com", "https://corp.example.com/login"}
 	out := []string{"10.1.0.1", "10.0.0.0/8", "example.com", "evilcorp.example.com.attacker.net"}
 	for _, target := range in {
-		if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{target}}), nil); r != nil {
+		if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{target}}), nil); r != nil {
 			t.Errorf("in-scope %s refused: %v", target, r)
 		}
 	}
 	for _, target := range out {
-		if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{target}}), nil); r == nil || r.Dimension != DimTargetScope {
+		if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{target}}), nil); r == nil || r.Dimension != DimTargetScope {
 			t.Errorf("out-of-scope %s admitted: %v", target, r)
 		}
 	}
 	// No network targets for a code-only grant; a repository path passes.
 	ci := trusted(mustProfile(t, ProfileCIRunner))
-	if r := ci.Admit("scan", payload(t, map[string]any{"scanner": "semgrep", "targets": []string{"example.com"}}), nil); r == nil || r.Dimension != DimTargetNetwork {
+	if r := ci.admitReleased("scan", payload(t, map[string]any{"scanner": "semgrep", "targets": []string{"example.com"}}), nil); r == nil || r.Dimension != DimTargetNetwork {
 		t.Errorf("ci-runner admitted a network target: %v", r)
 	}
-	if r := ci.Admit("scan", payload(t, map[string]any{"scanner": "semgrep", "targets": []string{"org/repo"}}), nil); r != nil {
+	if r := ci.admitReleased("scan", payload(t, map[string]any{"scanner": "semgrep", "targets": []string{"org/repo"}}), nil); r != nil {
 		t.Errorf("ci-runner refused a repository: %v", r)
 	}
-	if r := g.Admit("scan", json.RawMessage(`{"scanner":"nuclei","target":5}`), nil); r == nil {
+	if r := g.admitReleased("scan", json.RawMessage(`{"scanner":"nuclei","target":5}`), nil); r == nil {
 		t.Error("unreadable targets admitted")
 	}
 }
@@ -291,10 +291,10 @@ func TestAdmit_GrantNarrowsReportedTools(t *testing.T) {
 	}
 	g := trusted(mustProfile(t, ProfileInternalScanner))
 	g.Tools = []string{"nuclei"}
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "trivy", "targets": []string{"10.0.0.5"}}), nil); r == nil || r.Dimension != DimTools {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "trivy", "targets": []string{"10.0.0.5"}}), nil); r == nil || r.Dimension != DimTools {
 		t.Fatalf("trivy outside the grant admitted: %v", r)
 	}
-	if r := g.Admit("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"10.0.0.5"}}), nil); r != nil {
+	if r := g.admitReleased("scan", payload(t, map[string]any{"scanner": "nuclei", "targets": []string{"10.0.0.5"}}), nil); r != nil {
 		t.Fatalf("nuclei inside the grant refused: %v", r)
 	}
 }

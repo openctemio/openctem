@@ -134,7 +134,7 @@ func (m *mockScanRepository) addScan(s *scan.Scan) {
 
 func newTestImportExportService(repo scan.Repository) *Service {
 	log := logger.NewDevelopment()
-	return &Service{
+	return &Service{tools: testTools,
 		scanRepo: repo,
 		logger:   log.With("service", "scan-test"),
 	}

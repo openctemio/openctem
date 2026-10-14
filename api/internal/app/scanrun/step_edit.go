@@ -82,7 +82,11 @@ func (s *Service) buildStep(ctx context.Context, tenantID, templateID shared.ID,
 			return nil, fmt.Errorf("%w: %s", shared.ErrValidation, stepMessage(input, result.Errors[0].Message))
 		}
 	}
-	return constructStep(templateID, input, capabilities)
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return constructStep(cat, templateID, input, capabilities)
 }
 
 // stepCapabilities are the step's capabilities, derived from its tool when
@@ -109,7 +113,7 @@ func (s *Service) stepCapabilities(ctx context.Context, tenantID shared.ID, inpu
 // constructStep builds the step an input describes (no registry checks):
 // timeouts, condition, position, and the tool selection against the
 // capability contract.
-func constructStep(templateID shared.ID, input AddStepInput, capabilities []string) (*scanworkflow.Step, error) {
+func constructStep(cat stage.Catalog, templateID shared.ID, input AddStepInput, capabilities []string) (*scanworkflow.Step, error) {
 	step, err := scanworkflow.NewStep(templateID, input.StepKey, input.Name, input.Order, capabilities)
 	if err != nil {
 		return nil, err
@@ -145,7 +149,7 @@ func constructStep(templateID shared.ID, input AddStepInput, capabilities []stri
 		step.SetRetry(input.MaxRetries, input.RetryDelaySeconds)
 	}
 	step.PreferTools = normalizeToolList(input.PreferTools)
-	if err := checkStepSelection(step); err != nil {
+	if err := checkStepSelection(cat, step); err != nil {
 		return nil, err
 	}
 	return step, nil
@@ -181,11 +185,11 @@ func normalizeToolList(in []string) []string {
 // every preferred tool implements the capability; the standard params have
 // the contract's types and bounds; tool settings need a pinned tool. A step
 // the catalog cannot place (a tenant tool) keeps its settings as they are.
-func checkStepSelection(step *scanworkflow.Step) error {
+func checkStepSelection(cat stage.Catalog, step *scanworkflow.Step) error {
 	if step.Tool != "" && len(step.PreferTools) > 0 {
 		return fmt.Errorf("%w: a step pins a tool or lists tools to prefer, not both", shared.ErrValidation)
 	}
-	st, ok := stage.ForStep(step.Tool, step.Capabilities)
+	st, ok := cat.ForStep(step.Tool, step.Capabilities)
 	if !ok {
 		if len(step.PreferTools) > 0 {
 			return fmt.Errorf("%w: step '%s': tools to prefer need a catalog capability", shared.ErrValidation, step.StepKey)
@@ -246,6 +250,10 @@ func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*scanworkflo
 	if err != nil {
 		return nil, err
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	_, err = s.stepRepo.MutateSteps(ctx, tenantID, t.ID, func(current []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
 		for _, c := range current {
@@ -254,7 +262,7 @@ func (s *Service) AddStep(ctx context.Context, input AddStepInput) (*scanworkflo
 			}
 		}
 		next := append(slices.Clone(current), step)
-		if err := validateStepsGraph(next); err != nil {
+		if err := validateStepsGraph(cat, next); err != nil {
 			return nil, err
 		}
 		return next, nil
@@ -301,6 +309,10 @@ func (s *Service) ReplaceSteps(ctx context.Context, input ReplaceStepsInput) ([]
 		return nil, err
 	}
 	tenantID, _ := shared.IDFromString(input.TenantID)
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 
 	built := make([]*scanworkflow.Step, 0, len(input.Steps))
 	keys := make(map[string]bool, len(input.Steps))
@@ -322,7 +334,7 @@ func (s *Service) ReplaceSteps(ctx context.Context, input ReplaceStepsInput) ([]
 	var added, updated, removed []*scanworkflow.Step
 	steps, err := s.stepRepo.MutateSteps(ctx, tenantID, t.ID, func(current []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
 		added, updated, removed = matchSteps(current, input.Steps, built)
-		if err := validateStepsGraph(built); err != nil {
+		if err := validateStepsGraph(cat, built); err != nil {
 			return nil, err
 		}
 		return built, nil
@@ -433,6 +445,10 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 	if err := s.checkStepToolConfig(ctx, tenantID, input); err != nil {
 		return nil, err
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	if s.securityValidator != nil {
 		result := s.securityValidator.ValidateStepConfig(ctx, tenantID, input.Tool, input.Capabilities, input.Config)
 		if !result.Valid {
@@ -454,11 +470,11 @@ func (s *Service) UpdateStep(ctx context.Context, stepID string, input AddStepIn
 				if err := applyStepUpdate(c, input); err != nil {
 					return nil, err
 				}
-				if err := checkStepSelection(c); err != nil {
+				if err := checkStepSelection(cat, c); err != nil {
 					return nil, err
 				}
 				updated = c
-				if err := validateStepsGraph(current); err != nil {
+				if err := validateStepsGraph(cat, current); err != nil {
 					return nil, err
 				}
 				return current, nil
@@ -544,6 +560,10 @@ func (s *Service) DeleteStep(ctx context.Context, tenantID, stepID string) error
 	}
 
 	tid, _ := shared.IDFromString(tenantID)
+	cat, err := s.catalog(ctx, tid)
+	if err != nil {
+		return err
+	}
 	_, err = s.stepRepo.MutateSteps(ctx, tid, step.ScanWorkflowID, func(current []*scanworkflow.Step) ([]*scanworkflow.Step, error) {
 		kept := make([]*scanworkflow.Step, 0, len(current))
 		for _, c := range current {
@@ -558,7 +578,7 @@ func (s *Service) DeleteStep(ctx context.Context, tenantID, stepID string) error
 		for _, c := range kept {
 			c.DependsOn = slices.DeleteFunc(c.DependsOn, func(d string) bool { return d == step.StepKey })
 		}
-		if err := validateStepsGraph(kept); err != nil {
+		if err := validateStepsGraph(cat, kept); err != nil {
 			return nil, err
 		}
 		return kept, nil

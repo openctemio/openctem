@@ -46,7 +46,7 @@ func (oneTemplate) GetWithSteps(context.Context, shared.ID) (*scanworkflow.Workf
 // never retry a run a retry cannot fix (D7).
 func TestFailStep_RecordsThePermanentFailureClass(t *testing.T) {
 	steps := &stepUpdates{}
-	s := &Service{stepRunRepo: steps, runRepo: statsRunRepo{}, templateRepo: oneTemplate{}, logger: logger.NewNop()}
+	s := &Service{tools: testTools, stepRunRepo: steps, runRepo: statsRunRepo{}, templateRepo: oneTemplate{}, logger: logger.NewNop()}
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), TotalSteps: 2}
 	sr := scanrun.NewStepRun(run.ID, shared.NewID(), "quick_scan", 1, 3)
 	run.AddStepRun(sr)

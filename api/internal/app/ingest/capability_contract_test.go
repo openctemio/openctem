@@ -33,7 +33,7 @@ func TestBoundCapability(t *testing.T) {
 	src := &fakeContracts{byKey: map[manifestKey]sensor.Manifest{
 		{tenantKey(agt.TenantID), agt.ID}: implementsManifest("acme-ports", []string{"scan.ports@1"}, "asset:ip_address", "asset:open_port"),
 	}}
-	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
 	ctx := context.Background()
 
 	cases := []struct {
@@ -49,10 +49,11 @@ func TestBoundCapability(t *testing.T) {
 		// report naming it is host discovery, any other is a port scan.
 		{"by capability", "naabu", "discover.hosts@1", "discover.hosts@1"},
 		{"by capability, foreign claim", "naabu", "secrets.code@1", "scan.ports@1"},
-		// trivy has several stages: only a matching claim picks one.
-		{"several, no claim", "trivy", "", ""},
+		// trivy has several stages: a matching claim picks one, else its
+		// primary capability (the first its contract implements).
+		{"several, no claim", "trivy", "", "sca.deps@1"},
 		{"several, matching claim", "trivy", "container.image@1", "container.image@1"},
-		{"several, foreign claim", "trivy", "scan.ports@1", ""},
+		{"several, foreign claim", "trivy", "scan.ports@1", "sca.deps@1"},
 		// A tool nobody knows: no capability, whatever it claims.
 		{"unknown tool", "mystery", "scan.ports@1", ""},
 	}
@@ -73,7 +74,7 @@ func TestBoundCapabilityIsTenantScoped(t *testing.T) {
 	src := &fakeContracts{byKey: map[manifestKey]sensor.Manifest{
 		{tenantKey(owner.TenantID), owner.ID}: implementsManifest("acme-ports", []string{"scan.ports@1"}, "asset:ip_address"),
 	}}
-	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
 	other.ID = owner.ID // same sensor id, another tenant
 	got := s.bindOutputTypes(context.Background(), other, *other.TenantID, boundCommand("acme-ports"), openPortReport("acme-ports", "scan.ports@1"), Options{})
 	if got.Metadata.Capability != "" {
@@ -105,7 +106,7 @@ func TestPortScanReportByCapability(t *testing.T) {
 // A report that misses its capability's required output is applied (warn).
 func TestCapabilityContractWarnsAndApplies(t *testing.T) {
 	agt := tenantSensor()
-	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
 	r := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "r1"}, Tool: &ctis.Tool{Name: "naabu"},
 		Assets: []ctis.Asset{{Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10"}}} // no ports
 	got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("naabu"), r, Options{})

@@ -1623,7 +1623,17 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 	case req.Tier != nil:
 		tier = *req.Tier
 	case req.ScannerName != "":
-		tier = int(scansvc.ProbeTier(req.ScannerName))
+		// The scanner's tier in the caller's organization's catalog.
+		if tp, ok := h.dryRun.(interface {
+			ProbeTierFor(ctx context.Context, tenantID shared.ID, tool string) (scopedom.Tier, error)
+		}); ok {
+			t, err := tp.ProbeTierFor(ctx, tid, req.ScannerName)
+			if err != nil {
+				h.handleServiceError(w, "Scope check", err)
+				return
+			}
+			tier = int(t)
+		}
 	}
 	outcome, err := h.dryRun.DryRun(ctx, scansvc.DryRunInput{TenantID: tid, Targets: req.Targets, AssetIDs: assetIDs,
 		SensorPreference: req.SensorPreference, Tier: tier, Tool: req.ScannerName})

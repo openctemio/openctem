@@ -64,7 +64,7 @@ func TestCreatePipelineWithInvalidStepPersistsNothing(t *testing.T) {
 		nil,
 		postgres.NewCommandRepository(pg),
 		rejectingStepValidator{},
-		logger.New(logger.Config{Level: "error"}),
+		logger.New(logger.Config{Level: "error"}), scanrun.WithToolFacts(integrationTools),
 	)
 	h := handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop())
 
@@ -127,7 +127,7 @@ func TestCreatePipelineWithDuplicateStepKeyPersistsNothing(t *testing.T) {
 		nil,
 		postgres.NewCommandRepository(pg),
 		acceptingStepValidator{},
-		logger.New(logger.Config{Level: "error"}),
+		logger.New(logger.Config{Level: "error"}), scanrun.WithToolFacts(integrationTools),
 	)
 	h := handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop())
 

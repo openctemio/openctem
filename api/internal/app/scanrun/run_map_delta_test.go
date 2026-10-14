@@ -30,7 +30,7 @@ func (r oneTenantRun) GetWithStepRuns(context.Context, shared.ID) (*scanrun.Run,
 func deltaFixture() (*Service, *memHops, *scanrun.Run) {
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), Status: scanrun.RunStatusCompleted}
 	hops := newMemHops()
-	return &Service{runRepo: oneTenantRun{run: run}, hops: hops, logger: logger.NewNop()}, hops, run
+	return &Service{tools: testTools, runRepo: oneTenantRun{run: run}, hops: hops, logger: logger.NewNop()}, hops, run
 }
 
 // The map carries the previous run of the scan and each step's comparison

@@ -12,11 +12,11 @@ import (
 
 func stepTool(t *testing.T, tool string) scanapp.StepTool {
 	t.Helper()
-	st, ok := stage.ForStep(tool, nil)
+	st, ok := testCat.ForStep(tool, nil)
 	if !ok {
 		t.Fatalf("no stage for %s", tool)
 	}
-	return scanapp.StepTool{Name: tool, Stage: st, HasStage: true}
+	return scanapp.StepTool{Catalog: testCat, Name: tool, Stage: st, HasStage: true}
 }
 
 func slash24s(n int) []string {

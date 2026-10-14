@@ -1,6 +1,6 @@
 # Tool contract: capabilities, descriptors and outputs
 
-> Last updated: 2026-10-07. Design: [RFC-055](../rfcs/RFC-055-tool-contract-v1.md).
+> Last updated: 2026-10-14. Design: [RFC-055](../rfcs/RFC-055-tool-contract-v1.md).
 > Related: [scan-stages.md](scan-stages.md) (catalogue, planner, output
 > binding), [sensors.md](sensors.md) (manifest, tool contracts),
 > [tool-availability.md](tool-availability.md), [sensor-platform-trust.md](sensor-platform-trust.md).
@@ -59,12 +59,48 @@ taxonomy has:
 `missing_any_of` violations.
 
 The platform keeps only platform-only data in `pkg/domain/stage`:
-- default implementations;
+- a default preference order among the tools that implement a capability
+  (it names tools but states nothing about them);
 - fan-out caps;
 - the mapping of CTIS asset types to stored asset pairs;
 - the adapter table.
 
-The contracts come from the taxonomy.
+The contracts come from the taxonomy; which tools implement them comes from
+the tools' reported contracts (§2.1).
+
+### 2.1 Planning reads the reported contracts
+
+The platform plans by capability over one view per organization, the
+`stage.Catalog` that `internal/app/toolfacts` builds:
+
+- **Source.** The current manifests of the organization's own sensors
+  (`CurrentManifestsByTenant`, never a platform sensor) and of the platform's
+  sensors (`CurrentPlatformManifests`, the platform scanning service). Only
+  installed tools with a contract count. Per tool name the highest contract
+  version wins.
+- **Facts per tool.** The capabilities it implements, in its descriptor's
+  order (the first is its primary capability); per capability, the mapping of
+  standard params to its settings keys (`implements[].params`, standard params
+  only); whether it takes a target list (`input.batch`). Capabilities the
+  taxonomy does not know, or of another major, are ignored.
+- **Order.** A stage's implementations are the platform's default preference
+  first (subfinder, dnsx, naabu, httpx, katana, nuclei, semgrep, trivy, …),
+  then any other implementing tool by name; the first is the default.
+- **Cache.** In process, per organization (the tenant id is the key), for
+  15 seconds, bounded; a new manifest reaches planning within that time.
+- **Readers.** Step resolution and the command payload (capability, param
+  mapping, host-probe ports), validation and the graph check, readiness,
+  the workflow preview, chunking and per-target dispatch, tier and
+  intensity, scan windows, the web scope guard, the ingest output binding,
+  asset freshness and `GET /scans/stages` all read the same catalog.
+
+Threat model: a contract is a sensor's claim. The facts only decide which
+tool a capability step is routed to and how its settings are named; they
+grant no tier, no target and no access. Every fact is scoped to the
+organization, so a hostile sensor affects only its own organization's
+routing, and the claim-time grant, tier (§4) and sensor-local policy checks
+still apply to every job. The job signer keeps its own list of tool tiers:
+it is a separate trust root and never takes them from the API.
 
 ## 3. The descriptor
 
@@ -107,6 +143,11 @@ effective tier = max(capability floor, descriptor tier, T2 if any side effect,
                      T2 for out-of-band interaction or custom templates, classification)
 classification: built-in → catalogue; certified → signed attestation; otherwise T2
 ```
+
+The capability floor is the floor of the capability the job names; a job
+that names none takes the highest floor among the capabilities the tool's
+contract implements. A job of a tool without a contract that names no known
+capability is T2 (fail closed).
 
 | Trust | Obtained by | Runs | Published workflows |
 |---|---|---|---|
@@ -220,7 +261,8 @@ lints, runs offline through the real runtime, and runs the conformance kit:
 
 ## 9. Old sensors
 
-A sensor that reports no descriptors keeps working for one release train
-through the platform fallback: a built-in tool name maps to its catalogue
-capability, with the existing tier rule. The availability view marks such
-sensors "needs update". The fallback is then removed.
+A sensor that reports no contracts contributes no implementation to its
+organization's catalog: capability steps are not routed to its tools, and a
+job of its tools that names no capability is rated T2 (fail closed). A step
+that pins a tool by name still runs on it. The availability view marks such
+sensors "needs update".

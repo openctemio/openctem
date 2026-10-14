@@ -4,10 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 func countType(r *ctis.Report, t ctis.AssetType) int {
@@ -136,7 +137,7 @@ func TestPlanEndpoints_StaticFilesCountedNotStored(t *testing.T) {
 func TestSplitByContract_EndpointsOnlyFromToolsThatReportThem(t *testing.T) {
 	report := &ctis.Report{Endpoints: []ctis.Endpoint{{Origin: "https://a.example.com", Path: "/"}}}
 
-	nuclei := outputRules{stages: stage.ForTool("nuclei")}
+	nuclei := outputRules{stages: stagetest.Catalog().ForTool("nuclei")}
 	if nuclei.endpointsAllowed() {
 		t.Fatal("a template scanner may not write the endpoint inventory")
 	}
@@ -145,7 +146,7 @@ func TestSplitByContract_EndpointsOnlyFromToolsThatReportThem(t *testing.T) {
 		t.Fatal("endpoints of a tool that does not report them must be held")
 	}
 
-	katana := outputRules{stages: stage.ForTool("katana")}
+	katana := outputRules{stages: stagetest.Catalog().ForTool("katana")}
 	if !katana.endpointsAllowed() {
 		t.Fatal("the crawler reports endpoints")
 	}
@@ -155,7 +156,7 @@ func TestSplitByContract_EndpointsOnlyFromToolsThatReportThem(t *testing.T) {
 
 	// A declared contract narrows: a crawler that does not declare
 	// endpoints may not report them.
-	declared := outputRules{stages: stage.ForTool("katana"), declared: &sensor.ToolContract{Produces: []string{"asset:http_service"}}}
+	declared := outputRules{stages: stagetest.Catalog().ForTool("katana"), declared: &sensor.ToolContract{Produces: []string{"asset:http_service"}}}
 	if declared.endpointsAllowed() {
 		t.Fatal("an undeclared endpoint output was allowed")
 	}

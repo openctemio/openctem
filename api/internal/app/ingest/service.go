@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -135,6 +136,9 @@ type Service struct {
 	// contracts reads the submitting sensor's manifest, where a ported
 	// tool declares what it produces (output_binding.go). Nil-safe.
 	contracts ToolContractSource
+	// tools is the organization's stage catalog (which stages a tool
+	// implements, from its sensors' tool contracts).
+	tools stage.Source
 	// reach reads what a sensor's lookups may answer about
 	// (sensor_reach.go); nil: nothing outside the tenant-wide roles.
 	reach ReachSource

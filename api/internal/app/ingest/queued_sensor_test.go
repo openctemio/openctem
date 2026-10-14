@@ -50,7 +50,7 @@ func queuedService(rows ...*sensor.Sensor) (*Service, *recordingAuditRepo) {
 		repo.rows[a.ID] = a
 	}
 	auditRepo := &recordingAuditRepo{}
-	return &Service{logger: logger.NewNop(), sensorRepo: repo, auditRepo: auditRepo}, auditRepo
+	return &Service{tools: testTools, logger: logger.NewNop(), sensorRepo: repo, auditRepo: auditRepo}, auditRepo
 }
 
 func TestJobProcessor_DropsWorkOfSensorsTakenOutOfService(t *testing.T) {
@@ -124,7 +124,7 @@ func TestJobProcessor_ActiveSensorIngestsAsTheStoredSensor(t *testing.T) {
 }
 
 func TestJobProcessor_SensorLookupFailureRetries(t *testing.T) {
-	svc := &Service{logger: logger.NewNop(), sensorRepo: &tenantSensorRepo{err: errors.New("db down")}}
+	svc := &Service{tools: testTools, logger: logger.NewNop(), sensorRepo: &tenantSensorRepo{err: errors.New("db down")}}
 	ing := &stubIngester{out: &Output{}}
 	sensorID := shared.NewID()
 	p := &JobProcessor{service: ing, sensors: svc}

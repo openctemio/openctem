@@ -67,7 +67,7 @@ func TestPipelineHandler_AuditEntriesNameTheCaller(t *testing.T) {
 		postgres.NewCommandRepository(pg),
 		acceptingStepValidator{},
 		logger.New(logger.Config{Level: "error"}),
-		scanrun.WithAuditService(rec),
+		scanrun.WithAuditService(rec), scanrun.WithToolFacts(integrationTools),
 	)
 	h := handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop())
 	userID := shared.NewID().String()

@@ -46,7 +46,7 @@ func livenessFixture(t *testing.T, mode string, targets ...string) *chainFixture
 	f.run.TotalSteps = len(steps)
 	gate := scanapp.NewTargetGate(f.excl, f.attr, zoneList{}, nil, logger.NewNop())
 	scanapp.WithActScope(f.acts)(gate)
-	f.s = &Service{stepRunRepo: f.store, runRepo: &statusRuns{run: f.run}, templateRepo: fixedTemplate{tpl: f.tpl},
+	f.s = &Service{tools: testTools, stepRunRepo: f.store, runRepo: &statusRuns{run: f.run}, templateRepo: fixedTemplate{tpl: f.tpl},
 		commandRepo: f.cmds, toolRepo: platformTools{names: map[string]bool{"naabu": true}},
 		targetGate: gate, hops: f.hops, sensorRepo: tenantSensors{id: shared.NewID()}, logger: logger.NewNop()}
 	return f

@@ -14,7 +14,7 @@ import (
 // (research/62 SG-11): a workflow that prefers platform sensors no longer
 // sends the steps of an internal-target scan there.
 func TestStepUsesPlatform_FollowsTheTriggerDecision(t *testing.T) {
-	s := &Service{sensorSelector: platformSelector{}, logger: logger.NewNop()}
+	s := &Service{tools: testTools, sensorSelector: platformSelector{}, logger: logger.NewNop()}
 	step := &scanworkflow.Step{Tool: "nuclei"}
 	cases := []struct {
 		name    string
@@ -42,7 +42,7 @@ func TestStepUsesPlatform_FollowsTheTriggerDecision(t *testing.T) {
 
 // A caller of a workflow run cannot hand itself a routing decision.
 func TestGateRunContext_DropsCallerRouting(t *testing.T) {
-	s := &Service{logger: logger.NewNop()}
+	s := &Service{tools: testTools, logger: logger.NewNop()}
 	out, err := s.gateRunContext(context.Background(), shared.NewID(), "",
 		map[string]any{scanrun.RunContextKeySensorRouting: scanrun.SensorRoutingPlatform, "note": "x"})
 	if err != nil {

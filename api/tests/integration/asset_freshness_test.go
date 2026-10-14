@@ -15,7 +15,6 @@ import (
 	"github.com/openctemio/ctis"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	freshapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -42,7 +41,7 @@ func newFreshRig(t *testing.T) *freshRig {
 		repo = postgres.NewAssetFreshnessRepository(db)
 		assets = assetapp.NewAssetService(postgres.NewAssetRepository(db), logger.NewNop())
 		assets.SetFreshness(repo)
-		svc.SetAssetsObservedCallback(freshapp.NewRecorder(repo, logger.NewNop()).AssetsObserved)
+		svc.SetAssetsObservedCallback(integrationRecorder(repo).AssetsObserved)
 	})
 	return &freshRig{t: t, r: r, tn: r.newTenant("dnsx"), assets: assets, repo: repo}
 }

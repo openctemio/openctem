@@ -17,6 +17,7 @@ package ingest
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/openctemio/ctis"
 	"github.com/openctemio/ctis/capability"
@@ -62,12 +63,29 @@ func boundCapability(rules outputRules, claimed, tool string) string {
 	// A tool with several stages, one of them run only when a job names it
 	// (naabu: host discovery): a report that names none is the tool's own
 	// stage (naabu: a port scan).
-	if st, ok := stage.ForStep(tool, nil); ok {
+	if st, ok := primaryStage(rules.stages, tool); ok {
 		if ref := fmt.Sprintf("%s@%d", st.Key, stage.ContractVersion); slices.Contains(cands, ref) {
 			return ref
 		}
 	}
 	return ""
+}
+
+// primaryStage is the one stage among the tool's stages that it runs
+// without a job naming the capability (its contract's primary capability).
+func primaryStage(stages []stage.Stage, tool string) (stage.Stage, bool) {
+	var out []stage.Stage
+	for _, st := range stages {
+		for _, im := range st.Implementations {
+			if strings.EqualFold(im.Tool, strings.TrimSpace(tool)) && !im.ByCapability {
+				out = append(out, st)
+			}
+		}
+	}
+	if len(out) != 1 {
+		return stage.Stage{}, false
+	}
+	return out[0], true
 }
 
 // checkCapabilityContract logs and counts a report that misses the required

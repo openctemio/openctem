@@ -63,7 +63,7 @@ func TestIntensitySkipReason(t *testing.T) {
 		{"bogus", zap, false}, // an unreadable value records no ceiling; the claim fails it closed
 	}
 	for _, c := range cases {
-		if got := scanapp.IntensitySkipReason(run(c.intensity), c.step) != ""; got != c.skipped {
+		if got := scanapp.IntensitySkipReason(testCat, run(c.intensity), c.step) != ""; got != c.skipped {
 			t.Errorf("%s step at %q intensity: skipped = %v, want %v", c.step.StepKey, c.intensity, got, c.skipped)
 		}
 	}
@@ -75,12 +75,12 @@ func TestIntensitySkipReason(t *testing.T) {
 func TestCheckStepIntensity_ResolvedTool(t *testing.T) {
 	run := &scanrun.Run{ID: shared.NewID(), Context: map[string]any{scanapp.RunContextKeyIntensity: "passive"}}
 	dns, _ := stage.Lookup(stage.ResolveDNS)
-	ok := scanapp.StepTool{Name: "dnsx", Stage: dns, HasStage: true}
+	ok := scanapp.StepTool{Catalog: testCat, Name: "dnsx", Stage: dns, HasStage: true}
 	if err := checkStepIntensity(run, &scanworkflow.Step{Tool: "dnsx"}, ok); err != nil {
 		t.Fatalf("dnsx at passive: %v", err)
 	}
 	// A tool that sends packets to its targets placed on the passive stage.
-	bad := scanapp.StepTool{Name: "naabu", Stage: dns, HasStage: true}
+	bad := scanapp.StepTool{Catalog: testCat, Name: "naabu", Stage: dns, HasStage: true}
 	run.Context[scanapp.RunContextKeyIntensity] = "intrusive"
 	err := checkStepIntensity(run, &scanworkflow.Step{Capabilities: []string{"resolve.dns"}}, bad)
 	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "sends traffic to its targets") {

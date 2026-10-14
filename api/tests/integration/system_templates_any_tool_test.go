@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/openctemio/openctem/api/internal/app"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -37,6 +38,7 @@ func TestSystemTemplates_AreAnyToolCapabilityStepsThatSave(t *testing.T) {
 		validator,
 		logger.NewNop(),
 		scanrun.WithToolRepo(postgres.NewToolRepository(pg)),
+		scanrun.WithToolFacts(stagetest.Source{Cat: stagetest.Catalog()}),
 	)
 	templates := postgres.NewScanWorkflowRepository(pg)
 
@@ -62,7 +64,7 @@ func TestSystemTemplates_AreAnyToolCapabilityStepsThatSave(t *testing.T) {
 			if s.Tool != "" {
 				t.Errorf("%s / %s pins %q: a template step runs on any tool", name, s.StepKey, s.Tool)
 			}
-			if _, ok := stage.ForStep(s.Tool, s.Capabilities); !ok {
+			if _, ok := stagetest.Catalog().ForStep(s.Tool, s.Capabilities); !ok {
 				t.Errorf("%s / %s runs no catalog capability: %v", name, s.StepKey, s.Capabilities)
 			}
 			inputs = append(inputs, scanrun.AddStepInput{
@@ -74,7 +76,7 @@ func TestSystemTemplates_AreAnyToolCapabilityStepsThatSave(t *testing.T) {
 		if err := svc.ValidateSteps(ctx, inputs); err != nil {
 			t.Errorf("a copy of %q does not save: %v", name, err)
 		}
-		if rep := stage.ValidateGraph(scanrun.StepsGraph(tpl.Steps)); !rep.Valid() {
+		if rep := stagetest.Catalog().ValidateGraph(scanrun.StepsGraph(stagetest.Catalog(), tpl.Steps)); !rep.Valid() {
 			t.Errorf("%q fails the graph check: %+v", name, rep.Errors)
 		}
 		if strings.Contains(strings.ToLower(tpl.Description), "dalfox") || strings.Contains(tpl.Description, "(subfinder)") {

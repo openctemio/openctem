@@ -65,6 +65,7 @@ func newGoldenRig(t *testing.T) *goldenRig {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	svc.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte("golden-corpus-server-secret-0123456789")))
 	return &goldenRig{r: r, svc: svc}
 }

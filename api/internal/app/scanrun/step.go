@@ -29,6 +29,10 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *scanwork
 		s.logger.Warn("tool repository not available, skipping tool validation")
 		return nil
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return err
+	}
 
 	var missingTools []string
 	var inactiveTools []string
@@ -60,7 +64,7 @@ func (s *Service) ValidateToolReferences(ctx context.Context, template *scanwork
 		// rule (scan.ResolveStepTool), so a step that validates is a step
 		// the dispatcher names a scanner for (research/27 F1).
 		if len(step.Capabilities) > 0 {
-			if _, err := scanapp.ResolveStepTool(ctx, s.toolRepo, tenantID, step); err != nil {
+			if _, err := scanapp.ResolveStepTool(ctx, s.toolRepo, cat, tenantID, step); err != nil {
 				stepsWithNoMatchingCapabilities = append(stepsWithNoMatchingCapabilities,
 					fmt.Sprintf("step '%s' with capabilities %v (%s)", step.StepKey, step.Capabilities, resolveReason(err)))
 			}

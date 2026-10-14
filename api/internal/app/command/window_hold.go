@@ -70,13 +70,24 @@ func probingCommand(c *commanddom.Command) bool {
 	return false
 }
 
+// WithToolFacts wires the organization's stage catalog (internal/app/toolfacts).
+func WithToolFacts(src stage.Source) Option {
+	return func(s *Service) { s.tools = src }
+}
+
 // commandTier is the probe tier a job is judged at: the higher of its
-// tool's tier (an unknown or missing tool is active) and the tier its
+// tool's tier in the organization's catalog (an unknown or missing tool is
+// active; intrusive when the catalog cannot be read) and the tier its
 // dispatch gate recorded.
-func commandTier(c *commanddom.Command) int {
+func (s *Service) commandTier(ctx context.Context, c *commanddom.Command) int {
 	t := swdom.TierActive
 	if tool := commanddom.PayloadTool(c.Payload); tool != "" {
-		t = int(stage.ProbeTier(tool))
+		cat, err := stage.CatalogOf(ctx, s.tools, c.TenantID)
+		if err != nil {
+			t = int(stage.TierIntrusive)
+		} else {
+			t = int(cat.ProbeTier(tool))
+		}
 	}
 	if c.DispatchGate != nil && c.DispatchGate.Tier > t {
 		t = c.DispatchGate.Tier
@@ -175,7 +186,7 @@ func (s *Service) windowHoldOne(ctx context.Context, cmd *commanddom.Command) (*
 // windowDecide applies the windows to one job of the snapshot's tenant.
 func (s *Service) windowDecide(ctx context.Context, snap *swapp.Snapshot, caps *capTracker, c *commanddom.Command) windowVerdict {
 	now := snap.Now()
-	tier := commandTier(c)
+	tier := s.commandTier(ctx, c)
 	targets := windowTargets(c)
 	var all []swdom.Source
 	var open, closed []string

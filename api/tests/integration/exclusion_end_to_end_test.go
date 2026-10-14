@@ -45,7 +45,7 @@ func exclusionScanService(db *sql.DB, cmds commanddom.Repository) *scansvc.Servi
 		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), cmds, nil, logger.New(logger.Config{Level: "error"}),
-		scanrun.WithTargetGate(svc),
+		scanrun.WithTargetGate(svc), scanrun.WithToolFacts(integrationTools),
 	))
 	return svc
 }
@@ -164,6 +164,7 @@ func TestExclusions_EndToEnd(t *testing.T) {
 		postgres.NewVulnerabilityRepository(pg), postgres.NewComponentRepository(pg),
 		postgres.NewSensorRepository(pg), postgres.NewBranchRepository(pg), postgres.NewTenantRepository(pg),
 		postgres.NewAuditRepository(pg), logger.NewNop())
+	ing.SetToolFacts(integrationTools)
 	tid := tenant
 	sensorID := shared.NewID()
 	agt := &sensor.Sensor{ID: sensorID, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}

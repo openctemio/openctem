@@ -246,16 +246,16 @@ func uniqueStrings(in []string) []string {
 }
 
 // singleScanTier is the tier a single scan probes at.
-func singleScanTier(sc *scan.Scan) int { return int(ProbeTier(sc.ScannerName)) }
+func singleScanTier(cat stage.Catalog, sc *scan.Scan) int { return int(ProbeTier(cat, sc.ScannerName)) }
 
 // workflowTier is the highest tier of a workflow's steps; a step whose
 // stage cannot be told is active.
-func workflowTier(steps []*scanworkflow.Step) int {
+func workflowTier(cat stage.Catalog, steps []*scanworkflow.Step) int {
 	tier := 0
 	for _, st := range steps {
 		t := int(stage.TierActive)
 		if st.Tool != "" {
-			t = int(stage.ProbeTier(st.Tool))
+			t = int(cat.ProbeTier(st.Tool))
 		} else if sg, err := stage.ForCapabilities(st.Capabilities); err == nil {
 			t = int(sg.Tier)
 		}
@@ -295,7 +295,11 @@ func (s *Service) previewWindows(ctx context.Context, sc *scan.Scan, in ZoneRout
 	case in.Tier != nil:
 		tier = *in.Tier
 	case sc.ScanType == scan.ScanTypeSingle:
-		tier = singleScanTier(sc)
+		cat, err := s.catalog(ctx, sc.TenantID)
+		if err != nil {
+			return err
+		}
+		tier = singleScanTier(cat, sc)
 	}
 	zoneOf := planZoneOf(plan)
 	if zoneOf == nil && sc.ScanZoneID != nil {

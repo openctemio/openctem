@@ -22,7 +22,7 @@ func (f *fakeToolConfig) CheckScanToolConfig(context.Context, shared.ID, string,
 // the step.
 func TestCheckStepToolConfig(t *testing.T) {
 	refuse := &fakeToolConfig{err: shared.ErrValidation}
-	s := &Service{toolConfig: refuse}
+	s := &Service{tools: testTools, toolConfig: refuse}
 	tid := shared.NewID()
 	if err := s.checkStepToolConfig(context.Background(), tid, AddStepInput{Name: "probe", Capabilities: []string{"http"}, Config: map[string]any{"retries": 9}}); err != nil || refuse.calls != 0 {
 		t.Fatalf("unpinned step checked: %v (%d calls)", err, refuse.calls)
@@ -34,7 +34,7 @@ func TestCheckStepToolConfig(t *testing.T) {
 	if !errors.Is(err, shared.ErrValidation) || refuse.calls != 1 {
 		t.Fatalf("pinned step: err = %v (%d calls)", err, refuse.calls)
 	}
-	if (&Service{}).checkStepToolConfig(context.Background(), tid, AddStepInput{Tool: "httpx", Config: map[string]any{"x": 1}}) != nil {
+	if (&Service{tools: testTools}).checkStepToolConfig(context.Background(), tid, AddStepInput{Tool: "httpx", Config: map[string]any{"x": 1}}) != nil {
 		t.Fatal("no checker wired: refused")
 	}
 }

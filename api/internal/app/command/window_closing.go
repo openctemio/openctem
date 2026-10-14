@@ -75,7 +75,7 @@ func (s *Service) enforceTenantWindows(ctx context.Context, store commanddom.Win
 		for _, t := range windowTargets(c) {
 			all = append(all, snap.SourcesFor(t, c.ScanZoneID)...)
 		}
-		d := swdom.Decide(all, commandTier(c), now)
+		d := swdom.Decide(all, s.commandTier(ctx, c), now)
 		if d.Open {
 			if rc.WindowClosedAt != nil {
 				clear = append(clear, c.ID)

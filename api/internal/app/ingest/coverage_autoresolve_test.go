@@ -211,7 +211,7 @@ func coverageService(t *testing.T, mode CoverageAutoResolveMode, declared []stri
 	sensors := &sensorRowRepo{rows: map[shared.ID]*sensor.Sensor{
 		sensorID: {ID: sensorID, TenantID: &tid, Reported: sensor.ReportOf(declared...)},
 	}}
-	svc := &Service{logger: logger.NewNop(), findingRepo: repo, sensorRepo: sensors, assetRepo: assets}
+	svc := &Service{tools: testTools, logger: logger.NewNop(), findingRepo: repo, sensorRepo: sensors, assetRepo: assets}
 	svc.SetCommandReader(coverageCommands{cmd: &command.Command{
 		ID: shared.NewID(), TenantID: tid, Type: command.CommandTypeScan,
 		Payload: json.RawMessage(`{"scanner":"nuclei","targets":["a.example.com"]}`),

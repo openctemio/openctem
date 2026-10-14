@@ -25,7 +25,7 @@ func (f *fakeSnapshots) RecordRunSnapshot(_ context.Context, _, _ shared.ID, tar
 func TestRecordScopeSnapshot(t *testing.T) {
 	ctx := context.Background()
 	rec := &fakeSnapshots{}
-	svc := &Service{scopeSnapshots: rec, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeSnapshots: rec, logger: logger.NewNop()}
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), Context: map[string]any{}}
 	svc.recordScopeSnapshot(ctx, run, []string{"a.example"})
 	if run.Context[runContextScopeSnapshot] != "abc" || len(rec.got) != 1 {
@@ -43,5 +43,5 @@ func TestRecordScopeSnapshot(t *testing.T) {
 	}
 
 	// Not wired: nothing happens.
-	(&Service{logger: logger.NewNop()}).recordScopeSnapshot(ctx, run, nil)
+	(&Service{tools: testTools, logger: logger.NewNop()}).recordScopeSnapshot(ctx, run, nil)
 }

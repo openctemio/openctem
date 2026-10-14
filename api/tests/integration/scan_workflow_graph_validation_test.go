@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
 	"github.com/go-chi/chi/v5"
@@ -141,7 +143,8 @@ func TestSystemTemplates_PassTheGraphCheck(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rep := stage.ValidateGraph(scanrun.StepsGraph(tpl.Steps))
+		cat := stagetest.Catalog()
+		rep := cat.ValidateGraph(scanrun.StepsGraph(cat, tpl.Steps))
 		if !rep.Valid() {
 			t.Errorf("system template %q fails the graph check: %+v", name, rep.Errors)
 		}
@@ -169,7 +172,7 @@ func TestPipelineSave_ToolSelectionAndSettings(t *testing.T) {
 
 	ok := p.do(p.tenant, http.MethodPut, id, map[string]any{
 		"steps": []map[string]any{
-			{"step_key": "secrets", "name": "Secrets", "capabilities": []string{"secrets.code"}, "prefer_tools": []string{"gitleaks", "betterleaks"}},
+			{"step_key": "secrets", "name": "Static analysis", "capabilities": []string{"sast.code"}, "prefer_tools": []string{"codeql", "semgrep"}},
 			{"step_key": "ports", "name": "Ports", "capabilities": []string{"scan.ports"}, "config": map[string]any{"top_n": 100, "rate": 500}},
 		},
 	}, p.h.UpdateTemplate)

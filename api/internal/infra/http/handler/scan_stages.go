@@ -10,6 +10,9 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
@@ -100,19 +103,33 @@ type ScanStageListResponse struct {
 
 // ListStages handles GET /api/v1/scans/stages
 // @Summary      List scan capabilities
-// @Description  The scan capability catalog: each capability with its contract (typed ports, standard params, required output fields, version), its intrusiveness tier and the tools that implement it; the port types and the adapter table.
+// @Description  The scan capability catalog: each capability with its contract (typed ports, standard params, required output fields, version), its intrusiveness tier and the tools that implement it in the caller's organization (from the tool contracts its sensors and the platform's sensors report); the port types and the adapter table.
 // @Tags         Scans
 // @Produce      json
 // @Success      200  {object}  ScanStageListResponse
 // @Security     BearerAuth
 // @Router       /scans/stages [get]
-func (h *ScanHandler) ListStages(w http.ResponseWriter, _ *http.Request) {
+func (h *ScanHandler) ListStages(w http.ResponseWriter, r *http.Request) {
+	// The organization is the authenticated caller's, never the request's.
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	cat, err := stage.CatalogOf(r.Context(), h.stages, tenantID)
+	if err != nil {
+		h.logger.Error("list scan stages: read the tool contracts", "error", err)
+		apierror.InternalServerError("Failed to list scan capabilities").WriteJSON(w)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(scanStageList())
+	_ = json.NewEncoder(w).Encode(scanStageList(cat))
 }
 
-func scanStageList() ScanStageListResponse {
-	all := stage.Taxonomy()
+// scanStageList is the capability catalog with the implementations of cat
+// (the caller's organization's catalog).
+func scanStageList(cat stage.Catalog) ScanStageListResponse {
+	all := cat.Taxonomy()
 	out := ScanStageListResponse{
 		Stages:    make([]ScanStageResponse, 0, len(all)),
 		PortTypes: []ScanPortTypeResponse{},

@@ -56,7 +56,7 @@ func boundCommand(tool string) Binding {
 // and its finding held for review, never applied; in-contract assets apply.
 func TestBindOutputTypes_QuarantinesOutOfContract(t *testing.T) {
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
-	s := &Service{logger: logger.NewNop(), results: res}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res}
 	agt := &sensor.Sensor{ID: shared.NewID()}
 	in := dnsxReport()
 
@@ -85,7 +85,7 @@ func TestBindOutputTypes_QuarantinesOutOfContract(t *testing.T) {
 // Warn mode (existing tenants): applied whole, nothing quarantined.
 func TestBindOutputTypes_WarnModeApplies(t *testing.T) {
 	res := &policyResults{mode: sensorresult.ModeWarn}
-	s := &Service{logger: logger.NewNop(), results: res}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res}
 	got := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("dnsx"), dnsxReport(), Options{})
 	if len(got.Assets) != 3 || len(res.items) != 0 {
 		t.Fatalf("warn mode: %d assets applied, %d quarantined", len(got.Assets), len(res.items))
@@ -96,7 +96,7 @@ func TestBindOutputTypes_WarnModeApplies(t *testing.T) {
 // tenant's custom tool), a findings-only report.
 func TestBindOutputTypes_NoContract(t *testing.T) {
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
-	s := &Service{logger: logger.NewNop(), results: res}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res}
 	agt := &sensor.Sensor{ID: shared.NewID()}
 	if got := s.bindOutputTypes(context.Background(), agt, shared.NewID(), Binding{}, dnsxReport(), Options{}); len(got.Assets) != 3 {
 		t.Error("an unsolicited report was bound (it has its own gate)")
@@ -112,7 +112,7 @@ func TestBindOutputTypes_NoContract(t *testing.T) {
 // A report of a tool with a contract keeps the inputs it re-observes, and
 // an unclassified asset is out of every contract.
 func TestBindOutputTypes_ReobservedInputsAndUnclassified(t *testing.T) {
-	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
 	r := &ctis.Report{Tool: &ctis.Tool{Name: "httpx"}, Assets: []ctis.Asset{
 		{ID: "s", Type: ctis.AssetTypeHTTPService, Value: "https://acme.test"},
 		{ID: "d", Type: ctis.AssetTypeDomain, Value: "acme.test"},

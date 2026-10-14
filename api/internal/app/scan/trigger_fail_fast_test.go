@@ -50,7 +50,7 @@ func TestScheduleWorkflowSteps_QueueFailureSettlesTheRunAtOnce(t *testing.T) {
 
 	// One first step refused: the other still starts; the run is re-evaluated.
 	q := &failingQueuer{refuse: map[string]bool{"a": true}}
-	s := &Service{logger: logger.NewNop(), stepQueuer: q}
+	s := &Service{tools: testTools, logger: logger.NewNop(), stepQueuer: q}
 	run := newRun()
 	if err := s.scheduleWorkflowSteps(context.Background(), run, steps, 3); err != nil {
 		t.Fatalf("schedule: %v", err)
@@ -106,7 +106,7 @@ func TestScheduleWorkflowSteps_SettledStepAdvancesTheRun(t *testing.T) {
 		{ID: shared.NewID(), StepKey: "ports", Capabilities: []string{"scan.ports"}, DependsOn: []string{"hosts"}, Condition: scanworkflow.AlwaysCondition()},
 	}
 	q := &settlingQueuer{}
-	s := &Service{logger: logger.NewNop(), stepQueuer: q}
+	s := &Service{tools: testTools, logger: logger.NewNop(), stepQueuer: q}
 	run := &scanrun.Run{ID: shared.NewID(), TenantID: shared.NewID(), StartedAt: ptrTime(time.Now())}
 	if err := s.scheduleWorkflowSteps(context.Background(), run, steps, 3); err != nil {
 		t.Fatalf("schedule: %v (a settled step is not a failed start)", err)

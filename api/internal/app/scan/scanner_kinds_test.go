@@ -18,7 +18,7 @@ import (
 // incompatible. A port scanner still takes it.
 func TestResolveScanTargets_ScannerKinds(t *testing.T) {
 	ctx := context.Background()
-	svc := allowAllChecks(&Service{logger: logger.NewNop()})
+	svc := allowAllChecks(&Service{tools: testTools, logger: logger.NewNop()})
 
 	got, err := svc.resolveScanTargets(ctx, testScan("nuclei", "203.0.113.0/24", "app.example.com", "203.0.113.9"))
 	if err != nil {
@@ -56,7 +56,7 @@ func TestResolveScanTargets_ScannerKinds(t *testing.T) {
 // a template scanner too, whatever the registry says about its type; a
 // typed name the registry cannot decide is still left to the type gate.
 func TestResolveScanTargets_InventoryRangeNeverReachesTemplates(t *testing.T) {
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &typedMembersRepo{members: []*assetgroup.ScanMember{
 			member("203.0.113.0/24", asset.AssetTypeNetwork, ""),
 			member("mystery", asset.AssetTypeUnclassified, ""),

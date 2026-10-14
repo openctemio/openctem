@@ -16,7 +16,7 @@ import (
 // not refused for its form, but every check that can turn on a change still
 // runs (exclusions; internal addresses need a zone).
 func TestResolveDispatchTargets_Recheck(t *testing.T) {
-	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{"gone.example.com": true}},
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{values: map[string]bool{"gone.example.com": true}},
 		attributionGate: &stubGate{}, logger: logger.NewNop()}
 	targets := []string{"github.com/example/app", "app.example.com", "gone.example.com", "10.0.0.5", "169.254.169.254"}
 
@@ -61,7 +61,7 @@ func TestResolveDispatchTargets_RecheckZoneShrunk(t *testing.T) {
 		"zone shrunk":        {[]*scanzone.Zone{after}, []string{"10.1.0.5"}},
 		"zone deleted":       {nil, nil},
 	} {
-		svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: listZones{zones: tc.zones}, logger: logger.NewNop()}
+		svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: listZones{zones: tc.zones}, logger: logger.NewNop()}
 		got, err := svc.ResolveDispatchTargets(context.Background(), in)
 		if err != nil {
 			t.Fatal(err)

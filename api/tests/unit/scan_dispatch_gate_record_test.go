@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -14,7 +16,7 @@ import (
 // the scanner's tier and the act scope of the person who triggered the run.
 func TestScanTrigger_CommandsRecordTheDispatchGate(t *testing.T) {
 	user := shared.NewID()
-	want := command.DispatchGate{Tier: int(scanservice.ProbeTier("nuclei")), ActScope: true, Actor: user.String(), Intensity: "active"}
+	want := command.DispatchGate{Tier: int(scanservice.ProbeTier(stagetest.Catalog(), "nuclei")), ActScope: true, Actor: user.String(), Intensity: "active"}
 
 	tenant, _, _, svc, deps := windowZoneSetup(t, nil)
 	sc := singleScan(t, deps, tenant, "nuclei", 1, nil, "10.1.0.1", "10.2.0.1")

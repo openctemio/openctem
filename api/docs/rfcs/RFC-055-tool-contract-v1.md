@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions TC1–TC16, 2026-10-07); in implementation: capability contracts from `ctis/capability` in the stage catalog and ingest (OC1, OC4) shipped; per-tenant tool descriptors (OC2) and later items not built |
+| Status | Accepted (decisions TC1–TC16, 2026-10-07); in implementation: capability contracts from `ctis/capability` in the stage catalog and ingest (OC1, OC4) shipped; OC2's param, batch and step maps → descriptor lookups shipped (planning reads the organization's reported contracts, `internal/app/toolfacts`, no name fallback); per-tenant descriptor storage and later items not built |
 | Scope | ctis (`capability`, CTIS 1.5, `importer/mapping`), sdk-go (`pkg/tool`, runtime, `cmd/openctem`, `pkg/conformance`), sensor (built-in tool descriptors, parsers), api (`pkg/domain/stage`, `pkg/domain/sensor`, ingest, `tools`), web (workflow builder palette and forms) |
 | Architecture | [tool-contract.md](../architecture/tool-contract.md), [scan-stages.md](../architecture/scan-stages.md) |
 | Related | RFC-033 (sensor manifest), RFC-038 (tool config schema), RFC-040 (mutual distrust), RFC-046 (scans redesign, stage catalogue), RFC-049 (connector framework), RFC-052 (grants and tier ceilings), RFC-054 (scope authority); sdk-go `docs/rfcs/sensor-sdk-v2.md` (the tool contract runtime this RFC extends) |

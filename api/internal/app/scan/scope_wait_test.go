@@ -70,7 +70,7 @@ func TestAwaitingScopeTargets(t *testing.T) {
 	tenant := shared.NewID()
 	ctx := context.Background()
 	svc := func(blocked map[string]attribution.State, pending stubPending) *Service {
-		return &Service{
+		return &Service{tools: testTools,
 			attributionGate: &stubGate{blockedTyped: blocked},
 			scopeWaits:      &memWaits{waits: map[string]ScopeWait{}},
 			pendingScope:    pending,
@@ -142,7 +142,7 @@ func TestStartScansAwaitingScope(t *testing.T) {
 		_ = waits.Create(ctx, ScopeWait{ScanID: sc.ID, TenantID: sc.TenantID, RequestedBy: &requester, CreatedAt: now, ExpiresAt: now.Add(ScopeWaitTTL)})
 	}
 	var started []TriggerScanExecInput
-	svc := &Service{
+	svc := &Service{tools: testTools,
 		scanRepo:        repo,
 		attributionGate: &stubGate{blockedTyped: map[string]attribution.State{"api.later.vn": attribution.StateUnattributed}},
 		scopeWaits:      waits,
@@ -191,7 +191,7 @@ func TestRefuseOutOfActScopeAwaiting(t *testing.T) {
 		"hidden.acme":  actscope.ReasonOutOfDataScope,
 		"typed.member": actscope.ReasonNotAnAsset,
 	}}
-	svc := &Service{actScope: act, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, actScope: act, logger: logger.NewNop()}
 	awaiting := map[string]bool{"*.acme.vn": true, "hidden.acme": true, "typed.member": true}
 
 	if err := svc.refuseOutOfActScopeAwaiting(ctx, tenant, nil, []string{"*.acme.vn"}, awaiting); err != nil {

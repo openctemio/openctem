@@ -16,7 +16,7 @@ import (
 // the given exclusions (nil: none), no ownership refusal, an actor who may
 // scan everything.
 func NewGroupResolverForTest(groups assetgroup.Repository, exclusions ScopeExclusionFilter) *Service {
-	return allowAllChecks(&Service{assetGroupRepo: groups, scopeExclusions: exclusions, logger: logger.NewNop()})
+	return allowAllChecks(&Service{tools: testTools, assetGroupRepo: groups, scopeExclusions: exclusions, logger: logger.NewNop()})
 }
 
 // ResolvedForTest is what resolveScanTargets and recordResolvedTargets give.

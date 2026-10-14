@@ -55,6 +55,7 @@ func TestIngest_ExcludedAssetsAreNotAdded(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	svc.SetExclusionSource(scopeService(r.db))
 	tid := tn.tenant
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
@@ -143,13 +144,13 @@ func TestPipelineRun_TargetsPassTheScanGate(t *testing.T) {
 	gate := newTriggerServiceWith(db, scansvc.WithScopeExclusionFilter(scopeService(db)),
 		scansvc.WithActScope(actScopeChecker(db)), scansvc.WithAttributionGate(ownershipGate(db)))
 	cmdRepo := postgres.NewCommandRepository(pg)
-	cmdRepo.SetCreateGuard(scopesvc.NewWebJobGuard(scopeService(db), nil))
+	cmdRepo.SetCreateGuard(integrationGuard(scopesvc.NewWebJobGuard(scopeService(db), nil)))
 	svc := scanrun.NewService(
 		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), cmdRepo,
 		nil, logger.New(logger.Config{Level: "error"}),
-		scanrun.WithTargetGate(gate),
+		scanrun.WithTargetGate(gate), scanrun.WithToolFacts(integrationTools),
 	)
 	trigger := func(runContext map[string]any) error {
 		_, err := svc.TriggerPipeline(ctx, scanrun.TriggerRunInput{

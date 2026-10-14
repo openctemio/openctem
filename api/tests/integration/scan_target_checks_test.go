@@ -45,6 +45,7 @@ func (actOnAll) Check(context.Context, actscope.Input) (*actscope.Decision, erro
 // passes for one of these checks replaces it.
 func allowAllTargetChecks(opts ...scanservice.ServiceOption) []scanservice.ServiceOption {
 	return append([]scanservice.ServiceOption{
+		scanservice.WithToolFacts(integrationTools),
 		scanservice.WithScopeExclusionFilter(noExclusions{}),
 		scanservice.WithAttributionGate(allOwned{}),
 		scanservice.WithActScope(actOnAll{}),

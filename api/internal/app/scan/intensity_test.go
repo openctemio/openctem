@@ -31,7 +31,7 @@ func TestApplyIntensity_WorkflowStepAboveCeilingRefused(t *testing.T) {
 		{StepKey: "dns", Capabilities: []string{"resolve.dns"}},
 		{StepKey: "http", Capabilities: []string{"probe.http"}},
 	}}
-	s := &Service{stepRepo: steps, logger: logger.NewNop()}
+	s := &Service{tools: testTools, stepRepo: steps, logger: logger.NewNop()}
 	sc := intensityScan(t, scan.ScanTypeWorkflow)
 	wf := shared.NewID()
 	sc.ScanWorkflowID = &wf
@@ -51,14 +51,14 @@ func TestApplyIntensity_WorkflowStepAboveCeilingRefused(t *testing.T) {
 		t.Fatalf("omitted: %v / %q", err, sc.Intensity)
 	}
 
-	passiveOnly := &Service{stepRepo: stubSteps{steps: steps.steps[:2]}, logger: logger.NewNop()}
+	passiveOnly := &Service{tools: testTools, stepRepo: stubSteps{steps: steps.steps[:2]}, logger: logger.NewNop()}
 	if err := passiveOnly.applyIntensity(context.Background(), sc, ""); err != nil || sc.Intensity != scan.IntensityPassive {
 		t.Fatalf("passive workflow, omitted intensity: %v / %q (want passive)", err, sc.Intensity)
 	}
 }
 
 func TestApplyIntensity_SingleScanner(t *testing.T) {
-	s := &Service{logger: logger.NewNop()}
+	s := &Service{tools: testTools, logger: logger.NewNop()}
 	sc := intensityScan(t, scan.ScanTypeSingle)
 	sc.ScannerName = "zap"
 	if err := s.applyIntensity(context.Background(), sc, "active"); domainCode(err) != scan.CodeIntensityExceeded {
@@ -83,11 +83,11 @@ func TestRefuseRunAboveIntensity(t *testing.T) {
 	sc := intensityScan(t, scan.ScanTypeSingle)
 	sc.ScannerName = "nuclei"
 	sc.Intensity = scan.IntensityPassive
-	if err := refuseRunAboveIntensity(sc); domainCode(err) != scan.CodeIntensityExceeded {
+	if err := refuseRunAboveIntensity(testCat, sc); domainCode(err) != scan.CodeIntensityExceeded {
 		t.Fatalf("nuclei in a passive scan: %v", err)
 	}
 	sc.ScannerName = "subfinder"
-	if err := refuseRunAboveIntensity(sc); err != nil {
+	if err := refuseRunAboveIntensity(testCat, sc); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -101,7 +101,7 @@ func TestResolveDispatchTargets_PassiveRefusesOutOfScope(t *testing.T) {
 		blocked:   map[string]attribution.State{review.String(): attribution.StateNeedsReview},
 		uncovered: map[string]bool{"victim.example.org": true, "far.example.net": true},
 	}
-	svc := &Service{scopeExclusions: &stubExclusions{values: map[string]bool{}}, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{values: map[string]bool{}}, attributionGate: gate, logger: logger.NewNop()}
 	in := DispatchTargetsInput{
 		TenantID:    shared.NewID(),
 		Targets:     []string{"new.example.com", "victim.example.org", "far.example.net"},
