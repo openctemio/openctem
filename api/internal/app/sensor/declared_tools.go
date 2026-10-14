@@ -23,10 +23,10 @@ func (s *SensorService) SetDeclaredTools(store tooldom.DeclaredStore) { s.declar
 // projectDeclaredTools adds the tools a's manifest declares to a's
 // organization's catalog, or refreshes their rows from a newer descriptor.
 // A platform sensor (no organization) projects nothing: it runs only the
-// tools the platform's catalog lists. Failures are logged: the manifest is
+// tools the platform's catalog lists; nor does a sensor that is not active. Failures are logged: the manifest is
 // still stored, without the tools the catalog does not know.
 func (s *SensorService) projectDeclaredTools(ctx context.Context, a *sensordom.Sensor, m sensordom.Manifest) {
-	if s.declaredTools == nil || a == nil || a.TenantID == nil {
+	if s.declaredTools == nil || a == nil || a.TenantID == nil || a.Status != sensordom.SensorStatusActive {
 		return
 	}
 	for _, dt := range m.DeclaredTools() {
