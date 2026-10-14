@@ -349,6 +349,23 @@ payload comes from one builder, `scan.StepCommandPayload`.
   (RFC-089) the keys of private addresses and names carry the network, so
   overlapping private ranges at two sites never hold each other back;
   public addresses never do.
+  **Hosts are released per target** (research/130, migration
+  `command_settled_host_keys`). A running command holds a host only while
+  one of its pending targets needs it. The sensor's local queue tracks each
+  held command with `politeness.Holding` (ctis): when the job reports a
+  target done, the keys no pending target produces are freed on the sensor
+  and named on the next heartbeat (`progress.<id>.released_keys`).
+  `RecordProgress` adds them to `commands.settled_host_keys`, only for a
+  command that sensor holds and only keys of that command, and they only
+  grow within a claim; every claim resets them. A holder counts against a
+  pending command only through a conflicting key it has not released
+  (`holdsUnsettledSQL`, also in `get_next_platform_job`), so the next
+  tool's work on a host starts as soon as this one is done with it. A
+  bucket marker stays held while a pending address of the bucket does. Poll
+  cost, measured on 300k commands with 2,200 running holders (70 keys each,
+  half with released keys) and 5,000 pending commands of one tenant: the
+  per-row host probe stays one GIN bitmap scan (about 0.05 ms), and the
+  release check adds no measurable time.
   Not yet: the candidate tool list per chunk (claim by any candidate),
   placement modes and a spread cap.
 
