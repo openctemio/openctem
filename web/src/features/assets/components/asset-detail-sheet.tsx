@@ -401,7 +401,7 @@ export function AssetDetailSheet<T extends Asset>({
                 external-surface types, above the raw properties: the known
                 facts, then one "Not collected yet: …" line for the rest. */}
             {overviewContent === undefined && cellsForType(asset.type, asset.subType) && (
-              <DetailSection title="Service facts" icon={Radar}>
+              <DetailSection title={t('assets.facts.title', 'Service facts')} icon={Radar}>
                 <SurfaceFactsDetail asset={asset} />
               </DetailSection>
             )}
