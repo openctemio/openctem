@@ -13,7 +13,7 @@
 
 > **Superseded design (2026-10-04).** Coverage now runs on the Tenable.sc
 > sensor connector ([RFC-047](../rfcs/RFC-047-tenable-sc-sensor-connector.md)
-> §9, [tenable-sc-connector.md](tenable-sc-connector.md#rolling-coverage-p2)):
+> §9, [tenable-sc-connector.md](tenable-sc-connector.md#rolling-coverage-and-license-rotation)):
 > each batch is a `connector_scan`, sized against Tenable.sc's own licensed and
 > active IPs. The runner and direct modes described below are gone; the
 > planner, cursor and batch-scoped auto-resolve invariant are kept.

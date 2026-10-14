@@ -177,7 +177,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerSCMAppRoutes(router, &handler.SCMAppHandler{}, auth, nil, chain(), logger.NewNop())
 			registerTenantRoutes(router, &handler.TenantHandler{}, chain(auth, setUser), nil, routeTenantRepo{t: tn}, routeMembers{m: m}, nil, &handler.SSOChangeHandler{})
 			registerOrganizationMemberRoutes(router, &handler.LocalAuthHandler{}, &handler.TenantHandler{}, auth, nil)
-			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain())
+			registerIntegrationRoutes(router, &handler.IntegrationHandler{}, nil, nil, auth, nil, chain(), nil, nil)
 			registerAttachmentRoutes(router, &handler.AttachmentHandler{}, auth, nil)
 			registerScopeRoutes(router, &handler.ScopeHandler{}, auth, nil, chain())
 			registerProgramRoutes(router, &handler.BountyProgramHandler{}, auth, nil, chain())
