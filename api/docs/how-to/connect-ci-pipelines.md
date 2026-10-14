@@ -61,7 +61,7 @@ and a bundle image (`ghcr.io/openctemio/ci`), a GitHub Action, GitLab CI
 templates and examples for Azure Pipelines, Bitbucket Pipelines, CircleCI and
 Jenkins. Capabilities: `sast` (semgrep), `sca` (trivy), `secrets`
 (betterleaks), `iac` (trivy), `container` (trivy). Pin a release tag (the
-examples use `v0.2.0`) or a commit, never a branch.
+examples use `v0.3.0`) or a commit, never a branch.
 
 ### GitHub Actions
 
@@ -74,7 +74,7 @@ on:
 
 jobs:
   openctem:
-    uses: openctemio/ci/.github/workflows/scan.yml@v0.2.0
+    uses: openctemio/ci/.github/workflows/scan.yml@v0.3.0
     with:
       capabilities: sast,sca,secrets,iac
       api-url: https://openctem.example.com
@@ -86,8 +86,8 @@ jobs:
 
 Each capability runs in its own job and reports into one OpenCTEM CI run; a
 final gate job asks the platform for the verdict. A single-job variant
-(`uses: openctemio/ci@v0.2.0`) and every input are documented in
-[openctemio/ci docs/github.md](https://github.com/openctemio/ci/blob/v0.2.0/docs/github.md).
+(`uses: openctemio/ci@v0.3.0`) and every input are documented in
+[openctemio/ci docs/github.md](https://github.com/openctemio/ci/blob/v0.3.0/docs/github.md).
 Fork pull requests get no OIDC token from GitHub; the scan then runs without
 uploading, which is intended.
 
@@ -95,7 +95,7 @@ uploading, which is intended.
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/openctemio/ci/v0.2.0/gitlab/templates/all.yml
+  - remote: https://raw.githubusercontent.com/openctemio/ci/v0.3.0/gitlab/templates/all.yml
 
 variables:
   OPENCTEM_API_URL: https://openctem.example.com
@@ -113,7 +113,7 @@ them.
 
 ### Azure Pipelines, Bitbucket Pipelines, CircleCI, Jenkins
 
-See the [examples in openctemio/ci](https://github.com/openctemio/ci/tree/v0.2.0/examples)
+See the [examples in openctemio/ci](https://github.com/openctemio/ci/tree/v0.3.0/examples)
 (`azure-devops`, `bitbucket`, `circleci`, `jenkins`). In the trust configuration each of these providers asks
 for what names your CI organization (Azure DevOps organization, Bitbucket
 workspace, CircleCI organization, Jenkins controller issuer); Jenkins needs its
