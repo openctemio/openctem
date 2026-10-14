@@ -243,6 +243,12 @@ func StepRunContext(runContext map[string]any, st *StepTargets) map[string]any {
 	delete(out, RunContextKeyTargetExpansion)
 	delete(out, RunContextKeySelectorRoots)
 	delete(out, RunContextKeySkippedTargets)
+	delete(out, RunContextKeyExcludedTargets)
+	// The scan's settings travel without a target list of their own: the
+	// step's gated targets are the job's only targets.
+	if cfg, ok := out["scanner_config"].(map[string]any); ok {
+		out["scanner_config"] = withoutTargetKeys(cfg)
+	}
 	if st != nil && st.Targets != nil {
 		if _, had := out["targets"]; had {
 			out["targets"] = st.Targets
