@@ -520,7 +520,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// A large step is cut into chunks of the capability's size, so every
 	// eligible sensor takes a share; the step settles with its last chunk
 	// (checkStepBatches). A step that fits one chunk stays one command.
-	chunks := stepChunks(resolved, stepTargets)
+	chunks := stepChunks(resolved, stepTargets, s.hostAliases(ctx, run.TenantID, resolved, stepTargets))
 	// Admission: a step is not started when its run's deadline would cut it
 	// before it can do anything useful; its targets roll over instead.
 	if tooClose := deadlineTooClose(run, resolved.Name, time.Now()); tooClose != nil {
@@ -614,15 +614,17 @@ func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.Disp
 }
 
 // stepChunks cuts a step's targets into the chunks its commands carry:
-// pieces of the capability's chunk size for a tool that takes a target
-// list (stage.ChunkSizeFor), else one chunk with every target. An active
-// capability with an address budget (stage.ChunkAddressBudget) also closes
-// a chunk before its addresses would exceed the budget: a range weighs its
+// for a tool that takes a target list (stage.ChunkSizeFor), as many chunks
+// as the capability's chunk size needs, else one chunk with every target.
+// An active capability with an address budget (stage.ChunkAddressBudget)
+// also keeps a chunk's addresses within the budget: a range weighs its
 // address count, any other target 1, so a /16 port scan is many chunks that
-// every eligible sensor shares, not one. A target heavier than the budget
-// gets a chunk of its own. A step with no explicit target list is one chunk
-// (nil targets).
-func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.StepTargets {
+// every eligible sensor shares, not one. Chunks are cut from whole hosts
+// (host_chunks.go): two chunks of a step never hold the same host. aliases
+// maps a name to the addresses it is known to resolve to (one host with
+// them); nil keys hosts by their targets alone. A step with no explicit
+// target list is one chunk (nil targets).
+func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets, aliases map[string][]string) []*scanapp.StepTargets {
 	size, budget := 0, 0
 	if resolved.HasStage {
 		size = resolved.Stage.ChunkSizeFor(resolved.Name)
@@ -642,19 +644,7 @@ func stepChunks(resolved scanapp.StepTool, st *scanapp.StepTargets) []*scanapp.S
 	if len(st.Targets) <= size && (budget <= 0 || total <= uint64(budget)) {
 		return []*scanapp.StepTargets{st}
 	}
-	var out []*scanapp.StepTargets
-	start, sum := 0, uint64(0)
-	for i := range st.Targets {
-		full := i-start >= size || (budget > 0 && i > start && addSat(sum, weights[i]) > uint64(budget))
-		if full {
-			out = append(out, &scanapp.StepTargets{Targets: st.Targets[start:i:i], Refused: st.Refused, Reason: st.Reason})
-			start, sum = i, 0
-		}
-		sum = addSat(sum, weights[i])
-	}
-	end := len(st.Targets)
-	out = append(out, &scanapp.StepTargets{Targets: st.Targets[start:end:end], Refused: st.Refused, Reason: st.Reason})
-	return out
+	return packChunks(st, hostGroups(st.Targets, aliases), weights, size, budget)
 }
 
 // addSat adds without wrapping.

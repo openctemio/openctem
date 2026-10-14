@@ -134,6 +134,57 @@ describe('taskStatusNote', () => {
     expect(taskStatusNote({ status: 'running', waiting_on_hosts: true })).toBeNull()
   })
 
+  it('says in full how many hosts block a task, held by which run and step, and how many targets can start', () => {
+    const runId = '11111111-2222-3333-4444-555555555555'
+    const hostWait = {
+      hosts_held: 2,
+      hosts_total: 21,
+      targets: 23,
+      can_start: 21,
+      holders: [
+        { tool: 'nuclei', step_key: 'templates', run_id: 'abcdef12-0000-0000-0000-000000000000' },
+      ],
+    }
+    expect(
+      taskStatusNote(
+        { status: 'queued', waiting_on_hosts: true, host_wait: hostWait },
+        undefined,
+        runId
+      )
+    ).toEqual({
+      kind: 'waiting',
+      full: true,
+      text: 'Waiting for 2 of its hosts, held by nuclei (step templates, run abcdef12); 21 of its 23 targets are on free hosts',
+    })
+    // A holder in the same run; a holder whose run the caller cannot read
+    // (no run id or step); an unknown count of free targets.
+    const same = { ...hostWait, holders: [{ ...hostWait.holders[0], run_id: runId }] }
+    expect(
+      taskStatusNote(
+        { status: 'queued', waiting_on_hosts: true, host_wait: same },
+        undefined,
+        runId
+      )?.text
+    ).toBe(
+      'Waiting for 2 of its hosts, held by nuclei (step templates, this run); 21 of its 23 targets are on free hosts'
+    )
+    const hidden = { ...hostWait, can_start: -1, holders: [{ tool: 'nuclei' }] }
+    expect(
+      taskStatusNote(
+        { status: 'queued', waiting_on_hosts: true, host_wait: hidden },
+        undefined,
+        runId
+      )?.text
+    ).toBe('Waiting for 2 of its hosts, held by nuclei')
+    expect(
+      taskStatusNote(
+        { status: 'queued', waiting_on_hosts: true, host_wait: { ...hidden, holders: [] } },
+        undefined,
+        runId
+      )?.text
+    ).toBe('Waiting for 2 of its hosts, held by another task')
+  })
+
   it('keeps real errors as errors and says nothing without a message', () => {
     expect(taskStatusNote({ status: 'failed', error_message: 'scanner exited 2' })).toEqual({
       kind: 'error',
