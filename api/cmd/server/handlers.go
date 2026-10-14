@@ -1399,6 +1399,7 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		}
 		admin.SetCodeScanService(codescanapp.NewService(repos.CodeScan, csAudit, log))
 	}
+	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
