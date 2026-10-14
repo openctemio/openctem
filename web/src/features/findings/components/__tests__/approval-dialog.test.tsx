@@ -244,6 +244,26 @@ describe('ApprovalDialog', () => {
         justification: 'This is a justified reason',
       })
     })
+
+    it('an accepted risk always carries an expiry, 90 days ahead by default', async () => {
+      mockRequestApproval.mockResolvedValueOnce({})
+      const user = userEvent.setup()
+      render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
+
+      const expiry = screen.getByLabelText('Acceptance expires on') as HTMLInputElement
+      expect(expiry.required).toBe(true)
+      expect(expiry.max).not.toBe('')
+
+      await user.type(screen.getByLabelText('Justification'), 'Compensating control')
+      await user.click(screen.getByText('Review'))
+      await user.click(screen.getByText('Submit for Approval'))
+
+      const body = mockRequestApproval.mock.calls[0][0]
+      expect(body.requested_status).toBe('accepted')
+      const days = (new Date(body.expires_at).getTime() - Date.now()) / 86_400_000
+      expect(days).toBeGreaterThan(88)
+      expect(days).toBeLessThan(91)
+    })
   })
 
   // ============================================
