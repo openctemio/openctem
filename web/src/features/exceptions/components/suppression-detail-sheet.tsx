@@ -189,7 +189,10 @@ export function SuppressionDetailSheet({
             <DetailFieldGrid>
               <DetailField label="Requested">{relative(rule.requested_at)}</DetailField>
               <DetailField label="Requested by">
-                <span className="font-mono">{rule.requested_by.slice(0, 8)}</span>
+                {/* A request no user made (a CI job) names its requester. */}
+                <span className="font-mono">
+                  {rule.requested_by_actor || rule.requested_by.slice(0, 8)}
+                </span>
               </DetailField>
               {rule.approved_at && (
                 <DetailField label="Approved">{relative(rule.approved_at)}</DetailField>
