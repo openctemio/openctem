@@ -6,4 +6,4 @@
   `[request-budget]` warning naming the URL.
 - A guard test (`request-hygiene-guard.test.ts`) counts raw `fetch` of the API
   outside the API layer, `[url, tenantId]` cache keys and polling sites; the
-  counts only go down (research/81, page-load request budget).
+  counts only go down (page-load request budget).
