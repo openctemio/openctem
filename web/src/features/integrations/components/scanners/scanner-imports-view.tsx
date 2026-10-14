@@ -1,15 +1,16 @@
 'use client'
 
 /**
- * Vulnerability scanners while the Tenable connector is paused.
+ * Vulnerability scanners while the Tenable connector gate is off
+ * (TENABLE_CONNECTOR_ENABLED false; it is on, as Beta, by default).
  *
  * The live Tenable connector and RFC-007 rolling coverage are PAUSED (owner
  * decision D-14): sensor v0.8.0 removed the Tenable runner, so a connected
  * Tenable integration would never scan. The API refuses new Tenable
  * integrations and does not run the coverage scheduler. This view offers only
  * what works, the .nessus import, and lists Tenable integrations created
- * before the pause as paused, removable rows. TenableConnectorView comes back
- * when TENABLE_CONNECTOR_ENABLED is flipped (RFC-047).
+ * before the pause as paused, removable rows. TenableConnectorView replaces it
+ * while TENABLE_CONNECTOR_ENABLED (RFC-047).
  */
 
 import { useState } from 'react'
