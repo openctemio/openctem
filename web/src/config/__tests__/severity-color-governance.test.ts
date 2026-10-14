@@ -41,7 +41,6 @@ const ALLOWLIST = new Set(
     'app/(dashboard)/(scoping)/business-units/page.tsx',
     'app/(dashboard)/(scoping)/compliance/page.tsx',
     'components/notification-bell.tsx',
-    'features/assets/components/relationships/relationship-table.tsx',
     'features/capabilities/components/capability-card.tsx',
     'features/capabilities/components/capability-detail-panel.tsx',
     'features/capabilities/components/capability-table.tsx',
