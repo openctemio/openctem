@@ -451,7 +451,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 
 	// Break-glass for the commit passes the failing run, audited each use.
 	if _, err := r.svc.CreateOverride(ctx, r.tenant, cirunapp.OverrideInput{RepositoryAssetID: run.RepositoryAssetID,
-		CommitSHA: sha2[:12], Reason: "hotfix for the login outage"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
+		CommitSHA: sha2, Reason: "hotfix for the login outage"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
 		t.Fatal(err)
 	}
 	rejudge()

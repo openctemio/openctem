@@ -99,6 +99,7 @@ export function scheduleError(
   t: Translate = enTranslate
 ): string | null {
   const { schedule } = form
+  if (schedule.custom) return null
   if (schedule.runImmediately || schedule.saveOnly || schedule.frequency !== 'once') return null
   const at = onceRunAt(form)
   if (!at) return t('scans.err.dateTime')
@@ -238,6 +239,10 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
 /** A configuration's schedule as the wizard shows it (in the scan's zone). */
 function scheduleFromConfig(config: ScanConfig): NewScanFormData['schedule'] {
   const timezone = config.schedule_timezone || undefined
+  const custom = customSchedule(config)
+  if (custom) {
+    return { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, timezone, custom }
+  }
   const frequency = scheduleTypeToFrequency(config.schedule_type)
   const runAt =
     config.schedule_type === 'once' && config.schedule_run_at
@@ -253,6 +258,17 @@ function scheduleFromConfig(config: ScanConfig): NewScanFormData['schedule'] {
     runAtTime: runAt?.time,
     timezone,
   }
+}
+
+/** A cron or RRULE schedule, which the wizard keeps as stored. */
+function customSchedule(config: ScanConfig): NewScanFormData['schedule']['custom'] {
+  if (config.schedule_type === 'crontab') {
+    return { type: 'crontab', expression: config.schedule_cron ?? '' }
+  }
+  if (config.schedule_type === 'rrule') {
+    return { type: 'rrule', expression: config.schedule_rrule ?? '' }
+  }
+  return undefined
 }
 
 /** Edit: an existing configuration -> wizard form data. */
@@ -307,8 +323,14 @@ export function formDataToUpdateRequest(
     timeout_seconds: form.timeoutSeconds,
     max_retries: form.maxRetries,
     retry_backoff_seconds: form.retryBackoffSeconds,
-    schedule_type: onDemand(schedule) ? 'manual' : frequencyToScheduleType(schedule.frequency),
     sensor_preference: toApiSensorPreference(form.sensorPreference),
+  }
+  // A stored cron or RRULE schedule is left out (unchanged): sending it as
+  // a frequency would replace it, or be refused for a missing day.
+  if (!schedule.custom) {
+    request.schedule_type = onDemand(schedule)
+      ? 'manual'
+      : frequencyToScheduleType(schedule.frequency)
   }
   // Only someone who can see the zones may change the zone: otherwise an
   // empty picker would reset a restricted scan to Automatic.
@@ -325,7 +347,7 @@ export function formDataToUpdateRequest(
     )
   }
 
-  applySchedule(form, request)
+  if (!schedule.custom) applySchedule(form, request)
   return request
 }
 
