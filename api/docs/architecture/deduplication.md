@@ -474,3 +474,15 @@ tombstone (`status = duplicate`, `duplicate_of`) through the finding merge,
 with an activity on both and a `finding.duplicate_marked` audit row naming
 both ids (`metadata.reason = dast_identity_repair`). A second run changes
 nothing.
+
+### A changed taint source suspends a decision
+
+A trace is never part of a finding's identity, but the source of a taint
+finding is what a false-positive or accepted decision usually argues about.
+When a re-scan reports a decided finding whose trace starts at another source
+(`vulnerability.TaintSourceHash`: the source step's file and code; lines and
+intermediate steps ignored), the decision is suspended before the trace is
+replaced: the finding is `confirmed` again with resolution
+`decision_suspended`, the earlier decision is kept in
+`finding_decision_suspensions` and an audit row records it. A report without
+a trace, or one whose intermediate steps changed, keeps the decision.
