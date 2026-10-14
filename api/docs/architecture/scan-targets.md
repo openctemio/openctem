@@ -18,6 +18,23 @@ A scan says **what** to scan in three ways, all resolved again at every run:
 `asset_ids` on `POST /scans` are names resolved once at create (they become
 literal targets).
 
+## Changing a saved scan's targets
+
+`PUT /scans/{id}` takes `targets`, `asset_ids` and `asset_group_ids`;
+omitted means unchanged. `targets` or `asset_ids` replace the literal
+targets (the assets are named for the editor, as on create);
+`asset_group_ids` replaces the groups (`[]` = none). The new targets pass the
+checks a new scan's pass, as the editor: target validation (no internal or
+loopback address outside a scan zone), the editor's act scope, ownership for
+active scanning, intrusive proof and the scope tier ceiling; a group must be
+the organization's (another organization's group is not found). A scan must
+keep a target or a group. Editing also needs the editor's act scope to cover
+the scan's current targets. The CIDR mode is kept (an edit never switches a
+scan to live hosts first unless it names it), and the targets skipped at
+create are cleared. A governed scan's approval covers its targets, so a
+changed scan needs approving again (`internal/app/scan/edit_targets.go`).
+The Edit wizard sends them only when the user changed them.
+
 ## Run start
 
 `internal/app/scan/targets.go` `resolveScanTargets`:
