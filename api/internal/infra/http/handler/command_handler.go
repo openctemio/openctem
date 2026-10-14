@@ -901,6 +901,12 @@ func (h *CommandHandler) triggerScanRunProgression(ctx context.Context, cmd *com
 	// step as unreachable, some unreached ends it partial. A result without
 	// a reach summary (an older sensor) keeps the outcome above.
 	partial = withReach(partial, result.Metadata.Reach, result.Metadata.UnreachedTargets, result.Metadata.UnreachedTotal)
+	// A connector scan's targets it left unfinished (ctis outcomes,
+	// normalized against its own targets) end the step partial and are
+	// recorded on the run.
+	if unfinished, ok := commanddom.ConnectorUnfinishedTargets(cmd); ok {
+		partial.Unfinished = unfinished
+	}
 
 	// Trigger scan workflow progression asynchronously with independent context
 	// Use background context since the HTTP request context will be canceled after response

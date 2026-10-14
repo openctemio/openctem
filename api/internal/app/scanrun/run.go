@@ -948,16 +948,27 @@ type Partial struct {
 	// UnreachableMessage is then the step's failure message.
 	AllUnreached       bool
 	UnreachableMessage string
+	// Unfinished are the command's targets its result left unfinished (a
+	// connector scan that stopped part-way: its targets are not split into
+	// follow-ups). They are recorded on the run, so the next scheduled run
+	// plans them first and coverage never reads them as covered.
+	Unfinished []string
 }
 
-func (p Partial) any() bool { return p.Skipped > 0 || p.Gaps > 0 || p.Unreached > 0 }
+func (p Partial) any() bool {
+	return p.Skipped > 0 || p.Gaps > 0 || p.Unreached > 0 || len(p.Unfinished) > 0
+}
 
 // message and code of a partial step: the skipped targets' code when there
 // are any, else the unreached targets', else the coverage gaps'; every
 // message that applies.
 func (p Partial) message() (string, string) {
 	var parts []string
-	for _, m := range []string{p.SkippedSummary, p.UnreachedSummary, p.GapSummary} {
+	unfinished := ""
+	if n := len(p.Unfinished); n > 0 {
+		unfinished = fmt.Sprintf("%d target(s) not finished", n)
+	}
+	for _, m := range []string{p.SkippedSummary, p.UnreachedSummary, p.GapSummary, unfinished} {
 		if m != "" {
 			parts = append(parts, m)
 		}
@@ -1027,6 +1038,13 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, runID, stepKey str
 		p = b.partial()
 	}
 
+	if len(p.Unfinished) > 0 {
+		if rec, ok := s.runRepo.(scanrun.UnfinishedTargetRecorder); ok {
+			if err := rec.AddUnfinishedTargets(ctx, run.TenantID, run.ID, p.Unfinished); err != nil {
+				s.logger.Error("failed to record unfinished targets", "run_id", run.ID.String(), "error", err)
+			}
+		}
+	}
 	if stepRun != nil && p.AllUnreached && findingsCount == 0 {
 		return s.failStep(ctx, run, stepRun, p.UnreachableMessage, scanrun.FailureTargetUnreachable)
 	}

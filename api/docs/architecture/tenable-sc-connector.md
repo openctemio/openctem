@@ -93,7 +93,15 @@ A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
   allowed targets and the run's pipeline keys, so the run completes or fails
   with the command like any single scan. Expiry: `max_scan_seconds` + 2 h.
 - **Results**: bound to the command and its targets; `coverage_type: full`
-  only when the Tenable.sc scan completed and imported. Coverage-scoped
+  only when the Tenable.sc scan completed and imported. The result carries a
+  per-target outcome (ctis `target_outcomes`: done, failed unreachable for a
+  host that did not reply to a completed scan, unfinished) and reach
+  observations; a refused import (licence `Blocked`, import error) fails the
+  command with the reason. A connector scan is never split into follow-ups:
+  its unfinished targets (normalized against the command's own targets,
+  `command.ConnectorUnfinishedTargets`) end the step partial and are
+  recorded on the run (`scan_runs.unfinished_targets`), which the next
+  scheduled run plans first and the coverage ledger settles from. Coverage-scoped
   auto-resolve treats a completed full `connector_scan` like a scan command
   (same tool, covered assets only); a `connector_sync` never resolves by
   absence.
