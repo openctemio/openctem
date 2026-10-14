@@ -173,5 +173,6 @@
   "assets.views.outOfScope": "Đã loại khỏi phạm vi",
   "assets.views.newSinceVisit": "Mới từ lần truy cập trước",
   "assets.triage.defaultHint": "Đang hiển thị kho tài sản của bạn, gồm cả những gì quá trình phát hiện tìm thấy (chỉ thụ động cho đến khi có mục phạm vi bao phủ). Các tên đang chờ xem xét và các tên bị đánh dấu không phải của bạn được ẩn.",
-  "assets.triage.showAll": "Hiển thị tất cả"
+  "assets.triage.showAll": "Hiển thị tất cả",
+  "assets.attribution.scan.guardrailed": "Các lần quét giữ tài sản này ở chế độ thụ động: một rào chắn của nền tảng giữ nó (mạng dùng chung, CDN hoặc đám mây, mạng chưa rõ, hosting dùng chung, hoặc tên miền ngoài miền của bạn). Thêm vào Phạm vi › Phạm vi nếu đó là của bạn."
 }

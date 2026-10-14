@@ -292,5 +292,11 @@
   "scope.settings.unclassifiedHint.off": "Tài sản không có mục phạm vi bao phủ chỉ được kiểm tra thụ động, cho đến khi có mục phạm vi bao phủ.",
   "scope.settings.unclassifiedHint.low_impact": "Tài sản không có mục phạm vi bao phủ, và không ai loại trừ hay đánh dấu không phải của bạn, được kiểm tra tác động thấp: một số cổng phổ biến ở tốc độ thấp, trang chủ và /.well-known/, nhận diện chứng chỉ và công nghệ. Các rào chắn của nền tảng giữ ở chế độ thụ động các mạng dùng chung, CDN, đám mây, mạng chưa rõ và tên miền ngoài miền của bạn.",
   "scope.settings.unclassifiedHint.full": "Tài sản không có mục phạm vi bao phủ được quét theo cường độ của lần quét, vẫn sau các rào chắn của nền tảng. Loại trừ và Không phải của chúng tôi luôn được ưu tiên.",
-  "scope.settings.unclassifiedStrict": "Đang áp dụng phê duyệt quét Strict, nên thiết lập này hiện là Tắt."
+  "scope.settings.unclassifiedStrict": "Đang áp dụng phê duyệt quét Strict, nên thiết lập này hiện là Tắt.",
+  "scope.refusal.label.guardrailed": "Bị rào chắn của nền tảng giữ lại",
+  "scope.refusal.message.guardrailed": "Không có mục phạm vi bao phủ tài sản này và một rào chắn của nền tảng giữ nó ở chế độ thụ động (mạng dùng chung hoặc chưa rõ, hosting dùng chung, hoặc tên miền ngoài miền của bạn). Thêm mục phạm vi chính xác để quét.",
+  "scope.refusal.label.low_impact": "Chỉ kiểm tra tác động thấp",
+  "scope.refusal.message.low_impact": "Không có mục phạm vi bao phủ tài sản này nên nó chỉ được kiểm tra tác động thấp, và tác vụ này vượt quá mức đó. Thêm vào phạm vi để quét đầy đủ.",
+  "scope.refusal.label.web_ports_only": "Chỉ cổng web",
+  "scope.refusal.message.web_ports_only": "Một địa chỉ mà tên miền này trỏ tới không nằm trong phạm vi, nên quét cổng tên miền chỉ tới các cổng web. Thêm địa chỉ vào phạm vi để quét toàn bộ cổng."
 }
