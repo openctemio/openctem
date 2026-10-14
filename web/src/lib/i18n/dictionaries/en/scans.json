@@ -1622,5 +1622,8 @@
   "scans.liveness.switch": "Use live hosts first",
   "scans.liveness.switched": "The scan now finds live hosts first",
   "scans.liveness.switchFailed": "The scan could not be switched",
-  "scans.targetOptions.rangesLiveness": "Ranges: live hosts first"
+  "scans.targetOptions.rangesLiveness": "Ranges: live hosts first",
+  "scans.runDetail.cancelTitle": "Cancel this run?",
+  "scans.runDetail.canceledToast": "Run canceled. Running tasks stop at their next heartbeat.",
+  "scans.runDetail.cancelFailed": "Could not cancel the run"
 }
