@@ -132,8 +132,10 @@ type LicensedBatch struct {
 	Blocked int
 }
 
-// SelectLicensedBatch picks the next batch of a license-capped engine, in
-// SelectBatch's order: at most maxIPs addresses in all, and at most
+// SelectLicensedBatch picks the next batch of a license-capped engine:
+// oldest attempt first (never attempted before anything), criticality only
+// breaking ties, so every asset gets one turn per cycle and a critical asset
+// is not re-picked by every batch; at most maxIPs addresses in all, and at most
 // newHeadroom addresses the license has not counted yet. An asset the
 // engine assessed before (Assessed) is already counted, so it is rescanned
 // without using headroom, unless allNew (rotation: the data was removed,
@@ -147,11 +149,14 @@ func SelectLicensedBatch(candidates []Candidate, maxIPs, newHeadroom int, allNew
 	ordered := make([]Candidate, len(candidates))
 	copy(ordered, candidates)
 	sort.SliceStable(ordered, func(i, j int) bool {
-		wi, wj := criticalityWeight(ordered[i].Criticality), criticalityWeight(ordered[j].Criticality)
-		if wi != wj {
-			return wi > wj
+		a, b := ordered[i].LastScannedAt, ordered[j].LastScannedAt
+		if lessLastScanned(a, b) {
+			return true
 		}
-		return lessLastScanned(ordered[i].LastScannedAt, ordered[j].LastScannedAt)
+		if lessLastScanned(b, a) {
+			return false
+		}
+		return criticalityWeight(ordered[i].Criticality) > criticalityWeight(ordered[j].Criticality)
 	})
 	for _, c := range ordered {
 		n := CountIPs(c.Target)

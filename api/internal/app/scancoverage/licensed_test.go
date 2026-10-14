@@ -51,3 +51,27 @@ func TestSelectLicensedBatch(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+// Round robin: a critical asset scanned in the last batch waits for the
+// assets not scanned yet; criticality only breaks ties.
+func TestSelectLicensedBatch_OldestFirst(t *testing.T) {
+	recent := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
+	older := recent.Add(-time.Hour)
+	c := []Candidate{
+		{AssetID: "crit", Target: "10.0.0.1", Criticality: "critical", LastScannedAt: &recent, Assessed: true},
+		{AssetID: "low-old", Target: "10.0.0.2", Criticality: "low", LastScannedAt: &older, Assessed: true},
+		{AssetID: "new-low", Target: "10.0.0.3", Criticality: "low"},
+		{AssetID: "new-high", Target: "10.0.0.4", Criticality: "high"},
+	}
+	b := SelectLicensedBatch(c, 3, 100, true)
+	got := []string{}
+	for _, s := range b.Selected {
+		got = append(got, s.AssetID)
+	}
+	want := []string{"new-high", "new-low", "low-old"}
+	for i := range want {
+		if i >= len(got) || got[i] != want[i] {
+			t.Fatalf("order %v, want %v", got, want)
+		}
+	}
+}
