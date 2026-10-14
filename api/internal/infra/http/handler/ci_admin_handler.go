@@ -269,7 +269,9 @@ type CIGateOverrideListResponse struct {
 // CIGateOverrideRequest is a break-glass request.
 type CIGateOverrideRequest struct {
 	RepositoryAssetID string `json:"repository_asset_id"`
-	CommitSHA         string `json:"commit_sha"`
+	// CommitSHA is the full commit id (40 or 64 hex characters); the
+	// override covers exactly that commit.
+	CommitSHA string `json:"commit_sha"`
 	// Reason is required (10 to 2000 characters) and audited.
 	Reason string `json:"reason"`
 	// ExpiresInHours defaults to 24, at most 168.
