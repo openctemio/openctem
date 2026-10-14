@@ -360,6 +360,7 @@ export const REASON_LABEL: Record<string, string> = {
   epss: 'EPSS',
   severity: 'Severity',
   scan_failure: 'Scan failure',
+  missing_capability: 'Expected scan missing',
   override: 'Break-glass',
   no_baseline: 'No baseline',
   secret_pre_existing: 'Secret already on the default branch',
