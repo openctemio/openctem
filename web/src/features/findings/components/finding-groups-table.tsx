@@ -302,12 +302,13 @@ export function FindingGroupsTable<TRow extends { id: string }>({
     if (!queryProp) return undefined
     const q = withoutPaging(queryProp)
     if (!statusesProp) return q
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { state, exclude_statuses, ...rest } = q
-    return {
-      ...rest,
+    const scoped: FindingApiFilters = {
+      ...q,
       statuses: statusesProp.split(',') as NonNullable<FindingApiFilters['statuses']>,
     }
+    delete scoped.state
+    delete scoped.exclude_statuses
+    return scoped
   }, [queryProp, statusesProp])
   const queryKey = query ? JSON.stringify(query) : ''
   const {
