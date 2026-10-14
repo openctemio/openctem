@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "cebb3fc24d3eb181"
+const RegistryVersion = "ec30118e43df2aca"
 
 // Lenses.
 const (
@@ -131,6 +131,12 @@ var registryTypes = []TypeDefinition{
 		},
 		ScannableBy:     []string{"domain"},
 		ExposureDefault: "public",
+		Coverage: []CoverageRule{
+			{Capability: "discover.subdomains", EverySeconds: 86400, Requires: []string{"scope_entry"}},
+			{Capability: "resolve.dns", EverySeconds: 86400},
+			{Capability: "lookup.rdap", EverySeconds: 604800},
+			{Capability: "dns.email", EverySeconds: 86400},
+		},
 	},
 	{
 		Type:           "subdomain",
@@ -172,6 +178,12 @@ var registryTypes = []TypeDefinition{
 		},
 		ScannableBy:     []string{"domain"},
 		ExposureDefault: "public",
+		Coverage: []CoverageRule{
+			{Capability: "resolve.dns", EverySeconds: 86400},
+			{Capability: "dns.dangling", EverySeconds: 86400},
+			{Capability: "scan.ports", EverySeconds: 604800, Requires: []string{"resolves"}},
+			{Capability: "probe.http", EverySeconds: 259200, Requires: []string{"resolves"}, Expects: "http_service"},
+		},
 	},
 	{
 		Type:           "ip_address",
@@ -212,6 +224,10 @@ var registryTypes = []TypeDefinition{
 			},
 		},
 		ScannableBy: []string{"ip", "host"},
+		Coverage: []CoverageRule{
+			{Capability: "lookup.asn", EverySeconds: 604800},
+			{Capability: "scan.ports", EverySeconds: 604800},
+		},
 	},
 	{
 		Type:           "certificate",
@@ -358,6 +374,9 @@ var registryTypes = []TypeDefinition{
 			In:  []RelationshipRule{},
 		},
 		ScannableBy: []string{"url", "service", "port"},
+		Coverage: []CoverageRule{
+			{Capability: "vuln.templates", EverySeconds: 604800},
+		},
 	},
 	{
 		Type:           "open_port",
@@ -393,6 +412,9 @@ var registryTypes = []TypeDefinition{
 			In:  []RelationshipRule{},
 		},
 		ScannableBy: []string{"port", "service"},
+		Coverage: []CoverageRule{
+			{Capability: "probe.http", EverySeconds: 259200, Requires: []string{"web_port"}, Expects: "http_service"},
+		},
 	},
 	{
 		Type:           "discovered_url",
