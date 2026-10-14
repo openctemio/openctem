@@ -4,8 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +24,8 @@ import (
 // MockSuppressionRepository implements suppression.Repository for handler tests.
 type MockSuppressionRepository struct {
 	rules map[shared.ID]*suppression.Rule
+	// matching is the number of open findings a rule matches.
+	matching int
 }
 
 func NewMockSuppressionRepository() *MockSuppressionRepository {
@@ -34,6 +42,15 @@ func (m *MockSuppressionRepository) Save(_ context.Context, rule *suppression.Ru
 func (m *MockSuppressionRepository) SaveWithAudit(_ context.Context, rule *suppression.Rule, _ string, _ *shared.ID, _ map[string]any) error {
 	m.rules[rule.ID()] = rule
 	return nil
+}
+
+func (m *MockSuppressionRepository) Approve(_ context.Context, rule *suppression.Rule, _ time.Time, _ shared.ID, _ map[string]any, limit int) (suppression.ApplyResult, error) {
+	m.rules[rule.ID()] = rule
+	return suppression.ApplyResult{Applied: min(m.matching, limit), Capped: m.matching > limit}, nil
+}
+
+func (m *MockSuppressionRepository) CountMatchingOpenFindings(_ context.Context, _ *suppression.Rule, limit int) (int, error) {
+	return min(m.matching, limit+1), nil
 }
 
 func (m *MockSuppressionRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*suppression.Rule, error) {
@@ -260,6 +277,7 @@ func TestSuppressionHandler_ApproveRule(t *testing.T) {
 		RequestedBy:     userID,
 	}
 	rule, _ := svc.CreateRule(context.Background(), input)
+	repo.matching = 2
 
 	t.Run("approve pending rule", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/suppressions/"+rule.ID().String()+"/approve", reviewedBody(rule))
@@ -282,6 +300,9 @@ func TestSuppressionHandler_ApproveRule(t *testing.T) {
 
 		if resp["status"] != "approved" {
 			t.Errorf("status = %v, want 'approved'", resp["status"])
+		}
+		if resp["applied_findings"] != float64(2) || resp["capped"] != false {
+			t.Errorf("applied_findings = %v capped = %v, want 2 false", resp["applied_findings"], resp["capped"])
 		}
 	})
 
@@ -523,4 +544,105 @@ func TestSuppressionHandler_ListActiveRules(t *testing.T) {
 // reviewedBody is an approve request naming the version the approver saw.
 func reviewedBody(r *suppression.Rule) *bytes.Buffer {
 	return bytes.NewBufferString(`{"reviewed_updated_at":"` + r.UpdatedAt().Format(time.RFC3339Nano) + `"}`)
+}
+
+// The preview is an organization-wide count of open findings, so it is gated
+// like the approval (findings:suppressions:approve), not like a read. The web
+// permission map covers mutations only, so the GET gate is read from the
+// route registration itself.
+func TestSuppressionPreviewGate(t *testing.T) {
+	root := repoRoot(t)
+	perms := loadPermissionValues(t, root)
+	f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, "internal", "infra", "http", "routes", "scanning.go"), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates := map[string][]string{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		ce, ok := n.(*ast.CallExpr)
+		if !ok || len(ce.Args) < 2 {
+			return true
+		}
+		sel, ok := ce.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		path, ok := routePathArg(ce.Args[0])
+		if !ok || !strings.HasPrefix(path, "/{id}/") {
+			return true
+		}
+		var g routeGate
+		for _, a := range ce.Args[1:] {
+			gateOf(a, perms, &g)
+		}
+		gates[sel.Sel.Name+" "+path] = g.Permissions
+		return true
+	})
+	for route, want := range map[string][]string{
+		"GET /{id}/preview":  {"findings:suppressions:approve"},
+		"POST /{id}/approve": {"findings:suppressions:approve"},
+	} {
+		if got := gates[route]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: gate %v, want %v", route, got, want)
+		}
+	}
+}
+
+func TestSuppressionHandler_PreviewRule(t *testing.T) {
+	tenantID := shared.NewID()
+	repo := NewMockSuppressionRepository()
+	svc := suppression.NewService(repo, nil)
+	h := handler.NewSuppressionHandler(svc, logger.NewNop())
+	rule, err := svc.CreateRule(context.Background(), suppression.CreateRuleInput{
+		TenantID: tenantID, Name: "r", SuppressionType: suppression.SuppressionTypeFalsePositive,
+		RuleID: "semgrep.sqli", RequestedBy: shared.NewID(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	preview := func(tenant shared.ID, id string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/suppressions/"+id+"/preview", nil)
+		req.SetPathValue("id", id)
+		req = withSuppressionContext(req, tenant, shared.NewID())
+		rr := httptest.NewRecorder()
+		h.PreviewRule(rr, req)
+		return rr
+	}
+
+	t.Run("count", func(t *testing.T) {
+		repo.matching = 42
+		rr := preview(tenantID, rule.ID().String())
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+		}
+		var resp map[string]any
+		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+		if resp["matching_open_findings"] != float64(42) || resp["capped"] != false ||
+			resp["limit"] != float64(suppression.MaxFindingsAppliedOnApprove) {
+			t.Fatalf("resp = %v", resp)
+		}
+	})
+
+	t.Run("capped", func(t *testing.T) {
+		repo.matching = suppression.MaxFindingsAppliedOnApprove + 1
+		rr := preview(tenantID, rule.ID().String())
+		var resp map[string]any
+		_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+		if resp["matching_open_findings"] != float64(suppression.MaxFindingsAppliedOnApprove) || resp["capped"] != true {
+			t.Fatalf("resp = %v", resp)
+		}
+	})
+
+	t.Run("another tenant's rule is not found", func(t *testing.T) {
+		if rr := preview(shared.NewID(), rule.ID().String()); rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rr.Code)
+		}
+	})
+
+	t.Run("invalid id", func(t *testing.T) {
+		if rr := preview(tenantID, "not-a-uuid"); rr.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", rr.Code)
+		}
+	})
 }

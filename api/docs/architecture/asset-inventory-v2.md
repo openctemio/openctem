@@ -571,6 +571,27 @@ In short, at 100k services per tenant:
 The `api/tests/perf/inventory` fixtures and the `EXPLAIN` guard tests
 hold these targets.
 
+## Related assets
+
+An asset's relationships are read as groups, one per relationship type and
+direction seen from the asset ("Resolves to" and "Names that resolve here" are
+two groups of `resolves_to`). `GET /api/v1/assets/{id}/relationships/groups`
+(`assets:read`, relationships module) returns each group's total and its first
+rows, most critical related asset first, with the related asset's type,
+status, criticality, exposure and last seen and the edge's discovery method,
+confidence and `last_verified` (refreshed each time a scan reports the edge
+again). With `type` and `direction` it pages through one group (`offset`,
+`limit` up to 100, `q` for a name search), so an application running on
+thousands of hosts is read a page at a time instead of being cut at the
+list endpoint's page size.
+
+Data scope: the asset itself must be in the caller's scope (404 otherwise, as
+for every asset sub-resource). An edge whose other asset is outside the scope
+is never returned; only their number is, as `hidden_count`, over all of the
+asset's edges, never narrowed by `type` or `q`, so a search cannot be used to
+probe the names of assets the caller may not see. Every query is bound to the
+tenant, edges and assets alike.
+
 ## Related
 
 - [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md): the design and the

@@ -827,6 +827,7 @@ func TestDataScope_SubresourceLists_FilterForScopedMemberOnly(t *testing.T) {
 	}{
 		{"/api/v1/state-history/appearances", dsMarkerHistA, dsMarkerHistB},
 		{"/api/v1/assets/" + h.assetA.String() + "/relationships", r.relAA.String(), r.relAB.String()},
+		{"/api/v1/assets/" + h.assetA.String() + "/relationships/groups", r.relAA.String(), r.relAB.String()},
 		{"/api/v1/relationships/suggestions", dsMarkerSuggA, dsMarkerSuggB},
 		{"/api/v1/assets/dedup/reviews", r.reviewAA.String(), r.reviewAB.String()},
 		{"/api/v1/assets/dedup/merge-log", dsMarkerLogA, dsMarkerLogB},
@@ -1069,5 +1070,87 @@ func TestDataScope_AssetGroupCounts_FollowReaderScope(t *testing.T) {
 	_, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/asset-groups/"+g, nil)
 	if !strings.Contains(body, `"asset_count":0`) || !strings.Contains(body, `"finding_count":0`) {
 		t.Errorf("scopeless member GET group: want zero counts (body %.400s)", body)
+	}
+}
+
+// The grouped related-assets view counts out-of-scope neighbors without
+// naming them, and a name search never narrows that count (it would let a
+// scoped member probe the names of assets outside their scope).
+func TestDataScope_RelatedGroups_CountHiddenNeighbors(t *testing.T) {
+	h := newDSHarness(t)
+	r := h.seedSubresources()
+	base := "/api/v1/assets/" + h.assetA.String() + "/relationships/groups"
+
+	type groupsBody struct {
+		Groups []struct {
+			Type, Direction string
+			Total           int64
+			Items           []struct {
+				RelationshipID string `json:"relationship_id"`
+			}
+		}
+		Total       int64 `json:"total"`
+		HiddenCount int64 `json:"hidden_count"`
+	}
+	get := func(user shared.ID, admin bool, path string) (int, groupsBody, string) {
+		status, body := h.do(user, admin, http.MethodGet, path, nil)
+		var g groupsBody
+		_ = json.Unmarshal([]byte(body), &g)
+		return status, g, body
+	}
+
+	status, g, body := get(h.memberA, false, base)
+	if status != http.StatusOK || g.Total != 1 || g.HiddenCount != 1 || dsLeaksB(body) {
+		t.Fatalf("memberA groups = %d total=%d hidden=%d, want 200, 1 visible, 1 hidden, no B marker (body %.300s)", status, g.Total, g.HiddenCount, body)
+	}
+	if len(g.Groups) != 1 || g.Groups[0].Type != "depends_on" || g.Groups[0].Direction != "outgoing" ||
+		len(g.Groups[0].Items) != 1 || g.Groups[0].Items[0].RelationshipID != r.relAA.String() {
+		t.Errorf("memberA groups = %+v, want one outgoing depends_on group with A1->A2", g.Groups)
+	}
+
+	// Searching for the hidden neighbor's name: no row, same hidden count.
+	_, g, body = get(h.memberA, false, base+"?q=dsb-b1")
+	if g.Total != 0 || g.HiddenCount != 1 || dsLeaksB(body) {
+		t.Errorf("memberA search for B1: total=%d hidden=%d (body %.300s), want 0 and 1", g.Total, g.HiddenCount, body)
+	}
+
+	// Owner and a full-data role see both neighbors and nothing hidden.
+	for _, who := range []struct {
+		name  string
+		user  shared.ID
+		admin bool
+	}{{"owner", h.owner, true}, {"full-data role", h.memberFull, false}} {
+		if _, g, body := get(who.user, who.admin, base); g.Total != 2 || g.HiddenCount != 0 {
+			t.Errorf("%s groups total=%d hidden=%d, want 2 and 0 (body %.300s)", who.name, g.Total, g.HiddenCount, body)
+		}
+	}
+
+	// One group, paged: type and direction select it.
+	if _, g, _ := get(h.owner, true, base+"?type=depends_on&direction=outgoing&limit=1&offset=1"); len(g.Groups) != 1 || g.Groups[0].Total != 2 || len(g.Groups[0].Items) != 1 {
+		t.Errorf("owner page 2 of depends_on = %+v, want total 2 and 1 row", g.Groups)
+	}
+
+	// The out-of-scope asset itself, an unknown asset and another tenant's
+	// asset all answer 404.
+	other := shared.NewID()
+	otherAsset := shared.NewID()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, other.String(), "ds-other-"+other.String())
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, exposure, criticality) VALUES ($1, $2, 'dsb-SECRET-other-tenant.example.com', 'domain', 'public', 'high')`,
+		otherAsset.String(), other.String())
+	for _, c := range []struct {
+		user  shared.ID
+		admin bool
+		asset shared.ID
+	}{{h.memberA, false, h.assetB}, {h.memberA, false, shared.NewID()}, {h.owner, true, otherAsset}} {
+		if status, body := h.do(c.user, c.admin, http.MethodGet, "/api/v1/assets/"+c.asset.String()+"/relationships/groups", nil); status != http.StatusNotFound || dsLeaksB(body) {
+			t.Errorf("groups of %s = %d, want 404 (body %.200s)", c.asset, status, body)
+		}
+	}
+
+	// Bad input is refused, not ignored.
+	for _, q := range []string{"?type=owned_by_nobody", "?direction=sideways", "?limit=-1", "?offset=x"} {
+		if status, _ := h.do(h.owner, true, http.MethodGet, base+q, nil); status != http.StatusBadRequest {
+			t.Errorf("groups%s = %d, want 400", q, status)
+		}
 	}
 }
