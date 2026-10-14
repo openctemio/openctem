@@ -3,6 +3,7 @@ package coverage
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -185,4 +186,83 @@ type Repository interface {
 	Reconcile(ctx context.Context, tenantID shared.ID, rules []Rule) (added, changed int, err error)
 	// TenantsWithAssets returns the tenants that have active assets.
 	TenantsWithAssets(ctx context.Context) ([]shared.ID, error)
+}
+
+// DueTarget is a due pair with what the planner needs to address it.
+type DueTarget struct {
+	AssetID    shared.ID
+	Name       string
+	Type       asset.AssetType
+	SubType    string
+	FailStreak int
+}
+
+// Target is the scan target of an asset: its name, or "host:port" for an
+// open port (stored as "host:port:proto").
+func (d DueTarget) Target() string {
+	if d.Type == "service" && d.SubType == "open_port" {
+		if i := strings.LastIndex(d.Name, ":"); i > 0 {
+			if p := d.Name[i+1:]; p == "tcp" || p == "udp" || p == "sctp" {
+				return d.Name[:i]
+			}
+		}
+	}
+	return d.Name
+}
+
+// RunState is the state of a run that holds queued pairs.
+type RunState struct {
+	RunID      shared.ID
+	Capability string
+	Status     string
+	Error      string
+	Tool       string
+	// Unfinished are the targets the run did not finish.
+	Unfinished []string
+	QueuedAt   time.Time
+}
+
+// Run outcomes recorded on settled pairs.
+const (
+	OutcomeOK       = "ok"
+	OutcomeNoOutput = "no_output"
+	OutcomeFailed   = "failed"
+	OutcomeStalled  = "stalled"
+)
+
+// Backoff is how long a failed pair waits before it is due again: one hour
+// doubled per consecutive failure, at most the rule's cadence (and never
+// more than a day).
+func Backoff(every time.Duration, failStreak int) time.Duration {
+	d := time.Hour
+	for i := 1; i < failStreak && d < 24*time.Hour; i++ {
+		d *= 2
+	}
+	if every > 0 && d > every {
+		d = every
+	}
+	return min(d, 24*time.Hour)
+}
+
+// Planner is the ledger as the planner needs it. Every method is scoped to
+// one tenant.
+type Planner interface {
+	// DueBatch returns up to limit due or failed pairs of a capability whose
+	// time has come, highest priority and oldest first, on active assets.
+	DueBatch(ctx context.Context, tenantID shared.ID, capability string, limit int) ([]DueTarget, error)
+	// MarkQueued records that the pairs were handed to a run.
+	MarkQueued(ctx context.Context, tenantID shared.ID, capability string, assetIDs []shared.ID, runID shared.ID, tool string) error
+	// MarkBlocked records that the gate refused the pairs, with its code;
+	// they are due again after recheck.
+	MarkBlocked(ctx context.Context, tenantID shared.ID, capability string, reasons map[shared.ID]string, recheck time.Duration) error
+	// QueuedRuns returns the runs that hold queued pairs of the tenant.
+	QueuedRuns(ctx context.Context, tenantID shared.ID) ([]RunState, error)
+	// SettleRun settles the queued pairs of a finished run: success (with
+	// the output check of expects) or failure, then the next due time.
+	SettleRun(ctx context.Context, tenantID shared.ID, run RunState, rule Rule, success bool, unfinished []shared.ID) (int, error)
+	// QueuedTargets returns the queued pairs a run holds.
+	QueuedTargets(ctx context.Context, tenantID, runID shared.ID, capability string) ([]DueTarget, error)
+	// AttemptsSince counts the pairs of the tenant attempted since t (the
+	// daily budget).
+	AttemptsSince(ctx context.Context, tenantID shared.ID, t time.Time) (int, error)
 }

@@ -23,6 +23,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -992,6 +993,13 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 
 	// The asset coverage loop (RFC-093).
 	if cfg.Worker.AssetCoverageEnabled && svc.AssetCoverage != nil {
+		// Planning: due pairs become runs through the scope gate, as the
+		// system; off for a tenant whose scan approval mode is Strict.
+		if svc.Scan != nil && svc.ScanPolicy != nil {
+			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
+				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy},
+				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+		}
 		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
 	}
 
