@@ -159,33 +159,91 @@ Source-asserted resolve writes one audit entry per report:
 `ingest.source_resolved` (enforce) or `ingest.source_resolve_dry_run`
 (dry run), with the command id, the count and up to 200 finding ids.
 
-## Rolling coverage (P2)
+## Rolling coverage and license rotation
 
-The RFC-007 rotation (`scancoverage` planner and scheduler, the
-`scan_coverage_state` cursor, the claim-once across replicas, the target gate)
-now drives the connector; the old runner dispatcher is gone.
+The coverage scheduler (`scancoverage`, claim-once across replicas, the target
+gate) drives the connector from the asset coverage ledger (RFC-093,
+capability `network_va.connector`). Design: research/143 §4; owner decisions
+D1 (rotation off by default, behind an acknowledgement) and D3 (recycling
+opt-in, administrator key only on the connector).
 
 - **Opt-in per connector**: `coverage_enabled: true` with
   `coverage_policy_id` and `coverage_repository_id` (optional
   `coverage_zone_id`, `coverage_max_scan_seconds`), plus `batch_size`,
-  `license_cap` (optional lower cap) and `safety_margin`. Validated on create
-  and update.
-- **License numbers are Tenable.sc's own**: `licensedIPs` / `activeIPs` from
-  `/rest/status`, reported by every sync and scan and kept in
-  `metadata.tenable_sync`. No sync yet → no coverage. Headroom =
-  `min(licensed, license_cap) - active - safety_margin`.
-- **One batch at a time per connector**
-  (`tenablesc.Service.CoverageStatus`): the next batch waits until the
-  previous `connector_scan` finished and its reports were ingested, then takes
-  that scan's reported active count. A full license stops the rotation;
-  OpenCTEM never deletes data from Tenable.sc to free licenses (decision
-  Q4), so space comes back through Tenable.sc's own aging.
-- **Each batch** is one `connector_scan` (`DispatchCoverageBatch`) of the
-  gated targets, pinned to the connector's sensor. One connector per tenant
-  drives coverage; another is logged and skipped. Nessus Pro integrations are
-  not driven (no runner since sensor v0.8.0).
+  `license_cap` (optional lower cap) and `safety_margin`.
+- **Rotation** (`coverage_rotation`): `off` (default), `aging` or `recycle`.
+  Anything but `off` needs `coverage_rotation_acknowledged: true`: an
+  administrator (`integrations:manage`, audited with the integration update)
+  confirms that the customer's Tenable license terms allow rotating more
+  assets than licensed. `coverage_rotation_wait_hours` (1-72, default 12) is
+  how long `aging` waits after a batch.
+  - `off`: no data is removed. Assets the connector assessed before are
+    rescanned without using headroom; new ones only while the license has
+    room; the rest stay due (counted as left out by the license).
+  - `aging`: the rotation repository's lifetimes free the license at
+    Tenable.sc's nightly cleanup (set by its administrator); the next batch
+    is tried after the wait.
+  - `recycle`: each batch scans into the connector's rotation repository
+    (found by name on the connector), and the next batch asks the connector
+    to delete and recreate it first, only after the previous batch's results
+    were ingested. A batch that failed after it launched may have imported
+    results that were never ingested: rotation stalls (`rotation_stalled`)
+    until an administrator resumes it (`POST
+    /api/v1/integrations/{id}/coverage/reactivate`, `integrations:manage`,
+    audited).
+- **Sizing and verification**: every batch carries the license guard
+  (`licence_guard {new_addresses, headroom}`, the connector's wire key): the
+  connector launches only when Tenable.sc's `/rest/status` shows that free
+  capacity, otherwise it refuses with `LICENCE_CAPACITY` before creating
+  anything and the batch's targets stay due (retry after an hour). The
+  platform sizes the batch from the license numbers the previous batch
+  reported after its import (`active_ips`, `active_ips_before`): with
+  rotation, the previous batch's addresses leave the count.
+- **One batch at a time per connector**: the next batch waits until the
+  previous `connector_scan` finished and its reports were ingested.
+- **Per-target settlement**: dispatch leaves the batch's ledger rows `queued`;
+  the batch's outcomes settle them (`SettleConnectorBatch`): assessed →
+  `covered`, no reply → `failed` (`unreachable`), unfinished → `due`, a failed
+  batch → `failed` with the reason. A license refusal leaves them `due`.
+- **Cycle**: the first batch starts cycle 1; after each batch the connector's
+  state holds the eligible and assessed counts of the cycle and an ETA; when
+  every eligible asset was assessed the next cycle starts
+  (`metadata.tenable_sync.cycle*`).
 - **Results** auto-resolve by coverage only for the batch's covered assets,
-  only from a completed, `full` scan (RFC-007's batch invariant).
+  only from a completed, `full` scan.
+
+## Scan now and rescan after a fix
+
+A member scans chosen inventory assets through a connector now: "Scan with
+Tenable.sc" on an IP address or host, and "Rescan with Tenable.sc" on a
+finding the connector reported (its asset), for example after a fix.
+
+- **Route**: `POST /api/v1/integrations/{id}/scans/run` with
+  `{"asset_ids": [...]}` (1-50), `scans:write` and the scans module
+  (`scan.Service.StartConnectorScan`, `tenablesc.Service.OnDemandScanConfig`).
+- **Assets**: read tenant-scoped and through the caller's act scope; an asset
+  of another organization, a deleted one or one outside the caller's data
+  scope answers 404 (one answer for all, so nothing is confirmed). Each asset
+  is scanned by its inventory name.
+- **Scan settings**: the connector's coverage policy, repository and zone
+  (`coverage_policy_id`, `coverage_repository_id`, optional
+  `coverage_zone_id`, `coverage_max_scan_seconds`); without the policy and
+  repository the request is refused (400) and asks to set them. Another
+  organization's integration, or one that is not a connector, is 404.
+- **Run**: one hidden ad-hoc scan per connector, `Tenable.sc on demand:
+  <integration name>` (tag `tenable-on-demand`, reused by every request),
+  run as a manual run by the caller, so the act scope, the active-probe gate,
+  scan windows and scan approval apply exactly as for any scan. The targets
+  go to that run only (the stored scan keeps none): two members scanning at
+  once never trade targets. The connector's own refusals (sensor not running
+  the connector, integration disabled, grant) answer 409 with their codes.
+- **Closing the finding**: nothing closes a finding directly. A completed,
+  `full` rescan closes the findings it no longer reports through coverage
+  auto-resolve, governed by `INGEST_COVERAGE_AUTO_RESOLVE` (default
+  `dry_run`: it only logs and audits what it would close; `enforce` closes
+  them). Its candidate rules apply (same tool, covered assets, findings last
+  seen by a scan run of the same scan profile), so a finding only an import
+  or a `connector_sync` reported is not closed by a rescan.
 
 ## Web
 
@@ -201,8 +259,19 @@ Behind `TENABLE_CONNECTOR_ENABLED` (`web/src/features/integrations/config/featur
   reported, the sync error, and Sync now / Edit / Remove for
   `integrations:manage` only. Older Tenable rows are listed as paused.
 - **Coverage panel**: license used / limit (`Meter`), the current batch, the
-  next batch's headroom computed as the API does, scan freshness; numbers
-  that need a sync say "Not enough data".
+  next batch's headroom computed as the API does (with rotation, the last
+  batch's addresses leave the count), the coverage cycle (number, assessed /
+  eligible, ETA), the rotation mode and when and why the next batch waits,
+  scan freshness; numbers that need a sync say "Not enough data". A stalled
+  rotation shows its reason and Resume rotation (`integrations:manage`, after
+  a confirmation).
+- **Connector dialog**: license rotation (off, aging, recycle, each
+  explained), the acknowledgement it requires, and the aging wait (1-72 h).
+- **Scan now**: "Scan with Tenable.sc" in the asset's Scope and scanning
+  section (IP address and host assets) and "Rescan with Tenable.sc" next to
+  the retest section of a finding whose tool is `tenable_sc`
+  (`TenableScanNowButton`): shown with `scans:write` and `integrations:read`
+  when an enabled connector exists; with several the user picks one.
 - **Scan wizard**: `tenable_sc` is offered as a scanner only in New/Edit scan
   while the flag is on (`scannerOptions(..., allowConnectors)`), with the
   connector, policy, repository and zone pickers (`TenableScanFields`,

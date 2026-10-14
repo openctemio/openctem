@@ -51,6 +51,7 @@ import { FindingWhyItMatters } from './detail/finding-why-it-matters'
 import { FindingFixCard } from './detail/finding-fix-card'
 import { FindingProperties } from './detail/finding-properties'
 import { FindingRetestSection } from './detail/finding-retest'
+import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
 import { FindingActivity } from './finding-activity'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
@@ -241,6 +242,7 @@ export function FindingDetailDrawer({
             <DetailSections>
               <FindingProperties finding={detail} triage={triage} hideTriage />
               <FindingRetestSection finding={{ ...detail, status: triage.status }} />
+              <FindingTenableRescanSection finding={detail} />
 
               {description.text && (
                 <DetailSection

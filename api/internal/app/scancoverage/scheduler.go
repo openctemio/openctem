@@ -41,6 +41,12 @@ type CoverageConfig struct {
 	DefaultBatch int
 	// TemplateUUID optionally overrides the runner's default Nessus template.
 	TemplateUUID string
+	// LicenseAware sizes the batch with SelectLicensedBatch: DefaultBatch
+	// addresses in all, NewHeadroom of them new to the license count (all
+	// of them when AllNew, i.e. rotation). ActiveIPs is not consulted.
+	LicenseAware bool
+	NewHeadroom  int
+	AllNew       bool
 }
 
 // CoverageSource yields the work the scheduler acts on. The live implementation
@@ -181,6 +187,9 @@ func (s *Scheduler) RunOnce(ctx context.Context) (dispatched int, err error) {
 // dispatchTenant runs one tenant's rotation step. It returns ok=true only when a
 // batch was actually dispatched.
 func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (bool, error) {
+	if cfg.LicenseAware {
+		return s.dispatchLicensed(ctx, cfg)
+	}
 	// 1. Determine license headroom for this cycle.
 	headroom := cfg.DefaultBatch
 	if cfg.Policy.Mode == LicenseActiveIPCap {
@@ -317,6 +326,84 @@ func (s *Scheduler) dispatchTenant(ctx context.Context, cfg CoverageConfig) (boo
 		"assets", len(assetIDs),
 		"ips", ips,
 		"headroom", headroom)
+	return true, nil
+}
+
+// dispatchLicensed is dispatchTenant for a license-aware connector: the
+// batch fits the new-address headroom (SelectLicensedBatch), is gated and
+// claimed the same way, and tells the dispatcher how many new addresses it
+// needs (the sensor's license guard verifies them before launching).
+func (s *Scheduler) dispatchLicensed(ctx context.Context, cfg CoverageConfig) (bool, error) {
+	if cfg.DefaultBatch <= 0 {
+		return false, nil
+	}
+	candidates, err := s.source.ListCandidates(ctx, cfg.TenantID, s.limit)
+	if err != nil {
+		return false, fmt.Errorf("list candidates: %w", err)
+	}
+	pick := SelectLicensedBatch(candidates, cfg.DefaultBatch, max(cfg.NewHeadroom, 0), cfg.AllNew)
+	if pick.Blocked > 0 {
+		s.logger.Info("coverage: assets left out by the license headroom",
+			"tenant_id", cfg.TenantID.String(), "blocked", pick.Blocked, "new_headroom", cfg.NewHeadroom)
+	}
+	if len(pick.Selected) == 0 {
+		return false, nil
+	}
+	send, skipped, zoneID, err := s.gateBatch(ctx, cfg, pick.Selected)
+	if err != nil {
+		return false, err
+	}
+	toClaim := append(append(make([]Candidate, 0, len(send)+len(skipped)), send...), skipped...)
+	claimAt := time.Now().UTC().Truncate(time.Microsecond)
+	claimedIDs, err := s.store.ClaimBatch(ctx, cfg.TenantID, toClaim, claimAt)
+	if err != nil {
+		return false, fmt.Errorf("claim batch: %w", err)
+	}
+	won := make(map[string]bool, len(claimedIDs))
+	for _, id := range claimedIDs {
+		won[id] = true
+	}
+	batch := make([]Candidate, 0, len(send))
+	ips, newIPs := 0, 0
+	for _, c := range send {
+		if !won[c.AssetID] {
+			continue
+		}
+		batch = append(batch, c)
+		n := CountIPs(c.Target)
+		ips += n
+		if cfg.AllNew || !c.Assessed {
+			newIPs += n
+		}
+	}
+	if len(batch) == 0 {
+		return false, nil
+	}
+	targets := make([]string, 0, len(batch))
+	assetIDs := make([]string, 0, len(batch))
+	for _, c := range batch {
+		targets = append(targets, c.Target)
+		assetIDs = append(assetIDs, c.AssetID)
+	}
+	cmdID, sessionID, err := s.dispatcher.DispatchTenableScan(ctx, DispatchTenableInput{
+		TenantID: cfg.TenantID, IntegrationID: cfg.IntegrationID, Targets: targets, SensorID: cfg.SensorID,
+		Engine: cfg.Engine, TemplateUUID: cfg.TemplateUUID, ScanZoneID: zoneID, NewAddresses: newIPs,
+	})
+	if err != nil {
+		if rerr := s.store.ReleaseBatch(ctx, cfg.TenantID, batch, claimAt); rerr != nil {
+			s.logger.Warn("failed to release coverage claim after a failed dispatch",
+				"tenant_id", cfg.TenantID.String(), "error", rerr)
+		}
+		return false, fmt.Errorf("dispatch: %w", err)
+	}
+	if err := s.store.MarkDispatched(ctx, DispatchRecord{
+		TenantID: cfg.TenantID, AssetIDs: assetIDs, SessionID: sessionID, CommandID: cmdID, IPCount: ips,
+	}); err != nil {
+		return false, fmt.Errorf("mark dispatched (command %s already in flight): %w", cmdID, err)
+	}
+	s.logger.Info("dispatched license-aware coverage batch",
+		"tenant_id", cfg.TenantID.String(), "command_id", cmdID.String(), "assets", len(assetIDs),
+		"ips", ips, "new_ips", newIPs, "new_headroom", cfg.NewHeadroom, "rotation", cfg.AllNew)
 	return true, nil
 }
 

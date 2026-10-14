@@ -177,6 +177,9 @@ func (c *CoverageScheduler) ListActiveCoverage(ctx context.Context) ([]scancover
 				Engine:        string(scancoverage.EngineTenableSC),
 				Policy:        st.Policy,
 				DefaultBatch:  st.DefaultBatch,
+				LicenseAware:  true,
+				NewHeadroom:   st.NewHeadroom,
+				AllNew:        st.AllNew,
 			})
 		}
 		if len(res.Data) < c.config.IntegrationPageSize || int64(page*c.config.IntegrationPageSize) >= res.Total {

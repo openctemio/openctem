@@ -35,6 +35,8 @@ type ScanConfig struct {
 	RepositoryID   int
 	ZoneID         int
 	MaxScanSeconds int
+	// rotation: a coverage batch into the rotation repository.
+	rotation bool
 }
 
 // ParseScanConfig validates a tenable_sc scan's scanner_config.
@@ -98,6 +100,25 @@ type ScanPayload struct {
 	ScanRunID string `json:"scan_run_id,omitempty"`
 	StepKey   string `json:"step_key,omitempty"`
 	StepRunID string `json:"scan_run_step_id,omitempty"`
+
+	// Coverage batches only (research/143 §4): the license capacity the
+	// sensor checks before launching, and the rotation repository (found by
+	// the sensor by name; recycled first when RecycleRepository).
+	LicenseGuard       *LicenseGuard `json:"licence_guard,omitempty"` //nolint:misspell // the connector's published wire key
+	RotationRepository bool          `json:"rotation_repository,omitempty"`
+	RecycleRepository  bool          `json:"recycle_repository,omitempty"`
+}
+
+// LicenseGuard is the free license capacity a coverage batch needs.
+type LicenseGuard struct {
+	NewAddresses int `json:"new_addresses"`
+	Headroom     int `json:"headroom"`
+}
+
+// batchExtras are the coverage-only parts of a connector_scan.
+type batchExtras struct {
+	guard             *LicenseGuard
+	rotation, recycle bool
 }
 
 // connectorFor loads a tenant's connector integration and validates the scan
@@ -130,7 +151,9 @@ func (s *Service) connectorFor(ctx context.Context, tenantID shared.ID, sc ScanC
 		if len(cat.Policies) > 0 && !cat.hasPolicy(sc.PolicyID) {
 			return nil, cc, invalid(fmt.Sprintf("Tenable.sc policy %d is not allowed by the sensor owner", sc.PolicyID))
 		}
-		if len(cat.ScanRepositories) > 0 && !catalogHas(cat.ScanRepositories, sc.RepositoryID) {
+		// A rotation batch's repository is found by the sensor by name (its
+		// id changes when it is recycled).
+		if !sc.rotation && len(cat.ScanRepositories) > 0 && !catalogHas(cat.ScanRepositories, sc.RepositoryID) {
 			return nil, cc, invalid(fmt.Sprintf("Tenable.sc repository %d is not allowed for scans by the sensor owner", sc.RepositoryID))
 		}
 		if sc.ZoneID != 0 && len(cat.ScanZones) > 0 && !catalogHas(cat.ScanZones, sc.ZoneID) {
@@ -158,10 +181,16 @@ func (s *Service) ValidateScanConfig(ctx context.Context, tenantID shared.ID, cf
 // The caller stores it.
 func (s *Service) NewScanCommand(ctx context.Context, tenantID shared.ID, cfg map[string]any, targets []string,
 	bk map[string]string) (*command.Command, error) {
+	return s.newScanCommand(ctx, tenantID, cfg, targets, bk, batchExtras{})
+}
+
+func (s *Service) newScanCommand(ctx context.Context, tenantID shared.ID, cfg map[string]any, targets []string,
+	bk map[string]string, ex batchExtras) (*command.Command, error) {
 	sc, err := ParseScanConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
+	sc.rotation = ex.rotation
 	if len(targets) == 0 {
 		return nil, invalid("no target to scan")
 	}
@@ -185,6 +214,7 @@ func (s *Service) NewScanCommand(ctx context.Context, tenantID shared.ID, cfg ma
 		MaxScanSeconds: sc.MaxScanSeconds, MinSeverity: cc.MinSeverity,
 		RunID: bk["run_id"], ScanID: bk["scan_id"], ScanRunID: bk["scan_run_id"],
 		StepKey: bk["step_key"], StepRunID: bk["scan_run_step_id"],
+		LicenseGuard: ex.guard, RotationRepository: ex.rotation, RecycleRepository: ex.recycle,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode connector_scan payload: %w", err)

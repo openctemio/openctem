@@ -1914,3 +1914,55 @@ func integrationAuditView(v any) any {
 	}
 	return m
 }
+
+// ResumeCoverageRotation handles POST /api/v1/integrations/{id}/coverage/reactivate
+// @Summary      Resume a stalled license rotation
+// @Description  A Tenable.sc connector whose recycle rotation stalled (a batch failed after it launched, so its results may not be ingested) resumes: the next batch recycles the rotation repository. Audited.
+// @Tags         Integrations
+// @Produce      json
+// @Param        id   path      string  true  "Integration ID"  format(uuid)
+// @Success      200  {object}  IntegrationResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /integrations/{id}/coverage/reactivate [post]
+func (h *IntegrationHandler) ResumeCoverageRotation(w http.ResponseWriter, r *http.Request) {
+	if h.connector == nil {
+		apierror.NotFound("Integration").WriteJSON(w)
+		return
+	}
+	tenantID := middleware.MustGetTenantID(r.Context())
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant").WriteJSON(w)
+		return
+	}
+	iid, err := shared.IDFromString(r.PathValue("id"))
+	if err != nil {
+		apierror.BadRequest("Invalid integration ID").WriteJSON(w)
+		return
+	}
+	actx := auditapp.AuditContext{
+		TenantID:   tenantID,
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  r.Header.Get("X-Request-ID"),
+	}
+	intg, err := h.connector.ResumeRotation(r.Context(), tid, iid, &actx)
+	switch {
+	case errors.Is(err, tenablesc.ErrNotConnector), errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Integration").WriteJSON(w)
+		return
+	case errors.Is(err, tenablesc.ErrRotationNotStalled):
+		apierror.New(http.StatusConflict, apierror.Code("ROTATION_NOT_STALLED"), "The connector's license rotation is not stalled").WriteJSON(w)
+		return
+	case err != nil:
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toIntegrationResponse(intg))
+}

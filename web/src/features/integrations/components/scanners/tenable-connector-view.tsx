@@ -103,7 +103,7 @@ export function TenableConnectorView() {
           <h2 id="tsc-coverage-heading" className="mb-3 text-lg font-semibold">
             {t('tenableSc.view.coverage', 'Coverage')}
           </h2>
-          <TenableCoveragePanel integration={coverage} />
+          <TenableCoveragePanel integration={coverage} onChanged={refresh} />
         </section>
       )}
 

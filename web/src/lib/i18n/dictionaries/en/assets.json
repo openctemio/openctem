@@ -940,5 +940,7 @@
   "assets.actions.copyIp": "Copy IP",
   "assets.actions.copyIps": "Copy IPs",
   "assets.actions.copied": "Copied",
-  "assets.actions.copyName": "Copy name"
+  "assets.actions.copyName": "Copy name",
+  "assets.scanning.tenableScan": "Scan with Tenable.sc",
+  "assets.scanning.tenableScanTitle": "Scan this asset now through the organization's Tenable.sc connector"
 }

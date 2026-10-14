@@ -8,7 +8,9 @@
 > sensor that runs nothing but the connector, so the Tenable keys never share
 > a process or a container with scanners. `integration.TenableConnectorEnabled`
 > is on (Beta) until a real-instance run (§12.6) confirms it. Current build:
-> [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md). Decision D-14 (2026-10-04, final):
+> [architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md)
+> (license rotation and "scan now" of chosen assets, research/143 §4-§5, are
+> described there). Decision D-14 (2026-10-04, final):
 > rebuild the Tenable integration as a **two-way Tenable Security Center
 > (Tenable.sc) connector that runs inside the sensor**. Pull assets,
 > vulnerabilities and plugin metadata; push scan launches and schedules; keep

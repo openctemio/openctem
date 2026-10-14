@@ -43,6 +43,19 @@ export interface TenableSyncState {
   catalog: TenableCatalog | null
   coverageCommandId?: string
   lastCoverageOutcome?: string
+  /** When the next coverage batch may go, and why it waits (API words). */
+  nextBatchAt?: string
+  coverageWait?: string
+  /** Set when a recycle rotation stalled; an administrator resumes it. */
+  rotationStalled?: string
+  /** Addresses the last batch added to the license count. */
+  lastBatchAdded: number
+  /** Coverage cycle: number, progress and ETA (0 / undefined before the first batch). */
+  cycle: number
+  cycleStartedAt?: string
+  cycleAssessed: number
+  cycleEligible: number
+  cycleEta?: string
 }
 
 function obj(v: unknown): Record<string, unknown> | undefined {
@@ -99,6 +112,15 @@ export function readTenableSync(integration: Integration | undefined): TenableSy
       : null,
     coverageCommandId: str(s.coverage_command_id),
     lastCoverageOutcome: str(s.last_coverage_outcome),
+    nextBatchAt: str(s.next_batch_at),
+    coverageWait: str(s.coverage_wait),
+    rotationStalled: str(s.rotation_stalled),
+    lastBatchAdded: num(s.last_batch_added),
+    cycle: num(s.cycle),
+    cycleStartedAt: str(s.cycle_started_at),
+    cycleAssessed: num(s.cycle_assessed),
+    cycleEligible: num(s.cycle_eligible),
+    cycleEta: str(s.cycle_eta),
   }
 }
 
@@ -111,6 +133,26 @@ export function isTenableSCConnector(integration: Integration | undefined): bool
   if (!integration || integration.provider !== 'tenable') return false
   const c = config(integration)
   return c.engine === 'tenable_sc' && (c.execution_mode ?? 'sensor') === 'sensor'
+}
+
+/**
+ * How license capacity comes back between coverage batches (api research/143
+ * §4): off (cover what the license holds), aging (Tenable.sc's nightly
+ * cleanup frees it) or recycle (the connector recreates its rotation
+ * repository). Anything but off needs the administrator's acknowledgement.
+ */
+export type CoverageRotation = 'off' | 'aging' | 'recycle'
+
+export const COVERAGE_ROTATIONS: CoverageRotation[] = ['off', 'aging', 'recycle']
+
+/** The aging wait the API uses when none is set, and its bounds. */
+export const DEFAULT_ROTATION_WAIT_HOURS = 12
+export const MIN_ROTATION_WAIT_HOURS = 1
+export const MAX_ROTATION_WAIT_HOURS = 72
+
+function rotationOf(v: unknown): CoverageRotation {
+  const r = typeof v === 'string' ? v.trim().toLowerCase() : ''
+  return r === 'aging' || r === 'recycle' ? r : 'off'
 }
 
 export interface ConnectorSettings {
@@ -126,6 +168,9 @@ export interface ConnectorSettings {
   batchSize: number
   licenseCap: number
   safetyMargin: number
+  rotation: CoverageRotation
+  rotationAcknowledged: boolean
+  rotationWaitHours: number
 }
 
 export const DEFAULT_CONNECTOR_SETTINGS: ConnectorSettings = {
@@ -140,6 +185,9 @@ export const DEFAULT_CONNECTOR_SETTINGS: ConnectorSettings = {
   batchSize: 0,
   licenseCap: 0,
   safetyMargin: 0,
+  rotation: 'off',
+  rotationAcknowledged: false,
+  rotationWaitHours: DEFAULT_ROTATION_WAIT_HOURS,
 }
 
 /** The connector settings stored in the integration's config. */
@@ -158,6 +206,10 @@ export function readConnectorSettings(integration: Integration | undefined): Con
     batchSize: n('batch_size'),
     licenseCap: n('license_cap'),
     safetyMargin: n('safety_margin'),
+    rotation: rotationOf(c.coverage_rotation),
+    rotationAcknowledged:
+      c.coverage_rotation_acknowledged === true || c.coverage_rotation_acknowledged === 'true',
+    rotationWaitHours: n('coverage_rotation_wait_hours', DEFAULT_ROTATION_WAIT_HOURS),
   }
 }
 
@@ -186,6 +238,17 @@ export function connectorSettingsError(s: ConnectorSettings): TenableMessage | n
     return msg('fullSyncDays', 'Full sync every 1 to 90 days')
   if (s.coverageEnabled && (s.coveragePolicyId <= 0 || s.coverageRepositoryId <= 0))
     return msg('coverageNeedsPolicy', 'Coverage needs a scan policy and a scan repository')
+  if (s.rotation !== 'off' && !s.rotationAcknowledged)
+    return msg(
+      'rotationNeedsAck',
+      "License rotation needs the confirmation that this organization's Tenable license terms allow it"
+    )
+  if (
+    !Number.isInteger(s.rotationWaitHours) ||
+    s.rotationWaitHours < MIN_ROTATION_WAIT_HOURS ||
+    s.rotationWaitHours > MAX_ROTATION_WAIT_HOURS
+  )
+    return msg('rotationWaitHours', 'Wait after a batch: 1 to 72 hours')
   return null
 }
 
@@ -208,6 +271,11 @@ export function connectorConfig(
     full_sync_days: s.fullSyncDays,
     assets_in_scope: s.assetsInScope,
     coverage_enabled: s.coverageEnabled,
+    coverage_rotation: s.rotation,
+    // The acknowledgement is kept only while rotation is on: turning it off
+    // and on again asks for the confirmation again.
+    coverage_rotation_acknowledged: s.rotation !== 'off' && s.rotationAcknowledged,
+    coverage_rotation_wait_hours: s.rotationWaitHours,
   }
   const optional: Array<[string, number]> = [
     ['coverage_policy_id', s.coveragePolicyId],
@@ -257,6 +325,7 @@ export interface CoverageNumbers {
   headroom: number | null
   batchOpen: boolean
   lastBatchOutcome?: string
+  rotation: CoverageRotation
 }
 
 /** The coverage panel's numbers, computed the way the API sizes a batch. */
@@ -267,8 +336,16 @@ export function coverageNumbers(integration: Integration | undefined): CoverageN
   const limit =
     licensed === null ? null : s.licenseCap > 0 ? Math.min(licensed, s.licenseCap) : licensed
   const active = licensed === null ? null : sync.activeIPs
+  // With rotation the last batch's addresses leave the count before the
+  // next batch (aging cleanup or recycling), as the API sizes it.
+  const base =
+    active === null
+      ? null
+      : s.rotation === 'off'
+        ? active
+        : Math.max(0, active - sync.lastBatchAdded)
   const headroom =
-    limit === null || active === null ? null : Math.max(0, limit - active - s.safetyMargin)
+    limit === null || base === null ? null : Math.max(0, limit - base - s.safetyMargin)
   return {
     enabled: s.coverageEnabled,
     licensed,
@@ -278,6 +355,46 @@ export function coverageNumbers(integration: Integration | undefined): CoverageN
     headroom,
     batchOpen: Boolean(sync.coverageCommandId),
     lastBatchOutcome: sync.lastCoverageOutcome,
+    rotation: s.rotation,
+  }
+}
+
+export interface RotationProgress {
+  rotation: CoverageRotation
+  /** 0 before the first batch. */
+  cycle: number
+  assessed: number
+  eligible: number
+  /** 0-100, null while nothing is eligible yet. */
+  percent: number | null
+  eta?: string
+  nextBatchAt?: string
+  /** Why the next batch waits (the API's words), only while it does. */
+  waitReason?: string
+  stalled?: string
+}
+
+/** The coverage cycle of a connector, for the coverage panel. */
+export function rotationProgress(
+  integration: Integration | undefined,
+  now: Date = new Date()
+): RotationProgress {
+  const s = readConnectorSettings(integration)
+  const sync = readTenableSync(integration)
+  const eligible = sync.cycleEligible
+  const assessed = Math.min(sync.cycleAssessed, eligible || sync.cycleAssessed)
+  const waiting =
+    sync.nextBatchAt !== undefined && new Date(sync.nextBatchAt).getTime() > now.getTime()
+  return {
+    rotation: s.rotation,
+    cycle: sync.cycle,
+    assessed,
+    eligible,
+    percent: eligible > 0 ? Math.min(100, Math.round((assessed / eligible) * 100)) : null,
+    eta: sync.cycleEta,
+    nextBatchAt: waiting ? sync.nextBatchAt : undefined,
+    waitReason: waiting ? sync.coverageWait : undefined,
+    stalled: sync.rotationStalled,
   }
 }
 
@@ -297,6 +414,23 @@ export function readTenableScanConfig(cfg: Record<string, unknown> | undefined):
     repositoryId: num(c.repository_id),
     zoneId: num(c.zone_id),
   }
+}
+
+/** The connector integrations among a tenant's integrations. */
+export function tenableSCConnectors(integrations: Integration[] | undefined): Integration[] {
+  return (integrations ?? []).filter(isTenableSCConnector)
+}
+
+/** Asset types a connector scan targets (scanned by their address or host name). */
+export const TENABLE_SCANNABLE_ASSET_TYPES = ['ip_address', 'host'] as const
+
+export function isTenableScannableAssetType(type: string | undefined): boolean {
+  return (TENABLE_SCANNABLE_ASSET_TYPES as readonly string[]).includes(type ?? '')
+}
+
+/** A finding the connector reported (its tool or source is tenable_sc). */
+export function isTenableSCFinding(f: { toolName?: string; source?: string } | undefined): boolean {
+  return f?.toolName === TENABLE_SC_TOOL || f?.source === TENABLE_SC_TOOL
 }
 
 export function tenableScanConfigError(c: TenableScanConfig): TenableMessage | null {
