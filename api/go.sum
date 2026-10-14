@@ -141,10 +141,8 @@ github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
-github.com/openctemio/ctis v1.6.1-0.20261014040439-2faa92ad45f4 h1:omndgd2H2/R+/FrwvzLwGbQ9iZpcL1B9+OvmVRFTh6s=
-github.com/openctemio/ctis v1.6.1-0.20261014040439-2faa92ad45f4/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
-github.com/openctemio/ctis v1.6.1-0.20261014111010-59e1917b441a h1:qBtDggagioLiw7kzAHG2lqhHdnnLA0x5EiNPx8UI1YU=
-github.com/openctemio/ctis v1.6.1-0.20261014111010-59e1917b441a/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
+github.com/openctemio/ctis v1.6.1-0.20261014111942-0af957f7b489 h1:4GK9TBk5m7Q89QMI4mUa/KaepZKPqWb8UARrurtAh20=
+github.com/openctemio/ctis v1.6.1-0.20261014111942-0af957f7b489/go.mod h1:2JPNuKKM8Se951SQ2dqNSzf+0wyFJe3tEm1BGd2zbDI=
 github.com/openctemio/sdk-go/pkg/transfer v0.1.0 h1:3BLtG8MhACFzsF/lKsGnJAci05/dnO2xFS049V4p6fI=
 github.com/openctemio/sdk-go/pkg/transfer v0.1.0/go.mod h1:UTqxEYZclG93YfHam6d0PGMCqd9+9OCz0uhla4EQi04=
 github.com/pires/go-proxyproto v0.15.0 h1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=

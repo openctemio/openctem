@@ -84,5 +84,7 @@
   "common.cvss.value.S.C": "Thay đổi",
   "common.cvss.value.CIA.H": "Cao",
   "common.cvss.value.CIA.L": "Thấp",
-  "common.cvss.value.CIA.N": "Không"
+  "common.cvss.value.CIA.N": "Không",
+  "common.failedToLoad": "Không tải được {title}",
+  "common.unexpectedError": "Đã xảy ra lỗi không mong muốn"
 }
