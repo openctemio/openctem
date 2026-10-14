@@ -36,8 +36,8 @@ and your DNS are not asked too often.
 ## Run now
 
 **Run now** starts Certificate Transparency discovery and then the DNS
-checks (each only if it is on). Results appear within minutes, in the review
-queue, on Exposures and in this card. You can run again 15 minutes later.
+checks (each only if it is on). Results appear within minutes, in the inventory
+(decisions on **Attack surface > Suggestions**), on Exposures and in this card. You can run again 15 minutes later.
 
 Adding a seed with discovery on starts the same run for you automatically.
 

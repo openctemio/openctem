@@ -12,6 +12,7 @@ The app asks for the least it needs:
 | Checks | Read and write | post the gate's check run on the commit |
 | Pull requests | Read and write | the summary comment and inline review comments; find the pull request of a commit |
 | Metadata | Read | required by GitHub for every app |
+| Members (organization) | Read (required) | check, when an installation is bound, that the person binding it owns the GitHub organization; without it no organization installation can be bound |
 | Contents | Read (optional) | read a merge commit's parents, so the check still lands on a pull request whose base moved before it was posted; a token with this permission is minted only for that read, for one repository. Without it such a check is skipped (the next run posts it) |
 
 It reads no secrets and no workflows, and no code unless Contents is granted. Installation tokens live at
