@@ -6,5 +6,5 @@
   asset-less exposure is in nobody's asset scope (owner decision D11), and the
   fingerprint upsert let a restricted member overwrite an existing asset-less
   exposure's severity, title and details, e.g. downgrade a critical one
-  (research 21b H1, RFC-050 W1). Administrators, full-data roles, sensors and
+  (RFC-050 W1). Administrators, full-data roles, sensors and
   internal jobs are unchanged; out-of-scope asset ids were already refused.
