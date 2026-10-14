@@ -87,6 +87,11 @@ type CITrustConfigResponse struct {
 	// configuration pinned at their first admitted exchange; a token naming
 	// the same organization with another id is refused.
 	OwnerPins []cirun.OwnerPin `json:"owner_pins,omitempty"`
+	// LegacyAudience is the audience the configuration had before audiences
+	// had to name the organization. Until LegacyAudienceUntil, pipelines
+	// that existed then may still request it until they use Audience once.
+	LegacyAudience      string     `json:"legacy_audience,omitempty"`
+	LegacyAudienceUntil *time.Time `json:"legacy_audience_until,omitempty"`
 }
 
 // ciOwnerPinLister is the optional part of the service that lists pins.
@@ -97,7 +102,8 @@ type ciOwnerPinLister interface {
 func toCITrustResponse(c *cirun.TrustConfig) CITrustConfigResponse {
 	return CITrustConfigResponse{ID: c.ID.String(), Name: c.Name, Provider: string(c.Provider), Issuer: c.Issuer,
 		Audience: c.Audience, DefaultBranch: c.DefaultBranch, Rules: c.Rules, Enabled: c.Enabled,
-		LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}
+		LastUsedAt: c.LastUsedAt, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		LegacyAudience: c.LegacyAudience, LegacyAudienceUntil: c.LegacyAudienceUntil}
 }
 
 // CITrustConfigRequest creates or changes a trust configuration.
