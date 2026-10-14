@@ -15,7 +15,7 @@ import {
   SCOPE_STATUS_VALUES,
   type InventoryFilters,
 } from './inventory-url'
-import { ASSET_TYPE_LABELS, ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
+import { ASSET_SCOPE_LABELS, EXPOSURE_LEVEL_LABELS } from '../types/asset.types'
 import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 
 /** Data classification levels (mirrors the api CHECK constraint on assets). */
@@ -177,15 +177,6 @@ export function buildFacetGroups(
       id: 'kind',
       label: 'Kind',
       facets: [
-        {
-          kind: 'multi',
-          filterKey: 'types',
-          label: 'Asset type',
-          source: 'dynamic',
-          labelFor: (v) => ASSET_TYPE_LABELS[v as keyof typeof ASSET_TYPE_LABELS] ?? v,
-          counts: (s) => s.byType,
-          searchable: true,
-        },
         {
           kind: 'multi',
           filterKey: 'criticalities',
