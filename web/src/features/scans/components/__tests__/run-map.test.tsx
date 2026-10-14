@@ -275,6 +275,41 @@ describe('RunMap', () => {
     expect(within(stepButton('HTTP probe')).getByText('command exhausted')).toBeInTheDocument()
   })
 
+  it("says on the step how many targets the sensor's target guard refused", async () => {
+    const run: RunMapData = {
+      run_id: 'r1',
+      status: 'completed',
+      nodes: [
+        {
+          step_key: 'probe',
+          name: 'HTTP probe',
+          tool: 'httpx',
+          depends_on: [],
+          state: 'succeeded',
+          findings: 0,
+          chunks: { total: 1, queued: 0, running: 0, completed: 1, failed: 0 },
+          outputs: { total: 3, by_type: {} },
+        },
+      ],
+      edges: [],
+    }
+    get.mockResolvedValue(run)
+    render(
+      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+        <RunMap
+          runId="r1"
+          tasks={
+            [{ id: 'p1', step_key: 'probe', guard_refused_targets: 2 }] as unknown as RunTask[]
+          }
+        />
+      </SWRConfig>
+    )
+    await runFlow()
+    const guarded = "HTTP probe: 2 targets refused by the sensor's target guard (not run)."
+    expect(within(screen.getByRole('status')).getByText(guarded)).toBeInTheDocument()
+    expect(within(stepButton('HTTP probe')).getByText(guarded)).toBeInTheDocument()
+  })
+
   describe('with steps side by side', () => {
     const fan: RunMapData = {
       run_id: 'r1',

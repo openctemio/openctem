@@ -676,6 +676,8 @@
   "scans.map.noOutputSteps": "Các bước không có kết quả",
   "scans.map.egressRefused": "{name} không kết nối được tới {count} mục tiêu (bị chặn bởi giới hạn mạng của sensor).",
   "scans.map.egressRefusedOne": "{name} không kết nối được tới 1 mục tiêu (bị chặn bởi giới hạn mạng của sensor).",
+  "scans.map.guardRefused": "{name}: {count} mục tiêu bị bộ kiểm tra mục tiêu của sensor từ chối (không chạy).",
+  "scans.map.guardRefusedOne": "{name}: 1 mục tiêu bị bộ kiểm tra mục tiêu của sensor từ chối (không chạy).",
   "scans.flow.label": "Luồng xử lý của lượt chạy",
   "scans.flow.view": "Chế độ xem",
   "scans.flow.viewGraph": "Đồ thị",
