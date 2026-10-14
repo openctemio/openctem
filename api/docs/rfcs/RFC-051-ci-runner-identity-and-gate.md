@@ -174,6 +174,21 @@ its side. The version is self-reported: this keeps known-bad releases out, it
 does not authenticate the binary. A client that reports no sensor version is
 admitted and its pipeline shows the version as unknown.
 
+The 401 says nothing, so the console says it instead. `GET
+/api/v1/ci/trust-refusals` (`scans:ci:write`) lists the tenant's latest
+refused exchanges from the audit log: repository, provider, ref, event, time
+and rule codes, newest first, at most 50. Only verified tokens are ever
+recorded. The CI/CD page shows them under Trust as "Recent refused
+pipelines", each code with its reason and fix. "Connect a pipeline" on the
+CI/CD page walks an administrator through four steps:
+1. pick the CI system;
+2. name the organization (GitHub App installations are offered);
+3. create the trust and copy the snippet;
+4. wait for the first run.
+
+While waiting, it polls the runs and the refusals every 10 seconds. A refused
+pipeline shows the rule and the fix at once.
+
 `run_id` asks for a fresh token for a run the pipeline already holds (a long
 job). It is honored only for the same tenant, repository, commit, CI run id,
 run attempt and job (when the run recorded one), before the run was evaluated
