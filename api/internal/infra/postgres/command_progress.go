@@ -118,6 +118,7 @@ func (r *CommandRepository) RequeueStalledCommands(ctx context.Context) ([]comma
 			  AND (
 			    NOW() > c.started_at + make_interval(secs => 2 * (`+task+`) + $3)
 			    OR (c.progress_done < c.progress_total
+			        AND c.progress_done > 0
 			        AND NOW() > COALESCE(c.last_progress_at, c.started_at) + make_interval(secs => `+stall+`))
 			  )
 			FOR UPDATE OF c SKIP LOCKED
