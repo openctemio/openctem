@@ -189,6 +189,9 @@ func (s *Service) NewScanCommand(ctx context.Context, tenantID shared.ID, cfg ma
 	if err != nil {
 		return nil, fmt.Errorf("encode connector_scan payload: %w", err)
 	}
+	if err := s.admitGrant(ctx, tenantID, sn.ID, command.CommandTypeConnectorScan, payload); err != nil {
+		return nil, err
+	}
 	cmd, err := command.NewCommand(tenantID, command.CommandTypeConnectorScan, command.CommandPriorityNormal, payload)
 	if err != nil {
 		return nil, err

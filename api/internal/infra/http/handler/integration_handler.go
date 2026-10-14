@@ -1076,7 +1076,7 @@ func (h *IntegrationHandler) syncConnector(w http.ResponseWriter, r *http.Reques
 	switch {
 	case errors.Is(err, tenablesc.ErrNotConnector):
 		return false
-	case errors.Is(err, tenablesc.ErrSensorUnavailable), errors.Is(err, tenablesc.ErrDisabled):
+	case errors.Is(err, tenablesc.ErrSensorUnavailable), errors.Is(err, tenablesc.ErrDisabled), tenablesc.IsGrantRefusal(err):
 		var de *shared.DomainError
 		_ = errors.As(err, &de)
 		apierror.New(http.StatusConflict, apierror.Code(de.Code), de.Message).WriteJSON(w)
