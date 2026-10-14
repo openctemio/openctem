@@ -49,6 +49,10 @@ type RelationshipRepository interface {
 	// graph in-memory. The result is intentionally minimal (just IDs + type)
 	// so the query is fast even for large tenants.
 	ListAllEdges(ctx context.Context, tenantID shared.ID) ([]RelationshipEdge, error)
+
+	// RelatedAssets returns the edges of one asset grouped by type and
+	// direction, with the asset at the other end of each edge.
+	RelatedAssets(ctx context.Context, tenantID, assetID shared.ID, q RelatedAssetsQuery) (*RelatedAssets, error)
 }
 
 // RelationshipEdge is a lightweight representation of a relationship used
