@@ -168,6 +168,7 @@ export interface ScanProfileListFilters {
 
 // Available tools for scan profiles
 export const SCAN_PROFILE_TOOLS = [
+  'opengrep',
   'semgrep',
   'trivy',
   'nuclei',
@@ -182,6 +183,7 @@ export type ScanProfileTool = (typeof SCAN_PROFILE_TOOLS)[number]
 
 // Tool display names
 export const TOOL_DISPLAY_NAMES: Record<ScanProfileTool, string> = {
+  opengrep: 'Opengrep',
   semgrep: 'Semgrep',
   trivy: 'Trivy',
   nuclei: 'Nuclei',
@@ -190,18 +192,6 @@ export const TOOL_DISPLAY_NAMES: Record<ScanProfileTool, string> = {
   tfsec: 'Tfsec',
   grype: 'Grype',
   syft: 'Syft',
-}
-
-// Tool descriptions
-export const TOOL_DESCRIPTIONS: Record<ScanProfileTool, string> = {
-  semgrep: 'Static application security testing (SAST)',
-  trivy: 'Container and dependency vulnerability scanning',
-  nuclei: 'Web vulnerability scanner',
-  betterleaks: 'Secret detection in code, git history and archives (replaces Gitleaks)',
-  checkov: 'Infrastructure as code security scanner',
-  tfsec: 'Terraform security scanner',
-  grype: 'Software composition analysis (SCA)',
-  syft: 'SBOM generation and analysis',
 }
 
 // Intensity display names
