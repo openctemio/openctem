@@ -458,6 +458,7 @@ export const REFUSAL_CODES = [
   'pipeline_rate',
   'run_mismatch',
   'aggregate_no_run_id',
+  'legacy_audience',
 ] as const
 
 export type RefusalCode = (typeof REFUSAL_CODES)[number]

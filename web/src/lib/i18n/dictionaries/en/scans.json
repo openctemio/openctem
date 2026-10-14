@@ -1784,5 +1784,8 @@
   "scans.toolOption.checkov": "Infrastructure as code security scanner",
   "scans.toolOption.tfsec": "Terraform security scanner",
   "scans.toolOption.grype": "Software composition analysis (SCA)",
-  "scans.toolOption.syft": "SBOM generation and analysis"
+  "scans.toolOption.syft": "SBOM generation and analysis",
+  "scans.ci.refusal.legacy_audience": "The pipeline used the trust configuration's old audience, which it may no longer use.",
+  "scans.ci.refusal.legacy_audienceFix": "Update the pipeline to the current snippet: its audience names the organization (openctem:tenant:<id>).",
+  "scans.ci.trust.legacyAudience": "Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet."
 }

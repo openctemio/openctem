@@ -117,6 +117,20 @@ type TrustConfig struct {
 	LastUsedAt    *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	// LegacyAudience is the audience a GitHub or GitLab configuration had
+	// before audiences had to name the tenant (migration
+	// ci_tenant_bound_audience). Until LegacyAudienceUntil, a pipeline that
+	// existed then and has not yet exchanged a token with Audience may still
+	// use it; its first exchange with Audience ends that for it.
+	LegacyAudience      string
+	LegacyAudienceUntil *time.Time
+}
+
+// LegacyAccepted reports whether a token with the audience may still be
+// admitted as the configuration's legacy audience at the time.
+func (c *TrustConfig) LegacyAccepted(audience string, now time.Time) bool {
+	return c.LegacyAudience != "" && audience == c.LegacyAudience && audience != c.Audience &&
+		c.LegacyAudienceUntil != nil && now.Before(*c.LegacyAudienceUntil)
 }
 
 // DefaultAudience is the audience a new trust configuration expects when the
