@@ -674,9 +674,12 @@ export function SensorsSection({
       ? [
           {
             value: 'runner' as const,
-            label: 'Runner',
+            label: t('scans.ci.fleet.runner', 'Runner'),
             count: runnerCount,
-            description: 'CI/CD pipelines: the sensor binary runs inside a CI job',
+            description: t(
+              'scans.ci.fleet.runnerDescription',
+              'CI/CD pipelines that run the OpenCTEM CI scan'
+            ),
           },
         ]
       : []),
@@ -831,7 +834,7 @@ export function SensorsSection({
               <Button asChild variant="outline" size="sm">
                 <Link href="/ci-cd?tab=setup">
                   <Workflow className="h-4 w-4" />
-                  Connect a CI pipeline
+                  {t('scans.ci.setup.open', 'Connect a pipeline')}
                 </Link>
               </Button>
             )}

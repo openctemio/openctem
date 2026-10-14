@@ -9,6 +9,7 @@ package ingest
 // (SARIF primaryLocationLineHash, Semgrep matchBasedId/v1).
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 
@@ -100,11 +101,7 @@ func identityV2(assetID shared.ID, f *ctis.Finding, secretHMAC string, occurrenc
 		}
 		return vulnerability.NetworkIdentity(asset, cve, f.RuleID, port, proto)
 	case vulnerability.IdentityKindDAST:
-		rule := f.RuleID
-		if f.Vulnerability != nil && strings.TrimSpace(f.Vulnerability.CVEID) != "" {
-			rule = vulnerability.CanonicalVulnID(f.Vulnerability.CVEID) // a CVE template is the CVE
-		}
-		return vulnerability.DASTIdentity(asset, rule, dastMethod(f), locationPath(f), dastParams(f))
+		return vulnerability.DASTIdentity(asset, dastRule(f), dastMethod(f), dastKeyURL(f), dastParams(f))
 	case vulnerability.IdentityKindSAST:
 		return vulnerability.SASTIdentity(sastInput(asset, f, occurrence))
 	}
@@ -135,6 +132,18 @@ func sastInput(asset string, f *ctis.Finding, occurrence int) vulnerability.SAST
 		}
 	}
 	return in
+}
+
+// formerKey is the version-2 key a finding may still be stored under from an
+// earlier form of its recipe, "" when none.
+func formerKey(assetID shared.ID, f *ctis.Finding, identity vulnerability.IdentityKey) string {
+	switch identityKind(f) {
+	case vulnerability.IdentityKindSAST:
+		return sastFormerLineKey(assetID, f, identity)
+	case vulnerability.IdentityKindDAST:
+		return dastFormerURLKey(assetID, f)
+	}
+	return ""
 }
 
 // sastFormerLineKey is the line-anchored key of a SAST finding whose key is
@@ -198,11 +207,25 @@ func startLine(f *ctis.Finding) int {
 	return f.Location.StartLine
 }
 
-// dastMethod is the HTTP method of a DAST result: a "method" property, else
-// the first word of the recorded request.
+// dastRule is the rule a DAST key names: the CVE of a CVE template, else the
+// rule id.
+func dastRule(f *ctis.Finding) string {
+	if f.Vulnerability != nil && strings.TrimSpace(f.Vulnerability.CVEID) != "" {
+		return vulnerability.CanonicalVulnID(f.Vulnerability.CVEID) // a CVE template is the CVE
+	}
+	return f.RuleID
+}
+
+// dastMethod is the HTTP method of a DAST result, from wherever the producer
+// put it: a "method" property, the CTIS web location, else the first word of
+// a recorded request. "" when none says; DASTIdentity reads that as GET, so a
+// producer that stops reporting the method never forks a finding.
 func dastMethod(f *ctis.Finding) string {
 	if m, ok := f.Properties["method"].(string); ok && strings.TrimSpace(m) != "" {
 		return m
+	}
+	if f.Web != nil && strings.TrimSpace(f.Web.Method) != "" {
+		return f.Web.Method
 	}
 	if req, ok := f.Properties["request"].(string); ok {
 		if i := strings.IndexAny(req, " \t"); i > 0 && i <= 10 {
@@ -216,7 +239,8 @@ func dastMethod(f *ctis.Finding) string {
 }
 
 // dastParams are the parameter names a DAST result names besides the query
-// string (a fuzzed body or header parameter).
+// string (a fuzzed body or header parameter): a property, or the CTIS web
+// location's parameter.
 func dastParams(f *ctis.Finding) []string {
 	var out []string
 	for _, key := range []string{"parameter", "param"} {
@@ -224,7 +248,74 @@ func dastParams(f *ctis.Finding) []string {
 			out = append(out, p)
 		}
 	}
+	if f.Web != nil && f.Web.Parameter != nil && strings.TrimSpace(f.Web.Parameter.Name) != "" {
+		out = append(out, f.Web.Parameter.Name)
+	}
 	return out
+}
+
+// sourceExtraTarget is the producer's scan input (CTIS source_extra.target).
+const sourceExtraTarget = "target"
+
+// dastKeyURL is the URL a DAST key is built on. A result whose path the
+// template requested itself (a fixed-path detection: the matched URL is not
+// the target it was run against, and no parameter was fuzzed) is one issue on
+// that target, however many of its paths matched: it is keyed on the target.
+// Any other result (an endpoint the scan was given, a fuzzed parameter) is
+// keyed on the matched URL.
+func dastKeyURL(f *ctis.Finding) string {
+	matched := locationPath(f)
+	if base, ok := dastTemplateBase(f, matched); ok {
+		return base
+	}
+	return matched
+}
+
+// dastTemplateBase returns the target URL when the matched path came from the
+// template, not from the target.
+func dastTemplateBase(f *ctis.Finding, matched string) (string, bool) {
+	if len(dastParams(f)) > 0 {
+		return "", false
+	}
+	target := strings.TrimSpace(f.SourceExtra[sourceExtraTarget])
+	if target == "" || matched == "" {
+		return "", false
+	}
+	mu, err := url.Parse(matched)
+	if err != nil || mu.Host == "" {
+		return "", false
+	}
+	if !strings.Contains(target, "://") {
+		target = mu.Scheme + "://" + target
+	}
+	tu, err := url.Parse(target)
+	if err != nil || tu.Host == "" || !strings.EqualFold(tu.Hostname(), mu.Hostname()) {
+		return "", false
+	}
+	if tu.Port() == "" && mu.Port() != "" {
+		tu.Host = tu.Host + ":" + mu.Port()
+	}
+	tu.Scheme = mu.Scheme
+	tp, mp := strings.TrimSuffix(tu.EscapedPath(), "/"), strings.TrimSuffix(mu.EscapedPath(), "/")
+	if tp == mp && mu.RawQuery == "" {
+		return "", false // the matched URL is the target: an endpoint, keyed as it is
+	}
+	tu.RawQuery, tu.Fragment, tu.User = "", "", nil
+	return tu.String(), true
+}
+
+// dastFormerURLKey is the key a template-path DAST result had when it was
+// keyed on its matched URL, "" when it is keyed so now.
+func dastFormerURLKey(assetID shared.ID, f *ctis.Finding) string {
+	matched := locationPath(f)
+	if _, ok := dastTemplateBase(f, matched); !ok {
+		return ""
+	}
+	k, ok := vulnerability.DASTIdentity(assetID.String(), dastRule(f), dastMethod(f), matched, dastParams(f))
+	if !ok {
+		return ""
+	}
+	return k.Fingerprint()
 }
 
 // splitMultiCVENetworkFinding returns one finding per CVE for a network VA

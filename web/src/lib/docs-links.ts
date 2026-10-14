@@ -17,6 +17,7 @@ export const DOCS_URL = 'https://docs.openctem.io'
 export const DOCS = {
   ci: {
     guide: 'https://docs.openctem.io/scanning/ci-integration/',
+    githubApp: 'https://docs.openctem.io/scanning/ci-integration/#github-app-permissions',
   },
   scanning: {
     scannerContent: 'https://docs.openctem.io/scanning/tools/#scanner-content',

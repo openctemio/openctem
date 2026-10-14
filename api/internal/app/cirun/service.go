@@ -99,8 +99,10 @@ type Config struct {
 	// PipelineCaps bound the pipelines per tenant and per trust
 	// configuration (zero values take the defaults).
 	PipelineCaps cirun.PipelineCaps
-	// Versions is the sensor release channel a runner's version is judged
-	// against (SENSOR_LATEST_VERSION, SENSOR_MIN_VERSION).
+	// Versions is the CI runner release line a runner's version is judged
+	// against (CI_RUNNER_LATEST_VERSION, CI_RUNNER_MIN_VERSION). CI runners
+	// (openctemio/ci) are versioned apart from sensors, so the sensor's
+	// release settings never apply to them.
 	Versions cirun.StatusPolicy
 }
 
@@ -133,6 +135,8 @@ type Service struct {
 	lastPurge time.Time
 	images    ImageLinker
 	stepUp    shared.RecentAuthGate
+	rules     SuppressionRules
+	modules   ModuleGuard
 }
 
 // Deps are the service's collaborators.
@@ -286,14 +290,8 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{refusal})
 		return nil, ErrExchangeRefused
 	}
-	// A runner below the minimum supported version is refused. The version
-	// is the one the runner reports (User-Agent): this keeps known-bad
-	// releases out, it does not authenticate the binary. A client that
-	// reports no sensor version is admitted and shown as unknown.
-	if v := s.runnerVersion(in.UserAgent); s.cfg.Versions.MinVersion != "" &&
-		sensor.ClassifyVersion(v, "", s.cfg.Versions.MinVersion) == sensor.VersionUnsupported {
-		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{{Code: "runner_outdated",
-			Detail: fmt.Sprintf("runner %s is older than the minimum supported version %s", v, s.cfg.Versions.MinVersion)}})
+	if r := runnerRefusal(s.runnerVersion(in.UserAgent), s.cfg.Versions); r != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{r})
 		return nil, ErrRunnerOutdated
 	}
 	fresh, err := s.repo.ClaimJTI(ctx, tok.Issuer, tok.JTI, tok.ExpiresAt.Add(time.Hour))
@@ -585,6 +583,18 @@ func (s *Service) joinAggregate(ctx context.Context, run *cirun.Run, token strin
 
 // runnerVersion is the sensor version the runner's User-Agent reports
 // (normalized; "" when it reports none).
+// runnerRefusal refuses a runner below the minimum CI runner release. The
+// version is the one the runner reports (User-Agent): this keeps known-bad
+// releases out, it does not authenticate the binary. A client that reports
+// no version is admitted and shown as unknown.
+func runnerRefusal(version string, pol cirun.StatusPolicy) *cirun.Refusal {
+	if pol.MinVersion == "" || sensor.ClassifyVersion(version, "", pol.MinVersion) != sensor.VersionUnsupported {
+		return nil
+	}
+	return &cirun.Refusal{Code: "runner_outdated",
+		Detail: fmt.Sprintf("CI runner %s is older than the minimum supported CI runner release %s", version, pol.MinVersion)}
+}
+
 func (s *Service) runnerVersion(userAgent string) string {
 	_, v := sensor.ResolveBuild(sensor.BuildReport{}, "", userAgent, s.now())
 	return sensor.NormalizeVersion(v)

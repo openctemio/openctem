@@ -79,11 +79,7 @@ function evidenceCount(f: FindingDetail) {
 }
 
 function dataFlowCount(f: FindingDetail) {
-  return (
-    (f.dataFlow?.sources?.length || 0) +
-    (f.dataFlow?.intermediates?.length || 0) +
-    (f.dataFlow?.sinks?.length || 0)
-  )
+  return f.dataFlow?.steps.length ?? 0
 }
 
 /** Same grid as the page, so nothing jumps when the data arrives. */
