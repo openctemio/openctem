@@ -99,6 +99,7 @@ type Service struct {
 	reports      ReportReader
 	claimer      SyncClaimer
 	scope        ScopeAdder
+	grants       GrantReader
 	audit        *auditapp.AuditService
 	logger       *logger.Logger
 	now          func() time.Time
@@ -281,6 +282,9 @@ func (s *Service) requestSync(ctx context.Context, intg *integration.Integration
 	})
 	if err != nil {
 		return RequestResult{}, fmt.Errorf("encode connector_sync payload: %w", err)
+	}
+	if err := s.admitGrant(ctx, tenantID, sn.ID, command.CommandTypeConnectorSync, payload); err != nil {
+		return RequestResult{}, err
 	}
 	cmd, err := command.NewCommand(tenantID, command.CommandTypeConnectorSync, command.CommandPriorityNormal, payload)
 	if err != nil {
