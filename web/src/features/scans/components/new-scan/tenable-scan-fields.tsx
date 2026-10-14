@@ -49,7 +49,8 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
     <div className="space-y-3 rounded-lg border p-3">
       <div className="space-y-2">
         <Label htmlFor="tsc-scan-connector">
-          {t('scans.tenable.connector')} <span className="text-destructive">*</span>
+          {t('scans.tenable.connector', 'Tenable.sc connector')}{' '}
+          <span className="text-destructive">*</span>
         </Label>
         <Select
           value={cfg.integrationId || undefined}
@@ -58,14 +59,17 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
             set({ integrationId, policyId: 0, repositoryId: 0, zoneId: 0 })
           }
         >
-          <SelectTrigger id="tsc-scan-connector" aria-label={t('scans.tenable.connector')}>
+          <SelectTrigger
+            id="tsc-scan-connector"
+            aria-label={t('scans.tenable.connector', 'Tenable.sc connector')}
+          >
             <SelectValue
               placeholder={
                 isLoading
-                  ? t('scans.tenable.loading')
+                  ? t('scans.tenable.loading', 'Loading connectors…')
                   : connectors.length === 0
-                    ? t('scans.tenable.none')
-                    : t('scans.tenable.choose')
+                    ? t('scans.tenable.none', 'No Tenable.sc connector')
+                    : t('scans.tenable.choose', 'Choose a connector')
               }
             />
           </SelectTrigger>
@@ -80,7 +84,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
         {!isLoading && connectors.length === 0 && (
           <p className="text-muted-foreground text-xs">
             <Link href="/settings/integrations/scanners" className="underline">
-              {t('scans.tenable.connectLink')}
+              {t('scans.tenable.connectLink', 'Connect a vulnerability scanner')}
             </Link>
           </p>
         )}
@@ -90,7 +94,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
         <>
           <CatalogSelect
             id="tsc-scan-policy"
-            label={t('scans.tenable.policy')}
+            label={t('scans.tenable.policy', 'Scan policy')}
             items={catalog?.policies}
             value={cfg.policyId}
             onChange={(policyId) => set({ policyId })}
@@ -98,7 +102,7 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
           />
           <CatalogSelect
             id="tsc-scan-repo"
-            label={t('scans.tenable.repository')}
+            label={t('scans.tenable.repository', 'Repository')}
             items={catalog?.scanRepositories}
             value={cfg.repositoryId}
             onChange={(repositoryId) => set({ repositoryId })}
@@ -107,14 +111,19 @@ export function TenableScanFields({ value, onChange }: TenableScanFieldsProps) {
           {(catalog?.scanZones.length ?? 0) > 0 && (
             <CatalogSelect
               id="tsc-scan-zone"
-              label={t('scans.tenable.zone')}
+              label={t('scans.tenable.zone', 'Scan zone')}
               items={catalog?.scanZones}
               value={cfg.zoneId}
               onChange={(zoneId) => set({ zoneId })}
               optional
             />
           )}
-          <p className="text-muted-foreground text-xs">{t('scans.tenable.note')}</p>
+          <p className="text-muted-foreground text-xs">
+            {t(
+              'scans.tenable.note',
+              "The scan runs in Tenable.sc, launched by the connector's sensor; its results arrive like any scan's. Targets still pass the scope, exclusion and data-scope checks."
+            )}
+          </p>
         </>
       )}
     </div>
