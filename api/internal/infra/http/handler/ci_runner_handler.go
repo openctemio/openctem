@@ -7,6 +7,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -48,6 +49,8 @@ type CIRunnerHandler struct {
 	// vex applies the VEX statements of an uploaded VEX document; nil
 	// refuses VEX documents.
 	vex CIVEXApplier
+	// secretKeys derives the job's secret hashing key (nil: none).
+	secretKeys SecretKeys
 }
 
 // CIVEXApplier applies converted VEX statements (findingimport.Service).
@@ -118,7 +121,20 @@ type CIExchangeResponse struct {
 	IsDefaultBranch   bool      `json:"is_default_branch"`
 	// Aggregate: the token belongs to the aggregate run of the pipeline run.
 	Aggregate bool `json:"aggregate"`
+	// SecretKey (base64) is the key the job hashes each raw secret it finds
+	// with (HMAC-SHA256), sent as the CTIS partial fingerprint secretHMAC/v1,
+	// so a secret finding keeps its identity without the raw value leaving
+	// the job. Derived per organization and repository.
+	SecretKey string `json:"secret_key,omitempty"`
 }
+
+// SecretKeys derives the per-repository key a CI job hashes secrets with.
+type SecretKeys interface {
+	ProducerKey(tenantID, assetID shared.ID) []byte
+}
+
+// SetSecretKeys makes the exchange hand out a secret hashing key (nil: none).
+func (h *CIRunnerHandler) SetSecretKeys(k SecretKeys) { h.secretKeys = k }
 
 // Exchange handles POST /api/v1/ci/oidc/exchange
 // @Summary      Exchange a CI OIDC token for a run upload token
@@ -166,6 +182,11 @@ func (h *CIRunnerHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		RepositoryAssetID: run.RepositoryAssetID.String(), Branch: run.Branch, CommitSHA: run.CommitSHA,
 		PullRequest: run.PullRequest, DefaultBranch: run.DefaultBranch, IsDefaultBranch: run.IsDefaultBranch,
 		Aggregate: run.Aggregate}
+	if h.secretKeys != nil {
+		if k := h.secretKeys.ProducerKey(run.TenantID, run.RepositoryAssetID); len(k) > 0 {
+			resp.SecretKey = base64.StdEncoding.EncodeToString(k)
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
