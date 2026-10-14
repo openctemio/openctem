@@ -55,7 +55,7 @@ boundary can be moved to forge a collision. Recipes:
 
 | Kind | Tuple | Not in it |
 |---|---|---|
-| SAST | asset, tool, rule, repo-relative path, then one anchor: SARIF `primaryLocationLineHash` (with its `:N`), Semgrep `matchBasedId/v1`, else `hash(normalized snippet)` + logical location + occurrence index of that snippet in the file | line numbers, message |
+| SAST | asset, rule, repo-relative path, then `hash(normalized snippet)` (the snippet, else the producer's `snippetHash/v1` hash of the flagged lines) + logical location + occurrence index of that snippet in the file; without the code, the start line (re-keyed to the code key when a report carries the code) | tool name, engine fingerprints (`primaryLocationLineHash`, `matchBasedId/v1`: hints only), message; line numbers once the code is known |
 | SCA | asset, canonical PURL without version (`distro` qualifier only for deb/rpm/apk, D13), canonical vuln id | installed version, manifest path |
 | Secret | asset, per-tenant keyed HMAC of the reported (masked) value, repo-relative path | line, the value or its mask |
 | DAST | asset, rule (the CVE for a CVE template), method, URL template (lower-case IDNA host, default port dropped, numeric/UUID segments `{id}`, D4), sorted parameter names | query values |
