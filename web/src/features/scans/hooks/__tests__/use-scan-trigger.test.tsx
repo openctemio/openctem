@@ -164,4 +164,31 @@ describe('useScanTrigger', () => {
       expect(screen.getByTestId('busy')).toHaveTextContent('false')
     })
   })
+
+  // A refused run start said only what was wrong ("No target of scan ... is
+  // authorized") and not what to do; its code now brings the fix.
+  it.each([
+    ['ALL_TARGETS_UNCONFIRMED', 'Scoping'],
+    ['NO_COMPATIBLE_TARGETS', 'Pick a scanner'],
+    ['SCAN_APPROVAL_REQUIRED', 'Submit it for approval'],
+  ])('says what to do about a %s refusal', async (code, fix) => {
+    const { toast } = await import('sonner')
+    getMock.mockRejectedValue(notFound)
+    postMock.mockRejectedValue(new ApiClientError('refused', code, 400))
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    const call = vi.mocked(toast.error).mock.calls.at(-1)
+    expect(call?.[0]).toBe('refused')
+    expect(String((call?.[1] as { description?: string })?.description)).toContain(fix)
+  })
+
+  it('adds no hint for a code without one', async () => {
+    const { toast } = await import('sonner')
+    getMock.mockRejectedValue(notFound)
+    postMock.mockRejectedValue(new ApiClientError('nope', 'BAD_REQUEST', 400))
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: 'Trigger' }))
+    const call = vi.mocked(toast.error).mock.calls.at(-1)
+    expect((call?.[1] as { description?: string })?.description).toBeUndefined()
+  })
 })
