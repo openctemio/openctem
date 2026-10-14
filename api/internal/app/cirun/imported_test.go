@@ -48,3 +48,16 @@ func TestScopeImported(t *testing.T) {
 		t.Fatalf("branch = %+v", b)
 	}
 }
+
+func TestScopeReportForkEventNeverReportsTheBaseBranch(t *testing.T) {
+	run := &cirun.Run{Repository: "github.com/acme/api", Branch: "main", DefaultBranch: "main", CommitSHA: "abc",
+		Event: "pull_request_target", Fork: true, IsDefaultBranch: true}
+	rep := &ctis.Report{Findings: []ctis.Finding{{Title: "x", Type: ctis.FindingTypeVulnerability, Severity: ctis.SeverityHigh}}}
+	if err := ScopeReport(rep, run); err != nil {
+		t.Fatal(err)
+	}
+	b := rep.Metadata.Branch
+	if b == nil || b.Name == "main" || b.IsDefaultBranch {
+		t.Fatalf("a fork event reported as the default branch: %+v", b)
+	}
+}
