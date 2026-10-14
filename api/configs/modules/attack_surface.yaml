@@ -18,6 +18,7 @@
     - get_exposure_chains
   jobs:
     - AssetEnrichmentController
+    - AssetCoverageController
     - CertMonitorController
     - EASMDNSController
     - EASMLookalikeController

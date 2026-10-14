@@ -65,7 +65,7 @@ var assetDetachStatements = []string{
 	`DELETE FROM business_service_assets WHERE asset_id = $1`,
 	`DELETE FROM compensating_control_assets WHERE asset_id = $1`,
 	`DELETE FROM asset_identifiers WHERE asset_id = $1`,
-	`DELETE FROM scan_coverage_state WHERE asset_id = $1`,
+	`DELETE FROM asset_coverage WHERE tenant_id = (SELECT tenant_id FROM assets WHERE id = $1) AND asset_id = $1`,
 	`DELETE FROM asset_services WHERE asset_id = $1`,
 	`DELETE FROM asset_software WHERE asset_id = $1 AND source = 'package'`,
 	`DELETE FROM asset_dedup_review WHERE status = 'pending' AND (keep_asset_id = $1 OR $1 = ANY(merge_asset_ids))`,
