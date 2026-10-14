@@ -3,7 +3,9 @@
 Verifying a domain proves your organization controls its DNS. Names
 discovered under a verified domain (for example through Certificate
 Transparency) are confirmed as yours automatically, with the strong
-`fqdn_under_verified_root` rule, instead of waiting in the review queue.
+`fqdn_under_verified_root` rule. (Discovered names join the inventory either
+way; confirmation is what the scope policy's "Confirming an asset adds it to
+scope" acts on.)
 
 This verification is for attack-surface management only. **It never lets
 anyone sign in:** domains for SSO sign-in are set up by your platform
