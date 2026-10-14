@@ -305,6 +305,12 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	if err != nil {
 		return nil, err
 	}
+	if input.MaxScanCommands != nil &&
+		s.admitHostBusy(ctx, tenantID, sensorID, input.Capabilities, *input.MaxScanCommands-scanCount(cmds)) > 0 {
+		if cmds, err = s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, candidateLimit(limit)); err != nil {
+			return nil, err
+		}
+	}
 	// A sensor never gets a command its reported local policy refuses, nor
 	// one with private targets when the tenant requires a local policy for
 	// them (RFC-040 §5.7, research/25 §3.6): those stay pending for a
@@ -384,6 +390,13 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, candidateLimit(limit))
 	if err != nil {
 		return nil, err
+	}
+	// Free slots the queue cannot fill: split commands whose hosts are
+	// only partly busy, so their free targets start now (host_split.go).
+	if s.admitHostBusy(ctx, tenantID, &sensorID, input.Capabilities, slots-scanCount(cands)) > 0 {
+		if cands, err = s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, input.Capabilities, candidateLimit(limit)); err != nil {
+			return nil, err
+		}
 	}
 	n := len(cands)
 	cands = s.gateFor(ctx, tenantID, &sensorID, cands).accepted(cands)
