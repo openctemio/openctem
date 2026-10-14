@@ -41,15 +41,13 @@ type credImportMockExposureRepo struct {
 	countBySeverityResult map[exposure.Severity]int64
 
 	// Call tracking
-	createCalls     int
-	getByIDCalls    int
-	getFPCalls      int
-	updateCalls     int
-	deleteCalls     int
-	listCalls       int
-	countCalls      int
-	countStateCalls int
-	countSevCalls   int
+	createCalls  int
+	getByIDCalls int
+	getFPCalls   int
+	updateCalls  int
+	deleteCalls  int
+	listCalls    int
+	countCalls   int
 }
 
 func newCredImportMockExposureRepo() *credImportMockExposureRepo {
