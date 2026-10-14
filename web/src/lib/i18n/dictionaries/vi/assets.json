@@ -211,5 +211,11 @@
   "assets.sheet.delete": "Xóa {type}",
   "assets.sheet.edit": "Sửa",
   "assets.sheet.description": "Mô tả",
+  "assets.scanning.title": "Phạm vi và quét",
+  "assets.scanning.details": "Vì sao",
+  "assets.scanning.allowed": "Có thể quét tài sản này.",
+  "assets.scanning.scanNow": "Quét ngay",
+  "assets.scanning.allowWildcard": "Xác nhận và cho phép quét",
+  "assets.scanning.confirmed": "Đã xác nhận là của bạn; giờ có thể quét",
   "assets.attribution.scan.guardrailed": "Các lần quét giữ tài sản này ở chế độ thụ động: một rào chắn của nền tảng giữ nó (mạng dùng chung, CDN hoặc đám mây, mạng chưa rõ, hosting dùng chung, hoặc tên miền ngoài miền của bạn). Thêm vào Phạm vi › Phạm vi nếu đó là của bạn."
 }

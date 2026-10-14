@@ -211,5 +211,11 @@
   "assets.sheet.delete": "Delete {type}",
   "assets.sheet.edit": "Edit",
   "assets.sheet.description": "Description",
+  "assets.scanning.title": "Scope and scanning",
+  "assets.scanning.details": "Why",
+  "assets.scanning.allowed": "Scans can reach this asset.",
+  "assets.scanning.scanNow": "Scan now",
+  "assets.scanning.allowWildcard": "Confirm and allow scanning",
+  "assets.scanning.confirmed": "Confirmed as yours; scans may reach it now",
   "assets.attribution.scan.guardrailed": "Scans keep this asset passive: a platform guardrail holds it (a shared, CDN or cloud network, an unknown network, shared hosting, or a name outside your domains). Add it to Scoping › Scope if it is yours."
 }

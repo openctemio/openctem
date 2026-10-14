@@ -432,8 +432,12 @@ func toRunTaskResponses(tasks []scanrundom.Task) []RunTaskResponse {
 // excluded by scope, every target not scanned and why, and the scan-zone
 // routing (RFC-023). Absent for runs that recorded none of it.
 type RunDispatchResponse struct {
-	ResolvedTargets  int                  `json:"resolved_targets"`
-	ExcludedTargets  int                  `json:"excluded_targets"`
+	ResolvedTargets int `json:"resolved_targets"`
+	ExcludedTargets int `json:"excluded_targets"`
+	// Excluded lists the targets the organization's exclusions left out
+	// (whole, or a range cut around excluded addresses) with the matching
+	// rules, at most 50 (RFC-054 §6.5).
+	Excluded         []RunExcludedTarget  `json:"excluded,omitempty"`
 	Warnings         []string             `json:"warnings,omitempty"`
 	UncoveredTargets []RunUncoveredTarget `json:"uncovered_targets,omitempty"`
 	ZoneRouting      *RunZoneRouting      `json:"zone_routing,omitempty"`
@@ -453,6 +457,24 @@ type RunTargetExpansion struct {
 	Matched  int      `json:"matched"`
 	Capped   bool     `json:"capped,omitempty"`
 	Sample   []string `json:"sample,omitempty"`
+}
+
+// RunExcludedTarget is a target exclusions left out of a run.
+type RunExcludedTarget struct {
+	Target string `json:"target"`
+	// Rules are the organization's exclusions that matched.
+	Rules []RunExclusionRule `json:"rules,omitempty"`
+	// Cut: a range dispatched without its excluded addresses
+	// (RemovedAddresses of them).
+	Cut              bool   `json:"cut,omitempty"`
+	RemovedAddresses uint64 `json:"removed_addresses,omitempty"`
+}
+
+// RunExclusionRule is one matching exclusion.
+type RunExclusionRule struct {
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Pattern string `json:"pattern"`
 }
 
 // RunUncoveredTarget is a target the run did not scan.
@@ -1474,7 +1496,7 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 // the run context. Values round-trip through JSON so the same code reads a
 // freshly built context and one loaded from the database.
 func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
-	keys := []string{"resolved_target_count", "excluded_target_count", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion"}
+	keys := []string{"resolved_target_count", "excluded_target_count", "excluded_targets", "dispatch_warnings", "uncovered_targets", "zone_routing", "sensor_routing", "target_expansion"}
 	present := map[string]any{}
 	for _, k := range keys {
 		if v, ok := runContext[k]; ok && v != nil {
@@ -1491,6 +1513,7 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 	var in struct {
 		Resolved  int                  `json:"resolved_target_count"`
 		Excluded  int                  `json:"excluded_target_count"`
+		Detail    []RunExcludedTarget  `json:"excluded_targets"`
 		Warnings  []string             `json:"dispatch_warnings"`
 		Uncovered []RunUncoveredTarget `json:"uncovered_targets"`
 		Routing   *RunZoneRouting      `json:"zone_routing"`
@@ -1503,6 +1526,7 @@ func toRunDispatchResponse(runContext map[string]any) *RunDispatchResponse {
 	return &RunDispatchResponse{
 		ResolvedTargets:  in.Resolved,
 		ExcludedTargets:  in.Excluded,
+		Excluded:         in.Detail,
 		Warnings:         in.Warnings,
 		UncoveredTargets: in.Uncovered,
 		ZoneRouting:      in.Routing,
