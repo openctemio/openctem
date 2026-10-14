@@ -242,6 +242,8 @@ export interface ProviderTraits {
   tenantAudience: boolean
   /** Pull request builds count as fork builds (the token cannot tell). */
   pullRequestsAsForks: boolean
+  /** The token names the pipeline definition (workflow_refs rule). */
+  workflowRefs: boolean
 }
 
 export const AZURE_DEVOPS_AUDIENCE = 'api://AzureADTokenExchange'
@@ -255,6 +257,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: false,
     pullRequestsAsForks: false,
+    workflowRefs: true,
   },
   gitlab: {
     issuerInput: 'url',
@@ -264,6 +267,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: false,
     pullRequestsAsForks: false,
+    workflowRefs: true,
   },
   azure_devops: {
     issuerInput: 'organization_id',
@@ -274,6 +278,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     fixedAudience: AZURE_DEVOPS_AUDIENCE,
     tenantAudience: false,
     pullRequestsAsForks: true,
+    workflowRefs: false,
   },
   bitbucket: {
     issuerInput: 'workspace',
@@ -283,6 +288,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: true,
     tenantAudience: true,
     pullRequestsAsForks: false,
+    workflowRefs: false,
   },
   circleci: {
     issuerInput: 'organization_id',
@@ -292,6 +298,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: true,
     pullRequestsAsForks: true,
+    workflowRefs: false,
   },
   jenkins: {
     issuerInput: 'url',
@@ -301,6 +308,7 @@ export const PROVIDER_TRAITS: Record<CIProvider, ProviderTraits> = {
     repositoriesById: false,
     tenantAudience: true,
     pullRequestsAsForks: true,
+    workflowRefs: false,
   },
 }
 
