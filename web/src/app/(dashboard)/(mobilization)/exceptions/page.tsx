@@ -53,6 +53,7 @@ import {
   useApproveSuppression,
   useRejectSuppression,
   useDeleteSuppression,
+  SuppressionApprovePreview,
   SuppressionFormDialog,
   SuppressionDetailSheet,
   SUPPRESSION_STATUS_BADGE,
@@ -182,12 +183,25 @@ export default function ExceptionsPage() {
   const confirmApprove = async () => {
     if (!selectedRule) return
     try {
-      await triggerApprove({ reviewed_updated_at: selectedRule.updated_at })
-      toast.success('Suppression rule approved')
+      const approved = await triggerApprove({ reviewed_updated_at: selectedRule.updated_at })
+      const closed = approved?.applied_findings ?? 0
+      toast.success(
+        closed > 0
+          ? t(
+              'confirm.suppression.approvedClosed',
+              'Rule approved; {count} open findings closed.',
+              {
+                count: closed.toLocaleString(),
+              }
+            )
+          : t('confirm.suppression.approved', 'Rule approved.')
+      )
       setDetailOpen(false)
       await mutate()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to approve rule'))
+      toast.error(
+        getErrorMessage(err, t('confirm.suppression.approveFailed', 'Failed to approve the rule'))
+      )
     } finally {
       setApproveOpen(false)
     }
@@ -493,7 +507,9 @@ export default function ExceptionsPage() {
         }
         isLoading={isApproving}
         handleConfirm={confirmApprove}
-      />
+      >
+        <SuppressionApprovePreview ruleId={approveOpen ? selectedRule?.id : undefined} />
+      </ConfirmDialog>
 
       {/* Reject dialog */}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>

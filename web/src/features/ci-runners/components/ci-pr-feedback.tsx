@@ -31,6 +31,8 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeHref } from '@/lib/safe-href'
+import { SafeExternalLink } from '@/components/safe-external-link'
+import { DOCS } from '@/lib/docs-links'
 import {
   useConnectGitLab,
   useGitHubInstallURL,
@@ -85,15 +87,25 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
               {t('scans.ci.feedback.github', 'GitHub App')}
             </CardTitle>
             <CardDescription>
-              {github?.configured
-                ? t(
-                    'scans.ci.feedback.githubConfigured',
-                    'Install the app on the GitHub organizations whose repositories send results. It can post checks and pull request comments, and read nothing else.'
-                  )
-                : t(
+              {github?.configured ? (
+                t(
+                  'scans.ci.feedback.githubConfigured',
+                  'Install the app on the GitHub organizations whose repositories send results. It can post checks and pull request comments, and read nothing else.'
+                )
+              ) : (
+                <>
+                  {t(
                     'scans.ci.feedback.githubMissing',
-                    'This deployment has no GitHub App yet. An operator registers it (see the GitHub App guide); then install it here.'
-                  )}
+                    'This deployment has no GitHub App yet. An operator registers it; then install it here.'
+                  )}{' '}
+                  <SafeExternalLink
+                    href={DOCS.ci.githubApp}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    {t('scans.ci.feedback.githubGuide', 'GitHub App guide')}
+                  </SafeExternalLink>
+                </>
+              )}
             </CardDescription>
           </div>
           {github?.configured && (

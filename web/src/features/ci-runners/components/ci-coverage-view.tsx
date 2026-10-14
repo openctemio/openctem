@@ -63,7 +63,13 @@ function capabilityTitle(c: CICapabilityCoverage, t: TFn): string {
       }) + (c.last_at ? `, ${new Date(c.last_at).toLocaleString()}` : '')
     )
   }
-  if (c.expected) parts.push(t('scans.ci.coverage.expectedHere', 'Expected for this repository.'))
+  if (c.expected)
+    parts.push(
+      t(
+        'scans.ci.coverage.expectedHere',
+        'Expected for this repository. Every CI run of it must report these capabilities, or the gate fails it.'
+      )
+    )
   return parts.filter(Boolean).join(' ')
 }
 
@@ -316,7 +322,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
           onPaginationChange={setPagination}
           getRowId={(r) => r.repository_asset_id ?? ''}
           showSearch={false}
-          paginationNoun="repositories"
+          paginationNoun={t('scans.ci.noun.repositories', 'repositories')}
           emptyMessage={t('scans.ci.coverage.noMatch', 'No repository matches')}
           toolbarStart={
             <>

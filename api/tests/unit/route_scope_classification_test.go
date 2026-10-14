@@ -211,6 +211,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"/api/v1/workflow-runs":                              {classGap, "L-18 (trigger data)"},
 	"/api/v1/iocs":                                       {classGap, "§1.3 IOC matches (L-18)"},
 	"/api/v1/suppressions":                               {classGap, "§1.3 suppression rules"},
+	"GET /api/v1/suppressions/{id}/preview":              {classPartial, "organization-wide count of open findings an approval would close; the approval applies organization-wide, so only approvers (findings:suppressions:approve) see it (authorization-matrix.md)"},
 	"/api/v1/reports":                                    {classGap, "L-19 (scheduled reports; P1-4/P1-5)"},
 	"/api/v1/simulations":                                {classGap, "§1.3 validation and simulation"},
 	"/api/v1/validation":                                 {classGap, "§1.3 validation coverage"},

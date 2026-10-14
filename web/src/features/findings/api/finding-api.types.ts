@@ -46,22 +46,49 @@ export type FindingSource =
 
 export type ApiFindingType = 'vulnerability' | 'secret' | 'misconfiguration' | 'compliance' | 'web3'
 
-export type ApiDataFlowLocationType = 'source' | 'intermediate' | 'sink'
+export type ApiDataFlowLocationType = 'source' | 'intermediate' | 'sink' | 'sanitizer'
 
+/** One location of a data flow, as GET /findings/{id} returns it. */
 export interface ApiDataFlowLocation {
   path?: string
   line?: number
+  end_line?: number
   column?: number
-  content?: string
+  end_column?: number
+  snippet?: string
+  function_name?: string
+  class_name?: string
+  fully_qualified_name?: string
   label?: string
+  message?: string
   index?: number
   location_type?: ApiDataFlowLocationType
+}
+
+/** One step of a trace, in order from the source to the sink. */
+export interface ApiDataFlowStep {
+  index: number
+  location_type: ApiDataFlowLocationType
+  location?: ApiDataFlowLocation
+  label?: string
+  message?: string
+}
+
+export interface ApiDataFlowTrace {
+  index: number
+  /** The commit the trace was reported for: the step lines are that commit's lines. */
+  commit_sha?: string
+  message?: string
+  steps: ApiDataFlowStep[]
 }
 
 export interface ApiDataFlow {
   sources?: ApiDataFlowLocation[]
   intermediates?: ApiDataFlowLocation[]
+  sanitizers?: ApiDataFlowLocation[]
   sinks?: ApiDataFlowLocation[]
+  /** The traces with their steps in order; the first is the primary path. */
+  traces?: ApiDataFlowTrace[]
 }
 
 // ============================================

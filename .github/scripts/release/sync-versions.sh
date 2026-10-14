@@ -61,16 +61,19 @@ CONSUMERS=(
   'sdk.latest|api/deploy/docker-compose.yml|}|(SENSOR_SDK_LATEST_VERSION: \$\{SENSOR_SDK_LATEST_VERSION:-)([^}]*)\}'
   'sdk.min|api/internal/config/config.go|"|^(const DefaultSensorSDKMinVersion = ")([^"]*)"'
   'sdk.min|api/deploy/docker-compose.yml|}|(SENSOR_SDK_MIN_VERSION: \$\{SENSOR_SDK_MIN_VERSION:-)([^}]*)\}'
+  'ci.latest|api/internal/config/config.go|"|^(const DefaultCIRunnerLatestVersion = ")([^"]*)"'
+  'ci.latest|web/src/features/ci-runners/lib/ci.ts|'"'"'|^(export const CI_RELEASE = '"'"')([^'"'"']*)'"'"''
+  'ci.min|api/internal/config/config.go|"|^(const DefaultCIRunnerMinVersion = ")([^"]*)"'
 )
 
 # Keys that may be "" (= not set). The others must be a version.
-OPTIONAL_KEYS=" sensor.min sdk.min "
+OPTIONAL_KEYS=" sensor.min sdk.min ci.min "
 
 problems=0
 problem() { echo "::error::$*"; problems=$((problems + 1)); }
 
 declare -A VALUE
-for key in platform.release sensor.latest sensor.min sdk.latest sdk.min chart.version; do
+for key in platform.release sensor.latest sensor.min sdk.latest sdk.min ci.latest ci.min chart.version; do
   if ! v="$(rel_yaml_get "$MANIFEST" "$key")"; then
     problem "versions.yaml: $key is missing"
     continue

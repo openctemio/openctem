@@ -42,6 +42,23 @@ export interface SuppressionRule {
   updated_at: string
 }
 
+/** `POST /api/v1/suppressions/{id}/approve`: the rule plus what the approval closed. */
+export interface ApproveSuppressionResponse extends SuppressionRule {
+  /** Open findings the approval gave the rule's disposition. */
+  applied_findings: number
+  /** More matched than one approval closes; the rest stay open. */
+  capped: boolean
+}
+
+/** `GET /api/v1/suppressions/{id}/preview`: what an approval would close now. */
+export interface SuppressionPreview {
+  /** Open findings of the organization the rule matches, at most `limit`. */
+  matching_open_findings: number
+  /** More than `limit` match; an approval closes `limit` of them. */
+  capped: boolean
+  limit: number
+}
+
 /** `GET /api/v1/suppressions` list envelope. */
 export interface SuppressionListResponse {
   data: SuppressionRule[]

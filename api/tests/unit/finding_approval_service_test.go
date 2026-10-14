@@ -225,6 +225,12 @@ func (m *mockFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Conte
 func (m *mockFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
+
+// AcceptUntil records an accept like UpdateStatusBatch does.
+func (m *mockFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
+	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+}
+
 func (m *mockFindingRepository) UpdateStatusBatch(_ context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
 	if m.statusBatchErr != nil {
 		return m.statusBatchErr
@@ -600,17 +606,17 @@ func TestFindingApprovalService_ApproveStatus_Expired(t *testing.T) {
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	// Create approval with an already-expired time
-	past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+	// An acceptance request whose end passed while it was pending.
 	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
-		RequestedStatus: "false_positive",
+		RequestedStatus: "accepted",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
-		ExpiresAt:       &past,
 	})
 	require.NoError(t, err)
+	past := time.Now().Add(-1 * time.Hour)
+	approvalRepo.approvals[created.ID].ExpiresAt = &past
 
 	// Try to approve the expired approval
 	approval, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
@@ -670,17 +676,17 @@ func TestFindingApprovalService_RejectApproval_Expired(t *testing.T) {
 	approvalRepo := newMockApprovalRepository()
 	svc := newApprovalTestService(findingRepo, approvalRepo)
 
-	// Create approval with an already-expired time
-	past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+	// An acceptance request whose end passed while it was pending.
 	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
 		TenantID:        tenantID.String(),
 		FindingID:       findingID.String(),
-		RequestedStatus: "false_positive",
+		RequestedStatus: "accepted",
 		Justification:   "Test",
 		RequestedBy:     requestedBy.String(),
-		ExpiresAt:       &past,
 	})
 	require.NoError(t, err)
+	past := time.Now().Add(-1 * time.Hour)
+	approvalRepo.approvals[created.ID].ExpiresAt = &past
 
 	// Try to reject the expired approval
 	approval, err := svc.RejectApproval(context.Background(), finding.RejectApprovalInput{
@@ -1253,4 +1259,62 @@ func newApprovalTestFinding(t *testing.T) *vulnerability.Finding {
 	require.NoError(t, err)
 	require.NoError(t, f.TransitionStatus(vulnerability.FindingStatusConfirmed, "", nil))
 	return f
+}
+
+func TestFindingApprovalService_RequestApproval_DecisionEnd(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	requestedBy := shared.NewID()
+
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+	req := func(status string, end *string) (*vulnerability.Approval, error) {
+		return svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+			TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: status,
+			Justification: "Test", RequestedBy: requestedBy.String(), ExpiresAt: end,
+		})
+	}
+	str := func(t time.Time) *string { s := t.Format(time.RFC3339); return &s }
+
+	a, err := req("accepted", nil)
+	require.NoError(t, err)
+	require.NotNil(t, a.ExpiresAt, "an accepted risk always ends")
+	assert.WithinDuration(t, time.Now().Add(vulnerability.DefaultAcceptanceDuration), *a.ExpiresAt, time.Minute)
+
+	_, err = req("accepted", str(time.Now().AddDate(1, 0, 2)))
+	assert.ErrorIs(t, err, shared.ErrValidation, "more than a year ahead is refused")
+	_, err = req("accepted", str(time.Now().Add(-time.Hour)))
+	assert.ErrorIs(t, err, shared.ErrValidation, "an end in the past is refused")
+	_, err = req("false_positive", str(time.Now().Add(24*time.Hour)))
+	assert.ErrorIs(t, err, shared.ErrValidation, "a false positive does not expire")
+
+	fp, err := req("false_positive", nil)
+	require.NoError(t, err)
+	assert.Nil(t, fp.ExpiresAt)
+}
+
+func TestFindingApprovalService_ApproveAccepted_StoresAcceptanceEnd(t *testing.T) {
+	tenantID := shared.NewID()
+	findingID := shared.NewID()
+	findingRepo := newMockFindingRepository()
+	findingRepo.findings[findingID] = newApprovalTestFinding(t)
+	approvalRepo := newMockApprovalRepository()
+	svc := newApprovalTestService(findingRepo, approvalRepo)
+
+	created, err := svc.RequestApproval(context.Background(), finding.RequestApprovalInput{
+		TenantID: tenantID.String(), FindingID: findingID.String(), RequestedStatus: "accepted",
+		Justification: "Test", RequestedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	// A request from before the end was required has none.
+	approvalRepo.approvals[created.ID].ExpiresAt = nil
+
+	approved, err := svc.ApproveStatus(context.Background(), finding.ApproveStatusInput{
+		TenantID: tenantID.String(), ApprovalID: created.ID.String(), ApprovedBy: shared.NewID().String(),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, approved.ExpiresAt, "approving gives an endless acceptance the default end")
+	assert.WithinDuration(t, time.Now().Add(vulnerability.DefaultAcceptanceDuration), *approved.ExpiresAt, time.Minute)
 }

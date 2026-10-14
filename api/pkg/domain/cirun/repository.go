@@ -70,6 +70,10 @@ type Repository interface {
 	// RunFindings returns the findings on the run's repository asset whose
 	// fingerprints the run recorded.
 	RunFindings(ctx context.Context, tenantID, runID, assetID shared.ID) ([]RunFinding, error)
+	// FindingsByFingerprints returns the findings on assetID that hold the
+	// given fingerprints (at most MaxRunFindings), with the fields
+	// RunFindings returns.
+	FindingsByFingerprints(ctx context.Context, tenantID, assetID shared.ID, fingerprints []string) ([]RunFinding, error)
 	// SaveVerdict stores the first verdict of a running run whose recorded
 	// findings count is still expectFindings (the count the verdict was
 	// computed from): ErrRunEvaluated when another verdict was stored first,
@@ -92,6 +96,11 @@ type Repository interface {
 	// ActiveOverride returns the newest unrevoked, unexpired override that
 	// covers the commit, or nil.
 	ActiveOverride(ctx context.Context, tenantID, assetID shared.ID, sha string, now time.Time) (*GateOverride, error)
+	// MissingExpectedCapabilities returns the capabilities the run's
+	// repository is expected to report (its coverage expectation; an empty
+	// list means every capability) that no tool the run reported has, per
+	// the tool catalog. None when the repository has no expectation.
+	MissingExpectedCapabilities(ctx context.Context, tenantID, runID shared.ID) ([]string, error)
 
 	PipelineRepository
 	CoverageRepository

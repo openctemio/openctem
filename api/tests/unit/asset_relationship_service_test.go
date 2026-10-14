@@ -2265,3 +2265,7 @@ func TestAssetRelationshipService_GetRelationshipTypeUsage(t *testing.T) {
 		}
 	})
 }
+
+func (m *MockRelationshipRepository) RelatedAssets(_ context.Context, _, _ shared.ID, _ asset.RelatedAssetsQuery) (*asset.RelatedAssets, error) {
+	return &asset.RelatedAssets{}, nil
+}

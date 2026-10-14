@@ -185,6 +185,31 @@ rule. Requests name the CI identity in `suppression_rules.requested_by_actor`
 `ci_run.exceptions_requested` audit event. At most 20 of each per upload; an
 open request for the same rule and path is not duplicated. Branch runs
 request nothing.
+||||||| a3dc36070
+### Known decisions
+
+A decision made on the platform holds on the next run of the same repository:
+
+- **Gate.** `cirun.Decision` leaves out of the verdict (counted as
+  `accepted`) a finding marked false positive or duplicate, accepted until
+  its acceptance expires, or covered by an approved, unexpired suppression
+  rule. Rules are matched at evaluation time (`applyActiveRules`), so an
+  exception approved after the finding was first seen (an `.openctem.yml`
+  request) covers it; ingest only stamps findings created after approval. A
+  pending request never counts. With the suppressions module off, rules do
+  not apply.
+- **Job output.** The response to `POST /ci/runs/{id}/results` (CTIS report)
+  carries `known`: the indexes, in that report, of the results that carry such
+  a decision, with the decision and the finding id. The job leaves them out of
+  its console summary, SARIF and merge request report and says how many it
+  hid. It learns nothing about findings it did not report, and nothing about
+  another repository or tenant; a lookup failure returns an empty list, so
+  the job shows everything.
+- **Identity.** The finding is the same when its key is (RFC-043 §4.2): a SAST
+  key is the rule, the path and the flagged code, so a line shift keeps the
+  decision and a material change to the code is a new finding that is judged
+  again. The job's claims (`suppressed` flags, inline ignore comments) are
+  never decisions; only the platform's are.
 
 ## Invariants
 

@@ -54,15 +54,16 @@ const StopGraceSeconds = 300
 // MaxProgressEntries bounds the progress entries one heartbeat records.
 const MaxProgressEntries = 1000
 
-// OverrunGraceSeconds is how long past twice its task budget a running
-// command may go before the platform takes it back: the sensor stops it at
-// twice its budget, and its result needs time to arrive.
+// OverrunGraceSeconds is how long past its deadline a running command may
+// go before the platform takes it back: the sensor stops it at its deadline
+// (the step's timeout_seconds when the payload carries one, else twice its
+// task budget), and its result needs time to arrive.
 const OverrunGraceSeconds = 300
 
 // Messages a re-queued command records (command_events, the task's error).
 const (
 	StalledMessage = "re-queued: nothing moved within the task's stall window (no target finished, no output, no CPU time) and the sensor did not hand back what it finished"
-	OverrunMessage = "re-queued: the task ran past twice its time budget and did not report"
+	OverrunMessage = "re-queued: the task ran past its deadline (its step timeout, or twice its time budget) and did not report"
 	// StoppedEmptyMessage prefixes the error of a stalled task its sensor
 	// stopped with nothing finished (re-queued, not failed).
 	StoppedEmptyMessage = "re-queued: the task stalled and its sensor stopped it with nothing finished"
