@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,7 +60,15 @@ type App struct {
 	now  func() time.Time
 
 	mu     sync.Mutex
-	tokens map[int64]cachedToken
+	tokens map[tokenKey]cachedToken
+}
+
+// tokenKey identifies a cached installation token by installation and
+// scope: a token minted for one repository is never handed out for another.
+type tokenKey struct {
+	installation int64
+	repository   string // "" = every repository the installation covers
+	permissions  string // canonical form of the requested permissions
 }
 
 type cachedToken struct {
@@ -89,7 +98,7 @@ func New(cfg Config, httpClient *http.Client) (*App, error) {
 	// Never follow a redirect with a bearer token.
 	c := *httpClient
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &App{cfg: cfg, key: key, http: &c, now: time.Now, tokens: map[int64]cachedToken{}}, nil
+	return &App{cfg: cfg, key: key, http: &c, now: time.Now, tokens: map[tokenKey]cachedToken{}}, nil
 }
 
 // SetClock replaces the clock (tests).
@@ -207,11 +216,22 @@ func (a *App) GetInstallation(ctx context.Context, id int64) (*Installation, err
 	return &inst, nil
 }
 
-// InstallationToken returns a token for the installation (at most one hour;
-// cached until five minutes before it expires).
+// InstallationToken returns a token for the installation covering every
+// repository and permission it was granted (at most one hour; cached until
+// five minutes before it expires). Prefer RepositoryToken.
 func (a *App) InstallationToken(ctx context.Context, id int64) (string, error) {
+	return a.RepositoryToken(ctx, id, "", nil)
+}
+
+// RepositoryToken returns an installation token narrowed to one repository
+// (by name, without the owner) and to the given permissions, so a token used
+// for one repository's check cannot act on the installation's other
+// repositories or with permissions the call does not need. An empty
+// repository or nil permissions keep the installation's own.
+func (a *App) RepositoryToken(ctx context.Context, id int64, repository string, permissions map[string]string) (string, error) {
+	key := tokenKey{installation: id, repository: repository, permissions: canonicalPermissions(permissions)}
 	a.mu.Lock()
-	if t, ok := a.tokens[id]; ok && a.now().Before(t.expires.Add(-5*time.Minute)) {
+	if t, ok := a.tokens[key]; ok && a.now().Before(t.expires.Add(-5*time.Minute)) {
 		a.mu.Unlock()
 		return t.token, nil
 	}
@@ -220,27 +240,59 @@ func (a *App) InstallationToken(ctx context.Context, id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	var body any
+	if repository != "" || len(permissions) > 0 {
+		req := map[string]any{}
+		if repository != "" {
+			req["repositories"] = []string{repository}
+		}
+		if len(permissions) > 0 {
+			req["permissions"] = permissions
+		}
+		body = req
+	}
 	var out struct {
 		Token     string    `json:"token"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
 	if err := a.do(ctx, http.MethodPost, a.cfg.APIURL+"/app/installations/"+strconv.FormatInt(id, 10)+"/access_tokens",
-		"Bearer "+jwt, nil, &out); err != nil {
+		"Bearer "+jwt, body, &out); err != nil {
 		return "", err
 	}
 	if out.Token == "" {
 		return "", errors.New("github: no installation token in the response")
 	}
 	a.mu.Lock()
-	a.tokens[id] = cachedToken{token: out.Token, expires: out.ExpiresAt}
+	a.tokens[key] = cachedToken{token: out.Token, expires: out.ExpiresAt}
 	a.mu.Unlock()
 	return out.Token, nil
 }
 
-// ForgetInstallation drops a cached token (installation removed).
+func canonicalPermissions(p map[string]string) string {
+	if len(p) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(p))
+	for k := range p {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k + "=" + p[k] + ";")
+	}
+	return b.String()
+}
+
+// ForgetInstallation drops the installation's cached tokens (installation
+// removed or suspended).
 func (a *App) ForgetInstallation(id int64) {
 	a.mu.Lock()
-	delete(a.tokens, id)
+	for k := range a.tokens {
+		if k.installation == id {
+			delete(a.tokens, k)
+		}
+	}
 	a.mu.Unlock()
 }
 

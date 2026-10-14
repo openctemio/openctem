@@ -524,7 +524,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		BaseRef:           truncate(CleanBaseRef(c), 255),
 		PullRequest:       truncate(c.PullRequest, 32),
 		DefaultBranch:     defaultBranch,
-		IsDefaultBranch:   c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch,
+		IsDefaultBranch:   cirun.IsDefaultBranchRun(c, defaultBranch),
 		Event:             truncate(c.Event, 64),
 		Environment:       truncate(c.Environment, 255),
 		Actor:             truncate(c.Actor, 255),
@@ -902,8 +902,8 @@ func ScopeReport(report *ctis.Report, run *cirun.Run) error {
 	}
 	report.Assets = []ctis.Asset{repoAsset}
 	report.Metadata.Branch = &ctis.BranchInfo{
-		Name:            run.Branch,
-		IsDefaultBranch: run.IsDefaultBranch,
+		Name:            cirun.ReportBranchName(run.Branch, run.Event, run.PullRequest, run.Fork),
+		IsDefaultBranch: run.IsDefaultBranch && !run.Fork,
 		CommitSHA:       run.CommitSHA,
 		BaseBranch:      run.DefaultBranch,
 		RepositoryURL:   "https://" + run.Repository,
