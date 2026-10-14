@@ -210,6 +210,9 @@ func (h *ExposureHandler) handleValidationError(w http.ResponseWriter, err error
 
 // handleServiceError converts service errors to API errors and writes response.
 func (h *ExposureHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if writeDispositionError(w, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, shared.ErrNotFound),
 		exposure.IsExposureEventNotFound(err):
@@ -851,4 +854,25 @@ func (h *ExposureHandler) attachPending(r *http.Request, tenantID string, resps 
 		resps[i].PendingDisposition = exposuresvc.PendingView(pending[e.ID()])
 	}
 	return nil
+}
+
+// writeDispositionError answers the four-eyes refusals of an exposure or
+// credential disposition with their own status and message. False when err
+// is not one of them.
+func writeDispositionError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, exposure.ErrDispositionSelfApproval):
+		apierror.Forbidden("A second approver must confirm this request; you cannot approve your own").WriteJSON(w)
+	case errors.Is(err, exposure.ErrDispositionConflict):
+		apierror.Conflict("A different disposition is already pending; reject it first").WriteJSON(w)
+	case errors.Is(err, exposure.ErrNoPendingDisposition):
+		apierror.NotFound("pending disposition request").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict("The request was decided by someone else; reload and try again").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.SafeForbidden(err).WriteJSON(w)
+	default:
+		return false
+	}
+	return true
 }

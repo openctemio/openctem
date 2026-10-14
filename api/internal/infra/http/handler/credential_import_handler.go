@@ -790,6 +790,9 @@ func (h *CredentialImportHandler) toImportRequest(req CredentialImportRequest) (
 // malformed id, 409 for a transition the credential's state does not allow.
 // Only an unexpected failure is logged as an error.
 func (h *CredentialImportHandler) writeStateChangeError(w http.ResponseWriter, verb, id string, err error) {
+	if writeDispositionError(w, err) {
+		return
+	}
 	switch {
 	case exposure.IsExposureEventNotFound(err):
 		apierror.NotFound("Credential").WriteJSON(w)
