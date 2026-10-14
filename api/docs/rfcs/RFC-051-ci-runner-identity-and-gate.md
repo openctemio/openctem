@@ -68,7 +68,7 @@ Per tenant (`ci_trust_configs`, migration 001077):
 | Field | Meaning |
 |---|---|
 | `provider` | `github`, `gitlab`, `azure_devops`, `bitbucket`, `circleci` or `jenkins` (section 3.1) |
-| `issuer` | GitHub: `https://token.actions.githubusercontent.com` only. GitLab: `https://gitlab.com` or a self-managed instance's URL (https, no credentials, query or fragment). The others: section 3.1. Never a hosted provider's issuer under another provider |
+| `issuer` | GitHub: `https://token.actions.githubusercontent.com`, an enterprise's customized issuer `https://token.actions.githubusercontent.com/<enterprise slug>`, or a GitHub Enterprise Server `https://<host>/_services/token` (its repositories are named on that host; an internal host needs `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`). GitLab: `https://gitlab.com` or a self-managed instance's URL (https, no credentials, query or fragment). The others: section 3.1. Never a hosted provider's issuer under another provider |
 | `audience` | What the job asks its provider for; default `openctem:tenant:<tenant id>`, so a token minted for one organization is useless to another. Azure Pipelines: always `api://AzureADTokenExchange`. Bitbucket, CircleCI, Jenkins: must contain the tenant id |
 | `rules.owners` | GitHub organizations or users, GitLab top-level groups (exact) |
 | `rules.repositories` | `owner/name`, `owner/*` (one level), `owner/**` (any depth); the owner can never be a wildcard |

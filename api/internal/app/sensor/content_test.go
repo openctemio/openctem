@@ -196,3 +196,39 @@ func TestContentService_FleetAndPolicy(t *testing.T) {
 		t.Fatalf("commands %d", len(cmds.created))
 	}
 }
+
+// SECURITY (license): a platform-operated sensor never receives registry
+// rulesets in its policy (it would fetch registry rules for a tenant); a
+// tenant's own sensor receives the rulesets its tenant chose.
+func TestContentService_NoRegistryRulesetsForPlatformSensors(t *testing.T) {
+	tenant := shared.NewID()
+	own := contentSensor(tenant, true, sensordom.SensorStatusActive)
+	platform := contentSensor(tenant, true, sensordom.SensorStatusActive)
+	platform.IsPlatformSensor = true
+	svc, cmds, pols := newTestContentService(own, platform)
+	pols.stored = &sensordom.StoredContentPolicy{TenantID: tenant, Policy: sensordom.ContentPolicy{Content: map[string]sensordom.ContentPin{
+		sensordom.ContentSemgrepRules: {Rulesets: []string{"p/default"}, Version: "v0.1.0"},
+	}}}
+	ctx := context.Background()
+	for _, s := range []*sensordom.Sensor{own, platform} {
+		if _, _, err := svc.RefreshSensor(ctx, tenant, s.ID, nil, false, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[shared.ID]sensordom.ContentPin{}
+	for _, c := range cmds.created {
+		var payload struct {
+			Policy *sensordom.ContentPolicy `json:"policy"`
+		}
+		if err := json.Unmarshal(c.Payload, &payload); err != nil || payload.Policy == nil {
+			t.Fatalf("payload %s %v", c.Payload, err)
+		}
+		got[*c.SensorID] = payload.Policy.Pin(sensordom.ContentSemgrepRules)
+	}
+	if p := got[platform.ID]; len(p.Rulesets) != 0 || p.Version != "v0.1.0" {
+		t.Errorf("platform sensor policy %+v: rulesets must be dropped, the pin kept", p)
+	}
+	if p := got[own.ID]; len(p.Rulesets) != 1 || p.Rulesets[0] != "p/default" {
+		t.Errorf("tenant sensor policy %+v: its tenant's rulesets must stay", p)
+	}
+}
