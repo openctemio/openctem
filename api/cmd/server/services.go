@@ -2078,6 +2078,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		log,
 		scan.WithAuditService(scanAuditAdapter),
 		scan.WithProfileRepo(repos.ScanProfile),
+		// A scan's tool options are checked against the sensors' tool settings when saved.
+		scan.WithToolConfigChecker(s.Sensor),
 		// Enforce scope EXCLUSIONS on every dispatch path; unwired or failing, nothing is dispatched (fail closed).
 		scan.WithScopeExclusionFilter(s.Scope),
 		// Ownership of every actively scanned target (RFC-036 §6.3): confirmed,
@@ -2200,6 +2202,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		scanrun.WithDB(deps.DB),
 		scanrun.WithSensorSelector(scanRunSensorSelectorAdapter),
 		scanrun.WithToolRepo(repos.Tool),
+		// A pinned step's tool options are checked against the sensors' tool settings.
+		scanrun.WithToolConfigChecker(s.Sensor),
 		// A draft check warns about steps no online sensor can run now.
 		scanrun.WithRunnableTools(s.Tool),
 		// The builder saves drafts; a publish makes them the steps runs use.
