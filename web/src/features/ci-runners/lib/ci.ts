@@ -4,7 +4,7 @@
  * provider's OIDC token (api RFC-051).
  */
 
-import type { CIProvider } from '../types'
+import type { CIProvider, CITrustConfig } from '../types'
 
 /** Splits a comma- or newline-separated list, trimmed and de-duplicated. */
 export function parseList(text: string): string[] {
@@ -29,6 +29,8 @@ export interface SnippetInput {
   apiUrl: string
   tenantId: string
   audience: string
+  /** The branch push events scan (the trust's default branch); main if unset. */
+  defaultBranch?: string
 }
 
 /**
@@ -45,14 +47,21 @@ const DEFAULT_CAPABILITIES = 'sast,sca,secrets,iac'
  * per capability in parallel, reports into one run with the job's OIDC token
  * and lets one gate job decide.
  */
-export function githubSnippet({ apiUrl, tenantId, audience }: SnippetInput): string {
+export function githubSnippet({ apiUrl, tenantId, audience, defaultBranch }: SnippetInput): string {
   const audLine =
     audience && audience !== defaultAudience(tenantId) ? `\n      oidc-audience: ${audience}` : ''
+  // Before v0.3.0 the reusable workflow's scan job always asks for
+  // security-events: write, and GitHub refuses to start a called job that asks
+  // for more than its caller grants. From v0.3.0 it is needed only to upload
+  // SARIF, so the snippet stops granting it.
+  const sarifLine = releaseBefore(CI_RELEASE, 'v0.3.0')
+    ? `\n      security-events: write # required by openctemio/ci ${CI_RELEASE}`
+    : ''
   return `name: OpenCTEM
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [${yamlBranch(defaultBranch)}]
 
 jobs:
   openctem:
@@ -63,8 +72,28 @@ jobs:
       tenant-id: ${tenantId}${audLine}
     permissions:
       contents: read
-      id-token: write # the job asks GitHub for an OIDC token; no stored secret
+      id-token: write # the job asks GitHub for an OIDC token; no stored secret${sarifLine}
 `
+}
+
+/** A branch name as a YAML flow-sequence item (quoted unless plainly safe). */
+function yamlBranch(branch?: string): string {
+  const b = (branch ?? '').trim() || 'main'
+  return /^[A-Za-z0-9._/-]+$/.test(b) ? b : JSON.stringify(b)
+}
+
+/** Whether release a (vX.Y.Z) is older than release b. */
+export function releaseBefore(a: string, b: string): boolean {
+  const parse = (v: string) =>
+    v
+      .replace(/^v/, '')
+      .split('.')
+      .map((n) => Number.parseInt(n, 10) || 0)
+  const [x, y] = [parse(a), parse(b)]
+  for (let i = 0; i < 3; i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0)
+  }
+  return false
 }
 
 const GITLAB_JOBS = [
@@ -101,10 +130,11 @@ ${override}`
 // ─────────────────────────────────────────────── other CI systems ───
 
 /**
- * The CI image that carries `openctem-ci`. Pin a release by digest in a real
- * pipeline (see the openctemio/ci repository's docs/images.md).
+ * The CI image that carries `openctem-ci`, at the release the other snippets
+ * pin (never the moving edge build). Pin it by digest in a real pipeline (see
+ * the openctemio/ci repository's docs/images.md).
  */
-const CI_IMAGE = 'ghcr.io/openctemio/ci:edge'
+const CI_IMAGE = `ghcr.io/openctemio/ci:${CI_RELEASE}`
 
 function ciEnv(apiUrl: string, tenantId: string, indent: string): string {
   return `${indent}OPENCTEM_API_URL: ${apiUrl}\n${indent}OPENCTEM_TENANT_ID: ${tenantId}`
@@ -331,6 +361,39 @@ export function issuerFor(provider: CIProvider, value: string): string | undefin
     default:
       return value.trim()
   }
+}
+
+/** The issuer of a GitLab trust configuration left empty (gitlab.com). */
+const GITLAB_COM = 'https://gitlab.com'
+
+/**
+ * An enabled trust configuration of this CI system and issuer that already
+ * admits every owner (or repository) given, so the setup wizard reuses it
+ * instead of creating a duplicate. Matching is case-insensitive, as owners are.
+ */
+export function findCoveringTrust(
+  configs: CITrustConfig[],
+  provider: CIProvider,
+  issuerValue: string,
+  scope: string[]
+): CITrustConfig | undefined {
+  if (scope.length === 0) return undefined
+  const traits = PROVIDER_TRAITS[provider]
+  let issuer: string | undefined
+  if (traits.issuerInput !== 'fixed') {
+    issuer = issuerFor(provider, issuerValue) ?? (provider === 'gitlab' ? GITLAB_COM : undefined)
+    if (!issuer) return undefined
+  }
+  const norm = (v: string) => v.trim().toLowerCase().replace(/\/+$/, '')
+  const want = scope.map(norm)
+  return configs.find((c) => {
+    if (c.provider !== provider || c.enabled === false) return false
+    if (issuer && norm(c.issuer ?? '') !== norm(issuer)) return false
+    const have = new Set(
+      ((traits.repositoriesById ? c.rules?.repositories : c.rules?.owners) ?? []).map(norm)
+    )
+    return want.every((w) => have.has(w))
+  })
 }
 
 /** The organization id or workspace an issuer names (to edit a configuration). */
