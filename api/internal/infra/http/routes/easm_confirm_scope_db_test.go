@@ -173,8 +173,38 @@ func TestEASMConfirmAddsScopeEntry_DB(t *testing.T) {
 		t.Fatal("review_before_inventory not cleared")
 	}
 
+	// unclassified_scans (RFC-054 §16): low_impact by default, set to full,
+	// kept by a change that does not name it, an unknown mode refused, and
+	// off in force under Strict whatever is set.
+	type unclassified struct {
+		Setting   string `json:"unclassified_scans"`
+		Effective string `json:"unclassified_scans_effective"`
+	}
+	readUnclassified := func(body string) unclassified {
+		t.Helper()
+		var u unclassified
+		if err := json.Unmarshal([]byte(body), &u); err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	if u := readUnclassified(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); u.Setting != "low_impact" {
+		t.Fatalf("default: %+v", u)
+	}
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"unclassified_scans":"full"}`, http.StatusOK)
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"one_off_max_days":6}`, http.StatusOK)
+	if u := readUnclassified(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); u.Setting != "full" {
+		t.Fatalf("kept: %+v", u)
+	}
+	h.expect(owner, http.MethodPut, "/api/v1/scope/settings", `{"unclassified_scans":"everything"}`, http.StatusUnprocessableEntity)
+	h.exec(`UPDATE tenants SET scan_approval_policy = 'strict' WHERE id = $1`, org)
+	if u := readUnclassified(h.expect(owner, http.MethodGet, "/api/v1/scope/settings", "", http.StatusOK)); u.Setting != "full" || u.Effective != "off" {
+		t.Fatalf("strict: %+v", u)
+	}
+
 	// Strict keeps confirmation as ownership only.
 	h.exec(`UPDATE tenants SET scan_approval_policy = 'strict' WHERE id = $1`, org)
+
 	strict := asset(org, "strict.confirm-db.example", "subdomain")
 	if out = decide(admin, strict); out.Scope == nil || out.Scope.Skipped != easmapp.ConfirmSkippedStrict {
 		t.Fatalf("strict: %+v", out.Scope)

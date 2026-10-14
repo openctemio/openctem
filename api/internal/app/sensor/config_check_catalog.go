@@ -114,14 +114,24 @@ services:
       - {{joinq "outbox:" "path" ""}}
 volumes:
   outbox:`
-	toolsEnvFix = `# List the scanners the sensor offers (installed in its image):
-export SENSOR_TOOLS=nuclei`
-	toolsComposeFix = `services:
+	// The sensor offers every tool its image ships; a tool list only narrows
+	// that set, so the fix is an image that ships the scanner and a local
+	// policy (tools.allow) that allows it.
+	toolsEnvFix = `# Use an image that ships the scanners (the default one carries semgrep,
+# betterleaks, trivy and nuclei) and check tools.allow in the local policy.
+# Remove SENSOR_TOOLS if it is set: the sensor then offers what it finds.
+docker pull ghcr.io/openctemio/sensor:latest`
+	toolsComposeFix = `# Use an image that ships the scanners, check tools.allow in the local
+# policy, and drop SENSOR_TOOLS from the environment if it is set:
+services:
   sensor:
-    environment:
-      SENSOR_TOOLS: "nuclei"`
-	toolsHelmFix = `sensor:
-  tools: "nuclei"`
+    image: ghcr.io/openctemio/sensor:latest`
+	toolsHelmFix = `# Use an image that ships the scanners and leave sensor.tools empty:
+sensor:
+  image:
+    repository: ghcr.io/openctemio/sensor
+    tag: "latest"
+  tools: ""`
 	imageComposeFix = `# Pull the current default image (semgrep, betterleaks, trivy, nuclei):
 services:
   sensor:
@@ -143,8 +153,8 @@ var configCheckCatalog = []checkCatalogEntry{
 		Why:  "The sensor offers {tool}, but its image does not contain it. The platform sends it no {tool} jobs.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-binary",
 		Fix: map[string]string{
-			FixFormatEnv: `# Use an image that ships {{.tool}}, or stop offering it:
-export SENSOR_TOOLS=nuclei`,
+			FixFormatEnv: `# Use an image that ships {{.tool}}:
+docker pull ghcr.io/openctemio/sensor:latest`,
 			FixFormatCompose: imageComposeFix,
 			FixFormatHelm:    imageHelmFix,
 		}},
@@ -160,12 +170,12 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 	{ID: "tool.*.binary", Code: "check_error", Group: "tools", Title: "Scanner {tool} could not be checked",
 		Why: "The sensor could not run its check of {tool}. The output below says why.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-binary"},
 	{ID: "tool.*.selection", Code: "not_selected", Group: "tools", Title: "Scanner {tool} is not offered",
-		Why:  "{tool} is installed but not listed in SENSOR_TOOLS, so the sensor does not offer it.",
+		Why:  "{tool} is installed but left out by the sensor's SENSOR_TOOLS (or -tools) setting, so the sensor does not offer it.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#tool-selection",
 		Fix: map[string]string{
-			FixFormatEnv:     "# Add the scanner to the list the sensor offers:\nexport SENSOR_TOOLS=nuclei,{{.tool}}",
-			FixFormatCompose: "services:\n  sensor:\n    environment:\n      SENSOR_TOOLS: {{.tool}}",
-			FixFormatHelm:    "sensor:\n  tools: {{.tool}}",
+			FixFormatEnv:     "# Remove SENSOR_TOOLS (and -tools): the sensor then offers every tool it finds.\n# Narrow the set in the local policy's tools.allow instead.\nunset SENSOR_TOOLS",
+			FixFormatCompose: "# Drop SENSOR_TOOLS from services.sensor.environment; narrow the set in the\n# local policy's tools.allow instead.",
+			FixFormatHelm:    "sensor:\n  tools: \"\"",
 		}},
 	{ID: "tool.*.selection", Code: "policy_excluded", Group: "tools", Title: "Scanner {tool} is excluded by the local policy",
 		Why:  "The sensor's local policy does not allow {tool}, so the sensor does not offer it. Only the network owner can change the policy on the sensor host.",
@@ -313,7 +323,7 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		Why:  "{name} was replaced by {replacement}; the sensor runs {replacement} for it. Update the tool list.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#config-tool-retired",
 		Fix: map[string]string{
-			FixFormatEnv:     "# In SENSOR_TOOLS, replace {{.name}} with {{.replacement}}",
+			FixFormatEnv:     "# In SENSOR_TOOLS, replace {{.name}} with {{.replacement}} (or remove SENSOR_TOOLS)",
 			FixFormatCompose: "# In services.sensor.environment.SENSOR_TOOLS, replace {{.name}} with {{.replacement}}",
 			FixFormatHelm:    "# In sensor.tools, replace {{.name}} with {{.replacement}}",
 		}},

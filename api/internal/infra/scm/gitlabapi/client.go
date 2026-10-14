@@ -128,6 +128,23 @@ func (c *Client) Token(ctx context.Context) (*TokenInfo, error) {
 	return &t, nil
 }
 
+// User is the user a token acts as.
+type User struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	// Bot: a project or group access token's own user (never a person).
+	Bot bool `json:"bot"`
+}
+
+// CurrentUser reads the user the token acts as.
+func (c *Client) CurrentUser(ctx context.Context) (*User, error) {
+	var u User
+	if err := c.do(ctx, http.MethodGet, "/user", nil, &u); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
 // Group is a GitLab group.
 type Group struct {
 	ID       int64  `json:"id"`

@@ -230,6 +230,9 @@ func (h *SensorControlV2Handler) Heartbeat(w http.ResponseWriter, r *http.Reques
 		resp.CancelCommandIDs = ids
 		resp.Actions = append(resp.Actions, protov2.ActionCancel)
 	}
+	if !id.Paused {
+		resp.StopCommandIDs = h.ingest.commandsToStop(r.Context(), s, &req)
+	}
 	// RFC-033: a sensor that registers manifests and echoes a digest the
 	// platform does not have as current is asked to send it again.
 	// With slim heartbeats switched off (SENSOR_SLIM_HEARTBEAT=false), a

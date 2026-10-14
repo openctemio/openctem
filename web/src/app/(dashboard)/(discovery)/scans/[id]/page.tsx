@@ -14,7 +14,16 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import { toast } from 'sonner'
-import { AlertTriangle, ArrowLeft, RefreshCw, Tag, Trash2, XCircle } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Copy,
+  Pencil,
+  RefreshCw,
+  Tag,
+  Trash2,
+  XCircle,
+} from 'lucide-react'
 
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
@@ -39,6 +48,7 @@ import {
   type MetricStripItem,
 } from '@/features/shared'
 import { RunDetailSheet } from '@/features/scans/components/run-detail-sheet'
+import { CloneScanDialog, EditScanDialog } from '@/features/scans/components'
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ScanControls, scanStateLabel } from '@/features/scans/components/scan-controls'
 import { ScanApprovalPanel } from '@/features/scans/components/approval/scan-approval-panel'
@@ -142,6 +152,8 @@ export default function ScanDetailPage() {
   const [runPerPage, setRunPerPage] = useState(25)
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [cloneOpen, setCloneOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null)
   const [pendingStop, setPendingStop] = useState<ScanRun | null>(null)
@@ -439,7 +451,30 @@ export default function ScanDetailPage() {
           onViewRun={setOpenRunId}
           onChanged={() => void refetchAll()}
         />
+        <Can permission={Permission.ScansWrite}>
+          <Button variant="outline" onClick={() => setEditOpen(true)}>
+            <Pencil className="me-2 h-4 w-4" />
+            {t('scans.page.edit')}
+          </Button>
+          <Button variant="outline" onClick={() => setCloneOpen(true)}>
+            <Copy className="me-2 h-4 w-4" />
+            {t('scans.page.clone')}
+          </Button>
+        </Can>
       </PageHeader>
+
+      <EditScanDialog
+        scanConfig={config}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSuccess={() => void refetchConfig()}
+      />
+      <CloneScanDialog
+        scan={config}
+        open={cloneOpen}
+        onOpenChange={setCloneOpen}
+        onSuccess={(copy) => router.push(`/scans/${copy.id}`)}
+      />
 
       <MetricStrip className="mt-5" items={metrics} />
 
