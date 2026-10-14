@@ -15,8 +15,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/openctemio/ctis/politeness"
 
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -64,6 +68,19 @@ type Placement struct {
 	Eligible int
 	Busy     int
 	Blocking []ReasonCount
+	// HostWait says, when the command waits for its hosts (host_busy),
+	// how many of them other tasks of the organization hold and which tasks
+	// (at most commanddom.MaxHostHolders). Nil otherwise.
+	HostWait *HostWait
+}
+
+// HostWait is why a command waits for its hosts: Held of its Total hosts
+// are held by the Holders (the tasks holding the most of them first). Only
+// counts and the organization's own tasks; never host names.
+type HostWait struct {
+	Held    int
+	Total   int
+	Holders []commanddom.HostHolder
 }
 
 // ExplainPlacement explains why the command waits. Only a pending command
@@ -83,6 +100,13 @@ func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shar
 		return out, nil
 	}
 	out.JobReasons = jobReasons(job)
+	if !job.HostFree {
+		hw, err := s.hostWait(ctx, tenantID, commandID)
+		if err != nil {
+			return nil, err
+		}
+		out.HostWait = hw
+	}
 	if len(claims) > MaxPlacementSensors {
 		claims, out.Truncated = claims[:MaxPlacementSensors], true
 	}
@@ -134,6 +158,63 @@ func jobReasons(j commanddom.PlacementJob) []string {
 	}
 	if !j.HostFree {
 		out = append(out, commanddom.PlacementHostBusy)
+	} else if j.SensorHostsBusy {
+		out = append(out, commanddom.PlacementSensorHostsBusy)
+	}
+	return out
+}
+
+// maxHostHoldersRead bounds the holders read to count the held hosts.
+const maxHostHoldersRead = 50
+
+// hostWait counts the command's hosts that tasks of its tenant hold and
+// names the tasks holding the most; nil when the repository cannot tell.
+func (s *Service) hostWait(ctx context.Context, tenantID, commandID shared.ID) (*HostWait, error) {
+	reader, ok := s.repo.(commanddom.HostHoldersReader)
+	if !ok {
+		return nil, nil
+	}
+	keys, holders, err := reader.HostHolders(ctx, tenantID, commandID, maxHostHoldersRead)
+	if err != nil {
+		return nil, fmt.Errorf("read host holders: %w", err)
+	}
+	held := map[string]bool{}
+	for _, h := range holders {
+		for _, k := range h.Keys {
+			held[k] = true
+		}
+	}
+	hw := &HostWait{}
+	for _, k := range keys {
+		if strings.HasPrefix(k, commanddom.HostKeyAddrInBucket) {
+			continue // the bucket marker of an address: not a host of its own
+		}
+		hw.Total++
+		for _, c := range hostConflicts(k) {
+			if held[c] {
+				hw.Held++
+				break
+			}
+		}
+	}
+	if len(holders) > commanddom.MaxHostHolders {
+		holders = holders[:commanddom.MaxHostHolders]
+	}
+	hw.Holders = holders
+	return hw, nil
+}
+
+// hostConflicts is the keys that hold host key k back: k itself and, for
+// an address, the range key of its bucket (for a range key, the bucket's
+// address marker; politeness.Conflicts).
+func hostConflicts(k string) []string {
+	out := commanddom.HostKeyConflicts([]string{k})
+	addr, suffix, _ := strings.Cut(k, politeness.NetworkSep)
+	if a, err := netip.ParseAddr(addr); err == nil {
+		if suffix != "" {
+			suffix = politeness.NetworkSep + suffix
+		}
+		out = append(out, commanddom.HostKeyRangeBucket+commanddom.AddrBucket(a).String()+suffix)
 	}
 	return out
 }

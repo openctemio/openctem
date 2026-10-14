@@ -1762,5 +1762,13 @@
   "scans.ci.policySourceName.repository": "kho mã",
   "scans.ci.policySourceName.business_unit": "đơn vị kinh doanh",
   "scans.ci.policySourceName.tenant": "tổ chức",
-  "scans.ci.policySourceName.default": "mặc định có sẵn"
+  "scans.ci.policySourceName.default": "mặc định có sẵn",
+  "scans.placement.sensor_hosts_busy.text": "Cảm biến đã nhận tác vụ vẫn đang quét một máy chủ của nó nên đã trả lại tác vụ.",
+  "scans.placement.sensor_hosts_busy.fix": "Tác vụ chạy khi máy chủ đó rảnh trên cảm biến này, hoặc trên một cảm biến khác.",
+  "scans.placement.hostWait": "Đang chờ: {held}/{total} máy chủ của nó đang được một tác vụ khác quét. Tác vụ bắt đầu khi các máy chủ đó rảnh.",
+  "scans.placement.hostWaitTool": "Đang chờ: {held}/{total} máy chủ của nó đang được {tool} quét. Tác vụ bắt đầu khi các máy chủ đó rảnh.",
+  "scans.placement.hostWaitBy": "Đang chờ: {held}/{total} máy chủ của nó đang được {tool} quét (bước {step}). Tác vụ bắt đầu khi các máy chủ đó rảnh.",
+  "scans.placement.holderRun": "Mở lần chạy đang quét chúng",
+  "scans.tasks.waitingForHosts": "Đang chờ máy chủ: một tác vụ khác đang quét chúng",
+  "scans.tasks.handedBackHostsBusy": "Sensor trả lại: sensor vẫn đang quét một máy chủ của nó"
 }
