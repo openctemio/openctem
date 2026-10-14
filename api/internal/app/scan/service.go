@@ -215,7 +215,8 @@ type Service struct {
 	templateSourceRepo  templatesource.Repository
 	toolRepo            tool.Repository
 	targetMappingRepo   tool.TargetMappingRepository // For asset-scanner compatibility
-	profileRepo         scanprofile.Repository       // For ScanProfile linking and quality gates
+	toolConfigChecker   ToolConfigChecker
+	profileRepo         scanprofile.Repository // For ScanProfile linking and quality gates
 	templateSyncer      TemplateSyncer
 	sensorSelector      SensorSelector
 	securityValidator   SecurityValidator
@@ -319,6 +320,32 @@ func WithAttributionGate(g AttributionGate) ServiceOption {
 	return func(s *Service) {
 		s.attributionGate = g
 	}
+}
+
+// ToolConfigChecker checks a scan's tool options against the tenant's own
+// sensors for that tool, as they will resolve them
+// (sensor.SensorService.CheckScanToolConfig): an error wrapping
+// shared.ErrValidation refuses the config.
+type ToolConfigChecker interface {
+	CheckScanToolConfig(ctx context.Context, tenantID shared.ID, tool string, config map[string]any) error
+}
+
+// WithToolConfigChecker makes saving a single-scanner scan check its tool
+// options against the sensors' tool settings: a config no sensor of the
+// tenant would accept (a sensor-only option, a value out of bounds, a raise
+// above the sensor's value) is refused when saved, not when a job fails.
+func WithToolConfigChecker(c ToolConfigChecker) ServiceOption {
+	return func(s *Service) {
+		s.toolConfigChecker = c
+	}
+}
+
+// checkToolConfig runs the ToolConfigChecker, when one is wired.
+func (s *Service) checkToolConfig(ctx context.Context, tenantID shared.ID, tool string, config map[string]any) error {
+	if s.toolConfigChecker == nil {
+		return nil
+	}
+	return s.toolConfigChecker.CheckScanToolConfig(ctx, tenantID, tool, config)
 }
 
 // NewService creates a new Service.
