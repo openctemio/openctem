@@ -3,14 +3,24 @@
   "asset": {"type": "repository", "value": "github.com/acme/web"},
   "cases": [
     {
-      "name": "SARIF primaryLocationLineHash survives a line shift",
-      "expect": "same",
+      "name": "without the code a line shift is another finding: an engine line hash is not identity",
+      "expect": "different",
       "before": {"type": "vulnerability", "title": "Database query built from user-controlled sources", "severity": "high", "rule_id": "js/sql-injection",
         "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:1"},
         "location": {"path": "src/routes/user.js", "start_line": 17, "end_line": 17}},
       "after": {"type": "vulnerability", "title": "Database query built from user-controlled sources", "severity": "high", "rule_id": "js/sql-injection",
         "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:1"},
         "location": {"path": "src/routes/user.js", "start_line": 31, "end_line": 31}}
+    },
+    {
+      "name": "with the code (SARIF region snippet) a line shift is the same finding",
+      "expect": "same",
+      "before": {"type": "vulnerability", "title": "Database query built from user-controlled sources", "severity": "high", "rule_id": "js/sql-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "39fa2ee980eb94b0:1"},
+        "location": {"path": "src/routes/user.js", "start_line": 17, "end_line": 17, "snippet": "db.query('SELECT * FROM u WHERE id=' + req.query.id)"}},
+      "after": {"type": "vulnerability", "title": "Database query built from user-controlled sources", "severity": "high", "rule_id": "js/sql-injection",
+        "partial_fingerprints": {"primaryLocationLineHash": "77aa2ee980eb94b0:1"},
+        "location": {"path": "src/routes/user.js", "start_line": 31, "end_line": 31, "snippet": "  db.query('SELECT * FROM u WHERE id=' + req.query.id)"}}
     },
     {
       "name": "a twin result has its own :N occurrence",

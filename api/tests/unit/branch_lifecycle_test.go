@@ -138,6 +138,11 @@ func (m *MockFindingRepoForLifecycle) BatchCountByAssetIDs(ctx context.Context, 
 }
 
 // Security: UpdateStatusBatch now requires tenantID for tenant isolation
+// AcceptUntil records an accept like UpdateStatusBatch does.
+func (m *MockFindingRepoForLifecycle) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
+	return m.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+}
+
 func (m *MockFindingRepoForLifecycle) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }

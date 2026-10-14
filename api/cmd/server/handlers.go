@@ -19,6 +19,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app"
 	apispecapp "github.com/openctemio/openctem/api/internal/app/apispec"
+	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/platformlegal"
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
@@ -56,6 +57,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/oidc"
@@ -280,6 +282,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.PriorityClassification != nil {
 		vulnHandler.SetPriorityExplainer(svc.PriorityClassification)
 	}
+	vulnHandler.SetFindingCorrelations(repos.FindingCorrelation)
 
 	// Jira/GitHub ticket sync handler. GitHub Issues is wired as an optional
 	// secondary provider on the same create-ticket endpoint.
@@ -511,6 +514,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		TemplateSource:      handler.NewTemplateSourceHandler(svc.TemplateSource, v, log),
 		ContentPack:         handler.NewContentPackHandler(svc.ContentPacks, log),
 		PlatformContentPack: handler.NewPlatformContentPackHandler(svc.PlatformContentPacks, adminConsoleSvc, repos.AdminAuditLog, log),
+		SensorContentV2:     handler.NewSensorContentV2Handler(contentpackapp.NewDelivery(svc.ContentPacks, svc.PlatformContentPacks), log),
 		AdminProgramFeed: handler.NewAdminProgramFeedHandler(svc.ProgramFeedSettings, adminConsoleSvc, repos.AdminAuditLog,
 			svc.ProgramFeed != nil, svc.ProgramFeedLocal != nil, log),
 		SecretStore:  handler.NewSecretStoreHandler(svc.SecretStore, v, log),
@@ -1099,6 +1103,34 @@ func sensorHealthPolicy(cfg *config.Config, log *logger.Logger) sensordom.Health
 	}.Normalized()
 }
 
+// ciRunnerVersionPolicy is the release line CI runners (openctemio/ci) are
+// judged against at the token exchange and in pipeline health. It is their
+// own line, never the sensor's: the two are versioned apart, and the sensor
+// minimum would refuse every CI runner release.
+func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusPolicy {
+	sc := cfg.SensorConfig
+	var pol cirun.StatusPolicy
+	for _, s := range []struct {
+		name, value string
+		dst         *string
+	}{
+		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &pol.LatestVersion},
+		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &pol.MinVersion},
+	} {
+		if s.value == "" {
+			continue
+		}
+		v := sensordom.NormalizeVersion(s.value)
+		if !sensordom.IsReleaseVersion(v) {
+			log.Warn("ignoring CI runner release setting that is not a version (want e.g. v0.3.0, or none)",
+				"setting", s.name, "value", s.value)
+			continue
+		}
+		*s.dst = v
+	}
+	return pol
+}
+
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
 // membership verification for finding-scoped attachments.
 func newAttachmentHandlerWithAccessCheck(attachSvc *integration.AttachmentService, pentestSvc *compliance.PentestService, db *sql.DB, enc crypto.Encryptor, auditSvc *auditsvc.AuditService, log *logger.Logger) *handler.AttachmentHandler {
@@ -1381,13 +1413,17 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 		Units:    repos.CIRun,
 		Audit:    audit,
 		Alerts:   cirunapp.NewAdminAlerts(admins, inApp, ob, log),
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: cirun.StatusPolicy{
-		LatestVersion: sensordom.NormalizeVersion(cfg.SensorConfig.LatestVersion),
-		MinVersion:    sensordom.NormalizeVersion(cfg.SensorConfig.MinVersion),
-	}}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
 	var ds handler.DataScopeEnforcer
 	if svc.DataScope != nil {
 		ds = svc.DataScope
+	}
+	if svc.Suppression != nil {
+		var mg cirunapp.ModuleGuard
+		if svc.Module != nil {
+			mg = svc.Module
+		}
+		ciSvc.SetSuppressionRules(svc.Suppression, mg)
 	}
 	if repos.RelationshipSuggestion != nil {
 		ciSvc.SetImageLinker(ciImageLinker{repos.CIRun, repos.RelationshipSuggestion})
@@ -1405,6 +1441,9 @@ func newCIHandlers(cfg *config.Config, repos *Repositories, svc *Services, log *
 	}
 	admin.SetRefusalService(ciSvc)
 	runner := handler.NewCIRunnerHandler(ciSvc, log)
+	if fp := vulnerability.NewSecretFingerprinter([]byte(cfg.Encryption.Key)); fp != nil {
+		runner.SetSecretKeys(fp)
+	}
 	// VEX documents a run uploads: stored on the run repository's findings,
 	// never closing any (the run token is not a person with findings:approve).
 	runner.SetVEXApplier(findingimport.NewService(svc.Ingest, repos.Finding, ingest.ParseVEXMode(cfg.Ingest.VEX), log))

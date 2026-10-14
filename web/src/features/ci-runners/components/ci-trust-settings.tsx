@@ -18,6 +18,7 @@ import { Check, Copy, KeyRound, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { PageHeader, EmptyState, ErrorState, GatedButton } from '@/features/shared'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CIPRFeedback } from './ci-pr-feedback'
+import { useUrlFilter } from '@/hooks/use-url-param'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -86,11 +87,24 @@ type TFn = ReturnType<typeof useTranslation>['t']
  * Trust, gate policy and break-glass. `embedded` drops the page header (the
  * CI/CD integration page shows these as its Trust and gate tab).
  */
+const SETUP_SECTIONS = ['trust', 'gate', 'break-glass', 'feedback'] as const
+type SetupSection = (typeof SETUP_SECTIONS)[number]
+
+/** The setup section a URL asks for; anything unknown is Trust. */
+export function setupSection(raw: string): SetupSection {
+  return (SETUP_SECTIONS as readonly string[]).includes(raw) ? (raw as SetupSection) : 'trust'
+}
+
 export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {}) {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
   const canOverride = can(Permission.CIOverride)
+  // The open section lives in the URL (?section=), so a link (the GitHub App
+  // callback, an alert, the docs) can land on it.
+  const [sectionParam, setSectionParam] = useUrlFilter('section', 'trust')
+  const section = setupSection(sectionParam)
+  const setSection = (v: string) => setSectionParam(setupSection(v))
   return (
     <div className="space-y-4">
       {!embedded && (
@@ -103,7 +117,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
         />
       )}
       <CIRequireOIDC canWrite={canWrite} />
-      <Tabs defaultValue="trust">
+      <Tabs value={section} onValueChange={setSection}>
         <TabsList>
           <TabsTrigger value="trust">{t('scans.ci.trust.tab', 'Trust')}</TabsTrigger>
           <TabsTrigger value="gate">{t('scans.ci.gatePolicy.tab', 'Gate policy')}</TabsTrigger>
@@ -118,7 +132,7 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
           <TrustConfigsSection canWrite={canWrite} />
         </TabsContent>
         <TabsContent value="gate" className="mt-4">
-          <GatePolicySection canWrite={canWrite} />
+          <GatePolicySection canWrite={can(Permission.CIPolicy)} />
         </TabsContent>
         <TabsContent value="break-glass" className="mt-4">
           <OverridesSection canOverride={canOverride} />
@@ -245,6 +259,21 @@ function TrustConfigsSection({ canWrite }: { canWrite: boolean }) {
                   value: c.audience ?? '',
                 })}
               </span>
+              {c.legacy_audience && c.legacy_audience_until && (
+                <span
+                  className="break-all text-warning sm:col-span-2"
+                  data-testid="ci-legacy-audience"
+                >
+                  {t(
+                    'scans.ci.trust.legacyAudience',
+                    'Pipelines that existed before may still use the old audience {value} until {until}, until they use the new one once. Update their pipeline to the current snippet.',
+                    {
+                      value: c.legacy_audience,
+                      until: new Date(c.legacy_audience_until).toLocaleDateString(),
+                    }
+                  )}
+                </span>
+              )}
               <span>
                 {t('scans.ci.trust.defaultBranchValue', 'Default branch: {value}', {
                   value: c.default_branch ?? '',
@@ -350,7 +379,12 @@ function TrustConfigDialog({
   const body = (): CITrustConfigRequest => ({
     name: name.trim() || 'preview',
     provider,
-    issuer: traits.issuerInput === 'fixed' ? undefined : issuerFor(provider, organization),
+    issuer:
+      provider === 'github'
+        ? organization.trim() || undefined
+        : traits.issuerInput === 'fixed'
+          ? undefined
+          : issuerFor(provider, organization),
     audience: traits.fixedAudience ? undefined : audience.trim() || undefined,
     default_branch: defaultBranch.trim() || undefined,
     enabled,
@@ -427,6 +461,23 @@ function TrustConfigDialog({
                 </SelectContent>
               </Select>
             </Field>
+            {provider === 'github' && (
+              <Field
+                label={t('scans.ci.trust.githubIssuer', 'GitHub Enterprise issuer (optional)')}
+                id="ci-issuer"
+                hint={t(
+                  'scans.ci.trust.githubIssuerHint',
+                  'Leave empty for github.com. GitHub Enterprise Server: https://<host>/_services/token. An enterprise with a customized issuer: https://token.actions.githubusercontent.com/<enterprise>.'
+                )}
+              >
+                <Input
+                  id="ci-issuer"
+                  placeholder="https://token.actions.githubusercontent.com"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                />
+              </Field>
+            )}
             {provider === 'gitlab' && (
               <Field
                 label={t('scans.ci.trust.gitlabIssuer', 'GitLab URL (issuer)')}

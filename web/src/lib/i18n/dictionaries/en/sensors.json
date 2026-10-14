@@ -333,5 +333,19 @@
   "sensors.toolSettings.effective.source": "Source",
   "sensors.toolSettings.effective.flag": "Native flag",
   "sensors.toolSettings.source.sensor": "This sensor",
-  "sensors.toolSettings.source.default": "Tool default"
+  "sensors.toolSettings.source.default": "Tool default",
+  "sensors.toolSettings.summaryChanged": "{count} changed: {list}",
+  "sensors.toolSettings.groupChanged": "{count} changed",
+  "sensors.toolSettings.changedFromDefault": "Changed from default",
+  "sensors.toolSettings.resetOption": "Reset to default",
+  "sensors.toolSettings.resetOptionLabel": "Reset {option} to default",
+  "sensors.toolSettings.resetTool": "Reset tool",
+  "sensors.toolSettings.unsaved": "Unsaved changes",
+  "sensors.toolSettings.discard": "Discard",
+  "sensors.toolSettings.saveTool": "Save the settings of {tool}",
+  "sensors.toolSettings.needsAttention": "Needs attention",
+  "sensors.toolSettings.impactWarning": "A non-default value increases the load or reach of each scan.",
+  "sensors.toolSettings.searchLabel": "Search tool settings",
+  "sensors.toolSettings.searchPlaceholder": "Search tools or options",
+  "sensors.toolSettings.searchEmpty": "No tool or option matches \"{query}\"."
 }

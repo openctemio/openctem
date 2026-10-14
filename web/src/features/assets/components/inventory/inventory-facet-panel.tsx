@@ -129,6 +129,7 @@ function MultiFacetSection({
   stats: AssetStatsData
   onChange: (next: InventoryFilters) => void
 }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState(false)
   const selected = (filters[facet.filterKey] as string[] | undefined) ?? []
@@ -177,15 +178,21 @@ function MultiFacetSection({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Search ${facet.label.toLowerCase()}…`}
-            aria-label={`Search ${facet.label.toLowerCase()}`}
+            placeholder={t('assets.facetPanel.searchFacet', 'Search {facet}…', {
+              facet: facet.label.toLowerCase(),
+            })}
+            aria-label={t('assets.facetPanel.searchFacetAria', 'Search {facet}', {
+              facet: facet.label.toLowerCase(),
+            })}
             className="h-8 ps-7 text-xs"
           />
         </div>
       )}
       {shown.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">
-          {query ? 'No matches.' : 'None in this workspace yet.'}
+          {query
+            ? t('assets.facetPanel.noMatches', 'No matches.')
+            : t('assets.facetPanel.noneYet', 'None in this workspace yet.')}
         </p>
       ) : (
         shown.map((value) => (
@@ -203,7 +210,9 @@ function MultiFacetSection({
           onClick={() => setExpanded((e) => !e)}
           className="px-1.5 pt-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          {expanded ? 'Show fewer' : `Show ${hiddenCount} more`}
+          {expanded
+            ? t('assets.facetPanel.showFewer', 'Show fewer')
+            : t('assets.facetPanel.showMore', 'Show {count} more', { count: hiddenCount })}
         </button>
       )}
     </FacetSection>
@@ -219,13 +228,14 @@ function AttributeFacetSection({
   filters: InventoryFilters
   onChange: (next: InventoryFilters) => void
 }) {
+  const { t } = useTranslation()
   const { attribute, label, counts } = facet
   const selected = filters.propertiesFilter?.[attribute.key] ?? []
   let options: { value: string; label: string }[]
   if (attribute.kind === 'bool') {
     options = [
-      { value: 'true', label: 'Yes' },
-      { value: 'false', label: 'No' },
+      { value: 'true', label: t('assets.facetPanel.yes', 'Yes') },
+      { value: 'false', label: t('assets.properties.no', 'No') },
     ]
   } else if (attribute.kind === 'enum' && attribute.values) {
     options = attribute.values.map((v) => ({ value: v, label: v }))
@@ -243,7 +253,9 @@ function AttributeFacetSection({
   return (
     <FacetSection title={label} selectedCount={selected.length} defaultOpen={selected.length > 0}>
       {options.length === 0 ? (
-        <p className="py-1 text-xs text-muted-foreground">None recorded yet.</p>
+        <p className="py-1 text-xs text-muted-foreground">
+          {t('assets.facetPanel.noneRecorded', 'None recorded yet.')}
+        </p>
       ) : (
         options.map((o) => (
           <FacetOption
@@ -311,9 +323,13 @@ function SignalsSection({
     (filters.lastSeenAfter ? 1 : 0)
 
   return (
-    <FacetSection title="Signals" selectedCount={selectedCount} defaultOpen={false}>
+    <FacetSection
+      title={t('assets.facetPanel.signals', 'Signals')}
+      selectedCount={selectedCount}
+      defaultOpen={false}
+    >
       <FacetOption
-        label="Crown jewels"
+        label={t('assets.facetPanel.crown', 'Crown jewels')}
         checked={filters.isCrownJewel === true}
         onCheckedChange={(on) => patch({ isCrownJewel: on ? true : undefined })}
       />
@@ -321,31 +337,31 @@ function SignalsSection({
           can be removed, but do not offer them otherwise. */}
       {filters.isCrownJewel === false && (
         <FacetOption
-          label="Not a crown jewel"
+          label={t('assets.facetPanel.notCrown', 'Not a crown jewel')}
           checked
           onCheckedChange={() => patch({ isCrownJewel: undefined })}
         />
       )}
       <FacetOption
-        label="Has findings"
+        label={t('assets.facetPanel.hasFindings', 'Has findings')}
         checked={filters.hasFindings === true}
         onCheckedChange={(on) => patch({ hasFindings: on ? true : undefined })}
       />
       {filters.hasFindings === false && (
         <FacetOption
-          label="No findings"
+          label={t('assets.facetPanel.noFindings', 'No findings')}
           checked
           onCheckedChange={() => patch({ hasFindings: undefined })}
         />
       )}
       <FacetOption
-        label="Not seen for 30+ days"
+        label={t('assets.facetPanel.stale30', 'Not seen for 30+ days')}
         checked={!!filters.lastSeenBefore}
         onCheckedChange={(on) => patch({ lastSeenBefore: on ? staleBeforeISO(30) : undefined })}
       />
       {filters.lastSeenAfter && (
         <FacetOption
-          label="Seen recently"
+          label={t('assets.facetPanel.seenRecently', 'Seen recently')}
           checked
           onCheckedChange={() => patch({ lastSeenAfter: undefined })}
         />

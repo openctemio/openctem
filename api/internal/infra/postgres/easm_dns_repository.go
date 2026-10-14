@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/internal/app/easmdns"
+	"github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/easmalert"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -114,14 +115,15 @@ func dnsScopeMatch(pattern string) string {
 
 func (r *EASMDNSRepository) dueAssetTargets(ctx context.Context, tenantID shared.ID, kind string, checkedBefore time.Time, limit int) ([]dueTarget, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT a.id, a.name, s.last_checked_at
+		SELECT a.id, a.name, s.last_attempt_at
 		FROM assets a
 		LEFT JOIN asset_attributions aa ON aa.asset_id = a.id AND aa.tenant_id = a.tenant_id
-		LEFT JOIN easm_dns_check_state s ON s.asset_id = a.id AND s.check_kind = $2
+		LEFT JOIN asset_coverage s ON s.tenant_id = a.tenant_id AND s.asset_id = a.id
+		      AND s.capability = 'dns.' || $2 AND s.vantage = ''
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.asset_type = ANY($3)
 		  AND a.status = 'active'
-		  AND (s.last_checked_at IS NULL OR s.last_checked_at < $4)
+		  AND (s.last_attempt_at IS NULL OR s.last_attempt_at < $4)
 		  AND (COALESCE(aa.state, 'confirmed') = ANY($6) OR (
 		       aa.state IN ('discovered', 'needs_review', 'candidate')
 		       AND EXISTS (SELECT 1 FROM scope_targets t
@@ -134,7 +136,7 @@ func (r *EASMDNSRepository) dueAssetTargets(ctx context.Context, tenantID shared
 		              AND (e.expires_at IS NULL OR e.expires_at > now())
 		              AND e.exclusion_type IN ('domain', 'subdomain', 'email_domain')
 		              AND `+dnsScopeMatch("e.pattern")+`)))
-		ORDER BY s.last_checked_at ASC NULLS FIRST, a.name
+		ORDER BY s.last_attempt_at ASC NULLS FIRST, a.name
 		LIMIT $5`,
 		tenantID.String(), kind, pq.Array(assetTypesFor(kind)), checkedBefore, limit, pq.Array(dnsCheckInventoryStates))
 	if err != nil {
@@ -204,14 +206,33 @@ func (r *EASMDNSRepository) SaveState(ctx context.Context, tenantID, assetID sha
 	if assetID.IsZero() {
 		return fmt.Errorf("%w: a name target's state is saved with SaveNameState", shared.ErrValidation)
 	}
+	// The check's outcome settles its coverage ledger row: an outcome the
+	// check could not decide is a failed attempt, a name the check does not
+	// apply to is not applicable, anything else covers the asset for a day.
+	state, failed := coverage.StateCovered, outcome == easmdns.OutcomeUnknown
+	switch {
+	case failed:
+		state = coverage.StateFailed
+	case strings.HasPrefix(outcome, "skipped"):
+		state = coverage.StateNotApplicable
+	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO easm_dns_check_state (tenant_id, asset_id, check_kind, last_checked_at, last_outcome, last_error)
-		SELECT a.tenant_id, a.id, $3, $4, $5, $6 FROM assets a WHERE a.id = $2 AND a.tenant_id = $1 AND a.deleted_at IS NULL
-		ON CONFLICT (asset_id, check_kind) DO UPDATE SET
-			last_checked_at = EXCLUDED.last_checked_at,
+		INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state, next_due_at,
+		                            last_attempt_at, last_success_at, last_outcome, last_error, fail_streak, updated_at)
+		SELECT a.tenant_id, a.id, 'dns.' || $3, '', $7, $4::timestamptz + interval '1 day',
+		       $4, CASE WHEN $8 THEN NULL ELSE $4::timestamptz END, $5, $6, CASE WHEN $8 THEN 1 ELSE 0 END, now()
+		FROM assets a WHERE a.id = $2 AND a.tenant_id = $1 AND a.deleted_at IS NULL
+		ON CONFLICT (tenant_id, asset_id, capability, vantage) DO UPDATE SET
+			state           = EXCLUDED.state,
+			next_due_at     = EXCLUDED.next_due_at,
+			last_attempt_at = EXCLUDED.last_attempt_at,
+			last_success_at = COALESCE(EXCLUDED.last_success_at, asset_coverage.last_success_at),
 			last_outcome    = EXCLUDED.last_outcome,
-			last_error      = EXCLUDED.last_error`,
-		tenantID.String(), assetID.String(), kind, at, outcome, lastErr)
+			last_error      = EXCLUDED.last_error,
+			fail_streak     = CASE WHEN $8 THEN asset_coverage.fail_streak + 1 ELSE 0 END,
+			updated_at      = now()`,
+		tenantID.String(), assetID.String(), kind, at,
+		coverage.Clip(outcome, coverage.MaxCodeLen), coverage.Clip(lastErr, coverage.MaxErrorLen), string(state), failed)
 	if err != nil {
 		return fmt.Errorf("save dns check state: %w", err)
 	}

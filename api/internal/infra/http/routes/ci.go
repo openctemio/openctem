@@ -88,14 +88,18 @@ func registerCIRoutes(
 		}, "CI trust preview rate limit exceeded")
 	router.Group("/api/v1/ci", func(r Router) {
 		r.GET("/settings", admin.GetSettings, middleware.Require(permission.CIRead))
-		r.PUT("/settings", admin.UpdateSettings, middleware.Require(permission.CIWrite))
+		// Who may send results is the CI trust: creating or changing a trust
+		// configuration, or letting CI sensor keys back in, grants upload
+		// rights, so it needs a recent sign-in like a break-glass does.
+		// Deleting a configuration only withdraws trust.
+		r.PUT("/settings", admin.UpdateSettings, middleware.Require(permission.CIWrite), requireStepUp())
 
 		r.GET("/trust-configs", admin.ListTrustConfigs, middleware.Require(permission.CIRead))
-		r.POST("/trust-configs", admin.CreateTrustConfig, middleware.Require(permission.CIWrite))
+		r.POST("/trust-configs", admin.CreateTrustConfig, middleware.Require(permission.CIWrite), requireStepUp())
 		// Fetches the draft issuer's keys (SSRF-guarded): per-user budget.
 		r.POST("/trust-configs/preview", admin.PreviewTrustConfig, middleware.Require(permission.CIWrite), previewRL)
 		r.GET("/trust-configs/{id}", admin.GetTrustConfig, middleware.Require(permission.CIRead))
-		r.PUT("/trust-configs/{id}", admin.UpdateTrustConfig, middleware.Require(permission.CIWrite))
+		r.PUT("/trust-configs/{id}", admin.UpdateTrustConfig, middleware.Require(permission.CIWrite), requireStepUp())
 		r.DELETE("/trust-configs/{id}", admin.DeleteTrustConfig, middleware.Require(permission.CIWrite))
 
 		r.GET("/pipelines", admin.ListPipelines, middleware.Require(permission.CIRead))
@@ -107,16 +111,16 @@ func registerCIRoutes(
 		r.GET("/trust-refusals", admin.ListTokenRefusals, middleware.Require(permission.CIWrite))
 
 		r.GET("/coverage", admin.GetCoverage, middleware.Require(permission.CIRead))
-		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIWrite))
-		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIWrite))
+		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIPolicy))
+		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIPolicy))
 
 		r.GET("/runs", admin.ListRuns, middleware.Require(permission.CIRead))
 		r.GET("/runs/{id}", admin.GetRun, middleware.Require(permission.CIRead))
 
 		r.GET("/gate-policies", admin.ListGatePolicies, middleware.Require(permission.CIRead))
-		r.POST("/gate-policies", admin.CreateGatePolicy, middleware.Require(permission.CIWrite))
-		r.PATCH("/gate-policies/{id}", admin.UpdateGatePolicy, middleware.Require(permission.CIWrite))
-		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIWrite))
+		r.POST("/gate-policies", admin.CreateGatePolicy, middleware.Require(permission.CIPolicy))
+		r.PATCH("/gate-policies/{id}", admin.UpdateGatePolicy, middleware.Require(permission.CIPolicy))
+		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIPolicy))
 
 		r.GET("/code-scanning/settings", admin.GetCodeScanTemplate, middleware.Require(permission.CIRead))
 		r.PUT("/code-scanning/settings", admin.UpdateCodeScanTemplate, middleware.Require(permission.CIWrite))

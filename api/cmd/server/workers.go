@@ -23,6 +23,7 @@ import (
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -33,7 +34,6 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -332,10 +332,7 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Audit != nil {
 			auditor = svc.Audit
 		}
-		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, cirun.StatusPolicy{
-			LatestVersion: sensordom.NormalizeVersion(deps.Config.SensorConfig.LatestVersion),
-			MinVersion:    sensordom.NormalizeVersion(deps.Config.SensorConfig.MinVersion),
-		}, log)
+		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, ciRunnerVersionPolicy(deps.Config, log), log)
 		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
@@ -993,6 +990,21 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			Logger: log,
 		},
 	))
+
+	// The asset coverage loop (RFC-093).
+	if cfg.Worker.AssetCoverageEnabled && svc.AssetCoverage != nil {
+		// Planning: due pairs become runs through the scope gate, as the
+		// system; off for a tenant whose scan approval mode is Strict.
+		if svc.Scan != nil && svc.ScanPolicy != nil {
+			svc.AssetCoverage.EnablePlanning(repos.AssetCoverage, svc.Scan,
+				coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant},
+				coverageapp.Config{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+			// Gaps, output drops and repeated failures alert the tenant's
+			// administrators (in-app and integrations) at most once a day.
+			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
+		}
+		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
+	}
 
 	// Automatic passive enrichment of new assets (RFC-075).
 	if cfg.Worker.AssetEnrichmentEnabled && svc.AssetEnricher != nil {

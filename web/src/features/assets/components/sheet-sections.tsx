@@ -134,15 +134,24 @@ export function TimelineSection({
   createdAt,
   updatedAt,
 }: TimelineSectionProps) {
+  const { t } = useTranslation()
   const fmt = (iso: string) => new Date(iso).toLocaleString()
   return (
-    <DetailSection title="Timeline" icon={Clock}>
+    <DetailSection title={t('assets.sheetSections.timeline', 'Timeline')} icon={Clock}>
       <DetailFieldGrid>
-        <DetailField label="First seen">{fmt(firstSeen)}</DetailField>
-        <DetailField label="Last seen">{fmt(lastSeen)}</DetailField>
-        {createdAt && <DetailField label="Created">{fmt(createdAt)}</DetailField>}
+        <DetailField label={t('assets.overview2.firstSeen', 'First seen')}>
+          {fmt(firstSeen)}
+        </DetailField>
+        <DetailField label={t('components.col.lastSeen', 'Last seen')}>{fmt(lastSeen)}</DetailField>
+        {createdAt && (
+          <DetailField label={t('assets.sheetSections.created', 'Created')}>
+            {fmt(createdAt)}
+          </DetailField>
+        )}
         {updatedAt && updatedAt !== createdAt && (
-          <DetailField label="Updated">{fmt(updatedAt)}</DetailField>
+          <DetailField label={t('assets.sheetSections.updated', 'Updated')}>
+            {fmt(updatedAt)}
+          </DetailField>
         )}
       </DetailFieldGrid>
     </DetailSection>
@@ -174,28 +183,37 @@ export function TechnicalDetailsSection({
   externalId,
   parentId,
 }: TechnicalDetailsSectionProps) {
+  const { t } = useTranslation()
   return (
-    <DetailSection title="Technical details" icon={Info}>
+    <DetailSection title={t('assets.sheetSections.technical', 'Technical details')} icon={Info}>
       <DetailFieldGrid>
-        <DetailField label="Type">{ASSET_TYPE_LABELS[type] ?? type}</DetailField>
-        <DetailField label="Sub-type">{subType}</DetailField>
-        {provider && provider !== 'other' && <DetailField label="Provider">{provider}</DetailField>}
-        <DetailField label="Group">
+        <DetailField label={t('assets.properties.columns.type', 'Type')}>
+          {ASSET_TYPE_LABELS[type] ?? type}
+        </DetailField>
+        <DetailField label={t('assets.sheetSections.subType', 'Sub-type')}>{subType}</DetailField>
+        {provider && provider !== 'other' && (
+          <DetailField label={t('assets.sheetSections.provider', 'Provider')}>
+            {provider}
+          </DetailField>
+        )}
+        <DetailField label={t('assets.sheetSections.group', 'Group')}>
           {groupId ? (
             <code className="font-mono text-xs break-all">{groupId}</code>
           ) : (
-            <span className="text-muted-foreground">Ungrouped</span>
+            <span className="text-muted-foreground">
+              {t('assets.sheetSections.ungrouped', 'Ungrouped')}
+            </span>
           )}
         </DetailField>
-        <DetailField label="ID" full>
+        <DetailField label={t('assets.sheetSections.id', 'ID')} full>
           <code className="font-mono text-xs break-all">{id}</code>
         </DetailField>
-        <DetailField label="External ID" full>
+        <DetailField label={t('assets.sheetSections.externalId', 'External ID')} full>
           {externalId ? (
             <code className="font-mono text-xs break-all">{externalId}</code>
           ) : undefined}
         </DetailField>
-        <DetailField label="Parent asset" full>
+        <DetailField label={t('assets.sheetSections.parent', 'Parent asset')} full>
           {parentId ? <code className="font-mono text-xs break-all">{parentId}</code> : undefined}
         </DetailField>
       </DetailFieldGrid>
@@ -214,16 +232,21 @@ interface DangerZoneSectionProps {
 
 /** The shared DangerZone, for asset detail sheets. */
 export function DangerZoneSection({ onDelete, assetTypeName }: DangerZoneSectionProps) {
+  const { t } = useTranslation()
   const noun = assetTypeName.toLowerCase()
   return (
     <DangerZone as="h3">
       <DangerZoneItem
-        title={`Delete ${noun}`}
-        description={`Permanently delete this ${noun} from your inventory.`}
+        title={t('assets.sheetSections.deleteTitle', 'Delete {noun}', { noun })}
+        description={t(
+          'assets.sheetSections.deleteDesc',
+          'Permanently delete this {noun} from your inventory.',
+          { noun }
+        )}
         action={
           <Button variant="destructive" size="sm" onClick={onDelete}>
             <Trash2 className="me-2 h-4 w-4" />
-            Delete {noun}
+            {t('assets.sheetSections.deleteTitle', 'Delete {noun}', { noun })}
           </Button>
         }
       />
@@ -324,7 +347,7 @@ export function TagsSection({
 
   return (
     <DetailSection
-      title="Tags"
+      title={t('assets.tagFilter.title', 'Tags')}
       icon={TagIcon}
       className={className}
       actions={
@@ -334,7 +357,7 @@ export function TagsSection({
               variant="ghost"
               size="sm"
               className="h-7 w-7 p-0"
-              aria-label="Edit tags"
+              aria-label={t('assets.sheetSections.editTags', 'Edit tags')}
               onClick={startEditing}
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -346,7 +369,7 @@ export function TagsSection({
                 variant="ghost"
                 size="sm"
                 className="h-7 w-7 p-0"
-                aria-label="Save tags"
+                aria-label={t('assets.sheetSections.saveTags', 'Save tags')}
                 onClick={handleSave}
                 disabled={saving}
               >
@@ -356,7 +379,7 @@ export function TagsSection({
                 variant="ghost"
                 size="sm"
                 className="h-7 w-7 p-0"
-                aria-label="Cancel"
+                aria-label={t('common.cancel', 'Cancel')}
                 onClick={cancelEditing}
                 disabled={saving}
               >
@@ -401,7 +424,9 @@ export function TagsSection({
           })}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">No tags</p>
+        <p className="text-sm text-muted-foreground">
+          {t('assets.sheetSections.noTags', 'No tags')}
+        </p>
       )}
     </DetailSection>
   )

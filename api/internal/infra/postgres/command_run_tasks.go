@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 
 	"github.com/lib/pq"
+	"github.com/openctemio/ctis/outcome"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -125,7 +126,11 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		            THEN LEAST((commands.payload->'budget'->>'task_seconds')::bigint, 86400) END,
 		       CASE WHEN (commands.payload->'budget'->>'stall_seconds') ~ '^[0-9]{1,9}$'
 		            THEN LEAST((commands.payload->'budget'->>'stall_seconds')::bigint, 86400) END,
-		       (commands.status = 'pending' AND NOT `+hostFreePredicate+`)
+		       (commands.status = 'pending' AND NOT `+hostFreePredicate+`),
+		       `+egressRefusedTargetsSQL+`,
+		       `+guardRefusedTargetsSQL+`,
+		       CASE WHEN jsonb_typeof(commands.result->'metadata'->'refused_targets') = 'array'
+		            THEN jsonb_array_length(commands.result->'metadata'->'refused_targets') ELSE 0 END
 		FROM commands
 		LEFT JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
 		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id AND NOT s.is_platform_sensor
@@ -147,6 +152,7 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 			startedAt, completeAt sql.NullTime
 			skipped, hold, gaps   []byte
 			skippedTotal          int
+			guardListed, listed   int
 			gapsTotal             int
 			progDone, progTotal   sql.NullInt64
 			progressAt            sql.NullTime
@@ -155,12 +161,16 @@ func (r *CommandRepository) queryRunTasks(ctx context.Context, where string, arg
 		if err := rows.Scan(&id, &stepRunID, &t.StepKey, &t.Tool, &status, &sensorID, &t.SensorName,
 			&t.Platform, &t.Targets, &t.Attempts, &t.CreatedAt, &startedAt, &completeAt, &t.ErrorMessage,
 			&skipped, &skippedTotal, &hold, &gaps, &gapsTotal,
-			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs, &t.WaitingOnHosts); err != nil {
+			&progDone, &progTotal, &progressAt, &taskSecs, &stallSecs, &t.WaitingOnHosts, &t.EgressRefusedTargets,
+			&guardListed, &listed); err != nil {
 			return nil, fmt.Errorf("failed to scan run task: %w", err)
 		}
 		// Sensor-supplied: parsed defensively, bounded and cleaned.
 		t.Skipped, t.SkippedTotal = scanrun.ParseSkippedTargets(skipped, skippedTotal)
 		t.CoverageGaps, t.CoverageGapsTotal = scanrun.ParseCoverageGaps(gaps, gapsTotal)
+		// Sensor-supplied: never more than the task's own targets.
+		t.EgressRefusedTargets = min(max(t.EgressRefusedTargets, 0), t.Targets)
+		t.GuardRefusedTargets = scanrun.GuardRefusedCount(guardListed, listed, skippedTotal, t.Targets)
 		if len(hold) > 0 {
 			var h scanwindow.Hold
 			if json.Unmarshal(hold, &h) == nil {
@@ -240,3 +250,29 @@ func (r *CommandRepository) TaskSummaries(ctx context.Context, tenantID shared.I
 	}
 	return out, rows.Err()
 }
+
+// guardRefusedTargetsSQL counts the entries of a command result's
+// refused_targets list (sensor result metadata) that the sensor's target
+// guard refused: rule target_guard. It reads at most outcome.MaxTargets
+// entries; the caller bounds the count by the command's targets
+// (scanrun.GuardRefusedCount).
+var guardRefusedTargetsSQL = `CASE WHEN jsonb_typeof(commands.result->'metadata'->'refused_targets') = 'array'
+		       THEN (SELECT count(*) FROM (
+		                SELECT o FROM jsonb_array_elements(commands.result->'metadata'->'refused_targets') o
+		                LIMIT ` + strconv.Itoa(outcome.MaxTargets) + `) e
+		             WHERE e.o->>'rule' = '` + scanrun.SkipRuleTargetGuard + `')
+		       ELSE 0 END`
+
+// egressRefusedTargetsSQL counts the per-target outcomes of a completed
+// command's result (ctis outcome, target_outcomes) that its sensor's
+// network confinement refused: failed with class egress_refused. It reads
+// at most outcome.MaxTargets entries; the caller bounds the count by the
+// command's targets.
+var egressRefusedTargetsSQL = `CASE WHEN commands.status = 'completed'
+		            AND jsonb_typeof(commands.result->'` + outcome.ResultKey + `') = 'array'
+		       THEN (SELECT count(*) FROM (
+		                SELECT o FROM jsonb_array_elements(commands.result->'` + outcome.ResultKey + `') o
+		                LIMIT ` + strconv.Itoa(outcome.MaxTargets) + `) e
+		             WHERE e.o->>'state' = '` + string(outcome.Failed) + `'
+		               AND e.o->>'class' = '` + string(outcome.EgressRefused) + `')
+		       ELSE 0 END`

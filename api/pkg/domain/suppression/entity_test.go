@@ -409,3 +409,24 @@ func TestRule_PathOnlyRuleSkipsPathlessFindings(t *testing.T) {
 		t.Fatal("path-only rule no longer matches a path under its pattern")
 	}
 }
+
+// MatchesCriteria ignores the rule's status (the approval preview runs on a
+// pending rule); Matches requires an active rule.
+func TestRule_MatchesCriteriaIgnoresStatus(t *testing.T) {
+	rule, err := NewRule(shared.NewID(), "r", SuppressionTypeFalsePositive, shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule.SetRuleIDPattern("semgrep.*")
+	rule.SetPathPattern("src/**/*.go")
+	f := FindingMatch{RuleID: "semgrep.sqli", FilePath: "src/a/b.go"}
+	if !rule.MatchesCriteria(f) {
+		t.Fatal("pending rule: MatchesCriteria = false, want true")
+	}
+	if rule.Matches(f) {
+		t.Fatal("pending rule: Matches = true, want false")
+	}
+	if rule.MatchesCriteria(FindingMatch{RuleID: "semgrep.sqli", FilePath: "test/b.go"}) {
+		t.Fatal("path outside the glob matched")
+	}
+}

@@ -14,7 +14,8 @@ the shared concepts: [Connect CI pipelines](connect-ci-pipelines.md).
 
 ## What you need
 
-- OpenCTEM: the `scans:ci:write` permission (owners and administrators).
+- OpenCTEM: the `scans:ci:write` permission (owners and administrators), and a
+  recent sign-in: saving a trust configuration asks for your second factor.
 - GitLab 15.7 or later (`id_tokens` in `.gitlab-ci.yml`).
 - A GitLab runner with the Docker executor (or Kubernetes) that can pull the
   `ghcr.io/openctemio/ci-*` images and reach your OpenCTEM API over HTTPS.
@@ -24,8 +25,8 @@ the shared concepts: [Connect CI pipelines](connect-ci-pipelines.md).
 
 ## 1. Trust the GitLab project in OpenCTEM
 
-**Settings > Scanning > CI/CD integration > Trust > Add trust** (also under
-**Discovery > CI/CD**):
+**Discovery > CI/CD > Trust and gate > Trust > Add trust**, or **Connect a
+pipeline** on the empty Pipelines tab:
 
 | Field | What to enter |
 |---|---|
@@ -69,10 +70,10 @@ run the scan, write GitLab security reports and ask OpenCTEM for the verdict.
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/openctemio/ci/v0.2.0/gitlab/templates/all.yml
+  - remote: https://raw.githubusercontent.com/openctemio/ci/v0.3.0/gitlab/templates/all.yml
 ```
 
-`all.yml` runs `openctem-sast` (semgrep), `openctem-sca` (trivy),
+`all.yml` runs `openctem-sast` (opengrep), `openctem-sca` (trivy),
 `openctem-secrets` (betterleaks) and `openctem-iac` (trivy) in parallel, reports
 them into one OpenCTEM run, and judges them once in `openctem-gate` (stage
 `.post`). To pick jobs, include `sast.yml`, `sca.yml`, `secrets.yml`, `iac.yml`
@@ -83,7 +84,7 @@ runs in your pipeline with your project's identity.
 Optional variables: `OPENCTEM_FAIL_ON` (local gate threshold when the platform
 cannot decide), `OPENCTEM_SCAN_ARGS` (extra `openctem-ci scan` flags, e.g.
 `--target services/api`), `OPENCTEM_DISABLED` (`"true"` turns every job off).
-Full reference: [openctemio/ci docs/gitlab.md](https://github.com/openctemio/ci/blob/v0.2.0/docs/gitlab.md).
+Full reference: [openctemio/ci docs/gitlab.md](https://github.com/openctemio/ci/blob/v0.3.0/docs/gitlab.md).
 
 What the jobs do: run the scanners on the checkout, convert the output to CTIS
 on the runner, exchange `OPENCTEM_ID_TOKEN` for a run token, upload the
@@ -103,12 +104,14 @@ capability, so findings appear in the merge request security widget.
   ```
   Remove it to **enforce** the gate, then turn on **Settings > Merge requests >
   Pipelines must succeed**.
-- What fails is set in OpenCTEM under **Settings > Scanning > CI/CD
-  integration > Gate policy** (organization, business unit or repository):
+- What fails is set in OpenCTEM under **Discovery > CI/CD > Trust and gate >
+  Gate policy** (organization, business unit or repository; `scans:ci:policy`):
   severity threshold, KEV, EPSS, and whether only **new** findings count
   (default: compared with the default branch). Committed secrets always fail;
-  accepted risk, false positives and suppressions never do. **Warn** mode
-  reports what would fail and passes.
+  false positives and approved suppressions never do, and accepted risks do
+  not until their end date. A project with expected scans (**Coverage**,
+  **Expect**) fails a pipeline that drops one. **Warn** mode reports what
+  would fail and passes.
 - When a release cannot wait, **Break-glass** lets one commit pass for a limited
   time with a reason. It is audited, and so is every run it lets through.
 
@@ -140,7 +143,8 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 - The certificate must be trusted by the API (a public CA, or your CA added to
   the API container).
 - A custom audience in the trust configuration replaces
-  `openctem:tenant:<id>`; set the same value in `id_tokens`.
+  `openctem:tenant:<id>`; it must contain the organization id. Set the same
+  value in `id_tokens`.
 
 ## Security notes
 
@@ -163,12 +167,18 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
   after 15 minutes and is renewed only for the same job.
 - **Budgets.** A run accepts at most 200 reports, and a pipeline may start at
   most 300 runs an hour; beyond that the exchange is refused and audited.
-- **Secrets in results.** `openctem-ci` masks a secret before it leaves the job,
-  and the platform stores only a short masked preview and a keyed fingerprint,
-  never the value, whatever the upload contains.
+- **Secrets in results.** `openctem-ci` masks a secret before it leaves the job
+  and sends a keyed hash of the raw value (`secretHMAC/v1`, under a key the
+  exchange hands the job). The platform stores only a short masked preview and
+  a keyed fingerprint, never the value, whatever the upload contains.
+- **Ignore comments are claims.** SAST runs with `--disable-nosem` and
+  `--x-ignore-semgrepignore-files`, and scanner configuration and ignore files
+  in the project are not read. Inline ignore comments and `.semgrepignore`
+  patterns become pending suppression requests from a default-branch
+  pipeline, and count until approved.
 - **Pinned, verified images.** The templates run the per-tool images of the
   pinned `openctemio/ci` release; images are cosign-signed with SBOMs (see
-  [openctemio/ci docs/images.md](https://github.com/openctemio/ci/blob/v0.2.0/docs/images.md)).
+  [openctemio/ci docs/images.md](https://github.com/openctemio/ci/blob/v0.3.0/docs/images.md)).
 - **Minimum runner version.** A release older than the platform's minimum
   supported version is refused (`403 RUNNER_OUTDATED`): update the pinned tag.
 - **Enforce the gate.** If you started with `allow_failure: exit_codes: [1]`,
@@ -181,9 +191,9 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 
 | Symptom | Cause and fix |
 |---|---|
-| `The CI token was not accepted` | No trust configuration admits the project or branch, the `aud` differs from the configuration's audience, or the token was used twice. The reason is in **Settings > Audit log** (`ci_run.token_refused`) |
+| `The CI token was not accepted` | No trust configuration admits the project or branch, the `aud` differs from the configuration's audience, or the token was used twice. **Trust and gate > Recent refused pipelines** shows the rule and the fix; the audit log has it too (`ci_run.token_refused`), except for tokens that did not verify |
 | `id_tokens` is ignored / `OPENCTEM_ID_TOKEN` is empty | GitLab older than 15.7, or the variable name differs from the one under `id_tokens` |
-| `403 RUNNER_OUTDATED` on the exchange | The pinned `openctemio/ci` release is older than the minimum supported version: pin a current release |
+| `403 RUNNER_OUTDATED` on the exchange | The pinned `openctemio/ci` release is older than the platform's minimum CI runner release (`CI_RUNNER_MIN_VERSION`, v0.3.0 by default): change the `include` to the line the message names |
 | `401` on upload after a long scan | The 15-minute run token expired: keep the token exchange and the verdict within 15 minutes of each other (the parallel per-capability jobs of `all.yml` help) |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than this project's repository |
 | Every finding is "new" | The default branch was never scanned: see step 5 |

@@ -675,6 +675,18 @@ export const assetEndpoints = {
   listRelationships: (assetId: string) => `${API_BASE.ASSETS}/${assetId}/relationships`,
 
   /**
+   * Related assets grouped by relationship type and direction (GET).
+   * Out-of-scope neighbours are only counted (`hidden_count`).
+   */
+  relationshipGroups: (assetId: string, query?: string) =>
+    `${API_BASE.ASSETS}/${assetId}/relationships/groups${query ? `?${query}` : ''}`,
+
+  /**
+   * Get one relationship by its own ID (GET)
+   */
+  getRelationship: (relationshipId: string) => `/api/v1/relationships/${relationshipId}`,
+
+  /**
    * Create a new relationship for an asset (POST)
    * The {id} in the path is the source asset; backend also requires
    * source_asset_id in the body and rejects mismatches.
@@ -1815,6 +1827,12 @@ export const exposureEndpoints = {
    * Reactivate a resolved/accepted exposure
    */
   reactivate: (exposureId: string) => `${API_BASE.EXPOSURES}/${exposureId}/reactivate`,
+
+  /**
+   * Reject (or, for the requester, cancel) a pending disposition request
+   */
+  rejectDisposition: (exposureId: string) =>
+    `${API_BASE.EXPOSURES}/${exposureId}/disposition/reject`,
 
   /**
    * Get exposure state change history

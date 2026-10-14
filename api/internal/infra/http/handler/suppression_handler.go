@@ -50,33 +50,36 @@ type SuppressionRuleResponse struct {
 	AssetID         *string `json:"asset_id,omitempty"`
 	Status          string  `json:"status"`
 	RequestedBy     string  `json:"requested_by"`
-	RequestedAt     string  `json:"requested_at"`
-	ApprovedBy      *string `json:"approved_by,omitempty"`
-	ApprovedAt      *string `json:"approved_at,omitempty"`
-	RejectedBy      *string `json:"rejected_by,omitempty"`
-	RejectedAt      *string `json:"rejected_at,omitempty"`
-	RejectionReason string  `json:"rejection_reason,omitempty"`
-	ExpiresAt       *string `json:"expires_at,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	// RequestedByActor names a requester that is not a user (a CI job).
+	RequestedByActor string  `json:"requested_by_actor,omitempty"`
+	RequestedAt      string  `json:"requested_at"`
+	ApprovedBy       *string `json:"approved_by,omitempty"`
+	ApprovedAt       *string `json:"approved_at,omitempty"`
+	RejectedBy       *string `json:"rejected_by,omitempty"`
+	RejectedAt       *string `json:"rejected_at,omitempty"`
+	RejectionReason  string  `json:"rejection_reason,omitempty"`
+	ExpiresAt        *string `json:"expires_at,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 // toSuppressionRuleResponse converts a domain rule to API response.
 func toSuppressionRuleResponse(r *suppression.Rule) SuppressionRuleResponse {
 	resp := SuppressionRuleResponse{
-		ID:              r.ID().String(),
-		TenantID:        r.TenantID().String(),
-		Name:            r.Name(),
-		Description:     r.Description(),
-		SuppressionType: string(r.SuppressionType()),
-		RuleID:          r.RuleID(),
-		ToolName:        r.ToolName(),
-		PathPattern:     r.PathPattern(),
-		Status:          string(r.Status()),
-		RequestedBy:     r.RequestedBy().StringOrEmpty(),
-		RequestedAt:     r.RequestedAt().Format(time.RFC3339),
-		RejectionReason: r.RejectionReason(),
-		CreatedAt:       r.CreatedAt().Format(time.RFC3339),
+		ID:               r.ID().String(),
+		TenantID:         r.TenantID().String(),
+		Name:             r.Name(),
+		Description:      r.Description(),
+		SuppressionType:  string(r.SuppressionType()),
+		RuleID:           r.RuleID(),
+		ToolName:         r.ToolName(),
+		PathPattern:      r.PathPattern(),
+		Status:           string(r.Status()),
+		RequestedBy:      r.RequestedBy().StringOrEmpty(),
+		RequestedByActor: r.RequestedByActor(),
+		RequestedAt:      r.RequestedAt().Format(time.RFC3339),
+		RejectionReason:  r.RejectionReason(),
+		CreatedAt:        r.CreatedAt().Format(time.RFC3339),
 		// Full precision: an approval sends this back as the version it
 		// reviewed, and two edits in the same second must not look equal.
 		UpdatedAt: r.UpdatedAt().Format(time.RFC3339Nano),
@@ -390,26 +393,95 @@ func (h *SuppressionHandler) ApproveRule(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rule := result.Rule
-	h.auditApproval(r, rule, result.SelfApproved)
+	h.auditApproval(r, result)
 
 	h.logger.Info("suppression rule approved",
 		"rule_id", ruleID,
 		"approved_by", userID,
 		"tenant_id", tenantID,
+		"applied_findings", result.AppliedFindings,
+		"capped", result.Capped,
 	)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toSuppressionRuleResponse(rule))
+	json.NewEncoder(w).Encode(ApproveSuppressionRuleResponse{
+		SuppressionRuleResponse: toSuppressionRuleResponse(rule),
+		AppliedFindings:         result.AppliedFindings,
+		Capped:                  result.Capped,
+	})
+}
+
+// ApproveSuppressionRuleResponse is the approved rule plus what the approval
+// did to existing findings.
+type ApproveSuppressionRuleResponse struct {
+	SuppressionRuleResponse
+	// AppliedFindings is the number of open findings the approval gave the
+	// rule's disposition (false_positive or accepted).
+	AppliedFindings int `json:"applied_findings"`
+	// Capped: more open findings matched than one approval changes; the rest
+	// stay open.
+	Capped bool `json:"capped"`
+}
+
+// SuppressionRulePreviewResponse is what approving a rule would do now.
+type SuppressionRulePreviewResponse struct {
+	// MatchingOpenFindings is the number of the organization's open findings
+	// the rule matches and an approval would close, at most Limit.
+	MatchingOpenFindings int `json:"matching_open_findings"`
+	// Capped: more than Limit match; an approval closes Limit of them.
+	Capped bool `json:"capped"`
+	Limit  int  `json:"limit"`
+}
+
+// PreviewRule handles GET /api/v1/suppressions/{id}/preview: the number of
+// open findings an approval would close. The count is organization-wide, as
+// the approval is, so the route is gated like the approval itself.
+// @Summary      Preview a suppression rule's approval
+// @Description  The number of the organization's open findings the rule matches and an approval would close now (at most limit; capped when more match). Organization-wide, like the approval; needs findings:suppressions:approve.
+// @Tags         Suppressions
+// @Produce      json
+// @Param        id   path      string  true  "Suppression rule ID"
+// @Success      200  {object}  SuppressionRulePreviewResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /suppressions/{id}/preview [get]
+func (h *SuppressionHandler) PreviewRule(w http.ResponseWriter, r *http.Request) {
+	tenantUUID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.BadRequest("Invalid tenant ID").WriteJSON(w)
+		return
+	}
+	ruleUUID, err := shared.IDFromString(r.PathValue("id"))
+	if err != nil {
+		apierror.BadRequest("Invalid rule ID").WriteJSON(w)
+		return
+	}
+
+	preview, err := h.service.PreviewRule(r.Context(), tenantUUID, ruleUUID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(SuppressionRulePreviewResponse{
+		MatchingOpenFindings: preview.MatchingOpenFindings,
+		Capped:               preview.Capped,
+		Limit:                preview.Limit,
+	})
 }
 
 // auditApproval records the approval in the tenant audit log. A self-approval
 // (B16) is Critical.
-func (h *SuppressionHandler) auditApproval(r *http.Request, rule *suppression.Rule, selfApproved bool) {
+func (h *SuppressionHandler) auditApproval(r *http.Request, result *suppression.ApproveResult) {
 	if h.auditService == nil {
 		return
 	}
+	rule := result.Rule
 	action, msg := auditdom.ActionSuppressionRuleApproved, "Suppression rule approved"
-	if selfApproved {
+	if result.SelfApproved {
 		action = auditdom.ActionSuppressionRuleSelfApproved
 		msg = "Suppression rule approved by its own requester (the owner, the only eligible approver)"
 	}
@@ -426,6 +498,8 @@ func (h *SuppressionHandler) auditApproval(r *http.Request, rule *suppression.Ru
 		WithMessage(msg).
 		WithMetadata("suppression_type", string(rule.SuppressionType())).
 		WithMetadata("requested_by", rule.RequestedBy().StringOrEmpty()).
+		WithMetadata("applied_findings", result.AppliedFindings).
+		WithMetadata("capped", result.Capped).
 		WithSeverity(auditdom.SeverityForAction(action))
 	if err := h.auditService.LogEvent(r.Context(), actx, event); err != nil {
 		h.logger.Warn("failed to audit suppression approval", "error", err)

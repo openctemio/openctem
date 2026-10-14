@@ -19,6 +19,7 @@ import (
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -102,6 +103,7 @@ type AssetService struct {
 	attrLister  AttributeSourceLister
 	// Freshness of attribute classes. Optional: nil serves no observation.
 	freshness  freshdom.Repository
+	coverage   covdom.Repository
 	enrichReqs freshdom.RequestRepository
 	// createdHook requests enrichment of assets a person created.
 	createdHook CreatedAssetsHook

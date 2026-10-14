@@ -76,9 +76,16 @@ export function LinkedAssetsPanel({
     try {
       await onUnlink(item.id)
       setPendingUnlink(null)
-      toast.success(`${item.name} unlinked from ${targetName}`)
+      toast.success(
+        t('assets.linkedPanel.unlinked', '{name} unlinked from {target}', {
+          name: item.name,
+          target: targetName,
+        })
+      )
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to unlink the asset'))
+      toast.error(
+        getErrorMessage(err, t('assets.linkedPanel.unlinkFailed', 'Failed to unlink the asset'))
+      )
     } finally {
       setRemoving(null)
     }
@@ -87,7 +94,7 @@ export function LinkedAssetsPanel({
   const linkButton = canEdit ? (
     <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>
       <Link2 className="me-2 h-4 w-4" />
-      Link assets
+      {t('assets.linkedPanel.link', 'Link assets')}
     </Button>
   ) : null
 
@@ -95,13 +102,21 @@ export function LinkedAssetsPanel({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          {isLoading ? 'Loading…' : `${count} asset${count === 1 ? '' : 's'} linked`}
+          {isLoading
+            ? t('common.loading', 'Loading…')
+            : count === 1
+              ? t('assets.linkedPanel.countOne', '1 asset linked')
+              : t('assets.linkedPanel.countMany', '{count} assets linked', { count })}
         </p>
         {linkButton}
       </div>
 
       {error ? (
-        <ErrorState title="linked assets" error={error} onRetry={onRetry} />
+        <ErrorState
+          title={t('assets.linkedPanel.errorTitle', 'linked assets')}
+          error={error}
+          onRetry={onRetry}
+        />
       ) : isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
@@ -111,13 +126,18 @@ export function LinkedAssetsPanel({
       ) : !items || items.length === 0 ? (
         <EmptyState
           icon={Box}
-          title="No assets linked"
+          title={t('assets.linkedPanel.empty', 'No assets linked')}
           description={emptyDescription}
           card={false}
           className="rounded-lg border border-dashed py-8"
         />
       ) : (
-        <ul className="divide-y rounded-lg border" aria-label={`Assets linked to ${targetName}`}>
+        <ul
+          className="divide-y rounded-lg border"
+          aria-label={t('assets.linkedPanel.listAria', 'Assets linked to {target}', {
+            target: targetName,
+          })}
+        >
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 px-3 py-2">
               <Box className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -159,7 +179,9 @@ export function LinkedAssetsPanel({
       {viewAllHref && items && total !== undefined && total > items.length && (
         <DetailSheetFooter>
           <Button asChild variant="outline" className="w-full">
-            <Link href={viewAllHref}>View all {total} in the inventory</Link>
+            <Link href={viewAllHref}>
+              {t('assets.linkedPanel.viewAll', 'View all {total} in the inventory', { total })}
+            </Link>
           </Button>
         </DetailSheetFooter>
       )}
