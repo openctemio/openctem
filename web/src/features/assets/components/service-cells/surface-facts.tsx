@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import type { Asset } from '../../types'
 import {
   asnInfo,
@@ -21,18 +22,20 @@ import { cellsForType, type SurfaceCell } from './cells-for-type'
 import { ChipMono, ChipRow, FactChip } from './fact-chip'
 import { HttpStatusChip } from './http-status-chip'
 import { EmptyCell, NotCollectedNote } from './not-collected'
+import { MoreChip } from './more-chip'
 import { OverflowChips } from './overflow-chips'
 import { TechChips } from './tech-chips'
 import { CertExpiryChip, TlsSummary, tlsNotCollected } from './tls-summary'
 
 /** The port as "443/https"; `fallback` (nothing by default) when none was recorded. */
 export function PortChip({ asset, fallback = null }: { asset: Asset; fallback?: ReactNode }) {
+  const { t } = useTranslation()
   const port = servicePort(asset)
   if (port === null) return <>{fallback}</>
   const proto = serviceProtocol(asset)
   return (
     <FactChip tone="muted">
-      <span>Port</span>
+      <span>{t('assets.facts.port', 'Port')}</span>
       <ChipMono>{proto ? `${port}/${proto}` : port}</ChipMono>
     </FactChip>
   )
@@ -52,11 +55,12 @@ export function OpenPortChips({
   max?: number
   fallback?: ReactNode
 }) {
+  const { t } = useTranslation()
   const ports = openPorts(asset)
   if (ports === null) return <>{fallback}</>
-  if (ports.length === 0) return <FactChip tone="muted">No open ports</FactChip>
+  if (ports.length === 0)
+    return <FactChip tone="muted">{t('assets.facts.noOpenPorts', 'No open ports')}</FactChip>
   const shown = ports.slice(0, max)
-  const rest = ports.length - shown.length
   return (
     <>
       {shown.map((p) => (
@@ -64,15 +68,10 @@ export function OpenPortChips({
           <ChipMono>{formatPort(p)}</ChipMono>
         </FactChip>
       ))}
-      {rest > 0 && (
-        <FactChip
-          tone="muted"
-          className="tabular-nums"
-          title={ports.slice(max).map(formatPort).join(', ')}
-        >
-          +{rest}
-        </FactChip>
-      )}
+      <MoreChip
+        label={t('assets.facts.ports', 'ports')}
+        values={ports.slice(shown.length).map(formatPort)}
+      />
     </>
   )
 }
@@ -93,7 +92,8 @@ export function ProductChip({ asset }: { asset: Asset }) {
 interface CellSpec {
   /** Whether the cell has anything to show for this asset. */
   known: (a: Asset) => boolean
-  render: (a: Asset) => ReactNode
+  /** `all`: a detail view, every value is listed (no "+N"). */
+  render: (a: Asset, all: boolean) => ReactNode
   /**
    * What the drawer's "Not collected yet" line names when this fact is
    * missing, or null. Optional facts (CNAME, ASN, product) are not gaps.
@@ -118,20 +118,22 @@ const SPECS: Record<SurfaceCell, CellSpec> = {
   },
   ip: {
     known: (a) => ipAddresses(a).length > 0,
-    render: (a) => <OverflowChips label="IP" values={ipAddresses(a)} />,
+    render: (a, all) => (
+      <OverflowChips label="IP" values={ipAddresses(a)} max={all ? Infinity : 1} />
+    ),
   },
   cname: {
     known: (a) => cnames(a).length > 0,
-    render: (a) => <OverflowChips label="CNAME" values={cnames(a)} />,
+    render: (a, all) => <OverflowChips label="CNAME" values={cnames(a)} max={all ? Infinity : 1} />,
   },
   // The data cannot tell "never resolved" from "resolved to nothing": both
   // are an empty record list. It keeps its old meaning (not collected).
   dns: {
     known: (a) => cnames(a).length > 0 || ipAddresses(a).length > 0,
-    render: (a) => (
+    render: (a, all) => (
       <>
-        <OverflowChips label="CNAME" values={cnames(a)} />
-        <OverflowChips label="IP" values={ipAddresses(a)} />
+        <OverflowChips label="CNAME" values={cnames(a)} max={all ? Infinity : 1} />
+        <OverflowChips label="IP" values={ipAddresses(a)} max={all ? Infinity : 1} />
       </>
     ),
     missing: (a) => (cnames(a).length === 0 && ipAddresses(a).length === 0 ? 'DNS records' : null),
@@ -150,12 +152,12 @@ const SPECS: Record<SurfaceCell, CellSpec> = {
   },
   ports: {
     known: (a) => openPorts(a) !== null,
-    render: (a) => <OpenPortChips asset={a} />,
+    render: (a, all) => <OpenPortChips asset={a} max={all ? Infinity : 4} />,
     missing: (a) => (openPorts(a) === null ? 'open ports' : null),
   },
   tech: {
     known: (a) => technologies(a) !== null,
-    render: (a) => <TechChips technologies={technologies(a)} max={2} />,
+    render: (a, all) => <TechChips technologies={technologies(a)} max={all ? Infinity : 2} />,
     missing: (a) => (technologies(a) === null ? 'technologies' : null),
   },
   tls: {
@@ -207,10 +209,13 @@ export function SurfaceFacts({
   asset,
   className,
   empty = <EmptyCell />,
+  all = false,
 }: {
   asset: Asset
   className?: string
   empty?: ReactNode
+  /** A detail view: list every value instead of "+N". */
+  all?: boolean
 }) {
   const cells = cellsForType(asset.type, asset.subType)
   if (!cells) return null
@@ -219,7 +224,7 @@ export function SurfaceFacts({
   return (
     <ChipRow className={className}>
       {known.map((cell) => (
-        <RenderCell key={cell} cell={cell} asset={asset} />
+        <RenderCell key={cell} cell={cell} asset={asset} all={all} />
       ))}
     </ChipRow>
   )
@@ -233,12 +238,12 @@ export function SurfaceFactsDetail({ asset }: { asset: Asset }) {
   const missing = missingSurfaceFacts(asset)
   return (
     <div className="space-y-2">
-      <SurfaceFacts asset={asset} empty={null} />
+      <SurfaceFacts asset={asset} empty={null} all />
       <NotCollectedNote items={missing} />
     </div>
   )
 }
 
-function RenderCell({ cell, asset }: { cell: SurfaceCell; asset: Asset }) {
-  return <>{SPECS[cell].render(asset)}</>
+function RenderCell({ cell, asset, all }: { cell: SurfaceCell; asset: Asset; all: boolean }) {
+  return <>{SPECS[cell].render(asset, all)}</>
 }
