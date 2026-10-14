@@ -1785,5 +1785,14 @@
   "scans.tasks.waitingForHosts": "Waiting for its hosts: another task is scanning them",
   "scans.tasks.handedBackHostsBusy": "Handed back: its sensor is still scanning one of its hosts",
   "scans.ci.fleet.runner": "Runner",
-  "scans.ci.fleet.runnerDescription": "CI/CD pipelines that run the OpenCTEM CI scan"
+  "scans.ci.fleet.runnerDescription": "CI/CD pipelines that run the OpenCTEM CI scan",
+  "scans.toolOption.opengrep": "Static application security testing (SAST) with local rules only",
+  "scans.toolOption.semgrep": "Static application security testing (SAST)",
+  "scans.toolOption.trivy": "Container and dependency vulnerability scanning",
+  "scans.toolOption.nuclei": "Web vulnerability scanner",
+  "scans.toolOption.betterleaks": "Secret detection in code, git history and archives (replaces Gitleaks)",
+  "scans.toolOption.checkov": "Infrastructure as code security scanner",
+  "scans.toolOption.tfsec": "Terraform security scanner",
+  "scans.toolOption.grype": "Software composition analysis (SCA)",
+  "scans.toolOption.syft": "SBOM generation and analysis"
 }
