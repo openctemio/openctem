@@ -184,3 +184,30 @@ func TestCIAdminDataScope(t *testing.T) {
 		t.Fatalf("out of scope override: %d created=%v", w.Code, svc.created)
 	}
 }
+
+type fakeRefusals struct{ limit int }
+
+func (f *fakeRefusals) RecentRefusals(_ context.Context, _ shared.ID, limit int) ([]cirun.TokenRefusal, error) {
+	f.limit = limit
+	return []cirun.TokenRefusal{{Repository: "github.com/acme/api", Reasons: []string{"fork_refused"}}, {Repository: "x"}}, nil
+}
+
+func TestCIListTokenRefusals(t *testing.T) {
+	tenant := shared.NewID()
+	h := NewCIAdminHandler(nil, nil, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.ListTokenRefusals(w, tenantRequest(http.MethodGet, "/api/v1/ci/trust-refusals", "", tenant))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unwired: %d", w.Code)
+	}
+	svc := &fakeRefusals{}
+	h.SetRefusalService(svc)
+	w = httptest.NewRecorder()
+	h.ListTokenRefusals(w, tenantRequest(http.MethodGet, "/api/v1/ci/trust-refusals?limit=500", "", tenant))
+	if w.Code != http.StatusOK || svc.limit != cirun.MaxTokenRefusals {
+		t.Fatalf("listing: %d limit %d %s", w.Code, svc.limit, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"reasons":["fork_refused"]`) || !strings.Contains(w.Body.String(), `"reasons":[]`) {
+		t.Fatalf("body: %s", w.Body.String())
+	}
+}

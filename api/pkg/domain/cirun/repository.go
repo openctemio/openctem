@@ -112,6 +112,9 @@ type CoverageRepository interface {
 	// TokenRefusalsSince counts the tenant's refused CI token exchanges
 	// (audited, so verified tokens only) since the time.
 	TokenRefusalsSince(ctx context.Context, tenantID shared.ID, since time.Time) (int, error)
+	// RecentTokenRefusals lists the tenant's latest refused CI token
+	// exchanges, newest first, at most limit.
+	RecentTokenRefusals(ctx context.Context, tenantID shared.ID, limit int) ([]TokenRefusal, error)
 	MarkStaleSourceFindings(ctx context.Context, tenantID shared.ID, p *Pipeline) ([]shared.ID, error)
 	RetirePipeline(ctx context.Context, tenantID, pipelineID shared.ID, by *shared.ID, reason string, at time.Time) (*Pipeline, []shared.ID, error)
 }
@@ -174,3 +177,19 @@ type PipelineRepository interface {
 	// RecordRunTools merges tool labels into the run's (capped).
 	RecordRunTools(ctx context.Context, tenantID, runID shared.ID, tools []ToolLabel) error
 }
+
+// TokenRefusal is a refused CI token exchange, as audited: verified tokens
+// only (an unverified token is never recorded), with the rule codes that
+// refused it.
+type TokenRefusal struct {
+	At         time.Time
+	Repository string
+	Provider   string
+	Ref        string
+	Event      string
+	Reasons    []string
+	Message    string
+}
+
+// MaxTokenRefusals bounds a refusal listing.
+const MaxTokenRefusals = 50
