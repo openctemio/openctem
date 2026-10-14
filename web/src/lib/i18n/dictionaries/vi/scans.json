@@ -409,6 +409,10 @@
   "scans.sheet.details": "Chi tiết",
   "scans.sheet.copyId": "Sao chép ID",
   "scans.sheet.idCopied": "Đã sao chép ID vào clipboard",
+  "scans.sheet.edit": "Sửa",
+  "scans.sheet.clone": "Nhân bản",
+  "scans.page.edit": "Sửa",
+  "scans.page.clone": "Nhân bản",
   "scans.sheet.deleteConfig": "Xóa cấu hình",
   "scans.sheet.keyNumbers": "Số liệu chính",
   "scans.sheet.successRate": "Tỷ lệ thành công",
@@ -1622,9 +1626,5 @@
   "scans.liveness.switch": "Dùng tìm máy đang hoạt động trước",
   "scans.liveness.switched": "Lượt quét giờ tìm máy đang hoạt động trước",
   "scans.liveness.switchFailed": "Không thể chuyển chế độ của lượt quét",
-  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước",
-  "scans.sheet.edit": "Sửa",
-  "scans.sheet.clone": "Nhân bản",
-  "scans.page.edit": "Sửa",
-  "scans.page.clone": "Nhân bản"
+  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước"
 }
