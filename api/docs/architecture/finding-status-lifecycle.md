@@ -109,7 +109,7 @@ instead).
   (`cirun.honored`), even before the hourly approval-expiration controller
   reopens it. Threat models read it as the acceptance horizon.
 
-Migration `002117` adds the trigger and fills the column for findings already
+Migration `002119` adds the trigger and fills the column for findings already
 accepted, from their latest approved acceptance request or their suppression
 rule. Findings accepted with no end anywhere stay empty.
 
@@ -144,7 +144,6 @@ Key files: `pkg/domain/exposure/disposition.go`,
 `002126`; web `features/exposures/components/pending-disposition.tsx`.
 The credentials page has no accept or false-positive control yet; its API
 responses carry `pending_disposition` the same way.
-||||||| a2193be20
 
 ## Upgrade
 
