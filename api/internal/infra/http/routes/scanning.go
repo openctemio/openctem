@@ -135,6 +135,16 @@ func registerSensorManagementRoutes(
 		// Manifest (RFC-033): the current one and its history.
 		r.GET("/{id}/manifest", h.Manifest, middleware.Require(permission.SensorsRead), own)
 		r.GET("/{id}/manifests", h.Manifests, middleware.Require(permission.SensorsRead), own)
+		// Tool settings: per tool of the current manifest that declares a
+		// settings schema. Saving and resetting change what the sensor's
+		// scan jobs run with, so they need sensors:write (owners and
+		// administrators).
+		r.GET("/{id}/tool-settings", h.ListToolSettings, middleware.Require(permission.SensorsRead), own)
+		r.GET("/{id}/tool-settings/{tool}/effective", h.EffectiveToolSettings, middleware.Require(permission.SensorsRead), own)
+		// Read-only: resolves a scan's config, stores nothing.
+		r.POST("/{id}/tool-settings/{tool}/preview", h.PreviewToolSettings, middleware.Require(permission.SensorsRead), own)
+		r.PUT("/{id}/tool-settings/{tool}", h.UpdateToolSettings, middleware.Require(permission.SensorsWrite), own)
+		r.DELETE("/{id}/tool-settings/{tool}", h.ResetToolSettings, middleware.Require(permission.SensorsWrite), own)
 		// Setup checklist (research/26): the sensor's config report, explained
 		// from the platform catalog.
 		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsRead), own)
