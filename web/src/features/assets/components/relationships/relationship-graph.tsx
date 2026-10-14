@@ -18,7 +18,9 @@ import type {
   RelationshipGraphNode,
   RelationshipGraphEdge,
 } from '../../types'
-import { EXTENDED_ASSET_TYPE_LABELS, RELATIONSHIP_LABELS } from '../../types'
+import { EXTENDED_ASSET_TYPE_LABELS } from '../../types'
+import type { AssetRelationship } from '../../types'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // Types
@@ -291,8 +293,7 @@ function GraphEdge({ edge, sourcePos, targetPos, onClick }: GraphEdgeProps) {
   }
 
   const edgeColor = getEdgeColor()
-  const labels = RELATIONSHIP_LABELS[edge.type]
-  const labelText = labels?.direct || edge.type
+  const labelText = edge.label || edge.type
   // Approximate label width — 6.2px per char + 12px horizontal padding
   const labelWidth = Math.max(48, labelText.length * 6.2 + 12)
 
@@ -350,6 +351,7 @@ export function RelationshipGraphView({
   onEdgeClick,
   className,
 }: RelationshipGraphProps) {
+  const { t } = useTranslation()
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = React.useState({ width: 600, height: 400 })
   const [zoom, setZoom] = React.useState(1)
@@ -424,7 +426,9 @@ export function RelationshipGraphView({
         )}
       >
         <Link2 className="h-12 w-12 text-muted-foreground mb-4" />
-        <p className="text-sm text-muted-foreground">No relationships to display</p>
+        <p className="text-sm text-muted-foreground">
+          {t('assets.related.graphEmpty', 'No relationships to draw')}
+        </p>
       </div>
     )
   }
@@ -523,86 +527,48 @@ export function RelationshipGraphView({
 
       {/* Stats */}
       <div className="absolute top-2 left-2 z-10 text-xs text-muted-foreground">
-        {graph.nodes.length} nodes, {graph.edges.length} edges
+        {t('assets.related.graphCount', '{nodes} assets, {edges} relationships', {
+          nodes: graph.nodes.length,
+          edges: graph.edges.length,
+        })}
       </div>
     </div>
   )
 }
 
-// ============================================
-// Mini Graph (for cards/previews)
-// ============================================
-
-interface MiniGraphProps {
-  graph: RelationshipGraphType
-  centralNodeId?: string
-  className?: string
-}
-
-export function MiniGraph({ graph, centralNodeId, className }: MiniGraphProps) {
-  const nodesWithPositions = React.useMemo(
-    () => calculateNodePositions(graph.nodes, graph.edges, centralNodeId, 200, 150),
-    [graph.nodes, graph.edges, centralNodeId]
-  )
-
-  const getNodePosition = (nodeId: string): Position | undefined => {
-    return nodesWithPositions.find((n) => n.id === nodeId)?.position
-  }
-
-  if (graph.nodes.length === 0) {
-    return (
-      <div
-        className={cn(
-          'flex items-center justify-center h-[100px] rounded border bg-muted/30',
-          className
-        )}
-      >
-        <Link2 className="h-6 w-6 text-muted-foreground" />
-      </div>
-    )
-  }
-
-  return (
-    <div className={cn('rounded border bg-card overflow-hidden', className)}>
-      <svg width="100%" height="100" viewBox="0 0 200 150">
-        {/* Edges */}
-        {graph.edges.map((edge) => {
-          const sourcePos = getNodePosition(edge.source)
-          const targetPos = getNodePosition(edge.target)
-          if (!sourcePos || !targetPos) return null
-
-          return (
-            <line
-              key={edge.id}
-              x1={sourcePos.x}
-              y1={sourcePos.y}
-              x2={targetPos.x}
-              y2={targetPos.y}
-              stroke="#6b7280"
-              strokeWidth={1}
-              strokeOpacity={0.5}
-            />
-          )
-        })}
-
-        {/* Nodes */}
-        {nodesWithPositions.map((node) => {
-          const color = ASSET_TYPE_COLORS[node.type] || '#6b7280'
-          const isCentral = node.id === centralNodeId
-
-          return (
-            <circle
-              key={node.id}
-              cx={node.position.x}
-              cy={node.position.y}
-              r={isCentral ? 12 : 8}
-              fill={`${color}40`}
-              stroke={color}
-              strokeWidth={isCentral ? 2 : 1}
-            />
-          )
-        })}
-      </svg>
-    </div>
-  )
+/**
+ * Graph of an asset's relationships, each edge labelled with its forward verb
+ * (`label`, already translated by the caller).
+ */
+export function buildGraphFromRelationships(
+  relationships: AssetRelationship[],
+  label: (type: AssetRelationship['type']) => string
+): RelationshipGraphType {
+  const nodeMap = new Map<string, RelationshipGraphNode>()
+  const edges: RelationshipGraphEdge[] = []
+  relationships.forEach((rel) => {
+    if (!nodeMap.has(rel.sourceAssetId)) {
+      nodeMap.set(rel.sourceAssetId, {
+        id: rel.sourceAssetId,
+        name: rel.sourceAssetName,
+        type: rel.sourceAssetType,
+      })
+    }
+    if (!nodeMap.has(rel.targetAssetId)) {
+      nodeMap.set(rel.targetAssetId, {
+        id: rel.targetAssetId,
+        name: rel.targetAssetName,
+        type: rel.targetAssetType,
+      })
+    }
+    edges.push({
+      id: rel.id,
+      source: rel.sourceAssetId,
+      target: rel.targetAssetId,
+      type: rel.type,
+      label: label(rel.type),
+      impactWeight: rel.impactWeight,
+    })
+  })
+  return { nodes: Array.from(nodeMap.values()), edges }
 }

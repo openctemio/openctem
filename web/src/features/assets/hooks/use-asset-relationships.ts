@@ -39,7 +39,7 @@ interface BackendRelationshipsListResponse {
   total_pages: number
 }
 
-function transformRelationship(backend: BackendRelationshipResponse): AssetRelationship {
+export function transformRelationship(backend: BackendRelationshipResponse): AssetRelationship {
   return {
     id: backend.id,
     type: backend.type as AssetRelationship['type'],
@@ -218,4 +218,14 @@ export async function updateAssetRelationship(
  */
 export async function removeAssetRelationship(relationshipId: string): Promise<void> {
   await del(endpoints.assets.deleteRelationship(relationshipId))
+}
+
+/**
+ * Fetch one relationship by its ID (the edit dialog needs the fields the
+ * grouped view does not carry: description and impact weight).
+ */
+export async function getAssetRelationship(relationshipId: string): Promise<AssetRelationship> {
+  return transformRelationship(
+    await get<BackendRelationshipResponse>(endpoints.assets.getRelationship(relationshipId))
+  )
 }
