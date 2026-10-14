@@ -16,6 +16,10 @@ type mockRepository struct {
 	findErr    error
 	deleteErr  error
 	auditCalls []auditCall
+	// matching is what CountMatchingOpenFindings and Approve see: the number
+	// of open findings the rule matches.
+	matching   int
+	applyLimit int
 }
 
 type auditCall struct {
@@ -55,6 +59,27 @@ func (m *mockRepository) SaveWithAudit(_ context.Context, rule *Rule, action str
 	m.rules[rule.ID()] = rule
 	m.auditCalls = append(m.auditCalls, auditCall{rule.ID(), action, userID, details})
 	return nil
+}
+
+// Approve mirrors the atomic repository method: save, apply (capped at
+// limit) and audit with the count.
+func (m *mockRepository) Approve(_ context.Context, rule *Rule, _ time.Time, actorID shared.ID, details map[string]any, limit int) (ApplyResult, error) {
+	if m.saveErr != nil {
+		return ApplyResult{}, m.saveErr
+	}
+	m.applyLimit = limit
+	res := ApplyResult{Applied: min(m.matching, limit), Capped: m.matching > limit}
+	m.rules[rule.ID()] = rule
+	d := map[string]any{"applied_findings": res.Applied, "capped": res.Capped}
+	for k, v := range details {
+		d[k] = v
+	}
+	m.auditCalls = append(m.auditCalls, auditCall{rule.ID(), "approved", &actorID, d})
+	return res, nil
+}
+
+func (m *mockRepository) CountMatchingOpenFindings(_ context.Context, _ *Rule, limit int) (int, error) {
+	return min(m.matching, limit+1), nil
 }
 
 func (m *mockRepository) FindByID(_ context.Context, tenantID, ruleID shared.ID) (*Rule, error) {
@@ -603,4 +628,76 @@ func TestService_ApproveRule_PinsReviewedVersion(t *testing.T) {
 	}); !errors.Is(err, ErrRuleChangedSinceReview) {
 		t.Fatalf("approve a changed rule = %v, want ErrRuleChangedSinceReview", err)
 	}
+}
+
+// Approving a rule closes the open findings it matches (research 134
+// decision 2): the result and the rule's audit entry carry the count, capped
+// at MaxFindingsAppliedOnApprove.
+func TestService_ApproveRule_AppliesToExistingFindings(t *testing.T) {
+	ctx := context.Background()
+	tenantID := shared.NewID()
+	newPending := func(svc *Service) *Rule {
+		rule, err := svc.CreateRule(ctx, CreateRuleInput{
+			TenantID: tenantID, Name: "r", SuppressionType: SuppressionTypeFalsePositive,
+			RuleID: "semgrep.sqli", RequestedBy: shared.NewID(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rule
+	}
+
+	t.Run("count in result and audit", func(t *testing.T) {
+		repo := newMockRepository()
+		repo.matching = 7
+		svc := NewService(repo, nil)
+		rule := newPending(svc)
+		res, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: shared.NewID(), ReviewedUpdatedAt: reviewedAt(rule)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.AppliedFindings != 7 || res.Capped {
+			t.Fatalf("result = %+v, want 7 applied, not capped", res)
+		}
+		last := repo.auditCalls[len(repo.auditCalls)-1]
+		if last.action != "approved" || last.details["applied_findings"] != 7 {
+			t.Fatalf("audit = %+v, want approved with applied_findings 7", last)
+		}
+		if repo.applyLimit != MaxFindingsAppliedOnApprove {
+			t.Fatalf("limit = %d, want %d", repo.applyLimit, MaxFindingsAppliedOnApprove)
+		}
+	})
+
+	t.Run("capped", func(t *testing.T) {
+		repo := newMockRepository()
+		repo.matching = MaxFindingsAppliedOnApprove + 5
+		svc := NewService(repo, nil)
+		rule := newPending(svc)
+		res, err := svc.ApproveRule(ctx, ApproveRuleInput{TenantID: tenantID, RuleID: rule.ID(), ApprovedBy: shared.NewID(), ReviewedUpdatedAt: reviewedAt(rule)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.AppliedFindings != MaxFindingsAppliedOnApprove || !res.Capped {
+			t.Fatalf("result = %+v, want capped at %d", res, MaxFindingsAppliedOnApprove)
+		}
+	})
+
+	t.Run("preview", func(t *testing.T) {
+		repo := newMockRepository()
+		svc := NewService(repo, nil)
+		rule := newPending(svc)
+		repo.matching = 3
+		p, err := svc.PreviewRule(ctx, tenantID, rule.ID())
+		if err != nil || p.MatchingOpenFindings != 3 || p.Capped || p.Limit != MaxFindingsAppliedOnApprove {
+			t.Fatalf("preview = %+v, %v; want 3 not capped", p, err)
+		}
+		repo.matching = MaxFindingsAppliedOnApprove * 3
+		p, err = svc.PreviewRule(ctx, tenantID, rule.ID())
+		if err != nil || p.MatchingOpenFindings != MaxFindingsAppliedOnApprove || !p.Capped {
+			t.Fatalf("preview = %+v, %v; want capped", p, err)
+		}
+		if _, err := svc.PreviewRule(ctx, shared.NewID(), rule.ID()); !errors.Is(err, ErrRuleNotFound) {
+			t.Fatalf("other tenant preview err = %v, want ErrRuleNotFound", err)
+		}
+	})
 }

@@ -449,7 +449,7 @@ func str(m map[string]any, k string) string {
 // host and the repository path, lower case ("github.com/acme/api",
 // "gitlab.example.com/group/project").
 func CanonicalRepository(provider Provider, issuer, repository string) string {
-	host := "github.com"
+	host := GitHubHost(issuer)
 	if provider == ProviderGitLab {
 		host = IssuerHost(issuer)
 	}
@@ -473,7 +473,7 @@ func PipelineURL(provider Provider, issuer string, c Claims) string {
 	}
 	switch provider {
 	case ProviderGitHub:
-		return "https://github.com/" + c.Repository + "/actions/runs/" + c.RunID
+		return "https://" + GitHubHost(issuer) + "/" + c.Repository + "/actions/runs/" + c.RunID
 	case ProviderGitLab:
 		return strings.TrimRight(issuer, "/") + "/" + c.Repository + "/-/pipelines/" + c.RunID
 	case ProviderAzureDevOps:
