@@ -331,3 +331,104 @@ func (s *SensorService) SensorToolSettingsLayer(ctx context.Context, tenantID, s
 	}
 	return row.Values, nil
 }
+
+// ToolSettingsPreview is what a job of a scan with config runs with on a
+// sensor: every key with its value and source (default, sensor or scan),
+// before the job's own limits and the sensor's local policy (both only
+// lower values). Ignored lists the config keys the sensor would ignore.
+type ToolSettingsPreview struct {
+	View      ToolSettingsView
+	Effective []sensordom.EffectiveToolSetting
+	Ignored   []string
+}
+
+// PreviewToolSettings resolves a scan's config (its scan layer) over the
+// sensor's stored settings for tool, as the sensor will. A config the
+// sensor would refuse (a sensor-scope key, a value out of bounds, a raise
+// above the value in force, a dangerous option) is settings.Errors; stored
+// values that no longer validate are the view's problems.
+func (s *SensorService) PreviewToolSettings(ctx context.Context, tenantID, sensorID, tool string, config map[string]any) (*ToolSettingsPreview, error) {
+	_, view, err := s.EffectiveToolSettings(ctx, tenantID, sensorID, tool)
+	if err != nil {
+		return nil, err
+	}
+	_, _, ts, err := s.toolSettingsSensor(ctx, tenantID, sensorID, tool)
+	if err != nil {
+		return nil, err
+	}
+	layer, ignored := sensordom.ScanSettingsLayer(ts.schema, config)
+	if err := sensordom.ValidateScanSettings(ts.schema, view.Values, layer); err != nil {
+		return nil, err
+	}
+	eff, err := sensordom.EffectiveToolSettingsWithScan(ts.schema, view.Values, layer)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolSettingsPreview{View: *view, Effective: eff, Ignored: ignored}, nil
+}
+
+// maxScanConfigSensors bounds how many of the tenant's sensors one scan's
+// tool config is checked against.
+const maxScanConfigSensors = 50
+
+// CheckScanToolConfig checks the config of a scan (or of a workflow step
+// pinned to tool) against the tenant's own sensors whose current manifest
+// declares settings for tool: the scan layer over each sensor's stored
+// values, as that sensor will resolve it. It refuses (shared.ErrValidation
+// with the first sensor's problems) only when no such sensor accepts it, so
+// one stale sensor does not block a scan the others run. No such sensor
+// (the tool runs on platform sensors only, or has no settings): nil.
+func (s *SensorService) CheckScanToolConfig(ctx context.Context, tenantID shared.ID, tool string, config map[string]any) error {
+	name := sensordom.NormalizeToolName(tool)
+	store, ok := s.toolSettingsStore()
+	if name == "" || len(config) == 0 || !ok {
+		return nil
+	}
+	mstore, ok := s.manifestStore()
+	if !ok {
+		return nil
+	}
+	sensors, err := s.repo.FindByCapabilities(ctx, tenantID, nil, name)
+	if err != nil {
+		return err
+	}
+	var first error
+	checked := 0
+	for _, a := range sensors {
+		if a.TenantID == nil || a.IsPlatformSensor || !a.TenantID.Equals(tenantID) {
+			continue
+		}
+		if checked == maxScanConfigSensors {
+			break
+		}
+		mv, err := mstore.CurrentManifest(ctx, &tenantID, a.ID)
+		if errors.Is(err, shared.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		schema, err := sensordom.ToolSettingsSchema(mv.Manifest.ToolDescriptor(name))
+		if err != nil || schema == nil {
+			continue
+		}
+		checked++
+		var values map[string]any
+		row, err := store.GetToolSettings(ctx, tenantID, a.ID, name)
+		switch {
+		case err == nil:
+			values = row.Values
+		case !errors.Is(err, shared.ErrNotFound):
+			return err
+		}
+		layer, _ := sensordom.ScanSettingsLayer(schema, config)
+		err = sensordom.ValidateScanSettings(schema, values, layer)
+		if err == nil {
+			return nil
+		}
+		if first == nil {
+			first = fmt.Errorf("%w: %s options are not valid on sensor %q: %w", shared.ErrValidation, name, a.Name, err)
+		}
+	}
+	return first
+}
