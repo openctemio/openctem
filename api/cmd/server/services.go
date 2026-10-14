@@ -2609,8 +2609,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// (docs/architecture/asset-freshness.md): ingest, manual create, CSV import.
 	s.AssetEnricher = assetfreshnessapp.NewEnricher(repos.AssetEnrichmentRequests, repos.Asset, s.Tenant, s.Scan,
 		assetfreshnessapp.EnricherConfig{DailyBudget: cfg.Worker.AssetEnrichmentDailyBudget}, log)
+	// The asset coverage loop (RFC-093) supersedes it: it resolves and looks
+	// up every asset its policy names, new or not.
+	enrichNew := cfg.Worker.AssetEnrichmentEnabled && !cfg.Worker.AssetCoverageEnabled
 	requestNew := func(ctx context.Context, tenantID shared.ID, assets []*assetdom.Asset) {
-		if cfg.Worker.AssetEnrichmentEnabled {
+		if enrichNew {
 			s.AssetEnricher.RequestAssets(ctx, tenantID, assets, freshdom.ReasonNewAsset)
 		}
 	}
@@ -2618,7 +2621,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Resolve before active (RFC-088): active stages skip names without
 	// recent resolution evidence; their enrichment is asked for again.
 	var staleRefresher scan.StaleRefresher
-	if cfg.Worker.AssetEnrichmentEnabled {
+	if enrichNew {
 		staleRefresher = s.AssetEnricher
 	}
 	s.Scan.SetResolveEvidence(repos.AssetFreshness, staleRefresher)

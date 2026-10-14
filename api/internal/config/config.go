@@ -1005,6 +1005,9 @@ type SensorConfig struct {
 	// AssetCoverageInterval is how often the loop runs.
 	// ASSET_COVERAGE_INTERVAL, default 1m.
 	AssetCoverageInterval time.Duration
+	// AssetCoverageDailyBudget caps the pairs one tenant's automatic
+	// coverage attempts per 24 h. ASSET_COVERAGE_DAILY_BUDGET, default 5000.
+	AssetCoverageDailyBudget int
 
 	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
 	// (free tier), when crt.sh still fails after its retries. Set
@@ -1470,6 +1473,7 @@ func Load() (*Config, error) {
 			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
 			AssetCoverageEnabled:        getEnvBool("ASSET_COVERAGE_ENABLED", true),
 			AssetCoverageInterval:       getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
+			AssetCoverageDailyBudget:    getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
 			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),
