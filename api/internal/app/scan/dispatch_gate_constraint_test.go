@@ -33,7 +33,7 @@ func (g *constraintGate) ConstraintRefused(_ context.Context, _ shared.ID, targe
 // entries' port or path limit; the claim re-check passes the job.
 func TestResolveDispatchTargets_Constrained(t *testing.T) {
 	g := &constraintGate{refuse: map[string]string{"api.example.com": scopedom.ConstrainedPortsOutside}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: g, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: g, logger: logger.NewNop()}
 	job := scopedom.JobShape{Tool: "naabu", Ports: "1-65535"}
 	got, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{
 		TenantID: shared.NewID(), Targets: []string{"api.example.com", "app.example.com"}, Job: &job,
@@ -58,7 +58,7 @@ func TestResolveDispatchTargets_Constrained(t *testing.T) {
 
 // A gate that cannot check the limits fails closed.
 func TestResolveDispatchTargets_ConstrainedFailsClosed(t *testing.T) {
-	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	job := scopedom.JobShape{Tool: "httpx"}
 	_, err := svc.ResolveDispatchTargets(context.Background(), DispatchTargetsInput{
 		TenantID: shared.NewID(), Targets: []string{"api.example.com"}, Job: &job,

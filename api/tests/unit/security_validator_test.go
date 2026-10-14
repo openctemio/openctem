@@ -129,7 +129,9 @@ func (m *secValMockToolRepo) Count(_ context.Context, _ tool.ToolFilter) (int64,
 // refresh finish; because our mock returns immediately, this is safe.
 func newSecValValidator(repo *secValMockToolRepo) *app.SecurityValidator {
 	log := logger.NewNop()
-	return app.NewSecurityValidator(repo, log)
+	v := app.NewSecurityValidator(repo, log)
+	v.SetToolFacts(unitToolFacts)
+	return v
 }
 
 // makeActivePlatformTool creates an active platform tool with the given

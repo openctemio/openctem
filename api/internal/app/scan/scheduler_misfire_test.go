@@ -76,7 +76,7 @@ func TestScheduler_MisfiredOccurrenceIsSkippedAndCounted(t *testing.T) {
 	repo := &claimingScanRepo{}
 	// A nil-dependency Service: reaching TriggerScan would panic, so the
 	// test also proves the misfire is never triggered.
-	s := &ScanScheduler{scanRepo: repo, scanService: &Service{logger: logger.NewNop()}, logger: logger.NewNop()}
+	s := &ScanScheduler{scanRepo: repo, scanService: &Service{tools: testTools, logger: logger.NewNop()}, logger: logger.NewNop()}
 
 	c := metrics.ScanScheduleOutcomes.WithLabelValues("skipped_misfire")
 	before := testutil.ToFloat64(c)

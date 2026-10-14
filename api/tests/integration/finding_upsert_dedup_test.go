@@ -44,6 +44,7 @@ func newUpsertRig(t *testing.T) *upsertRig {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	tid := tn.tenant
 	u := &upsertRig{v2Rig: r, tn: tn, svc: svc, frepo: frepo,
 		agt: &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}}
@@ -245,6 +246,7 @@ func TestFindingUpsert_LosingTheRaceIsNotACreation(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	loser.SetToolFacts(integrationTools)
 	var seen []shared.ID
 	loser.SetFindingCreatedCallback(func(_ context.Context, _ shared.ID, fs []*vulnerability.Finding) {
 		for _, f := range fs {

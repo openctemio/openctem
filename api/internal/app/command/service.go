@@ -14,6 +14,7 @@ import (
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -21,6 +22,9 @@ import (
 
 // Service handles command-related business operations.
 type Service struct {
+	// tools is the organization's stage catalog (a job's tool tier, from
+	// its sensors' tool contracts); nil: every tool is active.
+	tools     stage.Source
 	repo      commanddom.Repository
 	sensors   SensorLookup
 	templates TemplateSigner

@@ -99,8 +99,10 @@ func TestCommandCreate_UnguardedWebJob(t *testing.T) {
 			t.Fatalf("%s for a tenant with a path exclusion: err = %v, want ErrWebScopeUnwired", tool, err)
 		}
 	}
-	if err := repo.Create(ctx, newWebTestCommand(t, ruled, "httpx")); err != nil {
-		t.Fatalf("a job without web requests: %v", err)
+	// Unguarded, the organization's tool facts are not read: any job that
+	// names a tool may be a web job and is refused (fail closed).
+	if err := repo.Create(ctx, newWebTestCommand(t, ruled, "httpx")); !errors.Is(err, command.ErrWebScopeUnwired) {
+		t.Fatalf("httpx for a tenant with a path exclusion, unguarded: err = %v, want ErrWebScopeUnwired", err)
 	}
 	if err := repo.Create(ctx, newWebTestCommand(t, other, "nuclei")); err != nil {
 		t.Fatalf("another tenant's rule refused this tenant's job: %v", err)

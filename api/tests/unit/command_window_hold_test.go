@@ -173,7 +173,7 @@ func newWindowFixture(assets windowAssets) *windowFixture {
 	policies := &askedPolicies{fakeWindowPolicies: &fakeWindowPolicies{}}
 	res := swapp.NewResolver(policies, nil)
 	res.SetAssets(assets)
-	rf.svc = command.NewService(repo, newCmdTestLogger(), command.WithScanWindows(res),
+	rf.svc = command.NewService(repo, newCmdTestLogger(), command.WithScanWindows(res), command.WithToolFacts(unitToolFacts),
 		command.WithClock(func() time.Time { return monday10 }))
 	rf.svc.SetFailureObserver(rf.steps)
 	return &windowFixture{recheckFixture: rf, repo: repo, policies: policies}
@@ -425,7 +425,7 @@ func TestWindowHold_OverrideLetsTheJobGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := swapp.NewResolver(f.policies, fixedOverrides{o})
-	f.svc = command.NewService(f.repo, newCmdTestLogger(), command.WithScanWindows(res),
+	f.svc = command.NewService(f.repo, newCmdTestLogger(), command.WithScanWindows(res), command.WithToolFacts(unitToolFacts),
 		command.WithClock(func() time.Time { return monday10 }))
 	c := f.repo.add(f.tenant, commanddom.CommandTypeScan, windowPayload, nil)
 	cmds, err := f.svc.Poll(context.Background(), command.PollInput{TenantID: f.tenant.String(), SensorID: f.sensor.String(), Limit: 10})

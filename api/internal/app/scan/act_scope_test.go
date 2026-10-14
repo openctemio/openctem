@@ -44,7 +44,7 @@ func (s *stubActScope) Check(_ context.Context, in actscope.Input) (*actscope.De
 func TestRefuseOutOfActScope(t *testing.T) {
 	tenant, owner := shared.NewID(), shared.NewID()
 	stub := &stubActScope{targets: map[string]string{"other.example.com": actscope.ReasonOutOfDataScope}}
-	svc := &Service{actScope: stub, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, actScope: stub, logger: logger.NewNop()}
 
 	err := svc.refuseOutOfActScope(context.Background(), tenant, &owner, []string{"mine.example.com", "other.example.com"})
 	var de *shared.DomainError
@@ -74,7 +74,7 @@ func TestResolveScanTargets_SkipsOutOfActScope(t *testing.T) {
 		targets: map[string]string{"typed.example.org": actscope.ReasonNoScopeTarget},
 		assets:  map[shared.ID]bool{theirs.ID: true},
 	}
-	svc := allowAllChecks(&Service{
+	svc := allowAllChecks(&Service{tools: testTools,
 		assetGroupRepo: &stubGroupAssetsRepo{assets: []*assetgroup.GroupAsset{mine, theirs}},
 		actScope:       stub,
 		logger:         logger.NewNop(),
@@ -122,7 +122,7 @@ func TestResolveDispatchTargets_ActScope(t *testing.T) {
 	tenant := shared.NewID()
 	excl := &stubExclusions{}
 	stub := &stubActScope{targets: map[string]string{"other.example.com": actscope.ReasonOutOfDataScope}}
-	svc := &Service{scopeExclusions: excl, actScope: stub, attributionGate: &stubGate{}, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: excl, actScope: stub, attributionGate: &stubGate{}, logger: logger.NewNop()}
 	in := DispatchTargetsInput{TenantID: tenant, Targets: []string{"mine.example.com", "other.example.com"}, ActScope: true}
 
 	got, err := svc.ResolveDispatchTargets(context.Background(), in)
@@ -140,7 +140,7 @@ func TestResolveDispatchTargets_ActScope(t *testing.T) {
 	}
 
 	in.ActScope = true
-	if _, err := (&Service{scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrActScopeUnavailable) {
+	if _, err := (&Service{tools: testTools, scopeExclusions: excl, attributionGate: &stubGate{}, logger: logger.NewNop()}).ResolveDispatchTargets(context.Background(), in); !errors.Is(err, ErrActScopeUnavailable) {
 		t.Fatalf("asked and unwired: err = %v, want ErrActScopeUnavailable", err)
 	}
 	svc.actScope = &stubActScope{err: errors.New("db down")}
@@ -153,7 +153,7 @@ func TestResolveDispatchTargets_ActScope(t *testing.T) {
 // member's act scope is refused as a whole.
 func TestGateCommandPayload_ActScope(t *testing.T) {
 	stub := &stubActScope{targets: map[string]string{"other.example.com": actscope.ReasonOutOfDataScope}}
-	svc := &Service{scopeExclusions: &stubExclusions{}, actScope: stub, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, actScope: stub, logger: logger.NewNop()}
 	payload, _ := json.Marshal(map[string]any{"scanner": "nuclei", "targets": []string{"mine.example.com", "other.example.com"}})
 	if _, err := svc.GateCommandPayload(context.Background(), shared.NewID(), nil, payload); !errors.Is(err, ErrCommandTargetRefused) {
 		t.Fatalf("err = %v, want ErrCommandTargetRefused", err)

@@ -70,7 +70,7 @@ func TestPlanRolloverFirst(t *testing.T) {
 
 	t.Run("scheduled run plans the leftovers first, asking for its own tenant and scan", func(t *testing.T) {
 		repo := &rolloverRunRepo{ro: &scanrun.Rollover{FromRunID: from, Targets: []string{"c"}}}
-		svc := &Service{runRepo: repo, logger: logger.NewNop()}
+		svc := &Service{tools: testTools, runRepo: repo, logger: logger.NewNop()}
 		resolved := &resolvedTargets{Targets: []string{"a", "b", "c"}}
 		rc := map[string]any{}
 		svc.planRolloverFirst(context.Background(), sc, scanworkflow.TriggerTypeSchedule, resolved, rc)
@@ -88,7 +88,7 @@ func TestPlanRolloverFirst(t *testing.T) {
 	for _, trig := range []scanworkflow.TriggerType{scanworkflow.TriggerTypeManual, scanworkflow.TriggerTypeAPI} {
 		t.Run("no rollover for "+string(trig), func(t *testing.T) {
 			repo := &rolloverRunRepo{ro: &scanrun.Rollover{FromRunID: from, Targets: []string{"c"}}}
-			svc := &Service{runRepo: repo, logger: logger.NewNop()}
+			svc := &Service{tools: testTools, runRepo: repo, logger: logger.NewNop()}
 			resolved := &resolvedTargets{Targets: []string{"a", "c"}}
 			rc := map[string]any{}
 			svc.planRolloverFirst(context.Background(), sc, trig, resolved, rc)
@@ -100,7 +100,7 @@ func TestPlanRolloverFirst(t *testing.T) {
 
 	t.Run("a read error keeps the usual order", func(t *testing.T) {
 		repo := &rolloverRunRepo{err: errors.New("db down")}
-		svc := &Service{runRepo: repo, logger: logger.NewNop()}
+		svc := &Service{tools: testTools, runRepo: repo, logger: logger.NewNop()}
 		resolved := &resolvedTargets{Targets: []string{"a", "c"}}
 		svc.planRolloverFirst(context.Background(), sc, scanworkflow.TriggerTypeSchedule, resolved, map[string]any{})
 		if !reflect.DeepEqual(resolved.Targets, []string{"a", "c"}) {

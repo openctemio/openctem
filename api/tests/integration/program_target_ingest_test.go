@@ -33,6 +33,7 @@ func TestProgramTargets_IngestedThroughTheStandardPath(t *testing.T) {
 		postgres.NewVulnerabilityRepository(pg), postgres.NewComponentRepository(pg),
 		postgres.NewSensorRepository(pg), postgres.NewBranchRepository(pg), postgres.NewTenantRepository(pg),
 		postgres.NewAuditRepository(pg), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	assetSvc := assetapp.NewAssetService(postgres.NewAssetRepository(pg), logger.NewNop())
 	assetSvc.SetAttributeSources(postgres.NewAssetAttributeSourceRepository(pg), postgres.NewTenantRepository(pg))
 	svc.SetAttributeReconciler(assetSvc)

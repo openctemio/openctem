@@ -5,24 +5,22 @@ package sensor
 // platform takes the highest of:
 //
 //   - the floor of the capability the job runs (ctis/capability), or, for a
-//     job that names none, the lowest tier of the catalog stages the tool
-//     implements (the rule before the tool contract);
+//     job that names none, the highest floor of the capabilities the tool's
+//     contract implements;
 //   - the tier the tool's descriptor declares;
 //   - T2 when the descriptor declares a side effect;
 //   - T2 for a tool the operator installed (origin adapter): it is
 //     unverified until the platform classifies it;
 //   - T2 for out-of-band callbacks or custom templates.
 //
-// A tool neither the catalog nor a built-in contract knows is T2 (fail
-// closed).
+// A job that names no capability, of a tool that reports no contract, is
+// T2 (fail closed).
 
 import (
 	"encoding/json"
 	"strings"
 
 	"github.com/openctemio/ctis/capability"
-
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // Trust levels of a tool (RFC-055 §6.3).
@@ -101,38 +99,39 @@ func declaresSideEffects(c *ToolContract) bool {
 	return d.Safety != nil && len(d.Safety.SideEffects) > 0
 }
 
-// contractTier applies the tool's reported contract to a scan's tier.
-func contractTier(tier int, job Job, c *ToolContract) int {
-	known := len(stage.ForTool(job.Tool)) > 0
+// contractTier is the tier of a scan job of the tool: the floor of the
+// capability the job names, else the highest floor among the capabilities
+// the tool's contract implements, raised to the tier its descriptor
+// declares; T2 for a capability the taxonomy does not know, for a tool
+// without a contract whose job names no capability, and for a contract
+// that is not a verified built-in or declares a side effect.
+func contractTier(job Job, c *ToolContract) int {
+	tier := -1
 	if job.Capability != "" {
-		if cp, ok := capability.Lookup(job.Capability); ok {
-			tier = max(tier, cp.TierFloor)
-		} else {
+		cp, ok := capability.Lookup(job.Capability)
+		if !ok {
 			return TierIntrusive
 		}
+		tier = cp.TierFloor
 	}
 	if c == nil {
-		if !known {
+		if tier < 0 {
 			return TierIntrusive
 		}
-		return tier
+		return min(tier, TierIntrusive)
 	}
 	if !builtinOrigin(job.Tool, c) || declaresSideEffects(c) {
 		return TierIntrusive
 	}
-	if !known {
-		// A built-in tool the catalog does not route: the floors of the
-		// capabilities it implements.
-		floor := -1
+	if tier < 0 {
 		for _, ref := range c.Implements {
 			if cp, ok := capability.Lookup(ref); ok {
-				floor = max(floor, cp.TierFloor)
+				tier = max(tier, cp.TierFloor)
 			}
 		}
-		if floor < 0 {
+		if tier < 0 {
 			return TierIntrusive
 		}
-		tier = max(tier, floor)
 	}
 	if d := tierOfLabel(c.Tier); d > tier {
 		tier = d

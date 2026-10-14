@@ -62,6 +62,7 @@ func TestFindingTemplateProvenance_KeptAndRebaselined(t *testing.T) {
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), logger.NewNop())
+	svc.SetToolFacts(integrationTools)
 	ingestAs := func(tn v2Tenant, rep *ctis.Report) {
 		t.Helper()
 		tid := tn.tenant

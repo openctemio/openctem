@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
 
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -13,7 +18,7 @@ import (
 // null) and the tier labels.
 func TestListStages_ServesTheCatalog(t *testing.T) {
 	rec := httptest.NewRecorder()
-	(&ScanHandler{}).ListStages(rec, httptest.NewRequest(http.MethodGet, "/api/v1/scans/stages", nil))
+	(&ScanHandler{stages: builtinStages}).ListStages(rec, stagesRequest(shared.NewID()))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -54,7 +59,7 @@ func TestListStages_ServesTheCatalog(t *testing.T) {
 // marked unavailable.
 func TestListStages_ServesContracts(t *testing.T) {
 	rec := httptest.NewRecorder()
-	(&ScanHandler{}).ListStages(rec, httptest.NewRequest(http.MethodGet, "/api/v1/scans/stages", nil))
+	(&ScanHandler{stages: builtinStages}).ListStages(rec, stagesRequest(shared.NewID()))
 	var resp ScanStageListResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
@@ -84,5 +89,59 @@ func TestListStages_ServesContracts(t *testing.T) {
 		if _, ok := byKey[a.Capability]; !ok {
 			t.Fatalf("adapter names unknown capability %s", a.Capability)
 		}
+	}
+}
+
+// builtinStages hands every organization the built-in tools' catalog.
+var builtinStages = stagetest.Source{Cat: stagetest.Catalog()}
+
+// stagesRequest is GET /scans/stages by a member of tenant.
+func stagesRequest(tenant shared.ID) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans/stages", nil)
+	return req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String()))
+}
+
+// perTenantStages is a catalog source with one catalog per organization.
+type perTenantStages map[shared.ID]stage.Catalog
+
+func (p perTenantStages) Catalog(_ context.Context, tenantID shared.ID) (stage.Catalog, error) {
+	return p[tenantID], nil
+}
+
+// SECURITY: the implementations are the caller's organization's (from the
+// authenticated tenant, never the request): a tool only tenant A's sensor
+// reports is offered to A and never to B; without a tenant the request is
+// refused.
+func TestListStages_ImplementationsAreTheCallersOrganizations(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	toyweb := stage.ToolFacts{Name: "toyweb", Implements: []stage.Key{stage.DASTWeb},
+		Params: map[stage.Key]map[string]string{stage.DASTWeb: {"max_duration_minutes": "max_minutes"}}}
+	h := &ScanHandler{stages: perTenantStages{a: stagetest.Catalog(toyweb), b: stagetest.Catalog()}}
+	dast := func(tenant shared.ID) ScanStageResponse {
+		rec := httptest.NewRecorder()
+		h.ListStages(rec, stagesRequest(tenant))
+		var resp ScanStageListResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range resp.Stages {
+			if s.Key == "dast.web" {
+				return s
+			}
+		}
+		t.Fatal("no dast.web")
+		return ScanStageResponse{}
+	}
+	if got := dast(a); !got.Available || len(got.Implementations) != 1 || got.Implementations[0].Tool != "toyweb" ||
+		got.Implementations[0].Params["max_duration_minutes"] != "max_minutes" {
+		t.Fatalf("tenant A dast.web: %+v", got)
+	}
+	if got := dast(b); got.Available || len(got.Implementations) != 0 {
+		t.Fatalf("tenant B sees tenant A's tool: %+v", got)
+	}
+	rec := httptest.NewRecorder()
+	h.ListStages(rec, httptest.NewRequest(http.MethodGet, "/api/v1/scans/stages?tenant_id="+a.String(), nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no tenant in the principal: status %d", rec.Code)
 	}
 }

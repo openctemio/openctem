@@ -35,6 +35,7 @@ func TestIngest_PortsSurfaced(t *testing.T) {
 			postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 			postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 			postgres.NewAuditRepository(db), logger.NewNop())
+		svc.SetToolFacts(integrationTools)
 		svc.SetRelationshipRepository(postgres.NewAssetRelationshipRepository(db))
 		svc.SetAssetStateHistoryRepository(postgres.NewAssetStateHistoryRepository(db))
 		svc.SetAssetExposureProjector(exposurebridge.NewAssetBridge(

@@ -24,7 +24,7 @@ func TestResolveAssetTargets(t *testing.T) {
 		hidden: {"secret.example.com"},
 	}}
 	act := &stubActScope{assets: map[shared.ID]bool{hidden: true}}
-	svc := &Service{actScope: act, attributionGate: gate, logger: logger.NewNop()}
+	svc := &Service{tools: testTools, actScope: act, attributionGate: gate, logger: logger.NewNop()}
 	ctx := context.Background()
 
 	got, err := svc.resolveAssetTargets(ctx, tenant, &creator, []string{mine.String(), mine2.String(), mine.String()})

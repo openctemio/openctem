@@ -108,8 +108,8 @@ type selectorExpansion struct {
 
 // rootsOnlyTool reports whether tool enumerates subdomains from a root
 // domain (discover.subdomains): it takes a wildcard as its apex alone.
-func rootsOnlyTool(tool string) bool {
-	return slices.ContainsFunc(stage.ForTool(tool), func(st stage.Stage) bool {
+func rootsOnlyTool(cat stage.Catalog, tool string) bool {
+	return slices.ContainsFunc(cat.ForTool(tool), func(st stage.Stage) bool {
 		return st.Key == stage.DiscoverSubdomains
 	})
 }
@@ -253,10 +253,10 @@ func expansionWarnings(report []TargetExpansion) []string {
 // run's seed targets: a subdomain discovery step enumerates from the apex of
 // each wildcard selector, not from the names the inventory already knows
 // under it; every other step takes the seeds as they are. seeds nil reads
-// the run's targets.
-func DiscoverySeeds(tool string, seeds *StepTargets, runContext map[string]any) *StepTargets {
+// the run's targets. cat is the organization's catalog.
+func DiscoverySeeds(cat stage.Catalog, tool string, seeds *StepTargets, runContext map[string]any) *StepTargets {
 	roots := contextStrings(runContext, RunContextKeySelectorRoots)
-	if len(roots) == 0 || !rootsOnlyTool(tool) {
+	if len(roots) == 0 || !rootsOnlyTool(cat, tool) {
 		return seeds
 	}
 	out := &StepTargets{}

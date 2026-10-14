@@ -22,7 +22,6 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // Grant profiles.
@@ -500,10 +499,10 @@ func requiredCapabilities(payload json.RawMessage) []string {
 }
 
 // CommandTier is how intrusive a command is: collect and connector_sync are
-// T0, connector_scan and validate T1, a scan takes the lowest tier of the
-// stages its tool implements (stage catalog); custom templates or
-// out-of-band callbacks make any job T2, and a scan whose tool the catalog
-// does not know is T2 (fail closed). A retest is rated at the tier of the
+// T0, connector_scan and validate T1, a scan takes the floor of the
+// capability it names; custom templates or out-of-band callbacks make any
+// job T2, and without a tool contract a scan that names no capability is T2
+// (fail closed). A retest is rated at the tier of the
 // detection it repeats: the scan tier of the finding's tool.
 func CommandTier(cmdType string, job Job) int { return CommandTierFor(cmdType, job, nil) }
 
@@ -534,14 +533,7 @@ func CommandTierFor(cmdType string, job Job, c *ToolContract) int {
 	if job.Tool == "" {
 		return TierIntrusive
 	}
-	tier := TierPassive
-	if stages := stage.ForTool(job.Tool); len(stages) > 0 {
-		tier = TierIntrusive
-		for _, s := range stages {
-			tier = min(tier, int(s.Tier))
-		}
-	}
-	return contractTier(tier, job, c)
+	return contractTier(job, c)
 }
 
 // CarriesCredentials reports whether a command's tool configuration holds

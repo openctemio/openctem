@@ -927,7 +927,7 @@ func newTestScanService(opts ...scanservice.ServiceOption) (*scanservice.Service
 	// one step dispatcher (research/27 P0-2), as in production.
 	svc.SetStepQueuer(scanrun.NewService(deps.templateRepo, deps.stepRepo, deps.runRepo,
 		&mockStepRunRepo{}, newMockSensorRepo(), deps.commandRepo, nil, log,
-		scanrun.WithToolRepo(deps.toolRepo)))
+		scanrun.WithToolRepo(deps.toolRepo), scanrun.WithToolFacts(unitToolFacts)))
 
 	return svc, deps
 }

@@ -144,21 +144,25 @@ func (s *Service) WorkflowReadiness(ctx context.Context, tenantID shared.ID, wor
 	if err != nil || !known {
 		return nil, err
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	out := make(map[shared.ID]*WorkflowReadiness, len(workflows))
 	for _, w := range workflows {
-		out[w.ID] = s.workflowReadiness(ctx, tenantID, w, snap)
+		out[w.ID] = s.workflowReadiness(ctx, cat, tenantID, w, snap)
 	}
 	return out, nil
 }
 
-func (s *Service) workflowReadiness(ctx context.Context, tenantID shared.ID, w *scanworkflow.Workflow, snap readinessSnapshot) *WorkflowReadiness {
+func (s *Service) workflowReadiness(ctx context.Context, cat stage.Catalog, tenantID shared.ID, w *scanworkflow.Workflow, snap readinessSnapshot) *WorkflowReadiness {
 	pref := w.Settings.SensorPreference
 	usePlatform := snap.pfOffered && pref != scanworkflow.SensorPreferenceTenant
 	useTenant := pref != scanworkflow.SensorPreferencePlatform
 	r := &WorkflowReadiness{State: ReadinessReady, Steps: make([]StepReadiness, 0, len(w.Steps))}
 	rank := map[string]int{ReadinessReady: 0, ReadinessWaiting: 1, ReadinessCIOnly: 2, ReadinessBlocked: 3}
 	for _, step := range w.Steps {
-		sr := s.stepReadiness(ctx, tenantID, step, snap, useTenant, usePlatform)
+		sr := s.stepReadiness(ctx, cat, tenantID, step, snap, useTenant, usePlatform)
 		r.Steps = append(r.Steps, sr)
 		if rank[sr.State] > rank[r.State] {
 			r.State = sr.State
@@ -191,12 +195,12 @@ func (snap readinessSnapshot) toolState(name string, status sensordom.ToolStatus
 	return state
 }
 
-func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *scanworkflow.Step, snap readinessSnapshot, useTenant, usePlatform bool) StepReadiness {
+func (s *Service) stepReadiness(ctx context.Context, cat stage.Catalog, tenantID shared.ID, step *scanworkflow.Step, snap readinessSnapshot, useTenant, usePlatform bool) StepReadiness {
 	sr := StepReadiness{StepKey: step.StepKey, Name: step.Name}
 	if sr.Name == "" {
 		sr.Name = step.StepKey
 	}
-	st, placed := stage.ForStep(step.Tool, step.Capabilities)
+	st, placed := cat.ForStep(step.Tool, step.Capabilities)
 	what := "this step"
 	if placed {
 		sr.Capability = string(st.Key)
@@ -209,7 +213,7 @@ func (s *Service) stepReadiness(ctx context.Context, tenantID shared.ID, step *s
 	case placed:
 		candidates = stepCandidates(st, step)
 	default:
-		if t, err := ResolveStepTool(ctx, s.toolRepo, tenantID, step); err == nil && t.Name != "" {
+		if t, err := ResolveStepTool(ctx, s.toolRepo, cat, tenantID, step); err == nil && t.Name != "" {
 			candidates = []string{t.Name}
 		}
 	}

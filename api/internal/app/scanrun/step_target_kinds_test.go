@@ -8,7 +8,6 @@ import (
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // kindFixture is a one-step run whose step runs tool on typed-in targets.
@@ -77,11 +76,11 @@ func TestStepDispatch_PortScanTakesRange(t *testing.T) {
 }
 
 func TestGateStepKinds_ChainedStepKeepsEmptySeeds(t *testing.T) {
-	st, ok := stage.ForStep("nuclei", nil)
+	st, ok := testCat.ForStep("nuclei", nil)
 	if !ok {
 		t.Fatal("nuclei has no stage")
 	}
-	resolved := scanapp.StepTool{Name: "nuclei", Stage: st, HasStage: true}
+	resolved := scanapp.StepTool{Catalog: testCat, Name: "nuclei", Stage: st, HasStage: true}
 	got, err := gateStepKinds(resolved, &scanapp.StepTargets{Targets: []string{"203.0.113.0/24"}}, nil, true)
 	if err != nil {
 		t.Fatal(err)

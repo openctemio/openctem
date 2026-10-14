@@ -8,6 +8,7 @@ import (
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/robfig/cron/v3"
 
@@ -184,6 +185,10 @@ type TemplateSyncResult struct {
 
 // Service handles scan business operations.
 type Service struct {
+	// tools is the organization's stage catalog: which tools implement
+	// each capability, from the tool contracts its sensors report
+	// (toolfacts); nil: no tool implements anything (fail closed).
+	tools stage.Source
 	// programRules refuses runs a bug-bounty program's rules forbid
 	// (program_rules.go); nil: not checked.
 	programRules ProgramRuleChecker

@@ -181,7 +181,11 @@ func (s *Service) governanceTools(ctx context.Context, sc *scan.Scan) ([]string,
 		if name == "" {
 			return nil, nil, int(stage.TierActive), nil
 		}
-		return []string{name}, nil, int(stage.ProbeTier(name)), nil
+		cat, err := s.catalog(ctx, sc.TenantID)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		return []string{name}, nil, int(cat.ProbeTier(name)), nil
 	}
 	if sc.ScanWorkflowID == nil || s.stepRepo == nil {
 		return nil, nil, int(stage.TierActive), nil
@@ -193,10 +197,14 @@ func (s *Service) governanceTools(ctx context.Context, sc *scan.Scan) ([]string,
 	if len(steps) == 0 {
 		return nil, nil, int(stage.TierActive), nil
 	}
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	var tools, defs []string
 	top := -1
 	for _, st := range steps {
-		tier := stepTier(st)
+		tier := stepTier(cat, st)
 		if tier > top {
 			top = tier
 		}
@@ -216,14 +224,14 @@ func (s *Service) governanceTools(ctx context.Context, sc *scan.Scan) ([]string,
 
 // stepTier is the tier a workflow step probes at: its pinned tool's, else
 // its capability stage's, else active.
-func stepTier(st *scanworkflow.Step) int {
+func stepTier(cat stage.Catalog, st *scanworkflow.Step) int {
 	if st == nil {
 		return int(stage.TierActive)
 	}
 	if st.Tool != "" {
-		return int(stage.ProbeTier(st.Tool))
+		return int(cat.ProbeTier(st.Tool))
 	}
-	if sg, ok := stage.ForStep("", st.Capabilities); ok {
+	if sg, err := stage.ForCapabilities(st.Capabilities); err == nil {
 		return int(sg.Tier)
 	}
 	return int(stage.TierActive)

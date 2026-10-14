@@ -31,7 +31,7 @@ func TestExpandEndpoints(t *testing.T) {
 	vuln, _ := stage.Lookup(stage.VulnTemplates)
 	cands := candidates{gate: []hopCandidate{{key: "https://a.example.com", assetID: a}, {key: "https://b.example.com", assetID: b}}}
 	f := &fakeEndpoints{urls: map[shared.ID][]string{a: {"https://a.example.com/orders/1", "https://a.example.com/login", "https://a.example.com/login"}}}
-	s := &Service{endpoints: f}
+	s := &Service{tools: testTools, endpoints: f}
 	step := &scanworkflow.Step{StepKey: "vuln", Config: map[string]any{scanworkflow.StepKeyEndpointSelector: "changed"}}
 
 	skipped := map[string]int{}
@@ -61,7 +61,7 @@ func TestExpandEndpoints(t *testing.T) {
 	}
 
 	// Fail closed: unwired or a failed lookup refuses the plan.
-	if _, err := (&Service{}).expandEndpoints(context.Background(), run, vuln, step, cands, map[string]int{}); err == nil {
+	if _, err := (&Service{tools: testTools}).expandEndpoints(context.Background(), run, vuln, step, cands, map[string]int{}); err == nil {
 		t.Fatal("unwired selector planned the step")
 	}
 	f.err = errors.New("db down")

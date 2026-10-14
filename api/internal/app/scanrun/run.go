@@ -248,6 +248,10 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 	if err != nil {
 		return err
 	}
+	cat, err := s.catalog(ctx, run.TenantID)
+	if err != nil {
+		return err
+	}
 
 	// A dependency gates a step only by producing results (completed, or
 	// partial: some batches failed, the others' results are kept). Every
@@ -313,7 +317,7 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 		}
 		// A step above the scan's intensity is never dispatched (RFC-071);
 		// its dependents are then skipped as blocked.
-		if reason := scanapp.IntensitySkipReason(run, step); reason != "" {
+		if reason := scanapp.IntensitySkipReason(cat, run, step); reason != "" {
 			stepRun.Skip(reason)
 			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
 				s.logger.Error("failed to skip a step above the scan's intensity", "step_key", step.StepKey, "error", err)
@@ -388,7 +392,11 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// capability the planner picks (F1: a capability-only step used to
 	// reach the sensor with no scanner). Every check below and the payload
 	// read the resolved tool.
-	resolved, err := scanapp.ResolveStepTool(ctx, s.toolRepo, run.TenantID, step)
+	cat, err := s.catalog(ctx, run.TenantID)
+	if err != nil {
+		return fmt.Errorf("step %s: %w", step.StepKey, err)
+	}
+	resolved, err := scanapp.ResolveStepTool(ctx, s.toolRepo, cat, run.TenantID, step)
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -418,7 +426,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	// The step's tool is handed only the run's targets it can scan; a step
 	// left with none fails here (INCOMPATIBLE_TARGETS), before any sensor
 	// sees it.
-	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(run, resolved.Stage, preds)) > 0
+	chained := s.hops != nil && resolved.HasStage && len(feedingPredecessors(cat, run, resolved.Stage, preds)) > 0
 	var stepTargets *scanapp.StepTargets
 	if f, ok := s.targetGate.(StepTargetFilter); ok {
 		st, ferr := f.FilterStepTargets(ctx, run.TenantID, step.Tool, run.Context)
@@ -460,13 +468,13 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 
 	// Subdomain discovery enumerates from the apex of a wildcard selector,
 	// not from the known names the run expanded under it (RFC-068).
-	stepTargets = scanapp.DiscoverySeeds(resolved.Name, stepTargets, run.Context)
+	stepTargets = scanapp.DiscoverySeeds(cat, resolved.Name, stepTargets, run.Context)
 
 	// Live hosts first: an active stage other than host discovery never
 	// takes a range; its live hosts come from the host discovery step it
 	// follows (RFC-088).
 	before := chunkTargets(stepTargets, run.Context)
-	stepTargets = scanapp.LivenessSeeds(run.Context, resolved, stepTargets)
+	stepTargets = scanapp.LivenessSeeds(cat, run.Context, resolved, stepTargets)
 	if stepTargets != nil && len(stepTargets.Targets) == 0 && len(before) > 0 && !chained {
 		return fmt.Errorf("step %s: %w", step.StepKey, shared.NewDomainError(scanapp.CodeLivenessNeedsHostDiscovery,
 			"This step scans hosts, the scan finds the live hosts of its address ranges first, and no Host discovery step comes before it. Add one before this step, or scan every address of the ranges.",
@@ -531,7 +539,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	}
 	created := make([]*command.Command, 0, len(chunks))
 	for _, chunk := range chunks {
-		cmd, err := s.stepCommand(ctx, run, step, stepRun, chunk)
+		cmd, err := s.stepCommand(ctx, cat, run, step, stepRun, chunk)
 		if err == nil {
 			// An active stage holds its hosts while a sensor runs the
 			// chunk, so no other sensor hits them at the same time; the
@@ -592,7 +600,7 @@ func activeStep(resolved scanapp.StepTool) bool {
 	if resolved.HasStage {
 		return !resolved.Stage.Tier.Passive()
 	}
-	return !stage.PassiveTool(resolved.Name)
+	return !resolved.Catalog.PassiveTool(resolved.Name)
 }
 
 // stepDispatchGate is the gate record of a step's commands: the run
@@ -601,7 +609,7 @@ func activeStep(resolved scanapp.StepTool) bool {
 // tier; seeds at the tool's, never lower), or the tool's tier for a step
 // outside the stage catalog.
 func stepDispatchGate(run *scanrun.Run, resolved scanapp.StepTool) *command.DispatchGate {
-	g := &command.DispatchGate{Tier: int(scanapp.ProbeTier(resolved.Name)), ActScope: true,
+	g := &command.DispatchGate{Tier: int(scanapp.ProbeTier(resolved.Catalog, resolved.Name)), ActScope: true,
 		Intensity: string(scanapp.RunIntensity(run))}
 	if resolved.HasStage {
 		g.Tier = int(resolved.Stage.Tier)
@@ -682,10 +690,10 @@ func targetWeight(t string, weighRanges bool) uint64 {
 // stepCommand builds one command of a step for the given chunk of its
 // targets, after the payload passed the security validator. Its web scope
 // is attached when the command is stored (command.CreateGuard).
-func (s *Service) stepCommand(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
+func (s *Service) stepCommand(ctx context.Context, cat stage.Catalog, run *scanrun.Run, step *scanworkflow.Step, stepRun *scanrun.StepRun,
 	chunk *scanapp.StepTargets,
 ) (*command.Command, error) {
-	payload, err := scanapp.StepCommandPayload(run, step, step.Tool, stepRun.ID.String(), chunk)
+	payload, err := scanapp.StepCommandPayload(cat, run, step, step.Tool, stepRun.ID.String(), chunk)
 	if err != nil {
 		return nil, fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -2028,7 +2036,7 @@ func (s *Service) NotifyRunsReaped(ctx context.Context, reaped []scanrun.ReapedR
 // (RFC-071): a T0 step must only use third-party sources, recursive
 // resolvers, a vendor API or no network.
 func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool) error {
-	tier := scanapp.StepIntensityTier(step)
+	tier := scanapp.StepIntensityTier(resolved.Catalog, step)
 	if resolved.HasStage && int(resolved.Stage.Tier) > tier {
 		tier = int(resolved.Stage.Tier)
 	}
@@ -2036,7 +2044,7 @@ func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scan
 		return fmt.Errorf("%w: tool %s probes at %s, above the scan's %s intensity; not dispatched",
 			shared.ErrValidation, resolved.Name, scandom.TierLabel(tier), scanapp.RunIntensity(run))
 	}
-	if resolved.HasStage && resolved.Stage.Tier.Passive() && stage.ToolNetwork(resolved.Name).TouchesTargets() {
+	if resolved.HasStage && resolved.Stage.Tier.Passive() && resolved.Catalog.ToolNetwork(resolved.Name).TouchesTargets() {
 		return fmt.Errorf("%w: passive step uses tool %s, which sends traffic to its targets; not dispatched",
 			shared.ErrValidation, resolved.Name)
 	}

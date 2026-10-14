@@ -1,8 +1,10 @@
-package stage
+package stage_test
 
 import (
 	"slices"
 	"testing"
+
+	. "github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
@@ -48,7 +50,7 @@ func TestPortTypes_ClosedSetOfEleven(t *testing.T) {
 // wired but never fed). Same for outputs; the certificate is an output with
 // no port yet.
 func TestContracts_PortsMatchStoredTypes(t *testing.T) {
-	for _, s := range All() {
+	for _, s := range cat.All() {
 		if s.Version != ContractVersion || s.ID() != string(s.Key)+"@1" {
 			t.Fatalf("%s: version %d id %s", s.Key, s.Version, s.ID())
 		}
@@ -98,7 +100,7 @@ func TestContracts_PortsMatchStoredTypes(t *testing.T) {
 }
 
 func TestContracts_ParamsAndMappings(t *testing.T) {
-	for _, s := range Taxonomy() {
+	for _, s := range cat.Taxonomy() {
 		names := map[string]bool{}
 		for _, p := range s.Params {
 			if p.Name == "" || names[p.Name] {
@@ -128,23 +130,8 @@ func TestContracts_ParamsAndMappings(t *testing.T) {
 			}
 		}
 	}
-	// Every tool mapping names a param of a capability the tool implements,
-	// so no mapping silently drops out of the contract.
-	for tool, m := range toolParams {
-		for std := range m {
-			found := false
-			for _, s := range ForTool(tool) {
-				if _, ok := s.Implementations[slices.IndexFunc(s.Implementations, func(i Implementation) bool { return i.Tool == tool })].Params[std]; ok {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatalf("tool %s maps %q, which none of its capabilities declares", tool, std)
-			}
-		}
-	}
 	// The mapped keys are the settings the sensor declares for the tool.
-	scan, _ := Lookup(ScanPorts)
+	scan, _ := cat.Lookup(ScanPorts)
 	if got := scan.Implementations[0].Params; got["top_n"] != "top_ports" || got["ports"] != "ports" || got["rate"] != "rate" {
 		t.Fatalf("naabu mapping: %v", got)
 	}
@@ -155,7 +142,7 @@ func TestAdapters_TypeCheck(t *testing.T) {
 		t.Fatal("no adapters")
 	}
 	for _, a := range Adapters() {
-		s, ok := Lookup(a.Capability)
+		s, ok := cat.Lookup(a.Capability)
 		if !ok {
 			t.Fatalf("adapter %s→%s: unknown capability %s", a.From, a.To, a.Capability)
 		}
@@ -177,7 +164,7 @@ func TestAdapters_TypeCheck(t *testing.T) {
 // Taxonomy v1 has 22 capabilities. The planned ones are listed but never
 // routed: no lookup, tool or capability word reaches them.
 func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
-	all := Taxonomy()
+	all := cat.Taxonomy()
 	// 16 routed + 12 planned: the 22 of taxonomy v1 plus discover.cloud,
 	// sbom.generate and import.file (RFC-055), lookup.rdap and lookup.asn
 	// (RFC-071), discover.hosts (RFC-088).
@@ -194,14 +181,14 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 			t.Fatalf("%s: cross-cutting flag", s.Key)
 		}
 	}
-	for _, p := range planned {
+	for _, p := range plannedStages() {
 		if p.Available() || len(p.Implementations) > 0 {
 			t.Fatalf("planned %s has implementations", p.Key)
 		}
-		if _, ok := Lookup(p.Key); ok {
+		if _, ok := cat.Lookup(p.Key); ok {
 			t.Fatalf("planned %s is visible to Lookup", p.Key)
 		}
-		if _, err := ForCapabilities([]string{string(p.Key)}); err == nil {
+		if _, err := cat.ForCapabilities([]string{string(p.Key)}); err == nil {
 			t.Fatalf("planned %s resolves from a capability word", p.Key)
 		}
 		for _, port := range append(slices.Clone(p.InPorts), p.OutPorts...) {
@@ -211,25 +198,25 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 		}
 	}
 	// Adding the planned contracts changed no tool's routing.
-	if len(ForTool("nuclei")) != 1 || len(ForTool("httpx")) != 1 {
+	if len(cat.ForTool("nuclei")) != 1 || len(cat.ForTool("httpx")) != 1 {
 		t.Fatal("a planned capability changed how nuclei or httpx steps route")
 	}
 }
 
 func TestAcceptsTargetList(t *testing.T) {
 	for _, tool := range []string{"nuclei", "subfinder", "dnsx", "naabu", "httpx", "katana", " NUCLEI "} {
-		if !AcceptsTargetList(tool) {
+		if !cat.AcceptsTargetList(tool) {
 			t.Errorf("%q takes a target list", tool)
 		}
 	}
 	for _, tool := range []string{"zap", "semgrep", "trivy", "tenable_sc", "betterleaks", "unknown", ""} {
-		if AcceptsTargetList(tool) {
+		if cat.AcceptsTargetList(tool) {
 			t.Errorf("%q takes one target per task", tool)
 		}
 	}
-	for _, s := range All() {
+	for _, s := range cat.All() {
 		for _, impl := range s.Implementations {
-			if impl.Batch != AcceptsTargetList(impl.Tool) {
+			if impl.Batch != cat.AcceptsTargetList(impl.Tool) {
 				t.Errorf("%s/%s: implementation batch flag disagrees", s.Key, impl.Tool)
 			}
 		}
@@ -257,7 +244,7 @@ func TestChunkSizeFor(t *testing.T) {
 		{ContainerImage, "trivy", 0},
 	}
 	for _, c := range cases {
-		s, ok := Lookup(c.key)
+		s, ok := cat.Lookup(c.key)
 		if !ok {
 			t.Fatalf("no stage %s", c.key)
 		}

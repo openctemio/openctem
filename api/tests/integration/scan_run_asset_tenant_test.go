@@ -58,7 +58,7 @@ func TestPipelineRun_AssetMustBeTheCallersInTheTenant(t *testing.T) {
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg),
 		nil, logger.New(logger.Config{Level: "error"}),
-		scanrun.WithAssetRefChecker(enf),
+		scanrun.WithAssetRefChecker(enf), scanrun.WithToolFacts(integrationTools),
 	)
 	admin := datascope.Caller{UserID: shared.NewID().String(), IsAdmin: true}
 	restricted := datascope.Caller{UserID: member.String()}
@@ -131,7 +131,7 @@ func TestPipelineRun_AssetMustBeTheCallersInTheTenant(t *testing.T) {
 		postgres.NewScanWorkflowRepository(pg), postgres.NewScanWorkflowStepRepository(pg),
 		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg),
 		postgres.NewSensorRepository(pg), postgres.NewCommandRepository(pg),
-		nil, logger.New(logger.Config{Level: "error"}),
+		nil, logger.New(logger.Config{Level: "error"}), scanrun.WithToolFacts(integrationTools),
 	)
 	if _, err := bare.TriggerPipeline(asCaller(ctx, admin), scanrun.TriggerRunInput{
 		TenantID: tenant.String(), TemplateID: templateID.String(), AssetID: inScope.String(), TriggerType: "manual",

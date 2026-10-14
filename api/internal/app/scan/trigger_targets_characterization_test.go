@@ -412,7 +412,7 @@ func newCharFixture(t *testing.T, c charCase) *charFixture {
 		zones.zones = []*scanzone.Zone{mustZone(t, f.sc.TenantID, "office", c.zoneRanges, shared.NewID())}
 	}
 
-	f.svc = &Service{
+	f.svc = &Service{tools: testTools,
 		scopeExclusions: excl,
 		attributionGate: gate,
 		actScope:        f.act,
@@ -517,7 +517,7 @@ func TestResolveScanTargets_CharacterizationCaps(t *testing.T) {
 		for _, v := range excl {
 			e.values[v] = true
 		}
-		return &Service{scopeExclusions: e, attributionGate: &stubGate{}, actScope: &stubActScope{},
+		return &Service{tools: testTools, scopeExclusions: e, attributionGate: &stubGate{}, actScope: &stubActScope{},
 			zones: &gateZones{}, logger: logger.NewNop()}
 	}
 	names := func(prefix string, n int) []string {
@@ -597,7 +597,7 @@ func TestResolveScanTargets_CharacterizationFailClosed(t *testing.T) {
 	sort.Strings(keys)
 	for _, name := range keys {
 		t.Run(name, func(t *testing.T) {
-			svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, actScope: &stubActScope{},
+			svc := &Service{tools: testTools, scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, actScope: &stubActScope{},
 				zones: &gateZones{}, logger: logger.NewNop()}
 			cases[name](svc)
 			sc := testScan("nuclei", "app.example.com", "10.0.0.5", "dep.example.com")

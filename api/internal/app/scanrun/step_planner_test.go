@@ -28,6 +28,10 @@ func (p platformTools) GetPlatformToolByName(_ context.Context, name string) (*t
 	return nil, shared.ErrNotFound
 }
 
+func (p platformTools) GetByName(ctx context.Context, _ shared.ID, name string) (*tool.Tool, error) {
+	return p.GetPlatformToolByName(ctx, name)
+}
+
 func (p platformTools) FindByCapabilities(context.Context, shared.ID, []string) (*tool.Tool, error) {
 	return nil, nil
 }

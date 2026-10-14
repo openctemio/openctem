@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
 
 // RunContextKeySkippedTargets holds the targets left out when the scan was
@@ -28,10 +29,10 @@ const codeNothingAllowed = "NO_ALLOWED_TARGETS"
 // createTier is the probe tier the create of input is checked at, as the
 // scope check of the same form: the intensity ceiling of a workflow, the
 // scanner's tier for a single scan (capped by an explicit intensity).
-func createTier(input CreateScanInput) int {
+func createTier(cat stage.Catalog, input CreateScanInput) int {
 	tier := int(scopedom.TierActive)
 	if input.ScanType == string(scan.ScanTypeSingle) && input.ScannerName != "" {
-		tier = int(ProbeTier(input.ScannerName))
+		tier = int(ProbeTier(cat, input.ScannerName))
 	}
 	if i, err := scan.ParseIntensity(input.Intensity); err == nil && input.Intensity != "" {
 		if input.ScanType == string(scan.ScanTypeWorkflow) || i.MaxTier() < tier {
@@ -51,10 +52,15 @@ func (s *Service) partitionRefused(ctx context.Context, tenantID shared.ID, inpu
 	if input.TenantRunner {
 		pref = string(scan.SensorPreferenceTenant)
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	tier := createTier(cat, input)
 	refused := map[string]string{}
 	for i := 0; i < len(input.Targets); i += MaxDryRunTargets {
 		batch := input.Targets[i:min(i+MaxDryRunTargets, len(input.Targets))]
-		res, err := s.DryRunTargets(ctx, DryRunInput{TenantID: tenantID, Targets: batch, SensorPreference: pref, Tier: createTier(input)})
+		res, err := s.DryRunTargets(ctx, DryRunInput{TenantID: tenantID, Targets: batch, SensorPreference: pref, Tier: tier})
 		if err != nil {
 			return nil, nil, fmt.Errorf("scope check failed, nothing saved: %w", err)
 		}

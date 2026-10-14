@@ -69,7 +69,7 @@ func TestPlatformPipelineWrites(t *testing.T) {
 	pg := &postgres.DB{DB: db}
 	steps := postgres.NewScanWorkflowStepRepository(pg)
 	svc := scanrun.NewService(postgres.NewScanWorkflowRepository(pg), steps,
-		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg), nil, nil, nil, logger.NewNop())
+		postgres.NewScanRunRepository(pg), postgres.NewStepRunRepository(pg), nil, nil, nil, logger.NewNop(), scanrun.WithToolFacts(integrationTools))
 
 	forbidden := func(what string, err error) {
 		t.Helper()

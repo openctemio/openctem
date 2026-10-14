@@ -92,7 +92,7 @@ func TestBindOutputTypes_DeclaredProducesQuarantine(t *testing.T) {
 		{tenantKey(agt.TenantID), agt.ID}: contractManifest("acme-probe", "asset:domain", "finding:misconfiguration"),
 	}}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
-	s := &Service{logger: logger.NewNop(), results: res}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res}
 	s.SetToolContractSource(src)
 
 	got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("acme-probe"), probeReport("acme-probe"), Options{Route: "ctis"})
@@ -115,7 +115,7 @@ func TestBindOutputTypes_DeclaredProducesQuarantine(t *testing.T) {
 
 	// Without a contract source the same report is applied whole: the
 	// declaration is what holds it.
-	plain := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
+	plain := &Service{tools: testTools, logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
 	if all := plain.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("acme-probe"), probeReport("acme-probe"), Options{}); len(all.Assets) != 2 || len(all.Findings) != 2 {
 		t.Fatalf("no contract: applied %d assets / %d findings", len(all.Assets), len(all.Findings))
 	}
@@ -129,7 +129,7 @@ func TestBindOutputTypes_DeclarationNeverWidens(t *testing.T) {
 		{tenantKey(agt.TenantID), agt.ID}: contractManifest("dnsx", "asset:domain", "asset:ip_address", "asset:repository"),
 	}}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
-	s := &Service{logger: logger.NewNop(), results: res, contracts: src}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res, contracts: src}
 	got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("dnsx"), dnsxReport(), Options{})
 	for _, a := range got.Assets {
 		if a.Type == ctis.AssetTypeRepository {
@@ -154,7 +154,7 @@ func TestBindOutputTypes_DeclarationIsTenantScoped(t *testing.T) {
 		{tenantKey(victim.TenantID), victim.ID}: contractManifest("acme-probe", "asset:domain"),
 	}}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
-	s := &Service{logger: logger.NewNop(), results: res, contracts: src}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res, contracts: src}
 	got := s.bindOutputTypes(context.Background(), victim, *victim.TenantID, boundCommand("acme-probe"), probeReport("acme-probe"), Options{})
 	if len(got.Assets) != 1 || got.Assets[0].Type != ctis.AssetTypeDomain || len(got.Findings) != 0 {
 		t.Fatalf("tenant A applied %+v / %+v: another tenant's contract was used", got.Assets, got.Findings)
@@ -172,7 +172,7 @@ func TestBindOutputTypes_NoDeclarationUnchanged(t *testing.T) {
 		"other tool only": {byKey: map[manifestKey]sensor.Manifest{{tenantKey(agt.TenantID), agt.ID}: contractManifest("httpx", "asset:http_service")}},
 	} {
 		res := &policyResults{mode: sensorresult.ModeQuarantine}
-		s := &Service{logger: logger.NewNop(), results: res, contracts: src}
+		s := &Service{tools: testTools, logger: logger.NewNop(), results: res, contracts: src}
 		got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("dnsx"), dnsxReport(), Options{})
 		// The catalog alone: domain and IP kept, the repository and its finding held.
 		if len(got.Assets) != 2 || len(got.Findings) != 1 || len(res.items) != 1 {
@@ -181,7 +181,7 @@ func TestBindOutputTypes_NoDeclarationUnchanged(t *testing.T) {
 	}
 	// A server-side (synthetic) sensor never reads a manifest.
 	src := &fakeContracts{}
-	s := &Service{logger: logger.NewNop(), contracts: src}
+	s := &Service{tools: testTools, logger: logger.NewNop(), contracts: src}
 	_ = s.bindOutputTypes(context.Background(), &sensor.Sensor{}, shared.NewID(), boundCommand("acme-probe"), probeReport("acme-probe"), Options{})
 	if src.calls != 0 {
 		t.Fatal("a synthetic sensor read a manifest")
@@ -201,12 +201,12 @@ func TestBindOutputTypes_FindingsOnlyAndWarn(t *testing.T) {
 		}}
 	}
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
-	s := &Service{logger: logger.NewNop(), results: res, contracts: src}
+	s := &Service{tools: testTools, logger: logger.NewNop(), results: res, contracts: src}
 	got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("acme-sast"), rep(), Options{})
 	if len(got.Findings) != 1 || got.Findings[0].Title != "ok" || len(res.items) != 1 || res.items[0].FindingsCount != 2 {
 		t.Fatalf("applied %+v, quarantined %+v", got.Findings, res.items)
 	}
-	warn := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
+	warn := &Service{tools: testTools, logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
 	if all := warn.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("acme-sast"), rep(), Options{}); len(all.Findings) != 3 {
 		t.Fatalf("warn mode applied %d findings", len(all.Findings))
 	}

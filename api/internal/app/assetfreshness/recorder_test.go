@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -39,6 +41,7 @@ func mustAsset(t *testing.T, name string, typ assetdom.AssetType) *assetdom.Asse
 func TestRecorder_MapsWrittenAssetsToClasses(t *testing.T) {
 	repo := &fakeRepo{}
 	r := NewRecorder(repo, logger.NewNop())
+	r.SetToolFacts(stagetest.Source{Cat: stagetest.Catalog()})
 	tenant := shared.NewID()
 	at := time.Now().UTC()
 	sub := mustAsset(t, "a.example.com", assetdom.AssetTypeSubdomain)

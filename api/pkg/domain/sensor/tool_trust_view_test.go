@@ -36,9 +36,9 @@ func TestComputeToolAvailability_TrustAndTier(t *testing.T) {
 	if n := findTool(t, got, "naabu"); n.Trust != ToolTrustBuiltin || n.Tier != TierActive {
 		t.Fatalf("naabu %q T%d", n.Trust, n.Tier)
 	}
-	// SECURITY: a sensor without a contract keeps the catalog rule, and
-	// trust stays unknown rather than builtin.
-	if s := findTool(t, got, "subfinder"); s.Trust != "" || s.Tier != TierPassive {
+	// SECURITY: a sensor without a contract: trust stays unknown rather
+	// than builtin, and a job that names no capability is T2.
+	if s := findTool(t, got, "subfinder"); s.Trust != "" || s.Tier != TierIntrusive {
 		t.Fatalf("subfinder %q T%d", s.Trust, s.Tier)
 	}
 

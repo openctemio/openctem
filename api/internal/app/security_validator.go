@@ -46,7 +46,14 @@ type SecurityValidator struct {
 	capabilitiesMu      sync.RWMutex
 	capabilitiesLoaded  time.Time
 	capabilitiesTTL     time.Duration
+
+	// tools is the organization's stage catalog (which capabilities a tool
+	// implements, from its sensors' tool contracts).
+	tools stage.Source
 }
+
+// SetToolFacts wires the organization's stage catalog.
+func (v *SecurityValidator) SetToolFacts(src stage.Source) { v.tools = src }
 
 // Default capabilities that are always allowed (fallback if DB is empty)
 var defaultCapabilities = []string{
@@ -183,11 +190,15 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 
 	// 3. A pinned tool must be able to run every capability of the step. A
 	// capability is a catalog key ("resolve.dns") or a pre-catalog word
-	// ("dns"); stage.ToolCanRun maps the two onto each other.
+	// ("dns"); stage.Catalog.ToolCanRun maps the two onto each other.
 	if toolName != "" && len(toolCapabilities) > 0 && len(capabilities) > 0 {
+		cat, err := stage.CatalogOf(ctx, v.tools, tenantID)
+		if err != nil {
+			addValidationError(result, "capabilities", "the tools of the organization's sensors could not be read; try again", "TOOL_FACTS_UNAVAILABLE")
+		}
 		for _, cap := range capabilities {
-			if !stage.ToolCanRun(toolName, toolCapabilities, cap) {
-				addValidationError(result, "capabilities", capabilityMismatchMessage(toolName, toolCapabilities, cap), "CAPABILITY_TOOL_MISMATCH")
+			if err == nil && !cat.ToolCanRun(toolName, toolCapabilities, cap) {
+				addValidationError(result, "capabilities", capabilityMismatchMessage(cat, toolName, toolCapabilities, cap), "CAPABILITY_TOOL_MISMATCH")
 			}
 		}
 	}
@@ -224,10 +235,10 @@ func (v *SecurityValidator) ValidateStepConfig(ctx context.Context, tenantID sha
 
 // capabilityMismatchMessage says, in words, why a tool cannot run a step's
 // capability: what the tool can run instead, and how to fix the step.
-func capabilityMismatchMessage(toolName string, toolCaps []string, capability string) string {
+func capabilityMismatchMessage(cat stage.Catalog, toolName string, toolCaps []string, capability string) string {
 	can := make([]string, 0, len(toolCaps))
 	named := map[string]bool{}
-	for _, st := range stage.ForTool(toolName) {
+	for _, st := range cat.ForTool(toolName) {
 		can = append(can, fmt.Sprintf("%s (%s)", st.Name, st.Key))
 		named[string(st.Key)] = true
 		for _, l := range st.Legacy {

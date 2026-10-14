@@ -38,7 +38,7 @@ func TestTenantDisabledToolIsNotDispatched(t *testing.T) {
 	cfgs := &fakeTenantTools{cfg: map[string]*tool.TenantToolConfig{
 		tenantA.String() + "|" + nuclei.ID.String(): {TenantID: tenantA, ToolID: nuclei.ID, IsEnabled: false},
 	}}
-	svc := &Service{toolRepo: tools, tenantTools: cfgs}
+	svc := &Service{tools: testTools, toolRepo: tools, tenantTools: cfgs}
 	ctx := context.Background()
 
 	isDisabled := func(err error) bool {

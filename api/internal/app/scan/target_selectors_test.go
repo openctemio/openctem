@@ -18,21 +18,21 @@ func TestDropUnderRoots(t *testing.T) {
 
 func TestDiscoverySeeds(t *testing.T) {
 	rc := map[string]any{"targets": []any{"example.com", "api.example.com"}, RunContextKeySelectorRoots: []any{"example.com"}}
-	if got := DiscoverySeeds("subfinder", nil, rc); got == nil || !slices.Equal(got.Targets, []string{"example.com"}) {
+	if got := DiscoverySeeds(testCat, "subfinder", nil, rc); got == nil || !slices.Equal(got.Targets, []string{"example.com"}) {
 		t.Errorf("subfinder seeds = %+v, want the apex", got)
 	}
 	seeds := &StepTargets{Targets: []string{"example.com", "api.example.com"}, Refused: 2, Reason: "r"}
-	got := DiscoverySeeds("subfinder", seeds, rc)
+	got := DiscoverySeeds(testCat, "subfinder", seeds, rc)
 	if !slices.Equal(got.Targets, []string{"example.com"}) || got.Refused != 2 || got.Reason != "r" {
 		t.Errorf("subfinder with filtered seeds = %+v", got)
 	}
 	if seeds.Targets[1] != "api.example.com" {
 		t.Error("the caller's seeds were changed in place")
 	}
-	if got := DiscoverySeeds("nuclei", seeds, rc); got != seeds {
+	if got := DiscoverySeeds(testCat, "nuclei", seeds, rc); got != seeds {
 		t.Errorf("nuclei seeds changed: %+v", got)
 	}
-	if got := DiscoverySeeds("subfinder", seeds, map[string]any{}); got != seeds {
+	if got := DiscoverySeeds(testCat, "subfinder", seeds, map[string]any{}); got != seeds {
 		t.Errorf("no selector roots changed the seeds: %+v", got)
 	}
 }

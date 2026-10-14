@@ -57,7 +57,7 @@ func TestCheckStepBatches(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &Service{commandRepo: tc.repo, logger: logger.NewNop()}
+			s := &Service{tools: testTools, commandRepo: tc.repo, logger: logger.NewNop()}
 			got := s.checkStepBatches(context.Background(), run, tc.step)
 			if got.batched != tc.wantBatched || got.wait != tc.wantWait {
 				t.Errorf("batched=%v wait=%v, want %v %v", got.batched, got.wait, tc.wantBatched, tc.wantWait)

@@ -49,6 +49,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/internal/app/threat"
 	"github.com/openctemio/openctem/api/internal/app/tool"
+	"github.com/openctemio/openctem/api/internal/app/toolfacts"
 
 	"github.com/openctemio/openctem/api/internal/app"
 
@@ -995,7 +996,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every web job carries the path exclusions of its hosts, whatever path
 	// creates it (RFC-056 §5): the command repository's create guard. A
 	// web-scoped nuclei job needs a confined sensor (NO_CONFINED_SENSOR).
-	repos.Command.SetCreateGuard(scope.NewWebJobGuard(s.Scope, repos.Sensor))
+	// The organization's stage catalog (RFC-092): which tools implement each
+	// capability comes from the tool contracts its sensors and the
+	// platform's sensors report, cached per organization for a few seconds.
+	toolFacts := toolfacts.New(repos.Sensor)
+	webJobGuard := scope.NewWebJobGuard(s.Scope, repos.Sensor)
+	webJobGuard.SetToolFacts(toolFacts)
+	repos.Command.SetCreateGuard(webJobGuard)
 	// The platform's scope guardrails (RFC-054 §8): public suffixes, the deny
 	// list and CIDR caps on every new entry; the deny list and the proof mode
 	// at dispatch (the ownership gate below).
@@ -1841,6 +1848,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	// research/122: completed scan commands teach per-target durations.
 	cmdOpts = append(cmdOpts, command.WithDurationStats(repos.ToolDurationStats))
+	cmdOpts = append(cmdOpts, command.WithToolFacts(toolFacts))
 	s.Command = command.NewService(repos.Command, log, cmdOpts...)
 	s.SensorContent = sensorapp.NewContentService(repos.Sensor, s.Sensor, repos.SensorContentPolicy, repos.Command, s.Audit, log)
 	// Tenable.sc sensor connector (RFC-047): connector_sync commands pinned to
@@ -1860,6 +1868,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize ingest service (unified ingestion engine)
 	s.Ingest = ingest.NewService(repos.Asset, repos.Finding, repos.Vulnerability, repos.Component, repos.Sensor, repos.Branch, repos.Tenant, repos.Audit, log)
+	s.Ingest.SetToolFacts(toolFacts)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).
 	s.DefectDojoSync = defectdojo.NewSyncService(repos.Integration, s.Ingest, s.Encryptor, log)
@@ -2034,6 +2043,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// Initialize security validator for scan workflow/scan operations
 	securityValidator := app.NewSecurityValidator(repos.Tool, log)
+	securityValidator.SetToolFacts(toolFacts)
 
 	// Create adapters for scan sub-package (clean architecture - each package defines its own interfaces)
 	scanAuditAdapter := app.NewScanAuditServiceAdapter(s.Audit)
@@ -2125,6 +2135,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	s.Scan.SetToolFacts(toolFacts)
 	// Wildcard domains and inventory-mode CIDRs are expanded from the
 	// inventory at each run start (RFC-068).
 	s.Scan.SetSelectorAssets(repos.ScanSelector)
@@ -2228,6 +2239,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	// One step dispatcher (research/27 P0-2): a workflow scan's first steps
 	// are queued by the scan run service, like every later step.
+	s.ScanRun.SetToolFacts(toolFacts)
 	s.Scan.SetStepQueuer(s.ScanRun)
 	s.Scan.SetWorkflowVersions(repos.ScanWorkflow)
 	// Every retest is a scan run (kind retest): Runs lists it with its tasks and logs.
@@ -2616,7 +2628,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetAssetsExposedCallback(s.AssetDiscoveryNotifier.AssetsExposed)
 	// Every asset an ingest wrote moves the freshness clock of the attribute
 	// classes the report's tool observes (docs/architecture/asset-freshness.md).
-	s.Ingest.SetAssetsObservedCallback(assetfreshnessapp.NewRecorder(repos.AssetFreshness, log).AssetsObserved)
+	freshness := assetfreshnessapp.NewRecorder(repos.AssetFreshness, log)
+	freshness.SetToolFacts(toolFacts)
+	s.Ingest.SetAssetsObservedCallback(freshness.AssetsObserved)
 	// Network seeds (RFC-082): expanded from RIPEstat through the SSRF guard.
 	s.EASMNetworkSeeds = easmapp.NewNetworkSeedService(repos.EASMNetworkSeed, easmapp.NewRIPEstat(), s.ScopeGuardrails, log.With("service", "easm-network-seeds"))
 	s.EASMNetworkSeeds.SetSettings(s.Tenant) // per-organization opt-out of RIPEstat lookups

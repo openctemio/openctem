@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
@@ -54,7 +56,7 @@ func TestPresetPipelines_UseShippedTools(t *testing.T) {
 				t.Errorf("%s / %s: a capability step names one capability, got %v", tmpl, key, stepCaps)
 				continue
 			}
-			st, ok := stage.Lookup(stage.Key(stepCaps[0]))
+			st, ok := stagetest.Catalog().Lookup(stage.Key(stepCaps[0]))
 			if !ok || !slices.ContainsFunc(st.Tools(), func(tl string) bool { return shipped[tl] }) {
 				t.Errorf("%s / %s: no shipped tool runs %q", tmpl, key, stepCaps[0])
 			}

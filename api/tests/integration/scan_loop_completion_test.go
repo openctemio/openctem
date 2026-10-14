@@ -51,7 +51,7 @@ func newScanRunService(db *sql.DB) *scanrun.Service {
 		nil, // sensorRepo
 		postgres.NewCommandRepository(pg),
 		nil, // securityValidator
-		logger.New(logger.Config{Level: "error"}),
+		logger.New(logger.Config{Level: "error"}), scanrun.WithToolFacts(integrationTools),
 	)
 }
 

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/stage/stagetest"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -28,7 +30,7 @@ func TestClassesForTool(t *testing.T) {
 		{"", asset.AssetTypeDomain, nil},
 	}
 	for _, c := range cases {
-		got := ClassesForTool(c.tool, c.typ)
+		got := ClassesForTool(stagetest.Catalog(), c.tool, c.typ)
 		if !slices.Equal(got, c.want) {
 			t.Errorf("ClassesForTool(%q, %s) = %v, want %v", c.tool, c.typ, got, c.want)
 		}

@@ -40,7 +40,7 @@ func TestDecideWorkflowRouting(t *testing.T) {
 		{"auto, no selector: tenant only", nil, scan.SensorPreferenceAuto, false, false, []string{"a.example.com"}, sensorRoutingTenant, false},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: tc.sel, logger: logger.NewNop()}
+		svc := &Service{tools: testTools, sensorSelector: tc.sel, logger: logger.NewNop()}
 		sc := testScan("")
 		sc.SensorPreference = tc.pref
 		sc.RunOnTenantRunner = tc.tenantRO
@@ -73,7 +73,7 @@ func (unprovenTargets) UnverifiedTargets(_ context.Context, _ shared.ID, targets
 // With the operator's proof requirement, 'auto' keeps unproven targets off
 // platform sensors.
 func TestDecideWorkflowRouting_UnprovenStaysOnTenant(t *testing.T) {
-	svc := &Service{sensorSelector: stubSelector{false, true}, logger: logger.NewNop(),
+	svc := &Service{tools: testTools, sensorSelector: stubSelector{false, true}, logger: logger.NewNop(),
 		proofPolicy: StaticProofPolicy(true), attributionGate: unprovenTargets{}}
 	sc := testScan("")
 	sc.SensorPreference = scan.SensorPreferenceAuto

@@ -1,0 +1,5 @@
+### Changed: capability steps are planned from the tools' reported contracts
+- Which tools implement a capability (`dast.web@1`, `scan.ports@1`, …), how the capability's standard params map to each tool's settings keys and whether a tool takes a target list now come from the tool contracts the organization's sensors and the platform's sensors report, not from tables in the API. A capability step runs a tool that only a sensor's contract describes (for example a tool implementing `dast.web@1`); before, it was refused with "No sensor offers Web application scan".
+- Each organization sees only its own sensors' tools plus the platform's; `GET /api/v1/scans/stages` returns the caller's organization's implementations.
+- A pinned tool without a capability runs its primary capability (the first its contract implements): naabu stays a port scan, trivy runs `sca.deps`.
+- **Upgrade note:** a sensor that reports no tool contracts (older than the tool contract) contributes no implementation, and a job of its tools that names no capability is rated T2 at claim. Upgrade such sensors.

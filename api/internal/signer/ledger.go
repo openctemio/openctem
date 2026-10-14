@@ -34,7 +34,6 @@ import (
 	"time"
 
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
 )
 
@@ -648,7 +647,7 @@ func (l *Ledger) Check(st *jobsign.Statement, now time.Time) *refusal {
 		return refuse(http.StatusForbidden, ReasonTemplateNotInLed,
 			"custom template %s is not a version the organization approved", clip(d, 80))
 	}
-	tier := int(stage.ProbeTier(st.Tool))
+	tier := toolTier(st.Tool)
 	for _, lim := range st.Limits {
 		if !t.limitAllowed(lim, st.Targets, tier, now) {
 			return refuse(http.StatusForbidden, ReasonOutOfLedger,

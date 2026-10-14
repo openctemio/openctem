@@ -35,7 +35,7 @@ func (g *stubApprovalGate) CheckRun(_ context.Context, _ *scan.Scan, def scangov
 // inventory: selectors, CIDR width, schedule, placement, the scanner's tier.
 func TestGovernanceSubjectOf(t *testing.T) {
 	assets := &stubApprovalAssets{resp: scangov.AssetFacts{Expanded: 40, Tags: []string{"production"}, MaxCriticality: "high"}}
-	s := &Service{}
+	s := &Service{tools: testTools}
 	s.SetApprovalGate(nil, assets)
 	zone := shared.NewID()
 	sc := &scan.Scan{TenantID: shared.NewID(), ScanType: scan.ScanTypeSingle, ScannerName: "nuclei",
@@ -65,7 +65,7 @@ func TestGovernanceSubjectOf(t *testing.T) {
 
 // Every run passes the approval gate; its refusal refuses the run.
 func TestRequireApproval(t *testing.T) {
-	s := &Service{}
+	s := &Service{tools: testTools}
 	sc := &scan.Scan{TenantID: shared.NewID(), ScanType: scan.ScanTypeSingle, ScannerName: "zap", Targets: []string{"a.example.com"}}
 	if err := s.requireApproval(context.Background(), sc, ""); err != nil {
 		t.Fatalf("no gate wired: %v", err)
@@ -84,7 +84,7 @@ func TestRequireApproval(t *testing.T) {
 // declared intrusive is intrusive for approval, and changing the declared
 // intensity changes what was approved. Never below what the tools probe.
 func TestGovernanceSubjectOf_DeclaredIntensity(t *testing.T) {
-	s := &Service{}
+	s := &Service{tools: testTools}
 	sc := &scan.Scan{TenantID: shared.NewID(), ScanType: scan.ScanTypeSingle, ScannerName: "subfinder",
 		Targets: []string{"example.com"}, Intensity: scan.IntensityIntrusive}
 	def, f, err := s.GovernanceSubjectOf(context.Background(), sc)

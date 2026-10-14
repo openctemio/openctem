@@ -36,7 +36,7 @@ func hasRangeTarget(targets []string) bool {
 
 // workflowFindsHosts reports whether a scan workflow has a host discovery
 // step (a step whose stage is discover.hosts).
-func (s *Service) workflowFindsHosts(ctx context.Context, workflowID shared.ID) (bool, error) {
+func (s *Service) workflowFindsHosts(ctx context.Context, tenantID, workflowID shared.ID) (bool, error) {
 	if s.stepRepo == nil {
 		return false, nil
 	}
@@ -44,8 +44,12 @@ func (s *Service) workflowFindsHosts(ctx context.Context, workflowID shared.ID) 
 	if err != nil {
 		return false, fmt.Errorf("read the scan workflow steps: %w", err)
 	}
+	cat, err := s.catalog(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
 	for _, st := range steps {
-		if sg, ok := stage.ForStep(st.Tool, st.Capabilities); ok && sg.Key == stage.DiscoverHosts {
+		if sg, ok := cat.ForStep(st.Tool, st.Capabilities); ok && sg.Key == stage.DiscoverHosts {
 			return true, nil
 		}
 	}
@@ -72,7 +76,7 @@ func (s *Service) applyCIDRMode(ctx context.Context, sc *scan.Scan, explicit boo
 	finds := true
 	if sc.ScanType == scan.ScanTypeWorkflow && sc.ScanWorkflowID != nil {
 		var err error
-		if finds, err = s.workflowFindsHosts(ctx, *sc.ScanWorkflowID); err != nil {
+		if finds, err = s.workflowFindsHosts(ctx, sc.TenantID, *sc.ScanWorkflowID); err != nil {
 			return err
 		}
 	}
@@ -93,14 +97,14 @@ func (s *Service) applyCIDRMode(ctx context.Context, sc *scan.Scan, explicit boo
 // the ranges and keeps the rest (the inventory's addresses inside them,
 // names, URLs). Its live hosts reach it from the host discovery step it
 // follows. Another run is unchanged.
-func LivenessSeeds(runContext map[string]any, resolved StepTool, st *StepTargets) *StepTargets {
+func LivenessSeeds(cat stage.Catalog, runContext map[string]any, resolved StepTool, st *StepTargets) *StepTargets {
 	if mode, _ := runContext[RunContextKeyCIDRMode].(string); mode != string(scan.CIDRModeLiveness) {
 		return st
 	}
 	if resolved.HasStage && (resolved.Stage.Key == stage.DiscoverHosts || resolved.Stage.Tier.Passive()) {
 		return st
 	}
-	if !resolved.HasStage && stage.PassiveTool(resolved.Name) {
+	if !resolved.HasStage && cat.PassiveTool(resolved.Name) {
 		return st
 	}
 	targets := runTargetList(st, runContext)

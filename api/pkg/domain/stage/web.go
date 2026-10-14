@@ -13,8 +13,8 @@ func IsWebStage(k Key) bool { return webStages[k] }
 // WebTool reports whether a tool implements a web stage. It is decided by
 // the tool alone, so a web tool in a step outside the stage catalog (a
 // quick scan, a step without a stage) is still one.
-func WebTool(tool string) bool {
-	for _, s := range ForTool(tool) {
+func (c Catalog) WebTool(tool string) bool {
+	for _, s := range c.ForTool(tool) {
 		if webStages[s.Key] {
 			return true
 		}

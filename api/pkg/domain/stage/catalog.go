@@ -3,8 +3,11 @@
 // stage catalog) and research/27 §4-§6 (owner decisions G1-G12).
 //
 // A stage is one capability ("discover.subdomains", "probe.http", ...). It
-// declares the asset types it consumes and produces, its intrusiveness tier
-// and the tools that implement it. The platform connects one stage's
+// declares the asset types it consumes and produces and its intrusiveness
+// tier. Which tools implement it, under which settings keys and whether
+// they take a target list, is not in this package: it comes from the tool
+// contracts an organization's sensors report (WithTools, RFC-092). The
+// platform connects one stage's
 // outputs to the next stage's inputs by type, through the inventory and the
 // per-hop gate; a sensor never feeds another sensor.
 //
@@ -15,9 +18,7 @@ package stage
 
 import (
 	"fmt"
-	"maps"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/openctemio/ctis/capability"
@@ -82,15 +83,16 @@ type Implementation struct {
 	// names only the capability. Exactly one per stage.
 	Default bool `json:"default"`
 	// Batch: the tool takes a list of targets in one task; otherwise one
-	// target per task (contract.go batchTools).
+	// target per task (the contract's input.batch).
 	Batch bool `json:"batch"`
 	// ByCapability: the tool runs this stage only for a step or job that
-	// names the capability. A step that pins the tool without naming a
-	// capability runs the tool's other stage (naabu: a port scan, not host
-	// discovery).
+	// names the capability: it is not the tool's primary capability (the
+	// first its contract implements). A step that pins the tool without
+	// naming a capability runs the primary one (naabu: a port scan, not
+	// host discovery).
 	ByCapability bool `json:"by_capability,omitempty"`
 	// Params maps the capability's standard params this tool accepts to
-	// the tool's own config key (contract.go toolParams).
+	// the tool's own config key (the contract's implements[].params).
 	Params map[string]string `json:"params"`
 }
 
@@ -111,7 +113,8 @@ type Stage struct {
 	// Endpoints: the stage reports web endpoints (CTIS 1.6 endpoints[]).
 	Endpoints bool `json:"endpoints,omitempty"`
 	Tier      Tier `json:"tier"`
-	// Implementations, the default first.
+	// Implementations, the default first: set only on a stage of an
+	// organization's Catalog, from the contracts its sensors report.
 	Implementations []Implementation `json:"implementations"`
 	// MaxFanout bounds how many derived targets one run hands this stage.
 	// An engine may lower it, never raise it.
@@ -198,10 +201,7 @@ var catalog = []Stage{
 		Outputs:     dnsNames,
 		Relations:   []string{"subdomain_of"},
 		Tier:        TierPassive,
-		Implementations: []Implementation{
-			{Tool: "subfinder", Default: true},
-		},
-		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+		MaxFanout:   RunFanoutCap, MaxPerParent: DefaultPerParent,
 		Legacy: []string{"subdomain"},
 	},
 	{
@@ -211,10 +211,7 @@ var catalog = []Stage{
 		Outputs:     []asset.TypeRef{tDomain, tSubdomain, tIP},
 		Relations:   []string{string(asset.RelTypeResolvesTo), string(asset.RelTypeCnameOf)},
 		Tier:        TierPassive,
-		Implementations: []Implementation{
-			{Tool: "dnsx", Default: true},
-		},
-		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+		MaxFanout:   RunFanoutCap, MaxPerParent: DefaultPerParent,
 		Legacy: []string{"dns"},
 	},
 	{
@@ -223,10 +220,7 @@ var catalog = []Stage{
 		Inputs:      []asset.TypeRef{tDomain},
 		Outputs:     []asset.TypeRef{tDomain},
 		Tier:        TierPassive,
-		Implementations: []Implementation{
-			{Tool: "rdap", Default: true},
-		},
-		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+		MaxFanout:   RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: LookupASN, Name: "Network ownership lookup",
@@ -234,10 +228,7 @@ var catalog = []Stage{
 		Inputs:      []asset.TypeRef{tIP, tNetwork},
 		Outputs:     []asset.TypeRef{tIP, tNetwork},
 		Tier:        TierPassive,
-		Implementations: []Implementation{
-			{Tool: "asn", Default: true},
-		},
-		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+		MaxFanout:   RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: DiscoverHosts, Name: "Host discovery",
@@ -245,10 +236,7 @@ var catalog = []Stage{
 		Inputs:      []asset.TypeRef{tIP, tNetwork},
 		Outputs:     []asset.TypeRef{tIP},
 		Tier:        TierActive,
-		Implementations: []Implementation{
-			{Tool: "naabu", Default: true, ByCapability: true},
-		},
-		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+		MaxFanout:   RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: ScanPorts, Name: "Port scan",
@@ -257,10 +245,7 @@ var catalog = []Stage{
 		Outputs:     []asset.TypeRef{tIP, tHost, tOpenPort},
 		Relations:   []string{string(asset.RelTypeExposes)},
 		Tier:        TierActive,
-		Implementations: []Implementation{
-			{Tool: "naabu", Default: true},
-		},
-		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+		MaxFanout:   RunFanoutCap, MaxPerParent: DefaultPerParent,
 		Legacy: []string{"portscan"},
 	},
 	{
@@ -275,9 +260,6 @@ var catalog = []Stage{
 		},
 		Relations: []string{"serves_certificate", "hosted_by"},
 		Tier:      TierActive,
-		Implementations: []Implementation{
-			{Tool: "httpx", Default: true},
-		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 		Legacy: []string{"http"},
 	},
@@ -288,11 +270,8 @@ var catalog = []Stage{
 		Outputs:     []asset.TypeRef{tHTTPService},
 		Endpoints:   true,
 		Tier:        TierActive,
-		Implementations: []Implementation{
-			{Tool: "katana", Default: true},
-		},
-		MaxFanout: webFanoutCap,
-		Legacy:    []string{"crawler", "url_discovery"},
+		MaxFanout:   webFanoutCap,
+		Legacy:      []string{"crawler", "url_discovery"},
 	},
 	{
 		Key: VulnTemplates, Name: "Vulnerability templates",
@@ -302,11 +281,8 @@ var catalog = []Stage{
 			tDomain, tSubdomain, tIP,
 			tWebsite, tAPI,
 		},
-		Findings: true,
-		Tier:     TierActive,
-		Implementations: []Implementation{
-			{Tool: "nuclei", Default: true},
-		},
+		Findings:  true,
+		Tier:      TierActive,
 		MaxFanout: RunFanoutCap,
 	},
 	{
@@ -316,21 +292,13 @@ var catalog = []Stage{
 		Findings:    true,
 		Endpoints:   true,
 		// An active DAST scan sends attack payloads: intrusive.
-		Tier: TierIntrusive,
-		Implementations: []Implementation{
-			{Tool: "zap", Default: true},
-		},
+		Tier:      TierIntrusive,
 		MaxFanout: webFanoutCap,
 	},
 	{
 		Key: SecretsCode, Name: "Secrets in code",
 		Description: "Find committed secrets in a repository.",
 		Inputs:      codeInputs, Findings: true, Tier: TierPassive,
-		Implementations: []Implementation{
-			{Tool: "betterleaks", Default: true},
-			{Tool: "trufflehog"},
-			{Tool: "gitleaks"},
-		},
 		MaxFanout: RunFanoutCap,
 		Legacy:    []string{"secrets"},
 	},
@@ -338,11 +306,6 @@ var catalog = []Stage{
 		Key: SASTCode, Name: "Static analysis",
 		Description: "Static application security testing of source code.",
 		Inputs:      codeInputs, Findings: true, Tier: TierPassive,
-		Implementations: []Implementation{
-			{Tool: "semgrep", Default: true},
-			{Tool: "opengrep"},
-			{Tool: "codeql"},
-		},
 		MaxFanout: RunFanoutCap,
 		Legacy:    []string{"sast"},
 	},
@@ -351,11 +314,6 @@ var catalog = []Stage{
 		Description: "Find vulnerable dependencies and build a component inventory.",
 		Inputs:      []asset.TypeRef{canonical(asset.AssetTypeRepository), tContainer},
 		Findings:    true, Tier: TierPassive,
-		Implementations: []Implementation{
-			{Tool: "trivy", Default: true},
-			{Tool: "osv-scanner"},
-			{Tool: "grype"},
-		},
 		MaxFanout: RunFanoutCap,
 		Legacy:    []string{"sca"},
 	},
@@ -363,11 +321,6 @@ var catalog = []Stage{
 		Key: IaCMisconfig, Name: "Infrastructure-as-code misconfiguration",
 		Description: "Find misconfigurations in infrastructure-as-code files.",
 		Inputs:      codeInputs, Findings: true, Tier: TierPassive,
-		Implementations: []Implementation{
-			{Tool: "checkov", Default: true},
-			{Tool: "kics"},
-			{Tool: "trivy"},
-		},
 		MaxFanout: RunFanoutCap,
 		Legacy:    []string{"iac"},
 	},
@@ -376,10 +329,6 @@ var catalog = []Stage{
 		Description: "Find vulnerabilities in a container image.",
 		Inputs:      []asset.TypeRef{tContainer},
 		Findings:    true, Tier: TierPassive,
-		Implementations: []Implementation{
-			{Tool: "trivy", Default: true},
-			{Tool: "grype"},
-		},
 		MaxFanout: RunFanoutCap,
 		Legacy:    []string{"container"},
 	},
@@ -388,30 +337,21 @@ var catalog = []Stage{
 		Description: "Run a network vulnerability scan through a connected scanner product.",
 		Inputs:      []asset.TypeRef{tIP, tHost, tNetwork},
 		Findings:    true, Tier: TierActive,
-		Implementations: []Implementation{
-			{Tool: "tenable_sc", Default: true},
-		},
 		MaxFanout: connectorFanoutCap,
 	},
 }
 
-// All returns a copy of the catalog, in display order.
-func All() []Stage {
-	out := make([]Stage, len(catalog))
-	for i, s := range catalog {
-		out[i] = s.clone()
-	}
-	return out
-}
+// All returns a copy of the capability catalog, in display order, without
+// implementations: which tools run a stage is an organization's fact
+// (Catalog.All).
+func All() []Stage { return Catalog{}.All() }
 
+// clone is a deep copy of the stage.
 func (s Stage) clone() Stage {
 	s.Inputs = slices.Clone(s.Inputs)
 	s.Outputs = slices.Clone(s.Outputs)
 	s.Relations = slices.Clone(s.Relations)
-	s.Implementations = slices.Clone(s.Implementations)
-	for i := range s.Implementations {
-		s.Implementations[i].Params = maps.Clone(s.Implementations[i].Params)
-	}
+	s.Implementations = cloneImplementations(s.Implementations)
 	s.Legacy = slices.Clone(s.Legacy)
 	s.InPorts = slices.Clone(s.InPorts)
 	s.OutPorts = slices.Clone(s.OutPorts)
@@ -423,15 +363,9 @@ func (s Stage) clone() Stage {
 	return s
 }
 
-// Lookup returns the stage with this key.
-func Lookup(k Key) (Stage, bool) {
-	for _, s := range catalog {
-		if s.Key == k {
-			return s.clone(), true
-		}
-	}
-	return Stage{}, false
-}
+// Lookup returns the stage with this key, without implementations
+// (Catalog.Lookup).
+func Lookup(k Key) (Stage, bool) { return Catalog{}.Lookup(k) }
 
 // DefaultTool is the stage's default implementation.
 func (s Stage) DefaultTool() string {
@@ -520,85 +454,6 @@ func Label(ref asset.TypeRef) string {
 // normalizeTool is the registry spelling of a tool name.
 func normalizeTool(t string) string { return strings.ToLower(strings.TrimSpace(t)) }
 
-// ForTool returns the stages a tool implements, in catalog order.
-func ForTool(tool string) []Stage {
-	var out []Stage
-	for _, s := range catalog {
-		if s.Implements(tool) {
-			out = append(out, s.clone())
-		}
-	}
-	return out
-}
-
-// ProbeTier is the highest tier among the stages a tool implements: what a
-// run of the tool may send at its targets. A tool the catalog does not know
-// counts as an active (T1) probe; it is never treated as passive.
-func ProbeTier(tool string) Tier {
-	stages := ForTool(tool)
-	if len(stages) == 0 {
-		return TierActive
-	}
-	t := TierPassive
-	for _, s := range stages {
-		if s.Tier > t {
-			t = s.Tier
-		}
-	}
-	return t
-}
-
-// PassiveTool reports whether every stage the tool implements is passive
-// (T0): it sends no traffic to its targets. A tool the catalog does not know
-// is not passive.
-func PassiveTool(tool string) bool {
-	stages := ForTool(tool)
-	if len(stages) == 0 {
-		return false
-	}
-	for _, s := range stages {
-		if !s.Tier.Passive() {
-			return false
-		}
-	}
-	return true
-}
-
-// PassiveTools returns every tool for which PassiveTool holds, sorted.
-func PassiveTools() []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range catalog {
-		for _, impl := range s.Implementations {
-			t := normalizeTool(impl.Tool)
-			if !seen[t] && PassiveTool(t) {
-				seen[t] = true
-				out = append(out, t)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// OutputTypes is the union of the asset types a tool's stages produce, sorted
-// (what tools.output_types records for a platform tool). Nil for a tool the
-// catalog does not know.
-func OutputTypes(tool string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range ForTool(tool) {
-		for _, t := range s.Outputs {
-			if l := Label(t); !seen[l] {
-				seen[l] = true
-				out = append(out, l)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 // Resolution errors.
 var (
 	// ErrUnknownCapability: no stage matches the capabilities.
@@ -611,113 +466,11 @@ var (
 // ("probe.http") names the stage directly; otherwise the pre-catalog words
 // that name exactly one stage ("portscan", "dns", ...) do. Qualifier words
 // ("recon", "web", "tech_detect") name no stage on their own.
-func ForCapabilities(caps []string) (Stage, error) {
-	matched := map[Key]bool{}
-	for _, c := range caps {
-		c = strings.ToLower(strings.TrimSpace(c))
-		if c == "" {
-			continue
-		}
-		for _, s := range catalog {
-			if string(s.Key) == c || slices.Contains(s.Legacy, c) {
-				matched[s.Key] = true
-			}
-		}
-	}
-	switch len(matched) {
-	case 0:
-		return Stage{}, ErrUnknownCapability
-	case 1:
-		for k := range matched {
-			s, _ := Lookup(k)
-			return s, nil
-		}
-	}
-	return Stage{}, ErrAmbiguousCapability
-}
+//
+// The stage has no implementations; Catalog.ForCapabilities has them.
+func ForCapabilities(caps []string) (Stage, error) { return Catalog{}.ForCapabilities(caps) }
 
 // ForWord is the stage one capability word names: a stage key
 // ("resolve.dns") or a pre-catalog word that names exactly one stage
 // ("dns"). Qualifier words ("recon", "scan") name none.
-func ForWord(word string) (Stage, bool) {
-	s, err := ForCapabilities([]string{word})
-	return s, err == nil
-}
-
-// ToolCanRun reports whether a tool can run a step's capability word. The
-// two vocabularies map onto each other through the catalog: the word is one
-// the tool declares (toolCaps, lowercase), or it names a stage that the
-// catalog has the tool implement, or that the tool declares under the
-// stage's key or one of its pre-catalog words. So "resolve.dns" fits a tool
-// declaring "dns", and "dns" fits a tool declaring "resolve.dns".
-//
-// This only decides whether the step is valid. Where a step runs and what it
-// may chain into is still placed by ForStep, from the catalog alone, so a
-// tenant tool declaring a word never gains a catalog contract.
-func ToolCanRun(tool string, toolCaps []string, word string) bool {
-	word = strings.ToLower(strings.TrimSpace(word))
-	if word == "" {
-		return false
-	}
-	if slices.Contains(toolCaps, word) {
-		return true
-	}
-	s, ok := ForWord(word)
-	if !ok {
-		return false
-	}
-	if s.Implements(tool) || slices.Contains(toolCaps, string(s.Key)) {
-		return true
-	}
-	for _, l := range s.Legacy {
-		if slices.Contains(toolCaps, l) {
-			return true
-		}
-	}
-	return false
-}
-
-// ForStep is the stage a workflow step runs: its pinned tool's stage when
-// the tool implements exactly one, else the one its capabilities name and
-// the tool implements, else the one its capabilities name. ok is false for a
-// step the catalog cannot place (a tenant tool, a tool with several stages
-// and no capability naming one); such a step never chains.
-func ForStep(tool string, caps []string) (Stage, bool) {
-	byCaps, capErr := ForCapabilities(caps)
-	if tool == "" {
-		return byCaps, capErr == nil
-	}
-	stages := ForTool(tool)
-	switch {
-	case len(stages) == 1:
-		return stages[0], true
-	case len(stages) > 1 && capErr == nil && byCaps.Implements(tool):
-		return byCaps, true
-	case len(stages) > 1:
-		// A pinned tool whose capabilities name none of its stages runs
-		// its one stage that is not reached by capability only.
-		if own := withoutByCapability(stages, tool); len(own) == 1 {
-			return own[0], true
-		}
-	}
-	return Stage{}, false
-}
-
-// withoutByCapability keeps the stages tool runs without being asked for
-// the capability (Implementation.ByCapability).
-func withoutByCapability(stages []Stage, tool string) []Stage {
-	tool = normalizeTool(tool)
-	var out []Stage
-	for _, st := range stages {
-		byCap := false
-		for _, im := range st.Implementations {
-			if im.Tool == tool && im.ByCapability {
-				byCap = true
-			}
-		}
-		if !byCap {
-			out = append(out, st)
-		}
-	}
-	return out
-}
+func ForWord(word string) (Stage, bool) { return Catalog{}.ForWord(word) }

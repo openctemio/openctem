@@ -23,19 +23,24 @@ import (
 const RunContextKeyIntensity = scanrun.RunContextKeyIntensity
 
 // StepIntensityTier is the tier a workflow step counts at against the
-// scan's intensity (stage.IntensityTier).
-func StepIntensityTier(step *scanworkflow.Step) int {
+// scan's intensity (stage.Catalog.IntensityTier in the organization's
+// catalog cat).
+func StepIntensityTier(cat stage.Catalog, step *scanworkflow.Step) int {
 	if step == nil {
 		return int(stage.TierActive)
 	}
-	return int(stage.IntensityTier(step.Tool, step.Capabilities, step.Config))
+	return int(cat.IntensityTier(step.Tool, step.Capabilities, step.Config))
 }
 
 // probeCeiling is the highest tier the scan's tool or workflow steps probe
 // at, and what reaches it (for the refusal message).
 func (s *Service) probeCeiling(ctx context.Context, sc *scan.Scan) (int, string, error) {
+	cat, err := s.catalog(ctx, sc.TenantID)
+	if err != nil {
+		return 0, "", err
+	}
 	if sc.ScanType != scan.ScanTypeWorkflow {
-		return int(stage.IntensityTier(sc.ScannerName, nil, sc.ScannerConfig)), fmt.Sprintf("Scanner %q", sc.ScannerName), nil
+		return int(cat.IntensityTier(sc.ScannerName, nil, sc.ScannerConfig)), fmt.Sprintf("Scanner %q", sc.ScannerName), nil
 	}
 	if sc.ScanWorkflowID == nil || s.stepRepo == nil {
 		return int(stage.TierActive), "The workflow", nil
@@ -49,7 +54,7 @@ func (s *Service) probeCeiling(ctx context.Context, sc *scan.Scan) (int, string,
 	}
 	top, what := -1, ""
 	for _, st := range steps {
-		if t := StepIntensityTier(st); t > top {
+		if t := StepIntensityTier(cat, st); t > top {
 			top, what = t, fmt.Sprintf("Workflow step %q", st.StepKey)
 		}
 	}
@@ -80,12 +85,12 @@ func (s *Service) applyIntensity(ctx context.Context, sc *scan.Scan, requested s
 // refuseRunAboveIntensity refuses a single-scanner run whose tool probes
 // above the scan's intensity (the scan was saved before a tool change, or
 // its row was edited). A workflow is checked per step at dispatch.
-func refuseRunAboveIntensity(sc *scan.Scan) error {
+func refuseRunAboveIntensity(cat stage.Catalog, sc *scan.Scan) error {
 	if sc.ScanType == scan.ScanTypeWorkflow || sc.ScannerName == "" {
 		return nil
 	}
 	i := sc.EffectiveIntensity()
-	if t := int(stage.IntensityTier(sc.ScannerName, nil, sc.ScannerConfig)); !i.Allows(t) {
+	if t := int(cat.IntensityTier(sc.ScannerName, nil, sc.ScannerConfig)); !i.Allows(t) {
 		return scan.IntensityExceededError(i, fmt.Sprintf("Scanner %q", sc.ScannerName), t)
 	}
 	return nil
@@ -108,8 +113,8 @@ func RunIntensity(run *scanrun.Run) scan.Intensity {
 // IntensitySkipReason is why a workflow step is skipped in a run: it
 // probes above the intensity the run started with; "" when it fits, or the
 // run has no intensity.
-func IntensitySkipReason(run *scanrun.Run, step *scanworkflow.Step) string {
-	return intensitySkipReason(RunIntensity(run), StepIntensityTier(step))
+func IntensitySkipReason(cat stage.Catalog, run *scanrun.Run, step *scanworkflow.Step) string {
+	return intensitySkipReason(RunIntensity(run), StepIntensityTier(cat, step))
 }
 
 // IntensitySkipReasonForTier is IntensitySkipReason for a step whose tool

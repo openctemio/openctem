@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -173,6 +174,10 @@ type SelectSensorResult struct {
 
 // Service handles scan workflow-related business operations.
 type Service struct {
+	// tools is the organization's stage catalog: which tools implement
+	// each capability, from the tool contracts its sensors report
+	// (toolfacts); nil: no tool implements anything (fail closed).
+	tools stage.Source
 	// toolConfig checks a pinned step's tool options against the sensors'
 	// tool settings (WithToolConfigChecker).
 	toolConfig ToolConfigChecker

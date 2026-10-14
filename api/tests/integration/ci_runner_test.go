@@ -116,6 +116,7 @@ func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)
+	ing.SetToolFacts(integrationTools)
 	ing.SetSecretFingerprinter(ciSecretFingerprinter)
 	idp := newCIIdP(t)
 	repo := postgres.NewCIRunRepository(db)

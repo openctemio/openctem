@@ -47,7 +47,7 @@ func TestScanWorkflowDelete_RetiresAndKeepsRuns(t *testing.T) {
 		nil,
 		postgres.NewCommandRepository(pg),
 		acceptingStepValidator{},
-		logger.New(logger.Config{Level: "error"}),
+		logger.New(logger.Config{Level: "error"}), scanrun.WithToolFacts(integrationTools),
 	)
 	h := handler.NewScanWorkflowHandler(svc, validator.New(), logger.NewNop())
 	call := func(fn http.HandlerFunc, method, target string, as shared.ID, body any, id string) *httptest.ResponseRecorder {

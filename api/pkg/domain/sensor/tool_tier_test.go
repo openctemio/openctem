@@ -25,10 +25,23 @@ func TestCommandTierFor(t *testing.T) {
 		c    *ToolContract
 		want int
 	}{
-		// Unchanged without a contract: the catalog rule (TC12 fallback).
-		{"catalog tool, no contract", Job{Tool: "naabu"}, nil, TierActive},
-		{"catalog passive tool", Job{Tool: "subfinder"}, nil, TierPassive},
+		// SECURITY: without a contract a job that names no capability is T2,
+		// built-in tool name or not (no Go table vouches for a tool).
+		{"built-in tool name, no contract", Job{Tool: "naabu"}, nil, TierIntrusive},
+		{"passive built-in tool name, no contract", Job{Tool: "subfinder"}, nil, TierIntrusive},
 		{"unknown tool, no contract", Job{Tool: "acme-scan"}, nil, TierIntrusive},
+		{"no contract, capability named", Job{Tool: "subfinder", Capability: "discover.subdomains@1"}, nil, TierPassive},
+		// With its contract a tool is rated by what it implements: the
+		// highest floor when the job names no capability, else the floor of
+		// the one it names.
+		{"released naabu", Job{Tool: "naabu"}, releasedContract("naabu"), TierActive},
+		{"released subfinder", Job{Tool: "subfinder"}, releasedContract("subfinder"), TierPassive},
+		{"released trivy", Job{Tool: "trivy"}, releasedContract("trivy"), TierPassive},
+		{"contract floors: highest without a capability", Job{Tool: "nuclei"}, builtinContract("T1", "vuln.templates@1", "dast.web@1"), TierIntrusive},
+		{"contract floors: the named capability's", Job{Tool: "nuclei", Capability: "vuln.templates@1"}, builtinContract("T1", "vuln.templates@1", "dast.web@1"), TierActive},
+		// SECURITY: a contract-only tool (not compiled into a released
+		// sensor) is unverified: T2 whatever it declares.
+		{"contract-only tool", Job{Tool: "toyweb", Capability: "dast.web@1"}, builtinContract("T0", "dast.web@1"), TierIntrusive},
 		// The capability floor applies; a capability nobody knows fails closed.
 		{"capability floor", Job{Tool: "trivy", Capability: "sca.deps@1"}, nil, TierPassive},
 		{"unknown capability", Job{Tool: "naabu", Capability: "scan.everything@1"}, nil, TierIntrusive},

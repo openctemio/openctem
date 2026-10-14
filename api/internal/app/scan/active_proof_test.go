@@ -67,7 +67,7 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 		{"no verifier: fail closed", true, nil, scan.SensorPreferencePlatform, []string{"app.verified.example"}, false, codeProofRequired},
 	}
 	for _, tc := range cases {
-		svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(tc.on), attributionGate: tc.gate}
+		svc := &Service{tools: testTools, sensorSelector: allowed, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(tc.on), attributionGate: tc.gate}
 		sc := testScan("nuclei")
 		sc.SensorPreference = tc.pref
 		got, err := svc.shouldUsePlatformSensor(ctx, sc, tc.targets)
@@ -82,7 +82,7 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 		}
 	}
 	// A failed proof lookup fails the explicit-platform decision.
-	svc := &Service{sensorSelector: allowed, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{err: errors.New("db down")}}
+	svc := &Service{tools: testTools, sensorSelector: allowed, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{err: errors.New("db down")}}
 	sc := testScan("nuclei")
 	sc.SensorPreference = scan.SensorPreferencePlatform
 	if _, err := svc.shouldUsePlatformSensor(ctx, sc, []string{"app.verified.example"}); err == nil {
@@ -94,15 +94,15 @@ func TestShouldUsePlatformSensor_ProofRequired(t *testing.T) {
 // sensor; off, they need none.
 func TestRefuseUnprovenIntrusive(t *testing.T) {
 	ctx := context.Background()
-	off := &Service{logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false), attributionGate: proofGate{}}
+	off := &Service{tools: testTools, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(false), attributionGate: proofGate{}}
 	if err := off.refuseUnprovenIntrusive(ctx, shared.NewID(), "zap", []string{"https://bigbank.example/"}); err != nil {
 		t.Fatalf("setting off: intrusive scan refused: %v", err)
 	}
-	unwired := &Service{logger: logger.NewNop(), attributionGate: proofGate{}}
+	unwired := &Service{tools: testTools, logger: logger.NewNop(), attributionGate: proofGate{}}
 	if err := unwired.refuseUnprovenIntrusive(ctx, shared.NewID(), "zap", []string{"https://bigbank.example/"}); err != nil {
 		t.Fatalf("no policy (default off): intrusive scan refused: %v", err)
 	}
-	svc := &Service{logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{}}
+	svc := &Service{tools: testTools, logger: logger.NewNop(), proofPolicy: StaticProofPolicy(true), attributionGate: proofGate{}}
 	tenant := shared.NewID()
 	var de *shared.DomainError
 	if err := svc.refuseUnprovenIntrusive(ctx, tenant, "zap", []string{"https://bigbank.example/"}); !errors.As(err, &de) || de.Code != codeProofRequired {
