@@ -36,6 +36,8 @@ const (
 	SectionLicensePolicy  = "license_policy"
 	// SectionAssetReconciliation is RFC-069.
 	SectionAssetReconciliation = "asset_reconciliation"
+	// SectionFindingCorrelation is research/134 section 12.
+	SectionFindingCorrelation = "finding_correlation"
 )
 
 // settingsSectionTargets maps each section key to the field of s it decodes
@@ -58,6 +60,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionScope:               &s.Scope,
 		SectionMCP:                 &s.MCP,
 		SectionAssetReconciliation: &s.AssetReconciliation,
+		SectionFindingCorrelation:  &s.FindingCorrelation,
 		SectionVulnMatching:        &s.VulnMatching,
 		SectionLicensePolicy:       &s.LicensePolicy,
 		SectionScanGovernance:      &s.ScanGovernance,

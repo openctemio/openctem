@@ -339,6 +339,9 @@ func (s *Service) SetSecretFingerprinter(fp *vulnerability.SecretFingerprinter) 
 	s.findingProcessor.SetSecretFingerprinter(fp)
 }
 
+// SetCorrelationStore wires cross-rule finding correlation (nil: off).
+func (s *Service) SetCorrelationStore(c CorrelationStore) { s.findingProcessor.SetCorrelationStore(c) }
+
 // SetSuppressionChecker wires approved suppression-rule enforcement into the
 // ingest finding path: a new finding matching an active (approved, non-expired)
 // rule lands resolved+suppressed. Nil-safe: when not wired, findings are never

@@ -2365,6 +2365,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// batch (tenant-scoped). Without this wire the suppression engine + CRUD +
 	// approve/reject UI exist but suppress nothing on the ingest path. Nil-safe.
 	s.Ingest.SetSuppressionChecker(s.Suppression)
+	// Cross-rule correlation of DAST findings (research/134 section 12).
+	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
 
 	// Initialize access control services
 	s.Group = accesscontrol.NewGroupService(repos.Group, log,
