@@ -143,7 +143,7 @@ AI triage may **propose** a false positive; it never decides one.
 Key files: `internal/app/finding/vulnerability_service.go`
 (`ProposeFalsePositiveFromAI`), `internal/app/aitriage/service.go`
 (`proposeFalsePositive`), `pkg/domain/vulnerability/approval.go`
-(`NewActorApproval`), migration `002127`.
+(`NewActorApproval`), migration `002131`.
 
 ## Upgrade
 

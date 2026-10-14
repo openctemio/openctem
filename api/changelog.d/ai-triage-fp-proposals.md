@@ -4,4 +4,4 @@
 - Never for critical or high findings. Never auto-approved. Never repeated while a request is pending or after a person rejected an AI proposal. Nothing is proposed when the triage output needed review (coerced fields or prompt-injection markers in the finding).
 - An actor-made request counts as requested by nobody: any approver may decide it, and a person always must.
 - The approval UI shows "Proposed by AI triage" (en, vi).
-- Migration `002127` adds `finding_status_approvals.requested_by_actor` and one pending actor request per finding.
+- Migration `002131` adds `finding_status_approvals.requested_by_actor` and one pending actor request per finding.
