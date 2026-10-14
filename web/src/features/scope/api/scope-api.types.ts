@@ -137,7 +137,15 @@ export interface UpdateScopeSettingsInput {
   /** null: the default min(1, admins - 1). */
   widening_approvals: number | null
   default_max_tier: 't0' | 't1'
+  /**
+   * What active scans may do to assets no entry covers (RFC-054 §16); sent
+   * only when the API reports it.
+   */
+  unclassified_scans?: UnclassifiedScans
 }
+
+/** The unclassified-scans setting (RFC-054 §16). */
+export type UnclassifiedScans = 'off' | 'low_impact' | 'full'
 
 /** One result of POST /scope/check. */
 export type ApiScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
