@@ -1607,9 +1607,11 @@ func (h *AssetHandler) BulkUpdateStatus(w http.ResponseWriter, r *http.Request) 
 
 // AssetStatsResponse represents asset statistics in API responses.
 type AssetStatsResponse struct {
-	Total          int                       `json:"total"`
-	ByType         map[string]int            `json:"by_type"`
-	BySubType      map[string]int            `json:"by_sub_type"`
+	Total     int            `json:"total"`
+	ByType    map[string]int `json:"by_type"`
+	BySubType map[string]int `json:"by_sub_type"`
+	// ByTypeSubType: counts keyed "type" or "type/sub_type" (registry class placement).
+	ByTypeSubType  map[string]int            `json:"by_type_sub_type"`
 	ByStatus       map[string]int            `json:"by_status"`
 	ByCriticality  map[string]int            `json:"by_criticality"`
 	ByScope        map[string]int            `json:"by_scope"`
@@ -1666,6 +1668,7 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		Total:                aggStats.Total,
 		ByType:               aggStats.ByType,
 		BySubType:            aggStats.BySubType,
+		ByTypeSubType:        aggStats.ByTypeSubType,
 		ByStatus:             aggStats.ByStatus,
 		ByCriticality:        aggStats.ByCriticality,
 		ByScope:              aggStats.ByScope,

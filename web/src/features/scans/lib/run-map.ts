@@ -1,59 +1,15 @@
 /**
- * The live run map (GET /scan-runs/{id}/map) as the shared WorkflowStages
- * component draws it: the run's workflow version as steps, each step's
- * state as a status tone, a short badge (chunks, outputs, why it waits or
- * failed) and edge labels with what flowed from one step to the next.
+ * The live run map (GET /scan-runs/{id}/map): state labels, a step's badge
+ * lines (chunks, outputs, why it waits or failed), the comparison with the
+ * previous run and the warnings over the map (a step that produced nothing,
+ * or whose targets the sensor's network confinement refused).
  */
-import type { ScanWorkflowStep } from '@/lib/api'
 import { enTranslate, type Translate } from './translate'
 import type { RunMap, RunMapNode } from '@/lib/api/generated'
-import type { StepStatusTone } from '@/features/scan-workflows/components/workflow-stages'
 
 /** A map node state (RunMapNode.state). */
 export type RunMapState =
   'pending' | 'waiting' | 'running' | 'succeeded' | 'partial' | 'failed' | 'skipped' | 'canceled'
-
-/** The five status tones of WorkflowStages, from a map state. */
-export function mapStateTone(state: string): StepStatusTone {
-  switch (state as RunMapState) {
-    case 'running':
-      return 'running'
-    case 'succeeded':
-      return 'completed'
-    case 'failed':
-    case 'partial':
-      return 'failed'
-    case 'skipped':
-    case 'canceled':
-      return 'skipped'
-    default:
-      return 'pending' // pending, waiting
-  }
-}
-
-/** The map's nodes as workflow steps (the fields WorkflowStages reads). */
-export function mapSteps(map: RunMap | undefined): ScanWorkflowStep[] {
-  return (map?.nodes ?? []).map((n, i) => ({
-    id: n.step_key ?? '',
-    step_key: n.step_key ?? '',
-    name: n.name || n.step_key || '',
-    order: i + 1,
-    ui_position: { x: 0, y: 0 },
-    tool: n.tool || undefined,
-    capabilities: n.capabilities ?? [],
-    depends_on: n.depends_on ?? [],
-    timeout_seconds: n.timeout_seconds || undefined,
-    max_retries: 0,
-    retry_delay_seconds: 0,
-  }))
-}
-
-/** Status tone per step key. */
-export function mapStatus(map: RunMap | undefined): Record<string, StepStatusTone> {
-  const out: Record<string, StepStatusTone> = {}
-  for (const n of map?.nodes ?? []) out[n.step_key ?? ''] = mapStateTone(n.state ?? 'pending')
-  return out
-}
 
 /** "1.2k" for counts over 999. */
 export function compactCount(n: number): string {
@@ -140,16 +96,61 @@ export function producedNothing(n: RunMapNode): boolean {
   return (n.outputs?.total ?? 0) === 0 && (n.findings ?? 0) === 0
 }
 
-/** The finished steps that produced nothing, and the warning to show for each. */
+/**
+ * A run task's count of targets its sensor's network confinement refused
+ * every connection to (egress_refused_targets; absent from older APIs).
+ */
+export type EgressCountedTask = { step_key?: string; egress_refused_targets?: number }
+
+/** How many of a step's targets the sensor's egress refused, over its tasks. */
+export function stepEgressRefused(tasks: EgressCountedTask[] | undefined, stepKey: string): number {
+  let n = 0
+  for (const task of tasks ?? []) {
+    if (task.step_key !== stepKey) continue
+    const c = task.egress_refused_targets
+    if (typeof c === 'number' && Number.isFinite(c) && c > 0) n += Math.floor(c)
+  }
+  return n
+}
+
+const FINISHED = new Set(['succeeded', 'partial', 'failed'])
+
+/** "Port scan could not reach 21 targets (blocked by ...)", or null. */
+export function egressRefusedText(
+  n: RunMapNode,
+  count: number,
+  t: Translate = enTranslate
+): string | null {
+  if (count <= 0 || !FINISHED.has(n.state ?? '')) return null
+  const name = n.name || n.step_key || ''
+  return count === 1
+    ? t('scans.map.egressRefusedOne', undefined, { name })
+    : t('scans.map.egressRefused', undefined, { name, count: compactCount(count) })
+}
+
+/**
+ * The warnings over the map: a finished step whose targets the sensor's
+ * network confinement refused says so (it did not "produce nothing": it
+ * could not reach them); otherwise a finished step that produced nothing.
+ */
 export function zeroOutputWarnings(
   map: RunMap | undefined,
-  t: Translate = enTranslate
+  t: Translate = enTranslate,
+  tasks?: EgressCountedTask[]
 ): { key: string; text: string }[] {
-  return (map?.nodes ?? []).filter(producedNothing).map((n) => {
+  const out: { key: string; text: string }[] = []
+  for (const n of map?.nodes ?? []) {
+    const key = n.step_key ?? ''
+    const blocked = egressRefusedText(n, stepEgressRefused(tasks, key), t)
+    if (blocked) {
+      out.push({ key, text: blocked })
+      continue
+    }
+    if (!producedNothing(n)) continue
     const name = n.name || n.step_key || ''
     const before = n.outputs?.previous ?? 0
-    return {
-      key: n.step_key ?? '',
+    out.push({
+      key,
       text:
         before > 0
           ? t('scans.map.producedNothingBefore', undefined, {
@@ -157,20 +158,9 @@ export function zeroOutputWarnings(
               before: compactCount(before),
             })
           : t('scans.map.producedNothing', undefined, { name }),
-    }
-  })
-}
-
-/** Edge label: what the upstream step produced, when it produced anything. */
-export function mapEdgeLabel(
-  map: RunMap | undefined
-): (from: string, to: string) => string | undefined {
-  const counts = new Map<string, number>()
-  for (const e of map?.edges ?? []) counts.set(`${e.from}->${e.to}`, e.count ?? 0)
-  return (from, to) => {
-    const n = counts.get(`${from}->${to}`) ?? 0
-    return n > 0 ? compactCount(n) : undefined
+    })
   }
+  return out
 }
 
 /** The tasks of one step of the run (by step key). */
