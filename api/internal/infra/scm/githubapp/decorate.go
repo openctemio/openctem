@@ -73,6 +73,23 @@ func (a *App) installationDo(ctx context.Context, installationID int64, method, 
 	return a.do(ctx, method, a.cfg.APIURL+path, "Bearer "+tok, body, out)
 }
 
+// CommitParents returns the parent commit ids of a commit.
+func (a *App) CommitParents(ctx context.Context, installationID int64, owner, repo, sha string) ([]string, error) {
+	var c struct {
+		Parents []struct {
+			SHA string `json:"sha"`
+		} `json:"parents"`
+	}
+	if err := a.installationDo(ctx, installationID, http.MethodGet, repoPath(owner, repo)+"/commits/"+url.PathEscape(sha), nil, &c); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(c.Parents))
+	for _, p := range c.Parents {
+		out = append(out, p.SHA)
+	}
+	return out, nil
+}
+
 // CreateCheckRun posts a completed check run (annotations capped at 50, the
 // API's limit per request).
 func (a *App) CreateCheckRun(ctx context.Context, installationID int64, owner, repo string, c CheckRun) error {

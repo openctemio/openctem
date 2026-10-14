@@ -122,8 +122,15 @@ When a default-branch commit comes from a merged pull request whose last
 gate verdict was not a pass, the notification `ci.ungated_merge` is sent
 (Settings > Notifications): the merge did not wait for the gate.
 
-Posting runs in the background (every 15 seconds, retried up to five times);
-it never changes a verdict.
+Posting runs in the background (every 15 seconds); it never changes a
+verdict. A failed post is retried up to eight times, 30 seconds apart and
+doubling up to 30 minutes (about an hour in all), and a GitHub rate limit is
+retried, never final. When GitHub recomputes a pull request's merge commit
+because its base branch moved, a run that judged the same head still posts
+its check on that head. The check is `action_required` when only a scanner
+failure failed the gate (nothing in the code was judged); findings the policy
+lists in comment mode are notice annotations and are marked as not blocking
+in the comment.
 
 ## Rotate
 

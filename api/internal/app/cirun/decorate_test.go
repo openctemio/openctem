@@ -16,6 +16,7 @@ import (
 )
 
 type fakePoster struct {
+	parents  map[string][]string
 	merged   []githubapp.PullRequest
 	pr       githubapp.PullRequest
 	prErr    error
@@ -43,6 +44,13 @@ func (f *fakePoster) UpsertIssueComment(_ context.Context, _ int64, _, _ string,
 	f.markers = append(f.markers, marker)
 	f.comments = append(f.comments, body)
 	return nil
+}
+
+func (f *fakePoster) CommitParents(_ context.Context, _ int64, _, _, sha string) ([]string, error) {
+	if p, ok := f.parents[sha]; ok {
+		return p, nil
+	}
+	return nil, &githubapp.StatusError{Status: 404}
 }
 
 func (f *fakePoster) PullRequestsForCommit(context.Context, int64, string, string, string) ([]githubapp.PullRequest, error) {
@@ -76,7 +84,7 @@ func TestDecorateGitHub(t *testing.T) {
 	base := cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "github.com/acme/api", PullRequest: "7",
 		CommitSHA: "merge1", CommitVerified: true, PipelineID: &pid, VerdictDetail: failingVerdict(t)}
 	newJob := func(p *fakePoster) *DecorationJob {
-		return NewDecorationJob(nil, fakeInstalls{tenant: tenant}, p, "https://console.example", nil)
+		return NewDecorationJob(fakeDecorationRepo{}, fakeInstalls{tenant: tenant}, p, "https://console.example", nil)
 	}
 	ctx := context.Background()
 
@@ -207,7 +215,7 @@ func TestDecorateGitLab(t *testing.T) {
 		PullRequest: "3", CommitSHA: "abc", CommitVerified: true, VerdictDetail: failingVerdict(t)}
 	ctx := context.Background()
 	api := &fakeGitLabAPI{mrSHA: "abc"}
-	job := NewDecorationJob(nil, fakeInstalls{}, nil, "https://c", nil)
+	job := NewDecorationJob(fakeDecorationRepo{}, fakeInstalls{}, nil, "https://c", nil)
 	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api})
 	if st, d := job.decorate(ctx, &run); st != cirun.DecorationPosted || len(api.statuses) != 1 ||
 		api.statuses[0] != "acme/api@abc:failed:"+CheckName || len(api.notes) != 1 {
@@ -288,5 +296,96 @@ func TestUngatedMergeAlert(t *testing.T) {
 	_, _ = job.decorate(context.Background(), &prRun)
 	if len(n.titles) != 0 {
 		t.Fatalf("pull request run alerted: %v", n.titles)
+	}
+}
+
+// GitHub recomputes a pull request's merge commit when its base moves: a run
+// that judged the same head merged into the older base still posts on the
+// head; a run of another head does not.
+func TestDecorateAfterTheBaseMoved(t *testing.T) {
+	tenant := shared.NewID()
+	run := cirun.Run{ID: shared.NewID(), TenantID: tenant, Repository: "github.com/acme/api", PullRequest: "7",
+		CommitSHA: "merge1", CommitVerified: true, VerdictDetail: failingVerdict(t)}
+	ctx := context.Background()
+	for _, tc := range []struct {
+		parents map[string][]string
+		want    string
+	}{
+		{map[string][]string{"merge1": {"base1", "head1"}}, cirun.DecorationPosted},
+		{map[string][]string{"merge1": {"base1", "head0"}}, cirun.DecorationSkipped},
+		{map[string][]string{"merge1": {"head1"}}, cirun.DecorationSkipped}, // not a merge commit
+		{nil, cirun.DecorationSkipped},                                      // unknown commit (404)
+	} {
+		p := &fakePoster{parents: tc.parents}
+		p.pr.MergeCommitSHA, p.pr.Head.SHA = "merge2", "head1"
+		job := NewDecorationJob(fakeDecorationRepo{}, fakeInstalls{tenant: tenant}, p, "https://c", nil)
+		r := run
+		st, d := job.decorate(ctx, &r)
+		if st != tc.want {
+			t.Fatalf("%v: %s %s", tc.parents, st, d)
+		}
+		if st == cirun.DecorationPosted && p.checks[0].HeadSHA != "head1" {
+			t.Fatalf("check on %s", p.checks[0].HeadSHA)
+		}
+	}
+}
+
+// A GitHub rate limit is retried, never final; other refusals stay final.
+func TestRateLimitIsRetried(t *testing.T) {
+	if st, d := outcome(&githubapp.StatusError{Status: 403, RateLimited: true}, "post"); st != cirun.DecorationRetry {
+		t.Fatalf("rate limited 403: %s %s", st, d)
+	}
+	if st, _ := outcome(&githubapp.StatusError{Status: 429, RateLimited: true}, "post"); st != cirun.DecorationRetry {
+		t.Fatalf("429: %s", st)
+	}
+	if st, _ := outcome(&githubapp.StatusError{Status: 403}, "post"); st != cirun.DecorationFailed {
+		t.Fatalf("403: %s", st)
+	}
+}
+
+// A comment-mode reason is a notice annotation and is marked as not
+// blocking in the comment; a run failed only by a scanner failure asks for
+// action instead of reporting a failure of the code.
+func TestCommentModeAndScanFailure(t *testing.T) {
+	v := &Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictFail, Summary: cirun.GateSummary{Blocking: 1},
+		Reasons: []cirun.GateReason{
+			{Code: cirun.ReasonSeverity, Severity: "high", Title: "SQLi", File: "db.go", Line: 4},
+			{Code: cirun.ReasonSeverity, Severity: "medium", Title: "Weak hash", File: "h.go", Line: 9, Mode: cirun.FindingModeComment},
+		}}}
+	run := &cirun.Run{ID: shared.NewID(), CommitSHA: "abc"}
+	c := buildCheckRun(run, v, "abc", "https://c/r")
+	if c.Conclusion != "failure" || len(c.Annotations) != 2 || c.Annotations[0].AnnotationLevel != "failure" ||
+		c.Annotations[1].AnnotationLevel != "notice" {
+		t.Fatalf("check = %+v", c)
+	}
+	comment := buildComment(run, v, "https://c/r", "<!-- m -->")
+	if strings.Count(comment, "(not blocking)") != 1 || !strings.Contains(comment, "Weak hash") {
+		t.Fatalf("comment = %s", comment)
+	}
+
+	scan := &Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictFail, Summary: cirun.GateSummary{Blocking: 1},
+		Reasons: []cirun.GateReason{{Code: cirun.ReasonScanFailure, Message: "1 scanner(s) failed"},
+			{Code: cirun.ReasonSeverity, Title: "x", File: "a.go", Line: 1, Mode: cirun.FindingModeComment}}}}
+	if got := conclusion(scan); got != "action_required" {
+		t.Fatalf("scan failure only = %s", got)
+	}
+	if !strings.Contains(checkTitle(scan), "Action required") || !strings.Contains(buildComment(run, scan, "u", "m"), "Action required") {
+		t.Fatalf("title = %s", checkTitle(scan))
+	}
+	both := &Verdict{GateVerdict: cirun.GateVerdict{Verdict: cirun.VerdictFail, Reasons: append(scan.Reasons,
+		cirun.GateReason{Code: cirun.ReasonSecret, File: "k", Line: 1})}}
+	if got := conclusion(both); got != "failure" {
+		t.Fatalf("scan failure and a secret = %s", got)
+	}
+	// GitLab has no "action required" state: the status fails.
+	tenant := shared.NewID()
+	sv, _ := json.Marshal(scan)
+	api := &fakeGitLabAPI{mrSHA: "abc"}
+	job := NewDecorationJob(fakeDecorationRepo{}, fakeInstalls{}, nil, "https://c", nil)
+	job.SetGitLab(fakeGitLabClients{tenant: tenant, api: api})
+	gl := cirun.Run{ID: shared.NewID(), TenantID: tenant, Provider: cirun.ProviderGitLab, Repository: "gitlab.example.com/acme/api",
+		CommitSHA: "abc", CommitVerified: true, VerdictDetail: sv}
+	if st, _ := job.decorate(context.Background(), &gl); st != cirun.DecorationPosted || !strings.HasSuffix(api.statuses[0], ":failed:"+CheckName) {
+		t.Fatalf("gitlab = %s %v", st, api.statuses)
 	}
 }
