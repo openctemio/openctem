@@ -157,10 +157,8 @@ describe('CIPipelinesPanel', () => {
     render(<CIPipelinesPanel />)
     expect(screen.getByText('No CI pipelines yet')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /set up ci trust/i })).toHaveAttribute(
-      'href',
-      '/ci-cd?tab=setup'
-    )
+    // One way to start: the wizard (its advanced settings stay on the Trust tab).
+    expect(screen.queryByRole('link', { name: /set up ci trust/i })).not.toBeInTheDocument()
     perms = []
   })
 

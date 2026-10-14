@@ -64,3 +64,24 @@ func TestCollectorInstallImage(t *testing.T) {
 		}
 	}
 }
+
+// CI runners are judged against their own release settings, never the
+// sensor's: the sensor minimum (v0.9.0) is above every CI runner release.
+func TestCIRunnerVersionPolicy_FromConfig(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.SensorConfig.LatestVersion, cfg.SensorConfig.MinVersion = "v0.21.1", "v0.9.0"
+	cfg.SensorConfig.CIRunnerLatestVersion = "0.2.0"
+	cfg.SensorConfig.CIRunnerMinVersion = "latest" // not a version: ignored with a warning
+	p := ciRunnerVersionPolicy(cfg, logger.NewNop())
+	if p.LatestVersion != "v0.2.0" || p.MinVersion != "" {
+		t.Fatalf("CI runner policy = %+v, want latest v0.2.0 and no minimum", p)
+	}
+	cfg.SensorConfig.CIRunnerMinVersion = "v0.3.0"
+	if p := ciRunnerVersionPolicy(cfg, logger.NewNop()); p.MinVersion != "v0.3.0" {
+		t.Fatalf("CI runner minimum = %q", p.MinVersion)
+	}
+	cfg.SensorConfig.CIRunnerLatestVersion, cfg.SensorConfig.CIRunnerMinVersion = "", ""
+	if p := ciRunnerVersionPolicy(cfg, logger.NewNop()); p.LatestVersion != "" || p.MinVersion != "" {
+		t.Fatalf("CI runner settings off, policy = %+v: the sensor settings leaked in", p)
+	}
+}

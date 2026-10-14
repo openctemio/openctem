@@ -934,72 +934,67 @@ export const FINDING_TYPE_CONFIG: Record<
 export type DataFlowLocationType = 'source' | 'intermediate' | 'sink' | 'sanitizer'
 
 /**
- * Location in a data flow trace (source → intermediate → sink)
+ * One step of a data flow trace (source, propagation, sanitizer or sink)
  */
 export interface DataFlowLocation {
-  /** File path */
+  /** File path, relative to the repository */
   path?: string
   /** Line number (1-indexed) */
   line?: number
+  endLine?: number
   /** Column number (1-indexed) */
   column?: number
-  /** Code snippet at this location */
+  /** Code at this step */
   content?: string
-  /** Variable/expression name being tracked */
+  /** Variable or expression being tracked, or the scanner's step message */
   label?: string
-  /** Step index in the flow (for ordering) */
+  /** Step index in the flow */
   index?: number
-  /** Location type */
-  type?: DataFlowLocationType
-  /** Function name containing this location */
+  /** Role of the step */
+  type: DataFlowLocationType
+  /** Function containing this step */
   functionName?: string
-  /** Class name containing this location */
+  /** Class containing this step */
   className?: string
 }
 
 /**
- * Data flow trace representing taint propagation from source to sink
+ * Data flow trace: how tainted data travels from a source to the sink
  */
 export interface DataFlow {
-  /** Where tainted data enters (e.g., user input) */
-  sources?: DataFlowLocation[]
-  /** Transformation/propagation steps */
-  intermediates?: DataFlowLocation[]
-  /** Where the vulnerability occurs (e.g., SQL execution) */
-  sinks?: DataFlowLocation[]
+  /** The steps of the primary trace, in order from the source to the sink */
+  steps: DataFlowLocation[]
+  /** The commit the trace was reported for, when the report named one */
+  commitSha?: string
 }
 
 export const DATA_FLOW_LOCATION_CONFIG: Record<
   DataFlowLocationType,
-  { label: string; icon: string; color: string; bgColor: string; description: string }
+  { labelKey: string; icon: string; color: string; bgColor: string }
 > = {
   source: {
-    label: 'Source',
+    labelKey: 'findings.dataFlow.type.source',
     icon: 'log-in',
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/20',
-    description: 'Where untrusted data enters',
   },
   intermediate: {
-    label: 'Propagation',
+    labelKey: 'findings.dataFlow.type.intermediate',
     icon: 'arrow-right',
     color: 'text-yellow-400',
     bgColor: 'bg-yellow-500/20',
-    description: 'Data transformation step',
   },
   sink: {
-    label: 'Sink',
+    labelKey: 'findings.dataFlow.type.sink',
     icon: 'alert-triangle',
     color: 'text-red-400',
     bgColor: 'bg-red-500/20',
-    description: 'Where vulnerability occurs',
   },
   sanitizer: {
-    label: 'Sanitizer',
+    labelKey: 'findings.dataFlow.type.sanitizer',
     icon: 'shield',
     color: 'text-green-400',
     bgColor: 'bg-green-500/20',
-    description: 'Where data is sanitized',
   },
 }
 

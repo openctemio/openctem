@@ -578,6 +578,8 @@ func reasonLabel(code string) string {
 		return "Severity"
 	case cirun.ReasonScanFailure:
 		return "Scan failure"
+	case cirun.ReasonMissingCapability:
+		return "Expected scan missing"
 	case cirun.ReasonOverride:
 		return "Break-glass"
 	case cirun.ReasonNoBaseline:
