@@ -183,7 +183,7 @@ run the pipeline on `main` first (push, or **Build > Pipelines > Run pipeline**)
 |---|---|
 | `The CI token was not accepted` | No trust configuration admits the project or branch, the `aud` differs from the configuration's audience, or the token was used twice. The reason is in **Settings > Audit log** (`ci_run.token_refused`) |
 | `id_tokens` is ignored / `OPENCTEM_ID_TOKEN` is empty | GitLab older than 15.7, or the variable name differs from the one under `id_tokens` |
-| `403 RUNNER_OUTDATED` on the exchange | The pinned `openctemio/ci` release is older than the minimum supported version: pin a current release |
+| `403 RUNNER_OUTDATED` on the exchange | The pinned `openctemio/ci` release is older than the platform's minimum CI runner release (`CI_RUNNER_MIN_VERSION`): pin a current release |
 | `401` on upload after a long scan | The 15-minute run token expired: keep the token exchange and the verdict within 15 minutes of each other (the parallel per-capability jobs of `all.yml` help) |
 | `REPORT_OUT_OF_SCOPE` | The report names an asset other than this project's repository |
 | Every finding is "new" | The default branch was never scanned: see step 5 |
