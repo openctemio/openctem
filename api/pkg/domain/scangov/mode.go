@@ -163,3 +163,18 @@ func CeilingsChange(prev, next Mode) (changed, enforced bool) {
 // ErrModeForced refuses an owner's choice the platform policy overrides.
 var ErrModeForced = shared.NewDomainError("SCAN_APPROVAL_FORCED",
 	"your platform administrator sets scan approval for this organization", shared.ErrForbidden)
+
+// UnclassifiedMode is the unclassified-scans mode in force (RFC-054 §16):
+// the organization's setting ("off", "low_impact" or "full") in Off and On,
+// and "off" in Strict or an unknown mode (fail closed). Under Strict every
+// active probe needs an approved scope entry.
+func UnclassifiedMode(m Mode, setting string) string {
+	if m != ModeOff && m != ModeOn {
+		return "off"
+	}
+	switch setting {
+	case "low_impact", "full":
+		return setting
+	}
+	return "off"
+}
