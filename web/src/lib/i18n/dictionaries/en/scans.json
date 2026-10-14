@@ -215,6 +215,7 @@
   "scans.review.blockedMany": "{count} targets may not be scanned: remove them or fix the scope first",
   "scans.review.workflowWouldNotStartWhy": "The workflow would not start: {why}",
   "scans.review.workflowWouldNotStart": "The workflow would not start as it is",
+  "scans.review.sensorsOffline": "No sensor that can run it is online now ({why}). The scan is saved; its runs wait for a sensor.",
   "scans.review.groupsResolved": "Asset group members are resolved when the scan runs; members outside your scope are skipped then.",
   "scans.review.scanName": "Scan name",
   "scans.review.namePlaceholder": "e.g., Production weekly scan",
