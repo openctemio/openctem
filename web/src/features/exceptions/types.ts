@@ -29,6 +29,8 @@ export interface SuppressionRule {
   asset_id?: string | null
   status: SuppressionStatus
   requested_by: string
+  /** A requester that is not a user, e.g. "ci:gitlab:alice". */
+  requested_by_actor?: string
   requested_at: string
   approved_by?: string | null
   approved_at?: string | null

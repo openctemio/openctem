@@ -8,7 +8,7 @@
 'use client'
 
 import * as React from 'react'
-import { FileText, Hash, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronRight, FileText, Hash, Network, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
@@ -34,7 +34,8 @@ import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
 import { AssetFreshnessSection } from './asset-freshness-section'
 import { AssetTimeline } from './asset-timeline'
 import { useTranslation } from '@/context/i18n-provider'
-import { RelationshipPreview } from './relationships'
+import { RELATED_PREVIEW_ROWS, RelatedAssetsList } from './relationships/related-assets-list'
+import { useRelatedAssets } from '../hooks/use-related-assets'
 import { AssetRelationshipsTab } from './asset-relationships-tab'
 import { AssetOwnersTab } from './asset-owners-tab'
 import { AssetScanningSection } from './asset-scanning-section'
@@ -224,8 +225,34 @@ export function AssetDetailSheet<T extends Asset>({
   // dialogs. Both calls share the same SWR cache key so there is only one
   // network request in practice.
   const { relationships } = useAssetRelationships(asset?.id ?? null)
+  // Grouped related assets: the overview summary, the tab and its count share
+  // one request.
+  const related = useRelatedAssets(asset?.id ?? null, { limit: RELATED_PREVIEW_ROWS })
   // Relations follow the relationships module, as the API does.
   const relationshipsOn = useModuleEnabled('relationships')
+
+  // Walking a chain of related assets keeps a trail, so "back" returns to the
+  // asset the walk came from. The trail ends when the sheet closes.
+  const [trail, setTrail] = React.useState<Array<{ id: string; name: string }>>([])
+  React.useEffect(() => {
+    if (!open) setTrail([])
+  }, [open])
+  const goToRelated = React.useMemo(
+    () =>
+      onNavigateToAsset && asset
+        ? (id: string) => {
+            setTrail((tr) => [...tr, { id: asset.id, name: asset.name }])
+            onNavigateToAsset(id)
+          }
+        : undefined,
+    [onNavigateToAsset, asset]
+  )
+  const goBackTo = (index: number) => {
+    const target = trail[index]
+    if (!target || !onNavigateToAsset) return
+    setTrail((tr) => tr.slice(0, index))
+    onNavigateToAsset(target.id)
+  }
 
   if (!asset) return null
 
@@ -241,7 +268,7 @@ export function AssetDetailSheet<T extends Asset>({
     relationships.some((r) => r.targetAssetId === asset.id && r.isControlPlane)
 
   // Determine if we should show relationships
-  const hasRelationships = relationships.length > 0
+  const hasRelationships = related.total > 0 || related.hiddenCount > 0
   const shouldShowRelationshipPreview =
     relationshipsOn && (showRelationshipPreview ?? hasRelationships)
 
@@ -267,7 +294,7 @@ export function AssetDetailSheet<T extends Asset>({
             label: (
               <>
                 {t('assets.sheet.tab.relations', 'Relations')}
-                {relationships.length > 0 && <TabsCount value={relationships.length} />}
+                {related.total > 0 && <TabsCount value={related.total} />}
               </>
             ),
           },
@@ -377,6 +404,43 @@ export function AssetDetailSheet<T extends Asset>({
         }
         tabs={<DetailTabs tabs={tabs} value={tab} onValueChange={setActiveTab} />}
       >
+        {trail.length > 0 && (
+          <nav
+            aria-label={t('assets.related.trail', 'Related assets you came from')}
+            className="-mt-1 mb-3 flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-1.5 text-xs"
+              onClick={() => goBackTo(trail.length - 1)}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+              {t('assets.related.back', 'Back')}
+            </Button>
+            {trail.slice(-3).map((step, i, shown) => {
+              const index = trail.length - shown.length + i
+              return (
+                <React.Fragment key={`${step.id}-${index}`}>
+                  {(i > 0 || trail.length > shown.length) && (
+                    <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+                  )}
+                  <button
+                    type="button"
+                    className="max-w-[12rem] truncate rounded hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => goBackTo(index)}
+                  >
+                    {step.name}
+                  </button>
+                </React.Fragment>
+              )
+            })}
+            <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="max-w-[12rem] truncate text-foreground" aria-current="page">
+              {asset.name}
+            </span>
+          </nav>
+        )}
         {tab === 'overview' && (
           <DetailSections>
             {/* Order follows the triage question: how risky, who owns it,
@@ -429,13 +493,28 @@ export function AssetDetailSheet<T extends Asset>({
             )}
 
             {shouldShowRelationshipPreview && (
-              <RelationshipPreview
-                relationships={relationships}
-                currentAssetId={asset.id}
-                onViewAll={() => setActiveTab('relationships')}
-                onAssetClick={onNavigateToAsset}
-                maxItems={3}
-              />
+              <DetailSection
+                title={t('assets.related.title', 'Related assets')}
+                icon={Network}
+                count={related.total}
+                actions={
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0"
+                    onClick={() => setActiveTab('relationships')}
+                  >
+                    {t('assets.related.viewAll', 'View all')}
+                  </Button>
+                }
+              >
+                <RelatedAssetsList
+                  assetId={asset.id}
+                  variant="summary"
+                  onNavigateToAsset={goToRelated}
+                  onViewAll={() => setActiveTab('relationships')}
+                />
+              </DetailSection>
             )}
 
             <TagsSection
@@ -470,7 +549,7 @@ export function AssetDetailSheet<T extends Asset>({
               type: asset.type,
               subType: asset.subType,
             }}
-            onNavigateToAsset={onNavigateToAsset}
+            onNavigateToAsset={goToRelated}
           />
         )}
 

@@ -502,94 +502,57 @@ func buildExposureBulkUpsert(events []*exposure.ExposureEvent) (string, []any, e
 	return query, valueArgs, nil
 }
 
-// CountByState returns counts grouped by state for a tenant.
-func (r *ExposureRepository) CountByState(ctx context.Context, tenantID shared.ID) (map[exposure.State]int64, error) {
-	query := `
-		SELECT state, COUNT(*) as count
-		FROM exposure_events
-		WHERE tenant_id = $1 AND ` + notOfDeletedAssetSQL("exposure_events.asset_id") + `
-		GROUP BY state
-	`
+// Stats counts the events a filter selects by state, severity and event type
+// (one GROUPING SETS query) and averages resolution time over the resolved
+// ones. Both queries share buildWhereClause, so the tenant, the caller's data
+// scope and the deleted-asset exclusion are the list's own.
+func (r *ExposureRepository) Stats(ctx context.Context, filter exposure.Filter) (exposure.Stats, error) {
+	out := exposure.Stats{
+		ByState:     make(map[string]int64),
+		BySeverity:  make(map[string]int64),
+		ByEventType: make(map[string]int64),
+	}
+	whereClause, args := r.buildWhereClause(filter)
 
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	// GROUPING(x) is 0 on the rows grouped by x, so a NULL value is never
+	// taken for another dimension.
+	query := `SELECT GROUPING(state), GROUPING(severity), COALESCE(state, ''), COALESCE(severity, ''), COALESCE(event_type, ''), COUNT(*)
+		FROM exposure_events WHERE ` + whereClause + `
+		GROUP BY GROUPING SETS ((state), (severity), (event_type))`
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count by state: %w", err)
+		return out, fmt.Errorf("failed to count exposure events: %w", err)
 	}
 	defer rows.Close()
-
-	result := make(map[exposure.State]int64)
 	for rows.Next() {
-		var stateStr string
-		var count int64
-		if err := rows.Scan(&stateStr, &count); err != nil {
-			return nil, fmt.Errorf("failed to scan state count: %w", err)
+		var gState, gSeverity int
+		var state, severity, eventType string
+		var n int64
+		if err := rows.Scan(&gState, &gSeverity, &state, &severity, &eventType, &n); err != nil {
+			return out, fmt.Errorf("failed to scan exposure counts: %w", err)
 		}
-		state, _ := exposure.ParseState(stateStr)
-		result[state] = count
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error: %w", err)
-	}
-
-	return result, nil
-}
-
-// CountBySeverity returns counts grouped by severity for a tenant.
-func (r *ExposureRepository) CountBySeverity(ctx context.Context, tenantID shared.ID) (map[exposure.Severity]int64, error) {
-	query := `
-		SELECT severity, COUNT(*) as count
-		FROM exposure_events
-		WHERE tenant_id = $1 AND ` + notOfDeletedAssetSQL("exposure_events.asset_id") + `
-		GROUP BY severity
-	`
-
-	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
-	if err != nil {
-		return nil, fmt.Errorf("failed to count by severity: %w", err)
-	}
-	defer rows.Close()
-
-	result := make(map[exposure.Severity]int64)
-	for rows.Next() {
-		var severityStr string
-		var count int64
-		if err := rows.Scan(&severityStr, &count); err != nil {
-			return nil, fmt.Errorf("failed to scan severity count: %w", err)
+		switch {
+		case gState == 0:
+			out.ByState[state] = n
+		case gSeverity == 0:
+			out.BySeverity[severity] = n
+		default:
+			out.ByEventType[eventType] = n
 		}
-		severity, _ := exposure.ParseSeverity(severityStr)
-		result[severity] = count
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error: %w", err)
+		return out, fmt.Errorf("failed to read exposure counts: %w", err)
 	}
 
-	return result, nil
-}
-
-// MeanTimeToResolveHours returns the average (resolved_at - first_seen_at) in
-// hours across resolved events for a tenant. Returns ok=false when no resolved
-// event has a resolved_at timestamp, so the caller can omit the metric.
-func (r *ExposureRepository) MeanTimeToResolveHours(ctx context.Context, tenantID shared.ID) (float64, bool, error) {
-	query := `
-		SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - first_seen_at)) / 3600.0)
-		FROM exposure_events
-		WHERE tenant_id = $1
-		  AND state = $2
-		  AND resolved_at IS NOT NULL
-	`
-
+	mttrArgs := append(append([]any{}, args...), exposure.StateResolved.String())
+	mttrQuery := fmt.Sprintf(`SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - first_seen_at)) / 3600.0)
+		FROM exposure_events WHERE %s AND state = $%d AND resolved_at IS NOT NULL`, whereClause, len(mttrArgs))
 	var avgHours sql.NullFloat64
-	if err := r.db.QueryRowContext(ctx, query, tenantID.String(), exposure.StateResolved.String()).Scan(&avgHours); err != nil {
-		return 0, false, fmt.Errorf("failed to compute mean time to resolve: %w", err)
+	if err := r.db.QueryRowContext(ctx, mttrQuery, mttrArgs...).Scan(&avgHours); err != nil {
+		return out, fmt.Errorf("failed to compute mean time to resolve: %w", err)
 	}
-
-	if !avgHours.Valid {
-		return 0, false, nil
-	}
-
-	return avgHours.Float64, true, nil
+	out.MTTRHours, out.HasMTTR = avgHours.Float64, avgHours.Valid
+	return out, nil
 }
 
 // Helper methods

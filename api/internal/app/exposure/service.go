@@ -924,53 +924,41 @@ func (s *ExposureService) GetStateHistory(ctx context.Context, tenantID, exposur
 	return s.historyRepo.ListByExposureEvent(ctx, parsedID)
 }
 
-// GetExposureStats returns statistics for a tenant.
+// GetExposureStats returns the stats card numbers for the exposures the caller
+// may list: the tenant's, narrowed to the caller's data scope. A restricted
+// member never learns how many exposures exist outside their scope.
 func (s *ExposureService) GetExposureStats(ctx context.Context, tenantID string) (map[string]any, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
 	}
-
-	byState, err := s.repo.CountByState(ctx, parsedTenantID)
+	filter := exposuredom.NewFilter().WithTenantID(parsedTenantID.String())
+	scope, err := s.dataScope.Resolve(ctx, parsedTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get state counts: %w", err)
+		return nil, fmt.Errorf("resolve data scope: %w", err)
 	}
+	filter.DataScope = scope
 
-	bySeverity, err := s.repo.CountBySeverity(ctx, parsedTenantID)
+	st, err := s.repo.Stats(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get severity counts: %w", err)
+		return nil, fmt.Errorf("failed to get exposure stats: %w", err)
 	}
-
-	stateMap := make(map[string]int64)
 	var total int64
-	for k, v := range byState {
-		stateMap[k.String()] = v
+	for _, v := range st.ByState {
 		total += v
 	}
-
-	severityMap := make(map[string]int64)
-	for k, v := range bySeverity {
-		severityMap[k.String()] = v
-	}
-
 	stats := map[string]any{
-		"by_state":       stateMap,
-		"by_severity":    severityMap,
+		"by_state":       st.ByState,
+		"by_severity":    st.BySeverity,
+		"by_event_type":  st.ByEventType,
 		"total":          total,
-		"active_count":   stateMap[exposuredom.StateActive.String()],
-		"resolved_count": stateMap[exposuredom.StateResolved.String()],
+		"active_count":   st.ByState[exposuredom.StateActive.String()],
+		"resolved_count": st.ByState[exposuredom.StateResolved.String()],
 	}
-
-	// MTTR is optional — only surface it when there is at least one resolved
-	// event with a resolution timestamp to average.
-	mttrHours, ok, err := s.repo.MeanTimeToResolveHours(ctx, parsedTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute MTTR: %w", err)
+	// MTTR only when at least one resolved event has a timestamp to average.
+	if st.HasMTTR {
+		stats["mttr_hours"] = st.MTTRHours
 	}
-	if ok {
-		stats["mttr_hours"] = mttrHours
-	}
-
 	return stats, nil
 }
 
