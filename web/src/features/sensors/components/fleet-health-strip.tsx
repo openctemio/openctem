@@ -4,7 +4,12 @@ import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared'
 import { cn } from '@/lib/utils'
 
-import type { AttentionKind, FleetSummary, ReleaseChannel } from '../lib/fleet'
+import {
+  scanningSensorLine,
+  type AttentionKind,
+  type FleetSummary,
+  type ReleaseChannel,
+} from '../lib/fleet'
 import { PROTOCOL_V1_SUNSET, PROTOCOL_V2_SENSOR_VERSION } from './sensor-cells'
 
 const ATTENTION_WORDS: Record<AttentionKind, string> = {
@@ -104,6 +109,7 @@ export function FleetHealthStrip({
   className,
 }: FleetHealthStripProps) {
   const { t } = useTranslation()
+  const scanner = scanningSensorLine(channel)
   const items: MetricStripItem[] = [
     {
       key: 'health',
@@ -128,18 +134,15 @@ export function FleetHealthStrip({
       key: 'updates',
       label: t('sensors.health.updates'),
       value: summary.updates,
-      hint: channel.latest
-        ? t('sensors.health.latest', undefined, { version: channel.latest })
+      hint: scanner.latest
+        ? t('sensors.health.latest', undefined, { version: scanner.latest })
         : undefined,
       detail:
-        summary.unsupported > 0 && channel.min ? (
+        summary.unsupported > 0 ? (
           <span className="text-destructive">
-            {t('sensors.health.belowMin', undefined, {
-              count: summary.unsupported,
-              min: channel.min,
-            })}
+            {t('sensors.health.belowProductMin', undefined, { count: summary.unsupported })}
           </span>
-        ) : channel.latest ? (
+        ) : (channel.products?.length ?? 0) > 0 ? (
           summary.updates === 0 ? (
             t('sensors.health.allLatest')
           ) : (
