@@ -1441,6 +1441,14 @@ func deriveWebURLFromAssetName(name string) string {
 
 // getAssetName extracts the name from a CTIS asset.
 func getAssetName(ctisAsset *ctis.Asset) string {
+	// A web origin is identified by its URL. The recon converter names an
+	// http_service by its bare host, which is the name of the subdomain or
+	// address it runs on: used as the name, the origin was folded into that
+	// row and no origin asset ever existed.
+	if ctisAsset.Type == ctis.AssetTypeHTTPService && !strings.Contains(ctisAsset.Name, "://") &&
+		strings.Contains(ctisAsset.Value, "://") {
+		return ctisAsset.Value
+	}
 	if ctisAsset.Name != "" {
 		return ctisAsset.Name
 	}
