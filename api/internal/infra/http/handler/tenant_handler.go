@@ -2139,18 +2139,17 @@ type FindingCorrelationSettingsRequest struct {
 	SuggestionsDisabled *bool `json:"suggestions_disabled"`
 }
 
-// GetFindingCorrelationSettings handles GET /api/v1/tenants/{tenant}/settings/finding-correlation
+// GetFindingCorrelationSettings handles GET /api/v1/organization/settings/finding-correlation
 //
 //	@Summary	Finding correlation switches
 //	@Tags		Tenants
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		tenant	path		string	true	"Tenant id or slug"
-//	@Success	200		{object}	tenant.FindingCorrelationSettings
-//	@Router		/tenants/{tenant}/settings/finding-correlation [get]
+//	@Success	200	{object}	tenant.FindingCorrelationSettings
+//	@Router		/organization/settings/finding-correlation [get]
 func (h *TenantHandler) GetFindingCorrelationSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}
@@ -2163,7 +2162,7 @@ func (h *TenantHandler) GetFindingCorrelationSettings(w http.ResponseWriter, r *
 	_ = json.NewEncoder(w).Encode(fc)
 }
 
-// UpdateFindingCorrelationSettings handles PATCH /api/v1/tenants/{tenant}/settings/finding-correlation
+// UpdateFindingCorrelationSettings handles PATCH /api/v1/organization/settings/finding-correlation
 //
 //	@Summary		Change the finding correlation switches
 //	@Description	Turns automatic cross-rule correlation (a detection becomes a reversible duplicate of the same issue's primary) or its "possibly related" suggestions off or on. Audited.
@@ -2171,13 +2170,12 @@ func (h *TenantHandler) GetFindingCorrelationSettings(w http.ResponseWriter, r *
 //	@Accept			json
 //	@Produce		json
 //	@Security		BearerAuth
-//	@Param			tenant	path		string								true	"Tenant id or slug"
 //	@Param			request	body		FindingCorrelationSettingsRequest	true	"Switches"
 //	@Success		200		{object}	tenant.FindingCorrelationSettings
-//	@Router			/tenants/{tenant}/settings/finding-correlation [patch]
+//	@Router			/organization/settings/finding-correlation [patch]
 func (h *TenantHandler) UpdateFindingCorrelationSettings(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil || tenantID.IsZero() {
 		apierror.BadRequest("Tenant context required").WriteJSON(w)
 		return
 	}

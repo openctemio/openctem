@@ -124,7 +124,7 @@ type ConfirmFindingCorrelationRequest struct {
 	FindingID string `json:"finding_id" validate:"required,uuid"`
 }
 
-// ConfirmFindingCorrelation handles POST /api/v1/findings/{id}/correlation/confirm.
+// ConfirmFindingCorrelation handles POST /api/v1/findings/{id}/correlation/approve.
 //
 //	@Summary		Confirm a "possibly related" finding
 //	@Description	The finding in the body, suggested as possibly related to the one in the path, becomes its correlated duplicate (reversible with correlation/release). Both must be open, in the caller's data scope and on the same asset. Audited.
@@ -136,7 +136,7 @@ type ConfirmFindingCorrelationRequest struct {
 //	@Success		204
 //	@Failure		404	{object}	apierror.Error
 //	@Failure		409	{object}	apierror.Error
-//	@Router			/findings/{id}/correlation/confirm [post]
+//	@Router			/findings/{id}/correlation/approve [post]
 func (h *VulnerabilityHandler) ConfirmFindingCorrelation(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.correlationFinding(w, r)
 	if !ok {

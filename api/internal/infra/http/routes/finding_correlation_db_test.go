@@ -23,7 +23,7 @@ func TestFindingCorrelationEndpoints_ScopeAndTenant(t *testing.T) {
 		t.Fatalf("out-of-scope finding: %d, want 404", code)
 	}
 	// Confirm naming an out-of-scope finding in the body: 404, nothing changes.
-	code, _ := h.do(h.memberA, false, http.MethodPost, "/api/v1/findings/"+h.findingA.String()+"/correlation/confirm",
+	code, _ := h.do(h.memberA, false, http.MethodPost, "/api/v1/findings/"+h.findingA.String()+"/correlation/approve",
 		map[string]string{"finding_id": h.findingB.String()})
 	if code != http.StatusNotFound {
 		t.Fatalf("confirm with an out-of-scope finding: %d, want 404", code)

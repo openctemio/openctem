@@ -278,7 +278,7 @@ func registerVulnerabilityRoutes(
 		// suggestion are triage decisions.
 		r.GET("/{id}/detections", h.GetFindingDetections, middleware.Require(permission.FindingsRead))
 		r.POST("/{id}/correlation/release", h.ReleaseFindingCorrelation, middleware.Require(permission.FindingsTriage))
-		r.POST("/{id}/correlation/confirm", h.ConfirmFindingCorrelation, middleware.Require(permission.FindingsTriage))
+		r.POST("/{id}/correlation/approve", h.ConfirmFindingCorrelation, middleware.Require(permission.FindingsTriage))
 		// Verification is a segregation-of-duties control: moving a finding to
 		// resolved must require FindingsVerify (security/scanner), NOT the
 		// broader FindingsWrite that a developer role holds — otherwise a member
