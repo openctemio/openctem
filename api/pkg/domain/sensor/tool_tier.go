@@ -39,7 +39,7 @@ const (
 // sensor's built-in tool list.
 var builtinTools = map[string]bool{
 	"betterleaks": true, "codeql": true, "dnsx": true, "httpx": true, "katana": true,
-	"naabu": true, "nuclei": true, "nuclei-validate": true, "semgrep": true,
+	"naabu": true, "nuclei": true, "nuclei-validate": true, "opengrep": true, "semgrep": true,
 	"subfinder": true, "trivy": true, "file-import": true, "rdap": true, "asn": true,
 }
 
