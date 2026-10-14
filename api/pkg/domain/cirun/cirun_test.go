@@ -395,3 +395,34 @@ func TestClaimsJobID(t *testing.T) {
 		t.Fatalf("gitlab job id = %q", gl.JobID)
 	}
 }
+
+// A fork event carries the base branch's ref: it must never count as a run
+// of the default branch, and its findings go to a branch that is not one of
+// the repository's.
+func TestForkEventsAreNeverDefaultBranchRuns(t *testing.T) {
+	push := githubClaims(nil)
+	if !IsDefaultBranchRun(push, "main") {
+		t.Fatal("a push to main is a default-branch run")
+	}
+	if IsDefaultBranchRun(push, "develop") {
+		t.Fatal("a push to main is not a run of develop")
+	}
+	for _, ev := range []string{"pull_request_target", "workflow_run"} {
+		c := githubClaims(map[string]any{"event_name": ev})
+		if c.Branch != "main" {
+			t.Fatalf("%s: branch claim %q", ev, c.Branch)
+		}
+		if IsDefaultBranchRun(c, "main") {
+			t.Errorf("%s on main counted as a default-branch run", ev)
+		}
+	}
+	if got := ReportBranchName("main", "pull_request_target", "", true); got != "fork/pull_request_target" {
+		t.Errorf("fork event branch = %q", got)
+	}
+	if got := ReportBranchName("main", "pull_request", "12", true); got != "fork/pr-12" {
+		t.Errorf("fork pull request branch = %q", got)
+	}
+	if got := ReportBranchName("main", "push", "", false); got != "main" {
+		t.Errorf("own branch = %q", got)
+	}
+}
