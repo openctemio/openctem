@@ -285,7 +285,9 @@ func IsValidType(t string) bool {
 		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
 		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
 		TypeCampaignStatusChange,
-		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending:
+		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending,
+		TypeMemberLifecycle, TypeCISecurity, TypeSensorSecurity, TypeScopeChange,
+		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest:
 		return true
 	}
 	return false
