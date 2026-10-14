@@ -119,6 +119,7 @@ func TestConnectGitLabChecksTheTokenAndSealsIt(t *testing.T) {
 	}
 	gl.token = gitlabapi.TokenInfo{Active: true, Scopes: []string{"api"}, UserID: 9, ExpiresAt: "2027-01-31"}
 	gl.member = true
+	gl.user = nil // the loop above ends on a random case (map order)
 	c, err := svc.ConnectGitLab(ctx, tenant, in, Actor{})
 	if err != nil {
 		t.Fatalf("connect: %v", err)
