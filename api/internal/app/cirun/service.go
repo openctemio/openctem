@@ -132,6 +132,7 @@ type Service struct {
 	purgeMu   sync.Mutex
 	lastPurge time.Time
 	images    ImageLinker
+	stepUp    shared.RecentAuthGate
 }
 
 // Deps are the service's collaborators.
@@ -524,7 +525,7 @@ func (s *Service) createRun(ctx context.Context, tenantID shared.ID, cfg *cirun.
 		BaseRef:           truncate(CleanBaseRef(c), 255),
 		PullRequest:       truncate(c.PullRequest, 32),
 		DefaultBranch:     defaultBranch,
-		IsDefaultBranch:   c.Branch != "" && c.PullRequest == "" && c.Branch == defaultBranch,
+		IsDefaultBranch:   cirun.IsDefaultBranchRun(c, defaultBranch),
 		Event:             truncate(c.Event, 64),
 		Environment:       truncate(c.Environment, 255),
 		Actor:             truncate(c.Actor, 255),
@@ -804,13 +805,14 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 	if report == nil {
 		return nil, fmt.Errorf("%w: report is required", shared.ErrValidation)
 	}
-	if run.Status == cirun.StatusEvaluated {
-		return nil, fmt.Errorf("%w: the run was already evaluated", shared.ErrConflict)
-	}
-	if run.ReportsCount >= cirun.MaxRunReports {
-		return nil, cirun.ErrRunReportCap
-	}
 	if err := ScopeReport(report, run); err != nil {
+		return nil, err
+	}
+	// The run status and report count on run are the snapshot of the token
+	// lookup; the slot is taken atomically against the stored run, so
+	// concurrent uploads (or the files of one ZIP) cannot pass the cap or
+	// land after the verdict.
+	if err := s.repo.ReserveRunReport(ctx, run.TenantID, run.ID); err != nil {
 		return nil, err
 	}
 	out, err := s.ingester.IngestForCIRun(ctx, run.TenantID, run.ID, run.Repository, report)
@@ -818,6 +820,11 @@ func (s *Service) UploadReport(ctx context.Context, run *cirun.Run, report *ctis
 		return nil, err
 	}
 	if err := s.repo.RecordRunReport(ctx, run.TenantID, run.ID, out.SightedFingerprints); err != nil {
+		if errors.Is(err, cirun.ErrRunEvaluated) {
+			// Judged while this report was ingested: the verdict did not
+			// see it, and the job must know.
+			return nil, err
+		}
 		return nil, fmt.Errorf("record run findings: %w", err)
 	}
 	// The tool block is self-declared: a label on the run, sanitized and
@@ -896,8 +903,8 @@ func ScopeReport(report *ctis.Report, run *cirun.Run) error {
 	}
 	report.Assets = []ctis.Asset{repoAsset}
 	report.Metadata.Branch = &ctis.BranchInfo{
-		Name:            run.Branch,
-		IsDefaultBranch: run.IsDefaultBranch,
+		Name:            cirun.ReportBranchName(run.Branch, run.Event, run.PullRequest, run.Fork),
+		IsDefaultBranch: run.IsDefaultBranch && !run.Fork,
 		CommitSHA:       run.CommitSHA,
 		BaseBranch:      run.DefaultBranch,
 		RepositoryURL:   "https://" + run.Repository,

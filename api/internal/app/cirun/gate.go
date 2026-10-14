@@ -51,12 +51,20 @@ func (s *Service) ResolvePolicy(ctx context.Context, tenantID, assetID shared.ID
 	if err != nil {
 		return cirun.GatePolicy{}, "", fmt.Errorf("load gate policies: %w", err)
 	}
+	p, source := resolveFrom(ps)
+	return p, source, nil
+}
+
+// resolveFrom picks among enabled policies that may apply to one
+// repository: its own, else the strictest business unit's, else the
+// tenant's, else the built-in default.
+func resolveFrom(ps []cirun.GatePolicy) (cirun.GatePolicy, string) {
 	var units []cirun.GatePolicy
 	var tenant *cirun.GatePolicy
 	for i := range ps {
 		switch ps[i].ScopeType {
 		case cirun.ScopeRepository:
-			return ps[i], cirun.ScopeRepository, nil
+			return ps[i], cirun.ScopeRepository
 		case cirun.ScopeBusinessUnit:
 			units = append(units, ps[i])
 		case cirun.ScopeTenant:
@@ -65,11 +73,11 @@ func (s *Service) ResolvePolicy(ctx context.Context, tenantID, assetID shared.ID
 	}
 	switch {
 	case len(units) > 0:
-		return cirun.Strictest(units), cirun.ScopeBusinessUnit, nil
+		return cirun.Strictest(units), cirun.ScopeBusinessUnit
 	case tenant != nil:
-		return *tenant, cirun.ScopeTenant, nil
+		return *tenant, cirun.ScopeTenant
 	}
-	return cirun.DefaultGatePolicy(), cirun.ScopeDefault, nil
+	return cirun.DefaultGatePolicy(), cirun.ScopeDefault
 }
 
 // Evaluate judges the run against the policy and stores the verdict.
@@ -99,6 +107,35 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 			repoFile = "ignored"
 		}
 	}
+	// A report recorded while the verdict is computed would not be in it:
+	// SaveVerdict then refuses (ErrRunChanged) and the run is judged again
+	// with what it has now.
+	for attempt := 1; ; attempt++ {
+		v, err := s.judge(ctx, run, in, policy, source, repoFile)
+		if errors.Is(err, cirun.ErrRunChanged) && attempt < maxJudgeAttempts {
+			fresh, gerr := s.repo.GetRun(ctx, run.TenantID, run.ID)
+			if gerr != nil {
+				return nil, gerr
+			}
+			run = fresh
+			if run.Status == cirun.StatusEvaluated {
+				return s.storedVerdict(ctx, run)
+			}
+			continue
+		}
+		return v, err
+	}
+}
+
+// maxJudgeAttempts bounds how often Evaluate judges a run that keeps
+// recording reports; past it the caller gets ErrRunChanged (409) and asks
+// again once its uploads are done.
+const maxJudgeAttempts = 3
+
+// judge computes the run's verdict and stores it, guarded by the findings
+// count the verdict was computed from (run.FindingsCount, read before the
+// findings).
+func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, policy cirun.GatePolicy, source, repoFile string) (*Verdict, error) {
 	findings, err := s.repo.RunFindings(ctx, run.TenantID, run.ID, run.RepositoryAssetID)
 	if err != nil {
 		return nil, fmt.Errorf("load run findings: %w", err)
@@ -130,7 +167,10 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now); err != nil {
+	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount); err != nil {
+		if errors.Is(err, cirun.ErrRunChanged) {
+			return nil, err
+		}
 		if errors.Is(err, cirun.ErrRunEvaluated) {
 			// Another job of the run was judged first.
 			return s.storedVerdict(ctx, run)
@@ -141,9 +181,6 @@ func (s *Service) Evaluate(ctx context.Context, run *cirun.Run, in EvaluateInput
 		return nil, fmt.Errorf("save run outcome: %w", err)
 	}
 	s.refreshPipeline(ctx, run.TenantID, run.PipelineID)
-	if err := s.repo.MarkDecorationPending(ctx, run.TenantID, run.ID); err != nil {
-		s.log.Warn("ci decoration not queued", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
-	}
 	s.auditVerdict(ctx, run, in, v)
 	return v, nil
 }

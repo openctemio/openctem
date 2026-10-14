@@ -336,6 +336,21 @@ payload comes from one builder, `scan.StepCommandPayload`.
   a release or an expired lease frees the hosts with nothing to clean up.
   Passive stages carry no keys. Keys are tenant-scoped, so another tenant's
   work never holds a tenant back.
+  **Every command, one choke point** (research/130). `CommandRepository.Create`
+  gives every command its keys (`command.AssignHostKeys`), whatever path
+  built it: a single-scanner or quick scan, a zone fan-out, validate,
+  retest, a platform job. Keys the caller set (a scan run's stage-aware
+  keys) win, then a payload's own `host_keys`, else the keys of the
+  payload's `target` and `targets` in its `network_id`: exactly the keys a
+  sensor computes when none are sent, less the keys of local filesystem
+  paths (a code scan of `.` or `/src` is on the running sensor's own disk
+  and never holds another sensor back). They are written into the payload
+  too, so the two sides never disagree. A follow-up of unfinished targets
+  holds only the keys of its remaining targets among its parent's. A
+  startup pass (`BackfillPendingHostKeys`) keys pending commands queued
+  before this rule, in the column only: their payloads stay exactly as
+  queued. Only `Create`, the follow-up and the window-hold copy
+  insert commands (a test fails on any other `INSERT INTO commands`).
   **One key function on both sides** (RFC-090): the keys are computed by
   `github.com/openctemio/ctis/politeness` (the CTIS contract), which the sensor runtime
   uses too, and every catalog-stage chunk carries the keys the platform
@@ -349,6 +364,23 @@ payload comes from one builder, `scan.StepCommandPayload`.
   (RFC-089) the keys of private addresses and names carry the network, so
   overlapping private ranges at two sites never hold each other back;
   public addresses never do.
+  **Hosts are released per target** (research/130, migration
+  `command_settled_host_keys`). A running command holds a host only while
+  one of its pending targets needs it. The sensor's local queue tracks each
+  held command with `politeness.Holding` (ctis): when the job reports a
+  target done, the keys no pending target produces are freed on the sensor
+  and named on the next heartbeat (`progress.<id>.released_keys`).
+  `RecordProgress` adds them to `commands.settled_host_keys`, only for a
+  command that sensor holds and only keys of that command, and they only
+  grow within a claim; every claim resets them. A holder counts against a
+  pending command only through a conflicting key it has not released
+  (`holdsUnsettledSQL`, also in `get_next_platform_job`), so the next
+  tool's work on a host starts as soon as this one is done with it. A
+  bucket marker stays held while a pending address of the bucket does. Poll
+  cost, measured on 300k commands with 2,200 running holders (70 keys each,
+  half with released keys) and 5,000 pending commands of one tenant: the
+  per-row host probe stays one GIN bitmap scan (about 0.05 ms), and the
+  release check adds no measurable time.
   Not yet: the candidate tool list per chunk (claim by any candidate),
   placement modes and a spread cap.
 

@@ -97,7 +97,9 @@ func TestSignerLedger_DatabaseCommandsOutsideTheLedgerAreNotSigned(t *testing.T)
 		t.Fatalf("ledger status %+v %v", st, err)
 	}
 	inScope := h.newScanCommand(h.tenantID, `{"scanner":"nuclei","targets":["app.example.com","https://example.com/login"]}`)
-	outScope := h.newScanCommand(h.tenantID, `{"scanner":"nuclei","targets":["app.example.com","victim.example.org"]}`)
+	// Another in-scope host than inScope's: two commands on one host are
+	// never claimed together (per-host politeness).
+	outScope := h.newScanCommand(h.tenantID, `{"scanner":"nuclei","targets":["api.example.com","victim.example.org"]}`)
 	ids := h.claimIDs(s.key)
 	if len(ids) != 1 || ids[0] != inScope {
 		t.Fatalf("claimed %v, want only %s", ids, inScope)

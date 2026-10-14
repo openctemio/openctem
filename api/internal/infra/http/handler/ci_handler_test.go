@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/importer"
 
 	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
@@ -182,5 +184,67 @@ func TestCIAdminDataScope(t *testing.T) {
 		`{"repository_asset_id":"`+run.RepositoryAssetID.String()+`","commit_sha":"abcdef1","reason":"hotfix for an outage"}`, tenant))
 	if w.Code != http.StatusNotFound || svc.created {
 		t.Fatalf("out of scope override: %d created=%v", w.Code, svc.created)
+	}
+}
+
+type recordingVEX struct{ calls int }
+
+func (v *recordingVEX) ApplyVEXStatements(context.Context, findingimport.Request, []importer.VEXStatement) (*findingimport.VEXSummary, error) {
+	v.calls++
+	return &findingimport.VEXSummary{}, nil
+}
+
+// A VEX document uploaded by a run that already has its verdict is refused,
+// like a findings report: the verdict is final and did not see it.
+func TestCIUploadVEXAfterVerdictRefused(t *testing.T) {
+	const doc = `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"https://example.com/vex/1","author":"Security team",
+"timestamp":"2026-10-01T00:00:00Z","version":1,"statements":[
+ {"vulnerability":{"name":"CVE-2021-23337"},"products":[{"@id":"pkg:npm/lodash@4.17.20"}],"status":"not_affected",
+  "justification":"vulnerable_code_not_in_execute_path"}]}`
+	for status, want := range map[string]int{cirun.StatusEvaluated: http.StatusConflict, cirun.StatusRunning: http.StatusCreated} {
+		run := &cirun.Run{ID: shared.NewID(), TenantID: shared.NewID(), RepositoryAssetID: shared.NewID(),
+			Repository: "github.com/acme/api", Status: status}
+		h := NewCIRunnerHandler(&fakeCIService{run: run}, logger.NewNop())
+		vex := &recordingVEX{}
+		h.SetVEXApplier(vex)
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/x/results", strings.NewReader(doc))
+		r.SetPathValue("id", run.ID.String())
+		r.Header.Set("Authorization", "Bearer octci_"+strings.Repeat("a", 43))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.AuthenticateRun(http.HandlerFunc(h.UploadResults)).ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("%s run: %d, want %d: %s", status, w.Code, want, w.Body.String())
+		}
+		if applied := vex.calls > 0; applied != (status == cirun.StatusRunning) {
+			t.Fatalf("%s run: VEX applied = %v", status, applied)
+		}
+	}
+}
+
+type fakeRefusals struct{ limit int }
+
+func (f *fakeRefusals) RecentRefusals(_ context.Context, _ shared.ID, limit int) ([]cirun.TokenRefusal, error) {
+	f.limit = limit
+	return []cirun.TokenRefusal{{Repository: "github.com/acme/api", Reasons: []string{"fork_refused"}}, {Repository: "x"}}, nil
+}
+
+func TestCIListTokenRefusals(t *testing.T) {
+	tenant := shared.NewID()
+	h := NewCIAdminHandler(nil, nil, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.ListTokenRefusals(w, tenantRequest(http.MethodGet, "/api/v1/ci/trust-refusals", "", tenant))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unwired: %d", w.Code)
+	}
+	svc := &fakeRefusals{}
+	h.SetRefusalService(svc)
+	w = httptest.NewRecorder()
+	h.ListTokenRefusals(w, tenantRequest(http.MethodGet, "/api/v1/ci/trust-refusals?limit=500", "", tenant))
+	if w.Code != http.StatusOK || svc.limit != cirun.MaxTokenRefusals {
+		t.Fatalf("listing: %d limit %d %s", w.Code, svc.limit, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"reasons":["fork_refused"]`) || !strings.Contains(w.Body.String(), `"reasons":[]`) {
+		t.Fatalf("body: %s", w.Body.String())
 	}
 }

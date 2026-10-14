@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -20,8 +21,9 @@ import (
 func newBudgetTestCommand(ctx context.Context, t *testing.T, cmds *CommandRepository, tenant, sensor shared.ID, n int, budget *toolbudget.Task) shared.ID {
 	t.Helper()
 	targets := make([]string, n)
+	host := uniqueTestHost()
 	for i := range targets {
-		targets[i] = "10.9.1." + string(rune('1'+i%9))
+		targets[i] = fmt.Sprintf("t%d.%s", i%9, host)
 	}
 	p := map[string]any{"scanner": "nuclei", "targets": targets}
 	if budget != nil {
@@ -121,10 +123,12 @@ func TestRecordProgress_ScopedBoundedMonotonic(t *testing.T) {
 	}
 }
 
-// A running task is re-queued when it finished no target for its stall
-// window, or when it runs past twice its budget plus the grace; a slow but
-// progressing task, a finished count, a task without a budget and a fresh
-// task are left alone. A new claim starts with no progress.
+// A running task that finished no target for its stall window is asked to
+// stop and hand back what it finished, and re-queued when no answer comes
+// within the grace; one past twice its budget plus the grace is re-queued
+// at once. A slow but progressing task, a finished count, a task without a
+// budget and a fresh task are left alone. A new claim starts with no
+// progress.
 func TestRequeueStalledCommands(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
@@ -154,13 +158,42 @@ func TestRequeueStalledCommands(t *testing.T) {
 	// twice its budget (its lease and the run's cap bound it).
 	silent := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, budget)
 	set(silent, `started_at = NOW() - interval '3 hours'`)
+	// A batch tool (httpx, naabu) reports its total but finishes no target
+	// until it exits: no finished target yet is not a stall, only the
+	// overrun limit bounds it (live, 2026-10-14: httpx re-queued three
+	// times at the stall window and exhausted).
+	batch := newBudgetTestCommand(ctx, t, cmds, tenant, a, 10, budget)
+	set(batch, `progress_done = 0, progress_total = 10, last_progress_at = NOW() - interval '9 minutes', started_at = NOW() - interval '9 minutes'`)
 
+	// A stalled task is first asked to stop and hand back what it
+	// finished; only the stalled one is asked.
+	stops, err := cmds.RequestStopForStalled(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids := tenantRequeued(stops, tenant); len(ids) != 1 || ids[stalled.String()].SensorID == nil {
+		t.Fatalf("stop requested for %v, want only %s", ids, stalled)
+	}
+	if ids, err := cmds.CommandsToStop(ctx, tenant, a, []string{stalled.String(), slow.String(), "not-an-id"}); err != nil || len(ids) != 1 || ids[0] != stalled.String() {
+		t.Fatalf("commands to stop %v %v", ids, err)
+	}
+	// Within the grace it is not re-queued; the overrun is at once.
 	rq, err := cmds.RequeueStalledCommands(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := requeuedIDs(rq)[stalled.String()]; ok {
+		t.Fatal("a stalled task was re-queued before its sensor could hand it back")
+	}
+	// No answer within the grace: re-queued.
+	set(stalled, `stop_requested_at = NOW() - interval '6 minutes'`)
+	more, err := cmds.RequeueStalledCommands(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rq = append(rq, more...)
 	got := requeuedIDs(rq)
-	for _, keep := range []shared.ID{slow, finished, noBudget, silent} {
+	for _, keep := range []shared.ID{slow, finished, noBudget, silent, batch} {
 		if _, ok := got[keep.String()]; ok {
 			t.Errorf("command %s re-queued, want it left running", keep)
 		}
@@ -190,4 +223,16 @@ func TestRequeueStalledCommands(t *testing.T) {
 	if p := readProgress(ctx, t, sqlDB, slow); p.done.Valid || p.total.Valid {
 		t.Fatalf("a new claim kept the old progress: %+v", p)
 	}
+}
+
+// tenantRequeued is requeuedIDs limited to one tenant (the sweeps are
+// global; other tests' rows are not this test's business).
+func tenantRequeued(rq []command.RequeuedCommand, tenant shared.ID) map[string]command.RequeuedCommand {
+	out := map[string]command.RequeuedCommand{}
+	for _, r := range rq {
+		if r.TenantID == tenant {
+			out[r.ID.String()] = r
+		}
+	}
+	return out
 }

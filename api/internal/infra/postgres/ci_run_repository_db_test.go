@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,7 +60,7 @@ func TestCIRunRepository(t *testing.T) {
 	if runs, total, err := repo.ListRuns(ctx, other, cirun.RunFilter{}); err != nil || total != 0 || len(runs) != 0 {
 		t.Fatalf("cross-tenant list: %d %v", total, err)
 	}
-	if err := repo.SaveVerdict(ctx, other, runA.ID, cirun.VerdictPass, []byte(`{}`), now); !errors.Is(err, shared.ErrNotFound) {
+	if err := repo.SaveVerdict(ctx, other, runA.ID, cirun.VerdictPass, []byte(`{}`), now, 0); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant verdict: %v", err)
 	}
 	// A run cannot point at another tenant's asset (composite foreign key).
@@ -105,11 +108,13 @@ func TestCIRunRepository(t *testing.T) {
 	for i := range 3 {
 		fps = append(fps, fmt.Sprintf("fp-%d", i))
 	}
-	if err := repo.RecordRunReport(ctx, tenant, runA.ID, fps); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.RecordRunReport(ctx, tenant, runA.ID, fps[:1]); err != nil {
-		t.Fatal(err)
+	for _, batch := range [][]string{fps, fps[:1]} {
+		if err := repo.ReserveRunReport(ctx, tenant, runA.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.RecordRunReport(ctx, tenant, runA.ID, batch); err != nil {
+			t.Fatal(err)
+		}
 	}
 	got, _ := repo.GetRun(ctx, tenant, runA.ID)
 	if got.ReportsCount != 2 || got.FindingsCount != 3 {
@@ -118,23 +123,38 @@ func TestCIRunRepository(t *testing.T) {
 	if err := repo.RecordRunReport(ctx, other, runA.ID, fps); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant report: %v", err)
 	}
+	if err := repo.ReserveRunReport(ctx, other, runA.ID); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant report slot: %v", err)
+	}
 
-	// Overrides: commit prefix, expiry, revocation, tenant.
-	o := &cirun.GateOverride{ID: shared.NewID(), TenantID: tenant, RepositoryAssetID: repoA, CommitSHA: "abcdef1",
+	// Overrides: exact commit, expiry, revocation, tenant.
+	fullSHA := strings.Repeat("abcdef12", 5)
+	o := &cirun.GateOverride{ID: shared.NewID(), TenantID: tenant, RepositoryAssetID: repoA, CommitSHA: fullSHA,
 		Reason: "release hotfix", ExpiresAt: now.Add(time.Hour), CreatedAt: now}
 	if err := repo.CreateOverride(ctx, o); err != nil {
 		t.Fatal(err)
 	}
-	if a, err := repo.ActiveOverride(ctx, tenant, repoA, "abcdef1234567", now); err != nil || a == nil || a.ID != o.ID {
+	if a, err := repo.ActiveOverride(ctx, tenant, repoA, strings.ToUpper(fullSHA), now); err != nil || a == nil || a.ID != o.ID {
 		t.Fatalf("active override: %v %v", a, err)
 	}
 	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, "ffffff1234567", now); a != nil {
 		t.Fatal("override matched another commit")
 	}
-	if a, _ := repo.ActiveOverride(ctx, other, repoA, "abcdef1234567", now); a != nil {
+	// A row stored before full ids were required: its prefix no longer covers
+	// a commit that shares it.
+	if _, err := db.ExecContext(ctx, `UPDATE ci_gate_overrides SET commit_sha = 'abcdef1' WHERE id = $1`, o.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, fullSHA, now); a != nil {
+		t.Fatal("an abbreviated override covered a commit by prefix")
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE ci_gate_overrides SET commit_sha = $2 WHERE id = $1`, o.ID.String(), fullSHA); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := repo.ActiveOverride(ctx, other, repoA, fullSHA, now); a != nil {
 		t.Fatal("override visible to another tenant")
 	}
-	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, "abcdef1234567", now.Add(2*time.Hour)); a != nil {
+	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, fullSHA, now.Add(2*time.Hour)); a != nil {
 		t.Fatal("expired override active")
 	}
 	if err := repo.RevokeOverride(ctx, other, o.ID, shared.NewID(), now); !errors.Is(err, shared.ErrNotFound) {
@@ -143,7 +163,7 @@ func TestCIRunRepository(t *testing.T) {
 	if err := repo.RevokeOverride(ctx, tenant, o.ID, shared.ID{}, now); err != nil {
 		t.Fatal(err)
 	}
-	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, "abcdef1234567", now); a != nil {
+	if a, _ := repo.ActiveOverride(ctx, tenant, repoA, fullSHA, now); a != nil {
 		t.Fatal("revoked override active")
 	}
 	if list, _ := repo.ListOverrides(ctx, tenant, nil, &shared.DataScope{TenantID: tenant, UserID: user}); len(list) != 0 {
@@ -230,5 +250,88 @@ func TestCITrustConfigRepository(t *testing.T) {
 	}
 	if err := repo.DeleteTrustConfig(ctx, tenant, c.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The report slots and the verdict are checked against the stored run, not
+// the snapshot a request authenticated with: concurrent uploads cannot pass
+// MaxRunReports, a report cannot land after the verdict, and a verdict
+// computed before a report was recorded is refused (ErrRunChanged).
+func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
+	db := openSensorDB(t)
+	// Many goroutines, few connections: the race is on the row, not on
+	// the pool (and the test must not exhaust the server's connections).
+	db.SetMaxOpenConns(8)
+	ctx := context.Background()
+	repo := NewCIRunRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	asset := seedTestAsset(ctx, t, db, tenant)
+	now := time.Now().UTC()
+	newRun := func() *cirun.Run {
+		_, hash, err := cirun.NewToken()
+		if err != nil {
+			t.Fatal(err)
+		}
+		exp := now.Add(10 * time.Minute)
+		r := &cirun.Run{ID: shared.NewID(), TenantID: tenant, RepositoryAssetID: asset, Provider: cirun.ProviderGitHub,
+			Issuer: cirun.GitHubIssuer, Repository: "github.com/acme/api", Ref: "refs/heads/main", Branch: "main",
+			CommitSHA: strings.Repeat("ab", 20), Status: cirun.StatusRunning, TokenHash: hash, TokenExpiresAt: &exp,
+			CreatedAt: now, UpdatedAt: now}
+		if err := repo.CreateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	// Concurrent reservations: exactly MaxRunReports succeed.
+	run := newRun()
+	var ok, capped atomic.Int32
+	var wg sync.WaitGroup
+	for range cirun.MaxRunReports + 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			switch err := repo.ReserveRunReport(ctx, tenant, run.ID); {
+			case err == nil:
+				ok.Add(1)
+			case errors.Is(err, cirun.ErrRunReportCap):
+				capped.Add(1)
+			default:
+				t.Errorf("reserve: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if ok.Load() != cirun.MaxRunReports || capped.Load() != 20 {
+		t.Fatalf("reserved %d, capped %d; want %d and 20", ok.Load(), capped.Load(), cirun.MaxRunReports)
+	}
+
+	// A verdict computed from 0 findings is refused once a report recorded one.
+	run = newRun()
+	if err := repo.ReserveRunReport(ctx, tenant, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordRunReport(ctx, tenant, run.ID, []string{"fp-late"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 0); !errors.Is(err, cirun.ErrRunChanged) {
+		t.Fatalf("stale verdict: %v", err)
+	}
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictFail, []byte(`{}`), now, 1); err != nil {
+		t.Fatalf("current verdict: %v", err)
+	}
+	// After the verdict: no slot, no recording, no second verdict.
+	if err := repo.ReserveRunReport(ctx, tenant, run.ID); !errors.Is(err, cirun.ErrRunEvaluated) {
+		t.Fatalf("slot after the verdict: %v", err)
+	}
+	if err := repo.RecordRunReport(ctx, tenant, run.ID, []string{"fp-after"}); !errors.Is(err, cirun.ErrRunEvaluated) {
+		t.Fatalf("report after the verdict: %v", err)
+	}
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 1); !errors.Is(err, cirun.ErrRunEvaluated) {
+		t.Fatalf("second verdict: %v", err)
+	}
+	got, err := repo.GetRun(ctx, tenant, run.ID)
+	if err != nil || got.Verdict != cirun.VerdictFail || got.FindingsCount != 1 {
+		t.Fatalf("stored run: %+v %v", got, err)
 	}
 }

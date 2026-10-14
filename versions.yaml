@@ -19,19 +19,19 @@
 # The newest released vX.Y.Z tag of this repository (API + web share it); on
 # release/vX.Y.Z, that vX.Y.Z.
 platform:
-  release: v0.9.4
+  release: v0.9.5
 
 # Sensor (openctemio/sensor). latest: the install snippets pin this image tag
 # and the Sensors page shows "update available" below it. min: a sensor below it
 # is degraded ("version unsupported"); "" = no minimum.
 sensor:
-  latest: v0.17.0
+  latest: v0.21.1
   min: v0.9.0
 
 # SDK (openctemio/sdk-go) a sensor is built with. latest: older is "outdated".
 # min: older is degraded ("SDK below minimum"); "" = no minimum.
 sdk:
-  latest: v0.23.0
+  latest: v0.31.0
   min: ""
 
 # Helm chart (openctemio/helm-charts): the newest published chart whose

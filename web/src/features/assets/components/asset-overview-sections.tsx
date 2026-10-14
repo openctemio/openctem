@@ -11,10 +11,10 @@
 'use client'
 
 import * as React from 'react'
-import Link from '@/components/link'
-import { AlertTriangle, Gauge, ListTree, Radar, ShieldHalf, UserRound } from 'lucide-react'
+import { AlertTriangle, Gauge, ListTree, Radar, Search, ShieldHalf, UserRound } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   DetailSection,
   DetailField,
@@ -24,16 +24,17 @@ import {
   SeverityStrip,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { SafeExternalLink } from '@/components/safe-external-link'
 import {
   groupProperties,
   propertyLabel,
   type PropertyEntry,
 } from '@/features/asset-types/lib/property-schema'
-import type { AssetPropertyFormat } from '@/features/asset-types/registry.generated'
-import { serializeInventoryFilters } from '../lib/inventory-url'
+import { PropertyValue, hasPropertyValue, isWideValue } from './property-value'
 import type { Asset } from '../types/asset.types'
 import { ProgramTargetBadge } from './program-target-badge'
+
+// The property list gets a search box from this many values.
+const SEARCH_FROM = 8
 
 // Assets not observed for this long are flagged as possibly stale.
 const STALE_AFTER_DAYS = 30
@@ -267,67 +268,6 @@ export function DiscoverySection({ asset }: { asset: Asset }) {
 // Properties
 // ============================================
 
-/** The inventory query that finds the IP address asset with this address. */
-function ipAssetQuery(ip: string): string {
-  return serializeInventoryFilters({ types: ['ip_address'], search: ip }).toString()
-}
-
-function formatScalar(
-  value: string | number | boolean,
-  format?: AssetPropertyFormat
-): React.ReactNode {
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  const text = String(value)
-  switch (format) {
-    case 'ip':
-      return (
-        <Link
-          href={`/assets?${ipAssetQuery(text)}`}
-          className="font-mono text-xs text-primary hover:underline"
-        >
-          {text}
-        </Link>
-      )
-    case 'url':
-      return (
-        <SafeExternalLink href={text} className="break-all text-primary hover:underline">
-          {text}
-        </SafeExternalLink>
-      )
-    case 'code':
-      return <code className="font-mono text-xs break-all">{text}</code>
-    default:
-      return text
-  }
-}
-
-function formatValue(value: unknown, format?: AssetPropertyFormat): React.ReactNode {
-  if (value === null || value === undefined || value === '') return undefined
-  if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
-    return formatScalar(value, format)
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return undefined
-    if (value.every((v) => ['string', 'number', 'boolean'].includes(typeof v))) {
-      if (!format) return value.join(', ')
-      return (
-        <span className="flex flex-wrap gap-x-2 gap-y-1">
-          {value.map((v) => (
-            <span key={String(v)}>{formatScalar(v as string | number | boolean, format)}</span>
-          ))}
-        </span>
-      )
-    }
-  }
-  return <code className="font-mono text-xs break-all">{JSON.stringify(value)}</code>
-}
-
-function renderEntries(entries: PropertyEntry[]) {
-  return entries
-    .map((e) => [e, formatValue(e.value, e.format)] as const)
-    .filter(([, v]) => v !== undefined)
-}
-
 /**
  * The asset's `properties`, rendered from the property schema of its type
  * (RFC-042 §6.3.9): labels in the viewer's language and in schema order,
@@ -339,48 +279,104 @@ export function PropertiesSection({
   properties,
   type,
   subType,
+  all = false,
 }: {
   properties?: Record<string, unknown>
   /** The asset's stored type and sub-type; without them every key is "Other". */
   type?: string
   subType?: string | null
+  /**
+   * Shown under the key facts: titled "All properties" and folded until the
+   * reader opens it (the key facts already answer the first questions).
+   */
+  all?: boolean
 }) {
   const { locale, t } = useTranslation()
+  const [query, setQuery] = React.useState('')
+  const [open, setOpen] = React.useState(!all)
   const { known, other } = React.useMemo(
     () => groupProperties(properties, type ?? '', subType),
     [properties, type, subType]
   )
-  const knownRows = renderEntries(known)
-  const otherRows = renderEntries(other)
+  const label = React.useCallback((key: string) => propertyLabel(key, locale), [locale])
+  const q = query.trim().toLowerCase()
+  const matches = React.useCallback(
+    (e: PropertyEntry) =>
+      !q ||
+      e.key.toLowerCase().includes(q) ||
+      label(e.key).toLowerCase().includes(q) ||
+      JSON.stringify(e.value ?? '')
+        .toLowerCase()
+        .includes(q),
+    [q, label]
+  )
+  const knownRows = known.filter((e) => hasPropertyValue(e.value))
+  const otherRows = other.filter((e) => hasPropertyValue(e.value))
   const count = knownRows.length + otherRows.length
   if (count === 0) return null
+  const knownShown = knownRows.filter(matches)
+  const otherShown = otherRows.filter(matches)
+
+  const grid = (rows: PropertyEntry[]) => (
+    <DetailFieldGrid>
+      {rows.map((e) => (
+        <DetailField key={e.key} label={label(e.key)} full={isWideValue(e.value)}>
+          <PropertyValue value={e.value} format={e.format} />
+        </DetailField>
+      ))}
+    </DetailFieldGrid>
+  )
 
   return (
-    <DetailSection title={t('assets.properties.title', 'Properties')} icon={ListTree} count={count}>
-      {knownRows.length > 0 && (
-        <DetailFieldGrid>
-          {knownRows.map(([e, value]) => (
-            <DetailField key={e.key} label={propertyLabel(e.key, locale)}>
-              {value}
-            </DetailField>
-          ))}
-        </DetailFieldGrid>
+    <DetailSection
+      title={
+        all
+          ? t('assets.properties.allTitle', 'All properties')
+          : t('assets.properties.title', 'Properties')
+      }
+      icon={ListTree}
+      count={count}
+      actions={
+        all ? (
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? t('assets.properties.hide', 'Hide') : t('assets.properties.show', 'Show')}
+          </Button>
+        ) : undefined
+      }
+    >
+      {open && count > SEARCH_FROM && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('assets.properties.search', 'Search properties')}
+            aria-label={t('assets.properties.search', 'Search properties')}
+            className="h-8 ps-8 text-sm"
+          />
+        </div>
       )}
-      {otherRows.length > 0 && (
+      {open && knownShown.length > 0 && grid(knownShown)}
+      {open && otherShown.length > 0 && (
         <div className="space-y-2">
-          {knownRows.length > 0 && (
+          {knownShown.length > 0 && (
             <p className="text-xs font-medium text-muted-foreground">
               {t('assets.properties.other', 'Other')}
             </p>
           )}
-          <DetailFieldGrid>
-            {otherRows.map(([e, value]) => (
-              <DetailField key={e.key} label={propertyLabel(e.key, locale)}>
-                {value}
-              </DetailField>
-            ))}
-          </DetailFieldGrid>
+          {grid(otherShown)}
         </div>
+      )}
+      {open && knownShown.length + otherShown.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {t('assets.properties.noMatch', 'No property matches "{query}".', { query })}
+        </p>
       )}
     </DetailSection>
   )

@@ -45,6 +45,8 @@ import { GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
 import { CIPipelineSheet } from './ci-pipeline-sheet'
 import { CICoverageView } from './ci-coverage-view'
 import { CIRunsView } from './ci-runs-view'
+import { CISetupEntry } from './ci-setup-wizard'
+import { Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 
 type RunnerView = 'pipelines' | 'runs' | 'coverage'
@@ -134,10 +136,11 @@ export interface CIPipelinesPanelProps {
 
 export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
+  const canWrite = can(Permission.CIWrite)
   const [viewParam, setView] = useUrlFilter('view', 'pipelines')
   const view: RunnerView =
     viewParam === 'runs' || viewParam === 'coverage' ? viewParam : 'pipelines'
-  const [runParam] = useUrlFilter('run', '')
   const [q, setQ] = useUrlFilter('q', '')
   const [statusParam, setStatusParam] = useUrlFilterList('pipeline_status')
   const [inactiveParam, setInactiveParam] = useUrlFilter('inactive', '')
@@ -269,7 +272,6 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
       <div className="mt-5">
         <CIRunsView
           embedded
-          initialRunId={runParam || null}
           toolbarStart={
             <>
               {toolbarStart}
@@ -305,9 +307,16 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
               'A pipeline appears after its first run. Add a CI trust configuration, then add the OpenCTEM CI scan to a pipeline.'
             )}
             action={
-              <Button asChild size="sm">
-                <Link href="/ci-cd?tab=setup">{t('scans.ci.setUpTrust', 'Set up CI trust')}</Link>
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <CISetupEntry canWrite={canWrite} />
+                {canWrite && (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/ci-cd?tab=setup">
+                      {t('scans.ci.setUpTrust', 'Set up CI trust')}
+                    </Link>
+                  </Button>
+                )}
+              </div>
             }
           />
         </>

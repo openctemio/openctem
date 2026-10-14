@@ -446,13 +446,13 @@ scan_scheduler:
 # Command Expiration
 command_expiration:
   check_interval: 1m      # How often to check for expired commands
-  default_timeout: 30m    # Default command timeout
-
-# Pipeline
-pipeline:
-  default_step_timeout: 5m
-  max_retries: 3
 ```
+
+There is no fixed command or step timeout any more: a run's deadline is the
+scan's max duration, else the workflow's timeout, else the platform's 24 h
+cap, and a running task is judged by its progress (finished targets, records,
+output bytes, CPU time) against a stall window derived from the tool's
+per-target budget. See [Placement](placement.md) and [Scan lifecycle](scan-lifecycle.md).
 
 ## API Endpoints
 

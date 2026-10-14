@@ -130,3 +130,32 @@ func TestGetRunTaskPlacement_NotFoundAcrossTenantsAndRuns(t *testing.T) {
 		t.Fatalf("malformed task id: status %d", w.Code)
 	}
 }
+
+// A task waiting for its hosts says how many and which tasks hold them: a
+// holder's task, run and step only when the caller can read that run; the
+// tool always; never host names.
+func TestGetRunTaskPlacement_HostWait(t *testing.T) {
+	h, f := newPlacementHandler(t)
+	sameRun, otherRun := shared.NewID(), shared.NewID()
+	f.p.JobReasons = []string{commanddom.PlacementHostBusy}
+	f.p.HostWait = &commandapp.HostWait{Held: 10, Total: 10, Holders: []commanddom.HostHolder{
+		{CommandID: sameRun, RunID: f.run.String(), StepKey: "http", Tool: "httpx", Keys: []string{"secret-host.example.com"}},
+		{CommandID: otherRun, RunID: shared.NewID().String(), StepKey: "ports", Tool: "naabu"},
+	}}
+	w := httptest.NewRecorder()
+	h.GetRunTaskPlacement(w, placementRequest(f.tenant, f.run.String(), f.task.String()))
+	got := decodePlacement(t, w)
+	hw := got.HostWait
+	if hw == nil || hw.HostsHeld != 10 || hw.HostsTotal != 10 || len(hw.Holders) != 2 {
+		t.Fatalf("host wait %+v", hw)
+	}
+	if hw.Holders[0] != (RunTaskHostHolder{TaskID: sameRun.String(), RunID: f.run.String(), StepKey: "http", Tool: "httpx"}) {
+		t.Fatalf("visible holder %+v", hw.Holders[0])
+	}
+	if hw.Holders[1] != (RunTaskHostHolder{Tool: "naabu"}) {
+		t.Fatalf("a holder in a run the caller cannot read was named: %+v", hw.Holders[1])
+	}
+	if strings.Contains(w.Body.String(), "secret-host") {
+		t.Fatalf("host names in the response: %s", w.Body)
+	}
+}

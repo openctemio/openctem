@@ -80,10 +80,14 @@ type GatePolicy struct {
 	// AllowRepoPolicy lets a repository's .openctem.yml tighten the gate and
 	// request exceptions (default true; any policy saying no wins).
 	AllowRepoPolicy bool
-	CreatedBy       *shared.ID
-	UpdatedBy       *shared.ID
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// FixableOnly fails a dependency or image vulnerability on its severity
+	// or EPSS score only when a fixed version exists; one with no fix is
+	// listed, not blocking. KEV still fails, fixable or not.
+	FixableOnly bool
+	CreatedBy   *shared.ID
+	UpdatedBy   *shared.ID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // DefaultGatePolicy is the built-in policy: new findings of high severity
@@ -139,6 +143,9 @@ func Strictest(ps []GatePolicy) GatePolicy {
 		if !p.NewFindingsOnly {
 			out.NewFindingsOnly = false
 		}
+		if !p.FixableOnly {
+			out.FixableOnly = false
+		}
 		if p.FailOnKEV {
 			out.FailOnKEV = true
 		}
@@ -182,9 +189,11 @@ type GateOverride struct {
 	CreatedAt      time.Time
 }
 
-var commitSHARE = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
+var commitSHARE = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
-// ValidCommitSHA reports whether s is a hex commit id.
+// ValidCommitSHA reports whether s is a full hex commit id (SHA-1 or
+// SHA-256). An abbreviated id is refused: an override must cover exactly
+// one commit, and a short prefix can be matched by a commit made to fit it.
 func ValidCommitSHA(s string) bool { return commitSHARE.MatchString(s) }
 
 // Validate checks a new override. Every error wraps shared.ErrValidation.
@@ -192,7 +201,7 @@ func (o *GateOverride) Validate(now time.Time) error {
 	o.CommitSHA = strings.ToLower(strings.TrimSpace(o.CommitSHA))
 	o.Reason = strings.TrimSpace(o.Reason)
 	if !ValidCommitSHA(o.CommitSHA) {
-		return fmt.Errorf("%w: commit_sha must be a commit id", shared.ErrValidation)
+		return fmt.Errorf("%w: commit_sha must be a full commit id (40 or 64 hex characters)", shared.ErrValidation)
 	}
 	if n := len([]rune(o.Reason)); n < minOverrideReason || n > maxOverrideReason {
 		return fmt.Errorf("%w: reason must be %d to %d characters", shared.ErrValidation, minOverrideReason, maxOverrideReason)
@@ -206,11 +215,11 @@ func (o *GateOverride) Validate(now time.Time) error {
 // ActiveAt reports whether the override applies at t.
 func (o GateOverride) ActiveAt(t time.Time) bool { return o.RevokedAt == nil && t.Before(o.ExpiresAt) }
 
-// MatchesCommit reports whether the override covers commit sha (a short id
-// covers the full one).
+// MatchesCommit reports whether the override covers commit sha: the same
+// full commit id, nothing else.
 func (o GateOverride) MatchesCommit(sha string) bool {
 	sha = strings.ToLower(sha)
-	return sha != "" && o.CommitSHA != "" && strings.HasPrefix(sha, o.CommitSHA)
+	return sha != "" && o.CommitSHA != "" && sha == o.CommitSHA
 }
 
 // GateInput is everything one evaluation reads.
@@ -269,6 +278,7 @@ type GatePolicyView struct {
 	NewFindingsOnly bool     `json:"new_findings_only"`
 	FailOnKEV       bool     `json:"fail_on_kev"`
 	EPSSThreshold   *float64 `json:"epss_threshold,omitempty"`
+	FixableOnly     bool     `json:"fixable_only,omitempty"`
 	// Modes are the policy's per-capability and per-rule modes, when set.
 	Modes *PolicyModes `json:"modes,omitempty"`
 }
@@ -321,7 +331,7 @@ func Evaluate(in GateInput) GateVerdict {
 	v := GateVerdict{
 		Reasons: []GateReason{},
 		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity, Modes: modesView(p.Modes),
-			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold},
+			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold, FixableOnly: p.FixableOnly},
 		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown},
 	}
 	blocking := 0
@@ -393,6 +403,14 @@ func Evaluate(in GateInput) GateVerdict {
 		if mode == FindingModeComment {
 			emit = func(r GateReason) {
 				r.Mode = FindingModeComment
+				note(r)
+			}
+		}
+		// No fixed version to move to: listed, not blocking (KEV aside).
+		if p.FixableOnly && f.IsVulnerability() && !f.FixAvailable && !(p.FailOnKEV && f.IsInKEV) {
+			emit = func(r GateReason) {
+				r.Mode = FindingModeComment
+				r.Message += " (no fixed version yet)"
 				note(r)
 			}
 		}

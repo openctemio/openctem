@@ -37,6 +37,7 @@ type CIAdminService interface {
 	DeleteGatePolicy(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
 	CreateOverride(ctx context.Context, tenantID shared.ID, in cirunapp.OverrideInput, a cirunapp.Actor) (*cirun.GateOverride, error)
 	ListOverrides(ctx context.Context, tenantID shared.ID, assetID *shared.ID, scope *shared.DataScope) ([]cirun.GateOverride, error)
+	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*cirun.GatePolicy, error)
 	GetOverride(ctx context.Context, tenantID, id shared.ID) (*cirun.GateOverride, error)
 	RevokeOverride(ctx context.Context, tenantID, id shared.ID, a cirunapp.Actor) error
 }
@@ -47,8 +48,18 @@ type CIAdminHandler struct {
 	pipelines CIPipelineService
 	coverage  CICoverageService
 	settings  CISettingsService
+	codeScan  CICodeScanService
+	refusals  CIRefusalService
 	dataScope DataScopeEnforcer
 	logger    *logger.Logger
+}
+
+// SetStepUpGate passes the re-authentication gate to the service: a gate
+// policy change that loosens the gate needs step-up.
+func (h *CIAdminHandler) SetStepUpGate(g shared.RecentAuthGate) {
+	if svc, ok := h.svc.(interface{ SetStepUpGate(shared.RecentAuthGate) }); ok {
+		svc.SetStepUpGate(g)
+	}
 }
 
 // NewCIAdminHandler creates the handler. A nil data-scope enforcer leaves
@@ -153,9 +164,19 @@ type CIRunResponse struct {
 	// view only).
 	VerdictDetail *cirunapp.Verdict `json:"verdict_detail,omitempty"`
 	EvaluatedAt   *time.Time        `json:"evaluated_at,omitempty"`
-	ReportsCount  int               `json:"reports_count"`
-	FindingsCount int               `json:"findings_count"`
-	CreatedAt     time.Time         `json:"created_at"`
+	// WouldFail: the verdict passed only because the policy warns or a
+	// break-glass override covered the commit (list and detail).
+	WouldFail bool `json:"would_fail"`
+	// Override is the break-glass override that let the commit pass.
+	Override *cirun.GateOverrideView `json:"override,omitempty"`
+	// DecorationState is where posting the verdict to the code host stands
+	// (pending, posting, posted, skipped, failed; empty when nothing was
+	// queued) and DecorationDetail a short explanation.
+	DecorationState  string    `json:"decoration_state,omitempty"`
+	DecorationDetail string    `json:"decoration_detail,omitempty"`
+	ReportsCount     int       `json:"reports_count"`
+	FindingsCount    int       `json:"findings_count"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
@@ -173,6 +194,16 @@ func toCIRunResponse(r *cirun.Run, withDetail bool) CIRunResponse {
 		out.PipelineID = r.PipelineID.String()
 	}
 	out.SensorVersion, out.ScanFailures, out.TemplateRef = r.SensorVersion, r.ScanFailures, r.TemplateRef
+	out.DecorationState, out.DecorationDetail = r.DecorationState, r.DecorationDetail
+	if len(r.VerdictDetail) > 0 {
+		var v struct {
+			WouldFail bool                    `json:"would_fail"`
+			Override  *cirun.GateOverrideView `json:"override"`
+		}
+		if json.Unmarshal(r.VerdictDetail, &v) == nil {
+			out.WouldFail, out.Override = v.WouldFail, v.Override
+		}
+	}
 	out.Tools = make([]CIToolLabel, 0, len(r.Tools))
 	for _, t := range r.Tools {
 		out.Tools = append(out.Tools, CIToolLabel{Name: t.Name, Version: t.Version})
@@ -201,15 +232,18 @@ type CIGatePolicyResponse struct {
 	Modes cirun.PolicyModes `json:"modes"`
 	// AllowRepoPolicy: repositories' .openctem.yml may tighten the gate and
 	// request exceptions.
-	AllowRepoPolicy bool      `json:"allow_repo_policy"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	AllowRepoPolicy bool `json:"allow_repo_policy"`
+	// FixableOnly: a dependency or image vulnerability blocks on severity
+	// or EPSS only when a fixed version exists (KEV still blocks).
+	FixableOnly bool      `json:"fixable_only"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func toCIPolicyResponse(p *cirun.GatePolicy) CIGatePolicyResponse {
 	out := CIGatePolicyResponse{ID: p.ID.String(), ScopeType: p.ScopeType, Enabled: p.Enabled, Mode: p.Mode,
 		FailOnSeverity: p.FailOnSeverity, NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV,
-		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
+		EPSSThreshold: p.EPSSThreshold, Modes: p.Modes, AllowRepoPolicy: p.AllowRepoPolicy, FixableOnly: p.FixableOnly, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt}
 	if p.ScopeID != nil {
 		out.ScopeID = p.ScopeID.String()
 	}
@@ -240,6 +274,9 @@ type CIGatePolicyRequest struct {
 	// AllowRepoPolicy allows (default) or forbids repositories'
 	// .openctem.yml; any applicable policy forbidding it wins.
 	AllowRepoPolicy *bool `json:"allow_repo_policy,omitempty"`
+	// FixableOnly: vulnerabilities with no fixed version are listed, not
+	// blocking (KEV still blocks). Turning it on loosens the gate.
+	FixableOnly *bool `json:"fixable_only,omitempty"`
 }
 
 // CIGateOverrideResponse is a break-glass override.
@@ -269,7 +306,9 @@ type CIGateOverrideListResponse struct {
 // CIGateOverrideRequest is a break-glass request.
 type CIGateOverrideRequest struct {
 	RepositoryAssetID string `json:"repository_asset_id"`
-	CommitSHA         string `json:"commit_sha"`
+	// CommitSHA is the full commit id (40 or 64 hex characters); the
+	// override covers exactly that commit.
+	CommitSHA string `json:"commit_sha"`
 	// Reason is required (10 to 2000 characters) and audited.
 	Reason string `json:"reason"`
 	// ExpiresInHours defaults to 24, at most 168.
@@ -304,6 +343,12 @@ func pathID(w http.ResponseWriter, r *http.Request, what string) (shared.ID, boo
 
 func (h *CIAdminHandler) writeErr(w http.ResponseWriter, err error, what, notFound string) {
 	if WritePlanLimitError(w, err) {
+		return
+	}
+	if errors.Is(err, cirunapp.ErrStepUpUnavailable) {
+		err = middleware.ErrStepUpUnavailable
+	}
+	if writeStepUpError(w, err) {
 		return
 	}
 	switch {
@@ -620,15 +665,56 @@ func (h *CIAdminHandler) ListGatePolicies(w http.ResponseWriter, r *http.Request
 	def := cirun.DefaultGatePolicy()
 	out := CIGatePolicyListResponse{Data: make([]CIGatePolicyResponse, 0, len(list)), Default: toCIPolicyResponse(&def)}
 	for i := range list {
+		// A repository policy names an asset: only callers who may see it.
+		if list[i].ScopeType == cirun.ScopeRepository && list[i].ScopeID != nil &&
+			!assetInDataScope(r.Context(), h.dataScope, tenantID, *list[i].ScopeID) {
+			continue
+		}
 		out.Data = append(out.Data, toCIPolicyResponse(&list[i]))
 	}
 	ciWriteJSON(w, http.StatusOK, out)
 }
 
+// policyScopeAllowed reports whether the caller may manage a policy of this
+// scope and writes the refusal: a repository policy only for a repository
+// in the caller's data scope (404 otherwise, as for any asset they cannot
+// see); an organization or business unit policy only for a caller whose
+// data scope is unrestricted (403), since it governs repositories outside
+// a restricted scope.
+func (h *CIAdminHandler) policyScopeAllowed(w http.ResponseWriter, r *http.Request, tenantID shared.ID, scopeType string, scopeID *shared.ID, notFound string) bool {
+	if scopeType == cirun.ScopeRepository {
+		if scopeID == nil || !assetInDataScope(r.Context(), h.dataScope, tenantID, *scopeID) {
+			apierror.NotFound(notFound).WriteJSON(w)
+			return false
+		}
+		return true
+	}
+	scope, err := resolveDataScope(r.Context(), h.dataScope, tenantID)
+	if err != nil {
+		h.writeErr(w, err, "resolve data scope", notFound)
+		return false
+	}
+	if scope.Restricted() {
+		apierror.Forbidden("An organization or business unit gate policy needs access to every repository").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// policyOfCaller loads a policy and checks the caller may manage it.
+func (h *CIAdminHandler) policyOfCaller(w http.ResponseWriter, r *http.Request, tenantID, id shared.ID) bool {
+	p, err := h.svc.GetGatePolicy(r.Context(), tenantID, id)
+	if err != nil {
+		h.writeErr(w, err, "load gate policy", "CI gate policy")
+		return false
+	}
+	return h.policyScopeAllowed(w, r, tenantID, p.ScopeType, p.ScopeID, "CI gate policy")
+}
+
 func (req CIGatePolicyRequest) input() (cirunapp.GatePolicyInput, error) {
 	in := cirunapp.GatePolicyInput{ScopeType: req.ScopeType, Enabled: req.Enabled, Mode: req.Mode,
 		FailOnSeverity: req.FailOnSeverity, NewFindingsOnly: req.NewFindingsOnly, FailOnKEV: req.FailOnKEV,
-		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy}
+		EPSSThreshold: req.EPSSThreshold, Modes: req.Modes, AllowRepoPolicy: req.AllowRepoPolicy, FixableOnly: req.FixableOnly}
 	if req.ScopeID != "" {
 		id, err := shared.IDFromString(req.ScopeID)
 		if err != nil {
@@ -666,6 +752,9 @@ func (h *CIAdminHandler) CreateGatePolicy(w http.ResponseWriter, r *http.Request
 	in, err := req.input()
 	if err != nil {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
+		return
+	}
+	if !h.policyScopeAllowed(w, r, tenantID, in.ScopeType, in.ScopeID, "Scope") {
 		return
 	}
 	p, err := h.svc.CreateGatePolicy(r.Context(), tenantID, in, h.actor(r))
@@ -709,6 +798,9 @@ func (h *CIAdminHandler) UpdateGatePolicy(w http.ResponseWriter, r *http.Request
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
+	if !h.policyOfCaller(w, r, tenantID, id) {
+		return
+	}
 	p, err := h.svc.UpdateGatePolicy(r.Context(), tenantID, id, in, h.actor(r))
 	if err != nil {
 		h.writeErr(w, err, "change gate policy", "CI gate policy")
@@ -732,6 +824,9 @@ func (h *CIAdminHandler) DeleteGatePolicy(w http.ResponseWriter, r *http.Request
 	}
 	id, ok := pathID(w, r, "CI gate policy")
 	if !ok {
+		return
+	}
+	if !h.policyOfCaller(w, r, tenantID, id) {
 		return
 	}
 	if err := h.svc.DeleteGatePolicy(r.Context(), tenantID, id, h.actor(r)); err != nil {

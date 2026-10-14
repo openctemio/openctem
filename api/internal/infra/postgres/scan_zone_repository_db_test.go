@@ -79,7 +79,7 @@ func newTestZone(t *testing.T, tenantID shared.ID, name string, isDefault bool, 
 func createZoneCommand(ctx context.Context, t *testing.T, repo *CommandRepository, tenantID shared.ID,
 	zoneID, sensorID *shared.ID, scanner string) shared.ID {
 	t.Helper()
-	payload, _ := json.Marshal(map[string]any{"scanner": scanner, "targets": []string{"10.0.0.1"}})
+	payload, _ := json.Marshal(map[string]any{"scanner": scanner, "targets": []string{uniqueTestHost()}})
 	cmd, err := command.NewCommand(tenantID, command.CommandTypeScan, command.CommandPriorityNormal, payload)
 	if err != nil {
 		t.Fatal(err)

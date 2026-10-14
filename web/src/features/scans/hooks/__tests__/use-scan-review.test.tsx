@@ -74,6 +74,54 @@ describe('useScanReview', () => {
     expect(r.blockers).toContain('The workflow would not start: no sensor runs httpx')
   })
 
+  // A workflow whose only problem is that its sensors are offline right now
+  // blocked "Save scan" too, although the API saves it (its runs wait for a
+  // sensor): nobody could save or schedule a workflow scan while their
+  // sensor was down.
+  it('only warns when the workflow waits for an offline sensor and the scan does not run now', () => {
+    wfData = {
+      blocking: true,
+      nodes: [
+        {
+          blocking: { code: 'NO_SENSOR_FOR_TOOL', message: 'none is online now' },
+          availability: { status: 'offline_only' },
+        },
+      ],
+    }
+    const saved = review(
+      form({
+        mode: 'workflow',
+        workflowId: 'w1',
+        schedule: { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, saveOnly: true },
+      })
+    )
+    expect(saved.blockers).toEqual([])
+    expect(saved.warnings.join(' ')).toContain('none is online now')
+
+    const now = review(form({ mode: 'workflow', workflowId: 'w1' }))
+    expect(now.blockers).toContain('The workflow would not start: none is online now')
+  })
+
+  it('still blocks a step no sensor has at all, even when saved for later', () => {
+    wfData = {
+      blocking: true,
+      nodes: [
+        {
+          blocking: { code: 'NO_SENSOR_FOR_TOOL', message: 'no sensor has it' },
+          availability: { status: 'no_sensor' },
+        },
+      ],
+    }
+    const r = review(
+      form({
+        mode: 'workflow',
+        workflowId: 'w1',
+        schedule: { ...DEFAULT_NEW_SCAN.schedule, runImmediately: false, saveOnly: true },
+      })
+    )
+    expect(r.blockers).toContain('The workflow would not start: no sensor has it')
+  })
+
   it('warns about targets waiting for their windows and about groups resolved at run time', () => {
     wfData = {
       blocking: false,

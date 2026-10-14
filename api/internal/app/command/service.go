@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -65,6 +64,8 @@ type Service struct {
 	windows WindowSource
 	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
 	httpPolicy HTTPPolicySource
+	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
+	toolSettings ToolSettingsSource
 }
 
 // TemplateSigner signs the custom templates embedded in a command payload
@@ -321,7 +322,10 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	cmds, rates := s.windowHold(ctx, tenantID, cmds)
 	// Program rules: conflicts, headers and rate caps (program_rules.go).
 	cmds, rules := s.programHold(ctx, tenantID, sensorID, cmds)
-	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates))
+	// Tool settings of the sensor: checked against its current manifest
+	// (tool_settings.go).
+	cmds, layers := s.settingsHold(ctx, tenantID, sensorID, cmds)
+	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates), layers)
 }
 
 // ClaimInput is a claim-N poll: the sensor takes its work in one request.
@@ -401,6 +405,9 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	n = len(cands)
 	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
 	claimSkipped(skipProgramHold, n, len(cands))
+	n = len(cands)
+	cands, layers := s.settingsHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipToolSettings, n, len(cands))
 	rules = withWindowRates(rules, rates)
 	if len(cands) == 0 {
 		return nil, nil
@@ -436,7 +443,7 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 	observeClaimed(claimModePoll, out, time.Now())
 	// The organization's HTTP policy and the template signatures go into the
 	// payload first, so the job signature covers them.
-	delivered, err := s.deliver(ctx, input.SensorID, out, rules)
+	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +469,9 @@ func freeScanSlots(maxJobs, held int, reportedFree *int) int {
 // never changed. A tenant policy that cannot be read fails the delivery (the
 // claimed commands go back when their lease ends): a job never leaves
 // without the organization's layer.
-func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules) ([]*commanddom.Command, error) {
+func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
+	layers map[shared.ID]map[string]any,
+) ([]*commanddom.Command, error) {
 	if s.httpPolicy != nil {
 		for i, c := range cmds {
 			if c.Type != commanddom.CommandTypeScan {
@@ -484,6 +493,12 @@ func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commandd
 	// Bug-bounty program rules go over the organization's layer: a
 	// program's headers and User-Agent win (program_rules.go).
 	cmds = s.withProgramRules(cmds, rules)
+	// The sensor's tool settings (settings_layers): the field belongs to the
+	// platform, whatever a command's creator put there.
+	cmds, err := withToolSettings(cmds, layers)
+	if err != nil {
+		return nil, err
+	}
 	return s.signTemplates(sensorID, cmds), nil
 }
 
@@ -559,6 +574,7 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 
 	var rules *bp.JobRules
+	var layer map[string]any
 	if !cmd.CanBeAcknowledged() {
 		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
 	}
@@ -584,6 +600,9 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 		if rules, err = s.programHoldOne(ctx, sid, cmd); err != nil {
 			return nil, err
 		}
+		if layer, err = s.settingsHoldOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
 		if rate > 0 {
 			rules = withWindowRates(map[shared.ID]*bp.JobRules{cmd.ID: rules}, map[shared.ID]int{cmd.ID: rate})[cmd.ID]
 		}
@@ -603,10 +622,19 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 	}
 	observeClaimed(claimModeByID, []*commanddom.Command{cmd}, time.Now())
 
-	// Return the freshly-claimed state, with its programs' rules.
+	// Return the freshly-claimed state, with its programs' rules and the
+	// sensor's tool settings.
 	got, err := s.Get(ctx, tenantID, commandID)
-	if err != nil || rules == nil {
+	if err != nil {
 		return got, err
+	}
+	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]map[string]any{got.ID: layer})
+	if err != nil {
+		return nil, err
+	}
+	got = withLayer[0]
+	if rules == nil {
+		return got, nil
 	}
 	out := s.withProgramRules([]*commanddom.Command{got}, map[shared.ID]*bp.JobRules{got.ID: rules})
 	if len(out) != 1 {
@@ -713,12 +741,46 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 
 	fence := fenceOf(cmd, input.SensorID)
 	cmd.Complete(input.Result)
-	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+	if err := s.completeWithFollowUp(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
 	s.learnDuration(ctx, cmd)
 
 	return cmd, nil
+}
+
+// completeWithFollowUp saves a sensor's completion. A scan whose result
+// leaves targets unfinished is followed, in the same transaction, by a new
+// command carrying only those targets (research/125): the settled targets
+// stay done and are never run again. Without a follow-up-capable
+// repository, or with nothing unfinished, it is saveSensorChange.
+func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Command, fence commanddom.Fence) error {
+	f, ok := s.repo.(commanddom.FollowUpCompleter)
+	if !ok || cmd.SensorID == nil {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	remaining, settled, ok := commanddom.UnfinishedTargets(cmd)
+	if !ok || len(remaining) == 0 {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	followUp, err := commanddom.NewFollowUp(cmd, remaining, settled)
+	if err != nil {
+		// The completion stands; the unfinished targets are reported
+		// partial by the run (the result says so).
+		s.logger.Error("failed to build the follow-up of a partial command", "command_id", cmd.ID.String(), "error", err)
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	applied, err := f.CompleteWithFollowUp(ctx, cmd, fence, followUp)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return ErrLeaseLost
+	}
+	s.logger.Info("command completed with unfinished targets; follow-up queued",
+		"command_id", cmd.ID.String(), "follow_up_id", followUp.ID.String(),
+		"settled", settled, "unfinished", len(remaining), "dispatch_attempts", followUp.DispatchAttempts)
+	return nil
 }
 
 // FailInput represents the input for failing a command.
@@ -790,7 +852,21 @@ func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Comman
 	}
 
 	fence := fenceOf(cmd, input.SensorID)
-	cmd.Fail(truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes))
+	msg := truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes)
+	// A task the platform asked to stop as stalled that stopped with
+	// nothing finished has not failed: it is re-queued, as a stall was.
+	if r, ok := s.repo.(commanddom.StopRequeuer); ok && cmd.SensorID != nil {
+		requeued, err := r.RequeueStopped(ctx, cmd, fence, truncateUTF8(commanddom.StoppedEmptyMessage+": "+msg, MaxFailErrorMessageBytes))
+		if err != nil {
+			return nil, err
+		}
+		if requeued {
+			cmd.Status, cmd.SensorID, cmd.StartedAt, cmd.AcknowledgedAt = commanddom.CommandStatusPending, nil, nil, nil
+			cmd.DispatchAttempts++
+			return cmd, nil
+		}
+	}
+	cmd.Fail(msg)
 	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
 		return nil, err
 	}
