@@ -121,6 +121,18 @@ func TestDeclaredToolsJoinTheCatalog_DB(t *testing.T) {
 		t.Fatalf("member's tool: %+v %v", mine, err)
 	}
 
+	// A sensor that is not active declares nothing.
+	off := h.sensor(tenantA)
+	h.exec(`UPDATE sensors SET status = 'disabled' WHERE id = $1`, off.String())
+	b, err := svc.GetSensor(ctx, tenantA.String(), off.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = svc.RegisterManifest(ctx, b, []byte(`{"schema":1,"tools":[`+declaredToolJSON(t, "from-disabled", "1.0.0", "X")+`]}`))
+	if _, err := tools.GetByName(ctx, tenantA, "from-disabled"); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("a disabled sensor declared a tool: %v", err)
+	}
+
 	// A newer version refreshes the row; an older one does not.
 	raw2 := `{"schema":1,"tools":[` + declaredToolJSON(t, "toyweb-it", "0.2.0", "Toy web checker 2") + `]}`
 	if _, err := svc.RegisterManifest(ctx, a, []byte(raw2)); err != nil {
