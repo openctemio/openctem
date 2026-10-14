@@ -117,7 +117,12 @@ one OpenCTEM organization. Removing it on GitHub, or suspending it, stops
 OpenCTEM from using it at once (webhook).
 
 Then make **OpenCTEM gate** a required status check in the repository's
-branch protection or ruleset.
+branch protection or ruleset, and **set its expected source to the OpenCTEM
+app** (ruleset: *Require status checks to pass* > the check > source
+*OpenCTEM*; branch protection: the app next to the check name). Without a
+pinned source, any token that may write checks could post a check with the
+same name and satisfy the rule: a workflow's own token can, and a pull
+request can add a workflow.
 
 ## What it posts
 
@@ -125,7 +130,12 @@ After each CI run's verdict on a GitHub repository whose organization bound
 an installation:
 
 - a check run **OpenCTEM gate** on the commit (success, failure, or neutral in
-  warn mode) with the counts, the reasons and up to 50 line annotations. For a
+  warn mode) with the counts, the reasons and up to 50 line annotations. The
+  check of a commit takes the strictest of the latest verdicts of every
+  pipeline on that commit: GitHub keeps the latest check of a name, so a
+  second workflow (or a later run of another pipeline) that passes cannot
+  replace a failing check; a re-run of the same pipeline replaces its own
+  earlier verdict. For a
   pull request it goes on the pull request's head as GitHub reports it, and
   only when the run judged the pull request's current merge commit: a run can
   never put its verdict on another commit;
