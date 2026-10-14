@@ -31,12 +31,13 @@ func (s *SensorService) projectDeclaredTools(ctx context.Context, a *sensordom.S
 	}
 	for _, dt := range m.DeclaredTools() {
 		d := declarationOf(dt)
+		name := sanitizeLogValue(dt.Name) // validated already; kept out of log forging regardless
 		cur, err := s.declaredTools.GetByTenantAndName(ctx, *a.TenantID, dt.Name)
 		switch {
 		case err == nil:
 			if cur.RefreshDeclaration(d, newerVersion) {
 				if err := s.declaredTools.UpdateDeclared(ctx, cur); err != nil {
-					s.logger.Warn("declared tool not refreshed", "sensor_id", a.ID.String(), "tool", dt.Name, "error", err)
+					s.logger.Warn("declared tool not refreshed", "sensor_id", a.ID.String(), "tool", name, "error", err)
 				}
 			}
 		case errors.Is(err, shared.ErrNotFound):
@@ -46,15 +47,15 @@ func (s *SensorService) projectDeclaredTools(ctx context.Context, a *sensordom.S
 			}
 			created, err := s.declaredTools.CreateDeclared(ctx, t)
 			if err != nil {
-				s.logger.Warn("declared tool not added to the catalog", "sensor_id", a.ID.String(), "tool", dt.Name, "error", err)
+				s.logger.Warn("declared tool not added to the catalog", "sensor_id", a.ID.String(), "tool", name, "error", err)
 				continue
 			}
 			if created {
-				s.logger.Info("declared tool added to the catalog", "sensor_id", a.ID.String(), "tool", dt.Name,
-					"digest", dt.Contract.Digest)
+				s.logger.Info("declared tool added to the catalog", "sensor_id", a.ID.String(), "tool", name,
+					"digest", sanitizeLogValue(dt.Contract.Digest))
 			}
 		default:
-			s.logger.Warn("declared tool lookup failed", "sensor_id", a.ID.String(), "tool", dt.Name, "error", err)
+			s.logger.Warn("declared tool lookup failed", "sensor_id", a.ID.String(), "tool", name, "error", err)
 		}
 	}
 }
