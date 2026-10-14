@@ -284,6 +284,66 @@ describe('scanConfigToFormData + formDataToUpdateRequest (Edit)', () => {
   })
 })
 
+describe('Edit: a cron or RRULE schedule the wizard cannot show', () => {
+  const cron = () =>
+    config({
+      schedule_type: 'crontab',
+      schedule_cron: '0 4 * * 1-5',
+      schedule_day: undefined,
+      schedule_time: undefined,
+      schedule_timezone: 'UTC',
+    } as Partial<ScanConfig>)
+  const rrule = () =>
+    config({
+      schedule_type: 'rrule',
+      schedule_rrule: 'FREQ=WEEKLY;BYDAY=MO,TH;BYHOUR=5',
+      schedule_day: undefined,
+      schedule_time: undefined,
+    } as Partial<ScanConfig>)
+
+  it('saving another change leaves the stored schedule out (unchanged)', () => {
+    // It used to be sent as "weekly" without a day: the API refused every
+    // edit of such a scan, a rename included.
+    for (const c of [cron(), rrule()]) {
+      const f = { ...scanConfigToFormData(c), name: 'Renamed' }
+      expect(scheduleError(f)).toBeNull()
+      const req = formDataToUpdateRequest(f, c, { canSetZone: false })
+      expect(req.name).toBe('Renamed')
+      for (const key of [
+        'schedule_type',
+        'schedule_day',
+        'schedule_time',
+        'schedule_cron',
+        'schedule_rrule',
+        'run_at',
+        'timezone',
+      ]) {
+        expect(key in req).toBe(false)
+      }
+    }
+  })
+
+  it('shows the stored expression', () => {
+    expect(scanConfigToFormData(cron()).schedule.custom).toEqual({
+      type: 'crontab',
+      expression: '0 4 * * 1-5',
+    })
+    expect(scanConfigToFormData(rrule()).schedule.custom?.type).toBe('rrule')
+  })
+
+  it('replacing it sends the chosen frequency', () => {
+    const c = cron()
+    const f = scanConfigToFormData(c)
+    const replaced = {
+      ...f,
+      schedule: { ...f.schedule, custom: undefined, frequency: 'weekly' as const, dayOfWeek: 2 },
+    }
+    const req = formDataToUpdateRequest(replaced, c, { canSetZone: false })
+    expect(req.schedule_type).toBe('weekly')
+    expect(req.schedule_day).toBe(2)
+  })
+})
+
 describe('a Tenable.sc scan (scanner tenable_sc)', () => {
   const tenable = (cfg: Record<string, unknown> | undefined) =>
     form({ scannerName: 'tenable_sc', scannerConfig: cfg })

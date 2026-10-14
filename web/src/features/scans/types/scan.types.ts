@@ -108,6 +108,12 @@ export interface ScanSchedule {
   runAtTime?: string
   /** IANA zone the schedule is in; empty = the viewer's zone. */
   timezone?: string
+  /**
+   * Edit: the scan's stored cron or RRULE schedule, which the wizard cannot
+   * show as a frequency. Kept as stored (the update leaves the schedule out)
+   * until the user replaces it with one of the frequencies above.
+   */
+  custom?: { type: 'crontab' | 'rrule'; expression: string }
 }
 
 export const FREQUENCY_OPTIONS: { value: ScheduleFrequency; label: string }[] = [
