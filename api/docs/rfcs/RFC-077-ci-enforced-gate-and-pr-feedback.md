@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Proposed (decisions G-1..G-10 adopted as recommended, 2026-10-11; owner may veto) |
+| Status | Implemented in part (decisions G-1..G-10 adopted 2026-10-11; open items in section 8) |
 | Related | RFC-051 (CI runner identity and the central gate), RFC-008 (superseded scanning path), RFC-040 (result binding), RFC-043 (finding identity), RFC-050 (asset access model) |
 
 ## 1. Summary
@@ -174,12 +174,12 @@ when a lock file changed). The run records `scan_mode` (`full`, `diff`) and
 
 | Phase | Content | State |
 |---|---|---|
-| A | First verdict wins; base-branch baseline; secrets on pull requests (G-4, G-5, G-9) | Open |
-| B | Owner id pins and `workflow_refs` rule (G-10) | Open |
-| C | SCM app installations, check, summary comment, inline comments (G-1..G-3) | Open |
-| D | Ungated-merge alert | Open (needs C) |
-| E | Diff-aware runs in `openctem-ci` (G-6) | Open |
-| F | Policy modes and `.openctem.yml` (G-7, G-8) | Open |
+| A | First verdict wins; base-branch baseline; secrets on pull requests (G-4, G-5, G-9) | Implemented |
+| B | Owner id pins and `workflow_refs` rule (G-10) | Implemented |
+| C | SCM app installations, check, summary comment (G-1..G-3) | Implemented; inline review comments open |
+| D | Ungated-merge alert | Implemented for GitHub; GitLab open |
+| E | Diff-aware runs in `openctem-ci` (G-6) | Implemented for sast; secrets and dependencies open |
+| F | Policy modes and `.openctem.yml` (G-7, G-8) | Implemented |
 
 Code to cloud, first step (implemented): a CI `container` report carries the
 image's content digest (`metadata.properties.image_digest`); the platform
