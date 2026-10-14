@@ -1,0 +1,188 @@
+package coverage
+
+import (
+	"context"
+	"slices"
+	"time"
+
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+)
+
+// Predicates a coverage rule may require (asset-types.yaml `requires`).
+const (
+	// RequiresResolves: the name has an address (a resolves_to relation).
+	RequiresResolves = "resolves"
+	// RequiresWebPort: the open port is one of WebPorts.
+	RequiresWebPort = "web_port"
+	// RequiresScopeEntry: an active scope entry covers the name.
+	RequiresScopeEntry = "scope_entry"
+)
+
+// WebPorts are the ports an HTTP probe takes from an open port. A web
+// service on another port is found by the probe of its name.
+var WebPorts = []int{80, 443, 591, 3000, 5000, 8000, 8008, 8080, 8081, 8088, 8443, 8888, 9000, 9443}
+
+// IsWebPort reports whether p is one of WebPorts.
+func IsWebPort(p int) bool { return slices.Contains(WebPorts, p) }
+
+// Rule is one coverage rule of a stored (type, sub-type) pair.
+type Rule struct {
+	Type       asset.AssetType
+	SubType    string // "" = the core type (its non-alias sub-types)
+	Capability string
+	Every      time.Duration
+	Requires   []string
+	Expects    string
+}
+
+// GapAfter is how long a pair may go without a success before it is a
+// coverage gap: twice its cadence.
+func (r Rule) GapAfter() time.Duration { return 2 * r.Every }
+
+// Rules returns every coverage rule of the registry, keyed by the stored
+// pair it applies to.
+func Rules() []Rule {
+	var out []Rule
+	for _, d := range asset.RegistryDocument().Types {
+		t, sub := d.Type, ""
+		if d.AliasOf != nil {
+			t, sub = d.AliasOf.Type, d.AliasOf.SubType
+		}
+		for _, c := range d.Coverage {
+			out = append(out, Rule{
+				Type: t, SubType: sub, Capability: c.Capability,
+				Every:    time.Duration(c.EverySeconds) * time.Second,
+				Requires: slices.Clone(c.Requires), Expects: c.Expects,
+			})
+		}
+	}
+	return out
+}
+
+// RulesFor returns the coverage rules of one stored pair.
+func RulesFor(t asset.AssetType, subType string) []Rule {
+	rs := asset.CoverageRules(t, subType)
+	out := make([]Rule, 0, len(rs))
+	for _, c := range rs {
+		out = append(out, Rule{Type: t, SubType: subType, Capability: c.Capability,
+			Every:    time.Duration(c.EverySeconds) * time.Second,
+			Requires: slices.Clone(c.Requires), Expects: c.Expects})
+	}
+	return out
+}
+
+// AliasSubTypes returns the sub-types of a core type that are aliases with
+// their own coverage list: a core rule does not apply to them.
+func AliasSubTypes(t asset.AssetType) []string {
+	var out []string
+	for _, d := range asset.RegistryDocument().Types {
+		if d.AliasOf != nil && d.AliasOf.Type == t && d.AliasOf.SubType != "" {
+			out = append(out, d.AliasOf.SubType)
+		}
+	}
+	return out
+}
+
+// Entry is one line of an asset's coverage explanation.
+type Entry struct {
+	Capability    string     `json:"capability"`
+	Vantage       string     `json:"vantage,omitempty"`
+	State         State      `json:"state"`
+	Reason        string     `json:"reason,omitempty"`
+	EverySeconds  int        `json:"every_seconds,omitempty"`
+	NextDueAt     *time.Time `json:"next_due_at,omitempty"`
+	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
+	LastSuccessAt *time.Time `json:"last_success_at,omitempty"`
+	LastOutcome   string     `json:"last_outcome,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	LastTool      string     `json:"last_tool,omitempty"`
+	FailStreak    int        `json:"fail_streak,omitempty"`
+	// Gap: the pair applies and has gone without a success for more than
+	// twice its cadence (or never succeeded since it was planned that
+	// long ago).
+	Gap bool `json:"gap"`
+}
+
+// AssetView is an asset's coverage: one entry per rule of its type, plus
+// any other ledger row of the asset (platform checks, connectors).
+type AssetView struct {
+	AssetID string  `json:"asset_id"`
+	Entries []Entry `json:"entries"`
+	Gaps    int     `json:"gaps"`
+}
+
+// ReasonNotPlanned marks a rule the ledger has no row for yet.
+const ReasonNotPlanned = "not_planned"
+
+// IsGap reports whether a row of a rule is a coverage gap at now.
+func IsGap(r Rule, row *Row, now time.Time) bool {
+	if r.Every <= 0 || row == nil {
+		return false
+	}
+	switch row.State {
+	case StateBlocked, StatePaused, StateNotApplicable:
+		return false
+	}
+	since := row.CreatedAt
+	if row.LastSuccessAt != nil {
+		since = *row.LastSuccessAt
+	}
+	return now.Sub(since) > r.GapAfter()
+}
+
+// View builds an asset's coverage explanation.
+func View(assetID shared.ID, rules []Rule, rows []Row, now time.Time) AssetView {
+	v := AssetView{AssetID: assetID.String(), Entries: []Entry{}}
+	byCap := make(map[string]*Row, len(rows))
+	for i := range rows {
+		if rows[i].Vantage == VantageInternet {
+			byCap[rows[i].Capability] = &rows[i]
+		}
+	}
+	seen := map[string]bool{}
+	for _, r := range rules {
+		seen[r.Capability] = true
+		row := byCap[r.Capability]
+		e := Entry{Capability: r.Capability, EverySeconds: int(r.Every / time.Second)}
+		if row == nil {
+			e.State, e.Reason = StateDue, ReasonNotPlanned
+		} else {
+			fill(&e, row)
+			e.Gap = IsGap(r, row, now)
+		}
+		if e.Gap {
+			v.Gaps++
+		}
+		v.Entries = append(v.Entries, e)
+	}
+	for i := range rows {
+		if rows[i].Vantage == VantageInternet && seen[rows[i].Capability] {
+			continue
+		}
+		e := Entry{Capability: rows[i].Capability, Vantage: rows[i].Vantage}
+		fill(&e, &rows[i])
+		v.Entries = append(v.Entries, e)
+	}
+	return v
+}
+
+func fill(e *Entry, row *Row) {
+	e.State, e.Reason = row.State, row.Reason
+	e.NextDueAt, e.LastAttemptAt, e.LastSuccessAt = row.NextDueAt, row.LastAttemptAt, row.LastSuccessAt
+	e.LastOutcome, e.LastError, e.LastTool, e.FailStreak = row.LastOutcome, row.LastError, row.LastTool, row.FailStreak
+}
+
+// Repository is the ledger as the coverage service needs it. Every method
+// is scoped to one tenant.
+type Repository interface {
+	// ListForAsset returns every ledger row of an asset.
+	ListForAsset(ctx context.Context, tenantID, assetID shared.ID) ([]Row, error)
+	// Reconcile makes the ledger match the policy for one tenant: a missing
+	// row of an applicable rule is added as due, a row whose precondition
+	// stopped holding becomes not applicable (and due again when it holds
+	// again). It returns the rows added and changed.
+	Reconcile(ctx context.Context, tenantID shared.ID, rules []Rule) (added, changed int, err error)
+	// TenantsWithAssets returns the tenants that have active assets.
+	TenantsWithAssets(ctx context.Context) ([]shared.ID, error)
+}

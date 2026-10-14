@@ -301,6 +301,8 @@ Prefixes the API owns: `APP_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AUTH_`, `SSO
 | `SCM_SYNC_INTERVAL` | duration | `0` |  |  | Interval of the scheduled repository and branch sync of SCM integrations (for example `6h`). Off: repositories are imported on demand only. |
 | `ASSET_ENRICHMENT_DAILY_BUDGET` | int | `2000` |  |  | Most assets one organization sends to automatic enrichment per 24 hours. |
 | `ASSET_ENRICHMENT_ENABLED` | bool | `true` |  |  | Automatic passive enrichment of new assets, platform-wide. Each organization can still turn it off. |
+| `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs (RFC-093). |
+| `ASSET_COVERAGE_INTERVAL` | duration | `1m` |  |  | How often the asset coverage loop runs. |
 | `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports. |
 | `PROGRAMFEED_DIR` | path | empty |  |  | Directory holding the newest signed public program feed bundle (a mirror or an upload). Needs `PROGRAMFEED_ROOT_KEY_ID`. |
 | `PROGRAMFEED_LOCAL_BUNDLE_DIR` | path | empty |  |  | Directory of the operator's own unsigned local-only program bundle (`programfeed build --local-only`). Read only while a platform administrator has that source enabled. |

@@ -998,6 +998,14 @@ type SensorConfig struct {
 	// enrichment runs per 24 h. ASSET_ENRICHMENT_DAILY_BUDGET, default 2000.
 	AssetEnrichmentDailyBudget int
 
+	// AssetCoverageEnabled runs the asset coverage loop (RFC-093) for the
+	// platform: the ledger follows the registry's coverage policy.
+	// ASSET_COVERAGE_ENABLED, default true.
+	AssetCoverageEnabled bool
+	// AssetCoverageInterval is how often the loop runs.
+	// ASSET_COVERAGE_INTERVAL, default 1m.
+	AssetCoverageInterval time.Duration
+
 	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
 	// (free tier), when crt.sh still fails after its retries. Set
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
@@ -1460,6 +1468,8 @@ func Load() (*Config, error) {
 			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
 			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
 			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+			AssetCoverageEnabled:        getEnvBool("ASSET_COVERAGE_ENABLED", true),
+			AssetCoverageInterval:       getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
 			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),

@@ -990,6 +990,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		},
 	))
 
+	// The asset coverage loop (RFC-093).
+	if cfg.Worker.AssetCoverageEnabled && svc.AssetCoverage != nil {
+		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
+	}
+
 	// Automatic passive enrichment of new assets (RFC-075).
 	if cfg.Worker.AssetEnrichmentEnabled && svc.AssetEnricher != nil {
 		w.ControllerManager.Register(controller.NewAssetEnrichmentController(svc.AssetEnricher, 0))
