@@ -85,6 +85,15 @@ Valid values (constraint `chk_findings_source`): `sast`, `dast`, `sca`,
 
 ---
 
+### acceptance_expires_at - End of a Risk Acceptance
+
+Set with the `accepted` status by the approval flow and by accepted-risk
+suppression rules; read by the CI gate. Trigger function
+`clear_finding_acceptance_expiry()` (trigger
+`trg_findings_clear_acceptance_expiry`, `BEFORE INSERT OR UPDATE`) empties it
+on any row whose status is not `accepted`. See
+[finding-status-lifecycle.md](finding-status-lifecycle.md#risk-acceptance-end).
+
 ## Best Practices
 
 1. **Never add a `finding_count` column** - Keep it calculated dynamically
