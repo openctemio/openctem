@@ -1,7 +1,7 @@
 ### Changed: suppressed findings are dispositions, not fixes
 
 - **A suppression rule marks a finding `false_positive` or `accepted`,
-  never `resolved`** (research 18 F7, owner decision O9). A false-positive
+  never `resolved`** (owner decision O9). A false-positive
   rule gives `false_positive`; accepted-risk and won't-fix rules give
   `accepted`. The resolution stays `suppressed` and `finding_suppressions`
   names the rule. Fix rate and MTTR therefore count real fixes only.

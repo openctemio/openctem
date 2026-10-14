@@ -176,6 +176,53 @@ describe('ScopeSettingsForm', () => {
     ).toBeInTheDocument()
   })
 
+  it('turns automatic coverage off (RFC-093)', async () => {
+    api.put.mockResolvedValue({ ...settings, auto_coverage: false, auto_coverage_effective: false })
+    const user = userEvent.setup()
+    wrap(
+      <ScopeSettingsForm
+        settings={{ ...settings, auto_coverage_effective: true } as typeof settings}
+      />
+    )
+    const sw = screen.getByRole('switch', { name: 'Automatic coverage' })
+    expect(sw).toBeChecked()
+    await user.click(sw)
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/api/v1/scope/settings',
+        expect.objectContaining({ auto_coverage: false })
+      )
+    )
+  })
+
+  it('says automatic coverage waits for the organization under Strict approval', () => {
+    wrap(
+      <ScopeSettingsForm
+        settings={
+          {
+            ...settings,
+            auto_coverage_effective: false,
+            approval_policy: { scan_approval: 'strict' },
+          } as typeof settings
+        }
+      />
+    )
+    expect(screen.getByRole('switch', { name: 'Automatic coverage' })).not.toBeChecked()
+    expect(screen.getByText(/so it is off until you turn it on/)).toBeInTheDocument()
+  })
+
+  it('leaves automatic coverage untouched when the API does not report it', async () => {
+    api.put.mockResolvedValue(settings)
+    const user = userEvent.setup()
+    wrap(<ScopeSettingsForm settings={settings} />)
+    expect(screen.queryByRole('switch', { name: 'Automatic coverage' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('switch', { name: 'Review discovered assets first' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() => expect(api.put).toHaveBeenCalled())
+    expect(api.put.mock.calls[0][1]).not.toHaveProperty('auto_coverage')
+  })
+
   it('shows no unclassified setting when the API does not report it', () => {
     wrap(<ScopeSettingsForm settings={settings} />)
     expect(

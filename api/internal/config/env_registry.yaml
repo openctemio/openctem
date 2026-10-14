@@ -1266,6 +1266,24 @@ vars:
     type: bool
     default: "true"
     description: "Automatic passive enrichment of new assets, platform-wide. Each organization can still turn it off."
+  - name: ASSET_COVERAGE_ENABLED
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: bool
+    default: "true"
+    description: "The asset coverage loop, platform-wide: every asset gets the capabilities its type needs (RFC-093)."
+  - name: ASSET_COVERAGE_DAILY_BUDGET
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: int
+    default: "5000"
+    description: "Most asset and capability pairs one organization's automatic coverage attempts per 24 hours."
+  - name: ASSET_COVERAGE_INTERVAL
+    component: api
+    group: "Discovery feeds and background jobs"
+    type: duration
+    default: "1m"
+    description: "How often the asset coverage loop runs."
   - name: FEED_CACHE_DIR
     component: api
     group: "Discovery feeds and background jobs"

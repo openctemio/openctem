@@ -383,5 +383,19 @@
   "sensors.manifest.ignored.invalid-name": "not a valid name",
   "sensors.manifest.ignored.unknown-capability": "not a known capability",
   "sensors.manifest.ignored.invalid-contract": "not a valid tool contract",
-  "sensors.manifest.ignored.limit": "over the limit"
+  "sensors.manifest.ignored.limit": "over the limit",
+  "sensors.toolSettings.summaryChanged": "{count} changed: {list}",
+  "sensors.toolSettings.groupChanged": "{count} changed",
+  "sensors.toolSettings.changedFromDefault": "Changed from default",
+  "sensors.toolSettings.resetOption": "Reset to default",
+  "sensors.toolSettings.resetOptionLabel": "Reset {option} to default",
+  "sensors.toolSettings.resetTool": "Reset tool",
+  "sensors.toolSettings.unsaved": "Unsaved changes",
+  "sensors.toolSettings.discard": "Discard",
+  "sensors.toolSettings.saveTool": "Save the settings of {tool}",
+  "sensors.toolSettings.needsAttention": "Needs attention",
+  "sensors.toolSettings.impactWarning": "A non-default value increases the load or reach of each scan.",
+  "sensors.toolSettings.searchLabel": "Search tool settings",
+  "sensors.toolSettings.searchPlaceholder": "Search tools or options",
+  "sensors.toolSettings.searchEmpty": "No tool or option matches \"{query}\"."
 }

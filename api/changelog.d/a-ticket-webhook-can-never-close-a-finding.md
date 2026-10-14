@@ -1,6 +1,6 @@
 ### Security: a ticket webhook can never close a finding
 
-- **Jira and GitHub inbound sync only report work state** (research 18 F5).
+- **Jira and GitHub inbound sync only report work state**.
   A Jira webhook may move a finding to `confirmed`, `in_progress` or
   `fix_applied`, never to `resolved`, `false_positive`, `accepted` or
   `duplicate`: a webhook has no person who holds `findings:verify` or an

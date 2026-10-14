@@ -380,9 +380,15 @@ func TestTemplates_SensorInstallsListNoTools(t *testing.T) {
 				}
 			}
 		}
-		// Released sensors still need both flags outside the image's CMD.
-		if !strings.Contains(out.CLI, "./openctemio-sensor -daemon -enable-commands\n") {
+		// Sensor v0.21.0+ runs the daemon with platform commands by default;
+		// the deprecated -daemon / -enable-commands flags are not emitted.
+		if !strings.Contains(out.CLI, "\n./openctemio-sensor\n") {
 			t.Errorf("[%s] cli daemon command changed:\n%s", dir, out.CLI)
+		}
+		for _, deprecated := range []string{"-daemon", "-enable-commands"} {
+			if strings.Contains(out.CLI, deprecated) {
+				t.Errorf("[%s] cli emits deprecated %s:\n%s", dir, deprecated, out.CLI)
+			}
 		}
 	}
 }

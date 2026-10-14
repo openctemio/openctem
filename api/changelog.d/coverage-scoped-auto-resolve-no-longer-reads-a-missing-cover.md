@@ -1,7 +1,7 @@
 ### Fixed: Coverage-scoped auto-resolve no longer reads a missing coverage_type
 
 - **Coverage-scoped auto-resolve no longer reads a missing `coverage_type`
-  as full** (safety; CTIS spec 4.5, research 16 G4, owner decision Q5).
+  as full** (safety; CTIS spec 4.5, owner decision Q5).
   A scan command's run closed findings it no longer reported when its
   report declared `full` *or nothing at all*, while the report-level
   (repository) path already treated an absent value as no auto-resolve.

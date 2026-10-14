@@ -444,7 +444,7 @@ const DefaultSensorKeyRenewGrace = 15 * time.Minute
 // DefaultSensorLatestVersion is the newest sensor release when this API was
 // built. Override with SENSOR_LATEST_VERSION when a newer sensor ships before
 // the platform is upgraded; set it to "none" to turn the comparison off.
-const DefaultSensorLatestVersion = "v0.22.1"
+const DefaultSensorLatestVersion = "v0.22.2"
 
 // DefaultSensorMinVersion is the oldest supported sensor release
 // (SENSOR_MIN_VERSION); empty means no minimum.
@@ -460,7 +460,7 @@ const DefaultCIRunnerMinVersion = "v0.3.0"
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
-const DefaultSensorSDKLatestVersion = "v0.31.0"
+const DefaultSensorSDKLatestVersion = "v0.32.0"
 
 // DefaultSensorSDKMinVersion is the oldest supported SDK release
 // (SENSOR_SDK_MIN_VERSION); empty means no minimum.
@@ -998,6 +998,17 @@ type SensorConfig struct {
 	// enrichment runs per 24 h. ASSET_ENRICHMENT_DAILY_BUDGET, default 2000.
 	AssetEnrichmentDailyBudget int
 
+	// AssetCoverageEnabled runs the asset coverage loop (RFC-093) for the
+	// platform: the ledger follows the registry's coverage policy.
+	// ASSET_COVERAGE_ENABLED, default true.
+	AssetCoverageEnabled bool
+	// AssetCoverageInterval is how often the loop runs.
+	// ASSET_COVERAGE_INTERVAL, default 1m.
+	AssetCoverageInterval time.Duration
+	// AssetCoverageDailyBudget caps the pairs one tenant's automatic
+	// coverage attempts per 24 h. ASSET_COVERAGE_DAILY_BUDGET, default 5000.
+	AssetCoverageDailyBudget int
+
 	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
 	// (free tier), when crt.sh still fails after its retries. Set
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
@@ -1460,6 +1471,9 @@ func Load() (*Config, error) {
 			CertMonitorMaxDomainsPerRun: getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
 			AssetEnrichmentEnabled:      getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
 			AssetEnrichmentDailyBudget:  getEnvInt("ASSET_ENRICHMENT_DAILY_BUDGET", 2000),
+			AssetCoverageEnabled:        getEnvBool("ASSET_COVERAGE_ENABLED", true),
+			AssetCoverageInterval:       getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
+			AssetCoverageDailyBudget:    getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
 			EASMDNSChecksEnabled:        getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:             getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                  getEnvFloat("EASM_DNS_QPS", 20),

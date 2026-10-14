@@ -1,6 +1,6 @@
 ### Security: members without a scope row see nothing, in every organization
 
-- **The "see everything" mode is retired** (research doc 15 L-04, owner
+- **The "see everything" mode is retired** (owner
   decision D2; owner signoff 2026-10-04). A member who is in no access group,
   holds no explicit grant and no `has_full_data_access` role sees no asset or
   finding anywhere (lists, search, stats, exports, dashboards, reports,
