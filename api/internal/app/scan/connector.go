@@ -31,6 +31,11 @@ type ConnectorScans interface {
 	// scan_run_step_id).
 	NewScanCommand(ctx context.Context, tenantID shared.ID, cfg map[string]any, targets []string,
 		bookkeeping map[string]string) (*command.Command, error)
+	// OnDemandScanConfig names a connector integration of the tenant and
+	// returns the scanner_config of an on-demand scan with it (its
+	// coverage policy, repository and zone). Another tenant's integration,
+	// or one that is not a connector, is shared.ErrNotFound.
+	OnDemandScanConfig(ctx context.Context, tenantID, integrationID shared.ID) (name string, cfg map[string]any, err error)
 }
 
 // WithConnectorScans wires connector scans. Without it a connector cannot be
