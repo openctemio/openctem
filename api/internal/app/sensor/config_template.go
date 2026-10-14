@@ -47,14 +47,36 @@ var templateFormats = []string{"yaml", "env", "docker", "cli", "compose", "kuber
 // its own image and settings, not the scanner.
 const collectorPrefix = "collector-"
 
-// templateNames is every template loaded: each format, and its collector
-// variant.
+// InstallSensor is the snippet set of the scanning sensor: the unprefixed
+// <format>.tmpl files. Another sensor product's set (versions.yaml install)
+// is its <set>-<format>.tmpl files, and may cover only some formats.
+const InstallSensor = "sensor"
+
+// templateNames is every template loaded: the shipped ones (each format of
+// the scanning sensor, the collector's and each product set's files).
 func templateNames() []string {
-	out := slices.Clone(templateFormats)
-	for _, f := range templateFormats {
-		out = append(out, collectorPrefix+f)
+	out := make([]string, 0, len(builtinTemplates))
+	for name := range builtinTemplates {
+		out = append(out, name)
 	}
+	slices.Sort(out)
 	return out
+}
+
+// HasInstallSet reports whether the snippet set has at least its docker
+// template, the one every set must offer.
+func (s *SensorConfigTemplateService) HasInstallSet(set string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.templates[templateKey(set, "docker")]
+	return ok
+}
+
+func templateKey(set, format string) string {
+	if set == "" || set == InstallSensor {
+		return format
+	}
+	return set + "-" + format
 }
 
 // SensorTemplateData is the data passed to every sensor config template.
@@ -69,6 +91,15 @@ type SensorTemplateData struct {
 	// Image is the sensor image with its pinned tag, e.g.
 	// ghcr.io/openctemio/sensor:v0.4.2. Never "latest".
 	Image string
+	// ImageTag is Image's tag (the product release it pins).
+	ImageTag string
+	// Install is the product's snippet set (InstallSensor when empty); a
+	// collector sensor always uses the collector's set.
+	Install string
+	// ReleaseIdentity is the workflow that signs the product's image
+	// (versions.yaml release_identity); the snippets that check the
+	// signature use it + "@refs/tags/" + ImageTag. Empty: no check shown.
+	ReleaseIdentity string
 	// CACert is the PEM of the platform's certificate authority when it uses
 	// a private one (SENSOR_CA_CERT_FILE); empty for a publicly trusted
 	// certificate. The snippets install it and point SSL_CERT_DIR at it.
@@ -216,15 +247,25 @@ func (s *SensorConfigTemplateService) Render(data SensorTemplateData) (*Rendered
 		data.CACert += "\n"
 	}
 
-	prefix := ""
+	if data.ImageTag == "" {
+		if i := strings.LastIndex(data.Image, ":"); i > strings.LastIndex(data.Image, "/") {
+			data.ImageTag = data.Image[i+1:]
+		}
+	}
+	set := data.Install
 	if data.Sensor.Type.IsCollector() {
-		prefix = collectorPrefix
+		set = strings.TrimSuffix(collectorPrefix, "-")
 	}
 	out := make(map[string]string, len(templateFormats))
 	for _, format := range templateFormats {
-		tmpl, ok := tmpls[prefix+format]
+		tmpl, ok := tmpls[templateKey(set, format)]
 		if !ok {
-			return nil, fmt.Errorf("template %q not loaded", format)
+			if set == "" || set == InstallSensor || format == "docker" {
+				return nil, fmt.Errorf("template %q not loaded", templateKey(set, format))
+			}
+			// A product set covers only the formats it ships; the
+			// others are left empty and the console hides them.
+			continue
 		}
 		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, data); err != nil {
