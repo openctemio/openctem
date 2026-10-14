@@ -120,3 +120,29 @@ func (r *FindingRepository) AdoptFingerprint(ctx context.Context, tenantID share
 	n, _ := res.RowsAffected()
 	return n > 0, nil
 }
+
+// AdoptFormerFingerprint re-keys the finding stored under from to to within
+// the same recipe version: a SAST finding stored under its line-anchored key
+// takes its code-anchored key once a report carries the code. The same
+// guards as AdoptFingerprint apply; from stays an alias (trigger).
+func (r *FindingRepository) AdoptFormerFingerprint(ctx context.Context, tenantID shared.ID, from, to string, identityKey []byte, version int) (bool, error) {
+	if from == "" || to == "" || from == to || len(identityKey) == 0 || tenantID.IsZero() {
+		return false, nil
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE findings
+		SET fingerprint = $3, fingerprint_version = $5, identity_key = $4::jsonb, updated_at = NOW()
+		WHERE tenant_id = $1 AND fingerprint = $2
+		  AND fingerprint_version <= $5
+		  AND status <> 'duplicate'
+		  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $1 AND c.fingerprint = $3)`,
+		tenantID.String(), from, to, string(identityKey), version)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("adopt former fingerprint: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
