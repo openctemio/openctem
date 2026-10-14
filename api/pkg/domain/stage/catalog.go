@@ -340,6 +340,7 @@ var catalog = []Stage{
 		Inputs:      codeInputs, Findings: true, Tier: TierPassive,
 		Implementations: []Implementation{
 			{Tool: "semgrep", Default: true},
+			{Tool: "opengrep"},
 			{Tool: "codeql"},
 		},
 		MaxFanout: RunFanoutCap,
