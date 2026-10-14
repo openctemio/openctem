@@ -710,6 +710,9 @@ func registerSuppressionRoutes(
 		// Approval workflow (requires separate approve permission)
 		r.POST("/{id}/approve", h.ApproveRule, middleware.Require(permission.SuppressionsApprove))
 		r.POST("/{id}/reject", h.RejectRule, middleware.Require(permission.SuppressionsApprove))
+		// What an approval would close: an organization-wide count of open
+		// findings, so it is gated like the approval.
+		r.GET("/{id}/preview", h.PreviewRule, middleware.Require(permission.SuppressionsApprove))
 
 		// Delete operations
 		r.DELETE("/{id}", h.DeleteRule, middleware.Require(permission.SuppressionsDelete))
