@@ -1200,14 +1200,14 @@ func TestFindingFingerprint_IndependentOfDataFlow(t *testing.T) {
 }
 
 func TestFindingTrace(t *testing.T) {
-	_, ok := findingTrace("fp", nil)
+	_, ok := findingTrace("fp", "", nil)
 	assert.False(t, ok, "no data flow, no trace")
-	_, ok = findingTrace("fp", &ctis.DataFlow{})
+	_, ok = findingTrace("fp", "", &ctis.DataFlow{})
 	assert.False(t, ok, "a flow without steps is no trace")
-	a, ok := findingTrace("fp", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "a.js", Line: 1}}})
+	a, ok := findingTrace("fp", "", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "a.js", Line: 1}}})
 	require.True(t, ok)
-	b, _ := findingTrace("fp", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "a.js", Line: 1}}})
-	c, _ := findingTrace("fp", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "b.js", Line: 1}}})
+	b, _ := findingTrace("fp", "", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "a.js", Line: 1}}})
+	c, _ := findingTrace("fp", "", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "b.js", Line: 1}}})
 	assert.Equal(t, a.Hash, b.Hash, "the same trace hashes the same")
 	assert.NotEqual(t, a.Hash, c.Hash, "a changed path changes the hash")
 }
