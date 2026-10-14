@@ -47,6 +47,9 @@ const (
 	ReasonInvalid      = "invalid"       // not a well-formed host, address or URL
 	ReasonNotChainable = "not_chainable" // an intrusive (T2) stage is never fed derived targets
 	ReasonUnchanged    = "unchanged"     // an origin with no new or changed endpoint (endpoint_selector)
+	// ReasonCoveredByOrigin: a web stage gets the http_service origin, not
+	// the name, address or open port it is served on again.
+	ReasonCoveredByOrigin = "covered_by_origin"
 )
 
 // StepOutput is one asset a stage of a run produced, as the inventory has
