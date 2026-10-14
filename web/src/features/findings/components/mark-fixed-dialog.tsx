@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import {
   Dialog,
@@ -48,6 +49,7 @@ export function MarkFixedDialog({
   findingCount,
   onSuccess,
 }: MarkFixedDialogProps) {
+  const { t } = useTranslation()
   const [note, setNote] = useState('')
   const [reference, setReference] = useState('')
   const [includeRelated, setIncludeRelated] = useState(true)
@@ -69,7 +71,9 @@ export function MarkFixedDialog({
 
   const handleSubmit = async () => {
     if (!note.trim()) {
-      toast.error('Please describe what you did to fix the issue')
+      toast.error(
+        t('findings.markFixed.noteRequired', 'Please describe what you did to fix the issue')
+      )
       return
     }
 
@@ -95,16 +99,30 @@ export function MarkFixedDialog({
 
       const result = await post<FixAppliedResponse>('/api/v1/findings/actions/fix-applied', body)
 
-      toast.success(`${result.updated} findings marked as fix applied`, {
-        description:
-          result.assets_affected > 0 ? `${result.assets_affected} assets affected` : undefined,
-      })
+      toast.success(
+        t('findings.markFixed.success', '{count} findings marked as fix applied', {
+          count: result.updated,
+        }),
+        {
+          description:
+            result.assets_affected > 0
+              ? t('findings.markFixed.assetsAffected', '{count} assets affected', {
+                  count: result.assets_affected,
+                })
+              : undefined,
+        }
+      )
 
       onOpenChange(false)
       resetForm()
       onSuccess?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to mark findings as fix applied'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('findings.markFixed.failed', 'Failed to mark findings as fix applied')
+        )
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -141,11 +159,19 @@ export function MarkFixedDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Mark as Fixed</DialogTitle>
+          <DialogTitle>{t('findings.markFixed.title', 'Mark as Fixed')}</DialogTitle>
           <DialogDescription>
-            {groupType === 'cve' && `${groupLabel} — ${findingCount} findings`}
-            {groupType === 'asset' && `All findings on ${groupLabel}`}
-            {groupType === 'owner' && `All findings assigned to ${groupLabel}`}
+            {groupType === 'cve' &&
+              t('findings.markFixed.descCve', '{label} — {count} findings', {
+                label: groupLabel,
+                count: findingCount,
+              })}
+            {groupType === 'asset' &&
+              t('findings.markFixed.descAsset', 'All findings on {label}', { label: groupLabel })}
+            {groupType === 'owner' &&
+              t('findings.markFixed.descOwner', 'All findings assigned to {label}', {
+                label: groupLabel,
+              })}
           </DialogDescription>
         </DialogHeader>
 
@@ -153,10 +179,15 @@ export function MarkFixedDialog({
           <div className="space-y-4 py-2">
             {/* Note (required) */}
             <div className="space-y-2">
-              <Label htmlFor="fix-note">What did you do to fix this? *</Label>
+              <Label htmlFor="fix-note">
+                {t('findings.markFixed.noteLabel', 'What did you do to fix this?')} *
+              </Label>
               <Textarea
                 id="fix-note"
-                placeholder="e.g., Upgraded log4j-core from 2.14.0 to 2.17.1 via Ansible playbook"
+                placeholder={t(
+                  'findings.markFixed.notePlaceholder',
+                  'e.g., Upgraded log4j-core from 2.14.0 to 2.17.1 via Ansible playbook'
+                )}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
@@ -171,7 +202,7 @@ export function MarkFixedDialog({
               className="w-full justify-between text-muted-foreground"
               onClick={() => setShowAdvanced(!showAdvanced)}
             >
-              Advanced options
+              {t('findings.markFixed.advanced', 'Advanced options')}
               {showAdvanced ? (
                 <ChevronUp className="h-4 w-4" />
               ) : (
@@ -183,7 +214,9 @@ export function MarkFixedDialog({
               <div className="space-y-4 rounded-lg border p-3">
                 {/* Reference */}
                 <div className="space-y-2">
-                  <Label htmlFor="fix-ref">Reference (optional)</Label>
+                  <Label htmlFor="fix-ref">
+                    {t('findings.markFixed.referenceLabel', 'Reference (optional)')}
+                  </Label>
                   <Input
                     id="fix-ref"
                     placeholder="commit:abc123, PR #456, KB5033898"
@@ -202,7 +235,10 @@ export function MarkFixedDialog({
                         onCheckedChange={(v) => setIncludeRelated(!!v)}
                       />
                       <Label htmlFor="include-related" className="cursor-pointer">
-                        Include related CVEs (same component)
+                        {t(
+                          'findings.markFixed.includeRelated',
+                          'Include related CVEs (same component)'
+                        )}
                       </Label>
                     </div>
 
@@ -227,10 +263,15 @@ export function MarkFixedDialog({
             <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-sm">
               <Info className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
               <div>
-                <span className="font-medium">{totalFindings} findings</span> will be marked as
-                &quot;Fix Applied&quot;. A proof-of-fix retest re-runs each finding&apos;s check
-                where it can; a security reviewer confirms the rest. You cannot mark findings as
-                &quot;Resolved&quot; directly.
+                <span className="font-medium">
+                  {t('findings.markFixed.summaryCount', '{count} findings', {
+                    count: totalFindings,
+                  })}
+                </span>{' '}
+                {t(
+                  'findings.markFixed.summaryBody',
+                  'will be marked as "Fix Applied". A proof-of-fix retest re-runs each finding\'s check where it can; a security reviewer confirms the rest. You cannot mark findings as "Resolved" directly.'
+                )}
               </div>
             </div>
           </div>
@@ -238,16 +279,18 @@ export function MarkFixedDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting || !note.trim()}>
             {isSubmitting ? (
               <>
                 <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                Submitting...
+                {t('findings.markFixed.submitting', 'Submitting...')}
               </>
             ) : (
-              `Submit Fix Applied (${totalFindings})`
+              t('findings.markFixed.submit', 'Submit Fix Applied ({count})', {
+                count: totalFindings,
+              })
             )}
           </Button>
         </DialogFooter>
@@ -269,12 +312,15 @@ function RelatedCVERow({
   selected: boolean
   onToggle: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center gap-2 text-sm">
       <Checkbox checked={selected} onCheckedChange={onToggle} />
       <span className="font-mono text-xs">{cve.cve_id}</span>
       <SeverityBadge severity={cve.severity as 'critical' | 'high' | 'medium' | 'low' | 'info'} />
-      <span className="text-muted-foreground ms-auto">{cve.finding_count} findings</span>
+      <span className="text-muted-foreground ms-auto">
+        {t('findings.markFixed.relatedCount', '{count} findings', { count: cve.finding_count })}
+      </span>
     </div>
   )
 }

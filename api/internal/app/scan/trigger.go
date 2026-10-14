@@ -123,6 +123,13 @@ func (s *Service) TriggerScan(ctx context.Context, input TriggerScanExecInput) (
 	if err != nil {
 		return nil, err
 	}
+	return s.triggerAndRecord(ctx, sc, input)
+}
+
+// triggerAndRecord triggers a loaded scan as TriggerScan does: a refusal
+// becomes a blocked run, the scan's run summary is refreshed and the trigger
+// is audited. The run uses sc as given (its targets included).
+func (s *Service) triggerAndRecord(ctx context.Context, sc *scan.Scan, input TriggerScanExecInput) (*scanrun.Run, error) {
 	if input.TriggerType == "" {
 		input.TriggerType = scanworkflow.TriggerTypeManual
 	}

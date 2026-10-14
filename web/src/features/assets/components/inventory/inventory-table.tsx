@@ -169,14 +169,18 @@ export function InventoryTable({
     async (id: string, tags: string[]) => {
       try {
         await updateAsset(id, { tags })
-        toast.success('Label added')
+        toast.success(t('assets.inv.labelAdded', 'Label added'))
         onAssetUpdated?.()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to add the label')
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : t('assets.inv.labelAddFailed', 'Failed to add the label')
+        )
         throw err
       }
     },
-    [onAssetUpdated]
+    [onAssetUpdated, t]
   )
 
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
@@ -193,14 +197,14 @@ export function InventoryTable({
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
             onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-            aria-label="Select all rows on this page"
+            aria-label={t('assets.inv.selectAllRows', 'Select all rows on this page')}
           />
         ),
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
             onCheckedChange={(v) => row.toggleSelected(!!v)}
-            aria-label="Select row"
+            aria-label={t('assets.inv.selectRow', 'Select row')}
             onClick={(e) => e.stopPropagation()}
           />
         ),
@@ -210,7 +214,12 @@ export function InventoryTable({
         accessorKey: 'name',
         enableHiding: false,
         enableSorting: sortable('name'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.properties.columns.name', 'Name')}
+          />
+        ),
         cell: ({ row }) => (
           <div className="flex min-w-0 items-center gap-2">
             <AssetTypeIcon
@@ -240,7 +249,12 @@ export function InventoryTable({
         id: 'type',
         accessorKey: 'type',
         enableSorting: sortable('type'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.properties.columns.type', 'Type')}
+          />
+        ),
         cell: ({ row }) => (
           <div className="flex min-w-0 flex-col items-start gap-0.5">
             <Badge variant="outline" className="font-normal">
@@ -286,7 +300,12 @@ export function InventoryTable({
         id: 'criticality',
         accessorKey: 'criticality',
         enableSorting: sortable('criticality'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Criticality" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.badge.criticality', 'Criticality')}
+          />
+        ),
         cell: ({ row }) => (
           <CriticalityBadge criticality={row.original.criticality} size="sm" showTooltip={false} />
         ),
@@ -295,7 +314,9 @@ export function InventoryTable({
         id: 'exposure',
         accessorKey: 'exposure',
         enableSorting: sortable('exposure'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Exposure" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.badge.exposure', 'Exposure')} />
+        ),
         cell: ({ row }) => (
           <ExposureBadge exposure={row.original.exposure} size="sm" showTooltip={false} />
         ),
@@ -303,19 +324,21 @@ export function InventoryTable({
       {
         id: 'internet',
         enableSorting: false,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Internet" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.inv.col.internet', 'Internet')} />
+        ),
         cell: ({ row }) => {
           const v = row.original.isInternetAccessible
           if (v === undefined) return <span className="text-muted-foreground">—</span>
           return v ? (
             <span className="inline-flex items-center gap-1 text-xs text-warning">
               <Globe className="h-3.5 w-3.5" />
-              Facing
+              {t('assets.inv.facing', 'Facing')}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <MinusCircle className="h-3.5 w-3.5" />
-              No
+              {t('assets.properties.no', 'No')}
             </span>
           )
         },
@@ -323,7 +346,9 @@ export function InventoryTable({
       {
         id: 'owner',
         enableSorting: false,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Owner" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.inv.col.owner', 'Owner')} />
+        ),
         cell: ({ row }) => {
           const owner = row.original.primaryOwner
           if (owner) {
@@ -338,21 +363,32 @@ export function InventoryTable({
           if (row.original.ownerRef) {
             return <span className="truncate text-sm">{row.original.ownerRef}</span>
           }
-          return <span className="text-sm text-muted-foreground">Unowned</span>
+          return (
+            <span className="text-sm text-muted-foreground">
+              {t('assets.views.unowned', 'Unowned')}
+            </span>
+          )
         },
       },
       {
         id: 'risk',
         accessorKey: 'riskScore',
         enableSorting: sortable('risk'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Risk" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('components.col.risk', 'Risk')} />
+        ),
         cell: ({ row }) => <RiskScoreBadge score={row.original.riskScore} size="sm" />,
       },
       {
         id: 'findings',
         accessorKey: 'findingCount',
         enableSorting: sortable('findings'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Findings" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('assets.sheet.tab.findings', 'Findings')}
+          />
+        ),
         cell: ({ row }) =>
           row.original.findingCount > 0 ? (
             <IssuesChip assetId={row.original.id} count={row.original.findingCount} />
@@ -364,7 +400,12 @@ export function InventoryTable({
         id: 'last_seen',
         accessorKey: 'lastSeen',
         enableSorting: sortable('last_seen'),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last seen" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('components.col.lastSeen', 'Last seen')}
+          />
+        ),
         cell: ({ row }) => (
           <AssetStatusBadge
             status={row.original.status}
@@ -376,7 +417,9 @@ export function InventoryTable({
       {
         id: 'tags',
         enableSorting: false,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Labels" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('assets.inv.col.labels', 'Labels')} />
+        ),
         cell: ({ row }) => (
           <LabelChips
             className="max-w-[240px]"
@@ -408,10 +451,10 @@ export function InventoryTable({
         id: 'actions',
         enableSorting: false,
         enableHiding: false,
-        header: () => <span className="sr-only">Actions</span>,
+        header: () => <span className="sr-only">{t('components.col.actions', 'Actions')}</span>,
         cell: ({ row }) => {
           const asset = row.original
-          const actions = rowActionsFor(asset, typeView).filter((a) =>
+          const actions = rowActionsFor(asset, typeView, t).filter((a) =>
             a.permissions.every((p) => can(p))
           )
           const canEdit = canWriteAssets && !!onEditAsset
@@ -423,7 +466,9 @@ export function InventoryTable({
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  aria-label={`Actions for ${asset.name}`}
+                  aria-label={t('assets.inv.actionsFor', 'Actions for {name}', {
+                    name: asset.name,
+                  })}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -439,7 +484,7 @@ export function InventoryTable({
                 {canEdit && (
                   <DropdownMenuItem onClick={() => onEditAsset?.(asset)}>
                     <Pencil className="me-2 h-4 w-4" />
-                    Edit
+                    {t('assets.inv.edit', 'Edit')}
                   </DropdownMenuItem>
                 )}
                 {canDelete && (
@@ -450,7 +495,7 @@ export function InventoryTable({
                       onClick={() => onDeleteAsset?.(asset)}
                     >
                       <Trash2 className="me-2 h-4 w-4" />
-                      Delete
+                      {t('assets.inv.delete', 'Delete')}
                     </DropdownMenuItem>
                   </>
                 )}
@@ -581,13 +626,17 @@ export function InventoryTable({
                 if (!selectedAsset) return
                 try {
                   const updated = await updateAsset(selectedAsset.id, { tags })
-                  toast.success('Tags updated')
+                  toast.success(t('assets.inv.tagsUpdated', 'Tags updated'))
                   // Lift the fresh asset into the sheet so it re-renders with the
                   // saved tags, then refetch the list in the background.
                   setSelectedAsset(updated)
                   onAssetUpdated?.()
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Failed to update tags')
+                  toast.error(
+                    err instanceof Error
+                      ? err.message
+                      : t('assets.inv.tagsUpdateFailed', 'Failed to update tags')
+                  )
                   throw err
                 }
               }

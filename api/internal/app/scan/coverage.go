@@ -77,14 +77,15 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 		tier, intensity = scopedom.TierPassive, scan.IntensityPassive
 	}
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
-		TenantID:        in.TenantID,
-		Targets:         in.Targets,
-		ActScope:        true,
-		PassiveOnly:     passive,
-		Tier:            &tier,
-		SkipZoneRouting: true,
-		MaxTargets:      maxCoverageTargets,
-		Path:            "auto_coverage",
+		TenantID:    in.TenantID,
+		Targets:     in.Targets,
+		ActScope:    true,
+		PassiveOnly: passive,
+		Tier:        &tier,
+		// Zone routing here: a target no zone can place is refused on its
+		// own (zone_none, zone_no_sensor), so the rest of the batch runs.
+		MaxTargets: maxCoverageTargets,
+		Path:       "auto_coverage",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coverage targets not checked, nothing dispatched: %w", err)

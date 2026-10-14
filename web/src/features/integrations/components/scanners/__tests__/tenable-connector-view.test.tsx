@@ -21,6 +21,7 @@ vi.mock('@/features/integrations/api/use-integrations-api', () => ({
   useCreateIntegrationApi: () => ({ trigger: mockCreate, isMutating: false }),
   useUpdateIntegrationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   useSyncIntegrationApi: () => ({ trigger: mockSync, isMutating: false }),
+  useResumeCoverageRotationApi: () => ({ trigger: vi.fn(), isMutating: false }),
   invalidateIntegrationsCache: vi.fn(),
 }))
 vi.mock('@/lib/api/sensor-hooks', () => ({

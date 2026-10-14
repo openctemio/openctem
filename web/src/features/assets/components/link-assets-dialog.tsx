@@ -18,6 +18,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useAssets } from '../hooks/use-assets'
 
@@ -56,6 +57,7 @@ export function LinkAssetsDialog({
   children,
   resetKey,
 }: LinkAssetsDialogProps) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -97,18 +99,44 @@ export function LinkAssetsDialog({
     setIsSubmitting(true)
     try {
       const failed = await onLink(Array.from(selected))
-      const noun = (n: number) => `${n} asset${n === 1 ? '' : 's'}`
       if (failed === 0) {
-        toast.success(`${noun(count)} linked to ${targetName}`)
+        toast.success(
+          count === 1
+            ? t('assets.link.doneOne', '1 asset linked to {target}', { target: targetName })
+            : t('assets.link.doneMany', '{count} assets linked to {target}', {
+                count,
+                target: targetName,
+              })
+        )
       } else if (failed < count) {
-        toast.warning(`${noun(count - failed)} linked to ${targetName}; ${failed} failed`)
+        toast.warning(
+          t(
+            'assets.link.donePartial',
+            '{done} of {count} assets linked to {target}; {failed} failed',
+            {
+              done: count - failed,
+              count,
+              target: targetName,
+              failed,
+            }
+          )
+        )
       } else {
-        toast.error(`Could not link ${noun(count)} to ${targetName}`)
+        toast.error(
+          count === 1
+            ? t('assets.link.failedOne', 'Could not link 1 asset to {target}', {
+                target: targetName,
+              })
+            : t('assets.link.failedMany', 'Could not link {count} assets to {target}', {
+                count,
+                target: targetName,
+              })
+        )
         return
       }
       onOpenChange(false)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to link assets'))
+      toast.error(getErrorMessage(error, t('assets.link.failed', 'Failed to link assets')))
     } finally {
       setIsSubmitting(false)
     }
@@ -125,7 +153,7 @@ export function LinkAssetsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
-            Link assets
+            {t('assets.link.title', 'Link assets')}
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
@@ -135,8 +163,8 @@ export function LinkAssetsDialog({
             <div className="relative">
               <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search assets..."
-                aria-label="Search assets"
+                placeholder={t('assets.link.searchPlaceholder', 'Search assets...')}
+                aria-label={t('assets.link.searchAria', 'Search assets')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="ps-9"
@@ -145,9 +173,11 @@ export function LinkAssetsDialog({
 
             {selected.size > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">{selected.size} selected</span>
+                <span className="text-muted-foreground">
+                  {t('assets.link.selected', '{count} selected', { count: selected.size })}
+                </span>
                 <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-                  Clear
+                  {t('assets.link.clear', 'Clear')}
                 </Button>
               </div>
             )}
@@ -172,7 +202,9 @@ export function LinkAssetsDialog({
                 <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
                   <Box className="mb-2 h-8 w-8 text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">
-                    {debouncedSearch ? 'No assets match your search' : 'No active assets found'}
+                    {debouncedSearch
+                      ? t('assets.link.noMatch', 'No assets match your search')
+                      : t('assets.link.noneActive', 'No active assets found')}
                   </p>
                 </div>
               ) : (
@@ -224,7 +256,11 @@ export function LinkAssetsDialog({
                             )}
                           </div>
                         </div>
-                        {linked && <span className="text-xs text-muted-foreground">Linked</span>}
+                        {linked && (
+                          <span className="text-xs text-muted-foreground">
+                            {t('assets.link.linked', 'Linked')}
+                          </span>
+                        )}
                       </div>
                     )
                   })}
@@ -238,7 +274,7 @@ export function LinkAssetsDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={isSubmitting}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleLink} disabled={isSubmitting || selected.size === 0}>
             {isSubmitting ? (
@@ -247,8 +283,12 @@ export function LinkAssetsDialog({
               <Link2 className="me-2 h-4 w-4" />
             )}
             {isSubmitting
-              ? 'Linking...'
-              : `Link ${selected.size > 0 ? `${selected.size} ` : ''}asset${selected.size !== 1 ? 's' : ''}`}
+              ? t('assets.link.linking', 'Linking...')
+              : selected.size === 0
+                ? t('assets.link.submit', 'Link assets')
+                : selected.size === 1
+                  ? t('assets.link.submitOne', 'Link 1 asset')
+                  : t('assets.link.submitMany', 'Link {count} assets', { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>

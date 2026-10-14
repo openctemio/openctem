@@ -51,6 +51,38 @@ func UnfinishedTargets(cmd *Command) (remaining []string, settled int, ok bool) 
 	return remaining, len(normalized) - len(remaining), true
 }
 
+// ConnectorUnfinishedTargets reads a completed connector_scan's result
+// against its own targets and returns the targets it left unfinished, in
+// payload order. A connector scan is one scan in the connected product, so
+// it is never split into follow-ups: its unfinished targets are reported to
+// its run instead (recorded there, so the coverage ledger and the next
+// scheduled run see them). ok is false for any other command, a command
+// without targets, or a result without target_outcomes (a sensor that
+// predates them). The result is the sensor's, untrusted: an outcome for a
+// target the command does not carry is ignored and a target without a valid
+// outcome is unfinished.
+func ConnectorUnfinishedTargets(cmd *Command) (remaining []string, ok bool) {
+	if cmd == nil || cmd.Type != CommandTypeConnectorScan || cmd.IsPlatformJob || len(cmd.Result) == 0 {
+		return nil, false
+	}
+	targets := PayloadTargets(cmd.Payload)
+	if len(targets) == 0 {
+		return nil, false
+	}
+	var res struct {
+		Outcomes *[]outcome.Target `json:"target_outcomes"`
+	}
+	if json.Unmarshal(cmd.Result, &res) != nil || res.Outcomes == nil {
+		return nil, false
+	}
+	for _, o := range outcome.Normalize(*res.Outcomes, targets) {
+		if o.State == outcome.Unfinished {
+			remaining = append(remaining, o.Target)
+		}
+	}
+	return remaining, true
+}
+
 // payloadNamesRun reports whether a payload routes its command to a scan
 // run (scan_run_id set).
 func payloadNamesRun(payload json.RawMessage) bool {

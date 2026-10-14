@@ -25,6 +25,7 @@ import (
 // (*command.Service).
 type taskPlacementExplainer interface {
 	ExplainRunTaskPlacement(ctx context.Context, tenantID, runID, commandID shared.ID) (*commandapp.Placement, error)
+	RunTaskHostWait(ctx context.Context, tenantID, runID, commandID shared.ID) (*commandapp.HostWait, error)
 }
 
 // SetPlacement serves the run page's "why waiting" from p.
@@ -59,11 +60,14 @@ type RunTaskHostHolder struct {
 
 // RunTaskHostWait says why a task waits for its hosts: HostsHeld of its
 // HostsTotal hosts are being scanned by other tasks of the organization
-// (the ones holding the most first, at most 3). Counts only, never host
-// names.
+// (the ones holding the most first, at most 3), and CanStart of its
+// Targets are on free hosts (-1: cannot tell; a claim splits those off
+// when at most half wait). Counts only, never host names.
 type RunTaskHostWait struct {
 	HostsHeld  int                 `json:"hosts_held"`
 	HostsTotal int                 `json:"hosts_total"`
+	Targets    int                 `json:"targets"`
+	CanStart   int                 `json:"can_start"`
 	Holders    []RunTaskHostHolder `json:"holders"`
 }
 
@@ -172,7 +176,8 @@ func placementResponse(p *commandapp.Placement, withSensors bool) RunTaskPlaceme
 // the caller can read that run (a run about a finding needs its finding
 // access; the holders are always of the caller's own organization).
 func (h *ScanWorkflowHandler) hostWaitResponse(ctx context.Context, tenantID shared.ID, hw *commandapp.HostWait) *RunTaskHostWait {
-	out := &RunTaskHostWait{HostsHeld: hw.Held, HostsTotal: hw.Total, Holders: []RunTaskHostHolder{}}
+	out := &RunTaskHostWait{HostsHeld: hw.Held, HostsTotal: hw.Total, Targets: hw.Targets, CanStart: hw.CanStart,
+		Holders: []RunTaskHostHolder{}}
 	lookup := h.runLookup
 	if lookup == nil {
 		lookup = h.service
@@ -187,4 +192,41 @@ func (h *ScanWorkflowHandler) hostWaitResponse(ctx context.Context, tenantID sha
 		out.Holders = append(out.Holders, holder)
 	}
 	return out
+}
+
+// maxListedHostWaits bounds the waiting tasks of one task list that get
+// their host wait (a few reads each).
+const maxListedHostWaits = 25
+
+// withHostWaits fills the host wait of the queued tasks of run that wait
+// for their hosts (at most maxListedHostWaits): the list row then says how
+// many hosts are held, by which task, and how many targets can start.
+func (h *ScanWorkflowHandler) withHostWaits(ctx context.Context, tenantID, runID string, tasks []RunTaskResponse) {
+	if h.placement == nil {
+		return
+	}
+	tid, err1 := shared.IDFromString(tenantID)
+	rid, err2 := shared.IDFromString(runID)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	n := 0
+	for i := range tasks {
+		if !tasks[i].WaitingOnHosts || n >= maxListedHostWaits {
+			continue
+		}
+		n++
+		cid, err := shared.IDFromString(tasks[i].ID)
+		if err != nil {
+			continue
+		}
+		hw, err := h.placement.RunTaskHostWait(ctx, tid, rid, cid)
+		if err != nil {
+			h.logger.Warn("failed to read a task's host wait", "task_id", tasks[i].ID, "error", err)
+			continue
+		}
+		if hw != nil {
+			tasks[i].HostWait = h.hostWaitResponse(ctx, tid, hw)
+		}
+	}
 }

@@ -5,8 +5,10 @@ import {
   contentLabel,
   contentState,
   formatHours,
+  msg,
   shortContentError,
 } from './content'
+import type { Tr } from './format'
 import type { HealthCheck, HealthCheckAction } from './health-checks'
 import { sensorState, type FleetThresholds } from './sensor-state'
 
@@ -36,35 +38,42 @@ export interface HealthIssue {
 
 const SEVERITY_ORDER: Record<HealthIssueSeverity, number> = { critical: 0, warning: 1, info: 2 }
 
-function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>): string {
+function checkTitle(check: HealthCheck, state: ReturnType<typeof sensorState>, tr?: Tr): string {
+  const m = (key: string, en: string) => msg(tr, `sensors.checks.issue.${key}`, en)
   switch (check.key) {
     case 'heartbeat':
-      if (state === 'disabled') return 'Disabled'
-      if (state === 'revoked') return 'Access revoked'
-      if (state === 'never_connected') return 'Not connected yet'
-      if (state === 'late') return 'Heartbeat late'
-      if (state === 'stale') return 'Heartbeat well overdue'
-      return 'No heartbeat'
+      if (state === 'disabled') return m('disabled', 'Disabled')
+      if (state === 'revoked') return m('revoked', 'Access revoked')
+      if (state === 'never_connected') return m('neverConnected', 'Not connected yet')
+      if (state === 'late') return m('late', 'Heartbeat late')
+      if (state === 'stale') return m('stale', 'Heartbeat well overdue')
+      return m('noHeartbeat', 'No heartbeat')
     case 'outbox':
-      return check.status === 'critical' ? 'Results lost' : 'Results waiting to upload'
+      return check.status === 'critical'
+        ? m('outboxLost', 'Results lost')
+        : m('outboxWaiting', 'Results waiting to upload')
     case 'key':
-      return check.status === 'critical' ? 'API key expired' : 'API key expires soon'
+      return check.status === 'critical'
+        ? m('keyExpired', 'API key expired')
+        : m('keySoon', 'API key expires soon')
     case 'version':
-      return 'Unsupported version'
+      return m('version', 'Unsupported version')
     case 'sdk':
-      return 'SDK below the supported minimum'
+      return m('sdk', 'SDK below the supported minimum')
     case 'protocol':
-      return 'Protocol v1 is deprecated'
+      return m('protocol', 'Protocol v1 is deprecated')
     case 'tools':
-      return /not reported/i.test(check.text) ? 'Tools not reported' : 'No installed tool'
+      return check.code === 'tools_not_reported' || /not reported/i.test(check.text)
+        ? m('toolsNotReported', 'Tools not reported')
+        : m('toolsNone', 'No installed tool')
     case 'error':
-      return 'The sensor reported an error'
+      return m('error', 'The sensor reported an error')
     default:
       return check.label
   }
 }
 
-function contentIssues(sensor: Pick<Sensor, 'content'>, now: number): HealthIssue[] {
+function contentIssues(sensor: Pick<Sensor, 'content'>, now: number, tr?: Tr): HealthIssue[] {
   const out: HealthIssue[] = []
   for (const c of sensor.content ?? []) {
     const label = contentLabel(c.name)
@@ -74,22 +83,42 @@ function contentIssues(sensor: Pick<Sensor, 'content'>, now: number): HealthIssu
         out.push({
           key,
           severity: 'warning',
-          title: `${label}: refresh failed`,
+          title: msg(tr, 'sensors.checks.issue.contentFailed', '{label}: refresh failed', {
+            label,
+          }),
           text: c.version
-            ? `Scans keep using the installed ${c.version}.`
-            : 'None is installed yet, so scans cannot use it.',
+            ? msg(
+                tr,
+                'sensors.checks.issue.contentFailedKeep',
+                'Scans keep using the installed {version}.',
+                { version: c.version }
+              )
+            : msg(
+                tr,
+                'sensors.checks.issue.contentFailedNone',
+                'None is installed yet, so scans cannot use it.'
+              ),
           error: c.error,
           action: 'refresh_content',
         })
         break
       case 'stale': {
-        const age = contentAgeText(c, now)
+        const age =
+          contentAgeText(c, now, tr) ??
+          msg(tr, 'sensors.checks.issue.contentOlder', 'Older than allowed')
         const limit = formatHours(c.max_age_hours)
         out.push({
           key,
           severity: 'warning',
-          title: `${label} is out of date`,
-          text: `${age ?? 'Older than allowed'}${limit ? `, over the ${limit} limit` : ''}.`,
+          title: msg(tr, 'sensors.checks.issue.contentStale', '{label} is out of date', {
+            label,
+          }),
+          text: limit
+            ? msg(tr, 'sensors.checks.issue.contentStaleLimit', '{age}, over the {limit} limit.', {
+                age,
+                limit,
+              })
+            : `${age}.`,
           action: 'refresh_content',
         })
         break
@@ -98,8 +127,18 @@ function contentIssues(sensor: Pick<Sensor, 'content'>, now: number): HealthIssu
         out.push({
           key,
           severity: 'warning',
-          title: `${label}: not the pinned version`,
-          text: `Runs ${c.version}; the content policy pins ${c.pinned_version}.`,
+          title: msg(
+            tr,
+            'sensors.checks.issue.contentMismatch',
+            '{label}: not the pinned version',
+            { label }
+          ),
+          text: msg(
+            tr,
+            'sensors.checks.issue.contentMismatchText',
+            'Runs {version}; the content policy pins {pinned}.',
+            { version: c.version ?? '', pinned: c.pinned_version ?? '' }
+          ),
           action: 'refresh_content',
         })
         break
@@ -107,8 +146,14 @@ function contentIssues(sensor: Pick<Sensor, 'content'>, now: number): HealthIssu
         out.push({
           key,
           severity: 'warning',
-          title: `${label} not installed`,
-          text: 'The sensor has not downloaded it yet.',
+          title: msg(tr, 'sensors.checks.issue.contentMissing', '{label} not installed', {
+            label,
+          }),
+          text: msg(
+            tr,
+            'sensors.checks.issue.contentMissingText',
+            'The sensor has not downloaded it yet.'
+          ),
           action: 'refresh_content',
         })
         break
@@ -123,14 +168,15 @@ export function sensorHealthIssues(
   sensor: Sensor,
   checks: HealthCheck[],
   now: number,
-  thresholds?: FleetThresholds
+  thresholds?: FleetThresholds,
+  tr?: Tr
 ): HealthIssue[] {
   const state = sensorState(sensor, now, thresholds)
   const issues: HealthIssue[] = []
   for (const check of checks) {
     if (check.key === 'content') {
       if (check.status === 'warning' || check.status === 'critical') {
-        issues.push(...contentIssues(sensor, now))
+        issues.push(...contentIssues(sensor, now, tr))
       }
       continue
     }
@@ -140,7 +186,7 @@ export function sensorHealthIssues(
     issues.push({
       key: check.key,
       severity: lifecycle ? 'info' : check.status === 'critical' ? 'critical' : 'warning',
-      title: checkTitle(check, state),
+      title: checkTitle(check, state, tr),
       text: error ? shortContentError(error) : check.text,
       error: error && shortContentError(error) !== error ? error : undefined,
       since:
@@ -160,7 +206,7 @@ export function sensorHealthIssues(
       issues.push({
         key: `reason:${r.code}`,
         severity: r.severity === 'critical' ? 'critical' : 'warning',
-        title: 'Needs attention',
+        title: msg(tr, 'sensors.checks.issue.needsAttention', 'Needs attention'),
         text: short,
         error: short !== r.message ? r.message : undefined,
       })

@@ -1,11 +1,10 @@
 'use client'
 
 /**
- * Settings > Integrations > Vulnerability scanners with the Tenable.sc sensor
- * connector on (api docs/rfcs/RFC-047). Rendered only while
+ * Settings > Integrations > Vulnerability scanners with the Tenable.sc
+ * connector on (api docs/rfcs/RFC-047), as Beta. Rendered while
  * TENABLE_CONNECTOR_ENABLED (features/integrations/config/feature-gates.ts),
- * which flips with the API switch once a sensor release with the connector
- * is out.
+ * which stays equal to the API's integration.TenableConnectorEnabled.
  *
  * A connector is a Tenable integration whose sensor pulls from Tenable.sc and
  * launches its scans; the Tenable credentials stay on that sensor. Older
@@ -17,6 +16,7 @@ import { useMemo, useState } from 'react'
 import { Plus, ShieldCheck, Upload } from 'lucide-react'
 
 import { Main } from '@/components/layout'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -78,19 +78,22 @@ export function TenableConnectorView() {
   return (
     <Main>
       <PageHeader
-        title="Vulnerability scanners"
-        description="Pull from Tenable.sc and launch its scans through one of your sensors"
+        title={t('tenableSc.view.title', 'Vulnerability scanners')}
+        description={t(
+          'tenableSc.view.description',
+          'Pull from Tenable.sc and launch its scans through one of your sensors'
+        )}
       >
         <Can permission={[Permission.AssetsWrite, Permission.FindingsWrite]} requireAll mode="hide">
           <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
             <Upload className="me-2 h-4 w-4" />
-            Import .nessus
+            {t('tenableSc.view.importNessus', 'Import .nessus')}
           </Button>
         </Can>
         <Can permission={Permission.IntegrationsManage} mode="hide">
           <Button size="sm" onClick={openCreate}>
             <Plus className="me-2 h-4 w-4" />
-            Connect Tenable.sc
+            {t('tenableSc.view.connect', 'Connect Tenable.sc')}
           </Button>
         </Can>
       </PageHeader>
@@ -98,26 +101,32 @@ export function TenableConnectorView() {
       {coverage && (
         <section className="mt-5" aria-labelledby="tsc-coverage-heading">
           <h2 id="tsc-coverage-heading" className="mb-3 text-lg font-semibold">
-            Coverage
+            {t('tenableSc.view.coverage', 'Coverage')}
           </h2>
-          <TenableCoveragePanel integration={coverage} />
+          <TenableCoveragePanel integration={coverage} onChanged={refresh} />
         </section>
       )}
 
       <section className="mt-5" aria-labelledby="tsc-connectors-heading">
-        <h2 id="tsc-connectors-heading" className="mb-3 text-lg font-semibold">
-          Connectors
-        </h2>
+        <div className="mb-3 flex items-center gap-2">
+          <h2 id="tsc-connectors-heading" className="text-lg font-semibold">
+            {t('tenableSc.view.connectors', 'Connectors')}
+          </h2>
+          <Badge variant="outline">{t('tenableSc.beta', 'Beta')}</Badge>
+        </div>
         {connectors.length === 0 ? (
           <EmptyState
             icon={ShieldCheck}
-            title="No Tenable.sc connector"
-            description="Configure the connector on one of your sensors, then connect it here. The Tenable.sc API keys stay on the sensor."
+            title={t('tenableSc.view.emptyTitle', 'No Tenable.sc connector')}
+            description={t(
+              'tenableSc.view.emptyDescription',
+              'Configure the connector on one of your sensors, then connect it here. The Tenable.sc API keys stay on the sensor.'
+            )}
             action={
               <Can permission={Permission.IntegrationsManage} mode="hide">
                 <Button size="sm" onClick={openCreate}>
                   <Plus className="me-2 h-4 w-4" />
-                  Connect Tenable.sc
+                  {t('tenableSc.view.connect', 'Connect Tenable.sc')}
                 </Button>
               </Can>
             }
@@ -140,7 +149,7 @@ export function TenableConnectorView() {
       {paused.length > 0 && (
         <section className="mt-5" aria-labelledby="tsc-paused-heading">
           <h2 id="tsc-paused-heading" className="mb-3 text-lg font-semibold">
-            Paused Tenable integrations
+            {t('tenableSc.view.pausedTitle', 'Paused Tenable integrations')}
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
             {t(
