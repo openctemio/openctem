@@ -5,12 +5,21 @@ describes what is built and where it lives.
 
 ## Switch
 
-Everything here is behind `integration.TenableConnectorEnabled` (decision
-D-14; `TENABLE_CONNECTOR_ENABLED` in the web). While it is false,
-Tenable integrations cannot be created (the connector validator is not
-wired), the sync and coverage controllers are not registered, and the page
-stays hidden. It is turned on once a sensor release with the connector is out
-(**Planned**).
+On, as **Beta**: `integration.TenableConnectorEnabled` (decision D-14;
+`TENABLE_CONNECTOR_ENABLED` in the web) is true. The connector runs as its own
+image (`ghcr.io/openctemio/connector-tenable`, from v0.1.0). Turning the switch
+off refuses new Tenable integrations (the connector validator is not wired),
+stops registering the sync and coverage controllers and hides the page;
+stored rows are kept. It stays Beta until a run against a real Tenable.sc has
+confirmed the API details only the documentation states (RFC-047 §12.6), in
+particular the unit of `maxScanTime`.
+
+**`maxScanTime`.** The connector sends the scan's maximum duration in
+seconds. The Tenable.sc API reference states a default of 3600 without a
+unit, and the user guide speaks of hours, so Tenable.sc may let a scan run
+longer than asked. The connector does not rely on it: it stops the scan
+itself at `max_scan_seconds` plus 30 minutes for the import and reports it
+partial.
 
 ## Shape
 
