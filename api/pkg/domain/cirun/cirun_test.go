@@ -437,3 +437,21 @@ func TestForkEventsAreNeverDefaultBranchRuns(t *testing.T) {
 		t.Errorf("own branch = %q", got)
 	}
 }
+
+// A capability the repository is expected to report and the run did not
+// blocks like a scan failure: a pipeline edited to skip it cannot pass on
+// silence. In warn mode it would fail; an override lets the commit through.
+func TestEvaluateMissingCapability(t *testing.T) {
+	p := DefaultGatePolicy()
+	v := Evaluate(GateInput{Policy: p, MissingCapabilities: []string{"sast"}, BaselineKnown: true})
+	if v.Verdict != VerdictFail || len(v.Reasons) != 1 || v.Reasons[0].Code != ReasonMissingCapability {
+		t.Fatalf("verdict = %+v", v)
+	}
+	p.Mode = ModeWarn
+	if v := Evaluate(GateInput{Policy: p, MissingCapabilities: []string{"sast"}, BaselineKnown: true}); v.Verdict != VerdictPass || !v.WouldFail {
+		t.Fatalf("warn mode = %+v", v)
+	}
+	if v := Evaluate(GateInput{Policy: DefaultGatePolicy(), BaselineKnown: true}); v.Verdict != VerdictPass {
+		t.Fatalf("nothing missing = %+v", v)
+	}
+}

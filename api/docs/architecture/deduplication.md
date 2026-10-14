@@ -55,10 +55,10 @@ boundary can be moved to forge a collision. Recipes:
 
 | Kind | Tuple | Not in it |
 |---|---|---|
-| SAST | asset, tool, rule, repo-relative path, then one anchor: SARIF `primaryLocationLineHash` (with its `:N`), Semgrep `matchBasedId/v1`, else `hash(normalized snippet)` + logical location + occurrence index of that snippet in the file | line numbers, message |
+| SAST | asset, rule, repo-relative path, then `hash(normalized snippet)` (the snippet, else the producer's `snippetHash/v1` hash of the flagged lines) + logical location + occurrence index of that snippet in the file; without the code, the start line (re-keyed to the code key when a report carries the code) | tool name, engine fingerprints (`primaryLocationLineHash`, `matchBasedId/v1`: hints only), message; line numbers once the code is known |
 | SCA | asset, canonical PURL without version (`distro` qualifier only for deb/rpm/apk, D13), canonical vuln id | installed version, manifest path |
 | Secret | asset, per-tenant keyed HMAC of the reported (masked) value, repo-relative path | line, the value or its mask |
-| DAST | asset, rule (the CVE for a CVE template), method, URL template (lower-case IDNA host, default port dropped, numeric/UUID segments `{id}`, D4), sorted parameter names | query values |
+| DAST | asset, rule (the CVE for a CVE template), method (from a `method` property, the CTIS web location or the recorded request; **GET when the producer does not say**), URL template (lower-case IDNA host, default port dropped, numeric/UUID segments `{id}`, D4), sorted parameter names (query names, a `parameter` property, the web location's parameter). A fixed-path detection result (the matched URL is not the scan target in `source_extra.target`, and no parameter was fuzzed) is keyed on the **target**, so a template matching several of its own paths is one finding; a finding keyed on its matched URL before is re-keyed on its next sighting | query values; the matched path of a fixed-path template |
 | Network VA | asset, canonical CVE (one finding per CVE, D3; else `rule:<id>`), `port/proto` or `host` | plugin title |
 | Misconfig | asset, policy id, resource type/name, path | message |
 
@@ -285,7 +285,7 @@ merge into the survivor and tombstone the loser (RFC-043 §5).
 | Network VA without a CVE | F1(c) `generic`: rule + title — **port not in the key** | **BROKEN** | `ctis/fingerprint.go:201-209` | **P18:** Nessus plugin 51192 on ports 443 and 8443 → **1** finding |
 | Nessus / DefectDojo converter fingerprints | `nessus:host:plugin:port/proto`, `defectdojo:<hash>` (`nessus/converter.go:242`, `defectdojo/converter.go:130`) | **BROKEN** | not hex → discarded by `isValidFingerprint` | DefectDojo's "stable across re-imports" key is never used; two jars with one CVE on a product merge via `netva::<cve>` (**code**) |
 | SARIF via `/ingest/scanner?scanner_type=sarif` | `matchBasedId/v1`, else the usable value under the **lowest key**, long values hashed (`resultFingerprint`, `internal/infra/adapters/sarif/adapter.go`) — the rule `ctis.FromSARIF` applies on `/ingest/sarif` | **OK** (RFC-043 item 12) | was the first map entry (random) | — |
-| SARIF parsers inside the API | `ctis.FromSARIF` (`/ingest/sarif`) and the in-tree adapter (`/ingest/scanner`, keeps code flows); the unused third copy `pkg/parsers/sarif` is deleted | **PARTIAL** | the adapter still has its own parse for code flows and help references, which `ctis.FromSARIF` does not read | titles and data flows differ by entry point; identity does not (both keep `partialFingerprints`, the server recipe decides) |
+| SARIF parsers inside the API | one parser, `ctis.FromSARIF` through the ctis importer; it maps `codeFlows` to `data_flow`. The in-tree adapter and `pkg/parsers/sarif` are deleted, and so is the API's unused code-flow converter | **OK** | — | every entry point stores the same title, data flow and identity |
 | Nessus `.nessus` parsing | one parser, the ctis importer (`importer.FormatNessus`), behind `POST /findings/import`; the API's own parser, findings converter and host-only asset import are deleted | **OK** (RFC-043 item 12) | was three XML models | every plugin result, host-level ones included, keys on the network identity (host, CVE or plugin, port) |
 | In-tree adapters (`internal/infra/adapters/*`) vs sensor parsers | two implementations of trivy/semgrep/nuclei/betterleaks parsing with different fingerprints | **PARTIAL** — identity no longer depends on it | API nuclei adapter: `GenerateSAST(host, template, 0)` (`nuclei/adapter.go:164`); sensor: `template|host|matched-at|matcher` | with identity version 2 the sensor or adapter fingerprint is only a sighting key, so the same nuclei result through `/ingest/scanner` and through the sensor keys on the same server recipe; the parsers are still two copies in two repositories (follow-up: canonical converters in `ctis`, as `FromSARIF` and the recon converter already are) |
 | Threat models | `UNIQUE (tenant_id, scope_type, scope_ref_id)` with `scope_ref_id` NULL for tenant-wide (`000189:33`); unlocked select-then-insert (`threat_model_repository.go:125-170`) | **BROKEN** | NULLS DISTINCT | **P18:** two tenant-wide models inserted for one tenant |
@@ -365,6 +365,7 @@ coverage.
 | E27 | Reopen respects deliberate dispositions (FP, accepted) | Covered: `internal/infra/postgres/finding_reopen_human_resolved_db_test.go` |
 | E28 | Fingerprint algorithm change keeps triage state | Not covered — no version is stored |
 | E29 | Sensor fingerprint scheme change (e.g. semgrep login on/off) | Not covered |
+| E29a | SAST engine change, semgrep to opengrep (same rules) | Covered: the ctis `opengrep` format keeps the semgrep fingerprint (path, rule, line) as the finding's fingerprint and puts opengrep's match-based id in `matchBasedId/v1`, so the first opengrep sighting adopts the stored version-1 finding and re-keys it to version 2 with its triage (`tests/integration/sast_engine_change_test.go`). SARIF imports are not carried over: the version-2 key holds the tool name, so semgrep and opengrep SARIF key differently |
 | E30 | Tool version renames a rule id | Not covered |
 | E31 | Pentest: two findings with one title in a campaign | Not covered — **fails** (**code**) |
 | E32 | Manual fingerprint field-boundary collision | Not covered — **fails** (P13) |
@@ -458,3 +459,18 @@ repositories (the same constructor as `ingest_host_exposure_test.go`) and log
 | P16 | 8 reports first-see one CVE concurrently | 1 catalog row |
 | P17 | http_service, cross-type, ARN, repo `.git/`, s3 | see §2.3 |
 | P18 | exposure batch with a duplicate; two tenant-wide threat models; Nessus no-CVE plugin on two ports; report with a duplicated finding on a default branch | 0 exposures (batch error); 2 models; 1 finding; 0 branch occurrences |
+
+### DAST identity repair (2026-10-14)
+
+A producer that moved the HTTP method from a `method`/`request` property into
+the CTIS web location made every re-sighted DAST finding a new one (method
+"" instead of GET), leaving its triage behind. Ingest now reads the method
+from every place a producer puts it and treats a missing one as GET. Findings
+already forked are folded once by `refingerprint -dast-repair` (dry run by
+default; `-fold-dast-rules wp-user-enum` also folds the listed fixed-path
+templates per origin; `-apply` commits). The earliest-created finding
+survives with its triage, comments and tickets; each other becomes a
+tombstone (`status = duplicate`, `duplicate_of`) through the finding merge,
+with an activity on both and a `finding.duplicate_marked` audit row naming
+both ids (`metadata.reason = dast_identity_repair`). A second run changes
+nothing.

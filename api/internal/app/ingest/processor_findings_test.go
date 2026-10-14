@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openctemio/ctis"
 	"github.com/stretchr/testify/assert"
@@ -979,9 +980,23 @@ func TestMapCTISDataFlowToDomain_EmptyDataFlow(t *testing.T) {
 
 	result := mapCTISDataFlowToDomain(df)
 
-	assert.Empty(t, result.Steps)
-	assert.Equal(t, 0, result.Index)
-	assert.Equal(t, "essential", result.Importance)
+	assert.Equal(t, vulnerability.DataFlow{}, result, "a flow without a step is no flow")
+}
+
+// The receiver normalizes the trace again: an absolute path of the
+// scanning machine is dropped and a credential in a snippet masked, the
+// producer's report is not changed.
+func TestMapCTISDataFlowToDomain_NormalizedOnReceipt(t *testing.T) {
+	df := &ctis.DataFlow{
+		Sources: []ctis.DataFlowLocation{{Path: "/home/runner/work/app/app/src/a.py", Line: 3, Content: `password = "hunter2hunter2"`}},
+		Sinks:   []ctis.DataFlowLocation{{Path: "../../etc/passwd", Line: 9, Index: 1}},
+	}
+	result := mapCTISDataFlowToDomain(df)
+	require.Len(t, result.Steps, 2)
+	assert.Equal(t, "", result.Steps[0].Location.Path)
+	assert.NotContains(t, result.Steps[0].Location.Snippet, "hunter2")
+	assert.Equal(t, "", result.Steps[1].Location.Path)
+	assert.Equal(t, "/home/runner/work/app/app/src/a.py", df.Sources[0].Path, "the report is not changed")
 }
 
 // =============================================================================
@@ -1139,27 +1154,63 @@ func TestMapCTISLocationToDomain_PreservesAllFields(t *testing.T) {
 	assert.Equal(t, loc.LogicalLocation.FullyQualifiedName, result.LogicalLocation.FullyQualifiedName)
 }
 
-func TestMapCTISDataFlowToDomain_OnlySanitizersIgnored(t *testing.T) {
-	// Sanitizers are in the CTIS DataFlow but not mapped to steps
-	// (only Sources, Intermediates, Sinks are mapped)
+func TestMapCTISDataFlowToDomain_SanitizersKeptInStepOrder(t *testing.T) {
 	df := &ctis.DataFlow{
-		Sources: []ctis.DataFlowLocation{
-			{Path: "src/a.go", Line: 1},
-		},
-		Sanitizers: []ctis.DataFlowLocation{
-			{Path: "src/sanitize.go", Line: 50}, // This is NOT mapped
-		},
-		Sinks: []ctis.DataFlowLocation{
-			{Path: "src/b.go", Line: 100},
-		},
+		Sources:       []ctis.DataFlowLocation{{Path: "src/a.go", Line: 1, Index: 0}},
+		Intermediates: []ctis.DataFlowLocation{{Path: "src/a.go", Line: 9, Index: 2}},
+		Sanitizers:    []ctis.DataFlowLocation{{Path: "src/sanitize.go", Line: 50, Index: 1, Function: "clean"}},
+		Sinks:         []ctis.DataFlowLocation{{Path: "src/b.go", Line: 100, EndLine: 101, Column: 3, EndColumn: 9, Index: 3}},
+		Tainted:       true,
 	}
 
 	result := mapCTISDataFlowToDomain(df)
 
-	// Only sources and sinks should be present (sanitizers are ignored)
-	require.Len(t, result.Steps, 2)
-	assert.Equal(t, vulnerability.LocationTypeSource, result.Steps[0].LocationType)
-	assert.Equal(t, vulnerability.LocationTypeSink, result.Steps[1].LocationType)
+	require.Len(t, result.Steps, 4)
+	types := make([]string, 0, 4)
+	for i, s := range result.Steps {
+		assert.Equal(t, i, s.Index)
+		types = append(types, s.LocationType)
+	}
+	assert.Equal(t, []string{"source", "sanitizer", "intermediate", "sink"}, types)
+	assert.Equal(t, "clean", result.Steps[1].FunctionName)
+	assert.Equal(t, 101, result.Steps[3].Location.EndLine)
+	assert.Equal(t, 9, result.Steps[3].Location.EndColumn)
+	assert.True(t, result.Tainted)
+}
+
+// The trace is context, never identity: the fingerprint of a finding is
+// the same with no trace, a trace, and a different trace. (The identity
+// recipe itself is owned elsewhere; this only pins that the trace stays out
+// of it.)
+func TestFindingFingerprint_IndependentOfDataFlow(t *testing.T) {
+	assetID := shared.NewID()
+	base := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "SQL injection", RuleID: "js.sqli",
+		Location: &ctis.FindingLocation{Path: "src/db.js", StartLine: 22, Snippet: "db.query(q)"}}
+	tool := &ctis.Tool{Name: "semgrep"}
+	want, wantBase := generateFindingFingerprint(assetID, &base, tool)
+	for _, df := range []*ctis.DataFlow{
+		{Sources: []ctis.DataFlowLocation{{Path: "src/a.js", Line: 1}}, Sinks: []ctis.DataFlowLocation{{Path: "src/db.js", Line: 22, Index: 1}}},
+		{Sources: []ctis.DataFlowLocation{{Path: "src/other.js", Line: 7}}, Sinks: []ctis.DataFlowLocation{{Path: "src/db.js", Line: 22, Index: 1}}},
+	} {
+		f := base
+		f.DataFlow = df
+		got, gotBase := generateFindingFingerprint(assetID, &f, tool)
+		assert.Equal(t, want, got)
+		assert.Equal(t, wantBase, gotBase)
+	}
+}
+
+func TestFindingTrace(t *testing.T) {
+	_, ok := findingTrace("fp", "", nil)
+	assert.False(t, ok, "no data flow, no trace")
+	_, ok = findingTrace("fp", "", &ctis.DataFlow{})
+	assert.False(t, ok, "a flow without steps is no trace")
+	a, ok := findingTrace("fp", "", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "a.js", Line: 1}}})
+	require.True(t, ok)
+	b, _ := findingTrace("fp", "", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "a.js", Line: 1}}})
+	c, _ := findingTrace("fp", "", &ctis.DataFlow{Sinks: []ctis.DataFlowLocation{{Path: "b.js", Line: 1}}})
+	assert.Equal(t, a.Hash, b.Hash, "the same trace hashes the same")
+	assert.NotEqual(t, a.Hash, c.Hash, "a changed path changes the hash")
 }
 
 func TestMapCTISAttachmentToDomain_RegionsWithLogicalLocations(t *testing.T) {
@@ -1321,6 +1372,12 @@ func (s *stubFindingRepository) UpdateSnippetBatchByFingerprints(_ context.Conte
 func (s *stubFindingRepository) BatchCountByAssetIDs(_ context.Context, _ shared.ID, _ []shared.ID) (map[shared.ID]int64, error) {
 	return nil, nil
 }
+
+// AcceptUntil records an accept like UpdateStatusBatch does.
+func (s *stubFindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, _ time.Time, by *shared.ID) error {
+	return s.UpdateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", by, "")
+}
+
 func (s *stubFindingRepository) UpdateStatusBatch(_ context.Context, _ shared.ID, _ []shared.ID, _ vulnerability.FindingStatus, _ string, _ *shared.ID, _ vulnerability.ResolutionMethod) error {
 	return nil
 }
