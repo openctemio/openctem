@@ -4,6 +4,8 @@ import useSWR from 'swr'
 import { ChevronDown, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import Link from '@/components/link'
+
 import { useTranslation } from '@/context/i18n-provider'
 import { get } from '@/lib/api/client'
 import { scanRunEndpoints } from '@/lib/api/endpoints'
@@ -22,6 +24,8 @@ import { CodeHelpLine } from './code-help'
 export function placementSummary(p: RunTaskPlacement, t: Translate): string {
   if (!p.queued) return t('scans.placement.notQueued')
   if (p.platform) return t('scans.placement.platform')
+  const hostWait = hostWaitSummary(p, t)
+  if (hostWait) return hostWait
   if ((p.job_reasons ?? []).length > 0) return t('scans.placement.heldForAll')
   const eligible = p.eligible ?? 0
   const busy = p.busy ?? 0
@@ -31,6 +35,30 @@ export function placementSummary(p: RunTaskPlacement, t: Translate): string {
   if (eligible > 0) return t('scans.placement.someCan', undefined, { count: eligible, busy })
   if ((p.evaluated ?? 0) === 0) return t('scans.placement.noSensors')
   return t('scans.placement.noneCan', undefined, { count: p.evaluated ?? 0 })
+}
+
+/**
+ * Why a task waits for its hosts, when it does: how many of its hosts other
+ * tasks of the organization are scanning, and with which tool and step (the
+ * task holding the most). Counts only, never host names. Null when the task
+ * does not wait for its hosts.
+ */
+export function hostWaitSummary(p: RunTaskPlacement, t: Translate): string | null {
+  const hw = p.host_wait
+  if (!hw || !(p.job_reasons ?? []).includes('host_busy')) return null
+  const vars = { held: hw.hosts_held ?? 0, total: hw.hosts_total ?? 0 }
+  const top = (hw.holders ?? [])[0]
+  if (top?.tool && top.step_key) {
+    return t('scans.placement.hostWaitBy', undefined, {
+      ...vars,
+      tool: toDisplayText(top.tool),
+      step: toDisplayText(top.step_key),
+    })
+  }
+  if (top?.tool) {
+    return t('scans.placement.hostWaitTool', undefined, { ...vars, tool: toDisplayText(top.tool) })
+  }
+  return t('scans.placement.hostWait', undefined, vars)
 }
 
 /** The "Why waiting?" toggle of a queued task. */
@@ -85,6 +113,18 @@ export function TaskPlacementPanel({ runId, taskId }: { runId: string; taskId: s
       {data && (
         <>
           <p className="font-medium">{placementSummary(data, t)}</p>
+          {(data.host_wait?.holders ?? [])
+            .filter((h) => h.run_id && h.run_id !== runId)
+            .slice(0, 1)
+            .map((h) => (
+              <Link
+                key={h.task_id ?? h.run_id}
+                href={`/scans/runs?run=${encodeURIComponent(h.run_id ?? '')}`}
+                className="text-primary underline-offset-2 hover:underline"
+              >
+                {t('scans.placement.holderRun')}
+              </Link>
+            ))}
           {reasons.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-2">
               {reasons.map((r) => (
