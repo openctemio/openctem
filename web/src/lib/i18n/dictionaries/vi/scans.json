@@ -556,6 +556,9 @@
   "scans.runDetail.started": "bắt đầu {time}",
   "scans.runDetail.copyId": "Sao chép ID lượt chạy",
   "scans.runDetail.idCopied": "Đã sao chép ID lượt chạy",
+  "scans.runDetail.cancelTitle": "Hủy lượt chạy này?",
+  "scans.runDetail.canceledToast": "Đã hủy lượt chạy. Các tác vụ đang chạy sẽ dừng ở nhịp tim kế tiếp.",
+  "scans.runDetail.cancelFailed": "Không hủy được lượt chạy",
   "scans.runDetail.runNoun": "lượt chạy",
   "scans.runDetail.thisFinding": "phát hiện này",
   "scans.runDetail.keyNumbers": "Số liệu chính",
@@ -1622,8 +1625,5 @@
   "scans.liveness.switch": "Dùng tìm máy đang hoạt động trước",
   "scans.liveness.switched": "Lượt quét giờ tìm máy đang hoạt động trước",
   "scans.liveness.switchFailed": "Không thể chuyển chế độ của lượt quét",
-  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước",
-  "scans.runDetail.cancelTitle": "Hủy lượt chạy này?",
-  "scans.runDetail.canceledToast": "Đã hủy lượt chạy. Các tác vụ đang chạy sẽ dừng ở nhịp tim kế tiếp.",
-  "scans.runDetail.cancelFailed": "Không hủy được lượt chạy"
+  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước"
 }
