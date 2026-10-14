@@ -43,7 +43,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
@@ -51,7 +50,6 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
-  useCreateGateOverride,
   useDeleteGatePolicy,
   useDeleteTrustConfig,
   useGateOverrides,
@@ -75,6 +73,7 @@ import {
   snippetFor,
 } from '../lib/ci'
 import { CITrustPreview } from './ci-trust-preview'
+import { CIOverrideDialog } from './ci-override-dialog'
 import { CITrustRefusals } from './ci-refusals'
 import { CISetupEntry } from './ci-setup-wizard'
 import type { CIGatePolicy, CIProvider, CITrustConfig, CITrustConfigRequest } from '../types'
@@ -1018,6 +1017,14 @@ function PolicySummary({ p }: { p: CIGatePolicy }) {
           ? t('scans.ci.gatePolicy.kevFails', 'Known exploited (KEV): fails')
           : t('scans.ci.gatePolicy.kevNoFail', 'Known exploited (KEV): does not fail')}
       </li>
+      {p.fixable_only && (
+        <li>
+          {t(
+            'scans.ci.gatePolicy.fixableOnly',
+            'Vulnerabilities without a fix: listed, not blocking (KEV still fails)'
+          )}
+        </li>
+      )}
       {p.epss_threshold !== undefined && p.epss_threshold !== null && (
         <li>
           {t('scans.ci.gatePolicy.epssAtLeast', 'EPSS at least {value}', {
@@ -1048,6 +1055,7 @@ function PolicyDialog({
   const [severity, setSeverity] = useState(policy?.fail_on_severity ?? 'high')
   const [newOnly, setNewOnly] = useState(policy?.new_findings_only ?? true)
   const [kev, setKev] = useState(policy?.fail_on_kev ?? true)
+  const [fixableOnly, setFixableOnly] = useState(policy?.fixable_only ?? false)
   const [epss, setEpss] = useState(
     policy?.epss_threshold !== undefined && policy?.epss_threshold !== null
       ? String(policy.epss_threshold)
@@ -1071,6 +1079,7 @@ function PolicyDialog({
           new_findings_only: newOnly,
           fail_on_kev: kev,
           epss_threshold: epssValue,
+          fixable_only: fixableOnly,
         },
       })
       toast.success(t('scans.ci.gatePolicy.saved', 'Gate policy saved'))
@@ -1188,6 +1197,15 @@ function PolicyDialog({
               checked={kev}
               onChange={setKev}
             />
+            <SwitchRow
+              id="gp-fixable-only"
+              label={t(
+                'scans.ci.gatePolicy.fixableOnlySwitch',
+                'Dependency and image vulnerabilities block only when a fix exists'
+              )}
+              checked={fixableOnly}
+              onChange={setFixableOnly}
+            />
           </div>
         </DialogBody>
         <DialogFooter>
@@ -1212,22 +1230,11 @@ function PolicyDialog({
 
 function OverridesSection({ canOverride }: { canOverride: boolean }) {
   const { data, error, isLoading, mutate } = useGateOverrides()
-  const { trigger: create, isMutating } = useCreateGateOverride()
   const { trigger: revoke } = useRevokeGateOverride()
   const [open, setOpen] = useState(false)
   const [pendingRevoke, setPendingRevoke] = useState<{ id: string; sha: string } | null>(null)
   const { t } = useTranslation()
-  const [assetId, setAssetId] = useState('')
-  const [sha, setSha] = useState('')
-  const [reason, setReason] = useState('')
-  const [hours, setHours] = useState('24')
   const overrides = data?.data ?? []
-  const hoursValue = Number(hours)
-  const invalid =
-    !assetId.trim() ||
-    !/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(sha.trim()) ||
-    reason.trim().length < 10 ||
-    !(hoursValue >= 1 && hoursValue <= 168)
 
   if (error)
     return (
@@ -1312,92 +1319,7 @@ function OverridesSection({ canOverride }: { canOverride: boolean }) {
           </Card>
         ))
       )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>{t('scans.ci.breakGlass.tab', 'Break-glass')}</DialogTitle>
-            <DialogDescription>
-              {t(
-                'scans.ci.breakGlass.dialogDescription',
-                'The commit passes the gate until the override expires or is revoked.'
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody>
-            <div className="space-y-3">
-              <Field label={t('scans.ci.repositoryAssetId', 'Repository asset ID')} id="ov-asset">
-                <Input id="ov-asset" value={assetId} onChange={(e) => setAssetId(e.target.value)} />
-              </Field>
-              <Field
-                label={t('scans.ci.breakGlass.commit', 'Commit')}
-                id="ov-sha"
-                hint={t(
-                  'scans.ci.breakGlass.commitHint',
-                  'Full or abbreviated (at least 7 characters).'
-                )}
-              >
-                <Input
-                  id="ov-sha"
-                  className="font-mono"
-                  value={sha}
-                  onChange={(e) => setSha(e.target.value)}
-                />
-              </Field>
-              <Field
-                label={t('scans.ci.breakGlass.reason', 'Reason')}
-                id="ov-reason"
-                hint={t(
-                  'scans.ci.breakGlass.reasonHint',
-                  'At least 10 characters; recorded in the audit log.'
-                )}
-              >
-                <Textarea
-                  id="ov-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </Field>
-              <Field label={t('scans.ci.breakGlass.hours', 'Hours (1 to 168)')} id="ov-hours">
-                <Input
-                  id="ov-hours"
-                  inputMode="numeric"
-                  value={hours}
-                  onChange={(e) => setHours(e.target.value)}
-                />
-              </Field>
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={invalid || isMutating}
-              onClick={async () => {
-                try {
-                  await create({
-                    repository_asset_id: assetId.trim(),
-                    commit_sha: sha.trim(),
-                    reason: reason.trim(),
-                    expires_in_hours: hoursValue,
-                  })
-                  toast.success(t('scans.ci.breakGlass.created', 'Override created'))
-                  setOpen(false)
-                  setAssetId('')
-                  setSha('')
-                  setReason('')
-                  void mutate()
-                } catch (e) {
-                  toast.error(getErrorMessage(e))
-                }
-              }}
-            >
-              {t('scans.ci.breakGlass.submit', 'Override the gate')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CIOverrideDialog open={open} onOpenChange={setOpen} onCreated={() => void mutate()} />
       <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={(o) => !o && setPendingRevoke(null)}

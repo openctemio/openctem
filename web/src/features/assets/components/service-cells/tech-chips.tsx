@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
 import { formatTechnology, type Technology } from '../../lib/service-facts'
 import { FactChip } from './fact-chip'
+import { MoreChip } from './more-chip'
 
 export interface TechChipsProps {
   /** `null` = nothing fingerprinted the asset; `[]` = probed, none found. */
@@ -21,11 +22,15 @@ export interface TechChipsProps {
  *   drawer names it in its "Not collected yet" line.
  */
 export function TechChips({ technologies, max = 3, fallback = null }: TechChipsProps) {
+  const { t } = useTranslation()
   if (technologies === null) return <>{fallback}</>
   if (technologies.length === 0)
     return (
-      <FactChip tone="muted" title="Fingerprinting ran and found no technology">
-        No technologies detected
+      <FactChip
+        tone="muted"
+        title={t('assets.facts.noTechHint', 'Fingerprinting ran and found no technology')}
+      >
+        {t('assets.facts.noTech', 'No technologies detected')}
       </FactChip>
     )
   const shown = technologies.slice(0, max)
@@ -38,29 +43,11 @@ export function TechChips({ technologies, max = 3, fallback = null }: TechChipsP
           {t.version && <span className="text-muted-foreground tabular-nums">{t.version}</span>}
         </FactChip>
       ))}
-      {rest.length > 0 && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`${rest.length} more technologies: ${rest.map(formatTechnology).join(', ')}`}
-              className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <FactChip tone="muted" className="tabular-nums">
-                +{rest.length}
-              </FactChip>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[320px]">
-            <ul className="space-y-0.5">
-              {rest.map((t) => (
-                <li key={formatTechnology(t)}>{formatTechnology(t)}</li>
-              ))}
-            </ul>
-          </TooltipContent>
-        </Tooltip>
-      )}
+      <MoreChip
+        label={t('assets.facts.technologies', 'technologies')}
+        values={rest.map(formatTechnology)}
+        mono={false}
+      />
     </>
   )
 }

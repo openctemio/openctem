@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -12,11 +13,11 @@ import (
 // the repository bounds it), at most MaxProgressEntries entries.
 func TestHeartbeatProgress(t *testing.T) {
 	var req HeartbeatRequest
-	if err := json.Unmarshal([]byte(`{"status":"ok","running":["c1"],"progress":{"c1":{"done":3,"total":72}}}`), &req); err != nil {
+	if err := json.Unmarshal([]byte(`{"status":"ok","running":["c1"],"progress":{"c1":{"done":3,"total":72,"released_keys":["a.example.com"]}}}`), &req); err != nil {
 		t.Fatal(err)
 	}
 	got := req.commandProgress()
-	if len(got) != 1 || got["c1"] != (commanddom.Progress{Done: 3, Total: 72}) {
+	if len(got) != 1 || !reflect.DeepEqual(got["c1"], commanddom.Progress{Done: 3, Total: 72, ReleasedKeys: []string{"a.example.com"}}) {
 		t.Fatalf("progress = %+v", got)
 	}
 	if (&HeartbeatRequest{}).commandProgress() != nil {

@@ -28,7 +28,15 @@ type Progress struct {
 	Records     int64
 	OutputBytes int64
 	CPUMs       int64
+	// ReleasedKeys are the host keys the holder freed because the targets
+	// that needed them settled (research/130). Untrusted: only the keys of
+	// the command itself count, for a command the sensor holds.
+	ReleasedKeys []string
 }
+
+// MaxReleasedKeyLen bounds one released key a heartbeat may name (the
+// sensor's bound on a host key).
+const MaxReleasedKeyLen = 512
 
 // MaxLivenessCounter bounds each liveness counter a heartbeat may set.
 const MaxLivenessCounter = int64(1) << 50
