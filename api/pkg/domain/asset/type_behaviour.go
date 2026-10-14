@@ -81,6 +81,16 @@ func ScannableBy(t AssetType, subType string) []string {
 	return slices.Clone(d.ScannableBy)
 }
 
+// CoverageRules returns the coverage rules of a stored pair: an alias's own
+// when the pair is an alias, else the core type's. Unknown types have none.
+func CoverageRules(t AssetType, subType string) []CoverageRule {
+	d, ok := registryDefFor(t, subType)
+	if !ok {
+		return nil
+	}
+	return slices.Clone(d.Coverage)
+}
+
 // subTypeMatches reports whether an asset's sub-type satisfies a rule's.
 // A rule without a sub-type matches every asset of the type. An asset
 // without a sub-type (its kind was never recorded, e.g. an application
