@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   Dialog,
   DialogContent,
@@ -20,6 +21,18 @@ import { useRequestApproval } from '../api/use-findings-api'
 import { FINDING_STATUS_CONFIG } from '../types'
 import type { FindingStatus } from '../types'
 
+/** Days an accepted risk lasts unless the requester picks another date. */
+const DEFAULT_ACCEPTANCE_DAYS = 90
+
+/** Local calendar date (YYYY-MM-DD) `days` days and `years` years from today. */
+function acceptanceDate(days: number, years = 0): string {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() + years)
+  d.setDate(d.getDate() + days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 interface ApprovalDialogProps {
   findingId: string
   targetStatus: FindingStatus
@@ -36,17 +49,33 @@ export function ApprovalDialog({
   onOpenChange,
   onSuccess,
 }: ApprovalDialogProps) {
+  const { t } = useTranslation()
   const [justification, setJustification] = useState('')
-  const [expiresAt, setExpiresAt] = useState('')
+  // An accepted risk always ends: 90 days ahead unless changed, at most a year.
+  const [expiresAt, setExpiresAt] = useState(() => acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
   const [step, setStep] = useState<'input' | 'confirm'>('input')
   const { trigger: requestApproval, isMutating } = useRequestApproval(findingId)
 
   const statusLabel = FINDING_STATUS_CONFIG[targetStatus]?.label || targetStatus
   const showExpiryPicker = targetStatus === 'accepted'
+  const minDate = acceptanceDate(1)
+  const maxDate = acceptanceDate(0, 1)
+  const expiryValid =
+    !showExpiryPicker || (!!expiresAt && expiresAt >= minDate && expiresAt <= maxDate)
+  const justificationRequired = t(
+    'findings.approvalDialog.justificationRequired',
+    'Justification is required'
+  )
 
   const handleNext = () => {
     if (!justification.trim()) {
-      toast.error('Justification is required')
+      toast.error(justificationRequired)
+      return
+    }
+    if (!expiryValid) {
+      toast.error(
+        t('findings.approvalDialog.expiryInvalid', 'Choose an expiry date within the next year')
+      )
       return
     }
     setStep('confirm')
@@ -58,7 +87,7 @@ export function ApprovalDialog({
 
   const handleSubmit = async () => {
     if (!justification.trim()) {
-      toast.error('Justification is required')
+      toast.error(justificationRequired)
       return
     }
 
@@ -66,16 +95,27 @@ export function ApprovalDialog({
       await requestApproval({
         requested_status: targetStatus,
         justification: justification.trim(),
-        ...(expiresAt ? { expires_at: new Date(expiresAt).toISOString() } : {}),
+        ...(showExpiryPicker && expiresAt
+          ? { expires_at: new Date(`${expiresAt}T00:00:00`).toISOString() }
+          : {}),
       })
-      toast.success(`Approval request submitted for "${statusLabel}"`)
+      toast.success(
+        t('findings.approvalDialog.submitted', 'Approval request submitted for "{status}"', {
+          status: statusLabel,
+        })
+      )
       setJustification('')
-      setExpiresAt('')
+      setExpiresAt(acceptanceDate(DEFAULT_ACCEPTANCE_DAYS))
       setStep('input')
       onOpenChange(false)
       await onSuccess?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to submit approval request'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('findings.approvalDialog.submitFailed', 'Failed to submit approval request')
+        )
+      )
     }
   }
 
@@ -92,40 +132,60 @@ export function ApprovalDialog({
         {step === 'input' ? (
           <>
             <DialogHeader>
-              <DialogTitle>Request Status Approval</DialogTitle>
+              <DialogTitle>
+                {t('findings.approvalDialog.title', 'Request Status Approval')}
+              </DialogTitle>
               <DialogDescription>
-                Changing status to <strong>{statusLabel}</strong> requires approval. Please provide
-                a justification.
+                {t('findings.approvalDialog.descriptionBefore', 'Changing status to')}{' '}
+                <strong>{statusLabel}</strong>{' '}
+                {t(
+                  'findings.approvalDialog.descriptionAfter',
+                  'requires approval. Please provide a justification.'
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="justification">Justification</Label>
+                  <Label htmlFor="justification">
+                    {t('findings.approvalDialog.justification', 'Justification')}
+                  </Label>
                   <Textarea
                     id="justification"
-                    placeholder="Explain why this status change is needed..."
+                    placeholder={t(
+                      'findings.approvalDialog.justificationPlaceholder',
+                      'Explain why this status change is needed...'
+                    )}
                     value={justification}
                     onChange={(e) => setJustification(e.target.value)}
                     rows={4}
                     maxLength={2000}
                   />
                   <p className="text-xs text-muted-foreground">
-                    {justification.length}/2000 characters
+                    {t('findings.approvalDialog.characters', '{count}/2000 characters', {
+                      count: justification.length,
+                    })}
                   </p>
                 </div>
                 {showExpiryPicker && (
                   <div className="grid gap-2">
-                    <Label htmlFor="expires-at">Expiry Date (optional)</Label>
+                    <Label htmlFor="expires-at">
+                      {t('findings.approvalDialog.expiry', 'Acceptance expires on')}
+                    </Label>
                     <Input
                       id="expires-at"
-                      type="datetime-local"
+                      type="date"
+                      required
                       value={expiresAt}
                       onChange={(e) => setExpiresAt(e.target.value)}
-                      min={new Date().toISOString().slice(0, 16)}
+                      min={minDate}
+                      max={maxDate}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Risk acceptance will expire on this date if set.
+                      {t(
+                        'findings.approvalDialog.expiryHint',
+                        'The finding reopens on this date. At most one year ahead.'
+                      )}
                     </p>
                   </div>
                 )}
@@ -133,43 +193,58 @@ export function ApprovalDialog({
             </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                Cancel
+                {t('findings.approvalDialog.cancel', 'Cancel')}
               </Button>
-              <Button onClick={handleNext} disabled={!justification.trim()}>
-                Review
+              <Button onClick={handleNext} disabled={!justification.trim() || !expiryValid}>
+                {t('findings.approvalDialog.review', 'Review')}
               </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Confirm Approval Request</DialogTitle>
-              <DialogDescription>Please review the details before submitting.</DialogDescription>
+              <DialogTitle>
+                {t('findings.approvalDialog.confirmTitle', 'Confirm Approval Request')}
+              </DialogTitle>
+              <DialogDescription>
+                {t(
+                  'findings.approvalDialog.confirmDescription',
+                  'Please review the details before submitting.'
+                )}
+              </DialogDescription>
             </DialogHeader>
             <DialogBody>
               <div className="grid gap-3 py-4 text-sm">
                 <div>
-                  <span className="font-medium text-muted-foreground">Status:</span>{' '}
+                  <span className="font-medium text-muted-foreground">
+                    {t('findings.approvalDialog.status', 'Status:')}
+                  </span>{' '}
                   <strong>{statusLabel}</strong>
                 </div>
                 <div>
-                  <span className="font-medium text-muted-foreground">Justification:</span>
+                  <span className="font-medium text-muted-foreground">
+                    {t('findings.approvalDialog.justificationLabel', 'Justification:')}
+                  </span>
                   <p className="mt-1 rounded-md border bg-muted/50 p-2 text-sm">{justification}</p>
                 </div>
-                {expiresAt && (
+                {showExpiryPicker && expiresAt && (
                   <div>
-                    <span className="font-medium text-muted-foreground">Expires:</span>{' '}
-                    {new Date(expiresAt).toLocaleString()}
+                    <span className="font-medium text-muted-foreground">
+                      {t('findings.approvalDialog.expires', 'Expires:')}
+                    </span>{' '}
+                    {new Date(`${expiresAt}T00:00:00`).toLocaleDateString()}
                   </div>
                 )}
               </div>
             </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={handleBack} disabled={isMutating}>
-                Back
+                {t('findings.approvalDialog.back', 'Back')}
               </Button>
               <Button onClick={handleSubmit} disabled={isMutating}>
-                {isMutating ? 'Submitting...' : 'Submit for Approval'}
+                {isMutating
+                  ? t('findings.approvalDialog.submitting', 'Submitting...')
+                  : t('findings.approvalDialog.submit', 'Submit for Approval')}
               </Button>
             </DialogFooter>
           </>
