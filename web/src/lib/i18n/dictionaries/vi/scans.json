@@ -1024,6 +1024,7 @@
   "scans.ci.noTrustTitle": "Chưa có cấu hình tin cậy CI",
   "scans.ci.noTrust": "Nêu các tổ chức hoặc kho mã có pipeline được phép gửi kết quả.",
   "scans.workflows.systemTemplate": "Mẫu hệ thống",
+  "scans.workflows.readOnlyNoPermission": "Chỉ xem: bạn được xem quy trình này nhưng không được sửa.",
   "scans.workflows.cloneHint": "Bản sao của bạn chỉnh sửa được hoàn toàn và không làm thay đổi mẫu.",
   "scans.templates.title": "Mẫu trình quét",
   "scans.templates.description": "Mẫu Nuclei, Semgrep và Betterleaks tùy chỉnh, tải lên tại đây hoặc đồng bộ từ nguồn mẫu.",
@@ -1622,6 +1623,5 @@
   "scans.liveness.switch": "Dùng tìm máy đang hoạt động trước",
   "scans.liveness.switched": "Lượt quét giờ tìm máy đang hoạt động trước",
   "scans.liveness.switchFailed": "Không thể chuyển chế độ của lượt quét",
-  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước",
-  "scans.workflows.readOnlyNoPermission": "Chỉ xem: bạn được xem quy trình này nhưng không được sửa."
+  "scans.targetOptions.rangesLiveness": "Dải địa chỉ: tìm máy đang hoạt động trước"
 }

@@ -1024,6 +1024,7 @@
   "scans.ci.noTrustTitle": "No CI trust yet",
   "scans.ci.noTrust": "Name the organizations or repositories whose pipelines may send results.",
   "scans.workflows.systemTemplate": "System template",
+  "scans.workflows.readOnlyNoPermission": "Read-only: you may view this workflow but not change it.",
   "scans.workflows.cloneHint": "Your copy is fully editable and does not change the template.",
   "scans.templates.title": "Scanner templates",
   "scans.templates.description": "Custom Nuclei, Semgrep and Betterleaks templates, uploaded here or synced from template sources.",
@@ -1622,6 +1623,5 @@
   "scans.liveness.switch": "Use live hosts first",
   "scans.liveness.switched": "The scan now finds live hosts first",
   "scans.liveness.switchFailed": "The scan could not be switched",
-  "scans.targetOptions.rangesLiveness": "Ranges: live hosts first",
-  "scans.workflows.readOnlyNoPermission": "Read-only: you may view this workflow but not change it."
+  "scans.targetOptions.rangesLiveness": "Ranges: live hosts first"
 }
