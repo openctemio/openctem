@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useTranslation } from '@/context/i18n-provider'
 import { DetailCallout } from '@/features/shared'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import {
@@ -59,6 +60,21 @@ import { ToggleChip } from './toggle-chip'
 
 type ListKey = 'job_types' | 'zone_ids' | 'tools' | 'capabilities'
 
+/** widenedDimensions() names a dimension in English; the catalog key suffix for each. */
+const DIMENSION_KEYS: Record<string, string> = {
+  'trust level': 'trustLevel',
+  'job types': 'jobTypes',
+  zones: 'zones',
+  tools: 'tools',
+  capabilities: 'capabilities',
+  'tier ceiling': 'tierCeiling',
+  'target network': 'targetNetwork',
+  'target scope': 'targetScope',
+  credentials: 'credentials',
+  'push ingest': 'pushIngest',
+  'remote actions': 'remoteActions',
+}
+
 /** A list dimension: "Any" (null, no limit) or "Only these" (a list, possibly empty = none). */
 function ListDimension({
   label,
@@ -74,6 +90,7 @@ function ListDimension({
   options?: { value: string; label: string }[]
   placeholder?: string
 }) {
+  const { t } = useTranslation()
   const id = useId()
   const [text, setText] = useState((value ?? []).join(', '))
   const limited = value !== null
@@ -82,10 +99,10 @@ function ListDimension({
       <legend className="text-sm font-medium">{label}</legend>
       <div className="flex gap-2">
         <ToggleChip pressed={!limited} onToggle={() => onChange(null)}>
-          Any
+          {t('sensors.grantEdit.any')}
         </ToggleChip>
         <ToggleChip pressed={limited} onToggle={() => onChange(limited ? value : [])}>
-          Only these
+          {t('sensors.grantEdit.onlyThese')}
         </ToggleChip>
       </div>
       {limited &&
@@ -105,12 +122,14 @@ function ListDimension({
                 </ToggleChip>
               )
             })}
-            {value.length === 0 && <span className="text-xs text-muted-foreground">None</span>}
+            {value.length === 0 && (
+              <span className="text-xs text-muted-foreground">{t('sensors.grantEdit.none')}</span>
+            )}
           </div>
         ) : (
           <Input
             id={id}
-            aria-label={`${label} list`}
+            aria-label={t('sensors.grantEdit.listLabel', undefined, { label })}
             value={text}
             placeholder={placeholder}
             onChange={(e) => {
@@ -138,6 +157,15 @@ export function SensorGrantEditDialog({
   onSaved: (next: SensorGrant) => unknown
   onConflict: () => unknown
 }) {
+  const { t } = useTranslation()
+  const tierText = (n: number) => t(`sensors.grantEdit.tier.${n}`, TIER_LABELS[n])
+  const networkText = (n: string) =>
+    t(`sensors.grantEdit.network.${n}`, TARGET_NETWORK_LABELS[n] ?? n)
+  const profileText = (p: string) => {
+    const [base, param] = p.split(':', 2)
+    const label = t(`sensors.grantEdit.profile.${base}`, profileLabel(base))
+    return param ? `${label} (${param})` : label
+  }
   const canWiden = useHasPermission(Permission.SensorsGrantWiden)
   const canReadZones = useHasPermission(Permission.ScanZonesRead)
   const { data: profilesData } = useSensorGrantProfiles(open)
@@ -161,7 +189,9 @@ export function SensorGrantEditDialog({
   const set = <K extends keyof UpdateSensorGrantRequest>(k: K, v: UpdateSensorGrantRequest[K]) =>
     setDraft((d) => ({ ...d, [k]: v }))
 
-  const widened = mode === 'dimensions' ? widenedDimensions(grant, draft) : []
+  const widened = (mode === 'dimensions' ? widenedDimensions(grant, draft) : []).map((d) =>
+    DIMENSION_KEYS[d] ? t(`sensors.grantEdit.dim.${DIMENSION_KEYS[d]}`) : d
+  )
   const selectedProfile = profiles.find((p) => p.name === profile)
   const profileValue =
     selectedProfile?.parameterised && integration.trim()
@@ -178,10 +208,10 @@ export function SensorGrantEditDialog({
           : draft
       const next = await updateSensorGrant(sensorId, body)
       await onSaved(next)
-      toast.success('Grant saved')
+      toast.success(t('sensors.grantEdit.saved'))
       onOpenChange(false)
     } catch (err) {
-      setError(grantErrorMessage(err))
+      setError(grantErrorMessage(err, t))
       if (isVersionConflict(err)) await onConflict()
     } finally {
       setSaving(false)
@@ -206,75 +236,81 @@ export function SensorGrantEditDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Edit grant</DialogTitle>
+          <DialogTitle>{t('sensors.grantEdit.title')}</DialogTitle>
           <DialogDescription>
-            Currently {profileLabel(grant.profile)}. Narrowing takes effect on the sensor&apos;s
-            next request.
+            {t('sensors.grantEdit.description', undefined, {
+              profile: profileText(grant.profile),
+            })}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody className="grid gap-4">
           <Tabs value={mode} onValueChange={(v) => setMode(v as 'profile' | 'dimensions')}>
             <TabsList>
-              <TabsTrigger value="profile">Apply a profile</TabsTrigger>
-              <TabsTrigger value="dimensions">Edit dimensions</TabsTrigger>
+              <TabsTrigger value="profile">{t('sensors.grantEdit.tabProfile')}</TabsTrigger>
+              <TabsTrigger value="dimensions">{t('sensors.grantEdit.tabDimensions')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="profile" className="mt-4 space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor={ids.profile}>Profile</Label>
+                <Label htmlFor={ids.profile}>{t('sensors.grantEdit.profile')}</Label>
                 <Select value={profile} onValueChange={setProfile}>
                   <SelectTrigger id={ids.profile} data-testid="grant-profile-select">
-                    <SelectValue placeholder="Choose a profile" />
+                    <SelectValue placeholder={t('sensors.grantEdit.chooseProfile')} />
                   </SelectTrigger>
                   <SelectContent>
                     {profiles.map((p) => (
                       <SelectItem key={p.name} value={p.name}>
-                        {profileLabel(p.name)}
+                        {profileText(p.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {selectedProfile && (
                   <p className="text-xs text-muted-foreground">
-                    {TIER_LABELS[selectedProfile.tier_ceiling]} ·{' '}
-                    {TARGET_NETWORK_LABELS[selectedProfile.target_network] ??
-                      selectedProfile.target_network}
-                    {selectedProfile.allow_credentials ? ' · credentials' : ''}
-                    {selectedProfile.allow_push_ingest ? ' · results without a job' : ''}. The zones
-                    stay as they are; the trust level does not change.
+                    {tierText(selectedProfile.tier_ceiling)} ·{' '}
+                    {networkText(selectedProfile.target_network)}
+                    {selectedProfile.allow_credentials
+                      ? ` · ${t('sensors.grantEdit.credentialsTag')}`
+                      : ''}
+                    {selectedProfile.allow_push_ingest
+                      ? ` · ${t('sensors.grantEdit.pushTag')}`
+                      : ''}
+                    . {t('sensors.grantEdit.profileKeeps')}
                   </p>
                 )}
               </div>
               {selectedProfile?.parameterised && (
                 <div className="space-y-1.5">
-                  <Label htmlFor={ids.integration}>Integration</Label>
+                  <Label htmlFor={ids.integration}>{t('sensors.grantEdit.integration')}</Label>
                   <Input
                     id={ids.integration}
                     value={integration}
                     maxLength={64}
-                    placeholder="e.g. github"
+                    placeholder={t('sensors.grantEdit.integrationPlaceholder')}
                     onChange={(e) => setIntegration(e.target.value)}
                   />
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Whether a profile narrows or widens this grant is decided by the server; widening
-                needs the permission to widen sensor grants.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('sensors.grantEdit.profileNote')}</p>
             </TabsContent>
 
             <TabsContent value="dimensions" className="mt-4 space-y-4">
-              {listDim('job_types', 'Job types', {
-                options: GRANT_JOB_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') })),
+              {listDim('job_types', t('sensors.grantEdit.dim.jobTypes'), {
+                options: GRANT_JOB_TYPES.map((jt) => ({
+                  value: jt,
+                  label: t(`sensors.grantEdit.jobType.${jt}`, jt.replace('_', ' ')),
+                })),
               })}
-              {listDim('zone_ids', 'Zones', { options: zoneOptions })}
-              {listDim('tools', 'Tools', { placeholder: 'nuclei, httpx' })}
-              {listDim('capabilities', 'Capabilities', { placeholder: 'scan:dast' })}
+              {listDim('zone_ids', t('sensors.grantEdit.dim.zones'), { options: zoneOptions })}
+              {listDim('tools', t('sensors.grantEdit.dim.tools'), { placeholder: 'nuclei, httpx' })}
+              {listDim('capabilities', t('sensors.grantEdit.dim.capabilities'), {
+                placeholder: 'scan:dast',
+              })}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor={ids.tier}>Tier ceiling</Label>
+                  <Label htmlFor={ids.tier}>{t('sensors.grantEdit.dim.tierCeiling')}</Label>
                   <Select
                     value={String(draft.tier_ceiling)}
                     onValueChange={(v) => set('tier_ceiling', Number(v))}
@@ -283,16 +319,16 @@ export function SensorGrantEditDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {[0, 1, 2].map((t) => (
-                        <SelectItem key={t} value={String(t)}>
-                          {TIER_LABELS[t]}
+                      {[0, 1, 2].map((tier) => (
+                        <SelectItem key={tier} value={String(tier)}>
+                          {tierText(tier)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor={ids.network}>Target network</Label>
+                  <Label htmlFor={ids.network}>{t('sensors.grantEdit.dim.targetNetwork')}</Label>
                   <Select
                     value={draft.target_network}
                     onValueChange={(v) => set('target_network', v as TargetNetwork)}
@@ -303,7 +339,7 @@ export function SensorGrantEditDialog({
                     <SelectContent>
                       {(['any', 'public', 'none'] as const).map((n) => (
                         <SelectItem key={n} value={n}>
-                          {TARGET_NETWORK_LABELS[n]}
+                          {networkText(n)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -312,13 +348,13 @@ export function SensorGrantEditDialog({
               </div>
 
               <ListDimension
-                label="Target CIDRs"
+                label={t('sensors.grantEdit.targetCidrs')}
                 value={draft.target_cidrs}
                 onChange={(v) => set('target_cidrs', v)}
                 placeholder="10.0.0.0/8, 192.0.2.10"
               />
               <ListDimension
-                label="Target domains"
+                label={t('sensors.grantEdit.targetDomains')}
                 value={draft.target_domains}
                 onChange={(v) => set('target_domains', v)}
                 placeholder="example.com"
@@ -327,8 +363,8 @@ export function SensorGrantEditDialog({
               <div className="space-y-3">
                 {(
                   [
-                    ['allow_credentials', 'May receive jobs with credentials'],
-                    ['allow_push_ingest', 'May send results without a job'],
+                    ['allow_credentials', t('sensors.grantEdit.allowCredentials')],
+                    ['allow_push_ingest', t('sensors.grantEdit.allowPush')],
                   ] as const
                 ).map(([k, label]) => (
                   <div key={k} className="flex items-center justify-between gap-4">
@@ -345,9 +381,11 @@ export function SensorGrantEditDialog({
               </div>
 
               <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Remote actions</legend>
+                <legend className="text-sm font-medium">
+                  {t('sensors.grantEdit.dim.remoteActions')}
+                </legend>
                 <p className="text-xs text-muted-foreground">
-                  Pause, resume, drain and cancel are always allowed.
+                  {t('sensors.grantEdit.remoteAlways')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {GATED_REMOTE_ACTIONS.map((a) => {
@@ -364,7 +402,7 @@ export function SensorGrantEditDialog({
                           )
                         }
                       >
-                        {a.replace('_', ' ')}
+                        {t(`sensors.grantEdit.action.${a}`, a.replace('_', ' '))}
                       </ToggleChip>
                     )
                   })}
@@ -378,11 +416,11 @@ export function SensorGrantEditDialog({
               <DetailCallout
                 tone={canWiden ? 'warning' : 'destructive'}
                 icon={AlertTriangle}
-                title={`This widens the grant: ${widened.join(', ')}`}
+                title={t('sensors.grantEdit.widens', undefined, { dims: widened.join(', ') })}
               >
                 {canWiden
-                  ? 'Widening is audited at high severity and every administrator is notified.'
-                  : 'You can only narrow grants; saving this will be refused. Ask someone with the permission to widen sensor grants.'}
+                  ? t('sensors.grantEdit.widenAudited')
+                  : t('sensors.grantEdit.widenRefused')}
               </DetailCallout>
             </div>
           )}
@@ -396,11 +434,11 @@ export function SensorGrantEditDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={() => void save()} disabled={saving || (mode === 'profile' && !profile)}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

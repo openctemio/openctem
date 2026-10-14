@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import { OneTimeSecretField } from '@/features/shared'
 
 import { useRegenerateSensorKey, invalidateSensorsCache } from '@/lib/api/sensor-hooks'
@@ -38,6 +39,7 @@ export function RegenerateKeyDialog({
   sensor,
   onSuccess,
 }: RegenerateKeyDialogProps) {
+  const { t } = useTranslation()
   const [apiKey, setApiKey] = useState<string | null>(null)
 
   const { trigger: regenerateKey, isMutating } = useRegenerateSensorKey()
@@ -57,12 +59,12 @@ export function RegenerateKeyDialog({
       if (typeof newApiKey === 'string' && newApiKey) {
         // Keep the list cache until the dialog closes (the key is shown once).
         setApiKey(newApiKey)
-        toast.success('API key rotated')
+        toast.success(t('sensors.regenerate.rotated'))
       } else {
-        toast.error('The new API key was not in the response')
+        toast.error(t('sensors.regenerate.noKey'))
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to rotate the API key'))
+      toast.error(getErrorMessage(error, t('sensors.regenerate.failed')))
     }
   }
 
@@ -81,24 +83,28 @@ export function RegenerateKeyDialog({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>New API key for {sensor.name}</DialogTitle>
-            <DialogDescription>
-              The old key no longer works. Copy the new one now: it is shown only once.
-            </DialogDescription>
+            <DialogTitle>
+              {t('sensors.regenerate.newKeyTitle', undefined, { name: sensor.name })}
+            </DialogTitle>
+            <DialogDescription>{t('sensors.regenerate.newKeyBody')}</DialogDescription>
           </DialogHeader>
 
           <DialogBody>
             <div className="min-w-0 space-y-4">
-              <OneTimeSecretField label="New API key" noun="API key" value={apiKey} />
+              <OneTimeSecretField
+                label={t('sensors.regenerate.newKeyLabel')}
+                noun={t('sensors.regenerate.keyNoun')}
+                value={apiKey}
+              />
               <div>
-                <p className="mb-2 text-sm font-medium">Restart the sensor with it</p>
+                <p className="mb-2 text-sm font-medium">{t('sensors.regenerate.restart')}</p>
                 <SensorInstallSnippets sensorId={sensor.id} apiKey={apiKey} />
               </div>
             </div>
           </DialogBody>
 
           <DialogFooter>
-            <Button onClick={handleClose}>Done</Button>
+            <Button onClick={handleClose}>{t('sensors.pair.done')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -111,10 +117,11 @@ export function RegenerateKeyDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-5 w-5" />
-            Rotate API key
+            {t('sensors.regenerate.title')}
           </DialogTitle>
           <DialogDescription>
-            Issue a new API key for <strong>{sensor.name}</strong>.
+            {t('sensors.regenerate.issueBefore')} <strong>{sensor.name}</strong>
+            {t('sensors.regenerate.issueAfter')}
           </DialogDescription>
         </DialogHeader>
 
@@ -122,25 +129,24 @@ export function RegenerateKeyDialog({
           <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3">
             <AlertTriangle className="h-5 w-5 shrink-0 text-warning" aria-hidden />
             <div className="space-y-1 text-sm">
-              <p className="font-medium">The current key stops working at once</p>
-              <p className="text-muted-foreground">
-                The sensor disconnects until it is restarted with the new key.
-              </p>
+              <p className="font-medium">{t('sensors.regenerate.warnTitle')}</p>
+              <p className="text-muted-foreground">{t('sensors.regenerate.warnBody')}</p>
             </div>
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Current key <span className="font-mono">{sensor.api_key_prefix}…</span>
+            {t('sensors.regenerate.currentKey')}{' '}
+            <span className="font-mono">{sensor.api_key_prefix}…</span>
           </p>
         </DialogBody>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={handleClose} disabled={isMutating}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button variant="destructive" onClick={handleRegenerate} disabled={isMutating}>
             {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Rotate key
+            {t('sensors.regenerate.rotate')}
           </Button>
         </DialogFooter>
       </DialogContent>
