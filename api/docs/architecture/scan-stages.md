@@ -441,6 +441,15 @@ what makes chained outputs trustworthy.
   report defers the step; the v2 commit calls `OnCommandIngested`, which
   advances the run. (A report that expires uncommitted wakes nothing: the run
   timeout ends such a run; P1 adds a sweep.)
+- **One canonical input per web origin.** A stage that takes web origins
+  (`vuln.templates`, `crawl.web`) gets each web service once, as the
+  `http_service` the HTTP probe found: the same service is not handed again
+  as the port scan's `host:port`, nor as the name or address the origin is
+  served on, and an open web port the probe found no HTTP on is not web
+  input. A non-web open port (SSH, SMTP, a database) still reaches a stage
+  that declares open ports. Dropped outputs count as `covered_by_origin`.
+  Without any origin among the outputs (a chain with no HTTP probe), the
+  open ports stay.
 - **The per-hop gate.** Each candidate: the stage takes its stored pair; the
   name parses strictly (host, IP, host:port or an http(s) URL without
   credentials; no control or bidi characters; at most 2 048 characters);

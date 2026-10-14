@@ -153,6 +153,7 @@ func (s *Service) planStage(ctx context.Context, run *scanrun.Run, step *scanwor
 		stageOf[p.run] = p.key
 	}
 
+	outputs = canonicalWebInputs(st, outputs, plan.Skipped)
 	cands, inputs := deriveCandidates(st, outputs, parents, stageOf, seen, plan.Skipped, len(seedList))
 	if cands, err = s.expandEndpoints(ctx, run, st, step, cands, plan.Skipped); err != nil {
 		return nil, err
