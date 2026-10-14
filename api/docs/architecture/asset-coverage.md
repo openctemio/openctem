@@ -45,7 +45,9 @@ Each pass, per tenant, after reconciling:
    `blocked` → `failed` with the run's error, failure streak + 1, due again
    after 1 h doubled per failure (at most the cadence, at most a day). A run
    not finished after a day fails its pairs as stalled.
-2. **Plan**, unless the tenant's scan approval mode in force is Strict: for
+2. **Plan**, when the organization has automatic coverage on (Scoping >
+   Settings, `auto_coverage`; default on, except while the scan approval
+   mode in force is Strict, until the organization turns it on): for
    each stage capability of the policy (never an intrusive one; platform
    checks run on their own schedule), take up to 200 due pairs (priority,
    then oldest), within the tenant's daily budget
