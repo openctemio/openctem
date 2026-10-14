@@ -412,6 +412,18 @@ type SensorConfigConfig struct {
 	// gateway's CA export directory into the API read-only and point this at
 	// openctem-root-ca.crt. Empty: the certificate is publicly trusted.
 	CACertFile string
+
+	// CIRunnerLatestVersion is the newest CI runner release (openctemio/ci,
+	// the openctem-ci action and image; CI_RUNNER_LATEST_VERSION, default
+	// DefaultCIRunnerLatestVersion). CI runners have their own release line,
+	// so a pipeline's runner is compared with this, never with the sensor's.
+	// Empty turns the "update available" comparison off.
+	CIRunnerLatestVersion string
+	// CIRunnerMinVersion is the oldest CI runner release still accepted
+	// (CI_RUNNER_MIN_VERSION, default DefaultCIRunnerMinVersion; empty = no
+	// minimum). An older runner is refused at the token exchange and its
+	// pipeline shows as degraded.
+	CIRunnerMinVersion string
 }
 
 // DefaultSensorKeyTTL is how long a renewed sensor API key stays valid when
@@ -437,6 +449,14 @@ const DefaultSensorLatestVersion = "v0.21.1"
 // DefaultSensorMinVersion is the oldest supported sensor release
 // (SENSOR_MIN_VERSION); empty means no minimum.
 const DefaultSensorMinVersion = "v0.9.0"
+
+// DefaultCIRunnerLatestVersion is the newest CI runner release
+// (openctemio/ci) when this API was built (CI_RUNNER_LATEST_VERSION).
+const DefaultCIRunnerLatestVersion = "v0.2.0"
+
+// DefaultCIRunnerMinVersion is the oldest accepted CI runner release
+// (CI_RUNNER_MIN_VERSION); empty means no minimum.
+const DefaultCIRunnerMinVersion = ""
 
 // DefaultSensorSDKLatestVersion is the newest SDK release
 // (SENSOR_SDK_LATEST_VERSION); empty turns the "outdated" comparison off.
@@ -1252,6 +1272,8 @@ func Load() (*Config, error) {
 			Image:                 getEnv("SENSOR_IMAGE", DefaultSensorImageRepository),
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
 			CACertFile:            getEnv("SENSOR_CA_CERT_FILE", ""),
+			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", DefaultCIRunnerLatestVersion)),
+			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", DefaultCIRunnerMinVersion)),
 		},
 		Storage: StorageConfig{
 			Provider:  getEnv("STORAGE_PROVIDER", "local"),
