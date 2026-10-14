@@ -329,7 +329,7 @@ func (h *CIAdminHandler) ResetCodeScanRepository(w http.ResponseWriter, r *http.
 	ciWriteJSON(w, http.StatusOK, toCodeScanRepository(st))
 }
 
-// RebaselineCodeScanRepository handles POST /api/v1/ci/code-scanning/repositories/{id}/rebaseline
+// RebaselineCodeScanRepository handles POST /api/v1/ci/code-scanning/repositories/{id}/baseline
 // @Summary      Re-baseline a repository now
 // @Description  Audited. Queues a full scan of every known protected branch of the repository (its default branch is recorded first when no branch is known); branches already queued or running stay as they are. 409 when no known branch is protected, 400 when code scanning is off for the repository, 404 outside the caller's data scope.
 // @Tags         CI
@@ -340,7 +340,7 @@ func (h *CIAdminHandler) ResetCodeScanRepository(w http.ResponseWriter, r *http.
 // @Failure      400  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /ci/code-scanning/repositories/{id}/rebaseline [post]
+// @Router       /ci/code-scanning/repositories/{id}/baseline [post]
 func (h *CIAdminHandler) RebaselineCodeScanRepository(w http.ResponseWriter, r *http.Request) {
 	tenantID, id, ok := h.codeScanRepository(w, r)
 	if !ok {
