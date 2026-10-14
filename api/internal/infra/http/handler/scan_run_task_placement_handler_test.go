@@ -20,6 +20,14 @@ import (
 type fakePlacement struct {
 	tenant, run, task shared.ID
 	p                 *commandapp.Placement
+	hw                *commandapp.HostWait
+}
+
+func (f *fakePlacement) RunTaskHostWait(_ context.Context, tenantID, runID, commandID shared.ID) (*commandapp.HostWait, error) {
+	if tenantID != f.tenant || runID != f.run || commandID != f.task {
+		return nil, shared.ErrNotFound
+	}
+	return f.hw, nil
 }
 
 func (f *fakePlacement) ExplainRunTaskPlacement(_ context.Context, tenantID, runID, commandID shared.ID) (*commandapp.Placement, error) {
@@ -157,5 +165,36 @@ func TestGetRunTaskPlacement_HostWait(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "secret-host") {
 		t.Fatalf("host names in the response: %s", w.Body)
+	}
+}
+
+// The run's task list says, on each task waiting for its hosts, how many
+// hosts are held, by which task (named only when the caller can read its
+// run), and how many targets can start; never a host name, and nothing
+// for a task that is not the run's or does not wait.
+func TestRunTaskList_HostWait(t *testing.T) {
+	h, f := newPlacementHandler(t)
+	holder := shared.NewID()
+	f.hw = &commandapp.HostWait{Held: 1, Total: 20, Targets: 23, CanStart: 21, Holders: []commanddom.HostHolder{
+		{CommandID: holder, RunID: f.run.String(), StepKey: "templates", Tool: "nuclei", Keys: []string{"203.0.113.3"}},
+	}}
+	tasks := []RunTaskResponse{
+		{ID: f.task.String(), WaitingOnHosts: true},
+		{ID: shared.NewID().String(), WaitingOnHosts: true}, // not found for this run
+		{ID: shared.NewID().String()},
+	}
+	ctx := placementRequest(f.tenant, f.run.String(), f.task.String()).Context()
+	h.withHostWaits(ctx, f.tenant.String(), f.run.String(), tasks)
+	hw := tasks[0].HostWait
+	if hw == nil || hw.HostsHeld != 1 || hw.HostsTotal != 20 || hw.Targets != 23 || hw.CanStart != 21 || len(hw.Holders) != 1 ||
+		hw.Holders[0] != (RunTaskHostHolder{TaskID: holder.String(), RunID: f.run.String(), StepKey: "templates", Tool: "nuclei"}) {
+		t.Fatalf("host wait %+v", hw)
+	}
+	if tasks[1].HostWait != nil || tasks[2].HostWait != nil {
+		t.Fatalf("host wait on a task that is not the run's or not waiting: %+v %+v", tasks[1].HostWait, tasks[2].HostWait)
+	}
+	b, _ := json.Marshal(tasks)
+	if strings.Contains(string(b), "203.0.113.3") {
+		t.Fatalf("a host name in the list: %s", b)
 	}
 }

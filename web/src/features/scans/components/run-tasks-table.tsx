@@ -15,7 +15,11 @@ import { formatScanDuration } from '@/features/scans/lib/format'
 import { elapsedMs } from '@/features/scans/lib/run-display'
 import { RunTaskLogsDialog } from '@/features/scans/components/run-task-logs-dialog'
 import { holdText } from '@/features/scan-windows'
-import { TaskPlacementPanel, WhyWaitingButton } from '@/features/scans/components/task-placement'
+import {
+  hostWaitLine,
+  TaskPlacementPanel,
+  WhyWaitingButton,
+} from '@/features/scans/components/task-placement'
 
 /**
  * Who runs a task: "Platform scanning" (never a platform sensor's name), the
@@ -46,14 +50,23 @@ const RELEASED_PREFIX = 'released by sensor'
  * it opens (window_hold, RFC-067). Any other message is the task's error.
  */
 export function taskStatusNote(
-  task: Pick<RunTask, 'status' | 'error_message' | 'window_hold' | 'waiting_on_hosts'>,
-  t: Translate = enTranslate
-): { kind: 'waiting' | 'error'; text: string } | null {
+  task: Pick<
+    RunTask,
+    'status' | 'error_message' | 'window_hold' | 'waiting_on_hosts' | 'host_wait'
+  >,
+  t: Translate = enTranslate,
+  runId = ''
+): { kind: 'waiting' | 'error'; text: string; full?: boolean } | null {
   if (task.status === 'queued' && task.window_hold) {
     return { kind: 'waiting', text: holdText(task.window_hold) }
   }
-  // Another task of the organization is scanning its hosts (research/130).
+  // Another task of the organization is scanning its hosts (research/130):
+  // how many, held by which task, and how many targets can start, shown
+  // in full.
   if (task.status === 'queued' && task.waiting_on_hosts) {
+    if (task.host_wait) {
+      return { kind: 'waiting', text: hostWaitLine(task.host_wait, runId, t), full: true }
+    }
     return { kind: 'waiting', text: t('scans.tasks.waitingForHosts') }
   }
   const msg = task.error_message?.trim()
@@ -279,7 +292,7 @@ export function RunTasksTable({
           <tbody>
             {rows.map((task, i) => {
               const ms = elapsedMs(task)
-              const note = taskStatusNote(task, t)
+              const note = taskStatusNote(task, t, runId)
               const skipped = taskSkippedNote(task, t)
               const gaps = taskCoverageGapNote(task, t)
               const prog = taskProgressNote(task, t)
@@ -291,7 +304,11 @@ export function RunTasksTable({
                       {note?.kind === 'waiting' && (
                         <div className="mt-1 flex max-w-[260px] items-start gap-1 text-xs text-muted-foreground">
                           <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                          <TruncatedText value={note.text} label={t('scans.tasks.waiting')} />
+                          {note.full ? (
+                            <span className="break-words">{note.text}</span>
+                          ) : (
+                            <TruncatedText value={note.text} label={t('scans.tasks.waiting')} />
+                          )}
                         </div>
                       )}
                       {canExplain(task) && (
