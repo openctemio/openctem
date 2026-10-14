@@ -105,7 +105,7 @@ require (
 	github.com/aws/smithy-go v1.28.4
 	github.com/crewjam/saml v0.5.1
 	github.com/go-pdf/fpdf v0.9.0
-	github.com/openctemio/ctis v1.6.1-0.20261014155714-52aad01c5f8d
+	github.com/openctemio/ctis v1.6.1-0.20261014160351-372f01b81bcd
 	github.com/openctemio/sdk-go/pkg/transfer v0.1.0
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
