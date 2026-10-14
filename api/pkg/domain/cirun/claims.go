@@ -163,6 +163,9 @@ const (
 	RefuseOrganization = "organization_mismatch"
 	// RefuseSSHRerun: a CircleCI job re-run with SSH access.
 	RefuseSSHRerun = "ssh_rerun"
+	// RefuseWorkflow: the job runs a pipeline definition the workflow_refs
+	// rule does not list (or the token names none).
+	RefuseWorkflow = "workflow_not_allowed"
 )
 
 func refuse(code, format string, a ...any) *Refusal {
@@ -205,7 +208,41 @@ func (r Rules) Admit(c Claims) *Refusal {
 	if r.RequireProtectedRef && !r.protectedRef(c) {
 		return refuse(RefuseRefNotProtected, "ref %q is not protected", c.Ref)
 	}
+	if len(r.WorkflowRefs) > 0 {
+		def := c.WorkflowDefinition()
+		if def == "" {
+			return refuse(RefuseWorkflow, "the token does not name the pipeline definition")
+		}
+		if !slices.ContainsFunc(r.WorkflowRefs, func(p string) bool { return workflowRefMatch(p, def) }) {
+			return refuse(RefuseWorkflow, "pipeline definition %q is not listed", def)
+		}
+	}
 	return nil
+}
+
+// WorkflowDefinition is the pipeline definition the job runs, as the
+// workflow_refs rule matches it: GitHub job_workflow_ref (the reusable
+// workflow the job calls, or the workflow itself), GitLab
+// ci_config_ref_uri. Empty for providers whose token does not name it.
+func (c Claims) WorkflowDefinition() string {
+	switch c.Provider {
+	case ProviderGitHub:
+		return strings.TrimSpace(c.JobWorkflowRef)
+	case ProviderGitLab:
+		return strings.TrimSpace(c.Workflow)
+	}
+	return ""
+}
+
+// workflowRefMatch matches a workflow_refs entry: the path exactly (case
+// does not matter, as for repository names), the ref as a pattern.
+func workflowRefMatch(pattern, def string) bool {
+	pf, pr, ok := cutWorkflowRef(pattern)
+	df, dr, ok2 := cutWorkflowRef(def)
+	if !ok || !ok2 || pr == "" || dr == "" {
+		return false
+	}
+	return strings.EqualFold(pf, df) && refMatch(pr, dr)
 }
 
 // protectedRef reports whether the job runs on a protected ref. GitLab says
