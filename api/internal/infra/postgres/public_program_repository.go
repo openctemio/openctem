@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/openctemio/sdk-go/pkg/transfer/bundle"
+	"github.com/openctemio/ctis/transfer/bundle"
 
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
