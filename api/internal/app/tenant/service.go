@@ -16,9 +16,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
 	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -379,11 +379,10 @@ type CreateTenantInput struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
 	Slug        string `json:"slug" validate:"required,min=3,max=100,slug"`
 	Description string `json:"description" validate:"max=500"`
-	// Plan is stored with the organization when set (Free for a
-	// self-service organization). Empty: no plan is stored and the
-	// organization is on plan.Unassigned until an administrator picks one
-	// (bootstrap-admin, the console, an approved access request).
-	Plan plan.Plan `json:"-"`
+	// InitialLimits are stored with the organization (the instance's
+	// self-service defaults for an organization a person creates). Empty:
+	// no limits.
+	InitialLimits limits.Limits `json:"-"`
 }
 
 // CreateTenant creates a new tenant and adds the creator as owner.
@@ -409,11 +408,7 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 	if input.Description != "" {
 		t.UpdateDescription(input.Description)
 	}
-	if input.Plan != "" {
-		if err := t.SetPlan(input.Plan); err != nil {
-			return nil, err
-		}
-	}
+	t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
 
 	// Build the owner membership before any write so a construction error can't
 	// leave a tenant without an owner.

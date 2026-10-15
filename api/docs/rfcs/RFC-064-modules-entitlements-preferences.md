@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted (decisions MD1–MD12 delegated to the platform team, 2026-10-09) |
 | Authors | Platform team |
-| Related | Plans and limits ([architecture](../architecture/plans-and-limits.md)), RFC-022 (platform admin console), RFC-062 (MCP authorization), module system ([architecture](../architecture/modules.md)) |
+| Related | Plans and limits ([architecture](../architecture/limits.md)), RFC-022 (platform admin console), RFC-062 (MCP authorization), module system ([architecture](../architecture/modules.md)) |
 | Code | #1583 (SLA core), #1590 (every surface and replica), #1594 (catalog cleanup, permissions), #1596 (console consistency); M1–M5 below |
 
 ## 1. Summary

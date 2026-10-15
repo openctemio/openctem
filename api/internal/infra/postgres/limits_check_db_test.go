@@ -11,7 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/apikey"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/plan"
+	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
@@ -20,35 +20,35 @@ import (
 // refusingChecker refuses every addition of one key and records each call.
 type refusingChecker struct {
 	mu     sync.Mutex
-	refuse plan.Key
+	refuse limits.Key
 	calls  []string
-	deltas map[plan.Key]int
+	deltas map[limits.Key]int
 }
 
-func (c *refusingChecker) Check(_ context.Context, _ shared.ID, key plan.Key, delta int) error {
+func (c *refusingChecker) Check(_ context.Context, _ shared.ID, key limits.Key, delta int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls = append(c.calls, string(key))
 	if c.deltas == nil {
-		c.deltas = map[plan.Key]int{}
+		c.deltas = map[limits.Key]int{}
 	}
 	c.deltas[key] += delta
 	if key == c.refuse {
-		return &plan.ErrLimitReached{Key: key, Limit: 1, Used: 1}
+		return &limits.ErrLimitReached{Key: key, Limit: 1, Used: 1}
 	}
 	return nil
 }
 
-func (c *refusingChecker) Headroom(_ context.Context, _ shared.ID, key plan.Key) (int, error) {
+func (c *refusingChecker) Headroom(_ context.Context, _ shared.ID, key limits.Key) (int, error) {
 	if key == c.refuse {
 		return 0, nil
 	}
-	return plan.Unlimited, nil
+	return limits.Unlimited, nil
 }
 
-func (c *refusingChecker) RecordRefusals(plan.Key, int) {}
+func (c *refusingChecker) RecordRefusals(limits.Key, int) {}
 
-func countPlanRows(t *testing.T, db *sql.DB, query string, args ...any) int {
+func countLimitRows(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()
 	var n int
 	if err := db.QueryRowContext(context.Background(), query, args...).Scan(&n); err != nil {
@@ -57,82 +57,82 @@ func countPlanRows(t *testing.T, db *sql.DB, query string, args ...any) int {
 	return n
 }
 
-func wantLimit(t *testing.T, err error, key plan.Key) {
+func wantLimit(t *testing.T, err error, key limits.Key) {
 	t.Helper()
-	var lim *plan.ErrLimitReached
+	var lim *limits.ErrLimitReached
 	if !errors.As(err, &lim) || lim.Key != key {
 		t.Fatalf("want a %s limit refusal, got %v", key, err)
 	}
 }
 
-// Every insert that counts against a plan limit is refused before it writes,
+// Every insert that counts against a limit is refused before it writes,
 // as the application role. Requires DATABASE_URL.
-func TestPlanLimitsRefuseAtTheInsert(t *testing.T) {
+func TestLimitsRefuseAtTheInsert(t *testing.T) {
 	sqlDB := openSensorDB(t)
 	ctx := context.Background()
 	db := &DB{DB: sqlDB}
 	suffix := shared.NewID().String()[28:]
-	tid := planTestTenant(t, sqlDB, "limits-"+suffix)
-	user := planTestUser(t, sqlDB, "limits-"+suffix+"@example.test")
+	tid := limitsTestTenant(t, sqlDB, "limits-"+suffix)
+	user := limitsTestUser(t, sqlDB, "limits-"+suffix+"@example.test")
 
 	t.Run("seats: membership and invitation accept", func(t *testing.T) {
 		r := NewTenantRepository(db)
-		r.SetPlanLimits(&refusingChecker{refuse: plan.Seats})
+		r.SetLimits(&refusingChecker{refuse: limits.Seats})
 		m, _ := tenant.NewMembership(user, tid, tenant.RoleViewer, nil)
-		wantLimit(t, r.CreateMembership(ctx, m), plan.Seats)
+		wantLimit(t, r.CreateMembership(ctx, m), limits.Seats)
 		inv, err := tenant.NewInvitation(tid, "limits-"+suffix+"@example.test", tenant.RoleViewer, user, []string{"00000000-0000-0000-0000-000000000004"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantLimit(t, r.AcceptInvitationTx(ctx, inv, m), plan.Seats)
-		if n := countPlanRows(t, sqlDB, `SELECT count(*) FROM tenant_members WHERE tenant_id = $1`, tid.String()); n != 0 {
+		wantLimit(t, r.AcceptInvitationTx(ctx, inv, m), limits.Seats)
+		if n := countLimitRows(t, sqlDB, `SELECT count(*) FROM tenant_members WHERE tenant_id = $1`, tid.String()); n != 0 {
 			t.Fatalf("refused membership written: %d", n)
 		}
 	})
 
 	t.Run("invites_per_day", func(t *testing.T) {
 		r := NewTenantRepository(db)
-		r.SetPlanLimits(&refusingChecker{refuse: plan.InvitesPerDay})
+		r.SetLimits(&refusingChecker{refuse: limits.InvitesPerDay})
 		inv, err := tenant.NewInvitation(tid, "inv-"+suffix+"@example.test", tenant.RoleViewer, user, []string{"00000000-0000-0000-0000-000000000004"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantLimit(t, r.CreateInvitation(ctx, inv), plan.InvitesPerDay)
-		if n := countPlanRows(t, sqlDB, `SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1`, tid.String()); n != 0 {
+		wantLimit(t, r.CreateInvitation(ctx, inv), limits.InvitesPerDay)
+		if n := countLimitRows(t, sqlDB, `SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1`, tid.String()); n != 0 {
 			t.Fatalf("refused invitation written: %d", n)
 		}
 	})
 
 	t.Run("api_keys", func(t *testing.T) {
 		r := NewAPIKeyRepository(db)
-		r.SetPlanLimits(&refusingChecker{refuse: plan.APIKeys})
+		r.SetLimits(&refusingChecker{refuse: limits.APIKeys})
 		k := apikey.NewAPIKey(shared.NewID(), tid, "k", "hash-"+suffix, "oct_x")
-		wantLimit(t, r.Create(ctx, k), plan.APIKeys)
-		if n := countPlanRows(t, sqlDB, `SELECT count(*) FROM api_keys WHERE tenant_id = $1`, tid.String()); n != 0 {
+		wantLimit(t, r.Create(ctx, k), limits.APIKeys)
+		if n := countLimitRows(t, sqlDB, `SELECT count(*) FROM api_keys WHERE tenant_id = $1`, tid.String()); n != 0 {
 			t.Fatalf("refused key written: %d", n)
 		}
 	})
 
 	t.Run("ci_trusts", func(t *testing.T) {
 		r := NewCIRunRepository(db)
-		r.SetPlanLimits(&refusingChecker{refuse: plan.CITrusts})
+		r.SetLimits(&refusingChecker{refuse: limits.CITrusts})
 		c := &cirun.TrustConfig{ID: shared.NewID(), TenantID: tid, Name: "gh", Provider: cirun.ProviderGitHub, CreatedAt: time.Now()}
-		wantLimit(t, r.CreateTrustConfig(ctx, c), plan.CITrusts)
-		if n := countPlanRows(t, sqlDB, `SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1`, tid.String()); n != 0 {
+		wantLimit(t, r.CreateTrustConfig(ctx, c), limits.CITrusts)
+		if n := countLimitRows(t, sqlDB, `SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1`, tid.String()); n != 0 {
 			t.Fatalf("refused trust written: %d", n)
 		}
 	})
 
 	t.Run("sensors: the organization's own, not platform sensors", func(t *testing.T) {
-		chk := &refusingChecker{refuse: plan.Sensors}
+		chk := &refusingChecker{refuse: limits.Sensors}
 		r := NewSensorRepository(db)
-		r.SetPlanLimits(chk)
+		r.SetLimits(chk)
 		s, err := sensordom.NewSensor(tid, "s-"+suffix, sensordom.SensorTypeWorker, "", nil, "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantLimit(t, r.Create(ctx, s), plan.Sensors)
-		if n := countPlanRows(t, sqlDB, `SELECT count(*) FROM sensors WHERE tenant_id = $1`, tid.String()); n != 0 {
+		wantLimit(t, r.Create(ctx, s), limits.Sensors)
+		if n := countLimitRows(t, sqlDB, `SELECT count(*) FROM sensors WHERE tenant_id = $1`, tid.String()); n != 0 {
 			t.Fatalf("refused sensor written: %d", n)
 		}
 
@@ -147,9 +147,9 @@ func TestPlanLimitsRefuseAtTheInsert(t *testing.T) {
 		}
 
 		p := NewSensorPairingRepository(db)
-		p.SetPlanLimits(chk)
+		p.SetLimits(chk)
 		_, err = p.Approve(ctx, sensordom.PairingApproval{PairingID: shared.NewID(), TenantID: tid, ApprovedBy: user, Now: time.Now()}, nil)
-		wantLimit(t, err, plan.Sensors)
+		wantLimit(t, err, limits.Sensors)
 		// A re-pair replaces an existing sensor: no limit check (the
 		// unknown request is then simply not found).
 		repair := shared.NewID()
@@ -169,21 +169,21 @@ func TestPlanLimitsRefuseAtTheInsert(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		chk := &refusingChecker{refuse: plan.Assets}
-		r.SetPlanLimits(chk)
+		chk := &refusingChecker{refuse: limits.Assets}
+		r.SetLimits(chk)
 		a, _ := asset.NewAssetWithTenant(tid, "new-"+suffix+".example.test", asset.AssetTypeDomain, asset.CriticalityMedium)
-		wantLimit(t, r.Create(ctx, a), plan.Assets)
+		wantLimit(t, r.Create(ctx, a), limits.Assets)
 
 		_, _, _, err := r.UpsertBatch(ctx, []*asset.Asset{a})
-		wantLimit(t, err, plan.Assets)
-		if n := countPlanRows(t, sqlDB, `SELECT count(*) FROM assets WHERE tenant_id = $1`, tid.String()); n != 1 {
+		wantLimit(t, err, limits.Assets)
+		if n := countLimitRows(t, sqlDB, `SELECT count(*) FROM assets WHERE tenant_id = $1`, tid.String()); n != 1 {
 			t.Fatalf("refused assets written: %d rows", n)
 		}
 
 		// Re-ingesting only assets that exist adds nothing: delta 0 passes
 		// without a check, even at the limit.
-		counting := &refusingChecker{refuse: plan.Assets}
-		r.SetPlanLimits(counting)
+		counting := &refusingChecker{refuse: limits.Assets}
+		r.SetLimits(counting)
 		again, _ := asset.NewAssetWithTenant(tid, "old-"+suffix+".example.test", asset.AssetTypeDomain, asset.CriticalityMedium)
 		if _, _, _, err := r.UpsertBatch(ctx, []*asset.Asset{again}); err != nil {
 			t.Fatalf("an update of an existing asset must pass at the limit: %v", err)
@@ -191,15 +191,15 @@ func TestPlanLimitsRefuseAtTheInsert(t *testing.T) {
 
 		// A mixed batch counts only the new names, once each.
 		mixed := &refusingChecker{}
-		r.SetPlanLimits(mixed)
+		r.SetLimits(mixed)
 		n1, _ := asset.NewAssetWithTenant(tid, "n1-"+suffix+".example.test", asset.AssetTypeDomain, asset.CriticalityMedium)
 		n2, _ := asset.NewAssetWithTenant(tid, "n2-"+suffix+".example.test", asset.AssetTypeDomain, asset.CriticalityMedium)
 		old2, _ := asset.NewAssetWithTenant(tid, "old-"+suffix+".example.test", asset.AssetTypeDomain, asset.CriticalityMedium)
 		if _, _, _, err := r.UpsertBatch(ctx, []*asset.Asset{n1, n2, old2}); err != nil {
 			t.Fatal(err)
 		}
-		if mixed.deltas[plan.Assets] != 2 {
-			t.Fatalf("new assets counted: %d, want 2", mixed.deltas[plan.Assets])
+		if mixed.deltas[limits.Assets] != 2 {
+			t.Fatalf("new assets counted: %d, want 2", mixed.deltas[limits.Assets])
 		}
 		_, _ = sqlDB.ExecContext(ctx, `DELETE FROM assets WHERE tenant_id = $1`, tid.String())
 	})

@@ -644,7 +644,7 @@ These routes require the tenant ID in the URL path and use database-based member
 | `POST /api/v1/tenants/{tenant}/users` | Team admin+ (creates an account + one-time set-password link; RFC-025) |
 | `POST /api/v1/tenants/{tenant}/users/{userId}/setup-link` | Team admin+ (only an unused account that belongs to this organization only). The link takes the account over before its first sign-in, so an **owner or admin target needs an owner**, and the caller must be able to grant every role the target holds (403 otherwise). The platform console never uses this route: it issues a new organization's owner link under the first-owner rule (emailed only, see Organizations). |
 | `PATCH /api/v1/tenants/{tenant}/settings/security` | **Team owner only** + **step-up** (refuses an IP allowlist that excludes the caller's IP) |
-| `GET /api/v1/organization/plan` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (plan, limits and usage; `docs/architecture/plans-and-limits.md`) |
+| `GET /api/v1/organization/limits` | owner or admin (`RequireAdmin`) + `settings:read`; the organization comes from the credential (the limits that apply, usage, unavailable features; no operator notes; `docs/architecture/limits.md`) |
 | `DELETE /api/v1/tenants/{tenant}` | **Team owner only** + **step-up** |
 
 > **Peer administrators are the owner's** (owner decision 2026-10-02, AUTHZ
@@ -800,12 +800,14 @@ Authorization is enforced at the **route layer** in
 | `GET/PUT/DELETE /api/v1/admin/platform-idp` | **super_admin** (writes audited high; secret never returned) |
 | `GET /api/v1/admin/access-requests` | any admin |
 | `POST /api/v1/admin/access-requests/{id}/approve`, `/reject` | **ops_admin+** (audited); approve creates the organization with the requester as owner |
-| `GET /api/v1/admin/settings/plans` | any admin |
-| `PUT /api/v1/admin/settings/plans` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
-| `GET /api/v1/admin/tenants/{tenantId}/plan` | any admin (limits, usage, over-limit flag) |
+| `GET /api/v1/admin/settings/limits` | any admin (self-service default limits, configured sources) |
+| `PUT /api/v1/admin/settings/limits` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical** |
+| `GET /api/v1/admin/tenants/{tenantId}/limits` | any admin (limits with origin and reason, usage, denies, over-limit flag) |
 | `GET /api/v1/admin/tenants/{tenantId}/idle` | any admin (the organization's idle policy and stage) |
 | `PUT /api/v1/admin/tenants/{tenantId}/idle/policy` | **ops_admin+** (turns the idle policy on or off; reason required both ways; audited high; `docs/architecture/idle-workspaces.md`) |
-| `PUT /api/v1/admin/tenants/{tenantId}/plan`, `PUT/DELETE .../plan/overrides/{key}` | **ops_admin+** (audited high; an override needs a reason, an expiry is optional) |
+| `PUT/DELETE /api/v1/admin/tenants/{tenantId}/limits/{key}` | **ops_admin+** (audited high; a reason is required, an expiry is optional; only operator rows) |
+| `GET /api/v1/admin/tenants/{tenantId}/modules` | any admin (each module's state; a deny's origin and reason) |
+| `PUT/DELETE /api/v1/admin/tenants/{tenantId}/modules/{module_id}/deny` | **ops_admin+** + reason + a fresh authenticator code (audited high; a denied module keeps read access for 30 days) |
 | `GET /api/v1/admin/settings/signup` | any admin |
 | `PUT /api/v1/admin/settings/signup` | **super_admin** + a fresh authenticator code; optimistic version (409); audited **critical**; the other administrators are emailed |
 | `GET /api/v1/admin/users` | **super_admin** |
@@ -898,7 +900,7 @@ and certificates are never logged — an IdP update records
 
 | Endpoint | Required Role |
 |----------|---------------|
-| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filters `owner=none\|present`, `plan=free\|pro\|enterprise`; other values 400) |
+| `GET /api/v1/admin/tenants` (+ `/{tenantId}`) | any admin (list filter `owner=none\|present`; other values 400; each row says whether limits apply) |
 | `POST /api/v1/admin/tenants` | **ops_admin+** (audited; creates the owner's account when `owner_email` has none) |
 | `GET /api/v1/admin/tenants/{tenantId}/users` | any admin |
 | `POST /api/v1/admin/tenants/{tenantId}/users` | **ops_admin+**, **bootstrap only**: creates the first owner of an organization with no owner, active or suspended, nothing else (409 otherwise). With `"recovery": true`: **super_admin** only (403 otherwise), a `reason` of 10 to 500 characters (400; kept in the admin audit row) and a fresh console authenticator code in `totp_code` (step-up: 401 `STEP_UP_REQUIRED` without one, 401 for a wrong or replayed one), for an organization whose owners are all suspended (409 while one is active), link emailed only (400 without email). Audited in `admin_audit_logs` (`organization.user_create` / `organization.owner_recovery`) and the organization's audit log |

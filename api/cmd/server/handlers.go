@@ -254,6 +254,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	if svc.Signup != nil {
 		tenantHandler.SetSignupPolicy(svc.Signup)
 	}
+	if svc.Entitlement != nil {
+		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
+	}
 	if svc.UserProvisioning != nil {
 		tenantHandler.SetUserProvisioning(svc.UserProvisioning)
 	}
@@ -776,8 +779,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
 	}
 	if svc.Entitlement != nil {
-		handlers.Plan = handler.NewPlanHandler(svc.Entitlement, adminConsoleSvc, log)
-		svc.Entitlement.SetNotifier(planDefaultsMailer{email: svc.Email, appName: cfg.App.Name, log: log})
+		handlers.Limits = handler.NewLimitsHandler(svc.Entitlement, adminConsoleSvc, log)
 	}
 	if svc.IdleWorkspaces != nil {
 		handlers.IdleWorkspace = handler.NewIdleWorkspaceHandler(svc.IdleWorkspaces, log)
