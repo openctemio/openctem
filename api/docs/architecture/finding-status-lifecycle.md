@@ -290,7 +290,7 @@ The paths that use the engine:
 
 The same decisions are served to clients, so no client keeps a copy of the rules:
 - `GET /findings/{id}/transitions` (`findings:read`) returns every move from the finding's status. Each move says whether it is allowed, its mode, the inputs it needs, and the blocked reason codes (`missing_permission` with the permission, `not_a_lifecycle_move`, `not_fix_owner`, `not_a_person`, `ticket_cannot_close`, `pentest_module`). An out-of-scope or other tenant's finding answers 404.
-- `POST /findings/transitions:evaluate` (`findings:read`, at most 100 ids) is a dry run for a bulk change. It returns the decision per finding, and `not_found` for an id the caller cannot see. It changes nothing.
+- `POST /findings/transitions/preview` (`findings:read`, at most 100 ids) is a dry run for a bulk change. It returns the decision per finding, and `not_found` for an id the caller cannot see. It changes nothing.
 - The MCP tool `list_finding_transitions` returns the same answer as the GET route.
 
 ## The same claim and close rules on every route

@@ -65,7 +65,7 @@ func (h *VulnerabilityHandler) GetFindingTransitions(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, FindingTransitionsResponse{Status: status.String(), Transitions: transitions})
 }
 
-// EvaluateFindingTransitions handles POST /api/v1/findings/transitions:evaluate.
+// EvaluateFindingTransitions handles POST /api/v1/findings/transitions/preview.
 // @Summary      Dry run of a status change for many findings
 // @Description  For each finding (at most 100), whether the caller may move it to the target status and the reason codes why not. Changes nothing. An id that is not a finding the caller can see is answered not_found.
 // @Tags         Findings
@@ -75,7 +75,7 @@ func (h *VulnerabilityHandler) GetFindingTransitions(w http.ResponseWriter, r *h
 // @Param        request  body      EvaluateTransitionsRequest  true  "Findings and target status"
 // @Success      200  {object}  EvaluateTransitionsResponse
 // @Failure      400  {object}  map[string]string
-// @Router       /findings/transitions:evaluate [post]
+// @Router       /findings/transitions/preview [post]
 func (h *VulnerabilityHandler) EvaluateFindingTransitions(w http.ResponseWriter, r *http.Request) {
 	var req EvaluateTransitionsRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
