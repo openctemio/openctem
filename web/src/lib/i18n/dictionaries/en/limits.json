@@ -77,5 +77,6 @@
   "limits.unlimited": "Unlimited",
   "limits.until": "until {date}",
   "limits.usage.description": "What this organization may add. To change a limit, contact the administrator of this installation.",
-  "limits.usage.title": "Limits"
+  "limits.usage.title": "Limits",
+  "limits.accountPortal": "Manage your service account"
 }
