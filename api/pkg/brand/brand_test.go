@@ -145,6 +145,8 @@ func TestSanitizeSVGRefusesActiveContent(t *testing.T) {
 		"style import":    `<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(https://evil.example/a.css);</style></svg>`,
 		"style url":       `<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:url( 'https://evil.example/p')"/></svg>`,
 		"style js":        `<svg xmlns="http://www.w3.org/2000/svg"><rect style="background:java script:x"/></svg>`,
+		"css escape":      `<svg xmlns="http://www.w3.org/2000/svg"><style>.a{fill:\75 rl(https://evil.example/p)}</style></svg>`,
+		"attr css escape": `<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:\75 rl(https://evil.example/p)"/></svg>`,
 		"not svg":         `<html xmlns="http://www.w3.org/1999/xhtml"><body/></html>`,
 		"broken":          `<svg xmlns="http://www.w3.org/2000/svg"><rect></svg>`,
 		"nested script":   `<svg xmlns="http://www.w3.org/2000/svg"><metadata><script>x</script></metadata></svg>`,

@@ -177,6 +177,10 @@ func svgAttr(elem string, a xml.Attr) (string, bool, error) {
 // checkCSS refuses style text and attribute values that import or fetch
 // content, or carry script.
 func checkCSS(v string) error {
+	// CSS escapes (\75 rl(, \@import) would hide every check below.
+	if strings.ContainsRune(v, '\\') {
+		return fmt.Errorf("%w: backslash escapes are not allowed in style", ErrUnsafeSVG)
+	}
 	l := strings.ToLower(strings.Join(strings.Fields(v), ""))
 	for _, bad := range []string{"@import", "javascript:", "vbscript:", "data:", "expression(", "behavior:", "-moz-binding", "<"} {
 		if strings.Contains(l, bad) {
