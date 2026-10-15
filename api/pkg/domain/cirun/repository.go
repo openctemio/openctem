@@ -99,7 +99,7 @@ type Repository interface {
 	// findings count is still expectFindings (the count the verdict was
 	// computed from): ErrRunEvaluated when another verdict was stored first,
 	// ErrRunChanged when a report was recorded meanwhile.
-	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int) error
+	SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int, failedCapabilities []string) error
 
 	ListGatePolicies(ctx context.Context, tenantID shared.ID) ([]GatePolicy, error)
 	GetGatePolicy(ctx context.Context, tenantID, id shared.ID) (*GatePolicy, error)
@@ -126,11 +126,9 @@ type Repository interface {
 	// a record that it had one, so no first run records another.
 	DeleteGateBaseline(ctx context.Context, tenantID, assetID shared.ID) error
 
-	// RecordFailedCapabilities stores the capabilities a verdict found
-	// failed; a later attempt that re-opens the run carries them.
-	RecordFailedCapabilities(ctx context.Context, tenantID, runID shared.ID, names []string) error
 	// ClearCarriedCapabilities drops from a run's carried failed
-	// capabilities those the named tool provides (a report of it arrived).
+	// capabilities those the tool registry says the named tool provides (a
+	// report naming that tool arrived).
 	ClearCarriedCapabilities(ctx context.Context, tenantID, runID shared.ID, tool string) error
 
 	CreateOverride(ctx context.Context, o *GateOverride) error
