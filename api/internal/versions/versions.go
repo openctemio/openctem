@@ -17,8 +17,10 @@ package versions
 import (
 	_ "embed"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
@@ -32,7 +34,7 @@ var manifestYAML []byte
 const DefaultProductID = "openctemio-sensor"
 
 // InstallSensor is the install snippet set of the scanning sensor (the
-// unprefixed configs/sensor-templates/<format>.tmpl files).
+// configs/sensor-products/sensor/<format>.tmpl files).
 const InstallSensor = "sensor"
 
 // Product is one sensor product of the catalog.
@@ -95,12 +97,128 @@ func Embedded() *Manifest { return embedded }
 // PlatformRelease is platform.release.
 func PlatformRelease() string { return embedded.PlatformRelease }
 
-// Products is the sensor product catalog, in manifest order. The slice is a
+// Products is the sensor product catalog: the built-in products in
+// manifest order, then the operator's (LoadExtraProducts). The slice is a
 // copy.
-func Products() []Product { return append([]Product(nil), embedded.Products...) }
+func Products() []Product {
+	extraMu.RLock()
+	defer extraMu.RUnlock()
+	out := append([]Product(nil), embedded.Products...)
+	return append(out, extra...)
+}
 
-// LookupProduct returns the catalog entry of a product id.
-func LookupProduct(id string) (Product, bool) { return embedded.Product(id) }
+// LookupProduct returns the catalog entry of a product id, built-in or the
+// operator's.
+func LookupProduct(id string) (Product, bool) {
+	if p, ok := embedded.Product(id); ok {
+		return p, true
+	}
+	extraMu.RLock()
+	defer extraMu.RUnlock()
+	for _, p := range extra {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return Product{}, false
+}
+
+var (
+	extraMu sync.RWMutex
+	extra   []Product
+)
+
+// maxExtraProductsFile bounds the operator's product file.
+const maxExtraProductsFile = 64 << 10
+
+// LoadExtraProducts adds the sensor products of the operator's file at path
+// (SENSOR_PRODUCTS_FILE; "" = none) to the catalog, replacing any loaded
+// before. A product of a customer's own sensor, or a new product before a
+// platform release lists it, is data: a section here plus its install
+// snippet set (configs/sensor-products/<install>/), no API change. The file
+// is ParseExtraProducts' format; an invalid file is an error (the API does
+// not start), never a silent partial catalog.
+func LoadExtraProducts(path string) error {
+	var ps []Product
+	if strings.TrimSpace(path) != "" {
+		st, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("sensor products file: %w", err)
+		}
+		if st.Size() > maxExtraProductsFile {
+			return fmt.Errorf("sensor products file: %d bytes, more than %d", st.Size(), maxExtraProductsFile)
+		}
+		b, err := os.ReadFile(path) //nolint:gosec // operator-configured path (SENSOR_PRODUCTS_FILE)
+		if err != nil {
+			return fmt.Errorf("sensor products file: %w", err)
+		}
+		if ps, err = ParseExtraProducts(b, embedded); err != nil {
+			return fmt.Errorf("sensor products file %s: %w", path, err)
+		}
+	}
+	extraMu.Lock()
+	extra = ps
+	extraMu.Unlock()
+	return nil
+}
+
+// ParseExtraProducts reads an operator's product file: top-level sections
+// that are each one product, with the keys of a versions.yaml product.
+// release_identity may be "" (no signature check is shown) or any GitHub
+// Actions workflow URL. A section may not be one of the manifest's fixed
+// sections, and neither its name nor its product id may be one of base's
+// products: a built-in product's image and release line are never
+// overridden from here.
+func ParseExtraProducts(b []byte, base *Manifest) ([]Product, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return nil, fmt.Errorf("not YAML: %w", err)
+	}
+	if len(doc.Content) == 0 {
+		return nil, nil
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("the top level must be a mapping of product sections")
+	}
+	top := doc.Content[0]
+	keys := make(map[string]bool, len(productKeys))
+	for k, optional := range productKeys {
+		keys[k] = optional
+	}
+	keys["release_identity"] = true
+	var out []Product
+	seen := map[string]bool{}
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		name, body := top.Content[i].Value, top.Content[i+1]
+		if _, fixed := fixedSections[name]; fixed {
+			return nil, fmt.Errorf("section %q is not a product", name)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("section %q appears twice", name)
+		}
+		seen[name] = true
+		vals, err := section(name, body, keys)
+		if err != nil {
+			return nil, err
+		}
+		p, err := productWith(name, vals, extraIdentityRE)
+		if err != nil {
+			return nil, err
+		}
+		for _, q := range base.Products {
+			if q.Key == p.Key || q.ID == p.ID {
+				return nil, fmt.Errorf("%s: product %q is built in and cannot be redefined", name, p.ID)
+			}
+		}
+		for _, q := range out {
+			if q.ID == p.ID {
+				return nil, fmt.Errorf("%s: product %q is listed twice", name, p.ID)
+			}
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
 
 // SensorLatest is the scanning sensor's latest release.
 func SensorLatest() string { return defaultProduct().Latest }
@@ -142,6 +260,9 @@ var (
 	installRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 	// identityRE is a GitHub Actions workflow of the openctemio organization.
 	identityRE = regexp.MustCompile(`^https://github\.com/openctemio/[a-z0-9._-]+/\.github/workflows/[a-z0-9._-]+\.ya?ml$`)
+	// extraIdentityRE is a GitHub Actions workflow of any organization, or
+	// "" (an operator's product need not be signed by a workflow).
+	extraIdentityRE = regexp.MustCompile(`^(https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/\.github/workflows/[A-Za-z0-9._-]+\.ya?ml)?$`)
 )
 
 // sections other than products, with their keys and whether each may be "".
@@ -284,6 +405,10 @@ func (m *Manifest) setFixed(name string, v map[string]string) error {
 }
 
 func product(name string, v map[string]string) (Product, error) {
+	return productWith(name, v, identityRE)
+}
+
+func productWith(name string, v map[string]string, identity *regexp.Regexp) (Product, error) {
 	p := Product{
 		Key: name, ID: v["product"], Latest: v["latest"], Min: v["min"],
 		Image: v["image"], Install: v["install"], ReleaseIdentity: v["release_identity"],
@@ -308,8 +433,8 @@ func product(name string, v map[string]string) (Product, error) {
 	if !installRE.MatchString(p.Install) {
 		return p, fmt.Errorf("%s.install %q is not a snippet set name", name, p.Install)
 	}
-	if !identityRE.MatchString(p.ReleaseIdentity) {
-		return p, fmt.Errorf("%s.release_identity %q is not an openctemio GitHub workflow URL", name, p.ReleaseIdentity)
+	if !identity.MatchString(p.ReleaseIdentity) {
+		return p, fmt.Errorf("%s.release_identity %q is not an allowed GitHub workflow URL", name, p.ReleaseIdentity)
 	}
 	return p, nil
 }
