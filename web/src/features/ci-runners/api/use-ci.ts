@@ -25,7 +25,6 @@ import type {
   CIVerdictFilter,
   CIPipelineDetail,
   CIPipelineList,
-  FleetList,
   CICoverage,
   CISettings,
   SCMAppInstallation,
@@ -37,12 +36,7 @@ import type {
   CIRepositorySettings,
   CIGateBaseline,
 } from '../types'
-import {
-  fleetURL,
-  pipelinesURL,
-  type FleetListFilters,
-  type PipelineListFilters,
-} from '../lib/pipeline'
+import { pipelinesURL, type PipelineListFilters } from '../lib/pipeline'
 
 import { ApiClientError } from '@/lib/api/error-handler'
 import { coverageExpectationURL, coverageURL, type CoverageFilters } from '../lib/coverage'
@@ -105,23 +99,6 @@ export function useCIPipeline(id: string | null) {
   return useSWR<CIPipelineDetail>(
     currentTenant && id ? `${CI_BASE}/pipelines/${encodeURIComponent(id)}` : null,
     (url: string) => get<CIPipelineDetail>(url)
-  )
-}
-
-/**
- * The fleet read model: sensors (daemon mode) and CI pipelines (runner mode)
- * in one list. The API filters each mode by its own permission and returns
- * the modes the caller may see with their counts.
- */
-export function useFleet(
-  filters: FleetListFilters,
-  { enabled = true }: { enabled?: boolean } = {}
-) {
-  const { currentTenant } = useTenant()
-  return useSWR<FleetList>(
-    currentTenant && enabled ? fleetURL(filters) : null,
-    (url: string) => get<FleetList>(url),
-    { keepPreviousData: true, refreshInterval: 30_000 }
   )
 }
 

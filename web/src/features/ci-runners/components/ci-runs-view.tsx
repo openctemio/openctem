@@ -57,7 +57,7 @@ import {
 } from '@/components/ui/table'
 import { useCIRun, useCIRuns } from '../api/use-ci'
 import { baselineCounts, missingCodeHost, runAttempts } from '../lib/gate-settings'
-import { PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
+import { INFO_REASON_CODES, PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
 import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
@@ -408,8 +408,10 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
   const v = run?.verdict_detail
   const dfLocale = dateFnsLocaleFor(locale)
   const reasons = v?.reasons ?? []
-  const blocking = reasons.filter((r) => r.mode !== 'comment')
-  const commentOnly = reasons.filter((r) => r.mode === 'comment')
+  const isInfo = (r: CIGateReason) => INFO_REASON_CODES.includes(r.code ?? '')
+  const blocking = reasons.filter((r) => r.mode !== 'comment' && !isInfo(r))
+  const commentOnly = reasons.filter((r) => r.mode === 'comment' && !isInfo(r))
+  const notes = reasons.filter(isInfo)
   const findingsPath = safeHref(consolePath(v?.links?.findings))
   const codeHost =
     run?.decoration_state === 'skipped' ? missingCodeHost(run.decoration_detail) : null
@@ -603,7 +605,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
               {v?.baseline?.established && (
                 <Alert data-testid="ci-run-baseline-established">
                   <ShieldCheck className="size-4" aria-hidden />
-                  <AlertTitle>
+                  <AlertTitle className="line-clamp-none">
                     {t(
                       'scans.ci.runDetail.baselineEstablished',
                       'First run: {count} existing findings recorded as the baseline',
@@ -682,6 +684,13 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                     reasons={commentOnly}
                     label={t('scans.ci.runDetail.commentOnly', 'Comment only (does not block)')}
                   />
+                </section>
+              )}
+
+              {notes.length > 0 && (
+                <section className="space-y-2">
+                  <h3 className="font-medium">{t('scans.ci.runDetail.notes', 'Notes')}</h3>
+                  <ReasonList reasons={notes} label={t('scans.ci.runDetail.notes', 'Notes')} />
                 </section>
               )}
 

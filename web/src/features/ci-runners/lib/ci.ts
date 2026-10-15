@@ -435,7 +435,13 @@ export const REASON_LABEL: Record<string, string> = {
   override: 'Break-glass',
   no_baseline: 'No baseline',
   secret_pre_existing: 'Secret already on the default branch',
+  too_many_findings: 'Too many findings to judge',
+  baseline_established: 'Baseline recorded',
+  no_results: 'No results',
 }
+
+/** Reason codes that inform and never block (listed apart from the blocking ones). */
+export const INFO_REASON_CODES = ['no_baseline', 'baseline_established', 'no_results']
 
 export const SEVERITY_OPTIONS = ['critical', 'high', 'medium', 'low', 'none'] as const
 
