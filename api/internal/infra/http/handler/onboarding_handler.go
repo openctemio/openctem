@@ -164,9 +164,8 @@ type DecideJoinRequestRequest struct {
 // @Description  Owner or admin. Waiting requests from verified holders of the organization's domains.
 // @Tags         Tenants
 // @Produce      json
-// @Param        tenant  path  string  true  "Tenant ID or slug"
 // @Success      200  {array}  JoinRequestResponse
-// @Router       /tenants/{tenant}/join-requests [get]
+// @Router       /organization/join-requests [get]
 func (h *TenantHandler) ListJoinRequests(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.joinRequestTenant(w, r)
 	if !ok {
@@ -193,11 +192,10 @@ func (h *TenantHandler) ListJoinRequests(w http.ResponseWriter, r *http.Request)
 // @Description  Owner or admin with members:write. Role viewer or member. A request of another organization is not found.
 // @Tags         Tenants
 // @Accept       json
-// @Param        tenant     path  string                    true  "Tenant ID or slug"
-// @Param        requestId  path  string                    true  "Request ID"
+// @Param        request_id  path  string                    true  "Request ID"
 // @Param        request    body  DecideJoinRequestRequest  true  "Role"
 // @Success      204
-// @Router       /tenants/{tenant}/join-requests/{requestId}/approve [post]
+// @Router       /organization/join-requests/{request_id}/approve [post]
 func (h *TenantHandler) ApproveJoinRequest(w http.ResponseWriter, r *http.Request) {
 	h.decideJoinRequest(w, r, true)
 }
@@ -206,10 +204,9 @@ func (h *TenantHandler) ApproveJoinRequest(w http.ResponseWriter, r *http.Reques
 // @Summary      Reject a request to join
 // @Description  Owner or admin with members:write. The requester is not told who decided.
 // @Tags         Tenants
-// @Param        tenant     path  string  true  "Tenant ID or slug"
-// @Param        requestId  path  string  true  "Request ID"
+// @Param        request_id  path  string  true  "Request ID"
 // @Success      204
-// @Router       /tenants/{tenant}/join-requests/{requestId}/reject [post]
+// @Router       /organization/join-requests/{request_id}/reject [post]
 func (h *TenantHandler) RejectJoinRequest(w http.ResponseWriter, r *http.Request) {
 	h.decideJoinRequest(w, r, false)
 }
@@ -219,7 +216,7 @@ func (h *TenantHandler) decideJoinRequest(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	id, err := shared.IDFromString(chi.URLParam(r, "requestId"))
+	id, err := shared.IDFromString(chi.URLParam(r, "request_id"))
 	if err != nil {
 		apierror.NotFound("Request not found").WriteJSON(w)
 		return
@@ -255,9 +252,9 @@ func (h *TenantHandler) decideJoinRequest(w http.ResponseWriter, r *http.Request
 }
 
 func (h *TenantHandler) joinRequestTenant(w http.ResponseWriter, r *http.Request) (shared.ID, bool) {
-	tenantID := middleware.GetTeamID(r.Context())
-	if tenantID.IsZero() {
-		apierror.BadRequest("Tenant context required").WriteJSON(w)
+	tenantID, err := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("Authentication required").WriteJSON(w)
 		return shared.ID{}, false
 	}
 	if h.joinRequests == nil {

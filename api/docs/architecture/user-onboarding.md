@@ -168,9 +168,9 @@ and applies only while the claim is verified and unambiguous: a lapsed claim
 | `block_new_workspaces` | Accounts on the domain cannot create organizations (create-first-team, `POST /tenants`) |
 | `include_subdomains` | The effects also cover `*.domain` addresses; the exact claim of a subdomain wins |
 
-- `GET /api/v1/tenants/{tenant}/settings/domains` (owner or admin) lists the
+- `GET /api/v1/organization/settings/domains` (owner or admin) lists the
   organization's domains with their policy and `effective`.
-- `PUT /api/v1/tenants/{tenant}/settings/domains/{domainId}/signup-policy`
+- `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
   (owner, step-up) changes it; audited as
   `sso.verified_domain_signup_policy_changed` (high). A domain id of another
   organization answers 404.
@@ -216,9 +216,9 @@ per person and organization, at most 5 per person per day, expire after 30
 days; decided and expired rows are purged 30 days later
 (`join-request-purge` controller). The organization's inbox:
 
-- `GET /api/v1/tenants/{tenant}/join-requests` (admin+, `team:members:read`):
+- `GET /api/v1/organization/join-requests` (owner or admin, `team:members:read`):
   waiting requests with the requester's email, name and verification;
-- `POST .../join-requests/{id}/approve` `{role}` (admin+,
+- `POST .../join-requests/{id}/approve` `{role}` (owner or admin,
   `team:members:write`): role `viewer` or `member` only (nobody becomes an
   administrator by request), creates the membership with no data scope;
 - `POST .../join-requests/{id}/reject`: the requester is not told who decided.
