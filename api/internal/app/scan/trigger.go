@@ -1152,13 +1152,22 @@ func (s *Service) decideWorkflowRouting(ctx context.Context, sc *scan.Scan, targ
 		return sensorRouting{Routing: sensorRoutingTenant,
 			Warning: "target proof lookup failed; the run is queued for tenant sensors only"}, nil
 	}
-	if refusal != nil {
-		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	// The targets pass, the tenant may use shared sensors and is within
+	// today's limit: each step decides (auto); otherwise the run stays on
+	// the tenant's sensors.
+	if refusal == nil && s.mayUseShared(ctx, sc.TenantID) {
+		return sensorRouting{Routing: sensorRoutingAuto}, nil
 	}
-	if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID); !canUse {
-		return sensorRouting{Routing: sensorRoutingTenant}, nil
+	return sensorRouting{Routing: sensorRoutingTenant}, nil
+}
+
+// mayUseShared reports whether the tenant may send one more scan to shared
+// sensors now: access allowed and within today's limit.
+func (s *Service) mayUseShared(ctx context.Context, tenantID shared.ID) bool {
+	if canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, tenantID); !canUse {
+		return false
 	}
-	return sensorRouting{Routing: sensorRoutingAuto}, nil
+	return s.sharedLimitRefusal(ctx, tenantID) == nil
 }
 
 // platformTargetRefusal is the one target check for shared platform
@@ -1255,6 +1264,9 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 					shared.ErrValidation)
 			}
 		}
+		if err := s.sharedLimitRefusal(ctx, sc.TenantID); err != nil {
+			return false, err
+		}
 		return true, nil
 	}
 
@@ -1276,8 +1288,8 @@ func (s *Service) shouldUsePlatformSensor(ctx context.Context, sc *scan.Scan, ta
 	if (result.Sensor != nil && !result.IsPlatform) || result.TenantBusy {
 		return false, nil
 	}
-	canUse, _ := s.sensorSelector.CanUsePlatformSensors(ctx, sc.TenantID)
-	return canUse, nil
+	// Over today's limit the job waits for the organization's own sensors.
+	return s.mayUseShared(ctx, sc.TenantID), nil
 }
 
 // calculateInitialPriority calculates the initial queue priority for a platform job.
