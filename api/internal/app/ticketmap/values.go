@@ -126,7 +126,7 @@ func TaskValues(c *remediation.Campaign, members []*vulnerability.Finding, total
 		if loc != "" && f.StartLine() > 0 {
 			loc = fmt.Sprintf("%s:%d", loc, f.StartLine())
 		}
-		t.Rows = append(t.Rows, []string{f.Title(), string(f.Severity()), string(f.Status()), loc, base + "/findings/" + f.ID().String()})
+		t.Rows = append(t.Rows, []string{findingTitle(f), string(f.Severity()), string(f.Status()), loc, base + "/findings/" + f.ID().String()})
 	}
 	if more := int(totalMembers) - len(t.Rows); more > 0 {
 		t.More = more

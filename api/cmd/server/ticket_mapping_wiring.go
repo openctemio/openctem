@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/openctemio/openctem/api/internal/app/datascope"
 	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
@@ -62,4 +63,25 @@ func (o ticketMappingObjects) TaskMembers(ctx context.Context, tenantID, id shar
 		return nil, 0, err
 	}
 	return res.Data, res.Total, nil
+}
+
+// ticketMappingScope adapts the data-scope enforcer to the mapping service.
+type ticketMappingScope struct{ e *datascope.Enforcer }
+
+var _ appticketmap.ScopeChecker = ticketMappingScope{}
+
+func (s ticketMappingScope) AssertFinding(ctx context.Context, tenantID, findingID shared.ID) error {
+	return s.e.AssertFinding(ctx, tenantID, findingID)
+}
+
+func (s ticketMappingScope) FilterFindings(ctx context.Context, tenantID shared.ID, ids []shared.ID) (func(shared.ID) bool, bool, error) {
+	scope, err := s.e.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, false, err
+	}
+	keep, err := s.e.FilterFindings(ctx, scope, ids)
+	if err != nil {
+		return nil, false, err
+	}
+	return keep, scope.Restricted(), nil
 }

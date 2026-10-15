@@ -297,7 +297,7 @@ func registerIntegrationRoutes(
 			r.GET("/ticket-mappings", ticketMapping.List, read)
 			r.POST("/ticket-mappings", ticketMapping.Create, manage)
 			r.GET("/ticket-mappings/{mapping_id}", ticketMapping.Get, read)
-			r.DELETE("/ticket-mappings/{mapping_id}", ticketMapping.Delete, manage)
+			r.DELETE("/ticket-mappings/{mapping_id}", ticketMapping.Delete, manage, requireStepUp())
 			r.PUT("/ticket-mappings/{mapping_id}/draft", ticketMapping.SaveDraft, manage)
 			r.DELETE("/ticket-mappings/{mapping_id}/draft", ticketMapping.DiscardDraft, manage)
 			r.POST("/ticket-mappings/{mapping_id}/publish", ticketMapping.Publish, manage, requireStepUp())
