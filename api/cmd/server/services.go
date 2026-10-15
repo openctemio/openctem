@@ -2700,8 +2700,6 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 		log.Error("seed the sign-up policy (admin_only stays in force until it can be read)", "error", err)
 	}
 	s.Auth.SetSignupPolicy(s.Signup)
-	// Plans and limits: self-service organizations are Free.
-	s.Auth.SetFreePlan(s.Entitlement)
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
