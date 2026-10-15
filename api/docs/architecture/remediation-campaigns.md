@@ -11,7 +11,9 @@ A `remediation_campaign` (table created in migration `000125`) ties together:
 - a **scope** — a `finding_filter` (JSONB) describing which findings belong to
   the campaign (by severity, CVE, source, etc.);
 - **lifecycle** — `draft → active → (paused) → validating → completed`, plus
-  `canceled` from any non-terminal state;
+  `canceled` from any non-terminal state; `validating → active` when a
+  validation fails (the fix did not hold) and `completed → active` (Reopen,
+  `PATCH /{id}/status {"status":"active"}`), which clears `completed_at`;
 - **progress** — `finding_count`, `resolved_count`, and a derived `progress`
   percentage;
 - **ownership & timeline** — `assigned_to` / `assigned_team`, `start_date`,
@@ -53,9 +55,11 @@ finding of the organization).
 | `remediation_key`      | a solution family (alone, no other key) | `"sol:…"`    |
 
 The tenant is always pinned, so counts are tenant-isolated regardless of the
-filter contents. A campaign has **scope** only when a condition other than a
-status narrows it: an empty filter, or a status alone ("every new finding" is
-the whole organization), tracks nothing and cannot resolve. A filter stored
+filter contents. A campaign has **scope** only when it names what is fixed:
+an asset, CVEs, linked findings, a tool, or a fix key (`remediation_key`).
+Severity, source, status and search only narrow that scope; on their own
+("every critical finding", "every new finding") they are the whole
+organization, so such a campaign tracks nothing and cannot resolve. A filter stored
 before the strict check that no longer parses is treated the same way, and a
 resolve answers 400 until its scope is edited.
 
@@ -96,11 +100,30 @@ backlog larger than one batch rotates instead of starving. The counter update
 never touches status, dates or the version. It is registered in
 `cmd/server/workers.go` whenever the campaign service is available.
 
+### Done means fixed
+
+A campaign is **done** when every finding is closed **and at least one is
+verified fixed** (`resolved`; `verified_count` in the response, computed with
+the counts). A campaign whose findings were all accepted, marked false
+positive or folded as duplicates fixed nothing and is not done
+(`Campaign.IsDone`).
+
+- Manual completion of a campaign that is not done is refused (400,
+  `ErrCampaignNotDone`) unless the request sets `close_with_open_members`;
+  the console asks first and sends it only after the person confirms. The
+  audit row carries `trigger=manual_with_open_members`, `open_findings` and
+  `verified_findings`, at medium severity.
+- A Jira epic moved to Done completes the campaign only when it is done (the
+  counts are recomputed first); otherwise the campaign stays as it is and the
+  refusal is logged. A closed ticket is a claim, not evidence.
+- A campaign's due date only tightens: an update may set a first due date or
+  move it to an earlier day; a later day or clearing it is refused
+  (`ErrCampaignDeadlineOnlyTightens`).
+
 ### Auto-complete
 
-When **all** of a campaign's findings are resolved
-(`finding_count > 0 && resolved_count >= finding_count`) and the campaign is
-`active` or `validating`, the reconcile (and the manual refresh) transitions it
+When a campaign is done (above) and it is `active` or `validating`, the
+reconcile (and the manual refresh) transitions it
 to `completed` through a versioned save: a Pause or Cancel made since the
 reconciler read the campaign wins, and the completion is skipped. An empty campaign
 (`finding_count == 0`) is never auto-completed — an empty campaign is a
@@ -120,6 +143,34 @@ Base path `/api/v1/remediation/campaigns` (permissions: `remediation:read` /
 | PATCH  | `/{id}/status`   | transition lifecycle (optional `version`)|
 | POST   | `/{id}/refresh`  | recompute progress + auto-complete now   |
 | DELETE | `/{id}`          | delete                                   |
+
+## What a restricted member sees
+
+A member restricted by data scope reaches only the campaigns that touch their
+scope: at least one of the campaign's findings, or its `asset_id`, is on an
+in-scope asset, or they created it. Any other campaign answers 404 for every
+read and write (get, findings, update, status, resolve, refresh,
+create-ticket, delete) and is left out of the list, whose total counts only
+the visible campaigns (the list examines every campaign of the tenant, page
+by page). Seeing a campaign is not changing it: update, status, refresh,
+create-ticket and delete need **every** finding of the campaign (and its
+`asset_id`) in the member's scope, or an empty campaign they created; a
+campaign they can see that also covers another team's findings answers 403
+(`ErrCampaignOutsideScope`), so one shared finding never gives them control of
+it. The same check runs on a new or changed `finding_filter` before it is
+saved (create and update), so a restricted member cannot point a campaign at
+another team's assets or CVEs. Resolve stays open on a visible campaign because it changes only the
+member's in-scope findings. Within a visible campaign the member sees it
+through their scope only:
+`finding_count`, `resolved_count`, `verified_count` and `progress` count the
+findings on their in-scope assets; the explicit `finding_ids` and the
+`asset_id` of the `finding_filter` that are outside the scope are removed
+(they name findings and assets the member cannot open); and the
+organization-wide risk fields are not shown. This is a view: nothing is
+written back, and the stored counts (used for auto-complete) stay
+organization-wide. On a lookup error the references are dropped (fail
+closed). The remediation side table (`finding_remediation_keys`) is joined to
+findings of the same tenant only.
 
 ## Saves
 
@@ -145,10 +196,11 @@ Every change to a campaign is written to `audit_logs` (resource type
 | `remediation_campaign.deleted`          | `DELETE /{id}`                                              |
 
 A status change carries `trigger` (`manual` for `PATCH /{id}/status`,
-`auto_complete` when every finding closed, `jira_epic` when the linked epic was
-closed), `finding_count`, `resolved_count`, and on completion `open_findings`.
-Completing with findings still open is allowed (the console asks first and
-says how many are open) and is logged at medium severity. Automatic moves are
+`manual_with_open_members` for an explicit completion of a campaign that is
+not done, `auto_complete` when it became done, `jira_epic` when the linked
+epic was closed on a done campaign), `finding_count`, `resolved_count`, and on
+completion `open_findings` and `verified_findings`. A completion with open or
+no verified findings is logged at medium severity. Automatic moves are
 attributed to the actor `system`. The audit row is always filed under the
 campaign's tenant; an audit write failure is logged and never fails the change.
 
