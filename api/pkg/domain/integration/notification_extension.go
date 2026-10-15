@@ -103,6 +103,11 @@ const (
 	// listed in KEV, or a compensating control was removed). Without it a
 	// priority escalation is a silent dashboard update.
 	EventTypeFindingPriorityEscalated EventType = "finding_priority_escalated"
+	// EventTypeScoringChangeApplied fires once per scoring change (a new
+	// scoring model, or the organization's risk scoring settings, priority
+	// rules or SLA policy) when its recompute has finished: one summary
+	// instead of one priority-escalated event per finding.
+	EventTypeScoringChangeApplied EventType = "scoring_change_applied"
 
 	// EventTypeFindingAssigned fires when an assignment rule routes a finding to
 	// a group AND that rule has its "notify group" option switched on. The
@@ -214,6 +219,7 @@ func AllEventTypes() []EventTypeInfo {
 		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
+		{Type: EventTypeScoringChangeApplied, Category: EventCategoryFinding, Label: "Scoring Changed", Description: "One summary when a scoring model or the risk scoring settings, priority rules or SLA policy changed open findings", RequiredModule: ModuleFindings},
 		{Type: EventTypeFindingAssigned, Category: EventCategoryFinding, Label: "Finding Assigned", Description: "Finding routed to a group by an assignment rule with group notification enabled", RequiredModule: ModuleFindings},
 		{Type: EventTypeSLABreach, Category: EventCategoryFinding, Label: "SLA Breached", Description: "Finding missed its SLA remediation deadline", RequiredModule: ModuleFindings},
 		{Type: EventTypeSLAWarning, Category: EventCategoryFinding, Label: "SLA Approaching", Description: "Finding is approaching its SLA remediation deadline (pre-breach warning)", RequiredModule: ModuleFindings},
@@ -296,6 +302,10 @@ func DefaultEnabledEventTypes() []EventType {
 		// per-integration severity filter still applies (P0 -> critical,
 		// P1 -> high, ...), so this is not a firehose.
 		EventTypeFindingPriorityEscalated,
+		// A scoring change sends one summary instead of the escalations it
+		// caused (docs/architecture/scoring-versions.md), so it is on
+		// wherever escalations are.
+		EventTypeScoringChangeApplied,
 
 		// A scheduled CI scan that silently stopped, a repository that lost
 		// its scanning, or a runner below the supported version are the
