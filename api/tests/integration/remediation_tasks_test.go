@@ -116,14 +116,23 @@ func (r *rtRig) finding(asset shared.ID, status string, sla *time.Time) shared.I
 	return r.findingIn(r.tenant, asset, status, "high", sla)
 }
 
-func (r *rtRig) setStatus(id shared.ID, status, method string) {
+// setStatus moves a finding; for a closed status, verification is how the
+// closure was proven ("" = none).
+func (r *rtRig) setStatus(id shared.ID, status, verification string) {
 	r.t.Helper()
-	var m any
-	if method != "" {
-		m = method
+	var reason, verif any
+	switch status {
+	case "resolved":
+		reason = "fixed"
+		verif = "none"
+		if verification != "" {
+			verif = verification
+		}
+	case "accepted":
+		reason = "risk_accepted"
 	}
-	r.exec(`UPDATE findings SET status = $3, resolution_method = $4, updated_at = now() + interval '1 second' WHERE tenant_id = $1 AND id = $2`,
-		r.tenant.String(), id.String(), status, m)
+	r.exec(`UPDATE findings SET status = $3, closure_reason = $4, verification = $5, updated_at = now() + interval '1 second'
+		WHERE tenant_id = $1 AND id = $2`, r.tenant.String(), id.String(), status, reason, verif)
 }
 
 func (r *rtRig) adminCtx() context.Context {
@@ -218,7 +227,7 @@ func TestRemediationTasks_CreateDeriveAndOnePrimaryTask(t *testing.T) {
 
 	// Every member closed but nothing verified: not done.
 	r.setStatus(f1, "accepted", "")
-	r.setStatus(f2, "resolved", "admin_direct")
+	r.setStatus(f2, "resolved", "attested")
 	_, err = r.svc.Reconcile(context.Background())
 	require.NoError(t, err)
 	task, _ = r.svc.GetTask(ctx, r.tenant, task.ID)
@@ -226,7 +235,7 @@ func TestRemediationTasks_CreateDeriveAndOnePrimaryTask(t *testing.T) {
 	assert.Nil(t, task.Deadline, "no open member, no deadline")
 
 	// One member verified by a scan: done.
-	r.setStatus(f2, "resolved", "scan_verified")
+	r.setStatus(f2, "resolved", "covered_scan")
 	_, err = r.svc.Reconcile(context.Background())
 	require.NoError(t, err)
 	task, _ = r.svc.GetTask(ctx, r.tenant, task.ID)
@@ -254,7 +263,8 @@ func TestRemediationTasks_RefusesBadInput(t *testing.T) {
 	r := newRTRig(t)
 	ctx := r.adminCtx()
 	open := r.finding(r.assetA, "new", nil)
-	closed := r.finding(r.assetA, "resolved", nil)
+	closed := r.finding(r.assetA, "new", nil)
+	r.setStatus(closed, "resolved", "")
 	create := func(in remediationapp.CreateTaskInput) error {
 		in.TenantID, in.ActorID = r.tenant, &r.admin
 		if in.Title == "" {

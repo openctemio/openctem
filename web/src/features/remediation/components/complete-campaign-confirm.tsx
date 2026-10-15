@@ -9,6 +9,7 @@
 import * as React from 'react'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   completionWarning,
   completionWarningText,
@@ -17,10 +18,17 @@ import {
   type CompletionWarning,
 } from '@/features/remediation/lib/campaign-completion'
 
+/**
+ * Completes the campaigns. `closeWithOpenMembers` is true only after the
+ * person confirmed completing campaigns that are not done; the API refuses
+ * such a completion without it.
+ */
+export type ProceedCompletion = (closeWithOpenMembers: boolean) => void | Promise<void>
+
 interface Pending {
   warning: CompletionWarning
   selected: number
-  proceed: () => void | Promise<void>
+  proceed: ProceedCompletion
 }
 
 export interface ConfirmCampaignCompletion {
@@ -31,7 +39,7 @@ export interface ConfirmCampaignCompletion {
    */
   confirmCompletion: (
     ids: string[],
-    proceed: () => void | Promise<void>,
+    proceed: ProceedCompletion,
     fallback?: Record<string, CampaignCounts | undefined>
   ) => Promise<void>
   /** Render once on the page. */
@@ -47,7 +55,7 @@ export function useConfirmCampaignCompletion(): ConfirmCampaignCompletion {
       const counts = await fetchLiveCampaignCounts(ids, fallback)
       const warning = completionWarning(counts)
       if (!warning) {
-        await proceed()
+        await proceed(false)
         return
       }
       setPending({ warning, selected: ids.length, proceed })
@@ -65,7 +73,7 @@ export function useConfirmCampaignCompletion(): ConfirmCampaignCompletion {
         if (!pending) return
         setBusy(true)
         try {
-          await pending.proceed()
+          await pending.proceed(true)
         } finally {
           setBusy(false)
           setPending(null)
@@ -94,7 +102,33 @@ export function CompleteCampaignConfirmDialog({
   onConfirm,
   onCancel,
 }: CompleteCampaignConfirmDialogProps) {
+  const { t } = useTranslation()
   const many = selected > 1
+  // Nothing open, but nothing verified fixed either.
+  if (warning && warning.open === 0) {
+    return (
+      <ConfirmDialog
+        open
+        onOpenChange={(open) => !open && onCancel()}
+        title={t('confirm.campaign.unverifiedTitle', 'Complete without a verified fix?')}
+        desc={
+          many
+            ? t(
+                'confirm.campaign.unverifiedDescMany',
+                'In {count} of the tasks no finding was verified fixed: their findings were accepted, marked false positive or duplicate, or there are none. A task is done when one is verified fixed.',
+                { count: warning.unverified }
+              )
+            : t(
+                'confirm.campaign.unverifiedDesc',
+                'No finding in this task was verified fixed: its findings were accepted, marked false positive or duplicate, or there are none. A task is done when one is verified fixed.'
+              )
+        }
+        confirmText={t('confirm.campaign.completeAnyway', 'Complete anyway')}
+        isLoading={isLoading}
+        handleConfirm={onConfirm}
+      />
+    )
+  }
   return (
     <ConfirmDialog
       open={warning !== null}
