@@ -10,6 +10,7 @@
 
 import { ExternalLink, GitBranch } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 import { Badge } from '@/components/ui/badge'
 import {
   DetailField,
@@ -29,7 +30,7 @@ function Commit({ sha, repo }: { sha?: string; repo?: string }) {
   const href = buildRepositoryCommitUrl(repo, sha)
   return href ? (
     <a
-      href={href}
+      href={safeHref(href)}
       target="_blank"
       rel="noopener noreferrer nofollow"
       className="font-mono text-xs underline-offset-2 hover:underline"
@@ -65,7 +66,7 @@ export function FindingProvenanceSection({ finding }: { finding: FindingDetail }
       <span className="inline-flex flex-wrap items-center gap-x-1.5">
         {href ? (
           <a
-            href={href}
+            href={safeHref(href)}
             target="_blank"
             rel="noopener noreferrer nofollow"
             className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
