@@ -1425,6 +1425,7 @@
   "scans.ci.reason.severity": "Mức độ",
   "scans.ci.reason.scan_failure": "Lỗi quét",
   "scans.ci.reason.missing_capability": "Thiếu lượt quét bắt buộc",
+  "scans.ci.reason.capability_failed": "Kết quả quét chưa đến nền tảng",
   "scans.ci.reason.override": "Phá kính khẩn cấp",
   "scans.ci.reason.no_baseline": "Chưa có mốc so sánh",
   "scans.ci.reason.secret_pre_existing": "Bí mật đã có trên nhánh mặc định",

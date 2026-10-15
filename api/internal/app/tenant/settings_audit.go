@@ -31,7 +31,10 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 		len(before.AllowedDomains) > 0 && (len(after.AllowedDomains) == 0 || addsEntries(before.AllowedDomains, after.AllowedDomains)),
 		before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever,
 		before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets,
-		before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS:
+		before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS,
+		// Opening who may be invited, or dropping the required end of access.
+		before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny,
+		before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired:
 		return audit.SeverityHigh
 	default:
 		return audit.SeverityMedium

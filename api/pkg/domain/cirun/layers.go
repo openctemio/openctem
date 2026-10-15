@@ -1,7 +1,7 @@
 package cirun
 
 // Per-field layering of gate policies
-// (docs/rfcs/RFC-095-ci-per-repository-settings.md): a business unit or
+// (docs/rfcs/RFC-096-ci-per-repository-settings.md): a business unit or
 // repository policy sets only the fields it lists and inherits the rest; an
 // organization or business unit policy can lock fields, so that no layer
 // below it can loosen them; a repository policy can expire.

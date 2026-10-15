@@ -15,7 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// Per-repository gate settings (docs/rfcs/RFC-095-ci-per-repository-settings.md):
+// Per-repository gate settings (docs/rfcs/RFC-096-ci-per-repository-settings.md):
 // a repository policy sets only some fields and inherits the rest; an
 // organization lock is a floor no one can loosen below; loosening an
 // unlocked field needs a reason and step-up; an expired override stops
