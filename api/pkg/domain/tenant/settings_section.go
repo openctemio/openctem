@@ -207,7 +207,7 @@ func SettingsFromMapChecked(m map[string]any) (Settings, map[string]error) {
 		}
 	}
 	if _, ok := m[SectionRiskScoring]; !ok {
-		settings.RiskScoring = LegacyRiskScoringSettings()
+		settings.RiskScoring = DefaultRiskScoringPreset()
 	}
 	return settings, errs
 }
