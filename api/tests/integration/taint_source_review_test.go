@@ -2,9 +2,9 @@ package integration
 
 // A false positive on a taint finding is an argument about its source. When
 // a re-scan reports the same finding (same sink) from another source, the
-// decision is suspended for review: the finding is confirmed again, the
-// earlier decision is kept and the change is audited. A refactor of the
-// steps in between keeps the decision; another tenant is untouched.
+// decision stands and is flagged for review (a person decides): one open
+// review flag, audited. A refactor of the steps in between raises nothing;
+// another tenant is untouched.
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-func TestTaintSourceChange_SuspendsTheDecision(t *testing.T) {
+func TestTaintSourceChange_FlagsTheDecisionForReview(t *testing.T) {
 	r := newV2Rig(t, ingest.DefaultBlindingGuard())
 	db := &postgres.DB{DB: r.db}
 	svc := ingest.NewService(
@@ -61,18 +61,23 @@ func TestTaintSourceChange_SuspendsTheDecision(t *testing.T) {
 	if st := status(tn); st != "false_positive" {
 		t.Fatalf("a refactor of the trace suspended the decision: %s", st)
 	}
-	// The source changes to user input: suspended for review.
+	var flags int
+	_ = r.db.QueryRow(`SELECT count(*) FROM finding_decision_reviews WHERE tenant_id = $1`, tn.tenant.String()).Scan(&flags)
+	if flags != 0 {
+		t.Fatalf("a refactor of the trace raised %d review flags, want 0", flags)
+	}
+	// The source changes to user input: the decision stands, flagged for review.
 	ingestAs(tn, flowReport(repo, withSource("src/routes.js", "const id = req.query.id", 6)))
-	if st := status(tn); st != "confirmed" {
-		t.Fatalf("status after the source changed: %s, want confirmed", st)
+	if st := status(tn); st != "false_positive" {
+		t.Fatalf("status after the source changed: %s, want false_positive (the decision stands)", st)
 	}
 	var kept, audits int
-	_ = r.db.QueryRow(`SELECT count(*) FROM finding_decision_suspensions WHERE tenant_id = $1 AND prior_status = 'false_positive'
-		AND reason = 'taint_source_changed'`, tn.tenant.String()).Scan(&kept)
+	_ = r.db.QueryRow(`SELECT count(*) FROM finding_decision_reviews WHERE tenant_id = $1 AND decision_status = 'false_positive'
+		AND reason = 'taint_source_changed' AND cleared_at IS NULL`, tn.tenant.String()).Scan(&kept)
 	_ = r.db.QueryRow(`SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'finding.status_changed'
 		AND metadata->>'reason' = 'taint_source_changed'`, tn.tenant.String()).Scan(&audits)
 	if kept != 1 || audits != 1 {
-		t.Fatalf("suspension rows %d, audit rows %d; want 1 and 1", kept, audits)
+		t.Fatalf("open review flags %d, audit rows %d; want 1 and 1", kept, audits)
 	}
 	// Another tenant's decision is untouched.
 	if st := status(other); st != "false_positive" {
