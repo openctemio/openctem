@@ -35,6 +35,8 @@ export type FixGuidance =
       commands: FixCommand[]
       /** Other release lines with a fix (6.0.6 when the advice is 7.0.5). */
       otherFixedVersions: string[]
+      /** The upgrade crosses a major version: expect breaking changes. */
+      majorUpgrade: boolean
     }
   | {
       kind: 'no-fix'
@@ -149,8 +151,13 @@ export function fixGuidance(
   const pkg = f.component?.name || meta(f, 'package_name', 'component_name')
   const from = f.component?.version || meta(f, 'installed_version', 'current_version')
   if (pkg && from) {
-    const fixed = f.advisory?.fixedVersions ?? []
-    const to = f.component?.fixedIn || meta(f, 'fixed_version', 'patched_version')
+    const fixed = f.advisory?.fixedVersions?.length
+      ? f.advisory.fixedVersions
+      : (f.component?.fixedVersions ?? [])
+    // A scanner's fixed_version may list every release line ("5.2.8, 4.2.26"):
+    // that is not one version to upgrade to.
+    const metaTo = meta(f, 'fixed_version', 'patched_version')
+    const to = f.component?.fixedIn || (metaTo.includes(',') ? '' : metaTo)
     const ecosystem = f.component?.ecosystem || meta(f, 'ecosystem', 'package_manager')
     if (to) {
       return {
@@ -163,6 +170,7 @@ export function fixGuidance(
         manifestFile: f.component?.manifestFile,
         commands: ecosystem ? upgradeCommands(ecosystem, pkg, to, f.component?.dependencyType) : [],
         otherFixedVersions: fixed.filter((v) => v !== to),
+        majorUpgrade: !!f.component?.fixedInMajor,
       }
     }
     if (f.advisory && fixed.length === 0) {
