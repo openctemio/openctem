@@ -2872,6 +2872,8 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	// pauses schedules or a deprovisioned member still owns work.
 	s.Tenant.SetLifecycleRepository(repos.MemberLifecycle)
 	s.Tenant.SetLifecycleNotifier(s.Notification)
+	// Ownership transfer: owner asks, the member accepts with step-up.
+	s.Tenant.SetOwnershipTransferRepository(repos.OwnershipTransfer)
 
 	// Sensor pairing approvals need step-up re-authentication and notify
 	// every administrator (RFC-052 D-2, D-6).
