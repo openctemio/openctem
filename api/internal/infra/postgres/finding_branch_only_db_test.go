@@ -105,15 +105,23 @@ func TestBranchOnly_MarkedOnInsertByBranch(t *testing.T) {
 	if !f.branchOnly(ctx, t, onFeature) {
 		t.Fatal("a finding first seen on a feature branch is branch-only")
 	}
-	for name, id := range map[string]shared.ID{"default branch": onMain, "release branch": onRelease,
+	// A branch typed "release" from its name is not exposure: anyone who can
+	// push can create release/x. Only default or protected branches count.
+	if !f.branchOnly(ctx, t, onRelease) {
+		t.Fatal("a finding first seen on an unprotected release/* branch is branch-only")
+	}
+	for name, id := range map[string]shared.ID{"default branch": onMain,
 		"no branch": noBranch, "repository without a default branch": noDefault} {
 		if f.branchOnly(ctx, t, id) {
 			t.Fatalf("finding on %s must count", name)
 		}
 	}
 
-	// A protected branch counts.
+	// A protected branch counts; protecting release/1 promotes its finding.
 	f.exec(ctx, t, `UPDATE repository_branches SET is_protected = TRUE WHERE id = $1`, f.release.String())
+	if f.branchOnly(ctx, t, onRelease) {
+		t.Fatal("protecting the release branch did not promote its finding")
+	}
 	prot := shared.NewID()
 	f.branch(ctx, t, prot, f.repo, "stable", "other", false)
 	f.exec(ctx, t, `UPDATE repository_branches SET is_protected = TRUE WHERE id = $1`, prot.String())

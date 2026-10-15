@@ -39,8 +39,14 @@ GitLab Ultimate's **status checks** can also require it by name.
 ## What it posts
 
 - a commit status `success` or `failed` on the run's commit. For a merge
-  request run, only when the commit is the merge request's current head as
-  GitLab reports it;
+  request run, only when the run judged the merge request as it stands:
+  - a merge request pipeline on the head: the commit is the merge request's
+    current head as GitLab reports it;
+  - a merged results pipeline (`refs/merge-requests/<n>/merge`), whose commit
+    is the merge of the head into the target: the pipeline is the merge
+    request's head pipeline and its commit is the run's. The status is
+    attached to that pipeline, which is the one the merge request shows.
+  - Merge train pipelines (`/train`) are not decorated yet;
 - one note on the merge request, updated in place by later runs of the same
   pipeline.
 

@@ -427,6 +427,7 @@ func (r *DashboardRepository) GetMTTRMetrics(ctx context.Context, tenantID share
 }
 
 // GetRiskVelocity returns new vs resolved findings per week for trending analysis.
+// A fix counts in the week of its resolved_at, never of a later edit (updated_at).
 // Positive velocity = losing ground, negative = improving.
 func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shared.ID, weeks int) ([]module.RiskVelocityPoint, error) {
 	if weeks < 1 {
@@ -442,8 +443,8 @@ func (r *DashboardRepository) GetRiskVelocity(ctx context.Context, tenantID shar
 	SELECT
 		w.week_start,
 		COALESCE(SUM(CASE WHEN f.created_at >= w.week_start AND f.created_at < w.week_start + '1 week'::interval THEN 1 ELSE 0 END), 0) as new_count,
-		COALESCE(SUM(CASE WHEN f.updated_at >= w.week_start AND f.updated_at < w.week_start + '1 week'::interval
-			AND f.status = 'resolved' THEN 1 ELSE 0 END), 0) as resolved_count
+		COALESCE(SUM(CASE WHEN f.resolved_at >= w.week_start AND f.resolved_at < w.week_start + '1 week'::interval
+			AND ` + vulnerability.FixedStatusSQL("f.status") + ` THEN 1 ELSE 0 END), 0) as resolved_count
 	FROM weeks w
 	LEFT JOIN findings f ON f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
 	GROUP BY w.week_start
@@ -628,7 +629,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) FILTER (WHERE priority_class = 'P1') AS p1,
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND status NOT IN ('resolved','false_positive','accepted','duplicate')
+			WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
@@ -671,7 +672,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + `
-				AND f.status NOT IN ('resolved','false_positive','accepted','duplicate')
+				AND ` + vulnerability.OpenStatusSQL("f.status") + `
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_critical AS (
@@ -747,7 +748,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND f.status NOT IN ('resolved','false_positive','accepted','duplicate')
+		WHERE f.tenant_id = $1 AND NOT f.branch_only` + programFindingExcl(ctx, "f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`
@@ -877,7 +878,7 @@ func (r *DashboardRepository) GetProcessMetrics(ctx context.Context, tenantID sh
 		),
 		assign_stats AS (
 			SELECT
-				COUNT(*) FILTER(WHERE assigned_to IS NULL AND status NOT IN ('resolved','false_positive','accepted','duplicate')) AS unassigned,
+				COUNT(*) FILTER(WHERE assigned_to IS NULL AND ` + vulnerability.OpenStatusSQL("status") + `) AS unassigned,
 				COALESCE(AVG(EXTRACT(epoch FROM assigned_at - created_at) / 3600) FILTER(WHERE assigned_at IS NOT NULL), 0) AS avg_assign_hours
 			FROM findings WHERE tenant_id = $1 AND NOT branch_only` + programFindingExcl(ctx, "asset_id") + `
 			AND created_at >= NOW() - ($2 || ' days')::interval

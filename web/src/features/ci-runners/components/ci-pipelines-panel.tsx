@@ -127,12 +127,7 @@ export function pipelineColumns(t: TFn): ColumnDef<CIPipeline>[] {
   ]
 }
 
-export interface CIPipelinesPanelProps {
-  /** Controls placed first in the toolbar (the page's mode switch). */
-  toolbarStart?: React.ReactNode
-}
-
-export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
+export function CIPipelinesPanel() {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canWrite = can(Permission.CIWrite)
@@ -253,30 +248,13 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
   )
 
   if (view === 'coverage') {
-    return (
-      <CICoverageView
-        toolbarStart={
-          <>
-            {toolbarStart}
-            {lens}
-          </>
-        }
-      />
-    )
+    return <CICoverageView toolbarStart={lens} />
   }
 
   if (view === 'runs') {
     return (
       <div className="mt-5">
-        <CIRunsView
-          embedded
-          toolbarStart={
-            <>
-              {toolbarStart}
-              {lens}
-            </>
-          }
-        />
+        <CIRunsView embedded toolbarStart={lens} />
       </div>
     )
   }
@@ -293,10 +271,7 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
         />
       ) : empty ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            {toolbarStart}
-            {lens}
-          </div>
+          <div className="flex flex-wrap items-center gap-2">{lens}</div>
           <EmptyState
             icon={Workflow}
             title={
@@ -343,7 +318,6 @@ export function CIPipelinesPanel({ toolbarStart }: CIPipelinesPanelProps) {
           }
           toolbarStart={
             <>
-              {toolbarStart}
               {lens}
               <div className="relative min-w-0 flex-1 sm:max-w-xs">
                 <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

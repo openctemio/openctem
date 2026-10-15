@@ -13,6 +13,7 @@ import {
 import { PROTOCOL_V1_SUNSET, PROTOCOL_V2_SENSOR_VERSION } from './sensor-cells'
 
 const ATTENTION_WORDS: Record<AttentionKind, string> = {
+  offline: 'sensors.health.attention.offline',
   backlog: 'sensors.health.attention.backlog',
   key: 'sensors.health.attention.key',
   version: 'sensors.health.attention.version',
@@ -20,6 +21,7 @@ const ATTENTION_WORDS: Record<AttentionKind, string> = {
   heartbeat: 'sensors.health.attention.heartbeat',
   tools: 'sensors.health.attention.tools',
   content: 'sensors.health.attention.content',
+  preflight: 'sensors.health.attention.preflight',
   error: 'sensors.health.attention.error',
 }
 
@@ -78,6 +80,9 @@ export interface FleetHealthStripProps {
   summary: FleetSummary
   channel: ReleaseChannel
   loading?: boolean
+  /** The table shows only the sensors that are not connected. */
+  notConnectedActive: boolean
+  onToggleNotConnected: () => void
   attentionActive: boolean
   onToggleAttention: () => void
   updatesActive: boolean
@@ -92,12 +97,16 @@ export interface FleetHealthStripProps {
 /**
  * Fleet health, the first thing on the page: how many sensors can take work,
  * what needs attention, version drift, zone coverage and job slots. The
- * clickable metrics filter (or group) the table below.
+ * clickable metrics filter (or group) the table below: Fleet health to the
+ * sensors that are not connected, Needs attention, Updates, Zones (grouping)
+ * and protocol v1. Jobs stays a number: no subset of sensors answers it.
  */
 export function FleetHealthStrip({
   summary,
   channel,
   loading,
+  notConnectedActive,
+  onToggleNotConnected,
   attentionActive,
   onToggleAttention,
   updatesActive,
@@ -110,6 +119,8 @@ export function FleetHealthStrip({
 }: FleetHealthStripProps) {
   const { t } = useTranslation()
   const scanner = scanningSensorLine(channel)
+  const s = summary.byState
+  const notConnected = s.stale + s.offline + s.never_connected
   const items: MetricStripItem[] = [
     {
       key: 'health',
@@ -117,6 +128,10 @@ export function FleetHealthStrip({
       value: summary.canTakeJobs,
       hint: t('sensors.health.canTakeJobs', undefined, { count: summary.enabled }),
       detail: <FleetBar summary={summary} />,
+      // Filters to the sensors that are not connected, when there are any.
+      ...(notConnected > 0 || notConnectedActive
+        ? { onClick: onToggleNotConnected, active: notConnectedActive }
+        : {}),
     },
     {
       key: 'attention',

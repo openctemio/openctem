@@ -18,8 +18,8 @@ a **central gate policy** instead of a flag in each pipeline.
 A CI run is not a sensor row: it has no row in `sensors`, no heartbeat, no
 offline alert and no key to rotate. Its logical identity is the **CI
 pipeline** (one workflow file of one repository, section 10), listed on the
-Sensors page as a sensor in **runner mode**: fresh or stale against its own
-cadence, never offline, never dispatched.
+CI/CD page (never on the Sensors page: a pipeline is not a sensor): fresh or
+stale against its own cadence, never offline, never dispatched.
 
 ```
 CI job ──OIDC token──▶ POST /ci/oidc/exchange ──▶ trust configs (tenant) ──▶ run + octci_ token (≤15 min)
@@ -140,7 +140,15 @@ id is not recorded; an invalid draft fetches nothing.
    discovery document must name that exact issuer and a JWKS on the issuer's
    own host; discovery and JWKS are fetched through the SSRF-guarded client
    (`httpsec.SafeHTTPClient` + `ValidateURL`) and cached for an hour, with an
-   unknown `kid` refetching at most every 30 seconds; algorithms RS256, RS384,
+   unknown `kid` refetching at most every 30 seconds. Concurrent refreshes of
+   one document wait for a single fetch; when the issuer cannot be reached
+   the last discovery document and keys keep verifying for six hours, and a
+   failed fetch is not repeated within 30 seconds. A token whose keys cannot
+   be had (issuer unreachable past that bound, or a `kid` not yet fetched)
+   answers `503 CI_ISSUER_UNAVAILABLE` with `Retry-After: 30`, before
+   anything is claimed, so the job retries the same token. This tells the
+   caller that the organization trusts the token's issuer and nothing more;
+   algorithms RS256, RS384,
    RS512, ES256 only (never HMAC or `none`), key type must match the
    algorithm; `iss`, `aud`, `exp` (required), `nbf`, `iat` (required, not in
    the future) with one minute of leeway; lifetime at most 24 hours; `sub` and
@@ -156,9 +164,23 @@ id is not recorded; an invalid draft fetches nothing.
    `001261`) and never matches a break-glass. A refusal is audited (`ci_run.token_refused`) with the repository,
    actor, pipeline run id and the rule that refused.
 4. Replay: `(iss, jti)` is recorded in `ci_oidc_replay` until the token
-   expires plus an hour; a second exchange of the same token is refused and
-   audited at high severity. The table is global by design (a token is good
-   for one exchange anywhere) and purged every ten minutes.
+   expires plus an hour, with the organization, the SHA-256 of the exact
+   token, the run it opened or joined and an exchange count (migration
+   `002137`). The same token presented again while valid (same bytes, same
+   organization) is a re-exchange: it gets a fresh upload token, added
+   beside the first one, for the same run only, after every continuation
+   check (repository, commit, pipeline run, attempt, job, still running,
+   within six hours); at most five exchanges per token
+   (`cirun.MaxTokenExchanges`), each audited (`token_exchanges`). A plain
+   run's id is chosen at the first exchange, so a re-exchange after a failed
+   creation makes that run and never a second one. Any other token under a
+   used `(iss, jti)`, a token re-presented to another organization, or a
+   record without organization is a replay, refused and audited at high
+   severity. A holder of a valid token can already exchange it once and
+   upload to its run; a re-exchange returns that run again and nothing
+   wider, so it adds no capability, while refusing it broke honest jobs that
+   lost the first answer or run `openctem-ci` more than once. The table is
+   global by design and purged every ten minutes.
 5. The repository asset (`github.com/<owner>/<repo>`, or
    `<gitlab host>/<project path>`) is found or created in the tenant. The run
    records repository, commit, branch, pull request, pipeline URL (built from
@@ -171,8 +193,18 @@ id is not recorded; an invalid draft fetches nothing.
    stored. It expires after 15 minutes. `ci_run.token_issued` is audited
    without the token.
 
-Every refusal answers the same `401 The CI token was not accepted`, with one
-exception decided after the token verified and was admitted: a runner that
+Every refusal before a trust configuration admitted the token answers the
+same `401 CI_TOKEN_NOT_TRUSTED`, whose message lists what to check (tenant
+id, audience, expiry, trust) without saying which failed: on a shared issuer
+anyone can mint a token for any audience, and the organization's
+configuration is not theirs to learn. A refusal after admission is the
+organization's own pipeline and is told the reason as `401 CI_TOKEN_<reason>`
+(`replay`, `replay_limit` with the first exchange time and run,
+`replay_run_closed`, `run_mismatch`, `pipeline_rate`, `pipeline_cap`,
+`pipeline_identity`, `aggregate_no_run_id`, `repository_binding`,
+`owner_id_mismatch`, `legacy_audience`); the text names only that pipeline's
+token and run, never another repository or owner id. One more exception
+decided after the token verified and was admitted: a runner that
 reports (User-Agent) a CI runner version below `CI_RUNNER_MIN_VERSION` gets `403
 RUNNER_OUTDATED` and the refusal is audited (`runner_outdated`); the fix is on
 its side. The version is self-reported: this keeps known-bad releases out, it
@@ -392,7 +424,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | Forged, expired, not-yet-valid, wrong-issuer or wrong-audience token | Signature against the issuer's JWKS, alg allowlist, `iss`/`aud`/`exp`/`nbf`/`iat`; tests for each |
 | Token for another repository, branch, event or environment | Trust rules; refusal audited with the rule |
 | Fork code acting as the repository | Fork-capable events refused unless explicitly allowed; GitLab `require_protected_ref` |
-| Replay of a stolen OIDC token | One exchange per `(iss, jti)`; 24-hour lifetime cap |
+| Replay of a stolen OIDC token | A token maps to one run: re-exchanges (same bytes, same organization, at most five) return that run only, audited; any other token under a used `(iss, jti)` is refused; 24-hour lifetime cap |
 | Stolen run token | 15 minutes, one run, one repository, upload/evaluate only; hash stored, never the token |
 | Cross-tenant | Configurations, runs, policies and overrides tenant-scoped (composite FKs to the tenant's assets); the audience names the tenant; another tenant's ids answer 404 |
 | Data scope (RFC-050) | Run list and overrides filtered to the caller's repositories; by id out of scope is 404 |
@@ -402,7 +434,7 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A CI identity receiving work | Pipelines are a separate table with no key and no zone; no claim query reads them |
 | Withdrawn trust | Disabling, deleting or re-pointing a configuration revokes its pipelines and its running runs' tokens at once |
 | Personal data in claims | `user_email` never read; actor login only |
-| Cross-tenant through the fleet union | Each source tenant-scoped; the union adds no query; tests assert another tenant's fleet lists none of the pipelines |
+| Cross-tenant pipeline reads | The pipeline list and detail are tenant-scoped and follow the repository data scope; tests assert another tenant reads and lists none of the pipelines |
 | A report on another asset | `REPORT_OUT_OF_SCOPE`; the `ci_run` binding can change only the repository asset |
 | Baseline poisoning | The baseline branch is server-side (known default branch, else the configuration's); a run's branch comes from the token |
 | SSRF through a self-managed GitLab issuer or a Jenkins issuer | SSRF-guarded client, https only, JWKS pinned to the issuer's host; the preview validates the draft before any fetch |
@@ -414,7 +446,8 @@ Enforcement and pull request feedback by the platform: RFC-077.
 | A job naming a commit it did not build (CircleCI) | Marked unverified; never matches a break-glass |
 | A person driving a CI job interactively (CircleCI SSH re-run) | Refused |
 | Pull request builds of fork code where the token cannot say so | Refused unless fork pull requests are admitted |
-| JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` |
+| JWKS fetch amplification | One-hour cache, at most one refetch per 30 seconds for an unknown `kid` or a failed fetch, concurrent refreshes collapsed into one |
+| Issuer outage or key rotation breaking scans | Discovery and keys served stale up to six hours; a missing key is a retryable 503 with nothing claimed |
 | Audit flooding | Nothing is audited before the token verifies |
 | Brute force | Per-IP limit on the exchange (shared across replicas) and on run routes before the token lookup; per-run limit after |
 | Token in logs | Neither token is logged or audited; tests assert the audit log carries none |
@@ -433,7 +466,7 @@ custom roles).
 | R4 | Remote repository execution by a zoned daemon sensor | Open (needs the executor sandbox and the credential broker) |
 | R5 | Signed runner image, GitHub Action and GitLab component, SARIF upload | Implemented (openctemio/ci) |
 | F1 | CI pipelines: identity, JIT creation, caps, revocation, status, fleet read model (section 10, migration 001084) | Implemented |
-| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented |
+| F2 | Sensors page: Mode and Role filters, runner rows, pipeline drawer, CI runners page folded in | Implemented, then revised (2026-10-15): pipelines live only on the CI/CD page; Sensors keeps one line linking there (FI-4) |
 | F3 | Coverage (repository x capability), stale-source findings, alerts (section 10.6, migration 001099) | Implemented |
 | F4, F5 | Sensor pools; policy timeouts for daemons (section 10.7) | Design only |
 | P1 | Azure Pipelines, Bitbucket Pipelines, CircleCI and Jenkins trust; trust preview (section 3.1, migration 001261) | Implemented |
@@ -464,8 +497,12 @@ ever listed as "offline".
 - **FI-3** Liveness per kind: heartbeat for daemons; for pipelines, freshness
   against the expected cadence. "Offline" is never used for a pipeline.
 - **FI-4** Pipelines live in their own table (`ci_pipelines`) and are never
-  dispatchable: no key, no zone, no claim query reads them. One read model
-  (`GET /api/v1/fleet`) unifies the console.
+  dispatchable: no key, no zone, no claim query reads them. Revised
+  2026-10-15: each kind has one home in the console. Sensors lists the
+  sensors (`GET /api/v1/sensors`), CI/CD lists the pipelines
+  (`GET /api/v1/ci/pipelines`), and Sensors shows only a one-line link with
+  the pipeline count. The earlier union read model, `GET /api/v1/fleet`, made
+  the Sensors page list every pipeline next to the sensors, and was removed.
 - **FI-5** Alerts only on signals (missed schedule, coverage regression,
   opt-in failing gate, outdated runner), never per run (section 10.6).
 - **FI-6** Coverage (repository x capability) is a first-class output
@@ -537,7 +574,6 @@ revocation.
 
 | Endpoint | Permission |
 |---|---|
-| `GET /api/v1/fleet?mode=all\|daemon\|runner` (`role`, `status`, `attention`, `include_inactive`, `search`, paging) | `sensors:read` for daemon rows, `scans:ci:read` (and the scans module) for runner rows; each mode filtered by its own permission, 403 with neither |
 | `GET /api/v1/ci/pipelines` (`status`, `include_inactive`, `provider`, `repository_asset_id`, `search`, paging; status counts) | `scans:ci:read` |
 | `GET /api/v1/ci/pipelines/{id}` (status, branches, default-branch gate trend) | `scans:ci:read` |
 | `GET /api/v1/ci/runs?pipeline_id=` | `scans:ci:read` |

@@ -217,7 +217,10 @@ export const LEGACY_ORPHAN_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
 /**
  * CI pipelines have their own page, CI/CD integration (api RFC-051). A verdict
  * links to /ci-runners/{run id}; that link opens the run there. The old
- * runner-sensor list (/runners) lands there too.
+ * runner-sensor list (/runners) lands there too, and so does the Sensors
+ * page's retired Runner mode (/sensors?mode=runner): its `pipeline`, `view`,
+ * `q` and `pipeline_status` parameters mean the same on CI/CD, so a link to
+ * one pipeline opens that pipeline.
  */
 export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   {
@@ -227,6 +230,12 @@ export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   },
   { source: '/ci-runners', destination: '/ci-cd', permanent: true },
   { source: '/runners', destination: '/ci-cd', permanent: true },
+  {
+    source: '/sensors',
+    has: [{ type: 'query', key: 'mode', value: 'runner' }],
+    destination: '/ci-cd',
+    permanent: true,
+  },
 ]
 
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [

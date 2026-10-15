@@ -193,6 +193,18 @@ type SecuritySettings struct {
 	IPWhitelist    []string `json:"ip_whitelist"`    // Allowed IP addresses/CIDR ranges
 	AllowedDomains []string `json:"allowed_domains"` // Allowed email domains for signup
 
+	// Invitees says who may be invited (RFC-095 §4.1): any address (empty or
+	// "any", the default), addresses on the organization's verified domains
+	// ("verified_domains"), or those plus AllowedDomains ("allow_list"). An
+	// organization that set AllowedDomains before this setting existed reads
+	// as allow_list (InviteesPolicy.Effective).
+	Invitees InviteesPolicy `json:"invitees,omitempty"`
+	// ExternalAccessEndRequired requires an end of access, within
+	// MaxExternalAccessDays (DefaultExternalAccessDays when none is given),
+	// for people outside the organization that no organization manages.
+	// Off by default: the inviter may still set one.
+	ExternalAccessEndRequired bool `json:"external_access_end_required,omitempty"`
+
 	// PersonalAccounts says whether members with a personal address may use
 	// the organization (RFC-058): allowed (empty), allowed_with_mfa (the
 	// default for new organizations) or blocked.
@@ -392,6 +404,12 @@ const (
 	// ScoreCompositionAmplifyHeadroom de-saturates the top of the range by filling
 	// remaining headroom rather than overflowing past 100 (opt-in).
 	ScoreCompositionAmplifyHeadroom = "amplify_headroom"
+	// ScoreCompositionLikelihoodImpact is the default model: risk = findings
+	// score (severity tiers with diminishing returns, exploit signals count one
+	// severity up) × exposure score% × criticality score% × (1 − compensating
+	// control reduction). Weights, multipliers, finding impact and CTEM points
+	// do not apply to it (docs/architecture/asset-risk-score.md).
+	ScoreCompositionLikelihoodImpact = "likelihood_impact"
 )
 
 // RiskScoringSettings configures the risk scoring formula per tenant.
@@ -518,9 +536,23 @@ func LegacyRiskScoringSettings() RiskScoringSettings {
 	}
 }
 
-// DefaultRiskScoringPreset returns the recommended risk scoring settings
-// for new tenants who opt-in to configurable risk scoring.
+// DefaultRiskScoringPreset returns the recommended settings, the default of
+// every organization: the likelihood-impact model. ExposureScores and
+// CriticalityScores are its factors (percent); "unknown" exposure and "not
+// rated" criticality are deliberately not low. The weighted fields keep valid
+// values so a switch to a weighted composition validates.
 func DefaultRiskScoringPreset() RiskScoringSettings {
+	s := weightedRiskScoringPreset()
+	s.Preset = "default"
+	s.ScoreCompositionMode = ScoreCompositionLikelihoodImpact
+	s.ExposureScores = ExposureScoreConfig{Public: 100, Restricted: 90, Private: 75, Isolated: 50, Unknown: 90}
+	s.CriticalityScores = CriticalityScoreConfig{Critical: 100, High: 90, Medium: 80, Low: 60, None: 80}
+	return s
+}
+
+// weightedRiskScoringPreset is the weighted-sum base of the industry
+// presets.
+func weightedRiskScoringPreset() RiskScoringSettings {
 	return RiskScoringSettings{
 		Preset: "default",
 		Weights: ComponentWeights{
@@ -575,7 +607,7 @@ func RiskScoringPreset(name string) (RiskScoringSettings, bool) {
 }
 
 func bankingRiskScoringPreset() RiskScoringSettings {
-	base := DefaultRiskScoringPreset()
+	base := weightedRiskScoringPreset()
 	base.Preset = "banking"
 	base.Weights = ComponentWeights{Exposure: 25, Criticality: 30, Findings: 25, CTEM: 20}
 	base.CTEMPoints.Enabled = true
@@ -586,7 +618,7 @@ func bankingRiskScoringPreset() RiskScoringSettings {
 }
 
 func healthcareRiskScoringPreset() RiskScoringSettings {
-	base := DefaultRiskScoringPreset()
+	base := weightedRiskScoringPreset()
 	base.Preset = "healthcare"
 	base.Weights = ComponentWeights{Exposure: 20, Criticality: 25, Findings: 25, CTEM: 30}
 	base.CTEMPoints.Enabled = true
@@ -597,7 +629,7 @@ func healthcareRiskScoringPreset() RiskScoringSettings {
 }
 
 func ecommerceRiskScoringPreset() RiskScoringSettings {
-	base := DefaultRiskScoringPreset()
+	base := weightedRiskScoringPreset()
 	base.Preset = "ecommerce"
 	base.Weights = ComponentWeights{Exposure: 40, Criticality: 20, Findings: 30, CTEM: 10}
 	base.ExposureScores.Public = 90
@@ -605,7 +637,7 @@ func ecommerceRiskScoringPreset() RiskScoringSettings {
 }
 
 func governmentRiskScoringPreset() RiskScoringSettings {
-	base := DefaultRiskScoringPreset()
+	base := weightedRiskScoringPreset()
 	base.Preset = "government"
 	base.Weights = ComponentWeights{Exposure: 20, Criticality: 30, Findings: 20, CTEM: 30}
 	base.CTEMPoints.Enabled = true
@@ -698,10 +730,10 @@ func (s *RiskScoringSettings) Validate() error {
 		return fmt.Errorf("%w: risk levels must be between 1-100", shared.ErrValidation)
 	}
 	switch s.ScoreCompositionMode {
-	case "", ScoreCompositionMultiply, ScoreCompositionAmplifyHeadroom:
-		// "" resolves to multiply (backward compatible).
+	case "", ScoreCompositionMultiply, ScoreCompositionAmplifyHeadroom, ScoreCompositionLikelihoodImpact:
+		// "" resolves to multiply.
 	default:
-		return fmt.Errorf("%w: score_composition_mode must be 'multiply' or 'amplify_headroom'", shared.ErrValidation)
+		return fmt.Errorf("%w: score_composition_mode must be 'likelihood_impact', 'multiply' or 'amplify_headroom'", shared.ErrValidation)
 	}
 	return nil
 }
@@ -735,7 +767,7 @@ func DefaultSettings() Settings {
 			AutoTriageSeverities:   []string{"critical", "high"},
 			AutoTriageDelaySeconds: 60,
 		},
-		RiskScoring: LegacyRiskScoringSettings(),
+		RiskScoring: DefaultRiskScoringPreset(),
 		Pentest: PentestSettings{
 			CampaignTypes: []ConfigOption{
 				{Value: "external", Label: "External network"},
@@ -858,6 +890,12 @@ func (s *SecuritySettings) Validate() error {
 	}
 	if !s.PersonalAccounts.IsValid() {
 		return fmt.Errorf("%w: personal_accounts must be one of: allowed, allowed_with_mfa, blocked", shared.ErrValidation)
+	}
+	if !s.Invitees.IsValid() {
+		return fmt.Errorf("%w: invitees must be one of: any, verified_domains, allow_list", shared.ErrValidation)
+	}
+	if s.Invitees == InviteesAllowList && len(s.AllowedDomains) == 0 {
+		return fmt.Errorf("%w: invitees allow_list needs at least one allowed domain", shared.ErrValidation)
 	}
 	if len(s.SSOExceptions) > 100 {
 		return fmt.Errorf("%w: at most 100 sso exceptions", shared.ErrValidation)
