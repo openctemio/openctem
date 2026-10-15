@@ -147,7 +147,7 @@ Independently of retests, ingest reopens every re-detected finding that was
 closed as fixed — by a scan or by a person — and (since RFC-039) every
 `validated_fixed` one: `AutoReopenByFingerprintsBatch` locks the rows, reopens
 them to `confirmed` and returns what it cleared. The `auto_reopened` activity
-keeps `previous_status`, `previous_resolution`, `previous_resolution_method`,
+keeps `previous_status`, `previous_resolution`, `previous_closure_reason`, `previous_verification`,
 `previous_resolved_by`, `previous_resolved_at`, `scanner` and `scan_id`, so the
 person who resolved it is never lost. Deliberate dispositions are never
 reopened.

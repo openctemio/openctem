@@ -280,6 +280,8 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
 
     discoveredAt: api.first_detected_at || api.created_at,
     resolvedAt: api.resolved_at,
+    closureReason: api.closure_reason,
+    verification: api.verification,
     verifiedAt: api.verified_at,
     createdAt: api.created_at,
     updatedAt: api.updated_at,

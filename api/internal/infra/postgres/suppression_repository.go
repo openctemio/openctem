@@ -243,7 +243,7 @@ func (r *SuppressionRepository) liftSuppressionsInTx(
 
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE findings
-			   SET status = 'new', resolution = NULL, resolution_method = NULL,
+			   SET status = 'new', resolution = NULL, closure_reason = NULL, verification = NULL,
 			       resolved_at = NULL, resolved_by = NULL, updated_at = NOW()
 			 WHERE tenant_id = $1 AND id = $2 AND resolution = 'suppressed'
 			   AND status IN `+suppressionLiftFromSQL+``,
