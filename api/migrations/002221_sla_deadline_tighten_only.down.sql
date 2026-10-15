@@ -1,5 +1,3 @@
-DROP TRIGGER IF EXISTS trg_findings_sla_deadline_guard ON findings;
-DROP FUNCTION IF EXISTS guard_sla_deadline_tighten_only();
 DROP TRIGGER IF EXISTS trg_findings_sla_deadline_tightened ON findings;
 DROP FUNCTION IF EXISTS record_sla_deadline_tightened();
 DELETE FROM finding_activities WHERE activity_type = 'sla_deadline_tightened';
