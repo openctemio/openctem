@@ -168,11 +168,11 @@ export function FindingProperties({
         <>
           <Row label={t('findings.properties.status', 'Status')}>
             <StatusSelect
+              findingId={finding.id}
               value={triage.status}
               onChange={triage.changeStatus}
               loading={triage.statusBusy}
               disabled={locked}
-              source={finding.source}
             />
           </Row>
           <Row label={t('findings.properties.severity', 'Severity')}>

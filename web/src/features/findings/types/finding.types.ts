@@ -148,54 +148,9 @@ export const FINDING_STATUS_CONFIG: Record<FindingStatus, StatusConfig> = {
   },
 }
 
-/**
- * Status transitions workflow
- * Simplified: new → confirmed → in_progress → resolved
- *
- * Note: Transitions to false_positive and accepted require approval
- * from security team. The UI should show approval dialog for these.
- */
-export const STATUS_TRANSITIONS: Record<FindingStatus, FindingStatus[]> = {
-  // Open states
-  new: ['confirmed', 'duplicate', 'false_positive'],
-  confirmed: ['in_progress', 'resolved', 'duplicate', 'false_positive', 'accepted'],
-  // In progress
-  in_progress: ['fix_applied', 'confirmed'],
-  // Fix applied — awaiting a proof-of-fix retest or manual security review
-  fix_applied: ['resolved', 'in_progress'],
-  // Closed states (can reopen to confirmed)
-  resolved: ['confirmed'],
-  false_positive: ['confirmed'],
-  accepted: ['confirmed'],
-  duplicate: ['confirmed'],
-  // Pentest pre-publication (the pentest menu uses PENTEST_STATUS_TRANSITION_ROLES)
-  draft: ['in_review', 'confirmed', 'false_positive', 'accepted'],
-  in_review: ['confirmed', 'false_positive', 'accepted'],
-}
-
-/** Statuses valid for automated findings */
-export const AUTOMATED_STATUSES: FindingStatus[] = [
-  'new',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'resolved',
-  'false_positive',
-  'accepted',
-  'duplicate',
-]
-
-/** Statuses valid for pentest findings */
-export const PENTEST_STATUSES: FindingStatus[] = [
-  'draft',
-  'in_review',
-  'confirmed',
-  'in_progress',
-  'fix_applied',
-  'resolved',
-  'false_positive',
-  'accepted',
-]
+// The status moves of a finding are the API's (its transition engine):
+// GET /api/v1/findings/{id}/transitions, through useFindingTransitions. The
+// console keeps no copy of the rules.
 
 /** Every finding status, in lifecycle order. */
 export const ALL_FINDING_STATUSES: FindingStatus[] = Object.keys(
@@ -210,12 +165,6 @@ export function findingStatusesInCategory(category: StatusCategory): FindingStat
 /** True for a value the API accepts as a finding status. */
 export function isFindingStatus(value: string): value is FindingStatus {
   return Object.prototype.hasOwnProperty.call(FINDING_STATUS_CONFIG, value)
-}
-
-/** Get valid statuses for a finding based on its source */
-export function getStatusesForSource(source: string): FindingStatus[] {
-  if (source === 'pentest') return PENTEST_STATUSES
-  return AUTOMATED_STATUSES
 }
 
 /**
