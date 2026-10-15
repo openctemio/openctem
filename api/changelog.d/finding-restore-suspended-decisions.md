@@ -1,6 +1,6 @@
 ### Fixed: decisions the old taint-source check reversed are restored
 
-- Migration `002206` restores each finding that a changed taint source moved
+- Migration `002207` restores each finding that a changed taint source moved
   from false positive or accepted back to `confirmed` (resolution
   `decision_suspended`, before migration `002173`) to its latest suspended
   decision, with a timeline entry (reason `decision_restored`) and an open
