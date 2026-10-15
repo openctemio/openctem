@@ -1,7 +1,7 @@
 /**
  * The server's allowed status moves of a finding (GET
  * /api/v1/findings/{id}/transitions) and the bulk dry run (POST
- * /api/v1/findings/transitions:evaluate). The API's transition engine is
+ * /api/v1/findings/transitions/preview). The API's transition engine is
  * the only copy of the lifecycle rules; the console renders its decisions.
  */
 
@@ -54,7 +54,7 @@ export async function evaluateFindingTransitions(
   to: string
 ): Promise<EvaluatedTransition[]> {
   const res = await post<{ to: string; results: EvaluatedTransition[] }>(
-    '/api/v1/findings/transitions:evaluate',
+    '/api/v1/findings/transitions/preview',
     { finding_ids: findingIds, to }
   )
   return res?.results ?? []
