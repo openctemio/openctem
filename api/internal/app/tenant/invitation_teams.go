@@ -91,7 +91,11 @@ func (s *TenantService) checkInvitationTeams(ctx context.Context, tenantID share
 
 // reauthorizeInvitationTeams re-checks the teams for the inviter at
 // acceptance; a refusal voids the invitation.
-func (s *TenantService) reauthorizeInvitationTeams(ctx context.Context, inv *tenantdom.Invitation) error {
+//
+// external is the invitee's classification at acceptance (the membership
+// about to be created), not the one stored at creation: a person who became
+// an outsider since must not get full data access through a team.
+func (s *TenantService) reauthorizeInvitationTeams(ctx context.Context, inv *tenantdom.Invitation, external bool) error {
 	groupIDs := inv.GroupIDs()
 	if len(groupIDs) == 0 {
 		return nil
@@ -101,7 +105,7 @@ func (s *TenantService) reauthorizeInvitationTeams(ctx context.Context, inv *ten
 	}
 	_, err := s.invitationTeams.CheckInvitationTeams(ctx, accesscontrol.InvitationTeamCheck{
 		TenantID: inv.TenantID().String(), InviterID: inv.InvitedBy().String(), GroupIDs: groupIDs,
-		External:  inv.InviteeInfo().Kind == tenantdom.MemberKindExternal,
+		External:  external,
 		AccessEnd: inv.Access().ExpiresAt,
 	})
 	switch {
