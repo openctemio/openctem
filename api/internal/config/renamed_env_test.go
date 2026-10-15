@@ -82,7 +82,7 @@ func TestLoad_RefusesRemovedJiraWebhookSecret(t *testing.T) {
 	t.Setenv("JIRA_WEBHOOK_SECRET", "")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "JIRA_WEBHOOK_SECRET (removed:") ||
-		!strings.Contains(err.Error(), "/api/v1/integrations/jira/webhook-secret/rotate") {
+		!strings.Contains(err.Error(), "/api/v1/integrations/{id}/jira-webhook/secret/rotate") {
 		t.Fatalf("want JIRA_WEBHOOK_SECRET refused with the per-organization remedy, got %v", err)
 	}
 }
