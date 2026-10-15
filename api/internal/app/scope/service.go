@@ -58,6 +58,8 @@ type Service struct {
 	visible VisibleAssetCounter
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
+	// ciTrustLinks links CI trusts to the entries they manage (ci_trust.go).
+	ciTrustLinks scopedom.CITrustLinkRepository
 	// ledgerTemplates lists the approved template versions for snapshots.
 	ledgerTemplates LedgerTemplateSource
 }
@@ -115,6 +117,9 @@ type CreateTargetInput struct {
 	// batch: one of several entries added in one request (CreateTargets),
 	// which tells the administrators once for the whole batch.
 	batch bool
+	// inactive: the entry starts inactive (a CI trust's entry waiting for its
+	// first verified run, ci_trust.go).
+	inactive bool
 }
 
 // CreateTarget creates a scope entry: effective at once, pending approval,
@@ -186,6 +191,9 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	}
 	if input.Discovery != nil {
 		target.SetDiscovery(*input.Discovery)
+	}
+	if input.inactive && target.IsActive() {
+		target.Deactivate()
 	}
 
 	if err := s.commitEntry(ctx, nil, target, false, func() error {
@@ -301,6 +309,11 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	}
 	if target.IsProgramEntry() && input.changesEntry() {
 		return nil, scopedom.ErrProgramManaged
+	}
+	if input.changesEntry() {
+		if err := s.refuseCITrustManaged(ctx, target); err != nil {
+			return nil, err
+		}
 	}
 	before := ledgerEntryOf(target, time.Now())
 
@@ -472,6 +485,15 @@ func (s *Service) DeleteTarget(ctx context.Context, targetID string, tenantID st
 	if err != nil {
 		return err
 	}
+	if err := s.refuseCITrustManaged(ctx, target); err != nil {
+		return err
+	}
+	if s.ciTrustLinks != nil {
+		// A trust that linked this person's entry does not add it again.
+		if err := s.ciTrustLinks.MarkTargetRemoved(ctx, parsedTenantID, parsedID, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
 	if err := s.commitEntry(ctx, ledgerEntryOf(target, time.Now()), target, true, func() error {
 		return s.targetRepo.Delete(ctx, parsedTenantID, parsedID)
 	}); err != nil {
@@ -589,6 +611,11 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 	case target.IsPending() && s.entriesNeedApproval(ctx, parsedTenantID):
 		return target, nil // it waits for its approvals
 	}
+	// An entry a CI trust manages is put into effect by its first verified
+	// run, never by hand.
+	if err := s.refuseCITrustManaged(ctx, target); err != nil {
+		return nil, err
+	}
 	// A pending entry left from a time the organization required approvals
 	// (it no longer does, RFC-073 §6) is put into effect like a new entry:
 	// the caller's scope:write and step-up, no second person. Nothing puts
@@ -635,6 +662,9 @@ func (s *Service) DeactivateTarget(ctx context.Context, targetID string, tenantI
 		return nil, err
 	}
 
+	if err := s.refuseCITrustManaged(ctx, target); err != nil {
+		return nil, err
+	}
 	before := ledgerEntryOf(target, time.Now())
 	target.Deactivate()
 
