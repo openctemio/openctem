@@ -447,7 +447,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatal(err)
 	}
 	pol, err := r.svc.CreateGatePolicy(ctx, r.tenant, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository,
-		ScopeID: &run.RepositoryAssetID, Mode: cirun.ModeWarn}, cirunapp.Actor{Email: "admin@acme.test"})
+		ScopeID: &run.RepositoryAssetID, Mode: cirun.ModeWarn, Reason: "pilot repository, warn only"}, cirunapp.Actor{Email: "admin@acme.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +455,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" || v["would_fail"] != true {
 		t.Fatalf("warn policy: %v", v)
 	}
-	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, pol.ID, cirunapp.Actor{}); err != nil {
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, pol.ID, "", cirunapp.Actor{}); err != nil {
 		t.Fatal(err)
 	}
 	// A policy for another tenant's repository is refused as not found.
