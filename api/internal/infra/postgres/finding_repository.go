@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -2052,17 +2053,36 @@ func (r *FindingRepository) FingerprintsOpenOnBranch(ctx context.Context, tenant
 // resolution_method, so a reopened or dispositioned finding never keeps a
 // stale "fixed" claim.
 func (r *FindingRepository) UpdateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
-	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, method, nil)
+	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, method, nil, nil)
+}
+
+var _ vulnerability.FixClaimBatchWriter = (*FindingRepository)(nil)
+
+// UpdateStatusBatchFrom is UpdateStatusBatch limited to findings whose current
+// status is one of from (a subset of the lifecycle's predecessors of status):
+// a finding that moved to another status since the caller read it, for
+// example to an approved false positive, is left alone.
+func (r *FindingRepository) UpdateStatusBatchFrom(ctx context.Context, tenantID shared.ID, ids []shared.ID, from []vulnerability.FindingStatus, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod) error {
+	allowed := vulnerability.UserFromStatuses(status)
+	for _, f := range from {
+		if !slices.Contains(allowed, f) {
+			return fmt.Errorf("%w: %s is not a predecessor of %s", shared.ErrValidation, f, status)
+		}
+	}
+	if len(from) == 0 {
+		return fmt.Errorf("%w: no source status given", shared.ErrValidation)
+	}
+	return r.updateStatusBatch(ctx, tenantID, ids, status, resolution, resolvedBy, method, nil, from)
 }
 
 // AcceptUntil moves one finding to accepted with the end of its acceptance in
 // the same statement. Leaving accepted later clears the end (database trigger
 // trg_findings_clear_acceptance_expiry).
 func (r *FindingRepository) AcceptUntil(ctx context.Context, tenantID, id shared.ID, until time.Time, acceptedBy *shared.ID) error {
-	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy, "", &until)
+	return r.updateStatusBatch(ctx, tenantID, []shared.ID{id}, vulnerability.FindingStatusAccepted, "", acceptedBy, "", &until, nil)
 }
 
-func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod, acceptanceEnd *time.Time) error {
+func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shared.ID, ids []shared.ID, status vulnerability.FindingStatus, resolution string, resolvedBy *shared.ID, method vulnerability.ResolutionMethod, acceptanceEnd *time.Time, from []vulnerability.FindingStatus) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -2076,7 +2096,7 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 	// a finding that changed since the caller checked it is left alone.
 	placeholders := make([]string, len(ids))
 	args := []any{tenantID.String(), status.String(), nullString(resolution), nullID(resolvedBy), methodArg,
-		pq.Array(statusStrings(vulnerability.UserFromStatuses(status)))}
+		pq.Array(statusStrings(fromOrLifecycle(status, from)))}
 
 	for i, id := range ids {
 		placeholders[i] = fmt.Sprintf("$%d", i+7)
@@ -2107,6 +2127,15 @@ func (r *FindingRepository) updateStatusBatch(ctx context.Context, tenantID shar
 	}
 
 	return nil
+}
+
+// fromOrLifecycle is the from-statuses a status write accepts: the caller's
+// explicit list, else every lifecycle predecessor of status.
+func fromOrLifecycle(status vulnerability.FindingStatus, from []vulnerability.FindingStatus) []vulnerability.FindingStatus {
+	if len(from) > 0 {
+		return from
+	}
+	return vulnerability.UserFromStatuses(status)
 }
 
 // resolutionMethodArg is the resolution_method value a status write stores:
