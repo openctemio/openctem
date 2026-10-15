@@ -57,7 +57,7 @@ step runs.
             │   tool=tenable · metadata.id=session · coverage=full · synthetic default branch
             ▼
    ingest pipeline (RFC-005 async)
-            │   AutoResolveStaleByAssets(tenant, assetIDs=BATCH, tool, scanID)
+            │   coverage auto-resolve (command's assets, tool, full coverage)
             ▼
    findings stored + stale-resolved ONLY within the batch
             │
@@ -68,10 +68,10 @@ step runs.
 ## The safety invariant (most important property)
 
 Each batch covers only N of the estate. Auto-resolve **must** touch only the
-batch's assets. This is **already enforced** by the ingest pipeline: it calls
-`AutoResolveStaleByAssets(tenantID, assetIDs, toolName, scanID, branchID)`
-scoped to **(this tool) × (these asset IDs) × (this scan)**
-(`internal/app/ingest/service.go`). So:
+batch's assets. This is **already enforced** by the coverage auto-resolve
+(`internal/app/ingest/coverage_autoresolve.go`, `ResolveCoverageStale` /
+`ResolveRepoCoverageStale`): it is scoped to **(this tool) × (the command's
+asset IDs) × (this run)** and needs full coverage. So:
 
 - a 500-IP batch cannot resolve the other 2500 assets' findings;
 - a Tenable scan cannot resolve sensor-scanner (nuclei/trivy) findings.
@@ -120,7 +120,7 @@ The earlier `POST /assets/import/nessus` (hosts only) and
 |------|--------------------|
 | Batch size, scheduling, retry, timeout | `pkg/domain/scan` — `Scan.TargetsPerJob`, scheduler, retry/backoff |
 | Durable findings + dedup/correlation/idempotency | `internal/app/ingest` (RFC-005 async) |
-| Batch-scoped stale resolution | `FindingRepository.AutoResolveStaleByAssets` |
+| Batch-scoped stale resolution | the coverage auto-resolve (`ResolveCoverageStale`, `ResolveRepoCoverageStale`) |
 | Rotation cursor | `asset` `Criticality` + `LastScannedAt` |
 | Per-tenant credentials | `integration` `ProviderTenable` + AES-256-GCM creds (mirror Jira resolver) |
 
