@@ -77,15 +77,10 @@ func newCompensatingControlHandlerWithWiring(db *sql.DB, log *logger.Logger, svc
 	return h
 }
 
-// newPriorityRuleHandlerWithWiring constructs the priority-rule handler and
-// attaches the reclassify publisher when the services graph has one, so a rule
-// create/update/delete drives a whole-tenant reclassify sweep. Mirrors
-// newCompensatingControlHandlerWithWiring.
+// newPriorityRuleHandlerWithWiring constructs the priority-rule handler. A
+// rule change is recorded and its findings queued by a database trigger.
 func newPriorityRuleHandlerWithWiring(db *sql.DB, log *logger.Logger, svc *Services) *handler.PriorityRuleHandler {
 	h := handler.NewPriorityRuleHandler(db, log)
-	if svc != nil && svc.ControlChangePub != nil {
-		h.SetChangePublisher(svc.ControlChangePub)
-	}
 	// Wire the classifier so POST /priority-rules/dry-run can evaluate a draft
 	// rule against live findings with the real engine (nil → endpoint 503s).
 	if svc != nil && svc.PriorityClassification != nil {
