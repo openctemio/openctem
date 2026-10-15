@@ -601,6 +601,12 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SensorsRead,
     module: Module.Sensors,
   },
+  // Organization tool defaults: a sensors setting; saving needs
+  // sensors:write (checked by the page and the API).
+  '/settings/scanning/tool-defaults': {
+    permission: Permission.SensorsRead,
+    module: Module.Sensors,
+  },
 
   // ========================================
   // Settings - Organization (Core feature, no module required)
