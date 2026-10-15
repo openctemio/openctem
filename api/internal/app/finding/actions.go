@@ -560,9 +560,16 @@ func (s *FindingActionsService) BulkVerify(
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
 			continue
 		}
-		// The transition engine (the route requires findings:verify).
+		// The transition engine (the route requires findings:verify), with
+		// the evidence the finding's risk asks for.
 		facts := transitionFactsOf(f)
-		facts.ChecklistComplete = checklist != nil && checklist.FindingID() == f.ID() && checklist.IsComplete()
+		if s.db != nil {
+			if err := loadResolveEvidence(ctx, s.db, tid, fid, &facts); err != nil {
+				result.Failed++
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", idStr, err))
+				continue
+			}
+		}
 		if err := transitionError(vulnerability.EvaluateTransition(facts, personActor(uid, TransitionPermissions{Verify: true}),
 			vulnerability.FindingStatusResolved), resolution); err != nil {
 			result.Failed++
@@ -698,26 +705,50 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	if input.Note != "" {
 		resolution = input.Note
 	}
-	// The transition engine for the filtered set: every finding it touches
-	// is fix_applied and not a pentest finding (the statement's own
-	// predicates), so one decision covers them all.
-	if err := transitionError(vulnerability.EvaluateTransition(
-		vulnerability.TransitionFacts{Status: vulnerability.FindingStatusFixApplied},
-		personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusResolved), resolution); err != nil {
-		return 0, err
+	// The transition engine decides each finding, with the evidence its risk
+	// asks for (a high or critical finding needs its checklist or a retest),
+	// so the filtered set is read first (at most 1000) and only the findings
+	// it allows are resolved.
+	count, err := s.findingRepo.Count(ctx, input.Filter)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count findings: %w", err)
+	}
+	if count > 1000 {
+		return 0, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
+	}
+	actor := personActor(uid, TransitionPermissions{Verify: true})
+	allowed := make([]shared.ID, 0, int(count))
+	const batchSize = 100
+	for offset := int64(0); offset < count; offset += batchSize {
+		page, err := s.findingRepo.List(ctx, input.Filter, vulnerability.NewFindingListOptions(), pagination.New(int(offset/batchSize)+1, batchSize))
+		if err != nil {
+			return 0, fmt.Errorf("failed to list findings: %w", err)
+		}
+		for _, f := range page.Data {
+			facts := transitionFactsOf(f)
+			if s.db != nil {
+				if err := loadResolveEvidence(ctx, s.db, tid, f.ID(), &facts); err != nil {
+					return 0, err
+				}
+			}
+			if transitionError(vulnerability.EvaluateTransition(facts, actor, vulnerability.FindingStatusResolved), resolution) == nil {
+				allowed = append(allowed, f.ID())
+			}
+		}
+	}
+	if len(allowed) == 0 {
+		return 0, nil
 	}
 
 	// Each verified finding gets its timeline entry in the same transaction.
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
 		Source: string(vulnerability.SourceAPI), Reason: "verified_by_filter", ActorType: "user", ActorID: uid.String(), Message: resolution,
 	})
-	count, err := s.findingRepo.BulkUpdateStatusByFilter(moveCtx, tid, input.Filter,
-		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification))
-	if err != nil {
+	if err := s.findingRepo.UpdateStatusBatch(moveCtx, tid, allowed,
+		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification)); err != nil {
 		return 0, fmt.Errorf("failed to verify findings: %w", err)
 	}
-
-	return count, nil
+	return int64(len(allowed)), nil
 }
 
 // verifyByFilterVerification is how a verify-by-filter close is recorded: it
