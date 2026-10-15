@@ -304,6 +304,18 @@ Next.js proxy, the peer is the UI container, so:
 3. set `SERVER_TRUSTED_PROXIES` on the API to the UI's (and the gateway's)
    own addresses.
 
+**Behind the built-in gateway** the API needs only the gateway (and the UI) in
+`SERVER_TRUSTED_PROXIES`. The gateway resolves the client itself, believing a
+front proxy's header only when that proxy's address is in
+`OPENCTEM_TRUSTED_PROXIES`: `X-Forwarded-For` read right to left by default, or
+the header named in `OPENCTEM_CLIENT_IP_HEADERS` (`Cf-Connecting-Ip` behind a
+Cloudflare Tunnel connector, whose edge sets it to the one visitor address).
+It then overwrites both `X-Forwarded-For` and `X-Real-IP` with that one address
+and drops `Cf-Connecting-Ip` / `True-Client-Ip`, so the API never sees the front
+proxy's list. Passing that list on (with the front proxy's own address
+appended, as a reverse proxy does by default) made the API, which does not
+know the front proxy, record the proxy as the client of every request.
+
 List addresses, not a whole container network: every host in a trusted range
 can set the client address the API believes (login rate limits, audit
 addresses, IP allowlists), including a sensor container running third-party

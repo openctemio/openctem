@@ -218,17 +218,19 @@ func NormalizeUUID(s string) string {
 type Hints struct {
 	CommitSHA  string
 	Repository string
-	// BaseRef is the pull request's target branch as the job sees it.
+	// BaseRef is the pull request's target branch as the job sees it. It is
+	// never used: a job could name any branch, including one it pushed the
+	// finding to, as its baseline. The baseline comes from a signed claim
+	// (GitHub's base_ref) or from the code host (a GitLab merge request's
+	// target, read through the organization's connection).
 	BaseRef string
 }
 
 // ApplyHints fills what the token lacks from the job's hints. A commit taken
 // from a hint leaves CommitVerified false; a malformed hint is ignored (the
-// claims then lack the value and the job is refused).
+// claims then lack the value and the job is refused). The base branch hint
+// is ignored (Hints.BaseRef).
 func (c *Claims) ApplyHints(h Hints) {
-	if c.BaseRef == "" {
-		c.BaseRef = CleanBranchName(h.BaseRef)
-	}
 	if c.SHA == "" && (c.Provider == ProviderCircleCI || c.Provider == ProviderBitbucket || c.Provider == ProviderJenkins) {
 		if sha := strings.ToLower(strings.TrimSpace(h.CommitSHA)); fullSHARE.MatchString(sha) {
 			c.SHA, c.CommitVerified = sha, false
@@ -397,7 +399,7 @@ func ParseJenkinsClaims(m map[string]any) Claims {
 	case jenkinsPRRE.MatchString(branch):
 		c.PullRequest = jenkinsPRRE.FindStringSubmatch(branch)[1]
 		c.Ref = "refs/pull/" + c.PullRequest + "/head"
-		c.Branch = "pull/" + c.PullRequest
+		c.Branch = PullRequestBranch(c.PullRequest)
 	case branch != "":
 		c.Ref, c.Branch = "refs/heads/"+branch, branch
 	}
@@ -443,7 +445,7 @@ func (c *Claims) setBranchFromRef() {
 		c.PullRequest = pullRefRE.FindStringSubmatch(c.Ref)[1]
 		// The token names the pull request, not its source branch: its
 		// results belong to the pull request, never to a real branch.
-		c.Branch = "pull/" + c.PullRequest
+		c.Branch = PullRequestBranch(c.PullRequest)
 	case strings.HasPrefix(c.Ref, "refs/heads/"):
 		c.Branch = strings.TrimPrefix(c.Ref, "refs/heads/")
 	}
