@@ -1333,8 +1333,8 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO tenant_invitations (id, tenant_id, email, role, role_ids, token, invited_by, expires_at, created_at,
-			                                access_expires_at, access_expiry_reason, last_sent_at, invitee_kind, privileged)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $9, $12, $13)`,
+			                                access_expires_at, access_expiry_reason, last_sent_at, invitee_kind, privileged, group_ids)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $9, $12, $13, $14)`,
 			inv.ID().String(),
 			inv.TenantID().String(),
 			inv.Email(),
@@ -1348,6 +1348,7 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 			nullString(inv.Access().Reason),
 			string(info.Kind),
 			info.Privileged,
+			pq.Array(nonNilStrings(inv.GroupIDs())),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create invitation: %w", err)
@@ -1360,7 +1361,7 @@ func (r *TenantRepository) CreateInvitation(ctx context.Context, inv *tenant.Inv
 func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token string) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged, group_ids
 		FROM tenant_invitations
 		WHERE token = $1 AND revoked_at IS NULL
 	`
@@ -1372,7 +1373,7 @@ func (r *TenantRepository) GetInvitationByToken(ctx context.Context, token strin
 func (r *TenantRepository) GetInvitationByID(ctx context.Context, tenantID, id shared.ID) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged, group_ids
 		FROM tenant_invitations
 		WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL
 	`
@@ -1440,7 +1441,7 @@ func (r *TenantRepository) DeleteInvitation(ctx context.Context, tenantID, id sh
 func (r *TenantRepository) ListPendingInvitationsByTenant(ctx context.Context, tenantID shared.ID) ([]*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged, group_ids
 		FROM tenant_invitations
 		WHERE tenant_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
 		ORDER BY created_at DESC
@@ -1468,7 +1469,7 @@ func (r *TenantRepository) ListPendingInvitationsByTenant(ctx context.Context, t
 func (r *TenantRepository) GetPendingInvitationByEmail(ctx context.Context, tenantID shared.ID, email string) (*tenant.Invitation, error) {
 	query := `
 		SELECT id, tenant_id, email, role, role_ids, token, invited_by, expires_at, accepted_at, created_at,
-		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged
+		       access_expires_at, access_expiry_reason, last_sent_at, resend_count, invitee_kind, privileged, group_ids
 		FROM tenant_invitations
 		WHERE tenant_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()
 	`
@@ -1634,6 +1635,23 @@ func (r *TenantRepository) AcceptInvitationTx(ctx context.Context, inv *tenant.I
 			_, err = tx.ExecContext(ctx, userRolesQuery, args...)
 			if err != nil {
 				return fmt.Errorf("failed to assign roles: %w", err)
+			}
+		}
+
+		// Teams chosen by the inviter (the service re-checked the inviter
+		// first). Only active teams of this organization; an external team
+		// gets the invitation's end of access, which creating it required.
+		if groupIDs := inv.GroupIDs(); len(groupIDs) > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO group_members (group_id, user_id, role, joined_at, added_by, expires_at)
+				SELECT g.id, $2, 'member', $3, $4,
+				       CASE WHEN g.group_type = 'external' THEN $5::timestamptz END
+				FROM groups g
+				WHERE g.tenant_id = $1 AND g.id = ANY($6::uuid[]) AND g.is_active
+				ON CONFLICT (group_id, user_id) DO NOTHING`,
+				m.TenantID().String(), m.UserID().String(), m.JoinedAt(), invitedBy,
+				nullTime(inv.Access().ExpiresAt), pq.Array(groupIDs)); err != nil {
+				return fmt.Errorf("failed to add the invitee to teams: %w", err)
 			}
 		}
 
@@ -1822,8 +1840,9 @@ func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, err
 	var accessReason, inviteeKind sql.NullString
 	var resendCount int
 	var privileged bool
+	var groupIDs pq.StringArray
 	err := row.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt,
-		&accessAt, &accessReason, &lastSentAt, &resendCount, &inviteeKind, &privileged)
+		&accessAt, &accessReason, &lastSentAt, &resendCount, &inviteeKind, &privileged, &groupIDs)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, shared.ErrNotFound
@@ -1847,6 +1866,7 @@ func (r *TenantRepository) scanInvitation(row *sql.Row) (*tenant.Invitation, err
 	inv.SetAccess(tenant.ExternalAccess{ExpiresAt: nullTimeValue(accessAt), Reason: accessReason.String})
 	inv.SetSendHistory(nullTimeValue(lastSentAt), resendCount)
 	_ = inv.SetInviteeInfo(tenant.InviteeInfo{Kind: tenant.MemberKind(inviteeKind.String), Privileged: privileged})
+	inv.SetGroupIDs([]string(groupIDs))
 	return inv, nil
 }
 
@@ -1862,8 +1882,9 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 	var accessReason, inviteeKind sql.NullString
 	var resendCount int
 	var privileged bool
+	var groupIDs pq.StringArray
 	err := rows.Scan(&idStr, &tenantIDStr, &email, &roleStr, &roleIDs, &token, &invitedByStr, &expiresAt, &acceptedAt, &createdAt,
-		&accessAt, &accessReason, &lastSentAt, &resendCount, &inviteeKind, &privileged)
+		&accessAt, &accessReason, &lastSentAt, &resendCount, &inviteeKind, &privileged, &groupIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan invitation: %w", err)
 	}
@@ -1884,6 +1905,7 @@ func (r *TenantRepository) scanInvitationRow(rows *sql.Rows) (*tenant.Invitation
 	inv.SetAccess(tenant.ExternalAccess{ExpiresAt: nullTimeValue(accessAt), Reason: accessReason.String})
 	inv.SetSendHistory(nullTimeValue(lastSentAt), resendCount)
 	_ = inv.SetInviteeInfo(tenant.InviteeInfo{Kind: tenant.MemberKind(inviteeKind.String), Privileged: privileged})
+	inv.SetGroupIDs([]string(groupIDs))
 	return inv, nil
 }
 

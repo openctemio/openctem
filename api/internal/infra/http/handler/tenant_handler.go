@@ -256,6 +256,8 @@ type InvitationResponse struct {
 	// LastSentAt and ResendCount: resends are limited (RFC-095 §5).
 	LastSentAt  time.Time `json:"last_sent_at"`
 	ResendCount int       `json:"resend_count"`
+	// GroupIDs: the teams the invitee joins at acceptance.
+	GroupIDs []string `json:"group_ids"`
 }
 
 // =============================================================================
@@ -299,6 +301,10 @@ type CreateInvitationRequest struct {
 	AccessExpiresAt *time.Time `json:"access_expires_at,omitempty"`
 	// AccessReason says why the external invitee gets access (shown to admins).
 	AccessReason string `json:"access_reason,omitempty" validate:"max=500"`
+	// GroupIDs adds the invitee to these teams (data access) when they accept:
+	// at most 20, each one the inviter may add a member to, checked again at
+	// acceptance.
+	GroupIDs []string `json:"group_ids,omitempty" validate:"max=20"`
 }
 
 // UpdateMemberAccessRequest sets when an external member's access ends.
@@ -420,6 +426,7 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 		Privileged:      inv.InviteeInfo().Privileged,
 		LastSentAt:      inv.LastSentAt(),
 		ResendCount:     inv.ResendCount(),
+		GroupIDs:        nonNilIDs(inv.GroupIDs()),
 	}
 	if includeToken {
 		resp.Token = inv.Token()
@@ -430,6 +437,14 @@ func toInvitationResponse(inv *tenant.Invitation, includeToken bool) InvitationR
 // =============================================================================
 // Helpers
 // =============================================================================
+
+// nonNilIDs answers an empty list instead of null.
+func nonNilIDs(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
+}
 
 // buildAuditContext builds an app.AuditContext from the HTTP request.
 func (h *TenantHandler) buildAuditContext(r *http.Request) auditsvc.AuditContext {
@@ -1208,6 +1223,7 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 		RoleIDs:         req.RoleIDs,
 		AccessExpiresAt: req.AccessExpiresAt,
 		AccessReason:    req.AccessReason,
+		GroupIDs:        req.GroupIDs,
 	}
 
 	actx := h.buildAuditContext(r)
@@ -1230,6 +1246,8 @@ func (h *TenantHandler) CreateInvitation(w http.ResponseWriter, r *http.Request)
 type PreviewInvitationRequest struct {
 	Email   string   `json:"email" validate:"required,max=254"`
 	RoleIDs []string `json:"role_ids" validate:"max=10"`
+	// GroupIDs: the teams the invitee would join.
+	GroupIDs []string `json:"group_ids,omitempty" validate:"max=20"`
 }
 
 // PreviewInvitationResponse says what inviting the address would do.
@@ -1277,7 +1295,7 @@ func (h *TenantHandler) PreviewInvitation(w http.ResponseWriter, r *http.Request
 		h.handleValidationError(w, err)
 		return
 	}
-	p, err := h.service.PreviewInvitation(r.Context(), actx.TenantID, req.Email, req.RoleIDs, actx)
+	p, err := h.service.PreviewInvitationWithTeams(r.Context(), actx.TenantID, req.Email, req.RoleIDs, req.GroupIDs, actx)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
