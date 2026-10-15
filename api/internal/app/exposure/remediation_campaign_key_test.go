@@ -85,6 +85,7 @@ func TestResolveCampaignFindings_KeyedRoutesToKeyResolver(t *testing.T) {
 		t.Fatalf("CreateCampaign: %v", err)
 	}
 
+	activate(t, svc, tid, c)
 	out, err := svc.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -119,6 +120,7 @@ func TestResolveCampaignFindings_KeyedButNoKeyResolver_FailsClosed(t *testing.T)
 		t.Fatalf("CreateCampaign: %v", err)
 	}
 
+	activate(t, svc, tid, c)
 	_, err = svc.ResolveCampaignFindings(context.Background(), tid.String(), c.ID().String(), fixClaim())
 	if !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("expected ErrValidation when keyed campaign has no key resolver, got %v", err)
