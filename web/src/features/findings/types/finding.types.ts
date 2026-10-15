@@ -1313,7 +1313,10 @@ export interface ApiApproval {
   rejected_at?: string
   rejection_reason?: string
   status: ApprovalStatus
+  /** End of an accepted risk (accepted-risk requests only). */
   expires_at?: string
+  /** The latest moment a pending request can be decided; it expires after. */
+  decide_by?: string
   created_at: string
 }
 

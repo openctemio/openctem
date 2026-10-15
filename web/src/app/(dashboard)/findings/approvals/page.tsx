@@ -10,6 +10,7 @@ import {
   Check,
   X,
   Ban,
+  BellRing,
   Loader2,
   ArrowLeft,
   RefreshCw,
@@ -46,7 +47,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
 
 import { useDisplayUser } from '@/hooks/use-display-user'
@@ -55,6 +56,7 @@ import {
   useApproveStatus,
   useRejectApproval,
   useCancelApproval,
+  remindApprovers,
 } from '@/features/findings/api/use-findings-api'
 import type { ApiApproval, ApprovalStatus } from '@/features/findings/types'
 import { APPROVAL_STATUSES, FINDING_STATUS_CONFIG } from '@/features/findings/types'
@@ -322,6 +324,42 @@ export default function ApprovalsPage() {
     }
   }
 
+  // Nudge the approvers of your own pending request (rate-limited per hour
+  // by the API).
+  const handleRemind = useCallback(
+    async (approval: ApiApproval) => {
+      if (actionInProgress) return
+      setActionInProgress(approval.id)
+      try {
+        const res = await remindApprovers(approval.id)
+        toast.success(
+          t('findings.approvals.toast.reminded', 'Reminded {count} approver(s)', {
+            count: res?.reminded ?? 0,
+          })
+        )
+      } catch (err) {
+        if (err instanceof ApiClientError && err.statusCode === 409) {
+          toast.error(
+            t(
+              'findings.approvals.toast.remindTooSoon',
+              'The approvers were already reminded in the last hour.'
+            )
+          )
+        } else {
+          toast.error(
+            getErrorMessage(
+              err,
+              t('findings.approvals.toast.remindFailed', 'Failed to send the reminder')
+            )
+          )
+        }
+      } finally {
+        setActionInProgress(null)
+      }
+    },
+    [actionInProgress, t]
+  )
+
   const handleRefresh = async () => {
     await mutate()
     toast.success(t('findings.approvals.toast.refreshed', 'Approvals refreshed'))
@@ -427,11 +465,29 @@ export default function ApprovalsPage() {
         enableSorting: true,
       },
       {
+        accessorKey: 'decide_by',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('findings.approvals.col.decideBy', 'Decide by')}
+          />
+        ),
+        cell: ({ row }) => {
+          const by = row.original.decide_by
+          return (
+            <span className="text-muted-foreground text-sm whitespace-nowrap">
+              {by && row.original.status === 'pending' ? formatDate(by) : '-'}
+            </span>
+          )
+        },
+        enableSorting: false,
+      },
+      {
         accessorKey: 'expires_at',
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('findings.approvals.col.expires', 'Expires')}
+            title={t('findings.approvals.col.expires', 'Acceptance ends')}
           />
         ),
         cell: ({ row }) => {
@@ -498,6 +554,10 @@ export default function ApprovalsPage() {
                 </Can>
                 {mayCancel && (
                   <Can permission={Permission.FindingsWrite}>
+                    <DropdownMenuItem onClick={() => handleRemind(approval)}>
+                      <BellRing className="me-2 h-4 w-4" />
+                      {t('findings.approvals.action.remind', 'Remind approvers')}
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleCancelClick(approval)}>
                       <Ban className="me-2 h-4 w-4" />
                       {t('findings.approvals.action.cancel', 'Cancel request')}
@@ -510,7 +570,15 @@ export default function ApprovalsPage() {
         },
       },
     ],
-    [actionInProgress, handleApproveClick, handleRejectClick, handleCancelClick, currentUserId, t]
+    [
+      actionInProgress,
+      handleApproveClick,
+      handleRejectClick,
+      handleCancelClick,
+      handleRemind,
+      currentUserId,
+      t,
+    ]
   )
 
   // ============================================
