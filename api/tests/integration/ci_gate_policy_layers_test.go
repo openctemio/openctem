@@ -314,3 +314,37 @@ func TestCIGatePolicyLayers_BaselineSettings(t *testing.T) {
 		t.Fatalf("baseline secret with secrets off: %v", v)
 	}
 }
+
+// The first-run baseline is announced to the administrators once, like a
+// baseline recorded by hand.
+func TestCIGateBaseline_FirstRunIsAnnounced(t *testing.T) {
+	alerts := &alertRecorder{}
+	r := newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"}, func(d *cirunapp.Deps) { d.Alerts = alerts })
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/announced"
+	const sha = "6666666666666666666666666666666666666661"
+	run := func(job string) map[string]any {
+		t.Helper()
+		_, ex := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+			"id_token": r.idp.token(t, cfg.Audience, "acme/announced", "main", sha, map[string]any{"job_id": job})})
+		id, tok := ex["run_id"].(string), ex["token"].(string)
+		r.post("/api/v1/ci/runs/"+id+"/results", tok, ciReport(repoName, ciFinding("SQLi", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)))
+		_, v := r.post("/api/v1/ci/runs/"+id+"/evaluate", tok, map[string]any{})
+		return v
+	}
+	count := func() int {
+		n := 0
+		for _, a := range alerts.got {
+			if a.Metadata["action"] == "baseline_established" {
+				n++
+			}
+		}
+		return n
+	}
+	if v := run("1"); v["verdict"] != "pass" || count() != 1 {
+		t.Fatalf("first run: %v, %d announcements", v, count())
+	}
+	if run("2"); count() != 1 {
+		t.Fatalf("announced again: %d", count())
+	}
+}
