@@ -385,7 +385,7 @@ func (h *UserHandler) MyTenantsResponse(ctx context.Context, userID shared.ID) (
 			Slug:            t.Tenant.Slug(),
 			Description:     t.Tenant.Description(),
 			LogoURL:         t.Tenant.LogoURL(),
-			Plan:            t.Tenant.Plan().String(),
+			Plan:            string(t.Tenant.Plan()),
 			Role:            t.Role.String(),
 			JoinedAt:        t.JoinedAt,
 			CreatedAt:       t.Tenant.CreatedAt(),
