@@ -196,6 +196,11 @@ pre-checks:
   addresses are dialled. An address the job did not admit is never touched.
 - it is active work: tier T1, honours scan windows; a sensor exposes it as the
   `reach.probe` capability.
+- the platform knows it as a sensor service: the tool `reach-probe` and the
+  capability `reach.probe@1` are kept from a sensor's report and manifest
+  without a tool catalog row (`sensorServiceTools`), so tenants never pick
+  it as a scan tool and the platform can route probes to the sensors that
+  serve it.
 
 `conformance.RunReachSuite` proves, with a recording dialer: the probe never
 dials an address outside the admitted set (IPv4 and IPv6, ranges, names that
