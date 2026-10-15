@@ -125,7 +125,7 @@ transfer with an accept step.
 
 The last-owner protection is unchanged: the owner cannot be demoted,
 suspended or offboarded, and the error says to use the transfer instead.
-Data: `tenant_ownership_transfers` (migration `002181`).
+Data: `tenant_ownership_transfers` (migration `002206`).
 
 ## 4. Invitations for people outside the organization (amends RFC-058 §3)
 
