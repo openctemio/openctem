@@ -473,3 +473,14 @@ export function getPermissionModulesKey() {
 export function getPermissionsKey() {
   return PERMISSIONS_BASE
 }
+
+/**
+ * Bring a custom role up to its template's current version (api RFC-095):
+ * `version` is the template version the editor reviewed (409 otherwise).
+ */
+export function applyRoleTemplateUpdate(roleId: string, version: number) {
+  return fetcherWithOptions<Role>(`${API_BASE}/${roleId}/template/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ version }),
+  })
+}

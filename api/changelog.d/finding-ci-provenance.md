@@ -6,5 +6,5 @@
 ### Fixed: last seen branch and commit, and the technique of trivy misconfigurations and secrets
 
 - A finding seen again kept the branch and commit of its first sighting as "last seen" forever; they now follow the latest scan.
-- A trivy report from `openctem-ci` names its capability in `metadata.properties`; ingest now reads it there, so the IaC job's findings are IaC instead of SCA. A report without a capability files trivy misconfigurations as IaC and secrets as secret detection by the finding's type. Migration 002137 relabels the existing misconfiguration and secret findings filed as SCA.
+- A trivy report from `openctem-ci` names its capability in `metadata.properties`; ingest now reads it there, so the IaC job's findings are IaC instead of SCA. A report without a capability files trivy misconfigurations as IaC and secrets as secret detection by the finding's type. Migration 002199 relabels the existing misconfiguration and secret findings filed as SCA.
 - A concurrent first sighting by a different tool no longer pairs that tool's version with the first reporter's name.
