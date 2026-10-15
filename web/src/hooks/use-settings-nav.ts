@@ -3,14 +3,10 @@
 import { useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
-import { useOrganizationLimits } from '@/features/limits/api/use-organization-limits'
+import useSWR from 'swr'
+import { LIMITS_APPLY_KEY } from '@/context/bootstrap-session'
 import { useNavItemAccess, subModuleStatus } from '@/lib/permissions'
-import {
-  settingsNav,
-  settingsNavItems,
-  type SettingsNavGroup,
-  type SettingsNavItem,
-} from '@/config/settings-nav'
+import { settingsNav, type SettingsNavGroup, type SettingsNavItem } from '@/config/settings-nav'
 
 export interface VisibleSettingsItem extends SettingsNavItem {
   /** Translated title. */
@@ -35,15 +31,18 @@ export interface VisibleSettingsGroup extends Omit<SettingsNavGroup, 'items'> {
  * item is dropped. "My account" items carry no permission, so every signed-in
  * user sees at least that group. An item marked onlyWhenLimitsApply (Usage &
  * limits) is listed only while a limit or a module deny applies to the
- * organization; the limits are read only for users who may open that page.
+ * organization: the session bootstrap says so (limits_apply, owners and
+ * admins), so no page load asks for the limits.
  */
 export function useSettingsNav(): VisibleSettingsGroup[] {
   const canSee = useNavItemAccess()
   const { subModules } = useTenantModules()
   const { t } = useTranslation()
-  const mayReadLimits = settingsNavItems.some((i) => i.onlyWhenLimitsApply && canSee(i))
-  const { data: limits } = useOrganizationLimits(mayReadLimits)
-  const limitsApply = limits?.applies === true
+  // Cache only (null fetcher): the bootstrap seeds it; nothing is fetched.
+  const { data: limitsApply = false } = useSWR<boolean>(LIMITS_APPLY_KEY, null, {
+    revalidateOnFocus: false,
+    revalidateIfStale: false,
+  })
 
   return useMemo(
     () =>
