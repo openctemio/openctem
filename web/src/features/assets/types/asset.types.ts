@@ -501,7 +501,13 @@ export interface Asset {
   programOnly?: boolean
   /** Triage (list rows asked with_triage): attribution and what a scan would do now. */
   triage?: AssetTriage
-  riskScore: number // 0-100, calculated from criticality, exposure, and findings
+  riskScore: number // 0-100: open findings x exposure x criticality (asset-risk-score.md)
+  /** false = never scored (riskScore is not a real 0); undefined = not known by this payload. */
+  riskScored?: boolean
+  /** When the stored score was last computed. */
+  riskScoredAt?: string
+  /** An input changed and the rescore is queued. */
+  riskScorePending?: boolean
   findingCount: number
   /** Open findings per severity (assets.finding_severity_counts). */
   findingSeverityCounts?: Partial<Record<'critical' | 'high' | 'medium' | 'low' | 'info', number>>
