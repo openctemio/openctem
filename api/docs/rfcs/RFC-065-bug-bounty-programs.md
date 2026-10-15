@@ -216,14 +216,16 @@ A program the caller may not see answers 404. Errors: `PROGRAM_SCOPE_EMPTY`,
 ## 7. Researcher role and data scope
 
 Permissions `attack_surface:programs:read` and
-`attack_surface:programs:write` (owner and admin by default). The system role
-**Researcher** (`researcher`, fixed id `00000000-0000-0000-0000-000000000005`,
-no full data access) holds: `dashboard:read`, `assets:read`,
+`attack_surface:programs:write` (owner and admin by default). The
+**Researcher** role (no full data access) holds: `dashboard:read`, `assets:read`,
 `findings:read|write|status|triage|export`, `scans:read|write|execute`,
 `scans:profiles:read`, `scans:templates:read`, `scans:workflows:read`,
 `sensors:read`, `attack_surface:programs:read|write`. It holds no scope,
-sensor-management, member or settings permission. Organizations clone it to
-change it.
+sensor-management, member or settings permission. It was a built-in role
+(fixed id `…0005`) until RFC-095 made it the `researcher` role template: an
+organization creates its own Researcher role from the template, and migration
+`role_template_library` gave every organization that used the built-in role
+its own copy with the same assignments.
 
 **Data scope.** Each program has a group (type `project`, created with the
 program). Program members are the group's members, added like any group
