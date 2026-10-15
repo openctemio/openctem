@@ -10,7 +10,6 @@ import {
   FRESHNESS_LABEL,
   GATE_LABEL,
   HEALTH_REASON_LABEL,
-  MODE_LABEL,
   PIPELINE_STATUSES,
   cadenceLabel,
 } from '../lib/pipeline'
@@ -40,7 +39,6 @@ describe('CI/CD i18n keys', () => {
   it('has both catalogs for each key built from a value', () => {
     const built = [
       ...Object.keys(GATE_LABEL).map((k) => `scans.ci.gate.${k}`),
-      ...Object.keys(MODE_LABEL).map((k) => `scans.ci.mode.${k}`),
       ...Object.keys(REASON_LABEL).map((k) => `scans.ci.reason.${k}`),
       ...REFUSAL_CODES.flatMap((c) => [`scans.ci.refusal.${c}`, `scans.ci.refusal.${c}Fix`]),
       ...['provider', 'organization', 'snippet', 'waiting'].map((s) => `scans.ci.setup.step.${s}`),
