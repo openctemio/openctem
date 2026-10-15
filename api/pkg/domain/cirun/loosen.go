@@ -31,6 +31,15 @@ func Loosens(before, after GatePolicy) []string {
 	if !before.FixableOnly && after.FixableOnly {
 		out = append(out, "fixable_only")
 	}
+	if !before.BaselineOnFirstRun && after.BaselineOnFirstRun {
+		out = append(out, "baseline_on_first_run")
+	}
+	if before.BaselineGraceDays != nil && (after.BaselineGraceDays == nil || *after.BaselineGraceDays > *before.BaselineGraceDays) {
+		out = append(out, "baseline_grace_days")
+	}
+	if before.BaselineSecretsBlock && !after.BaselineSecretsBlock {
+		out = append(out, "baseline_secrets_block")
+	}
 	if modesLoosen(before.Modes, after.Modes) {
 		out = append(out, "modes")
 	}

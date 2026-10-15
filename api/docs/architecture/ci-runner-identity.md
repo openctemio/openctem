@@ -101,6 +101,15 @@ findings per run.
   `repository_asset_id`, a business-unit policy `business_unit_id`, each a
   composite FK (cascade); the repository's policy follows it on asset merge
   (the kept repository's own wins). The API keeps `scope_type` + `scope_id`.
+  Per-field layering (RFC-095, migration `ci_gate_policy_layers`): `fields`
+  lists what a business unit or repository policy sets (the rest is
+  inherited; the organization sets all), `locked_fields` (organization and
+  business unit) are fields no layer below may loosen, and a repository
+  policy carries `reason` and an optional `expires_at`. The gate baseline
+  settings (`baseline_on_first_run`, `baseline_grace_days`,
+  `baseline_secrets_block`) are policy fields too. `cirun.Resolve` builds a
+  repository's effective policy with the source of every field; the gate
+  and `GET /api/v1/ci/repositories/{id}/settings` both use it.
 - `ci_gate_baselines` and `ci_gate_baseline_findings`: one gate baseline per repository (tenant, repository
   asset), and the fingerprints it holds. Written only by `POST /api/v1/ci/repositories/{id}/gate-baseline`
   (`scans:ci:policy`, step-up, audited high); a default-branch run is judged against it only (RFC-051 §6.2).

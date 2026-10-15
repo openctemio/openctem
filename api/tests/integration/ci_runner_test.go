@@ -445,7 +445,7 @@ func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
 		t.Fatal(err)
 	}
 	pol, err := r.svc.CreateGatePolicy(ctx, r.tenant, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository,
-		ScopeID: &run.RepositoryAssetID, Mode: cirun.ModeWarn}, cirunapp.Actor{Email: "admin@acme.test"})
+		ScopeID: &run.RepositoryAssetID, Mode: cirun.ModeWarn, Reason: "pilot repository, warn only"}, cirunapp.Actor{Email: "admin@acme.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
