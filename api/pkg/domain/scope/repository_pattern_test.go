@@ -57,6 +57,8 @@ func TestMatchRepository(t *testing.T) {
 		{"gitlab.com/acme/*", "gitlab.com/acme/app", true},
 		{"gitlab.com/acme/*", "gitlab.com/acme/sub/group/app", true}, // subgroups, any depth
 		{"gitlab.com/acme/*", "gitlab.com/acme-evil/app", false},     // segment boundary
+		{"gitlab.com/acme/*", "gitlab.com/acme", true},               // the namespace itself
+		{"gitlab.com/acme/*", "gitlab.com/acme-evil", false},
 		{"gitlab.com/acme/*", "gitlab.com/other/app", false},
 		{"gitlab.com/acme/*", "GitLab.com/ACME/App.git", true}, // canonical form
 		{"github.com/acme/app", "github.com/acme/app", true},
