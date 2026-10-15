@@ -544,7 +544,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |
 | `AUTH_REFRESH_TOKEN_COOKIE_NAME` | unset it; the refresh cookie is always refresh_token |
 | `AUTH_TENANT_COOKIE_NAME` | unset it; the organization cookie is always app_tenant |
-| `JIRA_WEBHOOK_SECRET` | unset it; each organization rotates its own Jira webhook secret with POST /api/v1/integrations/jira/webhook-secret/rotate |
+| `JIRA_WEBHOOK_SECRET` | unset it; each Jira integration has its own webhook secret (Settings > Integrations > Ticketing, or POST /api/v1/integrations/{id}/jira-webhook/secret/rotate) |
 | `SENSOR_LATEST_VERSION` | unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade |
 | `SENSOR_MIN_VERSION` | unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade |
 | `SENSOR_SDK_LATEST_VERSION` | unset it; each sensor product's release line is built into the API from versions.yaml and changes with an API upgrade |
