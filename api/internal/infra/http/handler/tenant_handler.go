@@ -1738,9 +1738,10 @@ type InvitationLookupInvitation struct {
 	// What accepting gives (RFC-095 §5): the roles with their risk, the
 	// teams, the end of access, outside-member status and whether two-factor
 	// authentication will be required.
-	Roles           []tenantapp.InvitationGrantRole `json:"roles"`
-	Teams           []tenantapp.InvitationGrantTeam `json:"teams"`
-	MemberKind      string                          `json:"member_kind"`
+	// Present only while the invitation is pending.
+	Roles           []tenantapp.InvitationGrantRole `json:"roles,omitempty"`
+	Teams           []tenantapp.InvitationGrantTeam `json:"teams,omitempty"`
+	MemberKind      string                          `json:"member_kind,omitempty"`
 	AccessExpiresAt *time.Time                      `json:"access_expires_at,omitempty"`
 	MFARequired     bool                            `json:"mfa_required"`
 	MFAReason       string                          `json:"mfa_reason,omitempty"`
@@ -1795,25 +1796,27 @@ func (h *TenantHandler) writeInvitationLookup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	grants := h.service.InvitationGrants(r.Context(), invitation)
+	look := InvitationLookupInvitation{
+		ID:          invitation.ID().String(),
+		Email:       invitation.Email(),
+		Role:        invitation.Role().String(),
+		Pending:     invitation.IsPending(),
+		ExpiresAt:   invitation.ExpiresAt(),
+		InviterName: h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
+	}
+	// What accepting gives is shown only while it can still be accepted: an
+	// expired or used token reveals nothing about roles, teams or access.
+	if invitation.IsPending() {
+		grants := h.service.InvitationGrants(r.Context(), invitation)
+		look.Roles, look.Teams, look.MemberKind = grants.Roles, grants.Teams, grants.MemberKind
+		look.AccessExpiresAt = invitation.Access().ExpiresAt
+		look.MFARequired, look.MFAReason = grants.MFARequired, grants.MFAReason
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(InvitationLookupResponse{
-		Invitation: InvitationLookupInvitation{
-			ID:              invitation.ID().String(),
-			Email:           invitation.Email(),
-			Role:            invitation.Role().String(),
-			Pending:         invitation.IsPending(),
-			ExpiresAt:       invitation.ExpiresAt(),
-			InviterName:     h.service.GetUserDisplayName(r.Context(), invitation.InvitedBy()),
-			Roles:           grants.Roles,
-			Teams:           grants.Teams,
-			MemberKind:      grants.MemberKind,
-			AccessExpiresAt: invitation.Access().ExpiresAt,
-			MFARequired:     grants.MFARequired,
-			MFAReason:       grants.MFAReason,
-		},
-		Tenant: InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
+		Invitation: look,
+		Tenant:     InvitationLookupTenant{ID: t.ID().String(), Name: t.Name(), Slug: t.Slug()},
 	})
 }
 
