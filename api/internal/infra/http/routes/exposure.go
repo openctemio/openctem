@@ -359,6 +359,9 @@ func registerVulnerabilityRoutes(
 	router.Group("/api/v1/findings/{id}/approvals", func(r Router) {
 		r.GET("/", h.ListFindingApprovals, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.RequestApproval, middleware.Require(permission.FindingsWrite))
+		// How a false positive on this finding is decided now (the request
+		// dialog says when no second person is needed).
+		r.GET("/policy", h.GetFalsePositivePolicy, middleware.Require(permission.FindingsRead))
 	}, tenantMiddlewares...)
 
 	// Approval management routes - tenant from JWT token

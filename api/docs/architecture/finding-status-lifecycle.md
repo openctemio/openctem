@@ -388,6 +388,36 @@ instead).
   (`/api/v1/organization/settings/finding-approvals`) needs `settings:write`
   and a recent re-authentication; changes are audited with before/after and
   the approvers are told.
+
+### False-positive approval level
+
+`settings.finding_approvals.fp_approval` decides who decides a false positive
+(`internal/app/finding/approval_fp_policy.go`):
+
+| Level | A second person is needed for |
+|---|---|
+| `all` (default) | every false positive |
+| `high_and_above` | a material finding: critical or high, KEV, P0/P1, a validated exploit (`validation_outcome = reproducible`), a crown-jewel or internet-exposed asset (`vulnerability.FPFacts.Material`) |
+| `off` | none |
+
+An accepted risk always needs a second person. When the level lets one person
+decide, a requester holding `findings:approve` (with the finding in their
+data scope) gets the false positive applied at once: the request row is
+written approved with `single_person`, the status, closure reason and timeline
+entry in one transaction (`FindingApprovalRepository.CreateApplied`), audited
+`finding_approval.single_person_decided`. A member without `findings:approve`
+still files a pending request. Safeguards: a later severity rise, KEV listing
+or new evidence on a false positive one person decided raises the
+`material_change_single_person` review flag (triggers
+`trg_findings_single_person_fp_review`, `trg_finding_evidence_single_person_fp_review`,
+function `flag_single_person_fp_review`); `second_look_percent` (0-10) flags a
+random share (`second_look_sample`, crypto/rand). Changing the level needs
+`settings:write` and a recent re-authentication, is audited with before/after
+and the approvers are told; a lower level takes effect 24 hours later
+(`pending_fp_approval_at`), a higher one at once.
+`GET /api/v1/findings/{id}/approvals/policy` tells the request dialog how a
+false positive on that finding is decided now. Not built yet: a digest of
+single-person decisions (they are in the audit log and the approvals list).
 - **On the finding, on every accept path.** Approving `accepted` stores the
   end in `findings.acceptance_expires_at` in the same statement as the status
   (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix

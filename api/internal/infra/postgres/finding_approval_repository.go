@@ -248,7 +248,7 @@ func (r *FindingApprovalRepository) selectQuery() string {
 		SELECT id, tenant_id, finding_id, requested_status, requested_by,
 			justification, approved_by, approved_at, rejected_by, rejected_at,
 			rejection_reason, status, expires_at, created_at, version, requested_by_actor, decide_by, closure_reason,
-			self_approved, COALESCE(self_approval_reason, '')
+			self_approved, COALESCE(self_approval_reason, ''), single_person
 		FROM finding_status_approvals
 	`
 }
@@ -280,7 +280,7 @@ func (r *FindingApprovalRepository) scanApprovalRow(scanner approvalScanner) (*v
 		&id, &tenantID, &findingID, &a.RequestedStatus, &requestedBy,
 		&a.Justification, &approvedBy, &approvedAt, &rejectedBy, &rejectedAt,
 		&rejectionReason, &status, &expiresAt, &a.CreatedAt, &a.Version, &actor, &decideBy, &closureReason,
-		&a.SelfApproved, &a.SelfApprovalReason,
+		&a.SelfApproved, &a.SelfApprovalReason, &a.SinglePerson,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -336,26 +336,6 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 	if a == nil || a.Status != vulnerability.ApprovalStatusApproved || a.ApprovedBy == nil {
 		return fmt.Errorf("%w: only an approved request is applied", shared.ErrValidation)
 	}
-	status := vulnerability.FindingStatus(a.RequestedStatus)
-	var acceptanceEnd *time.Time
-	if status == vulnerability.FindingStatusAccepted {
-		if a.ExpiresAt == nil {
-			return fmt.Errorf("%w: an accepted risk needs an end", shared.ErrValidation)
-		}
-		acceptanceEnd = a.ExpiresAt
-	}
-	closure := vulnerability.Closure{Reason: a.ClosureReason}
-	if status == vulnerability.FindingStatusFalsePositive {
-		// A false positive a second person approved is security-reviewed; one
-		// person alone (the sole member) establishes no verification.
-		if !a.SelfApproved {
-			closure.Verification = vulnerability.VerificationSecurityReview
-		}
-	}
-	query, args, err := statusWriteSQL(a.TenantID, []shared.ID{a.FindingID}, status, "", a.ApprovedBy, closure, acceptanceEnd, nil)
-	if err != nil {
-		return err
-	}
 	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			UPDATE finding_status_approvals SET
@@ -372,25 +352,101 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 		} else if n == 0 {
 			return vulnerability.ErrConcurrentModification
 		}
-		if err := markStatusWriteTx(ctx, tx); err != nil {
+		return applyApprovedInTx(ctx, tx, a, entry)
+	})
+}
+
+// CreateApplied writes a request that is decided as it is made (a false
+// positive one person may decide alone) and applies it, in one transaction:
+// the request row (approved, single_person), the finding's status and the
+// timeline entry. The one-pending-request index still applies to pending
+// rows only, so an earlier pending request of another person is left as is.
+func (r *FindingApprovalRepository) CreateApplied(ctx context.Context, a *vulnerability.Approval, entry *vulnerability.FindingActivity) error {
+	if a == nil || a.Status != vulnerability.ApprovalStatusApproved || a.ApprovedBy == nil || !a.SinglePerson {
+		return fmt.Errorf("%w: only a single-person decision is created applied", shared.ErrValidation)
+	}
+	return r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO finding_status_approvals (
+				id, tenant_id, finding_id, requested_status, requested_by, justification, status,
+				expires_at, version, created_at, closure_reason, approved_by, approved_at, single_person
+			) VALUES ($1, $2, $3, $4, $5, $6, 'approved', $7, $8, $9, $10, $11, $12, true)`,
+			a.ID.String(), a.TenantID.String(), a.FindingID.String(), a.RequestedStatus, a.RequestedBy.String(),
+			a.Justification, a.ExpiresAt, a.Version, a.CreatedAt, nullString(a.ClosureReason.String()),
+			a.ApprovedBy.String(), a.ApprovedAt); err != nil {
+			return fmt.Errorf("failed to record the decision: %w", err)
+		}
+		return applyApprovedInTx(ctx, tx, a, entry)
+	})
+}
+
+// applyApprovedInTx writes an approved request's effect inside tx: the
+// finding's status (and acceptance end, and closure) and the timeline entry.
+// A finding no longer in a status the lifecycle allows to move from fails
+// the whole transaction.
+func applyApprovedInTx(ctx context.Context, tx *sql.Tx, a *vulnerability.Approval, entry *vulnerability.FindingActivity) error {
+	status := vulnerability.FindingStatus(a.RequestedStatus)
+	var acceptanceEnd *time.Time
+	if status == vulnerability.FindingStatusAccepted {
+		if a.ExpiresAt == nil {
+			return fmt.Errorf("%w: an accepted risk needs an end", shared.ErrValidation)
+		}
+		acceptanceEnd = a.ExpiresAt
+	}
+	closure := vulnerability.Closure{Reason: a.ClosureReason}
+	if status == vulnerability.FindingStatusFalsePositive && !a.SelfApproved && !a.SinglePerson {
+		// A false positive a second person approved is security-reviewed;
+		// one person alone establishes no verification.
+		closure.Verification = vulnerability.VerificationSecurityReview
+	}
+	query, args, err := statusWriteSQL(a.TenantID, []shared.ID{a.FindingID}, status, "", a.ApprovedBy, closure, acceptanceEnd, nil)
+	if err != nil {
+		return err
+	}
+	if err := markStatusWriteTx(ctx, tx); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to apply approved status: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("failed to apply approved status: %w", err)
+	} else if n == 0 {
+		return fmt.Errorf("%w: the finding changed since the request; it can no longer move to %s", shared.ErrValidation, status)
+	}
+	if entry != nil {
+		if err := insertFindingActivity(ctx, tx, entry); err != nil {
 			return err
 		}
-		res, err = tx.ExecContext(ctx, query, args...)
-		if err != nil {
-			return fmt.Errorf("failed to apply approved status: %w", err)
-		}
-		if n, err := res.RowsAffected(); err != nil {
-			return fmt.Errorf("failed to apply approved status: %w", err)
-		} else if n == 0 {
-			return fmt.Errorf("%w: the finding changed since the request; it can no longer move to %s", shared.ErrValidation, status)
-		}
-		if entry != nil {
-			if err := insertFindingActivity(ctx, tx, entry); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
+}
+
+// FalsePositiveFacts reads the facts of a finding that decide whether one
+// person may mark it a false positive (tenant-scoped; the asset's facts are
+// false when it has none).
+func (r *FindingApprovalRepository) FalsePositiveFacts(ctx context.Context, tenantID, findingID shared.ID) (vulnerability.FPFacts, error) {
+	var (
+		f        vulnerability.FPFacts
+		severity string
+	)
+	err := r.db.QueryRowContext(ctx, `
+		SELECT f.severity, COALESCE(f.is_in_kev, false), COALESCE(f.priority_class, ''),
+		       COALESCE(f.validation_outcome = 'reproducible', false),
+		       COALESCE(a.is_crown_jewel, false), COALESCE(a.is_internet_accessible, false)
+		FROM findings f
+		LEFT JOIN assets a ON a.tenant_id = f.tenant_id AND a.id = f.asset_id
+		WHERE f.tenant_id = $1 AND f.id = $2`,
+		tenantID.String(), findingID.String()).Scan(&severity, &f.KEV, &f.PriorityClass, &f.ExploitValidated, &f.CrownJewel, &f.InternetExposed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return f, fmt.Errorf("%w: finding not found", shared.ErrNotFound)
+	}
+	if err != nil {
+		return f, fmt.Errorf("read false-positive facts: %w", err)
+	}
+	f.Severity = vulnerability.Severity(severity)
+	return f, nil
 }
 
 // ExpireOverdueRequests expires pending requests whose decide-by time has
