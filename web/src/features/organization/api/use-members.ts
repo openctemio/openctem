@@ -317,7 +317,11 @@ export function createTenantInvitation(tenantIdOrSlug: string, input: CreateInvi
  * What inviting this address with these roles would do (RFC-095): policy,
  * outside or personal, step-up and two-factor needs. Nothing is sent.
  */
-export function previewInvitation(input: { email: string; role_ids: string[] }) {
+export function previewInvitation(input: {
+  email: string
+  role_ids: string[]
+  group_ids?: string[]
+}) {
   return fetcherWithOptions<InvitationPreview>('/api/v1/organization/invitations/preview', {
     method: 'POST',
     body: JSON.stringify(input),
