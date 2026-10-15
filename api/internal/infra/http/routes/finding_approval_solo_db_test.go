@@ -133,6 +133,10 @@ func TestFindingApprovals_SoleOwnerSelfApproval_DB(t *testing.T) {
 	if n := h.countRows(`SELECT COUNT(*) FROM findings WHERE id = $1 AND status = 'false_positive'`, fp); n != 1 {
 		t.Fatal("the finding did not become a false positive")
 	}
+	// One person alone is never recorded as a security review.
+	if n := h.countRows(`SELECT COUNT(*) FROM findings WHERE id = $1 AND verification IS NOT DISTINCT FROM 'security_review'`, fp); n != 0 {
+		t.Fatal("a sole-member false positive is labelled security-reviewed")
+	}
 	requireAudited(t, h.auditRows(org, "finding_approval.self_approved"), a1,
 		[]auditRow{{action: "finding_approval.self_approved", actor: owner.id, severity: "high"}})
 	if n := h.countRows(`SELECT COUNT(*) FROM finding_activities WHERE finding_id = $1 AND (changes->>'self_approved')::boolean`, fp); n != 1 {

@@ -348,8 +348,9 @@ func (r *FindingApprovalRepository) ApproveAndApply(ctx context.Context, a *vuln
 		acceptanceEnd = a.ExpiresAt
 	}
 	closure := vulnerability.Closure{Reason: a.ClosureReason}
-	if status == vulnerability.FindingStatusFalsePositive {
-		// A false positive a second person approved is security-reviewed.
+	if status == vulnerability.FindingStatusFalsePositive && !a.SelfApproved {
+		// A false positive a second person approved is security-reviewed;
+		// the sole member's own approval establishes no verification.
 		closure.Verification = vulnerability.VerificationSecurityReview
 	}
 	query, args, err := statusWriteSQL(a.TenantID, []shared.ID{a.FindingID}, status, "", a.ApprovedBy, closure, acceptanceEnd, nil)
