@@ -121,8 +121,14 @@ export function useApproveSuppression(id: string) {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant && id ? `${SUPPRESSIONS_URL}/${id}/approve` : null,
-    (url: string, { arg }: { arg: { reviewed_updated_at: string } }) =>
-      post<ApproveSuppressionResponse>(url, arg)
+    (
+      url: string,
+      {
+        arg,
+      }: {
+        arg: { reviewed_updated_at: string; self_approval_reason?: string; totp_code?: string }
+      }
+    ) => post<ApproveSuppressionResponse>(url, arg)
   )
 }
 
