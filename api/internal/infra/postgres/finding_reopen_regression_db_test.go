@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/activity"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // RFC-039 §6.5: a scan that re-detects a finding a person resolved reopens it,
@@ -40,7 +38,10 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 	}
 	downgradedID, downgradedFP := seedClosedFinding(ctx, t, db, tenantID, assetID, "validated_fixed", "")
 
-	reopened, err := repo.AutoReopenByFingerprintsBatch(ctx, tenantID, []string{humanFP, downgradedFP})
+	// The reopen writes its own timeline entry in the same transaction, with
+	// the scan from the context's evidence.
+	scanCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": "nuclei", "scan_id": "report-9"})
+	reopened, err := repo.AutoReopenByFingerprintsBatch(scanCtx, tenantID, []string{humanFP, downgradedFP})
 	if err != nil {
 		t.Fatalf("AutoReopenByFingerprintsBatch: %v", err)
 	}
@@ -59,13 +60,6 @@ func TestAutoReopenBatch_RegressionKeepsPreviousResolverInActivity(t *testing.T)
 		rf.PreviousResolution != "patched in release 4.2" || rf.PreviousResolutionMethod != "security_reviewed" ||
 		string(rf.PreviousStatus) != "resolved" || rf.PreviousResolvedAt == nil {
 		t.Errorf("reopen lost what it cleared: %+v", rf)
-	}
-
-	// The ingest path records the reopen through the activity service.
-	svc := activity.NewFindingActivityService(NewFindingActivityRepository(&DB{DB: db}), repo, logger.NewNop())
-	all := []vulnerability.ReopenedFinding{reopened[humanFP], reopened[downgradedFP]}
-	if err := svc.RecordBatchAutoReopened(ctx, tenantID, all, "nuclei", "report-9"); err != nil {
-		t.Fatalf("record: %v", err)
 	}
 
 	var raw []byte

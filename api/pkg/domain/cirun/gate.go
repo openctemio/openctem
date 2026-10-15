@@ -41,6 +41,9 @@ const (
 	ReasonMissingCapability = "missing_capability"
 	ReasonOverride          = "override"
 	ReasonNoBaseline        = "no_baseline"
+	// ReasonBaselineEstablished notes that this run recorded the
+	// repository's first gate baseline: its open findings stopped blocking.
+	ReasonBaselineEstablished = "baseline_established"
 	// ReasonSecretPreExisting notes a secret already open on the baseline
 	// branch: it blocks default-branch runs, not pull requests.
 	ReasonSecretPreExisting = "secret_pre_existing"
@@ -288,6 +291,12 @@ type GateInput struct {
 	NewFingerprints map[string]bool
 	BaselineBranch  string
 	BaselineKnown   bool
+	// BaselineSetAt is when the repository's gate baseline was recorded (nil
+	// when it has none).
+	BaselineSetAt *time.Time
+	// BaselineEstablished: this run recorded the repository's first gate
+	// baseline.
+	BaselineEstablished bool
 	// DefaultBranch: the run is on the repository's default branch, where
 	// every open secret blocks.
 	DefaultBranch bool
@@ -352,6 +361,12 @@ type GatePolicyView struct {
 type GateBaselineView struct {
 	Branch string `json:"branch,omitempty"`
 	Known  bool   `json:"known"`
+	// SetAt is when the repository's gate baseline was recorded; absent
+	// when it has none. A default-branch run is compared with it only.
+	SetAt *time.Time `json:"set_at,omitempty"`
+	// Established: this run recorded the repository's first gate baseline
+	// (its open findings stopped blocking).
+	Established bool `json:"established,omitempty"`
 }
 
 // GateOverrideView is the break-glass that let the run pass.
@@ -429,7 +444,8 @@ func Evaluate(in GateInput) GateVerdict {
 		Reasons: []GateReason{},
 		Policy: GatePolicyView{Source: in.PolicySource, Mode: p.Mode, FailOnSeverity: p.FailOnSeverity, Modes: modesView(p.Modes),
 			NewFindingsOnly: p.NewFindingsOnly, FailOnKEV: p.FailOnKEV, EPSSThreshold: p.EPSSThreshold, FixableOnly: p.FixableOnly},
-		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown},
+		Baseline: GateBaselineView{Branch: in.BaselineBranch, Known: in.BaselineKnown, SetAt: in.BaselineSetAt,
+			Established: in.BaselineEstablished},
 	}
 	blocking := 0
 	listed := 0
@@ -549,8 +565,15 @@ func Evaluate(in GateInput) GateVerdict {
 	v.Summary.Blocking = blocking
 	if p.NewFindingsOnly && !in.BaselineKnown && len(in.Findings) > 0 {
 		// Informational: listed after the blocking reasons, not counted.
-		v.Reasons = append(v.Reasons, GateReason{Code: ReasonNoBaseline,
-			Message: fmt.Sprintf("no scan of the baseline branch %q is known: every finding counts as new", in.BaselineBranch)})
+		msg := fmt.Sprintf("no scan of the baseline branch %q is known: every finding counts as new", in.BaselineBranch)
+		if in.DefaultBranch {
+			msg = "no gate baseline is recorded for this repository: every finding counts as new until an administrator records one"
+		}
+		v.Reasons = append(v.Reasons, GateReason{Code: ReasonNoBaseline, Message: msg})
+	}
+	if in.BaselineEstablished {
+		v.Reasons = append(v.Reasons, GateReason{Code: ReasonBaselineEstablished,
+			Message: fmt.Sprintf("first run on the default branch: %d existing findings recorded as the gate baseline; from now on only new findings block", v.Summary.PreExisting)})
 	}
 	fail := blocking > 0
 	switch {
