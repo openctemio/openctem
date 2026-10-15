@@ -62,7 +62,7 @@ func (r *FindingRemediationKeyRepository) ListGroups(ctx context.Context, tenant
 		       COUNT(*) FILTER (WHERE f.severity = 'low')::int AS low,
 		       COUNT(*) FILTER (WHERE f.severity IN ('info', 'none'))::int AS info
 		FROM finding_remediation_keys frk
-		JOIN findings f ON f.id = frk.finding_id
+		JOIN findings f ON f.id = frk.finding_id AND f.tenant_id = frk.tenant_id
 		WHERE frk.tenant_id = $1
 		  AND f.source <> 'pentest'
 		  AND f.status <> ALL($2::text[])
@@ -101,7 +101,7 @@ func (r *FindingRemediationKeyRepository) OpenFindingIDs(ctx context.Context, te
 	q := `
 		SELECT f.id
 		FROM finding_remediation_keys frk
-		JOIN findings f ON f.id = frk.finding_id
+		JOIN findings f ON f.id = frk.finding_id AND f.tenant_id = frk.tenant_id
 		WHERE frk.tenant_id = $1
 		  AND frk.remediation_key = $2
 		  AND f.source <> 'pentest'
@@ -148,7 +148,7 @@ func (r *FindingRemediationKeyRepository) CountByKeyInScope(ctx context.Context,
 			COUNT(*) AS total,
 			COUNT(*) FILTER (WHERE f.status = ANY($3::text[])) AS resolved
 		FROM finding_remediation_keys frk
-		JOIN findings f ON f.id = frk.finding_id
+		JOIN findings f ON f.id = frk.finding_id AND f.tenant_id = frk.tenant_id
 		WHERE frk.tenant_id = $1
 		  AND frk.remediation_key = $2
 		  AND f.source <> 'pentest'
