@@ -1939,5 +1939,6 @@
   "scans.ci.runDetail.notes": "Notes",
   "scans.ci.reason.baseline_established": "Baseline recorded",
   "scans.ci.reason.no_results": "No results",
-  "scans.ci.repoSettings.ignoredValue": "This repository sets {value}, looser than the lock allows, so it is ignored."
+  "scans.ci.repoSettings.ignoredValue": "This repository sets {value}, looser than the lock allows, so it is ignored.",
+  "scans.ci.repoSettings.droppedFields": "Saving also removes {fields} from this repository’s override: a lock above ignores its looser value."
 }
