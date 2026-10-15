@@ -155,7 +155,9 @@ create-ticket and delete need **every** finding of the campaign (and its
 `asset_id`) in the member's scope, or an empty campaign they created; a
 campaign they can see that also covers another team's findings answers 403
 (`ErrCampaignOutsideScope`), so one shared finding never gives them control of
-it. Resolve stays open on a visible campaign because it changes only the
+it. The same check runs on a new or changed `finding_filter` before it is
+saved (create and update), so a restricted member cannot point a campaign at
+another team's assets or CVEs. Resolve stays open on a visible campaign because it changes only the
 member's in-scope findings. Within a visible campaign the member sees it
 through their scope only:
 `finding_count`, `resolved_count`, `verified_count` and `progress` count the
