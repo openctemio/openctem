@@ -1064,8 +1064,8 @@ func (p *FindingProcessor) buildFinding(
 	source := vulnerability.FindingSourceExternal
 	toolName := UnknownValue
 	toolVersion := ""
-	if report.Tool != nil || report.Metadata.Capability != "" {
-		source = reportFindingSource(report)
+	if report.Tool != nil || reportCapability(report) != "" {
+		source = findingTechnique(report, ctisFinding)
 	}
 	if report.Tool != nil {
 		toolName = report.Tool.Name

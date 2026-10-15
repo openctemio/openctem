@@ -392,6 +392,42 @@ export interface FindingComponent {
   manifestFile?: string
 }
 
+/** A branch a finding was seen on (detail only). */
+export interface FindingBranchSighting {
+  name: string
+  isDefault: boolean
+  status: string
+  firstSeenAt: string
+  lastSeenAt: string
+  firstCommit?: string
+  lastCommit?: string
+}
+
+/** A CI run that reported a finding (detail only, scans:ci:read). */
+export interface FindingRunSighting {
+  id: string
+  provider: string
+  externalRunId?: string
+  pipelineUrl?: string
+  branch?: string
+  commitSha?: string
+  pullRequest?: string
+  isDefaultBranch: boolean
+  createdAt: string
+}
+
+/** Where and when a finding was seen. */
+export interface FindingProvenance {
+  firstDetectedBranch?: string
+  firstDetectedCommit?: string
+  lastSeenBranch?: string
+  lastSeenCommit?: string
+  lastSeenTool?: string
+  branches: FindingBranchSighting[]
+  runs: FindingRunSighting[]
+  firstRun?: FindingRunSighting
+}
+
 /** Vulnerability intelligence with sources and freshness (detail only). */
 export interface FindingIntel {
   cvssSource?: string
@@ -1210,6 +1246,8 @@ export interface FindingDetail extends Finding {
   sourceData?: FindingSourceData
   /** The affected package, for SCA / container findings. */
   component?: FindingComponent
+  /** Where and when it was seen: branches, commits, CI runs. */
+  provenance?: FindingProvenance
   /** The package's upgrade plan on this asset. */
   packageFix?: FindingFixPlan
   /** Advisory facts and feed dates. */
