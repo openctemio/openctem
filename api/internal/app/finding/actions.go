@@ -926,3 +926,10 @@ func (s *FindingActionsService) FixAppliers(ctx context.Context, tenantID, userI
 	}
 	return out
 }
+
+// QueueProofOfFix queues a proof-of-fix re-check for each finding just marked
+// fix_applied (the same bounded, best-effort dispatch as BulkFixApplied) and
+// returns how many were queued. The bulk status path calls it for a fix claim.
+func (s *FindingActionsService) QueueProofOfFix(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) int {
+	return s.autoQueueValidations(ctx, tenantID, findingIDs)
+}

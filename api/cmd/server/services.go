@@ -236,59 +236,6 @@ func (m assetOwnerMatcher) FindUserIDByEmail(ctx context.Context, tenantID share
 	return &id, nil
 }
 
-// campaignFindingResolver adapts the finding bulk-status path + abuse guard to
-// exposure.CampaignFindingResolver, so completing/resolving a remediation
-// campaign actively closes its open findings (RFC-015 Phase 3). Kept here (not
-// in exposure) so exposure needn't import the finding service or the guard.
-type campaignFindingResolver struct {
-	vuln  *finding.VulnerabilityService
-	guard *finding.BulkGuard
-}
-
-// maxCampaignResolve caps how many findings one campaign-resolve touches; the
-// abuse guard still enforces the tenant ceiling / hourly budget within this.
-const maxCampaignResolve = 2000
-
-func (a campaignFindingResolver) ResolveOpenByFilter(ctx context.Context, tenantID string, filter vulnerability.FindingFilter, in exposure.CampaignResolveInput) (int, error) {
-	tid, err := shared.IDFromString(tenantID)
-	if err != nil {
-		return 0, err
-	}
-	filter.ExcludeStatuses = vulnerability.ClosedFindingStatuses()
-	ids, err := a.vuln.ListFindingIDs(ctx, filter, maxCampaignResolve)
-	if err != nil {
-		return 0, err
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	if a.guard != nil {
-		if err := a.guard.CheckBulk(ctx, tid, len(ids), in.Approved); err != nil {
-			return 0, err
-		}
-	}
-	idStrs := make([]string, len(ids))
-	for i, id := range ids {
-		idStrs[i] = id.String()
-	}
-	status := in.Status
-	if status == "" {
-		status = string(vulnerability.FindingStatusFixApplied)
-	}
-	res, err := a.vuln.BulkUpdateFindingsStatus(ctx, tenantID, finding.BulkUpdateStatusInput{
-		FindingIDs:            idStrs,
-		Status:                status,
-		Resolution:            in.Resolution,
-		ActorID:               in.ActorID,
-		HasVerifyPermission:   in.HasVerifyPermission,
-		HasFixApplyPermission: in.HasFixApplyPermission,
-	})
-	if err != nil {
-		return 0, err
-	}
-	return res.Updated, nil
-}
-
 // campaignKeyResolver serves campaigns scoped to a remediation-group key (a
 // solution family): progress from the side-table rollup, resolution via the
 // same guarded group-resolve path as the standalone "resolve group" action.
@@ -313,10 +260,10 @@ func (a campaignKeyResolver) CountVerifiedByKey(ctx context.Context, tenantID sh
 	return verified, err
 }
 
-func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (int, error) {
+func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, key string, in exposure.CampaignResolveInput) (*exposure.CampaignResolveResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	res, err := a.group.ResolveGroup(ctx, tid, remediation.ResolveGroupInput{
 		Key:                   key,
@@ -328,9 +275,9 @@ func (a campaignKeyResolver) ResolveGroupByKey(ctx context.Context, tenantID, ke
 		OperatorApproved:      in.Approved,
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return res.Updated, nil
+	return remediation.CampaignResolveResult(res), nil
 }
 
 // httpDataScopeCaller reads the acting user and the admin decision from the
@@ -1175,6 +1122,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.FindingActions.SetDataScope(s.DataScope)
 	// Every route that marks a fix applied uses the same ownership rule.
 	s.Vulnerability.SetFixApplierCheck(s.FindingActions.FixAppliers)
+	// A bulk fix claim (findings bulk, remediation group and campaign
+	// resolves) queues a proof-of-fix re-check per finding, like the
+	// dedicated fix-applied action.
+	s.Vulnerability.SetProofOfFixQueuer(s.FindingActions.QueueProofOfFix)
 	// Finding source analytics: Tool Insights + the DefectDojo-dependency ratio
 	// (RFC-013's measure-to-phase-out guardrail). repos.Finding provides the
 	// SourceBreakdown query.
@@ -1595,7 +1546,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.RemediationCampaign.SetAssigneeChecker(repos.AccessControl) // a campaign owner must be an active member (21b C2)
 	// Phase 3: let a campaign actively resolve its open findings (reuses the
 	// finding bulk path + abuse guard).
-	s.RemediationCampaign.SetFindingResolver(campaignFindingResolver{vuln: s.Vulnerability, guard: s.BulkGuard})
+	s.RemediationCampaign.SetFindingResolver(remediation.NewCampaignFilterResolver(s.Vulnerability, s.BulkGuard))
 	s.BusinessUnit = asset.NewBusinessUnitService(repos.BusinessUnit, repos.Asset, log)
 	s.BusinessUnit.SetDataScope(s.DataScope)
 
@@ -1747,6 +1698,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.PriorityClassification.SetChangePublisher(
 		finding.NewOutboxPriorityChangePublisher(s.Outbox, log),
 	)
+	// A recompute caused by a scoring change sends one summary per change
+	// instead of one escalation per finding (docs/architecture/scoring-versions.md).
+	if s.Reclassifier != nil {
+		s.Reclassifier.SetSummaryPublisher(finding.NewOutboxScoringSummaryPublisher(s.Outbox, log))
+	}
 
 	// Note: UserNotificationService is wired later after NotificationService is initialized
 

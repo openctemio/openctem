@@ -261,7 +261,7 @@ func TestCampaignFilterToFindingFilter_MapsKeys(t *testing.T) {
 	raw := map[string]any{
 		"severities":  []any{"critical", "high"},
 		"cve_id":      "CVE-2021-44228",
-		"source":      "trivy",
+		"source":      "sast",
 		"search":      "log4j",
 		"finding_ids": []any{"01930000-0000-7000-8000-000000000001"},
 	}
