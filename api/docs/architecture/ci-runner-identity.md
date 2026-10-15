@@ -107,7 +107,10 @@ to it like any other blocking reason.
   one per pipeline, external run id and commit, whatever the attempt
   (`evidence_union`, `idx_ci_runs_pipeline_run`, migration
   `ci_run_evidence_union`). A later attempt re-opens it and carries the
-  verdict's scanner failures (`carried_scan_failures`) until it uploads. Its upload tokens are in `ci_run_tokens`
+  verdict's failed capabilities (`carried_failed_capabilities`, each cleared
+  only by a report of that capability) and its scanner failure count
+  (`carried_scan_failures`, cleared by the next upload). A re-opened run
+  keeps its verdict for the commit and pull request checks. Its upload tokens are in `ci_run_tokens`
   (`token_hash` primary key, composite FK `(tenant_id, run_id)` to the run,
   cascade; the job id; expiry), one per job exchange; it keeps none in
   `ci_runs.token_hash`. Token lookup reads `ci_runs.token_hash` first, then

@@ -413,6 +413,11 @@ type CIEvaluateRequest struct {
 	// suppression requests (default-branch runs only). An invalid file is
 	// refused (400).
 	RepoPolicy *cirun.RepoPolicy `json:"repo_policy,omitempty"`
+	// Capabilities is each capability's state as the job saw it
+	// (uploaded, partial, failed, not_uploaded, missing) with a fixed
+	// reason word. Any state but uploaded fails the gate, whatever
+	// ScanFailures says. At most 64 are read.
+	Capabilities []cirun.CapabilityState `json:"capabilities,omitempty"`
 }
 
 // Evaluate handles POST /api/v1/ci/runs/{id}/evaluate
@@ -443,7 +448,7 @@ func (h *CIRunnerHandler) Evaluate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	v, err := h.svc.Evaluate(r.Context(), run, cirunapp.EvaluateInput{ScanFailures: req.ScanFailures, RepoPolicy: req.RepoPolicy,
-		ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
+		Capabilities: req.Capabilities, ClientIP: getClientIP(r), UserAgent: r.UserAgent()})
 	if err != nil {
 		h.writeErr(w, "evaluate CI run", err)
 		return

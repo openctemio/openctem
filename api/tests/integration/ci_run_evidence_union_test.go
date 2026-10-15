@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/ctis"
 
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A pipeline run is the unit of evidence: retrying or re-running only the
@@ -120,5 +121,138 @@ func TestCIRunEvidenceUnion_GateRetryCannotPassOnNothing(t *testing.T) {
 		"aggregate": true})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("other tenant joined: %d", resp.StatusCode)
+	}
+}
+
+// Re-opening a failed run (a later attempt joined it) must never hide its
+// verdict: the commit check and the "merged without a passing gate" check
+// keep reading its last verdict until it is judged again. Two pipelines on
+// one commit: P1 fails, P2 passes; a retry of one of P1's scan jobs re-opens
+// P1; the commit still fails.
+func TestCIRunEvidenceUnion_ReopenKeepsTheVerdict(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/twopipes"
+	const sha = "7777777777777777777777777777777777777770"
+	join := func(workflow, pipeline, job string) map[string]any {
+		t.Helper()
+		resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]any{"tenant_id": r.tenant.String(),
+			"id_token": r.idp.token(t, cfg.Audience, "acme/twopipes", "feature/x", sha,
+				map[string]any{"job_id": job, "pipeline_id": pipeline, "ci_config_ref_uri": strings.TrimPrefix(r.idp.srv.URL, "https://") + "/acme/twopipes//" + workflow + "@refs/heads/feature/x"}),
+			"aggregate": true})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("join: %d %v", resp.StatusCode, out)
+		}
+		return out
+	}
+	judge := func(run, tok string, fs ...ctis.Finding) map[string]any {
+		t.Helper()
+		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, ciReport(repoName, fs...)); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("upload: %d %v", resp.StatusCode, out)
+		}
+		_, v := r.post("/api/v1/ci/runs/"+run+"/evaluate", tok, map[string]int{"scan_failures": 0})
+		return v
+	}
+	p1 := join(".gitlab-ci.yml", "3001", "1")
+	run1 := p1["run_id"].(string)
+	if v := judge(run1, p1["token"].(string), ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 7)); v["verdict"] != "fail" {
+		t.Fatalf("P1: %v", v)
+	}
+	p2 := join("ci/security.yml", "3002", "1")
+	if p2["run_id"] == run1 {
+		t.Fatal("two pipeline runs share one run")
+	}
+	if v := judge(p2["run_id"].(string), p2["token"].(string)); v["verdict"] != "pass" {
+		t.Fatalf("P2: %v", v)
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET pull_request = '7' WHERE tenant_id = $1 AND id = $2`, r.tenant.String(), run1); err != nil {
+		t.Fatal(err)
+	}
+	run, err := r.svc.GetRun(ctx, r.tenant, shared.MustIDFromString(run1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A retry of one of P1's scan jobs re-opens P1.
+	if retry := join(".gitlab-ci.yml", "3001", "2"); retry["run_id"] != run1 {
+		t.Fatalf("retry did not re-open P1: %v", retry)
+	}
+	var status string
+	_ = r.db.QueryRowContext(ctx, `SELECT status FROM ci_runs WHERE id = $1`, run1).Scan(&status)
+	if status != string(cirun.StatusRunning) {
+		t.Fatalf("P1 status %s, want running", status)
+	}
+	vs, err := r.repo.CommitVerdicts(ctx, r.tenant, run.RepositoryAssetID, []string{sha})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := false
+	for _, v := range vs {
+		if v.RunID.String() == run1 && v.Verdict == cirun.VerdictFail {
+			failed = true
+		}
+	}
+	if !failed {
+		t.Fatalf("the re-opened failed run dropped out of the commit verdicts: %+v", vs)
+	}
+	if ok, err := r.repo.PullRequestPassed(ctx, r.tenant, run.RepositoryAssetID, "7"); err != nil || ok {
+		t.Fatalf("the re-opened failed run counts as a passed pull request: %v %v", ok, err)
+	}
+}
+
+// A capability that failed in an earlier attempt keeps failing the pipeline
+// run until a report of THAT capability arrives: a report of another
+// capability does not clear it, and the evaluating job cannot clear it by
+// saying it uploaded.
+func TestCIRunEvidenceUnion_FailedCapabilityCarriedUntilItReports(t *testing.T) {
+	r := newCIRig(t)
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}})
+	repoName := strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://")) + "/acme/caps"
+	const sha = "8888888888888888888888888888888888888880"
+	join := func(job string) (string, string) {
+		t.Helper()
+		resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]any{"tenant_id": r.tenant.String(),
+			"id_token":  r.idp.token(t, cfg.Audience, "acme/caps", "feature/x", sha, map[string]any{"job_id": job, "pipeline_id": "4001"}),
+			"aggregate": true})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("join: %d %v", resp.StatusCode, out)
+		}
+		return out["run_id"].(string), out["token"].(string)
+	}
+	upload := func(run, tok, tool string) {
+		t.Helper()
+		rep := ciReport(repoName)
+		rep["report"].(ctis.Report).Tool.Name = tool
+		if resp, out := r.post("/api/v1/ci/runs/"+run+"/results", tok, rep); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("upload %s: %d %v", tool, resp.StatusCode, out)
+		}
+	}
+	gate := func(run, tok string, secretsState string) map[string]any {
+		t.Helper()
+		caps := []map[string]string{{"name": "sast", "tool": "semgrep", "state": "uploaded"},
+			{"name": "secrets", "tool": "betterleaks", "state": secretsState}}
+		_, v := r.post("/api/v1/ci/runs/"+run+"/evaluate", tok, map[string]any{"scan_failures": 0, "capabilities": caps})
+		return v
+	}
+	run, tok := join("1")
+	upload(run, tok, "semgrep")
+	if v := gate(run, tok, "failed"); v["verdict"] != "fail" || !hasReason(v, cirun.ReasonCapabilityFailed) {
+		t.Fatalf("secrets failed: %v", v)
+	}
+	// Re-run of the sast job only: a sast report does not clear secrets;
+	// the gate job says everything uploaded: still failing.
+	run2, tok2 := join("2")
+	if run2 != run {
+		t.Fatal("the retry opened another run")
+	}
+	upload(run, tok2, "semgrep")
+	if v := gate(run, tok2, "uploaded"); v["verdict"] != "fail" || !hasReason(v, cirun.ReasonCapabilityFailed) {
+		t.Fatalf("a sast report cleared the failed secrets scan: %v", v)
+	}
+	// The secrets scan re-runs and reports: cleared, the run passes.
+	_, tok3 := join("3")
+	upload(run, tok3, "betterleaks")
+	if v := gate(run, tok3, "uploaded"); v["verdict"] != "pass" {
+		t.Fatalf("after the secrets report: %v", v)
 	}
 }
