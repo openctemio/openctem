@@ -262,6 +262,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	tenantHandler.SetRoleService(svc.Role)
 	tenantHandler.SetAssetService(svc.Asset)
+	if svc.PriorityClassification != nil && svc.SLA != nil && svc.Scoring != nil {
+		tenantHandler.SetScoringPreview(svc.PriorityClassification, svc.SLA, svc.Scoring)
+	}
 	tenantHandler.SetModuleService(svc.Module)
 	lastTenantHandler = tenantHandler
 

@@ -74,8 +74,7 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 		body               any
 	}{
 		{"single", http.MethodPatch, "/api/v1/findings/" + fa + "/status", map[string]any{"status": "resolved", "resolution": "fixed"}},
-		{"bulk", http.MethodPost, "/api/v1/findings/bulk/status", map[string]any{"finding_ids": []string{fa}, "status": "resolved"}},
-		{"group", http.MethodPost, "/api/v1/findings/remediation-groups/" + key + "/resolve", map[string]any{"status": "resolved"}},
+		{"bulk", http.MethodPost, "/api/v1/findings/bulk/status", map[string]any{"finding_ids": []string{fa}, "status": "resolved", "resolution": "fixed"}},
 	}
 	for _, a := range attempts {
 		status, body := h.doPerms(h.memberA, rgMemberPerms, a.method, a.path, a.body)
@@ -87,9 +86,23 @@ func TestResolveGate_MemberWithoutVerifyCannotClose(t *testing.T) {
 		}
 	}
 
-	// The member's own step (fix_applied) and the group's default stay open to them.
+	// A group resolve never closes findings, not even for a findings:verify
+	// holder: each finding is verified on its own.
+	for _, perms := range [][]string{rgMemberPerms, rgVerifierPerms()} {
+		if status, body := h.doPerms(h.memberA, perms, http.MethodPost, "/api/v1/findings/remediation-groups/"+key+"/resolve",
+			map[string]any{"status": "resolved", "resolution": "fixed"}); status != http.StatusBadRequest {
+			t.Errorf("group resolve to resolved = %d %.300s, want 400", status, body)
+		}
+		if st, _, _ := h.closure(h.findingA); st != "fix_applied" {
+			t.Fatalf("group resolve closed the finding (status %s)", st)
+		}
+	}
+
+	// The member's own step (fix_applied, on a finding assigned to them, with a
+	// note) and the group's default stay open to them.
+	h.exec(`UPDATE findings SET assigned_to = $2 WHERE id = $1`, fa, h.memberA.String())
 	if status, body := h.doPerms(h.memberA, rgMemberPerms, http.MethodPost,
-		"/api/v1/findings/remediation-groups/"+key+"/resolve", map[string]any{}); status != http.StatusOK {
+		"/api/v1/findings/remediation-groups/"+key+"/resolve", map[string]any{"resolution": "patched"}); status != http.StatusOK {
 		t.Errorf("group resolve to the fix_applied default = %d %.300s, want 200", status, body)
 	}
 
