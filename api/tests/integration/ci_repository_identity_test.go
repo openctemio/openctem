@@ -81,6 +81,13 @@ func TestCIRepositoryIdentityByProviderID(t *testing.T) {
 	if nameOf(asset) != "github.com/acme/api-renamed" {
 		t.Fatalf("asset name = %q", nameOf(asset))
 	}
+	// The rename is an audit event, with the old and new name.
+	var audited int
+	if err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'asset.renamed'
+		AND resource_id = $2 AND metadata->>'old_name' = 'github.com/acme/api' AND metadata->>'new_name' = 'github.com/acme/api-renamed'`,
+		r.tenant.String(), asset).Scan(&audited); err != nil || audited != 1 {
+		t.Fatalf("rename audited %d times: %v", audited, err)
+	}
 
 	// Repository import created "acme/web" with its id: CI uses that asset.
 	imported := shared.NewID()
