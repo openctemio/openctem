@@ -374,6 +374,15 @@ func (s *TenantService) LogAuditEvent(ctx context.Context, actx auditapp.AuditCo
 // Tenant Operations
 // =============================================================================
 
+// ProvisionedEntitlements are what a hosted service's control plane writes
+// with an organization it provisions (validated by the caller).
+type ProvisionedEntitlements struct {
+	Limits         limits.Limits
+	DeniedFeatures []string
+	IdlePolicy     bool
+	Reason         string
+}
+
 // CreateTenantInput represents the input for creating a tenant.
 type CreateTenantInput struct {
 	Name        string `json:"name" validate:"required,min=2,max=100"`
@@ -383,6 +392,9 @@ type CreateTenantInput struct {
 	// self-service defaults for an organization a person creates). Empty:
 	// no limits.
 	InitialLimits limits.Limits `json:"-"`
+	// Provisioned, when set, replaces InitialLimits: what the control plane
+	// provisions with the organization (its limits, denies and idle policy).
+	Provisioned *ProvisionedEntitlements `json:"-"`
 }
 
 // CreateTenant creates a new tenant and adds the creator as owner.
@@ -408,7 +420,15 @@ func (s *TenantService) CreateTenant(ctx context.Context, input CreateTenantInpu
 	if input.Description != "" {
 		t.UpdateDescription(input.Description)
 	}
-	t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
+	if p := input.Provisioned; p != nil {
+		t.SetInitial(tenantdom.InitialEntitlements{
+			Limits:     limits.Rows(t.ID(), limits.OriginControlPlane, p.Reason, p.Limits, t.CreatedAt()),
+			Denies:     limits.DenyRows(t.ID(), limits.OriginControlPlane, p.Reason, p.DeniedFeatures, t.CreatedAt()),
+			IdlePolicy: p.IdlePolicy, IdleReason: p.Reason,
+		})
+	} else {
+		t.SetInitialLimits(limits.SelfServiceRows(t.ID(), input.InitialLimits, t.CreatedAt()))
+	}
 
 	// Build the owner membership before any write so a construction error can't
 	// leave a tenant without an owner.

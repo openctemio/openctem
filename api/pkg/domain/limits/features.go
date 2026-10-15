@@ -61,6 +61,20 @@ type FeatureDeny struct {
 	SetAt     time.Time
 }
 
+// DenyRows returns one deny per distinct feature, for the organization,
+// origin and reason given. The caller validated the features (IsFeature).
+func DenyRows(tenantID shared.ID, origin Origin, reason string, features []string, at time.Time) []FeatureDeny {
+	seen := map[string]bool{}
+	out := []FeatureDeny{}
+	for _, f := range features {
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, FeatureDeny{TenantID: tenantID, Feature: f, Origin: origin, Reason: reason, SetAt: at})
+		}
+	}
+	return out
+}
+
 // Active reports whether the deny applies at t.
 func (d FeatureDeny) Active(t time.Time) bool { return d.ExpiresAt == nil || t.Before(*d.ExpiresAt) }
 
@@ -107,7 +121,7 @@ type Repository interface {
 	GetSelfServiceDefaults(ctx context.Context) (Limits, int, error)
 	// SaveSelfServiceDefaults stores the defaults when the stored version is
 	// expected (0: nothing stored yet); shared.ErrConflict otherwise.
-	SaveSelfServiceDefaults(ctx context.Context, l Limits, expectedVersion int, by shared.ID, at time.Time) (int, error)
+	SaveSelfServiceDefaults(ctx context.Context, l Limits, expectedVersion int, by *shared.ID, at time.Time) (int, error)
 
 	ListLimits(ctx context.Context, tenantID shared.ID, origin Origin) ([]Limit, error)
 	SetLimit(ctx context.Context, l Limit) error
