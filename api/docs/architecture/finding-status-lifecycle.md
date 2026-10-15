@@ -107,6 +107,54 @@ Deliberately outside the maps: folding one finding record into another (the
 tombstone becomes `duplicate`; the survivor keeps the more advanced triage
 state of the two), which is an identity merge, not a lifecycle move.
 
+## Every move is on the timeline
+
+A finding's timeline (`finding_activities`) explains every status change, in
+the same transaction as the change.
+
+- **Platform writers** name themselves for their transaction with
+  `set_config('openctem.transition', <json>, true)` (Go:
+  `findingTransition` / `vulnerability.StatusTransition` in
+  `internal/infra/postgres/finding_transition.go`). The trigger
+  `trg_findings_record_transition` (migration `002180`) then writes one entry
+  per finding the transaction moves: the old and new status, what the
+  resolution was before (`previous_resolution`, `previous_resolution_method`,
+  `previous_resolved_by`, `previous_resolved_at`), a reason code, the source,
+  the actor and evidence references (scanner, scan or command, pipeline, rule,
+  statement). The move and its entry commit or roll back together.
+- Covered by it: coverage and default-branch auto-resolve and the source's own
+  "mitigated" state (`auto_resolved`), scan re-detection (`auto_reopened`;
+  `observed_again` for a stale finding), template drift, feature-branch
+  expiry, CI pipeline stale and retired, VEX in scan reports and VEX
+  documents, the software vulnerability matcher, correlation link and release,
+  taint-source suspension, suppression re-link, and the bulk verify / reject by
+  filter.
+- **Application paths acting for the platform** (validation verdicts, the IOC
+  correlator, workflow `update_status`, auto-assign to owners) attach the
+  transition to the request context (`vulnerability.WithStatusTransition`);
+  `FindingRepository.Update` and `UpdateStatusBatch` then write the move and its
+  entry in one transaction. A workflow is recorded as `workflow:<id>` (before,
+  its entry failed on an invalid actor id).
+- Evidence such as the scan behind an auto-resolve travels in the context
+  (`vulnerability.WithTransitionEvidence`).
+- Without a named transition the trigger writes nothing: a person's change is
+  recorded by its service with the person as the actor.
+- `TestFindingStatusSQL_EveryStatusWriteIsOnTheTimeline` fails when a file that
+  writes `findings.status` records no timeline entry.
+
+## Automatic signals never reverse a decision
+
+A false positive, an accepted risk or a duplicate is a person's decision
+(approved, for the first two). No automatic signal moves it:
+
+- a changed taint source and an indicator-of-compromise match raise a
+  **review flag** instead (`finding_decision_reviews`, migration `002154`,
+  reasons `taint_source_changed` and `ioc_match`), with a `decision_review`
+  timeline entry in the same transaction and an audit event; one open flag per
+  finding and reason; it clears when the finding's status changes;
+- an IOC match still reopens a finding closed as `resolved` (the match is
+  evidence it is not fixed).
+
 ## Duplicates name their canonical finding
 
 A duplicate is a tombstone of another finding: `duplicate_of` is always set
@@ -125,6 +173,28 @@ reopens each to `confirmed` with a timeline entry instead of failing the delete.
 Migration `002151` repaired existing orphan duplicates the same way (status
 `confirmed`, timeline reason `duplicate_link_missing`).
 
+## SLA status follows the status
+
+`findings.sla_status` is recomputed on every status or deadline change, by the
+trigger `trg_findings_recompute_sla_status` (migration `002181`) for every
+writer, and by `Finding.UpdateSLAStatus` with the same rules
+(`finding_sla_status_for`):
+
+| Finding | `sla_status` |
+|---|---|
+| no deadline | `not_applicable` |
+| `false_positive`, `accepted`, `duplicate` | `not_applicable` (a decision not to fix leaves the SLA) |
+| `resolved` | `on_track` when closed by the deadline (met), else `exceeded` (missed): the clock stops at the verified fix; `fix_applied` keeps it running |
+| open, past the deadline | `overdue` |
+| open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |
+
+The warning has **one definition**: the SLA escalation job's policy
+`warning_threshold_percent` of the window from the later of
+`first_detected_at` and `last_reopened_at` to the deadline (a regression's
+restarted deadline is measured from the reopen). The domain no longer warns 24
+hours before a deadline on its own. Migration `002181` also recomputed stale
+values (closed findings left `overdue`, dispositions `exceeded`).
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed
@@ -138,24 +208,52 @@ instead).
   end has passed it can no longer be approved (it would accept nothing) and is
   submitted again with a new end. Approving an older `accepted` request that
   has no end gives it the 90-day default from the approval.
-- **On the finding.** Approving `accepted` stores the end in
-  `findings.acceptance_expires_at` in the same statement as the status
-  (`FindingRepository.AcceptUntil`). A finding that an approved accepted-risk
-  or won't-fix suppression rule closes takes the rule's `expires_at` when the
-  finding-rule link is recorded (`SuppressionRepository.RecordSuppression`,
-  same tenant only); a rule without an expiry leaves it empty, and the rule's
-  own expiry lifts the suppression.
+- **On the finding, on every accept path.** Approving `accepted` stores the
+  end in `findings.acceptance_expires_at` in the same statement as the status
+  (`FindingRepository.AcceptUntil`). An approved accepted-risk or won't-fix
+  suppression rule writes its `expires_at` on the findings it closes, both
+  when it is approved (`applySuppressionChunk`) and when ingest links a new
+  finding to it (`RecordSuppression`, same tenant only); a re-link to another
+  rule takes that rule's end; an identity merge whose survivor inherits an
+  acceptance inherits its end; a full-row write of an accepted finding (the
+  pentest path) keeps its end. Wherever no end is given (a rule without an
+  expiry, a pentest acceptance), the 90-day default
+  (`vulnerability.DefaultAcceptanceDuration`) applies: an accepted risk always
+  ends.
 - **Cleared on leaving accepted.** The trigger
   `trg_findings_clear_acceptance_expiry` empties the column on any row that is
   not `accepted`, whatever path wrote the status, so a later accept starts
   clean.
 - **Who reads it.** The CI gate honors an accepted finding only until its end
-  (`cirun.honored`), even before the hourly approval-expiration controller
-  reopens it. Threat models read it as the acceptance horizon.
+  (`cirun.honored`), even before the hourly expiry job reopens it. Threat
+  models read it as the acceptance horizon.
 
-Migration `002119` adds the trigger and fills the column for findings already
-accepted, from their latest approved acceptance request or their suppression
-rule. Findings accepted with no end anywhere stay empty.
+### When an acceptance ends
+
+The hourly `approval-expiration` controller ends every accepted finding whose
+`acceptance_expires_at` has passed, whatever made it accepted (an approval, a
+rule, the repair below). Each end is **one transaction**
+(`FindingAcceptanceExpiryRepository.Expire`), taken only while the finding is
+still accepted and its end has passed:
+
+1. the finding returns to `confirmed` (the reopen target) and its resolution
+   fields are cleared;
+2. a **new SLA clock** starts at the reopen (owner decision D3): the tenant's
+   policy deadline for the finding's priority from now, `sla_status`
+   `on_track`; `first_detected_at` keeps the finding's true age;
+3. its approved acceptance requests are marked `expired`;
+4. the timeline gets an `acceptance_expired` entry (with the requests) and an
+   `sla_restarted` entry (with the previous deadline).
+
+A failure rolls all of it back and the next run retries; nothing is left with
+the request expired and the finding still accepted. Approved requests whose
+end passed while their finding had moved on (or holds a newer acceptance) are
+only marked `expired`.
+
+Migration `002119` filled the column for findings already accepted, from their
+latest approved acceptance request or their suppression rule. Migration
+`002166` gives the accepted findings that still had no end the 90-day default
+from the day it runs, with a timeline note (reason `acceptance_end_default`).
 
 ## AI false-positive proposals
 

@@ -64,8 +64,6 @@ type FindingProcessor struct {
 	// Nil-safe: when unwired, no evidence is kept.
 	evidence EvidenceStore
 
-	// activityService records audit trail for auto-reopen events
-	activityService activityRecorder
 	// regressions follows up on reopened findings (fresh SLA, announcement).
 	regressions RegressionHandler
 
@@ -131,11 +129,6 @@ type RegressionHandler interface {
 	HandleRegressions(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner string)
 }
 
-// activityRecorder is the subset of FindingActivityService needed by the processor.
-type activityRecorder interface {
-	RecordBatchAutoReopened(ctx context.Context, tenantID shared.ID, reopened []vulnerability.ReopenedFinding, scanner, scanID string) error
-}
-
 // RemediationKeyApplier derives and persists each finding's remediation group
 // key. Runs POST-insert (needs persisted finding IDs). Implemented by
 // *remediation.KeyApplier. Best-effort: errors are logged, never fatal.
@@ -177,11 +170,6 @@ func (p *FindingProcessor) SetComponentRepository(repo software.PackageWriter) {
 // SetDataFlowRepository sets the data flow repository for persisting data flow traces.
 func (p *FindingProcessor) SetDataFlowRepository(repo vulnerability.DataFlowRepository) {
 	p.dataFlowRepo = repo
-}
-
-// SetActivityService sets the activity service for recording auto-reopen audit trail.
-func (p *FindingProcessor) SetActivityService(svc activityRecorder) {
-	p.activityService = svc
 }
 
 // SetRegressionHandler wires the follow-up on scan regressions (RFC-039 D2).
@@ -545,7 +533,13 @@ func (p *FindingProcessor) processBatch(
 	// PERFORMANCE: Single query instead of N queries per existing finding
 	existingFingerprints = p.withoutHumanResolved(ctx, tenantID, existingFingerprints, guardedFingerprints, output)
 	if len(existingFingerprints) > 0 {
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(ctx, tenantID, existingFingerprints)
+		scanner := ""
+		if report.Tool != nil {
+			scanner = report.Tool.Name
+		}
+		// Each reopen writes its timeline entry with the scan behind it.
+		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
+		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints)
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
@@ -556,16 +550,6 @@ func (p *FindingProcessor) processBatch(
 			reopened := make([]vulnerability.ReopenedFinding, 0, len(reopenedMap))
 			for _, rf := range reopenedMap {
 				reopened = append(reopened, rf)
-			}
-			scanner := ""
-			if report.Tool != nil {
-				scanner = report.Tool.Name
-			}
-			// Record the regression on each finding, with who had resolved it.
-			if p.activityService != nil {
-				if err := p.activityService.RecordBatchAutoReopened(ctx, tenantID, reopened, scanner, report.Metadata.ID); err != nil {
-					p.logger.Warn("failed to record auto-reopen activities", "error", err)
-				}
 			}
 			// Fresh SLA + ticket comment + notification (RFC-039 D2, §7.4-7.5),
 			// for findings that count as exposure.
@@ -2123,7 +2107,7 @@ func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding 
 // taintSourceSuspender suspends decisions whose taint source changed (the
 // postgres data flow repository).
 type taintSourceSuspender interface {
-	SuspendOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
+	ReviewOnTaintSourceChange(ctx context.Context, tenantID shared.ID, traces []vulnerability.FindingTrace) ([]shared.ID, error)
 }
 
 // persistDataFlows stores each trace on the tenant's finding with its
@@ -2134,13 +2118,14 @@ func (p *FindingProcessor) persistDataFlows(ctx context.Context, tenantID shared
 	if p.dataFlowRepo == nil || len(traces) == 0 {
 		return
 	}
-	// A decision on a taint finding is suspended for review when its source
-	// changed (checked against the stored trace before it is replaced).
+	// A decision on a taint finding is flagged for review when its source
+	// changed (checked against the stored trace before it is replaced); the
+	// decision itself stands.
 	if sus, ok := p.dataFlowRepo.(taintSourceSuspender); ok {
-		if ids, err := sus.SuspendOnTaintSourceChange(ctx, tenantID, traces); err != nil {
+		if ids, err := sus.ReviewOnTaintSourceChange(ctx, tenantID, traces); err != nil {
 			p.logger.Warn("taint source check failed", "error", err)
 		} else if len(ids) > 0 {
-			p.logger.Info("decisions suspended: taint source changed", "count", len(ids))
+			p.logger.Info("decisions flagged for review: taint source changed", "count", len(ids))
 		}
 	}
 	n, err := p.dataFlowRepo.ReplaceDataFlows(ctx, tenantID, traces)
