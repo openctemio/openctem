@@ -16,6 +16,23 @@ type Group struct {
 	FixAvailable   bool           `json:"fix_available"`
 }
 
+// KeySource is what a finding's key is derived from, read from the finding,
+// its package (components) and its CVE catalog entry, plus the key stored now.
+type KeySource struct {
+	FindingID  shared.ID
+	CurrentKey string
+	// CurrentTitle is the stored title ("" when no key).
+	CurrentTitle string
+	Input        KeyInput
+}
+
+// CampaignKeyRef is a campaign that tracks a remediation key.
+type CampaignKeyRef struct {
+	ID   shared.ID
+	Name string
+	Key  string
+}
+
 // KeyRepository persists per-finding remediation keys and answers group queries.
 // It owns the finding_remediation_keys side-table; it never writes findings.
 type KeyRepository interface {
@@ -25,7 +42,36 @@ type KeyRepository interface {
 
 	// Delete removes a finding's key (e.g. when it becomes ungroupable). Deleting
 	// the finding itself CASCADE-removes the row.
-	Delete(ctx context.Context, findingID shared.ID) error
+	Delete(ctx context.Context, tenantID, findingID shared.ID) error
+
+	// KeySources reads the signals a key is derived from for the tenant's
+	// findings with these ids, with their current key ("" when none). Ids of
+	// another tenant or that do not exist are left out.
+	KeySources(ctx context.Context, tenantID shared.ID, findingIDs []shared.ID) ([]KeySource, error)
+
+	// KeySourcesByFingerprints is KeySources for the tenant's findings with
+	// these fingerprints (a re-sighting at ingest knows the fingerprint).
+	KeySourcesByFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) ([]KeySource, error)
+
+	// FindingIDsAfter pages through the tenant's finding ids in id order
+	// (keyset: ids greater than after; after zero starts at the beginning).
+	FindingIDsAfter(ctx context.Context, tenantID, after shared.ID, limit int) ([]shared.ID, error)
+
+	// TenantsWithFindings lists the tenants that have at least one finding.
+	TenantsWithFindings(ctx context.Context) ([]shared.ID, error)
+
+	// CampaignsTrackingKeys lists the tenant's campaigns whose finding filter
+	// tracks one of these remediation keys.
+	CampaignsTrackingKeys(ctx context.Context, tenantID shared.ID, keys []string) ([]CampaignKeyRef, error)
+
+	// CampaignsWithStaleKey lists the tenant's campaigns whose finding filter
+	// tracks a remediation key that no finding of the tenant has.
+	CampaignsWithStaleKey(ctx context.Context, tenantID shared.ID) ([]CampaignKeyRef, error)
+
+	// RetargetCampaignKey moves one campaign of the tenant from oldKey to
+	// newKey. It changes nothing (false) when the campaign no longer tracks
+	// oldKey, so a repeated run is a no-op.
+	RetargetCampaignKey(ctx context.Context, tenantID, campaignID shared.ID, oldKey, newKey string) (bool, error)
 
 	// ListGroups returns groups rolled up over the tenant's OPEN findings.
 	// excludeStatuses are the closed finding statuses to leave out; pentest

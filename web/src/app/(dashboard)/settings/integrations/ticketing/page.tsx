@@ -46,11 +46,13 @@ import {
   X,
   PlugZap,
   Trash2,
+  Webhook,
 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Can } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { RoutingRulesDialog } from '@/features/integrations/components/routing-rules-dialog'
+import { JiraWebhookDialog } from '@/features/integrations/components/jira-webhook-dialog'
 import { mergeShownMapping } from '@/features/integrations/lib/ticketing-mapping'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -512,6 +514,7 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   const { t } = useTranslation()
   const [configOpen, setConfigOpen] = useState(false)
   const [routingOpen, setRoutingOpen] = useState(false)
+  const [webhookOpen, setWebhookOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const { trigger: syncNow, isMutating: isSyncing } = useSyncIntegrationApi(integration.id)
@@ -638,6 +641,16 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             disabled: !jiraReady,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
+          ...(integration.provider === 'jira'
+            ? [
+                {
+                  label: t('settings.jiraWebhook.action', 'Inbound webhook'),
+                  icon: Webhook,
+                  onClick: () => setWebhookOpen(true),
+                  route: 'POST /api/v1/integrations/{id}/jira-webhook/secret/rotate' as const,
+                },
+              ]
+            : []),
           deleteAction,
         ]}
       />
@@ -652,6 +665,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
           integration={integration}
           open={configOpen}
           onOpenChange={setConfigOpen}
+        />
+      )}
+      {integration.provider === 'jira' && webhookOpen && (
+        <JiraWebhookDialog
+          integration={integration}
+          open={webhookOpen}
+          onOpenChange={setWebhookOpen}
         />
       )}
       {integration.provider === 'jira' && routingOpen && (
