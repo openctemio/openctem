@@ -61,7 +61,7 @@ func TestCIRunRepository(t *testing.T) {
 	if runs, total, err := repo.ListRuns(ctx, other, cirun.RunFilter{}); err != nil || total != 0 || len(runs) != 0 {
 		t.Fatalf("cross-tenant list: %d %v", total, err)
 	}
-	if err := repo.SaveVerdict(ctx, other, runA.ID, cirun.VerdictPass, []byte(`{}`), now, 0); !errors.Is(err, shared.ErrNotFound) {
+	if err := repo.SaveVerdict(ctx, other, runA.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant verdict: %v", err)
 	}
 	// A run cannot point at another tenant's asset (composite foreign key).
@@ -346,10 +346,10 @@ func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
 	if err := repo.RecordRunReport(ctx, tenant, run.ID, []string{"fp-late"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 0); !errors.Is(err, cirun.ErrRunChanged) {
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 0, nil); !errors.Is(err, cirun.ErrRunChanged) {
 		t.Fatalf("stale verdict: %v", err)
 	}
-	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictFail, []byte(`{}`), now, 1); err != nil {
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictFail, []byte(`{}`), now, 1, nil); err != nil {
 		t.Fatalf("current verdict: %v", err)
 	}
 	// After the verdict: no slot, no recording, no second verdict.
@@ -359,7 +359,7 @@ func TestCIRunReportSlotsAndVerdictGuard(t *testing.T) {
 	if err := repo.RecordRunReport(ctx, tenant, run.ID, []string{"fp-after"}); !errors.Is(err, cirun.ErrRunEvaluated) {
 		t.Fatalf("report after the verdict: %v", err)
 	}
-	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 1); !errors.Is(err, cirun.ErrRunEvaluated) {
+	if err := repo.SaveVerdict(ctx, tenant, run.ID, cirun.VerdictPass, []byte(`{}`), now, 1, nil); !errors.Is(err, cirun.ErrRunEvaluated) {
 		t.Fatalf("second verdict: %v", err)
 	}
 	got, err := repo.GetRun(ctx, tenant, run.ID)
