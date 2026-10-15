@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { safeHref } from '@/lib/safe-href'
+import { SafeExternalLink } from '@/components/safe-external-link'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared/types'
 import type { FindingDetail, FindingFixPlan, FindingFixPlanItem } from '../../types'
@@ -190,24 +190,29 @@ function DependencyChain({ via }: { via: string[] }) {
 }
 
 /** The lock file and the package's line, linked to the repository when known. */
-function ManifestRef({ file, line, href }: { file: string; line?: number; href: string | null }) {
+function ManifestRef({
+  file,
+  line,
+  codeUrl,
+}: {
+  file: string
+  line?: number
+  codeUrl: string | null
+}) {
   const { t } = useTranslation()
   const label = line ? `${file}:${line}` : file
-  const safe = href ? safeHref(href) : undefined
   return (
     <span className="min-w-0 break-all">
       <span className="whitespace-pre">{`${t('findings.fixCard.inPrefix', 'in')} `}</span>
-      {safe ? (
-        <a
-          href={safe}
-          target="_blank"
-          rel="noopener noreferrer nofollow"
+      {codeUrl ? (
+        <SafeExternalLink
+          href={codeUrl}
           className="inline-flex items-center gap-0.5 font-mono text-xs underline-offset-2 hover:underline"
           title={t('findings.fixCard.openLockfile', 'Open the lock file at this line')}
         >
           {label}
           <ExternalLink className="h-3 w-3" aria-hidden />
-        </a>
+        </SafeExternalLink>
       ) : (
         <span className="font-mono text-xs">{label}</span>
       )}
@@ -250,7 +255,7 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
             key="file"
             file={g.manifestFile}
             line={g.manifestLine}
-            href={buildRepositoryCodeUrl({
+            codeUrl={buildRepositoryCodeUrl({
               repositoryUrl: finding.repositoryUrl,
               filePath: g.manifestFile,
               startLine: g.manifestLine,
