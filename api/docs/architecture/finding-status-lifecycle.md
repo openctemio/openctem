@@ -263,6 +263,10 @@ restarted deadline is measured from the reopen). The domain no longer warns 24
 hours before a deadline on its own. Migration `002181` also recomputed stale
 values (closed findings left `overdue`, dispositions `exceeded`).
 
+When the priority or the SLA policy changes, an open finding's deadline only
+tightens (`min(old, now + new SLA)`) and never moves later; see
+[scoring versions](scoring-versions.md#sla-on-a-priority-change).
+
 ## Risk acceptance end
 
 An accepted risk always ends; a false positive does not (it is re-reviewed

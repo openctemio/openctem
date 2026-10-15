@@ -6,7 +6,11 @@ import { cn } from '@/lib/utils'
 import { formatRiskScore } from '@/features/shared'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 import dynamic from 'next/dynamic'
-import type { ExecutiveSummary, RiskTrendPoint } from '../../hooks/use-ctem-dashboard'
+import {
+  scoringChangeDates,
+  type ExecutiveSummary,
+  type RiskTrendPoint,
+} from '../../hooks/use-ctem-dashboard'
 import { STATE_TEXT } from '../../lib/ctem-colors'
 
 // recharts loads after the card's numbers (see trend-charts.tsx).
@@ -135,7 +139,10 @@ export function ExposureHero({ summary, trend, kevChainCount, isLoading }: Expos
           </div>
           {series.length > 1 ? (
             <div className="w-full flex-1 min-h-16">
-              <P0TrendLine series={series} />
+              <P0TrendLine
+                series={series}
+                markers={scoringChangeDates(trend ?? [], 'finding_priority')}
+              />
             </div>
           ) : (
             <div className="flex flex-1 min-h-16 items-center justify-center text-xs text-muted-foreground">
