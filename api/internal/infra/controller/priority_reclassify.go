@@ -25,7 +25,6 @@ import (
 type ReclassifyReasonKind string
 
 const (
-	ReasonKEVRefresh    ReclassifyReasonKind = "kev_refresh"
 	ReasonControlChange ReclassifyReasonKind = "control_change"
 	ReasonAssetChange   ReclassifyReasonKind = "asset_change"
 	// ReasonAITriage is queued when an AI triage completes for a finding, so a

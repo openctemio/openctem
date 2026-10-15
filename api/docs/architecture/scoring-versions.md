@@ -203,6 +203,24 @@ ticket is created, so a scoring change updates no ticket and creates none.
 If ticket priority ever follows the priority class, it must be a batched
 field update under the same summary, never new tickets.
 
+## Intel updates
+
+After the daily EPSS and KEV refresh, the threat-intel controller queues
+only the assets of **open** findings whose intel moved in a way a model can
+see, never a whole tenant (`ScoringRepository.EnqueueIntelChanges`):
+
+- EPSS: the catalog score, compared with the score stored on the finding,
+  crossed a threshold the classifier uses (0.01, 0.1, 0.5) or one of the
+  tenant's own active priority rules uses (`epss_score` conditions). Daily
+  decimal drift that crosses nothing queues nothing, and another tenant's
+  rule thresholds never queue this tenant's findings;
+- KEV: the CVE entered or left the catalog (compared with `is_in_kev`).
+
+The worker's pass re-reads both catalogs and stores the new values on the
+finding, so the next refresh with the same feeds queues nothing. The KEV
+escalation that raises severity queues its asset through the severity
+trigger. Closed findings are never queued.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -226,8 +244,10 @@ on risk snapshots and markers on trend charts.
 Shipped here: one summary notification per scoring change instead of one
 per finding.
 
-Planned in the same series: recompute scoped to the CVEs whose EPSS or KEV status
-changed.
+Shipped here: recompute scoped to the CVEs whose EPSS or KEV status changed.
+
+Planned: the "why this priority / score" panels showing the version and
+"changed on <date> because <change>".
 
 ## Key files
 
@@ -245,4 +265,4 @@ changed.
 - `internal/app/finding/scoring_summary.go`, `migrations/*_scoring_change_impacts.up.sql`
 - `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`,
   `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`,
-  `tests/integration/scoring_summary_test.go`
+  `tests/integration/scoring_summary_test.go`, `tests/integration/scoring_intel_test.go`
