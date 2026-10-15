@@ -108,6 +108,75 @@ Metrics: `openctem_finding_priority_queue_depth`,
 - A reopened finding is queued by the reopen trigger and recomputed with the
   current version.
 
+## SLA on a priority change
+
+The SLA applier (`internal/app/sla/applier.go`) computes a finding's first
+deadline from detection: `first_detected_at + SLA(class)`. After that,
+automatic recomputes only tighten:
+
+| Change | Deadline |
+|---|---|
+| priority rises (rule, model, KEV, EPSS, asset context) | `min(old, now + SLA(new class))`: the new SLA counts from the change, never a deadline already in the past |
+| priority drops | kept; an overdue finding stays overdue |
+| SLA policy shortened | `min(old, now + new days)` |
+| SLA policy lengthened | kept; new findings use the new policy |
+| finding closed | kept as it was when closed |
+
+A deadline that moves later by itself would hide overdue work, so an
+extension is an explicit decision (a regression or an expired acceptance
+starts a new clock with its own `sla_restarted` entry), never a side effect.
+The ingest upsert applies the same rule (`LEAST` of the stored and incoming
+deadline for an open finding).
+
+Every tightening of an open finding writes a `sla_deadline_tightened`
+timeline entry (database trigger, whatever wrote the deadline) with both
+deadlines, both classes and the reason (`priority_raised` or
+`sla_policy_changed`).
+
+## Preview before apply
+
+Saving risk scoring settings in the console opens a review first:
+`POST /tenants/{tenant}/settings/risk-scoring/preview` (team admin,
+`settings:write`) runs a dry run over **every** live asset of the
+organization with the same engine and inputs the asset-risk-score worker uses
+after the change, and nothing is written:
+
+- assets: total, how many scores change (up, down), band moves (from, to,
+  count) and the 50 largest changes. Counts cover the whole organization; an
+  asset outside the caller's data scope (a private program's asset) is
+  counted but never named;
+- when `floor_unowned_at_p2` changes, open findings: class moves, deadlines
+  that would move earlier (`min(old, now + SLA)`), findings with a linked
+  ticket, and manual overrides that keep their class. Closed findings are not
+  counted (they never change).
+
+Applying is the existing `PATCH /tenants/{tenant}/settings/risk-scoring`
+(section compare-and-swap with `If-Match`), which now also requires **step-up**
+re-authentication. It is audited with the before/after diff and the new
+`scoring_version`. It does not recompute in the request: the settings trigger
+records the change and queues the work, and the response says
+`"recompute": "queued"`. The manual "Recalculate" action queues every asset
+too (`assets_queued`) instead of rescoring in the request.
+
+Priority rules keep their own dry run (`POST /priority-rules/dry-run`).
+
+## History
+
+Snapshots, trends, MTTR and SLA compliance of past periods are history: they
+are never recomputed when a model or settings change.
+
+- `risk_snapshots.risk_version` / `priority_version` record the oldest
+  version among the asset scores and open-finding priorities the day's numbers
+  came from (NULL = before versions).
+- `GET /dashboard/risk-trend` returns, on each point, its versions and the
+  scoring changes that took effect there (`scoring_changes`: date, kind,
+  source, summary; a day without a snapshot moves the marker to the next
+  point). The tenant's own changes and platform model versions are listed,
+  never another tenant's.
+- The dashboard's priority charts draw a dashed line at each change and say
+  "Scoring changed on <date> (<what>): values before and after are not
+  directly comparable", so a step is not read as a change in risk.
+
 ## Security
 
 - Settings are a security control: they decide what is P0 and when work is
@@ -124,12 +193,11 @@ Metrics: `openctem_finding_priority_queue_depth`,
 ## Shipped and planned
 
 Shipped: versions, the durable queue, triggers, the worker and reconcile,
-closed findings frozen.
+closed findings frozen; SLA deadlines that only tighten, with a timeline
+entry; the whole-organization preview and the step-up apply; version stamps
+on risk snapshots and markers on trend charts.
 
-Planned in the same series: SLA deadlines that only tighten on a priority
-rise or policy change (with a timeline entry); a whole-tenant preview before
-applying risk settings, with step-up; version stamps on risk snapshots and
-markers on trend charts; one summary notification per scoring change instead
+Planned in the same series: one summary notification per scoring change instead
 of one per finding; recompute scoped to the CVEs whose EPSS or KEV status
 changed.
 
@@ -141,4 +209,10 @@ changed.
 - `internal/app/reclassify/reclassifier.go`, `queue.go`
 - `internal/infra/controller/priority_reclassify.go`
 - `internal/app/asset/risk_freshness.go` (risk version stamp)
-- `tests/integration/scoring_versions_test.go`
+- `internal/app/sla/applier.go`, `migrations/*_sla_deadline_tighten_only.up.sql`
+- `internal/app/asset/risk_preview.go`, `internal/app/finding/priority_preview.go`
+- `internal/infra/controller/risk_snapshot.go`, `internal/infra/postgres/dashboard_repository.go` (trend markers)
+- `web/src/features/organization/components/scoring-impact-dialog.tsx`
+- `web/src/features/dashboard/components/ctem/scoring-change-note.tsx`
+- `tests/integration/scoring_versions_test.go`, `tests/integration/sla_tighten_only_test.go`,
+  `tests/integration/scoring_preview_test.go`, `tests/integration/scoring_trend_test.go`
