@@ -23,7 +23,9 @@ func registerRemediationCampaignRoutes(
 		r.GET("/{id}/findings", h.ListFindings, middleware.RequireAll(permission.RemediationRead, permission.FindingsRead))
 		r.PATCH("/{id}", h.Update, middleware.Require(permission.RemediationWrite))
 		r.PATCH("/{id}/status", h.UpdateStatus, middleware.Require(permission.RemediationWrite))
-		r.POST("/{id}/resolve", h.Resolve, middleware.Require(permission.RemediationWrite))
+		// Marking the campaign's findings fixed is a fix claim on each one:
+		// the campaign write plus findings:fix_apply.
+		r.POST("/{id}/resolve", h.Resolve, middleware.RequireAll(permission.RemediationWrite, permission.FindingsFixApply))
 		r.POST("/{id}/refresh", h.Refresh, middleware.Require(permission.RemediationWrite))
 		r.POST("/{id}/create-ticket", h.CreateTicket, middleware.Require(permission.RemediationWrite))
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.RemediationWrite))

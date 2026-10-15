@@ -11,7 +11,7 @@ BEGIN
     WHERE c.conname = 'chk_activity_type' AND c.conrelid = 'finding_activities'::regclass;
     IF vals IS NOT NULL AND 'sla_deadline_tightened' = ANY (vals) THEN
         ALTER TABLE finding_activities DROP CONSTRAINT chk_activity_type;
-        EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s))',
+        EXECUTE format('ALTER TABLE finding_activities ADD CONSTRAINT chk_activity_type CHECK (activity_type IN (%s)) NOT VALID',
             (SELECT string_agg(quote_literal(v), ', ' ORDER BY v) FROM unnest(array_remove(vals, 'sla_deadline_tightened')) AS v));
     END IF;
 END;
