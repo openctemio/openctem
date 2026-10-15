@@ -624,6 +624,14 @@ export function useFindingApprovals(findingId: string | undefined) {
 /**
  * Cancel own approval request
  */
+/**
+ * Remind the eligible approvers of the caller's own pending request (the API
+ * allows one reminder per request per hour; a second answers 409 CONFLICT).
+ */
+export function remindApprovers(approvalId: string): Promise<{ reminded: number }> {
+  return post<{ reminded: number }>(`/api/v1/approvals/${approvalId}/remind`, {})
+}
+
 export function useCancelApproval(approvalId: string) {
   const { currentTenant } = useTenant()
 
