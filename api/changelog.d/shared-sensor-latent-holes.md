@@ -9,7 +9,7 @@
   no remote update. The sensors insert trigger used to grant it
   `legacy-broad` with credentials, push ingest and tier 2; a new
   `sensor_grants` trigger clamps later edits and sensors flagged shared after
-  creation, and the migration clamps existing rows (migration 002420
+  creation, and the migration clamps existing rows (migration 002433
   `shared_sensor_grant_least_privilege`).
 - Every workflow step queued for shared sensors goes through the scan
   trigger's target check (no asset group, no internal target, domain proof
