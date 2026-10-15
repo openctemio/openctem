@@ -117,6 +117,31 @@ func TestComponentProcessor_ProcessBatch_WriteErrorIsReported(t *testing.T) {
 	}
 }
 
+// A CI upload is a trimmed list and a finding import names only its
+// findings' packages: neither may write as a full inventory.
+func TestComponentProcessor_ProcessBatch_ModeByChannel(t *testing.T) {
+	cases := []struct {
+		channel          string
+		replace, partial bool
+	}{
+		{software.ChannelCI, true, true},
+		{software.ChannelFindingImport, false, true},
+		{software.ChannelSensor, true, false},
+		{software.ChannelIntegration, true, false},
+	}
+	for _, c := range cases {
+		w := &fakePackageWriter{}
+		p := NewComponentProcessor(w, slog.Default())
+		report := &ctis.Report{Dependencies: []ctis.Dependency{{Name: "x", Version: "1", PURL: "pkg:npm/x@1"}}}
+		if err := p.ProcessBatch(context.Background(), shared.NewID(), report, map[string]shared.ID{"a": shared.NewID()}, c.channel, &Output{}); err != nil {
+			t.Fatal(err)
+		}
+		if len(w.snaps) != 1 || w.snaps[0].Replace != c.replace || w.snaps[0].Partial != c.partial {
+			t.Errorf("%s: snapshots %+v, want replace=%v partial=%v", c.channel, w.snaps, c.replace, c.partial)
+		}
+	}
+}
+
 func TestComponentProcessor_NoAssetsNoWrite(t *testing.T) {
 	w := &fakePackageWriter{}
 	p := NewComponentProcessor(w, slog.Default())

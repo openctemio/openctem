@@ -25,6 +25,7 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useResolveRemediationCampaign } from '../api/use-remediation-campaigns'
+import { useTranslation } from '@/context/i18n-provider'
 
 type ResolveStatus = 'fix_applied' | 'resolved'
 
@@ -50,6 +51,7 @@ export function ResolveCampaignDialog({
   onSuccess,
 }: ResolveCampaignDialogProps) {
   const [status, setStatus] = useState<ResolveStatus>('fix_applied')
+  const { t } = useTranslation()
   const [resolution, setResolution] = useState('')
   const [approved, setApproved] = useState(false)
 
@@ -64,7 +66,7 @@ export function ResolveCampaignDialog({
     try {
       const result = await trigger({
         status,
-        resolution: resolution.trim() || undefined,
+        resolution: resolution.trim(),
         approved: approved || undefined,
       })
       toast.success(
@@ -115,7 +117,9 @@ export function ResolveCampaignDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="campaign-resolve-note">Note (optional)</Label>
+              <Label htmlFor="campaign-resolve-note">
+                {t('findings.statusNote.label', 'Note (required)')}
+              </Label>
               <Textarea
                 id="campaign-resolve-note"
                 placeholder="e.g. Patched via change CR-1234"
@@ -147,7 +151,7 @@ export function ResolveCampaignDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isMutating}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isMutating}>
+          <Button onClick={handleSubmit} disabled={isMutating || !resolution.trim()}>
             {isMutating ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
             Resolve findings
           </Button>

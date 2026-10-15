@@ -95,6 +95,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	h.vuln = vulnSvc
 
 	actionsSvc := finding.NewFindingActionsService(findingRepo, accessRepo, nil, assetRepo, nil, ds.db, log)
+	vulnSvc.SetFixApplierCheck(actionsSvc.FixAppliers)
 	actionsSvc.SetDataScope(enforcer)
 
 	remediationSvc := appremediation.NewGroupService(postgres.NewFindingRemediationKeyRepository(db), vulnSvc, nil, log)
