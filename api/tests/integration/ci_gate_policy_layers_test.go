@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -346,5 +347,62 @@ func TestCIGateBaseline_FirstRunIsAnnounced(t *testing.T) {
 	}
 	if run("2"); count() != 1 {
 		t.Fatalf("announced again: %d", count())
+	}
+}
+
+// Security review: letting the repository's .openctem.yml apply loosens the
+// gate, so a lock on allow_repo_policy=false holds; and deleting a business
+// unit policy that loosens needs a reason as well as a recent sign-in.
+func TestCIGatePolicyLayers_RepoFileLockAndUnitDeleteReason(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	admin := cirunapp.Actor{Email: "admin@acme.test"}
+	no, yes := false, true
+	locked := []string{cirun.FieldAllowRepoPolicy}
+	if _, err := r.svc.CreateGatePolicy(ctx, r.tenant, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeTenant,
+		AllowRepoPolicy: &no, LockedFields: &locked}, admin); err != nil {
+		t.Fatal(err)
+	}
+	repoID := shared.NewID()
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, scope, exposure, created_at, updated_at)
+		VALUES ($1, $2, 'example.test/acme/locked', 'repository', 'medium', 'active', 'internal', 'private', now(), now())`,
+		repoID.String(), r.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	if got := cirun.Loosens(cirun.GatePolicy{AllowRepoPolicy: false}, cirun.GatePolicy{AllowRepoPolicy: true}); !slices.Contains(got, cirun.FieldAllowRepoPolicy) {
+		t.Fatalf("allowing the repository file does not loosen: %v", got)
+	}
+	f := []string{cirun.FieldAllowRepoPolicy}
+	if _, err := r.svc.CreateGatePolicy(ctx, r.tenant, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository, ScopeID: &repoID,
+		AllowRepoPolicy: &yes, Fields: &f, Reason: "we want the repository file back"}, admin); !errors.Is(err, cirun.ErrFieldLocked) {
+		t.Fatalf("a locked allow_repo_policy=false was overridden: %v", err)
+	}
+
+	// A business unit stricter than the organization: deleting it loosens.
+	unit := shared.NewID()
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO business_units (id, tenant_id, name) VALUES ($1, $2, 'bu-delete')`,
+		unit.String(), r.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	sev := []string{cirun.FieldFailOnSeverity}
+	bu, err := r.svc.CreateGatePolicy(ctx, r.tenant, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeBusinessUnit, ScopeID: &unit,
+		FailOnSeverity: "low", Fields: &sev}, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.svc.SetStepUpGate(recentAuth{})
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, bu.ID, "", admin); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("loosening delete without a reason: %v", err)
+	}
+	r.svc.SetStepUpGate(recentAuth{err: errNeedsStepUp})
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, bu.ID, "unit merged into platform", admin); !errors.Is(err, errNeedsStepUp) {
+		t.Fatalf("loosening delete without step-up: %v", err)
+	}
+	r.svc.SetStepUpGate(recentAuth{})
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, bu.ID, "unit merged into platform", admin); err != nil {
+		t.Fatal(err)
+	}
+	if r.auditCount(r.tenant, "ci_gate_policy.loosened", "fail_on_severity") < 1 {
+		t.Fatal("loosening delete not audited")
 	}
 }

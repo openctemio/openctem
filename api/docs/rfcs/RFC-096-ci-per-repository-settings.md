@@ -37,6 +37,8 @@ findings' due date), and `baseline_secrets_block` (default on).
 | A lock is a floor: no layer below may loosen a locked field, whatever its permission. Stricter values stay allowed. A write that would loosen one is refused (409). A value written before the lock is ignored when the gate resolves the policy | service, `cirun.Resolve` |
 | Loosening a business unit or repository policy needs a reason (10–500 characters) and a recent sign-in. It is audited at high severity (`ci_gate_policy.loosened`) and announced to every administrator | service |
 | Removing a lock, or dropping or extending the end of a looser repository policy, counts as loosening | service |
+| Allowing the repository's `.openctem.yml` (`allow_repo_policy` false to true) counts as loosening, so a lock on it holds | `cirun.Loosens` |
+| Deleting a policy that loosens the gate needs the same as a loosening change: a recent sign-in and, for a business unit or repository policy, a reason (`DELETE /api/v1/ci/gate-policies/{id}?reason=`) | service |
 | A repository policy may end (`expires_at`, within 365 days). After that, the repository inherits again | `cirun.Resolve` |
 | The verdict always uses the policy resolved on the server at evaluation time. The repository file only tightens | `Evaluate` |
 | Organization and business unit policies need an unrestricted data scope. Repository policies and the effective-settings read need the repository in the caller's data scope (404 otherwise). Writes need `scans:ci:policy`; reads need `scans:ci:read` | handler |
