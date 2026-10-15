@@ -7,7 +7,16 @@
  * Nothing renders when the finding has no concrete fix.
  */
 
-import { ArrowRight, Check, ChevronRight, Copy, Layers, TriangleAlert, Wrench } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Layers,
+  TriangleAlert,
+  Wrench,
+} from 'lucide-react'
 import { useState } from 'react'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
@@ -15,10 +24,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-href'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared/types'
 import type { FindingDetail, FindingFixPlan, FindingFixPlanItem } from '../../types'
 import { fixGuidance, type FixCommand } from '../../lib/fix-guidance'
+import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 
 function CodeBlock({ cmd }: { cmd: FixCommand }) {
   const { t } = useTranslation()
@@ -162,6 +173,48 @@ export function PackageFixPlan({
   )
 }
 
+/** Longest chain shown in full; longer ones keep both ends. */
+const CHAIN_SHOWN = 4
+
+/** "Transitive via express → body-parser"; the full chain in the tooltip. */
+function DependencyChain({ via }: { via: string[] }) {
+  const { t } = useTranslation()
+  const shown = via.length > CHAIN_SHOWN ? [via[0], '…', ...via.slice(-(CHAIN_SHOWN - 2))] : via
+  return (
+    <span className="min-w-0 break-words" title={via.join(' → ')}>
+      {t('findings.fixCard.transitiveVia', 'Transitive via {path}', {
+        path: shown.join(' → '),
+      })}
+    </span>
+  )
+}
+
+/** The lock file and the package's line, linked to the repository when known. */
+function ManifestRef({ file, line, href }: { file: string; line?: number; href: string | null }) {
+  const { t } = useTranslation()
+  const label = line ? `${file}:${line}` : file
+  const safe = href ? safeHref(href) : undefined
+  return (
+    <span className="min-w-0 break-all">
+      <span className="whitespace-pre">{`${t('findings.fixCard.inPrefix', 'in')} `}</span>
+      {safe ? (
+        <a
+          href={safe}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          className="inline-flex items-center gap-0.5 font-mono text-xs underline-offset-2 hover:underline"
+          title={t('findings.fixCard.openLockfile', 'Open the lock file at this line')}
+        >
+          {label}
+          <ExternalLink className="h-3 w-3" aria-hidden />
+        </a>
+      ) : (
+        <span className="font-mono text-xs">{label}</span>
+      )}
+    </span>
+  )
+}
+
 export interface FindingFixCardProps {
   finding: FindingDetail
   /** Opens the full remediation plan (the Remediation tab). */
@@ -179,15 +232,35 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
   let body: React.ReactNode
   switch (g.kind) {
     case 'upgrade': {
-      const how = [
-        g.dependencyType === 'direct'
-          ? t('findings.fixCard.directDep', 'Direct dependency')
-          : g.dependencyType === 'transitive'
-            ? t('findings.fixCard.transitiveDep', 'Transitive dependency')
-            : null,
-        g.manifestFile ? t('findings.fixCard.inFile', 'in {file}', { file: g.manifestFile }) : null,
-        g.ecosystem || null,
-      ].filter(Boolean)
+      const how: React.ReactNode[] = []
+      if (g.dependencyType === 'direct') {
+        how.push(t('findings.fixCard.directDep', 'Direct dependency'))
+      } else if (g.dependencyType === 'transitive') {
+        how.push(
+          g.via ? (
+            <DependencyChain key="via" via={g.via} />
+          ) : (
+            t('findings.fixCard.transitiveDep', 'Transitive dependency')
+          )
+        )
+      }
+      if (g.manifestFile) {
+        how.push(
+          <ManifestRef
+            key="file"
+            file={g.manifestFile}
+            line={g.manifestLine}
+            href={buildRepositoryCodeUrl({
+              repositoryUrl: finding.repositoryUrl,
+              filePath: g.manifestFile,
+              startLine: g.manifestLine,
+              commitSha: finding.commitSha,
+              branch: finding.branch,
+            })}
+          />
+        )
+      }
+      if (g.ecosystem) how.push(g.ecosystem)
       body = (
         <>
           <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-base font-medium">
@@ -214,7 +287,18 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
             )}
           </p>
           {how.length > 0 && (
-            <p className="mt-1 text-sm text-muted-foreground">{how.join(' · ')}</p>
+            <p className="mt-1 flex flex-wrap items-center gap-y-0.5 text-sm text-muted-foreground">
+              {how.map((h, i) => (
+                <span key={i} className="inline-flex min-w-0 items-center">
+                  {i > 0 && (
+                    <span aria-hidden className="whitespace-pre">
+                      {' · '}
+                    </span>
+                  )}
+                  {h}
+                </span>
+              ))}
+            </p>
           )}
           {!compact && g.commands.length > 0 && (
             <div className="mt-3 grid gap-2">
